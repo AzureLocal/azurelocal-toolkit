@@ -1,0 +1,680 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+    Invoke-ArcRegistration-Orchestrated.ps1
+    Registers Azure Local cluster nodes with Azure Arc.
+
+.DESCRIPTION
+    Authenticates with a service principal (SPN secret resolved from Key Vault or
+    prompted securely), obtains an ARM access token, and runs
+    Invoke-AzStackHciArcInitialization on each cluster node via PSRemoting.
+
+    AZURE AUTHENTICATION:
+      - Default: SPN — secret resolved from Key Vault (identity.service_principal.secret)
+      - Override: -SpnAppId / -SpnSecret to bypass Key Vault lookup
+      - Fallback: secure prompt for SPN secret if Key Vault is unavailable
+
+    NODE ACCESS (standard credential resolution order):
+      1. -Credential parameter (explicit override)
+      2. Key Vault lookup via identity.accounts.account_local_admin_password
+      3. Interactive Get-Credential prompt
+
+    Configuration values are read from infrastructure.yml. All Azure values can be
+    overridden via command-line parameters (see YAML-overridable parameters below).
+
+    Arc registration is a mandatory prerequisite for Azure Local cloud deployment.
+    Without it, the deployment orchestrator cannot communicate with the cluster.
+
+    OEM IMAGE BOOTSTRAP:
+    When nodes ship with a preinstalled or outdated Azure Stack HCI OS image (Dell,
+    HPE, Lenovo, etc.), the Invoke-AzStackHciArcInitialization command triggers an
+    automatic OS update cycle:
+      1. Scan   — detect the current OS version vs. latest baseline
+      2. Download — download the update package (~40-60 min depending on network)
+      3. Install  — apply the update
+      4. REBOOT   — node reboots to complete the update
+      5. Resume   — after reboot, the bootstrap service resumes Arc registration
+                     using the cached SPN token (no manual intervention required)
+
+    During Phase 4 (REBOOT), the PSRemoting job enters a "Disconnected" state.
+    This is EXPECTED and not a failure. The script reports these nodes as
+    "Disconnected (OEM bootstrap)" rather than "Failed". Run Task 03
+    (Invoke-BootstrapMonitor-Orchestrated.ps1) to track progress through the
+    update cycle, or use Start-ArcRegistrationWithMonitor.ps1 to launch both
+    registration and monitoring together.
+
+.PARAMETER ConfigPath
+    Path to infrastructure.yml. Defaults to auto-detect from script location.
+
+.PARAMETER Credential
+    PSCredential for PSRemoting to cluster nodes. If omitted, resolved from
+    Key Vault using identity.accounts.account_local_admin_password, then
+    falls back to interactive Get-Credential prompt. Use -SpnAppId / -SpnSecret
+    to override Azure SPN credentials (separate from node credentials).
+
+.PARAMETER TargetNode
+    One or more node hostnames or IPs. Defaults to all nodes in config.
+
+.PARAMETER WhatIf
+    Dry-run mode — shows what would be registered without connecting.
+
+.PARAMETER LogPath
+    Override log file path. Default: ./logs/<task-folder>/<timestamp>_ArcRegistration.log
+
+.PARAMETER TenantId
+    Override Azure tenant ID. YAML path: azure_platform.tenant.id
+
+.PARAMETER SubscriptionId
+    Override Azure subscription ID. YAML path: azure_platform.subscriptions.lab.id
+
+.PARAMETER Region
+    Override Azure region. YAML path: azure_platform.region
+
+.PARAMETER ResourceGroup
+    Override Arc resource group. YAML path: compute.azure_local.arc_resource_group
+
+.PARAMETER ArcGatewayId
+    Override Arc gateway resource ID. YAML path: compute.azure_local.arc_gateway_id
+    Pass empty string to disable Arc Gateway.
+
+.PARAMETER SpnAppId
+    Override service principal application (client) ID. YAML path: identity.service_principal.client_id
+
+.PARAMETER SpnSecret
+    SPN secret (plaintext). If omitted, resolved from Key Vault via identity.service_principal.secret.
+
+.PARAMETER Cloud
+    Azure cloud environment. Default: AzureCloud
+
+.EXAMPLE
+    .\Invoke-ArcRegistration-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml
+
+.EXAMPLE
+    .\Invoke-ArcRegistration-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -WhatIf
+
+.EXAMPLE
+    .\Invoke-ArcRegistration-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -TargetNode azl-lab-01-n01
+
+.EXAMPLE
+    .\Invoke-ArcRegistration-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -SpnSecret "mySecret123"
+
+.NOTES
+    Author:  Azure Local Cloud azurelocalcloud
+    Phase:   04-arc-registration
+    Task:    02 - Register Cluster Nodes with Azure Arc
+    Mode:    DESTRUCTIVE. Arc deregistration requires OS reinstallation.
+#>
+
+[CmdletBinding()]
+param(
+    [string]$ConfigPath = "",
+
+    [Parameter(Mandatory = $false)]
+    [PSCredential]$Credential,
+
+    [string[]]$TargetNode = @(),
+
+    [switch]$WhatIf,
+
+    [string]$LogPath = "",
+
+    # YAML-overridable Azure parameters
+    [string]$TenantId       = "",        # azure_platform.tenant.id
+    [string]$SubscriptionId = "",        # azure_platform.subscriptions.lab.id
+    [string]$Region         = "",        # azure_platform.region
+    [string]$ResourceGroup  = "",        # compute.azure_local.arc_resource_group
+    [string]$ArcGatewayId   = "",        # compute.azure_local.arc_gateway_id
+    [string]$SpnAppId       = "",        # identity.service_principal.client_id
+    [string]$SpnSecret      = "",        # identity.service_principal.secret (resolved from KV)
+    [string]$Cloud          = "",        # AzureCloud (default)
+    [int]$RebootWaitSec     = 1800       # Seconds to wait for node to come back after OEM reboot (30 min)
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+# ── Log file initialization ───────────────────────────────────────────────
+# Scripts are always run from the repo root, so ./logs/<task-folder>/ is CWD-relative
+$scriptShortName = [System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath) -replace '^Invoke-|-Orchestrated$', ''
+$taskFolderName  = Split-Path (Split-Path $PSScriptRoot -Parent) -Leaf   # e.g. task-02-register-cluster-nodes-with-azure-arc
+$logDir  = Join-Path (Get-Location).Path "logs\$taskFolderName"
+if ($LogPath -ne "") {
+    $logDir  = Split-Path $LogPath -Parent
+    $logFile = $LogPath
+} else {
+    $logFile = Join-Path $logDir "$(Get-Date -Format 'yyyy-MM-dd_HHmmss')_${scriptShortName}.log"
+}
+if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+
+#region HELPERS
+
+function Write-Log {
+    param([string]$Message, [string]$Level = "INFO")
+    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+    $line = "[$ts] [$Level] $Message"
+    $line | Out-File -FilePath $script:logFile -Append -Encoding utf8
+    switch ($Level) {
+        "PASS"    { Write-Host "[$ts] [PASS] $Message" -ForegroundColor Green }
+        "FAIL"    { Write-Host "[$ts] [FAIL] $Message" -ForegroundColor Red }
+        "WARN"    { Write-Host "[$ts] [WARN] $Message" -ForegroundColor Yellow }
+        "HEADER"  { Write-Host "[$ts] [----] $Message" -ForegroundColor Cyan }
+        "SUCCESS" { Write-Host "[$ts] [PASS] $Message" -ForegroundColor Green }
+        "VERBOSE" { Write-Verbose "[$ts] $Message" }
+        "DEBUG"   { Write-Debug  "[$ts] $Message" }
+        default   { Write-Host "[$ts] [INFO] $Message" }
+    }
+}
+
+function Get-Config {
+    param([string]$Path)
+    if ($Path -eq "" -or -not (Test-Path $Path)) {
+        foreach ($c in @(
+            (Join-Path $PSScriptRoot "..\..\..\..\..\..\configs\infrastructure.yml"),
+            (Join-Path $PSScriptRoot "..\..\..\..\..\..\..\configs\infrastructure.yml")
+        )) { if (Test-Path $c) { $Path = (Resolve-Path $c).Path; break } }
+    } else {
+        $Path = (Resolve-Path $Path).Path
+    }
+    if (-not (Test-Path $Path)) { throw "infrastructure.yml not found. Use -ConfigPath." }
+
+    Write-Log "Loading config from: $Path"
+    Write-Log "Resolved config path: $Path" VERBOSE
+
+    Import-Module powershell-yaml -ErrorAction Stop
+    $cfg = Get-Content $Path -Raw | ConvertFrom-Yaml
+
+    # compute.cluster_nodes                                          # compute.cluster_nodes
+    $nodes = $cfg.compute.cluster_nodes.GetEnumerator() | ForEach-Object {
+        [PSCustomObject]@{
+            nodename = $_.Key                                        # compute.cluster_nodes.<key>
+            hostname = if ($_.Value.hostname) { $_.Value.hostname }  # compute.cluster_nodes.<key>.hostname
+                       else { $_.Key }
+            ip       = $_.Value.management_ip                        # compute.cluster_nodes.<key>.management_ip
+        }
+    }
+
+    $az = $cfg.compute.azure_local                                   # compute.azure_local
+
+    return [PSCustomObject]@{
+        Nodes          = @($nodes)
+        TenantId       = $cfg.azure_platform.tenant.id               # azure_platform.tenant.id
+        SubscriptionId = $cfg.azure_platform.subscriptions.lab.id    # azure_platform.subscriptions.lab.id
+        Region         = $cfg.azure_platform.region                  # azure_platform.region
+        ResourceGroup  = $az.arc_resource_group                      # compute.azure_local.arc_resource_group
+        ArcGatewayId   = if ($az.arc_gateway_enabled) { $az.arc_gateway_id } else { "" }  # compute.azure_local.arc_gateway_id
+        SpnAppId       = $cfg.identity.service_principal.client_id      # identity.service_principal.client_id
+        SpnSecretUri   = $cfg.identity.service_principal.secret      # identity.service_principal.secret
+        AdminUser      = $cfg.identity.accounts.account_local_admin_username   # identity.accounts.account_local_admin_username
+        AdminPassUri   = $cfg.identity.accounts.account_local_admin_password   # identity.accounts.account_local_admin_password
+        Cloud          = "AzureCloud"
+    }
+}
+
+function Resolve-KeyVaultRef {
+    param([string]$KvUri)
+    if ($KvUri -notmatch '^keyvault://([^/]+)/(.+)$') { Write-Log "  Not a Key Vault URI: $KvUri" "WARN"; return $null }
+    $vaultName  = $Matches[1]
+    $secretName = $Matches[2]
+
+    if (Get-Module -Name Az.KeyVault -ListAvailable -ErrorAction SilentlyContinue) {
+        try {
+            Write-Log "  Retrieving '$secretName' from '$vaultName' (Az.KeyVault)..."
+            $secret = Get-AzKeyVaultSecret -VaultName $vaultName -Name $secretName -AsPlainText -ErrorAction Stop
+            if ($secret) { Write-Log "  Secret retrieved." "SUCCESS"; return $secret }
+            Write-Log "  Az.KeyVault returned no secret." "WARN"
+        } catch { Write-Log "  Az.KeyVault failed: $_" "WARN" }
+        Write-Log "  Falling back to Azure CLI..." "WARN"
+    } else {
+        Write-Log "  Az.KeyVault module not found — trying Azure CLI..." "WARN"
+    }
+
+    try {
+        $azCmd = Get-Command az -ErrorAction SilentlyContinue
+        if (-not $azCmd) { Write-Log "  Azure CLI (az) not found." "WARN"; return $null }
+        Write-Log "  Retrieving '$secretName' from '$vaultName' (az CLI)..."
+        $tmpErr = [System.IO.Path]::GetTempFileName()
+        $val    = (& az keyvault secret show --vault-name $vaultName --name $secretName --query value --output tsv --only-show-errors 2>$tmpErr)
+        $azErr  = (Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue).Trim()
+        Remove-Item $tmpErr -ErrorAction SilentlyContinue
+        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($val)) {
+            $errDetail = if ($azErr) { ": $azErr" } else { " (exit $LASTEXITCODE)" }
+            Write-Log "  az CLI failed$errDetail." "WARN"
+            return $null
+        }
+        Write-Log "  Secret retrieved (az CLI)." "SUCCESS"
+        return $val
+    } catch { Write-Log "  az CLI failed: $_" "WARN"; return $null }
+}
+
+function Test-RebootError {
+    param([string]$ErrorMessage)
+    $patterns = @(
+        'I/O operation has been aborted',
+        'thread exit or an application request',
+        'existing connection was forcibly closed',
+        'broken pipe',
+        'connection was closed',
+        'transport returned an error',
+        'network session was ended'
+    )
+    foreach ($p in $patterns) {
+        if ($ErrorMessage -match [regex]::Escape($p)) { return $true }
+    }
+    return $false
+}
+
+function Wait-NodeOnline {
+    param(
+        [string]$IP,
+        [PSCredential]$Cred,
+        [int]$TimeoutSec = 1800,
+        [int]$RetrySec   = 15
+    )
+    $deadline = (Get-Date).AddSeconds($TimeoutSec)
+    # Initial pause to let node fully shut down before pinging
+    Start-Sleep -Seconds 30
+    while ((Get-Date) -lt $deadline) {
+        $remaining = [math]::Round(($deadline - (Get-Date)).TotalMinutes, 1)
+        if (Test-Connection -ComputerName $IP -Count 1 -Quiet -ErrorAction SilentlyContinue) {
+            try {
+                $result = Invoke-Command -ComputerName $IP -Credential $Cred `
+                    -ScriptBlock { $env:COMPUTERNAME } -ErrorAction Stop
+                return $result
+            } catch {
+                Write-Log "    Ping OK but WinRM not ready — retrying (${remaining} min left)..." INFO
+            }
+        } else {
+            Write-Log "    Not reachable — retrying (${remaining} min left)..." INFO
+        }
+        Start-Sleep -Seconds $RetrySec
+    }
+    return $null
+}
+
+function Get-RemoteBootstrapStatus {
+    param(
+        [string]$IP,
+        [PSCredential]$Cred
+    )
+    try {
+        return Invoke-Command -ComputerName $IP -Credential $Cred -ScriptBlock {
+            try {
+                $bs = Get-ArcBootstrapStatus -ErrorAction SilentlyContinue
+                if ($bs -and $bs.Response) {
+                    return [PSCustomObject]@{
+                        Status    = "$($bs.Response.Status)"
+                        StartTime = "$($bs.Response.StartTime)"
+                        EndTime   = "$($bs.Response.EndTime)"
+                    }
+                }
+            } catch {}
+            return [PSCustomObject]@{ Status = "Unknown"; StartTime = ""; EndTime = "" }
+        } -ErrorAction Stop
+    } catch { return $null }
+}
+
+function Invoke-RebootRecovery {
+    param(
+        [string]$NodeName,
+        [string]$NodeIP,
+        [PSCredential]$Credential,
+        [int]$RebootWaitSec
+    )
+    $backOnline = Wait-NodeOnline -IP $NodeIP -Cred $Credential -TimeoutSec $RebootWaitSec -RetrySec 15
+
+    if ($backOnline) {
+        Write-Log "[$NodeName] Node is back online ($backOnline)." SUCCESS
+        $bsStatus = Get-RemoteBootstrapStatus -IP $NodeIP -Cred $Credential
+        if ($bsStatus) {
+            Write-Log "[$NodeName] Bootstrap status: $($bsStatus.Status)" INFO
+            switch ($bsStatus.Status) {
+                "Succeeded" {
+                    Write-Log "[$NodeName] Arc registration completed successfully after reboot." PASS
+                    return "Completed"
+                }
+                "Failed" {
+                    Write-Log "[$NodeName] Bootstrap reports Failed after reboot." FAIL
+                    return "Failed"
+                }
+                default {
+                    Write-Log "[$NodeName] Bootstrap still running ($($bsStatus.Status)). Run Task 03 to monitor." WARN
+                    return "InProgress (OEM bootstrap)"
+                }
+            }
+        } else {
+            Write-Log "[$NodeName] Node online but bootstrap status unavailable. Run Task 03 to monitor." WARN
+            return "InProgress (OEM bootstrap)"
+        }
+    } else {
+        Write-Log "[$NodeName] Node still unreachable after ${RebootWaitSec}s." WARN
+        Write-Log "[$NodeName] May be in extended OEM update cycle (multi-stage reboot)." INFO
+        Write-Log "[$NodeName] Run Task 03 (Invoke-BootstrapMonitor-Orchestrated.ps1) to track progress." INFO
+        return "InProgress (OEM bootstrap)"
+    }
+}
+
+#endregion HELPERS
+
+#region REGISTRATION SCRIPTBLOCK
+
+$RegisterScript = {
+    param(
+        [string]$Sub,
+        [string]$RG,
+        [string]$Tenant,
+        [string]$Reg,
+        [string]$Cld,
+        [string]$Token,
+        [string]$Acct,
+        [string]$GwId
+    )
+    $params = @{
+        SubscriptionID = $Sub
+        ResourceGroup  = $RG
+        TenantID       = $Tenant
+        Region         = $Reg
+        Cloud          = $Cld
+        ArmAccessToken = $Token
+        AccountID      = $Acct
+    }
+    if ($GwId -ne "") { $params['ArcGatewayID'] = $GwId }
+    Invoke-AzStackHciArcInitialization @params
+}
+
+#endregion REGISTRATION SCRIPTBLOCK
+
+#region MAIN
+
+Write-Log "================================================================" HEADER
+Write-Log "   Phase 04 Arc Registration — Task 02: Register Nodes with Arc" HEADER
+Write-Log "================================================================" HEADER
+Write-Log "" INFO
+Write-Log "  Action  : Register cluster nodes with Azure Arc" INFO
+Write-Log "  WARNING : Arc deregistration requires OS reinstallation!" INFO
+Write-Log "  Log     : $logFile" INFO
+Write-Log "" INFO
+
+# ── Load config ──────────────────────────────────────────────────────────────
+Write-Log "Config : $ConfigPath" INFO
+Write-Log "--- Loading configuration ---" HEADER
+
+$cfg = Get-Config -Path $ConfigPath
+
+# ── Apply YAML-overridable parameter overrides ───────────────────────────────
+if ($TenantId       -ne "") { $cfg.TenantId       = $TenantId;       Write-Log "  Override: TenantId=$TenantId" WARN }
+if ($SubscriptionId -ne "") { $cfg.SubscriptionId = $SubscriptionId; Write-Log "  Override: SubscriptionId=$SubscriptionId" WARN }
+if ($Region         -ne "") { $cfg.Region         = $Region;         Write-Log "  Override: Region=$Region" WARN }
+if ($ResourceGroup  -ne "") { $cfg.ResourceGroup  = $ResourceGroup;  Write-Log "  Override: ResourceGroup=$ResourceGroup" WARN }
+if ($ArcGatewayId   -ne "") { $cfg.ArcGatewayId   = $ArcGatewayId;  Write-Log "  Override: ArcGatewayId=$ArcGatewayId" WARN }
+if ($SpnAppId       -ne "") { $cfg.SpnAppId       = $SpnAppId;      Write-Log "  Override: SpnAppId=$SpnAppId" WARN }
+if ($Cloud          -ne "") { $cfg.Cloud           = $Cloud;         Write-Log "  Override: Cloud=$Cloud" WARN }
+
+Write-Log "  Tenant ID      : $($cfg.TenantId)" INFO
+Write-Log "  Subscription   : $($cfg.SubscriptionId)" INFO
+Write-Log "  Region         : $($cfg.Region)" INFO
+Write-Log "  Resource Group : $($cfg.ResourceGroup)" INFO
+Write-Log "  Arc Gateway    : $(if ($cfg.ArcGatewayId) { $cfg.ArcGatewayId } else { '(none)' })" INFO
+Write-Log "  SPN App ID     : $($cfg.SpnAppId)" INFO
+Write-Log "  Cloud          : $($cfg.Cloud)" INFO
+Write-Log "Found $($cfg.Nodes.Count) node(s):" INFO
+$cfg.Nodes | ForEach-Object { Write-Log "  $($_.hostname)  ($($_.ip))" INFO }
+
+# ── Resolve SPN secret (the only credential context for Arc registration) ─────
+Write-Log "--- Resolving SPN credentials ---" HEADER
+if ($SpnSecret -eq "") {
+    Write-Log "Resolving SPN secret from Key Vault..."
+    $SpnSecret = Resolve-KeyVaultRef -KvUri $cfg.SpnSecretUri
+    if (-not $SpnSecret) {
+        Write-Log "Key Vault unavailable — prompting for SPN secret." WARN
+        $secureInput = Read-Host "Enter SPN secret for $($cfg.SpnAppId)" -AsSecureString
+        $SpnSecret = [System.Net.NetworkCredential]::new('', $secureInput).Password
+    }
+}
+Write-Log "SPN secret resolved." SUCCESS
+
+# ── Resolve node credentials (standard credential resolution) ─────────────────
+Write-Log "--- Resolving node credentials ---" HEADER
+if (-not $Credential) {
+    $adminUser    = $cfg.AdminUser                                   # identity.accounts.account_local_admin_username
+    $adminPassUri = $cfg.AdminPassUri                                # identity.accounts.account_local_admin_password
+    Write-Log "Resolving credentials from Key Vault..."
+    $adminPass = Resolve-KeyVaultRef -KvUri $adminPassUri
+    if ($adminPass) {
+        $securePwd  = ConvertTo-SecureString $adminPass -AsPlainText -Force
+        $Credential = [PSCredential]::new($adminUser, $securePwd)
+        Write-Log "Credentials resolved for '$adminUser'." SUCCESS
+    } else {
+        Write-Log "Key Vault unavailable — prompting for node credentials." WARN
+        $Credential = Get-Credential -Message "Enter credentials for cluster node access"
+    }
+} else {
+    Write-Log "Using explicit -Credential parameter: $($Credential.UserName)" INFO
+}
+
+# ── Apply TargetNode filter ───────────────────────────────────────────────────
+$nodes = $cfg.Nodes
+if ($TargetNode.Count -gt 0) {
+    $nodes = @($nodes | Where-Object { $TargetNode -contains $_.hostname -or $TargetNode -contains $_.nodename -or $TargetNode -contains $_.ip })
+    if ($nodes.Count -eq 0) { throw "No nodes matched filter: $($TargetNode -join ', ')" }
+    Write-Log "Node filter applied — running against: $($nodes.hostname -join ', ')" WARN
+}
+
+# ── WhatIf — dry-run mode ────────────────────────────────────────────────────
+if ($WhatIf) {
+    Write-Log "" INFO
+    Write-Log "================================================================" HEADER
+    Write-Log "  WHATIF — Dry-run mode. No registration will occur." HEADER
+    Write-Log "================================================================" HEADER
+    Write-Log "" INFO
+    Write-Log "Would authenticate as SPN: $($cfg.SpnAppId)" INFO
+    Write-Log "Would obtain ARM access token from Azure" INFO
+    Write-Log "Would register $($nodes.Count) node(s) with Azure Arc:" INFO
+    Write-Log "" INFO
+
+    foreach ($n in $nodes) {
+        Write-Log "────────────────────────────────────────────────────────────" HEADER
+        Write-Log "  NODE: $($n.hostname)  ($($n.ip))" HEADER
+        Write-Log "────────────────────────────────────────────────────────────" HEADER
+        Write-Log "  WHATIF: Would run Invoke-AzStackHciArcInitialization with:" INFO
+        Write-Log "    -SubscriptionID $($cfg.SubscriptionId)" INFO
+        Write-Log "    -ResourceGroup  $($cfg.ResourceGroup)" INFO
+        Write-Log "    -TenantID       $($cfg.TenantId)" INFO
+        Write-Log "    -Region         $($cfg.Region)" INFO
+        Write-Log "    -Cloud          $($cfg.Cloud)" INFO
+        Write-Log "    -ArcGatewayID   $(if ($cfg.ArcGatewayId) { $cfg.ArcGatewayId } else { '(none — gateway disabled)' })" INFO
+        Write-Log "    -ArmAccessToken <from SPN auth>" INFO
+        Write-Log "    -AccountID      $($cfg.SpnAppId)" INFO
+        Write-Log "" INFO
+    }
+
+    Write-Log "Connection method : Invoke-Command -ComputerName <ip> -Credential <resolved> -AsJob" INFO
+    Write-Log "  Node credential  : $($Credential.UserName) (from Key Vault)" INFO
+    Write-Log "Job timeout       : 3600 seconds (~60 min)" INFO
+    Write-Log "Reboot handling   : Wait up to $RebootWaitSec seconds (~$([math]::Round($RebootWaitSec/60)) min) for node to come back" INFO
+    Write-Log "" INFO
+    Write-Log "OEM IMAGE BOOTSTRAP:" INFO
+    Write-Log "  Nodes may reboot during OEM OS updates. The script detects WinRM session" INFO
+    Write-Log "  loss (I/O abort), waits for the node to come back, and checks bootstrap" INFO
+    Write-Log "  status. This is NOT treated as a failure." INFO
+    Write-Log "" INFO
+    Write-Log "Re-run without -WhatIf to execute." INFO
+    Write-Log "Log file: $logFile" INFO
+    exit 0
+}
+
+# ── Authenticate SPN ──────────────────────────────────────────────────────────
+Write-Log "" INFO
+Write-Log "--- Authenticating with Azure (SPN) ---" HEADER
+$secureSpnSecret = ConvertTo-SecureString $SpnSecret -AsPlainText -Force
+$spnCredential   = [PSCredential]::new($cfg.SpnAppId, $secureSpnSecret)
+Connect-AzAccount -ServicePrincipal -TenantId $cfg.TenantId -Credential $spnCredential -SubscriptionId $cfg.SubscriptionId | Out-Null
+Write-Log "Authenticated as SPN: $($cfg.SpnAppId)" SUCCESS
+
+$armToken  = (Get-AzAccessToken).Token
+$accountId = $cfg.SpnAppId
+Write-Log "ARM access token obtained." SUCCESS
+
+# ── Register nodes ────────────────────────────────────────────────────────────
+Write-Log "" INFO
+Write-Log "Registering $($nodes.Count) node(s) with Azure Arc..." HEADER
+Write-Log "================================================================" HEADER
+
+$jobTimeout = 3600   # 60 minutes — OEM image updates can take 40-90 min with multi-GB downloads
+$jobs       = [ordered]@{}
+$summary    = @()
+
+Write-Log "Launching registration jobs in parallel..." HEADER
+Write-Log "Note: Nodes may reboot during OEM updates. This is expected." INFO
+
+foreach ($node in $nodes) {
+    try {
+        $invokeParams = @{
+            ComputerName = $node.ip
+            ScriptBlock  = $RegisterScript
+            ArgumentList = @($cfg.SubscriptionId, $cfg.ResourceGroup, $cfg.TenantId, $cfg.Region, $cfg.Cloud, $armToken, $accountId, $cfg.ArcGatewayId)
+            AsJob        = $true
+            JobName      = "ArcReg-$($node.hostname)"
+            ErrorAction  = 'Stop'
+        }
+        $invokeParams['Credential'] = $Credential
+        $job = Invoke-Command @invokeParams
+        $jobs[$node.hostname] = @{ Job = $job; Node = $node; Error = $null }
+        Write-Log "  [$($node.hostname)] Registration job submitted ($($node.ip))" INFO
+    } catch {
+        $errMsg = $_.Exception.Message -replace '^.*\] ', ''
+        $jobs[$node.hostname] = @{ Job = $null; Node = $node; Error = $errMsg }
+        Write-Log "  [$($node.hostname)] Failed to submit: $errMsg" FAIL
+    }
+}
+
+# ── Wait for all jobs ─────────────────────────────────────────────────────
+$activeJobs = @($jobs.Values | Where-Object { $_.Job } | ForEach-Object { $_.Job })
+if ($activeJobs.Count -gt 0) {
+    Write-Log "Waiting for $($activeJobs.Count) job(s) to complete (timeout=${jobTimeout}s / ~40 min)..." INFO
+    $null = $activeJobs | Wait-Job -Timeout $jobTimeout
+}
+
+# ── Collect results per node ──────────────────────────────────────────────
+Write-Log "" INFO
+foreach ($entry in $jobs.GetEnumerator()) {
+    $nodeName = $entry.Key
+    $node     = $entry.Value.Node
+    $job      = $entry.Value.Job
+    $jobError = $entry.Value.Error
+
+    Write-Log "================================================================" HEADER
+    Write-Log "  NODE: $nodeName  ($($node.ip))" HEADER
+    Write-Log "================================================================" HEADER
+
+    $nodeError = $jobError
+    $status    = "Unknown"
+
+    if ($job) {
+        if ($job.State -eq 'Running') {
+            # Job still running after timeout — OEM update likely still in progress.
+            # Check if node is responsive before giving up.
+            Write-Log "[$nodeName] Job still running after ${jobTimeout}s — checking node status..." WARN
+            $bsCheck = Get-RemoteBootstrapStatus -IP $node.ip -Cred $Credential
+            if ($bsCheck -and $bsCheck.Status -eq 'Succeeded') {
+                $job | Stop-Job -ErrorAction SilentlyContinue
+                Write-Log "[$nodeName] Arc registration completed successfully." PASS
+                $status = "Completed"
+            } else {
+                $bsInfo = if ($bsCheck) { $bsCheck.Status } else { 'node may be rebooting' }
+                Write-Log "[$nodeName] Bootstrap: $bsInfo. OEM update likely still in progress." WARN
+                Write-Log "[$nodeName] Run Task 03 to monitor. DO NOT re-run registration." INFO
+                $status = "InProgress (OEM bootstrap)"
+            }
+        } elseif ($job.State -eq 'Disconnected') {
+            # EXPECTED during OEM bootstrap: node rebooted while applying OS updates.
+            Write-Log "[$nodeName] Session disconnected — likely rebooting for OEM OS update." WARN
+            Write-Log "[$nodeName] Waiting for node to come back online (up to $RebootWaitSec seconds)..." INFO
+            $status = Invoke-RebootRecovery -NodeName $nodeName -NodeIP $node.ip -Credential $Credential -RebootWaitSec $RebootWaitSec
+            if ($status -notin 'Failed','Completed') { $nodeError = $null }
+        } elseif ($job.State -eq 'Failed') {
+            $nodeError = ($job.ChildJobs | ForEach-Object { $_.JobStateInfo.Reason.Message }) -join '; '
+            if (-not $nodeError) { $nodeError = "Remote job failed (unknown reason)" }
+
+            if (Test-RebootError -ErrorMessage $nodeError) {
+                # WinRM I/O abort = node rebooted during OEM update. NOT a real failure.
+                Write-Log "[$nodeName] WinRM session lost — node likely rebooting for OEM OS update." WARN
+                Write-Log "[$nodeName] Detail: $nodeError" DEBUG
+                Write-Log "[$nodeName] Waiting for node to come back online (up to $RebootWaitSec seconds)..." INFO
+                $status = Invoke-RebootRecovery -NodeName $nodeName -NodeIP $node.ip -Credential $Credential -RebootWaitSec $RebootWaitSec
+                if ($status -ne 'Failed') { $nodeError = $null }
+            } else {
+                Write-Log "[$nodeName] Failed: $nodeError" FAIL
+                $status = "Failed"
+            }
+        } else {
+            try {
+                $output = Receive-Job -Job $job -ErrorAction Stop
+                Write-Log "[$nodeName] Registration completed successfully." PASS
+                $status = "Completed"
+            } catch {
+                $nodeError = $_.Exception.Message -replace '^.*\] ', ''
+                if (Test-RebootError -ErrorMessage $nodeError) {
+                    Write-Log "[$nodeName] WinRM error during result collection — node may have rebooted." WARN
+                    Write-Log "[$nodeName] Waiting for node to come back online (up to $RebootWaitSec seconds)..." INFO
+                    $status = Invoke-RebootRecovery -NodeName $nodeName -NodeIP $node.ip -Credential $Credential -RebootWaitSec $RebootWaitSec
+                    if ($status -ne 'Failed') { $nodeError = $null }
+                } else {
+                    Write-Log "[$nodeName] Error: $nodeError" FAIL
+                    $status = "Error"
+                }
+            }
+        }
+    } elseif (-not $nodeError) {
+        $nodeError = "No job was created"
+        Write-Log "[$nodeName] $nodeError" FAIL
+        $status = "Failed"
+    } else {
+        Write-Log "[$nodeName] Connection failed: $nodeError" FAIL
+        $status = "Failed"
+    }
+
+    $summary += [PSCustomObject]@{
+        Node   = $nodeName
+        IP     = $node.ip
+        Status = $status
+        Error  = $nodeError
+    }
+}
+
+# ── Cleanup jobs ──────────────────────────────────────────────────────────
+$activeJobs | Remove-Job -Force -ErrorAction SilentlyContinue
+
+# ── Summary table ──────────────────────────────────────────────────────────
+Write-Log "" INFO
+Write-Log "================================================================" HEADER
+Write-Log "  SUMMARY" HEADER
+Write-Log "================================================================" HEADER
+
+$tableStr = ($summary | Format-Table Node, IP, Status -AutoSize | Out-String).Trim()
+Write-Host $tableStr
+$tableStr | Out-File -FilePath $logFile -Append -Encoding utf8
+
+$failCount   = @($summary | Where-Object { $_.Status -in 'Failed', 'Error' }).Count
+$inProgress  = @($summary | Where-Object { $_.Status -like 'InProgress*' -or $_.Status -like 'Disconnected*' }).Count
+$completed   = @($summary | Where-Object { $_.Status -eq 'Completed' }).Count
+
+if ($completed -eq $nodes.Count) {
+    Write-Log "All $($nodes.Count) node(s) registered with Azure Arc." PASS
+    Write-Log "" INFO
+    Write-Log "Proceed to Task 04: Verify Arc Registration and Connectivity." INFO
+} elseif ($inProgress -gt 0 -and $failCount -eq 0) {
+    Write-Log "$completed node(s) completed, $inProgress node(s) still bootstrapping (OEM updates / reboots)." WARN
+    Write-Log "Bootstrap service will resume Arc registration after reboot." INFO
+    Write-Log "" INFO
+    Write-Log "Run Task 03 (Invoke-BootstrapMonitor-Orchestrated.ps1) to monitor progress." WARN
+    Write-Log "Or use Start-ArcRegistrationWithMonitor.ps1 to launch registration + monitor together." INFO
+} else {
+    Write-Log "$failCount node(s) failed registration. Review output above." FAIL
+    if ($inProgress -gt 0) { Write-Log "$inProgress node(s) still bootstrapping — run Task 03 to monitor." WARN }
+    Write-Log "Log file: $logFile" INFO
+    exit 1
+}
+
+Write-Log "Log file: $logFile" INFO
+
+#endregion MAIN

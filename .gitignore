@@ -1,0 +1,64 @@
+# Terraform
+.terraform/
+.terraform.lock.hcl
+*.tfstate
+*.tfstate.backup
+*.tfvars
+!*.tfvars.example
+crash.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+
+# Ansible
+ansible/roles/
+*.retry
+ansible/.vault_pass
+
+# PowerShell
+*.psm1~
+*.psd1~
+
+# Secrets / credentials
+*.pem
+*.key
+*.pfx
+*.p12
+*.cer
+*.crt
+*.creds
+*.secrets
+.env
+.env.*
+!.env.example
+
+# Central config (actual values — never commit)
+configs/infrastructure-*.yml
+!configs/infrastructure.yml
+configs/credentials/
+
+# Log files (keep the directory via .gitkeep)
+logs/**
+!logs/.gitkeep
+
+# Temp / scratch
+temp/
+
+# Editor / OS artifacts
+.vscode/
+.idea/
+*.suo
+*.user
+Thumbs.db
+.DS_Store
+*~
+
+# Build output
+dist/
+out/
+build/
+site/
+
+# Node (if mkdocs plugins ever need it)
+node_modules/

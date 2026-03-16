@@ -1,0 +1,800 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/Azure Local Cloud/azl-env/schemas/infrastructure.schema.json",
+  "title": "Azure Local Infrastructure Configuration (v4.0.0)",
+  "description": "JSON Schema for validating Azure Local environment infrastructure.yml files. Aligned with master-registry.yaml v4.0.0 — 13-section hierarchy. NOTE: This schema is currently hand-maintained and MUST be kept in sync with master-registry.yaml (the canonical source). TODO: Auto-generate this schema from master-registry.yaml to prevent drift.",
+  "type": "object",
+  "required": [
+    "site",
+    "environment",
+    "tags",
+    "azure_platform",
+    "identity",
+    "networking",
+    "compute"
+  ],
+  "properties": {
+    "_metadata": {
+      "type": "object",
+      "description": "File versioning and change tracking metadata",
+      "properties": {
+        "version": { "type": "string", "description": "Infrastructure file version", "examples": ["1.0.0"] },
+        "schema_version": { "type": "string", "description": "Schema version this file conforms to", "examples": ["4.0.0"] },
+        "last_updated": { "type": "string", "format": "date", "description": "Last modification date" },
+        "environment_name": { "type": "string", "description": "Environment identifier" }
+      },
+      "additionalProperties": true
+    },
+    "infrastructure_scenarios": {
+      "type": "object",
+      "description": "Deployment type taxonomy and variable grouping. Defines which infrastructure types are deployed and their required variable groups.",
+      "properties": {
+        "shared_groups": { "type": "array", "description": "Variable groups always included", "items": { "type": "string" } },
+        "infrastructure_types": { "type": "object", "description": "Supported infrastructure types and their variable groups", "additionalProperties": true }
+      },
+      "additionalProperties": true
+    },
+    "site": {
+      "type": "object",
+      "description": "Physical location metadata and hardware details",
+      "required": ["code", "name"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "description": "Short site code",
+          "pattern": "^[a-zA-Z]{2,10}$",
+          "maxLength": 10,
+          "examples": ["iic"]
+        },
+        "name": { "type": "string", "description": "Full site name", "examples": ["Project Phoenix Home Lab"] },
+        "env_name": { "type": "string", "description": "Environment display name" },
+        "location": { "type": "string", "description": "Physical location", "examples": ["Home Office"] },
+        "datacenter": { "type": "string", "description": "Datacenter code", "examples": ["RAL"] },
+        "site_code": { "type": "string", "description": "Site code (alternate)" },
+        "site_datacenter": { "type": "string" },
+        "site_description": { "type": "string" },
+        "site_environment": { "type": "string" },
+        "site_location": { "type": "string" },
+        "site_name": { "type": "string" },
+        "site_owner": { "type": "string" },
+        "hardware": {
+          "type": "object",
+          "description": "Hardware details for cluster nodes",
+          "properties": {
+            "hw_vendor": { "type": "string", "description": "Hardware vendor", "enum": ["Dell", "HPE", "Lenovo", "DataON"], "examples": ["Dell"] },
+            "hw_model": { "type": "string", "description": "Server model", "examples": ["Dell AX-760"] },
+            "hw_generation": { "type": "string", "description": "Hardware generation", "examples": ["16G"] },
+            "hw_serial": { "type": "string", "description": "Chassis serial number" },
+            "hw_sbe_version": { "type": "string", "description": "Solution Builder Extension version", "examples": ["4.2.2506.1600"] },
+            "hw_network_adapter": { "type": "string", "description": "Network adapter model" },
+            "hw_network_adapter_type": { "type": "string", "description": "Network adapter driver type" },
+            "idrac": {
+              "type": "object",
+              "properties": {
+                "idrac_username": { "type": "string" },
+                "idrac_password": { "type": "string", "description": "Key Vault reference" },
+                "idrac_vnc_enabled": { "type": "boolean", "default": true },
+                "idrac_vnc_port": { "type": "integer", "default": 5901 },
+                "idrac_vnc_timeout": { "type": "integer", "default": 1800 }
+              }
+            },
+            "dell_support": {
+              "type": "object",
+              "properties": {
+                "dell_support_username": { "type": "string" },
+                "dell_support_password": { "type": "string", "description": "Key Vault reference" }
+              }
+            },
+            "gpu_enabled": { "type": "boolean", "default": false },
+            "gpu_model": { "type": "string", "examples": ["NVIDIA L4"] }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": true
+    },
+    "environment": {
+      "type": "object",
+      "description": "Environment classification and metadata",
+      "required": ["env_name"],
+      "properties": {
+        "env_name": {
+          "type": "string",
+          "description": "Environment identifier",
+          "examples": ["ProjectIIC", "Azure Local Cloudproductlabs"]
+        },
+        "env_type": {
+          "type": "string",
+          "description": "Environment type classification",
+          "enum": ["management", "lab", "demo", "poc", "production"]
+        },
+        "env_owner": {
+          "type": "string",
+          "description": "Email of the environment owner",
+          "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+        },
+        "env_description": { "type": "string", "description": "Brief description of the environment" }
+      },
+      "additionalProperties": false
+    },
+    "tags": {
+      "type": "object",
+      "description": "Azure resource tagging standards",
+      "required": ["Environment", "Project", "ManagedBy"],
+      "properties": {
+        "Environment": { "type": "string", "examples": ["ProjectIIC"] },
+        "Project": { "type": "string", "examples": ["Azure Local Infrastructure"] },
+        "ManagedBy": { "type": "string", "default": "Infrastructure as Code" },
+        "Owner": { "type": "string", "examples": ["Azure Local Cloudnology Team"] },
+        "env_Owner": { "type": "string" },
+        "CostCenter": { "type": "string", "examples": ["IT-AzureLocalCloud"] },
+        "tag_architecture_version": { "type": "string" }
+      },
+      "additionalProperties": true
+    },
+    "azure_platform": {
+      "type": "object",
+      "description": "Azure organizational hierarchy — tenants, management groups, subscriptions, resource groups",
+      "properties": {
+        "azure_tenants": {
+          "type": "object",
+          "description": "Azure AD/Entra ID tenant configuration",
+          "properties": {
+            "aztenant_azurelocal_id": {
+              "type": "string",
+              "description": "Azure AD/Entra ID Tenant ID (GUID)",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "aztenant_azurelocal_name": { "type": "string", "description": "Azure tenant display name" },
+            "aztenant_azurelocal_domain": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]+\\.onmicrosoft\\.com$"
+            },
+            "aztenant_azurelocal_primary_domain": { "type": "string" },
+            "aztenant_region": { "type": "string", "examples": ["eastus"] }
+          },
+          "additionalProperties": true
+        },
+        "management_groups": {
+          "type": "object",
+          "description": "Azure Management Group hierarchy",
+          "additionalProperties": true
+        },
+        "subscriptions": {
+          "type": "object",
+          "description": "Azure subscription configuration",
+          "properties": {
+            "sub_bootstrap_id": {
+              "type": "string",
+              "description": "Bootstrap subscription ID",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            }
+          },
+          "additionalProperties": true
+        },
+        "resource_groups": {
+          "type": "object",
+          "description": "Resource group definitions",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "identity": {
+      "type": "object",
+      "description": "Accounts, Active Directory, managed identities, B2B, service principals",
+      "properties": {
+        "accounts": {
+          "type": "object",
+          "description": "Service accounts, local admins, domain admins, service principals, credentials (aligned with master-registry v4.0.0 — flat property structure)",
+          "properties": {
+            "account_local_admin_username": { "type": "string", "description": "Local administrator username" },
+            "account_local_admin_password": {
+              "type": "string",
+              "description": "Local admin password (Key Vault reference)",
+              "pattern": "^keyvault://[a-z0-9-]+/.+$"
+            },
+            "account_ad_domain_admin_username": { "type": "string", "description": "Domain admin username" },
+            "account_ad_domain_admin_password": {
+              "type": "string",
+              "description": "Domain admin password (Key Vault reference)",
+              "pattern": "^keyvault://[a-z0-9-]+/.+$"
+            },
+            "account_lcm_username": { "type": "string", "description": "Azure Local LCM deployment account username" },
+            "account_lcm_password": {
+              "type": "string",
+              "description": "Azure Local LCM deployment account password (Key Vault reference)",
+              "pattern": "^keyvault://[a-z0-9-]+/.+$"
+            },
+            "spn_automation_name": { "type": "string", "description": "Automation service principal name" },
+            "spn_automation_client_id": { "type": "string", "description": "Automation SPN client ID", "format": "uuid" },
+            "spn_azl_deployment_name": { "type": "string", "description": "Azure Local deployment SPN name" },
+            "spn_azl_deployment_client_id": { "type": "string", "description": "Azure Local deployment SPN client ID", "format": "uuid" },
+            "spn_azl_deployment_object_id": { "type": "string", "description": "Azure Local deployment SPN object ID", "format": "uuid" }
+          },
+          "additionalProperties": true
+        },
+        "active_directory": {
+          "type": "object",
+          "description": "Active Directory domain settings (aligned with master-registry v4.0.0)",
+          "properties": {
+            "ad_domain_fqdn": {
+              "type": "string",
+              "description": "Active Directory domain FQDN",
+              "pattern": "^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\\.)+[a-zA-Z]{2,}$",
+              "examples": ["azlocal.mgmt"]
+            },
+            "ad_netbios_name": {
+              "type": "string",
+              "description": "Active Directory NetBIOS name",
+              "maxLength": 15,
+              "pattern": "^[A-Z][A-Z0-9-]*$",
+              "examples": ["MGMT"]
+            },
+            "ad_ou_path": {
+              "type": "string",
+              "description": "Active Directory OU path",
+              "examples": ["OU=MGMT,DC=azlocal,DC=mgmt"]
+            },
+            "ad_computers_ou_path": {
+              "type": "string",
+              "description": "Computers OU path",
+              "examples": ["OU=Computers,OU=MGMT,DC=azlocal,DC=mgmt"]
+            },
+            "ad_servers_ou_path": {
+              "type": "string",
+              "description": "Servers OU path"
+            },
+            "ad_clusters_ou_path": {
+              "type": "string",
+              "description": "Azure Local cluster OU path"
+            },
+            "ad_dns_servers": {
+              "type": "array",
+              "description": "Active Directory DNS server IP addresses",
+              "items": {
+                "type": "string",
+                "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+              },
+              "minItems": 1
+            },
+            "ad_dns_server_fqdns": {
+              "type": "array",
+              "description": "DNS server FQDNs",
+              "items": { "type": "string" }
+            }
+          },
+          "additionalProperties": true
+        },
+        "managed_identities": {
+          "type": "object",
+          "description": "User-assigned and system-assigned managed identities",
+          "properties": {
+            "mi_user_assigned": { "type": "array", "items": { "type": "object" } },
+            "mi_system_assigned": { "type": "array", "items": { "type": "object" } }
+          },
+          "additionalProperties": true
+        },
+        "b2b_configuration": {
+          "type": "object",
+          "description": "Cross-tenant B2B synchronization settings",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "networking": {
+      "type": "object",
+      "description": "All networking — Azure, on-premises, and hybrid",
+      "properties": {
+        "azure": {
+          "type": "object",
+          "description": "Azure networking resources",
+          "properties": {
+            "hub_spoke": {
+              "type": "object",
+              "description": "Hub-spoke network architecture",
+              "properties": {
+                "hub_vnet_name": {
+                  "type": "string",
+                  "pattern": "^vnet-[a-z0-9-]+$",
+                  "examples": ["vnet-azlc-AzureLocalCloud-eus-connectivity-hub"]
+                },
+                "hub_vnet_address_space": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}\\/([0-9]|[1-2][0-9]|3[0-2])$"
+                  },
+                  "minItems": 1
+                }
+              },
+              "additionalProperties": true
+            },
+            "vnets": {
+              "type": "object",
+              "description": "Virtual network definitions",
+              "additionalProperties": true
+            },
+            "bastion": {
+              "type": "object",
+              "description": "Azure Bastion host configuration",
+              "additionalProperties": true
+            },
+            "firewall": {
+              "type": "object",
+              "description": "Azure Firewall rules and policies",
+              "additionalProperties": true
+            },
+            "sdn": {
+              "type": "object",
+              "description": "Software Defined Networking configuration",
+              "properties": {
+                "sdn_enabled": { "type": "boolean", "default": false }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "onprem": {
+          "type": "object",
+          "description": "On-premises networking",
+          "properties": {
+            "vlans": {
+              "type": "object",
+              "description": "VLAN definitions",
+              "additionalProperties": true
+            },
+            "dhcp": {
+              "type": "object",
+              "description": "DHCP service configuration",
+              "additionalProperties": true
+            },
+            "network_intents": {
+              "type": "array",
+              "description": "Azure Local network intent configurations (aligned with master-registry v4.0.0 and Microsoft ARM intentList). Each intent defines traffic types, adapters, and network settings. Supports 1-16 intents.",
+              "minItems": 1,
+              "maxItems": 16,
+              "items": {
+                "type": "object",
+                "required": ["name", "traffic_types", "adapter_names"],
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "description": "Intent name (e.g., 'MgmtCompute', 'Storage', 'Converged')",
+                    "examples": ["MgmtCompute", "Storage"]
+                  },
+                  "traffic_types": {
+                    "type": "array",
+                    "description": "Traffic types for this intent (ARM parameter: trafficType)",
+                    "items": {
+                      "type": "string",
+                      "enum": ["Management", "Compute", "Storage"]
+                    },
+                    "minItems": 1,
+                    "maxItems": 3
+                  },
+                  "adapter_names": {
+                    "type": "array",
+                    "description": "Physical network adapter names (minimum 2 for HA)",
+                    "items": { "type": "string" },
+                    "minItems": 2
+                  },
+                  "subnet": {
+                    "type": "string",
+                    "description": "Network subnet (CIDR) for management/compute traffic",
+                    "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}\\/([0-9]|[1-2][0-9]|3[0-2])$"
+                  },
+                  "gateway": {
+                    "type": "string",
+                    "description": "Network gateway for management/compute traffic",
+                    "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+                  },
+                  "vlan_id": { "type": "integer", "description": "VLAN ID", "minimum": 0, "maximum": 4094 },
+                  "dns_servers": {
+                    "type": "array",
+                    "description": "DNS servers for management traffic",
+                    "items": {
+                      "type": "string",
+                      "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+                    },
+                    "minItems": 1
+                  },
+                  "storage_networks": {
+                    "type": "array",
+                    "description": "Storage network configurations (ARM parameter: storageNetworkList)",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "subnet": {
+                          "type": "string",
+                          "description": "Storage network subnet (CIDR)",
+                          "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}\\/([0-9]|[1-2][0-9]|3[0-2])$"
+                        },
+                        "vlan_id": { "type": "integer", "description": "Storage VLAN ID", "minimum": 1, "maximum": 4094 }
+                      }
+                    },
+                    "minItems": 1,
+                    "maxItems": 4
+                  },
+                  "enable_storage_auto_ip": {
+                    "type": "boolean",
+                    "description": "Enable automatic IP assignment for storage (ARM parameter: enableStorageAutoIp)",
+                    "default": true
+                  },
+                  "storage_connectivity_switchless": {
+                    "type": "boolean",
+                    "description": "Use switchless storage topology (max 4 nodes)",
+                    "default": false
+                  }
+                },
+                "additionalProperties": true
+              }
+            },
+            "logical_networks": {
+              "type": "object",
+              "description": "Logical network definitions for VM networking layer",
+              "additionalProperties": true
+            },
+            "network_devices": {
+              "type": "object",
+              "description": "Physical network switches and ToR devices",
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "hybrid": {
+          "type": "object",
+          "description": "Hybrid connectivity (VPN, ExpressRoute)",
+          "properties": {
+            "vpn": {
+              "type": "object",
+              "description": "VPN gateway configuration",
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+    "compute": {
+      "type": "object",
+      "description": "Virtual machines, clusters, nodes, ARM deployment, AVD",
+      "properties": {
+        "vms": {
+          "type": "object",
+          "description": "Virtual machine definitions",
+          "properties": {
+            "azure": {
+              "type": "object",
+              "description": "Azure VMs (DCs, utility, NDM, lighthouse, etc.)",
+              "additionalProperties": true
+            },
+            "arc_hybrid": {
+              "type": "object",
+              "description": "Arc-enabled hybrid VMs",
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": false
+        },
+        "clusters": {
+          "type": "object",
+          "description": "Azure Local / WSFC cluster definitions",
+          "properties": {
+            "azure_local": {
+              "type": "object",
+              "properties": {
+                "azl_name": {
+                  "type": "string",
+                  "description": "Cluster name (max 15 chars, NetBIOS compatible)",
+                  "pattern": "^[a-zA-Z][a-zA-Z0-9-]*$",
+                  "maxLength": 15,
+                  "examples": ["iic-01-clus01"]
+                },
+                "azl_node_count": {
+                  "type": "integer",
+                  "description": "Number of cluster nodes",
+                  "minimum": 1,
+                  "maximum": 16,
+                  "examples": [2]
+                },
+                "azl_resource_group": {
+                  "type": "string",
+                  "pattern": "^rg-[a-z0-9-]+$"
+                },
+                "azl_cluster_ip": {
+                  "type": "string",
+                  "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+                },
+                "azl_network_topology": {
+                  "type": "string",
+                  "enum": ["switchless", "traditional", "nested"]
+                },
+                "azl_identity_provider": {
+                  "type": "string",
+                  "enum": ["active_directory", "local_identity"]
+                },
+                "azl_witness_type": {
+                  "type": "string",
+                  "enum": ["cloud_witness", "file_share_witness", "disk_witness"],
+                  "default": "cloud_witness"
+                },
+                "azl_deployment_mode": {
+                  "type": "string",
+                  "enum": ["validate_only", "deploy"],
+                  "default": "deploy"
+                }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "cluster_nodes": {
+          "type": "array",
+          "description": "Individual cluster node definitions (aligned with master-registry v4.0.0)",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "required": ["node_hostname", "node_management_ip", "node_idrac_ip"],
+            "properties": {
+              "node_hostname": {
+                "type": "string",
+                "description": "Node hostname (NetBIOS compatible)",
+                "maxLength": 15,
+                "examples": ["azlc-node01"]
+              },
+              "node_fqdn": {
+                "type": "string",
+                "description": "Node fully qualified domain name",
+                "examples": ["azlc-node01.azlocal.cloud"]
+              },
+              "node_management_ip": {
+                "type": "string",
+                "description": "Node management network IP address",
+                "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+              },
+              "node_idrac_ip": {
+                "type": "string",
+                "description": "Node iDRAC/BMC IP address",
+                "pattern": "^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$"
+              },
+              "node_service_tag": { "type": "string", "description": "Dell service tag", "examples": ["J8KXM73"] },
+              "node_serial_number": { "type": "string", "description": "Server serial number" },
+              "node_model": { "type": "string", "description": "Server model", "examples": ["PowerEdge R750"] },
+              "node_bios_version": { "type": "string", "description": "BIOS firmware version" },
+              "node_mac_bmc": {
+                "type": "string",
+                "description": "BMC/iDRAC MAC address",
+                "pattern": "^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$"
+              },
+              "node_mac_port1": {
+                "type": "string",
+                "pattern": "^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$"
+              },
+              "node_mac_port2": {
+                "type": "string",
+                "pattern": "^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$"
+              },
+              "node_cpu_model": { "type": "string", "description": "CPU model" },
+              "node_cpu_count": { "type": "integer", "description": "Number of CPU sockets", "minimum": 1, "maximum": 4 },
+              "node_cpu_cores": { "type": "integer", "description": "Cores per CPU socket", "minimum": 1, "maximum": 64 },
+              "node_memory_gb": { "type": "integer", "description": "Total memory in GB" }
+            },
+            "additionalProperties": true
+          }
+        },
+        "cluster_arm_deployment": {
+          "type": "object",
+          "description": "ARM template deployment parameters for Azure Local",
+          "additionalProperties": true
+        },
+        "avd": {
+          "type": "object",
+          "description": "Azure Virtual Desktop configuration",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "storage_accounts": {
+      "type": "object",
+      "description": "Azure Storage Account definitions (monitoring, diagnostics, witness, flow logs, bastion, boot diag)",
+      "properties": {
+        "storage_name": {
+          "type": "string",
+          "description": "Primary storage account name",
+          "pattern": "^[a-z0-9]{3,24}$"
+        },
+        "storage_tier": {
+          "type": "string",
+          "enum": ["Standard", "Premium"]
+        },
+        "storage_replication_type": {
+          "type": "string",
+          "description": "Storage replication type (aligned with master-registry v4.0.0)",
+          "enum": ["LRS", "GRS", "RAGRS", "ZRS", "GZRS", "RAGZRS"],
+          "default": "LRS"
+        },
+        "storage_kind": {
+          "type": "string",
+          "enum": ["StorageV2", "BlobStorage", "BlockBlobStorage", "FileStorage"]
+        },
+        "storage_min_tls_version": {
+          "type": "string",
+          "enum": ["TLS1_0", "TLS1_1", "TLS1_2"],
+          "default": "TLS1_2"
+        }
+      },
+      "additionalProperties": true
+    },
+    "security": {
+      "type": "object",
+      "description": "Key Vault, Defender for Cloud, Sentinel",
+      "properties": {
+        "keyvault": {
+          "type": "object",
+          "description": "Azure Key Vault configuration (aligned with master-registry v4.0.0 — 3 vault tiers: CMP platform, per-tenant platform, Azure Local deployment)",
+          "properties": {
+            "cmp_platform": {
+              "type": "object",
+              "description": "CMP platform Key Vault (management tenant — cross-tenant secrets)",
+              "properties": {
+                "kv_cmp_platform_name": {
+                  "type": "string",
+                  "description": "CMP platform Key Vault name",
+                  "pattern": "^[a-z][a-z0-9]+(-[a-z0-9]+)*$",
+                  "minLength": 3,
+                  "maxLength": 24
+                },
+                "kv_cmp_platform_resource_group": { "type": "string", "pattern": "^rg-[a-z0-9-]+$" },
+                "kv_cmp_platform_location": { "type": "string" },
+                "kv_cmp_platform_subscription_id": { "type": "string", "format": "uuid" },
+                "kv_cmp_platform_tenant_id": { "type": "string", "format": "uuid" },
+                "kv_cmp_platform_sku": { "type": "string", "enum": ["standard", "premium"], "default": "standard" },
+                "kv_cmp_platform_enable_rbac": { "type": "boolean", "default": true },
+                "kv_cmp_platform_enable_soft_delete": { "type": "boolean", "default": true },
+                "kv_cmp_platform_soft_delete_retention_days": { "type": "integer", "minimum": 7, "maximum": 90, "default": 90 },
+                "kv_cmp_platform_enable_purge_protection": { "type": "boolean", "default": true }
+              },
+              "additionalProperties": true
+            },
+            "platform": {
+              "type": "object",
+              "description": "Platform Key Vault (per-tenant secrets)",
+              "properties": {
+                "kv_platform_name": {
+                  "type": "string",
+                  "description": "Platform Key Vault name (tenant-specific secrets)",
+                  "pattern": "^[a-z][a-z0-9]+(-[a-z0-9]+)*$",
+                  "minLength": 3,
+                  "maxLength": 24
+                },
+                "kv_platform_resource_group": { "type": "string", "pattern": "^rg-[a-z0-9-]+$" },
+                "kv_platform_location": { "type": "string" },
+                "kv_platform_subscription_id": { "type": "string", "format": "uuid" },
+                "kv_platform_tenant_id": { "type": "string", "format": "uuid" },
+                "kv_platform_sku": { "type": "string", "enum": ["standard", "premium"], "default": "standard" },
+                "kv_platform_enable_rbac": { "type": "boolean", "default": true },
+                "kv_platform_enable_soft_delete": { "type": "boolean", "default": true },
+                "kv_platform_soft_delete_retention_days": { "type": "integer", "minimum": 7, "maximum": 90, "default": 90 },
+                "kv_platform_enable_purge_protection": { "type": "boolean", "default": true }
+              },
+              "additionalProperties": true
+            },
+            "kv_azl": {
+              "type": "object",
+              "description": "Azure Local deployment Key Vault (created during cluster deployment)",
+              "properties": {
+                "kv_azl_name": {
+                  "type": "string",
+                  "description": "Azure Local deployment Key Vault name",
+                  "pattern": "^[a-z][a-z0-9]+(-[a-z0-9]+)*$",
+                  "minLength": 3,
+                  "maxLength": 24
+                },
+                "kv_azl_resource_group": { "type": "string", "pattern": "^rg-[a-z0-9-]+$" },
+                "kv_azl_location": { "type": "string" },
+                "kv_azl_subscription_id": { "type": "string", "format": "uuid" },
+                "kv_azl_tenant_id": { "type": "string", "format": "uuid" },
+                "kv_azl_sku": { "type": "string", "enum": ["standard", "premium"], "default": "standard" },
+                "kv_azl_enable_rbac": { "type": "boolean", "default": true },
+                "kv_azl_local_admin_username": { "type": "string" },
+                "kv_azl_local_admin_password": { "type": "string", "description": "Key Vault secret name for local admin password" },
+                "kv_azl_arbdeployment_spn_value": { "type": "string", "description": "ARB deployment SPN secret name" }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "defender": {
+          "type": "object",
+          "description": "Defender for Cloud plans and settings",
+          "additionalProperties": true
+        },
+        "sentinel": {
+          "type": "object",
+          "description": "Azure Sentinel SIEM/SOAR configuration",
+          "properties": {
+            "sent_workspace_name": { "type": "string" },
+            "sent_workspace_rg": { "type": "string" }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "operations": {
+      "type": "object",
+      "description": "Monitoring, policy, patching, backup/recovery, SCVMM",
+      "properties": {
+        "monitoring": {
+          "type": "object",
+          "description": "Log Analytics workspace, DCR rules, alerting",
+          "additionalProperties": true
+        },
+        "policy": {
+          "type": "object",
+          "description": "Azure Policy assignments and definitions",
+          "additionalProperties": true
+        },
+        "azure_update_manager": {
+          "type": "object",
+          "description": "OS patching and update schedules",
+          "additionalProperties": true
+        },
+        "bcdr": {
+          "type": "object",
+          "description": "Backup and disaster recovery settings",
+          "additionalProperties": true
+        },
+        "scvmm": {
+          "type": "object",
+          "description": "System Center VMM integration and Arc Resource Bridge",
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    },
+    "devops": {
+      "type": "object",
+      "description": "GitLab CI/CD and Terraform configuration",
+      "properties": {
+        "gitlab": {
+          "type": "object",
+          "description": "GitLab CI/CD settings",
+          "properties": {
+            "gitlab_project_id": { "type": "integer" },
+            "gitlab_project_path": { "type": "string" },
+            "gitlab_runner_token": {
+              "type": "string",
+              "description": "GitLab runner registration token (Key Vault reference)",
+              "pattern": "^keyvault://[a-z0-9-]+/.+$"
+            },
+            "gitlab_environment_name": { "type": "string" }
+          },
+          "additionalProperties": true
+        },
+        "terraform": {
+          "type": "object",
+          "description": "Terraform state backend and provider configuration",
+          "properties": {
+            "tf_backend_storage_account": { "type": "string" },
+            "tf_backend_container": { "type": "string", "default": "tfstate" },
+            "tf_provider_azurerm_version": { "type": "string", "examples": ["~> 4.0"] },
+            "tf_provider_azuread_version": { "type": "string", "examples": ["~> 3.0"] }
+          },
+          "additionalProperties": true
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,207 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+
+    "deploymentMode": {
+      "value": "Validate"
+    },
+
+    "keyVaultName": {
+      "value": "{{CLUSTER_KEYVAULT_NAME}}"
+    },
+    "createNewKeyVault": {
+      "value": true
+    },
+    "softDeleteRetentionDays": {
+      "value": 30
+    },
+
+    "diagnosticStorageAccountName": {
+      "value": "{{DIAGNOSTIC_STORAGE_ACCOUNT_NAME}}"
+    },
+    "logsRetentionInDays": {
+      "value": 30
+    },
+    "storageAccountType": {
+      "value": "Standard_LRS"
+    },
+
+    "clusterName": {
+      "value": "{{CLUSTER_NAME}}"
+    },
+    "location": {
+      "value": "{{AZURE_REGION}}"
+    },
+    "tenantId": {
+      "value": "{{TENANT_ID}}"
+    },
+
+    "witnessType": {
+      "value": "Cloud"
+    },
+    "clusterWitnessStorageAccountName": {
+      "value": "{{CLUSTER_WITNESS_STORAGE_NAME}}"
+    },
+
+    "localAdminUserName": {
+      "value": "{{LOCAL_ADMIN_USERNAME}}"
+    },
+    "localAdminPassword": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/{{SUBSCRIPTION_ID}}/resourceGroups/{{CLUSTER_RESOURCE_GROUP}}/providers/Microsoft.KeyVault/vaults/{{CLUSTER_KEYVAULT_NAME}}"
+        },
+        "secretName": "local-admin-password"
+      }
+    },
+    "AzureStackLCMAdminUsername": {
+      "value": "{{LCM_USERNAME}}"
+    },
+    "AzureStackLCMAdminPassword": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/{{SUBSCRIPTION_ID}}/resourceGroups/{{CLUSTER_RESOURCE_GROUP}}/providers/Microsoft.KeyVault/vaults/{{CLUSTER_KEYVAULT_NAME}}"
+        },
+        "secretName": "lcm-deployment-password"
+      }
+    },
+
+    "hciResourceProviderObjectID": {
+      "value": "{{HCI_RESOURCE_PROVIDER_OBJECT_ID}}"
+    },
+
+    "arcNodeResourceIds": {
+      "value": [
+        "/subscriptions/{{SUBSCRIPTION_ID}}/resourceGroups/{{CLUSTER_RESOURCE_GROUP}}/providers/Microsoft.HybridCompute/machines/{{NODE_01_NAME}}",
+        "/subscriptions/{{SUBSCRIPTION_ID}}/resourceGroups/{{CLUSTER_RESOURCE_GROUP}}/providers/Microsoft.HybridCompute/machines/{{NODE_02_NAME}}"
+      ]
+    },
+
+    "domainFqdn": {
+      "value": ""
+    },
+    "namingPrefix": {
+      "value": "{{NAMING_PREFIX}}"
+    },
+    "adouPath": {
+      "value": ""
+    },
+
+    "securityLevel": {
+      "value": "Recommended"
+    },
+    "driftControlEnforced": {
+      "value": true
+    },
+    "credentialGuardEnforced": {
+      "value": true
+    },
+    "smbSigningEnforced": {
+      "value": true
+    },
+    "smbClusterEncryption": {
+      "value": false
+    },
+    "bitlockerBootVolume": {
+      "value": true
+    },
+    "bitlockerDataVolumes": {
+      "value": true
+    },
+    "wdacEnforced": {
+      "value": true
+    },
+
+    "streamingDataClient": {
+      "value": true
+    },
+    "euLocation": {
+      "value": false
+    },
+    "episodicDataUpload": {
+      "value": true
+    },
+
+    "configurationMode": {
+      "value": "Express"
+    },
+
+    "subnetMask": {
+      "value": "{{MANAGEMENT_SUBNET_MASK}}"
+    },
+    "defaultGateway": {
+      "value": "{{MANAGEMENT_DEFAULT_GATEWAY}}"
+    },
+    "startingIPAddress": {
+      "value": "{{MANAGEMENT_IP_POOL_START}}"
+    },
+    "endingIPAddress": {
+      "value": "{{MANAGEMENT_IP_POOL_END}}"
+    },
+    "dnsServers": {
+      "value": ["{{DNS_SERVER_1}}", "{{DNS_SERVER_2}}"]
+    },
+    "useDhcp": {
+      "value": false
+    },
+
+    "physicalNodesSettings": {
+      "value": [
+        {
+          "name": "{{NODE_01_NAME}}",
+          "ipv4Address": "{{NODE_01_IP}}"
+        },
+        {
+          "name": "{{NODE_02_NAME}}",
+          "ipv4Address": "{{NODE_02_IP}}"
+        }
+      ]
+    },
+
+    "networkingType": {
+      "value": "switchedMultiServerDeployment"
+    },
+    "networkingPattern": {
+      "value": "{{NETWORKING_PATTERN}}"
+    },
+    "intentList": {
+      "value": "{{INTENT_LIST}}"
+    },
+    "storageNetworkList": {
+      "value": "{{STORAGE_NETWORK_LIST}}"
+    },
+    "storageConnectivitySwitchless": {
+      "value": false
+    },
+    "enableStorageAutoIp": {
+      "value": true
+    },
+
+    "customLocation": {
+      "value": ""
+    },
+
+    "sbeVersion": {
+      "value": "{{SBE_VERSION}}"
+    },
+    "sbeFamily": {
+      "value": "{{SBE_FAMILY}}"
+    },
+    "sbePublisher": {
+      "value": "{{SBE_PUBLISHER}}"
+    },
+    "sbeManifestSource": {
+      "value": ""
+    },
+    "sbeManifestCreationDate": {
+      "value": ""
+    },
+    "partnerProperties": {
+      "value": []
+    },
+    "partnerCredentiallist": {
+      "value": []
+    }
+  }
+}

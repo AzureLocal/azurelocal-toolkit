@@ -1,0 +1,77 @@
+################################################################################
+# Azure Local Toolkit - Variables Template
+#
+# Copy this file to your own variables.yml and fill in your environment values.
+# This template contains the minimum required variables for a deployment.
+#
+# For the full variable reference, see:
+#   - configs/infrastructure.yml (complete 14-section schema)
+#   - configs/variables/assets/master-registry.yaml (variable definitions)
+#
+# All secrets should be stored in Azure Key Vault and referenced as:
+#   keyvault://<vault-name>/<secret-name>
+################################################################################
+
+# =============================================================================
+# SITE
+# =============================================================================
+site:
+  code: ""                          # Short site code (e.g., "NYC", "LAB01")
+  name: ""                          # Descriptive site name
+  location: ""                      # Physical location
+  environment: ""                   # Environment type (Production, Staging, Lab, Demo)
+  owner: ""                         # Contact email
+
+# =============================================================================
+# AZURE PLATFORM
+# =============================================================================
+azure:
+  tenant_id: ""                     # Azure AD tenant ID
+  subscription:
+    id: ""                          # Azure subscription ID
+    name: ""                        # Subscription display name
+  resource_group:
+    name: ""                        # Target resource group name
+    location: ""                    # Azure region (e.g., eastus, westus2)
+  keyvault:
+    name: ""                        # Key Vault name for secrets
+
+# =============================================================================
+# IDENTITY
+# =============================================================================
+identity:
+  domain:
+    fqdn: ""                        # Active Directory domain FQDN
+    netbios: ""                     # NetBIOS domain name
+    ou_path: ""                     # OU for computer objects
+  service_principal:
+    app_id: ""                      # Service principal application ID
+    object_id: ""                   # Service principal object ID
+
+# =============================================================================
+# NETWORKING
+# =============================================================================
+networking:
+  management:
+    vlan_id: 0                      # Management VLAN ID
+    subnet: ""                      # Management subnet CIDR
+    gateway: ""                     # Default gateway
+    dns_servers: []                 # DNS server IPs
+
+# =============================================================================
+# COMPUTE (Cluster Nodes)
+# =============================================================================
+nodes: []
+# Example:
+#   - name: "node-01"
+#     ipv4_address: "10.0.0.1"
+#     bmc_address: "10.0.1.1"
+#     serial_number: ""
+
+# =============================================================================
+# TAGS
+# =============================================================================
+tags:
+  environment: ""
+  project: ""
+  owner: ""

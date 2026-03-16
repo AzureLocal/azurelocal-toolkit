@@ -1,0 +1,287 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+
+    "deploymentMode": {
+      "value": "Validate"
+    },
+
+    "keyVaultName": {
+      "value": "kv-iic-deploy-01"
+    },
+    "createNewKeyVault": {
+      "value": true
+    },
+    "softDeleteRetentionDays": {
+      "value": 30
+    },
+
+    "diagnosticStorageAccountName": {
+      "value": "stiicdiag01"
+    },
+    "logsRetentionInDays": {
+      "value": 30
+    },
+    "storageAccountType": {
+      "value": "Standard_LRS"
+    },
+
+    "clusterName": {
+      "value": "iic-clus01"
+    },
+    "location": {
+      "value": "eastus"
+    },
+    "tenantId": {
+      "value": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    },
+
+    "witnessType": {
+      "value": "Cloud"
+    },
+    "clusterWitnessStorageAccountName": {
+      "value": "stiicwitness01"
+    },
+
+    "localAdminUserName": {
+      "value": "osfadmin"
+    },
+    "localAdminPassword": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/00000000-1111-2222-3333-444444444444/resourceGroups/rg-iic-azl-eus-01/providers/Microsoft.KeyVault/vaults/kv-iic-deploy-01"
+        },
+        "secretName": "local-admin-password"
+      }
+    },
+    "AzureStackLCMAdminUsername": {
+      "value": "osfadmin"
+    },
+    "AzureStackLCMAdminPassword": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/00000000-1111-2222-3333-444444444444/resourceGroups/rg-iic-azl-eus-01/providers/Microsoft.KeyVault/vaults/kv-iic-deploy-01"
+        },
+        "secretName": "lcm-deployment-password"
+      }
+    },
+
+    "hciResourceProviderObjectID": {
+      "value": "abcdef01-2345-6789-abcd-ef0123456789"
+    },
+
+    "arcNodeResourceIds": {
+      "value": [
+        "/subscriptions/00000000-1111-2222-3333-444444444444/resourceGroups/rg-iic-azl-eus-01/providers/Microsoft.HybridCompute/machines/iic-01-n01",
+        "/subscriptions/00000000-1111-2222-3333-444444444444/resourceGroups/rg-iic-azl-eus-01/providers/Microsoft.HybridCompute/machines/iic-01-n02",
+        "/subscriptions/00000000-1111-2222-3333-444444444444/resourceGroups/rg-iic-azl-eus-01/providers/Microsoft.HybridCompute/machines/iic-01-n03",
+        "/subscriptions/00000000-1111-2222-3333-444444444444/resourceGroups/rg-iic-azl-eus-01/providers/Microsoft.HybridCompute/machines/iic-01-n04"
+      ]
+    },
+
+    "domainFqdn": {
+      "value": ""
+    },
+    "namingPrefix": {
+      "value": "iic-01"
+    },
+    "adouPath": {
+      "value": ""
+    },
+
+    "securityLevel": {
+      "value": "Recommended"
+    },
+    "driftControlEnforced": {
+      "value": true
+    },
+    "credentialGuardEnforced": {
+      "value": true
+    },
+    "smbSigningEnforced": {
+      "value": true
+    },
+    "smbClusterEncryption": {
+      "value": false
+    },
+    "bitlockerBootVolume": {
+      "value": true
+    },
+    "bitlockerDataVolumes": {
+      "value": true
+    },
+    "wdacEnforced": {
+      "value": true
+    },
+
+    "streamingDataClient": {
+      "value": true
+    },
+    "euLocation": {
+      "value": false
+    },
+    "episodicDataUpload": {
+      "value": true
+    },
+
+    "configurationMode": {
+      "value": "Express"
+    },
+
+    "subnetMask": {
+      "value": "255.255.255.0"
+    },
+    "defaultGateway": {
+      "value": "192.168.100.1"
+    },
+    "startingIPAddress": {
+      "value": "192.168.100.30"
+    },
+    "endingIPAddress": {
+      "value": "192.168.100.39"
+    },
+    "dnsServers": {
+      "value": [
+        "192.168.100.10",
+        "192.168.100.11"
+      ]
+    },
+    "useDhcp": {
+      "value": false
+    },
+
+    "physicalNodesSettings": {
+      "value": [
+        {
+          "name": "iic-01-n01",
+          "ipv4Address": "192.168.100.21"
+        },
+        {
+          "name": "iic-01-n02",
+          "ipv4Address": "192.168.100.22"
+        },
+        {
+          "name": "iic-01-n03",
+          "ipv4Address": "192.168.100.23"
+        },
+        {
+          "name": "iic-01-n04",
+          "ipv4Address": "192.168.100.24"
+        }
+      ]
+    },
+
+    "networkingType": {
+      "value": "switchedMultiServerDeployment"
+    },
+    "networkingPattern": {
+      "value": "convergedManagementCompute"
+    },
+    "intentList": {
+      "value": [
+        {
+          "name": "MgmtCompute",
+          "trafficType": [
+            "Management",
+            "Compute"
+          ],
+          "adapter": [
+            "NIC1",
+            "NIC2"
+          ],
+          "overrideVirtualSwitchConfiguration": false,
+          "virtualSwitchConfigurationOverrides": {
+            "enableIov": "",
+            "loadBalancingAlgorithm": ""
+          },
+          "overrideQosPolicy": false,
+          "qosPolicyOverrides": {
+            "priorityValue8021Action_Cluster": "7",
+            "priorityValue8021Action_SMB": "",
+            "bandwidthPercentage_SMB": ""
+          },
+          "overrideAdapterProperty": true,
+          "adapterPropertyOverrides": {
+            "jumboPacket": "1514",
+            "networkDirect": "Disabled",
+            "networkDirectTechnology": ""
+          }
+        },
+        {
+          "name": "Storage",
+          "trafficType": [
+            "Storage"
+          ],
+          "adapter": [
+            "SMB1",
+            "SMB2"
+          ],
+          "overrideVirtualSwitchConfiguration": false,
+          "virtualSwitchConfigurationOverrides": {
+            "enableIov": "",
+            "loadBalancingAlgorithm": ""
+          },
+          "overrideQosPolicy": true,
+          "qosPolicyOverrides": {
+            "priorityValue8021Action_Cluster": "7",
+            "priorityValue8021Action_SMB": "3",
+            "bandwidthPercentage_SMB": "50"
+          },
+          "overrideAdapterProperty": true,
+          "adapterPropertyOverrides": {
+            "jumboPacket": "9014",
+            "networkDirect": "Enabled",
+            "networkDirectTechnology": "RoCEv2"
+          }
+        }
+      ]
+    },
+    "storageNetworkList": {
+      "value": [
+        {
+          "name": "StorageNetwork1",
+          "networkAdapterName": "SMB1",
+          "vlanId": "201"
+        },
+        {
+          "name": "StorageNetwork2",
+          "networkAdapterName": "SMB2",
+          "vlanId": "202"
+        }
+      ]
+    },
+    "storageConnectivitySwitchless": {
+      "value": false
+    },
+    "enableStorageAutoIp": {
+      "value": true
+    },
+
+    "customLocation": {
+      "value": ""
+    },
+
+    "sbeVersion": {
+      "value": "4.1.2411.1"
+    },
+    "sbeFamily": {
+      "value": "AzureLocal"
+    },
+    "sbePublisher": {
+      "value": "Dell"
+    },
+    "sbeManifestSource": {
+      "value": ""
+    },
+    "sbeManifestCreationDate": {
+      "value": ""
+    },
+    "partnerProperties": {
+      "value": []
+    },
+    "partnerCredentiallist": {
+      "value": []
+    }
+  }
+}
