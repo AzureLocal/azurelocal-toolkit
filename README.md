@@ -3,7 +3,7 @@
 !!! warning "Under Active Development"
     This repository is a work in progress. Scripts, templates, and automation are **not guaranteed to work** at this time. Use at your own risk and expect breaking changes.
 
-Platform automation toolkit for **Azure Local** — deployment scripts, validation suites, config management, and solution packages covering the full deployment lifecycle.
+Platform automation toolkit for **Azure Local** — deployment scripts, validation suites, and config management covering the full deployment lifecycle.
 
 ---
 
@@ -12,8 +12,7 @@ Platform automation toolkit for **Azure Local** — deployment scripts, validati
 | Directory | Description |
 |-----------|-------------|
 | **[scripts/](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/scripts)** | 200+ PowerShell scripts organized by deployment stage (02–08), plus common modules, validation, handover, lifecycle, and tools |
-| **[configs/](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/configs)** | Master infrastructure config template, solution definitions, ARM templates, and variable registry |
-| **[solutions/](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/solutions)** | Per-solution deployment packages (placeholders for future solutions) |
+| **[configs/](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/configs)** | Master infrastructure config template, ARM templates, and variable registry |
 | **[tools/](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/tools)** | Planning utilities (S2D capacity calculator) |
 | **[tests/](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/tests)** | Test infrastructure (future Pester suites) |
 
@@ -36,7 +35,6 @@ The toolkit follows a structured deployment lifecycle:
 The toolkit uses a config-driven approach:
 
 - **`configs/infrastructure.yml`** — Master configuration template with 14 sections covering Azure tenant, networking, compute, storage, security, and more
-- **`configs/solutions.yaml`** — Maps which variables each solution needs, with validation rules and artifact paths
 - **`configs/variables.template.yml`** — Azure Local-specific variables for deployment
 
 ## Related Repositories
@@ -47,17 +45,6 @@ The toolkit uses a config-driven approach:
 | [aurelocal-avd](https://github.com/AzureLocal/aurelocal-avd) | Azure Virtual Desktop on Azure Local |
 | [azurelocal-loadtools](https://github.com/AzureLocal/azurelocal-loadtools) | Load testing and benchmarking tools |
 | [azurelocal-vm-conversion-toolkit](https://github.com/AzureLocal/azurelocal-vm-conversion-toolkit) | VM Gen1 → Gen2 conversion |
-
-## Future Solutions
-
-Placeholder folders exist for upcoming solution packages:
-
-- **AI Foundry** — AI/ML workloads on Azure Local
-- **AKS** — Azure Kubernetes Service on Azure Local
-- **App Services** — Azure App Services on Azure Local
-- **IoT Operations** — IoT workloads on Azure Local
-- **Machine Learning** — ML training and inference
-- **MI SQL** — Managed Instance SQL on Azure Local
 
 ---
 

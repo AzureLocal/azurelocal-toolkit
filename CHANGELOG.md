@@ -9,5 +9,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 ### Features
 
 - Initial repository scaffold — MkDocs Material, release-please, GitHub Pages, CI/CD workflows
-- Migrate toolkit content from AzureLocalCloud-docs-azl-toolkit (scripts, configs, solution placeholders)
+- Migrate toolkit content from AzureLocalCloud-docs-azl-toolkit (scripts, configs)
 - Branding scrub — remove all Azure Local Cloud/AzureLocalCloud/HCS references

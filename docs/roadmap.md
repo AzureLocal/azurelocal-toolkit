@@ -12,19 +12,6 @@ This document tracks planned work, upcoming features, and improvements for the A
 - Stand up MkDocs documentation site
 - Validate all deployment scripts against Azure Local 23H2
 
-## Future Solution Packages
-
-Placeholder folders exist for these upcoming solutions. Contributions and brainstorming welcome.
-
-| Solution | Description | Status |
-|----------|-------------|--------|
-| AI Foundry | AI/ML workloads on Azure Local | Placeholder |
-| AKS | Azure Kubernetes Service on Azure Local | Placeholder |
-| App Services | Azure App Services on Azure Local | Placeholder |
-| IoT Operations | IoT workloads on Azure Local | Placeholder |
-| Machine Learning | ML training and inference | Placeholder |
-| MI SQL | Managed Instance SQL on Azure Local | Placeholder |
-
 ## Completed
 
 | Item | Status |

@@ -21,7 +21,3 @@ This file serves as a **metadata and schema registry**. Copy `variables.template
 ## variables.template.yml
 
 Azure Local-specific variables extracted from the master config. Copy this file to `variables.yml` (gitignored) and fill in your environment values.
-
-## solutions.yaml
-
-Maps which variables each solution needs, with validation rules and artifact paths. Used by `Generate-AzureLocal-Parameters.ps1` to produce per-solution parameter files.

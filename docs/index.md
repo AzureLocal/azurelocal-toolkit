@@ -3,7 +3,7 @@
 !!! warning "Under Active Development"
     This repository is a work in progress. Scripts, templates, and automation are **not guaranteed to work** at this time. Use at your own risk and expect breaking changes.
 
-Platform automation toolkit for **Azure Local** — deployment scripts, validation suites, config management, and solution packages covering the full deployment lifecycle.
+Platform automation toolkit for **Azure Local** — deployment scripts, validation suites, and config management covering the full deployment lifecycle.
 
 ---
 
@@ -12,8 +12,7 @@ Platform automation toolkit for **Azure Local** — deployment scripts, validati
 | Directory | Description |
 |-----------|-------------|
 | **scripts/** | 200+ PowerShell scripts organized by deployment stage (02–08), plus common modules, validation, handover, lifecycle, and tools |
-| **configs/** | Master infrastructure config template, solution definitions, ARM templates, and variable registry |
-| **solutions/** | Per-solution deployment packages (placeholders for future solutions) |
+| **configs/** | Master infrastructure config template, ARM templates, and variable registry |
 | **tools/** | Planning utilities (S2D capacity calculator) |
 | **tests/** | Test infrastructure (future Pester suites) |
 
@@ -32,7 +31,6 @@ Platform automation toolkit for **Azure Local** — deployment scripts, validati
 ## Configuration
 
 - [Variables Reference](configuration/variables.md) — Master infrastructure config and variable registry
-- [Solutions Mapping](configuration/solutions.md) — Which variables each solution needs
 
 ## Getting Started
 

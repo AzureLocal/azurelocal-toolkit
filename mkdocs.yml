@@ -1,5 +1,5 @@
 site_name: Azure Local Toolkit
-site_description: Azure Local platform automation toolkit — deployment scripts, validation suites, config management, and solution packages
+site_description: Azure Local platform automation toolkit — deployment scripts, validation suites, and config management
 site_url: https://azurelocal.github.io/azurelocal-toolkit/
 repo_url: https://github.com/AzureLocal/azurelocal-toolkit
 repo_name: AzureLocal/azurelocal-toolkit
@@ -44,11 +44,8 @@ nav:
       - Stage 08 — Lifecycle Operations: deployment/08-lifecycle-operations.md
   - Configuration:
       - Variables: configuration/variables.md
-      - Solutions: configuration/solutions.md
   - Validation:
       - Test Suites: validation/test-suites.md
-  - Solutions:
-      - Overview: solutions/overview.md
   - Roadmap: roadmap.md
   - Contributing: contributing.md
 
