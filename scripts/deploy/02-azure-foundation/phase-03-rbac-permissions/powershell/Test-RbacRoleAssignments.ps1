@@ -6,7 +6,7 @@
     Loads config from infrastructure.yml, validates role assignments at subscription and resource group scope.
 
 .PARAMETER ConfigPath
-    Path to infrastructure.yml config file. Defaults to configs/infrastructure.yml in the repository root.
+    Path to infrastructure.yml config file. Defaults to config/infrastructure.yml in the repository root.
 
 .PARAMETER ServicePrincipalDisplayName
     Display name of the deployment service principal to validate.
@@ -18,13 +18,13 @@
     Entra ID Object ID of the principal to validate (optional).
 
 .EXAMPLE
-    .\Validate-RbacRoleAssignments.ps1 -ConfigPath "configs/infrastructure.yml" -ServicePrincipalDisplayName "sp-azurelocal-deploy"
+    .\Validate-RbacRoleAssignments.ps1 -ConfigPath "config/infrastructure.yml" -ServicePrincipalDisplayName "sp-azurelocal-deploy"
 
 .EXAMPLE
-    .\Validate-RbacRoleAssignments.ps1 -ConfigPath "configs/infrastructure.yml" -UserPrincipalName "deployment-user@yourdomain.com"
+    .\Validate-RbacRoleAssignments.ps1 -ConfigPath "config/infrastructure.yml" -UserPrincipalName "deployment-user@yourdomain.com"
 
 .EXAMPLE
-    .\Validate-RbacRoleAssignments.ps1 -ConfigPath "configs/infrastructure.yml" -ObjectId "55555555-5555-5555-5555-555555555555"
+    .\Validate-RbacRoleAssignments.ps1 -ConfigPath "config/infrastructure.yml" -ObjectId "55555555-5555-5555-5555-555555555555"
 
 .NOTES
     Requires: Az.Accounts, Az.Resources, powershell-yaml modules
@@ -36,7 +36,7 @@
 param(
     [Parameter(Mandatory = $false)]
     [ValidateScript({Test-Path $_})]
-    [string]$ConfigPath = "configs/infrastructure.yml",
+    [string]$ConfigPath = "config/infrastructure.yml",
 
     [Parameter(Mandatory = $false)]
     [string]$ServicePrincipalDisplayName,

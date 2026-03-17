@@ -20,7 +20,7 @@
       - storageNetworkList     (from network_intents with storage_networks)
 
 .PARAMETER ConfigPath
-    Path to the infrastructure YAML file. Defaults to configs/infrastructure.yml
+    Path to the infrastructure YAML file. Defaults to config/infrastructure.yml
     relative to the repository root.
 
 .PARAMETER AuthType
@@ -35,11 +35,11 @@
     Show what would be generated without writing the file.
 
 .EXAMPLE
-    .\Generate-AzureLocal-Parameters.ps1 -ConfigPath "configs/infrastructure-azl-demo.yml" -AuthType AD
+    .\Generate-AzureLocal-Parameters.ps1 -ConfigPath "config/infrastructure-azl-demo.yml" -AuthType AD
     Generates AD parameters file from the azl-demo config.
 
 .EXAMPLE
-    .\Generate-AzureLocal-Parameters.ps1 -ConfigPath "configs/infrastructure-azl-lab.yml" -AuthType LocalIdentity -WhatIf
+    .\Generate-AzureLocal-Parameters.ps1 -ConfigPath "config/infrastructure-azl-lab.yml" -AuthType LocalIdentity -WhatIf
     Shows what would be generated for local identity without writing a file.
 #>
 

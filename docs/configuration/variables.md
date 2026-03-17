@@ -16,8 +16,8 @@ Master configuration template with 14 sections covering the full Azure Local dep
 - Active Directory
 - And more...
 
-This file serves as a **metadata and schema registry**. Copy `variables.template.yml` for your deployment-specific values.
+This file serves as a **metadata and schema registry**. Copy `variables.example.yml` for your deployment-specific values.
 
-## variables.template.yml
+## variables.example.yml
 
 Azure Local-specific variables extracted from the master config. Copy this file to `variables.yml` (gitignored) and fill in your environment values.

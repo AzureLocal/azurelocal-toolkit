@@ -1,16 +1,21 @@
-################################################################################
-# Azure Local Toolkit - Variables Template
+# =============================================================================
+# variables.example.yml
+# Central configuration — single source of truth for all deployment phases.
 #
-# Copy this file to your own variables.yml and fill in your environment values.
-# This template contains the minimum required variables for a deployment.
+# Copy this file to variables.yml and fill in your values:
+#   cp config/variables.example.yml config/variables.yml
+#
+# DO NOT commit variables.yml — it is excluded by .gitignore.
+#
+# Key Vault References:
+#   Secrets use keyvault:// URIs and are resolved at runtime.
+#   Format: keyvault://<vault-name>/<secret-name>
+#   NEVER put actual passwords or secrets in this file.
 #
 # For the full variable reference, see:
-#   - configs/infrastructure.yml (complete 14-section schema)
-#   - configs/variables/assets/master-registry.yaml (variable definitions)
-#
-# All secrets should be stored in Azure Key Vault and referenced as:
-#   keyvault://<vault-name>/<secret-name>
-################################################################################
+#   - config/infrastructure.yml (complete 14-section schema)
+#   - config/schema/master-registry.yaml (variable definitions)
+# =============================================================================
 
 # =============================================================================
 # SITE

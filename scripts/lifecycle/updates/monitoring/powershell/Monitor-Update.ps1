@@ -29,7 +29,7 @@
       3. Existing Connect-AzAccount / Get-AzContext
 
 .PARAMETER ConfigPath
-    Path to the infrastructure YAML config file (e.g. configs/infrastructure-azl-lab.yml).
+    Path to the infrastructure YAML config file (e.g. config/infrastructure-azl-lab.yml).
     When supplied, ResourceGroupName, ClusterName, SubscriptionId, TenantId, NodeIPs,
     KeyVaultName, and credentials are all resolved automatically from the config.
     Any explicitly supplied parameters override the config values.

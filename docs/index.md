@@ -12,7 +12,7 @@ Platform automation toolkit for **Azure Local** — deployment scripts, validati
 | Directory | Description |
 |-----------|-------------|
 | **scripts/** | 200+ PowerShell scripts organized by deployment stage (02–08), plus common modules, validation, handover, lifecycle, and tools |
-| **configs/** | Master infrastructure config template, ARM templates, and variable registry |
+| **config/** | Master infrastructure config template, ARM templates, and variable registry |
 | **tools/** | Planning utilities (S2D capacity calculator) |
 | **tests/** | Test infrastructure (future Pester suites) |
 
@@ -35,7 +35,7 @@ Platform automation toolkit for **Azure Local** — deployment scripts, validati
 ## Getting Started
 
 1. Clone the repository
-2. Copy `configs/variables.template.yml` to `configs/variables.yml`
+2. Copy `config/variables.example.yml` to `config/variables.yml`
 3. Fill in your environment-specific values
 4. Follow the deployment stage guides in order (02 → 08)
 
