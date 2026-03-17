@@ -69,7 +69,7 @@ Examples:
 
 ### Infrastructure as Code
 
-- Terraform, Bicep, and ARM files should follow the conventions in `docs/standards/`
+- Terraform, Bicep, and ARM files should follow the [org-wide IaC standards](https://azurelocal.cloud/standards/solutions/solution-development-standard)
 - Use variables for all environment-specific values — no hardcoded IPs, names, or paths
 
 ### Testing

@@ -44,6 +44,18 @@ nav:
       - Stage 08 — Lifecycle Operations: deployment/08-lifecycle-operations.md
   - Configuration:
       - Variables: configuration/variables.md
+  - Reference:
+      - Variable Reference: reference/variables.md
+  - Standards:
+      - Overview: standards/index.md
+      - Documentation: standards/documentation.md
+      - Scripting: standards/scripting.md
+      - Variables: standards/variables.md
+      - Naming Conventions: standards/naming.md
+      - Solutions: standards/solutions.md
+      - Infrastructure: standards/infrastructure.md
+      - Automation: standards/automation.md
+      - Examples & IIC: standards/examples.md
   - Validation:
       - Test Suites: validation/test-suites.md
   - Roadmap: roadmap.md
