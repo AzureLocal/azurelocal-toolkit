@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://github.com/Azure Local Cloud/azl-env/schemas/infrastructure.schema.json",
+  "$id": "https://github.com/Azure Local Cloud/azl-env/schemas/variables.schema.json",
   "title": "Azure Local Infrastructure Configuration (v4.0.0)",
   "description": "JSON Schema for validating Azure Local environment infrastructure.yml files. Aligned with master-registry.yaml v4.0.0 — 13-section hierarchy. NOTE: This schema is currently hand-maintained and MUST be kept in sync with master-registry.yaml (the canonical source). TODO: Auto-generate this schema from master-registry.yaml to prevent drift.",
   "type": "object",

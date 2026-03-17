@@ -9,7 +9,7 @@
     mandatory contract (ConfigPath, Credential, TargetNode, WhatIf, LogPath).
 
 .PARAMETER ConfigPath
-    Path to the infrastructure YAML config (default: configs/infrastructure.yml).
+    Path to the infrastructure YAML config (default: config/infrastructure.yml).
 
 .PARAMETER Credential
     PSCredential for remote node access. Falls back to Key Vault → interactive prompt.
@@ -27,7 +27,7 @@
     .\Invoke-VerifyADDomainStatus-Orchestrated.ps1
 
 .EXAMPLE
-    .\Invoke-VerifyADDomainStatus-Orchestrated.ps1 -ConfigPath "configs/infrastructure-azl-demo.yml" -WhatIf
+    .\Invoke-VerifyADDomainStatus-Orchestrated.ps1 -ConfigPath "config/infrastructure-azl-demo.yml" -WhatIf
 
 .NOTES
     Author:       Azure Local Cloud AzureLocalCloud
@@ -85,7 +85,7 @@ Write-Log "Log: $LogPath"
 
 # ── Config Loading ─────────────────────────────────────────────────────
 if (-not $ConfigPath) {
-    $candidates = @("configs/infrastructure.yml", "configs/infrastructure.yaml")
+    $candidates = @("config/infrastructure.yml", "config/infrastructure.yaml")
     foreach ($c in $candidates) {
         if (Test-Path $c) { $ConfigPath = $c; break }
     }

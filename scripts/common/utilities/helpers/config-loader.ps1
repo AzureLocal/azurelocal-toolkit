@@ -538,13 +538,13 @@ function Get-AvailableSolutions {
 
 .DESCRIPTION
     Primary function for deployment scripts to load configuration.
-    Loads configs/infrastructure.yml from the repository root.
+    Loads config/infrastructure.yml from the repository root.
     
     This is the simplified loader for scripts that need direct access
     to infrastructure configuration without solution-based merging.
 
 .PARAMETER ConfigPath
-    Optional. Path to infrastructure.yml. Defaults to configs/infrastructure.yml
+    Optional. Path to infrastructure.yml. Defaults to config/infrastructure.yml
     in the repository root.
 
 .EXAMPLE
@@ -563,7 +563,7 @@ function Get-InfrastructureConfig {
         [string]$ConfigPath
     )
 
-    # Default to configs/infrastructure.yml in repo root
+    # Default to config/infrastructure.yml in repo root
     if (-not $ConfigPath) {
         $ConfigPath = Join-Path $script:RepoRoot "configs\infrastructure.yml"
     }

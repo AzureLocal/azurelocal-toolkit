@@ -6,7 +6,7 @@
     Loads config from infrastructure.yml, assigns roles at subscription/resource group scope, supports WhatIf and verification mode.
 
 .PARAMETER ConfigPath
-    Path to infrastructure.yml config file. Defaults to configs/infrastructure.yml in the repository root.
+    Path to infrastructure.yml config file. Defaults to config/infrastructure.yml in the repository root.
 
 .PARAMETER ServicePrincipalDisplayName
     Display name of the deployment service principal.
@@ -22,13 +22,13 @@
     If specified, only verifies assignments (no changes).
 
 .EXAMPLE
-    .\Set-RbacRoleAssignments.ps1 -ConfigPath "configs/infrastructure.yml" -ServicePrincipalDisplayName "sp-azurelocal-deploy" -WhatIf
+    .\Set-RbacRoleAssignments.ps1 -ConfigPath "config/infrastructure.yml" -ServicePrincipalDisplayName "sp-azurelocal-deploy" -WhatIf
 
 .EXAMPLE
-    .\Set-RbacRoleAssignments.ps1 -ConfigPath "configs/infrastructure.yml" -UserPrincipalName "deployment-user@yourdomain.com" -VerifyOnly
+    .\Set-RbacRoleAssignments.ps1 -ConfigPath "config/infrastructure.yml" -UserPrincipalName "deployment-user@yourdomain.com" -VerifyOnly
 
 .EXAMPLE
-    .\Set-RbacRoleAssignments.ps1 -ConfigPath "configs/infrastructure.yml" -ObjectId "55555555-5555-5555-5555-555555555555"
+    .\Set-RbacRoleAssignments.ps1 -ConfigPath "config/infrastructure.yml" -ObjectId "55555555-5555-5555-5555-555555555555"
 
 .NOTES
     Requires: Az.Accounts, Az.Resources, powershell-yaml modules
@@ -40,7 +40,7 @@
 param(
     [Parameter(Mandatory = $false)]
     [ValidateScript({Test-Path $_})]
-    [string]$ConfigPath = "configs/infrastructure.yml",
+    [string]$ConfigPath = "config/infrastructure.yml",
 
     [Parameter(Mandatory = $false)]
     [string]$ServicePrincipalDisplayName,

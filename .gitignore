@@ -34,9 +34,10 @@ ansible/.vault_pass
 !.env.example
 
 # Central config (actual values — never commit)
-configs/infrastructure-*.yml
-!configs/infrastructure.yml
-configs/credentials/
+config/infrastructure-*.yml
+!config/infrastructure.yml
+config/variables.yml
+config/credentials/
 
 # Log files (keep the directory via .gitkeep)
 logs/**

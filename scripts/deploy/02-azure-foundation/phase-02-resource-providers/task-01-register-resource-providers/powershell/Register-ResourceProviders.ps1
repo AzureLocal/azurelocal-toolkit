@@ -14,7 +14,7 @@
 
 .PARAMETER ConfigFile
     Path to the infrastructure.yml configuration file.
-    Defaults to configs/infrastructure.yml in the repository root.
+    Defaults to config/infrastructure.yml in the repository root.
 
 .PARAMETER WaitForRegistration
     If specified, waits for all provider registrations to complete.

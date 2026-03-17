@@ -41,7 +41,7 @@
 
 .EXAMPLE
     # Read values from infrastructure.yml
-    .\Connect-AzureCliSession.ps1 -ConfigPath "../../configs/infrastructure.yml"
+    .\Connect-AzureCliSession.ps1 -ConfigPath "../../config/infrastructure.yml"
 
 .NOTES
     File Name      : Connect-AzureCliSession.ps1

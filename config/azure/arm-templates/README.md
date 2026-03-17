@@ -43,13 +43,13 @@ Use the config-driven generation script to populate parameters from `infrastruct
 
 ```powershell
 # Generate AD parameter file
-.\configs\Generate-AzureLocal-Parameters.ps1 -ConfigPath "configs/infrastructure.yml" -AuthType AD
+.\configs\Generate-AzureLocal-Parameters.ps1 -ConfigPath "config/infrastructure.yml" -AuthType AD
 
 # Generate Local Identity parameter file
-.\configs\Generate-AzureLocal-Parameters.ps1 -ConfigPath "configs/infrastructure.yml" -AuthType LocalIdentity
+.\configs\Generate-AzureLocal-Parameters.ps1 -ConfigPath "config/infrastructure.yml" -AuthType LocalIdentity
 ```
 
-The script reads all 54 parameters from `infrastructure.yml`, resolves Key Vault references, and writes a deployment-ready JSON file. See `configs/Generate-AzureLocal-Parameters.ps1` for full documentation.
+The script reads all 54 parameters from `infrastructure.yml`, resolves Key Vault references, and writes a deployment-ready JSON file. See `config/Generate-AzureLocal-Parameters.ps1` for full documentation.
 
 ### Option 2: Manual Placeholder Replacement
 

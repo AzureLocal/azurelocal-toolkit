@@ -16,7 +16,7 @@
       3. Interactive Get-Credential prompt
 
 .PARAMETER ConfigPath
-    Path to infrastructure YAML. Defaults to configs/infrastructure.yml in CWD.
+    Path to infrastructure YAML. Defaults to config/infrastructure.yml in CWD.
 
 .PARAMETER Credential
     Override credential resolution — skips Key Vault and prompt.
