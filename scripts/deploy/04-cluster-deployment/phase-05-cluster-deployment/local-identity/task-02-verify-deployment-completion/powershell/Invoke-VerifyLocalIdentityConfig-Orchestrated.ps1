@@ -19,7 +19,7 @@
     Source: https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault
 
 .PARAMETER ConfigPath
-    Path to infrastructure.yml. Defaults to 'configs/infrastructure.yml' relative
+    Path to infrastructure.yml. Defaults to 'config/infrastructure.yml' relative
     to the working directory.
 
 .PARAMETER Credential
@@ -43,9 +43,9 @@
     Execution:    Run from management server with access to infrastructure.yml
 
 .EXAMPLE
-    .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath configs/infrastructure.yml
-    .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath configs/infrastructure.yml -TargetNode iic-01-n01,iic-01-n02
-    .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath configs/infrastructure.yml -WhatIf
+    .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath config/infrastructure.yml
+    .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath config/infrastructure.yml -TargetNode iic-01-n01,iic-01-n02
+    .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath config/infrastructure.yml -WhatIf
 #>
 
 [CmdletBinding(SupportsShouldProcess)]

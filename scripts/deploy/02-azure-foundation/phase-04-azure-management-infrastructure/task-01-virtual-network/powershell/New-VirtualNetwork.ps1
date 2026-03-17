@@ -28,7 +28,7 @@
     .\New-VirtualNetwork.ps1 -ResourceGroupName "rg-azlmgmt-prd-eus-01" -Location "eastus"
 
 .EXAMPLE
-    .\New-VirtualNetwork.ps1 -ConfigFile "configs/infrastructure.yml"
+    .\New-VirtualNetwork.ps1 -ConfigFile "config/infrastructure.yml"
 
 .NOTES
     Author: Azure Local Cloud AzureLocalCloud Team

@@ -27,7 +27,7 @@ $switches | Format-Table Name, SwitchType, NetAdapterInterfaceDescription -AutoS
 
 $primary = $switches | Select-Object -First 1
 Write-Host "================================================================" -ForegroundColor Green
-Write-Host " Copy this value into configs/infrastructure.yml:"                 -ForegroundColor Green
+Write-Host " Copy this value into config/infrastructure.yml:"                 -ForegroundColor Green
 Write-Host ""
 Write-Host "  compute:"                                                         -ForegroundColor White
 Write-Host "    azure_local:"                                                   -ForegroundColor White

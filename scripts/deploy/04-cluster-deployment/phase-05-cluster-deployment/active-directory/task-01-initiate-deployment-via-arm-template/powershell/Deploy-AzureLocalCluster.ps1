@@ -242,7 +242,7 @@ else {
     }
 
     if (-not $generatorScript) {
-        throw "Generate-AzureLocal-Parameters.ps1 not found. Pass -ParametersFile with a pre-built file, or ensure the generator is in configs/."
+        throw "Generate-AzureLocal-Parameters.ps1 not found. Pass -ParametersFile with a pre-built file, or ensure the generator is in config/."
     }
 
     Write-Log "Generator script: $generatorScript"

@@ -19,7 +19,7 @@
     No WinRM/PSRemoting required — the Arc agent handles the OpenSSH install.
 
 .PARAMETER ConfigPath
-    Path to infrastructure YAML config. Defaults to configs/infrastructure.yml
+    Path to infrastructure YAML config. Defaults to config/infrastructure.yml
     relative to CWD (repo root).
 
 .PARAMETER TargetNode

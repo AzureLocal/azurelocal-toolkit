@@ -66,15 +66,15 @@
     Ignore SSL certificate validation errors (useful for self-signed iDRAC certificates).
 
 .EXAMPLE
-    .\Enable-IdracVnc.ps1 -ConfigPath "configs/infrastructure.yml"
+    .\Enable-IdracVnc.ps1 -ConfigPath "config/infrastructure.yml"
     Config-driven: enables VNC on all nodes using YAML settings and Key Vault credentials.
 
 .EXAMPLE
-    .\Enable-IdracVnc.ps1 -ConfigPath "configs/infrastructure.yml" -TargetNode "node-01"
+    .\Enable-IdracVnc.ps1 -ConfigPath "config/infrastructure.yml" -TargetNode "node-01"
     Config-driven: targets only a specific node.
 
 .EXAMPLE
-    .\Enable-IdracVnc.ps1 -ConfigPath "configs/infrastructure.yml" -WhatIf
+    .\Enable-IdracVnc.ps1 -ConfigPath "config/infrastructure.yml" -WhatIf
     Config-driven dry run: shows what would be configured without making changes.
 
 .EXAMPLE

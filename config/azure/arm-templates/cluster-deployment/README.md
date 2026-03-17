@@ -30,13 +30,13 @@ Use the generation script to populate all 54 parameters from `infrastructure.yml
 
 ```powershell
 # AD auth
-.\configs\Generate-AzureLocal-Parameters.ps1 -ConfigPath "configs/infrastructure.yml" -AuthType AD
+.\configs\Generate-AzureLocal-Parameters.ps1 -ConfigPath "config/infrastructure.yml" -AuthType AD
 
 # Local Identity auth
-.\configs\Generate-AzureLocal-Parameters.ps1 -ConfigPath "configs/infrastructure.yml" -AuthType LocalIdentity
+.\configs\Generate-AzureLocal-Parameters.ps1 -ConfigPath "config/infrastructure.yml" -AuthType LocalIdentity
 ```
 
-The script reads the YAML config, maps all values, and writes a deployment-ready JSON. See `configs/Generate-AzureLocal-Parameters.ps1` for full documentation.
+The script reads the YAML config, maps all values, and writes a deployment-ready JSON. See `config/Generate-AzureLocal-Parameters.ps1` for full documentation.
 
 ### Option B: Manual Replacement
 
@@ -101,10 +101,10 @@ Key differences:
 Instead of manually filling placeholders, use the generation script:
 
 ```powershell
-.\configs\Generate-AzureLocal-Parameters.ps1 -ConfigPath "configs/infrastructure.yml" -AuthType AD
+.\configs\Generate-AzureLocal-Parameters.ps1 -ConfigPath "config/infrastructure.yml" -AuthType AD
 ```
 
-See `configs/Generate-AzureLocal-Parameters.ps1` for full documentation.
+See `config/Generate-AzureLocal-Parameters.ps1` for full documentation.
 
 ## Validated Examples
 

@@ -14,7 +14,7 @@
     via az CLI from the management server.
 
 .PARAMETER ConfigPath
-    Path to infrastructure YAML. Defaults to configs/infrastructure.yml in CWD.
+    Path to infrastructure YAML. Defaults to config/infrastructure.yml in CWD.
 
 .PARAMETER Credential
     Not used for storage path registration (Azure CLI handles auth via az login).

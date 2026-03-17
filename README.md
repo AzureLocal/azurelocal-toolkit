@@ -12,7 +12,7 @@ Platform automation toolkit for **Azure Local** — deployment scripts, validati
 | Directory | Description |
 |-----------|-------------|
 | **[scripts/](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/scripts)** | 200+ PowerShell scripts organized by deployment stage (02–08), plus common modules, validation, handover, lifecycle, and tools |
-| **[configs/](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/configs)** | Master infrastructure config template, ARM templates, and variable registry |
+| **[config/](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/configs)** | Master infrastructure config template, ARM templates, and variable registry |
 | **[tools/](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/tools)** | Planning utilities (S2D capacity calculator) |
 | **[tests/](https://github.com/AzureLocal/azurelocal-toolkit/tree/main/tests)** | Test infrastructure (future Pester suites) |
 
@@ -34,8 +34,8 @@ The toolkit follows a structured deployment lifecycle:
 
 The toolkit uses a config-driven approach:
 
-- **`configs/infrastructure.yml`** — Master configuration template with 14 sections covering Azure tenant, networking, compute, storage, security, and more
-- **`configs/variables.template.yml`** — Azure Local-specific variables for deployment
+- **`config/infrastructure.yml`** — Master configuration template with 14 sections covering Azure tenant, networking, compute, storage, security, and more
+- **`config/variables.example.yml`** — Azure Local-specific variables for deployment
 
 ## Related Repositories
 

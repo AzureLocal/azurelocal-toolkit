@@ -42,20 +42,20 @@ Enables and configures VNC access on Dell iDRAC via Redfish API.
 
 ```powershell
 # Enable VNC on all nodes using infrastructure.yml settings
-.\Enable-IdracVnc.ps1 -ConfigPath "configs/infrastructure.yml" -IgnoreCertificateErrors
+.\Enable-IdracVnc.ps1 -ConfigPath "config/infrastructure.yml" -IgnoreCertificateErrors
 
 # Target a single node
-.\Enable-IdracVnc.ps1 -ConfigPath "configs/infrastructure.yml" -TargetNode "node-01"
+.\Enable-IdracVnc.ps1 -ConfigPath "config/infrastructure.yml" -TargetNode "node-01"
 
 # Dry run — show what would change without applying
-.\Enable-IdracVnc.ps1 -ConfigPath "configs/infrastructure.yml" -WhatIf
+.\Enable-IdracVnc.ps1 -ConfigPath "config/infrastructure.yml" -WhatIf
 
 # Override VNC port from config default
-.\Enable-IdracVnc.ps1 -ConfigPath "configs/infrastructure.yml" -VNCPort 5902
+.\Enable-IdracVnc.ps1 -ConfigPath "config/infrastructure.yml" -VNCPort 5902
 
 # Provide credentials explicitly (skips Key Vault resolution)
 $cred = Get-Credential -UserName "idrac_admin"
-.\Enable-IdracVnc.ps1 -ConfigPath "configs/infrastructure.yml" -Credential $cred
+.\Enable-IdracVnc.ps1 -ConfigPath "config/infrastructure.yml" -Credential $cred
 ```
 
 **Usage — Standalone mode:**

@@ -63,7 +63,7 @@
     iDRAC ATTRIBUTES
       - Full dump of all iDRAC settings
 
-    Output JSON files saved to configs/network-devices/bmc/<ServiceTag>.json.
+    Output JSON files saved to config/network-devices/bmc/<ServiceTag>.json.
     Optionally calls Update-InfrastructureYml-FromDiscovery.ps1 on completion.
 
     CREDENTIAL RESOLUTION ORDER

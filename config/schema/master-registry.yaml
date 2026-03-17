@@ -2,7 +2,7 @@
 # Master Variable Registry - Azure Local Cloudnology Cloud Management Platform
 # =============================================================================
 # Version: 4.0.0
-# Schema: infrastructure.schema.json (v4.0.0)
+# Schema: variables.schema.json (v4.0.0)
 # Last Updated: 2026-03-05
 #
 # This file defines ALL variable names, types, and descriptions used across
@@ -83,7 +83,7 @@ _metadata:
       change: "Added B2B, GitLab, Arc Resource Bridge, cluster networking, monitoring extended"
       reason: "Variable audit from 157 PowerShell scripts"
   cross_references:
-    - source: "infrastructure.schema.json"
+    - source: "variables.schema.json"
       relationship: "validates infrastructure files against these definitions"
     - source: "registry-reference.mdx"
       relationship: "human-readable documentation of this registry"

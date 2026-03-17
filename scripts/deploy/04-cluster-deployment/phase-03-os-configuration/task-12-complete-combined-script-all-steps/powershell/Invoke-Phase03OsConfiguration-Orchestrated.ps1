@@ -129,7 +129,7 @@ function Resolve-ConfigPath {
             if (Test-Path $r) { return $r }
         } catch {}
     }
-    # Attempt to find any infrastructure*.yml in a configs/ subdirectory
+    # Attempt to find any infrastructure*.yml in a config/ subdirectory
     foreach ($dir in @((Join-Path $PSScriptRoot "configs"), ".\configs")) {
         if (Test-Path $dir) {
             $found = @(Get-ChildItem -Path $dir -Filter "infrastructure*.yml" -File -ErrorAction SilentlyContinue)

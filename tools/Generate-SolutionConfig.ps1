@@ -5,9 +5,9 @@
     Generate a solution-specific YAML config from solutions.yaml + master-registry + infrastructure-<env>.yml.
 
 .DESCRIPTION
-    Reads the solutions definition (configs/solutions.yaml), the master variable registry
-    (configs/variables/assets/master-registry.yaml), and an environment-specific infrastructure
-    file (configs/infrastructure-<env>.yml) to produce a per-solution config file containing
+    Reads the solutions definition (config/solutions.yaml), the master variable registry
+    (config/schema/master-registry.yaml), and an environment-specific infrastructure
+    file (config/infrastructure-<env>.yml) to produce a per-solution config file containing
     only the variables that solution needs — with actual environment values populated.
 
     Output path follows the convention: solutions/<name>/solution-<name>.yml
@@ -125,9 +125,9 @@ $outputData = [ordered]@{
         generated_at = (Get-Date -Format "yyyy-MM-dd HH:mm:ss")
         generator   = "Generate-SolutionConfig.ps1 v1.0.0"
         source_files = @(
-            "configs/solutions.yaml"
-            "configs/variables/assets/master-registry.yaml"
-            "configs/infrastructure-$Environment.yml"
+            "config/solutions.yaml"
+            "config/schema/master-registry.yaml"
+            "config/infrastructure-$Environment.yml"
         )
     }
 }
