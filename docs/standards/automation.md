@@ -8,7 +8,7 @@
 
 ## Overview
 
-This standard defines how multiple automation tools (Terraform, Bicep, ARM, PowerShell, Ansible) interoperate within the Azure Local Platform Toolkit. All tools share a single configuration source and must produce identical infrastructure.
+This standard defines how multiple automation tools (Terraform, Bicep, ARM, PowerShell, Ansible) interoperate across AzureLocal solutions. All tools share a single configuration source and must produce identical infrastructure.
 
 ---
 
@@ -16,44 +16,42 @@ This standard defines how multiple automation tools (Terraform, Bicep, ARM, Powe
 
 ```mermaid
 flowchart TB
-    A["config/infrastructure.yml<br/>(single source of truth)"] --> B[Generate-AzureLocal-Parameters.ps1]
-    B --> C[Terraform .tfvars]
-    B --> D[Bicep .bicepparam]
-    B --> E[ARM parameters.json]
-    B --> F[Ansible group_vars]
-    A --> G[PowerShell ConvertFrom-Yaml]
-    C --> H[Identical Infrastructure]
-    D --> H
-    E --> H
-    F --> H
-    G --> H
+    A["config/variables.yml<br/>(single source of truth)"] --> B[Terraform .tfvars]
+    A --> C[Bicep .bicepparam]
+    A --> D[ARM parameters.json]
+    A --> E[PowerShell ConvertFrom-Yaml]
+    A --> F[Ansible group_vars]
+    B --> G[Identical Infrastructure]
+    C --> G
+    D --> G
+    E --> G
+    F --> G
 ```
 
 ---
 
 ## Deployment Path Matrix
 
-| Tool | Azure Foundation | Domain Join | Cluster Deploy | Guest Config | Operations |
-|------|:---:|:---:|:---:|:---:|:---:|
-| **Terraform** | ✅ | ✅ | Delegates | Delegates | ✅ |
-| **Bicep** | ✅ | ✅ | Delegates | Delegates | ✅ |
-| **ARM** | ✅ | ✅ | Delegates | Delegates | — |
-| **PowerShell** | ✅ | ✅ | ✅ | ✅ | ✅ |
-| **Ansible** | ✅ | ✅ | ✅ | ✅ | ✅ |
+| Tool | Azure Resources | Configuration | Monitoring | Scaling |
+|------|:---:|:---:|:---:|:---:|
+| **Terraform** | ✅ | Delegates | ✅ | ✅ |
+| **Bicep** | ✅ | Delegates | ✅ | ✅ |
+| **ARM** | ✅ | Delegates | ✅ | — |
+| **PowerShell** | ✅ | ✅ | ✅ | ✅ |
+| **Ansible** | ✅ | ✅ | ✅ | ✅ |
 
 !!! warning "Delegates"
-    "Delegates" means the IaC tool provisions Azure resources but does not configure the on-premises or guest OS layer. A separate tool (PowerShell or Ansible) handles those phases.
+    "Delegates" means the IaC tool provisions Azure resources but does not configure the guest OS or application layer. A separate tool (PowerShell or Ansible) handles guest configuration.
 
 ---
 
 ## Interoperability Rules
 
-1. **Single source of truth** — `config/infrastructure.yml` is the only config file. All tool-specific parameter files are derived via `Generate-AzureLocal-Parameters.ps1`.
+1. **Single source of truth** — `config/variables.yml` is the only config file. All tool-specific parameter files are derived.
 2. **Identical output** — Given the same config, every tool must produce the same infrastructure.
-3. **13-section hierarchy** — All configs follow the master-registry v4.0.0 structure (metadata, infrastructure_scenarios, site, environment, tags, azure_platform, identity, networking, compute, storage, security, monitoring, operations).
-4. **Idempotency** — All scripts and templates must be safe to re-run.
-5. **Error handling** — Every tool must validate config before executing changes.
-6. **Logging** — All operations logged to `./logs/` with consistent format.
+3. **Idempotency** — All scripts and templates must be safe to re-run.
+4. **Error handling** — Every tool must validate config before executing changes.
+5. **Logging** — All operations logged to `./logs/` with consistent format.
 
 ---
 

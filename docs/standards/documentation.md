@@ -21,30 +21,44 @@
 
 | Type | Convention | Pattern | Example |
 |------|-----------|---------|---------|
-| Directories | lowercase-with-hyphens | `^[a-z][a-z0-9-]*$` | `deployment/`, `configuration/` |
-| Markdown (docs/) | lowercase with hyphens | `*.md` | `azure-foundation.md` |
+| Directories | lowercase-with-hyphens | `^[a-z][a-z0-9-]*$` | `guides/`, `reference/` |
+| Markdown (docs/) | lowercase with hyphens | `*.md` | `deployment-guide.md` |
 | Root files | UPPERCASE | — | `README.md`, `CHANGELOG.md`, `CONTRIBUTING.md` |
-| PowerShell scripts | PascalCase | `Verb-Noun.ps1` | `Deploy-AzureFoundation.ps1` |
+| PowerShell scripts | PascalCase | `Verb-Noun.ps1` | `Deploy-Solution.ps1` |
 | Config files | lowercase-with-hyphens | — | `variables.example.yml` |
 
 ---
 
 ## MkDocs Material Conventions
 
-This repo uses **MkDocs Material** with:
+This repo uses **MkDocs Material** with the following conventions:
 
-- **Admonitions**: `!!! note`, `!!! warning`, `!!! danger`, `!!! info`, `!!! tip`
+- **Admonitions**: Use `!!! note`, `!!! warning`, `!!! danger`, `!!! info`, `!!! tip`
 - **Code blocks**: Always include a language identifier (e.g., ` ```powershell `, ` ```yaml `)
 - **Code copy**: Enabled via `content.code.copy`
 - **Mermaid diagrams**: Supported via `pymdownx.superfences` custom fence
 - **Tables**: Use standard Markdown tables
-- **Tabs**: `=== "Tab Name"` via `pymdownx.tabbed`
+- **Tabs**: Use `=== "Tab Name"` via `pymdownx.tabbed`
+
+---
+
+## Frontmatter & Metadata
+
+Every documentation page should include:
+
+```markdown
+# Page Title
+
+> Brief one-line description of the page's purpose.
+
+---
+```
 
 ---
 
 ## Fictional Company — Infinite Improbability Corp (IIC)
 
-All examples must use IIC naming patterns:
+All examples must use IIC. See the [Examples & IIC Policy](examples.md) page for the full reference card.
 
 | Never Use | Use Instead |
 |-----------|-------------|
@@ -58,5 +72,4 @@ All examples must use IIC naming patterns:
 
 - [Naming Conventions (full reference)](https://azurelocal.cloud/standards/documentation/naming-conventions)
 - [Badge Library](https://azurelocal.cloud/standards/documentation/badge-library)
-- [Naming Conventions](naming.md)
 - [Scripting Standards](scripting.md)

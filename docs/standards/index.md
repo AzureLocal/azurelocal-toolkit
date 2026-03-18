@@ -4,7 +4,7 @@ This repository follows the **org-wide AzureLocal standards** maintained on the 
 
 !!! info "Central Standards"
     The full standards suite is at [azurelocal.cloud/standards](https://azurelocal.cloud/standards/).
-    This section provides the key rules adapted for the Azure Local Platform Toolkit.
+    This section provides the key rules adapted for this solution.
 
 ---
 
@@ -32,7 +32,6 @@ This repository follows the **org-wide AzureLocal standards** maintained on the 
 
 ## Repo-Specific Conventions
 
-- **13-section hierarchy**: `config/infrastructure.yml` follows the master-registry v4.0.0 structure with 13 top-level sections (metadata, infrastructure_scenarios, site, environment, tags, azure_platform, identity, networking, compute, storage, security, monitoring, operations)
-- **Schema validation**: The 800-line `config/schema/variables.schema.json` enforces structure on every PR via `validate-config.yml`
-- **Platform scope**: This is the platform toolkit — it manages the full Azure Local infrastructure lifecycle, not a single workload
-- **Central config**: `config/infrastructure.yml` is the comprehensive template; `config/variables.example.yml` is the simplified deployment-specific extract
+- **IaC tooling**: Terraform, Bicep, ARM, PowerShell, Ansible
+- **Config file**: `config/variables.example.yml` — see [Variable Reference](../reference/variables.md)
+- **Fictional company**: Infinite Improbability Corp (IIC) — see [IIC Policy](examples.md)

@@ -10,11 +10,11 @@
 
 | Type | Convention | Pattern | Example |
 |------|-----------|---------|---------|
-| Directories | lowercase-with-hyphens | `^[a-z][a-z0-9-]*$` | `deployment/`, `configuration/` |
-| Markdown (docs/) | lowercase with hyphens | `*.md` | `azure-foundation.md` |
+| Directories | lowercase-with-hyphens | `^[a-z][a-z0-9-]*$` | `getting-started/` |
+| Markdown (docs/) | lowercase with hyphens | `*.md` | `deployment-guide.md` |
 | Root files | UPPERCASE | — | `README.md`, `CHANGELOG.md` |
-| PowerShell scripts | PascalCase | `Verb-Noun.ps1` | `Deploy-AzureFoundation.ps1` |
-| Config files | lowercase-with-hyphens | — | `variables.example.yml`, `infrastructure.yml` |
+| PowerShell scripts | PascalCase | `Verb-Noun.ps1` | `Deploy-Solution.ps1` |
+| Config files | lowercase-with-hyphens | — | `variables.example.yml` |
 
 ---
 
@@ -25,10 +25,10 @@ All resources follow the [IIC naming patterns](examples.md):
 | Resource Type | Pattern | Example |
 |--------------|---------|---------|
 | Resource Group | `rg-iic-<purpose>-<##>` | `rg-iic-platform-01` |
-| Cluster | `iic-clus<NN>` | `iic-clus01` |
-| Node | `iic-<clus>-n<NN>` | `iic-01-n01` |
+| Virtual Network | `vnet-iic-<purpose>-<##>` | `vnet-iic-compute-01` |
+| Network Security Group | `nsg-iic-<purpose>` | `nsg-iic-compute` |
 | Key Vault | `kv-iic-<purpose>` | `kv-iic-platform` |
-| Storage Account | `stiic<purpose><##>` | `stiicwitness01` |
+| Storage Account | `stiic<purpose><##>` | `stiicdata01` |
 | Log Analytics | `law-iic-<purpose>-<##>` | `law-iic-monitor-01` |
 
 ---
@@ -37,11 +37,10 @@ All resources follow the [IIC naming patterns](examples.md):
 
 | Rule | Standard | Example |
 |------|----------|---------|
-| YAML sections | `snake_case` | `azure_platform`, `networking`, `compute` |
-| YAML keys | `snake_case` | `subscription_id`, `cluster_name` |
+| YAML sections | `snake_case` | `azure_local`, `networking` |
+| YAML keys | `snake_case` | `subscription_id`, `resource_name` |
 | Pattern | `^[a-z][a-z0-9_]*$` | — |
 | Max length | 50 characters | — |
-| 13-section hierarchy | Follows master-registry v4.0.0 | `metadata`, `site`, `environment`, `tags`, `azure_platform`, `identity`, `networking`, `compute`, `storage`, `security`, `monitoring`, `operations`, `infrastructure_scenarios` |
 
 ---
 
@@ -50,9 +49,9 @@ All resources follow the [IIC naming patterns](examples.md):
 | Pattern | Usage | Example |
 |---------|-------|---------|
 | `main` | Default branch | — |
-| `feature/<description>` | New features | `feature/cloud-cache-support` |
-| `fix/<description>` | Bug fixes | `fix/node-validation` |
-| `docs/<description>` | Documentation | `docs/deployment-stages` |
+| `feature/<description>` | New features | `feature/add-validation` |
+| `fix/<description>` | Bug fixes | `fix/config-parsing` |
+| `docs/<description>` | Documentation | `docs/deployment-guide` |
 | `infra/<description>` | CI/CD | `infra/add-pester-tests` |
 
 ---

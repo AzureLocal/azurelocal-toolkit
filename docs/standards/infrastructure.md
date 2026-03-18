@@ -8,7 +8,7 @@
 
 ## Overview
 
-Standards for Infrastructure as Code (IaC), Terraform state management, and deployment processes for the Azure Local Platform Toolkit.
+Standards for Infrastructure as Code (IaC), Terraform state management, and deployment processes for AzureLocal solutions.
 
 ---
 
@@ -32,7 +32,7 @@ flowchart LR
 | Remote state | Store Terraform state in Azure Storage Account |
 | State locking | Enable locking during all operations |
 | Backup | Regular state file backups before destructive operations |
-| Naming | `toolkit-<env>.tfstate` (e.g., `toolkit-prod.tfstate`) |
+| Naming | `<solution>-<env>.tfstate` (e.g., `platform-prod.tfstate`) |
 
 ---
 
@@ -50,26 +50,13 @@ All tools must produce **identical infrastructure** when given the same configur
 
 ---
 
-## Toolkit-Specific Infrastructure
+## Deployment Phases
 
-| Convention | Rule |
-|-----------|------|
-| Platform scope | Manages the full Azure Local infrastructure lifecycle |
-| Config source | `config/infrastructure.yml` (13-section master config, single source of truth) |
-| Parameter generation | `config/Generate-AzureLocal-Parameters.ps1` derives tool-specific params |
-| Schema validation | 800-line `config/schema/variables.schema.json` enforces structure on every PR |
-
-### Deployment Stages
-
-| Stage | Scope |
-|-------|-------|
-| Stage 02: Azure Foundation | Resource groups, networking, Key Vault, storage |
-| Stage 03: On-Prem Readiness | AD prep, OU structure, DNS, certificates |
-| Stage 04: Cluster Deployment | Azure Local cluster registration and deployment |
-| Stage 05: Operational Foundations | Monitoring, backup, update management |
-| Stage 06: Testing & Validation | Pester tests, connectivity validation |
-| Stage 07: Validation & Handover | Final checks, documentation, handover |
-| Stage 08: Lifecycle Operations | Day-2 operations, patching, scaling |
+| Phase | Scope | Tools |
+|-------|-------|-------|
+| Phase 1: Azure Foundation | Resource groups, networking, Key Vault, storage | Terraform, Bicep, ARM |
+| Phase 2: Compute & Workload | VMs, clusters, workload deployment | Terraform, PowerShell |
+| Phase 3: Configuration | Guest config, monitoring, policies | PowerShell, Ansible |
 
 ---
 

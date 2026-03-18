@@ -6,23 +6,16 @@
 
 ---
 
-## Runtime Requirement
-
-All scripts in this repository require **PowerShell 7+** (`pwsh`). Windows PowerShell 5.1 is not supported.
-
----
-
 ## Script Naming
 
 | Script Type | Pattern | Example |
 |-------------|---------|---------|
-| PowerShell Core | `Verb-Noun.ps1` | `Deploy-AzureFoundation.ps1` |
+| PowerShell Core | `Verb-Noun.ps1` | `Deploy-Solution.ps1` |
 | Azure PowerShell | `Verb-AzResource.ps1` | `New-AzKeyVault.ps1` |
-| Azure CLI (PowerShell) | `az-verb-resource.ps1` | `az-create-vnet.ps1` |
-| Azure CLI (Bash) | `az-verb-resource.sh` | `az-create-vnet.sh` |
-| Standalone (no config) | `Verb-Noun-Standalone.ps1` | `Deploy-AzureFoundation-Standalone.ps1` |
-| Remote/orchestration | `Invoke-<Task>.ps1` | `Invoke-ClusterDeploy.ps1` |
-| Config generator | `Generate-<Purpose>-Parameters.ps1` | `Generate-AzureLocal-Parameters.ps1` |
+| Azure CLI (PowerShell) | `az-verb-resource.ps1` | `az-deploy-resource.ps1` |
+| Azure CLI (Bash) | `az-verb-resource.sh` | `az-deploy-resource.sh` |
+| Standalone (no config) | `Verb-Noun-Standalone.ps1` | `Deploy-Solution-Standalone.ps1` |
+| Remote/orchestration | `Invoke-<Task>.ps1` | `Invoke-Deployment.ps1` |
 
 ---
 
@@ -30,19 +23,19 @@ All scripts in this repository require **PowerShell 7+** (`pwsh`). Windows Power
 
 | Mode | Config File | Dependencies | Use Case |
 |------|-------------|-------------|----------|
-| Config-driven (Options 2–4) | `config/variables.yml` | Config loader, helpers, Key Vault | Multi-environment automation, CI/CD |
+| Config-driven (Options 2-4) | `config/variables.yml` | Config loader, helpers, Key Vault | Multi-environment automation, CI/CD |
 | Standalone (Option 5) | Inline `#region CONFIGURATION` | None | Demos, single-use, external sharing |
 
 ### Config-Driven Rules
 
-- Read all values from `config/variables.yml` or `config/infrastructure.yml` — never hardcode
+- Read all values from `config/variables.yml` — never hardcode
 - Accept `-ConfigPath` parameter (auto-discover if not provided)
 - Use helper functions: `ConvertFrom-Yaml`, `Resolve-KeyVaultRef`, logging
 
 ### Standalone Rules
 
 - All variables in `#region CONFIGURATION` block at top
-- Variable names match `variables.yml` paths (e.g., `$azure_tenant_id`)
+- Variable names match `variables.yml` paths (e.g., `$subscription_id`)
 - Zero external dependencies — copy, paste, run
 
 ---
@@ -64,7 +57,7 @@ All `Invoke-` scripts must use `[CmdletBinding()]` to enable `-Verbose` and `-De
 ### Credential Resolution Order
 
 1. **`-Credential` parameter** — if passed, use immediately
-2. **Key Vault** — read from `identity.accounts` in config; try `Az.KeyVault` module, fall back to `az` CLI
+2. **Key Vault** — read from config; try `Az.KeyVault`, fall back to `az` CLI
 3. **Interactive prompt** — `Get-Credential` with username pre-filled
 
 ---
@@ -73,20 +66,18 @@ All `Invoke-` scripts must use `[CmdletBinding()]` to enable `-Verbose` and `-De
 
 - Log to `./logs/<task-name>/<timestamp>.log`
 - Use `Write-Verbose` for detailed output
-- Use `Write-Warning` for override notifications
 - Log format: `[YYYY-MM-DD HH:MM:SS] [LEVEL] Message`
 
 ---
 
-## Toolkit-Specific Script Conventions
+## Solution Script Conventions
 
 | Convention | Rule |
 |-----------|------|
-| Platform scope | Scripts manage the full Azure Local infrastructure lifecycle (not a single workload) |
-| Config source | `config/infrastructure.yml` (13-section master config) and `config/variables.yml` |
-| Parameter generation | `config/Generate-AzureLocal-Parameters.ps1` derives tool-specific params |
-| Idempotency | All scripts must be safe to re-run (`-WhatIf` for dry runs) |
-| Validation | `tests/` contains Pester test suites for all script modules |
+| IaC tools | Terraform, Bicep, ARM, PowerShell, Ansible |
+| Config source | `config/variables.yml` (single source of truth) |
+| Parameter derivation | All tool-specific param files derived from central config |
+| Idempotency | All scripts must be safe to re-run |
 
 ---
 
