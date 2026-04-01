@@ -189,6 +189,100 @@ networking:
       load_balancer: {}
       gateway: {}
       network_controller: {}
+      nsgs:
+        - name: "nsg-iic-management"
+          description: "Management network - admin access only"
+          rules:
+            - name: "Allow-RDP-Management"
+              priority: 100
+              direction: "Inbound"
+              access: "Allow"
+              protocol: "Tcp"
+              source_address_prefix: "10.100.0.0/24"
+              destination_port_range: "3389"
+            - name: "Allow-WinRM"
+              priority: 110
+              direction: "Inbound"
+              access: "Allow"
+              protocol: "Tcp"
+              source_address_prefix: "10.100.0.0/24"
+              destination_port_range: "5985-5986"
+            - name: "Allow-SSH"
+              priority: 120
+              direction: "Inbound"
+              access: "Allow"
+              protocol: "Tcp"
+              source_address_prefix: "10.100.0.0/24"
+              destination_port_range: "22"
+            - name: "Allow-HTTPS-WAC"
+              priority: 130
+              direction: "Inbound"
+              access: "Allow"
+              protocol: "Tcp"
+              source_address_prefix: "10.100.0.0/24"
+              destination_port_range: "443"
+            - name: "Deny-All-Inbound"
+              priority: 4000
+              direction: "Inbound"
+              access: "Deny"
+              protocol: "*"
+              source_address_prefix: "*"
+              destination_port_range: "*"
+        - name: "nsg-iic-production"
+          description: "Production workload network"
+          rules:
+            - name: "Allow-HTTPS"
+              priority: 100
+              direction: "Inbound"
+              access: "Allow"
+              protocol: "Tcp"
+              source_address_prefix: "*"
+              destination_port_range: "443"
+            - name: "Allow-HTTP"
+              priority: 110
+              direction: "Inbound"
+              access: "Allow"
+              protocol: "Tcp"
+              source_address_prefix: "*"
+              destination_port_range: "80"
+            - name: "Allow-RDP-Management"
+              priority: 200
+              direction: "Inbound"
+              access: "Allow"
+              protocol: "Tcp"
+              source_address_prefix: "10.100.0.0/24"
+              destination_port_range: "3389"
+            - name: "Deny-All-Inbound"
+              priority: 4000
+              direction: "Inbound"
+              access: "Deny"
+              protocol: "*"
+              source_address_prefix: "*"
+              destination_port_range: "*"
+        - name: "nsg-iic-avd"
+          description: "AVD session host network"
+          rules:
+            - name: "Allow-RDP-Internal"
+              priority: 100
+              direction: "Inbound"
+              access: "Allow"
+              protocol: "Tcp"
+              source_address_prefix: "10.100.0.0/24"
+              destination_port_range: "3389"
+            - name: "Allow-AVD-Agent"
+              priority: 110
+              direction: "Outbound"
+              access: "Allow"
+              protocol: "Tcp"
+              source_address_prefix: "*"
+              destination_port_range: "443"
+            - name: "Deny-All-Inbound"
+              priority: 4000
+              direction: "Inbound"
+              access: "Deny"
+              protocol: "*"
+              source_address_prefix: "*"
+              destination_port_range: "*"
   onprem:
     mtu: 9000
     dns:
@@ -265,7 +359,50 @@ compute:
     cluster_witness_type: "cloud_witness"
     cluster_witness_file_share_path: "\\\\fs01.iic.local\\clusterwitness"
     network_intents: []
-    logical_networks: []
+    logical_networks:
+      - name: "ln-iic01-management-100"
+        display_name: "Management Network"
+        vlan_id: 100
+        ip_allocation_method: "Static"
+        address_prefix: "10.100.0.0/24"
+        default_gateway: "10.100.0.1"
+        dns_servers:
+          - "10.100.0.10"
+          - "10.100.0.11"
+        ip_pools:
+          - name: "pool-mgmt-vms"
+            start: "10.100.0.50"
+            end: "10.100.0.200"
+            type: "vm"
+        nsg_name: "nsg-iic-management"
+        enabled: true
+      - name: "ln-iic01-production-200"
+        display_name: "Production Network"
+        vlan_id: 200
+        ip_allocation_method: "Static"
+        address_prefix: "10.200.0.0/24"
+        default_gateway: "10.200.0.1"
+        dns_servers:
+          - "10.100.0.10"
+          - "10.100.0.11"
+        ip_pools:
+          - name: "pool-prod-vms"
+            start: "10.200.0.50"
+            end: "10.200.0.250"
+            type: "vm"
+        nsg_name: "nsg-iic-production"
+        enabled: true
+      - name: "ln-iic01-avd-300"
+        display_name: "AVD Network"
+        vlan_id: 300
+        ip_allocation_method: "Dynamic"
+        dhcp_options:
+          dns_servers:
+            - "10.100.0.10"
+            - "10.100.0.11"
+          domain_name: "azurelocal.cloud"
+        nsg_name: "nsg-iic-avd"
+        enabled: true
   cluster_nodes:
     - node_hostname: "azl-iic-n01"
       node_fqdn: "azl-iic-n01.iic.local"
