@@ -23,6 +23,11 @@
     Not used for logical network creation (ARM operation). Included for
     parameter contract compliance.
 
+.PARAMETER AssociateNsg
+    When specified, associates NSGs with logical networks during creation.
+    Each logical network entry must have an nsg_name field in the config.
+    Requires SDN to be enabled on the cluster and NSGs created in Task 07.
+
 .PARAMETER WhatIf
     Dry-run mode: logs all planned operations without making any changes.
 
@@ -36,6 +41,10 @@
 .EXAMPLE
     .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-07-logical-network-creation\powershell\Invoke-LogicalNetworks-Orchestrated.ps1 -ConfigPath configs\infrastructure-azl-lab.yml
 
+.EXAMPLE
+    # With NSG association (requires SDN enabled + NSGs from Task 07)
+    .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-07-logical-network-creation\powershell\Invoke-LogicalNetworks-Orchestrated.ps1 -ConfigPath configs\infrastructure-azl-lab.yml -AssociateNsg
+
 .NOTES
     Requires: powershell-yaml module  (Install-Module powershell-yaml -Scope CurrentUser)
     Requires: az CLI authenticated    (az login)
@@ -47,6 +56,7 @@ param(
     [string]      $ConfigPath = "",
     [PSCredential]$Credential = $null,
     [string[]]    $TargetNode = @(),
+    [switch]      $AssociateNsg,
     [switch]      $WhatIf,
     [string]      $LogPath    = ""
 )
@@ -122,6 +132,7 @@ Write-Log "Resource Group : $resourceGroup"
 Write-Log "Location       : $location"
 Write-Log "Custom Location: $customLocationName"
 Write-Log "vSwitch        : $vmSwitchName"
+Write-Log "NSG association: $(if ($AssociateNsg) { 'Enabled' } else { 'Disabled (use -AssociateNsg to enable)' })"
 Write-Log "Networks       : $($logicalNetworks.Count) defined"
 
 #region AUTH CHECK --------------------------------------------------------------
@@ -270,6 +281,17 @@ foreach ($lnet in $logicalNetworks) {
         } else {
             Write-Log "[$lnetName] FAILED: Could not resolve IP pool start/end from config. Raw ip_pools type=$($poolListRaw.GetType().FullName)" "FAIL"
             $failed++; continue
+        }
+    }
+
+    # Associate NSG if -AssociateNsg switch is set and nsg_name is defined
+    if ($AssociateNsg) {
+        $nsgName = Get-LnetProp $lnet 'nsg_name'
+        if ($nsgName) {
+            $createArgs.AddRange([string[]]@("--network-security-group", $nsgName))
+            Write-Log "[$lnetName] NSG association: $nsgName"
+        } else {
+            Write-Log "[$lnetName] -AssociateNsg set but no nsg_name in config — skipping NSG" "WARN"
         }
     }
 

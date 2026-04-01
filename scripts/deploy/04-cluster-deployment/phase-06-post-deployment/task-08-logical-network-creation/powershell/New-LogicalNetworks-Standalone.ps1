@@ -41,6 +41,11 @@ $custom_location_id = "/subscriptions/a1b2c3d4-e5f6-7890-abcd-ef1234567890/resou
 # Hyper-V virtual switch name (from Get-VMSwitch on a cluster node)
 $vm_switch_name     = "ConvergedSwitch(hci)"
 
+# ─── NSG Association ─────────────────────────────────────────────────────────────
+# Set to $true to associate NSGs with logical networks during creation.
+# Requires SDN enabled on the cluster and NSGs created in Task 07.
+$associate_nsg      = $false
+
 # ─── Logical Networks ────────────────────────────────────────────────────────────
 # ip_allocation_method: "Static" or "Dynamic"
 #   Static  — requires address_prefix, default_gateway, ip_pools
@@ -59,6 +64,7 @@ $logical_networks = @(
         ip_pools             = @(
             @{ name = "pool-mgmt-vms"; start = "10.100.0.50"; end = "10.100.0.200"; type = "vm" }
         )
+        nsg_name             = "nsg-iic-management"   # only used when $associate_nsg = $true
         routes               = @()                  # optional extra routes (list of @{address_prefix; next_hop})
     },
 
@@ -74,6 +80,7 @@ $logical_networks = @(
         ip_pools             = @(
             @{ name = "pool-prod-vms"; start = "10.200.0.50"; end = "10.200.0.250"; type = "vm" }
         )
+        nsg_name             = "nsg-iic-production"   # only used when $associate_nsg = $true
         routes               = @()
     },
 
@@ -87,6 +94,7 @@ $logical_networks = @(
             dns_servers  = @("10.100.0.10", "10.100.0.11")
             domain_name  = "improbability.cloud"
         }
+        nsg_name             = "nsg-iic-avd"           # only used when $associate_nsg = $true
         routes               = @()
     }
 )
@@ -210,6 +218,12 @@ foreach ($lnet in $logical_networks) {
 
     if ($lnet.display_name) {
         $createArgs += @("--tags", "displayName=$($lnet.display_name)")
+    }
+
+    # Associate NSG if opted in and nsg_name is defined
+    if ($associate_nsg -and $lnet.nsg_name) {
+        $createArgs += @("--network-security-group", $lnet.nsg_name)
+        Write-Host "[INFO] NSG association: $($lnet.nsg_name)" -ForegroundColor Cyan
     }
 
     Write-Host "[INFO] Creating: $lnetName..." -ForegroundColor Cyan
