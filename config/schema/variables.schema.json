@@ -115,7 +115,7 @@
         },
         "env_description": { "type": "string", "description": "Brief description of the environment" }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "tags": {
       "type": "object",
@@ -178,7 +178,7 @@
           "additionalProperties": true
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "identity": {
       "type": "object",
@@ -335,7 +335,7 @@
               "additionalProperties": true
             }
           },
-          "additionalProperties": false
+          "additionalProperties": true
         },
         "onprem": {
           "type": "object",
@@ -443,7 +443,7 @@
               "additionalProperties": true
             }
           },
-          "additionalProperties": false
+          "additionalProperties": true
         },
         "hybrid": {
           "type": "object",
@@ -458,7 +458,7 @@
           "additionalProperties": false
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "compute": {
       "type": "object",
@@ -535,7 +535,7 @@
           "additionalProperties": true
         },
         "cluster_nodes": {
-          "type": "array",
+          "type": ["array", "object"],
           "description": "Individual cluster node definitions (aligned with master-registry v4.0.0)",
           "minItems": 1,
           "maxItems": 16,
@@ -587,6 +587,10 @@
               "node_memory_gb": { "type": "integer", "description": "Total memory in GB" }
             },
             "additionalProperties": true
+          },
+          "additionalProperties": {
+            "type": "object",
+            "additionalProperties": true
           }
         },
         "cluster_arm_deployment": {
@@ -600,7 +604,7 @@
           "additionalProperties": true
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "storage_accounts": {
       "type": "object",
@@ -728,7 +732,7 @@
           "additionalProperties": true
         }
       },
-      "additionalProperties": false
+      "additionalProperties": true
     },
     "operations": {
       "type": "object",
@@ -794,6 +798,139 @@
         }
       },
       "additionalProperties": false
+    },
+    "cluster_shared_volumes": {
+      "type": "object",
+      "description": "Cluster Shared Volume definitions used by storage configuration scripts",
+      "additionalProperties": true
+    },
+    "marketplace_images": {
+      "type": "object",
+      "description": "Marketplace image definitions used by image download scripts",
+      "additionalProperties": true
+    },
+    "solution": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "azure": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "platform": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "cluster": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "azure_infrastructure": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "azure_resources": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "azure_local": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "azure_vms": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "active_directory": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "accounts": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "credentials": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "backup": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "monitoring": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "network": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "network_config": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "domain": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "deployment": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "hardware": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "dns": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "nat_gateway": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "key_vault": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "project": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "b2b_configuration": {
+      "type": "object",
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "additionalProperties": true
+    },
+    "nodes": {
+      "type": ["array", "object"],
+      "description": "Compatibility alias section still referenced by legacy scripts and implementation docs",
+      "items": {
+        "type": "object"
+      },
+      "additionalProperties": true
     }
   },
   "additionalProperties": false

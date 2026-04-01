@@ -1,82 +1,804 @@
 # =============================================================================
 # variables.example.yml
-# Central configuration — single source of truth for all deployment phases.
+# Canonical Azure Local toolkit configuration plus compatibility aliases still
+# referenced by implementation docs and deployment scripts.
 #
-# Copy this file to variables.yml and fill in your values:
+# Copy this file to variables.yml and fill in your site-specific values:
 #   cp config/variables.example.yml config/variables.yml
 #
 # DO NOT commit variables.yml — it is excluded by .gitignore.
-#
-# Key Vault References:
-#   Secrets use keyvault:// URIs and are resolved at runtime.
-#   Format: keyvault://<vault-name>/<secret-name>
-#   NEVER put actual passwords or secrets in this file.
-#
-# For the full variable reference, see:
-#   - config/infrastructure.yml (complete 14-section schema)
-#   - config/schema/master-registry.yaml (variable definitions)
 # =============================================================================
 
+_metadata:
+  version: "1.0.0"
+  schema_version: "4.0.0"
+  last_updated: "2026-04-01"
+  last_manual_edit: ""
+  environment_name: "ProjectIIC"
+  discovery:
+    idrac:
+      last_run: ""
+    azure:
+      last_run: ""
+
 # =============================================================================
-# SITE
+# CANONICAL HIERARCHY
 # =============================================================================
 site:
-  code: ""                          # Short site code (e.g., "NYC", "LAB01")
-  name: ""                          # Descriptive site name
-  location: ""                      # Physical location
-  environment: ""                   # Environment type (Production, Staging, Lab, Demo)
-  owner: ""                         # Contact email
+  code: "IIC"
+  name: "Infinite Improbability Corp Example Site"
+  location: "Dallas, TX"
+  environment: "Lab"
+  owner: "admin@improbability.cloud"
+  customer_name: "Infinite Improbability Corp"
+  hardware:
+    hw_vendor: "Dell"
+    hw_model: "PowerEdge R760"
+    hw_generation: "16G"
+    gpu_enabled: false
+    gpu_model: ""
+    idrac:
+      idrac_username: "root"
+      idrac_password: "keyvault://kv-iic-platform/idrac-password"
+    dell_support:
+      dell_support_username: "support@improbability.cloud"
+      dell_support_password: "keyvault://kv-iic-platform/dell-support-password"
 
-# =============================================================================
-# AZURE PLATFORM
-# =============================================================================
-azure:
-  tenant_id: ""                     # Azure AD tenant ID
-  subscription:
-    id: ""                          # Azure subscription ID
-    name: ""                        # Subscription display name
-  resource_group:
-    name: ""                        # Target resource group name
-    location: ""                    # Azure region (e.g., eastus, westus2)
-  keyvault:
-    name: ""                        # Key Vault name for secrets
+environment:
+  env_name: "ProjectIIC"
+  env_type: "lab"
+  env_owner: "admin@improbability.cloud"
+  env_description: "IIC example Azure Local toolkit deployment."
 
-# =============================================================================
-# IDENTITY
-# =============================================================================
-identity:
-  domain:
-    fqdn: ""                        # Active Directory domain FQDN
-    netbios: ""                     # NetBIOS domain name
-    ou_path: ""                     # OU for computer objects
-  service_principal:
-    app_id: ""                      # Service principal application ID
-    object_id: ""                   # Service principal object ID
-
-# =============================================================================
-# NETWORKING
-# =============================================================================
-networking:
-  management:
-    vlan_id: 0                      # Management VLAN ID
-    subnet: ""                      # Management subnet CIDR
-    gateway: ""                     # Default gateway
-    dns_servers: []                 # DNS server IPs
-
-# =============================================================================
-# COMPUTE (Cluster Nodes)
-# =============================================================================
-nodes: []
-# Example:
-#   - name: "node-01"
-#     ipv4_address: "10.0.0.1"
-#     bmc_address: "10.0.1.1"
-#     serial_number: ""
-
-# =============================================================================
-# TAGS
-# =============================================================================
 tags:
-  environment: ""
-  project: ""
-  owner: ""
+  Environment: "ProjectIIC"
+  Project: "Azure Local Toolkit"
+  ManagedBy: "Infrastructure as Code"
+  Owner: "admin@improbability.cloud"
+  CostCenter: "IT-IIC"
+  environment: "ProjectIIC"
+  project: "Azure Local Toolkit"
+  owner: "admin@improbability.cloud"
+  cost_center: "IT-IIC"
+
+azure_platform:
+  tenant:
+    id: "00000000-0000-0000-0000-000000000000"
+    name: "Infinite Improbability Corp"
+    default_domain: "improbability.onmicrosoft.com"
+  azure_tenants:
+    aztenant_azurelocal_id: "00000000-0000-0000-0000-000000000000"
+    aztenant_azurelocal_name: "Infinite Improbability Corp"
+    aztenant_azurelocal_domain: "improbability.onmicrosoft.com"
+    aztenant_azurelocal_primary_domain: "improbability.cloud"
+    aztenant_region: "eastus"
+  subscriptions:
+    lab:
+      id: "11111111-1111-1111-1111-111111111111"
+      name: "sub-iic-lab"
+    demo:
+      id: "22222222-2222-2222-2222-222222222222"
+      name: "sub-iic-demo"
+    primary:
+      id: "33333333-3333-3333-3333-333333333333"
+      name: "sub-iic-primary"
+    connectivity:
+      id: "44444444-4444-4444-4444-444444444444"
+      name: "sub-iic-connectivity"
+    security:
+      id: "55555555-5555-5555-5555-555555555555"
+      name: "sub-iic-security"
+    platform_connectivity:
+      id: "66666666-6666-6666-6666-666666666666"
+      name: "sub-iic-platform-connectivity"
+    platform_identity:
+      id: "77777777-7777-7777-7777-777777777777"
+      name: "sub-iic-platform-identity"
+    platform_management:
+      id: "88888888-8888-8888-8888-888888888888"
+      name: "sub-iic-platform-management"
+    sub_bootstrap_id: "99999999-9999-9999-9999-999999999999"
+  management_groups:
+    platform:
+      id: "mg-iic-platform"
+      name: "mg-iic-platform"
+    landing_zone:
+      name: "mg-iic-landing-zone"
+      display_name: "Landing Zone"
+    tenant_root:
+      name: "iic-root"
+  resource_groups:
+    management:
+      name: "rg-iic-management-01"
+    network:
+      name: "rg-iic-network-01"
+    compute:
+      name: "rg-iic-compute-01"
+    identity:
+      name: "rg-iic-identity-01"
+    security:
+      name: "rg-iic-security-01"
+    monitoring:
+      name: "rg-iic-monitor-01"
+    connectivity:
+      name: "rg-iic-connectivity-01"
+    arc:
+      name: "rg-iic-arc-01"
+  location: "eastus"
+  region: "eastus"
+  region_abbreviation: "eus"
+  resource_group: "rg-iic-compute-01"
+  resource_group_name: "rg-iic-compute-01"
+  platform:
+    kv_platform_name: "kv-iic-platform"
+    kv_platform_resource_group: "rg-iic-security-01"
+    kv_platform_enable_rbac: true
+
+identity:
+  accounts:
+    account_local_admin_username: "Administrator"
+    account_local_admin_password: "keyvault://kv-iic-platform/local-admin-password"
+    account_ad_domain_admin_username: "IMPROBABLE\\admin.iic"
+    account_ad_domain_admin_password: "keyvault://kv-iic-platform/domain-admin-password"
+    account_lcm_username: "lcm-iic-azl-clus01"
+    account_lcm_password: "keyvault://kv-iic-platform/lcm-deployment-password"
+  active_directory:
+    fqdn: "iic.local"
+    ad_domain_fqdn: "iic.local"
+    ad_netbios_name: "IMPROBABLE"
+    ad_ou_path: "OU=AzureLocal,OU=Servers,DC=iic,DC=local"
+    ad_computers_ou_path: "OU=Computers,OU=Servers,DC=iic,DC=local"
+    ad_servers_ou_path: "OU=Servers,DC=iic,DC=local"
+    ad_clusters_ou_path: "OU=Clusters,OU=Servers,DC=iic,DC=local"
+    ad_dns_servers:
+      - "192.168.10.10"
+      - "192.168.10.11"
+    domain:
+      fqdn: "iic.local"
+      netbios: "IMPROBABLE"
+    organizational_units:
+      servers: "OU=Servers,DC=iic,DC=local"
+  service_principal:
+    name: "sp-iic-azurelocal-deploy"
+    client_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    app_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+    object_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+    secret: "keyvault://kv-iic-platform/sp-iic-azurelocal-deploy-secret"
+    roles:
+      subscription: "Contributor"
+      resource_group: "Contributor"
+  break_glass_account_ids:
+    - "cccccccc-cccc-cccc-cccc-cccccccccccc"
+  managed_identities:
+    mi_user_assigned: []
+    mi_system_assigned: []
+  b2b_configuration: {}
+
+networking:
+  azure:
+    hub_spoke:
+      hub_vnet_name: "vnet-iic-hub-01"
+      hub_vnet_address_space:
+        - "10.10.0.0/16"
+      vnet_name: "vnet-iic-hub-01"
+    vnets: {}
+    bastion: {}
+    firewall: {}
+    sdn:
+      sdn_enabled: false
+      load_balancer: {}
+      gateway: {}
+      network_controller: {}
+  onprem:
+    mtu: 9000
+    dns:
+      servers:
+        - "192.168.10.10"
+        - "192.168.10.11"
+    dhcp:
+      management_compute:
+        dns_primary:
+          - "192.168.10.10"
+          - "192.168.10.11"
+      server: "192.168.10.5"
+    vlans:
+      management:
+        id: 2203
+        subnet: "10.0.0.0/24"
+        cidr: "10.0.0.0/24"
+        gateway: "10.0.0.1"
+      storage:
+        id: 2204
+        subnet: "10.0.1.0/24"
+        cidr: "10.0.1.0/24"
+        gateway: "10.0.1.1"
+      workload:
+        id: 2205
+        subnet: "10.0.2.0/24"
+        cidr: "10.0.2.0/24"
+        gateway: "10.0.2.1"
+        start: "10.0.2.100"
+        end: "10.0.2.199"
+    network_intents:
+      - name: "MgmtCompute"
+        traffic_types:
+          - "Management"
+          - "Compute"
+        adapter_names:
+          - "NIC1"
+          - "NIC2"
+        subnet: "10.0.0.0/24"
+        gateway: "10.0.0.1"
+        vlan_id: 2203
+        dns_servers:
+          - "192.168.10.10"
+        storage_networks:
+          - subnet: "10.0.1.0/24"
+            vlan_id: 2204
+    logical_networks: {}
+    network_devices:
+      opengear:
+        host: "10.245.64.10"
+        users: []
+        alerts: []
+      powerswitch:
+        host: "10.245.64.20"
+  hybrid:
+    vpn: {}
+  dhcp:
+    server: "192.168.10.5"
+  network_intents: []
+
+compute:
+  azure_local:
+    cluster_name: "azlocal-iic-01"
+    cluster_location: "eastus"
+    cluster_node_count: 2
+    resource_group: "rg-iic-compute-01"
+    arc_resource_group: "rg-iic-arc-01"
+    arc_gateway_enabled: false
+    arc_gateway_id: ""
+    custom_location: "cl-iic-azlocal-01"
+    custom_location_name: "cl-iic-azlocal-01"
+    azure_custom_location_name: "cl-iic-azlocal-01"
+    vm_switch_name: "ConvergedSwitch(hci)"
+    cluster_witness_type: "cloud_witness"
+    cluster_witness_file_share_path: "\\\\fs01.iic.local\\clusterwitness"
+    network_intents: []
+    logical_networks: []
+  cluster_nodes:
+    - node_hostname: "azl-iic-n01"
+      node_fqdn: "azl-iic-n01.iic.local"
+      node_management_ip: "10.0.0.11"
+      node_idrac_ip: "10.245.64.11"
+      name: "azl-iic-n01"
+      hostname: "azl-iic-n01"
+      fqdn: "azl-iic-n01.iic.local"
+      management_ip: "10.0.0.11"
+      ipv4_address: "10.0.0.11"
+      ip_address: "10.0.0.11"
+      idrac_ip: "10.245.64.11"
+      bmc_address: "10.245.64.11"
+      node_service_tag: "ABC1234"
+      serial_number: "ABC1234"
+      arc_node_resource_ids: []
+    - node_hostname: "azl-iic-n02"
+      node_fqdn: "azl-iic-n02.iic.local"
+      node_management_ip: "10.0.0.12"
+      node_idrac_ip: "10.245.64.12"
+      name: "azl-iic-n02"
+      hostname: "azl-iic-n02"
+      fqdn: "azl-iic-n02.iic.local"
+      management_ip: "10.0.0.12"
+      ipv4_address: "10.0.0.12"
+      ip_address: "10.0.0.12"
+      idrac_ip: "10.245.64.12"
+      bmc_address: "10.245.64.12"
+      node_service_tag: "ABC1235"
+      serial_number: "ABC1235"
+      arc_node_resource_ids: []
+  azure_vms:
+    dc01:
+      name: "vm-iic-dc01"
+      hostname: "iic-dc01"
+      fqdn: "iic-dc01.iic.local"
+      private_ip: "10.20.1.10"
+      ip_address: "10.20.1.10"
+      location: "eastus"
+      resource_group: "rg-iic-compute-01"
+    dc02:
+      name: "vm-iic-dc02"
+      hostname: "iic-dc02"
+      fqdn: "iic-dc02.iic.local"
+      private_ip: "10.20.1.11"
+      ip_address: "10.20.1.11"
+      location: "eastus"
+      resource_group: "rg-iic-compute-01"
+    utility:
+      name: "vm-iic-util01"
+      hostname: "iic-util01"
+      fqdn: "iic-util01.iic.local"
+      private_ip: "10.20.1.20"
+      ip_address: "10.20.1.20"
+      location: "eastus"
+      resource_group: "rg-iic-compute-01"
+    lighthouse:
+      name: "vm-iic-lighthouse01"
+      hostname: "iic-lighthouse01"
+      fqdn: "iic-lighthouse01.iic.local"
+      private_ip: "10.20.1.30"
+      ip_address: "10.20.1.30"
+      location: "eastus"
+      resource_group: "rg-iic-compute-01"
+    wac:
+      name: "vm-iic-wac01"
+      hostname: "iic-wac01"
+      fqdn: "iic-wac01.iic.local"
+      private_ip: "10.20.1.40"
+      ip_address: "10.20.1.40"
+      location: "eastus"
+      resource_group: "rg-iic-compute-01"
+    syslog:
+      name: "vm-iic-syslog01"
+      hostname: "iic-syslog01"
+      fqdn: "iic-syslog01.iic.local"
+      private_ip: "10.20.1.50"
+      ip_address: "10.20.1.50"
+      location: "eastus"
+      resource_group: "rg-iic-compute-01"
+  nodes:
+    - name: "azl-iic-n01"
+      ipv4_address: "10.0.0.11"
+      bmc_address: "10.245.64.11"
+      serial_number: "ABC1234"
+    - name: "azl-iic-n02"
+      ipv4_address: "10.0.0.12"
+      bmc_address: "10.245.64.12"
+      serial_number: "ABC1235"
+  vms:
+    azure: {}
+    arc_hybrid: {}
+  clusters:
+    azure_local:
+      azl_name: "azlocal-iic-01"
+      azl_node_count: 2
+      azl_resource_group: "rg-iic-compute-01"
+      azl_cluster_ip: "10.0.0.10"
+      azl_network_topology: "traditional"
+      azl_identity_provider: "active_directory"
+      azl_witness_type: "cloud_witness"
+      azl_deployment_mode: "deploy"
+  cluster_arm_deployment: {}
+  cluster_shared_volumes:
+    enabled: true
+    storage_pool_name: "S2D on azlocal-iic-01"
+    volumes:
+      - volume_name: "csv-iic-azlocal-01-vmstore-01"
+        size_gb: 2000
+        filesystem: "ReFS"
+        resiliency: "Mirror"
+        path: "C:\\ClusterStorage\\csv-iic-azlocal-01-vmstore-01"
+    storage_paths:
+      vmstore:
+        name: "sp-iic-azlocal-01-vmstore-01"
+        path: "C:\\ClusterStorage\\csv-iic-azlocal-01-vmstore-01\\VMs"
+  avd: {}
+
+storage_accounts: {}
+
+cluster_shared_volumes:
+  enabled: true
+  storage_pool_name: "S2D on azlocal-iic-01"
+  volumes:
+    - volume_name: "csv-iic-azlocal-01-vmstore-01"
+      size_gb: 2000
+      filesystem: "ReFS"
+      resiliency: "Mirror"
+      path: "C:\\ClusterStorage\\csv-iic-azlocal-01-vmstore-01"
+  storage_paths:
+    vmstore:
+      name: "sp-iic-azlocal-01-vmstore-01"
+      path: "C:\\ClusterStorage\\csv-iic-azlocal-01-vmstore-01\\VMs"
+
+marketplace_images:
+  enabled: true
+  images:
+    - name: "img-windows-server-2025"
+      publisher: "MicrosoftWindowsServer"
+      offer: "WindowsServer"
+      sku: "2025-datacenter-azure-edition"
+      os_type: "Windows"
+      storage_path: "C:\\ClusterStorage\\csv-iic-azlocal-01-vmstore-01\\Images"
+
+security:
+  keyvault:
+    cmp_platform:
+      kv_cmp_platform_name: "kv-iic-cmp"
+      kv_cmp_platform_resource_group: "rg-iic-security-01"
+      kv_cmp_platform_location: "eastus"
+      kv_cmp_platform_subscription_id: "10101010-1010-1010-1010-101010101010"
+      kv_cmp_platform_tenant_id: "00000000-0000-0000-0000-000000000000"
+    platform:
+      kv_platform_name: "kv-iic-platform"
+      kv_platform_resource_group: "rg-iic-security-01"
+      kv_platform_location: "eastus"
+      kv_platform_subscription_id: "55555555-5555-5555-5555-555555555555"
+      kv_platform_tenant_id: "00000000-0000-0000-0000-000000000000"
+    kv_azl:
+      kv_azl_name: "kv-iic-azl"
+      kv_azl_resource_group: "rg-iic-arc-01"
+      kv_azl_location: "eastus"
+      kv_azl_subscription_id: "33333333-3333-3333-3333-333333333333"
+      kv_azl_tenant_id: "00000000-0000-0000-0000-000000000000"
+      kv_azl_local_admin_username: "Administrator"
+      kv_azl_local_admin_password: "azlocal-admin-password"
+      kv_azl_arbdeployment_spn_value: "sp-iic-azurelocal-deploy-secret"
+  key_vaults:
+    management:
+      name: "kv-iic-platform"
+      resource_group: "rg-iic-security-01"
+      subscription: "security"
+      secrets:
+        azlocal_admin_password: "azlocal-admin-password"
+        recovery_admin_password: "recovery-admin-password"
+        vpn_shared_key: "vpn-shared-key"
+    platform:
+      name: "kv-iic-platform"
+      resource_group: "rg-iic-security-01"
+      admin_object_id: "dddddddd-dddd-dddd-dddd-dddddddddddd"
+    secrets:
+      name: "kv-iic-secrets"
+  credentials:
+    domain_join_username: "IMPROBABLE\\svc.iic.domainjoin"
+    domain_join_password: "keyvault://kv-iic-platform/domain-join-password"
+    local_admin_password: "keyvault://kv-iic-platform/local-admin-password"
+    password: "keyvault://kv-iic-platform/default-password"
+  infrastructure_credentials:
+    idrac:
+      username: "root"
+      password_secret: "idrac-password"
+  defender: {}
+  sentinel: {}
+
+operations:
+  monitoring:
+    log_analytics:
+      workspace_id: "/subscriptions/55555555-5555-5555-5555-555555555555/resourceGroups/rg-iic-monitor-01/providers/Microsoft.OperationalInsights/workspaces/law-iic-monitor-01"
+      workspace_name: "law-iic-monitor-01"
+    wac:
+      server: "iic-wac01"
+    extended:
+      datadog:
+        api_key: "keyvault://kv-iic-platform/datadog-api-key"
+        site: "datadoghq.com"
+      scom:
+        server: "iic-scom01"
+  policy: {}
+  azure_update_manager: {}
+  bcdr: {}
+  scvmm: {}
+
+devops:
+  gitlab: {}
+  terraform: {}
+
+# =============================================================================
+# COMPATIBILITY ALIASES
+# =============================================================================
+solution:
+  name: "azure-local"
+  type: "azure_local"
+
+azure:
+  tenant:
+    id: "00000000-0000-0000-0000-000000000000"
+  subscription:
+    id: "11111111-1111-1111-1111-111111111111"
+    name: "sub-iic-lab"
+  subscriptions:
+    lab:
+      id: "11111111-1111-1111-1111-111111111111"
+      name: "sub-iic-lab"
+    demo:
+      id: "22222222-2222-2222-2222-222222222222"
+      name: "sub-iic-demo"
+    connectivity:
+      id: "44444444-4444-4444-4444-444444444444"
+      name: "sub-iic-connectivity"
+    security:
+      id: "55555555-5555-5555-5555-555555555555"
+      name: "sub-iic-security"
+    platform_connectivity:
+      name: "sub-iic-platform-connectivity"
+    platform_identity:
+      name: "sub-iic-platform-identity"
+    platform_management:
+      name: "sub-iic-platform-management"
+  management_groups:
+    platform:
+      id: "mg-iic-platform"
+    landing_zone:
+      name: "mg-iic-landing-zone"
+      display_name: "Landing Zone"
+    tenant_root:
+      name: "iic-root"
+  identity:
+    pim:
+      roles:
+        - "Owner"
+        - "Contributor"
+      eligible_duration_hours: 8
+    conditional_access:
+      policy: "require-mfa-admins"
+  location: "eastus"
+  region: "eastus"
+  region_abbreviation: "eus"
+  environment: "lab"
+  resource_group: "rg-iic-compute-01"
+  resource_group_name: "rg-iic-compute-01"
+  subscription_id: "11111111-1111-1111-1111-111111111111"
+
+platform:
+  kv_platform_name: "kv-iic-platform"
+  kv_platform_resource_group: "rg-iic-security-01"
+  cluster_name: "azlocal-iic-01"
+
+cluster:
+  arm_deployment:
+    cluster_name: "azlocal-iic-01"
+    ou_path: "OU=Clusters,OU=Servers,DC=iic,DC=local"
+  deployment:
+    arc_gateway:
+      name: "arcgw-iic-01"
+      resource_group: "rg-iic-arc-01"
+  location: "eastus"
+  management_nic_name: "NIC1"
+  nodes:
+    - "azl-iic-n01"
+    - "azl-iic-n02"
+
+azure_infrastructure:
+  resource_groups:
+    management:
+      name: "rg-iic-management-01"
+    network:
+      name: "rg-iic-network-01"
+    compute:
+      name: "rg-iic-compute-01"
+    identity:
+      name: "rg-iic-identity-01"
+    security:
+      name: "rg-iic-security-01"
+    monitoring:
+      name: "rg-iic-monitor-01"
+    connectivity:
+      name: "rg-iic-connectivity-01"
+    arc:
+      name: "rg-iic-arc-01"
+  networking:
+    hub_vnet:
+      name: "vnet-iic-hub-01"
+    vnet:
+      name: "vnet-iic-management-01"
+      address_prefix: "10.20.0.0/16"
+    subnets:
+      infrastructure:
+        name: "snet-iic-infrastructure"
+        address_prefix: "10.20.1.0/24"
+    nsgs:
+      infrastructure:
+        name: "nsg-iic-infrastructure"
+      lighthouse:
+        name: "nsg-iic-lighthouse"
+  key_vaults:
+    management:
+      name: "kv-iic-platform"
+      resource_group: "rg-iic-security-01"
+      subscription: "security"
+      secrets:
+        azlocal_admin_password: "azlocal-admin-password"
+        recovery_admin_password: "recovery-admin-password"
+        vpn_shared_key: "vpn-shared-key"
+    platform:
+      name: "kv-iic-platform"
+      resource_group: "rg-iic-security-01"
+      admin_object_id: "dddddddd-dddd-dddd-dddd-dddddddddddd"
+    secrets:
+      name: "kv-iic-secrets"
+  bastion:
+    name: "bas-iic-connectivity-01"
+    public_ip: "pip-iic-bastion-01"
+    resource_group: "rg-iic-connectivity-01"
+    subscription: "connectivity"
+    sku: "Standard"
+  log_analytics:
+    management:
+      name: "law-iic-monitor-01"
+      workspace_name: "law-iic-monitor-01"
+      resource_group: "rg-iic-monitor-01"
+      subscription: "platform_management"
+      retention_days: 90
+      sku: "PerGB2018"
+  monitoring:
+    log_analytics:
+      name: "law-iic-monitor-01"
+    sentinel_workspace:
+      name: "law-iic-sentinel-01"
+  security:
+    notification_email: "admin@improbability.cloud"
+  domain_controllers:
+    dc01:
+      ip_address: "10.20.1.10"
+    dc02:
+      ip_address: "10.20.1.11"
+  virtual_machines:
+    admin_username: "azlocaladmin"
+    admin_password: "keyvault://kv-iic-platform/azlocal-admin-password"
+    lighthouse:
+      nic_name: "nic-iic-lighthouse01"
+    syslog:
+      name: "vm-iic-syslog01"
+      ip_address: "10.20.1.50"
+
+azure_resources:
+  resource_group_name: "rg-iic-compute-01"
+  platform_connectivity: {}
+  platform_identity: {}
+  platform_management: {}
+
+azure_local:
+  cluster_name: "azlocal-iic-01"
+  cluster_node_count: 2
+  custom_location_name: "cl-iic-azlocal-01"
+
+azure_vms:
+  dc01:
+    name: "vm-iic-dc01"
+    hostname: "iic-dc01"
+    location: "eastus"
+    private_ip: "10.20.1.10"
+    resource_group: "rg-iic-compute-01"
+  dc02:
+    name: "vm-iic-dc02"
+    hostname: "iic-dc02"
+    location: "eastus"
+    private_ip: "10.20.1.11"
+    resource_group: "rg-iic-compute-01"
+  utility:
+    fqdn: "iic-util01.iic.local"
+    private_ip: "10.20.1.20"
+
+active_directory:
+  ad_domain_fqdn: "iic.local"
+  ad_netbios_name: "IMPROBABLE"
+  ad_clusters_ou_path: "OU=Clusters,OU=Servers,DC=iic,DC=local"
+  domain:
+    fqdn: "iic.local"
+  organizational_units:
+    servers: "OU=Servers,DC=iic,DC=local"
+
+accounts:
+  account_lcm_username: "lcm-iic-azl-clus01"
+  account_local_admin_username: "Administrator"
+  account_local_admin_password: "keyvault://kv-iic-platform/local-admin-password"
+
+credentials:
+  domain_join_password: "keyvault://kv-iic-platform/domain-join-password"
+
+backup:
+  vault_name: "rsv-iic-backup-01"
+  recovery_vault_name: "rsv-iic-backup-01"
+  mabs_server: "iic-mabs01"
+  server_name: "iic-mabs01"
+
+monitoring:
+  log_analytics_workspace_id: "/subscriptions/55555555-5555-5555-5555-555555555555/resourceGroups/rg-iic-monitor-01/providers/Microsoft.OperationalInsights/workspaces/law-iic-monitor-01"
+  log_analytics:
+    workspace_name: "law-iic-monitor-01"
+
+network:
+  management: {}
+  vlans:
+    management:
+      cidr: "192.168.203.0/24"
+      dhcp:
+        server: "192.168.10.5"
+    oob:
+      cidr: "10.245.64.0/24"
+      dhcp:
+        server: "192.168.10.5"
+  azure_vnets:
+    management:
+      name: "vnet-iic-management-01"
+      cidr: "10.20.0.0/16"
+      location: "eastus"
+      resource_group: "rg-iic-network-01"
+      subscription: "platform_management"
+      subnets:
+        bastion:
+          name: "AzureBastionSubnet"
+          cidr: "10.20.0.0/27"
+        gateway:
+          name: "GatewaySubnet"
+          cidr: "10.20.0.32/27"
+        management:
+          name: "snet-iic-management"
+          cidr: "10.20.1.0/24"
+        privateendpoints:
+          name: "snet-iic-privateendpoints"
+          cidr: "10.20.2.0/24"
+    cicd:
+      subnets:
+        cicd:
+          cidr: "10.30.1.0/24"
+  vpn:
+    azure_gateway:
+      name: "vpngw-iic-01"
+      public_ip: "pip-iic-vpngw-01"
+      resource_group: "rg-iic-connectivity-01"
+      sku: "VpnGw2AZ"
+      generation: "Generation2"
+      active_active: false
+      bgp:
+        enabled: false
+        asn: 65515
+    local_gateway:
+      name: "lng-iic-site01"
+      resource_group: "rg-iic-connectivity-01"
+      gateway_ip: "203.0.113.10"
+      local_address_prefixes:
+        - "10.0.0.0/24"
+        - "10.0.1.0/24"
+      bgp:
+        enabled: false
+        asn: 65010
+        bgp_peering_address: ""
+    connection:
+      name: "conn-iic-site01"
+      resource_group: "rg-iic-connectivity-01"
+      shared_key: "keyvault://kv-iic-platform/vpn-shared-key"
+      enable_bgp: false
+      routing_weight: 0
+    p2s:
+      address_pool:
+        - "172.16.250.0/24"
+      auth_type: "AzureCertificate"
+      root_cert_name: "iic-root-cert"
+      root_cert_secret: "keyvault://kv-iic-platform/p2s-root-cert"
+      tunnel_type: "OpenVPN"
+
+network_config:
+  management_nic_name: "NIC1"
+
+domain:
+  name: "iic.local"
+
+deployment:
+  admin_upn: "admin@improbability.cloud"
+
+hardware:
+  bios_settings: {}
+  idrac_settings: {}
+
+dns: {}
+
+nat_gateway:
+  idle_timeout: 4
+
+key_vault:
+  name: "kv-iic-platform"
+
+project:
+  name: "Azure Local Toolkit"
+
+b2b_configuration: {}
+
+nodes:
+  - name: "azl-iic-n01"
+    ipv4_address: "10.0.0.11"
+    bmc_address: "10.245.64.11"
+    serial_number: "ABC1234"
+  - name: "azl-iic-n02"
+    ipv4_address: "10.0.0.12"
+    bmc_address: "10.245.64.12"
+    serial_number: "ABC1235"
