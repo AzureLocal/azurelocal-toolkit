@@ -442,7 +442,6 @@ operations:
   policy: {}
   azure_update_manager: {}
   bcdr: {}
-  scvmm: {}
 
 devops:
   gitlab: {}

@@ -1,12 +1,12 @@
 # =============================================================================
-# Master Variable Registry - Azure Local Cloudnology Cloud Management Platform
+# Master Variable Registry - AzureLocal Cloud Team Cloud Management Platform
 # =============================================================================
 # Version: 4.0.0
 # Schema: variables.schema.json (v4.0.0)
 # Last Updated: 2026-03-05
 #
 # This file defines ALL variable names, types, and descriptions used across
-# the Azure Local Cloudnology Cloud Management Platform (AzureLocalCloud-CMP) and all
+# the AzureLocal Cloud Team Cloud Management Platform (AzureLocalCloud-CMP) and all
 # Azure Local environment repositories.
 #
 # STRUCTURE: 15 top-level sections organized hierarchically:
@@ -23,7 +23,7 @@
 #   11. cluster_shared_volumes - S2D CSV volumes and Azure storage path registration
 #   12. marketplace_images     - Azure Marketplace VM images registered to the cluster
 #   13. security               - Key Vault, Defender, Sentinel
-#   14. operations             - Monitoring, policy, patching, BCDR, SCVMM
+#   14. operations             - Monitoring, policy, patching, BCDR
 #   15. devops                 - GitLab, Terraform
 #
 # Naming: snake_case, ^[a-z][a-z0-9_]*$, max 50 chars
@@ -51,8 +51,8 @@
 #     - Source: Variable audit from 157 PowerShell scripts in azl-toolkit
 #
 #   v2.1.0 (2025-12-13):
-#     - Added: Hyper-V Host, Arc Resource Bridge for SCVMM, Arc Hybrid VMs
-#     - Added: WSFC enhancements, SCVMM enhancements, AVD cloud + Azure Local
+# - Added: Hyper-V Host, Arc Resource Bridge for Arc Hybrid VMs
+# - Added: WSFC enhancements enhancements, AVD cloud + Azure Local
 #
 #   v2.0.0 (2025-12-13):
 #     - BREAKING: Renamed all variables with consistent prefixes
@@ -71,7 +71,7 @@ _metadata:
   last_updated: "2026-03-05"
   total_variables: "970+"
   maintainers:
-    - name: "Azure Local Cloudnology Team"
+    - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
     - date: "2026-03-05"
@@ -135,32 +135,7 @@ infrastructure_scenarios:
         - vlans
         - dhcp
         - cluster_arm_deployment
-      conflicts_with:
-        - wsfc_s2d
-        - wsfc_san
       estimated_variables: "250-350"
-      
-    wsfc_s2d:
-      description: "Windows Server Failover Clustering with Storage Spaces Direct"
-      variable_groups:
-        - clusters
-        - cluster_nodes
-        - network_devices
-      conflicts_with:
-        - azure_local
-        - wsfc_san
-      estimated_variables: "250-350"
-      
-    wsfc_san:
-      description: "Windows Server Failover Clustering with SAN storage"
-      variable_groups:
-        - clusters
-        - cluster_nodes
-        - network_devices
-      conflicts_with:
-        - azure_local
-        - wsfc_s2d
-      estimated_variables: "200-300"
       
     avd_azure:
       description: "Azure Virtual Desktop in Azure cloud"
@@ -179,172 +154,34 @@ infrastructure_scenarios:
         - azure_local
       estimated_variables: "50-100"
       
-    scvmm:
-      description: "System Center Virtual Machine Manager integration"
-      variable_groups:
-        - scvmm
-        - arc_resource_bridge
-      conflicts_with: []
-      requires: []
-      estimated_variables: "30-50"
-      
-    arc_vms:
-      description: "Arc-enabled VMs (hybrid VM management)"
-      variable_groups:
-        - arc_hybrid_vms
-      conflicts_with: []
-      requires: []
-      estimated_variables: "20-40"
-      
-    hyperv_host:
-      description: "Standalone Hyper-V host (no cluster)"
-      variable_groups: []
-      conflicts_with:
-        - azure_local
-        - wsfc_s2d
-        - wsfc_san
-      estimated_variables: "150-250"
-      note: "Only shared variable groups included"
-      
-    arc_scvmm:
-      description: "Arc Resource Bridge for SCVMM"
-      variable_groups:
-        - arc_resource_bridge
-        - scvmm
-      conflicts_with: []
-      estimated_variables: "100-150"
-      
-    arc_hybrid_vms:
-      description: "Arc-enabled hybrid VMs (standalone Hyper-V, VMware, physical)"
-      variable_groups:
-        - arc_hybrid_vms
-      conflicts_with: []
-      estimated_variables: "100-150"
-      note: "NOT for Azure Local cluster VMs - use azure_local flag for those"
-      
-    azure_only:
-      description: "Azure cloud infrastructure only (no on-premises clusters)"
-      variable_groups: []
-      conflicts_with:
-        - azure_local
-        - wsfc_s2d
-        - wsfc_san
-      estimated_variables: "150-250"
-      note: "Only shared variable groups included"
+
+    sofs_azure_local:
+      name: "Scale-Out File Server on Azure Local"
+      description: "SOFS guest clusters on Azure Local for FSLogix profile storage"
+      status: active
+      solutions: ["sofs-azure-local"]
+    aks_azure_local:
+      name: "AKS on Azure Local"
+      description: "Azure Kubernetes Service hybrid clusters on Azure Local"
+      status: active
+      solutions: ["aks-azure-local"]
+    loadtools:
+      name: "Load Testing Tools"
+      description: "Performance and load testing tools for Azure Local workloads"
+      status: active
+      solutions: ["loadtools"]
+    vm_conversion:
+      name: "VM Conversion Toolkit"
+      description: "Tools for converting VMs between generations and formats on Azure Local"
+      status: active
+      solutions: ["vm-conversion"]
+    copilot:
+      name: "Azure Local Copilot"
+      description: "AI-assisted operations and management for Azure Local infrastructure"
+      status: active
+      solutions: ["copilot"]
 
 # =============================================================================
-# TABLE OF CONTENTS
-# =============================================================================
-# AZURE INFRASTRUCTURE
-#   - Azure Tenants & Configuration (azure_tenants)
-#   - Tenant Root Management Group (tenant_root)
-#   - Management Groups (management_groups)
-#   - Subscriptions (subscriptions)
-#   - Resource Groups (resource_groups)
-#
-# CLOUD NETWORKING
-#   - Hub/Spoke Networking (hub_spoke_networking)
-#   - Azure VNets (azure_vnets)
-#   - VPN (vpn)
-#   - Azure Bastion (bastion)
-#   - Azure Firewall (firewall)
-#
-# ON-PREMISES NETWORKING
-#   - VLANs (vlans)
-#   - DHCP (dhcp)
-#   - Network Devices (network_devices)
-#
-# AZURE VIRTUAL MACHINES
-#   - Domain Controllers (dc1, dc2, domain_controllers)
-#   - Jumpbox (jumpbox)
-#   - Windows Admin Center (wac)
-#   - Lighthouse Server (lighthouse)
-#   - Syslog/SNMP Server (syslog)
-#   - Shared VM Settings (vm_shared)
-#
-# CLUSTER NODES (GENERIC - SHARED INFRASTRUCTURE)
-#   - Physical Node Specifications (cluster_nodes)
-#   - Hardware, Network Adapters, Storage (cluster_nodes)
-#   - Used by BOTH Azure Local and WSFC (cluster_nodes)
-#
-# AZURE LOCAL CLUSTER
-#   - Cluster Configuration (azure_local)
-#   - Cluster ARM Deployment (cluster_arm_deployment)
-#   - Network Intents (network_intents)
-#   - Logical Networks (logical_networks)
-#   - Cluster Storage (azurelocal_cluster_storage)
-#   - SCVMM Integration (scvmm)
-#
-# HYPER-V HOST
-#   - Virtual Switch Configuration (hyperv)
-#   - Live Migration Settings (hyperv)
-#   - Advanced Host Settings (hyperv)
-#
-# AZURE ARC
-#   - Arc Resource Bridge for SCVMM (arc_resource_bridge)
-#   - Arc Hybrid VM Management (arc_hybrid_vms)
-#
-# WINDOWS SERVER FAILOVER CLUSTER (WSFC)
-#   - Cluster Configuration (wsfc)
-#   - OS Version Selection (wsfc)
-#   - Storage Architecture (wsfc_s2d, wsfc_san)
-#   - Network Configuration (wsfc)
-#   - CSV Settings (wsfc)
-#   - Quorum Configuration (wsfc)
-#   - Cluster Roles (wsfc)
-#
-# AZURE VIRTUAL DESKTOP
-#   - AVD in Azure Cloud (avd_azure)
-#   - AVD on Azure Local (avd_azure_local)
-#
-# IDENTITY & SECURITY
-#   - Accounts (accounts)
-#   - On-Premises (onprem)
-#   - Credentials (credentials)
-#   - Active Directory (active_directory)
-#   - Service Principals & PIM (service_principals, pim)
-#   - Security & Compliance (security)
-#   - B2B Cross-Tenant Synchronization (b2b_configuration) **NEW v2.2.0**
-#
-# KEY VAULT
-#   - CMP Platform Key Vault (cmp_platform_keyvault)
-#   - Platform Key Vault (platform_keyvault)
-#   - Azure Local Deployment Key Vault (azurelocal_deployment_keyvault)
-#
-# MONITORING & OPERATIONS
-#   - Environment (environment)
-#   - Site (site)
-#   - Tags (tags)
-#   - Monitoring & Log Analytics (monitoring)
-#   - Extended Monitoring (monitoring_extended) **NEW v2.2.0**
-#   - Data Collection Rules (data_collection)
-#   - Azure Policy (policy)
-#   - Azure Update Manager (maintenance)
-#   - Backup & Disaster Recovery (backup)
-#   - GitLab CI/CD (gitlab) **NEW v2.2.0**
-#
-# NETWORKING (ADDITIONAL)
-#   - Network Config (network_config) **NEW v2.2.0**
-#   - Cluster Networking (cluster_networking) **NEW v2.2.0**
-#
-# CLUSTER CONFIGURATION (ADDITIONAL)
-#   - Cluster Config (cluster_config) **NEW v2.2.0**
-#
-# AZURE ARC (ADDITIONAL)
-#   - Arc Resource Bridge (arc_resource_bridge) **NEW v2.2.0**
-#
-# STORAGE & RESOURCES
-#   - Storage (storage)
-#   - Microsoft Defender for Cloud & Security (defender)
-#
-# HARDWARE
-#   - Hardware (hardware)
-#
-# MISCELLANEOUS
-#   - Alert, Automation, Azure, Break, Breakglass, Cloud, Cluster
-#   - Cost, CSV, DCR, Defender, Deployment, Metrics, Patch
-#   - Platform, Recovery, Service, Soft, SPN, TF
-
 # =============================================================================
 # 3. SITE
 # =============================================================================
@@ -421,7 +258,7 @@ site:
     type: string
     description: "Site owner"
     required: true
-    example: "Azure Local Cloudnology Team"
+    example: "AzureLocal Cloud Team Team"
 
   # ─── short-form aliases (canonical nested convenience keys) ───
   name:
@@ -434,7 +271,7 @@ site:
     type: string
     description: "Site owner (short alias for site_owner)"
     required: false
-    example: "Azure Local Cloudnology Team"
+    example: "AzureLocal Cloud Team Team"
 
   environment:
     type: string
@@ -446,7 +283,7 @@ site:
     type: string
     description: "Customer or tenant name associated with the site"
     required: false
-    example: "Infinite Improbability Corp"
+    example: "contoso"
 
   # ─── hardware (absorbed from dissolved hardware_support) ───
   hardware:
@@ -560,7 +397,7 @@ environment:
     type: string
     description: "Environment description"
     required: false
-    example: "Azure Local Cloudnology Cloud Management Platform"
+    example: "AzureLocal Cloud Team Cloud Management Platform"
 
 # =============================================================================
 # 5. TAGS
@@ -592,7 +429,7 @@ tags:
     - "Azure Local Cloud Demos"
     - "Azure Local Cloud POC"
     - "Azure Local Cloud Product Labs"
-    example: "Azure Local Cloudnology Cloud Management Platform"
+    example: "AzureLocal Cloud Team Cloud Management Platform"
 
   ManagedBy:
     type: string
@@ -611,7 +448,7 @@ tags:
     type: string
     description: "Owner tag"
     required: true
-    example: "Azure Local Cloudnology Team"
+    example: "AzureLocal Cloud Team Team"
 
   CostCenter:
     type: string
@@ -632,13 +469,13 @@ tags:
     type: string
     description: "Owner tag (lowercase alias for env_Owner)"
     required: false
-    example: "Azure Local Cloudnology Team"
+    example: "AzureLocal Cloud Team Team"
 
   Owner:
     type: string
     description: "Owner tag (PascalCase alias for env_Owner)"
     required: false
-    example: "Azure Local Cloudnology Team"
+    example: "AzureLocal Cloud Team Team"
 
   environment:
     type: string
@@ -1210,7 +1047,7 @@ azure_platform:
 
     rg_azurelocal_arc:
       type: string
-      description: "Azure Local Arc resource group - Arc-enabled infrastructure (SCVMM, Arc VMs)"
+      description: "Azure Local Arc resource group - Arc-enabled infrastructure (Arc VMs)"
       required: false
       pattern: "^rg-[a-z0-9]+-(AzureLocalCloud|demo|poc|lab)-[a-z0-9]+-(azurelocal)-arc$"
       example: "rg-azlc-AzureLocalCloud-eus-azurelocal-arc"
@@ -4344,9 +4181,9 @@ networking:
   onprem:
     # ─── vlans ───
     vlans:
-      infrastructure_type: ["azure_local", "wsfc_s2d", "wsfc_san"]
+      infrastructure_type: ["azure_local"]
       _meta:
-        solutions: ["azure-local", "wsfc-s2d", "wsfc-san", "sofs-azure-local"]
+        solutions: ["azure-local", "sofs-azure-local"]
         tier: required
         description: "VLAN assignments for on-premises networking"
       # ---------------------------------------------------------------------------
@@ -4824,9 +4661,9 @@ networking:
 
     # ─── dhcp ───
     dhcp:
-      infrastructure_type: ["azure_local", "wsfc_s2d", "wsfc_san"]
+      infrastructure_type: ["azure_local"]
       _meta:
-        solutions: ["azure-local", "wsfc-s2d", "wsfc-san"]
+        solutions: ["azure-local"]
         tier: optional
         description: "DHCP service configuration"
       # ---------------------------------------------------------------------------
@@ -5993,9 +5830,9 @@ networking:
             immutable: false
     # ─── network_devices ───
     network_devices:
-      infrastructure_type: ["wsfc_s2d", "wsfc_san"]
+      infrastructure_type: []
       _meta:
-        solutions: ["wsfc-s2d", "wsfc-san"]
+        solutions: []
         tier: optional
         description: "Network infrastructure devices (switches, firewalls, routers)"
 
@@ -7330,82 +7167,13 @@ compute:
             ManagedBy: "Terraform"
             CostCenter: "IT-Infrastructure"
             Workload: "Infrastructure"
-    # ─── arc_hybrid ───
+    # ─── arc_hybrid (placeholder for Arc-enabled hybrid VM onboarding) ───
     arc_hybrid:
-      infrastructure_type: ["arc_hybrid_vms"]
+      infrastructure_type: ["azure_local"]
       _meta:
-        solutions: ["arc-hybrid-vms"]
+        solutions: ["azure-local"]
         tier: optional
-        description: "Arc-enabled hybrid VM onboarding (Hyper-V, VMware, SCVMM, physical servers)"
-      # Arc Onboarding Configuration
-      arc_onboard_hyperv_vms:
-        type: boolean
-        description: "Enable Arc onboarding for standalone Hyper-V VMs (NOT Azure Local cluster VMs)"
-        required: false
-        default: false
-        note: "Installs Connected Machine agent for Hyper-V VMs not managed by Azure Local cluster"
-        reference: "https://learn.microsoft.com/azure/azure-arc/servers/overview"
-
-      arc_onboard_vmware_vms:
-        type: boolean
-        description: "Enable Arc onboarding for VMware vSphere VMs"
-        required: false
-        default: false
-        note: "Requires Arc Resource Bridge for vSphere (separate from SCVMM). Supports vSphere 7.0/8.0, up to 9,500 VMs."
-        reference: "https://learn.microsoft.com/azure/azure-arc/vmware-vsphere/overview"
-
-      arc_onboard_physical_servers:
-        type: boolean
-        description: "Enable Arc onboarding for physical servers (bare-metal Windows Server or Linux)"
-        required: false
-        default: false
-
-      # Arc VM Extensions
-      arc_vm_extensions:
-        type: array
-        description: "VM extensions to deploy on Arc-enabled machines"
-        required: false
-        default: []
-        allowedValues:
-        - MicrosoftMonitoringAgent
-        - AzureMonitorAgent
-        - DependencyAgent
-        - AzurePolicyforWindows
-        - AzurePolicyforLinux
-        - CustomScriptExtension
-        - DSC
-        example:
-        - AzureMonitorAgent
-        - DependencyAgent
-        - AzurePolicyforWindows
-
-      # Arc Management Services
-      arc_update_management_enabled:
-        type: boolean
-        description: "Enable Azure Update Manager for Arc-enabled machines (manage OS updates for Windows and Linux servers)"
-        required: false
-        default: true
-
-      arc_defender_enabled:
-        type: boolean
-        description: "Enable Microsoft Defender for Cloud integration (threat detection and vulnerability management)"
-        required: false
-        default: true
-
-      arc_vm_insights_enabled:
-        type: boolean
-        description: "Enable VM Insights for performance monitoring (collects performance data and application dependencies)"
-        required: false
-        default: false
-
-      arc_guest_configuration_enabled:
-        type: boolean
-        description: "Enable Azure Machine Configuration for guest configuration policies (audit settings inside Arc-enabled machines)"
-        required: false
-        default: false
-  # ═══════════════════════════════════════
-  # CLUSTERS
-  # ═══════════════════════════════════════
+        description: "Arc-enabled hybrid VM onboarding (reserved for future use)"
   clusters:
 
     # ===========================================================================
@@ -7771,9 +7539,9 @@ compute:
       #   - failover_cluster: (line 8656+) - Legacy failover cluster variables
 
     wsfc:
-      infrastructure_type: ["wsfc_s2d", "wsfc_san"]
+      infrastructure_type: ["sofs_azure_local"]
       _meta:
-        solutions: ["wsfc-s2d", "wsfc-san", "sofs-azure-local"]
+        solutions: ["sofs-azure-local"]
         tier: required
         description: "Windows Server Failover Cluster (S2D or SAN) configuration"
       # -------------------------------------------------------------------------
@@ -7800,14 +7568,14 @@ compute:
         description: "Active Directory domain FQDN for cluster"
         required: true
         format: fqdn
-        example: "corp.Infinite Improbability Corp.com"
+        example: "corp.contoso.com"
 
       wsfc_ou_path:
         type: string
         description: "Active Directory OU path for cluster objects"
         required: false
         format: ldap_dn
-        example: "OU=Clusters,OU=Servers,DC=corp,DC=Infinite Improbability Corp,DC=com"
+        example: "OU=Clusters,OU=Servers,DC=corp,DC=contoso,DC=com"
 
       wsfc_description:
         type: string
@@ -7888,329 +7656,6 @@ compute:
         - san
         - hybrid
         example: "s2d"
-
-      # STORAGE SPACES DIRECT (S2D) CONFIGURATION
-      # ---------------------------------------------------------------------------
-      wsfc_s2d_enabled:
-        type: boolean
-        description: "Enable Storage Spaces Direct (requires wsfc_storage_type = s2d)"
-        required: false
-        depends_on:
-        - variable: "wsfc_storage_type"
-          value: "s2d"
-        default: false
-
-      wsfc_s2d_cache_mode:
-        type: string
-        description: "S2D cache tier behavior (ReadWrite: cache reads and writes, ReadOnly: cache reads only, WriteOnly: cache writes only)"
-        required: false
-        depends_on:
-        - variable: "wsfc_s2d_enabled"
-          value: true
-        allowedValues:
-        - ReadWrite
-        - ReadOnly
-        - WriteOnly
-        default: "ReadWrite"
-
-      wsfc_s2d_cache_page_size_kbytes:
-        type: integer
-        description: "S2D cache page size in KB (8, 16, 32, or 64)"
-        required: false
-        depends_on:
-        - variable: "wsfc_s2d_enabled"
-          value: true
-        allowedValues:
-        - 8
-        - 16
-        - 32
-        - 64
-        default: 16
-
-      wsfc_s2d_resiliency_default:
-        type: string
-        description: "Default resiliency setting for S2D volumes"
-        required: false
-        depends_on:
-        - variable: "wsfc_s2d_enabled"
-          value: true
-        allowedValues:
-        - Mirror
-        - Parity
-        - MirrorAcceleratedParity
-        default: "Mirror"
-
-      wsfc_s2d_mirror_resiliency_type:
-        type: string
-        description: "Mirror resiliency type (TwoWay: 2-copy mirror, ThreeWay: 3-copy mirror)"
-        required: false
-        depends_on:
-        - variable: "wsfc_s2d_enabled"
-          value: true
-        allowedValues:
-        - TwoWay
-        - ThreeWay
-        default: "TwoWay"
-        note: "ThreeWay requires minimum 5 nodes"
-
-      wsfc_s2d_filesystem:
-        type: string
-        description: "Default filesystem for S2D volumes (ReFS recommended for S2D)"
-        required: false
-        depends_on:
-        - variable: "wsfc_s2d_enabled"
-          value: true
-        allowedValues:
-        - ReFS
-        - NTFS
-        default: "ReFS"
-
-      wsfc_s2d_cache_metadata_reserve_gb:
-        type: integer
-        description: "Cache metadata reserve in GB (1-100)"
-        required: false
-        depends_on:
-        - variable: "wsfc_s2d_enabled"
-          value: true
-        minimum: 1
-        maximum: 100
-        default: 1
-
-      # STORAGE SPACES DIRECT - PHYSICAL DRIVES
-      # ---------------------------------------------------------------------------
-      wsfc_s2d_cache_drive_type:
-        type: string
-        description: "Physical cache drive type for S2D"
-        required: false
-        depends_on:
-        - variable: "wsfc_s2d_enabled"
-          value: true
-        allowedValues:
-        - SSD
-        - NVMe
-        example: "SSD"
-
-      wsfc_s2d_cache_drives_per_node:
-        type: integer
-        description: "Number of cache drives per node"
-        required: false
-        depends_on:
-        - variable: "wsfc_s2d_enabled"
-          value: true
-        minimum: 1
-        maximum: 16
-        example: 2
-
-      wsfc_s2d_cache_drive_size_gb:
-        type: integer
-        description: "Size of each cache drive in GB"
-        required: false
-        depends_on:
-        - variable: "wsfc_s2d_enabled"
-          value: true
-        minimum: 128
-        maximum: 8192
-        example: 960
-
-      wsfc_s2d_capacity_drive_type:
-        type: string
-        description: "Physical capacity drive type for S2D"
-        required: false
-        depends_on:
-        - variable: "wsfc_s2d_enabled"
-          value: true
-        allowedValues:
-        - HDD
-        - SSD
-        - NVMe
-        example: "HDD"
-
-      wsfc_s2d_capacity_drives_per_node:
-        type: integer
-        description: "Number of capacity drives per node"
-        required: false
-        depends_on:
-        - variable: "wsfc_s2d_enabled"
-          value: true
-        minimum: 4
-        maximum: 64
-        example: 8
-
-      wsfc_s2d_capacity_drive_size_gb:
-        type: integer
-        description: "Size of each capacity drive in GB"
-        required: false
-        depends_on:
-        - variable: "wsfc_s2d_enabled"
-          value: true
-        minimum: 1000
-        maximum: 16384
-        example: 4000
-
-      # SAN STORAGE CONFIGURATION
-      # ---------------------------------------------------------------------------
-      wsfc_san_enabled:
-        type: boolean
-        description: "Enable SAN/shared storage (requires wsfc_storage_type = san)"
-        required: false
-        depends_on:
-        - variable: "wsfc_storage_type"
-          value: "san"
-        default: false
-
-      wsfc_san_connection_type:
-        type: string
-        description: "SAN connection type"
-        required: false
-        depends_on:
-        - variable: "wsfc_san_enabled"
-          value: true
-        allowedValues:
-        - iscsi
-        - fibre_channel
-        - fcoe
-        example: "iscsi"
-
-      wsfc_san_vendor:
-        type: string
-        description: "SAN vendor/manufacturer"
-        required: false
-        depends_on:
-        - variable: "wsfc_san_enabled"
-          value: true
-        example: "Dell EMC"
-
-      wsfc_san_model:
-        type: string
-        description: "SAN model/array type"
-        required: false
-        depends_on:
-        - variable: "wsfc_san_enabled"
-          value: true
-        example: "PowerStore 500T"
-
-      wsfc_san_mpio_enabled:
-        type: boolean
-        description: "Enable Multipath I/O (MPIO) for SAN connections"
-        required: false
-        depends_on:
-        - variable: "wsfc_san_enabled"
-          value: true
-        default: true
-
-      wsfc_san_mpio_policy:
-        type: string
-        description: "MPIO load balancing policy"
-        required: false
-        depends_on:
-        - variable: "wsfc_san_mpio_enabled"
-          value: true
-        allowedValues:
-        - RoundRobin
-        - LeastQueueDepth
-        - WeightedPaths
-        - FailOver
-        default: "RoundRobin"
-
-      # iSCSI Configuration
-      wsfc_san_iscsi_target_portal:
-        type: string
-        description: "iSCSI target portal IP address"
-        required: false
-        depends_on:
-        - variable: "wsfc_san_connection_type"
-          value: "iscsi"
-        format: ipv4
-        example: "192.168.100.10"
-
-      wsfc_san_iscsi_target_iqn:
-        type: string
-        description: "iSCSI target IQN (iSCSI Qualified Name)"
-        required: false
-        depends_on:
-        - variable: "wsfc_san_connection_type"
-          value: "iscsi"
-        pattern: "^iqn\\.[0-9]{4}-[0-9]{2}\\.[a-z0-9.-]+:[a-z0-9.-]+$"
-        example: "iqn.1992-04.com.emc:storage.array.12345"
-
-      wsfc_san_iscsi_port:
-        type: integer
-        description: "iSCSI target port (default 3260)"
-        required: false
-        depends_on:
-        - variable: "wsfc_san_connection_type"
-          value: "iscsi"
-        default: 3260
-
-      wsfc_san_iscsi_chap_enabled:
-        type: boolean
-        description: "Enable CHAP authentication for iSCSI"
-        required: false
-        depends_on:
-        - variable: "wsfc_san_connection_type"
-          value: "iscsi"
-        default: true
-
-      # Fibre Channel Configuration
-      wsfc_san_fc_hba_count:
-        type: integer
-        description: "Number of Fibre Channel HBAs per node"
-        required: false
-        depends_on:
-        - variable: "wsfc_san_connection_type"
-          value: "fibre_channel"
-        minimum: 1
-        maximum: 4
-        example: 2
-
-      wsfc_san_fc_fabric_type:
-        type: string
-        description: "Fibre Channel fabric topology"
-        required: false
-        depends_on:
-        - variable: "wsfc_san_connection_type"
-          value: "fibre_channel"
-        allowedValues:
-        - single_fabric
-        - dual_fabric
-        default: "dual_fabric"
-
-      # SAN LUN Configuration
-      wsfc_san_luns:
-        type: array
-        description: "Array of SAN LUNs for cluster storage"
-        required: false
-        depends_on:
-          - variable: "wsfc_san_enabled"
-            value: true
-        items:
-          type: object
-          properties:
-            lun_id:
-              type: integer
-              description: "LUN ID"
-            lun_name:
-              type: string
-              description: "LUN name/label"
-            size_gb:
-              type: integer
-              description: "LUN size in GB"
-            purpose:
-              type: string
-              description: "LUN purpose (quorum, csv, vm_storage)"
-          example:
-            - lun_id: 0
-              lun_name: "cluster-quorum"
-              size_gb: 10
-              purpose: "quorum"
-            - lun_id: 1
-              lun_name: "csv-volume1"
-              size_gb: 2000
-              purpose: "csv"
-
-      # ---------------------------------------------------------------------------
-      # CLUSTER NETWORKING
-      # ---------------------------------------------------------------------------
       wsfc_network_priority:
         type: array
         description: "Network priority order for cluster communications (1=highest)"
@@ -8224,12 +7669,6 @@ compute:
       wsfc_csv_network:
         type: string
         description: "Preferred network for CSV traffic"
-        required: false
-        example: "Storage-1"
-
-      wsfc_live_migration_network:
-        type: string
-        description: "Preferred network for live migration traffic"
         required: false
         example: "Storage-1"
 
@@ -8354,96 +7793,6 @@ compute:
         format: url
         default: "core.windows.net"
         example: "core.usgovcloudapi.net"
-
-      # ---------------------------------------------------------------------------
-      # CLUSTER ROLES AND SERVICES
-      # ---------------------------------------------------------------------------
-      wsfc_hyperv_role_enabled:
-        type: boolean
-        description: "Enable Hyper-V role on cluster nodes"
-        required: false
-        default: false
-
-      # Hyper-V Virtual Switch Configuration (when wsfc_hyperv_role_enabled = true)
-      wsfc_virtual_switch_name:
-        type: string
-        description: "Name of the Hyper-V virtual switch for VM connectivity"
-        required: false
-        depends_on:
-        - variable: "wsfc_hyperv_role_enabled"
-          value: true
-        pattern: "^[a-zA-Z0-9-_]{1,64}$"
-        default: "DefaultSwitch"
-        example: "External-vSwitch-01"
-
-      wsfc_virtual_switch_type:
-        type: string
-        description: "Type of virtual switch (External, Internal, Private)"
-        required: false
-        depends_on:
-        - variable: "wsfc_hyperv_role_enabled"
-          value: true
-        allowedValues:
-        - External
-        - Internal
-        - Private
-        default: "External"
-
-      # Hyper-V Live Migration Configuration
-      wsfc_live_migration_enabled:
-        type: boolean
-        description: "Enable live migration for VMs"
-        required: false
-        depends_on:
-        - variable: "wsfc_hyperv_role_enabled"
-          value: true
-        default: true
-
-      wsfc_live_migration_auth:
-        type: string
-        description: "Authentication protocol for live migration (Kerberos recommended for security)"
-        required: false
-        depends_on:
-        - variable: "wsfc_hyperv_role_enabled"
-          value: true
-        allowedValues:
-        - CredSSP
-        - Kerberos
-        default: "Kerberos"
-
-      wsfc_live_migration_performance:
-        type: string
-        description: "Network protocol for live migration performance (SMB provides best performance with RDMA)"
-        required: false
-        depends_on:
-        - variable: "wsfc_hyperv_role_enabled"
-          value: true
-        allowedValues:
-        - TCP/IP
-        - Compression
-        - SMB
-        default: "SMB"
-
-      # Hyper-V Advanced Host Settings
-      wsfc_numa_spanning:
-        type: boolean
-        description: "Allow VMs to span multiple NUMA nodes (enable only if workload requires more memory than single NUMA node)"
-        required: false
-        depends_on:
-        - variable: "wsfc_hyperv_role_enabled"
-          value: true
-        default: false
-
-      wsfc_storage_qos_enabled:
-        type: boolean
-        description: "Enable Storage Quality of Service for IOPS management"
-        required: false
-        depends_on:
-        - variable: "wsfc_hyperv_role_enabled"
-          value: true
-        default: true
-
-      # --- SOFS ROLE ---
       _meta_sofs:
         solutions: ["sofs-azure-local"]
         tier: required
@@ -8850,6 +8199,37 @@ compute:
       # ---------------------------------------------------------------------------
       # SOFS DEPLOYMENT ENGINE (Phase 2 Guest Config)
       # ---------------------------------------------------------------------------
+
+
+      wsfc_sofs_domain_join_account:
+        type: string
+        description: "Service account for domain join operations (UPN or DOMAIN\\user format)"
+        required: true
+        depends_on:
+        - variable: "wsfc_sofs_role_enabled"
+          value: true
+        example: "svc.azl.local"
+
+      wsfc_sofs_domain_ou_cluster:
+        type: string
+        description: "Active Directory OU path for SOFS cluster computer objects"
+        required: false
+        depends_on:
+        - variable: "wsfc_sofs_role_enabled"
+          value: true
+        format: ldap_dn
+        example: "OU=SOFS-Cluster,OU=Clusters,DC=corp,DC=contoso,DC=com"
+
+      wsfc_sofs_domain_ou_nodes:
+        type: string
+        description: "Active Directory OU path for SOFS cluster node computer objects"
+        required: false
+        depends_on:
+        - variable: "wsfc_sofs_role_enabled"
+          value: true
+        format: ldap_dn
+        example: "OU=SOFS-Nodes,OU=Clusters,DC=corp,DC=contoso,DC=com"
+
       wsfc_sofs_guest_config_engine:
         type: string
         description: "Phase 2 guest OS config engine: powershell (PSRemoting), ansible_create (new Linux controller VM), ansible_existing (reuse existing controller)"
@@ -9078,26 +8458,6 @@ compute:
         minimum: 5
         maximum: 120
         default: 30
-
-      # ---------------------------------------------------------------------------
-      # INTEGRATION & MANAGEMENT
-      # ---------------------------------------------------------------------------
-      wsfc_scvmm_managed:
-        type: boolean
-        description: "Cluster managed by System Center VMM"
-        required: false
-        default: false
-
-      wsfc_scvmm_server:
-        type: string
-        description: "SCVMM management server FQDN"
-        required: false
-        depends_on:
-        - variable: "wsfc_scvmm_managed"
-          value: true
-        format: fqdn
-        example: "scvmm.corp.Infinite Improbability Corp.com"
-
       wsfc_tags:
         type: object
         description: "Custom tags for cluster resources"
@@ -9153,9 +8513,9 @@ compute:
   #   credentials.cluster.cloud_witness_storage_key (keyvault:// URI)
 
   cluster_witness:
-    infrastructure_type: ["azure_local", "wsfc_s2d", "wsfc_san", "hyperv"]
+    infrastructure_type: ["azure_local"]
     _meta:
-      solutions: ["azure-local", "wsfc-s2d", "wsfc-san"]
+      solutions: ["azure-local"]
       tier: required
       description: "Cluster witness configuration (cloud witness, file share, or disk)"
 
@@ -9189,7 +8549,7 @@ compute:
       depends_on:
       - variable: "cluster_witness_type"
         value: "disk_witness"
-      note: "Incompatible with S2D (wsfc_s2d, azure_local). Use cloud_witness or file_share_witness instead."
+      note: "Incompatible with S2D (azure_local). Use cloud_witness or file_share_witness instead."
       example: "Cluster Disk 3"
 
   # =============================================================================
@@ -9225,9 +8585,9 @@ compute:
     # ─── Use storage_accounts.storage_accounts.cluster_witness.name instead ───
   # ─── cluster_nodes ───
   cluster_nodes:
-    infrastructure_type: ["azure_local", "wsfc_s2d", "wsfc_san"]
+    infrastructure_type: ["azure_local"]
     _meta:
-      solutions: ["azure-local", "wsfc-s2d", "wsfc-san"]
+      solutions: ["azure-local"]
       tier: required
       description: "Physical cluster node definitions (hostname, IPs, hardware)"
     description: "Array of cluster node configurations (generic, used by both Azure Local and WSFC)"
@@ -10699,7 +10059,7 @@ compute:
         type: string
         description: "Friendly display name for the workspace shown to end users in AVD client"
         required: false
-        example: "Infinite Improbability Corp - Desktops"
+        example: "contoso - Desktops"
 
 # =============================================================================
 # 10. STORAGE ACCOUNTS
@@ -10827,7 +10187,7 @@ storage_accounts:
   # Access key stored in Key Vault — see credentials.cluster.cloud_witness_storage_key
   # ────────────────────────────────────────────────────────────────────────────────
   cluster_witness:
-    infrastructure_type: ["azure_local", "wsfc_s2d", "wsfc_san"]
+    infrastructure_type: ["azure_local"]
     description: "Cloud witness storage account for cluster quorum — shared across all cluster types (Azure Local, WSFC, Hyper-V)"
     type: object
     required: false
@@ -11085,7 +10445,7 @@ cluster_shared_volumes:
           - Parity
           - MirrorAcceleratedParity
           default: "Mirror"
-          note: "ThreeWay mirror is set via wsfc_s2d_mirror_resiliency_type; Mirror here selects the resiliency class"
+          note: "ThreeWay mirror is set via mirror_resiliency_type; Mirror here selects the resiliency class"
         path:
           type: string
           description: "Full UNC-style local path to the CSV mount point"
@@ -13078,140 +12438,6 @@ operations:
       description: "Soft delete retention days"
       required: true
       example: "90"
-  # ─── scvmm ───
-  scvmm:
-    infrastructure_type: ["arc_scvmm"]
-    _meta:
-      solutions: ["arc-scvmm"]
-      tier: optional
-      description: "System Center VMM Arc integration"
-    scvmm_server_name:
-      type: string
-      description: "SCVMM server name"
-      required: false
-      example: "scvmm01.azlocal.mgmt"
-
-    scvmm_cloud_name:
-      type: string
-      description: "SCVMM cloud name"
-      required: false
-      example: "AzureLocalCloud"
-
-    scvmm_arc_enabled:
-      type: boolean
-      description: "SCVMM Arc integration enabled"
-      required: false
-      default: false
-
-    scvmm_port:
-      type: integer
-      description: "SCVMM server port"
-      required: false
-      minimum: 1
-      maximum: 65535
-      default: 8100
-
-    scvmm_library_share_path:
-      type: string
-      description: "UNC path to SCVMM library share for VM templates, ISOs, VHDs"
-      required: false
-      pattern: "^\\\\\\\\[a-zA-Z0-9.-]+\\\\[a-zA-Z0-9_$-]+$"
-      example: "\\\\scvmm-server\\Library"
-      note: "Library share stores VM templates, ISOs, VHDs"
-
-    scvmm_run_as_account:
-      type: string
-      description: "SCVMM Run As account for automation (service account with SCVMM Administrator role)"
-      required: false
-      example: "domain\\scvmm-svc"
-
-    scvmm_use_ssl:
-      type: boolean
-      description: "Use SSL for SCVMM server connection (recommended for secure communication)"
-      required: false
-      default: true
-    # ─── arc_resource_bridge (absorbed, also referenced in identity.accounts.service_principals.spn_arb) ───
-    arc_resource_bridge:
-      infrastructure_type: ["arc_scvmm"]
-      arb_scvmm_enabled:
-        type: boolean
-        description: "Deploy Arc Resource Bridge for SCVMM integration (required for Azure Arc-enabled SCVMM)"
-        required: false
-        default: false
-        note: "Supports VMM 2019/2022/2025, up to 15,000 VMs. Kubernetes-based virtual appliance."
-        reference: "https://learn.microsoft.com/azure/azure-arc/system-center-virtual-machine-manager/overview"
-
-      arb_scvmm_name:
-        type: string
-        description: "Name of Arc Resource Bridge appliance VM"
-        required: false
-        pattern: "^[a-z0-9-]{3,24}$"
-        default: "arc-resource-bridge"
-        example: "arb-scvmm-prod-01"
-
-      arb_scvmm_resource_group:
-        type: string
-        description: "Azure resource group for Arc Resource Bridge resources"
-        required: false
-        default: "rg-arc-resource-bridge"
-        example: "rg-azlc-AzureLocalCloud-eus-arc-scvmm"
-
-      arb_scvmm_location:
-        type: string
-        description: "Azure region for Arc Resource Bridge metadata (20+ regions supported)"
-        required: false
-        allowedValues:
-        - East US
-        - East US 2
-        - West US 2
-        - West US 3
-        - Central US
-        - North Europe
-        - West Europe
-        - UK South
-        - Southeast Asia
-        - Australia East
-        default: "East US"
-
-      arb_scvmm_custom_location_name:
-        type: string
-        description: "Custom location name mapping to SCVMM cloud (represents connection to specific SCVMM cloud)"
-        required: false
-        default: "scvmm-custom-location"
-        example: "scvmm-production-cloud"
-
-      # Service Principal Configuration
-      arb_service_principal_app_id:
-        category: "identity"
-        subcategory: "arc-resource-bridge"
-        type: string
-        description: "Arc Resource Bridge service principal application ID"
-        required: false
-        format: uuid
-        example: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-  
-      arb_service_principal_object_id:
-        category: "identity"
-        subcategory: "arc-resource-bridge"
-        type: string
-        description: "Arc Resource Bridge service principal object ID"
-        required: false
-        format: uuid
-        example: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-  
-      hci_resource_provider_object_id:
-        category: "identity"
-        subcategory: "arc-resource-bridge"
-        type: string
-        description: "Azure Stack HCI resource provider object ID"
-        required: false
-        format: uuid
-        example: "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-        note: "Required for RBAC assignments during cluster deployment"
-
-# =============================================================================
-# 15. DEVOPS
-# =============================================================================
 devops:
   # ─── gitlab ───
   gitlab:
