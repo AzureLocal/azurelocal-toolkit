@@ -8,7 +8,7 @@
     section of the configuration.
 
 .PARAMETER Solution
-    The solution name (e.g., "azure-local", "failover-clusters-scvmm").
+    The solution name (e.g., "azure-local").
 
 .PARAMETER ResourceGroupFilter
     Optional. Filter to create only specific resource groups.
@@ -35,7 +35,7 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("azure-local", "failover-clusters-scvmm", "scvmm-azure-arc", "azure-arc-servers")]
+    [ValidateSet("azure-local", "azure-arc-servers")]
     [string]$Solution,
 
     [Parameter(Mandatory = $false)]

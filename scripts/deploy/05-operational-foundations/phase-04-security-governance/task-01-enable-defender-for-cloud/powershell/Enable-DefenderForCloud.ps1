@@ -22,7 +22,7 @@
     .\Enable-DefenderForCloud.ps1 -SubscriptionId "00000000-0000-0000-0000-000000000000"
 
 .NOTES
-    Author: Azure Local Cloudnology Team
+    Author: AzureLocal Cloud Team Team
     Version: 1.0.0
     Stage: 05-operational-foundations
     Phase: phase-04-security-governance

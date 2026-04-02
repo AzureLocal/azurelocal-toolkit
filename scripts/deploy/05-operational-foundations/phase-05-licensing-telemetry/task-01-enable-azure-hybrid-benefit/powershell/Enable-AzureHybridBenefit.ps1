@@ -19,7 +19,7 @@
     .\Enable-AzureHybridBenefit.ps1 -ResourceGroupName "rg-azurelocal-prod"
 
 .NOTES
-    Author: Azure Local Cloudnology Team
+    Author: AzureLocal Cloud Team Team
     Version: 1.0.0
     Stage: 05-operational-foundations
     Phase: phase-05-licensing-telemetry

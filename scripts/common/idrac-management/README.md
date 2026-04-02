@@ -199,8 +199,8 @@ Planned additions to this utility module:
 
 **Version Control**
 
-- Created: 2026-01-20 by Azure Local Cloudnology Team
-- Last Edited: 2026-03-28 by Azure Local Cloudnology Team
+- Created: 2026-01-20 by AzureLocal Cloud Team Team
+- Last Edited: 2026-03-28 by AzureLocal Cloud Team Team
 - Version: 2.0.0
 - Tags: powershell, idrac, redfish, hardware, vnc, config-driven
 - Keywords: dell, idrac, redfish, hardware, automation, vnc, keyvault

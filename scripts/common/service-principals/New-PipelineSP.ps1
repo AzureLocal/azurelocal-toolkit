@@ -11,7 +11,7 @@
     DevOps platform supports it (GitHub Actions, Azure DevOps with workload identity).
 
 .PARAMETER Solution
-    The solution name (e.g., "azure-local", "failover-clusters-scvmm").
+    The solution name (e.g., "azure-local").
 
 .PARAMETER Platform
     The DevOps platform. Valid values: "github", "azuredevops", "gitlab".
@@ -48,7 +48,7 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("azure-local", "failover-clusters-scvmm", "scvmm-azure-arc", "azure-arc-servers")]
+    [ValidateSet("azure-local", "azure-arc-servers")]
     [string]$Solution,
 
     [Parameter(Mandatory = $true)]

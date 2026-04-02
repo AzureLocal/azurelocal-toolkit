@@ -16,7 +16,7 @@
     Path to infrastructure.yml configuration file.
 
 .EXAMPLE
-    .\Set-OmimswacConfiguration.ps1 -WacServerName "wac.Infinite Improbability Corp.local"
+    .\Set-OmimswacConfiguration.ps1 -WacServerName "wac.Contoso.local"
 
 .NOTES
     Author: Azure Local Cloud AzureLocalCloud

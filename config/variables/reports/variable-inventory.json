@@ -4912,7 +4912,7 @@
   {
     "repo": "azurelocal-toolkit",
     "file": "config/variables/variables.example.yml",
-    "key_path": "operations.scvmm"
+    "key_path": "operations.sofs_azure_local"
   },
   {
     "repo": "azurelocal-toolkit",

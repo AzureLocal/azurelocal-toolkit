@@ -22,7 +22,7 @@
     .\Set-SiteRecoveryConfiguration.ps1 -VaultName "rsv-azurelocal-prod" -ResourceGroupName "rg-azurelocal-prod"
 
 .NOTES
-    Author: Azure Local Cloudnology Team
+    Author: AzureLocal Cloud Team Team
     Version: 1.0.0
     Stage: 05-operational-foundations
     Phase: phase-03-backup-dr

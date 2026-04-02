@@ -56,7 +56,7 @@
       }
     },
     "AzureStackLCMAdminUsername": {
-      "value": "svc-azlocal-lcm@ad.improbability.cloud"
+      "value": "svc-azlocal-lcm@ad.contoso.cloud"
     },
     "AzureStackLCMAdminPassword": {
       "reference": {
@@ -81,7 +81,7 @@
     },
 
     "domainFqdn": {
-      "value": "ad.improbability.cloud"
+      "value": "ad.contoso.cloud"
     },
     "namingPrefix": {
       "value": "iic-01"

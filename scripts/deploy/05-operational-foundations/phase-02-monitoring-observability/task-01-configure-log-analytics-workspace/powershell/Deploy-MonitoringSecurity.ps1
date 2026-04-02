@@ -16,7 +16,7 @@
 .PARAMETER Solution
     The solution name to load configuration from. When specified, loads parameters from the solution's 
     configuration file. Individual parameters can still override config values.
-    Valid values: "azure-local", "failover-clusters-scvmm", "scvmm-azure-arc", "azure-arc-servers"
+    Valid values: "azure-local", "azure-arc-servers"
 
 .PARAMETER ManagementSubscriptionId
     Management subscription ID.
@@ -54,7 +54,7 @@
 [CmdletBinding(SupportsShouldProcess)]
 param(
     [Parameter(Mandatory = $false)]
-    [ValidateSet("azure-local", "failover-clusters-scvmm", "scvmm-azure-arc", "azure-arc-servers")]
+    [ValidateSet("azure-local", "azure-arc-servers")]
     [string]$Solution,
 
     [Parameter(Mandatory = $false)]

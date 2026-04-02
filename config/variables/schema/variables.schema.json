@@ -125,7 +125,7 @@
         "Environment": { "type": "string", "examples": ["ProjectIIC"] },
         "Project": { "type": "string", "examples": ["Azure Local Infrastructure"] },
         "ManagedBy": { "type": "string", "default": "Infrastructure as Code" },
-        "Owner": { "type": "string", "examples": ["Azure Local Cloudnology Team"] },
+        "Owner": { "type": "string", "examples": ["AzureLocal Cloud Team Team"] },
         "env_Owner": { "type": "string" },
         "CostCenter": { "type": "string", "examples": ["IT-AzureLocalCloud"] },
         "tag_architecture_version": { "type": "string" }
@@ -765,7 +765,7 @@
     },
     "operations": {
       "type": "object",
-      "description": "Monitoring, policy, patching, backup/recovery, SCVMM",
+      "description": "Monitoring, policy, patching, backup/recovery, SOFS",
       "properties": {
         "monitoring": {
           "type": "object",
@@ -785,11 +785,6 @@
         "bcdr": {
           "type": "object",
           "description": "Backup and disaster recovery settings",
-          "additionalProperties": true
-        },
-        "scvmm": {
-          "type": "object",
-          "description": "System Center VMM integration and Arc Resource Bridge",
           "additionalProperties": true
         }
       },

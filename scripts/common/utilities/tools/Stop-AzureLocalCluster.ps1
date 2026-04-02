@@ -79,7 +79,7 @@
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
     [Parameter()]
-    [ValidateSet("azure-local", "failover-clusters-scvmm", "scvmm-azure-arc", "azure-arc-servers")]
+    [ValidateSet("azure-local", "azure-arc-servers")]
     [string]$Solution,
 
     [Parameter()]

@@ -25,7 +25,7 @@
 
 .NOTES
     Requires: Az.Accounts, Az.KeyVault, powershell-yaml modules
-    Author: Azure Local Cloudnology Team
+    Author: AzureLocal Cloud Team Team
     Date: 2026-02-08
     Version: 1.0.0
 #>

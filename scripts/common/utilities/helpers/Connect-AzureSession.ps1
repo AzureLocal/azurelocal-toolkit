@@ -54,8 +54,8 @@
     Created        : 2026-03-02
     Version        : 1.0.0
 
-    Standards      : Azure Local Cloudnology PowerShell Standards
-    Framework      : Azure Local Cloudnology Scripting Framework
+    Standards      : AzureLocal Cloud Team PowerShell Standards
+    Framework      : AzureLocal Cloud Team Scripting Framework
     Repository     : AzureLocalCloud-docs-azl-toolkit
 
 .LINK

@@ -41,7 +41,7 @@
 .NOTES
     Requires: Az.ConnectedMachine module, authenticated Azure session (Connect-AzAccount)
     Role: Azure Connected Machine Resource Administrator or Contributor on the Arc resource
-    Author: Azure Local Cloudnology Team
+    Author: AzureLocal Cloud Team Team
     Version: 1.1.0
     Created: 2026-02-27
 #>

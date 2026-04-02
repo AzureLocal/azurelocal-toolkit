@@ -41,7 +41,7 @@ $WitnessRegion         = "eastus"
 $WitnessSku            = "Standard_LRS"                           # Standard_LRS | Standard_ZRS | Standard_GRS
 
 # File Share Witness settings (used when $WitnessType = "file_share_witness")
-$FileSharePath = "\\fileserver.improbability.cloud\ClusterWitness\iic-01-clus01"
+$FileSharePath = "\\fileserver.contoso.cloud\ClusterWitness\iic-01-clus01"
 
 # Target node for PSRemoting — only one node required to set cluster quorum
 $TargetNode    = "iic-01-n01"

@@ -98,7 +98,7 @@ function Get-Configuration {
     Environment name (dev, test, prod).
 
 .PARAMETER Solution
-    Optional. Solution name (azure-local, failover-clusters-scvmm, etc.).
+    Optional. Solution name (azure-local, sofs-azure-local, etc.).
 
 .EXAMPLE
     $config = Get-MergedConfiguration -Environment "prod" -Solution "azure-local"
@@ -254,7 +254,7 @@ function Export-AnsibleVars {
     follow the Variable Path Contract - same paths, different values.
 
 .PARAMETER Solution
-    Name of the solution folder (e.g., "azure-local", "failover-clusters-scvmm").
+    Name of the solution folder (e.g., "azure-local").
 
 .PARAMETER ConfigFile
     Optional. Name of the config file. Defaults to "solution.yaml".
@@ -266,14 +266,14 @@ function Export-AnsibleVars {
 
 .EXAMPLE
     # Use the guaranteed config paths
-    $config = Get-SolutionConfig -Solution "failover-clusters-scvmm"
+    $config = Get-SolutionConfig -Solution "sofs-azure-local"
     $kvName = Get-ConfigValue -Config $config -Path $script:ConfigPaths.PlatformKeyVault
 #>
 function Get-SolutionConfig {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet("azure-local", "failover-clusters-scvmm", "scvmm-azure-arc", "azure-arc-servers")]
+        [ValidateSet("azure-local", "azure-arc-servers")]
         [string]$Solution,
 
         [Parameter(Mandatory = $false)]

@@ -34,7 +34,7 @@
     .\New-ScriptFromTemplate.ps1 -ScriptType AzurePowerShell -Name "New-AzKeyVault" -Standalone
 
 .NOTES
-    Author: Azure Local Cloudnology Team
+    Author: AzureLocal Cloud Team Team
     Version: 1.0.0
 #>
 
@@ -115,7 +115,7 @@ if ($extension -eq "ps1") {
 
 .NOTES
     Type: Standalone (Option 5)
-    Author: Azure Local Cloudnology Team
+    Author: AzureLocal Cloud Team Team
     Date: $(Get-Date -Format 'yyyy-MM-dd')
     Version: 1.0.0
 #>
@@ -202,7 +202,7 @@ Write-Host "`nScript completed." -ForegroundColor Green
 
 .NOTES
     Type: Config-Driven (Option 2)
-    Author: Azure Local Cloudnology Team
+    Author: AzureLocal Cloud Team Team
     Date: $(Get-Date -Format 'yyyy-MM-dd')
     Version: 1.0.0
 #>

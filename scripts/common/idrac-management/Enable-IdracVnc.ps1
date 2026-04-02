@@ -83,7 +83,7 @@
 
 .NOTES
     File Name      : Enable-IdracVnc.ps1
-    Author         : Azure Local Cloudnology Team
+    Author         : AzureLocal Cloud Team Team
     Prerequisite   : Dell iDRAC 9 or later, PowerShell 5.1 or later
     Copyright      : Azure Local Cloud
     Version        : 2.0.0

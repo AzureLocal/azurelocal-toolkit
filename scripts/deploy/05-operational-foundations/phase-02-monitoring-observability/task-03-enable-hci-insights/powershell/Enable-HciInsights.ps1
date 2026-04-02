@@ -25,7 +25,7 @@
     .\Enable-HciInsights.ps1 -ResourceGroupName "rg-azurelocal-prod" -ClusterName "azl-cluster-01"
 
 .NOTES
-    Author: Azure Local Cloudnology Team
+    Author: AzureLocal Cloud Team Team
     Version: 1.0.0
     Stage: 05-operational-foundations
     Phase: phase-02-monitoring-observability

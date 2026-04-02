@@ -26,7 +26,7 @@
     .\Test-BiosIdracSettings.ps1 -ConfigPath ".\configs\infrastructure.yml"
 
 .NOTES
-    Author: Azure Local Cloudnology Team
+    Author: AzureLocal Cloud Team Team
     Version: 1.0.0
     Stage: 04-cluster-deployment
     Phase: phase-01-hardware-provisioning

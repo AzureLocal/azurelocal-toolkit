@@ -28,7 +28,7 @@
 .NOTES
     Requires: ActiveDirectory PowerShell module, powershell-yaml module
     Must be run from a domain-joined machine or with credentials that can query AD.
-    Author: Azure Local Cloudnology Team
+    Author: AzureLocal Cloud Team Team
     Version: 1.1.0
     Created: 2026-02-27
 #>

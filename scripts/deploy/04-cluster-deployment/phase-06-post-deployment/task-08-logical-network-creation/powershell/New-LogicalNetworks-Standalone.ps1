@@ -92,7 +92,7 @@ $logical_networks = @(
         ip_allocation_method = "Dynamic"
         dhcp_options         = @{
             dns_servers  = @("10.100.0.10", "10.100.0.11")
-            domain_name  = "improbability.cloud"
+            domain_name  = "contoso.cloud"
         }
         nsg_name             = "nsg-iic-avd"           # only used when $associate_nsg = $true
         routes               = @()

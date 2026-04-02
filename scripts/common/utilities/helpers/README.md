@@ -58,7 +58,7 @@ $script:Environment = @{
     Location = "eastus"
     Tags = @{
         Environment = "Production"
-        ManagedBy = "Azure Local Cloudnology"
+        ManagedBy = "AzureLocal Cloud Team"
     }
 }
 ```

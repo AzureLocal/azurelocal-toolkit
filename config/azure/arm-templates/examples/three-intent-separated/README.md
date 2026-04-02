@@ -48,4 +48,4 @@ The **only difference** between the two files is:
 
 ## Example Company
 
-All values use the **Infinite Improbability Corp** fictional company per documentation standards.
+All values use the **Contoso** fictional company per documentation standards.

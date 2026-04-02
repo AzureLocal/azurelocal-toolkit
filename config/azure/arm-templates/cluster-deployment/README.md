@@ -80,9 +80,9 @@ Use when:
 - Kerberos authentication required
 
 Key AD parameters:
-- `domainFqdn`: AD domain FQDN (e.g., `ad.improbability.cloud`)
+- `domainFqdn`: AD domain FQDN (e.g., `ad.contoso.cloud`)
 - `adouPath`: OU for cluster objects (e.g., `OU=AzureLocal,OU=Servers,DC=ad,DC=improbability,DC=cloud`)
-- `AzureStackLCMAdminUsername`: Domain UPN (e.g., `svc-azlocal-lcm@ad.improbability.cloud`)
+- `AzureStackLCMAdminUsername`: Domain UPN (e.g., `svc-azlocal-lcm@ad.contoso.cloud`)
 
 ### Local Identity (`azuredeploy.parameters.local-identity.json`)
 

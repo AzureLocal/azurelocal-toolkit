@@ -24,7 +24,7 @@
 
 .NOTES
     Requires: powershell-yaml module
-    Author: Azure Local Cloudnology Team
+    Author: AzureLocal Cloud Team Team
     Version: 1.0.0
 #>
 

@@ -1,6 +1,6 @@
 # ARM Template Examples
 
-This directory contains validated parameter files for Azure Local cluster deployments. The IIC (Infinite Improbability Corp) examples cover all three networking patterns with both AD and Local Identity authentication methods. Environment templates provide starting points for real deployments.
+This directory contains validated parameter files for Azure Local cluster deployments. The IIC (Contoso) examples cover all three networking patterns with both AD and Local Identity authentication methods. Environment templates provide starting points for real deployments.
 
 ## Purpose
 
@@ -43,7 +43,7 @@ examples/
 
 ## IIC Examples — Networking Patterns
 
-All IIC examples use the fictional Infinite Improbability Corp (`improbability.cloud`, prefix `iic`). Each pattern includes both AD and Local Identity parameter files with all 54 parameters populated.
+All IIC examples use the fictional Contoso (`contoso.cloud`, prefix `iic`). Each pattern includes both AD and Local Identity parameter files with all 54 parameters populated.
 
 | Pattern | Directory | Intent Count | Use Case |
 |---------|-----------|-------------|----------|

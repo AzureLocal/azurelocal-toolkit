@@ -33,7 +33,7 @@ $node_names   = @(
 
 # ─── Windows Admin Center ───────────────────────────────────────────────────────
 # Leave empty "" to skip WAC checks
-$wac_server   = "iic-wac01.improbability.cloud"  # FQDN or IP of WAC server (or "" to skip)
+$wac_server   = "iic-wac01.contoso.cloud"  # FQDN or IP of WAC server (or "" to skip)
 
 #endregion CONFIGURATION --------------------------------------------------------
 

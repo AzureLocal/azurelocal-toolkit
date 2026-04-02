@@ -27,7 +27,7 @@
     Switch to include Key Vault credential locations (not values).
 
 .EXAMPLE
-    .\New-DeploymentDocumentation.ps1 -ClusterName "azl-cluster-01" -CustomerName "Infinite Improbability Corp" -OutputPath "C:\Handover"
+    .\New-DeploymentDocumentation.ps1 -ClusterName "azl-cluster-01" -CustomerName "Contoso" -OutputPath "C:\Handover"
 
 .NOTES
     Author: Azure Local Cloud AzureLocalCloud Team

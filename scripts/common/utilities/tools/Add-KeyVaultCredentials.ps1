@@ -7,7 +7,7 @@
     Skips secrets that already exist unless -Force is specified.
 
 .PARAMETER Solution
-    Solution name to load configuration from (azure-local, failover-clusters-scvmm, etc.)
+    Solution name to load configuration from (azure-local, sofs-azure-local, etc.)
 
 .PARAMETER KeyVaultName
     Name of the Azure Key Vault. If not specified, loads from solution.yaml
@@ -27,7 +27,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $false, HelpMessage = "Solution name for config-driven execution")]
-    [ValidateSet("azure-local", "failover-clusters-scvmm", "scvmm-azure-arc", "azure-arc-servers")]
+    [ValidateSet("azure-local", "azure-arc-servers")]
     [string]$Solution,
 
     [Parameter(Mandatory = $false)]

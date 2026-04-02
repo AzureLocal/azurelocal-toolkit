@@ -14,7 +14,7 @@ $ErrorActionPreference = "Stop"
 
 #region CONFIGURATION -----------------------------------------------------------
 # Replace all values for your environment.
-# Example values use the fictional "Infinite Improbability Corp" (prefix: iic).
+# Example values use the fictional "Contoso" (prefix: iic).
 
 # Azure subscription ID containing the Arc-enrolled nodes
 [string]$SubscriptionId = 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx'

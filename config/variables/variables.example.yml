@@ -26,11 +26,11 @@ _metadata:
 # =============================================================================
 site:
   code: "IIC"
-  name: "Infinite Improbability Corp Example Site"
+  name: "Contoso Example Site"
   location: "Dallas, TX"
   environment: "Lab"
-  owner: "admin@improbability.cloud"
-  customer_name: "Infinite Improbability Corp"
+  owner: "admin@contoso.cloud"
+  customer_name: "Contoso"
   hardware:
     hw_vendor: "Dell"
     hw_model: "PowerEdge R760"
@@ -41,32 +41,32 @@ site:
       idrac_username: "root"
       idrac_password: "keyvault://kv-iic-platform/idrac-password"
     dell_support:
-      dell_support_username: "support@improbability.cloud"
+      dell_support_username: "support@contoso.cloud"
       dell_support_password: "keyvault://kv-iic-platform/dell-support-password"
 
 environment:
   env_name: "ProjectIIC"
   env_type: "lab"
-  env_owner: "admin@improbability.cloud"
+  env_owner: "admin@contoso.cloud"
   env_description: "IIC example Azure Local toolkit deployment."
 
 tags:
   Environment: "ProjectIIC"
   Project: "Azure Local Toolkit"
   ManagedBy: "Infrastructure as Code"
-  Owner: "admin@improbability.cloud"
+  Owner: "admin@contoso.cloud"
   CostCenter: "IT-IIC"
   environment: "ProjectIIC"
   project: "Azure Local Toolkit"
-  owner: "admin@improbability.cloud"
+  owner: "admin@contoso.cloud"
   cost_center: "IT-IIC"
 
 azure_platform:
   azure_tenants:
     aztenant_azurelocal_id: "00000000-0000-0000-0000-000000000000"
-    aztenant_azurelocal_name: "Infinite Improbability Corp"
+    aztenant_azurelocal_name: "Contoso"
     aztenant_azurelocal_domain: "improbability.onmicrosoft.com"
-    aztenant_azurelocal_primary_domain: "improbability.cloud"
+    aztenant_azurelocal_primary_domain: "contoso.cloud"
     aztenant_region: "eastus"
   management_groups:
     tenant_root:
@@ -120,8 +120,8 @@ identity:
     account_lcm_username: "lcm-iic-azl-clus01"
     account_lcm_password: "keyvault://kv-iic-platform/lcm-deployment-password"
   active_directory:
-    fqdn: "iic.local"
-    ad_domain_fqdn: "iic.local"
+    fqdn: "contoso.local"
+    ad_domain_fqdn: "contoso.local"
     ad_netbios_name: "IMPROBABLE"
     ad_ou_path: "OU=AzureLocal,OU=Servers,DC=iic,DC=local"
     ad_computers_ou_path: "OU=Computers,OU=Servers,DC=iic,DC=local"
@@ -131,7 +131,7 @@ identity:
       - "192.168.10.10"
       - "192.168.10.11"
     domain:
-      fqdn: "iic.local"
+      fqdn: "contoso.local"
       netbios: "IMPROBABLE"
     organizational_units:
       servers: "OU=Servers,DC=iic,DC=local"
@@ -323,19 +323,71 @@ networking:
 compute:
   cluster_nodes:
     - node_hostname: "azl-iic-n01"
-      node_fqdn: "azl-iic-n01.iic.local"
+      node_fqdn: "azl-iic-n01.contoso.local"
       node_management_ip: "10.0.0.11"
       node_idrac_ip: "10.245.64.11"
       node_service_tag: "ABC1234"
       arc_node_resource_ids: []
     - node_hostname: "azl-iic-n02"
-      node_fqdn: "azl-iic-n02.iic.local"
+      node_fqdn: "azl-iic-n02.contoso.local"
       node_management_ip: "10.0.0.12"
       node_idrac_ip: "10.245.64.12"
       node_service_tag: "ABC1235"
       arc_node_resource_ids: []
   vms:
-    azure: {}
+    management:
+      dc1:
+        dc1_hostname: "iic-dc01"
+        dc1_ip: "10.20.1.10"
+        dc1_fqdn: "iic-dc01.contoso.local"
+        dc1_deployment_target: "azure"  # azure | azurelocal | onprem
+        # Azure IaaS vars (only when deployment_target: azure)
+        azure_vm_dc1_vm_name: "vm-iic-dc01"
+        azure_vm_dc1_vm_size: "Standard_D2s_v3"
+        azure_vm_dc1_subnet: "snet-iic-identity"
+        azure_vm_dc1_os_disk_size_gb: 128
+        azure_vm_dc1_os_disk_type: "Premium_LRS"
+      dc2:
+        dc2_hostname: "iic-dc02"
+        dc2_ip: "10.20.1.11"
+        dc2_fqdn: "iic-dc02.contoso.local"
+        dc2_deployment_target: "azure"  # azure | azurelocal | onprem
+        azure_vm_dc2_vm_name: "vm-iic-dc02"
+        azure_vm_dc2_vm_size: "Standard_D2s_v3"
+        azure_vm_dc2_subnet: "snet-iic-identity"
+        azure_vm_dc2_os_disk_size_gb: 128
+        azure_vm_dc2_os_disk_type: "Premium_LRS"
+      jumpbox:
+        jumpbox_hostname: "iic-jumpbox"
+        jumpbox_ip: "10.20.1.20"
+        jumpbox_fqdn: "iic-jumpbox.contoso.local"
+        jumpbox_deployment_target: "azure"  # azure | azurelocal | onprem
+        azure_vm_jumpbox_vm_name: "vm-iic-jumpbox"
+        azure_vm_jumpbox_vm_size: "Standard_D2s_v3"
+        azure_vm_jumpbox_subnet: "snet-iic-management"
+        azure_vm_jumpbox_os_disk_size_gb: 128
+        azure_vm_jumpbox_os_disk_type: "Premium_LRS"
+      wac:
+        wac_hostname: "iic-wac01"
+        wac_ip: "10.20.1.21"
+        wac_fqdn: "iic-wac01.contoso.local"
+        wac_port: 443
+        wac_deployment_target: "azure"  # azure | azurelocal | onprem
+        azure_vm_wac_vm_name: "vm-iic-wac01"
+        azure_vm_wac_vm_size: "Standard_D2s_v3"
+        azure_vm_wac_subnet: "snet-iic-management"
+        azure_vm_wac_os_disk_size_gb: 128
+        azure_vm_wac_os_disk_type: "Premium_LRS"
+      syslog:
+        syslog_hostname: "iic-syslog01"
+        syslog_ip: "10.20.1.50"
+        syslog_fqdn: "iic-syslog01.contoso.local"
+        syslog_deployment_target: "azure"  # azure | azurelocal | onprem
+        azure_vm_syslog_vm_name: "vm-iic-syslog01"
+        azure_vm_syslog_vm_size: "Standard_B2s"
+        azure_vm_syslog_subnet: "snet-iic-management"
+        azure_vm_syslog_os_disk_size_gb: 64
+        azure_vm_syslog_os_disk_type: "StandardSSD_LRS"
     arc_hybrid: {}
   clusters:
     azure_local:
@@ -431,8 +483,6 @@ operations:
     log_analytics:
       workspace_id: "/subscriptions/55555555-5555-5555-5555-555555555555/resourceGroups/rg-iic-monitor-01/providers/Microsoft.OperationalInsights/workspaces/law-iic-monitor-01"
       workspace_name: "law-iic-monitor-01"
-    wac:
-      server: "iic-wac01"
     extended:
       datadog:
         api_key: "keyvault://kv-iic-platform/datadog-api-key"
@@ -553,8 +603,6 @@ azure_infrastructure:
     nsgs:
       infrastructure:
         name: "nsg-iic-infrastructure"
-      lighthouse:
-        name: "nsg-iic-lighthouse"
   key_vaults:
     management:
       name: "kv-iic-platform"
@@ -590,7 +638,7 @@ azure_infrastructure:
     sentinel_workspace:
       name: "law-iic-sentinel-01"
   security:
-    notification_email: "admin@improbability.cloud"
+    notification_email: "admin@contoso.cloud"
   domain_controllers:
     dc01:
       ip_address: "10.20.1.10"
@@ -599,8 +647,6 @@ azure_infrastructure:
   virtual_machines:
     admin_username: "azlocaladmin"
     admin_password: "keyvault://kv-iic-platform/azlocal-admin-password"
-    lighthouse:
-      nic_name: "nic-iic-lighthouse01"
     syslog:
       name: "vm-iic-syslog01"
       ip_address: "10.20.1.50"
@@ -616,29 +662,38 @@ azure_local:
   cluster_node_count: 2
   custom_location_name: "cl-iic-azlocal-01"
 
+# compute.vms.management is the canonical source for management server vars.
+# The azure_vms block below is a legacy compatibility alias — use compute.vms.management in new scripts.
 azure_vms:
   dc01:
     name: "vm-iic-dc01"
     hostname: "iic-dc01"
-    location: "eastus"
     private_ip: "10.20.1.10"
     resource_group: "rg-iic-compute-01"
   dc02:
     name: "vm-iic-dc02"
     hostname: "iic-dc02"
-    location: "eastus"
     private_ip: "10.20.1.11"
     resource_group: "rg-iic-compute-01"
-  utility:
-    fqdn: "iic-util01.iic.local"
+  jumpbox:
+    hostname: "iic-jumpbox"
+    fqdn: "iic-jumpbox.contoso.local"
     private_ip: "10.20.1.20"
+  wac:
+    hostname: "iic-wac01"
+    fqdn: "iic-wac01.contoso.local"
+    private_ip: "10.20.1.21"
+  syslog:
+    hostname: "iic-syslog01"
+    fqdn: "iic-syslog01.contoso.local"
+    private_ip: "10.20.1.50"
 
 active_directory:
-  ad_domain_fqdn: "iic.local"
+  ad_domain_fqdn: "contoso.local"
   ad_netbios_name: "IMPROBABLE"
   ad_clusters_ou_path: "OU=Clusters,OU=Servers,DC=iic,DC=local"
   domain:
-    fqdn: "iic.local"
+    fqdn: "contoso.local"
   organizational_units:
     servers: "OU=Servers,DC=iic,DC=local"
 
@@ -736,10 +791,10 @@ network_config:
   management_nic_name: "NIC1"
 
 domain:
-  name: "iic.local"
+  name: "contoso.local"
 
 deployment:
-  admin_upn: "admin@improbability.cloud"
+  admin_upn: "admin@contoso.cloud"
 
 hardware:
   bios_settings: {}

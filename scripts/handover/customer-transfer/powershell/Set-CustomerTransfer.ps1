@@ -29,7 +29,7 @@
     Path to save transfer documentation.
 
 .EXAMPLE
-    .\Set-CustomerTransfer.ps1 -ClusterName "azl-cluster-01" -CustomerTenantId "xxx" -CustomerAdminUPN "admin@Infinite Improbability Corp.com"
+    .\Set-CustomerTransfer.ps1 -ClusterName "azl-cluster-01" -CustomerTenantId "xxx" -CustomerAdminUPN "admin@Contoso.com"
 
 .NOTES
     Author: Azure Local Cloud AzureLocalCloud Team

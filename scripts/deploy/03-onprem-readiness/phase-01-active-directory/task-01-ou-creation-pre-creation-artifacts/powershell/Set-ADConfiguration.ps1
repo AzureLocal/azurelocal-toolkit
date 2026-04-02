@@ -30,7 +30,7 @@
     Path to infrastructure.yml configuration.
 
 .EXAMPLE
-    .\Set-ADConfiguration.ps1 -DomainController "dc01.Infinite Improbability Corp.com" -ClusterName "azl-cluster-01" -NodeNames @("node-01","node-02")
+    .\Set-ADConfiguration.ps1 -DomainController "dc01.Contoso.com" -ClusterName "azl-cluster-01" -NodeNames @("node-01","node-02")
 
 .NOTES
     Author: Azure Local Cloud AzureLocalCloud Team

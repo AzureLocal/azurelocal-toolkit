@@ -12,7 +12,7 @@
 # ── Edit these values to match your environment ──────────────────────────────
 
 # DNS zone name (your AD domain FQDN)
-$ZoneName = "improbability.cloud"
+$ZoneName = "contoso.cloud"
 
 # SDN prefix — used to form the NC REST URL: https://<Prefix>-NC.<domain>/
 $SdnPrefix = "iic01"

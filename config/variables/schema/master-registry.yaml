@@ -391,7 +391,7 @@ environment:
     description: "Environment owner email"
     format: email
     required: false
-    example: "AzureLocalCloud@improbability.cloud"
+    example: "AzureLocalCloud@contoso.cloud"
 
   env_description:
     type: string
@@ -4098,7 +4098,7 @@ networking:
         description: "Network Controller FQDN or REST endpoint — used post-deployment to reference the NC REST API. Derived value: <sdn_prefix>-NC.<domain>. Informational only; not a deployment input."
         type: string
         required: false
-        example: "iic01-NC.improbability.cloud"
+        example: "iic01-NC.contoso.cloud"
 
       sdn_gateway:
         description: "SDN RAS Gateway configuration — applicable only for SDN managed by on-premises tools (Windows Admin Center, SDN Express). Not supported with SDN enabled by Arc."
@@ -6600,87 +6600,107 @@ compute:
   # VIRTUAL MACHINES
   # ═══════════════════════════════════════
   vms:
-    # ─── azure ───
-    azure:
+    # ─── management servers ───
+    # These servers can be deployed anywhere: Azure IaaS, Azure Local VMs, or
+    # on-premises physical/virtual machines. Common variables (hostname, ip, fqdn)
+    # are always required. Platform-specific variables are conditional based on
+    # deployment_target and only populated when relevant.
+    management:
       _meta:
         solutions: ["all"]
         tier: required
-        description: "Azure IaaS VM definitions (DCs, jumpbox, WAC, management VMs)"
+        description: "Management server definitions (DCs, jumpbox/utility, WAC, syslog). Deployment-location agnostic — Azure IaaS, Azure Local VM, or on-premises."
+
       # DOMAIN CONTROLLERS
       # ---------------------------------------------------------------------------
       dc1:
+        # --- Common (required regardless of deployment location) ---
+        dc1_hostname:
+          category: "compute"
+          subcategory: "domain-controller"
+          type: string
+          description: "DC1 hostname (NetBIOS computer name, max 15 chars)"
+          required: true
+          maxLength: 15
+          example: "DC01"
+
+        dc1_ip:
+          type: string
+          description: "DC1 IP address"
+          required: true
+          format: ipv4
+          example: "10.100.1.36"
+
+        dc1_fqdn:
+          type: string
+          description: "DC1 fully qualified domain name"
+          required: false
+          example: "dc01.corp.local"
+
+        dc1_deployment_target:
+          type: string
+          description: "Where DC1 is deployed"
+          required: true
+          enum: [azure, azurelocal, onprem]
+          example: "azure"
+
+        # --- Azure IaaS (when deployment_target: azure) ---
         azure_vm_dc1_vm_name:
           category: "compute"
           subcategory: "domain-controller"
           type: string
-          description: "DC1 Azure VM resource name"
-          required: true
+          description: "DC1 Azure VM resource name (azure deployment only)"
+          required: false
           example: "vm-azlc-AzureLocalCloud-eus-dc01"
-    
-        azure_vm_dc1_computer_name:
-          category: "compute"
-          subcategory: "domain-controller"
-          type: string
-          description: "DC1 Windows Server computer name"
-          required: true
-          maxLength: 15
-          example: "DC01"
-    
+
         azure_vm_dc1_vm_size:
           type: string
-          description: "DC1 VM size"
-          required: true
+          description: "DC1 Azure VM size"
+          required: false
           example: "Standard_D2s_v3"
-    
+
         azure_vm_dc1_image_publisher:
           type: string
           description: "DC1 image publisher"
-          required: true
+          required: false
           default: "MicrosoftWindowsServer"
-    
+
         azure_vm_dc1_image_offer:
           type: string
           description: "DC1 image offer"
-          required: true
+          required: false
           default: "WindowsServer"
-    
+
         azure_vm_dc1_image_sku:
           type: string
           description: "DC1 image SKU"
-          required: true
-        default: "2025-datacenter-azure-edition"
-    
+          required: false
+          default: "2025-datacenter-azure-edition"
+
         azure_vm_dc1_image_version:
           type: string
           description: "DC1 image version"
-          required: true
+          required: false
           default: "latest"
-    
-        azure_vm_dc1_private_ip:
-          type: string
-          description: "DC1 private IP address"
-          required: true
-          format: ipv4
-          example: "10.100.1.36"
-    
+
         azure_vm_dc1_subnet:
           type: string
-          description: "DC1 subnet name"
-          required: true
+          description: "DC1 Azure subnet name"
+          required: false
           example: "snet-azlc-AzureLocalCloud-eus-identity"
-    
+
         azure_vm_dc1_os_disk_size_gb:
           type: integer
           description: "DC1 OS disk size (GB)"
-          required: true
+          required: false
           default: 128
-    
+
         azure_vm_dc1_os_disk_type:
           type: string
           description: "DC1 OS disk type"
-          required: true
+          required: false
           default: "Premium_LRS"
-    
+
         azure_vm_dc1_data_disks:
           type: array
           description: "DC1 data disks"
@@ -6694,75 +6714,103 @@ compute:
             size_gb: 256
             type: "Premium_LRS"
 
+        # --- Azure Local VM (when deployment_target: azurelocal) ---
+        azurelocal_vm_dc1_vm_name:
+          type: string
+          description: "DC1 Azure Local VM resource name (azurelocal deployment only)"
+          required: false
+          example: "dc01"
+
+        azurelocal_vm_dc1_cluster_name:
+          type: string
+          description: "Azure Local cluster hosting DC1"
+          required: false
+          example: "azl-corp-clus01"
+
       dc2:
-        azure_vm_dc2_vm_name:
+        # --- Common ---
+        dc2_hostname:
           type: string
-          description: "DC2 Azure VM resource name"
-          required: true
-          example: "vm-azlc-AzureLocalCloud-eus-dc02"
-    
-        azure_vm_dc2_computer_name:
-          type: string
-          description: "DC2 Windows Server computer name"
+          description: "DC2 hostname (NetBIOS computer name, max 15 chars)"
           required: true
           maxLength: 15
           example: "DC02"
-  
-        azure_vm_dc2_vm_size:
+
+        dc2_ip:
           type: string
-          description: "DC2 VM size"
-          required: true
-          example: "Standard_D2s_v3"
-    
-        azure_vm_dc2_image_publisher:
-          type: string
-          description: "DC2 image publisher"
-          required: true
-          default: "MicrosoftWindowsServer"
-    
-        azure_vm_dc2_image_offer:
-          type: string
-          description: "DC2 image offer"
-          required: true
-          default: "WindowsServer"
-    
-        azure_vm_dc2_image_sku:
-          type: string
-          description: "DC2 image SKU"
-          required: true
-          default: "2025-datacenter-azure-edition"
-    
-        azure_vm_dc2_image_version:
-          type: string
-          description: "DC2 image version"
-          required: true
-          default: "latest"
-    
-        azure_vm_dc2_private_ip:
-          type: string
-          description: "DC2 private IP address"
+          description: "DC2 IP address"
           required: true
           format: ipv4
           example: "10.100.1.37"
-    
+
+        dc2_fqdn:
+          type: string
+          description: "DC2 fully qualified domain name"
+          required: false
+          example: "dc02.corp.local"
+
+        dc2_deployment_target:
+          type: string
+          description: "Where DC2 is deployed"
+          required: true
+          enum: [azure, azurelocal, onprem]
+          example: "azure"
+
+        # --- Azure IaaS (when deployment_target: azure) ---
+        azure_vm_dc2_vm_name:
+          type: string
+          description: "DC2 Azure VM resource name (azure deployment only)"
+          required: false
+          example: "vm-azlc-AzureLocalCloud-eus-dc02"
+
+        azure_vm_dc2_vm_size:
+          type: string
+          description: "DC2 Azure VM size"
+          required: false
+          example: "Standard_D2s_v3"
+
+        azure_vm_dc2_image_publisher:
+          type: string
+          description: "DC2 image publisher"
+          required: false
+          default: "MicrosoftWindowsServer"
+
+        azure_vm_dc2_image_offer:
+          type: string
+          description: "DC2 image offer"
+          required: false
+          default: "WindowsServer"
+
+        azure_vm_dc2_image_sku:
+          type: string
+          description: "DC2 image SKU"
+          required: false
+          default: "2025-datacenter-azure-edition"
+
+        azure_vm_dc2_image_version:
+          type: string
+          description: "DC2 image version"
+          required: false
+          default: "latest"
+
         azure_vm_dc2_subnet:
           type: string
-          description: "DC2 subnet name"
-          required: true
+          description: "DC2 Azure subnet name"
+          required: false
           example: "snet-azlc-AzureLocalCloud-eus-identity"
-    
+
         azure_vm_dc2_os_disk_size_gb:
           type: integer
           description: "DC2 OS disk size (GB)"
-          required: true
+          required: false
           default: 128
-    
+
         azure_vm_dc2_os_disk_type:
           type: string
           description: "DC2 OS disk type"
-          required: true
+          required: false
           default: "Premium_LRS"
-    
+
         azure_vm_dc2_data_disks:
           type: array
           description: "DC2 data disks"
@@ -6776,290 +6824,312 @@ compute:
             size_gb: 256
             type: "Premium_LRS"
 
-      # JUMPBOX
+        # --- Azure Local VM (when deployment_target: azurelocal) ---
+        azurelocal_vm_dc2_vm_name:
+          type: string
+          description: "DC2 Azure Local VM resource name (azurelocal deployment only)"
+          required: false
+          example: "dc02"
+
+        azurelocal_vm_dc2_cluster_name:
+          type: string
+          description: "Azure Local cluster hosting DC2"
+          required: false
+          example: "azl-corp-clus01"
+
+      # JUMPBOX / UTILITY SERVER
       # ---------------------------------------------------------------------------
       jumpbox:
-        azure_vm_jumpbox_vm_name:
+        # --- Common (required regardless of deployment location) ---
+        jumpbox_hostname:
           type: string
-          description: "Jumpbox Azure VM resource name"
-          required: true
-          example: "vm-azlc-AzureLocalCloud-eus-jumpbox"
-    
-        azure_vm_jumpbox_computer_name:
-          type: string
-          description: "Jumpbox Windows Server computer name"
+          description: "Jumpbox/utility server hostname (max 15 chars for Windows)"
           required: true
           maxLength: 15
           example: "JUMPBOX"
-    
-        azure_vm_jumpbox_vm_size:
+
+        jumpbox_ip:
           type: string
-          description: "Jumpbox VM size"
-          required: true
-          example: "Standard_D2s_v3"
-    
-        azure_vm_jumpbox_image_publisher:
-          type: string
-          description: "Jumpbox image publisher"
-          required: true
-          default: "MicrosoftWindowsServer"
-    
-        azure_vm_jumpbox_image_offer:
-          type: string
-          description: "Jumpbox image offer"
-          required: true
-          default: "WindowsServer"
-    
-        azure_vm_jumpbox_image_sku:
-          type: string
-          description: "Jumpbox image SKU"
-          required: true
-          default: "2025-datacenter-azure-edition"
-    
-        azure_vm_jumpbox_image_version:
-          type: string
-          description: "Jumpbox image version"
-          required: true
-          default: "latest"
-    
-        azure_vm_jumpbox_private_ip:
-          type: string
-          description: "Jumpbox private IP address"
+          description: "Jumpbox IP address"
           required: true
           format: ipv4
           example: "10.100.1.50"
-    
+
+        jumpbox_fqdn:
+          type: string
+          description: "Jumpbox fully qualified domain name"
+          required: false
+          example: "jumpbox.corp.local"
+
+        jumpbox_deployment_target:
+          type: string
+          description: "Where the jumpbox/utility server is deployed"
+          required: true
+          enum: [azure, azurelocal, onprem]
+          example: "azure"
+
+        # --- Azure IaaS (when deployment_target: azure) ---
+        azure_vm_jumpbox_vm_name:
+          type: string
+          description: "Jumpbox Azure VM resource name (azure deployment only)"
+          required: false
+          example: "vm-azlc-AzureLocalCloud-eus-jumpbox"
+
+        azure_vm_jumpbox_vm_size:
+          type: string
+          description: "Jumpbox Azure VM size"
+          required: false
+          example: "Standard_D2s_v3"
+
+        azure_vm_jumpbox_image_publisher:
+          type: string
+          description: "Jumpbox image publisher"
+          required: false
+          default: "MicrosoftWindowsServer"
+
+        azure_vm_jumpbox_image_offer:
+          type: string
+          description: "Jumpbox image offer"
+          required: false
+          default: "WindowsServer"
+
+        azure_vm_jumpbox_image_sku:
+          type: string
+          description: "Jumpbox image SKU"
+          required: false
+          default: "2025-datacenter-azure-edition"
+
+        azure_vm_jumpbox_image_version:
+          type: string
+          description: "Jumpbox image version"
+          required: false
+          default: "latest"
+
         azure_vm_jumpbox_subnet:
           type: string
-          description: "Jumpbox subnet name"
-          required: true
+          description: "Jumpbox Azure subnet name"
+          required: false
           example: "snet-azlc-AzureLocalCloud-eus-management"
-    
+
         azure_vm_jumpbox_os_disk_size_gb:
           type: integer
           description: "Jumpbox OS disk size (GB)"
-          required: true
+          required: false
           default: 128
-    
+
         azure_vm_jumpbox_os_disk_type:
           type: string
           description: "Jumpbox OS disk type"
-          required: true
+          required: false
           default: "Premium_LRS"
+
+        # --- Azure Local VM (when deployment_target: azurelocal) ---
+        azurelocal_vm_jumpbox_vm_name:
+          type: string
+          description: "Jumpbox Azure Local VM resource name (azurelocal deployment only)"
+          required: false
+          example: "jumpbox"
+
+        azurelocal_vm_jumpbox_cluster_name:
+          type: string
+          description: "Azure Local cluster hosting the jumpbox"
+          required: false
+          example: "azl-corp-clus01"
 
       # WAC SERVER (Windows Admin Center)
       # ---------------------------------------------------------------------------
       wac:
-        azure_vm_wac_vm_name:
+        # --- Common (required regardless of deployment location) ---
+        wac_hostname:
           type: string
-          description: "WAC Azure VM resource name"
-          required: true
-          example: "vm-azlc-AzureLocalCloud-eus-wac"
-    
-        azure_vm_wac_computer_name:
-          type: string
-          description: "WAC Windows Server computer name"
+          description: "WAC server hostname (max 15 chars for Windows)"
           required: true
           maxLength: 15
           example: "WAC"
-    
-        azure_vm_wac_vm_size:
+
+        wac_ip:
           type: string
-          description: "WAC VM size"
-          required: true
-          example: "Standard_D2s_v3"
-    
-        azure_vm_wac_image_publisher:
-          type: string
-          description: "WAC image publisher"
-          required: true
-          default: "MicrosoftWindowsServer"
-    
-        azure_vm_wac_image_offer:
-          type: string
-          description: "WAC image offer"
-          required: true
-          default: "WindowsServer"
-    
-        azure_vm_wac_image_sku:
-          type: string
-          description: "WAC image SKU"
-          required: true
-          default: "2025-datacenter-azure-edition"
-    
-        azure_vm_wac_image_version:
-          type: string
-          description: "WAC image version"
-          required: true
-          default: "latest"
-    
-        azure_vm_wac_private_ip:
-          type: string
-          description: "WAC private IP address"
+          description: "WAC server IP address"
           required: true
           format: ipv4
           example: "10.100.1.51"
-    
+
+        wac_fqdn:
+          type: string
+          description: "WAC server fully qualified domain name"
+          required: false
+          example: "wac.corp.local"
+
+        wac_port:
+          type: integer
+          description: "WAC HTTPS port"
+          required: true
+          default: 443
+
+        wac_deployment_target:
+          type: string
+          description: "Where the WAC server is deployed"
+          required: true
+          enum: [azure, azurelocal, onprem]
+          example: "azure"
+
+        # --- Azure IaaS (when deployment_target: azure) ---
+        azure_vm_wac_vm_name:
+          type: string
+          description: "WAC Azure VM resource name (azure deployment only)"
+          required: false
+          example: "vm-azlc-AzureLocalCloud-eus-wac"
+
+        azure_vm_wac_vm_size:
+          type: string
+          description: "WAC Azure VM size"
+          required: false
+          example: "Standard_D2s_v3"
+
+        azure_vm_wac_image_publisher:
+          type: string
+          description: "WAC image publisher"
+          required: false
+          default: "MicrosoftWindowsServer"
+
+        azure_vm_wac_image_offer:
+          type: string
+          description: "WAC image offer"
+          required: false
+          default: "WindowsServer"
+
+        azure_vm_wac_image_sku:
+          type: string
+          description: "WAC image SKU"
+          required: false
+          default: "2025-datacenter-azure-edition"
+
+        azure_vm_wac_image_version:
+          type: string
+          description: "WAC image version"
+          required: false
+          default: "latest"
+
         azure_vm_wac_subnet:
           type: string
-          description: "WAC subnet name"
-          required: true
+          description: "WAC Azure subnet name"
+          required: false
           example: "snet-azlc-AzureLocalCloud-eus-management"
-    
+
         azure_vm_wac_os_disk_size_gb:
           type: integer
           description: "WAC OS disk size (GB)"
-          required: true
+          required: false
           default: 128
-    
+
         azure_vm_wac_os_disk_type:
           type: string
           description: "WAC OS disk type"
-          required: true
+          required: false
           default: "Premium_LRS"
 
-      # LIGHTHOUSE SERVER (Linux - Azure Lighthouse Management)
-      # ---------------------------------------------------------------------------
-      lighthouse:
-        azure_vm_lighthouse_vm_name:
+        # --- Azure Local VM (when deployment_target: azurelocal) ---
+        azurelocal_vm_wac_vm_name:
           type: string
-          description: "Lighthouse Azure VM resource name"
-          required: true
-          example: "vm-azlc-AzureLocalCloud-eus-lighthouse"
-    
-        azure_vm_lighthouse_computer_name:
+          description: "WAC Azure Local VM resource name (azurelocal deployment only)"
+          required: false
+          example: "wac"
+
+        azurelocal_vm_wac_cluster_name:
           type: string
-          description: "Lighthouse Linux hostname"
-          required: true
-          maxLength: 64
-          example: "lighthouse"
-    
-        azure_vm_lighthouse_vm_size:
-          type: string
-          description: "Lighthouse VM size"
-          required: true
-          example: "Standard_B2s"
-    
-        azure_vm_lighthouse_image_publisher:
-          type: string
-          description: "Lighthouse image publisher"
-          required: true
-          default: "Canonical"
-    
-        azure_vm_lighthouse_image_offer:
-          type: string
-          description: "Lighthouse image offer"
-          required: true
-          default: "0001-com-ubuntu-server-jammy"
-    
-        azure_vm_lighthouse_image_sku:
-          type: string
-          description: "Lighthouse image SKU"
-          required: true
-          default: "22_04-lts-gen2"
-    
-        azure_vm_lighthouse_image_version:
-          type: string
-          description: "Lighthouse image version"
-          required: true
-          default: "latest"
-    
-        azure_vm_lighthouse_private_ip:
-          type: string
-          description: "Lighthouse private IP address"
-          required: true
-          format: ipv4
-          example: "10.100.1.60"
-    
-        azure_vm_lighthouse_subnet:
-          type: string
-          description: "Lighthouse subnet name"
-          required: true
-          example: "snet-azlc-AzureLocalCloud-eus-management"
-    
-        azure_vm_lighthouse_os_disk_size_gb:
-          type: integer
-          description: "Lighthouse OS disk size (GB)"
-          required: true
-          default: 64
-    
-        azure_vm_lighthouse_os_disk_type:
-          type: string
-          description: "Lighthouse OS disk type"
-          required: true
-          default: "StandardSSD_LRS"
+          description: "Azure Local cluster hosting the WAC server"
+          required: false
+          example: "azl-corp-clus01"
 
       # SYSLOG/SNMP SERVER (Linux)
+      # Can be deployed as an Azure IaaS VM, Azure Local VM, on-prem VM, or
+      # physical server. Must be reachable from network devices (syslog UDP 514,
+      # SNMP UDP 161/162) and able to forward to Azure Monitor via AMA.
       # ---------------------------------------------------------------------------
       syslog:
-        azure_vm_syslog_vm_name:
+        # --- Common (required regardless of deployment location) ---
+        syslog_hostname:
           type: string
-          description: "Syslog Azure VM resource name"
-          required: true
-          example: "vm-azlc-AzureLocalCloud-eus-syslog"
-    
-        azure_vm_syslog_computer_name:
-          type: string
-          description: "Syslog Linux hostname"
+          description: "Syslog/SNMP server hostname"
           required: true
           maxLength: 64
           example: "syslog"
-    
-        azure_vm_syslog_vm_size:
+
+        syslog_ip:
           type: string
-          description: "Syslog VM size"
-          required: true
-          example: "Standard_B2s"
-    
-        azure_vm_syslog_image_publisher:
-          type: string
-          description: "Syslog image publisher"
-          required: true
-          default: "Canonical"
-    
-        azure_vm_syslog_image_offer:
-          type: string
-          description: "Syslog image offer"
-          required: true
-          default: "0001-com-ubuntu-server-jammy"
-    
-        azure_vm_syslog_image_sku:
-          type: string
-          description: "Syslog image SKU"
-          required: true
-          default: "22_04-lts-gen2"
-    
-        azure_vm_syslog_image_version:
-          type: string
-          description: "Syslog image version"
-          required: true
-          default: "latest"
-    
-        azure_vm_syslog_private_ip:
-          type: string
-          description: "Syslog private IP address"
+          description: "Syslog/SNMP server IP address"
           required: true
           format: ipv4
           example: "10.100.1.61"
-    
+
+        syslog_fqdn:
+          type: string
+          description: "Syslog/SNMP server fully qualified domain name"
+          required: false
+          example: "syslog.corp.local"
+
+        syslog_deployment_target:
+          type: string
+          description: "Where the syslog/SNMP server is deployed"
+          required: true
+          enum: [azure, azurelocal, onprem]
+          example: "azure"
+
+        # --- Azure IaaS (when deployment_target: azure) ---
+        azure_vm_syslog_vm_name:
+          type: string
+          description: "Syslog Azure VM resource name (azure deployment only)"
+          required: false
+          example: "vm-azlc-AzureLocalCloud-eus-syslog"
+
+        azure_vm_syslog_vm_size:
+          type: string
+          description: "Syslog Azure VM size"
+          required: false
+          example: "Standard_B2s"
+
+        azure_vm_syslog_image_publisher:
+          type: string
+          description: "Syslog image publisher"
+          required: false
+          default: "Canonical"
+
+        azure_vm_syslog_image_offer:
+          type: string
+          description: "Syslog image offer"
+          required: false
+          default: "0001-com-ubuntu-server-jammy"
+
+        azure_vm_syslog_image_sku:
+          type: string
+          description: "Syslog image SKU"
+          required: false
+          default: "22_04-lts-gen2"
+
+        azure_vm_syslog_image_version:
+          type: string
+          description: "Syslog image version"
+          required: false
+          default: "latest"
+
         azure_vm_syslog_subnet:
           type: string
-          description: "Syslog subnet name"
-          required: true
+          description: "Syslog Azure subnet name"
+          required: false
           example: "snet-azlc-AzureLocalCloud-eus-management"
-    
+
         azure_vm_syslog_os_disk_size_gb:
           type: integer
           description: "Syslog OS disk size (GB)"
-          required: true
+          required: false
           default: 64
-    
+
         azure_vm_syslog_os_disk_type:
           type: string
           description: "Syslog OS disk type"
-          required: true
+          required: false
           default: "StandardSSD_LRS"
-    
+
         azure_vm_syslog_data_disks:
           type: array
           description: "Syslog data disks for log storage"
@@ -7073,7 +7143,21 @@ compute:
             size_gb: 512
             type: "StandardSSD_LRS"
 
-      # SHARED VM SETTINGS
+        # --- Azure Local VM (when deployment_target: azurelocal) ---
+        azurelocal_vm_syslog_vm_name:
+          type: string
+          description: "Syslog Azure Local VM resource name (azurelocal deployment only)"
+          required: false
+          example: "syslog"
+
+        azurelocal_vm_syslog_cluster_name:
+          type: string
+          description: "Azure Local cluster hosting the syslog server"
+          required: false
+          example: "azl-corp-clus01"
+
+      # SHARED AZURE IAAS VM SETTINGS
+      # Applies only when deployment_target: azure. Ignored for azurelocal or onprem.
       # ---------------------------------------------------------------------------
       vm_shared:
         azure_vm_resource_group:
@@ -8144,7 +8228,7 @@ compute:
         - variable: "wsfc_sofs_role_enabled"
           value: true
         format: fqdn
-        example: "iic.local"
+        example: "contoso.local"
 
       wsfc_sofs_domain_netbios:
         type: string
@@ -8539,7 +8623,7 @@ compute:
       depends_on:
       - variable: "cluster_witness_type"
         value: "file_share_witness"
-      example: "\\\\fileserver.improbability.cloud\\witness"
+      example: "\\\\fileserver.contoso.cloud\\witness"
 
     # Disk Witness
     cluster_witness_disk_resource:
@@ -11233,7 +11317,7 @@ security:
       description: "Security contact email"
       required: false
       format: email
-      example: "security@improbability.cloud"
+      example: "security@contoso.cloud"
 
     def_compliance_framework:
       type: string
@@ -11618,7 +11702,7 @@ operations:
         type: string
       format: email
       example:
-      - "AzureLocalCloud@improbability.cloud"
+      - "AzureLocalCloud@contoso.cloud"
 
     monitoring_alert_severity_levels:
       type: array

@@ -19,7 +19,7 @@
     Active Directory domain name.
 
 .EXAMPLE
-    .\Test-DnsConfiguration.ps1 -NodeNames @("node01", "node02") -DomainName "Infinite Improbability Corp.local"
+    .\Test-DnsConfiguration.ps1 -NodeNames @("node01", "node02") -DomainName "Contoso.local"
 
 .NOTES
     Author: Azure Local Cloud AzureLocalCloud

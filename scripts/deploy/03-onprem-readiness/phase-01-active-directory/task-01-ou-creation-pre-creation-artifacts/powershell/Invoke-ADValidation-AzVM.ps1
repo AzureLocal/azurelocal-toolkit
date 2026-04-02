@@ -32,7 +32,7 @@
 .NOTES
     Requires: Az.Compute module, authenticated Azure session (Connect-AzAccount)
     Role: Contributor or Virtual Machine Contributor on the target VM
-    Author: Azure Local Cloudnology Team
+    Author: AzureLocal Cloud Team Team
     Version: 1.1.0
     Created: 2026-02-27
 #>
