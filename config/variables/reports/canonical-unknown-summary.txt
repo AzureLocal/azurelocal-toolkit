@@ -1,0 +1,11 @@
+Canonical Unknown Summary
+Total unknown paths: 118
+Top unknown roots:
+- networking: 47
+- security: 24
+- identity: 16
+- operations: 11
+- site: 9
+- compute: 5
+- tags: 5
+- marketplace_images: 1

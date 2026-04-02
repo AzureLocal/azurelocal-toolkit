@@ -62,77 +62,54 @@ tags:
   cost_center: "IT-IIC"
 
 azure_platform:
-  tenant:
-    id: "00000000-0000-0000-0000-000000000000"
-    name: "Infinite Improbability Corp"
-    default_domain: "improbability.onmicrosoft.com"
   azure_tenants:
     aztenant_azurelocal_id: "00000000-0000-0000-0000-000000000000"
     aztenant_azurelocal_name: "Infinite Improbability Corp"
     aztenant_azurelocal_domain: "improbability.onmicrosoft.com"
     aztenant_azurelocal_primary_domain: "improbability.cloud"
     aztenant_region: "eastus"
-  subscriptions:
-    lab:
-      id: "11111111-1111-1111-1111-111111111111"
-      name: "sub-iic-lab"
-    demo:
-      id: "22222222-2222-2222-2222-222222222222"
-      name: "sub-iic-demo"
-    primary:
-      id: "33333333-3333-3333-3333-333333333333"
-      name: "sub-iic-primary"
-    connectivity:
-      id: "44444444-4444-4444-4444-444444444444"
-      name: "sub-iic-connectivity"
-    security:
-      id: "55555555-5555-5555-5555-555555555555"
-      name: "sub-iic-security"
-    platform_connectivity:
-      id: "66666666-6666-6666-6666-666666666666"
-      name: "sub-iic-platform-connectivity"
-    platform_identity:
-      id: "77777777-7777-7777-7777-777777777777"
-      name: "sub-iic-platform-identity"
-    platform_management:
-      id: "88888888-8888-8888-8888-888888888888"
-      name: "sub-iic-platform-management"
-    sub_bootstrap_id: "99999999-9999-9999-9999-999999999999"
   management_groups:
-    platform:
-      id: "mg-iic-platform"
-      name: "mg-iic-platform"
-    landing_zone:
-      name: "mg-iic-landing-zone"
-      display_name: "Landing Zone"
     tenant_root:
-      name: "iic-root"
+      mgtgrp_tenant_root_name: "Tenant Root Group"
+    custom:
+      mgtgrp_root_name: "mg-azlc-projectiic"
+      mgtgrp_root_display_name: "Project IIC Root"
+      mgtgrp_platform_name: "platform-projectiic"
+      mgtgrp_platform_display_name: "Project IIC Platform"
+      mgtgrp_identity_name: "platform-identity"
+      mgtgrp_connectivity_name: "platform-connectivity"
+      mgtgrp_management_name: "platform-management"
+      mgtgrp_security_name: "platform-security"
+      mgtgrp_landing_zones_name: "lz-projectiic"
+  subscriptions:
+    sub_bootstrap_id: "99999999-9999-9999-9999-999999999999"
+    sub_connectivity_id: "44444444-4444-4444-4444-444444444444"
+    sub_connectivity_name: "sub-iic-connectivity"
+    sub_management_id: "88888888-8888-8888-8888-888888888888"
+    sub_security_id: "55555555-5555-5555-5555-555555555555"
+    sub_security_name: "sub-iic-security"
+    sub_identity_id: "77777777-7777-7777-7777-777777777777"
+    sub_identity_name: "sub-iic-platform-identity"
+    sub_azure_local_id: "33333333-3333-3333-3333-333333333333"
+    sub_azure_local_name: "sub-iic-primary"
+    sub_workloads_id: "11111111-1111-1111-1111-111111111111"
+    sub_workloads_name: "sub-iic-lab"
   resource_groups:
-    management:
-      name: "rg-iic-management-01"
-    network:
-      name: "rg-iic-network-01"
-    compute:
-      name: "rg-iic-compute-01"
-    identity:
-      name: "rg-iic-identity-01"
-    security:
-      name: "rg-iic-security-01"
-    monitoring:
-      name: "rg-iic-monitor-01"
-    connectivity:
-      name: "rg-iic-connectivity-01"
-    arc:
-      name: "rg-iic-arc-01"
-  location: "eastus"
-  region: "eastus"
-  region_abbreviation: "eus"
-  resource_group: "rg-iic-compute-01"
-  resource_group_name: "rg-iic-compute-01"
-  platform:
-    kv_platform_name: "kv-iic-platform"
-    kv_platform_resource_group: "rg-iic-security-01"
-    kv_platform_enable_rbac: true
+    rg_connectivity_hub: "rg-iic-connectivity-01"
+    rg_connectivity_dns: "rg-iic-network-01"
+    rg_connectivity_bastion: "rg-iic-connectivity-01"
+    rg_connectivity_arcgw: "rg-iic-arc-01"
+    rg_identity_mgmt: "rg-iic-identity-01"
+    rg_management_monitoring: "rg-iic-monitor-01"
+    rg_management_backup: "rg-iic-management-01"
+    rg_management_automation: "rg-iic-management-01"
+    rg_workload_compute: "rg-iic-compute-01"
+    rg_workload_data: "rg-iic-compute-01"
+    rg_workload_web: "rg-iic-compute-01"
+    rg_workload_storage: "rg-iic-compute-01"
+    rg_azurelocal_cluster: "rg-iic-compute-01"
+    rg_azurelocal_arc: "rg-iic-arc-01"
+    rg_azurelocal_network: "rg-iic-network-01"
 
 identity:
   accounts:
@@ -344,154 +321,19 @@ networking:
   network_intents: []
 
 compute:
-  azure_local:
-    cluster_name: "azlocal-iic-01"
-    cluster_location: "eastus"
-    cluster_node_count: 2
-    resource_group: "rg-iic-compute-01"
-    arc_resource_group: "rg-iic-arc-01"
-    arc_gateway_enabled: false
-    arc_gateway_id: ""
-    custom_location: "cl-iic-azlocal-01"
-    custom_location_name: "cl-iic-azlocal-01"
-    azure_custom_location_name: "cl-iic-azlocal-01"
-    vm_switch_name: "ConvergedSwitch(hci)"
-    cluster_witness_type: "cloud_witness"
-    cluster_witness_file_share_path: "\\\\fs01.iic.local\\clusterwitness"
-    network_intents: []
-    logical_networks:
-      - name: "ln-iic01-management-100"
-        display_name: "Management Network"
-        vlan_id: 100
-        ip_allocation_method: "Static"
-        address_prefix: "10.100.0.0/24"
-        default_gateway: "10.100.0.1"
-        dns_servers:
-          - "10.100.0.10"
-          - "10.100.0.11"
-        ip_pools:
-          - name: "pool-mgmt-vms"
-            start: "10.100.0.50"
-            end: "10.100.0.200"
-            type: "vm"
-        nsg_name: "nsg-iic-management"
-        enabled: true
-      - name: "ln-iic01-production-200"
-        display_name: "Production Network"
-        vlan_id: 200
-        ip_allocation_method: "Static"
-        address_prefix: "10.200.0.0/24"
-        default_gateway: "10.200.0.1"
-        dns_servers:
-          - "10.100.0.10"
-          - "10.100.0.11"
-        ip_pools:
-          - name: "pool-prod-vms"
-            start: "10.200.0.50"
-            end: "10.200.0.250"
-            type: "vm"
-        nsg_name: "nsg-iic-production"
-        enabled: true
-      - name: "ln-iic01-avd-300"
-        display_name: "AVD Network"
-        vlan_id: 300
-        ip_allocation_method: "Dynamic"
-        dhcp_options:
-          dns_servers:
-            - "10.100.0.10"
-            - "10.100.0.11"
-          domain_name: "azurelocal.cloud"
-        nsg_name: "nsg-iic-avd"
-        enabled: true
   cluster_nodes:
     - node_hostname: "azl-iic-n01"
       node_fqdn: "azl-iic-n01.iic.local"
       node_management_ip: "10.0.0.11"
       node_idrac_ip: "10.245.64.11"
-      name: "azl-iic-n01"
-      hostname: "azl-iic-n01"
-      fqdn: "azl-iic-n01.iic.local"
-      management_ip: "10.0.0.11"
-      ipv4_address: "10.0.0.11"
-      ip_address: "10.0.0.11"
-      idrac_ip: "10.245.64.11"
-      bmc_address: "10.245.64.11"
       node_service_tag: "ABC1234"
-      serial_number: "ABC1234"
       arc_node_resource_ids: []
     - node_hostname: "azl-iic-n02"
       node_fqdn: "azl-iic-n02.iic.local"
       node_management_ip: "10.0.0.12"
       node_idrac_ip: "10.245.64.12"
-      name: "azl-iic-n02"
-      hostname: "azl-iic-n02"
-      fqdn: "azl-iic-n02.iic.local"
-      management_ip: "10.0.0.12"
-      ipv4_address: "10.0.0.12"
-      ip_address: "10.0.0.12"
-      idrac_ip: "10.245.64.12"
-      bmc_address: "10.245.64.12"
       node_service_tag: "ABC1235"
-      serial_number: "ABC1235"
       arc_node_resource_ids: []
-  azure_vms:
-    dc01:
-      name: "vm-iic-dc01"
-      hostname: "iic-dc01"
-      fqdn: "iic-dc01.iic.local"
-      private_ip: "10.20.1.10"
-      ip_address: "10.20.1.10"
-      location: "eastus"
-      resource_group: "rg-iic-compute-01"
-    dc02:
-      name: "vm-iic-dc02"
-      hostname: "iic-dc02"
-      fqdn: "iic-dc02.iic.local"
-      private_ip: "10.20.1.11"
-      ip_address: "10.20.1.11"
-      location: "eastus"
-      resource_group: "rg-iic-compute-01"
-    utility:
-      name: "vm-iic-util01"
-      hostname: "iic-util01"
-      fqdn: "iic-util01.iic.local"
-      private_ip: "10.20.1.20"
-      ip_address: "10.20.1.20"
-      location: "eastus"
-      resource_group: "rg-iic-compute-01"
-    lighthouse:
-      name: "vm-iic-lighthouse01"
-      hostname: "iic-lighthouse01"
-      fqdn: "iic-lighthouse01.iic.local"
-      private_ip: "10.20.1.30"
-      ip_address: "10.20.1.30"
-      location: "eastus"
-      resource_group: "rg-iic-compute-01"
-    wac:
-      name: "vm-iic-wac01"
-      hostname: "iic-wac01"
-      fqdn: "iic-wac01.iic.local"
-      private_ip: "10.20.1.40"
-      ip_address: "10.20.1.40"
-      location: "eastus"
-      resource_group: "rg-iic-compute-01"
-    syslog:
-      name: "vm-iic-syslog01"
-      hostname: "iic-syslog01"
-      fqdn: "iic-syslog01.iic.local"
-      private_ip: "10.20.1.50"
-      ip_address: "10.20.1.50"
-      location: "eastus"
-      resource_group: "rg-iic-compute-01"
-  nodes:
-    - name: "azl-iic-n01"
-      ipv4_address: "10.0.0.11"
-      bmc_address: "10.245.64.11"
-      serial_number: "ABC1234"
-    - name: "azl-iic-n02"
-      ipv4_address: "10.0.0.12"
-      bmc_address: "10.245.64.12"
-      serial_number: "ABC1235"
   vms:
     azure: {}
     arc_hybrid: {}
@@ -506,19 +348,6 @@ compute:
       azl_witness_type: "cloud_witness"
       azl_deployment_mode: "deploy"
   cluster_arm_deployment: {}
-  cluster_shared_volumes:
-    enabled: true
-    storage_pool_name: "S2D on azlocal-iic-01"
-    volumes:
-      - volume_name: "csv-iic-azlocal-01-vmstore-01"
-        size_gb: 2000
-        filesystem: "ReFS"
-        resiliency: "Mirror"
-        path: "C:\\ClusterStorage\\csv-iic-azlocal-01-vmstore-01"
-    storage_paths:
-      vmstore:
-        name: "sp-iic-azlocal-01-vmstore-01"
-        path: "C:\\ClusterStorage\\csv-iic-azlocal-01-vmstore-01\\VMs"
   avd: {}
 
 storage_accounts: {}

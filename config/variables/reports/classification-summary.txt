@@ -1,0 +1,9 @@
+Classification Summary
+Generated: 2026-04-01T22:29:33
+Input: E:\git\azurelocal-toolkit\config\variables\reports\canonical-mapping-template.csv
+Output: E:\git\azurelocal-toolkit\config\variables\reports\canonical-mapping-template-classified.csv
+
+Counts by classification:
+- alias_candidate: 363
+- canonical_candidate: 490
+- orphaned_candidate: 230

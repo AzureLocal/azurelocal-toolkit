@@ -1,0 +1,5417 @@
+[
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "ansible"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "ansible.ansible_connection"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "control_plane"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "control_plane.app_group_friendly_name"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "control_plane.app_group_name"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "control_plane.app_group_type"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "control_plane.custom_rdp_properties"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "control_plane.host_pool_description"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "control_plane.host_pool_friendly_name"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "control_plane.host_pool_name"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "control_plane.host_pool_type"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "control_plane.load_balancer_type"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "control_plane.max_session_limit"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "control_plane.personal_assignment_type"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "control_plane.preferred_app_group_type"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "control_plane.resource_group"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "control_plane.start_vm_on_connect"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "control_plane.validation_environment"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "control_plane.workspace_friendly_name"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "control_plane.workspace_name"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "deployment"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "deployment.mode"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "deployment.naming_convention"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "domain"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "domain.domain_fqdn"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "domain.domain_join_ou_path"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "domain.domain_join_password"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "domain.domain_join_username"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.cloud_cache"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.cloud_cache.connections"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.enabled"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.profile_container"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.profile_container.delete_on_logoff"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.profile_container.flip_flop_enabled"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.profile_container.is_dynamic"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.profile_container.locked_retry_count"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.profile_container.locked_retry_interval"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.profile_container.size_in_mb"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.profile_container.vhd_type"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.share_topology"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.single_share"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.single_share.vhd_path"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.split_shares"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.split_shares.office_vhd_path"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.split_shares.profile_vhd_path"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "identity"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "identity.entra_id"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "identity.entra_id.enable_entra_id_auth"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "identity.entra_id.enroll_in_intune"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "identity.entra_id.entra_admin_login_group_id"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "identity.entra_id.entra_user_login_group_id"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "identity.rbac"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "identity.rbac.desktop_virtualization_admin_group_id"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "identity.rbac.desktop_virtualization_user_group_id"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "identity.rbac.power_on_contributor_group_id"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "identity.strategy"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "image"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "image.customization"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "image.customization.additional_scripts"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "image.customization.install_m365_apps"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "image.customization.install_onedrive"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "image.customization.install_teams_new"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "image.gallery"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "image.gallery.gallery_image_id"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "image.marketplace"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "image.marketplace.offer"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "image.marketplace.publisher"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "image.marketplace.sku"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "image.source"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring.alerts"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring.alerts.action_group_id"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring.alerts.enable_alerts"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring.defender"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring.defender.enable_defender_for_cloud"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring.diagnostics"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring.diagnostics.enable_host_pool_diagnostics"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring.diagnostics.enable_workspace_diagnostics"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring.diagnostics.log_categories"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring.log_analytics"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring.log_analytics.resource_group"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring.log_analytics.retention_days"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring.log_analytics.workspace_name"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "networking"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "networking.nsg"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "networking.nsg.apply_default_avd_rules"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "networking.private_endpoints"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "networking.private_endpoints.enabled"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "networking.private_endpoints.subnet_id"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.enabled"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.days_of_week"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.off_peak"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.off_peak.load_balancer_type"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.off_peak.start_time"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.peak"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.peak.load_balancer_type"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.peak.start_time"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.ramp_down"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.ramp_down.capacity_threshold_percent"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.ramp_down.force_logoff"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.ramp_down.load_balancer_type"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.ramp_down.minimum_host_percent"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.ramp_down.notification_message"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.ramp_down.start_time"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.ramp_down.wait_time_minutes"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.ramp_up"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.ramp_up.capacity_threshold_percent"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.ramp_up.load_balancer_type"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.ramp_up.minimum_host_percent"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.schedules.ramp_up.start_time"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "scaling.time_zone"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "security"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "security.key_vault_name"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "security.key_vault_resource_group"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "session_hosts"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "session_hosts.custom_location_id"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "session_hosts.gallery_image_id"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "session_hosts.logical_network_id"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "session_hosts.resource_group"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "session_hosts.session_host_count"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "session_hosts.session_host_os"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "session_hosts.storage_path_id"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "session_hosts.vm_admin_password"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "session_hosts.vm_admin_username"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "session_hosts.vm_memory_mb"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "session_hosts.vm_naming_prefix"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "session_hosts.vm_processors"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "session_hosts.vm_start_index"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "subscription"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "subscription.avd_subscription_id"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "subscription.azure_local_subscription_id"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "subscription.location"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "subscription.tenant_id"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "tags"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "tags.CostCenter"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "tags.Environment"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "tags.ManagedBy"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "tags.Owner"
+  },
+  {
+    "repo": "azurelocal-avd",
+    "file": "config/variables.example.yml",
+    "key_path": "tags.Project"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "azure"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local.cluster_domain"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local.cluster_name"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local.custom_location_id"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local.nodes"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local.nodes.management_ip"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local.nodes.role"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local.nodes.storage_ip"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local.storage_path_id"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "azure.location"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "azure.resource_group"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "azure.subscription_id"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "azure.tenant_id"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "credentials"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "credentials.cluster_admin_password"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "credentials.cluster_admin_username"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "credentials.linux_ssh_key_path"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "credentials.linux_ssh_username"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "credentials.vmfleet_admin_password"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "credentials.vmfleet_admin_username"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "hammerdb"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "hammerdb.db_name"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "hammerdb.db_server"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "hammerdb.db_type"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "hammerdb.virtual_users"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "hammerdb.warehouse_count"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "keyvault"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "keyvault.auth_method"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "keyvault.name"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring.collection_interval_seconds"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring.enable_real_time"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring.log_analytics_shared_key"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "monitoring.log_analytics_workspace_id"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "networking"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "networking.compute"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "networking.compute.subnet"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "networking.compute.vlan_id"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "networking.management"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "networking.management.subnet"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "networking.management.vlan_id"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "networking.storage"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "networking.storage.rdma_enabled"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "networking.storage.subnet"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "networking.storage.vlan_id"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "reporting"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "reporting.format"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "reporting.include_charts"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "reporting.output_dir"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "storage"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "storage.base_vhd_path"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "storage.collect_volume_path"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "storage.csv_path"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "tags"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "tags.environment"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "tags.project"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "tags.solution"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "tags.workload"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "testing"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "testing.default_profile"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "testing.default_tool"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "testing.duration_seconds"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "testing.warmup_seconds"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "vmfleet"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "vmfleet.block_size"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "vmfleet.data_disk_count"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "vmfleet.data_disk_size_gb"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "vmfleet.diskspd_version"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "vmfleet.outstanding_io"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "vmfleet.random_ratio"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "vmfleet.test_duration_seconds"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "vmfleet.threads_per_vm"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "vmfleet.version"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "vmfleet.vm_count"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "vmfleet.vm_memory_gb"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "vmfleet.vm_processors"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "vmfleet.warmup_seconds"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "vmfleet.write_ratio"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "winrm"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "winrm.authentication"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "winrm.operation_timeout_seconds"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "winrm.port"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables.example.yml",
+    "key_path": "winrm.use_ssl"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables/variables.yml",
+    "key_path": "metadata"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables/variables.yml",
+    "key_path": "metadata.description"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables/variables.yml",
+    "key_path": "metadata.last_modified"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables/variables.yml",
+    "key_path": "metadata.version"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables/variables.yml",
+    "key_path": "variables"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables/variables.yml",
+    "key_path": "variables.category"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables/variables.yml",
+    "key_path": "variables.description"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables/variables.yml",
+    "key_path": "variables.required"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables/variables.yml",
+    "key_path": "variables.sensitive"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables/variables.yml",
+    "key_path": "variables.solutions"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables/variables.yml",
+    "key_path": "variables.type"
+  },
+  {
+    "repo": "azurelocal-loadtools",
+    "file": "config/variables/variables.yml",
+    "key_path": "variables.value"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "ansible_controller"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "ansible_controller.admin_username"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "ansible_controller.existing_controller_ip"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "ansible_controller.existing_controller_user"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "ansible_controller.hub_rg"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "ansible_controller.hub_subnet_id"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "ansible_controller.name"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "ansible_controller.private_ip"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "ansible_controller.size"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "ansible_controller.ssh_public_key_path"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "azure"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local.cluster_name"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local.custom_location_id"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local.gallery_image_name"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local.logical_network_id"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local.storage_path_id"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local.storage_path_ids"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "azure.location"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "azure.resource_group"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "azure.subscription_id"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "azure.tenant_id"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "cloud_witness"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "cloud_witness.endpoint"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "cloud_witness.key_secret"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "cloud_witness.key_uri"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "cloud_witness.name"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "data_disks"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "data_disks.count"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "data_disks.dynamic"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "data_disks.size_gb"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "deployment"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "deployment.cloud_cache_enabled"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "deployment.guest_layout"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "deployment.guest_resiliency"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "deployment.guest_volume_layout"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "deployment.host_resiliency"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "deployment.host_volume_layout"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "dns_servers"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "domain"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "domain.cluster_ou_path"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "domain.fqdn"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "domain.join_password"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "domain.join_username"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "domain.netbios"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "domain.nodes_ou_path"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.cloud_cache"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.cloud_cache.azure_provider"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.cloud_cache.enabled"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.cloud_cache.providers"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.delete_local_profile"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.enabled"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.flip_flop_name"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.profile_size_mb"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "fslogix.volume_type"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "fsrm"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "fsrm.enabled"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "fsrm.soft_limit"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "fsrm.template_name"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "guest_config_engine"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "host_volumes"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "host_volumes.storage_pool_name"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "host_volumes.volumes"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "host_volumes.volumes.size_tb"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "keyvault"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "keyvault.name"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "keyvault.resource_group"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "keyvault.subscription_id"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "keyvault.tenant_id"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "permissions"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "permissions.admin_group"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "permissions.avd_users_group"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "permissions.users_group"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "s2d"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "s2d.data_copies"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "s2d.pool_name"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "s2d.volume_name"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "s2d.volume_size_gb"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "sofs"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "sofs.access_point_ip"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "sofs.anti_affinity_rule_name"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "sofs.caching_mode"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "sofs.cluster_ip"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "sofs.cluster_name"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "sofs.continuous_availability"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "sofs.folder_enumeration_mode"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "sofs.role_enabled"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "sofs.role_name"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "sofs.share_name"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "sofs.smb_encryption"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "tags"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "tags.environment"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "tags.project"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "tags.solution"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "tags.workload"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "vm"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "vm.admin_password"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "vm.admin_username"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "vm.count"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "vm.ips"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "vm.memory_mb"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "vm.os_disk_size_gb"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "vm.prefix"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "vm.processors"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "winrm"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "winrm.cert_validation"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "winrm.port"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "winrm.transport"
+  },
+  {
+    "repo": "azurelocal-sofs-fslogix",
+    "file": "config/variables.example.yml",
+    "key_path": "winrm.use_ssl"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "_metadata"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "_metadata.discovery"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "_metadata.discovery.azure"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "_metadata.discovery.azure.last_run"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "_metadata.discovery.idrac"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "_metadata.discovery.idrac.last_run"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "_metadata.environment_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "_metadata.last_manual_edit"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "_metadata.last_updated"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "_metadata.schema_version"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "_metadata.version"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "accounts"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "accounts.account_lcm_username"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "accounts.account_local_admin_password"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "accounts.account_local_admin_username"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "active_directory"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "active_directory.ad_clusters_ou_path"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "active_directory.ad_domain_fqdn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "active_directory.ad_netbios_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "active_directory.domain"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "active_directory.domain.fqdn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "active_directory.organizational_units"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "active_directory.organizational_units.servers"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.bastion"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.bastion.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.bastion.public_ip"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.bastion.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.bastion.sku"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.bastion.subscription"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.domain_controllers"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.domain_controllers.dc01"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.domain_controllers.dc01.ip_address"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.domain_controllers.dc02"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.domain_controllers.dc02.ip_address"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.key_vaults"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.key_vaults.management"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.key_vaults.management.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.key_vaults.management.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.key_vaults.management.secrets"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.key_vaults.management.secrets.azlocal_admin_password"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.key_vaults.management.secrets.recovery_admin_password"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.key_vaults.management.secrets.vpn_shared_key"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.key_vaults.management.subscription"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.key_vaults.platform"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.key_vaults.platform.admin_object_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.key_vaults.platform.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.key_vaults.platform.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.key_vaults.secrets"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.key_vaults.secrets.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.log_analytics"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.log_analytics.management"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.log_analytics.management.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.log_analytics.management.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.log_analytics.management.retention_days"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.log_analytics.management.sku"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.log_analytics.management.subscription"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.log_analytics.management.workspace_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.monitoring"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.monitoring.log_analytics"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.monitoring.log_analytics.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.monitoring.sentinel_workspace"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.monitoring.sentinel_workspace.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.networking"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.networking.hub_vnet"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.networking.hub_vnet.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.networking.nsgs"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.networking.nsgs.infrastructure"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.networking.nsgs.infrastructure.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.networking.nsgs.lighthouse"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.networking.nsgs.lighthouse.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.networking.subnets"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.networking.subnets.infrastructure"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.networking.subnets.infrastructure.address_prefix"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.networking.subnets.infrastructure.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.networking.vnet"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.networking.vnet.address_prefix"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.networking.vnet.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.resource_groups"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.resource_groups.arc"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.resource_groups.arc.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.resource_groups.compute"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.resource_groups.compute.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.resource_groups.connectivity"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.resource_groups.connectivity.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.resource_groups.identity"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.resource_groups.identity.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.resource_groups.management"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.resource_groups.management.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.resource_groups.monitoring"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.resource_groups.monitoring.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.resource_groups.network"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.resource_groups.network.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.resource_groups.security"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.resource_groups.security.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.security"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.security.notification_email"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.virtual_machines"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.virtual_machines.admin_password"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.virtual_machines.admin_username"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.virtual_machines.lighthouse"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.virtual_machines.lighthouse.nic_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.virtual_machines.syslog"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.virtual_machines.syslog.ip_address"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_infrastructure.virtual_machines.syslog.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_local"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_local.cluster_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_local.cluster_node_count"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_local.custom_location_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.azure_tenants"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.azure_tenants.aztenant_azurelocal_domain"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.azure_tenants.aztenant_azurelocal_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.azure_tenants.aztenant_azurelocal_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.azure_tenants.aztenant_azurelocal_primary_domain"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.azure_tenants.aztenant_region"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.location"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.management_groups"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.management_groups.landing_zone"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.management_groups.landing_zone.display_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.management_groups.landing_zone.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.management_groups.platform"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.management_groups.platform.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.management_groups.platform.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.management_groups.tenant_root"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.management_groups.tenant_root.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.platform"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.platform.kv_platform_enable_rbac"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.platform.kv_platform_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.platform.kv_platform_resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.region"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.region_abbreviation"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_group_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_groups"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_groups.arc"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_groups.arc.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_groups.compute"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_groups.compute.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_groups.connectivity"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_groups.connectivity.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_groups.identity"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_groups.identity.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_groups.management"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_groups.management.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_groups.monitoring"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_groups.monitoring.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_groups.network"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_groups.network.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_groups.security"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.resource_groups.security.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.connectivity"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.connectivity.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.connectivity.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.demo"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.demo.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.demo.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.lab"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.lab.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.lab.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.platform_connectivity"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.platform_connectivity.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.platform_connectivity.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.platform_identity"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.platform_identity.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.platform_identity.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.platform_management"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.platform_management.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.platform_management.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.primary"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.primary.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.primary.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.security"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.security.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.security.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.subscriptions.sub_bootstrap_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.tenant"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.tenant.default_domain"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.tenant.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_platform.tenant.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_resources"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_resources.platform_connectivity"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_resources.platform_identity"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_resources.platform_management"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_resources.resource_group_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_vms"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_vms.dc01"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_vms.dc01.hostname"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_vms.dc01.location"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_vms.dc01.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_vms.dc01.private_ip"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_vms.dc01.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_vms.dc02"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_vms.dc02.hostname"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_vms.dc02.location"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_vms.dc02.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_vms.dc02.private_ip"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_vms.dc02.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_vms.utility"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_vms.utility.fqdn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure_vms.utility.private_ip"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.environment"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.identity"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.identity.conditional_access"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.identity.conditional_access.policy"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.identity.pim"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.identity.pim.eligible_duration_hours"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.identity.pim.roles"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.location"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.management_groups"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.management_groups.landing_zone"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.management_groups.landing_zone.display_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.management_groups.landing_zone.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.management_groups.platform"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.management_groups.platform.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.management_groups.tenant_root"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.management_groups.tenant_root.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.region"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.region_abbreviation"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.resource_group_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscription"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscription_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscription.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscription.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions.connectivity"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions.connectivity.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions.connectivity.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions.demo"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions.demo.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions.demo.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions.lab"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions.lab.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions.lab.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions.platform_connectivity"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions.platform_connectivity.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions.platform_identity"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions.platform_identity.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions.platform_management"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions.platform_management.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions.security"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions.security.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.subscriptions.security.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.tenant"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "azure.tenant.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "b2b_configuration"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "backup"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "backup.mabs_server"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "backup.recovery_vault_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "backup.server_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "backup.vault_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster_shared_volumes"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster_shared_volumes.enabled"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster_shared_volumes.storage_paths"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster_shared_volumes.storage_paths.vmstore"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster_shared_volumes.storage_paths.vmstore.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster_shared_volumes.storage_paths.vmstore.path"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster_shared_volumes.storage_pool_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster_shared_volumes.volumes"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster_shared_volumes.volumes.filesystem"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster_shared_volumes.volumes.path"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster_shared_volumes.volumes.resiliency"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster_shared_volumes.volumes.size_gb"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster.arm_deployment"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster.arm_deployment.cluster_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster.arm_deployment.ou_path"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster.deployment"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster.deployment.arc_gateway"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster.deployment.arc_gateway.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster.deployment.arc_gateway.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster.location"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster.management_nic_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "cluster.nodes"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.avd"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.arc_gateway_enabled"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.arc_gateway_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.arc_resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.azure_custom_location_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.cluster_location"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.cluster_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.cluster_node_count"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.cluster_witness_file_share_path"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.cluster_witness_type"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.custom_location"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.custom_location_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.logical_networks"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.logical_networks.address_prefix"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.logical_networks.default_gateway"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.logical_networks.dhcp_options"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.logical_networks.dhcp_options.dns_servers"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.logical_networks.dhcp_options.domain_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.logical_networks.display_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.logical_networks.dns_servers"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.logical_networks.enabled"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.logical_networks.ip_allocation_method"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.logical_networks.ip_pools"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.logical_networks.ip_pools.end"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.logical_networks.ip_pools.start"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.logical_networks.ip_pools.type"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.logical_networks.nsg_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.logical_networks.vlan_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.network_intents"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_local.vm_switch_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.dc01"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.dc01.fqdn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.dc01.hostname"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.dc01.ip_address"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.dc01.location"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.dc01.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.dc01.private_ip"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.dc01.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.dc02"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.dc02.fqdn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.dc02.hostname"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.dc02.ip_address"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.dc02.location"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.dc02.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.dc02.private_ip"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.dc02.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.lighthouse"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.lighthouse.fqdn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.lighthouse.hostname"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.lighthouse.ip_address"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.lighthouse.location"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.lighthouse.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.lighthouse.private_ip"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.lighthouse.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.syslog"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.syslog.fqdn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.syslog.hostname"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.syslog.ip_address"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.syslog.location"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.syslog.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.syslog.private_ip"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.syslog.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.utility"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.utility.fqdn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.utility.hostname"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.utility.ip_address"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.utility.location"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.utility.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.utility.private_ip"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.utility.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.wac"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.wac.fqdn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.wac.hostname"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.wac.ip_address"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.wac.location"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.wac.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.wac.private_ip"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.azure_vms.wac.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_arm_deployment"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_nodes"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_nodes.arc_node_resource_ids"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_nodes.bmc_address"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_nodes.fqdn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_nodes.hostname"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_nodes.idrac_ip"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_nodes.ip_address"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_nodes.ipv4_address"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_nodes.management_ip"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_nodes.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_nodes.node_fqdn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_nodes.node_idrac_ip"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_nodes.node_management_ip"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_nodes.node_service_tag"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_nodes.serial_number"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_shared_volumes"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_shared_volumes.enabled"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_shared_volumes.storage_paths"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_shared_volumes.storage_paths.vmstore"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_shared_volumes.storage_paths.vmstore.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_shared_volumes.storage_paths.vmstore.path"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_shared_volumes.storage_pool_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_shared_volumes.volumes"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_shared_volumes.volumes.filesystem"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_shared_volumes.volumes.path"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_shared_volumes.volumes.resiliency"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.cluster_shared_volumes.volumes.size_gb"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.clusters"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.clusters.azure_local"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.clusters.azure_local.azl_cluster_ip"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.clusters.azure_local.azl_deployment_mode"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.clusters.azure_local.azl_identity_provider"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.clusters.azure_local.azl_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.clusters.azure_local.azl_network_topology"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.clusters.azure_local.azl_node_count"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.clusters.azure_local.azl_resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.clusters.azure_local.azl_witness_type"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.nodes"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.nodes.bmc_address"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.nodes.ipv4_address"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.nodes.serial_number"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.vms"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.vms.arc_hybrid"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "compute.vms.azure"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "credentials"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "credentials.domain_join_password"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "deployment"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "deployment.admin_upn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "devops"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "devops.gitlab"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "devops.terraform"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "dns"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "domain"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "domain.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "environment"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "environment.env_description"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "environment.env_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "environment.env_owner"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "environment.env_type"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "hardware"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "hardware.bios_settings"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "hardware.idrac_settings"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.accounts"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.accounts.account_ad_domain_admin_password"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.accounts.account_ad_domain_admin_username"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.accounts.account_lcm_password"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.accounts.account_lcm_username"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.accounts.account_local_admin_password"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.accounts.account_local_admin_username"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.active_directory"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.active_directory.ad_clusters_ou_path"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.active_directory.ad_computers_ou_path"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.active_directory.ad_dns_servers"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.active_directory.ad_domain_fqdn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.active_directory.ad_netbios_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.active_directory.ad_ou_path"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.active_directory.ad_servers_ou_path"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.active_directory.domain"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.active_directory.domain.fqdn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.active_directory.domain.netbios"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.active_directory.fqdn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.active_directory.organizational_units"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.active_directory.organizational_units.servers"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.b2b_configuration"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.break_glass_account_ids"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.managed_identities"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.managed_identities.mi_system_assigned"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.managed_identities.mi_user_assigned"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.service_principal"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.service_principal.app_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.service_principal.client_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.service_principal.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.service_principal.object_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.service_principal.roles"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.service_principal.roles.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.service_principal.roles.subscription"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "identity.service_principal.secret"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "key_vault"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "key_vault.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "marketplace_images"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "marketplace_images.enabled"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "marketplace_images.images"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "marketplace_images.images.offer"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "marketplace_images.images.os_type"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "marketplace_images.images.publisher"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "marketplace_images.images.sku"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "marketplace_images.images.storage_path"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "monitoring"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "monitoring.log_analytics"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "monitoring.log_analytics_workspace_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "monitoring.log_analytics.workspace_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "nat_gateway"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "nat_gateway.idle_timeout"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network_config"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network_config.management_nic_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.cicd"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.cicd.subnets"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.cicd.subnets.cicd"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.cicd.subnets.cicd.cidr"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management.cidr"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management.location"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management.subnets"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management.subnets.bastion"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management.subnets.bastion.cidr"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management.subnets.bastion.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management.subnets.gateway"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management.subnets.gateway.cidr"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management.subnets.gateway.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management.subnets.management"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management.subnets.management.cidr"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management.subnets.management.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management.subnets.privateendpoints"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management.subnets.privateendpoints.cidr"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management.subnets.privateendpoints.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.azure_vnets.management.subscription"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.management"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vlans"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vlans.management"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vlans.management.cidr"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vlans.management.dhcp"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vlans.management.dhcp.server"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vlans.oob"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vlans.oob.cidr"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vlans.oob.dhcp"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vlans.oob.dhcp.server"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.azure_gateway"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.azure_gateway.active_active"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.azure_gateway.bgp"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.azure_gateway.bgp.asn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.azure_gateway.bgp.enabled"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.azure_gateway.generation"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.azure_gateway.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.azure_gateway.public_ip"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.azure_gateway.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.azure_gateway.sku"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.connection"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.connection.enable_bgp"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.connection.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.connection.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.connection.routing_weight"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.connection.shared_key"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.local_gateway"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.local_gateway.bgp"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.local_gateway.bgp.asn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.local_gateway.bgp.bgp_peering_address"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.local_gateway.bgp.enabled"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.local_gateway.gateway_ip"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.local_gateway.local_address_prefixes"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.local_gateway.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.local_gateway.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.p2s"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.p2s.address_pool"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.p2s.auth_type"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.p2s.root_cert_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.p2s.root_cert_secret"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "network.vpn.p2s.tunnel_type"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.bastion"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.firewall"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.hub_spoke"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.hub_spoke.hub_vnet_address_space"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.hub_spoke.hub_vnet_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.hub_spoke.vnet_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.sdn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.sdn.gateway"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.sdn.load_balancer"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.sdn.network_controller"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.sdn.nsgs"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.sdn.nsgs.description"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.sdn.nsgs.rules"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.sdn.nsgs.rules.access"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.sdn.nsgs.rules.destination_port_range"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.sdn.nsgs.rules.direction"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.sdn.nsgs.rules.priority"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.sdn.nsgs.rules.protocol"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.sdn.nsgs.rules.source_address_prefix"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.sdn.sdn_enabled"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.azure.vnets"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.dhcp"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.dhcp.server"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.hybrid"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.hybrid.vpn"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.network_intents"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.dhcp"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.dhcp.management_compute"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.dhcp.management_compute.dns_primary"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.dhcp.server"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.dns"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.dns.servers"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.logical_networks"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.mtu"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.network_devices"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.network_devices.opengear"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.network_devices.opengear.alerts"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.network_devices.opengear.host"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.network_devices.opengear.users"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.network_devices.powerswitch"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.network_devices.powerswitch.host"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.network_intents"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.network_intents.adapter_names"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.network_intents.dns_servers"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.network_intents.gateway"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.network_intents.storage_networks"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.network_intents.storage_networks.vlan_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.network_intents.subnet"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.network_intents.traffic_types"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.network_intents.vlan_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.vlans"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.vlans.management"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.vlans.management.cidr"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.vlans.management.gateway"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.vlans.management.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.vlans.management.subnet"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.vlans.storage"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.vlans.storage.cidr"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.vlans.storage.gateway"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.vlans.storage.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.vlans.storage.subnet"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.vlans.workload"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.vlans.workload.cidr"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.vlans.workload.end"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.vlans.workload.gateway"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.vlans.workload.id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.vlans.workload.start"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "networking.onprem.vlans.workload.subnet"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "nodes"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "nodes.bmc_address"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "nodes.ipv4_address"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "nodes.serial_number"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "operations"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "operations.azure_update_manager"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "operations.bcdr"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "operations.monitoring"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "operations.monitoring.extended"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "operations.monitoring.extended.datadog"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "operations.monitoring.extended.datadog.api_key"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "operations.monitoring.extended.datadog.site"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "operations.monitoring.extended.scom"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "operations.monitoring.extended.scom.server"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "operations.monitoring.log_analytics"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "operations.monitoring.log_analytics.workspace_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "operations.monitoring.log_analytics.workspace_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "operations.monitoring.wac"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "operations.monitoring.wac.server"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "operations.policy"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "operations.scvmm"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "platform"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "platform.cluster_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "platform.kv_platform_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "platform.kv_platform_resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "project"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "project.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.credentials"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.credentials.domain_join_password"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.credentials.domain_join_username"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.credentials.local_admin_password"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.credentials.password"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.defender"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.infrastructure_credentials"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.infrastructure_credentials.idrac"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.infrastructure_credentials.idrac.password_secret"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.infrastructure_credentials.idrac.username"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.key_vaults"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.key_vaults.management"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.key_vaults.management.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.key_vaults.management.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.key_vaults.management.secrets"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.key_vaults.management.secrets.azlocal_admin_password"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.key_vaults.management.secrets.recovery_admin_password"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.key_vaults.management.secrets.vpn_shared_key"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.key_vaults.management.subscription"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.key_vaults.platform"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.key_vaults.platform.admin_object_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.key_vaults.platform.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.key_vaults.platform.resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.key_vaults.secrets"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.key_vaults.secrets.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.cmp_platform"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.cmp_platform.kv_cmp_platform_location"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.cmp_platform.kv_cmp_platform_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.cmp_platform.kv_cmp_platform_resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.cmp_platform.kv_cmp_platform_subscription_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.cmp_platform.kv_cmp_platform_tenant_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.kv_azl"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.kv_azl.kv_azl_arbdeployment_spn_value"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.kv_azl.kv_azl_local_admin_password"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.kv_azl.kv_azl_local_admin_username"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.kv_azl.kv_azl_location"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.kv_azl.kv_azl_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.kv_azl.kv_azl_resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.kv_azl.kv_azl_subscription_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.kv_azl.kv_azl_tenant_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.platform"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.platform.kv_platform_location"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.platform.kv_platform_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.platform.kv_platform_resource_group"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.platform.kv_platform_subscription_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.keyvault.platform.kv_platform_tenant_id"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "security.sentinel"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site.code"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site.customer_name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site.environment"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site.hardware"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site.hardware.dell_support"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site.hardware.dell_support.dell_support_password"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site.hardware.dell_support.dell_support_username"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site.hardware.gpu_enabled"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site.hardware.gpu_model"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site.hardware.hw_generation"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site.hardware.hw_model"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site.hardware.hw_vendor"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site.hardware.idrac"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site.hardware.idrac.idrac_password"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site.hardware.idrac.idrac_username"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site.location"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "site.owner"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "solution"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "solution.name"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "solution.type"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "storage_accounts"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "tags"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "tags.cost_center"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "tags.CostCenter"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "tags.Environment"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "tags.ManagedBy"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "tags.Owner"
+  },
+  {
+    "repo": "azurelocal-toolkit",
+    "file": "config/variables/variables.example.yml",
+    "key_path": "tags.project"
+  },
+  {
+    "repo": "azurelocal-vm-conversion-toolkit",
+    "file": "config/variables.example.yml",
+    "key_path": "azure"
+  },
+  {
+    "repo": "azurelocal-vm-conversion-toolkit",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local"
+  },
+  {
+    "repo": "azurelocal-vm-conversion-toolkit",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local.custom_location_id"
+  },
+  {
+    "repo": "azurelocal-vm-conversion-toolkit",
+    "file": "config/variables.example.yml",
+    "key_path": "azure_local.logical_network_id"
+  },
+  {
+    "repo": "azurelocal-vm-conversion-toolkit",
+    "file": "config/variables.example.yml",
+    "key_path": "azure.location"
+  },
+  {
+    "repo": "azurelocal-vm-conversion-toolkit",
+    "file": "config/variables.example.yml",
+    "key_path": "azure.resource_group"
+  },
+  {
+    "repo": "azurelocal-vm-conversion-toolkit",
+    "file": "config/variables.example.yml",
+    "key_path": "azure.subscription_id"
+  },
+  {
+    "repo": "azurelocal-vm-conversion-toolkit",
+    "file": "config/variables.example.yml",
+    "key_path": "conversion"
+  },
+  {
+    "repo": "azurelocal-vm-conversion-toolkit",
+    "file": "config/variables.example.yml",
+    "key_path": "conversion.max_parallel"
+  },
+  {
+    "repo": "azurelocal-vm-conversion-toolkit",
+    "file": "config/variables.example.yml",
+    "key_path": "conversion.working_directory"
+  },
+  {
+    "repo": "azurelocal-vm-conversion-toolkit",
+    "file": "config/variables.example.yml",
+    "key_path": "tags"
+  },
+  {
+    "repo": "azurelocal-vm-conversion-toolkit",
+    "file": "config/variables.example.yml",
+    "key_path": "tags.environment"
+  },
+  {
+    "repo": "azurelocal-vm-conversion-toolkit",
+    "file": "config/variables.example.yml",
+    "key_path": "tags.project"
+  },
+  {
+    "repo": "azurelocal-vm-conversion-toolkit",
+    "file": "config/variables.example.yml",
+    "key_path": "tags.solution"
+  },
+  {
+    "repo": "azurelocal-vm-conversion-toolkit",
+    "file": "config/variables.example.yml",
+    "key_path": "tags.workload"
+  }
+]

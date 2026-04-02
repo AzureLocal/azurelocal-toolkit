@@ -38,35 +38,29 @@ jobs:
       - name: Install dependencies
         run: pip install pyyaml jsonschema
 
-      - name: Validate infrastructure.yml against schema
+      - name: Validate master registry structure
+        shell: pwsh
         run: |
-          python3 -c "
-          import yaml, json, sys
-          from jsonschema import validate, ValidationError
+          ./config/variables/scripts/validate-registry.ps1
 
-          with open('config/infrastructure.yml') as f:
-              data = yaml.safe_load(f)
+      - name: Validate variables against schema and registry
+        shell: pwsh
+        run: |
+          ./config/variables/scripts/validate-variables.ps1 -StrictUnknown
 
-          with open('config/schema/variables.schema.json') as f:
-              schema = json.load(f)
-
-          try:
-              validate(instance=data, schema=schema)
-              print('✅ config/infrastructure.yml passes schema validation')
-          except ValidationError as e:
-              print(f'❌ Schema validation failed: {e.message}')
-              print(f'   Path: {\" > \".join(str(p) for p in e.absolute_path)}')
-              sys.exit(1)
-          "
+      - name: Validate alias expiry
+        shell: pwsh
+        run: |
+          ./config/variables/scripts/check-alias-expiry.ps1
 
       - name: Validate variables.example.yml syntax
         run: |
           python3 -c "
           import yaml, sys
-          with open('config/variables.example.yml') as f:
+          with open('config/variables/variables.example.yml') as f:
               data = yaml.safe_load(f)
           if data is None:
               print('❌ variables.example.yml is empty')
               sys.exit(1)
-          print('✅ config/variables.example.yml is valid YAML')
+          print('✅ config/variables/variables.example.yml is valid YAML')
           "

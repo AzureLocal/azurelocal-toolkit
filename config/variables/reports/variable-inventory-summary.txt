@@ -1,0 +1,11 @@
+Variable Inventory Summary
+Generated: 2026-04-01T22:19:10
+Total key entries: 1083
+Unique key paths: 1022
+
+Per-repo counts:
+- azurelocal-avd: 142
+- azurelocal-loadtools: 96
+- azurelocal-sofs-fslogix: 110
+- azurelocal-toolkit: 720
+- azurelocal-vm-conversion-toolkit: 15

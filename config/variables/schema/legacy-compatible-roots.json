@@ -1,0 +1,28 @@
+{
+  "roots": [
+    "solution",
+    "azure",
+    "platform",
+    "cluster",
+    "azure_infrastructure",
+    "azure_resources",
+    "azure_local",
+    "azure_vms",
+    "active_directory",
+    "accounts",
+    "credentials",
+    "backup",
+    "monitoring",
+    "network",
+    "network_config",
+    "domain",
+    "deployment",
+    "hardware",
+    "dns",
+    "nat_gateway",
+    "key_vault",
+    "project",
+    "b2b_configuration",
+    "nodes"
+  ]
+}

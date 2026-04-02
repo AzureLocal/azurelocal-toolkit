@@ -275,6 +275,35 @@
           },
           "additionalProperties": true
         },
+        "service_principal": {
+          "type": "object",
+          "description": "Service principal settings used by toolkit deployment flows",
+          "properties": {
+            "name": { "type": "string" },
+            "client_id": { "type": "string", "format": "uuid" },
+            "app_id": { "type": "string", "format": "uuid" },
+            "object_id": { "type": "string", "format": "uuid" },
+            "secret": {
+              "type": "string",
+              "description": "Service principal secret (Key Vault reference)",
+              "pattern": "^keyvault://[a-z0-9-]+/.+$"
+            },
+            "roles": {
+              "type": "object",
+              "properties": {
+                "subscription": { "type": "string" },
+                "resource_group": { "type": "string" }
+              },
+              "additionalProperties": true
+            }
+          },
+          "additionalProperties": true
+        },
+        "break_glass_account_ids": {
+          "type": "array",
+          "description": "Emergency access account object IDs",
+          "items": { "type": "string", "format": "uuid" }
+        },
         "b2b_configuration": {
           "type": "object",
           "description": "Cross-tenant B2B synchronization settings",

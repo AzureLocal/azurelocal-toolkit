@@ -1,0 +1,157 @@
+{
+  "policy_version": "1.0.0",
+  "description": "Alias lifecycle policy for the canonical variable registry",
+  "rules": {
+    "max_alias_age_days": 180,
+    "new_aliases_frozen": false,
+    "enforce_expiry_in_ci": true
+  },
+  "active_aliases": [
+    {
+      "alias_path": "identity.active_directory.domain.fqdn",
+      "canonical_target": "ad_domain_fqdn",
+      "created": "2026-04-02",
+      "reason": "Nested alias for example file compatibility"
+    },
+    {
+      "alias_path": "identity.active_directory.domain.netbios",
+      "canonical_target": "ad_netbios_name",
+      "created": "2026-04-02",
+      "reason": "Nested alias for example file compatibility"
+    },
+    {
+      "alias_path": "identity.active_directory.fqdn",
+      "canonical_target": "ad_domain_fqdn",
+      "created": "2026-04-02",
+      "reason": "Shorthand nested alias"
+    },
+    {
+      "alias_path": "identity.active_directory.organizational_units.servers",
+      "canonical_target": "ad_servers_ou_path",
+      "created": "2026-04-02",
+      "reason": "Nested alias for OU path"
+    },
+    {
+      "alias_path": "identity.service_principal.app_id",
+      "canonical_target": "client_id",
+      "created": "2026-04-02",
+      "reason": "Nested alias for service principal"
+    },
+    {
+      "alias_path": "networking.azure.hub_spoke.vnet_name",
+      "canonical_target": "hub_vnet_name",
+      "created": "2026-04-02",
+      "reason": "Nested alias for hub VNet"
+    },
+    {
+      "alias_path": "networking.azure.sdn.gateway",
+      "canonical_target": "sdn_gateway",
+      "created": "2026-04-02",
+      "reason": "SDN nested alias"
+    },
+    {
+      "alias_path": "networking.azure.sdn.load_balancer",
+      "canonical_target": "sdn_load_balancer",
+      "created": "2026-04-02",
+      "reason": "SDN nested alias"
+    },
+    {
+      "alias_path": "networking.azure.sdn.network_controller",
+      "canonical_target": "sdn_network_controller",
+      "created": "2026-04-02",
+      "reason": "SDN nested alias"
+    },
+    {
+      "alias_path": "networking.onprem.dhcp.server",
+      "canonical_target": "dhcp_server_ip",
+      "created": "2026-04-02",
+      "reason": "Nested DHCP alias"
+    },
+    {
+      "alias_path": "networking.onprem.vlans.management.id",
+      "canonical_target": "vlan_management_compute_id",
+      "created": "2026-04-02",
+      "reason": "Nested VLAN alias"
+    },
+    {
+      "alias_path": "networking.onprem.vlans.management.cidr",
+      "canonical_target": "vlan_management_compute_cidr",
+      "created": "2026-04-02",
+      "reason": "Nested VLAN alias"
+    },
+    {
+      "alias_path": "networking.onprem.vlans.management.gateway",
+      "canonical_target": "vlan_management_compute_gateway",
+      "created": "2026-04-02",
+      "reason": "Nested VLAN alias"
+    },
+    {
+      "alias_path": "networking.onprem.vlans.storage.id",
+      "canonical_target": "vlan_storage_1_id",
+      "created": "2026-04-02",
+      "reason": "Nested VLAN alias"
+    },
+    {
+      "alias_path": "networking.onprem.vlans.storage.cidr",
+      "canonical_target": "vlan_storage_1_cidr",
+      "created": "2026-04-02",
+      "reason": "Nested VLAN alias"
+    },
+    {
+      "alias_path": "networking.onprem.vlans.storage.gateway",
+      "canonical_target": "vlan_storage_1_gateway",
+      "created": "2026-04-02",
+      "reason": "Nested VLAN alias"
+    },
+    {
+      "alias_path": "networking.onprem.vlans.workload.id",
+      "canonical_target": "vlan_workload_1_id",
+      "created": "2026-04-02",
+      "reason": "Nested VLAN alias"
+    },
+    {
+      "alias_path": "networking.onprem.vlans.workload.cidr",
+      "canonical_target": "vlan_workload_1_cidr",
+      "created": "2026-04-02",
+      "reason": "Nested VLAN alias"
+    },
+    {
+      "alias_path": "networking.onprem.vlans.workload.gateway",
+      "canonical_target": "vlan_workload_1_gateway",
+      "created": "2026-04-02",
+      "reason": "Nested VLAN alias"
+    },
+    {
+      "alias_path": "operations.monitoring.extended.datadog.api_key",
+      "canonical_target": "monitoring_datadog_api_key",
+      "created": "2026-04-02",
+      "reason": "Nested monitoring alias"
+    },
+    {
+      "alias_path": "operations.monitoring.extended.datadog.site",
+      "canonical_target": "monitoring_datadog_site",
+      "created": "2026-04-02",
+      "reason": "Nested monitoring alias"
+    },
+    {
+      "alias_path": "operations.monitoring.extended.scom.server",
+      "canonical_target": "monitoring_scom_server",
+      "created": "2026-04-02",
+      "reason": "Nested monitoring alias"
+    },
+    {
+      "alias_path": "operations.monitoring.log_analytics.workspace_name",
+      "canonical_target": "monitoring_log_analytics_workspace_name",
+      "created": "2026-04-02",
+      "reason": "Nested monitoring alias"
+    },
+    {
+      "alias_path": "operations.monitoring.wac.server",
+      "canonical_target": "monitoring_wac_server",
+      "created": "2026-04-02",
+      "reason": "Nested monitoring alias"
+    }
+  ],
+  "retired_aliases": [],
+  "deprecated_keys": []
+}

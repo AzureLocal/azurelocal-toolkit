@@ -422,6 +422,32 @@ site:
     description: "Site owner"
     required: true
     example: "Azure Local Cloudnology Team"
+
+  # ─── short-form aliases (canonical nested convenience keys) ───
+  name:
+    type: string
+    description: "Site display name (short alias for site_name)"
+    required: false
+    example: "Azure Local Cloud"
+
+  owner:
+    type: string
+    description: "Site owner (short alias for site_owner)"
+    required: false
+    example: "Azure Local Cloudnology Team"
+
+  environment:
+    type: string
+    description: "Site environment label (short alias for site_environment)"
+    required: false
+    example: "Production"
+
+  customer_name:
+    type: string
+    description: "Customer or tenant name associated with the site"
+    required: false
+    example: "Infinite Improbability Corp"
+
   # ─── hardware (absorbed from dissolved hardware_support) ───
   hardware:
     hw_vendor:
@@ -468,6 +494,28 @@ site:
         type: string
         required: false
         sensitive: true
+    gpu_enabled:
+      type: boolean
+      description: "GPU acceleration available on cluster nodes"
+      required: false
+      default: false
+    gpu_model:
+      type: string
+      description: "GPU model installed in cluster nodes"
+      required: false
+      example: "NVIDIA A16"
+    idrac:
+      idrac_username:
+        type: string
+        description: "iDRAC default username for hardware management"
+        required: false
+        example: "root"
+      idrac_password:
+        type: string
+        description: "iDRAC password (Key Vault reference)"
+        required: false
+        sensitive: true
+        pattern: "^keyvault://[a-z0-9-]+/.+$"
 
 # =============================================================================
 # 4. ENVIRONMENT
@@ -578,6 +626,37 @@ tags:
     description: "Tag architecture version"
     required: true
     example: "v2.0"
+
+  # ─── lowercase tag aliases (canonical convenience keys) ───
+  owner:
+    type: string
+    description: "Owner tag (lowercase alias for env_Owner)"
+    required: false
+    example: "Azure Local Cloudnology Team"
+
+  Owner:
+    type: string
+    description: "Owner tag (PascalCase alias for env_Owner)"
+    required: false
+    example: "Azure Local Cloudnology Team"
+
+  environment:
+    type: string
+    description: "Environment tag (lowercase alias for Environment)"
+    required: false
+    example: "azurelocalcloud"
+
+  cost_center:
+    type: string
+    description: "Cost center tag (snake_case alias for CostCenter)"
+    required: false
+    example: "IT-AzureLocalCloud"
+
+  project:
+    type: string
+    description: "Project tag (lowercase alias for Project)"
+    required: false
+    example: "Azure Local Cloud Management"
 
 # =============================================================================
 # 6. AZURE PLATFORM
@@ -1881,6 +1960,32 @@ identity:
       required: false
       example: "OU=ServiceAccounts,OU=MGMT,DC=azlocal,DC=mgmt"
 
+    # ─── Nested structural aliases ───
+    domain:
+      type: object
+      description: "Domain configuration (nested alias for ad_domain_fqdn, ad_netbios_name)"
+      fqdn:
+        type: string
+        description: "Domain FQDN (alias for ad_domain_fqdn)"
+        alias_for: ad_domain_fqdn
+      netbios:
+        type: string
+        description: "Domain NetBIOS name (alias for ad_netbios_name)"
+        alias_for: ad_netbios_name
+
+    fqdn:
+      type: string
+      description: "Domain FQDN shorthand (alias for ad_domain_fqdn)"
+      alias_for: ad_domain_fqdn
+
+    organizational_units:
+      type: object
+      description: "Organizational unit paths"
+      servers:
+        type: string
+        description: "Servers OU path (alias for ad_servers_ou_path)"
+        alias_for: ad_servers_ou_path
+
     ad_dns_servers:
       type: array
       description: "Active Directory DNS server IP addresses"
@@ -2017,6 +2122,61 @@ identity:
           resource_name: { type: string }
           principal_id: { type: string }
           role_assignments: { type: array }
+
+  # ─── service_principal ───
+  service_principal:
+    _meta:
+      solutions: ["azure-local", "avd-azure-local"]
+      tier: optional
+      description: "Service principal for deployment automation"
+    name:
+      type: string
+      description: "Service principal display name"
+      required: false
+      example: "spn-azlc-deployment"
+    client_id:
+      type: string
+      description: "Service principal client/application ID"
+      required: false
+      format: uuid
+    app_id:
+      type: string
+      description: "Service principal application ID (alias for client_id)"
+      required: false
+      format: uuid
+      alias_for: client_id
+    object_id:
+      type: string
+      description: "Service principal object ID"
+      required: false
+      format: uuid
+    secret:
+      type: string
+      description: "Service principal secret (Key Vault reference)"
+      required: false
+      sensitive: true
+    roles:
+      type: object
+      description: "Role assignments for service principal"
+      subscription:
+        type: string
+        description: "Subscription-level role assignment"
+        required: false
+        example: "Contributor"
+      resource_group:
+        type: string
+        description: "Resource group-level role assignment"
+        required: false
+        example: "Contributor"
+
+  # ─── break_glass_account_ids ───
+  break_glass_account_ids:
+    type: array
+    description: "Emergency break-glass account object IDs"
+    required: false
+    items:
+      type: string
+      format: uuid
 
   # ─── b2b_configuration ───
   b2b_configuration:
@@ -2334,6 +2494,12 @@ networking:
         required: false
         pattern: "^vnet-[a-z0-9-]+$"
         example: "vnet-azlc-AzureLocalCloud-eus-connectivity-hub"
+
+      vnet_name:
+        type: string
+        description: "VNet name shorthand (alias for hub_vnet_name)"
+        required: false
+        alias_for: hub_vnet_name
 
       hub_vnet_address_space:
         category: "networking"
@@ -4107,6 +4273,71 @@ networking:
         type: string
         required: false
 
+      # ─── SDN aliases (nested form used in example) ───
+      gateway:
+        type: string
+        description: "SDN gateway shorthand (alias for sdn_gateway)"
+        alias_for: sdn_gateway
+
+      load_balancer:
+        type: string
+        description: "SDN load balancer shorthand (alias for sdn_load_balancer)"
+        alias_for: sdn_load_balancer
+
+      network_controller:
+        type: string
+        description: "SDN network controller shorthand (alias for sdn_network_controller)"
+        alias_for: sdn_network_controller
+
+      nsgs:
+        type: object
+        description: "SDN Network Security Groups configuration"
+        name:
+          type: string
+          description: "NSG name"
+        description:
+          type: string
+          description: "NSG description"
+        rules:
+          type: array
+          description: "NSG rules"
+          items:
+            type: object
+            properties:
+              name:
+                type: string
+                description: "Rule name"
+              priority:
+                type: integer
+                description: "Rule priority"
+              direction:
+                type: string
+                description: "Rule direction (Inbound/Outbound)"
+              access:
+                type: string
+                description: "Rule access (Allow/Deny)"
+              protocol:
+                type: string
+                description: "Rule protocol"
+              source_address_prefix:
+                type: string
+                description: "Source address prefix"
+              destination_port_range:
+                type: string
+                description: "Destination port range"
+
+  # ─── Top-level networking aliases (nested form) ───
+  dhcp:
+    type: object
+    description: "DHCP configuration shorthand (alias for onprem.dhcp)"
+    server:
+      type: string
+      description: "DHCP server IP"
+
+  network_intents:
+    type: object
+    description: "Network intents shorthand (alias for onprem.network_intents)"
+
   # ═══════════════════════════════════════
   # ON-PREMISES NETWORKING
   # ═══════════════════════════════════════
@@ -4524,6 +4755,73 @@ networking:
         required: false
         format: ipv4
         example: "192.168.55.1"
+
+      # ─── Nested VLAN aliases (used in example file) ───
+      management:
+        type: object
+        description: "Management VLAN configuration (nested alias)"
+        id:
+          type: integer
+          description: "Management VLAN ID (alias for vlan_management_compute_id)"
+          alias_for: vlan_management_compute_id
+        cidr:
+          type: string
+          description: "Management VLAN CIDR (alias for vlan_management_compute_cidr)"
+          alias_for: vlan_management_compute_cidr
+        gateway:
+          type: string
+          description: "Management VLAN gateway (alias for vlan_management_compute_gateway)"
+          alias_for: vlan_management_compute_gateway
+        subnet:
+          type: string
+          description: "Management VLAN subnet"
+
+      storage:
+        type: object
+        description: "Storage VLAN configuration (nested alias)"
+        id:
+          type: integer
+          description: "Storage VLAN ID (alias for vlan_storage_1_id)"
+          alias_for: vlan_storage_1_id
+        cidr:
+          type: string
+          description: "Storage VLAN CIDR (alias for vlan_storage_1_cidr)"
+          alias_for: vlan_storage_1_cidr
+        gateway:
+          type: string
+          description: "Storage VLAN gateway (alias for vlan_storage_1_gateway)"
+          alias_for: vlan_storage_1_gateway
+        subnet:
+          type: string
+          description: "Storage VLAN subnet"
+
+      workload:
+        type: object
+        description: "Workload VLAN configuration (nested alias)"
+        id:
+          type: integer
+          description: "Workload VLAN ID (alias for vlan_workload_1_id)"
+          alias_for: vlan_workload_1_id
+        cidr:
+          type: string
+          description: "Workload VLAN CIDR (alias for vlan_workload_1_cidr)"
+          alias_for: vlan_workload_1_cidr
+        gateway:
+          type: string
+          description: "Workload VLAN gateway (alias for vlan_workload_1_gateway)"
+          alias_for: vlan_workload_1_gateway
+        subnet:
+          type: string
+          description: "Workload VLAN subnet"
+        start:
+          type: string
+          description: "Workload VLAN IP range start"
+          format: ipv4
+        end:
+          type: string
+          description: "Workload VLAN IP range end"
+          format: ipv4
+
     # ─── dhcp ───
     dhcp:
       infrastructure_type: ["azure_local", "wsfc_s2d", "wsfc_san"]
@@ -5013,6 +5311,39 @@ networking:
         example:
         - "192.168.211.5"
 
+      # ─── Nested DHCP aliases (used in example file) ───
+      management_compute:
+        type: object
+        description: "Management-compute DHCP scope (nested alias)"
+        dns_primary:
+          type: string
+          description: "Primary DNS server for management-compute scope"
+          format: ipv4
+
+      server:
+        type: string
+        description: "DHCP server IP (alias for dhcp_server_ip)"
+        alias_for: dhcp_server_ip
+
+    # ─── dns ───
+    dns:
+      type: object
+      description: "DNS configuration"
+      servers:
+        type: array
+        description: "DNS server IP addresses"
+        items:
+          type: string
+          format: ipv4
+
+    # ─── mtu ───
+    mtu:
+      type: integer
+      description: "MTU size for on-premises network"
+      required: false
+      default: 9014
+      minimum: 1500
+      maximum: 9216
 
     # =============================================================================
     # CLUSTERS (ORCHESTRATION & MANAGEMENT)
@@ -5667,6 +5998,29 @@ networking:
         solutions: ["wsfc-s2d", "wsfc-san"]
         tier: optional
         description: "Network infrastructure devices (switches, firewalls, routers)"
+
+      # ─── Named device aliases (used in example file) ───
+      opengear:
+        type: object
+        description: "OpenGear console server configuration"
+        host:
+          type: string
+          description: "OpenGear hostname or IP"
+        users:
+          type: array
+          description: "OpenGear users"
+          items:
+            type: string
+        alerts:
+          type: object
+          description: "OpenGear alert configuration"
+      powerswitch:
+        type: object
+        description: "Power switch/PDU configuration"
+        host:
+          type: string
+          description: "Power switch hostname or IP"
+
       description: "Network infrastructure device configurations (switches, firewalls, routers, console servers). Optional and scalable."
       required: false
       minItems: 0
@@ -7178,6 +7532,42 @@ compute:
         - RoCEv2
         - iWARP
         default: "RoCEv2"
+
+      # CLUSTER IP & DEPLOYMENT SETTINGS
+      # ---------------------------------------------------------------------------
+      azl_cluster_ip:
+        type: string
+        description: "Cluster management IP address"
+        required: false
+        format: ipv4
+        example: "10.100.1.100"
+
+      azl_deployment_mode:
+        type: string
+        description: "Deployment mode (Deploy runs full deployment, Validate only validates)"
+        required: false
+        allowedValues:
+        - Deploy
+        - Validate
+        default: "Deploy"
+
+      azl_network_topology:
+        type: string
+        description: "Network topology for cluster (switchless: 1-4 nodes, switched: up to 16)"
+        required: false
+        allowedValues:
+        - switchless
+        - switched
+        example: "switched"
+
+      azl_witness_type:
+        type: string
+        description: "Cluster witness quorum type"
+        required: false
+        allowedValues:
+        - cloud_witness
+        - file_share_witness
+        default: "cloud_witness"
 
       # IDENTITY PROVIDER (Active Directory vs Local Identity with Key Vault)
       # ---------------------------------------------------------------------------
@@ -9283,6 +9673,16 @@ compute:
                     items:
                       type: string
                     example: ["1g.10gb", "2g.20gb", "3g.40gb"]
+
+        # ARC INTEGRATION (per-node)
+        arc_node_resource_ids:
+          type: array
+          description: "Azure Arc resource IDs for this node"
+          required: false
+          items:
+            type: string
+            format: azure_resource_id
+
   # ─── cluster_arm_deployment ───
   cluster_arm_deployment:
     infrastructure_type: ["azure_local"]
@@ -10895,6 +11295,13 @@ marketplace_images:
         infrastructure_type: ["azure_local"]
         example: "Windows"
 
+      storage_path:
+        type: string
+        required: false
+        description: "Local storage path for the downloaded image on the cluster."
+        infrastructure_type: ["azure_local"]
+        example: "C:\\ClusterStorage\\vmstore\\marketplace-images"
+
     example:
       - name: "img-iic01-ws2025-azedition-v1"
         display_name: "Windows Server 2025 Datacenter Azure Edition"
@@ -10922,6 +11329,93 @@ marketplace_images:
 # 13. SECURITY
 # =============================================================================
 security:
+  # ─── credentials (nested form used in example) ───
+  credentials:
+    type: object
+    description: "Deployment credentials (nested alias for identity.accounts equivalents)"
+    domain_join_username:
+      type: string
+      description: "Domain join username"
+      sensitive: false
+    domain_join_password:
+      type: string
+      description: "Domain join password (Key Vault reference)"
+      sensitive: true
+    local_admin_password:
+      type: string
+      description: "Local admin password (Key Vault reference)"
+      sensitive: true
+    password:
+      type: string
+      description: "Generic password reference"
+      sensitive: true
+
+  # ─── infrastructure_credentials ───
+  infrastructure_credentials:
+    type: object
+    description: "Infrastructure device credentials"
+    idrac:
+      type: object
+      description: "iDRAC credentials"
+      username:
+        type: string
+        description: "iDRAC username"
+      password_secret:
+        type: string
+        description: "iDRAC password Key Vault secret reference"
+        sensitive: true
+
+  # ─── key_vaults (nested form used in example) ───
+  key_vaults:
+    type: object
+    description: "Key Vault configurations (nested alias form)"
+    management:
+      type: object
+      description: "Management Key Vault"
+      name:
+        type: string
+        description: "Key Vault name"
+      resource_group:
+        type: string
+        description: "Key Vault resource group"
+      subscription:
+        type: string
+        description: "Key Vault subscription ID"
+      secrets:
+        type: object
+        description: "Key Vault secret references"
+        azlocal_admin_password:
+          type: string
+          description: "Azure Local admin password secret"
+          sensitive: true
+        recovery_admin_password:
+          type: string
+          description: "Recovery admin password secret"
+          sensitive: true
+        vpn_shared_key:
+          type: string
+          description: "VPN shared key secret"
+          sensitive: true
+    platform:
+      type: object
+      description: "Platform Key Vault"
+      name:
+        type: string
+        description: "Key Vault name"
+      resource_group:
+        type: string
+        description: "Key Vault resource group"
+      admin_object_id:
+        type: string
+        description: "Admin object ID for Key Vault access policies"
+        format: uuid
+    secrets:
+      type: object
+      description: "Secrets Key Vault"
+      name:
+        type: string
+        description: "Key Vault name"
+
   # ─── keyvault ───
   keyvault:
     _meta:
@@ -11618,6 +12112,91 @@ operations:
       solutions: ["all"]
       tier: required
       description: "Log Analytics, DCRs, alerts, and monitoring configuration"
+
+    # ─── Nested aliases (used in example file) ───
+    log_analytics:
+      type: object
+      description: "Log Analytics configuration (nested alias)"
+      workspace_id:
+        type: string
+        description: "Log Analytics workspace ID"
+        format: uuid
+      workspace_name:
+        type: string
+        description: "Log Analytics workspace name (alias for monitoring_log_analytics_workspace_name)"
+        alias_for: monitoring_log_analytics_workspace_name
+
+    wac:
+      type: object
+      description: "Windows Admin Center configuration (nested alias)"
+      server:
+        type: string
+        description: "WAC server FQDN (alias for monitoring_wac_server)"
+        alias_for: monitoring_wac_server
+
+    # ─── absorbed from dissolved monitoring_extended ───
+    extended:
+      # ─── Nested aliases (used in example file) ───
+      datadog:
+        monitoring_datadog_api_key:
+          category: "monitoring"
+          subcategory: "datadog"
+          type: string
+          description: "Datadog API key for agent configuration"
+          required: false
+          sensitive: true
+          pattern: "^keyvault://[a-z0-9-]+/.+$"
+          example: "keyvault://kv-azlc-AzureLocalCloud-secrets/datadog-api-key"
+
+        api_key:
+          type: string
+          description: "Datadog API key shorthand (alias for monitoring_datadog_api_key)"
+          alias_for: monitoring_datadog_api_key
+          sensitive: true
+
+        monitoring_datadog_site:
+          category: "monitoring"
+          subcategory: "datadog"
+          type: string
+          description: "Datadog site URL (region-specific)"
+          required: false
+          allowedValues:
+            - "datadoghq.com"
+            - "us3.datadoghq.com"
+            - "us5.datadoghq.com"
+            - "datadoghq.eu"
+          default: "datadoghq.com"
+          example: "datadoghq.com"
+
+        site:
+          type: string
+          description: "Datadog site shorthand (alias for monitoring_datadog_site)"
+          alias_for: monitoring_datadog_site
+
+      scom:
+        monitoring_scom_server:
+          category: "monitoring"
+          subcategory: "scom"
+          type: string
+          description: "SCOM management server FQDN"
+          required: false
+          example: "scom-mgmt01.azlocal.cloud"
+
+        server:
+          type: string
+          description: "SCOM server shorthand (alias for monitoring_scom_server)"
+          alias_for: monitoring_scom_server
+
+      wac_monitoring:
+        monitoring_wac_server:
+          category: "monitoring"
+          subcategory: "wac"
+          type: string
+          description: "Windows Admin Center server FQDN for monitoring integration"
+          required: false
+          example: "wac01.azlocal.cloud"
+          note: "For WAC VM configuration, see azure_jumpbox_vm.wac section"
+
     monitoring_log_analytics_workspace_name:
       category: "monitoring"
       subcategory: "log-analytics"
@@ -12551,51 +13130,6 @@ operations:
       description: "Use SSL for SCVMM server connection (recommended for secure communication)"
       required: false
       default: true
-    # ─── absorbed from dissolved monitoring_extended ───
-    extended:
-      datadog:
-        monitoring_datadog_api_key:
-          category: "monitoring"
-          subcategory: "datadog"
-          type: string
-          description: "Datadog API key for agent configuration"
-          required: false
-          sensitive: true
-          pattern: "^keyvault://[a-z0-9-]+/.+$"
-          example: "keyvault://kv-azlc-AzureLocalCloud-secrets/datadog-api-key"
-    
-        monitoring_datadog_site:
-          category: "monitoring"
-          subcategory: "datadog"
-          type: string
-          description: "Datadog site URL (region-specific)"
-          required: false
-          allowedValues:
-            - "datadoghq.com"
-            - "us3.datadoghq.com"
-            - "us5.datadoghq.com"
-            - "datadoghq.eu"
-          default: "datadoghq.com"
-          example: "datadoghq.com"
-  
-      scom:
-        monitoring_scom_server:
-          category: "monitoring"
-          subcategory: "scom"
-          type: string
-          description: "SCOM management server FQDN"
-          required: false
-          example: "scom-mgmt01.azlocal.cloud"
-  
-      wac_monitoring:
-        monitoring_wac_server:
-          category: "monitoring"
-          subcategory: "wac"
-          type: string
-          description: "Windows Admin Center server FQDN for monitoring integration"
-          required: false
-          example: "wac01.azlocal.cloud"
-          note: "For WAC VM configuration, see azure_jumpbox_vm.wac section"
     # ─── arc_resource_bridge (absorbed, also referenced in identity.accounts.service_principals.spn_arb) ───
     arc_resource_bridge:
       infrastructure_type: ["arc_scvmm"]

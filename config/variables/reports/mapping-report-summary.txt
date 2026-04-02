@@ -1,0 +1,12 @@
+Mapping Report Summary
+Generated: 2026-04-01T22:21:19
+Source inventory: E:\git\azurelocal-toolkit\config\variables\reports\variable-inventory.csv
+
+Total inventory rows: 1083
+Shared key paths across repos: 36
+Leaf collisions across repos: 56
+
+Outputs:
+- E:\git\azurelocal-toolkit\config\variables\reports\shared-key-paths.csv
+- E:\git\azurelocal-toolkit\config\variables\reports\leaf-collisions.csv
+- E:\git\azurelocal-toolkit\config\variables\reports\canonical-mapping-template.csv
