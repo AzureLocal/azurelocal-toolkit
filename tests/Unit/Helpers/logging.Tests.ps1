@@ -73,7 +73,7 @@ Describe 'Write-Log' {
             Write-Log -Level 'Info' -Message 'file log test'
             Stop-LogFile
             $logPath | Should -Exist
-            Get-Content $logPath | Should -Match 'file log test'
+            (Get-Content $logPath -Raw) | Should -Match 'file log test'
         }
 
         It 'should include timestamp in file output' {
@@ -81,7 +81,7 @@ Describe 'Write-Log' {
             Start-LogFile -Path $logPath
             Write-Log -Level 'Info' -Message 'timestamp test'
             Stop-LogFile
-            $content = Get-Content $logPath
+            $content = Get-Content $logPath -Raw
             # Timestamp format: [yyyy-MM-dd HH:mm:ss]
             $content | Should -Match '\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]'
         }
@@ -91,7 +91,7 @@ Describe 'Write-Log' {
             Start-LogFile -Path $logPath
             Write-Log -Level 'Warning' -Message 'level test'
             Stop-LogFile
-            Get-Content $logPath | Should -Match '\[Warning\]'
+            (Get-Content $logPath -Raw) | Should -Match '\[Warning\]'
         }
 
         It 'should not write to file when file logging is inactive' {
