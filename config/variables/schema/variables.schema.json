@@ -497,6 +497,11 @@
           "type": "object",
           "description": "Virtual machine definitions",
           "properties": {
+            "management": {
+              "type": "object",
+              "description": "Management and utility VM definitions",
+              "additionalProperties": true
+            },
             "azure": {
               "type": "object",
               "description": "Azure VMs (DCs, utility, NDM, lighthouse, etc.)",

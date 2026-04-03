@@ -2,7 +2,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$RegistryPath = "E:\git\azurelocal-toolkit\config\variables\schema\master-registry.yaml"
+    [string]$RegistryPath = (Join-Path $PSScriptRoot '..\schema\master-registry.yaml')
 )
 
 $ErrorActionPreference = "Stop"
@@ -55,6 +55,6 @@ if ($aliasDupes.Count -gt 0) {
     throw "Registry validation failed: alias conflicts detected. Sample aliases: $sample"
 }
 
-Write-Host "PASS: Registry structure validation passed"
-Write-Host "- Total key paths: $($keyPaths.Count)"
-Write-Host "- Alias nodes found: $($aliasNodes.Count)"
+Write-Output "PASS: Registry structure validation passed"
+Write-Output "- Total key paths: $($keyPaths.Count)"
+Write-Output "- Alias nodes found: $($aliasNodes.Count)"
