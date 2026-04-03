@@ -1,0 +1,89 @@
+# =============================================================================
+# test-scripts.yml — Run Pester unit and quality tests for scripts/
+# =============================================================================
+# Triggered on PRs and pushes that touch scripts/, tests/, or this workflow.
+# Runs Pester 5 unit tests and PSScriptAnalyzer quality checks.
+# =============================================================================
+
+name: Test Scripts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - 'tests/**'
+      - '.github/workflows/test-scripts.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/**'
+      - 'tests/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install PowerShell modules
+        shell: pwsh
+        run: |
+          Set-PSRepository -Name PSGallery -InstallationPolicy Trusted
+          Install-Module -Name Pester          -MinimumVersion '5.0.0' -Force -Scope CurrentUser
+          Install-Module -Name PSScriptAnalyzer -MinimumVersion '1.21.0' -Force -Scope CurrentUser
+          Install-Module -Name powershell-yaml  -Force -Scope CurrentUser
+
+      - name: Run unit tests
+        shell: pwsh
+        run: |
+          $config = New-PesterConfiguration
+          $config.Run.Path        = './tests/Unit'
+          $config.Output.Verbosity = 'Detailed'
+          $config.TestResult.Enabled      = $true
+          $config.TestResult.OutputPath   = './test-results-unit.xml'
+          $config.TestResult.OutputFormat = 'NUnitXml'
+          $config.Run.PassThru    = $true
+          $result = Invoke-Pester -Configuration $config
+          if ($result.FailedCount -gt 0) {
+              Write-Error "Unit tests failed: $($result.FailedCount) failure(s)"
+              exit 1
+          }
+
+      - name: Run quality tests
+        shell: pwsh
+        run: |
+          $config = New-PesterConfiguration
+          $config.Run.Path        = './tests/Quality'
+          $config.Output.Verbosity = 'Detailed'
+          $config.TestResult.Enabled      = $true
+          $config.TestResult.OutputPath   = './test-results-quality.xml'
+          $config.TestResult.OutputFormat = 'NUnitXml'
+          $config.Run.PassThru    = $true
+          $result = Invoke-Pester -Configuration $config
+          if ($result.FailedCount -gt 0) {
+              Write-Error "Quality tests failed: $($result.FailedCount) failure(s)"
+              exit 1
+          }
+
+      - name: Upload unit test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results
+          path: test-results-unit.xml
+          retention-days: 30
+
+      - name: Upload quality test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: quality-test-results
+          path: test-results-quality.xml
+          retention-days: 30
