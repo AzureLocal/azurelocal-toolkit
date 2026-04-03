@@ -2,13 +2,13 @@
 
 [CmdletBinding()]
 param(
-    [string]$VariablesPath = "E:\git\azurelocal-toolkit\config\variables\variables.example.yml",
-    [string]$RegistryPath = "E:\git\azurelocal-toolkit\config\variables\schema\master-registry.yaml",
-    [string]$SchemaPath = "E:\git\azurelocal-toolkit\config\variables\schema\variables.schema.json",
-    [string]$LegacyRootsPath = "E:\git\azurelocal-toolkit\config\variables\schema\legacy-compatible-roots.json",
-    [string]$CanonicalDriftAllowlistPath = "E:\git\azurelocal-toolkit\config\variables\schema\canonical-drift-allowlist.json",
-    [string]$UnknownReportCsv = "E:\git\azurelocal-toolkit\config\variables\reports\canonical-unknown-paths.csv",
-    [string]$UnknownSummaryTxt = "E:\git\azurelocal-toolkit\config\variables\reports\canonical-unknown-summary.txt",
+    [string]$VariablesPath = (Join-Path $PSScriptRoot '..\variables.example.yml'),
+    [string]$RegistryPath = (Join-Path $PSScriptRoot '..\schema\master-registry.yaml'),
+    [string]$SchemaPath = (Join-Path $PSScriptRoot '..\schema\variables.schema.json'),
+    [string]$LegacyRootsPath = (Join-Path $PSScriptRoot '..\schema\legacy-compatible-roots.json'),
+    [string]$CanonicalDriftAllowlistPath = (Join-Path $PSScriptRoot '..\schema\canonical-drift-allowlist.json'),
+    [string]$UnknownReportCsv = (Join-Path $PSScriptRoot '..\reports\canonical-unknown-paths.csv'),
+    [string]$UnknownSummaryTxt = (Join-Path $PSScriptRoot '..\reports\canonical-unknown-summary.txt'),
     [switch]$StrictUnknown
 )
 
