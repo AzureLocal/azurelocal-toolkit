@@ -2,10 +2,14 @@
 
 [CmdletBinding()]
 param(
-    [string]$RegistryPath = "E:\git\azurelocal-toolkit\config\variables\schema\master-registry.yaml"
+    [string]$RegistryPath
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $RegistryPath) {
+    $RegistryPath = Join-Path $PSScriptRoot '../schema/master-registry.yaml'
+}
 
 if (-not (Test-Path $RegistryPath)) {
     throw "Registry file not found: $RegistryPath"
