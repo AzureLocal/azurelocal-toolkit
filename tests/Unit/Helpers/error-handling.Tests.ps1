@@ -8,8 +8,18 @@
 
 BeforeAll {
     $helpersPath = Join-Path $PSScriptRoot '..' '..' '..' 'scripts' 'common' 'utilities' 'helpers'
-    . (Join-Path $helpersPath 'logging.ps1')
+
+    # Load logging as a module (not dot-sourced) so Write-Log internally called by
+    # Invoke-WithRetry resolves to a consistent function without scope conflicts.
+    $loggingContent = Get-Content (Join-Path $helpersPath 'logging.ps1') -Raw
+    New-Module -Name 'LoggingModuleEH' -ScriptBlock ([scriptblock]::Create($loggingContent)) |
+        Import-Module -Force
+
     . (Join-Path $helpersPath 'error-handling.ps1')
+}
+
+AfterAll {
+    Remove-Module LoggingModuleEH -Force -ErrorAction SilentlyContinue
 }
 
 Describe 'Invoke-WithRetry' {
