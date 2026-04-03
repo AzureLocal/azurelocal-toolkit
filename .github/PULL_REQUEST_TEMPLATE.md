@@ -22,7 +22,7 @@ Closes #<!-- issue number -->
 ## Checklist
 
 - [ ] I have tested this in a non-production environment
-- [ ] I have updated the README or `docs/` if usage changed
+- [ ] I have updated the README or file-local documentation if usage changed
 - [ ] I have added an entry to `CHANGELOG.md` under `[Unreleased]`
 - [ ] My code follows the project's style guidelines in `CONTRIBUTING.md`
 - [ ] My commit messages follow [Conventional Commits](https://www.conventionalcommits.org/)

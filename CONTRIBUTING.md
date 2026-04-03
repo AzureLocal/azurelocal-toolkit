@@ -23,14 +23,14 @@ Open an issue describing the use case, not just the solution.
 
 ### Documentation Issues
 
-Open an issue for missing, incorrect, or unclear docs.
+Open an issue for missing, incorrect, or unclear repository documentation.
 
 ### Submitting Pull Requests
 
 1. Fork the repo and create a branch from `main`
 2. Name branches using conventional types: `feat/new-validation-suite`, `fix/config-loader`, `docs/deployment-guide`
 3. Keep changes focused — one logical change per PR
-4. Update the README and relevant `docs/` pages if your change affects usage or prerequisites
+4. Update the README and any file-local documentation if your change affects usage or prerequisites
 5. Add an entry to [CHANGELOG.md](CHANGELOG.md) under `[Unreleased]`
 6. Test your changes against at least one real Azure Local environment before submitting
 7. Fill out the pull request template completely
@@ -83,7 +83,6 @@ This project follows the **org-wide AzureLocal standards** documented at [azurel
 
 - [Repository Structure](https://azurelocal.cloud/standards/repo-structure) — Required files, directories, labels, branch naming
 - [Scripting Standards](https://azurelocal.cloud/standards/scripting/scripting-standards) — PowerShell conventions
-- [Documentation Standards](https://azurelocal.cloud/standards/documentation/documentation-standards) — Writing and formatting
 - [Variable Management](https://azurelocal.cloud/docs/implementation/04-variable-management-standard) — Config file patterns
 - [Fictional Company Policy](https://azurelocal.cloud/standards/fictional-company-policy) — Use IIC, never Contoso
 

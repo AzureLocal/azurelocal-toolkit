@@ -1,7 +1,7 @@
 # Helper Utilities
 
 > **Purpose**: Shared helper functions for all PowerShell scripts in the toolkit  
-> **Standard**: [Scripting Standards](../../../../docs/standards/scripting/scripting-standards.mdx)
+> **Standard**: [Scripting Standards](https://azurelocal.cloud/standards/scripting/scripting-standards)
 
 ## Files
 
@@ -127,4 +127,4 @@ All scripts use consistent paths to access configuration values. These paths are
 | `tags.*` | Standard Azure resource tags |
 | `credentials.<name>.password` | Credential secret URI |
 
-See [Scripting Standards - Variable Path Contract](../../../../docs/standards/scripting/scripting-standards.mdx#variable-path-contract) for the complete list.
+See [Scripting Standards - Variable Path Contract](https://azurelocal.cloud/standards/scripting/scripting-standards#variable-path-contract) for the complete list.

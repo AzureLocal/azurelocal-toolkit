@@ -59,7 +59,6 @@
     - Optional timestamped files with -KeepTimestampedFiles
     - Compatible with Update-InfrastructureFromDiscovery.ps1
     - Feeds into infrastructure.yml single source of truth
-    - See docs/infrastructure-data-framework.md for complete workflow
     
     REQUIREMENTS:
     - iDRAC 9 with Redfish API enabled

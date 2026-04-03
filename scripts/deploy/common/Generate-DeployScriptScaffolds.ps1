@@ -1,5 +1,5 @@
 param(
-    [string]$CoverageDocumentPath = 'e:\git\azurelocal.github.io\project-management\deploy-script-coverage.md',
+    [string]$CoverageDocumentPath = 'e:\git\azurelocal.github.io\repo-management\reports\variables\deploy-script-coverage.md',
     [string]$RepositoryRoot = 'e:\git\azurelocal-toolkit'
 )
 

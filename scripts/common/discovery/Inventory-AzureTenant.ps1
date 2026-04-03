@@ -61,7 +61,6 @@
     - Outputs to discovery/ folder as azure-inventory.json
     - Compatible with Update-InfrastructureFromDiscovery.ps1
     - Feeds into infrastructure.yml single source of truth
-    - See docs/infrastructure-data-framework.md for complete workflow
 
     REQUIREMENTS:
     - Az PowerShell module

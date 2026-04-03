@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://azurelocal.github.io/azurelocal-toolkit/sitemap.xml

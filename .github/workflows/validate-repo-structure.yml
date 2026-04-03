@@ -27,7 +27,7 @@ jobs:
       - name: Check required directories
         run: |
           missing=0
-          for d in docs .github; do
+          for d in .github; do
             if [ ! -d "$d" ]; then
               echo "::error::Missing required directory: $d/"
               missing=$((missing + 1))
@@ -67,14 +67,3 @@ jobs:
             echo "No config/ directory — skipping config checks"
           fi
 
-      - name: Check variable reference doc (if config dir exists)
-        run: |
-          if [ -d "config" ]; then
-            if [ ! -f "docs/reference/variables.md" ]; then
-              echo "::error::Missing docs/reference/variables.md (required when config/ exists)"
-              exit 1
-            fi
-            echo "Variable reference doc found"
-          else
-            echo "No config/ directory — skipping variable reference check"
-          fi

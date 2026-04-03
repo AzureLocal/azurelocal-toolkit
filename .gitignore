@@ -61,5 +61,4 @@ out/
 build/
 site/
 
-# Node (if mkdocs plugins ever need it)
 node_modules/
