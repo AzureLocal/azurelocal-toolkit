@@ -8,6 +8,7 @@
 
 BeforeAll {
     $helpersPath = Join-Path $PSScriptRoot '..' '..' '..' 'scripts' 'common' 'utilities' 'helpers'
+    . (Join-Path $helpersPath 'logging.ps1')
     . (Join-Path $helpersPath 'error-handling.ps1')
 }
 
@@ -19,9 +20,9 @@ Describe 'Invoke-WithRetry' {
         }
 
         It 'should execute the scriptblock exactly once when it succeeds first try' {
-            $callCount = 0
+            $script:callCount = 0
             Invoke-WithRetry -ScriptBlock { $script:callCount++ } -MaxRetries 3 | Out-Null
-            $callCount | Should -Be 1
+            $script:callCount | Should -Be 1
         }
 
         It 'should pass through the scriptblock return value unchanged' {
@@ -34,14 +35,14 @@ Describe 'Invoke-WithRetry' {
 
     Context 'Retry behaviour' {
         It 'should retry and succeed on the second attempt' {
-            $attempt = 0
+            $script:attempt = 0
             $result = Invoke-WithRetry -MaxRetries 3 -RetryDelaySeconds 0 -ScriptBlock {
                 $script:attempt++
                 if ($script:attempt -lt 2) { throw 'transient' }
                 'success'
             }
-            $result  | Should -Be 'success'
-            $attempt | Should -Be 2
+            $result           | Should -Be 'success'
+            $script:attempt   | Should -Be 2
         }
 
         It 'should throw after exhausting MaxRetries' {
@@ -53,7 +54,7 @@ Describe 'Invoke-WithRetry' {
         }
 
         It 'should attempt exactly MaxRetries times before giving up' {
-            $attempt = 0
+            $script:attempt = 0
             try {
                 Invoke-WithRetry -MaxRetries 3 -RetryDelaySeconds 0 -ScriptBlock {
                     $script:attempt++
@@ -61,7 +62,7 @@ Describe 'Invoke-WithRetry' {
                 }
             }
             catch { }
-            $attempt | Should -Be 3
+            $script:attempt | Should -Be 3
         }
 
         It 'should use a smaller delay when RetryDelaySeconds is 0' {
@@ -89,7 +90,7 @@ Describe 'Invoke-WithRetry' {
         }
 
         It 'should default MaxRetries to 3 when not specified' {
-            $attempt = 0
+            $script:attempt = 0
             try {
                 Invoke-WithRetry -RetryDelaySeconds 0 -ScriptBlock {
                     $script:attempt++
@@ -97,28 +98,28 @@ Describe 'Invoke-WithRetry' {
                 }
             }
             catch { }
-            $attempt | Should -Be 3
+            $script:attempt | Should -Be 3
         }
     }
 }
 
-Describe 'Get-DetailedError' {
+Describe 'Get-ErrorDetails' {
     It 'should return an object with Message property' {
         try { throw 'test error' } catch { $err = $_ }
-        $detail = Get-DetailedError -ErrorRecord $err
+        $detail = Get-ErrorDetails -ErrorRecord $err
         $detail | Should -Not -BeNullOrEmpty
         $detail.Message | Should -Not -BeNullOrEmpty
     }
 
     It 'should include the original exception message' {
         try { throw 'original message here' } catch { $err = $_ }
-        $detail = Get-DetailedError -ErrorRecord $err
+        $detail = Get-ErrorDetails -ErrorRecord $err
         $detail.Message | Should -Match 'original message here'
     }
 
     It 'should include ScriptName or InvocationInfo when available' {
         try { throw 'with invocation' } catch { $err = $_ }
-        $detail = Get-DetailedError -ErrorRecord $err
+        $detail = Get-ErrorDetails -ErrorRecord $err
         # Should have at minimum a Message key
         $detail.PSObject.Properties.Name | Should -Contain 'Message'
     }

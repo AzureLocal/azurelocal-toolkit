@@ -709,7 +709,8 @@ function Get-B2BConfig {
     return $b2b
 }
 
-# Export functions
+# Export functions — only applies when loaded as a module (.psm1), not when dot-sourced
+if ($MyInvocation.MyCommand.ModuleName) {
 Export-ModuleMember -Function @(
     'Get-Configuration',
     'Get-MergedConfiguration', 
@@ -726,3 +727,4 @@ Export-ModuleMember -Function @(
     'Export-AnsibleVars',
     'Export-TerraformTfvars'
 ) -Variable 'ConfigPaths'
+}

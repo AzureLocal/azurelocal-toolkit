@@ -48,18 +48,18 @@ Describe 'Write-Log' {
         }
 
         It 'should write to file when file logging is active' {
-            Start-FileLogging -Path $testLogFile
+            Start-LogFile -Path $testLogFile
             Write-Log -Level 'Info' -Message 'file log test'
-            Stop-FileLogging
+            Stop-LogFile
 
             $testLogFile | Should -Exist
             Get-Content $testLogFile | Should -Match 'file log test'
         }
 
         It 'should include timestamp in file output' {
-            Start-FileLogging -Path $testLogFile
+            Start-LogFile -Path $testLogFile
             Write-Log -Level 'Info' -Message 'timestamp test'
-            Stop-FileLogging
+            Stop-LogFile
 
             $content = Get-Content $testLogFile
             # Timestamp format: [yyyy-MM-dd HH:mm:ss]
@@ -67,25 +67,25 @@ Describe 'Write-Log' {
         }
 
         It 'should include level in file output' {
-            Start-FileLogging -Path $testLogFile
+            Start-LogFile -Path $testLogFile
             Write-Log -Level 'Warning' -Message 'level test'
-            Stop-FileLogging
+            Stop-LogFile
 
             Get-Content $testLogFile | Should -Match '\[Warning\]'
         }
 
         It 'should not write to file when file logging is inactive' {
             # Ensure file logging is off
-            Stop-FileLogging
+            Stop-LogFile
             Write-Log -Level 'Info' -Message 'no file'
             $testLogFile | Should -Not -Exist
         }
 
         It 'should append multiple entries to the same log file' {
-            Start-FileLogging -Path $testLogFile
+            Start-LogFile -Path $testLogFile
             Write-Log -Level 'Info'    -Message 'entry one'
             Write-Log -Level 'Warning' -Message 'entry two'
-            Stop-FileLogging
+            Stop-LogFile
 
             $lines = Get-Content $testLogFile
             $lines.Count | Should -BeGreaterOrEqual 2
@@ -95,19 +95,19 @@ Describe 'Write-Log' {
     }
 }
 
-Describe 'Start-FileLogging' {
+Describe 'Start-LogFile' {
     It 'should create the log file directory if it does not exist' {
         $nestedLog = Join-Path $TestDrive 'subdir' 'nested.log'
-        Start-FileLogging -Path $nestedLog
+        Start-LogFile -Path $nestedLog
         Write-Log -Level 'Info' -Message 'nested'
-        Stop-FileLogging
+        Stop-LogFile
 
         $nestedLog | Should -Exist
     }
 }
 
-Describe 'Stop-FileLogging' {
-    It 'should not throw when called without Start-FileLogging' {
-        { Stop-FileLogging } | Should -Not -Throw
+Describe 'Stop-LogFile' {
+    It 'should not throw when called without Start-LogFile' {
+        { Stop-LogFile } | Should -Not -Throw
     }
 }
