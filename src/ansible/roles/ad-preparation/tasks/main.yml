@@ -1,0 +1,126 @@
+# =============================================================================
+# Role: ad-preparation
+# =============================================================================
+# Mirrors: scripts/deploy/03-onprem-readiness/phase-01-active-directory/
+# Tasks: OU creation, security groups, DNS records, LCM service account
+# Target: domain_controllers group (run on DC with AD RSAT)
+# Collections: microsoft.ad, community.windows
+# =============================================================================
+---
+- name: Build domain DN from FQDN
+  ansible.builtin.set_fact:
+    ad_domain_dn: "DC={{ ad_domain_fqdn.split('.') | join(',DC=') }}"
+
+# ---------------------------------------------------------------
+# Task 1 — OU Structure
+# Mirrors: task-01-ou-creation-pre-creation-artifacts
+# ---------------------------------------------------------------
+- name: Ensure base OU exists
+  microsoft.ad.ou:
+    name: "AzureLocal"
+    path: "OU=Servers,{{ ad_domain_dn }}"
+    state: present
+    protect_from_deletion: true
+
+- name: Ensure child OUs exist
+  microsoft.ad.ou:
+    name: "{{ item }}"
+    path: "OU=AzureLocal,OU=Servers,{{ ad_domain_dn }}"
+    state: present
+    protect_from_deletion: true
+  loop:
+    - Computers
+    - ServiceAccounts
+    - Groups
+
+- name: Ensure cluster-specific OU exists
+  microsoft.ad.ou:
+    name: "{{ cluster_name }}"
+    path: "OU=Computers,OU=AzureLocal,OU=Servers,{{ ad_domain_dn }}"
+    state: present
+
+# ---------------------------------------------------------------
+# Task 2 — Security Groups
+# Mirrors: task-02-security-groups
+# ---------------------------------------------------------------
+- name: Create cluster security groups
+  microsoft.ad.group:
+    name: "{{ item.name }}"
+    scope: global
+    path: "OU=Groups,OU=AzureLocal,OU=Servers,{{ ad_domain_dn }}"
+    state: present
+    description: "{{ item.scope }} for {{ cluster_name }}"
+  loop: "{{ security_groups }}"
+
+# ---------------------------------------------------------------
+# Task 3 — DNS Conditional Forwarders for Azure endpoints
+# Mirrors: task-03-dns-node-a-records
+# ---------------------------------------------------------------
+- name: Create DNS conditional forwarders for Azure endpoints
+  ansible.windows.win_powershell:
+    script: |
+      $zone = '{{ item }}'
+      $existing = Get-DnsServerZone -Name $zone -ErrorAction SilentlyContinue
+      if (-not $existing) {
+          Add-DnsServerConditionalForwarderZone -Name $zone -MasterServers '{{ azure_dns_forwarder_ip }}'
+          Write-Output "Created conditional forwarder for $zone"
+      } else {
+          Write-Output "Conditional forwarder for $zone already exists"
+      }
+  loop: "{{ azure_dns_zones }}"
+  register: dns_forwarder_results
+  changed_when: "'Created' in dns_forwarder_results.output[0]"
+
+# ---------------------------------------------------------------
+# Task 4 — LCM Deployment Service Account
+# Mirrors: task-04-service-admin-accounts
+# ---------------------------------------------------------------
+- name: Generate LCM service account password
+  ansible.builtin.set_fact:
+    _lcm_password: "{{ lookup('ansible.builtin.password', '/dev/null length=' + (lcm_service_account_password_length | string) + ' chars=ascii_letters,digits,punctuation') }}"
+  no_log: true
+
+- name: Create LCM deployment service account
+  microsoft.ad.user:
+    name: "{{ lcm_username }}"
+    path: "OU=ServiceAccounts,OU=AzureLocal,OU=Servers,{{ ad_domain_dn }}"
+    password: "{{ _lcm_password }}"
+    password_never_expires: true
+    user_cannot_change_password: true
+    enabled: true
+    state: present
+    description: "Azure Local LCM deployment service account for {{ cluster_name }}"
+  register: lcm_account_result
+
+- name: Store LCM password in Key Vault (if Azure auth available)
+  azure.azcollection.azure_rm_keyvaultsecret:
+    secret_name: "{{ lcm_username }}-password"
+    secret_value: "{{ _lcm_password }}"
+    keyvault_uri: "https://{{ key_vault_name }}.vault.azure.net"
+    subscription_id: "{{ azure_subscription_azure_local }}"
+    tenant: "{{ azure_tenant_id }}"
+  when: key_vault_name is defined
+  no_log: true
+
+# ---------------------------------------------------------------
+# Task 5 — Pre-stage Cluster Computer Account
+# ---------------------------------------------------------------
+- name: Pre-stage cluster computer account
+  microsoft.ad.computer:
+    name: "{{ cluster_name }}"
+    path: "OU={{ cluster_name }},OU=Computers,OU=AzureLocal,OU=Servers,{{ ad_domain_dn }}"
+    enabled: false
+    state: present
+    description: "Azure Local cluster object for {{ cluster_name }}"
+
+# ---------------------------------------------------------------
+# Task 6 — Group Membership Assignments
+# Mirrors: task-05-group-assignments
+# ---------------------------------------------------------------
+- name: Add LCM account to cluster admin group
+  microsoft.ad.group:
+    name: "{{ security_groups[0].name }}"
+    members:
+      add:
+        - "{{ lcm_username }}"
+    state: present

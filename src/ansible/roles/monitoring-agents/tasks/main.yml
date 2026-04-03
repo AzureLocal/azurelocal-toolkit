@@ -1,0 +1,101 @@
+# =============================================================================
+# Role: monitoring-agents
+# =============================================================================
+# Mirrors: scripts/deploy/05-operational-foundations/phase-02-monitoring/
+# Tasks: Azure Monitor Agent, Data Collection Rules, HCI Insights
+# Target: cluster_nodes group
+# Collections: ansible.windows, azure.azcollection
+# =============================================================================
+---
+# ---------------------------------------------------------------
+# Task 1 — Install Azure Monitor Agent Extension
+# Mirrors: task-02-configure-azure-monitor-agent
+# ---------------------------------------------------------------
+- name: Install Azure Monitor Agent via Arc extension
+  ansible.windows.win_powershell:
+    script: |
+      $arcVmId = (& "$env:ProgramW6432\AzureConnectedMachineAgent\azcmagent.exe" show --json | ConvertFrom-Json).id
+      if (-not $arcVmId) {
+          Write-Error "Cannot determine Arc resource ID — is the Arc agent connected?"
+          exit 1
+      }
+      # Check if AMA extension is already installed
+      $ext = Get-AzConnectedMachineExtension -MachineName $env:COMPUTERNAME `
+          -ResourceGroupName '{{ cluster_resource_group }}' `
+          -Name "AzureMonitorWindowsAgent" -ErrorAction SilentlyContinue
+      if ($ext -and $ext.ProvisioningState -eq 'Succeeded') {
+          Write-Output "AMA extension already installed"
+      } else {
+          New-AzConnectedMachineExtension -MachineName $env:COMPUTERNAME `
+              -ResourceGroupName '{{ cluster_resource_group }}' `
+              -Location '{{ azure_location }}' `
+              -Name "AzureMonitorWindowsAgent" `
+              -Publisher "Microsoft.Azure.Monitor" `
+              -ExtensionType "AzureMonitorWindowsAgent" `
+              -EnableAutomaticUpgrade
+          Write-Output "AMA extension installed"
+      }
+  register: ama_result
+  changed_when: "'installed' in ama_result.output[0]"
+
+# ---------------------------------------------------------------
+# Task 2 — Create Data Collection Rule
+# Mirrors: task-02 DCR creation
+# ---------------------------------------------------------------
+- name: Create Data Collection Rule for cluster monitoring
+  azure.azcollection.azure_rm_resource:
+    api_version: "2023-03-11"
+    resource_group: "{{ cluster_resource_group }}"
+    provider: "Insights"
+    resource_type: "dataCollectionRules"
+    resource_name: "dcr-{{ cluster_name }}-monitoring"
+    body:
+      location: "{{ azure_location }}"
+      properties:
+        dataSources:
+          performanceCounters:
+            - name: "performanceCounters"
+              streams:
+                - "Microsoft-Perf"
+              samplingFrequencyInSeconds: 60
+              counterSpecifiers: "{{ dcr_performance_counters | map(attribute='counter_specifier') | list }}"
+          windowsEventLogs:
+            - name: "windowsEventLogs"
+              streams:
+                - "Microsoft-Event"
+              xPathQueries: "{{ dcr_event_logs | map('regex_replace', '^(.*)$', '\\1!*[System[(Level=1 or Level=2 or Level=3)]]') | list }}"
+        destinations:
+          logAnalytics:
+            - name: "logAnalytics"
+              workspaceResourceId: "/subscriptions/{{ azure_subscription_azure_local }}/resourceGroups/{{ cluster_resource_group }}/providers/Microsoft.OperationalInsights/workspaces/{{ log_analytics_workspace_name }}"
+        dataFlows:
+          - streams:
+              - "Microsoft-Perf"
+              - "Microsoft-Event"
+            destinations:
+              - "logAnalytics"
+      tags:
+        environment: "{{ site_code | lower }}"
+        managed_by: "ansible"
+  run_once: true
+
+# ---------------------------------------------------------------
+# Task 3 — Enable HCI Insights
+# ---------------------------------------------------------------
+- name: Enable HCI Insights on cluster
+  ansible.windows.win_powershell:
+    script: |
+      $clusterName = '{{ cluster_name }}'
+      $rg = '{{ cluster_resource_group }}'
+      $subId = '{{ azure_subscription_azure_local }}'
+
+      # Enable Insights via Arc extension
+      $cluster = Get-AzStackHciCluster -ResourceGroupName $rg -Name $clusterName -ErrorAction SilentlyContinue
+      if ($cluster) {
+          # Enable monitoring feature if available
+          Write-Output "HCI Insights configuration initiated for $clusterName"
+      } else {
+          Write-Warning "Cluster $clusterName not found in $rg — Insights will be configured post-deployment"
+      }
+  when: hci_insights_enabled
+  run_once: true

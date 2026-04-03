@@ -1,0 +1,29 @@
+# =============================================================================
+# Playbook 03: Azure Arc Registration
+# =============================================================================
+# Part 4 — Cluster Deployment, Phase 4: Arc Registration
+# Run on: cluster_nodes (each Azure Local node)
+# =============================================================================
+---
+- name: "Part 4 | Phase 4 — Azure Arc Registration"
+  hosts: cluster_nodes
+  gather_facts: false
+  become: false
+  tags:
+    - arc-registration
+    - cluster-deployment
+
+  pre_tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - azure_tenant_id is defined
+          - azure_subscription_azure_local is defined
+          - azure_location is defined
+          - cluster_resource_group is defined
+          - spn_client_id is defined
+          - spn_client_secret is defined
+        fail_msg: "Missing required Arc registration variables — check group_vars/all.yml and vault"
+
+  roles:
+    - role: arc-registration

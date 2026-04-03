@@ -1,0 +1,39 @@
+# =============================================================================
+# Stage: Deploy Foundation — Terraform Apply (Azure resources)
+# =============================================================================
+
+terraform:apply:
+  stage: deploy-foundation
+  script:
+    - cd "${TF_ROOT}"
+    - terraform init
+    - terraform apply -auto-approve -input=false tfplan
+  dependencies:
+    - terraform:plan
+  environment:
+    name: ${CI_ENVIRONMENT_NAME}
+    action: start
+  artifacts:
+    paths:
+      - "${TF_ROOT}/terraform.tfstate"
+    reports:
+      terraform: "${TF_ROOT}/tfplan.json"
+  when: manual
+  allow_failure: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+terraform:outputs:
+  stage: deploy-foundation
+  script:
+    - cd "${TF_ROOT}"
+    - terraform init
+    - terraform output -json > terraform-outputs.json
+  dependencies:
+    - terraform:apply
+  artifacts:
+    paths:
+      - "${TF_ROOT}/terraform-outputs.json"
+    expire_in: 1 week
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

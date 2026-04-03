@@ -1,0 +1,24 @@
+# =============================================================================
+# Stage: Configure Operations — Monitoring, WAC, Syslog
+# =============================================================================
+
+monitoring:setup:
+  stage: configure-operations
+  script:
+    - cd "${ANSIBLE_ROOT}"
+    - ansible-galaxy collection install -r collections/requirements.yml
+    - ansible-playbook -i inventory/hosts.yml playbooks/04-monitoring-setup.yml
+  when: manual
+  allow_failure: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+management:vms:
+  stage: configure-operations
+  script:
+    - cd "${ANSIBLE_ROOT}"
+    - ansible-playbook -i inventory/hosts.yml playbooks/05-management-vms.yml
+  when: manual
+  allow_failure: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

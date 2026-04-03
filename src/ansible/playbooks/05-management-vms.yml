@@ -1,0 +1,60 @@
+# =============================================================================
+# Playbook 05: Management VM Configuration
+# =============================================================================
+# Part 2 — Azure Foundation, Phase 4 + Part 5: Management Infrastructure
+# Run on: domain_controllers (DC promotion), management (WAC + syslog)
+# =============================================================================
+---
+- name: "Part 2 | Phase 4 — Promote Domain Controllers"
+  hosts: domain_controllers
+  gather_facts: true
+  become: false
+  serial: 1  # Promote DCs one at a time
+  tags:
+    - domain-controller
+    - management-vms
+
+  pre_tasks:
+    - name: Validate required DC variables
+      ansible.builtin.assert:
+        that:
+          - ad_domain_fqdn is defined
+          - ad_netbios_name is defined
+        fail_msg: "Missing required DC variables — check group_vars/all.yml"
+
+  roles:
+    - role: domain-controller
+
+- name: "Part 5 | Phase 2 — Configure WAC Server"
+  hosts: management
+  gather_facts: true
+  become: false
+  tags:
+    - wac-server
+    - management-vms
+
+  pre_tasks:
+    - name: Check if host is the WAC server
+      ansible.builtin.set_fact:
+        _is_wac_server: "{{ 'wac' in inventory_hostname | lower }}"
+
+  roles:
+    - role: wac-server
+      when: _is_wac_server | bool
+
+- name: "Part 5 | Phase 2 — Configure Syslog Receiver"
+  hosts: management
+  gather_facts: true
+  become: false
+  tags:
+    - syslog-receiver
+    - management-vms
+
+  pre_tasks:
+    - name: Check if host is the syslog receiver
+      ansible.builtin.set_fact:
+        _is_syslog_server: "{{ 'syslog' in inventory_hostname | lower }}"
+
+  roles:
+    - role: syslog-receiver
+      when: _is_syslog_server | bool

@@ -1,0 +1,50 @@
+# =============================================================================
+# GitLab CI/CD Pipeline — Azure Local Deployment
+# =============================================================================
+# Master pipeline definition for automated Azure Local deployments.
+# Stages execute sequentially with manual approval gates between phases.
+#
+# Requirements:
+#   - Self-hosted GitLab Runner with network access to on-premises nodes
+#   - CI/CD variables: ARM_CLIENT_ID, ARM_CLIENT_SECRET, ARM_TENANT_ID,
+#     ARM_SUBSCRIPTION_ID, DOMAIN_ADMIN_PASSWORD
+#   - Terraform >= 1.6, Ansible >= 2.15, PowerShell >= 7.0
+# =============================================================================
+
+stages:
+  - validate
+  - plan
+  - deploy-foundation
+  - configure-onprem
+  - deploy-cluster
+  - configure-operations
+  - validate-deployment
+
+variables:
+  TF_ROOT: "${CI_PROJECT_DIR}/src/terraform/environments/azure-local"
+  ANSIBLE_ROOT: "${CI_PROJECT_DIR}/src/ansible"
+  CONFIG_PATH: "${CI_PROJECT_DIR}/config/variables/variables.yml"
+  TF_STATE_NAME: "${CI_ENVIRONMENT_NAME}"
+  ANSIBLE_HOST_KEY_CHECKING: "False"
+
+# Global defaults
+default:
+  tags:
+    - azurelocal
+    - self-hosted
+  before_script:
+    - export ARM_CLIENT_ID="${ARM_CLIENT_ID}"
+    - export ARM_CLIENT_SECRET="${ARM_CLIENT_SECRET}"
+    - export ARM_TENANT_ID="${ARM_TENANT_ID}"
+    - export ARM_SUBSCRIPTION_ID="${ARM_SUBSCRIPTION_ID}"
+
+# =============================================================================
+# Stage: Validate
+# =============================================================================
+include:
+  - local: 'pipelines/gitlab/stages/validate.yml'
+  - local: 'pipelines/gitlab/stages/deploy-foundation.yml'
+  - local: 'pipelines/gitlab/stages/configure-onprem.yml'
+  - local: 'pipelines/gitlab/stages/deploy-cluster.yml'
+  - local: 'pipelines/gitlab/stages/configure-operations.yml'
+  - local: 'pipelines/gitlab/stages/validate-deployment.yml'

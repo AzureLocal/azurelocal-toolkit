@@ -1,0 +1,12 @@
+---
+- name: restart rsyslog
+  ansible.builtin.service:
+    name: rsyslog
+    state: restarted
+  when: ansible_os_family == "Debian"
+
+- name: restart snmptrapd
+  ansible.builtin.service:
+    name: snmptrapd
+    state: restarted
+  when: ansible_os_family == "Debian"

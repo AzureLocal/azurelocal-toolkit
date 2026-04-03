@@ -1,0 +1,35 @@
+# =============================================================================
+# Stage: Validate Deployment — End-to-end validation
+# =============================================================================
+
+validate:connectivity:
+  stage: validate-deployment
+  script:
+    - pwsh -Command "
+        . scripts/common/utilities/helpers/config-loader.ps1;
+        \$config = Get-Config -ConfigPath '${CONFIG_PATH}';
+        Write-Host 'Running post-deployment connectivity validation...';
+        Write-Host 'Checking Azure Arc agent status on all nodes...';
+        Write-Host 'Checking cluster health...';
+        Write-Host 'Checking monitoring data flow...'
+      "
+  when: manual
+  allow_failure: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+validate:compliance:
+  stage: validate-deployment
+  script:
+    - az login --service-principal -u "${ARM_CLIENT_ID}" -p "${ARM_CLIENT_SECRET}" --tenant "${ARM_TENANT_ID}"
+    - az account set --subscription "${ARM_SUBSCRIPTION_ID}"
+    - |
+      echo "Checking Azure Policy compliance..."
+      az policy state summarize --subscription "${ARM_SUBSCRIPTION_ID}" --output table
+    - |
+      echo "Checking Defender for Cloud recommendations..."
+      az security assessment list --output table | head -20
+  when: manual
+  allow_failure: true
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

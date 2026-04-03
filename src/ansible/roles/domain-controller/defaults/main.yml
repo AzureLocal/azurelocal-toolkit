@@ -1,0 +1,11 @@
+# =============================================================================
+# Role: domain-controller — Default Variables
+# =============================================================================
+dc_safe_mode_password_length: 24
+dc_promotion_mode: "replica"  # "new_forest" or "replica"
+dc_forest_functional_level: "WinThreshold"  # Windows Server 2016+
+dc_domain_functional_level: "WinThreshold"
+dc_install_dns: true
+dc_database_path: "C:\\Windows\\NTDS"
+dc_log_path: "C:\\Windows\\NTDS"
+dc_sysvol_path: "C:\\Windows\\SYSVOL"

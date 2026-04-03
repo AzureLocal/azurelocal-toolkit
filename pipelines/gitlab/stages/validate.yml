@@ -1,0 +1,51 @@
+# =============================================================================
+# Stage: Validate — Lint, schema validation, Terraform plan
+# =============================================================================
+
+terraform:validate:
+  stage: validate
+  script:
+    - cd "${TF_ROOT}"
+    - terraform init -backend=false
+    - terraform validate
+    - terraform fmt -check -recursive
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+ansible:lint:
+  stage: validate
+  script:
+    - cd "${ANSIBLE_ROOT}"
+    - ansible-galaxy collection install -r collections/requirements.yml
+    - ansible-lint playbooks/ roles/
+    - ansible-playbook --syntax-check playbooks/site.yml
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+config:validate:
+  stage: validate
+  script:
+    - pwsh -Command "
+        . scripts/common/utilities/helpers/config-loader.ps1;
+        \$config = Get-Config -ConfigPath '${CONFIG_PATH}';
+        if (-not \$config) { throw 'Config validation failed' };
+        Write-Host 'Configuration validated successfully'
+      "
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+terraform:plan:
+  stage: plan
+  script:
+    - cd "${TF_ROOT}"
+    - terraform init
+    - terraform plan -out=tfplan -input=false
+  artifacts:
+    paths:
+      - "${TF_ROOT}/tfplan"
+    expire_in: 1 day
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

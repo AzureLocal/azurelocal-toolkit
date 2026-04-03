@@ -1,0 +1,7 @@
+# =============================================================================
+# Role: arc-registration — Default Variables
+# =============================================================================
+arc_cloud: "AzureCloud"
+arc_proxy: ""
+arc_gateway_id: ""
+arc_registration_timeout: 600

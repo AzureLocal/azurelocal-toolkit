@@ -1,0 +1,36 @@
+# =============================================================================
+# Template: Ansible Playbook — Reusable CI/CD template
+# =============================================================================
+# Usage:
+#   include:
+#     - local: 'pipelines/gitlab/templates/ansible-playbook.yml'
+#
+#   run:ad-preparation:
+#     extends: .ansible:playbook
+#     variables:
+#       PLAYBOOK: playbooks/01-ad-preparation.yml
+# =============================================================================
+
+.ansible:playbook:
+  before_script:
+    - cd "${ANSIBLE_ROOT}"
+    - ansible-galaxy collection install -r collections/requirements.yml --force
+  script:
+    - |
+      ansible-playbook \
+        -i inventory/hosts.yml \
+        ${PLAYBOOK} \
+        ${ANSIBLE_EXTRA_ARGS:-}
+  variables:
+    ANSIBLE_FORCE_COLOR: "true"
+    ANSIBLE_STDOUT_CALLBACK: "yaml"
+
+.ansible:check:
+  extends: .ansible:playbook
+  script:
+    - |
+      ansible-playbook \
+        -i inventory/hosts.yml \
+        ${PLAYBOOK} \
+        --check --diff \
+        ${ANSIBLE_EXTRA_ARGS:-}

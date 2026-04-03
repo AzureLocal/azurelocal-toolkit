@@ -1,0 +1,26 @@
+# =============================================================================
+# Role: monitoring-agents — Default Variables
+# =============================================================================
+ama_extension_version: "1.29"
+hci_insights_enabled: true
+
+# Data Collection Rule — Performance Counters
+dcr_performance_counters:
+  - counter_specifier: "\\Processor(_Total)\\% Processor Time"
+    sampling_frequency: 60
+  - counter_specifier: "\\Memory\\Available MBytes"
+    sampling_frequency: 60
+  - counter_specifier: "\\LogicalDisk(*)\\% Free Space"
+    sampling_frequency: 300
+  - counter_specifier: "\\Network Adapter(*)\\Bytes Total/sec"
+    sampling_frequency: 60
+  - counter_specifier: "\\Cluster CSV File System(*)\\IO Read Bytes/sec"
+    sampling_frequency: 60
+
+# Data Collection Rule — Windows Event Logs
+dcr_event_logs:
+  - "Application"
+  - "System"
+  - "Microsoft-Windows-FailoverClustering/Operational"
+  - "Microsoft-Windows-Hyper-V-VMMS-Admin"
+  - "Microsoft-Windows-StorageSpaces-Driver/Operational"

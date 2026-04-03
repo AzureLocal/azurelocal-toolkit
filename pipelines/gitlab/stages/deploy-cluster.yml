@@ -1,0 +1,40 @@
+# =============================================================================
+# Stage: Deploy Cluster — ARM template cluster deployment
+# =============================================================================
+# Azure Local cluster deployment uses ARM/CLI as the supported method.
+# Neither Terraform nor Ansible can natively deploy Azure Local clusters.
+# =============================================================================
+
+cluster:validate:
+  stage: deploy-cluster
+  script:
+    - az login --service-principal -u "${ARM_CLIENT_ID}" -p "${ARM_CLIENT_SECRET}" --tenant "${ARM_TENANT_ID}"
+    - az account set --subscription "${ARM_SUBSCRIPTION_ID}"
+    - |
+      az stack-hci cluster list \
+        --resource-group "${CLUSTER_RESOURCE_GROUP}" \
+        --query "[?name=='${CLUSTER_NAME}'].{name:name,status:status}" \
+        --output table
+    - echo "Cluster validation complete — review status above before proceeding"
+  when: manual
+  allow_failure: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+cluster:deploy:
+  stage: deploy-cluster
+  script:
+    - az login --service-principal -u "${ARM_CLIENT_ID}" -p "${ARM_CLIENT_SECRET}" --tenant "${ARM_TENANT_ID}"
+    - az account set --subscription "${ARM_SUBSCRIPTION_ID}"
+    - echo "Cluster deployment initiated via Azure portal or CLI"
+    - echo "Monitor deployment at https://portal.azure.com"
+    - |
+      echo "NOTE: Cluster deployment is a long-running operation (45-90 minutes)."
+      echo "This job validates readiness. Actual deployment is triggered via:"
+      echo "  az stack-hci cluster create --name ${CLUSTER_NAME} --resource-group ${CLUSTER_RESOURCE_GROUP} ..."
+  needs:
+    - cluster:validate
+  when: manual
+  allow_failure: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

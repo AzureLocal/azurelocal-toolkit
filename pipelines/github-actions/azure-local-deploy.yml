@@ -1,0 +1,238 @@
+# =============================================================================
+# GitHub Actions Workflow — Azure Local Deployment
+# =============================================================================
+# Mirrors the GitLab CI/CD pipeline with GitHub Actions syntax.
+#
+# Required secrets:
+#   ARM_CLIENT_ID, ARM_CLIENT_SECRET, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID
+#
+# Required environments (with protection rules):
+#   production — requires manual approval
+# =============================================================================
+name: Azure Local Deployment
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/terraform/**'
+      - 'src/ansible/**'
+      - 'config/variables/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/terraform/**'
+      - 'src/ansible/**'
+  workflow_dispatch:
+    inputs:
+      skip_steps:
+        description: 'Comma-separated steps to skip'
+        required: false
+        default: ''
+      deploy_target:
+        description: 'Deployment target environment'
+        required: true
+        default: 'lab'
+        type: choice
+        options:
+          - lab
+          - staging
+          - production
+
+env:
+  TF_ROOT: src/terraform/environments/azure-local
+  ANSIBLE_ROOT: src/ansible
+  CONFIG_PATH: config/variables/variables.yml
+  TERRAFORM_VERSION: '1.6'
+
+permissions:
+  contents: read
+  id-token: write  # For OIDC authentication
+
+jobs:
+  # =========================================================================
+  # Validate
+  # =========================================================================
+  terraform-validate:
+    name: Terraform Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform init -backend=false
+
+      - name: Terraform Validate
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform validate
+
+      - name: Terraform Format Check
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform fmt -check -recursive
+
+  ansible-lint:
+    name: Ansible Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Ansible and lint tools
+        run: |
+          pip install ansible ansible-lint
+
+      - name: Install collections
+        working-directory: ${{ env.ANSIBLE_ROOT }}
+        run: ansible-galaxy collection install -r collections/requirements.yml
+
+      - name: Lint playbooks and roles
+        working-directory: ${{ env.ANSIBLE_ROOT }}
+        run: ansible-lint playbooks/ roles/
+
+      - name: Syntax check
+        working-directory: ${{ env.ANSIBLE_ROOT }}
+        run: ansible-playbook --syntax-check playbooks/site.yml
+
+  # =========================================================================
+  # Plan
+  # =========================================================================
+  terraform-plan:
+    name: Terraform Plan
+    needs: [terraform-validate]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    env:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform init
+
+      - name: Terraform Plan
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform plan -out=tfplan -input=false
+
+      - name: Upload plan artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ env.TF_ROOT }}/tfplan
+          retention-days: 1
+
+  # =========================================================================
+  # Deploy Foundation (requires approval)
+  # =========================================================================
+  terraform-apply:
+    name: Terraform Apply
+    needs: [terraform-plan]
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+
+      - name: Download plan artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: tfplan
+          path: ${{ env.TF_ROOT }}
+
+      - name: Terraform Init
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform apply -auto-approve -input=false tfplan
+
+      - name: Export Terraform outputs
+        working-directory: ${{ env.TF_ROOT }}
+        run: terraform output -json > terraform-outputs.json
+
+      - name: Upload outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: terraform-outputs
+          path: ${{ env.TF_ROOT }}/terraform-outputs.json
+
+  # =========================================================================
+  # Configure On-Prem (self-hosted runner required)
+  # =========================================================================
+  configure-onprem:
+    name: Configure On-Premises
+    needs: [terraform-apply]
+    runs-on: [self-hosted, azurelocal]
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Ansible
+        run: pip install ansible
+
+      - name: Install collections
+        working-directory: ${{ env.ANSIBLE_ROOT }}
+        run: ansible-galaxy collection install -r collections/requirements.yml
+
+      - name: Run AD Preparation
+        working-directory: ${{ env.ANSIBLE_ROOT }}
+        run: ansible-playbook -i inventory/hosts.yml playbooks/01-ad-preparation.yml
+
+      - name: Run OS Configuration
+        working-directory: ${{ env.ANSIBLE_ROOT }}
+        run: ansible-playbook -i inventory/hosts.yml playbooks/02-os-configuration.yml
+
+      - name: Run Arc Registration
+        working-directory: ${{ env.ANSIBLE_ROOT }}
+        run: ansible-playbook -i inventory/hosts.yml playbooks/03-arc-registration.yml
+
+  # =========================================================================
+  # Configure Operations (self-hosted runner required)
+  # =========================================================================
+  configure-operations:
+    name: Configure Operations
+    needs: [configure-onprem]
+    runs-on: [self-hosted, azurelocal]
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install collections
+        working-directory: ${{ env.ANSIBLE_ROOT }}
+        run: ansible-galaxy collection install -r collections/requirements.yml
+
+      - name: Run Monitoring Setup
+        working-directory: ${{ env.ANSIBLE_ROOT }}
+        run: ansible-playbook -i inventory/hosts.yml playbooks/04-monitoring-setup.yml
+
+      - name: Run Management VM Configuration
+        working-directory: ${{ env.ANSIBLE_ROOT }}
+        run: ansible-playbook -i inventory/hosts.yml playbooks/05-management-vms.yml

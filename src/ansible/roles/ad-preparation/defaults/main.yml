@@ -1,0 +1,23 @@
+# =============================================================================
+# Role: ad-preparation — Default Variables
+# =============================================================================
+# Override these in inventory/group_vars/all.yml or via extra-vars.
+# Mirrors: scripts/deploy/03-onprem-readiness/phase-01-active-directory/
+
+ad_ou_base: "OU=AzureLocal,OU=Servers,{{ ad_domain_dn }}"
+ad_ou_children:
+  - "OU=Computers,{{ ad_ou_base }}"
+  - "OU=ServiceAccounts,{{ ad_ou_base }}"
+  - "OU=Groups,{{ ad_ou_base }}"
+
+# Azure conditional DNS forwarders
+azure_dns_forwarder_ip: "168.63.129.16"
+azure_dns_zones:
+  - "his.arc.azure.com"
+  - "guestconfiguration.azure.com"
+  - "guestnotificationservice.azure.com"
+  - "dp.kubernetesconfiguration.azure.com"
+  - "servicebus.windows.net"
+
+# LCM service account
+lcm_service_account_password_length: 24

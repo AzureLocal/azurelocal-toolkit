@@ -1,0 +1,102 @@
+# =============================================================================
+# Role: arc-registration
+# =============================================================================
+# Mirrors: scripts/deploy/04-cluster-deployment/phase-04-arc-registration/
+# Tasks: Arc agent install, Azure registration, connectivity validation
+# Target: cluster_nodes group
+# Collections: ansible.windows
+# =============================================================================
+---
+# ---------------------------------------------------------------
+# Task 1 — Validate Prerequisites
+# Mirrors: task-01 pre-registration checks
+# ---------------------------------------------------------------
+- name: Verify Azure Arc connectivity endpoints
+  ansible.windows.win_powershell:
+    script: |
+      $endpoints = @(
+          "https://login.microsoftonline.com",
+          "https://management.azure.com",
+          "https://{{ azure_location }}.his.arc.azure.com",
+          "https://guestnotificationservice.azure.com"
+      )
+      $failures = @()
+      foreach ($ep in $endpoints) {
+          try {
+              $result = Invoke-WebRequest -Uri $ep -UseBasicParsing -TimeoutSec 10 -ErrorAction Stop
+          } catch [System.Net.WebException] {
+              # 403/401 responses still mean connectivity is OK
+              if ($_.Exception.Response.StatusCode.value__ -ge 500 -or $_.Exception.Response -eq $null) {
+                  $failures += $ep
+              }
+          }
+      }
+      if ($failures.Count -gt 0) {
+          Write-Error "Cannot reach: $($failures -join ', ')"
+          exit 1
+      }
+      Write-Output "All Arc endpoints reachable"
+
+# ---------------------------------------------------------------
+# Task 2 — Register Nodes with Azure Arc
+# Mirrors: task-02-register-cluster-nodes-with-azure-arc
+# ---------------------------------------------------------------
+- name: Authenticate to Azure and register node with Arc
+  ansible.windows.win_powershell:
+    script: |
+      # Authenticate with Service Principal
+      $securePassword = ConvertTo-SecureString '{{ spn_client_secret }}' -AsPlainText -Force
+      $credential = New-Object System.Management.Automation.PSCredential('{{ spn_client_id }}', $securePassword)
+      Connect-AzAccount -ServicePrincipal -TenantId '{{ azure_tenant_id }}' `
+          -Credential $credential -SubscriptionId '{{ azure_subscription_azure_local }}'
+
+      # Get ARM access token
+      $token = (Get-AzAccessToken).Token
+
+      # Build Arc initialization parameters
+      $params = @{
+          SubscriptionID  = '{{ azure_subscription_azure_local }}'
+          ResourceGroup   = '{{ cluster_resource_group }}'
+          TenantID        = '{{ azure_tenant_id }}'
+          Region          = '{{ azure_location }}'
+          Cloud           = '{{ arc_cloud }}'
+          ArmAccessToken  = $token
+          AccountID       = '{{ spn_client_id }}'
+      }
+
+      # Add optional Arc Gateway
+      {% if arc_gateway_id | length > 0 %}
+      $params['ArcGatewayID'] = '{{ arc_gateway_id }}'
+      {% endif %}
+
+      # Add optional proxy
+      {% if arc_proxy | length > 0 %}
+      $params['Proxy'] = '{{ arc_proxy }}'
+      {% endif %}
+
+      # Run Arc initialization
+      Invoke-AzStackHciArcInitialization @params
+  no_log: true
+  async: "{{ arc_registration_timeout }}"
+  poll: 30
+
+# ---------------------------------------------------------------
+# Task 3 — Verify Arc Registration
+# Mirrors: task-04-verify-registration
+# ---------------------------------------------------------------
+- name: Verify Arc agent status
+  ansible.windows.win_powershell:
+    script: |
+      $agentStatus = & "$env:ProgramW6432\AzureConnectedMachineAgent\azcmagent.exe" show
+      $statusLine = $agentStatus | Select-String "Agent Status"
+      if ($statusLine -notmatch "Connected") {
+          Write-Error "Arc agent is not connected: $statusLine"
+          exit 1
+      }
+      Write-Output "Arc agent is connected"
+      Write-Output ($agentStatus | Out-String)
+  register: arc_verify_result
+
+- name: Display Arc registration status
+  ansible.builtin.debug:
+    msg: "{{ arc_verify_result.output }}"

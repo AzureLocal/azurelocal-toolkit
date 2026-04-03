@@ -1,0 +1,97 @@
+# =============================================================================
+# Role: wac-server
+# =============================================================================
+# Mirrors: scripts/deploy/05-operational-foundations/phase-02-monitoring/task-05-deploy-wac/
+# Tasks: Download WAC, silent install, verify service, configure KCD
+# Target: management group (WAC server host)
+# Collections: ansible.windows
+# =============================================================================
+---
+# ---------------------------------------------------------------
+# Task 1 — Ensure temp directory exists
+# ---------------------------------------------------------------
+- name: Ensure temp directory for WAC installer
+  ansible.windows.win_file:
+    path: "C:\\Temp"
+    state: directory
+
+# ---------------------------------------------------------------
+# Task 2 — Download Windows Admin Center installer
+# ---------------------------------------------------------------
+- name: Download Windows Admin Center MSI
+  ansible.windows.win_get_url:
+    url: "{{ wac_download_url }}"
+    dest: "{{ wac_installer_path }}"
+    force: false
+  register: wac_download
+
+# ---------------------------------------------------------------
+# Task 3 — Install Windows Admin Center (silent)
+# Mirrors: Deploy-WindowsAdminCenter.ps1
+# ---------------------------------------------------------------
+- name: Install Windows Admin Center
+  ansible.windows.win_package:
+    path: "{{ wac_installer_path }}"
+    product_id: "Windows Admin Center"
+    arguments:
+      - /qn
+      - /L*v
+      - "{{ wac_log_path }}"
+      - SME_PORT={{ wac_port }}
+      - SSL_CERTIFICATE_OPTION={{ wac_ssl_certificate_option }}
+    state: present
+  register: wac_install
+
+# ---------------------------------------------------------------
+# Task 4 — Ensure WAC service is running
+# ---------------------------------------------------------------
+- name: Ensure WAC gateway service is running
+  ansible.windows.win_service:
+    name: "{{ wac_service_name }}"
+    start_mode: auto
+    state: started
+  register: wac_service
+
+# ---------------------------------------------------------------
+# Task 5 — Verify WAC is listening
+# ---------------------------------------------------------------
+- name: Verify WAC is responding on configured port
+  ansible.windows.win_powershell:
+    script: |
+      $maxRetries = 6
+      $retryDelay = 10
+      for ($i = 1; $i -le $maxRetries; $i++) {
+          try {
+              $response = Invoke-WebRequest -Uri "https://localhost:{{ wac_port }}" `
+                  -UseBasicParsing -SkipCertificateCheck -TimeoutSec 10
+              Write-Output "WAC responding on port {{ wac_port }} (HTTP $($response.StatusCode))"
+              exit 0
+          } catch {
+              Write-Output "Waiting for WAC... attempt $i/$maxRetries"
+              Start-Sleep -Seconds $retryDelay
+          }
+      }
+      Write-Error "WAC did not respond within timeout"
+      exit 1
+
+# ---------------------------------------------------------------
+# Task 6 — Configure Kerberos Constrained Delegation
+# Mirrors: Complete-WAC-Setup.ps1
+# ---------------------------------------------------------------
+- name: Configure KCD for WAC gateway
+  ansible.windows.win_powershell:
+    script: |
+      $wacComputer = Get-ADComputer -Identity $env:COMPUTERNAME -ErrorAction SilentlyContinue
+      if ($wacComputer) {
+          Set-ADComputer -Identity $wacComputer `
+              -Add @{ 'msDS-AllowedToDelegateTo' = @(
+                  'Microsoft Virtual System Migration Service/{{ cluster_name }}'
+                  'cifs/{{ cluster_name }}'
+                  'Microsoft Virtual System Migration Service/{{ cluster_name }}.{{ ad_domain_fqdn }}'
+                  'cifs/{{ cluster_name }}.{{ ad_domain_fqdn }}'
+              )}
+          Set-ADAccountControl -Identity $wacComputer -TrustedToAuthForDelegation $true
+          Write-Output "KCD configured for WAC to manage {{ cluster_name }}"
+      } else {
+          Write-Warning "Cannot find WAC computer object in AD — skipping KCD"
+      }

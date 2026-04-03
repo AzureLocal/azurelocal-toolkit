@@ -1,0 +1,25 @@
+# =============================================================================
+# Master Playbook — site.yml
+# =============================================================================
+# Runs all playbooks in the correct deployment order.
+# Usage:
+#   ansible-playbook -i inventory/hosts.yml playbooks/site.yml
+#
+# To run a specific phase:
+#   ansible-playbook -i inventory/hosts.yml playbooks/site.yml --tags ad-preparation
+# =============================================================================
+---
+- name: "Phase 1 — Active Directory Preparation"
+  ansible.builtin.import_playbook: 01-ad-preparation.yml
+
+- name: "Phase 2 — Management VM Configuration"
+  ansible.builtin.import_playbook: 05-management-vms.yml
+
+- name: "Phase 3 — Cluster Node OS Configuration"
+  ansible.builtin.import_playbook: 02-os-configuration.yml
+
+- name: "Phase 4 — Azure Arc Registration"
+  ansible.builtin.import_playbook: 03-arc-registration.yml
+
+- name: "Phase 5 — Monitoring & Observability"
+  ansible.builtin.import_playbook: 04-monitoring-setup.yml

@@ -1,0 +1,110 @@
+# =============================================================================
+# Role: syslog-receiver
+# =============================================================================
+# Mirrors: scripts/deploy/05-operational-foundations/phase-02-monitoring/task-06-configure-network-device-logging/
+# Tasks: Configure rsyslog, SNMP trap receiver, log forwarding
+# Target: management group (syslog VM — Ubuntu 24.04 LTS or Windows)
+# Note: This role handles BOTH Linux and Windows syslog receivers.
+#       Windows uses the NXLog agent; Linux uses rsyslog + snmpd.
+# =============================================================================
+---
+# ---------------------------------------------------------------
+# Linux Path — rsyslog + snmpd
+# ---------------------------------------------------------------
+- name: Install rsyslog and SNMP packages (Linux)
+  ansible.builtin.apt:
+    name:
+      - rsyslog
+      - snmpd
+      - snmp
+      - snmp-mibs-downloader
+    state: present
+    update_cache: true
+  when: ansible_os_family == "Debian"
+
+- name: Configure rsyslog to listen on UDP {{ syslog_port }}
+  ansible.builtin.copy:
+    dest: /etc/rsyslog.d/50-azurelocal.conf
+    content: |
+      # =============================================================================
+      # Azure Local Network Device Logging — rsyslog configuration
+      # Managed by Ansible — do not edit manually
+      # =============================================================================
+
+      # Enable UDP syslog reception
+      module(load="imudp")
+      input(type="imudp" port="{{ syslog_port }}")
+
+      # Log all network device messages to dedicated file
+      $template NetworkDevices,"/var/log/azurelocal/network/%HOSTNAME%/%$YEAR%-%$MONTH%-%$DAY%.log"
+      if $fromhost-ip != '127.0.0.1' then -?NetworkDevices
+      & stop
+    owner: root
+    group: root
+    mode: "0644"
+  notify: restart rsyslog
+  when: ansible_os_family == "Debian"
+
+- name: Ensure log directory exists (Linux)
+  ansible.builtin.file:
+    path: /var/log/azurelocal/network
+    state: directory
+    owner: syslog
+    group: adm
+    mode: "0755"
+  when: ansible_os_family == "Debian"
+
+- name: Configure SNMP trap receiver (Linux)
+  ansible.builtin.copy:
+    dest: /etc/snmp/snmptrapd.conf
+    content: |
+      # Azure Local SNMP Trap Receiver
+      # Managed by Ansible
+      disableAuthorization yes
+      traphandle default /usr/sbin/snmptthandler
+      authCommunity log,execute,net public
+    owner: root
+    group: root
+    mode: "0600"
+  notify: restart snmptrapd
+  when: ansible_os_family == "Debian"
+
+- name: Ensure rsyslog is running (Linux)
+  ansible.builtin.service:
+    name: rsyslog
+    state: started
+    enabled: true
+  when: ansible_os_family == "Debian"
+
+- name: Ensure snmptrapd is running (Linux)
+  ansible.builtin.service:
+    name: snmptrapd
+    state: started
+    enabled: true
+  when: ansible_os_family == "Debian"
+
+# ---------------------------------------------------------------
+# Windows Path — Windows Event Forwarding
+# ---------------------------------------------------------------
+- name: Configure Windows Event Forwarding for syslog (Windows)
+  ansible.windows.win_powershell:
+    script: |
+      # Enable Windows Remote Management for event collection
+      wecutil qc /q
+      # Configure firewall for syslog/SNMP inbound
+      New-NetFirewallRule -DisplayName "Syslog UDP Inbound" `
+          -Direction Inbound -Protocol UDP -LocalPort {{ syslog_port }} `
+          -Action Allow -ErrorAction SilentlyContinue
+      New-NetFirewallRule -DisplayName "SNMP UDP Inbound" `
+          -Direction Inbound -Protocol UDP -LocalPort {{ snmp_port }} `
+          -Action Allow -ErrorAction SilentlyContinue
+      New-NetFirewallRule -DisplayName "SNMP Trap UDP Inbound" `
+          -Direction Inbound -Protocol UDP -LocalPort {{ snmp_trap_port }} `
+          -Action Allow -ErrorAction SilentlyContinue
+      Write-Output "Windows syslog/SNMP firewall rules configured"
+  when: ansible_os_family == "Windows"
+
+# ---------------------------------------------------------------
+# Handlers
+# ---------------------------------------------------------------
+# Note: Handlers are defined in handlers/main.yml for this role

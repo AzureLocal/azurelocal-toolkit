@@ -246,6 +246,88 @@ function Export-AnsibleVars {
 
 <#
 .SYNOPSIS
+    Exports configuration to Terraform tfvars format.
+
+.DESCRIPTION
+    Converts the canonical variables.yml configuration hashtable into HCL-compatible
+    terraform.tfvars format. Handles strings, numbers, booleans, lists, and maps.
+
+.PARAMETER Config
+    The configuration hashtable (from Get-Configuration or Get-SolutionConfig).
+
+.PARAMETER OutputPath
+    Path to save the terraform.tfvars file.
+
+.EXAMPLE
+    $config = Get-Configuration -Path "config/variables/variables.yml"
+    Export-TerraformTfvars -Config $config -OutputPath "src/terraform/environments/azure-local/terraform.tfvars"
+#>
+function Export-TerraformTfvars {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [hashtable]$Config,
+
+        [Parameter(Mandatory = $true)]
+        [string]$OutputPath
+    )
+
+    function ConvertTo-HclValue {
+        param([object]$Value, [int]$Indent = 0)
+        $pad = "  " * $Indent
+        if ($null -eq $Value) { return '""' }
+        if ($Value -is [bool]) { return $Value.ToString().ToLower() }
+        if ($Value -is [int] -or $Value -is [long] -or $Value -is [double]) { return $Value.ToString() }
+        if ($Value -is [string]) { return '"' + ($Value -replace '\\', '\\' -replace '"', '\"') + '"' }
+        if ($Value -is [System.Collections.IList]) {
+            if ($Value.Count -eq 0) { return "[]" }
+            $items = $Value | ForEach-Object { "$pad  $(ConvertTo-HclValue $_ ($Indent + 1))" }
+            return "[$([Environment]::NewLine)$($items -join ",$([Environment]::NewLine)")$([Environment]::NewLine)$pad]"
+        }
+        if ($Value -is [System.Collections.IDictionary]) {
+            if ($Value.Count -eq 0) { return "{}" }
+            $entries = @()
+            foreach ($key in $Value.Keys | Sort-Object) {
+                $hclKey = $key -replace '[^a-zA-Z0-9_]', '_'
+                $entries += "$pad  $hclKey = $(ConvertTo-HclValue $Value[$key] ($Indent + 1))"
+            }
+            return "{$([Environment]::NewLine)$($entries -join [Environment]::NewLine)$([Environment]::NewLine)$pad}"
+        }
+        return '"' + $Value.ToString() + '"'
+    }
+
+    $lines = @(
+        "# =============================================================================",
+        "# terraform.tfvars",
+        "# Auto-generated from variables.yml via Export-TerraformTfvars",
+        "# DO NOT EDIT MANUALLY — regenerate from config/variables/variables.yml",
+        "# Generated: $(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')",
+        "# =============================================================================",
+        ""
+    )
+
+    # Flatten top-level sections into TF variable assignments
+    foreach ($section in $Config.Keys | Sort-Object) {
+        # Skip metadata and compatibility aliases
+        if ($section -eq '_metadata') { continue }
+
+        $value = $Config[$section]
+        $tfKey = $section -replace '[^a-zA-Z0-9_]', '_'
+
+        if ($value -is [System.Collections.IDictionary] -or $value -is [System.Collections.IList]) {
+            $lines += "$tfKey = $(ConvertTo-HclValue $value)"
+        } else {
+            $lines += "$tfKey = $(ConvertTo-HclValue $value)"
+        }
+        $lines += ""
+    }
+
+    $lines -join [Environment]::NewLine | Set-Content -Path $OutputPath -Encoding UTF8
+    Write-Verbose "Terraform tfvars exported to: $OutputPath"
+}
+
+<#
+.SYNOPSIS
     Loads a solution configuration directly.
 
 .DESCRIPTION
@@ -641,5 +723,6 @@ Export-ModuleMember -Function @(
     'Test-ConfigPaths',
     'Merge-Hashtables',
     'Export-BicepParams',
-    'Export-AnsibleVars'
+    'Export-AnsibleVars',
+    'Export-TerraformTfvars'
 ) -Variable 'ConfigPaths'

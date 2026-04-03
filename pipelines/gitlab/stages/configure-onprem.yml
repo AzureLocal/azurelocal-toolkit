@@ -1,0 +1,38 @@
+# =============================================================================
+# Stage: Configure On-Prem — Ansible/PowerShell on-premises configuration
+# =============================================================================
+
+ad:preparation:
+  stage: configure-onprem
+  script:
+    - cd "${ANSIBLE_ROOT}"
+    - ansible-galaxy collection install -r collections/requirements.yml
+    - ansible-playbook -i inventory/hosts.yml playbooks/01-ad-preparation.yml
+  when: manual
+  allow_failure: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+os:configuration:
+  stage: configure-onprem
+  script:
+    - cd "${ANSIBLE_ROOT}"
+    - ansible-playbook -i inventory/hosts.yml playbooks/02-os-configuration.yml
+  needs:
+    - ad:preparation
+  when: manual
+  allow_failure: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+arc:registration:
+  stage: configure-onprem
+  script:
+    - cd "${ANSIBLE_ROOT}"
+    - ansible-playbook -i inventory/hosts.yml playbooks/03-arc-registration.yml
+  needs:
+    - os:configuration
+  when: manual
+  allow_failure: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

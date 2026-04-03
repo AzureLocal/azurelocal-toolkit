@@ -1,0 +1,215 @@
+# =============================================================================
+# Azure DevOps Pipeline — Azure Local Deployment
+# =============================================================================
+# Mirrors the GitLab CI/CD pipeline with Azure Pipelines syntax.
+#
+# Requirements:
+#   - Service Connection: "AzureLocal-ServiceConnection" (SPN)
+#   - Agent Pool: "AzureLocal-SelfHosted" (self-hosted with on-prem access)
+#   - Variable Group: "azurelocal-secrets" (ARM_CLIENT_ID, etc.)
+#   - Environment: "production" (with approval checks)
+# =============================================================================
+trigger:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - src/terraform/**
+      - src/ansible/**
+      - config/variables/**
+
+pr:
+  branches:
+    include:
+      - main
+  paths:
+    include:
+      - src/terraform/**
+      - src/ansible/**
+
+variables:
+  - group: azurelocal-secrets
+  - name: TF_ROOT
+    value: 'src/terraform/environments/azure-local'
+  - name: ANSIBLE_ROOT
+    value: 'src/ansible'
+  - name: CONFIG_PATH
+    value: 'config/variables/variables.yml'
+
+stages:
+  # =========================================================================
+  # Stage: Validate
+  # =========================================================================
+  - stage: Validate
+    displayName: 'Validate'
+    jobs:
+      - job: TerraformValidate
+        displayName: 'Terraform Validate'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: TerraformInstaller@1
+            displayName: 'Install Terraform'
+            inputs:
+              terraformVersion: '1.6.x'
+
+          - script: |
+              cd $(TF_ROOT)
+              terraform init -backend=false
+              terraform validate
+              terraform fmt -check -recursive
+            displayName: 'Terraform Init, Validate, Format'
+
+      - job: AnsibleLint
+        displayName: 'Ansible Lint'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: UsePythonVersion@0
+            inputs:
+              versionSpec: '3.12'
+
+          - script: |
+              pip install ansible ansible-lint
+              cd $(ANSIBLE_ROOT)
+              ansible-galaxy collection install -r collections/requirements.yml
+              ansible-lint playbooks/ roles/
+              ansible-playbook --syntax-check playbooks/site.yml
+            displayName: 'Lint and Syntax Check'
+
+  # =========================================================================
+  # Stage: Plan
+  # =========================================================================
+  - stage: Plan
+    displayName: 'Terraform Plan'
+    dependsOn: Validate
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'))
+    jobs:
+      - job: TerraformPlan
+        displayName: 'Terraform Plan'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+          - task: TerraformInstaller@1
+            inputs:
+              terraformVersion: '1.6.x'
+
+          - task: TerraformTaskV4@4
+            displayName: 'Terraform Init'
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              workingDirectory: '$(TF_ROOT)'
+              backendServiceArm: 'AzureLocal-ServiceConnection'
+              backendAzureRmResourceGroupName: '$(TF_BACKEND_RG)'
+              backendAzureRmStorageAccountName: '$(TF_BACKEND_SA)'
+              backendAzureRmContainerName: 'tfstate'
+              backendAzureRmKey: 'azurelocal.tfstate'
+
+          - task: TerraformTaskV4@4
+            displayName: 'Terraform Plan'
+            inputs:
+              provider: 'azurerm'
+              command: 'plan'
+              workingDirectory: '$(TF_ROOT)'
+              commandOptions: '-out=tfplan -input=false'
+              environmentServiceNameAzureRM: 'AzureLocal-ServiceConnection'
+
+          - publish: '$(TF_ROOT)/tfplan'
+            artifact: tfplan
+            displayName: 'Publish Plan Artifact'
+
+  # =========================================================================
+  # Stage: Deploy Foundation
+  # =========================================================================
+  - stage: DeployFoundation
+    displayName: 'Deploy Azure Foundation'
+    dependsOn: Plan
+    jobs:
+      - deployment: TerraformApply
+        displayName: 'Terraform Apply'
+        pool:
+          vmImage: 'ubuntu-latest'
+        environment: 'production'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: TerraformInstaller@1
+                  inputs:
+                    terraformVersion: '1.6.x'
+
+                - download: current
+                  artifact: tfplan
+
+                - task: TerraformTaskV4@4
+                  displayName: 'Terraform Init'
+                  inputs:
+                    provider: 'azurerm'
+                    command: 'init'
+                    workingDirectory: '$(TF_ROOT)'
+                    backendServiceArm: 'AzureLocal-ServiceConnection'
+                    backendAzureRmResourceGroupName: '$(TF_BACKEND_RG)'
+                    backendAzureRmStorageAccountName: '$(TF_BACKEND_SA)'
+                    backendAzureRmContainerName: 'tfstate'
+                    backendAzureRmKey: 'azurelocal.tfstate'
+
+                - task: TerraformTaskV4@4
+                  displayName: 'Terraform Apply'
+                  inputs:
+                    provider: 'azurerm'
+                    command: 'apply'
+                    workingDirectory: '$(TF_ROOT)'
+                    commandOptions: '-auto-approve -input=false $(Pipeline.Workspace)/tfplan/tfplan'
+                    environmentServiceNameAzureRM: 'AzureLocal-ServiceConnection'
+
+  # =========================================================================
+  # Stage: Configure On-Prem (self-hosted agent)
+  # =========================================================================
+  - stage: ConfigureOnPrem
+    displayName: 'Configure On-Premises'
+    dependsOn: DeployFoundation
+    jobs:
+      - deployment: OnPremConfig
+        displayName: 'Ansible Configuration'
+        pool:
+          name: 'AzureLocal-SelfHosted'
+        environment: 'production'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - script: |
+                    cd $(ANSIBLE_ROOT)
+                    ansible-galaxy collection install -r collections/requirements.yml
+                    ansible-playbook -i inventory/hosts.yml playbooks/site.yml
+                  displayName: 'Run Ansible Playbooks'
+
+  # =========================================================================
+  # Stage: Configure Operations
+  # =========================================================================
+  - stage: ConfigureOperations
+    displayName: 'Configure Operations'
+    dependsOn: ConfigureOnPrem
+    jobs:
+      - deployment: Operations
+        displayName: 'Monitoring & Management'
+        pool:
+          name: 'AzureLocal-SelfHosted'
+        environment: 'production'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - script: |
+                    cd $(ANSIBLE_ROOT)
+                    ansible-playbook -i inventory/hosts.yml playbooks/04-monitoring-setup.yml
+                    ansible-playbook -i inventory/hosts.yml playbooks/05-management-vms.yml
+                  displayName: 'Run Operations Playbooks'

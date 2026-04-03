@@ -1,0 +1,27 @@
+# =============================================================================
+# Playbook 01: Active Directory Preparation
+# =============================================================================
+# Part 3 — On-Premises Readiness, Phase 1: Active Directory
+# Run on: domain_controllers (a DC with RSAT-AD-Tools)
+# =============================================================================
+---
+- name: "Part 3 | Phase 1 — Active Directory Preparation"
+  hosts: domain_controllers[0]
+  gather_facts: false
+  become: false
+  tags:
+    - ad-preparation
+    - onprem-readiness
+
+  pre_tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - ad_domain_fqdn is defined
+          - cluster_name is defined
+          - security_groups is defined
+          - lcm_username is defined
+        fail_msg: "Missing required AD variables — check group_vars/all.yml"
+
+  roles:
+    - role: ad-preparation

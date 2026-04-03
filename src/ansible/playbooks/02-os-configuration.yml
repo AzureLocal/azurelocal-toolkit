@@ -1,0 +1,28 @@
+# =============================================================================
+# Playbook 02: OS Configuration
+# =============================================================================
+# Part 4 — Cluster Deployment, Phase 3: OS Configuration
+# Run on: cluster_nodes (each bare-metal Azure Local node)
+# =============================================================================
+---
+- name: "Part 4 | Phase 3 — OS Configuration"
+  hosts: cluster_nodes
+  gather_facts: true
+  become: false
+  serial: 1  # Configure nodes one at a time (reboots involved)
+  tags:
+    - os-configuration
+    - cluster-deployment
+
+  pre_tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - ad_domain_fqdn is defined
+          - ad_dns_servers is defined
+          - domain_admin_username is defined
+          - domain_admin_password is defined
+        fail_msg: "Missing required OS config variables — check group_vars/all.yml"
+
+  roles:
+    - role: os-configuration

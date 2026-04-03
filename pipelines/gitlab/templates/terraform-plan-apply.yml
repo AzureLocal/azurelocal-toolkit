@@ -1,0 +1,50 @@
+# =============================================================================
+# Template: Terraform Plan/Apply — Reusable CI/CD template
+# =============================================================================
+# Usage:
+#   include:
+#     - local: 'pipelines/gitlab/templates/terraform-plan-apply.yml'
+#
+#   terraform:plan:myenv:
+#     extends: .terraform:plan
+#     variables:
+#       TF_ROOT: src/terraform/environments/my-env
+# =============================================================================
+
+.terraform:plan:
+  script:
+    - cd "${TF_ROOT}"
+    - terraform init
+      -backend-config="resource_group_name=${TF_BACKEND_RG}"
+      -backend-config="storage_account_name=${TF_BACKEND_SA}"
+      -backend-config="container_name=${TF_BACKEND_CONTAINER}"
+      -backend-config="key=${TF_STATE_NAME}.tfstate"
+    - terraform plan -out=tfplan -input=false
+  artifacts:
+    paths:
+      - "${TF_ROOT}/tfplan"
+    expire_in: 1 day
+
+.terraform:apply:
+  script:
+    - cd "${TF_ROOT}"
+    - terraform init
+      -backend-config="resource_group_name=${TF_BACKEND_RG}"
+      -backend-config="storage_account_name=${TF_BACKEND_SA}"
+      -backend-config="container_name=${TF_BACKEND_CONTAINER}"
+      -backend-config="key=${TF_STATE_NAME}.tfstate"
+    - terraform apply -auto-approve -input=false tfplan
+  when: manual
+  allow_failure: false
+
+.terraform:destroy:
+  script:
+    - cd "${TF_ROOT}"
+    - terraform init
+      -backend-config="resource_group_name=${TF_BACKEND_RG}"
+      -backend-config="storage_account_name=${TF_BACKEND_SA}"
+      -backend-config="container_name=${TF_BACKEND_CONTAINER}"
+      -backend-config="key=${TF_STATE_NAME}.tfstate"
+    - terraform destroy -auto-approve -input=false
+  when: manual
+  allow_failure: false

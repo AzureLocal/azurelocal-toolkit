@@ -1,0 +1,49 @@
+# =============================================================================
+# Ansible Inventory — IIC Example
+# =============================================================================
+# Copy to hosts.yml and update with your site-specific values.
+# Variables in group_vars/all.yml are generated from variables.yml.
+# =============================================================================
+all:
+  children:
+    # Active Directory domain controllers (management VMs)
+    domain_controllers:
+      hosts:
+        iic-dc01:
+          ansible_host: 10.20.1.10
+        iic-dc02:
+          ansible_host: 10.20.1.11
+
+    # Management servers
+    management:
+      hosts:
+        iic-jumpbox:
+          ansible_host: 10.20.1.20
+        iic-wac01:
+          ansible_host: 10.20.1.21
+        iic-syslog01:
+          ansible_host: 10.20.1.50
+
+    # Azure Local cluster nodes
+    cluster_nodes:
+      hosts:
+        azl-iic-n01:
+          ansible_host: 10.0.0.11
+          idrac_ip: 10.245.64.11
+          service_tag: ABC1234
+        azl-iic-n02:
+          ansible_host: 10.0.0.12
+          idrac_ip: 10.245.64.12
+          service_tag: ABC1235
+
+    # Windows hosts (all groups combined)
+    windows:
+      children:
+        domain_controllers:
+        management:
+        cluster_nodes:
+      vars:
+        ansible_connection: winrm
+        ansible_winrm_transport: kerberos
+        ansible_winrm_server_cert_validation: ignore
+        ansible_port: 5986

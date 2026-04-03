@@ -1,0 +1,27 @@
+# =============================================================================
+# Playbook 04: Monitoring Setup
+# =============================================================================
+# Part 5 — Operational Foundations, Phase 2: Monitoring & Observability
+# Run on: cluster_nodes (Azure Monitor Agent on each node)
+# =============================================================================
+---
+- name: "Part 5 | Phase 2 — Monitoring & Observability"
+  hosts: cluster_nodes
+  gather_facts: false
+  become: false
+  tags:
+    - monitoring
+    - operational-foundations
+
+  pre_tasks:
+    - name: Validate required variables
+      ansible.builtin.assert:
+        that:
+          - azure_subscription_azure_local is defined
+          - cluster_resource_group is defined
+          - cluster_name is defined
+          - log_analytics_workspace_name is defined
+        fail_msg: "Missing required monitoring variables — check group_vars/all.yml"
+
+  roles:
+    - role: monitoring-agents

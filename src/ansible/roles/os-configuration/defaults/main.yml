@@ -1,0 +1,7 @@
+# =============================================================================
+# Role: os-configuration — Default Variables
+# =============================================================================
+onprem_dns_servers: "{{ ad_dns_servers | default(['192.168.10.10', '192.168.10.11']) }}"
+onprem_ntp_server: "{{ ad_dns_servers[0] | default('192.168.10.10') }}"
+onprem_domain_join_ou: "OU={{ cluster_name }},OU=Computers,OU=AzureLocal,OU=Servers,{{ ad_domain_dn }}"
+firewall_icmp_enabled: true

@@ -1,0 +1,9 @@
+# =============================================================================
+# Role: wac-server — Default Variables
+# =============================================================================
+wac_port: 6516
+wac_download_url: "https://aka.ms/wacdownload"
+wac_installer_path: "C:\\Temp\\WindowsAdminCenter.msi"
+wac_log_path: "C:\\Temp\\wac-install.log"
+wac_ssl_certificate_option: "generate"  # "generate" for self-signed, "existing" for imported cert
+wac_service_name: "ServerManagementGateway"

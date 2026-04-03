@@ -1,0 +1,119 @@
+# =============================================================================
+# Role: domain-controller
+# =============================================================================
+# Mirrors: scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-12-configure-adds/
+# Tasks: Install AD DS role, promote DC (new forest or replica)
+# Target: domain_controllers group (management VMs provisioned by Terraform)
+# Collections: ansible.windows, microsoft.ad
+# =============================================================================
+---
+# ---------------------------------------------------------------
+# Task 1 — Install AD DS Windows Feature
+# ---------------------------------------------------------------
+- name: Install AD-Domain-Services feature
+  ansible.windows.win_feature:
+    name:
+      - AD-Domain-Services
+      - RSAT-AD-Tools
+      - RSAT-DNS-Server
+      - RSAT-ADDS
+    include_management_tools: true
+    state: present
+  register: adds_feature
+
+- name: Reboot after feature installation
+  ansible.windows.win_reboot:
+    reboot_timeout: 600
+  when: adds_feature.reboot_required | default(false)
+
+# ---------------------------------------------------------------
+# Task 2 — Generate DSRM Safe Mode Password
+# ---------------------------------------------------------------
+- name: Generate DSRM safe-mode password
+  ansible.builtin.set_fact:
+    _dsrm_password: "{{ lookup('ansible.builtin.password', '/dev/null length=' + (dc_safe_mode_password_length | string) + ' chars=ascii_letters,digits,punctuation') }}"
+  no_log: true
+
+# ---------------------------------------------------------------
+# Task 3a — Promote as New Forest (first DC only)
+# ---------------------------------------------------------------
+- name: Promote as new forest domain controller
+  microsoft.ad.domain:
+    dns_domain_name: "{{ ad_domain_fqdn }}"
+    domain_netbios_name: "{{ ad_netbios_name }}"
+    safe_mode_password: "{{ _dsrm_password }}"
+    forest_mode: "{{ dc_forest_functional_level }}"
+    domain_mode: "{{ dc_domain_functional_level }}"
+    install_dns: "{{ dc_install_dns }}"
+    database_path: "{{ dc_database_path }}"
+    log_path: "{{ dc_log_path }}"
+    sysvol_path: "{{ dc_sysvol_path }}"
+    reboot: true
+  when: dc_promotion_mode == "new_forest"
+  register: dc_new_forest_result
+
+# ---------------------------------------------------------------
+# Task 3b — Promote as Replica DC (additional DCs)
+# ---------------------------------------------------------------
+- name: Promote as replica domain controller
+  microsoft.ad.domain_controller:
+    dns_domain_name: "{{ ad_domain_fqdn }}"
+    domain_admin_user: "{{ domain_admin_username }}"
+    domain_admin_password: "{{ domain_admin_password }}"
+    safe_mode_password: "{{ _dsrm_password }}"
+    install_dns: "{{ dc_install_dns }}"
+    database_path: "{{ dc_database_path }}"
+    log_path: "{{ dc_log_path }}"
+    sysvol_path: "{{ dc_sysvol_path }}"
+    state: domain_controller
+    reboot: true
+  when: dc_promotion_mode == "replica"
+  register: dc_replica_result
+  no_log: true
+
+# ---------------------------------------------------------------
+# Task 4 — Wait for AD DS to stabilize
+# ---------------------------------------------------------------
+- name: Wait for AD DS services to stabilize after promotion
+  ansible.windows.win_powershell:
+    script: |
+      $maxRetries = 12
+      $retryDelay = 10
+      for ($i = 1; $i -le $maxRetries; $i++) {
+          try {
+              $dc = Get-ADDomainController -Identity $env:COMPUTERNAME -ErrorAction Stop
+              if ($dc) {
+                  Write-Output "AD DS is operational on $($dc.HostName)"
+                  exit 0
+              }
+          } catch {
+              Write-Output "Waiting for AD DS... attempt $i/$maxRetries"
+              Start-Sleep -Seconds $retryDelay
+          }
+      }
+      Write-Error "AD DS did not become operational within timeout"
+      exit 1
+  register: adds_health
+
+# ---------------------------------------------------------------
+# Task 5 — Store DSRM password in Key Vault
+# ---------------------------------------------------------------
+- name: Store DSRM password in Key Vault
+  azure.azcollection.azure_rm_keyvaultsecret:
+    secret_name: "{{ inventory_hostname_short }}-dsrm-password"
+    secret_value: "{{ _dsrm_password }}"
+    keyvault_uri: "https://{{ key_vault_name }}.vault.azure.net"
+    subscription_id: "{{ azure_subscription_azure_local }}"
+    tenant: "{{ azure_tenant_id }}"
+  when: key_vault_name is defined
+  no_log: true
+
+# ---------------------------------------------------------------
+# Task 6 — Configure DNS Forwarders
+# ---------------------------------------------------------------
+- name: Configure DNS forwarders to Azure DNS
+  ansible.windows.win_powershell:
+    script: |
+      Set-DnsServerForwarder -IPAddress @('168.63.129.16') -UseRootHint $false
+      Write-Output "DNS forwarders configured"
+  when: dc_install_dns

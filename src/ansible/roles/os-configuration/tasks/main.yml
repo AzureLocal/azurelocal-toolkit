@@ -1,0 +1,116 @@
+# =============================================================================
+# Role: os-configuration
+# =============================================================================
+# Mirrors: scripts/deploy/04-cluster-deployment/phase-03-os-configuration/
+# Tasks: Hostname, static IP, NTP, DNS, domain join, firewall
+# Target: cluster_nodes group
+# Collections: ansible.windows, community.windows
+# =============================================================================
+---
+# ---------------------------------------------------------------
+# Task 1 — Enable WinRM (prerequisite for further tasks)
+# Mirrors: task-01-enable-winrm
+# ---------------------------------------------------------------
+- name: Ensure WinRM service is running
+  ansible.windows.win_service:
+    name: WinRM
+    start_mode: auto
+    state: started
+
+# ---------------------------------------------------------------
+# Task 2 — Configure Hostname
+# Mirrors: task-10-configure-hostname
+# ---------------------------------------------------------------
+- name: Set hostname
+  ansible.windows.win_hostname:
+    name: "{{ inventory_hostname_short }}"
+  register: hostname_result
+
+- name: Reboot after hostname change
+  ansible.windows.win_reboot:
+    reboot_timeout: 600
+  when: hostname_result.reboot_required | default(false)
+
+# ---------------------------------------------------------------
+# Task 3 — Configure NTP
+# Mirrors: task-07-configure-time-synchronization-ntp
+# ---------------------------------------------------------------
+- name: Configure NTP server
+  ansible.windows.win_powershell:
+    script: |
+      w32tm /config /manualpeerlist:"{{ onprem_ntp_server }}" /syncfromflags:manual /reliable:YES /update
+      Restart-Service w32time -Force
+      w32tm /resync /force
+      $status = w32tm /query /status
+      Write-Output $status
+
+# ---------------------------------------------------------------
+# Task 4 — Configure Static IP on Management NIC
+# Mirrors: task-03-configure-static-ip-address
+# ---------------------------------------------------------------
+- name: Configure management NIC static IP
+  ansible.windows.win_powershell:
+    script: |
+      $adapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.Name -like '*{{ hostvars[inventory_hostname].mgmt_nic_name | default("Ethernet") }}*' } | Select-Object -First 1
+      if (-not $adapter) {
+          Write-Error "Management NIC not found"
+          exit 1
+      }
+      # Remove existing IP configuration
+      $adapter | Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue
+      $adapter | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
+      # Set static IP
+      New-NetIPAddress -InterfaceIndex $adapter.ifIndex `
+          -IPAddress '{{ hostvars[inventory_hostname].mgmt_ip }}' `
+          -PrefixLength {{ hostvars[inventory_hostname].mgmt_prefix | default(24) }} `
+          -DefaultGateway '{{ hostvars[inventory_hostname].mgmt_gateway | default(onprem_vlans.management.gateway) }}'
+      # Set DNS
+      Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex `
+          -ServerAddresses @({{ onprem_dns_servers | map('regex_replace', '^(.*)$', "'\\1'") | join(',') }})
+  when: hostvars[inventory_hostname].mgmt_ip is defined
+
+# ---------------------------------------------------------------
+# Task 5 — Configure DNS Client
+# Mirrors: task-05-configure-dns-clients
+# ---------------------------------------------------------------
+- name: Set DNS suffix search list
+  ansible.windows.win_dns_client:
+    adapter_names: '*'
+    dns_servers: "{{ onprem_dns_servers }}"
+
+# ---------------------------------------------------------------
+# Task 6 — Enable ICMP (Firewall)
+# ---------------------------------------------------------------
+- name: Enable ICMP Echo Request (IPv4)
+  community.windows.win_firewall_rule:
+    name: "Allow ICMPv4 Echo Request"
+    protocol: icmpv4
+    icmp_type_code:
+      - "8:*"
+    direction: in
+    action: allow
+    enabled: true
+    state: present
+  when: firewall_icmp_enabled
+
+# ---------------------------------------------------------------
+# Task 7 — Domain Join
+# ---------------------------------------------------------------
+- name: Build domain DN
+  ansible.builtin.set_fact:
+    ad_domain_dn: "DC={{ ad_domain_fqdn.split('.') | join(',DC=') }}"
+
+- name: Join node to domain
+  microsoft.ad.membership:
+    dns_domain_name: "{{ ad_domain_fqdn }}"
+    domain_admin_user: "{{ domain_admin_username }}"
+    domain_admin_password: "{{ domain_admin_password }}"
+    ou_path: "{{ onprem_domain_join_ou }}"
+    state: domain
+    reboot: true
+  register: domain_join_result
+
+- name: Reboot after domain join
+  ansible.windows.win_reboot:
+    reboot_timeout: 600
+  when: domain_join_result.reboot_required | default(false)
