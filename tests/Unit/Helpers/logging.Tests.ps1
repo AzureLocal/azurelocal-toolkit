@@ -8,8 +8,16 @@
 #>
 
 BeforeAll {
-    $helpersPath = Join-Path $PSScriptRoot '..' '..' '..' 'scripts' 'common' 'utilities' 'helpers'
-    . (Join-Path $helpersPath 'logging.ps1')
+    $script:helpersPath = Join-Path $PSScriptRoot '..' '..' '..' 'scripts' 'common' 'utilities' 'helpers'
+    . (Join-Path $script:helpersPath 'logging.ps1')
+
+    # Load as a named module so InModuleScope can be used for file-logging tests.
+    # This ensures $script:LogToFile / $script:LogFile share the same scope across
+    # all function calls (Start-LogFile, Write-Log, Stop-LogFile) regardless of
+    # which Pester block invokes them.
+    $loggingContent = Get-Content (Join-Path $script:helpersPath 'logging.ps1') -Raw
+    New-Module -Name 'LoggingModule' -ScriptBlock ([scriptblock]::Create($loggingContent)) |
+        Import-Module -Force
 }
 
 Describe 'Write-Log' {
@@ -42,72 +50,89 @@ Describe 'Write-Log' {
         }
     }
 
+    # File-logging tests use InModuleScope so $script:LogToFile / $script:LogFile
+    # are consistent across Start-LogFile, Write-Log, and Stop-LogFile calls.
     Context 'File logging' {
-        BeforeEach {
-            $testLogFile = Join-Path $TestDrive 'test.log'
-        }
-
         It 'should write to file when file logging is active' {
-            Start-LogFile -Path $testLogFile
-            Write-Log -Level 'Info' -Message 'file log test'
-            Stop-LogFile
-
-            $testLogFile | Should -Exist
-            Get-Content $testLogFile | Should -Match 'file log test'
+            $logPath = Join-Path $TestDrive 'write-active.log'
+            InModuleScope 'LoggingModule' -Parameters @{ LogPath = $logPath } {
+                param($LogPath)
+                Start-LogFile -Path $LogPath
+                Write-Log -Level 'Info' -Message 'file log test'
+                Stop-LogFile
+            }
+            $logPath | Should -Exist
+            Get-Content $logPath | Should -Match 'file log test'
         }
 
         It 'should include timestamp in file output' {
-            Start-LogFile -Path $testLogFile
-            Write-Log -Level 'Info' -Message 'timestamp test'
-            Stop-LogFile
-
-            $content = Get-Content $testLogFile
+            $logPath = Join-Path $TestDrive 'write-ts.log'
+            InModuleScope 'LoggingModule' -Parameters @{ LogPath = $logPath } {
+                param($LogPath)
+                Start-LogFile -Path $LogPath
+                Write-Log -Level 'Info' -Message 'timestamp test'
+                Stop-LogFile
+            }
+            $content = Get-Content $logPath
             # Timestamp format: [yyyy-MM-dd HH:mm:ss]
             $content | Should -Match '\[\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\]'
         }
 
         It 'should include level in file output' {
-            Start-LogFile -Path $testLogFile
-            Write-Log -Level 'Warning' -Message 'level test'
-            Stop-LogFile
-
-            Get-Content $testLogFile | Should -Match '\[Warning\]'
+            $logPath = Join-Path $TestDrive 'write-level.log'
+            InModuleScope 'LoggingModule' -Parameters @{ LogPath = $logPath } {
+                param($LogPath)
+                Start-LogFile -Path $LogPath
+                Write-Log -Level 'Warning' -Message 'level test'
+                Stop-LogFile
+            }
+            Get-Content $logPath | Should -Match '\[Warning\]'
         }
 
         It 'should not write to file when file logging is inactive' {
-            # Ensure file logging is off
-            Stop-LogFile
-            Write-Log -Level 'Info' -Message 'no file'
-            $testLogFile | Should -Not -Exist
+            $logPath = Join-Path $TestDrive 'write-inactive.log'
+            InModuleScope 'LoggingModule' -Parameters @{ LogPath = $logPath } {
+                param($LogPath)
+                Stop-LogFile
+                Write-Log -Level 'Info' -Message 'no file'
+            }
+            $logPath | Should -Not -Exist
         }
 
         It 'should append multiple entries to the same log file' {
-            Start-LogFile -Path $testLogFile
-            Write-Log -Level 'Info'    -Message 'entry one'
-            Write-Log -Level 'Warning' -Message 'entry two'
-            Stop-LogFile
-
-            $lines = Get-Content $testLogFile
+            $logPath = Join-Path $TestDrive 'write-append.log'
+            InModuleScope 'LoggingModule' -Parameters @{ LogPath = $logPath } {
+                param($LogPath)
+                Start-LogFile -Path $LogPath
+                Write-Log -Level 'Info'    -Message 'entry one'
+                Write-Log -Level 'Warning' -Message 'entry two'
+                Stop-LogFile
+            }
+            $lines = Get-Content $logPath
             $lines.Count | Should -BeGreaterOrEqual 2
-            $lines -join ' ' | Should -Match 'entry one'
-            $lines -join ' ' | Should -Match 'entry two'
+            ($lines -join ' ') | Should -Match 'entry one'
+            ($lines -join ' ') | Should -Match 'entry two'
         }
     }
 }
 
 Describe 'Start-LogFile' {
     It 'should create the log file directory if it does not exist' {
-        $nestedLog = Join-Path $TestDrive 'subdir' 'nested.log'
-        Start-LogFile -Path $nestedLog
-        Write-Log -Level 'Info' -Message 'nested'
-        Stop-LogFile
-
-        $nestedLog | Should -Exist
+        $logPath = Join-Path $TestDrive 'subdir' 'nested.log'
+        InModuleScope 'LoggingModule' -Parameters @{ LogPath = $logPath } {
+            param($LogPath)
+            Start-LogFile -Path $LogPath
+            Write-Log -Level 'Info' -Message 'nested'
+            Stop-LogFile
+        }
+        $logPath | Should -Exist
     }
 }
 
 Describe 'Stop-LogFile' {
-    It 'should not throw when called without Start-LogFile' {
-        { Stop-LogFile } | Should -Not -Throw
+    It 'should not throw when called without Stop-LogFile' {
+        InModuleScope 'LoggingModule' {
+            { Stop-LogFile } | Should -Not -Throw
+        }
     }
 }

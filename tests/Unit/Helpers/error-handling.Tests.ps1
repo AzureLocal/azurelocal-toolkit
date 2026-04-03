@@ -120,7 +120,7 @@ Describe 'Get-ErrorDetails' {
     It 'should include ScriptName or InvocationInfo when available' {
         try { throw 'with invocation' } catch { $err = $_ }
         $detail = Get-ErrorDetails -ErrorRecord $err
-        # Should have at minimum a Message key
-        $detail.PSObject.Properties.Name | Should -Contain 'Message'
+        # Get-ErrorDetails returns a [hashtable] — use .Keys not .PSObject.Properties.Name
+        $detail.Keys | Should -Contain 'Message'
     }
 }
