@@ -1,25 +1,17 @@
-# Repo Management
+# Repo Management — azurelocal-toolkit
 
-This folder contains repo planning, governance, delivery tracking, and working artifacts.
+This folder documents how this repository is configured, automated, and operated.
 
-## Standard Layout
+## Contents
 
-| Path | Purpose |
+| File | Purpose |
 |------|---------|
-| `plans/` | Active implementation plans, design notes, and scoped work items |
-| `checklists/` | Audit lists, migration checklists, and operational gates |
-| `roadmaps/` | Milestones, release phases, and longer-horizon planning |
-| `reports/` | Discovery outputs, coverage reports, and analysis artifacts |
+| `automation.md` | Every GitHub Actions workflow: what it does, why it exists, triggers, secrets |
+| `setup.md` | Branch protection, labels, secrets, CODEOWNERS, and replication guide |
+| `scripts-roadmap.md` | Outstanding work: Azure CLI and Bash script variants needed |
 | `scripts/` | Repo-management helper scripts |
-| `working/` | Drafts, scratch notes, and temporary working material |
 
 ## Canonical References
 
-- Label definitions: `azurelocal.github.io/.github/labels.yml`
-- Repository standard: `azurelocal.github.io/.github/repo-standard.md`
-- Standards source: `azurelocal.github.io/standards/`
-
-## Notes
-
-Use `repo-management/` for planning and coordination artifacts.
-Use `standards/` at the repo root for canonical standards.
+- Repository standard: [`azurelocal.github.io/.github/repo-standard.md`](https://github.com/AzureLocal/azurelocal.github.io/blob/main/.github/repo-standard.md)
+- Organisation standards: [`azurelocal.github.io/standards/`](https://azurelocal.cloud/standards/)

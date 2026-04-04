@@ -15,7 +15,14 @@
 
         # Computed property names are used in hashtable constructions for
         # dynamic config key resolution in config-loader.ps1.
-        'PSUseOutputTypeCorrectly'
+        'PSUseOutputTypeCorrectly',
+
+        # Several scripts (keyvault-helper.ps1, Stop-AzureLocalCluster.ps1,
+        # Get-DellServerInventory-FromiDRAC.ps1) accept credentials as
+        # SecureString parameters passed in at runtime. ConvertTo-SecureString
+        # is used only to convert caller-supplied values — not to embed
+        # plaintext secrets in source code.
+        'PSAvoidUsingConvertToSecureStringWithPlainText'
     )
 
     Rules = @{
