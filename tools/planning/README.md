@@ -1,32 +1,53 @@
 # Planning Tools
 
-Pre-deployment planning workbooks and calculators used during Azure Local design and sizing.
+This folder contains design-time planning assets used before deployment starts.
 
-## Files
+## What this folder is for
 
-### S2D_Capacity_Calculator_6.xlsx
+Use the files here during solution sizing, capacity estimation, and architecture planning.
+These are not deployment scripts and they do not change the environment.
 
-Storage Spaces Direct (S2D) capacity planning workbook for Azure Local clusters.
+## Files in this folder
 
-**Use this to:**
-- Calculate usable storage capacity from raw NVMe drive specs
-- Plan volume layout (Two-Way Mirror, Three-Way Mirror, Dual Parity)
-- Size workloads (VMs, AVD sessions) against available pool capacity
-- Check thin vs. thick provisioning footprint
+| File | Purpose |
+|------|---------|
+| `S2D_Capacity_Calculator.xlsx` | Storage Spaces Direct capacity planning workbook for Azure Local clusters |
 
-**Tabs:**
+## S2D_Capacity_Calculator.xlsx
+
+This workbook is used to estimate storage capacity and resiliency outcomes for an Azure Local cluster.
+
+### Use this workbook to
+
+- Calculate usable storage capacity from raw drive inputs.
+- Compare resiliency options such as Two-Way Mirror, Three-Way Mirror, and Dual Parity.
+- Estimate workload fit for VMs, AVD sessions, and other hosted workloads.
+- Understand the footprint trade-offs between thin and thick provisioning.
+
+### Workbook tabs
+
 | Tab | Purpose |
 |-----|---------|
-| Hardware Inputs | Node count, drive count, drive size, NVMe efficiency |
-| Workload Planner | VM disk sizes, AVD profiles, volume counts |
-| Capacity Report | Summary — usable pool, allocated footprint, headroom |
-| Volume Detail | Per-volume breakdown with resiliency and footprint |
-| Thin Provisioning Report | Educational reference on thin vs. thick trade-offs |
+| Hardware Inputs | Node count, drive count, drive size, and efficiency assumptions |
+| Workload Planner | VM disk sizes, AVD profiles, workload counts, and planning inputs |
+| Capacity Report | Summary of usable pool, allocated footprint, and remaining headroom |
+| Volume Detail | Per-volume breakdown including resiliency and storage footprint |
+| Thin Provisioning Report | Reference view for thin versus thick provisioning trade-offs |
 
-**Key formulas:**
-- Usable per drive ≈ Raw × 0.92 (NVMe overprovisioning)
-- Two-Way Mirror efficiency = 50% (min 2 nodes)
-- Three-Way Mirror efficiency = 33.3% (min 3 nodes)
-- Dual Parity efficiency = 50% at 4–6 nodes, 66.7% at 7+ nodes
+### Key planning assumptions documented in the workbook
 
-**Microsoft reserve recommendation:** Leave 1 capacity drive per node unallocated (max 4 drives) so failed drives auto-repair without waiting for hardware replacement.
+- Usable per drive is approximately raw capacity multiplied by `0.92` for NVMe efficiency.
+- Two-Way Mirror efficiency is `50%` and requires at least 2 nodes.
+- Three-Way Mirror efficiency is `33.3%` and requires at least 3 nodes.
+- Dual Parity efficiency is `50%` at 4 to 6 nodes and `66.7%` at 7 or more nodes.
+
+### Microsoft reserve recommendation
+
+Leave one capacity drive per node unallocated, up to four drives total, so failed drives can auto-repair without waiting for hardware replacement.
+
+## How to use this folder
+
+1. Open the workbook in Excel.
+2. Enter the planned node and drive characteristics.
+3. Review the capacity and resiliency outputs.
+4. Use the results to refine solution sizing before deployment work begins.
