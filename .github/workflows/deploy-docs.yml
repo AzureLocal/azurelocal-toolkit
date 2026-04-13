@@ -1,0 +1,15 @@
+name: Deploy Documentation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docs/**'
+      - 'mkdocs.yml'
+  workflow_dispatch:
+
+jobs:
+  docs:
+    uses: AzureLocal/platform/.github/workflows/reusable-mkdocs-deploy.yml@main
+    with:
+      pip-packages: 'mkdocs-material'

@@ -1,0 +1,57 @@
+site_name: Azure Local Toolkit
+site_description: Primary automation repository for Azure Local deployment, configuration, validation, and lifecycle operations.
+site_url: https://azurelocal.github.io/azurelocal-toolkit/
+repo_url: https://github.com/AzureLocal/azurelocal-toolkit
+repo_name: AzureLocal/azurelocal-toolkit
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - content.code.copy
+    - search.suggest
+    - search.highlight
+  icon:
+    repo: fontawesome/brands/github
+
+nav:
+  - Home: index.md
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - toc:
+      permalink: true
+
+plugins:
+  - search
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/AzureLocal/azurelocal-toolkit
+      name: GitHub Repository
+  homepage: https://azurelocal.cloud
+
+copyright: >-
+  Copyright &copy; 2026 AzureLocal.
