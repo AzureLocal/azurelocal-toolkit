@@ -2,14 +2,15 @@
 
 ## What this repo is
 
-MkDocs documentation site in the AzureLocal organization. This repo publishes technical documentation and is built with MkDocs Material.
+Primary automation repository for Azure Local deployment, configuration, validation, and lifecycle operations.
 
 ---
 
 ## ADO project details
 
 - **ADO org:** https://dev.azure.com/hybridcloudsolutions
-- **ADO project:** AzureLocal
+- **ADO project:** Azure Local
+- **Area path:** Platform Engineering\Onboarding
 - **Work item format:** `AB#<id>` in commit messages and PR descriptions
 
 ---
@@ -28,7 +29,7 @@ This repo follows all HCS platform standards defined in the Platform Engineering
 | Claude Code | [docs/standards/claude-code.md](https://dev.azure.com/hybridcloudsolutions/Platform%20Engineering/_git/Platform%20Engineering?path=/docs/standards/claude-code.md) |
 
 Key rules:
-- All scripts: PowerShell 7+ only. `#Requires -Version 7.0`, `Set-StrictMode -Version Latest`, `\Stop = 'Stop'`.
+- All scripts: PowerShell 7+ only. `#Requires -Version 7.0`, `Set-StrictMode -Version Latest`, ` $ErrorActionPreference = 'Stop'`.
 - All docs: Markdown only. No Word documents in any repo.
 - Commit format: `type(scope): short description` — types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`
 - No secrets, tokens, or credentials committed to any file.
@@ -44,9 +45,80 @@ Key rules:
 | Azure login | kris@hybridsolutions.cloud |
 | Key Vault | kv-hcs-vault-01 |
 
-Load environment before starting a session:
+### Environment variables expected
+
+| Variable | Source | Purpose |
+|---|---|---|
+| `GITHUB_TOKEN` | kv-hcs-vault-01 via Load-HCSEnvironment.ps1 | GitHub CLI and git operations |
+| `AZURE_DEVOPS_EXT_PAT` | kv-hcs-vault-01 via Load-HCSEnvironment.ps1 | ADO CLI (`az boards`, `az devops`) |
+Load before starting a session:
 ```powershell
 . E:\git\platform\scripts\Load-HCSEnvironment.ps1
+```
+
+### Build and test commands
+
+```
+mkdocs build
+mkdocs serve  # http://127.0.0.1:8000
+```
+
+---
+
+## Repo structure
+
+```
+azurelocal-toolkit/
+├── .claude/
+    └── settings.json
+├── .github/
+    ├── workflows/
+    └── CODEOWNERS
+├── config/
+    ├── azure/
+    ├── network-devices/
+    └── variables/
+├── docs/
+    └── index.md
+├── logs/
+    └── .gitkeep
+├── pipelines/
+    ├── azure-devops/
+    ├── github-actions/
+    ├── gitlab/
+    ├── .gitkeep
+    └── README.md
+├── repo-management/
+    ├── scripts/
+    ├── automation.md
+    ├── README.md
+    ├── scripts-roadmap.md
+    └── setup.md
+├── scripts/
+    ├── common/
+    ├── deploy/
+    ├── handover/
+    ├── lifecycle/
+    └── tools/
+├── src/
+    ├── ansible/
+    ├── arm-templates/
+    ├── bicep/
+    └── terraform/
+├── tests/
+    └── .gitkeep
+├── tools/
+    ├── planning/
+    ├── install-tools.ps1
+    └── README.md
+├── .azurelocal-platform.yml
+├── .gitignore
+├── .release-please-manifest.json
+├── azurelocal-toolkit.code-workspace
+├── CHANGELOG.md
+├── CLAUDE.md
+├── CONTRIBUTING.md
+└── ...
 ```
 
 ---
@@ -62,10 +134,19 @@ Load environment before starting a session:
 - `pip install` for MkDocs plugins
 
 **Always confirm before:**
-- Any operation that modifies Azure resources
-- Installing or upgrading dependencies
+- Creating or deleting Azure resources
+- Any `az` CLI write operation that modifies Azure state
 - Running destructive operations
 - Making API calls to external services
+
+
+---
+
+## Subagents available in this repo
+
+- `azurelocal-toolkit-engineer` (model: sonnet) — Expert in `azurelocal-toolkit`: deep knowledge of this repo's structure, conventions, and development workflow.
+
+User-level agents (available in every repo session): `triage-lookup`, `markdown-prose-editor`, `azurelocal-domain-expert`, `mkdocs-material-doctor`, `turner-module-scaffold-engineer`, `mms-2026-demo-presenter`.
 
 ---
 
