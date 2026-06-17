@@ -62,3 +62,8 @@ build/
 site/
 
 node_modules/
+
+
+# Claude Code local settings (logs and machine-local overrides only)
+.claude/logs/
+.claude/settings.local.json
