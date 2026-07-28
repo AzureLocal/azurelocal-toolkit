@@ -6,21 +6,10 @@ export default defineConfig({
   title: "Azure Local Toolkit",
   description: "Governed centrally by HCS Platform Engineering standards",
   themeConfig: {
-    nav: [
-      { text: 'Home', link: '/' },
-      { text: 'Architecture', link: '/architecture' },
-      { text: 'Runbooks', link: '/runbooks' }
-    ],
-    sidebar: [
-      {
-        text: 'Overview',
-        items: [
-          { text: 'Introduction', link: '/' }
-        ]
-      }
-    ],
+    nav: {"link":"/","text":"Home"},
+    sidebar: {"link":"/","text":"Home"},
     socialLinks: [
-      { icon: 'github', link: 'https://github.com/AzureLocal' }
+      { icon: 'github', link: 'https://github.com/AzureLocal/azurelocal-toolkit' }
     ],
     footer: {
       message: 'Released under the MIT License.',
@@ -28,6 +17,7 @@ export default defineConfig({
     }
   }
 })
+
 
 
 
