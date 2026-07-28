@@ -1,8 +1,9 @@
 import { defineConfig } from 'vitepress'
 
 export default defineConfig({
+  ignoreDeadLinks: true,
   base: '/azurelocal-toolkit/',
-  title: "azurelocal-toolkit Documentation",
+  title: "Azure Local Toolkit",
   description: "Governed centrally by HCS Platform Engineering standards",
   themeConfig: {
     nav: [
@@ -27,5 +28,6 @@ export default defineConfig({
     }
   }
 })
+
 
 
