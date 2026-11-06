@@ -1,0 +1,69 @@
+# Scenario: local identity with Key Vault, Storage Spaces Direct, two machines with switchless (dual-link) storage,
+# outbound through Arc gateway, OS installed from an ISO, deployed from the Azure portal. Placeholder values only.
+_metadata:
+  schema_version: "5.0.0"
+
+scenario:
+  identity: local_identity
+  storage_architecture: s2d
+  storage_connectivity: switchless
+  topology: standard
+  connectivity: connected
+  cloud: public
+  outbound_path: arc_gateway
+  os_install: iso
+  deploy_method: portal
+
+site: { code: "IICB", name: "IIC Branch 01", time_zone: "UTC" }
+environment: { name: "iic-branch-01", type: lab }
+
+azure:
+  tenant_id: "00000000-0000-0000-0000-000000000000"
+  location: "westeurope"
+  subscription_id: "00000000-0000-0000-0000-000000000000"
+  resource_group: "rg-iic-branch-01"
+
+key_vaults:
+  - { name: "kv-iic-branch-mgmt", subscription_id: "00000000-0000-0000-0000-000000000000", resource_group: "rg-iic-mgmt-01" }
+
+cluster:
+  name: "iic-br01"
+  witness: { type: cloud, storage_account: "stiicbr01wit" }
+  # Local identity: the instance's secrets live in this vault (one per instance).
+  key_vault: { name: "kv-iic-br01", create_new: true }
+
+nodes:
+  - { name: "iic-br01-n01", management: { ip_address: "192.0.2.11" } }
+  - { name: "iic-br01-n02", management: { ip_address: "192.0.2.12" } }
+
+hardware: { vendor: "HPE", model: "DL360 Gen11" }
+
+networking:
+  management:
+    subnet: "192.0.2.0/24"
+    gateway: "192.0.2.1"
+    dns_servers: ["192.0.2.4"]
+    infrastructure_pool: { start: "192.0.2.20", end: "192.0.2.29" }
+  ntp_servers: ["time.improbability.cloud"]
+  intents:
+    - { name: "mgmt_compute", traffic: [management, compute], adapters: ["NIC1", "NIC2"] }
+    # Switchless: storage in its own intent.
+    - { name: "storage", traffic: [storage], adapters: ["SMB1", "SMB2"] }
+  storage:
+    auto_ip: true
+    switchless_links: dual
+    networks:
+      - { name: "StorageNetwork1", adapter: "SMB1", vlan_id: 711 }
+      - { name: "StorageNetwork2", adapter: "SMB2", vlan_id: 712 }
+  outbound:
+    arc_gateway: { name: "arcgw-iic-branch-01" }
+
+identity:
+  local_admin: { username: "azl-admin", password: "keyvault://kv-iic-branch-mgmt/local-admin-password" }
+  local_identity:
+    dns_server_config: use_dns_server # use_dns_server | use_forwarder
+    dns_zone: "br01.improbability.cloud"
+
+provisioning:
+  os_version: "12.2610.1004.50"
+  iso: { image_source: microsoft }

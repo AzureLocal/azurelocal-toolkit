@@ -1,0 +1,79 @@
+# Scenario: disconnected operations, the management cluster that hosts the control plane appliance. Active Directory,
+# Storage Spaces Direct on switched storage, three machines, file share witness, OS from an ISO, ARM template.
+# Placeholder values only.
+_metadata:
+  schema_version: "5.0.0"
+
+scenario:
+  identity: active_directory
+  storage_architecture: s2d
+  storage_connectivity: switched
+  topology: standard
+  connectivity: disconnected
+  cloud: public
+  outbound_path: direct
+  os_install: iso
+  deploy_method: arm
+
+site: { code: "IICX", name: "IIC Secure Site" }
+environment: { name: "iic-secure-mgmt", type: prd }
+
+azure:
+  tenant_id: "00000000-0000-0000-0000-000000000000"
+  location: "autonomous"
+  subscription_id: "00000000-0000-0000-0000-000000000000"
+  resource_group: "azurelocal-management-cluster"
+
+key_vaults:
+  - { name: "kv-iic-secure-mgmt", subscription_id: "00000000-0000-0000-0000-000000000000", resource_group: "rg-iic-mgmt-01" }
+
+cluster:
+  name: "iic-sec-mgmt"
+  witness: { type: file_share, path: '\\fs01.improbability.cloud\witness\iic-sec-mgmt' }
+  key_vault: { name: "kv-iic-sec-mgmt" }
+
+nodes:
+  - { name: "iic-sec-n01", management: { ip_address: "192.0.2.11" } }
+  - { name: "iic-sec-n02", management: { ip_address: "192.0.2.12" } }
+  - { name: "iic-sec-n03", management: { ip_address: "192.0.2.13" } }
+
+hardware: { vendor: "Dell", model: "AX-760" }
+
+networking:
+  management:
+    subnet: "192.0.2.0/24"
+    gateway: "192.0.2.1"
+    dns_servers: ["192.0.2.4", "192.0.2.5"]
+    infrastructure_pool: { start: "192.0.2.20", end: "192.0.2.39" }
+  ntp_servers: ["192.0.2.4"]
+  intents:
+    - { name: "mgmt_compute", traffic: [management, compute], adapters: ["NIC1", "NIC2"] }
+    - { name: "storage", traffic: [storage], adapters: ["SMB1", "SMB2"] }
+  storage:
+    networks:
+      - { name: "StorageNetwork1", adapter: "SMB1", vlan_id: 711 }
+      - { name: "StorageNetwork2", adapter: "SMB2", vlan_id: 712 }
+
+identity:
+  local_admin: { username: "azl-admin", password: "keyvault://kv-iic-secure-mgmt/local-admin-password" }
+  active_directory:
+    domain_fqdn: "improbability.cloud"
+    ou_path: "OU=iic-sec-mgmt,OU=AzureLocal,DC=improbability,DC=cloud"
+    lcm_user: { username: "lcm-iic-sec", password: "keyvault://kv-iic-secure-mgmt/lcm-password" }
+
+disconnected:
+  role: management
+  domain_suffix: "autonomous.improbability.cloud"
+  ingress: { ip_address: "192.0.2.50", gateway: "192.0.2.1", prefix_length: 24 }
+  management: { ip_address: "203.0.113.10", prefix_length: 24 }
+  dns_server: "192.0.2.4"
+  time_servers: ["192.0.2.4"]
+  identity:
+    authority: "https://adfs.improbability.cloud/adfs"
+    ldap_server: "dc01.improbability.cloud"
+    ldaps: true
+  internal_ca: true
+
+provisioning:
+  os_version: "12.2610.1004.50"
+  iso: { image_source: microsoft }

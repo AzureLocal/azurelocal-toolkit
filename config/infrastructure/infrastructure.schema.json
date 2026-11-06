@@ -1,0 +1,3037 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://azurelocal.cloud/schemas/infrastructure/5/infrastructure.schema.json",
+  "title": "Azure Local infrastructure.yml",
+  "description": "The one environment file for an Azure Local instance: the design choices, the machines, the networks, identity, Azure targets, provisioning (ISO or simplified machine provisioning with ZTP) and the cluster deployment. Every Azure Local tool reads this file: azurelocal-toolkit, azurelocal-ztp, Trailwright (writes it), Beacon, Sonar and Ranger. Keys are snake_case. Secrets are never values: they are keyvault://<vault>/<secret> references. Sections reject unknown keys; put anything else under extensions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "_metadata",
+    "scenario",
+    "site",
+    "environment",
+    "azure",
+    "cluster",
+    "nodes",
+    "hardware",
+    "networking",
+    "identity"
+  ],
+  "properties": {
+    "_metadata": {
+      "description": "About this file.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version"
+      ],
+      "properties": {
+        "schema_version": {
+          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys.",
+          "type": "string",
+          "pattern": "^5\\.[0-9]+\\.[0-9]+$"
+        },
+        "file_version": {
+          "description": "Your own version of this file.",
+          "type": "string"
+        },
+        "last_updated": {
+          "description": "Date of the last change, YYYY-MM-DD.",
+          "$ref": "#/$defs/date"
+        },
+        "generated_by": {
+          "description": "The tool that wrote the file, for example azurelocal-trailwright 1.1.0. Empty when written by hand.",
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "scenario": {
+      "description": "The design choices. Every other section is read in the light of these: a choice makes its section required, and tools pick their path from here. All of them are required, so nothing is assumed.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "identity",
+        "storage_architecture",
+        "storage_connectivity",
+        "topology",
+        "connectivity",
+        "cloud",
+        "outbound_path",
+        "os_install",
+        "deploy_method"
+      ],
+      "properties": {
+        "identity": {
+          "description": "active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity.local_identity). https://learn.microsoft.com/azure/azure-local/deploy/deployment-local-identity-with-key-vault",
+          "enum": [
+            "active_directory",
+            "local_identity"
+          ]
+        },
+        "storage_architecture": {
+          "description": "s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both.",
+          "enum": [
+            "s2d",
+            "san",
+            "hybrid"
+          ]
+        },
+        "storage_connectivity": {
+          "description": "switched: storage traffic goes through top-of-rack switches. switchless: machines are cabled directly to each other for storage. A single machine uses switched.",
+          "enum": [
+            "switched",
+            "switchless"
+          ]
+        },
+        "topology": {
+          "description": "standard, or rack_aware (machines split across two local availability zones; every node needs a zone).",
+          "enum": [
+            "standard",
+            "rack_aware"
+          ]
+        },
+        "connectivity": {
+          "description": "connected to Azure, or disconnected operations (needs the disconnected section).",
+          "enum": [
+            "connected",
+            "disconnected"
+          ]
+        },
+        "cloud": {
+          "description": "Azure public cloud or Azure Government.",
+          "enum": [
+            "public",
+            "government"
+          ]
+        },
+        "outbound_path": {
+          "description": "How the machines reach Azure. Paths with a proxy need networking.outbound.proxy; paths with Arc gateway need networking.outbound.arc_gateway; private_path needs networking.outbound.private_path.",
+          "enum": [
+            "direct",
+            "proxy",
+            "arc_gateway",
+            "proxy_arc_gateway",
+            "private_path"
+          ]
+        },
+        "os_install": {
+          "description": "iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp automates (needs provisioning.simplified, and a serial number, BMC address and management MAC on every node).",
+          "enum": [
+            "iso",
+            "simplified"
+          ]
+        },
+        "deploy_method": {
+          "description": "How the cluster is deployed: the Azure portal or an ARM template.",
+          "enum": [
+            "portal",
+            "arm"
+          ]
+        }
+      }
+    },
+    "site": {
+      "description": "Where the machines are.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "name"
+      ],
+      "properties": {
+        "code": {
+          "description": "Short site code, 2 to 8 uppercase letters or digits.",
+          "type": "string",
+          "pattern": "^[A-Z0-9]{2,8}$"
+        },
+        "name": {
+          "description": "Display name of the site. Also the display name of the Microsoft.Edge site in simplified provisioning.",
+          "type": "string",
+          "minLength": 1
+        },
+        "location": {
+          "description": "Physical location, for example a city.",
+          "type": "string"
+        },
+        "datacenter": {
+          "type": "string"
+        },
+        "customer": {
+          "type": "string"
+        },
+        "owner": {
+          "type": "string"
+        },
+        "time_zone": {
+          "description": "Windows time zone ID of the site, for example UTC or Eastern Standard Time. Simplified provisioning sets it on the site.",
+          "type": "string"
+        }
+      }
+    },
+    "environment": {
+      "description": "Which environment this file describes.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "type"
+      ],
+      "properties": {
+        "name": {
+          "description": "Environment identifier: lowercase letters, digits and hyphens.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{1,40}$"
+        },
+        "type": {
+          "enum": [
+            "lab",
+            "demo",
+            "poc",
+            "dev",
+            "test",
+            "stg",
+            "prd"
+          ]
+        },
+        "owner": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "tags": {
+      "description": "Azure tags applied to the resources the tools create. A policy that requires tags isn't supported by simplified provisioning.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "azure": {
+      "description": "The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless provisioning.simplified says otherwise) the site and edge machines.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tenant_id",
+        "location",
+        "subscription_id",
+        "resource_group"
+      ],
+      "properties": {
+        "tenant_id": {
+          "$ref": "#/$defs/guid"
+        },
+        "location": {
+          "description": "Azure region, for example eastus. Simplified provisioning works only in eastus in the preview.",
+          "$ref": "#/$defs/azure_region"
+        },
+        "subscription_id": {
+          "$ref": "#/$defs/guid"
+        },
+        "resource_group": {
+          "$ref": "#/$defs/resource_group"
+        },
+        "hci_resource_provider_object_id": {
+          "description": "Object ID of the Azure Local resource provider's service principal (application 1412d89f-b8a8-4111-b4fd-e82905cbd85d) in the tenant. Optional: tools look it up when they can read the directory.",
+          "$ref": "#/$defs/guid"
+        },
+        "custom_location": {
+          "description": "Name of the custom location the deployment creates.",
+          "type": "string"
+        },
+        "automation_identity": {
+          "description": "The identity that runs automation with no one signed in (pipelines, ZTP, the ARM deployment).",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type",
+            "name"
+          ],
+          "properties": {
+            "type": {
+              "enum": [
+                "managed_identity",
+                "service_principal"
+              ]
+            },
+            "name": {
+              "description": "Managed identity resource name, or the service principal's display name.",
+              "type": "string"
+            },
+            "client_id": {
+              "$ref": "#/$defs/guid"
+            },
+            "subscription_id": {
+              "$ref": "#/$defs/guid"
+            },
+            "resource_group": {
+              "$ref": "#/$defs/resource_group"
+            }
+          }
+        }
+      }
+    },
+    "key_vaults": {
+      "description": "Every Key Vault that a keyvault:// reference in this file names, with where it is. Tools resolve references against this list, and grant roles on the vault from it.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "subscription_id",
+          "resource_group"
+        ],
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/key_vault_name"
+          },
+          "subscription_id": {
+            "$ref": "#/$defs/guid"
+          },
+          "resource_group": {
+            "$ref": "#/$defs/resource_group"
+          },
+          "purpose": {
+            "description": "What the vault holds, for example management, deployment or backup.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "cluster": {
+      "description": "The Azure Local instance (the cluster deployment).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "witness",
+        "key_vault"
+      ],
+      "properties": {
+        "name": {
+          "description": "Cluster name: a NetBIOS name of up to 15 characters. ARM parameter clusterName.",
+          "$ref": "#/$defs/netbios_name"
+        },
+        "naming_prefix": {
+          "description": "Prefix of the Azure resources the deployment creates. ARM parameter namingPrefix.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9-]{1,16}$"
+        },
+        "deployment_mode": {
+          "description": "ARM deploymentMode: validate runs the checks only; deploy deploys.",
+          "enum": [
+            "validate",
+            "deploy"
+          ]
+        },
+        "witness": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "description": "cloud (an Azure Storage account), file_share (disconnected operations), or none. Two machines need a witness. https://learn.microsoft.com/azure/azure-local/concepts/cluster-witness",
+              "enum": [
+                "cloud",
+                "file_share",
+                "none"
+              ]
+            },
+            "storage_account": {
+              "description": "Cloud witness storage account. ARM clusterWitnessStorageAccountName.",
+              "$ref": "#/$defs/storage_account_name"
+            },
+            "path": {
+              "description": "File share witness UNC path.",
+              "type": "string"
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "const": "cloud"
+                  }
+                }
+              },
+              "then": {
+                "type": "object",
+                "required": [
+                  "storage_account"
+                ],
+                "properties": {
+                  "storage_account": true
+                }
+              }
+            },
+            {
+              "if": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "const": "file_share"
+                  }
+                }
+              },
+              "then": {
+                "type": "object",
+                "required": [
+                  "path"
+                ],
+                "properties": {
+                  "path": true
+                }
+              }
+            }
+          ]
+        },
+        "key_vault": {
+          "description": "The Key Vault the deployment uses for the instance's secrets (one per instance). ARM keyVaultName.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/key_vault_name"
+            },
+            "create_new": {
+              "description": "ARM createNewKeyVault.",
+              "type": "boolean"
+            },
+            "soft_delete_retention_days": {
+              "type": "integer",
+              "minimum": 7,
+              "maximum": 90
+            }
+          }
+        },
+        "diagnostics": {
+          "description": "Key Vault audit logs. ARM diagnosticStorageAccountName, logsRetentionInDays and storageAccountType.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "storage_account": {
+              "$ref": "#/$defs/storage_account_name"
+            },
+            "logs_retention_days": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "storage_account_type": {
+              "type": "string",
+              "examples": [
+                "Standard_LRS"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "nodes": {
+      "description": "The machines, one entry each. ARM physicalNodesSettings and arcNodeResourceIds. Up to 16 with Storage Spaces Direct, up to 64 disaggregated (the validator checks which applies).",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/node"
+      }
+    },
+    "hardware": {
+      "description": "What every machine is. The layout is the same on every machine.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "vendor",
+        "model"
+      ],
+      "properties": {
+        "vendor": {
+          "description": "OEM, for example Dell, HPE, Lenovo or DataON. ZTP picks config/oem/<vendor>.json from it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "description": "Model, for example AX-760. Used to select the SBE.",
+          "type": "string",
+          "minLength": 1
+        },
+        "cpu_cores": {
+          "description": "Physical cores per machine.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "memory_gib": {
+          "description": "Memory per machine, GiB.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "gpu": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "model": {
+              "type": "string"
+            },
+            "count_per_node": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "bmc": {
+          "description": "BMC (iDRAC, iLO, XCC) login used for every machine unless a node sets its own.",
+          "$ref": "#/$defs/bmc_credentials"
+        },
+        "sbe": {
+          "description": "Solution Builder Extension. The version is the one validated with provisioning.os_version. ARM sbeVersion, sbeFamily, sbePublisher, sbeManifestSource and sbeManifestCreationDate.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "publisher": {
+              "type": "string"
+            },
+            "family": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "manifest_source": {
+              "type": "string"
+            },
+            "manifest_creation_date": {
+              "type": "string"
+            },
+            "bundle_path": {
+              "description": "Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml. Used to prepare machines before Validate.",
+              "type": "string"
+            },
+            "allow_unvalidated": {
+              "description": "Test only. Use the SBE in bundle_path even though the OEM's manifest doesn't list it as validated with provisioning.os_version. The hash is still checked. Default false.",
+              "type": "boolean"
+            }
+          }
+        },
+        "network_cards": {
+          "description": "The physical network cards in every machine, and what each port is for.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "make": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "ports": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name"
+                  ],
+                  "properties": {
+                    "name": {
+                      "description": "Adapter name in the OS, as the intents use it.",
+                      "type": "string"
+                    },
+                    "speed_gbps": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "rdma": {
+                      "enum": [
+                        "none",
+                        "iwarp",
+                        "roce",
+                        "roce_v2"
+                      ]
+                    },
+                    "role": {
+                      "description": "unused, intent:<intent name>, cluster:a, cluster:b, iscsi:a or iscsi:b.",
+                      "type": "string",
+                      "pattern": "^(unused|intent:.+|cluster:[ab]|iscsi:[ab])$"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "drives": {
+          "description": "Drives per machine.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "capacity": {
+              "$ref": "#/$defs/drive_group"
+            },
+            "cache": {
+              "$ref": "#/$defs/drive_group"
+            }
+          }
+        }
+      }
+    },
+    "networking": {
+      "description": "The on-premises networks.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "management",
+        "intents"
+      ],
+      "properties": {
+        "management": {
+          "description": "The management network and the infrastructure IP pool. DNS servers can't be changed after deployment.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "subnet",
+            "gateway",
+            "dns_servers"
+          ],
+          "properties": {
+            "subnet": {
+              "description": "CIDR. ARM subnetMask is derived from it.",
+              "$ref": "#/$defs/cidr"
+            },
+            "gateway": {
+              "description": "The one default gateway. ARM defaultGateway.",
+              "$ref": "#/$defs/ipv4"
+            },
+            "vlan_id": {
+              "description": "0 means untagged. Can't be changed after deployment.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4094
+            },
+            "dns_servers": {
+              "description": "ARM dnsServers.",
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/ipv4"
+              }
+            },
+            "use_dhcp": {
+              "description": "ARM useDhcp. Default false.",
+              "type": "boolean"
+            },
+            "infrastructure_pool": {
+              "description": "At least six contiguous addresses in the management subnet, outside the machines' addresses. ARM startingIPAddress and endingIPAddress.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "start",
+                "end"
+              ],
+              "properties": {
+                "start": {
+                  "$ref": "#/$defs/ipv4"
+                },
+                "end": {
+                  "$ref": "#/$defs/ipv4"
+                }
+              }
+            }
+          },
+          "if": {
+            "not": {
+              "type": "object",
+              "properties": {
+                "use_dhcp": {
+                  "const": true
+                }
+              },
+              "required": [
+                "use_dhcp"
+              ]
+            }
+          },
+          "then": {
+            "type": "object",
+            "required": [
+              "infrastructure_pool"
+            ],
+            "properties": {
+              "infrastructure_pool": true
+            }
+          }
+        },
+        "oob": {
+          "description": "The out-of-band network of the BMCs.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "subnet": {
+              "$ref": "#/$defs/cidr"
+            },
+            "gateway": {
+              "$ref": "#/$defs/ipv4"
+            },
+            "vlan_id": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4094
+            }
+          }
+        },
+        "ntp_servers": {
+          "description": "Time sources, as host names or addresses.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "intents": {
+          "description": "Network ATC intents. ARM intentList. https://learn.microsoft.com/azure/azure-local/concepts/host-network-requirements",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/intent"
+          }
+        },
+        "storage": {
+          "description": "Storage networks (Storage Spaces Direct). ARM storageNetworkList, enableStorageAutoIp and storageConnectivitySwitchless.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "auto_ip": {
+              "description": "Network ATC assigns the storage addresses. When false, each node lists its storage_ips. Default true.",
+              "type": "boolean"
+            },
+            "switchless_links": {
+              "description": "Switchless only: one or two links between each pair of machines.",
+              "enum": [
+                "single",
+                "dual"
+              ]
+            },
+            "tor_switches": {
+              "description": "Top-of-rack switches.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2
+            },
+            "layout": {
+              "description": "dedicated: storage on its own ports. converged: storage shares ports with other traffic.",
+              "enum": [
+                "dedicated",
+                "converged"
+              ]
+            },
+            "networks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "adapter",
+                  "vlan_id"
+                ],
+                "properties": {
+                  "name": {
+                    "description": "For example StorageNetwork1.",
+                    "type": "string"
+                  },
+                  "adapter": {
+                    "description": "Adapter name in the OS.",
+                    "type": "string"
+                  },
+                  "vlan_id": {
+                    "description": "Network ATC defaults are 711 and 712.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 4094
+                  },
+                  "subnet": {
+                    "description": "Needed when auto_ip is false.",
+                    "$ref": "#/$defs/cidr"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "cluster_networks": {
+          "description": "Disaggregated (SAN) only: the cluster networks on standalone ports, fabric A and B. ARM sanNetworkList.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "adapter",
+              "vlan_id",
+              "subnet"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "adapter": {
+                "type": "string"
+              },
+              "vlan_id": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4094
+              },
+              "subnet": {
+                "$ref": "#/$defs/cidr"
+              }
+            }
+          }
+        },
+        "vlans": {
+          "description": "Every VLAN in the design, by name.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "id"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "id": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4094
+              },
+              "subnet": {
+                "$ref": "#/$defs/cidr"
+              },
+              "purpose": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "logical_networks": {
+          "description": "Arc VM logical networks created after deployment.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/logical_network"
+          }
+        },
+        "outbound": {
+          "description": "Details of scenario.outbound_path.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "proxy": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "url"
+              ],
+              "properties": {
+                "url": {
+                  "type": "string",
+                  "pattern": "^https?://"
+                },
+                "bypass": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "arc_gateway": {
+              "description": "The Arc gateway resource, in the same subscription as the machines.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "resource_group": {
+                  "$ref": "#/$defs/resource_group"
+                }
+              }
+            },
+            "private_path": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "transport": {
+                  "enum": [
+                    "expressroute",
+                    "site_to_site_vpn"
+                  ]
+                },
+                "virtual_network": {
+                  "type": "string"
+                },
+                "workload_subnet": {
+                  "type": "string"
+                },
+                "firewall_subnet": {
+                  "type": "string"
+                },
+                "firewall_private_ip": {
+                  "$ref": "#/$defs/ipv4"
+                },
+                "firewall_port": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "arc_private_link_scope": {
+                  "type": "boolean"
+                },
+                "proxy_bypass": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "identity": {
+      "description": "Accounts and the identity provider (scenario.identity).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "local_admin"
+      ],
+      "properties": {
+        "local_admin": {
+          "description": "The deployment's local administrator on every machine. Not the built-in Administrator: the deployment renames it. ARM localAdminUserName and localAdminPassword.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "username",
+            "password"
+          ],
+          "properties": {
+            "username": {
+              "type": "string",
+              "minLength": 1,
+              "not": {
+                "type": "string",
+                "pattern": "^([Aa][Dd][Mm][Ii][Nn][Ii][Ss][Tt][Rr][Aa][Tt][Oo][Rr]|[Gg][Uu][Ee][Ss][Tt])$"
+              }
+            },
+            "password": {
+              "description": "At least 14 characters with lowercase, uppercase, a digit and a special character.",
+              "$ref": "#/$defs/kv_ref"
+            }
+          }
+        },
+        "active_directory": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "domain_fqdn",
+            "ou_path",
+            "lcm_user"
+          ],
+          "properties": {
+            "domain_fqdn": {
+              "description": "ARM domainFqdn.",
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$"
+            },
+            "netbios_name": {
+              "$ref": "#/$defs/netbios_name"
+            },
+            "ou_path": {
+              "description": "Distinguished name of the dedicated OU. ARM adouPath. https://learn.microsoft.com/azure/azure-local/deploy/deployment-prep-active-directory",
+              "type": "string",
+              "pattern": "^[Oo][Uu]=.+,[Dd][Cc]=.+$"
+            },
+            "lcm_user": {
+              "description": "The LCM deployment user, created in the OU by the AD preparation module. ARM AzureStackLCMAdminUsername and AzureStackLCMAdminPassword.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "username",
+                "password"
+              ],
+              "properties": {
+                "username": {
+                  "description": "Name only, no domain. Up to 20 characters.",
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 20,
+                  "pattern": "^[^@\\\\]+$"
+                },
+                "password": {
+                  "description": "At least 14 characters with lowercase, uppercase, a digit and a special character.",
+                  "$ref": "#/$defs/kv_ref"
+                }
+              }
+            },
+            "domain_controllers": {
+              "description": "Addresses of domain controllers, for pre-checks.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ipv4"
+              }
+            },
+            "security_groups": {
+              "description": "Groups created in the OU for administration of the instance.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "purpose": {
+                    "type": "string"
+                  },
+                  "members": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            },
+            "service_accounts": {
+              "description": "Service and administration accounts, apart from the LCM user.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "purpose": {
+                    "type": "string"
+                  },
+                  "password": {
+                    "$ref": "#/$defs/kv_ref"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "local_identity": {
+          "description": "Local identity with Key Vault. The instance's secrets go to cluster.key_vault.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "dns_server_config"
+          ],
+          "properties": {
+            "dns_server_config": {
+              "description": "ARM dnsServerConfig: use_dns_server (UseDnsServer) or use_forwarder (UseForwarder).",
+              "enum": [
+                "use_dns_server",
+                "use_forwarder"
+              ]
+            },
+            "dns_zone": {
+              "type": "string"
+            },
+            "dns_forwarders": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ipv4"
+              }
+            }
+          }
+        },
+        "entra": {
+          "description": "Entra ID groups, role assignments and PIM.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "groups": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "purpose": {
+                    "type": "string"
+                  },
+                  "roles": {
+                    "description": "Azure role names assigned to the group.",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "scope": {
+                    "type": "string",
+                    "description": "Scope of the role assignments."
+                  }
+                }
+              }
+            },
+            "break_glass_accounts": {
+              "description": "User principal names of emergency access accounts, excluded from Conditional Access.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "storage": {
+      "description": "Volumes and the SAN.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "configuration_mode": {
+          "description": "ARM configurationMode: express (Express), infra_only (InfraOnly) or keep_storage (KeepStorage).",
+          "enum": [
+            "express",
+            "infra_only",
+            "keep_storage"
+          ]
+        },
+        "volumes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "size_gib"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "size_gib": {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "resiliency": {
+                "enum": [
+                  "two_way",
+                  "three_way",
+                  "four_way",
+                  "parity",
+                  "nested_two_way"
+                ]
+              }
+            }
+          }
+        },
+        "san": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "type"
+          ],
+          "properties": {
+            "type": {
+              "enum": [
+                "fibre_channel",
+                "iscsi"
+              ]
+            },
+            "infra_volume_lun_id": {
+              "description": "LUN of the infrastructure volume (250 GB minimum). ARM infraVolLunId.",
+              "type": "string"
+            },
+            "performance_history_lun_id": {
+              "description": "LUN of the performance history volume (20 GB minimum). ARM infraPerfLunId.",
+              "type": "string"
+            },
+            "luns": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "size_gib"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "size_gib": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "lun_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "security": {
+      "description": "Security settings of the deployment. Omitted settings take Microsoft's recommended defaults.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "description": "ARM securityLevel: recommended (Recommended) or customized (Customized).",
+          "enum": [
+            "recommended",
+            "customized"
+          ]
+        },
+        "drift_control": {
+          "type": "boolean"
+        },
+        "credential_guard": {
+          "type": "boolean"
+        },
+        "smb_signing": {
+          "type": "boolean"
+        },
+        "smb_cluster_encryption": {
+          "type": "boolean"
+        },
+        "bitlocker_boot_volume": {
+          "type": "boolean"
+        },
+        "bitlocker_data_volumes": {
+          "type": "boolean"
+        },
+        "wdac": {
+          "type": "boolean"
+        },
+        "backup_key_vault": {
+          "$ref": "#/$defs/key_vault_name"
+        },
+        "telemetry": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "streaming_data": {
+              "type": "boolean"
+            },
+            "episodic_data_upload": {
+              "type": "boolean"
+            },
+            "eu_location": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "sdn": {
+      "description": "SDN enabled by Azure Arc.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "enabled"
+      ],
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "dns_records": {
+          "enum": [
+            "dynamic",
+            "static"
+          ]
+        },
+        "default_access_policy": {
+          "type": "boolean"
+        }
+      }
+    },
+    "operations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "update_method": {
+          "enum": [
+            "portal",
+            "powershell"
+          ]
+        },
+        "monitoring": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "log_analytics_workspace": {
+              "type": "string"
+            },
+            "workspace_resource_group": {
+              "$ref": "#/$defs/resource_group"
+            },
+            "data_collection_rule": {
+              "type": "string"
+            },
+            "data_collection_endpoint": {
+              "type": "string"
+            },
+            "health_alerts": {
+              "type": "boolean"
+            },
+            "alert_email": {
+              "type": "string"
+            }
+          }
+        },
+        "backup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "approach": {
+              "enum": [
+                "host",
+                "guest",
+                "both"
+              ]
+            },
+            "solution": {
+              "type": "string"
+            },
+            "recovery_vault": {
+              "type": "string"
+            },
+            "resource_group": {
+              "$ref": "#/$defs/resource_group"
+            },
+            "policy": {
+              "type": "string"
+            }
+          }
+        },
+        "disaster_recovery": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "enum": [
+                "none",
+                "asr",
+                "hyper_v_replica"
+              ]
+            },
+            "recovery_vault": {
+              "type": "string"
+            },
+            "resource_group": {
+              "$ref": "#/$defs/resource_group"
+            },
+            "replication_policy": {
+              "type": "string"
+            },
+            "recovery_plan": {
+              "type": "string"
+            },
+            "network": {
+              "type": "string",
+              "description": "Network the VMs fail over to."
+            },
+            "test_network": {
+              "type": "string",
+              "description": "Isolated network for test failovers."
+            },
+            "storage_account": {
+              "$ref": "#/$defs/storage_account_name"
+            },
+            "target_rto_minutes": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "target_rpo_minutes": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "notifications": {
+          "description": "Who hears about alerts. A webhook URL is a secret.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "emails": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "teams_webhook": {
+              "$ref": "#/$defs/kv_ref"
+            }
+          }
+        },
+        "licensing": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "azure_hybrid_benefit": {
+              "type": "boolean",
+              "description": "Azure Hybrid Benefit for the host fee and Windows Server guests."
+            },
+            "windows_server_subscription": {
+              "type": "boolean"
+            },
+            "azure_verification_for_vms": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "provisioning": {
+      "description": "How the OS gets onto the machines (scenario.os_install), and the OS version.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os_version"
+      ],
+      "properties": {
+        "os_version": {
+          "description": "The solution version the machines run: latest, latest-preview, or a version such as 12.2610.1004.50. Pin a version. Simplified provisioning installs it, and the SBE must be validated with it.",
+          "type": "string",
+          "pattern": "^(latest|latest-preview|12\\.[0-9]{4}\\.[0-9]+\\.[0-9]+)$"
+        },
+        "iso": {
+          "description": "OS installed from an ISO. There is no unattended install: the OS is installed, then the tools take over.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "image_source": {
+              "description": "microsoft (the Azure portal download) or oem (the OEM's image).",
+              "enum": [
+                "microsoft",
+                "oem"
+              ]
+            },
+            "image_version": {
+              "type": "string"
+            }
+          }
+        },
+        "simplified": {
+          "description": "Simplified machine provisioning from Azure, as azurelocal-ztp runs it. https://learn.microsoft.com/azure/azure-local/deploy/simplified-machine-provisioning",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "site_name",
+            "maintenance_iso",
+            "admin",
+            "media_share"
+          ],
+          "properties": {
+            "site_name": {
+              "description": "Resource name of the Microsoft.Edge site.",
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,62}$"
+            },
+            "subscription_id": {
+              "description": "Subscription of the site and edge machines, when it isn't azure.subscription_id.",
+              "$ref": "#/$defs/guid"
+            },
+            "resource_group": {
+              "description": "Resource group of the site and edge machines, when it isn't azure.resource_group.",
+              "$ref": "#/$defs/resource_group"
+            },
+            "maintenance_iso": {
+              "description": "The provisioning (maintenance environment) ISO: latest, a train such as 2610, a build such as 10.2610.0.3063, or a Microsoft download URL.",
+              "type": "string",
+              "pattern": "^(latest|[0-9]{4}|10\\.[0-9]{4}\\.[0-9]+\\.[0-9]+|https://.+)$"
+            },
+            "admin": {
+              "description": "The local administrator that the provisioned OS gets. Prepare signs in as <node>\\<username>.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "username",
+                "password"
+              ],
+              "properties": {
+                "username": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "password": {
+                  "description": "At least 12 characters with lowercase, uppercase, a digit and a special character. Create the secret before the run.",
+                  "$ref": "#/$defs/kv_ref"
+                }
+              }
+            },
+            "media_share": {
+              "description": "The SMB share the BMCs mount the images from.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9-]+$"
+                },
+                "host": {
+                  "description": "The management host's address as the BMCs reach it.",
+                  "$ref": "#/$defs/ipv4"
+                },
+                "host_adapter": {
+                  "description": "Instead of host: the local adapter whose IPv4 address the BMCs reach. Wins over host.",
+                  "type": "string"
+                }
+              },
+              "anyOf": [
+                {
+                  "type": "object",
+                  "required": [
+                    "host"
+                  ],
+                  "properties": {
+                    "host": true
+                  }
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "host_adapter"
+                  ],
+                  "properties": {
+                    "host_adapter": true
+                  }
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "disconnected": {
+      "description": "Disconnected operations: the control plane appliance, its endpoints, identity and certificates.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role"
+      ],
+      "properties": {
+        "role": {
+          "enum": [
+            "management",
+            "workload"
+          ]
+        },
+        "base_path": {
+          "type": "string"
+        },
+        "domain_suffix": {
+          "type": "string"
+        },
+        "ingress": {
+          "$ref": "#/$defs/appliance_endpoint"
+        },
+        "management": {
+          "$ref": "#/$defs/appliance_endpoint"
+        },
+        "dns_server": {
+          "$ref": "#/$defs/ipv4"
+        },
+        "time_servers": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "identity": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "authority": {
+              "type": "string"
+            },
+            "client_id": {
+              "type": "string"
+            },
+            "root_operator_upn": {
+              "type": "string"
+            },
+            "ldap_server": {
+              "type": "string"
+            },
+            "ldaps": {
+              "type": "boolean"
+            },
+            "sync_group_identifier": {
+              "type": "string"
+            }
+          }
+        },
+        "operator_subscription_name": {
+          "type": "string"
+        },
+        "resource_group": {
+          "type": "string"
+        },
+        "internal_ca": {
+          "type": "boolean"
+        }
+      }
+    },
+    "network_devices": {
+      "description": "Switches, firewalls, console servers and other devices in the design.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/network_device"
+      }
+    },
+    "landing_zone": {
+      "description": "Part 2 of the implementation steps: the Azure foundation the instance depends on. Optional; leave it out when the foundation exists and is managed elsewhere.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "management_groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "display_name": {
+                "type": "string"
+              },
+              "parent": {
+                "type": "string",
+                "description": "Parent management group name; empty for the tenant root."
+              }
+            }
+          }
+        },
+        "subscriptions": {
+          "description": "Subscriptions by role. azure.subscription_id is the one the instance uses.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "role"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "id": {
+                "$ref": "#/$defs/guid"
+              },
+              "role": {
+                "description": "What the subscription is for.",
+                "enum": [
+                  "connectivity",
+                  "identity",
+                  "management",
+                  "security",
+                  "devops",
+                  "workload",
+                  "azure_local"
+                ]
+              },
+              "management_group": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "resource_groups": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/resource_group"
+              },
+              "subscription": {
+                "type": "string",
+                "description": "Name of a subscription in landing_zone.subscriptions."
+              },
+              "location": {
+                "$ref": "#/$defs/azure_region"
+              },
+              "purpose": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "resource_providers": {
+          "description": "Resource provider namespaces to register, for example Microsoft.AzureStackHCI.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z]+\\.[A-Za-z.]+$"
+          }
+        },
+        "networks": {
+          "description": "Azure virtual networks.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "address_space"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "subscription": {
+                "type": "string"
+              },
+              "resource_group": {
+                "$ref": "#/$defs/resource_group"
+              },
+              "location": {
+                "$ref": "#/$defs/azure_region"
+              },
+              "role": {
+                "enum": [
+                  "hub",
+                  "spoke"
+                ]
+              },
+              "address_space": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "$ref": "#/$defs/cidr"
+                }
+              },
+              "dns_servers": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/ipv4"
+                }
+              },
+              "subnets": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name",
+                    "prefix"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "prefix": {
+                      "$ref": "#/$defs/cidr"
+                    },
+                    "network_security_group": {
+                      "type": "string"
+                    },
+                    "route_table": {
+                      "type": "string"
+                    }
+                  }
+                }
+              },
+              "peer_with": {
+                "description": "Names of networks this one peers with.",
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "connectivity": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "vpn_gateway": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "resource_group": {
+                  "$ref": "#/$defs/resource_group"
+                },
+                "network": {
+                  "type": "string"
+                },
+                "sku": {
+                  "type": "string"
+                },
+                "bgp_asn": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 4294967295
+                },
+                "site_to_site": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "connection_name",
+                      "shared_key"
+                    ],
+                    "properties": {
+                      "connection_name": {
+                        "type": "string"
+                      },
+                      "local_gateway_name": {
+                        "type": "string"
+                      },
+                      "peer_public_ip": {
+                        "$ref": "#/$defs/ipv4"
+                      },
+                      "peer_address_prefixes": {
+                        "type": "array",
+                        "items": {
+                          "$ref": "#/$defs/cidr"
+                        }
+                      },
+                      "peer_bgp_address": {
+                        "$ref": "#/$defs/ipv4"
+                      },
+                      "peer_asn": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 4294967295
+                      },
+                      "shared_key": {
+                        "$ref": "#/$defs/kv_ref"
+                      }
+                    }
+                  }
+                },
+                "point_to_site": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "address_pool"
+                  ],
+                  "properties": {
+                    "address_pool": {
+                      "$ref": "#/$defs/cidr"
+                    },
+                    "authentication": {
+                      "enum": [
+                        "entra_id",
+                        "certificate",
+                        "radius"
+                      ]
+                    }
+                  }
+                }
+              }
+            },
+            "bastion": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "resource_group": {
+                  "$ref": "#/$defs/resource_group"
+                },
+                "sku": {
+                  "type": "string"
+                }
+              }
+            },
+            "firewall": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name"
+              ],
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "resource_group": {
+                  "$ref": "#/$defs/resource_group"
+                },
+                "sku": {
+                  "type": "string"
+                },
+                "private_ip": {
+                  "$ref": "#/$defs/ipv4"
+                }
+              }
+            }
+          }
+        },
+        "virtual_machines": {
+          "description": "Management VMs: domain controllers, jump box, Windows Admin Center, syslog.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "role"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "hostname": {
+                "$ref": "#/$defs/netbios_name"
+              },
+              "role": {
+                "enum": [
+                  "domain_controller",
+                  "jumpbox",
+                  "windows_admin_center",
+                  "syslog",
+                  "management",
+                  "other"
+                ]
+              },
+              "deploy_target": {
+                "description": "Where the VM runs.",
+                "enum": [
+                  "azure",
+                  "azure_local",
+                  "onprem"
+                ]
+              },
+              "subscription": {
+                "type": "string"
+              },
+              "resource_group": {
+                "$ref": "#/$defs/resource_group"
+              },
+              "network": {
+                "type": "string"
+              },
+              "subnet": {
+                "type": "string"
+              },
+              "private_ip": {
+                "$ref": "#/$defs/ipv4"
+              },
+              "size": {
+                "type": "string"
+              },
+              "os": {
+                "type": "string"
+              },
+              "admin_username": {
+                "type": "string"
+              },
+              "admin_password": {
+                "$ref": "#/$defs/kv_ref"
+              }
+            }
+          }
+        },
+        "log_analytics": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "resource_group": {
+              "$ref": "#/$defs/resource_group"
+            },
+            "retention_days": {
+              "type": "integer",
+              "minimum": 30,
+              "maximum": 730
+            }
+          }
+        },
+        "storage_accounts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "$ref": "#/$defs/storage_account_name"
+              },
+              "resource_group": {
+                "$ref": "#/$defs/resource_group"
+              },
+              "sku": {
+                "type": "string"
+              },
+              "purpose": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "devops": {
+      "description": "Part 1 of the implementation steps: the pipeline platform and runner. Optional.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "platform"
+      ],
+      "properties": {
+        "platform": {
+          "enum": [
+            "github",
+            "gitlab",
+            "azure_devops"
+          ]
+        },
+        "url": {
+          "type": "string"
+        },
+        "organization": {
+          "type": "string",
+          "description": "Organization, group or project collection."
+        },
+        "project": {
+          "type": "string"
+        },
+        "runner": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "type"
+          ],
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "type": {
+              "enum": [
+                "vm",
+                "container_app",
+                "existing"
+              ]
+            },
+            "subscription": {
+              "type": "string"
+            },
+            "resource_group": {
+              "$ref": "#/$defs/resource_group"
+            },
+            "network": {
+              "type": "string"
+            },
+            "subnet": {
+              "type": "string"
+            },
+            "private_ip": {
+              "$ref": "#/$defs/ipv4"
+            },
+            "size": {
+              "type": "string"
+            },
+            "labels": {
+              "description": "Runner tags or labels that jobs select.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "registration_token": {
+              "$ref": "#/$defs/kv_ref"
+            }
+          }
+        },
+        "state": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "storage_account": {
+              "$ref": "#/$defs/storage_account_name"
+            },
+            "container": {
+              "type": "string"
+            },
+            "resource_group": {
+              "$ref": "#/$defs/resource_group"
+            }
+          }
+        }
+      }
+    },
+    "extensions": {
+      "description": "Anything this schema doesn't define: settings for one environment or one tool, each under its own key (for example extensions.devops_runner). Tools ignore keys they don't own. Secrets here are keyvault:// references too.",
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "scenario": {
+            "type": "object",
+            "properties": {
+              "identity": {
+                "const": "active_directory"
+              }
+            },
+            "required": [
+              "identity"
+            ]
+          }
+        },
+        "required": [
+          "scenario"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "identity": {
+            "type": "object",
+            "required": [
+              "active_directory"
+            ],
+            "properties": {
+              "active_directory": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "scenario": {
+            "type": "object",
+            "properties": {
+              "identity": {
+                "const": "local_identity"
+              }
+            },
+            "required": [
+              "identity"
+            ]
+          }
+        },
+        "required": [
+          "scenario"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "identity": {
+            "type": "object",
+            "required": [
+              "local_identity"
+            ],
+            "properties": {
+              "local_identity": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "scenario": {
+            "type": "object",
+            "properties": {
+              "storage_architecture": {
+                "enum": [
+                  "san",
+                  "hybrid"
+                ]
+              }
+            },
+            "required": [
+              "storage_architecture"
+            ]
+          }
+        },
+        "required": [
+          "scenario"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "required": [
+          "storage"
+        ],
+        "properties": {
+          "storage": {
+            "type": "object",
+            "required": [
+              "san"
+            ],
+            "properties": {
+              "san": true
+            }
+          },
+          "networking": {
+            "type": "object",
+            "required": [
+              "cluster_networks"
+            ],
+            "properties": {
+              "cluster_networks": true
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "scenario": {
+            "type": "object",
+            "properties": {
+              "storage_connectivity": {
+                "const": "switchless"
+              }
+            },
+            "required": [
+              "storage_connectivity"
+            ]
+          }
+        },
+        "required": [
+          "scenario"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "networking": {
+            "type": "object",
+            "required": [
+              "storage"
+            ],
+            "properties": {
+              "storage": {
+                "type": "object",
+                "required": [
+                  "switchless_links"
+                ],
+                "properties": {
+                  "switchless_links": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "scenario": {
+            "type": "object",
+            "properties": {
+              "topology": {
+                "const": "rack_aware"
+              }
+            },
+            "required": [
+              "topology"
+            ]
+          }
+        },
+        "required": [
+          "scenario"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "zone"
+              ],
+              "properties": {
+                "zone": true
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "scenario": {
+            "type": "object",
+            "properties": {
+              "connectivity": {
+                "const": "disconnected"
+              }
+            },
+            "required": [
+              "connectivity"
+            ]
+          }
+        },
+        "required": [
+          "scenario"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "required": [
+          "disconnected"
+        ],
+        "properties": {
+          "disconnected": true
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "scenario": {
+            "type": "object",
+            "properties": {
+              "outbound_path": {
+                "enum": [
+                  "proxy",
+                  "proxy_arc_gateway"
+                ]
+              }
+            },
+            "required": [
+              "outbound_path"
+            ]
+          }
+        },
+        "required": [
+          "scenario"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "networking": {
+            "type": "object",
+            "required": [
+              "outbound"
+            ],
+            "properties": {
+              "outbound": {
+                "type": "object",
+                "required": [
+                  "proxy"
+                ],
+                "properties": {
+                  "proxy": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "scenario": {
+            "type": "object",
+            "properties": {
+              "outbound_path": {
+                "enum": [
+                  "arc_gateway",
+                  "proxy_arc_gateway"
+                ]
+              }
+            },
+            "required": [
+              "outbound_path"
+            ]
+          }
+        },
+        "required": [
+          "scenario"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "networking": {
+            "type": "object",
+            "required": [
+              "outbound"
+            ],
+            "properties": {
+              "outbound": {
+                "type": "object",
+                "required": [
+                  "arc_gateway"
+                ],
+                "properties": {
+                  "arc_gateway": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "scenario": {
+            "type": "object",
+            "properties": {
+              "outbound_path": {
+                "const": "private_path"
+              }
+            },
+            "required": [
+              "outbound_path"
+            ]
+          }
+        },
+        "required": [
+          "scenario"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "networking": {
+            "type": "object",
+            "required": [
+              "outbound"
+            ],
+            "properties": {
+              "outbound": {
+                "type": "object",
+                "required": [
+                  "private_path"
+                ],
+                "properties": {
+                  "private_path": true
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "scenario": {
+            "type": "object",
+            "properties": {
+              "os_install": {
+                "const": "simplified"
+              }
+            },
+            "required": [
+              "os_install"
+            ]
+          }
+        },
+        "required": [
+          "scenario"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "required": [
+          "provisioning"
+        ],
+        "properties": {
+          "provisioning": {
+            "type": "object",
+            "required": [
+              "simplified"
+            ],
+            "properties": {
+              "simplified": true
+            }
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "serial_number",
+                "bmc"
+              ],
+              "properties": {
+                "management": {
+                  "type": "object",
+                  "required": [
+                    "mac_address"
+                  ],
+                  "properties": {
+                    "mac_address": true
+                  }
+                },
+                "bmc": {
+                  "type": "object",
+                  "required": [
+                    "ip_address"
+                  ],
+                  "properties": {
+                    "ip_address": true
+                  }
+                },
+                "serial_number": true
+              }
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "ipv4": {
+      "type": "string",
+      "pattern": "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
+    },
+    "cidr": {
+      "type": "string",
+      "pattern": "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])$"
+    },
+    "mac": {
+      "description": "AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF.",
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$"
+    },
+    "guid": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "azure_region": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]{2,30}$"
+    },
+    "resource_group": {
+      "type": "string",
+      "pattern": "^[-\\w\\._\\(\\)]{1,90}$"
+    },
+    "key_vault_name": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]$"
+    },
+    "storage_account_name": {
+      "type": "string",
+      "pattern": "^[a-z0-9]{3,24}$"
+    },
+    "netbios_name": {
+      "description": "Up to 15 letters, digits and hyphens.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,14}$"
+    },
+    "kv_ref": {
+      "description": "A Key Vault secret reference: keyvault://<vault>/<secret>. The vault must be listed in key_vaults.",
+      "type": "string",
+      "pattern": "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+    },
+    "bmc_credentials": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "username",
+        "password"
+      ],
+      "properties": {
+        "username": {
+          "description": "A reference to the secret holding the user name, or the user name itself.",
+          "type": "string",
+          "minLength": 1
+        },
+        "password": {
+          "$ref": "#/$defs/kv_ref"
+        }
+      }
+    },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "management"
+      ],
+      "properties": {
+        "name": {
+          "description": "Host name: up to 15 characters. Also the edge machine name and, for an ISO install, the Arc machine name.",
+          "$ref": "#/$defs/netbios_name"
+        },
+        "management": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "ip_address"
+          ],
+          "properties": {
+            "ip_address": {
+              "description": "Static management address. ARM physicalNodesSettings[].ipv4Address. Simplified provisioning connects to it before it is set static, so reserve it in DHCP for the management MAC.",
+              "$ref": "#/$defs/ipv4"
+            },
+            "mac_address": {
+              "description": "MAC of the management adapter: picks the adapter on the machine.",
+              "$ref": "#/$defs/mac"
+            },
+            "adapter_name": {
+              "type": "string"
+            }
+          }
+        },
+        "serial_number": {
+          "description": "Serial number (Dell service tag). Maps each simplified-provisioning voucher to its machine.",
+          "type": "string",
+          "minLength": 1
+        },
+        "bmc": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ip_address": {
+              "$ref": "#/$defs/ipv4"
+            },
+            "type": {
+              "enum": [
+                "idrac",
+                "ilo",
+                "xcc",
+                "other"
+              ]
+            },
+            "username": {
+              "type": "string",
+              "minLength": 1
+            },
+            "password": {
+              "$ref": "#/$defs/kv_ref"
+            }
+          },
+          "dependentRequired": {
+            "username": [
+              "password"
+            ],
+            "password": [
+              "username"
+            ]
+          }
+        },
+        "rack": {
+          "type": "string"
+        },
+        "rack_position": {
+          "type": "string"
+        },
+        "zone": {
+          "description": "Rack-aware: the local availability zone. ARM localAvailabilityZones.",
+          "type": "string"
+        },
+        "storage_ips": {
+          "description": "Storage address on each storage network, in networking.storage.networks order, when networking.storage.auto_ip is false.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ipv4"
+          }
+        },
+        "arc_resource_name": {
+          "description": "The machine's Arc resource name when it isn't the host name, as after simplified provisioning. ARM arcNodeResourceIds.",
+          "type": "string"
+        }
+      }
+    },
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "traffic",
+        "adapters"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "traffic": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "management",
+              "compute",
+              "storage"
+            ]
+          }
+        },
+        "adapters": {
+          "description": "Adapter names in the OS, the same on every machine.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "overrides": {
+          "description": "Network ATC overrides. Leave out to keep Network ATC's defaults, which Microsoft recommends.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "qos": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cluster_priority": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 7
+                },
+                "smb_priority": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 7
+                },
+                "smb_bandwidth_percent": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100
+                }
+              }
+            },
+            "adapter": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "jumbo_packet": {
+                  "enum": [
+                    1514,
+                    4088,
+                    9014
+                  ]
+                },
+                "network_direct": {
+                  "type": "boolean"
+                },
+                "network_direct_technology": {
+                  "enum": [
+                    "iwarp",
+                    "roce",
+                    "roce_v2"
+                  ]
+                }
+              }
+            },
+            "virtual_switch": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enable_iov": {
+                  "type": "boolean"
+                },
+                "load_balancing_algorithm": {
+                  "enum": [
+                    "dynamic",
+                    "hyper_v_port"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "logical_network": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name"
+      ],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "vlan_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4094
+        },
+        "address_prefix": {
+          "$ref": "#/$defs/cidr"
+        },
+        "gateway": {
+          "$ref": "#/$defs/ipv4"
+        },
+        "dns_servers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ipv4"
+          }
+        },
+        "ip_pool": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "start",
+            "end"
+          ],
+          "properties": {
+            "start": {
+              "$ref": "#/$defs/ipv4"
+            },
+            "end": {
+              "$ref": "#/$defs/ipv4"
+            }
+          }
+        }
+      }
+    },
+    "drive_group": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "media": {
+          "enum": [
+            "nvme",
+            "ssd",
+            "hdd"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "size_tb": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "appliance_endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ip_address": {
+          "$ref": "#/$defs/ipv4"
+        },
+        "gateway": {
+          "$ref": "#/$defs/ipv4"
+        },
+        "prefix_length": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 30
+        }
+      }
+    },
+    "network_device": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hostname",
+        "type"
+      ],
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": [
+            "switch",
+            "firewall",
+            "router",
+            "console_server",
+            "load_balancer",
+            "wireless_controller"
+          ]
+        },
+        "role": {
+          "enum": [
+            "primary",
+            "secondary",
+            "standalone"
+          ]
+        },
+        "vendor": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "serial_number": {
+          "type": "string"
+        },
+        "firmware_version": {
+          "type": "string"
+        },
+        "management": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ip_address": {
+              "description": "An IPv4 address, or dhcp.",
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ipv4"
+                },
+                {
+                  "const": "dhcp"
+                }
+              ]
+            },
+            "vlan_id": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4094
+            },
+            "protocol": {
+              "enum": [
+                "ssh",
+                "https",
+                "telnet",
+                "snmp"
+              ]
+            }
+          }
+        },
+        "credentials": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "username",
+            "password"
+          ],
+          "properties": {
+            "username": {
+              "type": "string",
+              "minLength": 1
+            },
+            "password": {
+              "$ref": "#/$defs/kv_ref"
+            }
+          }
+        },
+        "ha": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "mode": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  }
+}
