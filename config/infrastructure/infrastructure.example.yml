@@ -1,0 +1,395 @@
+# =============================================================================
+# infrastructure.yml: the one environment file for an Azure Local instance
+# =============================================================================
+# Every Azure Local tool reads this file: azurelocal-toolkit, azurelocal-ztp,
+# Trailwright (writes it), Beacon, Sonar and Ranger.
+#
+# Schema:    infrastructure.schema.json (next to this file), schema_version 5.x
+# Validate:  ./tools/Test-AzlInfrastructure.ps1 -Path ./infrastructure.yml
+# Reference: README.md (next to this file), every key and which tool reads it
+#
+# This example: Active Directory, Storage Spaces Direct on switched storage,
+# two machines, connected with direct outbound, the OS from simplified machine
+# provisioning (azurelocal-ztp), deployed with the ARM template.
+# Other scenarios are in examples/.
+#
+# Rules:
+#   - Keys are snake_case. Sections reject unknown keys; use extensions.
+#   - Secrets are never values. Use keyvault://<vault>/<secret> and list the
+#     vault in key_vaults.
+#   - Values here are placeholders (the IIC example customer and documentation
+#     address ranges). Replace every one.
+# =============================================================================
+
+_metadata:
+  schema_version: "5.0.0"
+  file_version: "1.0.0"
+  last_updated: "2026-11-06"
+  generated_by: ""
+
+# -----------------------------------------------------------------------------
+# The design choices. Every other section is read in the light of these.
+# -----------------------------------------------------------------------------
+scenario:
+  identity: active_directory # active_directory | local_identity
+  storage_architecture: s2d # s2d | san | hybrid
+  storage_connectivity: switched # switched | switchless
+  topology: standard # standard | rack_aware
+  connectivity: connected # connected | disconnected
+  cloud: public # public | government
+  outbound_path: direct # direct | proxy | arc_gateway | proxy_arc_gateway | private_path
+  os_install: simplified # iso | simplified
+  deploy_method: arm # portal | arm
+
+site:
+  code: "IIC"
+  name: "IIC Dallas"
+  location: "Dallas, TX"
+  datacenter: "dal-01"
+  customer: "Infinite Improbability Corp"
+  owner: "platform-team@improbability.cloud"
+  time_zone: "Central Standard Time"
+
+environment:
+  name: "iic-azl-01"
+  type: lab # lab | demo | poc | dev | test | stg | prd
+  owner: "platform-team@improbability.cloud"
+  description: "Example two-machine Azure Local instance."
+
+tags:
+  Owner: "platform-team@improbability.cloud"
+  Project: "azure-local"
+  Environment: "dev"
+  CostCenter: "iic-it"
+  ManagedBy: "azurelocal-toolkit"
+
+# -----------------------------------------------------------------------------
+# Azure targets: the Arc machines, the cluster, and the provisioning site.
+# -----------------------------------------------------------------------------
+azure:
+  tenant_id: "00000000-0000-0000-0000-000000000000"
+  location: "eastus" # simplified provisioning: eastus only in the preview
+  subscription_id: "00000000-0000-0000-0000-000000000000"
+  resource_group: "rg-iic-azl-01"
+  # Optional. Tools look it up when they can read the directory; pipelines should set it.
+  hci_resource_provider_object_id: "00000000-0000-0000-0000-000000000000"
+  custom_location: "cl-iic-azl-01"
+  automation_identity:
+    type: managed_identity # managed_identity | service_principal
+    name: "id-iic-cicd-01"
+    subscription_id: "00000000-0000-0000-0000-000000000000"
+    resource_group: "rg-iic-devops-01"
+
+# Every vault that a keyvault:// reference below names.
+key_vaults:
+  - name: "kv-iic-mgmt-01"
+    subscription_id: "00000000-0000-0000-0000-000000000000"
+    resource_group: "rg-iic-mgmt-01"
+    purpose: "management"
+
+# -----------------------------------------------------------------------------
+# The Azure Local instance.
+# -----------------------------------------------------------------------------
+cluster:
+  name: "iic-azl-01" # up to 15 characters
+  naming_prefix: "iicazl01"
+  deployment_mode: validate # validate | deploy
+  witness:
+    type: cloud # cloud | file_share | none
+    storage_account: "stiicazl01wit"
+  key_vault:
+    name: "kv-iic-azl-01"
+    create_new: true
+    soft_delete_retention_days: 30
+  diagnostics:
+    storage_account: "stiicazl01diag"
+    logs_retention_days: 30
+    storage_account_type: "Standard_LRS"
+
+# -----------------------------------------------------------------------------
+# The machines. Simplified provisioning needs serial_number, bmc.ip_address
+# and management.mac_address on every machine.
+# -----------------------------------------------------------------------------
+nodes:
+  - name: "iic-azl-n01"
+    management:
+      ip_address: "192.0.2.11"
+      mac_address: "00:00:5E:00:53:11"
+    serial_number: "SERIAL01"
+    bmc:
+      ip_address: "198.51.100.11"
+      type: idrac
+    rack: "R01"
+    rack_position: "24"
+  - name: "iic-azl-n02"
+    management:
+      ip_address: "192.0.2.12"
+      mac_address: "00:00:5E:00:53:12"
+    serial_number: "SERIAL02"
+    bmc:
+      ip_address: "198.51.100.12"
+      type: idrac
+    rack: "R01"
+    rack_position: "26"
+
+hardware:
+  vendor: "Dell"
+  model: "AX-760"
+  cpu_cores: 64
+  memory_gib: 1024
+  gpu:
+    enabled: false
+  # BMC login for every machine unless a node sets its own.
+  bmc:
+    username: "keyvault://kv-iic-mgmt-01/bmc-username"
+    password: "keyvault://kv-iic-mgmt-01/bmc-password"
+  sbe:
+    publisher: "Dell"
+    family: ""
+    version: ""
+    # Folder on the management host with the OEM's SBE files, as downloaded.
+    bundle_path: 'D:\sbe\dell'
+    allow_unvalidated: false # test only
+  network_cards:
+    - label: "Onboard"
+      ports:
+        - { name: "Port1", speed_gbps: 25, rdma: none, role: "intent:management" }
+        - { name: "Port2", speed_gbps: 25, rdma: none, role: "intent:management" }
+    - label: "Slot 3"
+      ports:
+        - { name: "Port3", speed_gbps: 25, rdma: roce_v2, role: "intent:compute_storage" }
+        - { name: "Port4", speed_gbps: 25, rdma: roce_v2, role: "intent:compute_storage" }
+  drives:
+    capacity: { media: nvme, count: 8, size_tb: 3.84 }
+
+# -----------------------------------------------------------------------------
+# On-premises networks.
+# -----------------------------------------------------------------------------
+networking:
+  management:
+    subnet: "192.0.2.0/24"
+    gateway: "192.0.2.1"
+    vlan_id: 0 # 0 means untagged; can't change after deployment
+    dns_servers: ["192.0.2.4", "192.0.2.5"] # can't change after deployment
+    use_dhcp: false
+    infrastructure_pool: # at least six contiguous addresses
+      start: "192.0.2.20"
+      end: "192.0.2.29"
+  oob:
+    subnet: "198.51.100.0/24"
+    gateway: "198.51.100.1"
+  ntp_servers: ["192.0.2.4", "192.0.2.5"]
+  intents:
+    - name: "management"
+      traffic: [management]
+      adapters: ["Port1", "Port2"]
+    - name: "compute_storage"
+      traffic: [compute, storage]
+      adapters: ["Port3", "Port4"]
+  storage:
+    auto_ip: true
+    tor_switches: 2
+    layout: converged
+    networks:
+      - { name: "StorageNetwork1", adapter: "Port3", vlan_id: 711 }
+      - { name: "StorageNetwork2", adapter: "Port4", vlan_id: 712 }
+  vlans:
+    - { name: "storage-1", id: 711 }
+    - { name: "storage-2", id: 712 }
+    - { name: "workloads", id: 2204, subnet: "203.0.113.0/24" }
+  logical_networks:
+    - name: "lnet-workloads"
+      vlan_id: 2204
+      address_prefix: "203.0.113.0/24"
+      gateway: "203.0.113.1"
+      dns_servers: ["192.0.2.4", "192.0.2.5"]
+      ip_pool: { start: "203.0.113.100", end: "203.0.113.200" }
+
+# -----------------------------------------------------------------------------
+# Accounts and the identity provider.
+# -----------------------------------------------------------------------------
+identity:
+  local_admin: # not Administrator: the deployment renames it
+    username: "azl-admin"
+    password: "keyvault://kv-iic-mgmt-01/local-admin-password"
+  active_directory:
+    domain_fqdn: "improbability.cloud"
+    netbios_name: "IIC"
+    ou_path: "OU=iic-azl-01,OU=AzureLocal,DC=improbability,DC=cloud"
+    lcm_user:
+      username: "lcm-iic-azl-01" # up to 20 characters, no domain
+      password: "keyvault://kv-iic-mgmt-01/lcm-password"
+    domain_controllers: ["192.0.2.4", "192.0.2.5"]
+    security_groups:
+      - { name: "sg-iic-azl-01-admins", purpose: "Administrators of the instance" }
+    service_accounts:
+      - { name: "svc-iic-azl-backup", purpose: "Backup agent", password: "keyvault://kv-iic-mgmt-01/svc-backup-password" }
+  entra:
+    groups:
+      - { name: "grp-iic-azl-operators", purpose: "Operate the instance", roles: ["Azure Stack HCI Administrator"], scope: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-azl-01" }
+    break_glass_accounts: ["breakglass01@improbability.cloud"]
+
+storage:
+  configuration_mode: express # express | infra_only | keep_storage
+  volumes:
+    - { name: "vol-workloads-01", size_gib: 4096, resiliency: two_way }
+
+security:
+  level: recommended # recommended | customized
+  drift_control: true
+  credential_guard: true
+  smb_signing: true
+  smb_cluster_encryption: false
+  bitlocker_boot_volume: true
+  bitlocker_data_volumes: true
+  wdac: true
+  telemetry:
+    streaming_data: true
+    episodic_data_upload: true
+    eu_location: false
+
+sdn:
+  enabled: false
+
+operations:
+  update_method: portal
+  monitoring:
+    enabled: true
+    log_analytics_workspace: "log-iic-azl-01"
+    workspace_resource_group: "rg-iic-mgmt-01"
+    health_alerts: true
+  notifications:
+    emails: ["noc@improbability.cloud"]
+    teams_webhook: "keyvault://kv-iic-mgmt-01/teams-webhook-url"
+  backup:
+    enabled: false
+  disaster_recovery:
+    method: none
+  licensing:
+    azure_hybrid_benefit: true
+    windows_server_subscription: false
+
+# -----------------------------------------------------------------------------
+# How the OS gets onto the machines, and which OS.
+# -----------------------------------------------------------------------------
+provisioning:
+  os_version: "12.2610.1004.50" # pin a version
+  simplified: # azurelocal-ztp
+    site_name: "iic-site-01"
+    maintenance_iso: "latest" # latest | a train (2610) | a build (10.2610.0.3063) | a Microsoft URL
+    admin: # the OS's local administrator after provisioning
+      username: "administrator"
+      password: "keyvault://kv-iic-mgmt-01/provisioning-admin-password"
+    media_share:
+      name: "ztp-virtual-usb"
+      host: "198.51.100.5" # or host_adapter: <adapter name>
+
+network_devices:
+  - hostname: "sw01-iic"
+    type: switch
+    role: primary
+    vendor: "Dell"
+    model: "S5248F-ON"
+    management: { ip_address: "198.51.100.6", protocol: ssh }
+    credentials:
+      username: "admin"
+      password: "keyvault://kv-iic-mgmt-01/switch-admin-password"
+  - hostname: "sw02-iic"
+    type: switch
+    role: secondary
+    vendor: "Dell"
+    model: "S5248F-ON"
+    management: { ip_address: "198.51.100.7", protocol: ssh }
+    credentials:
+      username: "admin"
+      password: "keyvault://kv-iic-mgmt-01/switch-admin-password"
+
+# -----------------------------------------------------------------------------
+# Part 2 of the implementation steps: the Azure foundation. Leave out when it
+# exists and is managed elsewhere.
+# -----------------------------------------------------------------------------
+landing_zone:
+  management_groups:
+    - { name: "mg-iic", display_name: "IIC" }
+    - { name: "mg-iic-platform", parent: "mg-iic" }
+  subscriptions:
+    - { name: "sub-iic-connectivity", id: "00000000-0000-0000-0000-000000000000", role: connectivity, management_group: "mg-iic-platform" }
+    - { name: "sub-iic-identity", id: "00000000-0000-0000-0000-000000000000", role: identity, management_group: "mg-iic-platform" }
+    - { name: "sub-iic-management", id: "00000000-0000-0000-0000-000000000000", role: management, management_group: "mg-iic-platform" }
+    - { name: "sub-iic-azure-local", id: "00000000-0000-0000-0000-000000000000", role: azure_local, management_group: "mg-iic" }
+  resource_groups:
+    - { name: "rg-iic-conn-01", subscription: "sub-iic-connectivity", location: "eastus", purpose: "hub network" }
+    - { name: "rg-iic-mgmt-01", subscription: "sub-iic-management", location: "eastus", purpose: "management" }
+    - { name: "rg-iic-azl-01", subscription: "sub-iic-azure-local", location: "eastus", purpose: "Azure Local instance" }
+  resource_providers: ["Microsoft.AzureStackHCI", "Microsoft.HybridCompute", "Microsoft.Edge", "Microsoft.KeyVault"]
+  networks:
+    - name: "vnet-iic-hub-01"
+      subscription: "sub-iic-connectivity"
+      resource_group: "rg-iic-conn-01"
+      location: "eastus"
+      role: hub
+      address_space: ["10.20.0.0/22"]
+      subnets:
+        - { name: "GatewaySubnet", prefix: "10.20.0.0/27" }
+        - { name: "AzureBastionSubnet", prefix: "10.20.0.64/26" }
+    - name: "vnet-iic-mgmt-01"
+      subscription: "sub-iic-management"
+      resource_group: "rg-iic-mgmt-01"
+      location: "eastus"
+      role: spoke
+      address_space: ["10.20.4.0/24"]
+      dns_servers: ["192.0.2.4", "192.0.2.5"]
+      subnets:
+        - { name: "snet-iic-mgmt-01", prefix: "10.20.4.0/26" }
+      peer_with: ["vnet-iic-hub-01"]
+  connectivity:
+    vpn_gateway:
+      name: "vpng-iic-hub-01"
+      resource_group: "rg-iic-conn-01"
+      network: "vnet-iic-hub-01"
+      sku: "VpnGw1AZ"
+      bgp_asn: 65515
+      site_to_site:
+        - connection_name: "cn-iic-dal-01"
+          local_gateway_name: "lgw-iic-dal-01"
+          peer_public_ip: "203.0.113.1"
+          peer_address_prefixes: ["192.0.2.0/24", "198.51.100.0/24"]
+          shared_key: "keyvault://kv-iic-mgmt-01/vpn-shared-key"
+    bastion: { name: "bas-iic-hub-01", resource_group: "rg-iic-conn-01", sku: "Standard" }
+  virtual_machines:
+    - name: "vm-iic-dc-01"
+      hostname: "iic-dc01"
+      role: domain_controller
+      deploy_target: azure
+      subscription: "sub-iic-management"
+      resource_group: "rg-iic-mgmt-01"
+      network: "vnet-iic-mgmt-01"
+      subnet: "snet-iic-mgmt-01"
+      private_ip: "10.20.4.10"
+      size: "Standard_D2s_v5"
+      admin_username: "iic-vmadmin"
+      admin_password: "keyvault://kv-iic-mgmt-01/vm-admin-password"
+  log_analytics: { name: "log-iic-azl-01", resource_group: "rg-iic-mgmt-01", retention_days: 90 }
+  storage_accounts:
+    - { name: "stiicazl01wit", resource_group: "rg-iic-azl-01", sku: "Standard_LRS", purpose: "cloud witness" }
+
+# Part 1 of the implementation steps: the pipeline platform and runner.
+devops:
+  platform: github
+  url: "https://github.com"
+  organization: "improbability-cloud"
+  project: "iic-azure-local"
+  runner:
+    name: "vm-iic-runner-01"
+    type: vm
+    resource_group: "rg-iic-mgmt-01"
+    network: "vnet-iic-mgmt-01"
+    subnet: "snet-iic-mgmt-01"
+    private_ip: "10.20.4.20"
+    size: "Standard_D2s_v5"
+    labels: ["iic-azl"]
+    registration_token: "keyvault://kv-iic-mgmt-01/runner-registration-token"
+  state: { storage_account: "stiictfstate01", container: "tfstate", resource_group: "rg-iic-mgmt-01" }
+
+# Anything this schema doesn't define, under its own key. Tools ignore keys they don't own.
+extensions: {}
