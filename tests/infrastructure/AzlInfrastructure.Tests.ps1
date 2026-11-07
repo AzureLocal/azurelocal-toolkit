@@ -152,6 +152,87 @@ Describe 'Semantic rules' {
     It 'AZL-015 needs a BMC login for simplified provisioning' {
         (Get-FindingFor { param($d) $d.hardware.Remove('bmc') }).Id | Should -Contain 'AZL-015'
     }
+    It 'AZL-017 refuses one management MAC on two nodes, in either notation' {
+        $f = Get-FindingFor { param($d) $d.nodes[1].management.mac_address = $d.nodes[0].management.mac_address.Replace(':', '-').ToLowerInvariant() }
+        $f | Where-Object { $_.Id -eq 'AZL-017' -and $_.Severity -eq 'error' } | Should -Not -BeNullOrEmpty
+    }
+    It 'AZL-017 warns that every node needs a DHCP reservation with ip_assignment dhcp' {
+        $f = Get-FindingFor { param($d) $d.networking.management.ip_assignment = 'dhcp' }
+        $w = @($f | Where-Object { $_.Id -eq 'AZL-017' -and $_.Severity -eq 'warning' })
+        $w.Count | Should -Be 2
+        $w[0].Path | Should -Be 'nodes[0].management'
+        $w[0].Message | Should -Match '192\.0\.2\.11.*00:00:5E:00:53:11'
+        @($f | Where-Object Severity -eq 'error') | Should -BeNullOrEmpty
+    }
+    It 'AZL-017 says nothing with static or preconfigured' {
+        foreach ($mode in 'static', 'preconfigured') {
+            $f = Get-FindingFor { param($d) $d.networking.management.ip_assignment = $mode }
+            @($f | Where-Object Id -eq 'AZL-017') | Should -BeNullOrEmpty -Because $mode
+        }
+    }
+    It 'AZL-018 refuses two nodes with the same Arc machine name' {
+        $f = Get-FindingFor { param($d) $d.nodes[1].arc_machine_name = $d.nodes[0].arc_machine_name.ToUpperInvariant() }
+        $f | Where-Object { $_.Id -eq 'AZL-018' -and $_.Severity -eq 'error' -and $_.Path -eq 'nodes' } | Should -Not -BeNullOrEmpty
+    }
+    It 'AZL-018 counts the node name as the Arc machine name when arc_machine_name is left out' {
+        $f = Get-FindingFor { param($d) $d.nodes[0].Remove('arc_machine_name'); $d.nodes[1].arc_machine_name = $d.nodes[0].name }
+        $f | Where-Object { $_.Id -eq 'AZL-018' -and $_.Path -eq 'nodes' } | Should -Not -BeNullOrEmpty
+    }
+    It 'AZL-018 warns about the deprecated arc_resource_name, and refuses it when it disagrees with arc_machine_name' {
+        $f = Get-FindingFor { param($d) $d.nodes[0].Remove('arc_machine_name'); $d.nodes[0]['arc_resource_name'] = 'iic-azl-n01' }
+        $f | Where-Object { $_.Id -eq 'AZL-018' -and $_.Severity -eq 'warning' -and $_.Path -eq 'nodes[0].arc_resource_name' } | Should -Not -BeNullOrEmpty
+        $f = Get-FindingFor { param($d) $d.nodes[0]['arc_resource_name'] = 'iic-azl-other' }
+        $f | Where-Object { $_.Id -eq 'AZL-018' -and $_.Severity -eq 'error' -and $_.Path -eq 'nodes[0].arc_resource_name' } | Should -Not -BeNullOrEmpty
+    }
+    It 'AZL-018 warns that an ISO install names the Arc machine after the host' {
+        $f = Get-FindingFor -From (Join-Path $repo 'config\infrastructure\examples\single-machine-iso.yml') { param($d) $d.nodes[0]['arc_machine_name'] = 'iic-edge-07-arc' }
+        $f | Where-Object { $_.Id -eq 'AZL-018' -and $_.Severity -eq 'warning' -and $_.Path -eq 'nodes[0].arc_machine_name' } | Should -Not -BeNullOrEmpty
+    }
+}
+
+Describe 'Management address and Arc machine name' {
+    It 'rejects an unknown ip_assignment' {
+        $f = Get-FindingFor { param($d) $d.networking.management.ip_assignment = 'auto' }
+        $f | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'networking.management.ip_assignment' } | Should -Not -BeNullOrEmpty
+    }
+    It 'accepts ip_assignment <_>' -ForEach @('static', 'dhcp', 'preconfigured') {
+        $mode = $_
+        $f = Get-FindingFor { param($d) $d.networking.management.ip_assignment = $mode }
+        @($f | Where-Object Severity -eq 'error') | Should -BeNullOrEmpty
+    }
+    It 'needs the management MAC on every node with simplified provisioning, also with <_>' -ForEach @('static', 'dhcp', 'preconfigured') {
+        $mode = $_
+        $f = Get-FindingFor { param($d) $d.networking.management.ip_assignment = $mode; $d.nodes[0].management.Remove('mac_address') }
+        $f | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'nodes[0].management' -and $_.Message -match 'mac_address' } | Should -Not -BeNullOrEmpty
+    }
+    It 'rejects an Arc machine name that <Case>' -ForEach @(
+        @{ Case = 'has a space'; Name = 'node 01' }
+        @{ Case = 'ends in a dot'; Name = 'node-01.' }
+        @{ Case = 'is longer than 54 characters'; Name = ('a' * 55) }
+        @{ Case = 'is empty'; Name = '' }
+    ) {
+        $n = $Name
+        $f = Get-FindingFor { param($d) $d.nodes[0].arc_machine_name = $n }
+        $f | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'nodes[0].arc_machine_name' } | Should -Not -BeNullOrEmpty
+    }
+    It 'accepts an Arc machine name of 54 characters with dots and underscores' {
+        $n = 'iic_azl.n01-' + ('a' * 42)
+        $f = Get-FindingFor { param($d) $d.nodes[0].arc_machine_name = $n }
+        @($f | Where-Object Severity -eq 'error') | Should -BeNullOrEmpty
+    }
+    It 'reads the IP assignment mode, static by default' {
+        $infra = Import-AzlInfrastructure -Path $script:ExamplePath -SkipValidation
+        Get-AzlManagementIpAssignment -Infrastructure $infra | Should -Be 'static'
+        $infra.networking.management.Remove('ip_assignment')
+        Get-AzlManagementIpAssignment -Infrastructure $infra | Should -Be 'static'
+        $infra.networking.management['ip_assignment'] = 'dhcp'
+        Get-AzlManagementIpAssignment -Infrastructure $infra | Should -Be 'dhcp'
+    }
+    It 'reads the Arc machine name: arc_machine_name, then arc_resource_name, then the node name' {
+        Get-AzlArcMachineName -Node ([ordered]@{ name = 'n01'; arc_machine_name = 'arc-01'; arc_resource_name = 'old-01' }) | Should -Be 'arc-01'
+        Get-AzlArcMachineName -Node ([ordered]@{ name = 'n01'; arc_resource_name = 'old-01' }) | Should -Be 'old-01'
+        Get-AzlArcMachineName -Node ([ordered]@{ name = 'n01' }) | Should -Be 'n01'
+    }
 }
 
 Describe 'Import-AzlInfrastructure' {

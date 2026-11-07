@@ -12,6 +12,8 @@
                               Key Vault references). Each finding has an ID, a severity, the key path, a message and,
                               for rules from Microsoft's documentation, the Learn page.
     Get-AzlInfrastructureValue  Read one value by its dotted path, for example networking.management.gateway.
+    Get-AzlManagementIpAssignment  How the machines' management addresses are set: static (default), dhcp or preconfigured.
+    Get-AzlArcMachineName     A node's Arc machine name: arc_machine_name, else the node name.
 
     Needs the powershell-yaml module. The schema is infrastructure.schema.json in config/infrastructure.
 #>
@@ -57,6 +59,42 @@ function Get-AzlInfrastructureValue {
         if ($node -is [System.Collections.IDictionary] -and $node.Contains($part)) { $node = $node[$part] } else { return $null }
     }
     return , $node
+}
+
+function Get-AzlManagementIpAssignment {
+    <#
+    .SYNOPSIS
+        How each machine's management address is set before deployment: static (the default), dhcp or preconfigured.
+    .DESCRIPTION
+        Reads networking.management.ip_assignment. static: the address is set on the port with management.mac_address
+        (by simplified provisioning, or for an ISO install by the operator or the toolkit). dhcp: the port stays on DHCP,
+        with a reservation for the MAC. preconfigured: the port is already configured and the tools leave it alone.
+        Not networking.management.use_dhcp, which is the deployment's ARM useDhcp.
+    .EXAMPLE
+        Get-AzlManagementIpAssignment -Infrastructure $infra
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure)
+    $mode = Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'networking.management.ip_assignment'
+    if ($mode -is [string] -and $mode) { return $mode.ToLowerInvariant() }
+    return 'static'
+}
+
+function Get-AzlArcMachineName {
+    <#
+    .SYNOPSIS
+        The name of a node's Arc machine: arc_machine_name, else the deprecated arc_resource_name, else the node name.
+    .EXAMPLE
+        $infra.nodes | ForEach-Object { Get-AzlArcMachineName -Node $_ }
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Node)
+    foreach ($key in 'arc_machine_name', 'arc_resource_name', 'name') {
+        if ($Node.Contains($key) -and $Node[$key] -is [string] -and $Node[$key]) { return $Node[$key] }
+    }
+    return $null
 }
 
 function ConvertTo-UInt32Address([string]$Address) {
@@ -132,21 +170,44 @@ function Get-SchemaFinding {
     $result = $schema.Evaluate([System.Text.Json.Nodes.JsonNode]::Parse($Json), $options)
     if ($result.IsValid) { return }
 
+    # A schema node is identified by its evaluation path and the instance location it was applied to: every item of an
+    # array is evaluated by the same schema path, so the path alone would let one valid node hide the errors of another.
+    $prefixes = {
+        param([string]$Pointer)
+        $parts = $Pointer.Split('/')
+        for ($i = 1; $i -le $parts.Count; $i++) { $parts[0..($i - 1)] -join '/' }
+    }
     $validity = @{}
-    foreach ($d in $result.Details) { $validity[$d.EvaluationPath.ToString()] = $d.IsValid }
+    # ToString() explicitly: a JsonPointer is enumerable, so string interpolation would join its segments.
+    foreach ($d in $result.Details) { $validity[$d.EvaluationPath.ToString() + '|' + $d.InstanceLocation.ToString()] = $d.IsValid }
+    # Every (schema node, instance) pair that has a failed node somewhere below it.
+    $invalidBelow = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($d in $result.Details) {
+        if ($d.IsValid) { continue }
+        $own = $d.EvaluationPath.ToString()
+        $instPrefixes = @(& $prefixes $d.InstanceLocation.ToString())
+        foreach ($e in @(& $prefixes $own)) {
+            if ($e -eq $own) { continue }
+            foreach ($p in $instPrefixes) { [void]$invalidBelow.Add("$e|$p") }
+        }
+    }
     $seen = [System.Collections.Generic.HashSet[string]]::new()
-    $invalidPaths = @($validity.Keys | Where-Object { -not $validity[$_] })
     foreach ($d in $result.Details) {
         $evalPath = $d.EvaluationPath.ToString()
+        $instance = $d.InstanceLocation.ToString()
         # A failed node with no message of its own (for example a failing not) counts when no node below it failed.
-        $silentFailure = (-not $d.IsValid) -and (-not $d.HasErrors) -and
-            -not ($invalidPaths | Where-Object { $_.StartsWith("$evalPath/") } | Select-Object -First 1)
+        $silentFailure = (-not $d.IsValid) -and (-not $d.HasErrors) -and -not $invalidBelow.Contains("$evalPath|$instance")
         if (-not $d.HasErrors -and -not $silentFailure) { continue }
-        $parts = $evalPath.Split('/')
+        # Masked when a schema node above it, applied to this value or one that contains it, passed.
         $masked = $false
-        for ($i = 1; $i -lt $parts.Count; $i++) {
-            $prefix = ($parts[0..($i - 1)] -join '/')
-            if ($validity.ContainsKey($prefix) -and $validity[$prefix]) { $masked = $true; break }
+        $instPrefixes = @(& $prefixes $instance)
+        foreach ($e in @(& $prefixes $evalPath)) {
+            if ($e -eq $evalPath) { break }
+            foreach ($p in $instPrefixes) {
+                $key = "$e|$p"
+                if ($validity.ContainsKey($key) -and $validity[$key]) { $masked = $true; break }
+            }
+            if ($masked) { break }
         }
         if ($masked) { continue }
         $at = ($d.InstanceLocation.ToString().TrimStart('/') -replace '/(\d+)(?=/|$)', '[$1]' -replace '/', '.')
@@ -386,6 +447,47 @@ function Get-SemanticFinding {
     if ($scenario['os_install'] -eq 'simplified' -and (Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'azure.location') -ne 'eastus') {
         New-Finding 'AZL-013' warning 'azure.location' 'Simplified machine provisioning works only in eastus in the preview.' $script:Learn.Simplified
     }
+
+    # The management port: each MAC names one machine's port, and with DHCP each address needs a reservation.
+    # (With simplified provisioning the schema already requires management.mac_address on every node, in every mode.)
+    $macs = @(for ($i = 0; $i -lt $nodeCount; $i++) {
+            $m = $nodes[$i]['management']
+            if ($m -is [System.Collections.IDictionary] -and $m['mac_address'] -is [string]) { $m['mac_address'].ToUpperInvariant().Replace('-', ':') }
+        })
+    foreach ($group in ($macs | Group-Object | Where-Object Count -gt 1)) {
+        New-Finding 'AZL-017' error 'nodes' "Management MAC $($group.Name) is used by $($group.Count) nodes. Each node's management.mac_address names its own management port."
+    }
+    if ((Get-AzlManagementIpAssignment -Infrastructure $Infra) -eq 'dhcp') {
+        for ($i = 0; $i -lt $nodeCount; $i++) {
+            $m = $nodes[$i]['management']
+            if ($m -isnot [System.Collections.IDictionary]) { continue }
+            $for = if ($m['mac_address']) { "MAC $($m['mac_address'])" } else { 'its management MAC (set management.mac_address)' }
+            New-Finding 'AZL-017' warning "nodes[$i].management" "Node '$($nodes[$i]['name'])': ip_assignment is dhcp, so the port keeps DHCP. Reserve $($m['ip_address']) in DHCP for $for, or the machine gets another address." $script:Learn.Decision8
+        }
+    }
+
+    # Arc machine names: unique, and arc_machine_name rather than the deprecated arc_resource_name.
+    for ($i = 0; $i -lt $nodeCount; $i++) {
+        $n = $nodes[$i]
+        if (-not $n.Contains('arc_resource_name')) { continue }
+        if ($n.Contains('arc_machine_name') -and [string]$n['arc_machine_name'] -ne [string]$n['arc_resource_name']) {
+            New-Finding 'AZL-018' error "nodes[$i].arc_resource_name" "Node '$($n['name'])' sets arc_machine_name '$($n['arc_machine_name'])' and arc_resource_name '$($n['arc_resource_name'])'. Keep arc_machine_name only."
+        } else {
+            New-Finding 'AZL-018' warning "nodes[$i].arc_resource_name" "arc_resource_name is deprecated: rename it to arc_machine_name."
+        }
+    }
+    $arcNames = @($nodes | ForEach-Object { Get-AzlArcMachineName -Node $_ } | Where-Object { $_ } | ForEach-Object { $_.ToLowerInvariant() })
+    foreach ($group in ($arcNames | Group-Object | Where-Object Count -gt 1)) {
+        New-Finding 'AZL-018' error 'nodes' "Arc machine name '$($group.Name)' is used by $($group.Count) nodes. Arc machine names are unique in the resource group."
+    }
+    if ($scenario['os_install'] -eq 'iso') {
+        for ($i = 0; $i -lt $nodeCount; $i++) {
+            $n = $nodes[$i]
+            if ($n['arc_machine_name'] -and [string]$n['arc_machine_name'] -ne [string]$n['name']) {
+                New-Finding 'AZL-018' warning "nodes[$i].arc_machine_name" "An ISO install registers the Arc machine under its host name '$($n['name'])'. arc_machine_name '$($n['arc_machine_name'])' applies to simplified provisioning only."
+            }
+        }
+    }
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -462,4 +564,4 @@ function Import-AzlInfrastructure {
     return Read-InfrastructureFile $Path
 }
 
-Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue
+Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlArcMachineName

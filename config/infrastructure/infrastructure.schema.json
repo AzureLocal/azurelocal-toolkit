@@ -621,7 +621,7 @@
               "$ref": "#/$defs/ipv4"
             },
             "vlan_id": {
-              "description": "0 means untagged. Can't be changed after deployment.",
+              "description": "0 means untagged. Can't be changed after deployment. With ip_assignment static, simplified provisioning also sets it on the management port (edge machine networkAdapters[].vlanId).",
               "type": "integer",
               "minimum": 0,
               "maximum": 4094
@@ -634,8 +634,18 @@
                 "$ref": "#/$defs/ipv4"
               }
             },
+            "ip_assignment": {
+              "description": "How each machine's management address (nodes[].management.ip_address) is set before deployment, on the management port (nodes[].management.mac_address). static (default): the address, the subnet mask, the gateway, the DNS servers and vlan_id are set on that port. Simplified provisioning sets them at the OS install (edge machine siteDetails.deviceConfiguration.network.networkAdapters[], ipAssignmentType Manual, keyed by the MAC); for an ISO install the operator or the toolkit sets them. dhcp: the port stays on DHCP, so reserve each ip_address in DHCP for its MAC. preconfigured: the port is already configured, and the tools don't change it. Not the same as use_dhcp, which is the deployment's ARM useDhcp.",
+              "type": "string",
+              "enum": [
+                "static",
+                "dhcp",
+                "preconfigured"
+              ],
+              "default": "static"
+            },
             "use_dhcp": {
-              "description": "ARM useDhcp. Default false.",
+              "description": "ARM useDhcp: the deployment takes the host and cluster addresses from DHCP instead of static addresses and the infrastructure_pool. Default false. A deployment setting, not how each machine's management port gets its address before deployment: that is ip_assignment.",
               "type": "boolean"
             },
             "infrastructure_pool": {
@@ -2662,10 +2672,11 @@
       ],
       "properties": {
         "name": {
-          "description": "Host name: up to 15 characters. Also the edge machine name and, for an ISO install, the Arc machine name.",
+          "description": "Host name: up to 15 characters. Also the edge machine name and, for an ISO install, the Arc machine name. With simplified provisioning the Arc machine name is arc_machine_name, which defaults to this.",
           "$ref": "#/$defs/netbios_name"
         },
         "management": {
+          "description": "The machine's management port and address.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -2673,14 +2684,15 @@
           ],
           "properties": {
             "ip_address": {
-              "description": "Static management address. ARM physicalNodesSettings[].ipv4Address. Simplified provisioning connects to it before it is set static, so reserve it in DHCP for the management MAC.",
+              "description": "Management address. ARM physicalNodesSettings[].ipv4Address. How it gets onto the management port before deployment is networking.management.ip_assignment: set on the port (static), reserved in DHCP for mac_address (dhcp), or already there (preconfigured).",
               "$ref": "#/$defs/ipv4"
             },
             "mac_address": {
-              "description": "MAC of the management adapter: picks the adapter on the machine.",
+              "description": "MAC of the management port. Provisioning finds and targets the port by it: simplified provisioning names the port by this MAC when it sets the static address (edge machine networkAdapters[].macAddress), and node preparation finds the adapter by it. With ip_assignment dhcp, reserve ip_address for this MAC. Required with simplified provisioning.",
               "$ref": "#/$defs/mac"
             },
             "adapter_name": {
+              "description": "Name of the management port in the installed OS, for example 'SLOT 3 Port 1'. Optional: mac_address identifies the port. Simplified provisioning also sends it with the port's settings; leave it out unless you know the name the OS gives the port.",
               "type": "string"
             }
           }
@@ -2739,9 +2751,15 @@
             "$ref": "#/$defs/ipv4"
           }
         },
+        "arc_machine_name": {
+          "description": "Name of the machine's Arc resource (Microsoft.HybridCompute/machines). Default: name. Simplified provisioning sets it when it claims the machine (edge machine arcMachineResourceId); without it the service names the Arc machine ROE1-<id>, and an Arc machine can't be renamed. The deployment uses it in ARM arcNodeResourceIds. An ISO install registers the Arc machine under the host name, so leave it out there. 1-54 letters, digits, '-', '_' and '.', not ending in '.'.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{0,53}[A-Za-z0-9_-]$"
+        },
         "arc_resource_name": {
-          "description": "The machine's Arc resource name when it isn't the host name, as after simplified provisioning. ARM arcNodeResourceIds.",
-          "type": "string"
+          "description": "Deprecated: use arc_machine_name. Read as arc_machine_name when that isn't set.",
+          "type": "string",
+          "deprecated": true
         }
       }
     },

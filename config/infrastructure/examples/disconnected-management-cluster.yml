@@ -2,7 +2,7 @@
 # Storage Spaces Direct on switched storage, three machines, file share witness, OS from an ISO, ARM template.
 # Placeholder values only.
 _metadata:
-  schema_version: "5.0.0"
+  schema_version: "5.1.0"
 
 scenario:
   identity: active_directory
