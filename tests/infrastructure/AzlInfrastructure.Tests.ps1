@@ -827,9 +827,9 @@ Describe 'Schema 5.4: ZTP settings and the BIOS actions derived from the invento
     }
 
     Context 'the templates' {
-        It 'are schema 5.4.0 and clean' {
+        It 'are schema 5.4.0 (ZTP) and 5.4.3 (full) and clean' {
             foreach ($f in $script:Ztp54, $script:Full54) {
-                (Import-AzlInfrastructure -Path $f)._metadata.schema_version | Should -Be '5.4.0'
+                (Import-AzlInfrastructure -Path $f)._metadata.schema_version | Should -Be $(if ($f -eq $script:Full54) { '5.4.3' } else { '5.4.0' })
                 @(Test-AzlInfrastructure -Path $f) | Should -BeNullOrEmpty
             }
         }
@@ -960,5 +960,31 @@ Describe 'Schema 5.4: an adapter that names its own BIOS attribute, and port lab
             $script:portLabel = $label
             @(Get-Ztp55Finding { param($d) $d.nodes[0].network_adapters.Add([ordered]@{ name = 'Extra Port'; slot = $script:portLabel; roles = @('compute'); ip_assignment = 'none' }) } | Where-Object Id -eq 'AZL-029') | Should -BeNullOrEmpty
         }
+    }
+}
+
+Describe 'Schema 5.4.3: os_configuration.clear_storage' {
+    BeforeAll { $script:Full543 = Join-Path $repo 'config\infrastructure\infrastructure.example.yml' }
+
+    It 'is in the example, false, and the schema defaults it to false' {
+        (Import-AzlInfrastructure -Path $script:Full543).os_configuration.clear_storage | Should -BeFalse
+        $schema = Get-Content -LiteralPath (Join-Path $repo 'config\infrastructure\infrastructure.schema.json') -Raw | ConvertFrom-Json -AsHashtable
+        $schema.properties.os_configuration.properties.clear_storage.default | Should -BeFalse
+        $schema.properties.os_configuration.properties.clear_storage.type | Should -Be 'boolean'
+    }
+    It 'accepts true on a storage-spaces-direct design without a finding' {
+        @(Get-FindingFor -From $script:Full543 { param($d) $d.os_configuration.clear_storage = $true }) | Should -BeNullOrEmpty
+    }
+    It 'rejects a value that is not a boolean' -ForEach @('yes', 'wipe', 1) {
+        $v = $_
+        @(Get-FindingFor -From $script:Full543 { param($d) $d.os_configuration.clear_storage = $v } | Where-Object Severity -eq 'error').Count | Should -BeGreaterThan 0
+    }
+    It 'rejects an unknown key in the section' {
+        @(Get-FindingFor -From $script:Full543 { param($d) $d.os_configuration.wipe_everything = $true } | Where-Object Severity -eq 'error').Count | Should -BeGreaterThan 0
+    }
+    It 'warns (AZL-031) when it is true on a SAN design' {
+        $f = @(Get-FindingFor -From $script:Full543 { param($d) $d.os_configuration.clear_storage = $true; $d.scenario.storage_architecture = 'hybrid' } | Where-Object Id -eq 'AZL-031')
+        $f.Count | Should -Be 1
+        $f[0].Severity | Should -Be 'warning'
     }
 }

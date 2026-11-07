@@ -194,6 +194,15 @@ Schema 5.4 only adds optional keys; a 5.3 file is valid as it is. Nothing change
 
 **Steps for a 5.3 file:** set `_metadata.schema_version` to `5.4.0`; list each machine's SAN adapters in `nodes[].san.hbas[]` and give the network ports a `slot`; you may then delete the raw `Slot` and embedded-NIC attributes from `bios` and `bios_during_provisioning`, or keep them as explicit overrides; run `Test-InfrastructureFile.ps1`. AZL-029 checks the new keys.
 
+## To 5.4.3: the OS configuration switch
+
+Schema 5.4.3 only adds one optional section; a 5.4.0 file is valid as it is. Nothing changes for a file that does not use it: leftover local storage is reported as blocking and nothing is wiped.
+
+| New key | What it is for |
+| --- | --- |
+| `os_configuration.clear_storage` | `true`: the OS configuration run (`Invoke-AzureLocalOsConfiguration.ps1`) wipes leftover storage pools, virtual disks and the data on non-boot, non-system local disks in Apply mode. Default `false`. |
+
+**Steps for a 5.4 file:** set `_metadata.schema_version` to `5.4.3`; add `os_configuration: { clear_storage: true }` only for machines that are re-used. Plan mode prints the wipe list; Apply never wipes a SAN LUN, a USB disk, or a boot or system disk.
 ## From Trailwright's export
 
 | Before | Schema 5 |

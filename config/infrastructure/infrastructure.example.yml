@@ -27,6 +27,7 @@
 # isolate_san_adapters and enable_embedded_nics), the Azure site choices, timeouts, retries, the USB
 # image, the maintenance environment, and hardware.bmc.rfs_write_attribute and verify_certificate.
 # Every one has the default shown, which is what ZTP did before the key existed.
+# Schema 5.4.3 adds os_configuration.clear_storage: whether the OS configuration run wipes leftover local disks.
 #
 # Rules:
 #   - Keys are snake_case. Sections reject unknown keys; use extensions.
@@ -37,7 +38,7 @@
 # =============================================================================
 
 _metadata:
-  schema_version: "5.4.0"
+  schema_version: "5.4.3"
   file_version: "1.0.0"
   last_updated: "2026-11-06"
   generated_by: ""
@@ -483,4 +484,10 @@ devops:
   state: { storage_account: "stiictfstate01", container: "tfstate", resource_group: "rg-iic-mgmt-01" }
 
 # Anything this schema doesn't define, under its own key. Tools ignore keys they don't own.
+# Schema 5.4.3. The OS configuration run (Invoke-AzureLocalOsConfiguration.ps1). Optional.
+os_configuration:
+  # true: Apply mode also wipes the leftover storage pools, virtual disks and data on the machines' local non-boot,
+  # non-system disks (SAN, USB, boot and system disks are never touched). Plan mode lists the disks and wipes nothing.
+  clear_storage: false
+
 extensions: {}

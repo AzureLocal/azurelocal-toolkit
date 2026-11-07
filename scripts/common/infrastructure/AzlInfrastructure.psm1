@@ -808,6 +808,7 @@ function Get-SemanticFinding {
     Get-ProvisioningNetworkFinding -Infra $Infra -Nodes $nodes -OwnerOf $ownerOf
     Get-SanFinding -Infra $Infra -Nodes $nodes
     Get-ZtpActionFinding -Infra $Infra -Nodes $nodes
+    Get-OsConfigurationFinding -Infra $Infra
 
     # Arc machine names: unique, and arc_machine_name rather than the deprecated arc_resource_name.
     for ($i = 0; $i -lt $nodeCount; $i++) {
@@ -1204,6 +1205,17 @@ function Get-SanFinding {
     foreach ($group in ($names | Group-Object Key | Where-Object Count -gt 1)) {
         $what = if ($type -eq 'iscsi') { 'IQN' } else { 'WWPN' }
         New-Finding 'AZL-028' error $group.Group[1].Path "$what $($group.Group[0].Display) is listed $($group.Count) times ($(@($group.Group.Path) -join ', ')). Each is unique in the SAN."
+    }
+}
+
+# AZL-031: the OS configuration run (schema 5.4.3). os_configuration.clear_storage wipes local disks. The schema makes it a
+# boolean; on a SAN design it is worth saying that only the machines' local disks are touched.
+function Get-OsConfigurationFinding {
+    param([System.Collections.IDictionary]$Infra)
+    $value = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'os_configuration.clear_storage'
+    if ($value -isnot [bool] -or -not $value) { return }
+    if ((Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'scenario.storage_architecture') -in 'san', 'hybrid') {
+        New-Finding 'AZL-031' warning 'os_configuration.clear_storage' 'clear_storage is true on a SAN design. Only the machines'' local disks are wiped; Fibre Channel and iSCSI LUNs, USB, boot and system disks are never touched. Check the wipe list the Plan mode prints before you approve.'
     }
 }
 

@@ -37,6 +37,7 @@
         '^identity\.local_admin'
         '^cluster\.name$'
         '^provisioning\.os_version$'
+        '^os_configuration(\.|$)'
     )
 
     # Keys the ARM and SAN deployment reads beyond those whose schema description names an ARM parameter.
@@ -47,6 +48,7 @@
 
     # Keys Trailwright does not write: host-local paths and files only the operator sets on the management host.
     TrailwrightNot = @(
+        '^os_configuration(\.|$)'
         '^provisioning\.simplified\.(media_path|evidence_path|maintenance_password|media_share|timeouts|usb_image|maintenance_environment|deployment_name|skip_azure_check|include_preview|max_train|retry_provision_os)'
         '^hardware\.sbe\.bundle_path$'
         '^nodes\[\]\.maintenance_address$'
@@ -100,6 +102,7 @@
         @{ Pattern = '^provisioning\.simplified\.(media_path|evidence_path)$'; Text = 'A folder you create on the management host (see Folders).' }
         @{ Pattern = '^provisioning\.simplified\.media_share'; Text = 'The management host: the share and the address the BMCs reach it on.' }
         @{ Pattern = '^provisioning\.simplified\.(admin|maintenance_password)'; Text = 'A Key Vault secret you create (see Secrets).' }
+        @{ Pattern = '^os_configuration\.clear_storage$'; Text = 'You: true when the machines are re-used and must start with no leftover storage. The OS configuration run lists the disks it would wipe before it wipes them.' }
         @{ Pattern = '^provisioning\.'; Text = 'The OS release you pin, from the release notes of Azure Local.' }
         @{ Pattern = '^security\.'; Text = 'Your security baseline; Microsoft''s recommended defaults apply when omitted.' }
         @{ Pattern = '^operations\.'; Text = 'Your operations design.' }
