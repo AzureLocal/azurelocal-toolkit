@@ -827,9 +827,9 @@ Describe 'Schema 5.4: ZTP settings and the BIOS actions derived from the invento
     }
 
     Context 'the templates' {
-        It 'are schema 5.4.0 and clean' {
+        It 'are schema 5.4.2 and clean' {
             foreach ($f in $script:Ztp54, $script:Full54) {
-                (Import-AzlInfrastructure -Path $f)._metadata.schema_version | Should -Be '5.4.0'
+                (Import-AzlInfrastructure -Path $f)._metadata.schema_version | Should -Be '5.4.2'
                 @(Test-AzlInfrastructure -Path $f) | Should -BeNullOrEmpty
             }
         }
@@ -960,5 +960,50 @@ Describe 'Schema 5.4: an adapter that names its own BIOS attribute, and port lab
             $script:portLabel = $label
             @(Get-Ztp55Finding { param($d) $d.nodes[0].network_adapters.Add([ordered]@{ name = 'Extra Port'; slot = $script:portLabel; roles = @('compute'); ip_assignment = 'none' }) } | Where-Object Id -eq 'AZL-029') | Should -BeNullOrEmpty
         }
+    }
+}
+
+Describe 'Schema 5.4.2: how the SBE package reaches the nodes (AZL-030)' {
+    BeforeAll {
+        $script:Full542 = Join-Path $repo 'config\infrastructure\infrastructure.example.yml'
+        function Get-Sbe542Finding([scriptblock]$Change) { Get-FindingFor -From $script:Full542 $Change }
+    }
+
+    It 'the full template (node_pull with an address) is clean' {
+        @(Get-Sbe542Finding { } | Where-Object Id -eq 'AZL-030') | Should -BeNullOrEmpty
+    }
+    It 'skip, and no delivery key at all, are clean and need no address' {
+        @(Get-Sbe542Finding { param($d) $d.hardware.sbe.delivery = 'skip'; $d.hardware.sbe.Remove('node_pull_url') } | Where-Object Id -in 'AZL-030', 'SCHEMA') | Should -BeNullOrEmpty
+        @(Get-Sbe542Finding { param($d) $d.hardware.sbe.Remove('delivery'); $d.hardware.sbe.Remove('node_pull_url') } | Where-Object Id -in 'AZL-030', 'SCHEMA') | Should -BeNullOrEmpty
+    }
+    It 'rejects a delivery route the toolkit does not have (there is no storage account route)' {
+        (Get-Sbe542Finding { param($d) $d.hardware.sbe.delivery = 'storage_account' }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'hardware.sbe.delivery' } | Should -Not -BeNullOrEmpty
+    }
+    It 'node_pull needs an address' {
+        (Get-Sbe542Finding { param($d) $d.hardware.sbe.Remove('node_pull_url') }) | Where-Object { $_.Id -eq 'AZL-030' -and $_.Severity -eq 'error' -and $_.Path -eq 'hardware.sbe.node_pull_url' } | Should -Not -BeNullOrEmpty
+    }
+    It 'accepts an https folder and a UNC folder' {
+        foreach ($url in 'https://files.example.invalid/sbe/dell', '\\files.example.invalid\sbe\dell') {
+            $script:u = $url
+            @(Get-Sbe542Finding { param($d) $d.hardware.sbe.node_pull_url = $script:u } | Where-Object { $_.Id -eq 'AZL-030' }) | Should -BeNullOrEmpty
+        }
+    }
+    It 'refuses an address that is neither, and one that carries a credential' {
+        foreach ($url in 'ftp://files.example.invalid/sbe', 'D:\sbe\dell', 'https://user:pass@files.example.invalid/sbe', 'https://files.example.invalid/sbe?sv=2024&sig=abc') {
+            $script:u = $url
+            (Get-Sbe542Finding { param($d) $d.hardware.sbe.node_pull_url = $script:u }) | Where-Object { $_.Id -eq 'AZL-030' -and $_.Severity -eq 'error' -and $_.Path -eq 'hardware.sbe.node_pull_url' } | Should -Not -BeNullOrEmpty -Because $url
+        }
+    }
+    It 'warns about plain http' {
+        (Get-Sbe542Finding { param($d) $d.hardware.sbe.node_pull_url = 'http://files.example.invalid/sbe' }) | Where-Object { $_.Id -eq 'AZL-030' -and $_.Severity -eq 'warning' } | Should -Not -BeNullOrEmpty
+    }
+    It 'warns when an address is given but the route is not node_pull' {
+        (Get-Sbe542Finding { param($d) $d.hardware.sbe.delivery = 'skip' }) | Where-Object { $_.Id -eq 'AZL-030' -and $_.Severity -eq 'warning' -and $_.Message -match 'not used' } | Should -Not -BeNullOrEmpty
+    }
+    It 'a route that delivers needs a bundle_path' {
+        (Get-Sbe542Finding { param($d) $d.hardware.sbe.delivery = 'winrm_copy'; $d.hardware.sbe.Remove('node_pull_url'); $d.hardware.sbe.Remove('bundle_path') }) | Where-Object { $_.Id -eq 'AZL-030' -and $_.Severity -eq 'error' -and $_.Path -eq 'hardware.sbe.delivery' } | Should -Not -BeNullOrEmpty
+    }
+    It 'winrm_copy is clean when every node has a management address' {
+        @(Get-Sbe542Finding { param($d) $d.hardware.sbe.delivery = 'winrm_copy'; $d.hardware.sbe.Remove('node_pull_url') } | Where-Object Id -eq 'AZL-030') | Should -BeNullOrEmpty
     }
 }

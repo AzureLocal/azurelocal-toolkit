@@ -808,6 +808,7 @@ function Get-SemanticFinding {
     Get-ProvisioningNetworkFinding -Infra $Infra -Nodes $nodes -OwnerOf $ownerOf
     Get-SanFinding -Infra $Infra -Nodes $nodes
     Get-ZtpActionFinding -Infra $Infra -Nodes $nodes
+    Get-SbeDeliveryFinding -Infra $Infra -Nodes $nodes -OwnerOf $ownerOf
 
     # Arc machine names: unique, and arc_machine_name rather than the deprecated arc_resource_name.
     for ($i = 0; $i -lt $nodeCount; $i++) {
@@ -1260,6 +1261,46 @@ function Get-ZtpActionFinding {
     $timeouts = $simplified['timeouts']
     if ($timeouts -is [System.Collections.IDictionary] -and $timeouts['bootstrap_voucher_minutes'] -and $timeouts['bootstrap_minutes'] -and [int]$timeouts['bootstrap_voucher_minutes'] -gt [int]$timeouts['bootstrap_minutes']) {
         New-Finding 'AZL-029' warning 'provisioning.simplified.timeouts.bootstrap_voucher_minutes' "The voucher budget ($($timeouts['bootstrap_voucher_minutes']) minutes) is longer than the overall Bootstrap budget ($($timeouts['bootstrap_minutes']) minutes), so the overall one ends first."
+    }
+}
+
+# AZL-030: how the SBE package reaches the nodes during OS configuration (schema 5.4.2): hardware.sbe.delivery is winrm_copy,
+# node_pull or skip. There is no storage account route (Azure Arc Run Command can't carry a file).
+function Get-SbeDeliveryFinding {
+    param([System.Collections.IDictionary]$Infra, [object[]]$Nodes, [hashtable]$OwnerOf)
+    $sbe = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'hardware.sbe'
+    if ($sbe -isnot [System.Collections.IDictionary]) { return }
+    $delivery = [string]$sbe['delivery']
+    $url = [string]$sbe['node_pull_url']
+    if ($delivery -in 'winrm_copy', 'node_pull' -and -not $sbe['bundle_path']) {
+        New-Finding 'AZL-030' error 'hardware.sbe.delivery' "delivery is $delivery but hardware.sbe.bundle_path is empty: there is no package to deliver."
+    }
+    if ($delivery -eq 'node_pull') {
+        if (-not $url) { New-Finding 'AZL-030' error 'hardware.sbe.node_pull_url' 'delivery is node_pull: give the folder the nodes download the SBE files from (https://host/sbe/dell, or a UNC folder \\server\share\sbe).' }
+    }
+    elseif ($url) {
+        New-Finding 'AZL-030' warning 'hardware.sbe.node_pull_url' "node_pull_url is set but delivery is '$(if ($delivery) { $delivery } else { 'skip' })', so it is not used. Set delivery to node_pull, or remove the address."
+    }
+    if ($url) {
+        if ($url -notmatch '^(https?://|\\\\)\S+$') {
+            New-Finding 'AZL-030' error 'hardware.sbe.node_pull_url' "'$url' is not an https:// (or http://) address or a UNC folder (\\server\share\folder)."
+        }
+        else {
+            if ($url -match '^https?://[^/]*@' -or $url -match '[?#]' ) {
+                New-Finding 'AZL-030' error 'hardware.sbe.node_pull_url' 'The address carries a user name, password, token or query string. infrastructure.yml holds no credential: serve the folder read-only without one (the SHA-256 is checked on the node).'
+            }
+            if ($url -match '^http://') {
+                New-Finding 'AZL-030' warning 'hardware.sbe.node_pull_url' 'http:// is not encrypted. The SHA-256 is checked on the node after the download, but serve the folder over https:// where you can.'
+            }
+        }
+    }
+    if ($delivery -eq 'winrm_copy') {
+        for ($i = 0; $i -lt $Nodes.Count; $i++) {
+            $o = $OwnerOf[$i]
+            if (-not $o -or -not $o.IpAddress) {
+                New-Finding 'AZL-030' warning "nodes[$i]" "delivery is winrm_copy and node '$($Nodes[$i]['name'])' has no management ip_address in the file, so the toolkit has no address to open the WinRM session to. Give it one (a DHCP reservation address counts)."
+            }
+        }
     }
 }
 

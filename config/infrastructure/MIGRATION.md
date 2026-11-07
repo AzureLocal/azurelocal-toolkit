@@ -194,6 +194,17 @@ Schema 5.4 only adds optional keys; a 5.3 file is valid as it is. Nothing change
 
 **Steps for a 5.3 file:** set `_metadata.schema_version` to `5.4.0`; list each machine's SAN adapters in `nodes[].san.hbas[]` and give the network ports a `slot`; you may then delete the raw `Slot` and embedded-NIC attributes from `bios` and `bios_during_provisioning`, or keep them as explicit overrides; run `Test-InfrastructureFile.ps1`. AZL-029 checks the new keys.
 
+## To 5.4.2: how the SBE package reaches the nodes
+
+Schema 5.4.2 only adds two optional keys; every 5.0 to 5.4.1 file stays valid. Set `_metadata.schema_version` to `5.4.2` to use them.
+
+| New key | What it does |
+| --- | --- |
+| `hardware.sbe.delivery` | `winrm_copy`, `node_pull` or `skip` (default). How OS configuration puts the SBE package from `hardware.sbe.bundle_path` into each node's `C:\SBE`. |
+| `hardware.sbe.node_pull_url` | With `node_pull`: the read-only HTTPS (or UNC) folder the nodes download the three SBE files from. No credential in the address (rule AZL-030). |
+
+**What changes in behaviour.** The staging storage account route is gone: `Set-AzureLocalNodeConfiguration.ps1` no longer takes `-StagingStorageAccount` or `-StagingContainer`, and nothing is uploaded to Azure. Before, a WinRM run copied the package by default and an Arc run needed a storage account. Now nothing is delivered unless `delivery` says how (`skip` is the default), the Sbe step runs last, and a package that is not delivered is reported without failing the other steps. If you used the WinRM transport to copy the package, set `delivery: winrm_copy`. If you passed `-StagingStorageAccount`, serve the SBE folder read-only from a host the nodes can reach and set `delivery: node_pull` and `node_pull_url`.
+
 ## From Trailwright's export
 
 | Before | Schema 5 |

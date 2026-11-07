@@ -62,7 +62,7 @@ About this file.
 | Path | What it is | Type | Required: full / ztp | Default | Example | Where to get the value | Read by |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `_metadata` | About this file. | object | yes / yes |  |  |  | ZTP, Trailwright |
-| `_metadata.schema_version` | The schema version this file follows. | string | yes / yes |  | `5.4.0` | Set by the template (5.3.0). Change it only with a migration. | ZTP, Trailwright |
+| `_metadata.schema_version` | The schema version this file follows. | string | yes / yes |  | `5.4.2` | Set by the template (5.3.0). Change it only with a migration. | ZTP, Trailwright |
 | `_metadata.scope` | Full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the section... (since 5.3) | one of `full`, `ztp` | no / no | `full` | `ztp` | You: ztp for a file used by azurelocal-ztp alone, full for everything. | ZTP, Trailwright |
 | `_metadata.file_version` | Your own version of this file. | string | no / no |  | `1.0.0` | You: bookkeeping for the file. | Trailwright |
 | `_metadata.last_updated` | Date of the last change, YYYY-MM-DD. | date (YYYY-MM-DD) | no / no |  | `2026-11-06` | You: bookkeeping for the file. | Trailwright |
@@ -263,13 +263,15 @@ What every machine is.
 | `hardware.bios.<attribute>` |  | string | no / no |  | `EmbNic1Nic2: Enabled` | The BMC's Redfish Bios resource or the vendor's BIOS attribute registry. | ZTP, Trailwright |
 | `hardware.bios_during_provisioning` | BIOS attributes that hold for the OS install only: TEMPORARY values. (since 5.3) | map of strings | no / no |  |  | The BMC's Redfish Bios resource or the vendor's BIOS attribute registry. | ZTP, Trailwright |
 | `hardware.bios_during_provisioning.<attribute>` |  | string | no / no |  | `Slot2: Disabled` | The BMC's Redfish Bios resource or the vendor's BIOS attribute registry. | ZTP, Trailwright |
-| `hardware.sbe` | Solution Builder Extension. | object | no / no |  |  | The hardware you ordered. | ZTP, ARM deployment, Trailwright |
+| `hardware.sbe` | Solution Builder Extension. | object | no / no |  |  | The hardware you ordered. | ZTP, OS configuration, ARM deployment, Trailwright |
 | `hardware.sbe.publisher` |  | string | no / no |  | `Dell` | The OEM's Solution Builder Extension release notes. | Trailwright |
 | `hardware.sbe.family` |  | string | no / no |  |  | The OEM's Solution Builder Extension release notes. | Trailwright |
 | `hardware.sbe.version` |  | string | no / no |  |  | The OEM's Solution Builder Extension release notes. | Trailwright |
 | `hardware.sbe.manifest_source` |  | string | no / no |  |  | The OEM's Solution Builder Extension release notes. | Trailwright |
 | `hardware.sbe.manifest_creation_date` |  | string | no / no |  |  | The OEM's Solution Builder Extension release notes. | Trailwright |
-| `hardware.sbe.bundle_path` | Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml. | string | no / no |  | `D:\sbe\dell` | A folder you create on the management host (see Folders), holding the OEM's Solution Builder Extension as downloaded. | ZTP |
+| `hardware.sbe.bundle_path` | Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml. | string | no / no |  | `D:\sbe\dell` | A folder you create on the management host (see Folders), holding the OEM's Solution Builder Extension as downloaded. | ZTP, OS configuration |
+| `hardware.sbe.delivery` | How the SBE package reaches the nodes. (since 5.4.2) | one of `winrm_copy`, `node_pull`, `skip` | no / no | `skip` | `node_pull` | Your decision, with the network: winrm_copy needs the host that runs the toolkit to reach the nodes' management subnet on TCP 5985; node_pull needs a read-only location the nodes can reach; skip (default) delivers nothing. | OS configuration |
+| `hardware.sbe.node_pull_url` | The folder the nodes pull the SBE files from (delivery node_pull). (since 5.4.2) | string | no / no |  | `https://sbe.iic.example/sbe/dell` | The read-only web or file server you put the SBE files on, at an address the nodes (not necessarily the operator host) can reach. | OS configuration |
 | `hardware.sbe.allow_unvalidated` | Test only. | boolean | no / no |  | `false` | The OEM's Solution Builder Extension release notes. | ZTP, Trailwright |
 | `hardware.network_cards` | The physical network cards in every machine, and what each port is for. | list of objects | no / no |  |  | The hardware you ordered. | OS configuration, Trailwright |
 | `hardware.network_cards[].label` |  | string | no / no |  | `Onboard` | The hardware you ordered. | OS configuration, Trailwright |
