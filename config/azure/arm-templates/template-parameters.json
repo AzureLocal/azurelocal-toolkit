@@ -1,0 +1,2107 @@
+{
+  "source": "https://github.com/Azure/azure-quickstart-templates/tree/master/quickstarts/microsoft.azurestackhci",
+  "retrieved": "2026-11-07",
+  "note": "Parameter names, types, defaults and allowed values of Microsoft's Azure Local quickstart templates. The ARM parameter generator checks what it writes against this table, and against the live template when it deploys. Regenerate when Microsoft changes a template.",
+  "templates": {
+    "create-cluster": {
+      "uri": "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-cluster/azuredeploy.json",
+      "deploymentSettingsApiVersion": "2025-09-15-preview",
+      "parameters": {
+        "adouPath": {
+          "type": "string",
+          "required": false
+        },
+        "arcNodeResourceIds": {
+          "type": "array",
+          "required": false
+        },
+        "AzureStackLCMAdminPassword": {
+          "type": "securestring",
+          "required": true
+        },
+        "AzureStackLCMAdminUsername": {
+          "type": "string",
+          "required": true
+        },
+        "bitlockerBootVolume": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "bitlockerDataVolumes": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "clusterName": {
+          "type": "string",
+          "required": true
+        },
+        "clusterWitnessStorageAccountName": {
+          "type": "string",
+          "required": false
+        },
+        "configurationMode": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Express",
+            "InfraOnly",
+            "KeepStorage"
+          ]
+        },
+        "createNewKeyVault": {
+          "type": "bool",
+          "required": false
+        },
+        "credentialGuardEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "customLocation": {
+          "type": "string",
+          "required": false
+        },
+        "defaultGateway": {
+          "type": "string",
+          "required": false
+        },
+        "deploymentMode": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Validate",
+            "Deploy"
+          ]
+        },
+        "diagnosticStorageAccountName": {
+          "type": "string",
+          "required": true
+        },
+        "dnsServers": {
+          "type": "array",
+          "required": false
+        },
+        "domainFqdn": {
+          "type": "string",
+          "required": false
+        },
+        "driftControlEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "enableStorageAutoIp": {
+          "type": "bool",
+          "required": true
+        },
+        "endingIPAddress": {
+          "type": "string",
+          "required": false
+        },
+        "episodicDataUpload": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "euLocation": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "hciResourceProviderObjectID": {
+          "type": "string",
+          "required": true
+        },
+        "intentList": {
+          "type": "array",
+          "required": false
+        },
+        "keyVaultName": {
+          "type": "string",
+          "required": true
+        },
+        "localAdminPassword": {
+          "type": "securestring",
+          "required": true
+        },
+        "localAdminUserName": {
+          "type": "string",
+          "required": true
+        },
+        "location": {
+          "type": "string",
+          "required": false
+        },
+        "logsRetentionInDays": {
+          "type": "int",
+          "required": false
+        },
+        "namingPrefix": {
+          "type": "string",
+          "required": false
+        },
+        "networkingPattern": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "hyperConverged",
+            "convergedManagementCompute",
+            "convergedComputeStorage",
+            "custom"
+          ]
+        },
+        "networkingType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "switchedMultiServerDeployment",
+            "switchlessMultiServerDeployment",
+            "singleServerDeployment"
+          ]
+        },
+        "partnerCredentiallist": {
+          "type": "array",
+          "required": false
+        },
+        "partnerProperties": {
+          "type": "array",
+          "required": false
+        },
+        "physicalNodesSettings": {
+          "type": "array",
+          "required": false
+        },
+        "sbeFamily": {
+          "type": "string",
+          "required": false
+        },
+        "sbeManifestCreationDate": {
+          "type": "string",
+          "required": false
+        },
+        "sbeManifestSource": {
+          "type": "string",
+          "required": false
+        },
+        "sbePublisher": {
+          "type": "string",
+          "required": false
+        },
+        "sbeVersion": {
+          "type": "string",
+          "required": false
+        },
+        "securityLevel": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Recommended",
+            "Customized"
+          ]
+        },
+        "smbClusterEncryption": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "smbSigningEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "softDeleteRetentionDays": {
+          "type": "int",
+          "required": false
+        },
+        "startingIPAddress": {
+          "type": "string",
+          "required": false
+        },
+        "storageAccountType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Standard_LRS"
+          ]
+        },
+        "storageConnectivitySwitchless": {
+          "type": "bool",
+          "required": false
+        },
+        "storageNetworkList": {
+          "type": "array",
+          "required": false
+        },
+        "streamingDataClient": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "subnetMask": {
+          "type": "string",
+          "required": false
+        },
+        "tenantId": {
+          "type": "string",
+          "required": false
+        },
+        "useDhcp": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "wdacEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "witnessType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Cloud",
+            "No Witness"
+          ]
+        }
+      }
+    },
+    "create-cluster-rac-enabled": {
+      "uri": "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-cluster-rac-enabled/azuredeploy.json",
+      "deploymentSettingsApiVersion": "2025-02-01-preview",
+      "parameters": {
+        "adouPath": {
+          "type": "string",
+          "required": false
+        },
+        "arcNodeResourceIds": {
+          "type": "array",
+          "required": false
+        },
+        "AzureStackLCMAdminPassword": {
+          "type": "securestring",
+          "required": true
+        },
+        "AzureStackLCMAdminUsername": {
+          "type": "string",
+          "required": true
+        },
+        "bitlockerBootVolume": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "bitlockerDataVolumes": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "clusterName": {
+          "type": "string",
+          "required": true
+        },
+        "clusterPattern": {
+          "type": "string",
+          "required": false
+        },
+        "clusterWitnessStorageAccountName": {
+          "type": "string",
+          "required": false
+        },
+        "configurationMode": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Express",
+            "InfraOnly",
+            "KeepStorage"
+          ]
+        },
+        "createNewKeyVault": {
+          "type": "bool",
+          "required": false
+        },
+        "credentialGuardEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "customLocation": {
+          "type": "string",
+          "required": false
+        },
+        "defaultGateway": {
+          "type": "string",
+          "required": false
+        },
+        "deploymentMode": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Validate",
+            "Deploy"
+          ]
+        },
+        "diagnosticStorageAccountName": {
+          "type": "string",
+          "required": true
+        },
+        "dnsServers": {
+          "type": "array",
+          "required": false
+        },
+        "domainFqdn": {
+          "type": "string",
+          "required": false
+        },
+        "driftControlEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "enableStorageAutoIp": {
+          "type": "bool",
+          "required": true
+        },
+        "endingIPAddress": {
+          "type": "string",
+          "required": false
+        },
+        "episodicDataUpload": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "euLocation": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "hciResourceProviderObjectID": {
+          "type": "string",
+          "required": true
+        },
+        "intentList": {
+          "type": "array",
+          "required": false
+        },
+        "keyVaultName": {
+          "type": "string",
+          "required": true
+        },
+        "localAdminPassword": {
+          "type": "securestring",
+          "required": true
+        },
+        "localAdminUserName": {
+          "type": "string",
+          "required": true
+        },
+        "localAvailabilityZones": {
+          "type": "array",
+          "required": true
+        },
+        "location": {
+          "type": "string",
+          "required": false
+        },
+        "logsRetentionInDays": {
+          "type": "int",
+          "required": false
+        },
+        "namingPrefix": {
+          "type": "string",
+          "required": false
+        },
+        "networkingPattern": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "hyperConverged",
+            "convergedManagementCompute",
+            "convergedComputeStorage",
+            "custom"
+          ]
+        },
+        "networkingType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "switchedMultiServerDeployment",
+            "switchlessMultiServerDeployment",
+            "singleServerDeployment"
+          ]
+        },
+        "partnerCredentiallist": {
+          "type": "array",
+          "required": false
+        },
+        "partnerProperties": {
+          "type": "array",
+          "required": false
+        },
+        "physicalNodesSettings": {
+          "type": "array",
+          "required": false
+        },
+        "sbeFamily": {
+          "type": "string",
+          "required": false
+        },
+        "sbeManifestCreationDate": {
+          "type": "string",
+          "required": false
+        },
+        "sbeManifestSource": {
+          "type": "string",
+          "required": false
+        },
+        "sbePublisher": {
+          "type": "string",
+          "required": false
+        },
+        "sbeVersion": {
+          "type": "string",
+          "required": false
+        },
+        "securityLevel": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Recommended",
+            "Customized"
+          ]
+        },
+        "smbClusterEncryption": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "smbSigningEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "softDeleteRetentionDays": {
+          "type": "int",
+          "required": false
+        },
+        "startingIPAddress": {
+          "type": "string",
+          "required": false
+        },
+        "storageAccountType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Standard_LRS"
+          ]
+        },
+        "storageConnectivitySwitchless": {
+          "type": "bool",
+          "required": false
+        },
+        "storageNetworkList": {
+          "type": "array",
+          "required": false
+        },
+        "streamingDataClient": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "subnetMask": {
+          "type": "string",
+          "required": false
+        },
+        "tenantId": {
+          "type": "string",
+          "required": false
+        },
+        "useDhcp": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "wdacEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "witnessType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Cloud",
+            "No Witness"
+          ]
+        }
+      }
+    },
+    "create-adless-cluster-external-dns-public-preview": {
+      "uri": "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-adless-cluster-external-dns-public-preview/azuredeploy.json",
+      "deploymentSettingsApiVersion": "2025-09-15-preview",
+      "parameters": {
+        "arcNodeResourceIds": {
+          "type": "array",
+          "required": false
+        },
+        "bitlockerBootVolume": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "bitlockerDataVolumes": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "clusterName": {
+          "type": "string",
+          "required": true
+        },
+        "clusterWitnessStorageAccountName": {
+          "type": "string",
+          "required": false
+        },
+        "configurationMode": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Express",
+            "InfraOnly",
+            "KeepStorage"
+          ]
+        },
+        "createNewKeyVault": {
+          "type": "bool",
+          "required": false
+        },
+        "credentialGuardEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "customLocation": {
+          "type": "string",
+          "required": false
+        },
+        "defaultGateway": {
+          "type": "string",
+          "required": false
+        },
+        "deploymentMode": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Validate",
+            "Deploy"
+          ]
+        },
+        "diagnosticStorageAccountName": {
+          "type": "string",
+          "required": true
+        },
+        "dnsServerConfig": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "UseForwarder",
+            "UseDnsServer"
+          ]
+        },
+        "dnsServers": {
+          "type": "array",
+          "required": false
+        },
+        "dnsZones": {
+          "type": "array",
+          "required": false
+        },
+        "driftControlEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "enableStorageAutoIp": {
+          "type": "bool",
+          "required": true
+        },
+        "endingIPAddress": {
+          "type": "string",
+          "required": false
+        },
+        "episodicDataUpload": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "euLocation": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "hciResourceProviderObjectID": {
+          "type": "string",
+          "required": true
+        },
+        "identityProvider": {
+          "type": "string",
+          "required": false
+        },
+        "intentList": {
+          "type": "array",
+          "required": false
+        },
+        "keyVaultName": {
+          "type": "string",
+          "required": true
+        },
+        "localAdminPassword": {
+          "type": "securestring",
+          "required": true
+        },
+        "localAdminUserName": {
+          "type": "string",
+          "required": true
+        },
+        "location": {
+          "type": "string",
+          "required": false
+        },
+        "logsRetentionInDays": {
+          "type": "int",
+          "required": false
+        },
+        "namingPrefix": {
+          "type": "string",
+          "required": false
+        },
+        "networkingPattern": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "hyperConverged",
+            "convergedManagementCompute",
+            "convergedComputeStorage",
+            "custom"
+          ]
+        },
+        "networkingType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "switchedMultiServerDeployment",
+            "switchlessMultiServerDeployment",
+            "singleServerDeployment"
+          ]
+        },
+        "partnerCredentiallist": {
+          "type": "array",
+          "required": false
+        },
+        "partnerProperties": {
+          "type": "array",
+          "required": false
+        },
+        "physicalNodesSettings": {
+          "type": "array",
+          "required": false
+        },
+        "sbeFamily": {
+          "type": "string",
+          "required": false
+        },
+        "sbeManifestCreationDate": {
+          "type": "string",
+          "required": false
+        },
+        "sbeManifestSource": {
+          "type": "string",
+          "required": false
+        },
+        "sbePublisher": {
+          "type": "string",
+          "required": false
+        },
+        "sbeVersion": {
+          "type": "string",
+          "required": false
+        },
+        "securityLevel": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Recommended",
+            "Customized"
+          ]
+        },
+        "smbClusterEncryption": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "smbSigningEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "softDeleteRetentionDays": {
+          "type": "int",
+          "required": false
+        },
+        "startingIPAddress": {
+          "type": "string",
+          "required": false
+        },
+        "storageAccountType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Standard_LRS"
+          ]
+        },
+        "storageConnectivitySwitchless": {
+          "type": "bool",
+          "required": false
+        },
+        "storageNetworkList": {
+          "type": "array",
+          "required": false
+        },
+        "streamingDataClient": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "subnetMask": {
+          "type": "string",
+          "required": false
+        },
+        "tenantId": {
+          "type": "string",
+          "required": false
+        },
+        "useDhcp": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "wdacEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "witnessType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Cloud",
+            "No Witness"
+          ]
+        }
+      }
+    },
+    "create-cluster-san": {
+      "uri": "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-cluster-san/azuredeploy.json",
+      "deploymentSettingsApiVersion": "2026-04-01-preview",
+      "parameters": {
+        "adouPath": {
+          "type": "string",
+          "required": false
+        },
+        "arcNodeResourceIds": {
+          "type": "array",
+          "required": false
+        },
+        "AzureStackLCMAdminPassword": {
+          "type": "securestring",
+          "required": true
+        },
+        "AzureStackLCMAdminUsername": {
+          "type": "string",
+          "required": true
+        },
+        "bitlockerBootVolume": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "bitlockerDataVolumes": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "clusterName": {
+          "type": "string",
+          "required": true
+        },
+        "clusterWitnessStorageAccountName": {
+          "type": "string",
+          "required": false
+        },
+        "configurationMode": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "InfraOnly"
+          ]
+        },
+        "createNewKeyVault": {
+          "type": "bool",
+          "required": false
+        },
+        "credentialGuardEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "customLocation": {
+          "type": "string",
+          "required": false
+        },
+        "defaultGateway": {
+          "type": "string",
+          "required": false
+        },
+        "deploymentMode": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Validate",
+            "Deploy"
+          ]
+        },
+        "diagnosticStorageAccountName": {
+          "type": "string",
+          "required": true
+        },
+        "dnsServers": {
+          "type": "array",
+          "required": false
+        },
+        "domainFqdn": {
+          "type": "string",
+          "required": false
+        },
+        "driftControlEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "endingIPAddress": {
+          "type": "string",
+          "required": false
+        },
+        "episodicDataUpload": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "euLocation": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "hciResourceProviderObjectID": {
+          "type": "string",
+          "required": true
+        },
+        "infraPerfLunId": {
+          "type": "string",
+          "required": false
+        },
+        "infraVolLunId": {
+          "type": "string",
+          "required": false
+        },
+        "intentList": {
+          "type": "array",
+          "required": false
+        },
+        "keyVaultName": {
+          "type": "string",
+          "required": true
+        },
+        "localAdminPassword": {
+          "type": "securestring",
+          "required": true
+        },
+        "localAdminUserName": {
+          "type": "string",
+          "required": true
+        },
+        "location": {
+          "type": "string",
+          "required": false
+        },
+        "logsRetentionInDays": {
+          "type": "int",
+          "required": false
+        },
+        "namingPrefix": {
+          "type": "string",
+          "required": false
+        },
+        "networkingPattern": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "hyperConverged",
+            "convergedManagementCompute",
+            "convergedComputeStorage",
+            "custom"
+          ]
+        },
+        "networkingType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "switchedMultiServerDeployment",
+            "switchlessMultiServerDeployment",
+            "singleServerDeployment"
+          ]
+        },
+        "partnerCredentiallist": {
+          "type": "array",
+          "required": false
+        },
+        "partnerProperties": {
+          "type": "array",
+          "required": false
+        },
+        "physicalNodesSettings": {
+          "type": "array",
+          "required": false
+        },
+        "sanNetworkList": {
+          "type": "object",
+          "required": false
+        },
+        "sbeFamily": {
+          "type": "string",
+          "required": false
+        },
+        "sbeManifestCreationDate": {
+          "type": "string",
+          "required": false
+        },
+        "sbeManifestSource": {
+          "type": "string",
+          "required": false
+        },
+        "sbePublisher": {
+          "type": "string",
+          "required": false
+        },
+        "sbeVersion": {
+          "type": "string",
+          "required": false
+        },
+        "securityLevel": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Recommended",
+            "Customized"
+          ]
+        },
+        "smbClusterEncryption": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "smbSigningEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "softDeleteRetentionDays": {
+          "type": "int",
+          "required": false
+        },
+        "startingIPAddress": {
+          "type": "string",
+          "required": false
+        },
+        "storageAccountType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Standard_LRS"
+          ]
+        },
+        "storageConnectivitySwitchless": {
+          "type": "bool",
+          "required": false
+        },
+        "streamingDataClient": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "subnetMask": {
+          "type": "string",
+          "required": false
+        },
+        "tenantId": {
+          "type": "string",
+          "required": false
+        },
+        "useDhcp": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "wdacEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "witnessType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Cloud",
+            "No Witness"
+          ]
+        }
+      }
+    },
+    "create-cluster-adless-san": {
+      "uri": "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-cluster-adless-san/azuredeploy.json",
+      "deploymentSettingsApiVersion": "2026-04-01-preview",
+      "parameters": {
+        "arcNodeResourceIds": {
+          "type": "array",
+          "required": false
+        },
+        "bitlockerBootVolume": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "bitlockerDataVolumes": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "clusterName": {
+          "type": "string",
+          "required": true
+        },
+        "clusterWitnessStorageAccountName": {
+          "type": "string",
+          "required": false
+        },
+        "configurationMode": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "InfraOnly"
+          ]
+        },
+        "createNewKeyVault": {
+          "type": "bool",
+          "required": false
+        },
+        "credentialGuardEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "customLocation": {
+          "type": "string",
+          "required": false
+        },
+        "defaultGateway": {
+          "type": "string",
+          "required": false
+        },
+        "deploymentMode": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Validate",
+            "Deploy"
+          ]
+        },
+        "diagnosticStorageAccountName": {
+          "type": "string",
+          "required": true
+        },
+        "dnsServerConfig": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "UseForwarder",
+            "UseDnsServer"
+          ]
+        },
+        "dnsServers": {
+          "type": "array",
+          "required": false
+        },
+        "dnsZones": {
+          "type": "array",
+          "required": false
+        },
+        "driftControlEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "endingIPAddress": {
+          "type": "string",
+          "required": false
+        },
+        "episodicDataUpload": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "euLocation": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "hciResourceProviderObjectID": {
+          "type": "string",
+          "required": true
+        },
+        "identityProvider": {
+          "type": "string",
+          "required": false
+        },
+        "infraPerfLunId": {
+          "type": "string",
+          "required": false
+        },
+        "infraVolLunId": {
+          "type": "string",
+          "required": false
+        },
+        "intentList": {
+          "type": "array",
+          "required": false
+        },
+        "keyVaultName": {
+          "type": "string",
+          "required": true
+        },
+        "localAdminPassword": {
+          "type": "securestring",
+          "required": true
+        },
+        "localAdminUserName": {
+          "type": "string",
+          "required": true
+        },
+        "location": {
+          "type": "string",
+          "required": false
+        },
+        "logsRetentionInDays": {
+          "type": "int",
+          "required": false
+        },
+        "namingPrefix": {
+          "type": "string",
+          "required": false
+        },
+        "networkingPattern": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "hyperConverged",
+            "convergedManagementCompute",
+            "convergedComputeStorage",
+            "custom"
+          ]
+        },
+        "networkingType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "switchedMultiServerDeployment",
+            "switchlessMultiServerDeployment",
+            "singleServerDeployment"
+          ]
+        },
+        "partnerCredentiallist": {
+          "type": "array",
+          "required": false
+        },
+        "partnerProperties": {
+          "type": "array",
+          "required": false
+        },
+        "physicalNodesSettings": {
+          "type": "array",
+          "required": false
+        },
+        "sanNetworkList": {
+          "type": "object",
+          "required": false
+        },
+        "sbeFamily": {
+          "type": "string",
+          "required": false
+        },
+        "sbeManifestCreationDate": {
+          "type": "string",
+          "required": false
+        },
+        "sbeManifestSource": {
+          "type": "string",
+          "required": false
+        },
+        "sbePublisher": {
+          "type": "string",
+          "required": false
+        },
+        "sbeVersion": {
+          "type": "string",
+          "required": false
+        },
+        "securityLevel": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Recommended",
+            "Customized"
+          ]
+        },
+        "smbClusterEncryption": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "smbSigningEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "softDeleteRetentionDays": {
+          "type": "int",
+          "required": false
+        },
+        "startingIPAddress": {
+          "type": "string",
+          "required": false
+        },
+        "storageAccountType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Premium_LRS",
+            "Premium_ZRS",
+            "Standard_GRS",
+            "Standard_GZRS",
+            "Standard_LRS",
+            "Standard_RAGRS",
+            "Standard_RAGZRS",
+            "Standard_ZRS"
+          ]
+        },
+        "storageConnectivitySwitchless": {
+          "type": "bool",
+          "required": false
+        },
+        "streamingDataClient": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "subnetMask": {
+          "type": "string",
+          "required": false
+        },
+        "tenantId": {
+          "type": "string",
+          "required": false
+        },
+        "useDhcp": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "wdacEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "witnessType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Cloud",
+            "No Witness"
+          ]
+        }
+      }
+    },
+    "create-cluster-san-iscsi": {
+      "uri": "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-cluster-san-iscsi/azuredeploy.json",
+      "deploymentSettingsApiVersion": "2026-10-01",
+      "parameters": {
+        "adouPath": {
+          "type": "string",
+          "required": false
+        },
+        "AzureStackLCMAdminPassword": {
+          "type": "securestring",
+          "required": true
+        },
+        "AzureStackLCMAdminUsername": {
+          "type": "string",
+          "required": true
+        },
+        "bitlockerBootVolume": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "bitlockerDataVolumes": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "chapCredential": {
+          "type": "securestring",
+          "required": false
+        },
+        "chapType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "None",
+            "OneWay",
+            "Mutual"
+          ]
+        },
+        "chapUsername": {
+          "type": "string",
+          "required": false
+        },
+        "clusterName": {
+          "type": "string",
+          "required": true
+        },
+        "clusterWitnessStorageAccountName": {
+          "type": "string",
+          "required": false
+        },
+        "configurationMode": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "InfraOnly"
+          ]
+        },
+        "createNewKeyVault": {
+          "type": "bool",
+          "required": false
+        },
+        "credentialGuardEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "customLocation": {
+          "type": "string",
+          "required": false
+        },
+        "defaultGateway": {
+          "type": "string",
+          "required": false
+        },
+        "deploymentMode": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Validate",
+            "Deploy"
+          ]
+        },
+        "diagnosticStorageAccountName": {
+          "type": "string",
+          "required": true
+        },
+        "dnsServers": {
+          "type": "array",
+          "required": false
+        },
+        "domainFqdn": {
+          "type": "string",
+          "required": false
+        },
+        "driftControlEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "endingIPAddress": {
+          "type": "string",
+          "required": false
+        },
+        "episodicDataUpload": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "euLocation": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "hciResourceProviderObjectID": {
+          "type": "string",
+          "required": true
+        },
+        "infraPerfLunId": {
+          "type": "string",
+          "required": false
+        },
+        "infraVolLunId": {
+          "type": "string",
+          "required": false
+        },
+        "intentList": {
+          "type": "array",
+          "required": false
+        },
+        "keyVaultName": {
+          "type": "string",
+          "required": true
+        },
+        "localAdminPassword": {
+          "type": "securestring",
+          "required": true
+        },
+        "localAdminUserName": {
+          "type": "string",
+          "required": true
+        },
+        "location": {
+          "type": "string",
+          "required": false
+        },
+        "logsRetentionInDays": {
+          "type": "int",
+          "required": false
+        },
+        "namingPrefix": {
+          "type": "string",
+          "required": false
+        },
+        "nodes": {
+          "type": "array",
+          "required": false
+        },
+        "partnerCredentiallist": {
+          "type": "array",
+          "required": false
+        },
+        "partnerProperties": {
+          "type": "array",
+          "required": false
+        },
+        "sanNetworkList": {
+          "type": "object",
+          "required": false
+        },
+        "sbeFamily": {
+          "type": "string",
+          "required": false
+        },
+        "sbeManifestCreationDate": {
+          "type": "string",
+          "required": false
+        },
+        "sbeManifestSource": {
+          "type": "string",
+          "required": false
+        },
+        "sbePublisher": {
+          "type": "string",
+          "required": false
+        },
+        "sbeVersion": {
+          "type": "string",
+          "required": false
+        },
+        "smbClusterEncryption": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "smbSigningEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "softDeleteRetentionDays": {
+          "type": "int",
+          "required": false
+        },
+        "startingIPAddress": {
+          "type": "string",
+          "required": false
+        },
+        "storageAccountType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Premium_LRS",
+            "Premium_ZRS",
+            "Standard_GRS",
+            "Standard_GZRS",
+            "Standard_LRS",
+            "Standard_RAGRS",
+            "Standard_RAGZRS",
+            "Standard_ZRS"
+          ]
+        },
+        "storageConnectivitySwitchless": {
+          "type": "bool",
+          "required": false
+        },
+        "streamingDataClient": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "subnetMask": {
+          "type": "string",
+          "required": false
+        },
+        "tenantId": {
+          "type": "string",
+          "required": false
+        },
+        "useDhcp": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "wdacEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "witnessType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Cloud",
+            "No Witness"
+          ]
+        }
+      }
+    },
+    "create-cluster-for-usgov": {
+      "uri": "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-cluster-for-usgov/azuredeploy.json",
+      "deploymentSettingsApiVersion": "2024-09-01-preview",
+      "parameters": {
+        "adouPath": {
+          "type": "string",
+          "required": false
+        },
+        "arcNodeResourceIds": {
+          "type": "array",
+          "required": false
+        },
+        "AzureStackLCMAdminPasssword": {
+          "type": "securestring",
+          "required": true
+        },
+        "AzureStackLCMAdminUsername": {
+          "type": "string",
+          "required": true
+        },
+        "bitlockerBootVolume": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "bitlockerDataVolumes": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "clusterName": {
+          "type": "string",
+          "required": true
+        },
+        "clusterWitnessStorageAccountName": {
+          "type": "string",
+          "required": false
+        },
+        "configurationMode": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Express",
+            "InfraOnly",
+            "KeepStorage"
+          ]
+        },
+        "createNewKeyVault": {
+          "type": "bool",
+          "required": false
+        },
+        "credentialGuardEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "customLocation": {
+          "type": "string",
+          "required": false
+        },
+        "defaultGateway": {
+          "type": "string",
+          "required": false
+        },
+        "deploymentMode": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Validate",
+            "Deploy"
+          ]
+        },
+        "diagnosticStorageAccountName": {
+          "type": "string",
+          "required": true
+        },
+        "dnsServers": {
+          "type": "array",
+          "required": false
+        },
+        "domainFqdn": {
+          "type": "string",
+          "required": false
+        },
+        "driftControlEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "enableStorageAutoIp": {
+          "type": "bool",
+          "required": true
+        },
+        "endingIPAddress": {
+          "type": "string",
+          "required": false
+        },
+        "episodicDataUpload": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "euLocation": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "hciResourceProviderObjectID": {
+          "type": "string",
+          "required": true
+        },
+        "intentList": {
+          "type": "array",
+          "required": false
+        },
+        "keyVaultName": {
+          "type": "string",
+          "required": true
+        },
+        "localAdminPassword": {
+          "type": "securestring",
+          "required": true
+        },
+        "localAdminUserName": {
+          "type": "string",
+          "required": true
+        },
+        "location": {
+          "type": "string",
+          "required": false
+        },
+        "logsRetentionInDays": {
+          "type": "int",
+          "required": false
+        },
+        "namingPrefix": {
+          "type": "string",
+          "required": false
+        },
+        "networkingPattern": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "hyperConverged",
+            "convergedManagementCompute",
+            "convergedComputeStorage",
+            "custom"
+          ]
+        },
+        "networkingType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "switchedMultiServerDeployment",
+            "switchlessMultiServerDeployment",
+            "singleServerDeployment"
+          ]
+        },
+        "partnerCredentiallist": {
+          "type": "array",
+          "required": false
+        },
+        "partnerProperties": {
+          "type": "array",
+          "required": false
+        },
+        "physicalNodesSettings": {
+          "type": "array",
+          "required": false
+        },
+        "sbeFamily": {
+          "type": "string",
+          "required": false
+        },
+        "sbeManifestCreationDate": {
+          "type": "string",
+          "required": false
+        },
+        "sbeManifestSource": {
+          "type": "string",
+          "required": false
+        },
+        "sbePublisher": {
+          "type": "string",
+          "required": false
+        },
+        "sbeVersion": {
+          "type": "string",
+          "required": false
+        },
+        "securityLevel": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Recommended",
+            "Customized"
+          ]
+        },
+        "smbClusterEncryption": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "smbSigningEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "softDeleteRetentionDays": {
+          "type": "int",
+          "required": false
+        },
+        "startingIPAddress": {
+          "type": "string",
+          "required": false
+        },
+        "storageAccountType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Premium_LRS",
+            "Premium_ZRS",
+            "Standard_GRS",
+            "Standard_GZRS",
+            "Standard_LRS",
+            "Standard_RAGRS",
+            "Standard_RAGZRS",
+            "Standard_ZRS"
+          ]
+        },
+        "storageConnectivitySwitchless": {
+          "type": "bool",
+          "required": false
+        },
+        "storageNetworkList": {
+          "type": "array",
+          "required": false
+        },
+        "streamingDataClient": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "subnetMask": {
+          "type": "string",
+          "required": false
+        },
+        "tenantId": {
+          "type": "string",
+          "required": false
+        },
+        "useDhcp": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "wdacEnforced": {
+          "type": "bool",
+          "required": false,
+          "allowed": [
+            true,
+            false
+          ]
+        },
+        "witnessType": {
+          "type": "string",
+          "required": false,
+          "allowed": [
+            "Cloud",
+            "No Witness"
+          ]
+        }
+      }
+    }
+  }
+}

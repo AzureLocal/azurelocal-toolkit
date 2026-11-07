@@ -87,6 +87,8 @@ If you are new to this repository, start with these files:
 | `src/ansible/README.md` | Ansible structure and execution model |
 | `pipelines/README.md` | CI/CD sample architecture and prerequisites |
 | `repo-management/README.md` | Planning and governance layout for this repo |
+| [docs/os-configuration-and-arm-deployment.md](docs/os-configuration-and-arm-deployment.md) | Prerequisites and run guide for node OS configuration (Arc Run Command or WinRM) and ARM Validate/Deploy from infrastructure.yml: roles, secrets, AD, SAN, SBE, the ZTP hand-off, and the keys each step reads |
+| [docs/infrastructure-variables.md](docs/infrastructure-variables.md) | Schema-wide reference for every infrastructure.yml key (maintained with the schema) |
 
 ## Standards and Governance
 
