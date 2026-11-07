@@ -827,9 +827,9 @@ Describe 'Schema 5.4: ZTP settings and the BIOS actions derived from the invento
     }
 
     Context 'the templates' {
-        It 'are schema 5.4.0 and clean' {
+        It 'are schema 5.4.1 and clean' {
             foreach ($f in $script:Ztp54, $script:Full54) {
-                (Import-AzlInfrastructure -Path $f)._metadata.schema_version | Should -Be '5.4.0'
+                (Import-AzlInfrastructure -Path $f)._metadata.schema_version | Should -Be '5.4.1'
                 @(Test-AzlInfrastructure -Path $f) | Should -BeNullOrEmpty
             }
         }
@@ -839,6 +839,7 @@ Describe 'Schema 5.4: ZTP settings and the BIOS actions derived from the invento
             $s.maintenance_environment.port | Should -Be 20001
             $s.maintenance_environment.username | Should -Be 'edgeuser'
             $s.timeouts.bootstrap_minutes | Should -Be 120
+            $s.timeouts.adapters_minutes | Should -Be 10
             $s.timeouts.ready_minutes | Should -Be 180
             $s.configuration_name | Should -Be 'default'
             $s.network_kind | Should -Be 'LAN'
