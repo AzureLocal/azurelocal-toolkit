@@ -61,6 +61,33 @@ Source: [Assign required permissions for Azure Local deployment](https://learn.m
 
 Also for Arc Run Command: the Connected Machine agent on each node is version 1.33 or later, the node shows `Connected` (the script warns if not), and nothing blocks the Run Command extension (`azcmagent config get extensions.blocklist`). Azure Policy mustn't block extensions or the resource types the deployment creates in the resource group.
 
+### Azure Policy and Defender during provisioning and deployment
+
+Policies assigned at a management group or subscription with the **deployIfNotExists** or **modify** effect act on
+new Arc machines as soon as they appear: they install extensions and agents or change machine settings (for example
+"Configure periodic checking for missing system updates on Azure Arc-enabled servers"). That can collide with the
+provisioning service and with OS configuration's Arc Run Command. Exempt the deployment resource groups from those
+policies until the cluster is deployed, then remove the exemptions:
+
+```powershell
+# List what reaches the groups and what would be exempted (only deployIfNotExists and modify; audit and deny stay on)
+./scripts/common/utilities/tools/Set-AzlDeploymentPolicyExemption.ps1 -SubscriptionId <sub> -ResourceGroupName <cluster-rg>,<AzLocal-ManagedResources-rg>
+# Before provisioning: create the exemptions (category Waiver, expire after 7 days by default)
+./scripts/common/utilities/tools/Set-AzlDeploymentPolicyExemption.ps1 -SubscriptionId <sub> -ResourceGroupName <cluster-rg>,<AzLocal-ManagedResources-rg> -Execute
+# After the deployment succeeds: remove them
+./scripts/common/utilities/tools/Set-AzlDeploymentPolicyExemption.ps1 -SubscriptionId <sub> -ResourceGroupName <cluster-rg>,<AzLocal-ManagedResources-rg> -Remove -Execute
+```
+
+- **Who can run it:** exempting an assignment needs `Microsoft.Authorization/policyAssignments/exempt/action` at the
+  **assignment's** scope, not only the resource group's. For a policy assigned at a management group (often the tenant
+  root group) that means Resource Policy Contributor or Owner on that management group; otherwise Azure answers
+  "There was a problem while evaluating linked access checks". Ask the management group's policy owner if you lack it.
+- **Defender for Servers is not a policy.** With the Defender for Servers plan on, Defender for Cloud installs the
+  Defender for Endpoint extension (MDE.Windows) on new Arc machines by itself; an exemption doesn't stop it. If it
+  interferes with provisioning (an extension install queued ahead of Arc Run Command), exclude the machines with
+  Defender for Cloud resource-level pricing, or agree a window with whoever owns the plan. The script reports the plan.
+- Exemptions expire on their own (`-ExpiresInDays`), so one forgotten after the deployment doesn't stay for good.
+
 ## Key Vault secrets
 
 Secrets are never values in `infrastructure.yml`. Each is a `keyvault://<vault>/<secret>` reference, and the vault is listed under `key_vaults`.
