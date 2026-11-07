@@ -781,3 +781,70 @@ Describe 'Run commands that end in state Unknown' {
         (Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver -MaxPasses 2).Converged | Should -BeFalse
     }
 }
+
+Describe 'SBE delivered last, together with the Unknown handling of the node scripts' {
+    BeforeEach {
+        $script:Spec = Get-SbeSpec node_pull 'https://sbe.example.invalid/sbe'
+        Set-AzlNodeRetryPolicy -Tries 1 -DelaySeconds 1
+        Mock -ModuleName AzlNodeTransport Start-Sleep { }
+        Mock -ModuleName AzlNodeConfiguration Start-Sleep { }
+        $script:Present = @([pscustomobject]@{ n = 'SBE_Dell_X_1.0.zip'; len = 100; ok = $true }, [pscustomobject]@{ n = 'SBE_Dell_X_1.0.xml'; len = 10; ok = $true })
+        $script:Ok = { param($p) [pscustomobject]@{ reboot = $false; results = @($p.actions | ForEach-Object { [pscustomobject]@{ id = $_.id; status = 'changed'; detail = 'ok' } }) } }
+    }
+    AfterAll { Set-AzlNodeRetryPolicy -Tries 3 -DelaySeconds 15, 45, 120 }
+
+    It 'an Apply of the other steps that ends in Unknown does not block the package: the next pass reads the node and delivers it' {
+        $s1 = New-ConfiguredState $script:Spec; $s1.host = 'WIN-X'; $s1.sbe = @()
+        $s2 = New-ConfiguredState $script:Spec; $s2.sbe = @()
+        $s3 = New-ConfiguredState $script:Spec; $s3.sbe = $script:Present
+        $t = New-FakeTransport @($s1, $s2, $s3) $script:Ok
+        $inner = $t.Invoke; $first = [pscustomobject]@{ Done = $false }
+        $t.Invoke = {
+            param($Self, $Node, [string]$Script, [hashtable]$Parameters, [hashtable]$Secrets, [int]$TimeoutSeconds)
+            if ($Script -match 'function Invoke-Action' -and -not $first.Done) { $first.Done = $true; return [pscustomobject]@{ Output = ''; Failed = $true; Error = ''; State = 'Unknown' } }
+            & $inner $Self $Node $Script $Parameters $Secrets $TimeoutSeconds
+        }.GetNewClosure()
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver
+        @($r.Changes | Where-Object Status -eq 'unknown').Count | Should -Be 1
+        @($r.Changes | Where-Object { $_.Id -like 'Sbe/*' -and $_.Status -eq 'changed' }).Count | Should -Be 2
+        $r.Converged | Should -BeTrue
+    }
+    It 'a restart that ends in Unknown is not a failure and the package is delivered after the node is back' {
+        $s1 = New-ConfiguredState $script:Spec; $s1.host = 'WIN-X'; $s1.sbe = @()
+        $s2 = New-ConfiguredState $script:Spec -Boot '2026-11-07T02:00:00Z'; $s2.sbe = @()
+        $s3 = New-ConfiguredState $script:Spec -Boot '2026-11-07T02:00:00Z'; $s3.sbe = $script:Present
+        $t = New-FakeTransport @($s1, $s2, $s3) { param($p) [pscustomobject]@{ reboot = (@($p.actions | ForEach-Object kind) -contains 'hostname'); results = @($p.actions | ForEach-Object { [pscustomobject]@{ id = $_.id; status = 'changed'; detail = 'ok' } }) } }
+        $inner = $t.Invoke
+        $t.Invoke = {
+            param($Self, $Node, [string]$Script, [hashtable]$Parameters, [hashtable]$Secrets, [int]$TimeoutSeconds)
+            if ($Script -match 'shutdown\.exe') { return [pscustomobject]@{ Output = ''; Failed = $true; Error = ''; State = 'Unknown' } }
+            & $inner $Self $Node $Script $Parameters $Secrets $TimeoutSeconds
+        }.GetNewClosure()
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver
+        $r.Restarted | Should -BeTrue
+        $r.Converged | Should -BeTrue
+        $kinds = @($t.Log | Where-Object { $_.Kind -in 'Apply', 'Read' } | ForEach-Object {
+                if ($_.Kind -eq 'Apply') { if (@($_.Parameters.actions | ForEach-Object kind) -contains 'sbe-file') { 'ApplySbe' } else { 'ApplyOther' } } else { 'Read' } })
+        $kinds.IndexOf('ApplyOther') | Should -BeLessThan $kinds.IndexOf('ApplySbe')
+    }
+    It 'the Sbe plan items come after every other step in the plan' {
+        $s = New-ConfiguredState $script:Spec; $s.host = 'WIN-X'; $s.sbe = @()
+        $plan = @(Compare-AzlNodeState -Spec $script:Spec -State $s -Step (InModuleScope AzlNodeConfiguration { $script:AllSteps }))
+        $steps = @($plan | ForEach-Object Step)
+        $steps | Should -Contain 'Sbe'
+        [array]::IndexOf($steps, 'Hostname') | Should -BeLessThan ([array]::IndexOf($steps, 'Sbe'))
+        [array]::LastIndexOf($steps, 'Sbe') | Should -Be ($steps.Count - 1)
+    }
+    It 'winrm_copy builds the remote path as C:\SBE plus the file name, whatever the host OS' {
+        $spec = Get-SbeSpec winrm_copy
+        $s1 = New-ConfiguredState $spec; $s1.sbe = @()
+        $s2 = New-ConfiguredState $spec; $s2.sbe = $script:Present
+        $arc = New-FakeTransport @($s1, $s2) $script:Ok
+        $copied = [System.Collections.Generic.List[string]]::new()
+        $win = [pscustomobject]@{ Kind = 'WinRM'; Stage = $null }
+        $win.Stage = { param($Self, $Node, $LocalPath, $RemotePath, $Sha256) $copied.Add($RemotePath); [pscustomobject]@{ Name = 'x'; Url = $null } }.GetNewClosure()
+        $null = Invoke-AzlNodeConfiguration -Spec $spec -Transport $arc -SbeTransport $win -Execute -SecretResolver $script:Resolver
+        $copied.Count | Should -Be 2
+        $copied | ForEach-Object { $_ | Should -Match '^C:\\SBE\\SBE_Dell_X_1\.0\.(zip|xml)$' }
+    }
+}

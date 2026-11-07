@@ -42,10 +42,11 @@ Import-Module (Join-Path $PSScriptRoot 'AzlNodeTransport.psm1')
 Import-Module (Join-Path $PSScriptRoot 'AzlNodeConfiguration.psm1')
 
 $script:SetScript = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', 'deploy', '04-cluster-deployment', 'phase-03-os-configuration', 'Set-AzureLocalNodeConfiguration.ps1'))
-$script:NodeSteps = @('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')
+# The order the steps run in (the same as AzlNodeConfiguration): Sbe is last, so a package that can't be delivered never stops the others.
+$script:NodeSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
 $script:AllSteps = $script:NodeSteps + 'ArcRegistration'
 # What ZTP already guaranteed (the computer name, Arc registration) is verified, not redone.
-$script:ZtpSteps = @('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')
+$script:ZtpSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
 $script:IsoSteps = $script:AllSteps
 # Azure Local OS 23H2 is build 25398; anything older cannot be an Azure Local node.
 $script:MinimumBuild = 25398
@@ -454,6 +455,12 @@ function Invoke-AzlNodeRun {
     if ($Context.SkipValidation) { $parameters.SkipValidation = $true }
     if ($Phase -eq 'Apply') { $parameters.Execute = $true }
     if ($Record.transport -eq 'WinRM') {
+        $parameters.Credential = $Context.CredentialInfo.Credential
+        if ($Record.address) { $parameters.NodeAddress = @{ $Record.name = $Record.address } }
+    }
+    elseif ($Context.CredentialInfo.Credential -and 'Sbe' -in $steps -and [string](Get-AzlProp $Context.Infra 'hardware.sbe.delivery' 'skip') -eq 'winrm_copy') {
+        # The node is reached over Arc Run Command, which can't carry a file. hardware.sbe.delivery winrm_copy copies the SBE package
+        # over WinRM, so the node script gets the local administrator for that one step (the other steps stay on Arc).
         $parameters.Credential = $Context.CredentialInfo.Credential
         if ($Record.address) { $parameters.NodeAddress = @{ $Record.name = $Record.address } }
     }

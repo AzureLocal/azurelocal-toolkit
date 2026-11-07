@@ -568,4 +568,45 @@ Describe 'Summary' {
         (Format-AzlOsConfigurationSummary -Record $recs -Mode Plan -Markdown) | Should -Match '\| n2 \| Iso \(evidence\) \| WinRM \|'
     }
 }
+
+Describe 'Integration with the SBE delivery routes and the node script' {
+    It 'every parameter the run passes to Set-AzureLocalNodeConfiguration.ps1 is one the script has' {
+        $setScript = Join-Path (Split-Path $script:EntryScript -Parent) 'Set-AzureLocalNodeConfiguration.ps1'
+        $known = @((Get-Command $setScript).Parameters.Keys)
+        $tokens = $null; $errors = $null
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:ModulePath, [ref]$tokens, [ref]$errors)
+        $function = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-AzlNodeRun' }, $true)
+        $passed = @($function.FindAll({ param($n) $n -is [System.Management.Automation.Language.MemberExpressionAst] -and $n.Expression.Extent.Text -eq '$parameters' }, $true) | ForEach-Object { $_.Member.Value })
+        $passed += @($function.FindAll({ param($n) $n -is [System.Management.Automation.Language.HashtableAst] -and $n.Extent.Text -match 'InfrastructureFile\s*=' }, $true) | Select-Object -First 1 | ForEach-Object { $_.KeyValuePairs | ForEach-Object { $_.Item1.Value } })
+        $passed.Count | Should -BeGreaterThan 8
+        foreach ($name in $passed) { $known | Should -Contain $name -Because "the run passes -$name" }
+    }
+    It 'the step list of the run is the step list of the node script, Sbe last' {
+        $setScript = Join-Path (Split-Path $script:EntryScript -Parent) 'Set-AzureLocalNodeConfiguration.ps1'
+        $validSet = @((Get-Command $setScript).Parameters.Step.Attributes | Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] } | ForEach-Object { $_.ValidValues })
+        $moduleOrder = @(InModuleScope AzlNodeConfiguration { $script:AllSteps })
+        $moduleOrder[-1] | Should -Be 'Sbe'
+        (Get-AzlNodeStepList -Method Ztp)[-1] | Should -Be 'Sbe'
+        (Get-AzlNodeStepList -Method Iso -Step Sbe, Dns, ArcRegistration, Hostname) | Should -Be @('Dns', 'Hostname', 'Sbe', 'ArcRegistration')
+        @(Get-AzlNodeStepList -Method Iso | Where-Object { $_ -ne 'ArcRegistration' }) | Should -Be $moduleOrder
+        @($validSet | Sort-Object) | Should -Be @($moduleOrder | Sort-Object)
+        $entry = Get-Command $script:EntryScript
+        @($entry.Parameters.Step.Attributes | Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] } | ForEach-Object { $_.ValidValues } | Sort-Object) | Should -Be @(($moduleOrder + 'ArcRegistration') | Sort-Object)
+    }
+    It 'winrm_copy on a ZTP node reached over Arc: the run hands the script the local administrator for the copy, the other steps stay on Arc' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.hardware.sbe.delivery = 'winrm_copy' }
+        $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
+        $call = $global:AzlCalls[0]
+        $call.Params.Transport | Should -Be 'ArcRunCommand'
+        $call.Params.Credential | Should -Not -BeNullOrEmpty
+        $call.Params.Credential.UserName | Should -Not -BeNullOrEmpty
+        'Sbe' | Should -BeIn $call.Params.Step
+    }
+    It '<_> on a ZTP node needs no credential' -ForEach 'skip', 'node_pull' {
+        $route = $_
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.hardware.sbe.delivery = $route; $d.hardware.sbe.node_pull_url = 'https://files.example.invalid/sbe' }
+        $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
+        $global:AzlCalls[0].Params.ContainsKey('Credential') | Should -BeFalse
+    }
+}
 }

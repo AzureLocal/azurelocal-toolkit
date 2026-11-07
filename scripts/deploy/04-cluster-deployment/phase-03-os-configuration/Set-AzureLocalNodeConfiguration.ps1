@@ -47,7 +47,7 @@
 .PARAMETER Step
     Limit the run to these steps. Default: all.
 .PARAMETER NodeAddress
-    -Transport WinRM only: node name -> the address to open the session to (default: the management address in the file). A node installed
+    Node name -> the address to open a WinRM session to (the WinRM transport, and the winrm_copy of the SBE package; default: the management address in the file). A node installed
     from an ISO may still hold the address the installer gave it.
 .PARAMETER RetryTries
     How many times a node script is tried when its Arc run command ends in state Unknown (default 3, with a growing pause).
@@ -159,7 +159,7 @@ $sbeDelivery = [string](Get-AzlProp $infra 'hardware.sbe.delivery' 'skip')
 $sbeTransport = $null
 if ($bundle -and $sbeDelivery -eq 'winrm_copy' -and $nodeTransport.Kind -ne 'WinRM' -and $Credential) {
     $sbeAddresses = @{}
-    foreach ($s in $specs) { $sbeAddresses[$s.Name] = $s.Management.Ip }
+    foreach ($s in $specs) { $sbeAddresses[$s.Name] = if ($NodeAddress -and $NodeAddress.ContainsKey($s.Name)) { [string]$NodeAddress[$s.Name] } else { $s.Management.Ip } }
     $sbeTransport = New-AzlWinRmTransport -Address $sbeAddresses -Credential $Credential
 }
 Write-Line "Transport: $($nodeTransport.Kind). $(if ($Execute) { 'EXECUTE: changes will be made.' } else { 'Plan only: nothing on the nodes changes. Add -Execute.' })"
