@@ -155,12 +155,28 @@ To find each machine's maintenance environment, the Device stage uses `nodes[].m
 | --- | --- |
 | `storage.san.array` | `name`, `vendor`, `model`, and an optional `management_address`. |
 | `storage.san.fibre_channel` (required for `type: fibre_channel`) | `fabrics`: `name` (A, B), optional `switch` and `zone_set`. `target_wwpns`: the array's `wwpn` and the `fabric` each is cabled to. |
-| `nodes[].san.hbas` | Per HBA: `slot` (for example `Slot2`, the BIOS key that turns it off), `model`, and `ports` with each port's `wwpn` and `fabric`. |
+| `nodes[].san.hbas` | Per HBA: `slot` (a PCIe slot label such as `Slot 2`, which azurelocal-ztp turns off in the BIOS for the OS install), `type` (5.4: `fibre_channel` or `iscsi_offload`), `model`, and `ports` with each port's `wwpn` and `fabric` (needed for a Fibre Channel SAN). |
 | `storage.san.iscsi` (required for `type: iscsi`) | `targets`: `iqn`, `portals` (IPv4 or IPv4:port) and `fabric`. Optional `chap`: `enabled`, `username`, and `secret` (a `keyvault://` reference). |
 | `nodes[].san.initiator_iqn` | The machine's iSCSI initiator name. |
 | `nodes[].network_adapters[]` with role `iscsi:a` or `iscsi:b` | The iSCSI ports and their addresses (`ip_assignment`, `ip_address`, `prefix_length`, VLAN). No gateway. |
 
 A WWPN is 16 hex digits, written as colon-separated pairs or without colons. Rule AZL-028: a SAN needs `storage.san` (schema); Fibre Channel needs the target WWPNs and every node's HBA WWPNs; every WWPN names a defined fabric; iSCSI needs targets and every node's initiator IQN, and its ports need an address; no WWPN or IQN appears twice. Complete files: [`examples/disaggregated-fibre-channel-proxy.yml`](examples/disaggregated-fibre-channel-proxy.yml) and [`examples/disaggregated-iscsi.yml`](examples/disaggregated-iscsi.yml).
+## Hardware-aware BIOS actions and every ZTP setting (schema 5.4)
+
+Schema 5.4 only adds keys; every 5.0 to 5.3 file stays valid. It does two things for azurelocal-ztp:
+
+**One file, no key that only ZTP knows.** Every setting ZTP reads is a key here, with the value ZTP used before the key existed as its default: the Azure site choices (`provisioning.simplified.create_resource_group`, `configuration_name`, `managed_resource_group_name`, `apply_site_settings`, `use_key_vault_configuration`, `assign_provisioning_roles`, `assign_hci_rp_role`, `network_kind`, `ntp`, `site_mode`, `deployment_name`), the stage `timeouts`, `retry_provision_os`, `skip_azure_check`, `include_preview` and `max_train`, the `usb_image`, the `maintenance_environment` (port and user), `media_share.account_name` and `keep`, and the BMC's `rfs_write_attribute` and `verify_certificate`. [`VARIABLES.md`](VARIABLES.md) lists each with its default.
+
+**BIOS actions come from the inventory, not from vendor attribute names.** Before, `hardware.bios` and `hardware.bios_during_provisioning` held raw attribute names (`Slot2: Disabled`), which only someone who knows Dell's names can fill in. Now:
+
+| You write | ZTP does |
+| --- | --- |
+| `nodes[].san.hbas[].slot` (`Slot 2`; `type` is `fibre_channel` by default, or `iscsi_offload`) | Turns that PCIe slot off in the BIOS for the OS install, so the maintenance environment can't install onto a SAN LUN, and on again in the Restore stage. Switch: `provisioning.simplified.isolate_san_adapters` (default true when a node lists `san.hbas`, false otherwise). |
+| `nodes[].network_adapters[].slot: Embedded` on a `management` or `provisioning` port | Makes sure the embedded NICs are enabled (Dell ships them as `DisabledOs`). Switch: `provisioning.simplified.enable_embedded_nics` (default true). |
+| `hardware.bios`, `hardware.bios_during_provisioning` (and the node ones) | Explicit overrides. They win over a derived value for the same attribute. Use them for any other attribute, or for a vendor ZTP has no slot mapping for. |
+
+The mapping from slot label to attribute is data in ZTP, `config/oem/<vendor>.json`, `bios` section (Dell: `Slot{n}` with `Disabled` and `Enabled`, and `EmbNic1Nic2`). For a vendor without a mapping ZTP says so and asks for the raw attribute instead of guessing. An HBA slot is never turned off when a network port is listed in the same slot (rule AZL-029). `ports` under an HBA are for zoning and LUN masking (rule AZL-028); the BIOS action needs only the `slot`.
+
 ## What the check covers
 
 **The schema** checks structure, types, formats (IPv4, CIDR, MAC, GUID), the `keyvault://` form, name lengths (cluster and node names up to 15 characters, the LCM user up to 20), and the conditional sections above. Every section rejects unknown keys, so a misspelt key is an error, not a silently ignored value.
@@ -197,6 +213,7 @@ A WWPN is 16 hex digits, written as colon-separated pairs or without colons. Rul
 | AZL-026 | BIOS phases (5.3): a key in `bios_during_provisioning` that `bios` doesn't name is a warning (Restore falls back to the saved original value) |
 | AZL-027 | The maintenance environment (5.3): `provisioning_dhcp_range` start at or below end and inside the management subnet; no maintenance address on two nodes; `static_method: site` with static addresses is a warning (Microsoft uses the first ready port, not the MAC) |
 | AZL-028 | The SAN (5.3): Fibre Channel needs target WWPNs and every node's HBA WWPNs, and every WWPN names a defined fabric; iSCSI needs targets and every node's initiator IQN, and an address on its `iscsi:a` / `iscsi:b` ports; no WWPN or IQN is used twice; fabric names are unique |
+| AZL-029 | What ZTP derives (5.4, simplified provisioning): an HBA slot is a PCIe slot label (`Slot 2`) while isolation is on, and no network port shares it; `isolate_san_adapters: true` with no HBA listed is a warning; `ntp.configuration: Manual` needs a server; the voucher budget is not longer than the Bootstrap budget |
 | (scope) | `_metadata.scope: ztp` requires only ZTP's keys (see [Which template](#which-template)); `full` requires everything |
 Design guidance (which pattern to pick, sizing, best practices) stays in Trailwright, which cites Microsoft Learn for every rule. The toolkit's rules are the ones that stop a deployment.
 
@@ -233,7 +250,7 @@ const validate = new Ajv2020({ strict: true, allErrors: true }).compile(schema);
 
 `_metadata.schema_version` is the schema version the file follows.
 
-- A **minor** version (5.3.0) adds optional keys. Files written for 5.0 stay valid.
+- A **minor** version (5.4.0) adds optional keys. Files written for 5.0 stay valid.
 - A **major** version (6.0.0) can rename or remove keys. It comes with a migration in `MIGRATION.md`, and tools refuse files from a major they don't read.
 
 Change the schema, the examples, the tests and this page together. The tests in `tests/infrastructure` validate every example and check every rule.

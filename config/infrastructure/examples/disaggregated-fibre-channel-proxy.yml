@@ -9,7 +9,7 @@
 # Every WWPN names a fabric defined under fabrics, and no WWPN appears twice. A WWPN is 16 hex digits, written as colon-
 # separated pairs or without colons.
 _metadata:
-  schema_version: "5.3.0"
+  schema_version: "5.4.0"
 
 scenario:
   identity: active_directory
@@ -46,7 +46,7 @@ nodes:
     rack: "R01"
     san:
       hbas:
-        - slot: "Slot2"
+        - slot: "Slot 2" # a PCIe slot label; with simplified provisioning azurelocal-ztp turns the slot off for the OS install
           model: "Emulex LPe35002 32Gb"
           ports:
             - { wwpn: "10:00:00:00:00:00:00:11", fabric: "A" }
@@ -56,7 +56,7 @@ nodes:
     rack: "R01"
     san:
       hbas:
-        - slot: "Slot2"
+        - slot: "Slot 2" # a PCIe slot label; with simplified provisioning azurelocal-ztp turns the slot off for the OS install
           model: "Emulex LPe35002 32Gb"
           ports:
             - { wwpn: "10:00:00:00:00:00:00:21", fabric: "A" }
@@ -66,7 +66,7 @@ nodes:
     rack: "R02"
     san:
       hbas:
-        - slot: "Slot2"
+        - slot: "Slot 2" # a PCIe slot label; with simplified provisioning azurelocal-ztp turns the slot off for the OS install
           model: "Emulex LPe35002 32Gb"
           ports:
             - { wwpn: "10:00:00:00:00:00:00:31", fabric: "A" }
@@ -76,7 +76,7 @@ nodes:
     rack: "R02"
     san:
       hbas:
-        - slot: "Slot2"
+        - slot: "Slot 2" # a PCIe slot label; with simplified provisioning azurelocal-ztp turns the slot off for the OS install
           model: "Emulex LPe35002 32Gb"
           ports:
             - { wwpn: "10:00:00:00:00:00:00:41", fabric: "A" }

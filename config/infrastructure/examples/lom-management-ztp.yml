@@ -21,9 +21,14 @@
 #   provisioning_dhcp_range, maintenance_address, maintenance_password
 #                      How the Device stage finds and signs in to each maintenance environment: it scans the DHCP range
 #                      (TCP 20001) for the node's MAC, unless nodes[].maintenance_address names it.
+# Schema 5.4 can derive that BIOS plan from the inventory, so no vendor attribute name is needed: each node lists its
+# Fibre Channel HBA (san.hbas[].slot "Slot 2") and its LOMs (slot Embedded). ZTP turns the HBA's slot off for the OS install
+# and on again in Restore (isolate_san_adapters), and enables the embedded NICs (enable_embedded_nics), using the Dell mapping
+# in its config/oem/dell.json. The raw maps in hardware below say the same thing in Dell's own words, as explicit overrides;
+# delete them and ZTP derives the same values. The same file works on a server whose HBA is in another slot.
 # Placeholder values only.
 _metadata:
-  schema_version: "5.3.0"
+  schema_version: "5.4.0"
 
 scenario:
   identity: active_directory
@@ -57,6 +62,7 @@ nodes:
   - name: "iic-lab-n01"
     serial_number: "SERIAL01"
     bmc: { ip_address: "198.51.100.11", type: idrac }
+    san: { hbas: [{ slot: "Slot 2", type: fibre_channel, model: "Example 32G FC HBA" }] }
     network_adapters:
       - name: "Embedded NIC 1"
         mac_address: "00:00:5E:00:53:11"
@@ -77,6 +83,7 @@ nodes:
     serial_number: "SERIAL02"
     maintenance_address: "192.0.2.102" # known (a DHCP reservation): the Device stage goes straight to it, no scan
     bmc: { ip_address: "198.51.100.12", type: idrac }
+    san: { hbas: [{ slot: "Slot 2", type: fibre_channel, model: "Example 32G FC HBA" }] }
     network_adapters:
       - { name: "Embedded NIC 1", mac_address: "00:00:5E:00:53:21", slot: "Embedded", speed_gbps: 1, roles: [management], ip_assignment: static, ip_address: "192.0.2.12", vlan_mode: access, vlan_id: 711, switch_port: { switch: "leaf-a", port: "Ethernet1/12" } }
       - { name: "Embedded NIC 2", mac_address: "00:00:5E:00:53:22", slot: "Embedded", speed_gbps: 1, roles: [management], ip_assignment: none, vlan_mode: access, vlan_id: 711, switch_port: { switch: "leaf-b", port: "Ethernet1/12" } }
@@ -94,6 +101,8 @@ hardware:
     EmbNic1Nic2: "Enabled" # the LOMs ship as DisabledOs, so the OS wouldn't see the management ports
   bios_during_provisioning: # temporary, for the OS install only; wins over bios; ZTP sets each key back to its bios value in Restore
     Slot2: "Disabled" # the HBA's SAN LUN would be offered as the install disk
+  # These raw Dell attributes are the explicit form of the plan ZTP derives from san.hbas and the Embedded ports. They are
+  # optional: delete the two maps and ZTP derives exactly these values. When present they win over the derived ones.
   sbe: { bundle_path: 'D:\sbe\dell' }
 
 networking:
@@ -136,6 +145,8 @@ provisioning:
     maintenance_iso: "2610"
     admin: { username: "administrator", password: "keyvault://kv-iic-lab-mgmt/provisioning-admin-password" }
     maintenance_password: "keyvault://kv-iic-lab-mgmt/maintenance-password" # optional; default: the out-of-box password Microsoft Learn documents
+    isolate_san_adapters: true # the default here, because the nodes list san.hbas
+    enable_embedded_nics: true # the default; the management port is a LOM (slot Embedded)
     media_share: { name: "ztp-virtual-usb", host_adapter: "Management" }
     media_path: 'D:\Data\azl-ztp\iic-lab\media' # downloads, images, vouchers, run state; never inside a git repository
     evidence_path: 'D:\Data\azl-ztp\iic-lab\evidence' # event log, BIOS change log, run logs

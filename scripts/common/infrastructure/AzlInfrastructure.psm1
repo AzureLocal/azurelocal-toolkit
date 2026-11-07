@@ -807,6 +807,7 @@ function Get-SemanticFinding {
     Get-BiosPhaseFinding -Infra $Infra -Nodes $nodes
     Get-ProvisioningNetworkFinding -Infra $Infra -Nodes $nodes -OwnerOf $ownerOf
     Get-SanFinding -Infra $Infra -Nodes $nodes
+    Get-ZtpActionFinding -Infra $Infra -Nodes $nodes
 
     # Arc machine names: unique, and arc_machine_name rather than the deprecated arc_resource_name.
     for ($i = 0; $i -lt $nodeCount; $i++) {
@@ -1154,7 +1155,7 @@ function Get-SanFinding {
         }
         for ($i = 0; $i -lt $Nodes.Count; $i++) {
             $mine = & $nodeSan $i
-            $hbas = @(Get-List $mine['hbas'] | Where-Object { $_ -is [System.Collections.IDictionary] })
+            $hbas = @(Get-List $mine['hbas'] | Where-Object { $_ -is [System.Collections.IDictionary] -and [string]$_['type'] -ne 'iscsi_offload' })
             $portCount = 0
             for ($h = 0; $h -lt $hbas.Count; $h++) {
                 $ports = @(Get-List $hbas[$h]['ports'] | Where-Object { $_ -is [System.Collections.IDictionary] })
@@ -1203,6 +1204,58 @@ function Get-SanFinding {
     foreach ($group in ($names | Group-Object Key | Where-Object Count -gt 1)) {
         $what = if ($type -eq 'iscsi') { 'IQN' } else { 'WWPN' }
         New-Finding 'AZL-028' error $group.Group[1].Path "$what $($group.Group[0].Display) is listed $($group.Count) times ($(@($group.Group.Path) -join ', ')). Each is unique in the SAN."
+    }
+}
+
+# AZL-029: what azurelocal-ztp derives from the hardware inventory and the Azure choices it makes (schema 5.4): the SAN
+# adapters whose PCIe slots it turns off for the OS install, the embedded NICs it enables, the site's time setting and the
+# stage budgets. Only for simplified provisioning, the path ZTP runs.
+function Get-ZtpActionFinding {
+    param([System.Collections.IDictionary]$Infra, [object[]]$Nodes)
+    if ((Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'scenario.os_install') -ne 'simplified') { return }
+    $simplified = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'provisioning.simplified'
+    if ($simplified -isnot [System.Collections.IDictionary]) { return }
+    $slotNumber = { param([object]$Label) if (([string]$Label) -match '^\s*slot[\s_-]*(\d+)\s*$') { [int]$Matches[1] } else { $null } }
+
+    $listed = @($(for ($i = 0; $i -lt $Nodes.Count; $i++) {
+                $san = $Nodes[$i]['san']
+                if ($san -is [System.Collections.IDictionary]) { for ($h = 0; $h -lt @(Get-List $san['hbas']).Count; $h++) { [pscustomobject]@{ Node = $i; Hba = $h; Item = @(Get-List $san['hbas'])[$h] } } }
+            }) | Where-Object { $_.Item -is [System.Collections.IDictionary] })
+    $switch = $simplified['isolate_san_adapters']
+    $isolate = if ($null -ne $switch) { [bool]$switch } else { $listed.Count -gt 0 }
+    if ($switch -eq $true -and $listed.Count -eq 0) {
+        New-Finding 'AZL-029' warning 'provisioning.simplified.isolate_san_adapters' 'isolate_san_adapters is true but no node lists san.hbas, so there is nothing to turn off for the OS install. List each machine''s HBAs in nodes[].san.hbas[] (slot is enough), or remove the switch.' $script:Learn.Simplified
+    }
+    if ($isolate) {
+        foreach ($x in $listed) {
+            $at = "nodes[$($x.Node)].san.hbas[$($x.Hba)].slot"
+            $label = [string]$x.Item['slot']
+            $n = & $slotNumber $label
+            if ($null -eq $n) {
+                New-Finding 'AZL-029' error $at "The slot '$label' isn't a PCIe slot label such as 'Slot 2', so azurelocal-ztp can't derive the BIOS attribute that turns it off for the OS install. Use 'Slot <n>', or set the vendor's raw attribute in bios_during_provisioning and isolate_san_adapters to false." $script:Learn.Simplified
+                continue
+            }
+            # A card in that slot that also carries network ports must stay on: the management port could be on it.
+            foreach ($port in @(Get-List $Nodes[$x.Node]['network_adapters'] | Where-Object { $_ -is [System.Collections.IDictionary] })) {
+                if ((& $slotNumber $port['slot']) -eq $n -and (@(Get-List $port['roles']) | Where-Object { $_ -ne 'unused' })) {
+                    New-Finding 'AZL-029' error $at "Slot $n holds the SAN adapter and also the network port '$($port['name'])' (roles $(@(Get-List $port['roles']) -join ', ')). Turning the slot off for the OS install would cut that port. Fix the slot of one of them, or set isolate_san_adapters to false and use a BIOS setting that hides the SAN LUN from the installer only." $script:Learn.Simplified
+                }
+            }
+        }
+        $twice = $listed | Group-Object { "$($_.Node)/$(& $slotNumber $_.Item['slot'])" } | Where-Object { $_.Count -gt 1 -and $_.Name -notmatch '/$' }
+        foreach ($g in $twice) { New-Finding 'AZL-029' warning "nodes[$($g.Group[0].Node)].san.hbas" "Two adapters are in the same slot ($($g.Group[0].Item['slot'])); a slot holds one card." }
+    }
+
+    $ntp = $simplified['ntp']
+    if ($ntp -is [System.Collections.IDictionary] -and $ntp['configuration'] -eq 'Manual' -and -not $ntp['server']) {
+        New-Finding 'AZL-029' error 'provisioning.simplified.ntp.server' 'ntp.configuration is Manual but ntp.server is empty. Name the NTP server, or use Automatic.' $script:Learn.Simplified
+    }
+    if ($ntp -is [System.Collections.IDictionary] -and $ntp['configuration'] -ne 'Manual' -and ($ntp['server'] -or $ntp['alternate_server'])) {
+        New-Finding 'AZL-029' warning 'provisioning.simplified.ntp' 'ntp.server is set but ntp.configuration is not Manual, so the site uses Automatic time and ignores the server.' $script:Learn.Simplified
+    }
+    $timeouts = $simplified['timeouts']
+    if ($timeouts -is [System.Collections.IDictionary] -and $timeouts['bootstrap_voucher_minutes'] -and $timeouts['bootstrap_minutes'] -and [int]$timeouts['bootstrap_voucher_minutes'] -gt [int]$timeouts['bootstrap_minutes']) {
+        New-Finding 'AZL-029' warning 'provisioning.simplified.timeouts.bootstrap_voucher_minutes' "The voucher budget ($($timeouts['bootstrap_voucher_minutes']) minutes) is longer than the overall Bootstrap budget ($($timeouts['bootstrap_minutes']) minutes), so the overall one ends first."
     }
 }
 

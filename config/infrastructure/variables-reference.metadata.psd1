@@ -4,7 +4,7 @@
     # (nodes[].bmc.ip_address). The first match wins.
 
     # Keys azurelocal-ztp reads: ConvertFrom-ZtpInfrastructureV5 in azurelocal-ztp (scripts/simplified-provisioning/
-    # ZtpEnvironment.Common.ps1), plus the 5.3 keys.
+    # ZtpEnvironment.Common.ps1), plus the 5.3 and 5.4 keys.
     Ztp           = @(
         '^_metadata\.(schema_version|scope)$'
         '^scenario\.os_install$'
@@ -16,7 +16,8 @@
         '^nodes\[\]\.bmc\.ip_address$'
         '^nodes\[\]\.(bios|bios_during_provisioning)(\.|$)'
         '^nodes\[\]\.management(\.|$)'
-        '^nodes\[\]\.network_adapters(\[\]\.(name|mac_address|roles|ip_assignment|ip_address|vlan_id|vlan_mode))?$'
+        '^nodes\[\]\.network_adapters(\[\]\.(name|mac_address|slot|roles|ip_assignment|ip_address|vlan_id|vlan_mode))?$'
+        '^nodes\[\]\.san(\.hbas(\[\]\.(slot|type))?)?$'
         '^hardware\.(vendor|model)$'
         '^hardware\.bmc(\.|$)'
         '^hardware\.(bios|bios_during_provisioning)(\.|$)'
@@ -46,7 +47,7 @@
 
     # Keys Trailwright does not write: host-local paths and files only the operator sets on the management host.
     TrailwrightNot = @(
-        '^provisioning\.simplified\.(media_path|evidence_path|maintenance_password|media_share)'
+        '^provisioning\.simplified\.(media_path|evidence_path|maintenance_password|media_share|timeouts|usb_image|maintenance_environment|deployment_name|skip_azure_check|include_preview|max_train|retry_provision_os)'
         '^hardware\.sbe\.bundle_path$'
         '^nodes\[\]\.maintenance_address$'
     )
@@ -80,6 +81,7 @@
         @{ Pattern = '^nodes\[\]\.'; Text = 'Your machine inventory and addressing plan.' }
         @{ Pattern = '^hardware\.sbe\.bundle_path$'; Text = 'A folder you create on the management host (see Folders), holding the OEM''s Solution Builder Extension as downloaded.' }
         @{ Pattern = '^hardware\.sbe\.'; Text = 'The OEM''s Solution Builder Extension release notes.' }
+        @{ Pattern = '^hardware\.bmc\.(rfs_write_attribute|verify_certificate)$'; Text = 'Your BMC: the vendor''s default is right unless the BMC firmware differs.' }
         @{ Pattern = '^hardware\.bmc\.'; Text = 'A Key Vault secret you create holding the BMC login (see Secrets).' }
         @{ Pattern = '^hardware\.(bios|bios_during_provisioning)'; Text = 'The BMC''s Redfish Bios resource or the vendor''s BIOS attribute registry.' }
         @{ Pattern = '^hardware\.'; Text = 'The hardware you ordered.' }
@@ -90,6 +92,10 @@
         @{ Pattern = '^identity\.'; Text = 'Your Active Directory and Microsoft Entra ID teams.' }
         @{ Pattern = '^storage\.san\.'; Text = 'The SAN administrator: the array manager and the fabric switches.' }
         @{ Pattern = '^storage\.'; Text = 'Your storage design.' }
+        @{ Pattern = '^provisioning\.simplified\.(isolate_san_adapters|enable_embedded_nics)$'; Text = 'Your hardware design: whether a SAN adapter (nodes[].san.hbas) or an onboard NIC (a port with slot Embedded) needs a BIOS action while the OS installs. The default follows the inventory.' }
+        @{ Pattern = '^provisioning\.simplified\.(create_resource_group|configuration_name|managed_resource_group_name|apply_site_settings|use_key_vault_configuration|assign_provisioning_roles|assign_hci_rp_role|network_kind|ntp|site_mode|deployment_name)'; Text = 'Your Azure design for the Microsoft.Edge site and its configuration. The defaults are the portal''s.' }
+        @{ Pattern = '^provisioning\.simplified\.(skip_azure_check|include_preview|max_train|retry_provision_os|timeouts|usb_image|maintenance_environment)'; Text = 'Optional tuning of azurelocal-ztp. The default is the value that worked on Dell AX servers; change it only when a stage fails for a reason your hardware or network explains.' }
+
         @{ Pattern = '^provisioning\.simplified\.maintenance_iso$'; Text = 'Azure portal > Azure Arc > Machine Provisioning > View downloads, or a Microsoft download URL.' }
         @{ Pattern = '^provisioning\.simplified\.(media_path|evidence_path)$'; Text = 'A folder you create on the management host (see Folders).' }
         @{ Pattern = '^provisioning\.simplified\.media_share'; Text = 'The management host: the share and the address the BMCs reach it on.' }

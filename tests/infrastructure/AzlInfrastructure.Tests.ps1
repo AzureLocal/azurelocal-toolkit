@@ -717,7 +717,7 @@ Describe 'Schema 5.3: file scope (full and ztp templates)' {
     }
     It 'applies the shared rules to a ztp file: the 5.3 keys, the ports and the vaults' {
         (Get-ZtpFinding { param($d) $d.networking.management.provisioning_dhcp_range.end = '192.0.3.9' }).Id | Should -Contain 'AZL-027'
-        (Get-ZtpFinding { param($d) $d.hardware.bios_during_provisioning['SriovGlobalEnable'] = 'Disabled' }).Id | Should -Contain 'AZL-026'
+        (Get-ZtpFinding { param($d) $d.hardware['bios_during_provisioning'] = [ordered]@{ SriovGlobalEnable = 'Disabled' } }).Id | Should -Contain 'AZL-026'
         (Get-ZtpFinding { param($d) $d.nodes[1].network_adapters[0].mac_address = $d.nodes[0].network_adapters[0].mac_address }).Id | Should -Contain 'AZL-019'
         (Get-ZtpFinding { param($d) $d.hardware.bmc.password = 'keyvault://kv-unlisted-01/bmc-password' }).Id | Should -Contain 'AZL-001'
     }
@@ -816,5 +816,116 @@ Describe 'Import-AzlInfrastructure' {
         $infra = Import-AzlInfrastructure -Path $script:ExamplePath -SkipValidation
         Get-AzlInfrastructureValue -Infrastructure $infra -Path 'scenario.os_install' | Should -Be 'simplified'
         Get-AzlInfrastructureValue -Infrastructure $infra -Path 'no.such.key' | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Schema 5.4: ZTP settings and the BIOS actions derived from the inventory' {
+    BeforeAll {
+        $script:Ztp54 = Join-Path $repo 'config\infrastructure\infrastructure.ztp.example.yml'
+        $script:Full54 = Join-Path $repo 'config\infrastructure\infrastructure.example.yml'
+        function Get-Ztp54Finding([scriptblock]$Change) { Get-FindingFor -From $script:Ztp54 $Change }
+    }
+
+    Context 'the templates' {
+        It 'are schema 5.4.0 and clean' {
+            foreach ($f in $script:Ztp54, $script:Full54) {
+                (Import-AzlInfrastructure -Path $f)._metadata.schema_version | Should -Be '5.4.0'
+                @(Test-AzlInfrastructure -Path $f) | Should -BeNullOrEmpty
+            }
+        }
+        It 'use the new keys with the values ZTP always used' {
+            $s = (Import-AzlInfrastructure -Path $script:Full54).provisioning.simplified
+            $s.usb_image.size_gb | Should -Be 4
+            $s.maintenance_environment.port | Should -Be 20001
+            $s.maintenance_environment.username | Should -Be 'edgeuser'
+            $s.timeouts.bootstrap_minutes | Should -Be 120
+            $s.timeouts.ready_minutes | Should -Be 180
+            $s.configuration_name | Should -Be 'default'
+            $s.network_kind | Should -Be 'LAN'
+            $s.media_share.account_name | Should -Be 'svc-ztp-media'
+        }
+        It 'list a server with two adapter types: an embedded LOM, a PCIe NIC, and a Fibre Channel HBA in its own slot' {
+            $n = (Import-AzlInfrastructure -Path $script:Ztp54).nodes[0]
+            @($n.network_adapters | ForEach-Object slot | Select-Object -Unique) | Should -Contain 'Embedded'
+            @($n.network_adapters | ForEach-Object slot | Select-Object -Unique) | Should -Contain 'Slot 3'
+            $n.san.hbas[0].slot | Should -Be 'Slot 2'
+        }
+        It 'still accepts a 5.3.0 file that uses none of the new keys' {
+            $f = Get-Ztp54Finding { param($d) $d._metadata.schema_version = '5.3.0'; foreach ($k in 'isolate_san_adapters', 'enable_embedded_nics') { $d.provisioning.simplified.Remove($k) } }
+            @($f | Where-Object Severity -eq 'error') | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'schema' {
+        It 'rejects <Name>' -ForEach @(
+            @{ Name = 'a zero Bootstrap budget'; Change = { param($d) $d.provisioning.simplified['timeouts'] = @{ bootstrap_minutes = 0 } }; Path = 'provisioning.simplified.timeouts.bootstrap_minutes' }
+            @{ Name = 'a port above 65535'; Change = { param($d) $d.provisioning.simplified['maintenance_environment'] = @{ port = 70000 } }; Path = 'provisioning.simplified.maintenance_environment.port' }
+            @{ Name = 'a network kind that is neither LAN nor WLAN'; Change = { param($d) $d.provisioning.simplified['network_kind'] = 'WAN' }; Path = 'provisioning.simplified.network_kind' }
+            @{ Name = 'a site mode that is not Auto, Create or Reuse'; Change = { param($d) $d.provisioning.simplified['site_mode'] = 'Maybe' }; Path = 'provisioning.simplified.site_mode' }
+            @{ Name = 'an unknown timeout'; Change = { param($d) $d.provisioning.simplified['timeouts'] = @{ forever = 1 } }; Path = 'provisioning.simplified.timeouts.forever' }
+            @{ Name = 'an image under 2 GiB'; Change = { param($d) $d.provisioning.simplified['usb_image'] = @{ size_gb = 1 } }; Path = 'provisioning.simplified.usb_image.size_gb' }
+            @{ Name = 'a text switch'; Change = { param($d) $d.provisioning.simplified['isolate_san_adapters'] = 'yes please' }; Path = 'provisioning.simplified.isolate_san_adapters' }
+            @{ Name = 'an HBA type that is not fibre_channel or iscsi_offload'; Change = { param($d) $d.nodes[0].san.hbas[0]['type'] = 'infiniband' }; Path = 'nodes[0].san.hbas[0].type' }
+            @{ Name = 'a BMC certificate switch that is not boolean'; Change = { param($d) $d.hardware.bmc['verify_certificate'] = 'sometimes' }; Path = 'hardware.bmc.verify_certificate' }
+        ) {
+            $f = Get-Ztp54Finding $Change
+            @($f | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq $Path }) | Should -Not -BeNullOrEmpty
+        }
+        It 'accepts an HBA with only its slot (ports are for zoning, not for the BIOS action)' {
+            @(Get-Ztp54Finding { param($d) $d.nodes[0].san.hbas[0] = @{ slot = 'Slot 2' } } | Where-Object Severity -eq 'error') | Should -BeNullOrEmpty
+        }
+        It 'accepts an iSCSI offload adapter with no ports' {
+            @(Get-Ztp54Finding { param($d) $d.nodes[0].san.hbas[0] = @{ slot = 'Slot 4'; type = 'iscsi_offload' } } | Where-Object Severity -eq 'error') | Should -BeNullOrEmpty
+        }
+    }
+
+    Context 'rules (AZL-029)' {
+        It 'is quiet for the template: one FC HBA in a slot of its own' {
+            @(Get-Ztp54Finding { param($d) } | Where-Object Id -eq 'AZL-029') | Should -BeNullOrEmpty
+        }
+        It 'refuses an HBA slot that is not a PCIe slot label while isolation is on' {
+            $f = Get-Ztp54Finding { param($d) $d.nodes[0].san.hbas[0].slot = 'OCP 1' }
+            $f | Where-Object { $_.Id -eq 'AZL-029' -and $_.Severity -eq 'error' -and $_.Path -eq 'nodes[0].san.hbas[0].slot' -and $_.Message -match 'OCP 1' } | Should -Not -BeNullOrEmpty
+        }
+        It 'accepts Slot2, slot 2 and SLOT-2 as the same label' {
+            foreach ($label in 'Slot2', 'slot 2', 'SLOT-2') {
+                @(Get-Ztp54Finding { param($d) $d.nodes[0].san.hbas[0].slot = $label } | Where-Object Id -eq 'AZL-029') | Should -BeNullOrEmpty
+            }
+        }
+        It 'lets an odd label through when isolation is off' {
+            @(Get-Ztp54Finding { param($d) $d.nodes[0].san.hbas[0].slot = 'OCP 1'; $d.provisioning.simplified.isolate_san_adapters = $false } | Where-Object Id -eq 'AZL-029') | Should -BeNullOrEmpty
+        }
+        It 'refuses to turn off a slot that also carries a network port' {
+            $f = Get-Ztp54Finding { param($d) $d.nodes[0].san.hbas[0].slot = 'Slot 3' }
+            $f | Where-Object { $_.Id -eq 'AZL-029' -and $_.Severity -eq 'error' -and $_.Message -match 'Slot 3 Port 1' } | Should -Not -BeNullOrEmpty
+        }
+        It 'warns when isolation is on and no node lists an adapter' {
+            $f = Get-Ztp54Finding { param($d) foreach ($n in $d.nodes) { $n.Remove('san') } }
+            $f | Where-Object { $_.Id -eq 'AZL-029' -and $_.Severity -eq 'warning' -and $_.Path -eq 'provisioning.simplified.isolate_san_adapters' } | Should -Not -BeNullOrEmpty
+        }
+        It 'needs nothing from a server with no SAN and the switch left out' {
+            $f = Get-Ztp54Finding { param($d) foreach ($n in $d.nodes) { $n.Remove('san') }; $d.provisioning.simplified.Remove('isolate_san_adapters') }
+            @($f | Where-Object Id -eq 'AZL-029') | Should -BeNullOrEmpty
+        }
+        It 'needs an NTP server when the site time is Manual' {
+            $f = Get-Ztp54Finding { param($d) $d.provisioning.simplified['ntp'] = @{ configuration = 'Manual' } }
+            $f | Where-Object { $_.Id -eq 'AZL-029' -and $_.Severity -eq 'error' -and $_.Path -eq 'provisioning.simplified.ntp.server' } | Should -Not -BeNullOrEmpty
+        }
+        It 'warns about an NTP server that Automatic ignores' {
+            $f = Get-Ztp54Finding { param($d) $d.provisioning.simplified['ntp'] = @{ configuration = 'Automatic'; server = '192.0.2.30' } }
+            $f | Where-Object { $_.Id -eq 'AZL-029' -and $_.Severity -eq 'warning' -and $_.Path -eq 'provisioning.simplified.ntp' } | Should -Not -BeNullOrEmpty
+        }
+        It 'warns when the voucher budget is longer than the Bootstrap budget' {
+            $f = Get-Ztp54Finding { param($d) $d.provisioning.simplified['timeouts'] = @{ bootstrap_minutes = 60; bootstrap_voucher_minutes = 90 } }
+            $f | Where-Object { $_.Id -eq 'AZL-029' -and $_.Severity -eq 'warning' } | Should -Not -BeNullOrEmpty
+        }
+        It 'does not apply to an ISO install, which has no ZTP BIOS action' {
+            $f = Get-FindingFor -From $script:Full54 { param($d) $d.scenario.os_install = 'iso'; $d.nodes[0]['san'] = @{ hbas = @(@{ slot = 'OCP 1' }) } }
+            @($f | Where-Object Id -eq 'AZL-029') | Should -BeNullOrEmpty
+        }
+        It 'does not ask an iSCSI offload adapter for WWPNs' {
+            $f = Get-Ztp54Finding { param($d) $d.nodes[0].san.hbas[0] = @{ slot = 'Slot 4'; type = 'iscsi_offload' } }
+            @($f | Where-Object Id -eq 'AZL-028') | Should -BeNullOrEmpty
+        }
     }
 }

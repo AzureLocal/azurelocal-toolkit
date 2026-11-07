@@ -175,6 +175,24 @@ Schema 5.3 only adds keys: every 5.0 to 5.2 file stays valid. Nothing is renamed
 5. Run `Test-InfrastructureFile.ps1`. AZL-026 to AZL-028 check the new keys.
 
 **A ZTP-only file** (`_metadata.scope: ztp`) is new in 5.3. Start it from `infrastructure.ztp.example.yml`; to grow it into the full file, add the rest and set `scope: full`. See the README (Which template).
+## To 5.4: every ZTP setting, and BIOS actions derived from the inventory
+
+Schema 5.4 only adds optional keys; a 5.3 file is valid as it is. Nothing changes for a file that uses none of them: ZTP behaves as before, with the old values as defaults.
+
+| New key | What it is for |
+| --- | --- |
+| `provisioning.simplified.isolate_san_adapters` | Turn the PCIe slots of `nodes[].san.hbas[]` off for the OS install and on in Restore. Default: true when a node lists `san.hbas`. |
+| `provisioning.simplified.enable_embedded_nics` | Enable the embedded NICs when a management or provisioning port has `slot: Embedded`. Default true. |
+| `nodes[].san.hbas[].type`; `ports` no longer required | `fibre_channel` (default) or `iscsi_offload`. ZTP needs only the `slot`. |
+| `provisioning.simplified.create_resource_group`, `configuration_name`, `managed_resource_group_name`, `apply_site_settings`, `use_key_vault_configuration`, `assign_provisioning_roles`, `assign_hci_rp_role`, `network_kind`, `ntp`, `site_mode`, `deployment_name` | The Microsoft.Edge site and its configuration. Defaults: what ZTP created before. |
+| `provisioning.simplified.timeouts.*`, `retry_provision_os`, `skip_azure_check`, `include_preview`, `max_train` | Stage budgets and the Resolve and Ready choices. Defaults: the values ZTP used. |
+| `provisioning.simplified.usb_image`, `maintenance_environment`, `media_share.account_name`, `media_share.keep` | The USB image size and name, the Configurator service's port and user, the share account. |
+| `hardware.bmc.rfs_write_attribute`, `hardware.bmc.verify_certificate` | The iDRAC Remote File Share attribute (default: true for Dell only) and the BMC certificate check (default false). |
+
+**What changes in behaviour.** A file that lists `nodes[].san.hbas` with `provisioning.simplified` now gets the slot turned off for the OS install without a raw `bios_during_provisioning`. If you already wrote the raw attribute, it wins and the result is the same. If the vendor has no slot mapping in ZTP and the file has no raw `bios_during_provisioning`, ZTP stops before it touches the hardware and says which. A slot label that is not `Slot <n>` is AZL-029 (an error) unless `isolate_san_adapters` is false.
+
+**Steps for a 5.3 file:** set `_metadata.schema_version` to `5.4.0`; list each machine's SAN adapters in `nodes[].san.hbas[]` and give the network ports a `slot`; you may then delete the raw `Slot` and embedded-NIC attributes from `bios` and `bios_during_provisioning`, or keep them as explicit overrides; run `Test-InfrastructureFile.ps1`. AZL-029 checks the new keys.
+
 ## From Trailwright's export
 
 | Before | Schema 5 |

@@ -22,6 +22,11 @@
 # provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.
 # maintenance_password, and the SAN details (storage.san.array, fibre_channel or iscsi,
 # nodes[].san). The SAN is shown in comments below; examples/disaggregated-*.yml are complete.
+# Schema 5.4 puts every azurelocal-ztp setting in this file: the BIOS actions ZTP derives from the
+# inventory (nodes[].san.hbas[].slot, a network port with slot Embedded; provisioning.simplified.
+# isolate_san_adapters and enable_embedded_nics), the Azure site choices, timeouts, retries, the USB
+# image, the maintenance environment, and hardware.bmc.rfs_write_attribute and verify_certificate.
+# Every one has the default shown, which is what ZTP did before the key existed.
 #
 # Rules:
 #   - Keys are snake_case. Sections reject unknown keys; use extensions.
@@ -32,7 +37,7 @@
 # =============================================================================
 
 _metadata:
-  schema_version: "5.3.0"
+  schema_version: "5.4.0"
   file_version: "1.0.0"
   last_updated: "2026-11-06"
   generated_by: ""
@@ -161,6 +166,8 @@ hardware:
   bmc:
     username: "keyvault://kv-iic-mgmt-01/bmc-username"
     password: "keyvault://kv-iic-mgmt-01/bmc-password"
+    rfs_write_attribute: true # default: true for Dell (iDRAC Remote File Share), false for other vendors
+    verify_certificate: false # default false: BMCs ship a self-signed certificate
   sbe:
     publisher: "Dell"
     family: ""
@@ -168,7 +175,9 @@ hardware:
     # Folder on the management host with the OEM's SBE files, as downloaded.
     bundle_path: 'D:\sbe\dell'
     allow_unvalidated: false # test only
-  bios: # optional; the FINAL state, set by azurelocal-ztp at its Boot stage. Dell attribute names.
+  # BIOS: from 5.4 azurelocal-ztp derives the SAN-adapter slots (nodes[].san.hbas[].slot) and the embedded NICs
+  # (a port with slot Embedded) itself, per vendor; the raw maps are explicit overrides that win over the derived values.
+  bios: # optional; the FINAL state, set by azurelocal-ztp at its Boot stage. Vendor attribute names (Dell here).
     EmbNic1Nic2: "Enabled"
     # Slot2: "Enabled" # a Fibre Channel HBA: on in the end (see bios_during_provisioning below)
   # bios_during_provisioning: # optional; TEMPORARY values for the OS install only. They win over bios.
@@ -284,7 +293,7 @@ storage:
   #     targets: [{ iqn: "iqn.2026-11.cloud.improbability:san-iic-01.a", portals: ["198.51.100.4:3260"], fabric: "A" }]
   #     chap: { enabled: true, username: "azl-chap", secret: "keyvault://kv-iic-mgmt-01/iscsi-chap-secret" }
   # and on every node (the iSCSI ports' addresses are network_adapters with role iscsi:a / iscsi:b):
-  #   san: { hbas: [{ slot: "Slot2", model: "Emulex LPe35002", ports: [{ wwpn: "10:00:00:00:00:00:00:11", fabric: "A" }] }] }
+  #   san: { hbas: [{ slot: "Slot 2", type: fibre_channel, model: "Emulex LPe35002", ports: [{ wwpn: "10:00:00:00:00:00:00:11", fabric: "A" }] }] }
   #   san: { initiator_iqn: "iqn.1991-05.com.microsoft:iic-azl-n01.improbability.cloud" }
 
 security:
@@ -338,8 +347,33 @@ provisioning:
     media_share:
       name: "ztp-virtual-usb"
       host: "198.51.100.5" # or host_adapter: <adapter name>
+      account_name: "svc-ztp-media" # default; the local account the BMCs sign in with
+      keep: false # default; true keeps the share, rule and account after the vouchers are collected
     media_path: 'D:\Data\azl-ztp\iic-azl-01\media' # downloads, images, vouchers, state; outside any git repository
     evidence_path: 'D:\Data\azl-ztp\iic-azl-01\evidence' # event log, BIOS change log, run logs
+    # Schema 5.4. BIOS actions derived from the inventory: with no nodes[].san.hbas there is nothing to isolate.
+    # isolate_san_adapters: false  # default: true when a node lists san.hbas
+    enable_embedded_nics: true # default true; acts when a management or provisioning port has slot Embedded
+    # The defaults of azurelocal-ztp, written out. Change one only when a stage needs it.
+    retry_provision_os: true
+    skip_azure_check: false
+    include_preview: false
+    # max_train: "2610"
+    usb_image: { size_gb: 4, name_prefix: "ztp-usb-" }
+    maintenance_environment: { port: 20001, username: "edgeuser" }
+    timeouts: { bootstrap_minutes: 120, bootstrap_voucher_minutes: 90, bootstrap_stall_minutes: 20, voucher_wait_minutes: 120, device_minutes: 30, ready_minutes: 180, network_minutes: 60, restore_settle_minutes: 5, bios_minutes: 30, poll_interval_seconds: 60 }
+    # The Microsoft.Edge site and its configuration:
+    create_resource_group: true # false: stop when azure.resource_group does not exist
+    configuration_name: "default"
+    # managed_resource_group_name: "" # empty: the service chooses
+    apply_site_settings: true
+    use_key_vault_configuration: true
+    assign_provisioning_roles: true
+    assign_hci_rp_role: true
+    network_kind: LAN
+    ntp: { configuration: Automatic } # or { configuration: Manual, server: "192.0.2.30", alternate_server: "192.0.2.31" }
+    site_mode: Auto # Auto | Create | Reuse
+    # deployment_name: "ztp-iic-site-01" # default: ztp-<site_name>
 
 network_devices:
   - hostname: "sw01-iic"

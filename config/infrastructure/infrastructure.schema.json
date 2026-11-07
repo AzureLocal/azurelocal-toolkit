@@ -18,7 +18,7 @@
       ],
       "properties": {
         "schema_version": {
-          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san). 5.3 also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads.",
+          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san). 5.3 also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate.",
           "type": "string",
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
@@ -489,7 +489,7 @@
           "$ref": "#/$defs/bios_settings"
         },
         "bios_during_provisioning": {
-          "description": "Schema 5.3. BIOS attributes that hold for the OS install only: TEMPORARY values. A node's bios_during_provisioning is merged over this one, and during-provisioning values win over bios. azurelocal-ztp applies them at its Boot stage. In its Restore stage, after the OS install and before Handoff, it sets each key back to its bios value (or, when bios doesn't name the key, to the original value it saved), restarts the node and waits for Arc to reconnect. Example: bios { Slot2: Enabled } with bios_during_provisioning { Slot2: Disabled } turns off a Fibre Channel HBA in slot 2 while the maintenance environment installs the OS (it would otherwise install onto the SAN LUN), and turns it on again afterwards. On Dell, a slot can also be BootDriverDisabled: visible to the OS but never a boot device. A key here should also be in bios, so the final state is explicit. See $defs/bios_settings.",
+          "description": "Schema 5.3. BIOS attributes that hold for the OS install only: TEMPORARY values. A node's bios_during_provisioning is merged over this one, and during-provisioning values win over bios. azurelocal-ztp applies them at its Boot stage. In its Restore stage, after the OS install and before Handoff, it sets each key back to its bios value (or, when bios doesn't name the key, to the original value it saved), restarts the node and waits for Arc to reconnect. From 5.4 azurelocal-ztp derives the SAN-adapter case itself from nodes[].san.hbas[].slot (provisioning.simplified.isolate_san_adapters); the raw keys remain as explicit overrides and win. Example: bios { Slot2: Enabled } with bios_during_provisioning { Slot2: Disabled } turns off a Fibre Channel HBA in slot 2 while the maintenance environment installs the OS (it would otherwise install onto the SAN LUN), and turns it on again afterwards. On Dell, a slot can also be BootDriverDisabled: visible to the OS but never a boot device. A key here should also be in bios, so the final state is explicit. See $defs/bios_settings.",
           "$ref": "#/$defs/bios_settings"
         },
         "sbe": {
@@ -1789,6 +1789,17 @@
                 "host_adapter": {
                   "description": "Instead of host: the local adapter whose IPv4 address the BMCs reach. Wins over host.",
                   "type": "string"
+                },
+                "account_name": {
+                  "description": "Schema 5.4. The local account azurelocal-ztp creates on the management host to give the BMCs access to the share (it generates a password for it, and removes the account with the share). Default: svc-ztp-media.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,19}$",
+                  "default": "svc-ztp-media"
+                },
+                "keep": {
+                  "description": "Schema 5.4. Keep the share, its firewall rule and the account after the vouchers are collected (azurelocal-ztp removes them by default). Default false.",
+                  "type": "boolean",
+                  "default": false
                 }
               },
               "anyOf": [
@@ -1821,6 +1832,235 @@
               "description": "Schema 5.2. Folder on the management host for the run's evidence: the event log monitors follow (ztp-events.jsonl), the BIOS and other Redfish change logs, and run logs. Outside any git working tree, created when missing. Default: %ProgramData%\\AzureLocalZtp\\<site_name>\\evidence.",
               "type": "string",
               "minLength": 1
+            },
+            "isolate_san_adapters": {
+              "description": "Schema 5.4. While the OS installs, turn off the PCIe slots that hold the SAN adapters listed in nodes[].san.hbas[], so the maintenance environment can't install onto a SAN LUN; turn them on again in the Restore stage. azurelocal-ztp derives the BIOS attribute from the slot label and the vendor (config/oem/<vendor>.json, bios section). Default: true when any node lists san.hbas, false otherwise. An explicit hardware.bios or bios_during_provisioning key for the same attribute wins. A vendor without a slot mapping needs the raw attribute in bios_during_provisioning.",
+              "type": "boolean"
+            },
+            "enable_embedded_nics": {
+              "description": "Schema 5.4. When a node's management or provisioning port has slot Embedded (an onboard LOM), make sure the embedded NICs are enabled in the BIOS (Dell ships them as DisabledOs, and the OS then can't see them): azurelocal-ztp sets the vendor's embedded-NIC attribute at the Boot stage and leaves it set. Default true. Does nothing when no such port is listed. An explicit hardware.bios key for the same attribute wins.",
+              "type": "boolean",
+              "default": true
+            },
+            "create_resource_group": {
+              "description": "Schema 5.4. Create the resource group of the site and edge machines (azure.resource_group, or provisioning.simplified.resource_group) when it does not exist. Default true. Set false when a landing zone creates resource groups and azurelocal-ztp should stop if it is missing.",
+              "type": "boolean",
+              "default": true
+            },
+            "configuration_name": {
+              "description": "Schema 5.4. Name of the Microsoft.Edge/configurations resource (the site configuration). Default: default.",
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,62}$",
+              "default": "default"
+            },
+            "managed_resource_group_name": {
+              "description": "Schema 5.4. Name for the managed resource group of the site configuration, which holds the Arc machines. Default: empty, the service chooses the name.",
+              "type": "string",
+              "pattern": "^$|^[A-Za-z0-9._()-]{1,89}[A-Za-z0-9_()-]$"
+            },
+            "apply_site_settings": {
+              "description": "Schema 5.4. Create the site's network, time, connectivity and security settings (Microsoft.Edge/configurations child resources). Default true. Set false when the site configuration already carries them.",
+              "type": "boolean",
+              "default": true
+            },
+            "use_key_vault_configuration": {
+              "description": "Schema 5.4. Reference the Key Vault in the site's security settings, which the provisioning administrator secret needs. Default true.",
+              "type": "boolean",
+              "default": true
+            },
+            "assign_provisioning_roles": {
+              "description": "Schema 5.4. Give each edge machine its constrained role delegations on the resource group and on the Key Vault. Default true. Set false when your landing zone assigns them.",
+              "type": "boolean",
+              "default": true
+            },
+            "assign_hci_rp_role": {
+              "description": "Schema 5.4. Give the Azure Local resource provider its Azure Connected Machine Resource Manager role on the resource group. Default true. Set false when the resource group already has this assignment under another name (the deployment would fail with RoleAssignmentExists).",
+              "type": "boolean",
+              "default": true
+            },
+            "network_kind": {
+              "description": "Schema 5.4. Kind of the site's network setting: LAN or WLAN. Default LAN.",
+              "enum": [
+                "LAN",
+                "WLAN"
+              ],
+              "default": "LAN"
+            },
+            "ntp": {
+              "description": "Schema 5.4. The time setting of the site configuration, used while the machines are provisioned. Default: Automatic. (networking.ntp_servers is OS configuration; it is not copied here.)",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "configuration": {
+                  "description": "Automatic or Manual.",
+                  "enum": [
+                    "Automatic",
+                    "Manual"
+                  ],
+                  "default": "Automatic"
+                },
+                "server": {
+                  "description": "The NTP server (address or name) when configuration is Manual.",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "alternate_server": {
+                  "description": "The alternate NTP server when configuration is Manual.",
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "site_mode": {
+              "description": "Schema 5.4. Auto (create the site and configuration when missing), Create (they must not exist) or Reuse (they must exist). Default Auto.",
+              "enum": [
+                "Auto",
+                "Create",
+                "Reuse"
+              ],
+              "default": "Auto"
+            },
+            "deployment_name": {
+              "description": "Schema 5.4. Name of the ARM deployment. Default: ztp-<site_name>.",
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._()-]{1,64}$"
+            },
+            "skip_azure_check": {
+              "description": "Schema 5.4. Skip the Bootstrap stage's check of the Azure prerequisites (the feature, the resource providers and the catalog). Default false.",
+              "type": "boolean",
+              "default": false
+            },
+            "include_preview": {
+              "description": "Schema 5.4. Resolve stage: also consider preview trains when maintenance_iso is latest. Default false.",
+              "type": "boolean",
+              "default": false
+            },
+            "max_train": {
+              "description": "Schema 5.4. Resolve stage: the highest train to consider when maintenance_iso is latest, for example 2609 to stay on the train of a given solution release. Default: none.",
+              "type": "string",
+              "pattern": "^$|^[0-9]{4}$"
+            },
+            "retry_provision_os": {
+              "description": "Schema 5.4. Resubmit a failed OS install job once. Default true.",
+              "type": "boolean",
+              "default": true
+            },
+            "usb_image": {
+              "description": "Schema 5.4. The per-node virtual USB image that carries the maintenance ISO.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "size_gb": {
+                  "description": "Image size in GiB. The maintenance ISO needs about 1 GiB; 4 is the size that booted on Dell 16G servers. Default 4.",
+                  "type": "integer",
+                  "minimum": 2,
+                  "maximum": 128,
+                  "default": 4
+                },
+                "name_prefix": {
+                  "description": "File-name prefix of the images (<prefix><node>.img). Default ztp-usb-.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9._-]{0,40}$",
+                  "default": "ztp-usb-"
+                }
+              }
+            },
+            "maintenance_environment": {
+              "description": "Schema 5.4. The maintenance environment's Configurator service, which the Device stage reaches before the claim.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "port": {
+                  "description": "TCP port of the service (https://<address>:<port>/BootstrapOobeService). Default 20001, the port Microsoft documents.",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535,
+                  "default": 20001
+                },
+                "username": {
+                  "description": "The service's local user. Default edgeuser, as Microsoft documents. Its password is maintenance_password.",
+                  "type": "string",
+                  "minLength": 1,
+                  "default": "edgeuser"
+                }
+              }
+            },
+            "timeouts": {
+              "description": "Schema 5.4. How long azurelocal-ztp waits at each stage, and how often it polls. The defaults are the values that worked on Dell AX servers; a server with a long POST (large memory) or a slow link may need more.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "bootstrap_minutes": {
+                  "description": "Bootstrap stage: overall budget until the maintenance environment is up and every node is ready for the portal. Default 120.",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1440,
+                  "default": 120
+                },
+                "bootstrap_voucher_minutes": {
+                  "description": "Bootstrap stage: budget until a valid voucher appears. Default 90.",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 1440,
+                  "default": 90
+                },
+                "bootstrap_stall_minutes": {
+                  "description": "Bootstrap stage: how long the BMC may show no change before the stage reports a stall. Default 20.",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 240,
+                  "default": 20
+                },
+                "voucher_wait_minutes": {
+                  "description": "Vouchers stage: how long to wait for each node's voucher in its image. Default 120.",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1440,
+                  "default": 120
+                },
+                "device_minutes": {
+                  "description": "Device stage: how long the maintenance environment may take to report the static address (and to be found by the scan). Default 30.",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1440,
+                  "default": 30
+                },
+                "ready_minutes": {
+                  "description": "Ready stage: polling budget until every machine is ready to cluster. Default 180.",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1440,
+                  "default": 180
+                },
+                "network_minutes": {
+                  "description": "Network stage: how long each Azure configuration job may take. Default 60.",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 1440,
+                  "default": 60
+                },
+                "restore_settle_minutes": {
+                  "description": "Restore stage: how long to wait after the BIOS restart before checking that the Arc machines are Connected again. Default 5.",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 120,
+                  "default": 5
+                },
+                "bios_minutes": {
+                  "description": "Boot and Restore stages: how long to wait for a node's BIOS to report the new values after the restart. Default 30.",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 240,
+                  "default": 30
+                },
+                "poll_interval_seconds": {
+                  "description": "Ready and Network stages: seconds between polls. Default 60.",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 3600,
+                  "default": 60
+                }
+              }
             }
           }
         }
@@ -3097,6 +3337,15 @@
         },
         "password": {
           "$ref": "#/$defs/kv_ref"
+        },
+        "rfs_write_attribute": {
+          "description": "Schema 5.4. azurelocal-ztp, Boot stage: also set the iDRAC Remote File Share attribute RFS.<n>.WriteProtected to Read Write before it inserts the virtual media. iDRAC 7.30 rejects WriteProtected=false in InsertMedia, and the maintenance environment cannot write its voucher to a read-only drive. Default: true for Dell (azurelocal-ztp config/oem/dell.json, bmc.rfsWriteAttribute), false for the other vendors, whose BMCs have no such attribute. Set it when your BMC differs from its vendor's usual behaviour.",
+          "type": "boolean"
+        },
+        "verify_certificate": {
+          "description": "Schema 5.4. Check the BMCs' TLS certificates. Default false: BMCs ship a self-signed certificate, so azurelocal-ztp accepts it. Set true once the BMCs carry a certificate that the management host trusts.",
+          "type": "boolean",
+          "default": false
         }
       }
     },
@@ -3600,21 +3849,28 @@
       "additionalProperties": false,
       "properties": {
         "hbas": {
-          "description": "The Fibre Channel host bus adapters in this machine.",
+          "description": "The host bus adapters in this machine that reach the SAN: Fibre Channel HBAs, and from 5.4 iSCSI offload adapters. azurelocal-ztp reads their slots (schema 5.4): while the OS installs it turns those PCIe slots off in the BIOS, so the maintenance environment can't install onto a SAN LUN, and turns them on again afterwards (provisioning.simplified.isolate_san_adapters).",
           "type": "array",
           "minItems": 1,
           "items": {
             "type": "object",
             "additionalProperties": false,
             "required": [
-              "slot",
-              "ports"
+              "slot"
             ],
             "properties": {
               "slot": {
-                "description": "Where the HBA is, as the BIOS names it, for example Slot2. The BIOS key of the same name (bios, bios_during_provisioning) turns it off or on.",
+                "description": "Where the HBA is, as a PCIe slot label: Slot 2, Slot2 or slot-2 (the number is what counts). azurelocal-ztp turns the BIOS attribute of that slot off for the OS install and on again afterwards; the attribute name per vendor is in its config/oem/<vendor>.json. Another label (for example OCP 1) needs the raw BIOS attribute in bios_during_provisioning.",
                 "type": "string",
                 "minLength": 1
+              },
+              "type": {
+                "description": "Schema 5.4. fibre_channel (default; with storage.san.type fibre_channel the ports with their WWPNs are needed for zoning, rule AZL-028) or iscsi_offload (an adapter that presents SAN LUNs to the BIOS; it needs no ports here, its addresses are on network_adapters with role iscsi:a or iscsi:b).",
+                "enum": [
+                  "fibre_channel",
+                  "iscsi_offload"
+                ],
+                "default": "fibre_channel"
               },
               "model": {
                 "type": "string"
@@ -3670,7 +3926,7 @@
           "$ref": "#/$defs/mac"
         },
         "slot": {
-          "description": "Where the port is, for example Embedded (a LOM), Slot 3 or OCP 1.",
+          "description": "Where the port is, for example Embedded (a LOM), Slot 3 or OCP 1. From 5.4 azurelocal-ztp reads it: a management or provisioning port in slot Embedded makes it enable the embedded NICs in the BIOS (provisioning.simplified.enable_embedded_nics), and a slot that also holds a SAN adapter (nodes[].san.hbas[].slot) is never turned off.",
           "type": "string"
         },
         "model": {
