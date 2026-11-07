@@ -211,6 +211,93 @@ Describe 'Comparison: only the differences are changes' {
     }
 }
 
+
+Describe 'Comparison: the management address, per mode' {
+    BeforeEach {
+        $script:Infra = Get-Infra
+        # Changes the management port of node 0 (found by role and MAC, never by slot or name) and returns spec and state.
+        $script:For = {
+            param([string]$Mode, [AllowNull()][string]$Ip = '192.0.2.11')
+            $p = $script:Infra.nodes[0].network_adapters | Where-Object { 'management' -in $_.roles -and $_.ip_assignment -ne 'none' } | Select-Object -First 1
+            $p.ip_assignment = $Mode
+            if ($Ip) { $p.ip_address = $Ip } else { $p.Remove('ip_address') }
+            $spec = Get-AzlNodeSpec -Infrastructure $script:Infra -Node $script:Infra.nodes[0]
+            $state = New-ConfiguredState $spec
+            [pscustomobject]@{ Spec = $spec; State = $state; Nic = ($state.nics | Where-Object { $_.mac -eq $spec.Management.Mac }) }
+        }
+        $script:MgmtItem = { param($Plan) $Plan | Where-Object { $_.Step -eq 'Network' -and $_.Item -like 'management *' -and $_.Item -notlike 'management VLAN*' } }
+    }
+    It 'static (Mode B or C): sets the address by MAC after the install reset the port to DHCP, and names the mode' {
+        $c = & $script:For 'static'
+        $c.Nic.ips = @('192.0.2.116/24/Dhcp'); $c.Nic.dhcp = 'Enabled'; $c.Nic.gw = @('192.0.2.1')
+        $item = & $script:MgmtItem (Compare-AzlNodeState -Spec $c.Spec -State $c.State)
+        $item.Action | Should -Be 'Change'
+        $item.Apply.kind | Should -Be 'nic-static'
+        $item.Apply.mac | Should -Be $c.Spec.Management.Mac
+        $item.Note | Should -Match '^Mode [BC] \(Static .*\): set by MAC'
+    }
+    It 'static: says why ZTP did not verify it, from the handoff' {
+        $handoff = Read-AzlHandoff -Path $script:HandoffFile
+        $spec = Get-AzlNodeSpec -Infrastructure $script:Infra -Node $script:Infra.nodes[1] -Handoff $handoff
+        $spec.Handoff.ManagementMode | Should -Be 'B'
+        $state = New-ConfiguredState $spec
+        ($state.nics | Where-Object { $_.mac -eq $spec.Management.Mac }) | ForEach-Object { $_.ips = @('192.0.2.120/24/Dhcp'); $_.dhcp = 'Enabled' }
+        $item = & $script:MgmtItem (Compare-AzlNodeState -Spec $spec -State $state)
+        $item.Action | Should -Be 'Change'
+        $item.Note | Should -Match "^ZTP didn't verify it: Mode B \(Static with DHCP\): the management port Port0"
+    }
+    It 'dhcp_reservation (Mode A): leaves DHCP on and verifies the reserved address' {
+        $c = & $script:For 'dhcp_reservation'
+        $c.Nic.ips = @('192.0.2.11/24/Dhcp'); $c.Nic.dhcp = 'Enabled'
+        $plan = Compare-AzlNodeState -Spec $c.Spec -State $c.State
+        (& $script:MgmtItem $plan).Action | Should -Be 'Ok'
+        @($plan | Where-Object { $_.Action -eq 'Change' -and $_.Step -eq 'Network' }) | Should -BeNullOrEmpty
+        $c.Nic.ips = @('192.0.2.99/24/Dhcp')
+        $item = & $script:MgmtItem (Compare-AzlNodeState -Spec $c.Spec -State $c.State)
+        $item.Action | Should -Be 'Info'
+        $item.Apply | Should -BeNullOrEmpty
+        $item.Note | Should -Match 'Mode A \(Reserved\): expected the reserved 192\.0\.2\.11 from DHCP; check the reservation for MAC'
+    }
+    It 'dhcp_reservation (Mode A) without ip_address: verified when the port has any DHCP address' {
+        $c = & $script:For 'dhcp_reservation' $null
+        $c.Nic.ips = @('192.0.2.140/24/Dhcp'); $c.Nic.dhcp = 'Enabled'
+        $item = & $script:MgmtItem (Compare-AzlNodeState -Spec $c.Spec -State $c.State)
+        $item.Action | Should -Be 'Ok'
+        $item.Note | Should -Match "can't be compared"
+        $c.Nic.ips = @()
+        (& $script:MgmtItem (Compare-AzlNodeState -Spec $c.Spec -State $c.State)).Action | Should -Be 'Info'
+    }
+    It '<_>: leaves the management port alone' -ForEach 'dhcp', 'preconfigured' {
+        $c = & $script:For $_
+        $c.Nic.ips = @('192.0.2.140/24/Dhcp'); $c.Nic.dhcp = 'Enabled'
+        $plan = Compare-AzlNodeState -Spec $c.Spec -State $c.State
+        $item = & $script:MgmtItem $plan
+        $item.Action | Should -Be 'Ok'
+        $item.Note | Should -Match '^Left as it is'
+        @($plan | Where-Object { $_.Step -in 'Network', 'Dns' -and $_.Action -eq 'Change' }) | Should -BeNullOrEmpty
+    }
+    It 'turns DHCP and the gateway off on every other port with ip_assignment none, whatever the mode' {
+        foreach ($mode in 'static', 'dhcp_reservation', 'dhcp', 'preconfigured') {
+            $script:Infra = Get-Infra
+            $c = & $script:For $mode
+            $c.Nic.ips = @('192.0.2.11/24/Dhcp'); $c.Nic.dhcp = 'Enabled'
+            foreach ($other in @($c.State.nics | Where-Object { $_.mac -ne $c.Spec.Management.Mac -and $_.st -ne 'Disabled' })) { $other.dhcp = 'Enabled'; $other.ips = @('198.51.100.40/26/Dhcp'); $other.gw = @('198.51.100.1') }
+            $clean = @(Compare-AzlNodeState -Spec $c.Spec -State $c.State | Where-Object { $_.Apply -and $_.Apply.kind -eq 'nic-clean' })
+            $clean.Count | Should -Be @($c.Spec.Ports | Where-Object { -not $_.IsManagement -and $_.IpAssignment -eq 'none' -and $_.Roles -notcontains 'unused' }).Count -Because $mode
+        }
+    }
+    It 'applies the management port''s static address before any other port loses DHCP (Mode C reaches Arc through another port)' {
+        $c = & $script:For 'static'
+        $c.Nic.ips = @(); $c.Nic.dhcp = 'Enabled'; $c.Nic.gw = @()
+        $other = $c.State.nics | Where-Object { $_.mac -eq '00005e005312' }
+        $other.dhcp = 'Enabled'; $other.ips = @('198.51.100.40/26/Dhcp'); $other.gw = @('198.51.100.1')
+        # The OS lists the management port last.
+        $c.State.nics = @(@($c.State.nics | Where-Object { $_.mac -ne $c.Spec.Management.Mac }) + @($c.Nic))
+        $kinds = @(Compare-AzlNodeState -Spec $c.Spec -State $c.State -Step Network | Where-Object { $_.Action -eq 'Change' } | ForEach-Object { $_.Apply.kind })
+        $kinds | Should -Be @('nic-static', 'nic-clean')
+    }
+}
+
 Describe 'Comparison: SAN' {
     BeforeEach {
         $infra = Get-Infra

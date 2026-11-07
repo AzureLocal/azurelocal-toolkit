@@ -245,10 +245,22 @@ Describe 'Schema 5.2: network adapters' {
     }
 
     Context 'schema' {
-        It 'needs ip_address for <_>' -ForEach @('static', 'dhcp_reservation') {
-            $mode = $_
-            $f = Get-LomFinding { param($d) $p = Get-Port $d 0 'Embedded NIC 1'; $p.ip_assignment = $mode; $p.Remove('ip_address') }
+        It 'needs ip_address for static' {
+            $f = Get-LomFinding { param($d) $p = Get-Port $d 0 'Embedded NIC 1'; $p.Remove('ip_address') }
             $f | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'nodes[0].network_adapters[0]' -and $_.Message -match 'ip_address' } | Should -Not -BeNullOrEmpty
+        }
+        It 'takes Mode A (dhcp_reservation) without ip_address: an error only where the deployment needs it, otherwise a warning' {
+            $edit = { param($d) foreach ($n in 0, 1) { $p = Get-Port $d $n 'Embedded NIC 1'; $p.ip_assignment = 'dhcp_reservation'; $p.Remove('ip_address') } }
+            $f = Get-LomFinding $edit
+            @($f | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Message -match 'ip_address' }) | Should -BeNullOrEmpty -Because 'only static requires it in the schema'
+            $f | Where-Object { $_.Id -eq 'AZL-020' -and $_.Severity -eq 'error' -and $_.Path -eq 'nodes[0].network_adapters[0]' -and $_.Message -match 'The deployment needs' } | Should -Not -BeNullOrEmpty
+            $ztp = Get-LomFinding { param($d) & $edit $d; $d._metadata['scope'] = 'ztp' }
+            @($ztp | Where-Object { $_.Id -eq 'AZL-020' -and $_.Message -match 'The deployment needs' }) | Should -BeNullOrEmpty -Because 'a file with scope ztp does not deploy'
+            $w = @($ztp | Where-Object { $_.Id -eq 'AZL-020' -and $_.Severity -eq 'warning' -and $_.Message -match "Mode A \(Reserved\) without ip_address: the expected reserved IP can't be verified" })
+            $w.Count | Should -Be 2
+            $w[0].Path | Should -Be 'nodes[0].network_adapters[0].ip_address'
+            $dhcp = Get-LomFinding { param($d) & $edit $d; $d.networking.management['use_dhcp'] = $true }
+            @($dhcp | Where-Object { $_.Id -eq 'AZL-020' -and $_.Message -match "can't be verified" }).Count | Should -Be 2 -Because 'use_dhcp needs no address, so only the warning stays'
         }
         It 'needs mac_address for a DHCP reservation' {
             $f = Get-FindingFor -From (Join-Path $repo 'config\infrastructure\examples\single-machine-iso.yml') { param($d) $d.nodes[0].network_adapters[0].Remove('mac_address') }
@@ -358,9 +370,44 @@ Describe 'Schema 5.2: network adapters' {
             (Get-LomFinding { param($d) (Get-Port $d 0 'Slot 3 Port 2').vlan_mode = 'access' }) | Where-Object { $_.Id -eq 'AZL-023' -and $_.Severity -eq 'warning' -and $_.Message -match 'trunk' } | Should -Not -BeNullOrEmpty
             @(Get-FindingFor -From $script:NoDhcp {} | Where-Object Id -eq 'AZL-023') | Should -BeNullOrEmpty -Because 'a tagged management port that matches networking.management.vlan_id is right'
         }
-        It 'AZL-024 warns that a static maintenance-environment address is unresearched, and that a static management port used for provisioning needs DHCP there' {
-            (Get-LomFinding { param($d) $d.networking.management.provisioning_network = 'static' }) | Where-Object { $_.Id -eq 'AZL-024' -and $_.Severity -eq 'warning' -and $_.Message -match 'open research item' } | Should -Not -BeNullOrEmpty
-            (Get-LomFinding { param($d) (Get-Port $d 0 'Embedded NIC 1').roles = @('management', 'provisioning') }) | Where-Object { $_.Id -eq 'AZL-024' -and $_.Severity -eq 'warning' -and $_.Message -match 'A DHCP server must answer' } | Should -Not -BeNullOrEmpty
+        It 'AZL-024 stops Mode C with no DHCP anywhere (G23), and warns that a static management port used for provisioning needs DHCP there (Mode B)' {
+            $f = Get-LomFinding { param($d) $d.networking.management.provisioning_network = 'static' }
+            $e = @($f | Where-Object { $_.Id -eq 'AZL-024' -and $_.Severity -eq 'error' })
+            $e.Count | Should -Be 2
+            $e[0].Path | Should -Be 'nodes[0].network_adapters'
+            $e[0].Message | Should -Match "Mode C \(Static without management DHCP\): the maintenance environment can't reach Azure: no DHCP anywhere \(G23\); give a provisioning port with DHCP"
+            @($f | Where-Object { $_.Id -eq 'AZL-024' -and $_.Message -match 'open research item' }) | Should -BeNullOrEmpty -Because 'the error says it'
+            (Get-LomFinding { param($d) (Get-Port $d 0 'Embedded NIC 1').roles = @('management', 'provisioning') }) | Where-Object { $_.Id -eq 'AZL-024' -and $_.Severity -eq 'warning' -and $_.Message -match 'Mode B \(Static with DHCP\)\. A DHCP server must answer' } | Should -Not -BeNullOrEmpty
+        }
+        It 'AZL-024 takes Mode C with provisioning_network static when every node has a provisioning port on DHCP' {
+            $f = Get-LomFinding { param($d) $d.networking.management.provisioning_network = 'static'; foreach ($n in 0, 1) { (Get-Port $d $n 'Slot 3 Port 1').ip_assignment = 'dhcp' } }
+            @($f | Where-Object { $_.Id -eq 'AZL-024' -and $_.Severity -eq 'error' }) | Should -BeNullOrEmpty
+            @($f | Where-Object { $_.Id -eq 'AZL-024' -and $_.Message -match 'open research item' }) | Should -BeNullOrEmpty
+            # One node without it is still stopped.
+            $one = Get-LomFinding { param($d) $d.networking.management.provisioning_network = 'static'; (Get-Port $d 0 'Slot 3 Port 1').ip_assignment = 'dhcp' }
+            @($one | Where-Object { $_.Id -eq 'AZL-024' -and $_.Severity -eq 'error' } | ForEach-Object Path) | Should -Be @('nodes[1].network_adapters')
+        }
+        It 'AZL-024 still only warns about a static provisioning network when the management port is not static' {
+            $f = Get-LomFinding { param($d) $d.networking.management.provisioning_network = 'static'; foreach ($n in 0, 1) { (Get-Port $d $n 'Embedded NIC 1').ip_assignment = 'dhcp_reservation' } }
+            @($f | Where-Object { $_.Id -eq 'AZL-024' -and $_.Severity -eq 'error' }) | Should -BeNullOrEmpty
+            $f | Where-Object { $_.Id -eq 'AZL-024' -and $_.Severity -eq 'warning' -and $_.Message -match 'open research item' } | Should -Not -BeNullOrEmpty
+        }
+        It 'AZL-024 stops Mode C on a node described with management only (schema 5.0/5.1)' {
+            $f = Get-FindingFor { param($d) $d.networking.management.provisioning_network = 'static' }
+            $f | Where-Object { $_.Id -eq 'AZL-024' -and $_.Severity -eq 'error' -and $_.Path -eq 'nodes[0].management' -and $_.Message -match 'G23' } | Should -Not -BeNullOrEmpty
+        }
+        It 'names each node''s management address mode: <Case>' -ForEach @(
+            @{ Case = 'static on a port without role provisioning is Mode C'; Edit = { param($d) }; Mode = 'C'; Label = 'Mode C (Static without management DHCP)' }
+            @{ Case = 'static on a port that is also the provisioning port is Mode B'; Edit = { param($d) (Get-Port $d 0 'Embedded NIC 1').roles = @('management', 'provisioning') }; Mode = 'B'; Label = 'Mode B (Static with DHCP)' }
+            @{ Case = 'static with provisioning_network static is Mode C'; Edit = { param($d) (Get-Port $d 0 'Embedded NIC 1').roles = @('management', 'provisioning'); $d.networking.management.provisioning_network = 'static' }; Mode = 'C'; Label = 'Mode C (Static without management DHCP)' }
+            @{ Case = 'dhcp_reservation is Mode A'; Edit = { param($d) (Get-Port $d 0 'Embedded NIC 1').ip_assignment = 'dhcp_reservation' }; Mode = 'A'; Label = 'Mode A (Reserved)' }
+            @{ Case = 'dhcp is none of the three'; Edit = { param($d) (Get-Port $d 0 'Embedded NIC 1').ip_assignment = 'dhcp' }; Mode = ''; Label = 'dhcp without a reservation (not Mode A, B or C)' }
+        ) {
+            $doc = ConvertFrom-Yaml (Get-Content -LiteralPath $script:Lom -Raw) -Ordered
+            & $Edit $doc
+            $m = Get-AzlManagementMode -Infrastructure $doc -Node $doc.nodes[0]
+            $m.Mode | Should -Be $Mode
+            $m.Label | Should -Be $Label
         }
         It 'AZL-025 checks the site range: <Case>' -ForEach @(
             @{ Case = 'a node outside it'; Range = @('192.0.2.11', '192.0.2.11'); Expect = 'outside the site range'; Severity = 'error' }

@@ -128,9 +128,11 @@ function Read-AzlHandoff {
     .SYNOPSIS
         Reads azurelocal-ztp's handoff file (schema 2) and returns it with a Node lookup by name.
     .DESCRIPTION
-        Schema 2 holds only what Azure generated during ZTP: nodes[] (name, serial, arcMachineName, arcMachineResourceId,
+        Schema 2 holds what Azure generated during ZTP: nodes[] (name, serial, arcMachineName, arcMachineResourceId,
         arcMachineResourceGroup, ready, managementAddressVerified, managementAddressReason), solution.vsrVersion (the build
-        installed), subscriptionId, resourceGroup and site. Addresses and MACs come from infrastructure.yml, not from here.
+        installed), subscriptionId, resourceGroup and site. Newer ZTP versions add, per node, managementMode { mode A, B or C,
+        name, ipAssignment } and networkAdapters[] (each port as Azure reports it after the install); they are additive, so
+        the schema stays 2 and older files read the same. The expected addresses and MACs come from infrastructure.yml.
     .OUTPUTS
         SchemaVersion, SubscriptionId, ResourceGroup, VsrVersion, Nodes (name -> node object), Raw.
     #>

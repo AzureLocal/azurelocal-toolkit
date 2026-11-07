@@ -152,16 +152,31 @@ For `hybrid` the cluster is deployed with Storage Spaces Direct and the SAN is c
 
 ## The ZTP hand-off file
 
-`ztp-handoff.json`, written by azurelocal-ztp's `New-ZtpHandoff.ps1` when every machine is ready to cluster. **Schema 2** is required; an older file stops the run. It holds only what Azure generated, so addresses and MACs always come from `infrastructure.yml`. Keep it out of source control: it holds Azure resource IDs.
+`ztp-handoff.json`, written by azurelocal-ztp's `New-ZtpHandoff.ps1` when every machine is ready to cluster. **Schema 2** is required; an older file stops the run. It holds what Azure generated, and since the per-port detail (`networkAdapters[]`) what Azure reports for each port after the install; the expected addresses and MACs always come from `infrastructure.yml`. Keep it out of source control: it holds Azure resource IDs.
 
 | Field read | Used for |
 | --- | --- |
 | `nodes[].arcMachineResourceId` | the Arc Run Command target; ARM `arcNodeResourceIds`. Without a handoff the Arc machine is found by `arc_machine_name` (default the node name) in `azure.resource_group` |
-| `nodes[].managementAddressVerified`, `managementAddressReason` | shown next to the management-address change when ZTP couldn't verify it. The script always verifies by MAC itself |
+| `nodes[].managementAddressVerified`, `managementAddressReason`, `managementMode.mode` | shown next to the management-address change when ZTP couldn't verify it (in Modes B and C that is the normal case: the OS install reset the static). The script always verifies by MAC itself |
 | `solution.vsrVersion` | compared with `provisioning.os_version`; a difference is reported |
 | `nodes[].name`, `arcMachineName` | matching the entry to the node |
 
 The OS configuration's own **report** (`-ReportPath`, JSON, no secrets) feeds the ARM step: the OS adapter names by MAC (Network ATC needs the real names, `Port0` to `Port6`, the same on every node) and the SAN disks by LUN.
+
+### The Network step, per management address mode
+
+The management port is the port the file gives role `management` (with an `ip_assignment` other than `none`), found on the node by its MAC, whatever its OS name, card or slot. What the Network step does with it follows the mode ([Management address modes](../config/infrastructure/README.md#management-address-modes)):
+
+| `ip_assignment` | Mode | The management port after ZTP | What the Network step does |
+| --- | --- | --- | --- |
+| `dhcp_reservation` | A, Reserved (recommended) | Its reserved address | Leaves DHCP on and verifies the address (`ip_address`; without it, any DHCP address). Info when it differs: check the reservation for the MAC |
+| `static` | B, Static with DHCP | A DHCP address: the OS install reset the static | Sets the static by MAC (`nic-static`: DHCP off, the address, the gateway), then DNS |
+| `static` | C, Static without management DHCP | No address; Arc reaches the node over the provisioning port | The same, over Arc, and **before** any other port loses DHCP: the management port is handled first |
+| `dhcp` | none | A DHCP address that can change | Leaves it alone |
+| `preconfigured` | none | What the operator set | Leaves it alone |
+| `none` (any other port) | every mode | DHCP and often a default gateway, from the install | Turns DHCP off and removes the address and the gateway (`nic-clean`) |
+
+A port the file lists as `dhcp` or `dhcp_reservation` keeps DHCP; if it holds a second default gateway the step is Blocked. A port the file doesn't list is Blocked when it holds a gateway, and left alone otherwise.
 
 ## What each part checks (summary)
 

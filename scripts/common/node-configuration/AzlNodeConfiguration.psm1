@@ -195,6 +195,7 @@ function Get-AzlNodeSpec {
     $mgmt = Get-AzlManagementAdapter -Infrastructure $Infrastructure -Node $Node
     if (-not $mgmt) { throw "Node $name has no single management port (role management with an address). Check nodes[].network_adapters." }
     if (-not $mgmt.MacAddress) { throw "Node $name's management port has no mac_address. Ports are found by MAC, so it is required." }
+    $modeLabel = (Get-AzlManagementMode -Infrastructure $Infrastructure -Node $Node).Label
 
     $ports = foreach ($p in @(Get-AzlNodeNetworkAdapter -Infrastructure $Infrastructure -Node $Node)) {
         $roles = @(ConvertTo-List $p['roles'] | ForEach-Object { [string]$_ })
@@ -243,7 +244,7 @@ function Get-AzlNodeSpec {
         ArcMachineName = $arcName
         ArcResourceId  = [string](Get-AzlProp $handoffNode 'arcMachineResourceId' '')
         Hostname       = $name
-        Management     = [pscustomobject]@{ Mac = ConvertTo-MacKey $mgmt.MacAddress; Name = $mgmt.Name; Ip = $mgmt.IpAddress; Prefix = $mgmt.PrefixLength; Gateway = $mgmt.Gateway; Dns = @($mgmt.DnsServers); Vlan = $mgmt.VlanId; Mode = $mgmt.IpAssignment }
+        Management     = [pscustomobject]@{ Mac = ConvertTo-MacKey $mgmt.MacAddress; Name = $mgmt.Name; Ip = $mgmt.IpAddress; Prefix = $mgmt.PrefixLength; Gateway = $mgmt.Gateway; Dns = @($mgmt.DnsServers); Vlan = $mgmt.VlanId; Mode = $mgmt.IpAssignment; ModeLabel = $modeLabel }
         Ports          = @($ports)
         Ntp            = @(ConvertTo-List (Get-AzlProp $Infrastructure 'networking.ntp_servers') | ForEach-Object { [string]$_ })
         LocalAdmin     = $(if ($local) { [pscustomobject]@{ Username = [string](Get-AzlProp $local 'username' ''); PasswordRef = [string](Get-AzlProp $local 'password' '') } } else { $null })
@@ -254,6 +255,7 @@ function Get-AzlNodeSpec {
             Present                   = [bool]$handoffNode
             ManagementAddressVerified = $(if ($handoffNode) { [bool](Get-AzlProp $handoffNode 'managementAddressVerified' $false) } else { $null })
             Reason                    = [string](Get-AzlProp $handoffNode 'managementAddressReason' '')
+            ManagementMode            = [string](Get-AzlProp $handoffNode 'managementMode.mode' '')
             InstalledBuild            = $(if ($Handoff) { $Handoff.VsrVersion } else { '' })
         }
         ExpectedBuild  = [string](Get-AzlProp $Infrastructure 'provisioning.os_version' '')
@@ -386,7 +388,9 @@ function Compare-AzlNodeState {
         $known = @{}
         foreach ($p in $Spec.Ports) { if ($p.Mac) { $known[$p.Mac] = $p } }
         $gatewayHolders = [System.Collections.Generic.List[string]]::new()
-        foreach ($nic in $nics) {
+        # The management port first: its static address (Modes B and C) is applied before any other port loses DHCP and its
+        # gateway, so a node reached over Arc through another port (Mode C: the provisioning port) keeps a way out.
+        foreach ($nic in @($nics | Sort-Object -Stable { $_.mac -ne $mgmt.Mac })) {
             $port = $known[$nic.mac]
             $routable = @($nic.ips | Where-Object { $_ -notlike '169.254.*' })
             $hasGw = @($nic.gw).Count -gt 0
@@ -403,12 +407,25 @@ function Compare-AzlNodeState {
                     $gwOk = @($nic.gw) -contains $mgmt.Gateway
                     $ok = $addressOk -and $gwOk -and $nic.dhcp -eq 'Disabled'
                     $current = "$(@($routable) -join ',') gw $(@($nic.gw) -join ',') dhcp $($nic.dhcp)"
-                    $note = if ($Spec.Handoff.Present -and $Spec.Handoff.ManagementAddressVerified -eq $false -and -not $ok) { "ZTP didn't verify it: $($Spec.Handoff.Reason)" } else { '' }
+                    $note = if ($ok) { '' } elseif ($Spec.Handoff.Present -and $Spec.Handoff.ManagementAddressVerified -eq $false) { "ZTP didn't verify it: $($Spec.Handoff.Reason)" } else { "$($mgmt.ModeLabel): set by MAC (Microsoft's OS install resets every port to DHCP)." }
                     & $add (New-AzlPlanItem $n 'Network' "management $label" $current "static $want gw $($mgmt.Gateway)" $(if ($ok) { 'Ok' } else { 'Change' }) $note $(if (-not $ok) { @{ id = "Network/$($nic.mac)"; kind = 'nic-static'; mac = $nic.mac; ip = $mgmt.Ip; prefix = $mgmt.Prefix; gateway = $mgmt.Gateway } }))
                 }
                 else {
-                    $has = @($nic.ips | Where-Object { $_ -like "$($mgmt.Ip)/*" }).Count -gt 0
-                    & $add (New-AzlPlanItem $n 'Network' "management $label" (@($routable) -join ',') "$($mgmt.Mode) ($($mgmt.Ip))" $(if ($mgmt.Mode -eq 'preconfigured' -or $has) { 'Ok' } else { 'Info' }) $(if ($mgmt.Mode -eq 'preconfigured') { 'Left as it is.' } elseif (-not $has) { "Expected $($mgmt.Ip) from DHCP; check the reservation for this MAC." } else { '' }))
+                    # Never changed: dhcp_reservation (Mode A) keeps DHCP and is verified; dhcp and preconfigured are left alone.
+                    $current = if ($routable.Count) { "$(@($routable) -join ',') dhcp $($nic.dhcp)" } else { "no address, dhcp $($nic.dhcp)" }
+                    switch ($mgmt.Mode) {
+                        'dhcp_reservation' {
+                            $has = if ($mgmt.Ip) { @($nic.ips | Where-Object { $_ -like "$($mgmt.Ip)/*" }).Count -gt 0 } else { $routable.Count -gt 0 }
+                            $note = if (-not $has -and $mgmt.Ip) { "Mode A (Reserved): expected the reserved $($mgmt.Ip) from DHCP; check the reservation for MAC $($nic.mac)." }
+                            elseif (-not $has) { "Mode A (Reserved): no DHCP address; check that the DHCP server answers and holds the reservation for MAC $($nic.mac)." }
+                            elseif (-not $mgmt.Ip) { 'Mode A (Reserved): has a DHCP address; the file gives no ip_address, so the reserved address can''t be compared.' }
+                            elseif ($nic.dhcp -eq 'Disabled') { 'Mode A (Reserved): the address is there, but DHCP is off on the port; the reservation no longer applies. Left as it is.' }
+                            else { '' }
+                            & $add (New-AzlPlanItem $n 'Network' "management $label" $current "dhcp_reservation$(if ($mgmt.Ip) { " ($($mgmt.Ip))" })" $(if ($has) { 'Ok' } else { 'Info' }) $note)
+                        }
+                        'dhcp' { & $add (New-AzlPlanItem $n 'Network' "management $label" $current 'dhcp' $(if ($routable.Count) { 'Ok' } else { 'Info' }) 'Left as it is: dhcp without a reservation, so the address can change. Use dhcp_reservation (Mode A) or static.') }
+                        default { & $add (New-AzlPlanItem $n 'Network' "management $label" $current $mgmt.Mode Ok 'Left as it is.') }
+                    }
                 }
                 if ($mgmt.Vlan -gt 0 -and $nic.vlan -ne $mgmt.Vlan) { & $add (New-AzlPlanItem $n 'Network' "management VLAN" "$($nic.vlan)" "$($mgmt.Vlan)" Info 'The host should tag this VLAN (vlan_mode tagged). This tool does not set it; set it on the port or the switch.') }
                 if ($hasGw -or $mgmt.Mode -eq 'static') { $gatewayHolders.Add($nic.n) }

@@ -662,7 +662,7 @@
               }
             },
             "provisioning_network": {
-              "description": "Simplified provisioning: how the maintenance environment gets the address it reaches Azure with, on the ports with role provisioning, before the machine is claimed. dhcp (default): a DHCP server answers on that port's network. static: a static address in the maintenance environment. Learn documents only the Configurator app for that, and whether the bootable image can carry a preset address is an open research item, so tools warn and don't set it.",
+              "description": "Simplified provisioning: how the maintenance environment gets the address it reaches Azure with, on the ports with role provisioning, before the machine is claimed. dhcp (default): a DHCP server answers on that port's network. When the management port is one of those ports, the management network has DHCP (Mode B for a static management port); when it isn't, it is Mode C (Static without management DHCP). static: no DHCP there. A static management port then needs another port with role provisioning and ip_assignment dhcp or dhcp_reservation, or validation stops (AZL-024): Learn documents only the Configurator app for a static maintenance address, and whether the bootable image can carry a preset address is an open research item, so tools don't set it.",
               "enum": [
                 "dhcp",
                 "static"
@@ -3707,7 +3707,7 @@
           }
         },
         "ip_assignment": {
-          "description": "How the installed OS gets this port's host address before deployment. static: ip_address is set on the port (simplified provisioning sets it on the management port at the OS install; otherwise the operator or the toolkit). dhcp_reservation: the port keeps DHCP and the DHCP server reserves ip_address for mac_address. dhcp: the port keeps DHCP with no reservation, so its address can change. preconfigured: the port is already configured; tools leave it alone. none: no host address before deployment (Network ATC or the storage networks give it one, or it isn't used); node preparation turns DHCP off on it. Exactly one management port per machine owns the management address: the one with role management and an ip_assignment other than none.",
+          "description": "How the installed OS gets this port's host address before deployment. For the management port this is the management address mode (config/infrastructure/README.md): dhcp_reservation is Mode A (Reserved, recommended); static is Mode B (Static with DHCP) or Mode C (Static without management DHCP). static: ip_address is set on the port (with simplified provisioning azurelocal-ztp's Device stage sets it by MAC before the OS install, the install resets every port to DHCP, and OS configuration sets it again by MAC; otherwise the operator or the toolkit). dhcp_reservation: the port keeps DHCP and the DHCP server reserves ip_address for mac_address. dhcp: the port keeps DHCP with no reservation, so its address can change (a warning). preconfigured: the port is already configured; tools leave it alone. none: no host address before deployment (Network ATC or the storage networks give it one, or it isn't used); node preparation turns DHCP off on it. Exactly one management port per machine owns the management address: the one with role management and an ip_assignment other than none.",
           "enum": [
             "static",
             "dhcp_reservation",
@@ -3717,7 +3717,7 @@
           ]
         },
         "ip_address": {
-          "description": "The host address. For the management port this is ARM physicalNodesSettings[].ipv4Address. Required with static and dhcp_reservation.",
+          "description": "The host address. For the management port this is ARM physicalNodesSettings[].ipv4Address. Required with static. With dhcp_reservation give the reserved address: without it the tools can only check that the port has a DHCP address (a warning), and the deployment still needs it unless use_dhcp is true (a file with scope ztp doesn't deploy).",
           "$ref": "#/$defs/ipv4"
         },
         "prefix_length": {
@@ -3782,8 +3782,7 @@
             "properties": {
               "ip_assignment": {
                 "enum": [
-                  "static",
-                  "dhcp_reservation"
+                  "static"
                 ]
               }
             }

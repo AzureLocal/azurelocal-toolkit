@@ -12,6 +12,12 @@
       "arcMachineResourceGroup": "rg-iic-azl-01", "ready": true, "managementAddressVerified": true, "managementAddressReason": null },
     { "name": "iic-n02", "serial": "SERIAL02", "edgeMachineName": "iic-n02", "edgeMachineId": "", "arcMachineName": "iic-n02",
       "arcMachineResourceId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-azl-01/providers/Microsoft.HybridCompute/machines/iic-n02",
-      "arcMachineResourceGroup": "rg-iic-azl-01", "ready": true, "managementAddressVerified": false, "managementAddressReason": "the port with the management MAC holds DHCP" }
+      "arcMachineResourceGroup": "rg-iic-azl-01", "ready": true, "managementAddressVerified": false,
+      "managementAddressReason": "Mode B (Static with DHCP): the management port Port0 (MAC 00:00:5e:00:53:20) has DHCP 192.0.2.120 after the install; expected static 192.0.2.12; OS configuration sets it by MAC.",
+      "biosRestored": {}, "managementMode": { "mode": "B", "name": "Static with DHCP", "ipAssignment": "static" },
+      "networkAdapters": [
+        { "name": "Port0", "macAddress": "00:00:5e:00:53:20", "description": "Example LOM", "roles": ["management", "compute"], "fileName": "Port0", "isManagement": true, "ipAssignment": "Dhcp", "ipAddress": "192.0.2.120", "prefix": 24, "subnetMask": "255.255.255.0", "gateway": "192.0.2.1", "expected": { "ipAssignment": "static", "ipAddress": "192.0.2.12" } },
+        { "name": "Port2", "macAddress": "00:00:5e:00:53:22", "description": "Example ConnectX-6", "roles": ["storage"], "fileName": "Port2", "isManagement": false, "ipAssignment": "Dhcp", "ipAddress": "198.51.100.40", "prefix": 26, "subnetMask": "255.255.255.192", "gateway": "198.51.100.1", "expected": { "ipAssignment": "none", "ipAddress": null } }
+      ] }
   ]
 }

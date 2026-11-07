@@ -271,6 +271,62 @@ function Get-AzlInfrastructureScope {
     return 'full'
 }
 
+function Test-AzlProvisioningDhcpPort {
+    <#
+    .SYNOPSIS
+        True when the node has a port with role provisioning, other than the management port, whose ip_assignment gives it
+        DHCP (dhcp or dhcp_reservation): the maintenance environment's way to Azure when the management network has none.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure, [Parameter(Mandatory)][System.Collections.IDictionary]$Node)
+    foreach ($p in @(Get-AzlNodeNetworkAdapter -Infrastructure $Infrastructure -Node $Node)) {
+        $roles = @(Get-List $p['roles'])
+        if ('provisioning' -in $roles -and 'management' -notin $roles -and [string]$p['ip_assignment'] -in 'dhcp', 'dhcp_reservation') { return $true }
+    }
+    return $false
+}
+
+function Get-AzlManagementMode {
+    <#
+    .SYNOPSIS
+        A node's management address mode, by the names the docs use (config/infrastructure/README.md, "Management address
+        modes"): A Reserved, B Static with DHCP, C Static without management DHCP.
+    .DESCRIPTION
+        From the ip_assignment of the management port (the port with role management that owns the address, found by its
+        MAC; any make or slot) and whether that port takes DHCP while the machine is provisioned (ManagementDhcp):
+        networking.management.provisioning_network is dhcp (the default) and the management port also has role provisioning,
+        or the node has no network_adapters (its one management port is the maintenance environment's way to Azure).
+          A  Reserved                         dhcp_reservation.
+          B  Static with DHCP                 static, ManagementDhcp.
+          C  Static without management DHCP   static, no ManagementDhcp: another port with role provisioning reaches Azure.
+        dhcp (no reservation) and preconfigured are none of the three: Mode is '' and Label says what they are. $null when
+        the node has no single management port.
+    .OUTPUTS
+        Mode, Name, IpAssignment, ManagementDhcp, Label (for example 'Mode B (Static with DHCP)').
+    .EXAMPLE
+        Get-AzlManagementMode -Infrastructure $infra -Node $infra.nodes[0]
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure, [Parameter(Mandatory)][System.Collections.IDictionary]$Node)
+    $owner = Get-AzlManagementAdapter -Infrastructure $Infrastructure -Node $Node
+    if (-not $owner) { return $null }
+    $network = [string](Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'networking.management.provisioning_network')
+    $dhcp = $network -ne 'static'
+    if ($dhcp -and $owner.Source -eq 'network_adapters') {
+        $raw = @(Get-AzlNodeNetworkAdapter -Infrastructure $Infrastructure -Node $Node | Where-Object { Test-IsManagementOwner $_ }) | Select-Object -First 1
+        $dhcp = 'provisioning' -in @(Get-List $raw['roles'])
+    }
+    $mode, $name = switch ($owner.IpAssignment) {
+        'dhcp_reservation' { 'A', 'Reserved' }
+        'static' { if ($dhcp) { 'B', 'Static with DHCP' } else { 'C', 'Static without management DHCP' } }
+        'dhcp' { '', 'dhcp without a reservation (not Mode A, B or C)' }
+        default { '', [string]$owner.IpAssignment }
+    }
+    [pscustomobject]@{ Mode = $mode; Name = $name; IpAssignment = $owner.IpAssignment; ManagementDhcp = $dhcp; Label = $(if ($mode) { "Mode $mode ($name)" } else { $name }) }
+}
+
 function Get-AzlManagementStaticMethod {
     <#
     .SYNOPSIS
@@ -744,7 +800,7 @@ function Get-SemanticFinding {
         if (-not $o -or $o.IpAssignment -ne 'dhcp_reservation' -or -not $o.IpAddress) { continue }
         $mode = if ($o.Source -eq 'management') { 'ip_assignment is dhcp' } else { 'the management port is dhcp_reservation' }
         $for = if ($o.MacAddress) { "MAC $($o.MacAddress)" } else { 'its management MAC (set management.mac_address)' }
-        New-Finding 'AZL-017' warning $o.Path "Node '$($nodes[$i]['name'])': $mode, so the port keeps DHCP. Reserve $($o.IpAddress) in DHCP for $for, or the machine gets another address." $script:Learn.Decision8
+        New-Finding 'AZL-017' warning $o.Path "Node '$($nodes[$i]['name'])': $mode (Mode A, Reserved), so the port keeps DHCP. Reserve $($o.IpAddress) in DHCP for $for, or the machine gets another address." $script:Learn.Decision8
     }
 
     Get-AdapterFinding -Infra $Infra -Nodes $nodes -OwnerOf $ownerOf -Intents @(Get-List (& $v 'networking.intents') | Where-Object { $_ -is [System.Collections.IDictionary] })
@@ -788,8 +844,23 @@ function Get-AdapterFinding {
 
     # The site range applies with or without network_adapters.
     Get-SiteRangeFinding -Infra $Infra -Nodes $Nodes -OwnerOf $OwnerOf -Subnet $subnet -Simplified $simplified
+    # AZL-024: provisioning_network static means no DHCP on the provisioning network. A static management port (Mode C,
+    # Static without management DHCP) then needs another port with role provisioning on DHCP, or the maintenance
+    # environment never reaches Azure (G23): an error, so validation stops before the hardware is touched.
     if ($simplified -and [string]$mgmt['provisioning_network'] -eq 'static') {
-        New-Finding 'AZL-024' warning 'networking.management.provisioning_network' 'provisioning_network is static: the maintenance environment needs a static address to reach Azure before the machine is claimed. Learn documents only the Configurator app for that; whether the bootable image can carry a preset address is an open research item, so azurelocal-ztp does not set it.' $script:Learn.Simplified
+        $unresearched = $false
+        for ($i = 0; $i -lt $Nodes.Count; $i++) {
+            if (Test-AzlProvisioningDhcpPort -Infrastructure $Infra -Node $Nodes[$i]) { continue }
+            $o = $OwnerOf[$i]
+            if ($o -and $o.IpAssignment -eq 'static') {
+                $at = if ($Nodes[$i].Contains('network_adapters')) { "nodes[$i].network_adapters" } else { $o.Path }
+                New-Finding 'AZL-024' error $at "Node '$($Nodes[$i]['name'])': Mode C (Static without management DHCP): the maintenance environment can't reach Azure: no DHCP anywhere (G23); give a provisioning port with DHCP (a port with role provisioning and ip_assignment dhcp or dhcp_reservation, on a network a DHCP server answers). provisioning_network is static, and azurelocal-ztp can't give the maintenance environment a static address." $script:Learn.Simplified
+            }
+            else { $unresearched = $true }
+        }
+        if ($unresearched) {
+            New-Finding 'AZL-024' warning 'networking.management.provisioning_network' 'provisioning_network is static: the maintenance environment needs a static address to reach Azure before the machine is claimed. Learn documents only the Configurator app for that; whether the bootable image can carry a preset address is an open research item, so azurelocal-ztp does not set it.' $script:Learn.Simplified
+        }
     }
     if ($listed.Count -eq 0) { return }
 
@@ -859,11 +930,15 @@ function Get-AdapterFinding {
                 New-Finding 'AZL-020' error "$($o.Path).dns_servers" "Node '$name': the management port's DNS servers aren't networking.management.dns_servers. The deployment sets the same DNS servers on every machine, and they can't change afterwards." $script:Learn.Decision8
             }
         }
-        if (-not $o.IpAddress -and -not $useDhcp) {
+        # The deployment needs the address (a file with scope ztp doesn't deploy, so it doesn't need it).
+        if (-not $o.IpAddress -and -not $useDhcp -and (Get-AzlInfrastructureScope -Infrastructure $Infra) -ne 'ztp') {
             New-Finding 'AZL-020' error "$($o.Path)" "Node '$name': the management port has no ip_address. The deployment needs each node's management address (ARM physicalNodesSettings[].ipv4Address) unless networking.management.use_dhcp is true." $script:Learn.Arm
         }
+        elseif (-not $o.IpAddress -and $o.IpAssignment -eq 'dhcp_reservation') {
+            New-Finding 'AZL-020' warning "$($o.Path).ip_address" "Node '$name': Mode A (Reserved) without ip_address: the expected reserved IP can't be verified. azurelocal-ztp and OS configuration can only check that the management port has a DHCP address; give the reserved address in ip_address." $script:Learn.Decision8
+        }
         if ($o.IpAssignment -eq 'dhcp') {
-            New-Finding 'AZL-020' warning "$($o.Path).ip_assignment" "Node '$name': the management port is on DHCP without a reservation, so its address can change. Use dhcp_reservation, or static." $script:Learn.Decision8
+            New-Finding 'AZL-020' warning "$($o.Path).ip_assignment" "Node '$name': the management port is dhcp without a reservation (not Mode A, B or C): the node's management IP can change, and Azure Local needs a stable IP. Use dhcp_reservation (Mode A, recommended) or static (Mode B or C)." $script:Learn.Decision8
         }
         if ($o.Source -eq 'network_adapters' -and $mgmtIntent) {
             $members = @(Get-List $mgmtIntent['adapters'])
@@ -987,7 +1062,7 @@ function Get-AdapterFinding {
             }
             # AZL-024: the maintenance environment's port.
             if ($simplified -and 'provisioning' -in $roles -and $owner -and $mode -eq 'static' -and [string]$mgmt['provisioning_network'] -ne 'static') {
-                New-Finding 'AZL-024' warning "$($p['_path']).roles" "Port '$($p['name'])' of node '$nodeName' is the static management port and also the maintenance environment's way to Azure, which takes DHCP there (provisioning_network dhcp). A DHCP server must answer on that network while the machine is in the maintenance environment." $script:Learn.Simplified
+                New-Finding 'AZL-024' warning "$($p['_path']).roles" "Port '$($p['name'])' of node '$nodeName' is the static management port and also the maintenance environment's way to Azure, which takes DHCP there (provisioning_network dhcp): Mode B (Static with DHCP). A DHCP server must answer on that network while the machine is in the maintenance environment. The OS install then resets the port to DHCP, so OS configuration sets the static address again after ZTP." $script:Learn.Simplified
             }
         }
     }
@@ -1240,4 +1315,4 @@ function Import-AzlInfrastructure {
     return Read-InfrastructureFile $Path
 }
 
-Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlArcMachineName, Get-AzlNodeNetworkAdapter, Get-AzlManagementAdapter, Get-AzlBiosSetting, Get-AzlBiosProvisioningOverride, Get-AzlManagementStaticMethod, Get-AzlInfrastructureScope, Get-AzlSiteIpRange
+Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlManagementMode, Test-AzlProvisioningDhcpPort, Get-AzlArcMachineName, Get-AzlNodeNetworkAdapter, Get-AzlManagementAdapter, Get-AzlBiosSetting, Get-AzlBiosProvisioningOverride, Get-AzlManagementStaticMethod, Get-AzlInfrastructureScope, Get-AzlSiteIpRange
