@@ -1,0 +1,82 @@
+# =============================================================================
+# Stage: CI/CD infrastructure - self-hosted runners (task 06 of automation / 01-cicd-infra)
+# =============================================================================
+# validate -> plan -> manual apply of the reviewed plan. The jobs run only when
+# the pipeline is started with CICD_INFRA=true (Run pipeline, or a schedule
+# variable), so they never run with the Azure Local deployment pipeline.
+#
+# Sign-in: OIDC with a GitLab ID token (the federated credential made by task 01).
+# CI/CD variables (task 05):   ARM_TENANT_ID, ARM_SUBSCRIPTION_ID, ARM_CLIENT_ID, ARM_USE_OIDC=true
+# Pipeline variables:
+#   CICD_INFRA=true            run these jobs
+#   CICD_INFRASTRUCTURE_FILE   path of infrastructure.yml (default config/infrastructure.yml)
+#   CICD_RUNNER_TAG            runner tag. Default "azure". For the very first run, before
+#                              the runners exist, set it to a shared runner tag.
+#   RUNNER_SSH_PUBLIC_KEY      the public key for the Linux runners (a public key)
+# Protect the "cicd-infra" environment with an approval rule, so the apply waits for a reviewer.
+# Reuses the stages of .gitlab-ci.yml: validate, plan and deploy-foundation.
+# =============================================================================
+
+.cicd-infra:base:
+  variables:
+    CICD_INFRASTRUCTURE_FILE: "config/infrastructure.yml"
+    CICD_RUNNER_TAG: "azure"
+    CICD_TF_ROOT: "${CI_PROJECT_DIR}/src/terraform/environments/cicd-infra"
+    CICD_WORK: "${CI_PROJECT_DIR}/.cicd-infra"
+    CICD_TASK06: "scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners/powershell/Invoke-CicdRunners-Orchestrated.ps1"
+    ARM_USE_OIDC: "true"
+    TF_IN_AUTOMATION: "true"
+  tags:
+    - ${CICD_RUNNER_TAG}
+  rules:
+    - if: '$CICD_INFRA == "true"'
+  id_tokens:
+    ARM_OIDC_TOKEN:
+      aud: api://AzureADTokenExchange
+  before_script:
+    # A runner made by the cicd-runner module has these tools. Shared runners get what is missing.
+    - command -v terraform >/dev/null || { curl -fsSL -o /tmp/tf.zip "https://releases.hashicorp.com/terraform/1.16.3/terraform_1.16.3_linux_amd64.zip" && unzip -o /tmp/tf.zip -d /usr/local/bin; }
+    - command -v pwsh >/dev/null || { echo "PowerShell 7 is needed on the runner"; exit 1; }
+    - pwsh -NoProfile -Command "Install-PSResource powershell-yaml -TrustRepository -Scope CurrentUser -ErrorAction Stop" || pwsh -NoProfile -Command "Install-Module powershell-yaml -Force -Scope CurrentUser"
+    - export AZL_RUNNER_SSH_PUBLIC_KEY="${RUNNER_SSH_PUBLIC_KEY}"
+    - mkdir -p "${CICD_WORK}"
+
+cicd-infra:validate:
+  extends: .cicd-infra:base
+  stage: validate
+  script:
+    - terraform fmt -check -recursive src/terraform/modules/cicd-runner src/terraform/environments/cicd-infra
+    - (cd "${CICD_TF_ROOT}" && terraform init -backend=false -input=false && terraform validate)
+    - (cd src/terraform/modules/cicd-runner && terraform init -backend=false -input=false && terraform test)
+    - pwsh -NoProfile -File scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path "${CICD_INFRASTRUCTURE_FILE}"
+
+cicd-infra:plan:
+  extends: .cicd-infra:base
+  stage: plan
+  needs: ["cicd-infra:validate"]
+  timeout: 1h
+  script:
+    # Nothing changes in Azure: init, validate and plan, with the plan saved.
+    - pwsh -NoProfile -File "${CICD_TASK06}" -ConfigPath "${CICD_INFRASTRUCTURE_FILE}" -WorkingDirectory "${CICD_WORK}"
+    - (cd "${CICD_TF_ROOT}" && terraform show -no-color "${CICD_WORK}/cicd-infra.tfplan" | tee "${CICD_WORK}/plan.txt")
+  artifacts:
+    paths:
+      - .cicd-infra/cicd-infra.tfplan
+      - .cicd-infra/.terraform.lock.hcl
+      - .cicd-infra/plan.txt
+    expire_in: 1 day
+
+cicd-infra:apply:
+  extends: .cicd-infra:base
+  stage: deploy-foundation
+  needs: ["cicd-infra:plan"]
+  timeout: 2h
+  script:
+    # Applies the plan that was reviewed. It makes no new plan.
+    - pwsh -NoProfile -File "${CICD_TASK06}" -ConfigPath "${CICD_INFRASTRUCTURE_FILE}" -PlanFile "${CICD_WORK}/cicd-infra.tfplan" -Apply
+  environment:
+    name: cicd-infra
+  rules:
+    - if: '$CICD_INFRA == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+      when: manual
+  allow_failure: false
