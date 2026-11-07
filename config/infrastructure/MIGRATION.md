@@ -77,6 +77,10 @@ Not carried over: `cluster_ip` (the deployment takes it from the infrastructure 
 | `ztp.node_preparation.sbe_bundle` | `hardware.sbe.bundle_path` |
 | `ztp.node_preparation.allow_unvalidated_sbe` | `hardware.sbe.allow_unvalidated` |
 | `ztp.tags` | `tags` |
+| `cluster_nodes[].bios`, `hardware.bios` | `nodes[].bios`, `hardware.bios` (schema 5.2) |
+| `network_intents.management.site_ip_range` | `networking.management.site_ip_range` (schema 5.2) |
+| `network_intents.management.provisioning_network` | `networking.management.provisioning_network` (schema 5.2) |
+| `ztp.media_path`, `ztp.evidence_path` | `provisioning.simplified.media_path`, `evidence_path` (schema 5.2) |
 | (implied by the presence of `ztp`) | `scenario.os_install: simplified` |
 | Other top-level keys of one environment (for example `devops_runner`) | `devops`, or `extensions.<name>` |
 
@@ -89,6 +93,55 @@ Minor versions add optional keys; a key that is renamed keeps working until the 
 | Before | Now |
 | --- | --- |
 | `nodes[].arc_resource_name` (5.0) | `nodes[].arc_machine_name` (5.1). `arc_resource_name` still reads as the Arc machine name, with a deprecation warning (AZL-018). |
+| `nodes[].management` (5.0) | `nodes[].network_adapters` (5.2): the port with role `management` and an `ip_assignment` other than `none`. `nodes[].management` still works for nodes without `network_adapters`. |
+| `networking.management.ip_assignment` (5.1): `static`, `dhcp`, `preconfigured` | Each port's `ip_assignment` (5.2): `static`, `dhcp_reservation`, `dhcp`, `preconfigured`, `none`. 5.1's `dhcp` meant a reserved address, so it reads as `dhcp_reservation`. |
+| `hardware.network_cards[].ports[]` (5.0) | Still valid as a hardware summary; `nodes[].network_adapters` (5.2) holds each machine's ports with MACs and addresses. |
+
+## To 5.2: the ports of each machine
+
+Schema 5.2 only adds keys: every 5.0 and 5.1 file stays valid, and tools read both shapes through `Get-AzlManagementAdapter`.
+
+**The decision.** `nodes[].management` and `networking.management.ip_assignment` become derivable from `nodes[].network_adapters` and are deprecated aliases, not removed:
+
+- A node without `network_adapters` is read as before: one management port, made from `nodes[].management`, with the site-wide `ip_assignment` (`dhcp` is read as `dhcp_reservation`).
+- A node with `network_adapters` takes its management port, address and MAC from the list. If it also has `nodes[].management`, the two must agree (AZL-020 error), and the repeat is a warning. The same for the site-wide `ip_assignment`.
+- List the ports on every node or on none (AZL-019).
+- A major version (6.0) would remove the aliases.
+
+**Steps for a 5.1 file:**
+
+1. Set `_metadata.schema_version` to `5.2.0`.
+2. On each node, add `network_adapters` with every physical port: `name` as the OS names it, `mac_address`, `roles` and `ip_assignment`.
+3. Move `management.ip_address` and `management.mac_address` to the management port (`roles: [management]`, `ip_assignment: static` or `dhcp_reservation`). Give its team partner `ip_assignment: none`. Delete `nodes[].management`.
+4. Delete `networking.management.ip_assignment`; each port has its own.
+5. Make `networking.intents[].adapters` and `networking.storage.networks[].adapter` use the port names, with the management port first in the management intent.
+6. With simplified provisioning, give at least one port per node the role `provisioning`: the port the maintenance environment reaches Azure through. Set `networking.management.provisioning_network` if it isn't DHCP.
+7. Run `Test-InfrastructureFile.ps1`. AZL-019 to AZL-025 check the ports against each other, the intents and the networks.
+
+Before and after, for one node:
+
+```yaml
+# 5.1
+nodes:
+  - name: "iic-azl-n01"
+    management: { ip_address: "192.0.2.11", mac_address: "00:00:5E:00:53:11", adapter_name: "Port1" }
+networking:
+  management: { ip_assignment: static, ... }
+
+# 5.2
+nodes:
+  - name: "iic-azl-n01"
+    network_adapters:
+      - { name: "Port1", mac_address: "00:00:5E:00:53:11", roles: [management], ip_assignment: static, ip_address: "192.0.2.11" }
+      - { name: "Port2", mac_address: "00:00:5E:00:53:12", roles: [management], ip_assignment: none }
+      - { name: "Port3", mac_address: "00:00:5E:00:53:13", roles: [compute, storage, provisioning], ip_assignment: none }
+      - { name: "Port4", mac_address: "00:00:5E:00:53:14", roles: [compute, storage, provisioning], ip_assignment: none }
+```
+
+**Two findings to know**, from live simplified-provisioning runs in 2026-11, both open research items:
+
+- The service overwrites the Arc machine name set at claim time (edge machine `arcMachineResourceId`): the Arc machines came out as `ROE1-<id>` and then `<device-id>-1`. `arc_machine_name` stays in the schema; tools read the name actually used from the edge machine afterwards.
+- The maintenance environment needs network access to Azure before the machine is claimed. Learn documents only the Configurator app for a static address there; whether the bootable image can carry a preset address is unresearched. So `provisioning_network: static` is a warning (AZL-024), and the example files use DHCP on a provisioning port.
 
 ## From Trailwright's export
 

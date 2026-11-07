@@ -12,8 +12,15 @@
                               Key Vault references). Each finding has an ID, a severity, the key path, a message and,
                               for rules from Microsoft's documentation, the Learn page.
     Get-AzlInfrastructureValue  Read one value by its dotted path, for example networking.management.gateway.
-    Get-AzlManagementIpAssignment  How the machines' management addresses are set: static (default), dhcp or preconfigured.
+    Get-AzlManagementIpAssignment  How the machines' management addresses are set: static (default), dhcp or preconfigured;
+                              with -Node, that node's management port (schema 5.2 adds dhcp_reservation).
     Get-AzlArcMachineName     A node's Arc machine name: arc_machine_name, else the node name.
+    Get-AzlNodeNetworkAdapter A node's ports: nodes[].network_adapters (5.2), or one port made from nodes[].management.
+    Get-AzlManagementAdapter  The port that owns a node's management address, with the address, mask, gateway, DNS and
+                              the VLAN the host tags, defaults applied from networking.management.
+    Get-AzlBiosSetting        A node's BIOS attributes: hardware.bios with nodes[].bios merged over it.
+    Get-AzlSiteIpRange        The site's management address range for simplified provisioning: site_ip_range, else the
+                              lowest to the highest static management address.
 
     Needs the powershell-yaml module. The schema is infrastructure.schema.json in config/infrastructure.
 #>
@@ -34,7 +41,13 @@ $script:Learn = @{
     CustomIp    = 'https://learn.microsoft.com/azure/azure-local/plan/cloud-deployment-network-considerations#custom-ips-for-storage'
     Simplified  = 'https://learn.microsoft.com/azure/azure-local/deploy/simplified-machine-provisioning'
     Arm         = 'https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template#arm-template-parameters-reference'
+    Symmetry    = 'https://learn.microsoft.com/azure/azure-local/concepts/host-network-requirements#switch-embedded-teaming-set'
+    AtcPrereq   = 'https://learn.microsoft.com/windows-server/networking/network-atc/network-atc#prerequisites'
 }
+
+# networking.management.ip_assignment (5.0, 5.1) as a port's ip_assignment (5.2). 5.1's dhcp meant a reserved address.
+$script:SiteModeToPort = @{ static = 'static'; dhcp = 'dhcp_reservation'; preconfigured = 'preconfigured' }
+$script:AddressModes = @('static', 'dhcp_reservation', 'dhcp', 'preconfigured')
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Helpers
@@ -70,15 +83,156 @@ function Get-AzlManagementIpAssignment {
         (by simplified provisioning, or for an ISO install by the operator or the toolkit). dhcp: the port stays on DHCP,
         with a reservation for the MAC. preconfigured: the port is already configured and the tools leave it alone.
         Not networking.management.use_dhcp, which is the deployment's ARM useDhcp.
+
+        With -Node, the ip_assignment of that node's management port (schema 5.2): static, dhcp_reservation, dhcp or
+        preconfigured. For a node without network_adapters that is networking.management.ip_assignment, with 5.1's dhcp
+        read as dhcp_reservation. Without -Node and without networking.management.ip_assignment, the value every node's
+        management port shares, or 'mixed' when they differ.
     .EXAMPLE
         Get-AzlManagementIpAssignment -Infrastructure $infra
+    .EXAMPLE
+        Get-AzlManagementIpAssignment -Infrastructure $infra -Node $infra.nodes[0]
     #>
     [CmdletBinding()]
     [OutputType([string])]
-    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure)
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure, [System.Collections.IDictionary]$Node)
+    if ($Node) {
+        $owner = Get-AzlManagementAdapter -Infrastructure $Infrastructure -Node $Node
+        if ($owner) { return $owner.IpAssignment }
+        return $null
+    }
     $mode = Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'networking.management.ip_assignment'
     if ($mode -is [string] -and $mode) { return $mode.ToLowerInvariant() }
+    $nodes = @(Get-List $Infrastructure['nodes'] | Where-Object { $_ -is [System.Collections.IDictionary] -and $_.Contains('network_adapters') })
+    if ($nodes.Count -gt 0) {
+        $modes = @($nodes | ForEach-Object { Get-AzlManagementIpAssignment -Infrastructure $Infrastructure -Node $_ } | Where-Object { $_ } | Select-Object -Unique)
+        if ($modes.Count -eq 1) { return $modes[0] }
+        if ($modes.Count -gt 1) { return 'mixed' }
+    }
     return 'static'
+}
+
+function Get-AzlNodeNetworkAdapter {
+    <#
+    .SYNOPSIS
+        A node's physical ports as ordered dictionaries: nodes[].network_adapters (schema 5.2), or, for a node described with
+        nodes[].management only, one management port made from it.
+    .DESCRIPTION
+        Each port carries its own keys plus _path (where it is in the file) and _source (network_adapters or management).
+        A port made from nodes[].management has roles [management] and the ip_assignment networking.management.ip_assignment
+        gives (5.1's dhcp is dhcp_reservation; default static).
+    .EXAMPLE
+        Get-AzlNodeNetworkAdapter -Infrastructure $infra -Node $infra.nodes[0] | ForEach-Object name
+    #>
+    [CmdletBinding()]
+    [OutputType([System.Collections.Specialized.OrderedDictionary])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure, [Parameter(Mandatory)][System.Collections.IDictionary]$Node)
+    $index = [array]::IndexOf(@(Get-List $Infrastructure['nodes']), $Node)
+    $at = if ($index -ge 0) { "nodes[$index]" } else { 'nodes[?]' }
+    if ($Node.Contains('network_adapters')) {
+        $list = @(Get-List $Node['network_adapters'])
+        for ($i = 0; $i -lt $list.Count; $i++) {
+            if ($list[$i] -isnot [System.Collections.IDictionary]) { continue }
+            $a = [ordered]@{}
+            foreach ($k in $list[$i].Keys) { $a[$k] = $list[$i][$k] }
+            $a['_path'] = "$at.network_adapters[$i]"
+            $a['_source'] = 'network_adapters'
+            $a
+        }
+        return
+    }
+    $m = $Node['management']
+    if ($m -isnot [System.Collections.IDictionary]) { return }
+    $site = Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'networking.management.ip_assignment'
+    $mode = if ($site -is [string] -and $script:SiteModeToPort.ContainsKey($site.ToLowerInvariant())) { $script:SiteModeToPort[$site.ToLowerInvariant()] } else { 'static' }
+    $a = [ordered]@{ name = $(if ($m['adapter_name']) { [string]$m['adapter_name'] } else { '' }); roles = @('management'); ip_assignment = $mode }
+    if ($m.Contains('mac_address')) { $a['mac_address'] = $m['mac_address'] }
+    if ($m.Contains('ip_address')) { $a['ip_address'] = $m['ip_address'] }
+    $a['_path'] = "$at.management"
+    $a['_source'] = 'management'
+    $a
+}
+
+function Get-AzlManagementAdapter {
+    <#
+    .SYNOPSIS
+        The port that owns a node's management address, with networking.management's defaults applied. $null when the node
+        has no such port, or more than one.
+    .OUTPUTS
+        Name, MacAddress (AA:BB:CC:DD:EE:FF), IpAddress, PrefixLength, SubnetMask, Gateway, DnsServers, VlanId (the VLAN the
+        host tags: 0 for an access port), VlanMode, IpAssignment, Source (network_adapters or management), Path.
+    .EXAMPLE
+        $infra.nodes | ForEach-Object { Get-AzlManagementAdapter -Infrastructure $infra -Node $_ }
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure, [Parameter(Mandatory)][System.Collections.IDictionary]$Node)
+    $owners = @(Get-AzlNodeNetworkAdapter -Infrastructure $Infrastructure -Node $Node | Where-Object { Test-IsManagementOwner $_ })
+    if ($owners.Count -ne 1) { return $null }
+    $a = $owners[0]
+    $mgmt = Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'networking.management'
+    if ($mgmt -isnot [System.Collections.IDictionary]) { $mgmt = @{} }
+    $prefix = if ($a.Contains('prefix_length')) { [int]$a['prefix_length'] } elseif (Test-IsCidr $mgmt['subnet']) { [int]($mgmt['subnet'].Split('/')[1]) } else { $null }
+    $siteVlan = if ($null -ne $mgmt['vlan_id']) { [int]$mgmt['vlan_id'] } else { 0 }
+    [pscustomobject]@{
+        Name         = [string]$a['name']
+        MacAddress   = ConvertTo-AzlMac $a['mac_address']
+        IpAddress    = $(if ($a.Contains('ip_address')) { [string]$a['ip_address'] } else { $null })
+        PrefixLength = $prefix
+        SubnetMask   = $(if ($null -ne $prefix) { ConvertTo-SubnetMask $prefix } else { $null })
+        Gateway      = $(if ($a.Contains('gateway')) { [string]$a['gateway'] } else { [string]$mgmt['gateway'] })
+        DnsServers   = @(if ($a.Contains('dns_servers')) { Get-List $a['dns_servers'] } else { Get-List $mgmt['dns_servers'] })
+        VlanId       = Get-HostVlan $a $siteVlan
+        VlanMode     = $(if ($a.Contains('vlan_mode')) { [string]$a['vlan_mode'] } else { $null })
+        IpAssignment = [string]$a['ip_assignment']
+        Source       = [string]$a['_source']
+        Path         = [string]$a['_path']
+    }
+}
+
+function Get-AzlBiosSetting {
+    <#
+    .SYNOPSIS
+        A node's BIOS attributes (schema 5.2): hardware.bios, with the node's own bios merged over it. Empty when neither is set.
+    .EXAMPLE
+        Get-AzlBiosSetting -Infrastructure $infra -Node $infra.nodes[0]
+    #>
+    [CmdletBinding()]
+    [OutputType([System.Collections.Specialized.OrderedDictionary])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure, [System.Collections.IDictionary]$Node)
+    $merged = [ordered]@{}
+    $sources = @((Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'hardware.bios'))
+    if ($Node) { $sources += , $Node['bios'] }
+    foreach ($source in $sources) {
+        if ($source -isnot [System.Collections.IDictionary]) { continue }
+        foreach ($k in $source.Keys) { $merged[[string]$k] = [string]$source[$k] }
+    }
+    return $merged
+}
+
+function Get-AzlSiteIpRange {
+    <#
+    .SYNOPSIS
+        The management address range of the simplified-provisioning site (schema 5.2): networking.management.site_ip_range,
+        else the lowest to the highest static management address. $null when no node's management address is static.
+    .OUTPUTS
+        Start, End, Source (site_ip_range or derived).
+    .EXAMPLE
+        Get-AzlSiteIpRange -Infrastructure $infra
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure)
+    $range = Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'networking.management.site_ip_range'
+    if ($range -is [System.Collections.IDictionary] -and (Test-IsIPv4 $range['start']) -and (Test-IsIPv4 $range['end'])) {
+        return [pscustomobject]@{ Start = [string]$range['start']; End = [string]$range['end']; Source = 'site_ip_range' }
+    }
+    $static = @(Get-List $Infrastructure['nodes'] | Where-Object { $_ -is [System.Collections.IDictionary] } |
+            ForEach-Object { Get-AzlManagementAdapter -Infrastructure $Infrastructure -Node $_ } |
+            Where-Object { $_ -and $_.IpAssignment -eq 'static' -and (Test-IsIPv4 $_.IpAddress) } | ForEach-Object IpAddress)
+    if ($static.Count -eq 0) { return $null }
+    $sorted = @($static | Sort-Object { ConvertTo-UInt32Address $_ })
+    return [pscustomobject]@{ Start = $sorted[0]; End = $sorted[-1]; Source = 'derived' }
 }
 
 function Get-AzlArcMachineName {
@@ -129,6 +283,31 @@ function Get-List([object]$Value) {
     if ($null -eq $Value) { return @() }
     if ($Value -is [System.Collections.IList]) { return @($Value) }
     return @($Value)
+}
+
+# AA:BB:CC:DD:EE:FF, whatever notation the file used.
+function ConvertTo-AzlMac([object]$Mac) {
+    if ($Mac -is [string] -and $Mac) { return $Mac.ToUpperInvariant().Replace('-', ':') }
+    return $null
+}
+
+# 24 -> 255.255.255.0. Unsigned arithmetic only, as in Get-SubnetRange.
+function ConvertTo-SubnetMask([int]$PrefixLength) {
+    $all = [uint64]4294967295
+    $bits = if ($PrefixLength -le 0) { [uint64]0 } else { ([uint64]($all -shl (32 - $PrefixLength))) -band $all }
+    return (3, 2, 1, 0 | ForEach-Object { ($bits -shr (8 * $_)) -band 0xFF }) -join '.'
+}
+
+# The port that owns the management address: role management and an ip_assignment that gives it one.
+function Test-IsManagementOwner([object]$Adapter) {
+    return ($Adapter -is [System.Collections.IDictionary] -and 'management' -in @(Get-List $Adapter['roles']) -and [string]$Adapter['ip_assignment'] -in $script:AddressModes)
+}
+
+# The VLAN the host tags on a port: 0 on an access port; else vlan_id; else the default given.
+function Get-HostVlan([System.Collections.IDictionary]$Adapter, [object]$Default) {
+    if ([string]$Adapter['vlan_mode'] -eq 'access') { return 0 }
+    if ($null -ne $Adapter['vlan_id']) { return [int]$Adapter['vlan_id'] }
+    return $Default
 }
 
 # Every string value in the file with its path, for the Key Vault reference check.
@@ -191,10 +370,25 @@ function Get-SchemaFinding {
             foreach ($p in $instPrefixes) { [void]$invalidBelow.Add("$e|$p") }
         }
     }
+    # anyOf branches that passed, by the branch's parent and instance: a failed sibling branch is then not an error.
+    $passedBranch = [System.Collections.Generic.HashSet[string]]::new()
+    foreach ($d in $result.Details) {
+        if ($d.IsValid -and $d.EvaluationPath.ToString() -match '^(.*)/anyOf/\d+$') { [void]$passedBranch.Add("$($Matches[1])|$($d.InstanceLocation.ToString())") }
+    }
     $seen = [System.Collections.Generic.HashSet[string]]::new()
     foreach ($d in $result.Details) {
         $evalPath = $d.EvaluationPath.ToString()
         $instance = $d.InstanceLocation.ToString()
+        # Inside a contains or an if, items and conditions are expected to fail: the contains keyword reports on the
+        # array itself, and a failed if only means its then doesn't apply.
+        if ($evalPath -match '/(contains|if)(/|$)') { continue }
+        $branchMasked = $false
+        foreach ($m in [regex]::Matches($evalPath, '/anyOf/\d+')) {
+            $parent = $evalPath.Substring(0, $m.Index)
+            foreach ($p in @(& $prefixes $instance)) { if ($passedBranch.Contains("$parent|$p")) { $branchMasked = $true; break } }
+            if ($branchMasked) { break }
+        }
+        if ($branchMasked) { continue }
         # A failed node with no message of its own (for example a failing not) counts when no node below it failed.
         $silentFailure = (-not $d.IsValid) -and (-not $d.HasErrors) -and -not $invalidBelow.Contains("$evalPath|$instance")
         if (-not $d.HasErrors -and -not $silentFailure) { continue }
@@ -219,6 +413,7 @@ function Get-SchemaFinding {
             $message = switch ($keyword) {
                 '' { 'Unknown key. Check the spelling, or put it under extensions.' }
                 'required' { $d.Errors[$keyword] -replace '^Required properties \[(.*)\] are not present$', 'Missing required key(s): $1' -replace '"', '' }
+                { $_ -in 'contains', 'minContains', 'maxContains' } { "$($d.Errors[$keyword]) ($keyword). See the key's description in infrastructure.schema.json for what the list must hold." }
                 default { "$($d.Errors[$keyword]) ($keyword)" }
             }
             if ($seen.Add("$at|$message")) { New-Finding 'SCHEMA' error $at $message }
@@ -255,7 +450,11 @@ function Get-SemanticFinding {
     foreach ($group in ($nodes | Group-Object { $_['name'] } | Where-Object Count -gt 1)) {
         New-Finding 'AZL-002' error 'nodes' "Node name '$($group.Name)' is used $($group.Count) times."
     }
-    $nodeIps = @($nodes | ForEach-Object { if ($_['management'] -is [System.Collections.IDictionary]) { $_['management']['ip_address'] } } | Where-Object { Test-IsIPv4 $_ })
+    # Each node's management port: nodes[].management, or from 5.2 the network_adapters port that owns the address.
+    $owners = @(foreach ($n in $nodes) { Get-AzlManagementAdapter -Infrastructure $Infra -Node $n })
+    $ownerOf = @{}
+    for ($i = 0; $i -lt $nodeCount; $i++) { $ownerOf[$i] = Get-AzlManagementAdapter -Infrastructure $Infra -Node $nodes[$i] }
+    $nodeIps = @($owners | Where-Object { $_ -and (Test-IsIPv4 $_.IpAddress) } | ForEach-Object IpAddress)
     foreach ($group in ($nodeIps | Group-Object | Where-Object Count -gt 1)) {
         New-Finding 'AZL-003' error 'nodes' "Management address $($group.Name) is used by $($group.Count) nodes."
     }
@@ -265,9 +464,10 @@ function Get-SemanticFinding {
     if ($mgmt -is [System.Collections.IDictionary] -and (Test-IsCidr $mgmt['subnet'])) {
         $subnet = $mgmt['subnet']
         for ($i = 0; $i -lt $nodeCount; $i++) {
-            $ip = if ($nodes[$i]['management'] -is [System.Collections.IDictionary]) { $nodes[$i]['management']['ip_address'] }
+            $o = $ownerOf[$i]
+            $ip = if ($o) { $o.IpAddress }
             if ((Test-IsIPv4 $ip) -and -not (Test-AddressInSubnet $ip $subnet)) {
-                New-Finding 'AZL-004' error "nodes[$i].management.ip_address" "$ip isn't in the management subnet $subnet. Node addresses must be on the same subnet as the infrastructure pool." $script:Learn.Decision8
+                New-Finding 'AZL-004' error "$($o.Path).ip_address" "$ip isn't in the management subnet $subnet. Node addresses must be on the same subnet as the infrastructure pool." $script:Learn.Decision8
             }
         }
         if ((Test-IsIPv4 $mgmt['gateway']) -and -not (Test-AddressInSubnet $mgmt['gateway'] $subnet)) {
@@ -450,21 +650,24 @@ function Get-SemanticFinding {
 
     # The management port: each MAC names one machine's port, and with DHCP each address needs a reservation.
     # (With simplified provisioning the schema already requires management.mac_address on every node, in every mode.)
+    # (Nodes described with network_adapters: every port's MAC is checked by AZL-019 instead.)
     $macs = @(for ($i = 0; $i -lt $nodeCount; $i++) {
+            if ($nodes[$i].Contains('network_adapters')) { continue }
             $m = $nodes[$i]['management']
-            if ($m -is [System.Collections.IDictionary] -and $m['mac_address'] -is [string]) { $m['mac_address'].ToUpperInvariant().Replace('-', ':') }
+            if ($m -is [System.Collections.IDictionary] -and $m['mac_address'] -is [string]) { ConvertTo-AzlMac $m['mac_address'] }
         })
     foreach ($group in ($macs | Group-Object | Where-Object Count -gt 1)) {
         New-Finding 'AZL-017' error 'nodes' "Management MAC $($group.Name) is used by $($group.Count) nodes. Each node's management.mac_address names its own management port."
     }
-    if ((Get-AzlManagementIpAssignment -Infrastructure $Infra) -eq 'dhcp') {
-        for ($i = 0; $i -lt $nodeCount; $i++) {
-            $m = $nodes[$i]['management']
-            if ($m -isnot [System.Collections.IDictionary]) { continue }
-            $for = if ($m['mac_address']) { "MAC $($m['mac_address'])" } else { 'its management MAC (set management.mac_address)' }
-            New-Finding 'AZL-017' warning "nodes[$i].management" "Node '$($nodes[$i]['name'])': ip_assignment is dhcp, so the port keeps DHCP. Reserve $($m['ip_address']) in DHCP for $for, or the machine gets another address." $script:Learn.Decision8
-        }
+    for ($i = 0; $i -lt $nodeCount; $i++) {
+        $o = $ownerOf[$i]
+        if (-not $o -or $o.IpAssignment -ne 'dhcp_reservation' -or -not $o.IpAddress) { continue }
+        $mode = if ($o.Source -eq 'management') { 'ip_assignment is dhcp' } else { 'the management port is dhcp_reservation' }
+        $for = if ($o.MacAddress) { "MAC $($o.MacAddress)" } else { 'its management MAC (set management.mac_address)' }
+        New-Finding 'AZL-017' warning $o.Path "Node '$($nodes[$i]['name'])': $mode, so the port keeps DHCP. Reserve $($o.IpAddress) in DHCP for $for, or the machine gets another address." $script:Learn.Decision8
     }
+
+    Get-AdapterFinding -Infra $Infra -Nodes $nodes -OwnerOf $ownerOf -Intents @(Get-List (& $v 'networking.intents') | Where-Object { $_ -is [System.Collections.IDictionary] })
 
     # Arc machine names: unique, and arc_machine_name rather than the deprecated arc_resource_name.
     for ($i = 0; $i -lt $nodeCount; $i++) {
@@ -487,6 +690,261 @@ function Get-SemanticFinding {
                 New-Finding 'AZL-018' warning "nodes[$i].arc_machine_name" "An ISO install registers the Arc machine under its host name '$($n['name'])'. arc_machine_name '$($n['arc_machine_name'])' applies to simplified provisioning only."
             }
         }
+    }
+}
+
+# Schema 5.2: the ports of each node (nodes[].network_adapters), checked against each other, the intents and the networks.
+function Get-AdapterFinding {
+    param([System.Collections.IDictionary]$Infra, [object[]]$Nodes, [hashtable]$OwnerOf, [object[]]$Intents)
+    $v = { param($p) Get-AzlInfrastructureValue -Infrastructure $Infra -Path $p }
+    $listed = @(for ($i = 0; $i -lt $Nodes.Count; $i++) { if ($Nodes[$i].Contains('network_adapters')) { $i } })
+    $mgmt = & $v 'networking.management'
+    if ($mgmt -isnot [System.Collections.IDictionary]) { $mgmt = @{} }
+    $subnet = if (Test-IsCidr $mgmt['subnet']) { [string]$mgmt['subnet'] } else { $null }
+    $simplified = (& $v 'scenario.os_install') -eq 'simplified'
+
+    # The site range applies with or without network_adapters.
+    Get-SiteRangeFinding -Infra $Infra -Nodes $Nodes -OwnerOf $OwnerOf -Subnet $subnet -Simplified $simplified
+    if ($simplified -and [string]$mgmt['provisioning_network'] -eq 'static') {
+        New-Finding 'AZL-024' warning 'networking.management.provisioning_network' 'provisioning_network is static: the maintenance environment needs a static address to reach Azure before the machine is claimed. Learn documents only the Configurator app for that; whether the bootable image can carry a preset address is an open research item, so azurelocal-ztp does not set it.' $script:Learn.Simplified
+    }
+    if ($listed.Count -eq 0) { return }
+
+    # AZL-019: every node or none, unique names on a node, unique MACs in the file.
+    if ($listed.Count -ne $Nodes.Count) {
+        New-Finding 'AZL-019' error 'nodes' "$($listed.Count) of $($Nodes.Count) nodes list network_adapters. List the ports on every node or on none: tools read one shape for the whole instance."
+    }
+    $ports = @{}
+    $allMacs = [System.Collections.Generic.List[object]]::new()
+    foreach ($i in $listed) {
+        $ports[$i] = @(Get-AzlNodeNetworkAdapter -Infrastructure $Infra -Node $Nodes[$i])
+        foreach ($group in ($ports[$i] | Group-Object { ([string]$_['name']).ToLowerInvariant() } | Where-Object Count -gt 1)) {
+            New-Finding 'AZL-019' error "nodes[$i].network_adapters" "Node '$($Nodes[$i]['name'])' has $($group.Count) ports named '$($group.Group[0]['name'])'. Port names are unique on a machine."
+        }
+        foreach ($p in $ports[$i]) { if ($p['mac_address']) { $allMacs.Add([pscustomobject]@{ Mac = ConvertTo-AzlMac $p['mac_address']; Path = $p['_path'] }) } }
+    }
+    foreach ($group in ($allMacs | Group-Object Mac | Where-Object Count -gt 1)) {
+        New-Finding 'AZL-019' error 'nodes' "MAC $($group.Name) is used by $($group.Count) ports ($(@($group.Group.Path) -join ', ')). Each MAC names one port."
+    }
+
+    # AZL-024: with simplified provisioning, every node names the port its maintenance environment reaches Azure through.
+    if ($simplified) {
+        foreach ($i in $listed) {
+            if (-not ($ports[$i] | Where-Object { 'provisioning' -in @(Get-List $_['roles']) })) {
+                New-Finding 'AZL-024' error "nodes[$i].network_adapters" "Node '$($Nodes[$i]['name'])' has no port with role provisioning. Simplified provisioning needs the port the maintenance environment reaches Azure through, before the machine is claimed (networking.management.provisioning_network says how it gets its address)." $script:Learn.Simplified
+            }
+        }
+    }
+
+    # AZL-020: the management port.
+    $siteMode = $mgmt['ip_assignment']
+    $siteDeprecated = $false
+    $mgmtIntent = @($Intents | Where-Object { 'management' -in @(Get-List $_['traffic']) }) | Select-Object -First 1
+    $useDhcp = $mgmt['use_dhcp'] -eq $true
+    foreach ($i in $listed) {
+        $n = $Nodes[$i]
+        $name = $n['name']
+        $count = @($ports[$i] | Where-Object { Test-IsManagementOwner $_ }).Count
+        if ($count -ne 1) {
+            New-Finding 'AZL-020' error "nodes[$i].network_adapters" "Node '$name': $count ports own the management address. Exactly one port with role management has an ip_assignment other than none; give a second management port (its team partner) ip_assignment none."
+            continue
+        }
+        $o = $OwnerOf[$i]
+        $legacy = $n['management']
+        if ($legacy -is [System.Collections.IDictionary]) {
+            $diff = @()
+            if ($legacy['ip_address'] -and [string]$legacy['ip_address'] -ne [string]$o.IpAddress) { $diff += "ip_address $($legacy['ip_address']) vs $($o.IpAddress)" }
+            if ($legacy['mac_address'] -and (ConvertTo-AzlMac $legacy['mac_address']) -ne $o.MacAddress) { $diff += "mac_address $($legacy['mac_address']) vs $($o.MacAddress)" }
+            if ($legacy['adapter_name'] -and [string]$legacy['adapter_name'] -ne $o.Name) { $diff += "adapter_name '$($legacy['adapter_name'])' vs '$($o.Name)'" }
+            if ($diff) { New-Finding 'AZL-020' error "nodes[$i].management" "Node '$name': management disagrees with its management port $($o.Path): $($diff -join '; '). Keep network_adapters only." }
+            else { New-Finding 'AZL-020' warning "nodes[$i].management" "Node '$name': management repeats the management port in network_adapters; remove it, network_adapters is read." }
+        }
+        if ($siteMode -is [string] -and $siteMode) {
+            $allowed = switch ($siteMode.ToLowerInvariant()) { 'static' { @('static') } 'dhcp' { @('dhcp_reservation', 'dhcp') } 'preconfigured' { @('preconfigured') } default { @() } }
+            if ($o.IpAssignment -notin $allowed) { New-Finding 'AZL-020' error 'networking.management.ip_assignment' "networking.management.ip_assignment is $siteMode, but node '$name''s management port is $($o.IpAssignment). Set each port's ip_assignment and remove the site-wide key." }
+            else { $siteDeprecated = $true }
+        }
+        if ($o.Source -eq 'network_adapters') {
+            $raw = $ports[$i] | Where-Object { Test-IsManagementOwner $_ } | Select-Object -First 1
+            if ($subnet -and $raw.Contains('prefix_length') -and [int]$raw['prefix_length'] -ne [int]$subnet.Split('/')[1]) {
+                New-Finding 'AZL-020' error "$($o.Path).prefix_length" "Node '$name': the management port's prefix_length $($raw['prefix_length']) doesn't match networking.management.subnet $subnet. The instance has one management network." $script:Learn.Decision8
+            }
+            if ($raw.Contains('gateway') -and $mgmt['gateway'] -and [string]$raw['gateway'] -ne [string]$mgmt['gateway']) {
+                New-Finding 'AZL-020' error "$($o.Path).gateway" "Node '$name': the management port's gateway $($raw['gateway']) isn't networking.management.gateway $($mgmt['gateway'])." $script:Learn.Decision8
+            }
+            if ($raw.Contains('dns_servers') -and (@(Get-List $raw['dns_servers']) -join ',') -ne (@(Get-List $mgmt['dns_servers']) -join ',')) {
+                New-Finding 'AZL-020' error "$($o.Path).dns_servers" "Node '$name': the management port's DNS servers aren't networking.management.dns_servers. The deployment sets the same DNS servers on every machine, and they can't change afterwards." $script:Learn.Decision8
+            }
+        }
+        if (-not $o.IpAddress -and -not $useDhcp) {
+            New-Finding 'AZL-020' error "$($o.Path)" "Node '$name': the management port has no ip_address. The deployment needs each node's management address (ARM physicalNodesSettings[].ipv4Address) unless networking.management.use_dhcp is true." $script:Learn.Arm
+        }
+        if ($o.IpAssignment -eq 'dhcp') {
+            New-Finding 'AZL-020' warning "$($o.Path).ip_assignment" "Node '$name': the management port is on DHCP without a reservation, so its address can change. Use dhcp_reservation, or static." $script:Learn.Decision8
+        }
+        if ($o.Source -eq 'network_adapters' -and $mgmtIntent) {
+            $members = @(Get-List $mgmtIntent['adapters'])
+            if ($o.Name -notin $members) {
+                New-Finding 'AZL-020' error "$($o.Path).name" "Node '$name': the management port '$($o.Name)' isn't in the management intent '$($mgmtIntent['name'])' ($($members -join ', ')). The management address moves to that intent's virtual adapter." $script:Learn.Decision8
+            }
+            elseif ($members[0] -ne $o.Name) {
+                $severity = if ($o.IpAssignment -in 'dhcp', 'dhcp_reservation') { 'error' } else { 'warning' }
+                New-Finding 'AZL-020' $severity "$($o.Path).name" "Node '$name': the management port '$($o.Name)' isn't the first adapter of the management intent ('$($members[0])'). The management virtual adapter takes the first adapter's MAC$(if ($severity -eq 'error') { ', so the DHCP reservation must be for that MAC' }). List '$($o.Name)' first." $script:Learn.Decision8
+            }
+        }
+    }
+    if ($siteDeprecated) {
+        New-Finding 'AZL-020' warning 'networking.management.ip_assignment' 'networking.management.ip_assignment is deprecated in 5.2: each port in nodes[].network_adapters has its own ip_assignment. Remove the site-wide key.'
+    }
+
+    # AZL-021: intents and storage networks name ports that exist on every node, with matching roles, symmetric.
+    $inIntent = @{}
+    foreach ($intent in $Intents) {
+        $traffic = @(Get-List $intent['traffic'] | Sort-Object)
+        $members = @(Get-List $intent['adapters'])
+        foreach ($a in $members) { $inIntent[([string]$a).ToLowerInvariant()] = $intent }
+        $shape = @{}
+        foreach ($i in $listed) {
+            $mine = @()
+            foreach ($a in $members) {
+                $p = $ports[$i] | Where-Object { ([string]$_['name']) -eq $a } | Select-Object -First 1
+                if (-not $p) { New-Finding 'AZL-021' error "nodes[$i].network_adapters" "Intent '$($intent['name'])' uses adapter '$a', which isn't a port of node '$($Nodes[$i]['name'])'. Every adapter of an intent is on every machine, with the same name." $script:Learn.AtcPrereq; continue }
+                $mine += $p
+                $roles = @(Get-List $p['roles'])
+                if ('unused' -in $roles) { New-Finding 'AZL-021' error "$($p['_path']).roles" "Port '$a' of node '$($Nodes[$i]['name'])' is in intent '$($intent['name'])' but its role is unused."; continue }
+                $carries = @($roles | Where-Object { $_ -in 'management', 'compute', 'storage' } | Sort-Object)
+                if (($carries -join ',') -ne ($traffic -join ',')) {
+                    New-Finding 'AZL-021' warning "$($p['_path']).roles" "Port '$a' of node '$($Nodes[$i]['name'])' has roles [$($roles -join ', ')], but its intent '$($intent['name'])' carries [$($traffic -join ', ')]."
+                }
+                foreach ($k in 'model', 'speed_gbps') {
+                    if ($null -ne $p[$k] -and "$($p[$k])" -ne '') {
+                        $key = "$a|$k"
+                        if ($shape.ContainsKey($key) -and $shape[$key].Value -ne "$($p[$k])") {
+                            New-Finding 'AZL-021' error "$($p['_path']).$k" "Port '$a' is $k '$($p[$k])' on node '$($Nodes[$i]['name'])' and '$($shape[$key].Value)' on node '$($shape[$key].Node)'. Intent adapters are symmetric on every machine." $script:Learn.AtcPrereq
+                        }
+                        elseif (-not $shape.ContainsKey($key)) { $shape[$key] = [pscustomobject]@{ Value = "$($p[$k])"; Node = $Nodes[$i]['name'] } }
+                    }
+                }
+            }
+            foreach ($k in 'model', 'speed_gbps') {
+                $values = @($mine | Where-Object { $null -ne $_[$k] -and "$($_[$k])" -ne '' } | ForEach-Object { "$($_[$k])" } | Select-Object -Unique)
+                if ($values.Count -gt 1) {
+                    New-Finding 'AZL-021' error "nodes[$i].network_adapters" "Intent '$($intent['name'])' on node '$($Nodes[$i]['name'])' mixes $k values ($($values -join ', ')). The adapters of one intent are the same make, model and speed." $script:Learn.Symmetry
+                }
+            }
+        }
+    }
+    $named = @(Get-List (& $v 'networking.storage.networks')) + @(Get-List (& $v 'networking.cluster_networks')) | Where-Object { $_ -is [System.Collections.IDictionary] -and $_['adapter'] }
+    foreach ($net in $named) {
+        foreach ($i in $listed) {
+            if (-not ($ports[$i] | Where-Object { [string]$_['name'] -eq [string]$net['adapter'] })) {
+                New-Finding 'AZL-021' error "nodes[$i].network_adapters" "Network '$($net['name'])' uses adapter '$($net['adapter'])', which isn't a port of node '$($Nodes[$i]['name'])'."
+            }
+        }
+    }
+    foreach ($i in $listed) {
+        foreach ($p in $ports[$i]) {
+            $traffic = @(Get-List $p['roles'] | Where-Object { $_ -in 'management', 'compute', 'storage' })
+            if ($traffic -and -not $inIntent.ContainsKey(([string]$p['name']).ToLowerInvariant())) {
+                New-Finding 'AZL-021' warning "$($p['_path'])" "Port '$($p['name'])' of node '$($Nodes[$i]['name'])' has roles [$($traffic -join ', ')] but isn't in any intent, so Network ATC doesn't configure it." $script:Learn.Intents
+            }
+        }
+    }
+
+    # AZL-022: addresses on the other ports; AZL-023: VLANs.
+    $siteVlan = if ($null -ne $mgmt['vlan_id']) { [int]$mgmt['vlan_id'] } else { 0 }
+    $addresses = [System.Collections.Generic.List[object]]::new()
+    $storageVlan = @{}
+    foreach ($net in @(Get-List (& $v 'networking.storage.networks') | Where-Object { $_ -is [System.Collections.IDictionary] })) { $storageVlan[[string]$net['adapter']] = $net }
+    foreach ($i in $listed) {
+        $nodeName = $Nodes[$i]['name']
+        foreach ($p in $ports[$i]) {
+            $owner = Test-IsManagementOwner $p
+            $mode = [string]$p['ip_assignment']
+            $roles = @(Get-List $p['roles'])
+            if (Test-IsIPv4 $p['ip_address']) { $addresses.Add([pscustomobject]@{ Ip = [string]$p['ip_address']; Path = $p['_path']; Owner = $owner }) }
+            if (-not $owner) {
+                if ($mode -eq 'static' -and $p['gateway']) {
+                    New-Finding 'AZL-022' error "$($p['_path']).gateway" "Port '$($p['name'])' of node '$nodeName' has a default gateway, and so does the management port. Validation fails when more than one physical adapter has a default gateway." $script:Learn.Decision8
+                }
+                if ($mode -in 'dhcp', 'dhcp_reservation') {
+                    New-Finding 'AZL-022' warning "$($p['_path']).ip_assignment" "Port '$($p['name'])' of node '$nodeName' keeps DHCP ($mode), and node preparation leaves it on. If the DHCP server hands it a default gateway, the node has two and validation fails." $script:Learn.Decision8
+                }
+                if ($mode -eq 'static' -and -not $p['prefix_length']) {
+                    New-Finding 'AZL-022' error "$($p['_path']).prefix_length" "Port '$($p['name'])' of node '$nodeName' has a static address without prefix_length; only the management port takes it from networking.management.subnet."
+                }
+                if ($mode -ne 'none' -and $mode -ne 'preconfigured' -and ($roles -join ',') -eq 'storage') {
+                    New-Finding 'AZL-022' warning "$($p['_path']).ip_assignment" "Storage port '$($p['name'])' of node '$nodeName' has a host address ($mode). Network ATC assigns the storage addresses (or nodes[].storage_ips with auto_ip false); set ip_assignment none." $script:Learn.CustomIp
+                }
+                if ($mode -eq 'none' -and $p['ip_address']) {
+                    New-Finding 'AZL-022' warning "$($p['_path']).ip_address" "Port '$($p['name'])' of node '$nodeName' lists $($p['ip_address']) but its ip_assignment is none, so the address is ignored. Set ip_assignment, or remove ip_address."
+                }
+                elseif ($mode -in 'static', 'dhcp_reservation' -and $subnet -and (Test-IsIPv4 $p['ip_address']) -and (Test-AddressInSubnet $p['ip_address'] $subnet)) {
+                    New-Finding 'AZL-022' warning "$($p['_path']).ip_address" "Port '$($p['name'])' of node '$nodeName' has $($p['ip_address']), in the management subnet $subnet, besides the management port. Two ports on one subnet make the route the node takes unpredictable."
+                }
+            }
+            $hostTag = Get-HostVlan $p $null
+            if ($mode -in 'static', 'dhcp_reservation', 'dhcp' -and [string]$p['vlan_mode'] -eq 'tagged' -and -not $hostTag) {
+                New-Finding 'AZL-023' error "$($p['_path']).vlan_id" "Port '$($p['name'])' of node '$nodeName' is tagged and has a host address, but no vlan_id to tag."
+            }
+            if ($owner -and $p['_source'] -eq 'network_adapters') {
+                $tag = Get-HostVlan $p $siteVlan
+                if ([int]$tag -ne $siteVlan) {
+                    New-Finding 'AZL-023' error "$($p['_path'])" "Node '$nodeName': the management port tags VLAN $tag, but networking.management.vlan_id is $siteVlan. With an access port use vlan_mode access (the host sends VLAN 0)."
+                }
+            }
+            if ('storage' -in $roles) {
+                if ([string]$p['vlan_mode'] -eq 'access') {
+                    New-Finding 'AZL-023' warning "$($p['_path']).vlan_mode" "Storage port '$($p['name'])' of node '$nodeName' is on an access port. Network ATC tags the storage VLANs, so the switch port must be a trunk that carries them." $script:Learn.Intents
+                }
+                $net = $storageVlan[[string]$p['name']]
+                if ($net -and $null -ne $p['vlan_id'] -and [int]$p['vlan_id'] -ne [int]$net['vlan_id']) {
+                    New-Finding 'AZL-023' error "$($p['_path']).vlan_id" "Storage port '$($p['name'])' of node '$nodeName' is VLAN $($p['vlan_id']), but storage network '$($net['name'])' on it is VLAN $($net['vlan_id'])."
+                }
+            }
+            # AZL-024: the maintenance environment's port.
+            if ($simplified -and 'provisioning' -in $roles -and $owner -and $mode -eq 'static' -and [string]$mgmt['provisioning_network'] -ne 'static') {
+                New-Finding 'AZL-024' warning "$($p['_path']).roles" "Port '$($p['name'])' of node '$nodeName' is the static management port and also the maintenance environment's way to Azure, which takes DHCP there (provisioning_network dhcp). A DHCP server must answer on that network while the machine is in the maintenance environment." $script:Learn.Simplified
+            }
+        }
+    }
+    foreach ($group in ($addresses | Group-Object Ip | Where-Object { $_.Count -gt 1 -and @($_.Group | Where-Object { -not $_.Owner }).Count -gt 0 })) {
+        New-Finding 'AZL-022' error 'nodes' "Address $($group.Name) is on $($group.Count) ports ($(@($group.Group.Path) -join ', '))."
+    }
+}
+
+# AZL-025: the site's management address range (simplified provisioning, static management addresses).
+function Get-SiteRangeFinding {
+    param([System.Collections.IDictionary]$Infra, [object[]]$Nodes, [hashtable]$OwnerOf, [string]$Subnet, [bool]$Simplified)
+    $set = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'networking.management.site_ip_range'
+    if (-not $Simplified -and $set -isnot [System.Collections.IDictionary]) { return }
+    $range = Get-AzlSiteIpRange -Infrastructure $Infra
+    if (-not $range) { return }
+    $at = if ($range.Source -eq 'site_ip_range') { 'networking.management.site_ip_range' } else { 'nodes' }
+    $start = ConvertTo-UInt32Address $range.Start
+    $end = ConvertTo-UInt32Address $range.End
+    if ($start -gt $end) { New-Finding 'AZL-025' error $at "The site range starts at $($range.Start), after its end $($range.End)."; return }
+    if ($Subnet -and -not ((Test-AddressInSubnet $range.Start $Subnet) -and (Test-AddressInSubnet $range.End $Subnet))) {
+        New-Finding 'AZL-025' error $at "The site range $($range.Start)-$($range.End) isn't inside the management subnet $Subnet."
+    }
+    $modes = @()
+    for ($i = 0; $i -lt $Nodes.Count; $i++) {
+        $o = $OwnerOf[$i]
+        if (-not $o) { continue }
+        $modes += $o.IpAssignment
+        if ($o.IpAssignment -eq 'static' -and (Test-IsIPv4 $o.IpAddress)) {
+            $ip = ConvertTo-UInt32Address $o.IpAddress
+            if ($ip -lt $start -or $ip -gt $end) { New-Finding 'AZL-025' error "$($o.Path).ip_address" "Node '$($Nodes[$i]['name'])': its static management address $($o.IpAddress) is outside the site range $($range.Start)-$($range.End)." }
+        }
+    }
+    $pool = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'networking.management.infrastructure_pool'
+    if ($pool -is [System.Collections.IDictionary] -and (Test-IsIPv4 $pool['start']) -and (Test-IsIPv4 $pool['end'])) {
+        if ((ConvertTo-UInt32Address $pool['start']) -le $end -and (ConvertTo-UInt32Address $pool['end']) -ge $start) {
+            New-Finding 'AZL-025' warning $at "The site range $($range.Start)-$($range.End) overlaps the infrastructure pool $($pool['start'])-$($pool['end']), which must hold no node address." $script:Learn.Decision8
+        }
+    }
+    if ($Simplified -and @($modes | Select-Object -Unique).Count -gt 1) {
+        New-Finding 'AZL-025' warning 'nodes' "The management ports mix $(@($modes | Select-Object -Unique) -join ', '). The site's network setting is one for every machine: Manual for the static addresses."
     }
 }
 
@@ -564,4 +1022,4 @@ function Import-AzlInfrastructure {
     return Read-InfrastructureFile $Path
 }
 
-Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlArcMachineName
+Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlArcMachineName, Get-AzlNodeNetworkAdapter, Get-AzlManagementAdapter, Get-AzlBiosSetting, Get-AzlSiteIpRange

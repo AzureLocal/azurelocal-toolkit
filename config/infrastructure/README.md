@@ -5,7 +5,7 @@
 | Tool | Reads | Writes |
 | --- | --- | --- |
 | [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) | Everything its scripts need, through `Import-AzlInfrastructure` | No |
-| [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | `scenario`, `azure`, `key_vaults`, `nodes`, `hardware`, `networking.management`, `networking.ntp_servers`, `identity.local_admin`, `provisioning`, `tags` | No |
+| [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | `scenario`, `azure`, `key_vaults`, `nodes` (with `network_adapters` and `bios`), `hardware` (with `bios`), `networking.management`, `networking.ntp_servers`, `identity.local_admin`, `provisioning`, `tags` | No |
 | [Trailwright](https://labs.hybridsolutions.cloud/azurelocal-trailwright/) | The design sections | Yes: it produces the file from a guided design |
 | Beacon, Sonar, Ranger | Addresses, names and identity for their checks and reports | No |
 
@@ -17,7 +17,7 @@ The ARM parameters for Microsoft's deployment templates come from this file. The
 | --- | --- |
 | [`infrastructure.schema.json`](infrastructure.schema.json) | The contract: JSON Schema draft 2020-12. Its `$id` is `https://azurelocal.cloud/schemas/infrastructure/5/infrastructure.schema.json`. |
 | [`infrastructure.example.yml`](infrastructure.example.yml) | A complete file with every section and placeholder values: Active Directory, Storage Spaces Direct, switched, simplified provisioning, ARM. Start here. |
-| [`examples/`](examples) | One file per scenario: local identity and switchless with Arc gateway, disaggregated Fibre Channel with a proxy, rack aware with ZTP, disconnected operations, single machine. |
+| [`examples/`](examples) | One file per scenario: local identity and switchless with Arc gateway, disaggregated Fibre Channel with a proxy, rack aware with ZTP, disconnected operations, a single machine on a DHCP reservation, management on the onboard LOMs with ZTP (`lom-management-ztp.yml`, every port listed), and no DHCP anywhere with switchless storage (`no-dhcp-switchless.yml`). |
 | [`MIGRATION.md`](MIGRATION.md) | Where every key from the earlier files went: the environment file ZTP read, the toolkit's `variables.yml` (registry 4.0.0), and Trailwright's export. |
 
 ## Start a file
@@ -44,7 +44,7 @@ The ARM parameters for Microsoft's deployment templates come from this file. The
 | `connectivity` | `connected`, `disconnected` | `disconnected`: the `disconnected` section |
 | `cloud` | `public`, `government` | |
 | `outbound_path` | `direct`, `proxy`, `arc_gateway`, `proxy_arc_gateway`, `private_path` | The matching `networking.outbound` entries |
-| `os_install` | `iso`, `simplified` | `simplified`: `provisioning.simplified`, and on every node `serial_number`, `bmc.ip_address` and `management.mac_address` |
+| `os_install` | `iso`, `simplified` | `simplified`: `provisioning.simplified`, and on every node `serial_number`, `bmc.ip_address` and the management MAC: `management.mac_address`, or (5.2) a `mac_address` on every `network_adapters` port with role `management` and at least one port with role `provisioning` |
 | `deploy_method` | `portal`, `arm` | |
 
 There is no unattended install from an ISO. With `iso`, the OS is installed first; the toolkit's OS configuration starts after that.
@@ -60,6 +60,33 @@ Two settings decide what happens to each machine before deployment. Both are opt
 
 `ip_assignment` isn't `networking.management.use_dhcp`. `use_dhcp` is the deployment's ARM `useDhcp`, which takes the host and cluster addresses from DHCP instead of the infrastructure pool. In scripts, read both settings with `Get-AzlManagementIpAssignment` and `Get-AzlArcMachineName`, which apply the defaults.
 
+## Every port of every machine (schema 5.2)
+
+`nodes[].network_adapters` lists each physical port of a machine, used or not, so every tool reads the same NICs: the toolkit, ZTP, Trailwright and your own tools. Each entry:
+
+| Key | Values | What it is |
+| --- | --- | --- |
+| `name` | Text, unique on the machine | The adapter's name in the OS or its slot label, for example `Embedded NIC 1` or `Slot 3 Port 1`. Intents and storage networks name ports by it, so it's the same on every machine. |
+| `mac_address` | MAC | Needed for a DHCP reservation, and for every management port with simplified provisioning. |
+| `slot`, `model`, `speed_gbps`, `rdma` | | The hardware. Ports in one intent must be the same model and speed. |
+| `roles` | List of `management`, `compute`, `storage`, `provisioning`, `unused` | What the port is for. A converged port lists several (`[management, compute]`). `provisioning`: the maintenance environment of simplified provisioning reaches Azure through it. `unused` stands alone. |
+| `ip_assignment` | `static`, `dhcp_reservation`, `dhcp`, `preconfigured`, `none` | How the installed OS gets the port's host address before deployment. `none`: no host address (Network ATC or the storage networks give it one, or it isn't used); node preparation turns DHCP off on it. |
+| `ip_address`, `prefix_length`, `gateway`, `dns_servers` | | The host address. The management port takes the prefix, gateway and DNS from `networking.management`, and must match them if it sets them. |
+| `vlan_id`, `vlan_mode` | 0-4094; `access` or `tagged` | `access`: the switch port is an access port in `vlan_id` and the host sends untagged frames (simplified provisioning sends VLAN 0). `tagged`: the host tags `vlan_id`. |
+| `switch_port` | `switch`, `port`, `description` | Where the port is cabled. |
+
+**The management port is derived.** Exactly one port per machine owns the management address: the one with role `management` and an `ip_assignment` other than `none`. A second management port (its team partner) has `ip_assignment: none`. List the management port first in the management intent: the management virtual adapter takes the first adapter's MAC. `nodes[].management` and `networking.management.ip_assignment` still work for files without `network_adapters`; with them, they're deprecated and must agree. Read the result with `Get-AzlManagementAdapter`, which works for both shapes. See [MIGRATION.md](MIGRATION.md#to-52-the-ports-of-each-machine).
+
+Other keys added in 5.2:
+
+| Key | Values | What it does |
+| --- | --- | --- |
+| `hardware.bios`, `nodes[].bios` | BIOS attribute -> string value | Set before the OS goes on; a node's map is merged over the hardware one (`Get-AzlBiosSetting`). azurelocal-ztp applies it over Redfish before the maintenance boot. Dell examples: `Slot2: Disabled` (a Fibre Channel HBA whose SAN LUN would be offered as the install disk), `EmbNic1Nic2: Enabled` (LOMs shipped `DisabledOs`). |
+| `networking.management.site_ip_range` | `start`, `end` | Simplified provisioning: the Manual range of the site's network setting when the management addresses are static. Default: the lowest to the highest static management address (`Get-AzlSiteIpRange`). |
+| `networking.management.provisioning_network` | `dhcp` (default), `static` | How the maintenance environment gets the address it reaches Azure with, on the `provisioning` ports. `static` is a warning: Learn documents only the Configurator app for it, and a preset address in the bootable image is unresearched. |
+| `provisioning.simplified.media_path`, `evidence_path` | Full paths | Where azurelocal-ztp keeps a run's downloads, images, vouchers and state, and its evidence (event log, change logs). Never inside a git working tree. |
+
+**Arc machine names.** `nodes[].arc_machine_name` stays. In live runs (2026-11) the service overwrote the name set at claim time (`arcMachineResourceId`): the Arc machines still came out as `ROE1-<id>` and then `<device-id>-1`. Why, and whether another property sets it, is an open research item.
 ## What the check covers
 
 **The schema** checks structure, types, formats (IPv4, CIDR, MAC, GUID), the `keyvault://` form, name lengths (cluster and node names up to 15 characters, the LCM user up to 20), and the conditional sections above. Every section rejects unknown keys, so a misspelt key is an error, not a silently ignored value.
@@ -71,7 +98,7 @@ Two settings decide what happens to each machine before deployment. Both are opt
 | AZL-000 | `schema_version` is 5.x |
 | AZL-001 | Every `keyvault://` reference names a vault listed in `key_vaults` |
 | AZL-002, AZL-003 | Node names and management addresses are unique |
-| AZL-004 | Node addresses and the gateway are in the management subnet |
+| AZL-004 | Node addresses (`nodes[].management`, or the 5.2 management port) and the gateway are in the management subnet |
 | AZL-005 | The infrastructure pool is in the subnet, has at least six consecutive addresses, and holds no node or gateway address |
 | AZL-006 | No infrastructure address is in a range the Arc resource bridge reserves (10.244.0.0/16, 10.96.0.0/24); 10.96.0.0/12 is a warning (AKS, and deployments created before 2610) |
 | AZL-007 | Node counts: up to 16 with Storage Spaces Direct, 1 to 4 switchless, rack aware in two equal zones of up to 4 (8 with a SAN) |
@@ -86,7 +113,13 @@ Two settings decide what happens to each machine before deployment. Both are opt
 | AZL-016 | Arc gateway (and the private path) isn't used with simplified provisioning or in Azure Government |
 | AZL-017 | Management ports: no MAC is used by two nodes; with `ip_assignment: dhcp`, a warning per node to reserve its address for its MAC |
 | AZL-018 | Arc machine names (`arc_machine_name`, default the node name) are unique; the deprecated `arc_resource_name` is a warning, or an error when it disagrees with `arc_machine_name`; `arc_machine_name` on an ISO install is a warning, because the Arc machine takes the host name |
-
+| AZL-019 | Ports (5.2): listed on every node or none, names unique on a machine, every MAC on one port only |
+| AZL-020 | The management port (5.2): exactly one per node; agrees with a repeated `nodes[].management` and the deprecated site-wide `ip_assignment`; on the one management network (prefix, gateway, DNS); has an address unless `use_dhcp`; in the management intent and first in it (an error with a DHCP reservation, else a warning); plain `dhcp` is a warning |
+| AZL-021 | Intents and ports (5.2): every intent and storage-network adapter is a port of every node, not `unused`, symmetric (model and speed) within the intent and across nodes; roles that don't fit the intent's traffic, and traffic ports in no intent, are warnings |
+| AZL-022 | Addresses on the other ports (5.2): no second default gateway; DHCP left on is a warning; a static address needs `prefix_length`; no address on two ports; a host address on a storage port, a second port in the management subnet and an address with `ip_assignment: none` are warnings |
+| AZL-023 | VLANs (5.2): the management port's host VLAN matches `networking.management.vlan_id`; a tagged port with an address has a `vlan_id`; a storage port's VLAN matches its storage network; a storage port on an access port is a warning |
+| AZL-024 | The maintenance environment (simplified provisioning): a `provisioning` port on every node (5.2); `provisioning_network: static` is a warning (unresearched); a static management port that is also the provisioning port is a warning (it needs DHCP there) |
+| AZL-025 | The site range (simplified provisioning, static addresses): start before end, inside the subnet, holds every static management address; overlapping the infrastructure pool, or mixing static and DHCP management ports, is a warning |
 Design guidance (which pattern to pick, sizing, best practices) stays in Trailwright, which cites Microsoft Learn for every rule. The toolkit's rules are the ones that stop a deployment.
 
 ## Use it from a script

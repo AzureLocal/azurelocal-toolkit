@@ -1,0 +1,126 @@
+# Scenario: two machines with six ports each, management on the onboard LOMs, simplified machine provisioning
+# (azurelocal-ztp). Schema 5.2: every port is listed per node with its MAC, its roles and how it gets an address.
+#
+#   Embedded NIC 1, 2   1 GbE LOMs      management, access ports in VLAN 711, static, no DHCP on that network
+#   Slot 3 Port 1       100 GbE ConnectX-6  compute, and the maintenance environment's way to Azure (DHCP)
+#   Slot 6 Port 2       100 GbE ConnectX-6  compute, and the maintenance environment's way to Azure (DHCP)
+#   Slot 3 Port 2       100 GbE ConnectX-6  storage, VLAN 712
+#   Slot 6 Port 1       100 GbE ConnectX-6  storage, VLAN 713
+#
+# Before it is claimed, the maintenance environment reaches Azure over DHCP on the ConnectX-6 ports. The static
+# management address goes on Embedded NIC 1 in the OS-install request. After the install, node preparation turns DHCP
+# off on every port whose ip_assignment is none, so the management port keeps the only default gateway.
+# The BIOS settings turn off the Fibre Channel HBA in slot 2 (the maintenance environment would install onto its SAN
+# LUN) and turn on the LOMs, which ship as DisabledOs. Placeholder values only.
+_metadata:
+  schema_version: "5.2.0"
+
+scenario:
+  identity: active_directory
+  storage_architecture: s2d
+  storage_connectivity: switched
+  topology: standard
+  connectivity: connected
+  cloud: public
+  outbound_path: direct
+  os_install: simplified
+  deploy_method: arm
+
+site: { code: "IICL", name: "IIC Lab", time_zone: "Eastern Standard Time" }
+environment: { name: "iic-lab-azl", type: lab }
+
+azure:
+  tenant_id: "00000000-0000-0000-0000-000000000000"
+  location: "eastus"
+  subscription_id: "00000000-0000-0000-0000-000000000000"
+  resource_group: "rg-iic-lab-azl"
+
+key_vaults:
+  - { name: "kv-iic-lab-mgmt", subscription_id: "00000000-0000-0000-0000-000000000000", resource_group: "rg-iic-lab-mgmt" }
+
+cluster:
+  name: "iic-lab-azl"
+  witness: { type: cloud, storage_account: "stiiclabazlwit" }
+  key_vault: { name: "kv-iic-lab-azl" }
+
+nodes:
+  - name: "iic-lab-n01"
+    serial_number: "SERIAL01"
+    bmc: { ip_address: "198.51.100.11", type: idrac }
+    network_adapters:
+      - name: "Embedded NIC 1"
+        mac_address: "00:00:5E:00:53:11"
+        slot: "Embedded"
+        speed_gbps: 1
+        roles: [management]
+        ip_assignment: static # the management address; simplified provisioning sets it by this MAC
+        ip_address: "192.0.2.11"
+        vlan_mode: access # the switch port is an access port in VLAN 711; the host sends untagged frames
+        vlan_id: 711
+        switch_port: { switch: "leaf-a", port: "Ethernet1/11" }
+      - { name: "Embedded NIC 2", mac_address: "00:00:5E:00:53:12", slot: "Embedded", speed_gbps: 1, roles: [management], ip_assignment: none, vlan_mode: access, vlan_id: 711, switch_port: { switch: "leaf-b", port: "Ethernet1/11" } }
+      - { name: "Slot 3 Port 1", mac_address: "00:00:5E:00:53:13", slot: "Slot 3", model: "NVIDIA ConnectX-6 Dx", speed_gbps: 100, rdma: roce_v2, roles: [compute, provisioning], ip_assignment: none, vlan_mode: tagged, switch_port: { switch: "leaf-a", port: "Ethernet1/1" } }
+      - { name: "Slot 3 Port 2", mac_address: "00:00:5E:00:53:14", slot: "Slot 3", model: "NVIDIA ConnectX-6 Dx", speed_gbps: 100, rdma: roce_v2, roles: [storage], ip_assignment: none, vlan_mode: tagged, vlan_id: 712, switch_port: { switch: "leaf-a", port: "Ethernet1/2" } }
+      - { name: "Slot 6 Port 1", mac_address: "00:00:5E:00:53:15", slot: "Slot 6", model: "NVIDIA ConnectX-6 Dx", speed_gbps: 100, rdma: roce_v2, roles: [storage], ip_assignment: none, vlan_mode: tagged, vlan_id: 713, switch_port: { switch: "leaf-b", port: "Ethernet1/2" } }
+      - { name: "Slot 6 Port 2", mac_address: "00:00:5E:00:53:16", slot: "Slot 6", model: "NVIDIA ConnectX-6 Dx", speed_gbps: 100, rdma: roce_v2, roles: [compute, provisioning], ip_assignment: none, vlan_mode: tagged, switch_port: { switch: "leaf-b", port: "Ethernet1/1" } }
+  - name: "iic-lab-n02"
+    serial_number: "SERIAL02"
+    bmc: { ip_address: "198.51.100.12", type: idrac }
+    network_adapters:
+      - { name: "Embedded NIC 1", mac_address: "00:00:5E:00:53:21", slot: "Embedded", speed_gbps: 1, roles: [management], ip_assignment: static, ip_address: "192.0.2.12", vlan_mode: access, vlan_id: 711, switch_port: { switch: "leaf-a", port: "Ethernet1/12" } }
+      - { name: "Embedded NIC 2", mac_address: "00:00:5E:00:53:22", slot: "Embedded", speed_gbps: 1, roles: [management], ip_assignment: none, vlan_mode: access, vlan_id: 711, switch_port: { switch: "leaf-b", port: "Ethernet1/12" } }
+      - { name: "Slot 3 Port 1", mac_address: "00:00:5E:00:53:23", slot: "Slot 3", model: "NVIDIA ConnectX-6 Dx", speed_gbps: 100, rdma: roce_v2, roles: [compute, provisioning], ip_assignment: none, vlan_mode: tagged, switch_port: { switch: "leaf-a", port: "Ethernet1/3" } }
+      - { name: "Slot 3 Port 2", mac_address: "00:00:5E:00:53:24", slot: "Slot 3", model: "NVIDIA ConnectX-6 Dx", speed_gbps: 100, rdma: roce_v2, roles: [storage], ip_assignment: none, vlan_mode: tagged, vlan_id: 712, switch_port: { switch: "leaf-a", port: "Ethernet1/4" } }
+      - { name: "Slot 6 Port 1", mac_address: "00:00:5E:00:53:25", slot: "Slot 6", model: "NVIDIA ConnectX-6 Dx", speed_gbps: 100, rdma: roce_v2, roles: [storage], ip_assignment: none, vlan_mode: tagged, vlan_id: 713, switch_port: { switch: "leaf-b", port: "Ethernet1/4" } }
+      - { name: "Slot 6 Port 2", mac_address: "00:00:5E:00:53:26", slot: "Slot 6", model: "NVIDIA ConnectX-6 Dx", speed_gbps: 100, rdma: roce_v2, roles: [compute, provisioning], ip_assignment: none, vlan_mode: tagged, switch_port: { switch: "leaf-b", port: "Ethernet1/3" } }
+
+hardware:
+  vendor: "Dell"
+  model: "AX-760"
+  bmc: { username: "keyvault://kv-iic-lab-mgmt/bmc-username", password: "keyvault://kv-iic-lab-mgmt/bmc-password" }
+  bios: # applied by azurelocal-ztp before the maintenance boot; a node's own bios is merged over this
+    Slot2: "Disabled" # the Fibre Channel HBA: its SAN LUN would be offered as the install disk
+    EmbNic1Nic2: "Enabled" # the LOMs ship as DisabledOs, so the OS wouldn't see the management ports
+  sbe: { bundle_path: 'D:\sbe\dell' }
+
+networking:
+  management:
+    subnet: "192.0.2.0/24"
+    gateway: "192.0.2.1"
+    vlan_id: 0 # the host doesn't tag: the LOMs are on access ports
+    dns_servers: ["192.0.2.30", "192.0.2.31"]
+    site_ip_range: { start: "192.0.2.11", end: "192.0.2.12" } # optional; this is also the default
+    provisioning_network: dhcp # the maintenance environment takes DHCP on the provisioning ports
+    infrastructure_pool: { start: "192.0.2.20", end: "192.0.2.29" }
+  ntp_servers: ["192.0.2.30", "192.0.2.31"]
+  intents:
+    - { name: "management", traffic: [management], adapters: ["Embedded NIC 1", "Embedded NIC 2"] } # the management port first
+    - { name: "compute", traffic: [compute], adapters: ["Slot 3 Port 1", "Slot 6 Port 2"] }
+    - { name: "storage", traffic: [storage], adapters: ["Slot 3 Port 2", "Slot 6 Port 1"] }
+  storage:
+    auto_ip: true
+    layout: dedicated
+    networks:
+      - { name: "StorageNetwork1", adapter: "Slot 3 Port 2", vlan_id: 712 }
+      - { name: "StorageNetwork2", adapter: "Slot 6 Port 1", vlan_id: 713 }
+  vlans:
+    - { name: "management", id: 711, subnet: "192.0.2.0/24" }
+    - { name: "storage-1", id: 712 }
+    - { name: "storage-2", id: 713 }
+
+identity:
+  local_admin: { username: "azl-admin", password: "keyvault://kv-iic-lab-mgmt/local-admin-password" }
+  active_directory:
+    domain_fqdn: "improbability.cloud"
+    ou_path: "OU=iic-lab-azl,OU=AzureLocal,DC=improbability,DC=cloud"
+    lcm_user: { username: "lcm-iic-lab-azl", password: "keyvault://kv-iic-lab-mgmt/lcm-password" }
+
+provisioning:
+  os_version: "12.2610.1004.50"
+  simplified:
+    site_name: "iic-lab-site"
+    maintenance_iso: "2610"
+    admin: { username: "administrator", password: "keyvault://kv-iic-lab-mgmt/provisioning-admin-password" }
+    media_share: { name: "ztp-virtual-usb", host_adapter: "Management" }
+    media_path: 'D:\Data\azl-ztp\iic-lab\media' # downloads, images, vouchers, run state; never inside a git repository
+    evidence_path: 'D:\Data\azl-ztp\iic-lab\evidence' # event log, BIOS change log, run logs

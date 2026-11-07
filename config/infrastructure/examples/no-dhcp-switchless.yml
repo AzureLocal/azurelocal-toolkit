@@ -1,0 +1,90 @@
+# Scenario: no DHCP anywhere. Two machines, Active Directory, Storage Spaces Direct on switchless storage (two direct
+# links), OS from an ISO, deployed with the ARM template. Schema 5.2 ports:
+#
+#   Slot 3 Port 1, 2   25 GbE   management and compute, trunk ports; the host tags management VLAN 2203; static
+#   Slot 6 Port 1, 2   25 GbE   storage, cabled machine to machine (switchless), VLANs 711 and 712
+#   Embedded NIC 1, 2  1 GbE    not cabled
+#
+# Every address is static. The management address is set on Slot 3 Port 1 (the first adapter of the management intent)
+# after the ISO install; node preparation turns DHCP off on every other port, so the management port holds the only
+# default gateway. Placeholder values only.
+_metadata:
+  schema_version: "5.2.0"
+
+scenario:
+  identity: active_directory
+  storage_architecture: s2d
+  storage_connectivity: switchless
+  topology: standard
+  connectivity: connected
+  cloud: public
+  outbound_path: direct
+  os_install: iso
+  deploy_method: arm
+
+site: { code: "IICB", name: "IIC Branch 02" }
+environment: { name: "iic-br02-azl", type: prd }
+
+azure:
+  tenant_id: "00000000-0000-0000-0000-000000000000"
+  location: "westeurope"
+  subscription_id: "00000000-0000-0000-0000-000000000000"
+  resource_group: "rg-iic-br02-azl"
+
+key_vaults:
+  - { name: "kv-iic-br02-mgmt", subscription_id: "00000000-0000-0000-0000-000000000000", resource_group: "rg-iic-mgmt-01" }
+
+cluster:
+  name: "iic-br02-azl"
+  witness: { type: cloud, storage_account: "stiicbr02azlwit" }
+  key_vault: { name: "kv-iic-br02-azl" }
+
+nodes:
+  - name: "iic-br02-n01"
+    network_adapters:
+      - { name: "Slot 3 Port 1", mac_address: "00:00:5E:00:53:11", slot: "Slot 3", model: "NVIDIA ConnectX-6 Lx", speed_gbps: 25, roles: [management, compute], ip_assignment: static, ip_address: "192.0.2.11", vlan_mode: tagged, vlan_id: 2203, switch_port: { switch: "sw-a", port: "1/1/1" } }
+      - { name: "Slot 3 Port 2", mac_address: "00:00:5E:00:53:12", slot: "Slot 3", model: "NVIDIA ConnectX-6 Lx", speed_gbps: 25, roles: [management, compute], ip_assignment: none, vlan_mode: tagged, switch_port: { switch: "sw-b", port: "1/1/1" } }
+      - { name: "Slot 6 Port 1", mac_address: "00:00:5E:00:53:13", slot: "Slot 6", model: "NVIDIA ConnectX-6 Lx", speed_gbps: 25, rdma: roce_v2, roles: [storage], ip_assignment: none, vlan_mode: tagged, vlan_id: 711 }
+      - { name: "Slot 6 Port 2", mac_address: "00:00:5E:00:53:14", slot: "Slot 6", model: "NVIDIA ConnectX-6 Lx", speed_gbps: 25, rdma: roce_v2, roles: [storage], ip_assignment: none, vlan_mode: tagged, vlan_id: 712 }
+      - { name: "Embedded NIC 1", mac_address: "00:00:5E:00:53:15", slot: "Embedded", speed_gbps: 1, roles: [unused], ip_assignment: none }
+      - { name: "Embedded NIC 2", mac_address: "00:00:5E:00:53:16", slot: "Embedded", speed_gbps: 1, roles: [unused], ip_assignment: none }
+  - name: "iic-br02-n02"
+    network_adapters:
+      - { name: "Slot 3 Port 1", mac_address: "00:00:5E:00:53:21", slot: "Slot 3", model: "NVIDIA ConnectX-6 Lx", speed_gbps: 25, roles: [management, compute], ip_assignment: static, ip_address: "192.0.2.12", vlan_mode: tagged, vlan_id: 2203, switch_port: { switch: "sw-a", port: "1/1/2" } }
+      - { name: "Slot 3 Port 2", mac_address: "00:00:5E:00:53:22", slot: "Slot 3", model: "NVIDIA ConnectX-6 Lx", speed_gbps: 25, roles: [management, compute], ip_assignment: none, vlan_mode: tagged, switch_port: { switch: "sw-b", port: "1/1/2" } }
+      - { name: "Slot 6 Port 1", mac_address: "00:00:5E:00:53:23", slot: "Slot 6", model: "NVIDIA ConnectX-6 Lx", speed_gbps: 25, rdma: roce_v2, roles: [storage], ip_assignment: none, vlan_mode: tagged, vlan_id: 711 }
+      - { name: "Slot 6 Port 2", mac_address: "00:00:5E:00:53:24", slot: "Slot 6", model: "NVIDIA ConnectX-6 Lx", speed_gbps: 25, rdma: roce_v2, roles: [storage], ip_assignment: none, vlan_mode: tagged, vlan_id: 712 }
+      - { name: "Embedded NIC 1", mac_address: "00:00:5E:00:53:25", slot: "Embedded", speed_gbps: 1, roles: [unused], ip_assignment: none }
+      - { name: "Embedded NIC 2", mac_address: "00:00:5E:00:53:26", slot: "Embedded", speed_gbps: 1, roles: [unused], ip_assignment: none }
+
+hardware:
+  vendor: "Lenovo"
+  model: "SE350 V2"
+
+networking:
+  management:
+    subnet: "192.0.2.0/24"
+    gateway: "192.0.2.1"
+    vlan_id: 2203 # the host tags the management VLAN on the trunk
+    dns_servers: ["192.0.2.4", "192.0.2.5"]
+    infrastructure_pool: { start: "192.0.2.20", end: "192.0.2.29" }
+  ntp_servers: ["192.0.2.4"]
+  intents:
+    - { name: "mgmt_compute", traffic: [management, compute], adapters: ["Slot 3 Port 1", "Slot 3 Port 2"] }
+    - { name: "storage", traffic: [storage], adapters: ["Slot 6 Port 1", "Slot 6 Port 2"] } # switchless: storage on its own
+  storage:
+    auto_ip: true
+    switchless_links: dual
+    networks:
+      - { name: "StorageNetwork1", adapter: "Slot 6 Port 1", vlan_id: 711 }
+      - { name: "StorageNetwork2", adapter: "Slot 6 Port 2", vlan_id: 712 }
+
+identity:
+  local_admin: { username: "azl-admin", password: "keyvault://kv-iic-br02-mgmt/local-admin-password" }
+  active_directory:
+    domain_fqdn: "improbability.cloud"
+    ou_path: "OU=iic-br02-azl,OU=AzureLocal,DC=improbability,DC=cloud"
+    lcm_user: { username: "lcm-iic-br02-azl", password: "keyvault://kv-iic-br02-mgmt/lcm-password" }
+
+provisioning:
+  os_version: "12.2610.1004.50"

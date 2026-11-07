@@ -1,7 +1,8 @@
 # Scenario: a single machine, Active Directory, Storage Spaces Direct, no witness, OS from an ISO, deployed from the
-# Azure portal. Placeholder values only.
+# Azure portal. Schema 5.2 ports: the management address comes from a DHCP reservation for the first port's MAC (the
+# management virtual adapter takes that MAC). Placeholder values only.
 _metadata:
-  schema_version: "5.1.0"
+  schema_version: "5.2.0"
 
 scenario:
   identity: active_directory
@@ -32,7 +33,12 @@ cluster:
   key_vault: { name: "kv-iic-edge-07" }
 
 nodes:
-  - { name: "iic-edge-07-n01", management: { ip_address: "192.0.2.11" } }
+  - name: "iic-edge-07-n01"
+    network_adapters:
+      # Converged: management and compute on both ports. The reservation is for NIC1, the first adapter of the intent.
+      - { name: "NIC1", mac_address: "00:00:5E:00:53:11", speed_gbps: 25, roles: [management, compute], ip_assignment: dhcp_reservation, ip_address: "192.0.2.11" }
+      - { name: "NIC2", mac_address: "00:00:5E:00:53:12", speed_gbps: 25, roles: [management, compute], ip_assignment: none }
+      - { name: "NIC3", mac_address: "00:00:5E:00:53:13", speed_gbps: 1, roles: [unused], ip_assignment: none }
 
 hardware: { vendor: "DataON", model: "AZS-6224" }
 
@@ -41,8 +47,7 @@ networking:
     subnet: "192.0.2.0/24"
     gateway: "192.0.2.1"
     dns_servers: ["192.0.2.4"]
-    ip_assignment: preconfigured # the address was set at the console after the ISO install; the tools leave the port alone
-    infrastructure_pool: { start: "192.0.2.20", end: "192.0.2.25" }
+    infrastructure_pool: { start: "192.0.2.20", end: "192.0.2.25" } # exclude it from the DHCP scope
   intents:
     - { name: "converged", traffic: [management, compute], adapters: ["NIC1", "NIC2"] }
 

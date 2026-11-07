@@ -27,7 +27,7 @@
       ],
       "properties": {
         "schema_version": {
-          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys.",
+          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network.",
           "type": "string",
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
@@ -118,7 +118,7 @@
           ]
         },
         "os_install": {
-          "description": "iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp automates (needs provisioning.simplified, and a serial number, BMC address and management MAC on every node).",
+          "description": "iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp automates (needs provisioning.simplified, and on every node a serial number, a BMC address and the management MAC: management.mac_address, or from 5.2 a mac_address on every network_adapters port with role management and at least one port with role provisioning).",
           "enum": [
             "iso",
             "simplified"
@@ -496,6 +496,10 @@
           "description": "BMC (iDRAC, iLO, XCC) login used for every machine unless a node sets its own.",
           "$ref": "#/$defs/bmc_credentials"
         },
+        "bios": {
+          "description": "BIOS attributes for every machine (schema 5.2); a node's bios is merged over it. See $defs/bios_settings.",
+          "$ref": "#/$defs/bios_settings"
+        },
         "sbe": {
           "description": "Solution Builder Extension. The version is the one validated with provisioning.os_version. ARM sbeVersion, sbeFamily, sbePublisher, sbeManifestSource and sbeManifestCreationDate.",
           "type": "object",
@@ -527,7 +531,7 @@
           }
         },
         "network_cards": {
-          "description": "The physical network cards in every machine, and what each port is for.",
+          "description": "The physical network cards in every machine, and what each port is for. A summary of the hardware; from 5.2 each node's ports, with MACs and addresses, are nodes[].network_adapters.",
           "type": "array",
           "items": {
             "type": "object",
@@ -621,7 +625,7 @@
               "$ref": "#/$defs/ipv4"
             },
             "vlan_id": {
-              "description": "0 means untagged. Can't be changed after deployment. With ip_assignment static, simplified provisioning also sets it on the management port (edge machine networkAdapters[].vlanId).",
+              "description": "0 means untagged. Can't be changed after deployment. The VLAN the host tags on the management port: simplified provisioning sets it on that port (edge machine networkAdapters[].vlanId). With nodes[].network_adapters the management port's host VLAN (0 when its vlan_mode is access) must match it.",
               "type": "integer",
               "minimum": 0,
               "maximum": 4094
@@ -635,18 +639,44 @@
               }
             },
             "ip_assignment": {
-              "description": "How each machine's management address (nodes[].management.ip_address) is set before deployment, on the management port (nodes[].management.mac_address). static (default): the address, the subnet mask, the gateway, the DNS servers and vlan_id are set on that port. Simplified provisioning sets them at the OS install (edge machine siteDetails.deviceConfiguration.network.networkAdapters[], ipAssignmentType Manual, keyed by the MAC); for an ISO install the operator or the toolkit sets them. dhcp: the port stays on DHCP, so reserve each ip_address in DHCP for its MAC. preconfigured: the port is already configured, and the tools don't change it. Not the same as use_dhcp, which is the deployment's ARM useDhcp.",
+              "description": "Deprecated in 5.2: set each port's ip_assignment in nodes[].network_adapters. Read when a node has no network_adapters, and must agree with them when both are given (static = static, dhcp = dhcp_reservation or dhcp, preconfigured = preconfigured). How each machine's management address (nodes[].management.ip_address) is set before deployment, on the management port (nodes[].management.mac_address). static (default): the address, the subnet mask, the gateway, the DNS servers and vlan_id are set on that port. Simplified provisioning sets them at the OS install (edge machine siteDetails.deviceConfiguration.network.networkAdapters[], ipAssignmentType Manual, keyed by the MAC); for an ISO install the operator or the toolkit sets them. dhcp: the port stays on DHCP, so reserve each ip_address in DHCP for its MAC. preconfigured: the port is already configured, and the tools don't change it. Not the same as use_dhcp, which is the deployment's ARM useDhcp.",
               "type": "string",
               "enum": [
                 "static",
                 "dhcp",
                 "preconfigured"
               ],
-              "default": "static"
+              "default": "static",
+              "deprecated": true
             },
             "use_dhcp": {
               "description": "ARM useDhcp: the deployment takes the host and cluster addresses from DHCP instead of static addresses and the infrastructure_pool. Default false. A deployment setting, not how each machine's management port gets its address before deployment: that is ip_assignment.",
               "type": "boolean"
+            },
+            "site_ip_range": {
+              "description": "Simplified provisioning: the address range of the site's network setting (Microsoft.Edge/configurations/networkConfigurations ipv4.addressRange) when the management addresses are static. Default: the lowest to the highest static management address. Inside the management subnet, and holding every static management address.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "start",
+                "end"
+              ],
+              "properties": {
+                "start": {
+                  "$ref": "#/$defs/ipv4"
+                },
+                "end": {
+                  "$ref": "#/$defs/ipv4"
+                }
+              }
+            },
+            "provisioning_network": {
+              "description": "Simplified provisioning: how the maintenance environment gets the address it reaches Azure with, on the ports with role provisioning, before the machine is claimed. dhcp (default): a DHCP server answers on that port's network. static: a static address in the maintenance environment. Learn documents only the Configurator app for that, and whether the bootable image can carry a preset address is an open research item, so tools warn and don't set it.",
+              "enum": [
+                "dhcp",
+                "static"
+              ],
+              "default": "dhcp"
             },
             "infrastructure_pool": {
               "description": "At least six contiguous addresses in the management subnet, outside the machines' addresses. ARM startingIPAddress and endingIPAddress.",
@@ -1571,6 +1601,16 @@
                   }
                 }
               ]
+            },
+            "media_path": {
+              "description": "Schema 5.2. Folder on the management host for the run's downloads and data: the maintenance ISO cache, the SBE copy and its unpacked drivers, the per-node USB images (about 4 GB each), the vouchers and the run state. Outside any git working tree: azurelocal-ztp refuses a folder inside one, and creates it when missing. Default: %ProgramData%\\AzureLocalZtp\\<site_name>\\media.",
+              "type": "string",
+              "minLength": 1
+            },
+            "evidence_path": {
+              "description": "Schema 5.2. Folder on the management host for the run's evidence: the event log monitors follow (ztp-events.jsonl), the BIOS and other Redfish change logs, and run logs. Outside any git working tree, created when missing. Default: %ProgramData%\\AzureLocalZtp\\<site_name>\\evidence.",
+              "type": "string",
+              "minLength": 1
             }
           }
         }
@@ -2589,7 +2629,47 @@
                     "ip_address": true
                   }
                 },
-                "serial_number": true
+                "serial_number": true,
+                "network_adapters": {
+                  "type": "array",
+                  "items": {
+                    "if": {
+                      "type": "object",
+                      "required": [
+                        "roles"
+                      ],
+                      "properties": {
+                        "roles": {
+                          "contains": {
+                            "const": "management"
+                          }
+                        }
+                      }
+                    },
+                    "then": {
+                      "type": "object",
+                      "required": [
+                        "mac_address"
+                      ],
+                      "properties": {
+                        "mac_address": true
+                      }
+                    }
+                  },
+                  "contains": {
+                    "type": "object",
+                    "required": [
+                      "roles"
+                    ],
+                    "properties": {
+                      "roles": {
+                        "contains": {
+                          "const": "provisioning"
+                        }
+                      }
+                    }
+                  }
+                }
               }
             }
           }
@@ -2664,11 +2744,11 @@
       }
     },
     "node": {
+      "description": "One machine. Describe its management port either with management (schema 5.0) or, from 5.2, with network_adapters, which lists every port and derives management from the port that owns the management address.",
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "name",
-        "management"
+        "name"
       ],
       "properties": {
         "name": {
@@ -2676,7 +2756,7 @@
           "$ref": "#/$defs/netbios_name"
         },
         "management": {
-          "description": "The machine's management port and address.",
+          "description": "The machine's management port and address (schema 5.0 and 5.1). From 5.2, network_adapters describes it instead: the port with role management and an ip_assignment other than none. When both are given they must agree; prefer network_adapters.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -2684,7 +2764,7 @@
           ],
           "properties": {
             "ip_address": {
-              "description": "Management address. ARM physicalNodesSettings[].ipv4Address. How it gets onto the management port before deployment is networking.management.ip_assignment: set on the port (static), reserved in DHCP for mac_address (dhcp), or already there (preconfigured).",
+              "description": "Management address. ARM physicalNodesSettings[].ipv4Address. How it gets onto the management port before deployment is networking.management.ip_assignment: set on the port (static), reserved in DHCP for mac_address (dhcp), or already there (preconfigured). With network_adapters it is the management port's ip_address.",
               "$ref": "#/$defs/ipv4"
             },
             "mac_address": {
@@ -2695,6 +2775,14 @@
               "description": "Name of the management port in the installed OS, for example 'SLOT 3 Port 1'. Optional: mac_address identifies the port. Simplified provisioning also sends it with the port's settings; leave it out unless you know the name the OS gives the port.",
               "type": "string"
             }
+          }
+        },
+        "network_adapters": {
+          "description": "Every physical network port of the machine (schema 5.2): name, MAC, roles and how each gets its host address. Exactly one port owns the management address: role management and an ip_assignment other than none. Intents name ports by these names. List them on every node or on none.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/network_adapter"
           }
         },
         "serial_number": {
@@ -2760,6 +2848,67 @@
           "description": "Deprecated: use arc_machine_name. Read as arc_machine_name when that isn't set.",
           "type": "string",
           "deprecated": true
+        },
+        "bios": {
+          "description": "BIOS attributes for this machine, merged over hardware.bios (a key here wins). See hardware.bios.",
+          "$ref": "#/$defs/bios_settings"
+        }
+      },
+      "anyOf": [
+        {
+          "type": "object",
+          "required": [
+            "management"
+          ],
+          "properties": {
+            "management": true
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "network_adapters"
+          ],
+          "properties": {
+            "network_adapters": true
+          }
+        }
+      ],
+      "if": {
+        "type": "object",
+        "required": [
+          "network_adapters"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "properties": {
+          "network_adapters": {
+            "contains": {
+              "type": "object",
+              "required": [
+                "roles",
+                "ip_assignment"
+              ],
+              "properties": {
+                "roles": {
+                  "contains": {
+                    "const": "management"
+                  }
+                },
+                "ip_assignment": {
+                  "enum": [
+                    "static",
+                    "dhcp_reservation",
+                    "dhcp",
+                    "preconfigured"
+                  ]
+                }
+              }
+            },
+            "minContains": 1,
+            "maxContains": 1
+          }
         }
       }
     },
@@ -2789,7 +2938,7 @@
           }
         },
         "adapters": {
-          "description": "Adapter names in the OS, the same on every machine.",
+          "description": "Adapter names in the OS, the same on every machine. With nodes[].network_adapters (5.2) each name must be a port in every node's list. The first adapter matters: the management virtual adapter takes the MAC of the first adapter of the management intent, so that adapter owns the management address.",
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
@@ -3050,6 +3199,209 @@
           }
         }
       }
+    },
+    "bios_settings": {
+      "description": "BIOS attributes to set before the OS goes on: vendor attribute name -> value, as the BMC's Redfish Bios resource names them (Attributes of /redfish/v1/Systems/<id>/Bios). Values are strings, even for numbers; tools convert them to the type the BMC reports. azurelocal-ztp applies them in its Boot stage, before the maintenance boot: it reads the current values, PATCHes only those that differ to the Bios Settings resource with @Redfish.SettingsApplyTime OnReset, powers the machine on or restarts it, and waits until the BIOS reports every value. Dell examples: Slot2: Disabled (turn off the card in PCIe slot 2, for example a Fibre Channel HBA whose SAN LUN the maintenance environment would otherwise install onto); EmbNic1Nic2: Enabled (the embedded LOM ports, when they show as DisabledOs and the OS can't see them).",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_.\\[\\]-]{1,128}$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "network_adapter": {
+      "description": "One physical network port of the machine (schema 5.2). List every port, used or not, so each tool reads the same NICs. A port can carry several roles (a converged design).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "roles",
+        "ip_assignment"
+      ],
+      "properties": {
+        "name": {
+          "description": "The adapter's name in the installed OS, or the slot label the OS uses, for example 'Embedded NIC 1' or 'Slot 3 Port 1'. networking.intents[].adapters and networking.storage.networks[].adapter name ports by it, so give a port the same name on every machine. Unique on the machine.",
+          "type": "string",
+          "minLength": 1
+        },
+        "mac_address": {
+          "description": "The port's MAC. Tools find the port by it (simplified provisioning keys the management address to it; node preparation finds the adapter by it). Needed for a DHCP reservation, and for every management port with simplified provisioning.",
+          "$ref": "#/$defs/mac"
+        },
+        "slot": {
+          "description": "Where the port is, for example Embedded (a LOM), Slot 3 or OCP 1.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Card model, for example 'NVIDIA ConnectX-6 Dx'. Ports in one intent must be the same make, model and speed.",
+          "type": "string"
+        },
+        "speed_gbps": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rdma": {
+          "enum": [
+            "none",
+            "iwarp",
+            "roce",
+            "roce_v2"
+          ]
+        },
+        "roles": {
+          "description": "What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified provisioning reaches Azure through this port, before the machine is claimed; how it gets its address there is networking.management.provisioning_network), or unused. A converged port lists several, for example [management, compute]. unused stands alone.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "management",
+              "compute",
+              "storage",
+              "provisioning",
+              "unused"
+            ]
+          }
+        },
+        "ip_assignment": {
+          "description": "How the installed OS gets this port's host address before deployment. static: ip_address is set on the port (simplified provisioning sets it on the management port at the OS install; otherwise the operator or the toolkit). dhcp_reservation: the port keeps DHCP and the DHCP server reserves ip_address for mac_address. dhcp: the port keeps DHCP with no reservation, so its address can change. preconfigured: the port is already configured; tools leave it alone. none: no host address before deployment (Network ATC or the storage networks give it one, or it isn't used); node preparation turns DHCP off on it. Exactly one management port per machine owns the management address: the one with role management and an ip_assignment other than none.",
+          "enum": [
+            "static",
+            "dhcp_reservation",
+            "dhcp",
+            "preconfigured",
+            "none"
+          ]
+        },
+        "ip_address": {
+          "description": "The host address. For the management port this is ARM physicalNodesSettings[].ipv4Address. Required with static and dhcp_reservation.",
+          "$ref": "#/$defs/ipv4"
+        },
+        "prefix_length": {
+          "description": "Prefix length of ip_address. Default for the management port: from networking.management.subnet, which it must match.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "gateway": {
+          "description": "Default gateway on this port. Default for the management port: networking.management.gateway. Leave it out on every other port: validation fails when more than one physical adapter has a default gateway.",
+          "$ref": "#/$defs/ipv4"
+        },
+        "dns_servers": {
+          "description": "Default for the management port: networking.management.dns_servers, which it must match.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ipv4"
+          }
+        },
+        "vlan_id": {
+          "description": "The VLAN of this port's traffic. With vlan_mode tagged the host tags it; with vlan_mode access the switch port is an access port in this VLAN and the host sends untagged frames (it records the switch side). Without vlan_mode, 0 or absent means untagged and anything else is tagged by the host.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4094
+        },
+        "vlan_mode": {
+          "description": "access: the switch port is an access (untagged) port; the host doesn't tag, so simplified provisioning sends VLAN 0. tagged: the switch port is a trunk and the host tags vlan_id.",
+          "enum": [
+            "access",
+            "tagged"
+          ]
+        },
+        "switch_port": {
+          "description": "Where the port is cabled.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "switch": {
+              "description": "The switch, for example a network_devices[].hostname.",
+              "type": "string"
+            },
+            "port": {
+              "description": "The switch port, for example Ethernet1/11.",
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            }
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "type": "object",
+            "required": [
+              "ip_assignment"
+            ],
+            "properties": {
+              "ip_assignment": {
+                "enum": [
+                  "static",
+                  "dhcp_reservation"
+                ]
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "required": [
+              "ip_address"
+            ],
+            "properties": {
+              "ip_address": true
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": [
+              "ip_assignment"
+            ],
+            "properties": {
+              "ip_assignment": {
+                "const": "dhcp_reservation"
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "required": [
+              "mac_address"
+            ],
+            "properties": {
+              "mac_address": true
+            }
+          }
+        },
+        {
+          "if": {
+            "type": "object",
+            "required": [
+              "roles"
+            ],
+            "properties": {
+              "roles": {
+                "contains": {
+                  "const": "unused"
+                }
+              }
+            }
+          },
+          "then": {
+            "type": "object",
+            "properties": {
+              "roles": {
+                "maxItems": 1
+              }
+            }
+          }
+        }
+      ]
     }
   }
 }

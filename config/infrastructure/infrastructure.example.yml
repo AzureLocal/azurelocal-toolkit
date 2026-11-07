@@ -11,7 +11,9 @@
 # This example: Active Directory, Storage Spaces Direct on switched storage,
 # two machines, connected with direct outbound, the OS from simplified machine
 # provisioning (azurelocal-ztp), deployed with the ARM template.
-# Other scenarios are in examples/.
+# Other scenarios are in examples/. This file describes each machine's management
+# port with nodes[].management (schema 5.0); from 5.2, nodes[].network_adapters lists
+# every port with its MAC, roles and address instead: see examples/lom-management-ztp.yml.
 #
 # Rules:
 #   - Keys are snake_case. Sections reject unknown keys; use extensions.
@@ -22,7 +24,7 @@
 # =============================================================================
 
 _metadata:
-  schema_version: "5.1.0"
+  schema_version: "5.2.0"
   file_version: "1.0.0"
   last_updated: "2026-11-06"
   generated_by: ""
@@ -156,6 +158,8 @@ hardware:
     # Folder on the management host with the OEM's SBE files, as downloaded.
     bundle_path: 'D:\sbe\dell'
     allow_unvalidated: false # test only
+  bios: # optional; set before the maintenance boot by azurelocal-ztp. Dell attribute names.
+    EmbNic1Nic2: "Enabled"
   network_cards:
     - label: "Onboard"
       ports:
@@ -182,6 +186,7 @@ networking:
     # (reserve each address for its MAC) or preconfigured (left as it is).
     ip_assignment: static
     use_dhcp: false # ARM useDhcp for the deployment; not ip_assignment
+    provisioning_network: dhcp # simplified provisioning: how the maintenance environment reaches Azure
     infrastructure_pool: # at least six contiguous addresses
       start: "192.0.2.20"
       end: "192.0.2.29"
@@ -293,6 +298,8 @@ provisioning:
     media_share:
       name: "ztp-virtual-usb"
       host: "198.51.100.5" # or host_adapter: <adapter name>
+    media_path: 'D:\Data\azl-ztp\iic-azl-01\media' # downloads, images, vouchers, state; outside any git repository
+    evidence_path: 'D:\Data\azl-ztp\iic-azl-01\evidence' # event log, BIOS change log, run logs
 
 network_devices:
   - hostname: "sw01-iic"
