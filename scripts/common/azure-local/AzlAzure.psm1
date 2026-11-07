@@ -178,7 +178,9 @@ function Find-AzlArcMachine {
         A node's Arc machine resource ID and, from Azure, its status and network interfaces.
     .DESCRIPTION
         The handoff's arcMachineResourceId wins. Without one the machine is looked up by its Arc machine name in the
-        instance's resource group. Reads only.
+        instance's resource group, then, when no machine has that name, by its host name: simplified provisioning names
+        the Arc machine after the device (<device-id>-1), not the node, but the agent reports the node's host name as
+        properties.osProfile.computerName. Reads only.
     .OUTPUTS
         Name, ResourceId, Location, Status, Interfaces (the Arc agent's per-NIC report: name, macAddress, ipAddresses), or
         $null when no such machine exists.
@@ -188,10 +190,24 @@ function Find-AzlArcMachine {
         [Parameter(Mandatory)][string]$ArcMachineName,
         [Parameter(Mandatory)][string]$SubscriptionId,
         [Parameter(Mandatory)][string]$ResourceGroup,
-        [string]$ResourceId
+        [string]$ResourceId,
+        # The node's host name, matched against properties.osProfile.computerName when no machine has $ArcMachineName.
+        [string]$HostName
     )
     $path = if ($ResourceId) { $ResourceId } else { "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.HybridCompute/machines/$ArcMachineName" }
     $machine = Invoke-AzlArm -Method GET -Path $path -ApiVersion $script:ArcMachineApiVersion -AllowNotFound
+    if (-not $machine -and -not $ResourceId) {
+        $byHost = if ($HostName) { $HostName } else { $ArcMachineName }
+        $list = Invoke-AzlArm -Method GET -Path "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.HybridCompute/machines" -ApiVersion $script:ArcMachineApiVersion -AllowNotFound
+        $hits = @(@(Get-AzlProp $list 'value' @()) | Where-Object { [string](Get-AzlProp $_ 'properties.osProfile.computerName' '') -ieq $byHost })
+        if ($hits.Count -gt 1) {
+            # Machines left over from earlier installs report the same host name: prefer the connected one.
+            $connected = @($hits | Where-Object { [string](Get-AzlProp $_ 'properties.status' '') -eq 'Connected' })
+            if ($connected.Count -eq 1) { $hits = $connected }
+            else { throw "$($byHost): $($hits.Count) Arc machines in $ResourceGroup report this host name ($(@($hits | ForEach-Object { Get-AzlProp $_ 'name' '' }) -join ', ')); pass the handoff file or remove the stale ones." }
+        }
+        if ($hits.Count -eq 1) { $machine = $hits[0]; $path = [string](Get-AzlProp $machine 'id' '') }
+    }
     if (-not $machine) { return $null }
     [pscustomobject]@{
         Name       = [string](Get-AzlProp $machine 'name' $ArcMachineName)

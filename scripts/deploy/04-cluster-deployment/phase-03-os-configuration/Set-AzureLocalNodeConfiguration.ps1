@@ -130,28 +130,28 @@ $arcIds = @{}
 if ($Transport -ne 'WinRM') {
     if (-not (Get-AzContext)) { throw 'Not signed in to Azure. Run Connect-AzAccount (the account needs Azure Connected Machine Resource Administrator on the Arc machines).' }
     foreach ($s in $specs) {
-        $found = Find-AzlArcMachine -ArcMachineName $s.ArcMachineName -SubscriptionId $subscription -ResourceGroup $resourceGroup -ResourceId $s.ArcResourceId
-        if ($found) { $arcIds[$s.Name] = $found.ResourceId; if ($found.Status -and $found.Status -ne 'Connected') { Write-Warning "$($s.Name): its Arc machine reports '$($found.Status)'." } }
-        else { Write-Warning "$($s.Name): no Arc machine named $($s.ArcMachineName) in $resourceGroup." }
+        $found = Find-AzlArcMachine -ArcMachineName $s.ArcMachineName -HostName $s.Name -SubscriptionId $subscription -ResourceGroup $resourceGroup -ResourceId $s.ArcResourceId
+        if ($found) { $arcIds[$s.Name] = $found.ResourceId; Write-Line "$($s.Name): Arc machine $($found.Name) ($($found.Status))."; if ($found.Status -and $found.Status -ne 'Connected') { Write-Warning "$($s.Name): its Arc machine reports '$($found.Status)'." } }
+        else { Write-Warning "$($s.Name): no Arc machine named $($s.ArcMachineName), or reporting host name $($s.Name), in $resourceGroup." }
     }
 }
 $useArc = $Transport -eq 'ArcRunCommand' -or ($Transport -eq 'Auto' -and $arcIds.Count -eq $specs.Count)
 if ($useArc) {
     if ($arcIds.Count -ne $specs.Count) { throw 'Not every node has an Arc machine, so the Arc Run Command transport can''t reach all of them.' }
-    $transport = New-AzlArcRunCommandTransport -ArcResourceId $arcIds -StagingStorageAccount $StagingStorageAccount -StagingContainer $StagingContainer
+    $nodeTransport = New-AzlArcRunCommandTransport -ArcResourceId $arcIds -StagingStorageAccount $StagingStorageAccount -StagingContainer $StagingContainer
 }
 else {
     if (-not $Credential) { throw 'The WinRM transport needs -Credential (the nodes'' local administrator).' }
     $addresses = @{}
     foreach ($s in $specs) { $addresses[$s.Name] = $s.Management.Ip }
-    $transport = New-AzlWinRmTransport -Address $addresses -Credential $Credential
+    $nodeTransport = New-AzlWinRmTransport -Address $addresses -Credential $Credential
 }
-Write-Line "Transport: $($transport.Kind). $(if ($Execute) { 'EXECUTE: changes will be made.' } else { 'Plan only: nothing on the nodes changes. Add -Execute.' })"
+Write-Line "Transport: $($nodeTransport.Kind). $(if ($Execute) { 'EXECUTE: changes will be made.' } else { 'Plan only: nothing on the nodes changes. Add -Execute.' })"
 
 # ---- the nodes
 $results = foreach ($s in $specs) {
     Write-Line "== $($s.Name)"
-    Invoke-AzlNodeConfiguration -Spec $s -Transport $transport -Execute:$Execute -Step $steps -ClearStorage:$ClearStorage -NoRestart:$NoRestart -MaxPasses $MaxPasses
+    Invoke-AzlNodeConfiguration -Spec $s -Transport $nodeTransport -Execute:$Execute -Step $steps -ClearStorage:$ClearStorage -NoRestart:$NoRestart -MaxPasses $MaxPasses
 }
 foreach ($r in $results) {
     Write-Line (Format-AzlPlan -Plan @($r.Plan | Where-Object { $_.Action -ne 'Ok' -or -not $Execute }))
@@ -173,7 +173,7 @@ $report = [ordered]@{
     schemaVersion = 1
     generatedUtc  = [datetime]::UtcNow.ToString('o')
     executed      = [bool]$Execute
-    transport     = $transport.Kind
+    transport     = $nodeTransport.Kind
     sanProblems   = $sanProblems
     nodes         = @($results | ForEach-Object {
             [ordered]@{
