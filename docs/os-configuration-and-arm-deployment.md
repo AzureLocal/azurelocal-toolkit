@@ -26,6 +26,9 @@ The OS configuration plan reads each node through Azure Arc Run Command, which c
 
 Order: ZTP hand-off, OS configuration with `-Execute` (it writes a JSON report), then ARM Validate, review, then ARM Deploy.
 
+![Azure Local OS configuration: from the ZTP handoff through the management address modes and each step to ARM Validate and Deploy](./diagrams/os-configuration-flow.png)
+
+The diagram source is [`diagrams/os-configuration-flow.drawio`](diagrams/os-configuration-flow.drawio). It follows one run: the ZTP handoff (schema 2) and `infrastructure.yml` are read and validated; each node's management address mode (A DHCP with reservation, B static with DHCP on management, C static without management DHCP) decides what the Network step does; then the steps run in the order the script runs them, with a tag on each that says whether it skips when already correct, only reads, or only runs on request; the SBE package is delivered last by the route `hardware.sbe.delivery` names; the node is read again until it matches, and the report feeds ARM Validate and then ARM Deploy (Phase 05).
 The full cross-tool matrix is in the toolkit's [access-and-connectivity page](access-and-connectivity.md).
 
 ## Operator host
