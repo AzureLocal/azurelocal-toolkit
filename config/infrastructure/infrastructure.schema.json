@@ -6,16 +6,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "_metadata",
-    "scenario",
-    "site",
-    "environment",
-    "azure",
-    "cluster",
-    "nodes",
-    "hardware",
-    "networking",
-    "identity"
+    "_metadata"
   ],
   "properties": {
     "_metadata": {
@@ -27,9 +18,17 @@
       ],
       "properties": {
         "schema_version": {
-          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network.",
+          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san). 5.3 also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads.",
           "type": "string",
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
+        },
+        "scope": {
+          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity beyond local_admin) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key).",
+          "enum": [
+            "full",
+            "ztp"
+          ],
+          "default": "full"
         },
         "file_version": {
           "description": "Your own version of this file.",
@@ -52,17 +51,6 @@
       "description": "The design choices. Every other section is read in the light of these: a choice makes its section required, and tools pick their path from here. All of them are required, so nothing is assumed.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "identity",
-        "storage_architecture",
-        "storage_connectivity",
-        "topology",
-        "connectivity",
-        "cloud",
-        "outbound_path",
-        "os_install",
-        "deploy_method"
-      ],
       "properties": {
         "identity": {
           "description": "active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity.local_identity). https://learn.microsoft.com/azure/azure-local/deploy/deployment-local-identity-with-key-vault",
@@ -497,7 +485,11 @@
           "$ref": "#/$defs/bmc_credentials"
         },
         "bios": {
-          "description": "BIOS attributes for every machine (schema 5.2); a node's bios is merged over it. See $defs/bios_settings.",
+          "description": "BIOS attributes for every machine, as they are when the machine is finished (schema 5.2; from 5.3 this is the FINAL state): a node's bios is merged over it. azurelocal-ztp applies them at its Boot stage, and in its Restore stage sets back to these values any key that bios_during_provisioning changed for the OS install. See $defs/bios_settings.",
+          "$ref": "#/$defs/bios_settings"
+        },
+        "bios_during_provisioning": {
+          "description": "Schema 5.3. BIOS attributes that hold for the OS install only: TEMPORARY values. A node's bios_during_provisioning is merged over this one, and during-provisioning values win over bios. azurelocal-ztp applies them at its Boot stage. In its Restore stage, after the OS install and before Handoff, it sets each key back to its bios value (or, when bios doesn't name the key, to the original value it saved), restarts the node and waits for Arc to reconnect. Example: bios { Slot2: Enabled } with bios_during_provisioning { Slot2: Disabled } turns off a Fibre Channel HBA in slot 2 while the maintenance environment installs the OS (it would otherwise install onto the SAN LUN), and turns it on again afterwards. On Dell, a slot can also be BootDriverDisabled: visible to the OS but never a boot device. A key here should also be in bios, so the final state is explicit. See $defs/bios_settings.",
           "$ref": "#/$defs/bios_settings"
         },
         "sbe": {
@@ -602,8 +594,7 @@
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "management",
-        "intents"
+        "management"
       ],
       "properties": {
         "management": {
@@ -678,6 +669,31 @@
               ],
               "default": "dhcp"
             },
+            "static_method": {
+              "description": "Schema 5.3. Simplified provisioning, and only when the management ip_assignment is static: who sets each machine's static management address. device (default): azurelocal-ztp's Device stage sets it on the management port, found by its MAC, through the maintenance environment's Configurator service before the machine is claimed. The Arc site's network setting is then Automatic and the claim carries no Manual adapter. site: the older path. The site's network setting is Manual with an address range (site_ip_range) and Microsoft's OS install assigns the address. Microsoft ignores the MAC there and uses the first ready port, which was observed live on Dell AX-760, so use it only when the first ready port is the management port.",
+              "enum": [
+                "device",
+                "site"
+              ],
+              "default": "device"
+            },
+            "provisioning_dhcp_range": {
+              "description": "Schema 5.3. Simplified provisioning: the DHCP range on the provisioning network (the one the maintenance environment gets its address on). The Device stage scans it (TCP 20001) to find each machine's maintenance environment by MAC when nodes[].maintenance_address isn't set. Inside the management subnet, start at or below end.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "start",
+                "end"
+              ],
+              "properties": {
+                "start": {
+                  "$ref": "#/$defs/ipv4"
+                },
+                "end": {
+                  "$ref": "#/$defs/ipv4"
+                }
+              }
+            },
             "infrastructure_pool": {
               "description": "At least six contiguous addresses in the management subnet, outside the machines' addresses. ARM startingIPAddress and endingIPAddress.",
               "type": "object",
@@ -694,28 +710,6 @@
                   "$ref": "#/$defs/ipv4"
                 }
               }
-            }
-          },
-          "if": {
-            "not": {
-              "type": "object",
-              "properties": {
-                "use_dhcp": {
-                  "const": true
-                }
-              },
-              "required": [
-                "use_dhcp"
-              ]
-            }
-          },
-          "then": {
-            "type": "object",
-            "required": [
-              "infrastructure_pool"
-            ],
-            "properties": {
-              "infrastructure_pool": true
             }
           }
         },
@@ -1208,6 +1202,7 @@
           }
         },
         "san": {
+          "description": "The external SAN of a disaggregated (san) or hybrid deployment. From 5.3 it also records the array, the Fibre Channel fabrics and target WWPNs or the iSCSI targets, which the SAN deployment and zoning work read; each machine's own HBAs or initiator are nodes[].san.",
           "type": "object",
           "additionalProperties": false,
           "required": [
@@ -1215,10 +1210,175 @@
           ],
           "properties": {
             "type": {
+              "description": "fibre_channel needs storage.san.fibre_channel; iscsi needs storage.san.iscsi.",
               "enum": [
                 "fibre_channel",
                 "iscsi"
               ]
+            },
+            "array": {
+              "description": "Schema 5.3. The storage array that presents the LUNs.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "name",
+                "vendor",
+                "model"
+              ],
+              "properties": {
+                "name": {
+                  "description": "The array's name, for example its hostname in the array manager.",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "vendor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "management_address": {
+                  "description": "The array's management address, when the SAN deployment drives it.",
+                  "$ref": "#/$defs/ipv4"
+                }
+              }
+            },
+            "fibre_channel": {
+              "description": "Schema 5.3. Required when type is fibre_channel: the fabrics and the array's target ports. Each machine's HBA ports are nodes[].san.hbas.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "fabrics": {
+                  "description": "The Fibre Channel fabrics, for example A and B. Every WWPN names one by fabric.",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "name"
+                    ],
+                    "properties": {
+                      "name": {
+                        "description": "For example A or B. Unique.",
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "switch": {
+                        "description": "The fabric's switch, for example a network_devices[].hostname.",
+                        "type": "string"
+                      },
+                      "zone_set": {
+                        "description": "The active zone set on this fabric.",
+                        "type": "string"
+                      }
+                    }
+                  }
+                },
+                "target_wwpns": {
+                  "description": "The array's target ports (WWPNs) and the fabric each is cabled to. Zoning lets each machine's HBA ports see them.",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "wwpn",
+                      "fabric"
+                    ],
+                    "properties": {
+                      "wwpn": {
+                        "$ref": "#/$defs/wwpn"
+                      },
+                      "fabric": {
+                        "description": "A name in fabrics.",
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "iscsi": {
+              "description": "Schema 5.3. Required when type is iscsi: the array's targets and CHAP. Each machine's initiator IQN is nodes[].san.initiator_iqn; the addresses of its iSCSI ports are on nodes[].network_adapters with role iscsi:a and iscsi:b.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "targets": {
+                  "description": "The array's iSCSI targets.",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "iqn",
+                      "portals"
+                    ],
+                    "properties": {
+                      "iqn": {
+                        "$ref": "#/$defs/iscsi_name"
+                      },
+                      "portals": {
+                        "description": "The target portals: an IPv4 address, optionally with a port (default 3260), for example 198.51.100.10 or 198.51.100.10:3260.",
+                        "type": "array",
+                        "minItems": 1,
+                        "uniqueItems": true,
+                        "items": {
+                          "$ref": "#/$defs/iscsi_portal"
+                        }
+                      },
+                      "fabric": {
+                        "description": "The storage network this target serves, matching the iSCSI port role: A for iscsi:a, B for iscsi:b.",
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    }
+                  }
+                },
+                "chap": {
+                  "description": "CHAP authentication of the sessions. The secret is a Key Vault reference.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "enabled"
+                  ],
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "username": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "secret": {
+                      "$ref": "#/$defs/kv_ref"
+                    }
+                  },
+                  "if": {
+                    "type": "object",
+                    "required": [
+                      "enabled"
+                    ],
+                    "properties": {
+                      "enabled": {
+                        "const": true
+                      }
+                    }
+                  },
+                  "then": {
+                    "type": "object",
+                    "required": [
+                      "username",
+                      "secret"
+                    ],
+                    "properties": {
+                      "username": true,
+                      "secret": true
+                    }
+                  }
+                }
+              }
             },
             "infra_volume_lun_id": {
               "description": "LUN of the infrastructure volume (250 GB minimum). ARM infraVolLunId.",
@@ -1251,7 +1411,53 @@
                 }
               }
             }
-          }
+          },
+          "allOf": [
+            {
+              "if": {
+                "type": "object",
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "fibre_channel"
+                  }
+                }
+              },
+              "then": {
+                "type": "object",
+                "required": [
+                  "fibre_channel"
+                ],
+                "properties": {
+                  "fibre_channel": true
+                }
+              }
+            },
+            {
+              "if": {
+                "type": "object",
+                "required": [
+                  "type"
+                ],
+                "properties": {
+                  "type": {
+                    "const": "iscsi"
+                  }
+                }
+              },
+              "then": {
+                "type": "object",
+                "required": [
+                  "iscsi"
+                ],
+                "properties": {
+                  "iscsi": true
+                }
+              }
+            }
+          ]
         }
       }
     },
@@ -1559,6 +1765,10 @@
                   "$ref": "#/$defs/kv_ref"
                 }
               }
+            },
+            "maintenance_password": {
+              "description": "Schema 5.3. The password of the maintenance environment's local user (edgeuser), which azurelocal-ztp's Device stage signs in with to reach the Configurator service before the machine is claimed. A Key Vault reference. Default: the maintenance environment's out-of-box password that Microsoft Learn documents (Configurator App article). Set a secret when the images carry another one.",
+              "$ref": "#/$defs/kv_ref"
             },
             "media_share": {
               "description": "The SMB share the BMCs mount the images from.",
@@ -2202,369 +2412,516 @@
   },
   "allOf": [
     {
+      "description": "Schema 5.3, _metadata.scope. ztp: only what azurelocal-ztp reads is required. full (default): the whole instance, as in 5.0 to 5.2.",
       "if": {
         "type": "object",
-        "properties": {
-          "scenario": {
-            "type": "object",
-            "properties": {
-              "identity": {
-                "const": "active_directory"
-              }
-            },
-            "required": [
-              "identity"
-            ]
-          }
-        },
         "required": [
-          "scenario"
-        ]
-      },
-      "then": {
-        "type": "object",
-        "properties": {
-          "identity": {
-            "type": "object",
-            "required": [
-              "active_directory"
-            ],
-            "properties": {
-              "active_directory": true
-            }
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "type": "object",
-        "properties": {
-          "scenario": {
-            "type": "object",
-            "properties": {
-              "identity": {
-                "const": "local_identity"
-              }
-            },
-            "required": [
-              "identity"
-            ]
-          }
-        },
-        "required": [
-          "scenario"
-        ]
-      },
-      "then": {
-        "type": "object",
-        "properties": {
-          "identity": {
-            "type": "object",
-            "required": [
-              "local_identity"
-            ],
-            "properties": {
-              "local_identity": true
-            }
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "type": "object",
-        "properties": {
-          "scenario": {
-            "type": "object",
-            "properties": {
-              "storage_architecture": {
-                "enum": [
-                  "san",
-                  "hybrid"
-                ]
-              }
-            },
-            "required": [
-              "storage_architecture"
-            ]
-          }
-        },
-        "required": [
-          "scenario"
-        ]
-      },
-      "then": {
-        "type": "object",
-        "required": [
-          "storage"
+          "_metadata"
         ],
         "properties": {
-          "storage": {
+          "_metadata": {
             "type": "object",
             "required": [
-              "san"
+              "scope"
             ],
             "properties": {
-              "san": true
+              "scope": {
+                "const": "ztp"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "required": [
+          "scenario",
+          "site",
+          "azure",
+          "key_vaults",
+          "nodes",
+          "hardware",
+          "networking",
+          "identity",
+          "provisioning"
+        ],
+        "properties": {
+          "scenario": {
+            "type": "object",
+            "required": [
+              "os_install"
+            ],
+            "properties": {
+              "os_install": {
+                "const": "simplified"
+              }
+            }
+          },
+          "site": {
+            "type": "object",
+            "required": [
+              "time_zone"
+            ],
+            "properties": {
+              "time_zone": true
+            }
+          },
+          "key_vaults": {
+            "minItems": 1
+          },
+          "hardware": {
+            "type": "object",
+            "required": [
+              "bmc"
+            ],
+            "properties": {
+              "bmc": true
+            }
+          }
+        }
+      },
+      "else": {
+        "type": "object",
+        "required": [
+          "scenario",
+          "site",
+          "environment",
+          "azure",
+          "cluster",
+          "nodes",
+          "hardware",
+          "networking",
+          "identity"
+        ],
+        "properties": {
+          "scenario": {
+            "type": "object",
+            "required": [
+              "identity",
+              "storage_architecture",
+              "storage_connectivity",
+              "topology",
+              "connectivity",
+              "cloud",
+              "outbound_path",
+              "os_install",
+              "deploy_method"
+            ],
+            "properties": {
+              "identity": true,
+              "storage_architecture": true,
+              "storage_connectivity": true,
+              "topology": true,
+              "connectivity": true,
+              "cloud": true,
+              "outbound_path": true,
+              "os_install": true,
+              "deploy_method": true
             }
           },
           "networking": {
             "type": "object",
             "required": [
-              "cluster_networks"
+              "intents"
             ],
             "properties": {
-              "cluster_networks": true
-            }
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "type": "object",
-        "properties": {
-          "scenario": {
-            "type": "object",
-            "properties": {
-              "storage_connectivity": {
-                "const": "switchless"
-              }
-            },
-            "required": [
-              "storage_connectivity"
-            ]
-          }
-        },
-        "required": [
-          "scenario"
-        ]
-      },
-      "then": {
-        "type": "object",
-        "properties": {
-          "networking": {
-            "type": "object",
-            "required": [
-              "storage"
-            ],
-            "properties": {
-              "storage": {
-                "type": "object",
-                "required": [
-                  "switchless_links"
-                ],
-                "properties": {
-                  "switchless_links": true
+              "intents": true,
+              "management": {
+                "description": "The infrastructure pool is a cluster-deployment setting, so a file with scope ztp doesn't need it. It is required unless use_dhcp is true.",
+                "if": {
+                  "not": {
+                    "type": "object",
+                    "properties": {
+                      "use_dhcp": {
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "use_dhcp"
+                    ]
+                  }
+                },
+                "then": {
+                  "type": "object",
+                  "required": [
+                    "infrastructure_pool"
+                  ],
+                  "properties": {
+                    "infrastructure_pool": true
+                  }
                 }
               }
             }
           }
-        }
-      }
-    },
-    {
-      "if": {
-        "type": "object",
-        "properties": {
-          "scenario": {
-            "type": "object",
-            "properties": {
-              "topology": {
-                "const": "rack_aware"
-              }
-            },
-            "required": [
-              "topology"
-            ]
-          }
         },
-        "required": [
-          "scenario"
-        ]
-      },
-      "then": {
-        "type": "object",
-        "properties": {
-          "nodes": {
-            "type": "array",
-            "items": {
+        "allOf": [
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "scenario": {
+                  "type": "object",
+                  "properties": {
+                    "identity": {
+                      "const": "active_directory"
+                    }
+                  },
+                  "required": [
+                    "identity"
+                  ]
+                }
+              },
+              "required": [
+                "scenario"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "identity": {
+                  "type": "object",
+                  "required": [
+                    "active_directory"
+                  ],
+                  "properties": {
+                    "active_directory": true
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "scenario": {
+                  "type": "object",
+                  "properties": {
+                    "identity": {
+                      "const": "local_identity"
+                    }
+                  },
+                  "required": [
+                    "identity"
+                  ]
+                }
+              },
+              "required": [
+                "scenario"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "identity": {
+                  "type": "object",
+                  "required": [
+                    "local_identity"
+                  ],
+                  "properties": {
+                    "local_identity": true
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "scenario": {
+                  "type": "object",
+                  "properties": {
+                    "storage_architecture": {
+                      "enum": [
+                        "san",
+                        "hybrid"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "storage_architecture"
+                  ]
+                }
+              },
+              "required": [
+                "scenario"
+              ]
+            },
+            "then": {
               "type": "object",
               "required": [
-                "zone"
+                "storage"
               ],
               "properties": {
-                "zone": true
+                "storage": {
+                  "type": "object",
+                  "required": [
+                    "san"
+                  ],
+                  "properties": {
+                    "san": true
+                  }
+                },
+                "networking": {
+                  "type": "object",
+                  "required": [
+                    "cluster_networks"
+                  ],
+                  "properties": {
+                    "cluster_networks": true
+                  }
+                }
               }
             }
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "type": "object",
-        "properties": {
-          "scenario": {
-            "type": "object",
-            "properties": {
-              "connectivity": {
-                "const": "disconnected"
-              }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "scenario": {
+                  "type": "object",
+                  "properties": {
+                    "storage_connectivity": {
+                      "const": "switchless"
+                    }
+                  },
+                  "required": [
+                    "storage_connectivity"
+                  ]
+                }
+              },
+              "required": [
+                "scenario"
+              ]
             },
-            "required": [
-              "connectivity"
-            ]
-          }
-        },
-        "required": [
-          "scenario"
-        ]
-      },
-      "then": {
-        "type": "object",
-        "required": [
-          "disconnected"
-        ],
-        "properties": {
-          "disconnected": true
-        }
-      }
-    },
-    {
-      "if": {
-        "type": "object",
-        "properties": {
-          "scenario": {
-            "type": "object",
-            "properties": {
-              "outbound_path": {
-                "enum": [
-                  "proxy",
-                  "proxy_arc_gateway"
-                ]
+            "then": {
+              "type": "object",
+              "properties": {
+                "networking": {
+                  "type": "object",
+                  "required": [
+                    "storage"
+                  ],
+                  "properties": {
+                    "storage": {
+                      "type": "object",
+                      "required": [
+                        "switchless_links"
+                      ],
+                      "properties": {
+                        "switchless_links": true
+                      }
+                    }
+                  }
+                }
               }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "scenario": {
+                  "type": "object",
+                  "properties": {
+                    "topology": {
+                      "const": "rack_aware"
+                    }
+                  },
+                  "required": [
+                    "topology"
+                  ]
+                }
+              },
+              "required": [
+                "scenario"
+              ]
             },
-            "required": [
-              "outbound_path"
-            ]
-          }
-        },
-        "required": [
-          "scenario"
-        ]
-      },
-      "then": {
-        "type": "object",
-        "properties": {
-          "networking": {
-            "type": "object",
-            "required": [
-              "outbound"
-            ],
-            "properties": {
-              "outbound": {
-                "type": "object",
-                "required": [
-                  "proxy"
-                ],
-                "properties": {
-                  "proxy": true
+            "then": {
+              "type": "object",
+              "properties": {
+                "nodes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "zone"
+                    ],
+                    "properties": {
+                      "zone": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "scenario": {
+                  "type": "object",
+                  "properties": {
+                    "connectivity": {
+                      "const": "disconnected"
+                    }
+                  },
+                  "required": [
+                    "connectivity"
+                  ]
+                }
+              },
+              "required": [
+                "scenario"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "required": [
+                "disconnected"
+              ],
+              "properties": {
+                "disconnected": true
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "scenario": {
+                  "type": "object",
+                  "properties": {
+                    "outbound_path": {
+                      "enum": [
+                        "proxy",
+                        "proxy_arc_gateway"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "outbound_path"
+                  ]
+                }
+              },
+              "required": [
+                "scenario"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "networking": {
+                  "type": "object",
+                  "required": [
+                    "outbound"
+                  ],
+                  "properties": {
+                    "outbound": {
+                      "type": "object",
+                      "required": [
+                        "proxy"
+                      ],
+                      "properties": {
+                        "proxy": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "scenario": {
+                  "type": "object",
+                  "properties": {
+                    "outbound_path": {
+                      "enum": [
+                        "arc_gateway",
+                        "proxy_arc_gateway"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "outbound_path"
+                  ]
+                }
+              },
+              "required": [
+                "scenario"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "networking": {
+                  "type": "object",
+                  "required": [
+                    "outbound"
+                  ],
+                  "properties": {
+                    "outbound": {
+                      "type": "object",
+                      "required": [
+                        "arc_gateway"
+                      ],
+                      "properties": {
+                        "arc_gateway": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "scenario": {
+                  "type": "object",
+                  "properties": {
+                    "outbound_path": {
+                      "const": "private_path"
+                    }
+                  },
+                  "required": [
+                    "outbound_path"
+                  ]
+                }
+              },
+              "required": [
+                "scenario"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "networking": {
+                  "type": "object",
+                  "required": [
+                    "outbound"
+                  ],
+                  "properties": {
+                    "outbound": {
+                      "type": "object",
+                      "required": [
+                        "private_path"
+                      ],
+                      "properties": {
+                        "private_path": true
+                      }
+                    }
+                  }
                 }
               }
             }
           }
-        }
-      }
-    },
-    {
-      "if": {
-        "type": "object",
-        "properties": {
-          "scenario": {
-            "type": "object",
-            "properties": {
-              "outbound_path": {
-                "enum": [
-                  "arc_gateway",
-                  "proxy_arc_gateway"
-                ]
-              }
-            },
-            "required": [
-              "outbound_path"
-            ]
-          }
-        },
-        "required": [
-          "scenario"
         ]
-      },
-      "then": {
-        "type": "object",
-        "properties": {
-          "networking": {
-            "type": "object",
-            "required": [
-              "outbound"
-            ],
-            "properties": {
-              "outbound": {
-                "type": "object",
-                "required": [
-                  "arc_gateway"
-                ],
-                "properties": {
-                  "arc_gateway": true
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    {
-      "if": {
-        "type": "object",
-        "properties": {
-          "scenario": {
-            "type": "object",
-            "properties": {
-              "outbound_path": {
-                "const": "private_path"
-              }
-            },
-            "required": [
-              "outbound_path"
-            ]
-          }
-        },
-        "required": [
-          "scenario"
-        ]
-      },
-      "then": {
-        "type": "object",
-        "properties": {
-          "networking": {
-            "type": "object",
-            "required": [
-              "outbound"
-            ],
-            "properties": {
-              "outbound": {
-                "type": "object",
-                "required": [
-                  "private_path"
-                ],
-                "properties": {
-                  "private_path": true
-                }
-              }
-            }
-          }
-        }
       }
     },
     {
@@ -2850,8 +3207,20 @@
           "deprecated": true
         },
         "bios": {
-          "description": "BIOS attributes for this machine, merged over hardware.bios (a key here wins). See hardware.bios.",
+          "description": "BIOS attributes for this machine in their FINAL state, merged over hardware.bios (a key here wins). See hardware.bios.",
           "$ref": "#/$defs/bios_settings"
+        },
+        "bios_during_provisioning": {
+          "description": "Schema 5.3. Temporary BIOS attributes for this machine's OS install only, merged over hardware.bios_during_provisioning (a key here wins); during-provisioning values win over bios. azurelocal-ztp sets each key back to its bios value in its Restore stage. See hardware.bios_during_provisioning.",
+          "$ref": "#/$defs/bios_settings"
+        },
+        "maintenance_address": {
+          "description": "Schema 5.3. Simplified provisioning: the address the machine's maintenance environment answers on (its Configurator service, TCP 20001), when it is known: a DHCP reservation, or an address set at the console. azurelocal-ztp's Device stage then talks to it directly. Without it, the Device stage finds the maintenance environment by MAC, scanning networking.management.provisioning_dhcp_range.",
+          "$ref": "#/$defs/ipv4"
+        },
+        "san": {
+          "description": "Schema 5.3. This machine's SAN connections: its Fibre Channel HBAs and their WWPNs (storage.san.type fibre_channel), or its iSCSI initiator IQN (storage.san.type iscsi; the iSCSI ports' addresses are on network_adapters with role iscsi:a and iscsi:b). Needed on every machine when storage.san.type is set.",
+          "$ref": "#/$defs/node_san"
         }
       },
       "anyOf": [
@@ -3201,13 +3570,84 @@
       }
     },
     "bios_settings": {
-      "description": "BIOS attributes to set before the OS goes on: vendor attribute name -> value, as the BMC's Redfish Bios resource names them (Attributes of /redfish/v1/Systems/<id>/Bios). Values are strings, even for numbers; tools convert them to the type the BMC reports. azurelocal-ztp applies them in its Boot stage, before the maintenance boot: it reads the current values, PATCHes only those that differ to the Bios Settings resource with @Redfish.SettingsApplyTime OnReset, powers the machine on or restarts it, and waits until the BIOS reports every value. Dell examples: Slot2: Disabled (turn off the card in PCIe slot 2, for example a Fibre Channel HBA whose SAN LUN the maintenance environment would otherwise install onto); EmbNic1Nic2: Enabled (the embedded LOM ports, when they show as DisabledOs and the OS can't see them).",
+      "description": "BIOS attributes: vendor attribute name -> value, as the BMC's Redfish Bios resource names them (Attributes of /redfish/v1/Systems/<id>/Bios). Values are strings, even for numbers; tools convert them to the type the BMC reports. azurelocal-ztp applies them in its Boot stage, before the maintenance boot: it reads the current values, PATCHes only those that differ to the Bios Settings resource with @Redfish.SettingsApplyTime OnReset, powers the machine on or restarts it, and waits until the BIOS reports every value. Used twice: as bios (the machine's FINAL state) and as bios_during_provisioning (TEMPORARY values for the OS install, which the Restore stage sets back to the bios values). Dell examples: Slot2: Disabled (turn off the card in PCIe slot 2, for example a Fibre Channel HBA whose SAN LUN the maintenance environment would otherwise install onto; as a temporary value, with Slot2: Enabled in bios); Slot2: BootDriverDisabled (the card stays visible to the OS but never boots); EmbNic1Nic2: Enabled (the embedded LOM ports, when they show as DisabledOs and the OS can't see them).",
       "type": "object",
       "propertyNames": {
         "pattern": "^[A-Za-z0-9_.\\[\\]-]{1,128}$"
       },
       "additionalProperties": {
         "type": "string"
+      }
+    },
+    "wwpn": {
+      "description": "A Fibre Channel World Wide Port Name: 16 hexadecimal digits, as 8 colon-separated pairs (50:00:09:72:08:12:34:56) or without colons.",
+      "type": "string",
+      "pattern": "^([0-9A-Fa-f]{2}:){7}[0-9A-Fa-f]{2}$|^[0-9A-Fa-f]{16}$"
+    },
+    "iscsi_name": {
+      "description": "An iSCSI qualified name (iqn.yyyy-mm.reversed.domain[:identifier]), or an eui. or naa. name.",
+      "type": "string",
+      "pattern": "^(iqn\\.[0-9]{4}-[0-9]{2}\\.[A-Za-z0-9.-]+(:\\S+)?|eui\\.[0-9A-Fa-f]{16}|naa\\.[0-9A-Fa-f]{16,32})$"
+    },
+    "iscsi_portal": {
+      "description": "An iSCSI target portal: an IPv4 address, optionally with :port (default 3260).",
+      "type": "string",
+      "pattern": "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(:([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+    },
+    "node_san": {
+      "description": "One machine's SAN connections (schema 5.3). Fibre Channel: hbas, each with its slot and ports, and every port's WWPN and fabric. iSCSI: initiator_iqn.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hbas": {
+          "description": "The Fibre Channel host bus adapters in this machine.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "slot",
+              "ports"
+            ],
+            "properties": {
+              "slot": {
+                "description": "Where the HBA is, as the BIOS names it, for example Slot2. The BIOS key of the same name (bios, bios_during_provisioning) turns it off or on.",
+                "type": "string",
+                "minLength": 1
+              },
+              "model": {
+                "type": "string"
+              },
+              "ports": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "wwpn",
+                    "fabric"
+                  ],
+                  "properties": {
+                    "wwpn": {
+                      "$ref": "#/$defs/wwpn"
+                    },
+                    "fabric": {
+                      "description": "A name in storage.san.fibre_channel.fabrics.",
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "initiator_iqn": {
+          "description": "The machine's iSCSI initiator name. Unique in the file.",
+          "$ref": "#/$defs/iscsi_name"
+        }
       }
     },
     "network_adapter": {
@@ -3250,7 +3690,7 @@
           ]
         },
         "roles": {
-          "description": "What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified provisioning reaches Azure through this port, before the machine is claimed; how it gets its address there is networking.management.provisioning_network), or unused. A converged port lists several, for example [management, compute]. unused stands alone.",
+          "description": "What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified provisioning reaches Azure through this port, before the machine is claimed; how it gets its address there is networking.management.provisioning_network), iscsi:a or iscsi:b (schema 5.3: a port that carries iSCSI traffic to the SAN's fabric A or B; give it a static address, prefix_length and VLAN, no gateway), or unused. A converged port lists several, for example [management, compute]. unused stands alone.",
           "type": "array",
           "minItems": 1,
           "uniqueItems": true,
@@ -3260,6 +3700,8 @@
               "compute",
               "storage",
               "provisioning",
+              "iscsi:a",
+              "iscsi:b",
               "unused"
             ]
           }

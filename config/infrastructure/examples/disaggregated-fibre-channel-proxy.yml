@@ -1,7 +1,15 @@
 # Scenario: disaggregated (external SAN over Fibre Channel), Active Directory, four machines, outbound through a proxy,
 # OS installed from an ISO, deployed with the ARM template. Placeholder values only.
+#
+# Schema 5.3 records the whole SAN (storage.san and nodes[].san), which the SAN deployment (zoning and LUN masking) reads:
+#   storage.san.array                 the array: name, vendor, model and its management address
+#   storage.san.fibre_channel         the fabrics (A and B, with their switch and active zone set) and the array's target WWPNs,
+#                                     each cabled to a fabric
+#   nodes[].san.hbas                  each machine's HBAs: slot, model, and every port's WWPN and fabric
+# Every WWPN names a fabric defined under fabrics, and no WWPN appears twice. A WWPN is 16 hex digits, written as colon-
+# separated pairs or without colons.
 _metadata:
-  schema_version: "5.1.0"
+  schema_version: "5.3.0"
 
 scenario:
   identity: active_directory
@@ -33,10 +41,46 @@ cluster:
   key_vault: { name: "kv-iic-dc02-azl", create_new: true }
 
 nodes:
-  - { name: "iic-dc02-n01", management: { ip_address: "192.0.2.11" }, rack: "R01" }
-  - { name: "iic-dc02-n02", management: { ip_address: "192.0.2.12" }, rack: "R01" }
-  - { name: "iic-dc02-n03", management: { ip_address: "192.0.2.13" }, rack: "R02" }
-  - { name: "iic-dc02-n04", management: { ip_address: "192.0.2.14" }, rack: "R02" }
+  - name: "iic-dc02-n01"
+    management: { ip_address: "192.0.2.11" }
+    rack: "R01"
+    san:
+      hbas:
+        - slot: "Slot2"
+          model: "Emulex LPe35002 32Gb"
+          ports:
+            - { wwpn: "10:00:00:00:00:00:00:11", fabric: "A" }
+            - { wwpn: "10:00:00:00:00:00:00:12", fabric: "B" }
+  - name: "iic-dc02-n02"
+    management: { ip_address: "192.0.2.12" }
+    rack: "R01"
+    san:
+      hbas:
+        - slot: "Slot2"
+          model: "Emulex LPe35002 32Gb"
+          ports:
+            - { wwpn: "10:00:00:00:00:00:00:21", fabric: "A" }
+            - { wwpn: "10:00:00:00:00:00:00:22", fabric: "B" }
+  - name: "iic-dc02-n03"
+    management: { ip_address: "192.0.2.13" }
+    rack: "R02"
+    san:
+      hbas:
+        - slot: "Slot2"
+          model: "Emulex LPe35002 32Gb"
+          ports:
+            - { wwpn: "10:00:00:00:00:00:00:31", fabric: "A" }
+            - { wwpn: "10:00:00:00:00:00:00:32", fabric: "B" }
+  - name: "iic-dc02-n04"
+    management: { ip_address: "192.0.2.14" }
+    rack: "R02"
+    san:
+      hbas:
+        - slot: "Slot2"
+          model: "Emulex LPe35002 32Gb"
+          ports:
+            - { wwpn: "10:00:00:00:00:00:00:41", fabric: "A" }
+            - { wwpn: "10:00:00:00:00:00:00:42", fabric: "B" }
 
 hardware: { vendor: "Dell", model: "PowerEdge R760" }
 
@@ -70,6 +114,20 @@ storage:
   configuration_mode: infra_only
   san:
     type: fibre_channel
+    array:
+      name: "san-iic-dc02-01"
+      vendor: "Dell"
+      model: "PowerStore 1200T"
+      management_address: "198.51.100.40"
+    fibre_channel:
+      fabrics:
+        - { name: "A", switch: "fc-sw-a-iic-dc02", zone_set: "azl-iic-dc02-a" }
+        - { name: "B", switch: "fc-sw-b-iic-dc02", zone_set: "azl-iic-dc02-b" }
+      target_wwpns: # the array's front-end ports, two per controller, one on each fabric
+        - { wwpn: "50:00:00:00:00:00:01:01", fabric: "A" }
+        - { wwpn: "50:00:00:00:00:00:01:02", fabric: "B" }
+        - { wwpn: "50:00:00:00:00:00:02:01", fabric: "A" }
+        - { wwpn: "50:00:00:00:00:00:02:02", fabric: "B" }
     infra_volume_lun_id: "0"
     performance_history_lun_id: "1"
     luns:

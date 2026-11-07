@@ -1,0 +1,112 @@
+# Scenario: disaggregated (external SAN over iSCSI), Active Directory, two machines, OS installed from an ISO, deployed
+# with the ARM template. Placeholder values only.
+#
+# Schema 5.3 records the iSCSI SAN, which the SAN deployment (LUN masking and the sessions) reads:
+#   storage.san.array                 the array: name, vendor, model and its management address
+#   storage.san.iscsi.targets         each target's IQN, its portals (ipv4 or ipv4:port) and the fabric it serves (A or B)
+#   storage.san.iscsi.chap            CHAP: enabled, username and the secret as a Key Vault reference
+#   nodes[].san.initiator_iqn         each machine's initiator name
+#   nodes[].network_adapters[]        the iSCSI ports, with role iscsi:a or iscsi:b, a static address, prefix_length and VLAN
+# Every IQN is unique in the file. The iSCSI ports have no default gateway: only the management port has one.
+_metadata:
+  schema_version: "5.3.0"
+
+scenario:
+  identity: active_directory
+  storage_architecture: san
+  storage_connectivity: switched
+  topology: standard
+  connectivity: connected
+  cloud: public
+  outbound_path: direct
+  os_install: iso
+  deploy_method: arm
+
+site: { code: "IICI", name: "IIC Datacenter 03" }
+environment: { name: "iic-dc03-azl", type: prd }
+
+azure:
+  tenant_id: "00000000-0000-0000-0000-000000000000"
+  location: "eastus2"
+  subscription_id: "00000000-0000-0000-0000-000000000000"
+  resource_group: "rg-iic-dc03-azl"
+
+key_vaults:
+  - { name: "kv-iic-dc03-mgmt", subscription_id: "00000000-0000-0000-0000-000000000000", resource_group: "rg-iic-mgmt-01" }
+
+cluster:
+  name: "iic-dc03-azl"
+  deployment_mode: validate
+  witness: { type: cloud, storage_account: "stiicdc03wit" }
+  key_vault: { name: "kv-iic-dc03-azl", create_new: true }
+
+nodes:
+  - name: "iic-dc03-n01"
+    rack: "R01"
+    network_adapters:
+      - { name: "NIC1", mac_address: "00:00:5E:00:53:31", slot: "Slot 1", model: "Intel E810", speed_gbps: 25, roles: [management, compute], ip_assignment: static, ip_address: "192.0.2.11", vlan_mode: access, vlan_id: 711 }
+      - { name: "NIC2", mac_address: "00:00:5E:00:53:32", slot: "Slot 1", model: "Intel E810", speed_gbps: 25, roles: [management, compute], ip_assignment: none, vlan_mode: access, vlan_id: 711 }
+      - { name: "NIC3", mac_address: "00:00:5E:00:53:33", slot: "Slot 3", model: "Intel E810", speed_gbps: 25, roles: ["iscsi:a"], ip_assignment: static, ip_address: "198.51.100.11", prefix_length: 26, vlan_mode: tagged, vlan_id: 1711 }
+      - { name: "NIC4", mac_address: "00:00:5E:00:53:34", slot: "Slot 3", model: "Intel E810", speed_gbps: 25, roles: ["iscsi:b"], ip_assignment: static, ip_address: "198.51.100.75", prefix_length: 26, vlan_mode: tagged, vlan_id: 1712 }
+    san:
+      initiator_iqn: "iqn.1991-05.com.microsoft:iic-dc03-n01.improbability.cloud"
+  - name: "iic-dc03-n02"
+    rack: "R01"
+    network_adapters:
+      - { name: "NIC1", mac_address: "00:00:5E:00:53:41", slot: "Slot 1", model: "Intel E810", speed_gbps: 25, roles: [management, compute], ip_assignment: static, ip_address: "192.0.2.12", vlan_mode: access, vlan_id: 711 }
+      - { name: "NIC2", mac_address: "00:00:5E:00:53:42", slot: "Slot 1", model: "Intel E810", speed_gbps: 25, roles: [management, compute], ip_assignment: none, vlan_mode: access, vlan_id: 711 }
+      - { name: "NIC3", mac_address: "00:00:5E:00:53:43", slot: "Slot 3", model: "Intel E810", speed_gbps: 25, roles: ["iscsi:a"], ip_assignment: static, ip_address: "198.51.100.12", prefix_length: 26, vlan_mode: tagged, vlan_id: 1711 }
+      - { name: "NIC4", mac_address: "00:00:5E:00:53:44", slot: "Slot 3", model: "Intel E810", speed_gbps: 25, roles: ["iscsi:b"], ip_assignment: static, ip_address: "198.51.100.76", prefix_length: 26, vlan_mode: tagged, vlan_id: 1712 }
+    san:
+      initiator_iqn: "iqn.1991-05.com.microsoft:iic-dc03-n02.improbability.cloud"
+
+hardware: { vendor: "Dell", model: "PowerEdge R760" }
+
+networking:
+  management:
+    subnet: "192.0.2.0/24"
+    gateway: "192.0.2.1"
+    vlan_id: 0 # the management ports are access ports in VLAN 711
+    dns_servers: ["192.0.2.4", "192.0.2.5"]
+    infrastructure_pool: { start: "192.0.2.30", end: "192.0.2.49" }
+  ntp_servers: ["192.0.2.4"]
+  # Storage runs over iSCSI on its own ports, so there is no storage intent.
+  intents:
+    - { name: "mgmt_compute", traffic: [management, compute], adapters: ["NIC1", "NIC2"] }
+  # The SAN networks on the iSCSI ports, fabric A and B (ARM sanNetworkList).
+  cluster_networks:
+    - { name: "sanNetwork-A", adapter: "NIC3", vlan_id: 1711, subnet: "198.51.100.0/26" }
+    - { name: "sanNetwork-B", adapter: "NIC4", vlan_id: 1712, subnet: "198.51.100.64/26" }
+
+identity:
+  local_admin: { username: "azl-admin", password: "keyvault://kv-iic-dc03-mgmt/local-admin-password" }
+  active_directory:
+    domain_fqdn: "improbability.cloud"
+    ou_path: "OU=iic-dc03-azl,OU=AzureLocal,DC=improbability,DC=cloud"
+    lcm_user: { username: "lcm-iic-dc03", password: "keyvault://kv-iic-dc03-mgmt/lcm-password" }
+
+storage:
+  configuration_mode: infra_only
+  san:
+    type: iscsi
+    array:
+      name: "san-iic-dc03-01"
+      vendor: "Dell"
+      model: "PowerStore 500T"
+      management_address: "198.51.100.40"
+    iscsi:
+      targets:
+        - { iqn: "iqn.2026-11.cloud.improbability:san-iic-dc03-01.a", portals: ["198.51.100.4:3260", "198.51.100.5"], fabric: "A" }
+        - { iqn: "iqn.2026-11.cloud.improbability:san-iic-dc03-01.b", portals: ["198.51.100.68:3260", "198.51.100.69"], fabric: "B" }
+      chap:
+        enabled: true
+        username: "azl-chap"
+        secret: "keyvault://kv-iic-dc03-mgmt/iscsi-chap-secret"
+    infra_volume_lun_id: "0"
+    performance_history_lun_id: "1"
+    luns:
+      - { name: "lun-workloads-01", size_gib: 4096, lun_id: "2" }
+
+provisioning:
+  os_version: "12.2610.1004.50"
+  iso: { image_source: oem }

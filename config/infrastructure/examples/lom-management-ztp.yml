@@ -10,10 +10,20 @@
 # Before it is claimed, the maintenance environment reaches Azure over DHCP on the ConnectX-6 ports. The static
 # management address goes on Embedded NIC 1 in the OS-install request. After the install, node preparation turns DHCP
 # off on every port whose ip_assignment is none, so the management port keeps the only default gateway.
-# The BIOS settings turn off the Fibre Channel HBA in slot 2 (the maintenance environment would install onto its SAN
-# LUN) and turn on the LOMs, which ship as DisabledOs. Placeholder values only.
+# Schema 5.3 adds three things to this example:
+#   BIOS phases        bios is the FINAL state; bios_during_provisioning holds for the OS install only. Slot2 (a Fibre
+#                      Channel HBA whose SAN LUN the maintenance environment would install onto) is Enabled in the end and
+#                      Disabled while the OS goes on. ZTP applies the temporary value at its Boot stage; in its Restore stage,
+#                      after the OS install and before Handoff, it sets Slot2 back to Enabled, restarts the node and waits
+#                      for Arc to reconnect. The LOMs ship as DisabledOs, so EmbNic1Nic2 is Enabled from the start.
+#   static_method      device: ZTP's Device stage sets each static management address, by MAC, through the maintenance
+#                      environment's Configurator service before the claim. The Arc site's network setting is Automatic.
+#   provisioning_dhcp_range, maintenance_address, maintenance_password
+#                      How the Device stage finds and signs in to each maintenance environment: it scans the DHCP range
+#                      (TCP 20001) for the node's MAC, unless nodes[].maintenance_address names it.
+# Placeholder values only.
 _metadata:
-  schema_version: "5.2.0"
+  schema_version: "5.3.0"
 
 scenario:
   identity: active_directory
@@ -65,6 +75,7 @@ nodes:
       - { name: "Slot 6 Port 2", mac_address: "00:00:5E:00:53:16", slot: "Slot 6", model: "NVIDIA ConnectX-6 Dx", speed_gbps: 100, rdma: roce_v2, roles: [compute, provisioning], ip_assignment: none, vlan_mode: tagged, switch_port: { switch: "leaf-b", port: "Ethernet1/1" } }
   - name: "iic-lab-n02"
     serial_number: "SERIAL02"
+    maintenance_address: "192.0.2.102" # known (a DHCP reservation): the Device stage goes straight to it, no scan
     bmc: { ip_address: "198.51.100.12", type: idrac }
     network_adapters:
       - { name: "Embedded NIC 1", mac_address: "00:00:5E:00:53:21", slot: "Embedded", speed_gbps: 1, roles: [management], ip_assignment: static, ip_address: "192.0.2.12", vlan_mode: access, vlan_id: 711, switch_port: { switch: "leaf-a", port: "Ethernet1/12" } }
@@ -78,9 +89,11 @@ hardware:
   vendor: "Dell"
   model: "AX-760"
   bmc: { username: "keyvault://kv-iic-lab-mgmt/bmc-username", password: "keyvault://kv-iic-lab-mgmt/bmc-password" }
-  bios: # applied by azurelocal-ztp before the maintenance boot; a node's own bios is merged over this
-    Slot2: "Disabled" # the Fibre Channel HBA: its SAN LUN would be offered as the install disk
+  bios: # the FINAL state; a node's own bios is merged over this
+    Slot2: "Enabled" # the Fibre Channel HBA, on again once the OS is installed (Dell also has BootDriverDisabled: visible to the OS, never boots)
     EmbNic1Nic2: "Enabled" # the LOMs ship as DisabledOs, so the OS wouldn't see the management ports
+  bios_during_provisioning: # temporary, for the OS install only; wins over bios; ZTP sets each key back to its bios value in Restore
+    Slot2: "Disabled" # the HBA's SAN LUN would be offered as the install disk
   sbe: { bundle_path: 'D:\sbe\dell' }
 
 networking:
@@ -89,7 +102,8 @@ networking:
     gateway: "192.0.2.1"
     vlan_id: 0 # the host doesn't tag: the LOMs are on access ports
     dns_servers: ["192.0.2.30", "192.0.2.31"]
-    site_ip_range: { start: "192.0.2.11", end: "192.0.2.12" } # optional; this is also the default
+    static_method: device # ZTP sets the static address by MAC before the claim; the site is Automatic (site_ip_range isn't used)
+    provisioning_dhcp_range: { start: "192.0.2.100", end: "192.0.2.199" } # the Device stage scans it (TCP 20001) for each MAC
     provisioning_network: dhcp # the maintenance environment takes DHCP on the provisioning ports
     infrastructure_pool: { start: "192.0.2.20", end: "192.0.2.29" }
   ntp_servers: ["192.0.2.30", "192.0.2.31"]
@@ -121,6 +135,7 @@ provisioning:
     site_name: "iic-lab-site"
     maintenance_iso: "2610"
     admin: { username: "administrator", password: "keyvault://kv-iic-lab-mgmt/provisioning-admin-password" }
+    maintenance_password: "keyvault://kv-iic-lab-mgmt/maintenance-password" # optional; default: the out-of-box password Microsoft Learn documents
     media_share: { name: "ztp-virtual-usb", host_adapter: "Management" }
     media_path: 'D:\Data\azl-ztp\iic-lab\media' # downloads, images, vouchers, run state; never inside a git repository
     evidence_path: 'D:\Data\azl-ztp\iic-lab\evidence' # event log, BIOS change log, run logs

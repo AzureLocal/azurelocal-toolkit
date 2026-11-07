@@ -289,7 +289,7 @@ Describe 'Schema 5.2: network adapters' {
         }
         It 'rejects an unknown provisioning_network and a site range without an end' {
             (Get-LomFinding { param($d) $d.networking.management.provisioning_network = 'wifi' }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'networking.management.provisioning_network' } | Should -Not -BeNullOrEmpty
-            (Get-LomFinding { param($d) $d.networking.management.site_ip_range.Remove('end') }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'networking.management.site_ip_range' } | Should -Not -BeNullOrEmpty
+            (Get-LomFinding { param($d) $d.networking.management['site_ip_range'] = [ordered]@{ start = '192.0.2.11' } }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'networking.management.site_ip_range' } | Should -Not -BeNullOrEmpty
         }
     }
 
@@ -408,13 +408,14 @@ Describe 'Schema 5.2: network adapters' {
         }
         It 'merges a node''s BIOS settings over hardware.bios' {
             $infra = Import-AzlInfrastructure -Path $script:Lom
-            $infra.nodes[1]['bios'] = [ordered]@{ Slot2 = 'Enabled'; SriovGlobalEnable = 'Enabled' }
+            $infra.nodes[1]['bios'] = [ordered]@{ Slot2 = 'Disabled'; SriovGlobalEnable = 'Enabled' }
             $b = Get-AzlBiosSetting -Infrastructure $infra -Node $infra.nodes[1]
-            $b['Slot2'] | Should -Be 'Enabled'; $b['EmbNic1Nic2'] | Should -Be 'Enabled'; $b['SriovGlobalEnable'] | Should -Be 'Enabled'
-            (Get-AzlBiosSetting -Infrastructure $infra -Node $infra.nodes[0])['Slot2'] | Should -Be 'Disabled'
+            $b['Slot2'] | Should -Be 'Disabled'; $b['EmbNic1Nic2'] | Should -Be 'Enabled'; $b['SriovGlobalEnable'] | Should -Be 'Enabled'
+            (Get-AzlBiosSetting -Infrastructure $infra -Node $infra.nodes[0])['Slot2'] | Should -Be 'Enabled'
         }
         It 'reads the site range from site_ip_range, else from the lowest to the highest static address' {
             $infra = Import-AzlInfrastructure -Path $script:Lom
+            $infra.networking.management['site_ip_range'] = [ordered]@{ start = '192.0.2.11'; end = '192.0.2.12' }
             (Get-AzlSiteIpRange -Infrastructure $infra).Source | Should -Be 'site_ip_range'
             $infra.networking.management.Remove('site_ip_range')
             $infra.nodes[0].network_adapters[0].ip_address = '192.0.2.15'
@@ -422,6 +423,332 @@ Describe 'Schema 5.2: network adapters' {
             "$($r.Start)-$($r.End) $($r.Source)" | Should -Be '192.0.2.12-192.0.2.15 derived'
             Get-AzlSiteIpRange -Infrastructure (Import-AzlInfrastructure -Path (Join-Path $repo 'config\infrastructure\examples\single-machine-iso.yml') -SkipValidation) | Should -BeNullOrEmpty -Because 'a reserved address is not static'
         }
+    }
+}
+
+Describe 'Schema 5.3: BIOS phases, static method, maintenance environment' {
+    BeforeAll {
+        $script:Lom = Join-Path $repo 'config\infrastructure\examples\lom-management-ztp.yml'
+        function Get-LomFinding([scriptblock]$Change) { Get-FindingFor -From $script:Lom $Change }
+    }
+
+    Context 'BIOS phases' {
+        It 'reads the final state, the install-time state, and the keys to set back' {
+            $infra = Import-AzlInfrastructure -Path $script:Lom
+            $node = $infra.nodes[0]
+            (Get-AzlBiosSetting -Infrastructure $infra -Node $node)['Slot2'] | Should -Be 'Enabled'
+            (Get-AzlBiosSetting -Infrastructure $infra -Node $node -Phase DuringProvisioning)['Slot2'] | Should -Be 'Disabled' -Because 'during-provisioning wins over bios'
+            (Get-AzlBiosSetting -Infrastructure $infra -Node $node -Phase DuringProvisioning)['EmbNic1Nic2'] | Should -Be 'Enabled' -Because 'bios still applies to the keys it names'
+            $o = @(Get-AzlBiosProvisioningOverride -Infrastructure $infra -Node $node)
+            $o.Count | Should -Be 1
+            "$($o[0].Name) $($o[0].ProvisioningValue) $($o[0].FinalValue)" | Should -Be 'Slot2 Disabled Enabled'
+        }
+        It 'merges a node''s bios_during_provisioning over the hardware one' {
+            $infra = Import-AzlInfrastructure -Path $script:Lom
+            $infra.nodes[1]['bios_during_provisioning'] = [ordered]@{ Slot2 = 'BootDriverDisabled'; SriovGlobalEnable = 'Disabled' }
+            $b = Get-AzlBiosSetting -Infrastructure $infra -Node $infra.nodes[1] -Phase DuringProvisioning
+            $b['Slot2'] | Should -Be 'BootDriverDisabled'
+            $b['SriovGlobalEnable'] | Should -Be 'Disabled'
+            (Get-AzlBiosSetting -Infrastructure $infra -Node $infra.nodes[0] -Phase DuringProvisioning)['Slot2'] | Should -Be 'Disabled'
+            (Get-AzlBiosProvisioningOverride -Infrastructure $infra -Node $infra.nodes[1] | Where-Object Name -eq 'SriovGlobalEnable').FinalValue | Should -BeNullOrEmpty
+        }
+        It 'AZL-026 warns about a temporary key that bios does not name' {
+            $f = Get-LomFinding { param($d) $d.hardware.bios_during_provisioning['SriovGlobalEnable'] = 'Disabled' }
+            $f | Where-Object { $_.Id -eq 'AZL-026' -and $_.Severity -eq 'warning' -and $_.Path -eq 'hardware.bios_during_provisioning.SriovGlobalEnable' } | Should -Not -BeNullOrEmpty
+            @($f | Where-Object { $_.Id -eq 'AZL-026' }).Count | Should -Be 1 -Because 'a hardware-level key is reported once, not once per node'
+        }
+        It 'AZL-026 accepts a key that the node''s own bios names, and warns for a node key that nothing names' {
+            $f = Get-LomFinding { param($d) $d.nodes[0]['bios_during_provisioning'] = [ordered]@{ SriovGlobalEnable = 'Disabled' }; $d.nodes[0]['bios'] = [ordered]@{ SriovGlobalEnable = 'Enabled' } }
+            @($f | Where-Object Id -eq 'AZL-026') | Should -BeNullOrEmpty
+            $f = Get-LomFinding { param($d) $d.nodes[1]['bios_during_provisioning'] = [ordered]@{ SriovGlobalEnable = 'Disabled' } }
+            $f | Where-Object { $_.Id -eq 'AZL-026' -and $_.Path -eq 'nodes[1].bios_during_provisioning.SriovGlobalEnable' } | Should -Not -BeNullOrEmpty
+        }
+        It 'takes during-provisioning values as strings with attribute-like names' {
+            (Get-LomFinding { param($d) $d.hardware.bios_during_provisioning['Slot2'] = 0 }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'hardware.bios_during_provisioning.Slot2' } | Should -Not -BeNullOrEmpty
+            (Get-LomFinding { param($d) $d.nodes[0]['bios_during_provisioning'] = [ordered]@{ 'Slot 2' = 'Disabled' } }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'nodes[0].bios_during_provisioning.Slot 2' } | Should -Not -BeNullOrEmpty
+        }
+    }
+
+    Context 'static method and the maintenance environment' {
+        It 'defaults to device, and reads site' {
+            $infra = Import-AzlInfrastructure -Path $script:Lom
+            Get-AzlManagementStaticMethod -Infrastructure $infra | Should -Be 'device'
+            $infra.networking.management['static_method'] = 'site'
+            Get-AzlManagementStaticMethod -Infrastructure $infra | Should -Be 'site'
+            $infra.networking.management.Remove('static_method')
+            Get-AzlManagementStaticMethod -Infrastructure $infra | Should -Be 'device'
+        }
+        It 'rejects an unknown static_method' {
+            (Get-LomFinding { param($d) $d.networking.management.static_method = 'hybrid' }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'networking.management.static_method' } | Should -Not -BeNullOrEmpty
+        }
+        It 'AZL-027 warns that the site method uses the first ready port, not the MAC' {
+            $f = Get-LomFinding { param($d) $d.networking.management.static_method = 'site' }
+            $f | Where-Object { $_.Id -eq 'AZL-027' -and $_.Severity -eq 'warning' -and $_.Message -match 'first ready port' } | Should -Not -BeNullOrEmpty
+            @(Get-LomFinding { param($d) }) | Where-Object Id -eq 'AZL-027' | Should -BeNullOrEmpty
+        }
+        It 'AZL-027 checks provisioning_dhcp_range: <Case>' -ForEach @(
+            @{ Case = 'reversed'; Range = @('192.0.2.150', '192.0.2.100'); Expect = 'after its end' }
+            @{ Case = 'outside the subnet'; Range = @('192.0.2.200', '192.0.3.10'); Expect = "isn't inside the management subnet" }
+            @{ Case = 'start outside the subnet'; Range = @('198.51.100.10', '192.0.2.10'); Expect = "isn't inside the management subnet" }
+        ) {
+            $r = $Range
+            $f = Get-LomFinding { param($d) $d.networking.management.provisioning_dhcp_range = [ordered]@{ start = $r[0]; end = $r[1] } }
+            $f | Where-Object { $_.Id -eq 'AZL-027' -and $_.Severity -eq 'error' -and $_.Message -match $Expect } | Should -Not -BeNullOrEmpty
+        }
+        It 'AZL-027 accepts a range with start equal to end' {
+            $f = Get-LomFinding { param($d) $d.networking.management.provisioning_dhcp_range = [ordered]@{ start = '192.0.2.100'; end = '192.0.2.100' } }
+            @($f | Where-Object Id -eq 'AZL-027') | Should -BeNullOrEmpty
+        }
+        It 'needs both ends of provisioning_dhcp_range, and IPv4 addresses' {
+            (Get-LomFinding { param($d) $d.networking.management.provisioning_dhcp_range.Remove('end') }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'networking.management.provisioning_dhcp_range' } | Should -Not -BeNullOrEmpty
+            (Get-LomFinding { param($d) $d.nodes[0]['maintenance_address'] = 'not-an-address' }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'nodes[0].maintenance_address' } | Should -Not -BeNullOrEmpty
+        }
+        It 'AZL-027 refuses one maintenance address on two nodes' {
+            $f = Get-LomFinding { param($d) $d.nodes[0]['maintenance_address'] = '192.0.2.102' }
+            $f | Where-Object { $_.Id -eq 'AZL-027' -and $_.Severity -eq 'error' -and $_.Message -match 'Maintenance address 192.0.2.102 is used by 2 nodes' } | Should -Not -BeNullOrEmpty
+        }
+        It 'takes maintenance_password only as a Key Vault reference, from a listed vault' {
+            (Get-LomFinding { param($d) $d.provisioning.simplified.maintenance_password = 'Password1' }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'provisioning.simplified.maintenance_password' } | Should -Not -BeNullOrEmpty
+            (Get-LomFinding { param($d) $d.provisioning.simplified.maintenance_password = 'keyvault://kv-unlisted-01/maintenance-password' }).Id | Should -Contain 'AZL-001'
+        }
+        It 'does not warn about mixed static and DHCP management ports with the device method' {
+            $f = Get-LomFinding { param($d) $p = $d.nodes[1].network_adapters[0]; $p.ip_assignment = 'dhcp_reservation' }
+            @($f | Where-Object { $_.Id -eq 'AZL-025' -and $_.Message -match 'mix' }) | Should -BeNullOrEmpty
+            $f = Get-LomFinding { param($d) $d.networking.management.static_method = 'site'; $d.nodes[1].network_adapters[0].ip_assignment = 'dhcp_reservation' }
+            @($f | Where-Object { $_.Id -eq 'AZL-025' -and $_.Message -match 'mix' }) | Should -Not -BeNullOrEmpty
+        }
+    }
+}
+
+Describe 'Schema 5.3: SAN' {
+    BeforeAll {
+        $script:Fc = Join-Path $repo 'config\infrastructure\examples\disaggregated-fibre-channel-proxy.yml'
+        $script:Iscsi = Join-Path $repo 'config\infrastructure\examples\disaggregated-iscsi.yml'
+        function Get-FcFinding([scriptblock]$Change) { Get-FindingFor -From $script:Fc $Change }
+        function Get-IscsiFinding([scriptblock]$Change) { Get-FindingFor -From $script:Iscsi $Change }
+    }
+
+    Context 'schema' {
+        It 'needs storage.san for a SAN or hybrid, and the block that goes with its type' {
+            (Get-FcFinding { param($d) $d.storage.Remove('san') }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Message -match 'san' } | Should -Not -BeNullOrEmpty
+            (Get-FcFinding { param($d) $d.scenario.storage_architecture = 'hybrid'; $d.storage.Remove('san') }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Message -match 'san' } | Should -Not -BeNullOrEmpty
+            (Get-FcFinding { param($d) $d.storage.san.Remove('fibre_channel') }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'storage.san' -and $_.Message -match 'fibre_channel' } | Should -Not -BeNullOrEmpty
+            (Get-IscsiFinding { param($d) $d.storage.san.Remove('iscsi') }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'storage.san' -and $_.Message -match 'iscsi' } | Should -Not -BeNullOrEmpty
+        }
+        It 'checks the WWPN form: 16 hex digits, with or without colons' {
+            (Get-FcFinding { param($d) $d.storage.san.fibre_channel.target_wwpns[0].wwpn = '5000000000000AAA' }) | Where-Object Severity -eq 'error' | Should -BeNullOrEmpty
+            (Get-FcFinding { param($d) $d.storage.san.fibre_channel.target_wwpns[0].wwpn = '50:00:00:00:00:00:01' }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'storage.san.fibre_channel.target_wwpns[0].wwpn' } | Should -Not -BeNullOrEmpty
+            (Get-FcFinding { param($d) $d.nodes[0].san.hbas[0].ports[0].wwpn = '10:00:00:00:00:00:00:1G' }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'nodes[0].san.hbas[0].ports[0].wwpn' } | Should -Not -BeNullOrEmpty
+        }
+        It 'needs the array''s name, vendor and model, and an IPv4 management address' {
+            (Get-FcFinding { param($d) $d.storage.san.array.Remove('model') }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'storage.san.array' -and $_.Message -match 'model' } | Should -Not -BeNullOrEmpty
+            (Get-FcFinding { param($d) $d.storage.san.array.management_address = 'san-01' }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'storage.san.array.management_address' } | Should -Not -BeNullOrEmpty
+        }
+        It 'checks iSCSI portals (ipv4 or ipv4:port), IQNs and CHAP' {
+            (Get-IscsiFinding { param($d) $d.storage.san.iscsi.targets[0].portals = @('198.51.100.4:65535', '198.51.100.5') }) | Where-Object Severity -eq 'error' | Should -BeNullOrEmpty
+            (Get-IscsiFinding { param($d) $d.storage.san.iscsi.targets[0].portals = @('198.51.100.4:70000') }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'storage.san.iscsi.targets[0].portals[0]' } | Should -Not -BeNullOrEmpty
+            (Get-IscsiFinding { param($d) $d.storage.san.iscsi.targets[0].portals = @('san-01.improbability.cloud') }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'storage.san.iscsi.targets[0].portals[0]' } | Should -Not -BeNullOrEmpty
+            (Get-IscsiFinding { param($d) $d.nodes[0].san.initiator_iqn = 'initiator-one' }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'nodes[0].san.initiator_iqn' } | Should -Not -BeNullOrEmpty
+            (Get-IscsiFinding { param($d) $d.storage.san.iscsi.chap.Remove('secret') }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'storage.san.iscsi.chap' -and $_.Message -match 'secret' } | Should -Not -BeNullOrEmpty
+            (Get-IscsiFinding { param($d) $d.storage.san.iscsi.chap = [ordered]@{ enabled = $false } }) | Where-Object Severity -eq 'error' | Should -BeNullOrEmpty
+            (Get-IscsiFinding { param($d) $d.storage.san.iscsi.chap.secret = 'a-plain-secret' }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'storage.san.iscsi.chap.secret' } | Should -Not -BeNullOrEmpty
+            (Get-IscsiFinding { param($d) $d.storage.san.iscsi.chap.secret = 'keyvault://kv-unlisted-01/chap' }).Id | Should -Contain 'AZL-001'
+        }
+        It 'takes iscsi:a and iscsi:b as port roles' {
+            (Get-IscsiFinding { param($d) $d.nodes[0].network_adapters[2].roles = @('iscsi:c') }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -like 'nodes[[]0].network_adapters[[]2].roles*' } | Should -Not -BeNullOrEmpty
+        }
+    }
+
+    Context 'rules (AZL-028)' {
+        It 'needs the target WWPNs' {
+            (Get-FcFinding { param($d) $d.storage.san.fibre_channel.Remove('target_wwpns') }) | Where-Object { $_.Id -eq 'AZL-028' -and $_.Path -eq 'storage.san.fibre_channel.target_wwpns' } | Should -Not -BeNullOrEmpty
+        }
+        It 'needs every node''s HBA WWPNs' {
+            $f = Get-FcFinding { param($d) $d.nodes[2].Remove('san') }
+            $f | Where-Object { $_.Id -eq 'AZL-028' -and $_.Severity -eq 'error' -and $_.Path -eq 'nodes[2].san' -and $_.Message -match 'iic-dc02-n03' } | Should -Not -BeNullOrEmpty
+            @($f | Where-Object { $_.Id -eq 'AZL-028' }).Count | Should -Be 1
+        }
+        It 'needs every WWPN''s fabric to be a defined fabric' {
+            $f = Get-FcFinding { param($d) $d.nodes[0].san.hbas[0].ports[1].fabric = 'C'; $d.storage.san.fibre_channel.target_wwpns[0].fabric = 'D' }
+            $f | Where-Object { $_.Id -eq 'AZL-028' -and $_.Path -eq 'nodes[0].san.hbas[0].ports[1].fabric' -and $_.Message -match "'C'" } | Should -Not -BeNullOrEmpty
+            $f | Where-Object { $_.Id -eq 'AZL-028' -and $_.Path -eq 'storage.san.fibre_channel.target_wwpns[0].fabric' } | Should -Not -BeNullOrEmpty
+            $f = Get-FcFinding { param($d) $d.storage.san.fibre_channel.Remove('fabrics') }
+            $f | Where-Object { $_.Id -eq 'AZL-028' -and $_.Message -match 'none are listed' } | Should -Not -BeNullOrEmpty
+        }
+        It 'refuses a duplicate WWPN, whatever the notation' {
+            $f = Get-FcFinding { param($d) $d.nodes[1].san.hbas[0].ports[0].wwpn = '1000000000000011' }
+            $f | Where-Object { $_.Id -eq 'AZL-028' -and $_.Severity -eq 'error' -and $_.Message -match 'WWPN .* is listed 2 times' } | Should -Not -BeNullOrEmpty
+            $f = Get-FcFinding { param($d) $d.nodes[0].san.hbas[0].ports[0].wwpn = $d.storage.san.fibre_channel.target_wwpns[0].wwpn.ToLowerInvariant() }
+            $f | Where-Object { $_.Id -eq 'AZL-028' -and $_.Message -match 'listed 2 times' } | Should -Not -BeNullOrEmpty
+        }
+        It 'refuses a duplicate fabric name' {
+            (Get-FcFinding { param($d) $d.storage.san.fibre_channel.fabrics[1].name = 'a' }) | Where-Object { $_.Id -eq 'AZL-028' -and $_.Path -eq 'storage.san.fibre_channel.fabrics' } | Should -Not -BeNullOrEmpty
+        }
+        It 'warns about an iSCSI initiator on a Fibre Channel SAN' {
+            (Get-FcFinding { param($d) $d.nodes[0].san['initiator_iqn'] = 'iqn.1991-05.com.microsoft:iic-dc02-n01' }) | Where-Object { $_.Id -eq 'AZL-028' -and $_.Severity -eq 'warning' } | Should -Not -BeNullOrEmpty
+        }
+        It 'needs the iSCSI targets and every node''s initiator IQN' {
+            (Get-IscsiFinding { param($d) $d.storage.san.iscsi.Remove('targets') }) | Where-Object { $_.Id -eq 'AZL-028' -and $_.Path -eq 'storage.san.iscsi.targets' } | Should -Not -BeNullOrEmpty
+            (Get-IscsiFinding { param($d) $d.nodes[1].san.Remove('initiator_iqn') }) | Where-Object { $_.Id -eq 'AZL-028' -and $_.Severity -eq 'error' -and $_.Path -eq 'nodes[1].san' } | Should -Not -BeNullOrEmpty
+            (Get-IscsiFinding { param($d) $d.nodes[1].Remove('san') }) | Where-Object { $_.Id -eq 'AZL-028' -and $_.Path -eq 'nodes[1].san' } | Should -Not -BeNullOrEmpty
+        }
+        It 'refuses a duplicate IQN, case aside, among the targets and the initiators' {
+            $f = Get-IscsiFinding { param($d) $d.nodes[1].san.initiator_iqn = $d.nodes[0].san.initiator_iqn.ToUpperInvariant().Replace('IQN.', 'iqn.') }
+            $f | Where-Object { $_.Id -eq 'AZL-028' -and $_.Severity -eq 'error' -and $_.Message -match 'IQN .* is listed 2 times' } | Should -Not -BeNullOrEmpty
+            $f = Get-IscsiFinding { param($d) $d.nodes[0].san.initiator_iqn = $d.storage.san.iscsi.targets[0].iqn }
+            $f | Where-Object { $_.Id -eq 'AZL-028' -and $_.Message -match 'listed 2 times' } | Should -Not -BeNullOrEmpty
+        }
+        It 'wants the iSCSI ports listed with an address' {
+            (Get-IscsiFinding { param($d) $d.nodes[0].network_adapters[2].roles = @('compute') ; $d.nodes[0].network_adapters[3].roles = @('compute') }) | Where-Object { $_.Id -eq 'AZL-028' -and $_.Severity -eq 'warning' -and $_.Path -eq 'nodes[0].network_adapters' } | Should -Not -BeNullOrEmpty
+            $f = Get-IscsiFinding { param($d) $p = $d.nodes[0].network_adapters[2]; $p.ip_assignment = 'none'; $p.Remove('ip_address'); $p.Remove('prefix_length') }
+            $f | Where-Object { $_.Id -eq 'AZL-028' -and $_.Severity -eq 'error' -and $_.Path -eq 'nodes[0].network_adapters[2].ip_assignment' } | Should -Not -BeNullOrEmpty
+        }
+        It 'keeps the iSCSI ports on the shared port rules: a static address needs a prefix_length, and no second gateway' {
+            (Get-IscsiFinding { param($d) $d.nodes[0].network_adapters[2].Remove('prefix_length') }) | Where-Object { $_.Id -eq 'AZL-022' -and $_.Path -eq 'nodes[0].network_adapters[2].prefix_length' } | Should -Not -BeNullOrEmpty
+            (Get-IscsiFinding { param($d) $d.nodes[0].network_adapters[2].gateway = '198.51.100.1' }) | Where-Object { $_.Id -eq 'AZL-022' -and $_.Severity -eq 'error' } | Should -Not -BeNullOrEmpty
+        }
+    }
+}
+
+Describe 'Schema 5.3: file scope (full and ztp templates)' {
+    BeforeAll {
+        $script:Full = Join-Path $repo 'config\infrastructure\infrastructure.example.yml'
+        $script:Ztp = Join-Path $repo 'config\infrastructure\infrastructure.ztp.example.yml'
+        function Get-ZtpFinding([scriptblock]$Change) { Get-FindingFor -From $script:Ztp $Change }
+    }
+
+    It 'validates both templates with no errors and no warnings' {
+        @(Test-AzlInfrastructure -Path $script:Full) | Should -BeNullOrEmpty
+        @(Test-AzlInfrastructure -Path $script:Ztp) | Should -BeNullOrEmpty
+    }
+    It 'reads the scope: full by default, ztp when set' {
+        Get-AzlInfrastructureScope -Infrastructure (Import-AzlInfrastructure -Path $script:Full) | Should -Be 'full'
+        Get-AzlInfrastructureScope -Infrastructure (Import-AzlInfrastructure -Path $script:Ztp) | Should -Be 'ztp'
+    }
+    It 'accepts a ztp file with no cluster, environment, intents, storage or scenario choices' {
+        $doc = ConvertFrom-Yaml (Get-Content -LiteralPath $script:Ztp -Raw) -Ordered
+        foreach ($k in 'cluster', 'environment', 'storage', 'sdn', 'security') { $doc.Keys | Should -Not -Contain $k }
+        $doc.networking.Keys | Should -Not -Contain 'intents'
+        $doc.identity.Keys | Should -Be @('local_admin')
+        @($doc.scenario.Keys) | Should -Be @('os_install')
+    }
+    It 'rejects a full-scope file without the cluster keys: <Case>' -ForEach @(
+        @{ Case = 'the ztp template with scope full'; Change = { param($d) $d._metadata.scope = 'full' }; Expect = 'cluster' }
+        @{ Case = 'the ztp template with the scope removed'; Change = { param($d) $d._metadata.Remove('scope') }; Expect = 'environment' }
+        @{ Case = 'the ztp template with scope full, intents missing'; Change = { param($d) $d._metadata.scope = 'full' }; Expect = 'intents' }
+    ) {
+        $f = Get-ZtpFinding $Change
+        @($f | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Message -match $Expect }) | Should -Not -BeNullOrEmpty
+        $f | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Message -match 'scenario|identity|environment|cluster' } | Should -Not -BeNullOrEmpty
+    }
+    It 'rejects the full template without cluster, and still enforces the scenario switches' {
+        $f = Get-FindingFor -From $script:Full { param($d) $d.Remove('cluster'); $d.networking.Remove('intents') }
+        @($f | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Message -match 'cluster' }) | Should -Not -BeNullOrEmpty
+        @($f | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Message -match 'intents' }) | Should -Not -BeNullOrEmpty
+        (Get-FindingFor -From $script:Full { param($d) $d.scenario.identity = 'local_identity' }) | Where-Object { $_.Path -eq 'identity' -and $_.Message -match 'local_identity' } | Should -Not -BeNullOrEmpty
+        (Get-FindingFor -From $script:Full { param($d) $d.networking.management.Remove('infrastructure_pool') }) | Where-Object { $_.Message -match 'infrastructure_pool' } | Should -Not -BeNullOrEmpty
+    }
+    It 'rejects a ztp file missing the ZTP key <Case>' -ForEach @(
+        @{ Case = 'azure.tenant_id'; Change = { param($d) $d.azure.Remove('tenant_id') }; Path = 'azure' }
+        @{ Case = 'azure.resource_group'; Change = { param($d) $d.azure.Remove('resource_group') }; Path = 'azure' }
+        @{ Case = 'site.time_zone'; Change = { param($d) $d.site.Remove('time_zone') }; Path = 'site' }
+        @{ Case = 'key_vaults'; Change = { param($d) $d.Remove('key_vaults') }; Path = '' }
+        @{ Case = 'hardware.bmc'; Change = { param($d) $d.hardware.Remove('bmc') }; Path = 'hardware' }
+        @{ Case = 'nodes[].serial_number'; Change = { param($d) $d.nodes[0].Remove('serial_number') }; Path = 'nodes[0]' }
+        @{ Case = 'nodes[].bmc.ip_address'; Change = { param($d) $d.nodes[1].bmc.Remove('ip_address') }; Path = 'nodes[1].bmc' }
+        @{ Case = 'the management port MAC'; Change = { param($d) $d.nodes[0].network_adapters[0].Remove('mac_address') }; Path = 'nodes[0].network_adapters[0]' }
+        @{ Case = 'the provisioning port'; Change = { param($d) $d.nodes[1].network_adapters.RemoveAt(2) }; Path = 'nodes[1].network_adapters' }
+        @{ Case = 'networking.management.gateway'; Change = { param($d) $d.networking.management.Remove('gateway') }; Path = 'networking.management' }
+        @{ Case = 'identity.local_admin'; Change = { param($d) $d.identity.Remove('local_admin') }; Path = 'identity' }
+        @{ Case = 'provisioning.simplified'; Change = { param($d) $d.provisioning.Remove('simplified') }; Path = 'provisioning' }
+        @{ Case = 'provisioning.simplified.site_name'; Change = { param($d) $d.provisioning.simplified.Remove('site_name') }; Path = 'provisioning.simplified' }
+        @{ Case = 'scenario.os_install'; Change = { param($d) $d.scenario.Remove('os_install') }; Path = 'scenario' }
+        @{ Case = 'scenario.os_install simplified'; Change = { param($d) $d.scenario.os_install = 'iso' }; Path = 'scenario.os_install' }
+    ) {
+        $f = Get-ZtpFinding $Change
+        @($f | Where-Object { $_.Severity -eq 'error' -and ($_.Path -eq $Path -or $_.Path -like "$Path*") }) | Should -Not -BeNullOrEmpty -Because "removing $Case must fail"
+    }
+    It 'applies the shared rules to a ztp file: the 5.3 keys, the ports and the vaults' {
+        (Get-ZtpFinding { param($d) $d.networking.management.provisioning_dhcp_range.end = '192.0.3.9' }).Id | Should -Contain 'AZL-027'
+        (Get-ZtpFinding { param($d) $d.hardware.bios_during_provisioning['SriovGlobalEnable'] = 'Disabled' }).Id | Should -Contain 'AZL-026'
+        (Get-ZtpFinding { param($d) $d.nodes[1].network_adapters[0].mac_address = $d.nodes[0].network_adapters[0].mac_address }).Id | Should -Contain 'AZL-019'
+        (Get-ZtpFinding { param($d) $d.hardware.bmc.password = 'keyvault://kv-unlisted-01/bmc-password' }).Id | Should -Contain 'AZL-001'
+    }
+    It 'does not warn about ports in no intent in a ztp file, but does in a full file' {
+        $f = Get-ZtpFinding { param($d) foreach ($n in $d.nodes) { $n.network_adapters.Add([ordered]@{ name = 'OCP 1'; roles = @('compute'); ip_assignment = 'none' }) } }
+        @($f | Where-Object { $_.Id -eq 'AZL-021' }) | Should -BeNullOrEmpty
+        $f = Get-ZtpFinding { param($d) $d._metadata.scope = 'full'; foreach ($n in $d.nodes) { $n.network_adapters.Add([ordered]@{ name = 'OCP 1'; roles = @('compute'); ip_assignment = 'none' }) } }
+        @($f | Where-Object { $_.Id -eq 'AZL-021' -and $_.Message -match "isn't in any intent" }) | Should -Not -BeNullOrEmpty
+    }
+    It 'rejects an unknown scope' {
+        (Get-ZtpFinding { param($d) $d._metadata.scope = 'cluster' }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq '_metadata.scope' } | Should -Not -BeNullOrEmpty
+    }
+}
+
+Describe 'Variables reference (VARIABLES.md)' {
+    BeforeAll {
+        $script:Config = Join-Path $repo 'config\infrastructure'
+        $script:Page = Join-Path $script:Config 'VARIABLES.md'
+        $script:Generator = Join-Path $repo 'scripts\common\infrastructure\New-InfrastructureVariablesReference.ps1'
+        $script:PageText = (Get-Content -LiteralPath $script:Page -Raw).Replace("`r`n", "`n")
+        $script:PagePaths = @([regex]::Matches($script:PageText, '(?m)^\| `([^`|]+)`') | ForEach-Object { $_.Groups[1].Value })
+
+        function Get-LeafPath($Obj, [string]$Path) {
+            if ($Obj -is [System.Collections.IDictionary]) {
+                foreach ($k in $Obj.Keys) { Get-LeafPath $Obj[$k] $(if ($Path) { "$Path.$k" } else { [string]$k }) }
+            } elseif ($Obj -is [System.Collections.IList] -and @($Obj | Where-Object { $_ -is [System.Collections.IDictionary] }).Count -gt 0) {
+                foreach ($item in $Obj) { Get-LeafPath $item "$Path[]" }
+            } else { $Path }
+        }
+    }
+
+    It 'is current: regenerating it from the schema gives the same page' {
+        $out = Join-Path $TestDrive 'VARIABLES.md'
+        & $script:Generator -OutputPath $out | Out-Null
+        (Get-Content -LiteralPath $out -Raw).Replace("`r`n", "`n") | Should -BeExactly $script:PageText -Because 'run ./scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1 and commit the result'
+    }
+    It 'has a row for every key used in <_>' -ForEach @(
+        'infrastructure.example.yml', 'infrastructure.ztp.example.yml',
+        'examples\disaggregated-fibre-channel-proxy.yml', 'examples\disaggregated-iscsi.yml', 'examples\lom-management-ztp.yml', 'examples\no-dhcp-switchless.yml'
+    ) {
+        $doc = ConvertFrom-Yaml (Get-Content -LiteralPath (Join-Path $script:Config $_) -Raw) -Ordered
+        $missing = @(Get-LeafPath $doc '' | Where-Object { $_ -notmatch '^extensions' } | Where-Object {
+                $path = $_
+                $isMapKey = $path -match '^(.*)\.[^.\[\]]+$' -and ($script:PagePaths -contains "$($Matches[1]).<attribute>")
+                -not $isMapKey -and ($script:PagePaths -notcontains $path)
+            })
+        $missing | Should -BeNullOrEmpty
+    }
+    It 'covers the 5.3 keys, with their required and default columns' {
+        foreach ($p in 'hardware.bios_during_provisioning', 'nodes[].bios_during_provisioning', 'networking.management.static_method', 'networking.management.provisioning_dhcp_range', 'nodes[].maintenance_address', 'provisioning.simplified.maintenance_password', 'storage.san.array', 'storage.san.fibre_channel.target_wwpns', 'storage.san.iscsi.targets', 'nodes[].san.hbas', 'nodes[].san.initiator_iqn', '_metadata.scope') {
+            $script:PagePaths | Should -Contain $p
+        }
+        $script:PageText | Should -Match '(?m)^\| `networking.management.static_method` .*\| `device` \|'
+        $script:PageText | Should -Match '(?m)^\| `site.time_zone` .*\| no / yes \|'
+        $script:PageText | Should -Match '(?m)^\| `cluster.name` .*\| yes / if section is set \|'
+        $script:PageText | Should -Match '(?m)^\| `nodes\[\].serial_number` .*\| when scenario.os_install is simplified / yes \|'
+    }
+    It 'groups the rows by section, in the schema''s order' {
+        $schema = Get-Content -LiteralPath (Join-Path $script:Config 'infrastructure.schema.json') -Raw | ConvertFrom-Json -AsHashtable
+        $headings = @([regex]::Matches($script:PageText, '(?m)^### (\S+)$') | ForEach-Object { $_.Groups[1].Value })
+        $headings | Should -Be @($schema.properties.Keys)
+    }
+    It 'lists the keyvault:// secrets by vault and secret name, and says no value goes in the file' {
+        $script:PageText | Should -Match '## Secrets: keyvault:// references'
+        $script:PageText | Should -Match 'No secret value is ever written in the file'
+        $script:PageText | Should -Match '(?m)^\| `identity.local_admin.password` \| `kv-iic-mgmt-01` \| `local-admin-password` \|'
+        $script:PageText | Should -Match '(?m)^\| `hardware.bmc.password` \| `kv-iic-mgmt-01` \| `bmc-password` \|'
+    }
+    It 'says where the folders go: outside every git repository, with the disk space' {
+        $section = [regex]::Match($script:PageText, '(?s)## Folders on the management host.*?(?=\n## )').Value
+        $section | Should -Match 'outside every git working tree'
+        foreach ($p in 'provisioning.simplified.media_path', 'provisioning.simplified.evidence_path', 'hardware.sbe.bundle_path') { $section | Should -Match ([regex]::Escape($p)) }
+        $section | Should -Match 'GB'
+    }
+    It 'is linked from the README and from both templates' {
+        (Get-Content -LiteralPath (Join-Path $script:Config 'README.md') -Raw) | Should -Match '\]\(VARIABLES\.md\)'
+        (Get-Content -LiteralPath (Join-Path $script:Config 'infrastructure.example.yml') -Raw) | Should -Match 'Variables: VARIABLES\.md'
+        (Get-Content -LiteralPath (Join-Path $script:Config 'infrastructure.ztp.example.yml') -Raw) | Should -Match 'Variables: VARIABLES\.md'
     }
 }
 

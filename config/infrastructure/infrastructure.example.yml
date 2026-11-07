@@ -5,6 +5,9 @@
 # Trailwright (writes it), Beacon, Sonar and Ranger.
 #
 # Schema:    infrastructure.schema.json (next to this file), schema_version 5.x
+# Variables: VARIABLES.md (next to this file): every key, whether it is required, its default,
+#            an example, where to get the value, which tool reads it, the keyvault:// secrets
+#            the file expects, and the folders it names
 # Validate:  ./tools/Test-AzlInfrastructure.ps1 -Path ./infrastructure.yml
 # Reference: README.md (next to this file), every key and which tool reads it
 #
@@ -14,6 +17,11 @@
 # Other scenarios are in examples/. This file describes each machine's management
 # port with nodes[].management (schema 5.0); from 5.2, nodes[].network_adapters lists
 # every port with its MAC, roles and address instead: see examples/lom-management-ztp.yml.
+# Schema 5.3 adds: BIOS phases (hardware.bios is the final state, bios_during_provisioning
+# the temporary values for the OS install), networking.management.static_method and
+# provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.
+# maintenance_password, and the SAN details (storage.san.array, fibre_channel or iscsi,
+# nodes[].san). The SAN is shown in comments below; examples/disaggregated-*.yml are complete.
 #
 # Rules:
 #   - Keys are snake_case. Sections reject unknown keys; use extensions.
@@ -24,7 +32,7 @@
 # =============================================================================
 
 _metadata:
-  schema_version: "5.2.0"
+  schema_version: "5.3.0"
   file_version: "1.0.0"
   last_updated: "2026-11-06"
   generated_by: ""
@@ -122,6 +130,8 @@ nodes:
       mac_address: "00:00:5E:00:53:11" # the management port
       adapter_name: "Port1" # optional; the MAC is enough
     serial_number: "SERIAL01"
+    # maintenance_address: "192.0.2.101" # optional; the maintenance environment's address when you know it.
+    #                                    # Without it, the Device stage scans provisioning_dhcp_range by MAC.
     bmc:
       ip_address: "198.51.100.11"
       type: idrac
@@ -158,8 +168,14 @@ hardware:
     # Folder on the management host with the OEM's SBE files, as downloaded.
     bundle_path: 'D:\sbe\dell'
     allow_unvalidated: false # test only
-  bios: # optional; set before the maintenance boot by azurelocal-ztp. Dell attribute names.
+  bios: # optional; the FINAL state, set by azurelocal-ztp at its Boot stage. Dell attribute names.
     EmbNic1Nic2: "Enabled"
+    # Slot2: "Enabled" # a Fibre Channel HBA: on in the end (see bios_during_provisioning below)
+  # bios_during_provisioning: # optional; TEMPORARY values for the OS install only. They win over bios.
+  #   Slot2: "Disabled"       # the HBA's SAN LUN would be offered as the install disk. In its Restore stage, after
+  #                           # the install, ZTP sets each key back to its bios value (or the original it saved),
+  #                           # restarts the node and waits for Arc. A key here should also be in bios.
+  #                           # Dell also has BootDriverDisabled: visible to the OS, never a boot device.
   network_cards:
     - label: "Onboard"
       ports:
@@ -185,6 +201,15 @@ networking:
     # before deployment: static (set on the port with mac_address), dhcp
     # (reserve each address for its MAC) or preconfigured (left as it is).
     ip_assignment: static
+    # With static addresses and simplified provisioning, who sets them:
+    #   device (default): ZTP's Device stage sets each address on the port with the MAC, through the
+    #                     maintenance environment's Configurator service, before the claim. The Arc site is Automatic.
+    #   site:             the site is Manual with site_ip_range and Microsoft's OS install assigns the address.
+    #                     It ignores the MAC and uses the first ready port (seen on Dell AX-760).
+    static_method: device
+    # The DHCP range on the provisioning network, inside the subnet. The Device stage scans it (TCP 20001) to find
+    # each maintenance environment by MAC when nodes[].maintenance_address isn't set.
+    provisioning_dhcp_range: { start: "192.0.2.100", end: "192.0.2.199" }
     use_dhcp: false # ARM useDhcp for the deployment; not ip_assignment
     provisioning_network: dhcp # simplified provisioning: how the maintenance environment reaches Azure
     infrastructure_pool: # at least six contiguous addresses
@@ -248,6 +273,19 @@ storage:
   configuration_mode: express # express | infra_only | keep_storage
   volumes:
     - { name: "vol-workloads-01", size_gib: 4096, resiliency: two_way }
+  # A SAN (storage_architecture san or hybrid) needs storage.san and networking.cluster_networks:
+  # san:
+  #   type: fibre_channel # fibre_channel | iscsi
+  #   array: { name: "san-iic-01", vendor: "Dell", model: "PowerStore 1200T", management_address: "198.51.100.40" }
+  #   fibre_channel: # required for fibre_channel
+  #     fabrics: [{ name: "A", switch: "fc-sw-a", zone_set: "azl-a" }, { name: "B", switch: "fc-sw-b", zone_set: "azl-b" }]
+  #     target_wwpns: [{ wwpn: "50:00:00:00:00:00:01:01", fabric: "A" }, { wwpn: "50:00:00:00:00:00:01:02", fabric: "B" }]
+  #   iscsi: # required for iscsi: targets (IQN, portals, fabric) and optional CHAP; each node has san.initiator_iqn
+  #     targets: [{ iqn: "iqn.2026-11.cloud.improbability:san-iic-01.a", portals: ["198.51.100.4:3260"], fabric: "A" }]
+  #     chap: { enabled: true, username: "azl-chap", secret: "keyvault://kv-iic-mgmt-01/iscsi-chap-secret" }
+  # and on every node (the iSCSI ports' addresses are network_adapters with role iscsi:a / iscsi:b):
+  #   san: { hbas: [{ slot: "Slot2", model: "Emulex LPe35002", ports: [{ wwpn: "10:00:00:00:00:00:00:11", fabric: "A" }] }] }
+  #   san: { initiator_iqn: "iqn.1991-05.com.microsoft:iic-azl-n01.improbability.cloud" }
 
 security:
   level: recommended # recommended | customized
@@ -295,6 +333,8 @@ provisioning:
     admin: # the OS's local administrator after provisioning
       username: "administrator"
       password: "keyvault://kv-iic-mgmt-01/provisioning-admin-password"
+    # maintenance_password: "keyvault://kv-iic-mgmt-01/maintenance-password" # optional; the maintenance environment's
+    #                       # local user password. Default: the out-of-box password that Microsoft Learn documents.
     media_share:
       name: "ztp-virtual-usb"
       host: "198.51.100.5" # or host_adapter: <adapter name>

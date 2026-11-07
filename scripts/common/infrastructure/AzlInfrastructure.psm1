@@ -18,7 +18,12 @@
     Get-AzlNodeNetworkAdapter A node's ports: nodes[].network_adapters (5.2), or one port made from nodes[].management.
     Get-AzlManagementAdapter  The port that owns a node's management address, with the address, mask, gateway, DNS and
                               the VLAN the host tags, defaults applied from networking.management.
-    Get-AzlBiosSetting        A node's BIOS attributes: hardware.bios with nodes[].bios merged over it.
+    Get-AzlBiosSetting        A node's BIOS attributes: hardware.bios with nodes[].bios merged over it (the final state);
+                              with -Phase DuringProvisioning, the values for the OS install (5.3).
+    Get-AzlBiosProvisioningOverride  The BIOS keys that hold for the OS install only (5.3), each with the value to set
+                              back afterwards.
+    Get-AzlManagementStaticMethod  Who sets the static management address (5.3): device (default) or site.
+    Get-AzlInfrastructureScope  _metadata.scope (5.3): full (default) or ztp, a file for azurelocal-ztp on its own.
     Get-AzlSiteIpRange        The site's management address range for simplified provisioning: site_ip_range, else the
                               lowest to the highest static management address.
 
@@ -190,26 +195,101 @@ function Get-AzlManagementAdapter {
     }
 }
 
+function Merge-BiosSource([System.Collections.IDictionary]$Into, [object[]]$Source) {
+    foreach ($one in $Source) {
+        if ($one -isnot [System.Collections.IDictionary]) { continue }
+        foreach ($k in $one.Keys) { $Into[[string]$k] = [string]$one[$k] }
+    }
+}
+
 function Get-AzlBiosSetting {
     <#
     .SYNOPSIS
-        A node's BIOS attributes (schema 5.2): hardware.bios, with the node's own bios merged over it. Empty when neither is set.
+        A node's BIOS attributes: hardware.bios, with the node's own bios merged over it. Empty when neither is set.
+    .DESCRIPTION
+        -Phase Final (default): the machine's FINAL state, hardware.bios with nodes[].bios merged over it (schema 5.2).
+        -Phase DuringProvisioning (schema 5.3): the values to apply at the Boot stage for the OS install: the final state
+        with hardware.bios_during_provisioning and then nodes[].bios_during_provisioning merged over it, so a
+        during-provisioning value wins over bios.
     .EXAMPLE
         Get-AzlBiosSetting -Infrastructure $infra -Node $infra.nodes[0]
+    .EXAMPLE
+        Get-AzlBiosSetting -Infrastructure $infra -Node $infra.nodes[0] -Phase DuringProvisioning
     #>
     [CmdletBinding()]
     [OutputType([System.Collections.Specialized.OrderedDictionary])]
-    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure, [System.Collections.IDictionary]$Node)
+    param(
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure,
+        [System.Collections.IDictionary]$Node,
+        [ValidateSet('Final', 'DuringProvisioning')][string]$Phase = 'Final'
+    )
     $merged = [ordered]@{}
-    $sources = @((Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'hardware.bios'))
-    if ($Node) { $sources += , $Node['bios'] }
-    foreach ($source in $sources) {
-        if ($source -isnot [System.Collections.IDictionary]) { continue }
-        foreach ($k in $source.Keys) { $merged[[string]$k] = [string]$source[$k] }
+    Merge-BiosSource $merged @((Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'hardware.bios'))
+    if ($Node) { Merge-BiosSource $merged @($Node['bios']) }
+    if ($Phase -eq 'DuringProvisioning') {
+        Merge-BiosSource $merged @((Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'hardware.bios_during_provisioning'))
+        if ($Node) { Merge-BiosSource $merged @($Node['bios_during_provisioning']) }
     }
     return $merged
 }
 
+function Get-AzlBiosProvisioningOverride {
+    <#
+    .SYNOPSIS
+        The BIOS keys that hold for the OS install only (schema 5.3): hardware.bios_during_provisioning with the node's
+        bios_during_provisioning merged over it, each with the value to set back in the Restore stage.
+    .OUTPUTS
+        Name, ProvisioningValue (the temporary value), FinalValue (the bios value, or $null when bios doesn't name the key:
+        then Restore uses the original value it saved at Boot).
+    .EXAMPLE
+        Get-AzlBiosProvisioningOverride -Infrastructure $infra -Node $infra.nodes[0]
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure, [System.Collections.IDictionary]$Node)
+    $temporary = [ordered]@{}
+    Merge-BiosSource $temporary @((Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'hardware.bios_during_provisioning'))
+    if ($Node) { Merge-BiosSource $temporary @($Node['bios_during_provisioning']) }
+    $final = Get-AzlBiosSetting -Infrastructure $Infrastructure -Node $Node
+    foreach ($k in $temporary.Keys) {
+        [pscustomobject]@{ Name = $k; ProvisioningValue = $temporary[$k]; FinalValue = $(if ($final.Contains($k)) { $final[$k] } else { $null }) }
+    }
+}
+
+function Get-AzlInfrastructureScope {
+    <#
+    .SYNOPSIS
+        The scope of the file (schema 5.3): full (the default, the whole instance) or ztp (only what azurelocal-ztp reads).
+    .EXAMPLE
+        Get-AzlInfrastructureScope -Infrastructure $infra
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure)
+    $scope = Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path '_metadata.scope'
+    if ($scope -is [string] -and $scope) { return $scope.ToLowerInvariant() }
+    return 'full'
+}
+
+function Get-AzlManagementStaticMethod {
+    <#
+    .SYNOPSIS
+        Who sets the static management address with simplified provisioning (schema 5.3): device (the default) or site.
+    .DESCRIPTION
+        device: azurelocal-ztp's Device stage sets the address on the management port, by MAC, through the maintenance
+        environment's Configurator service before the claim; the Arc site's network setting is Automatic. site: the site is
+        Manual with an address range and Microsoft's OS install assigns the address (to the first ready port, not the MAC).
+        Only matters when the management ip_assignment is static.
+    .EXAMPLE
+        Get-AzlManagementStaticMethod -Infrastructure $infra
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure)
+    $method = Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'networking.management.static_method'
+    if ($method -is [string] -and $method) { return $method.ToLowerInvariant() }
+    return 'device'
+}
 function Get-AzlSiteIpRange {
     <#
     .SYNOPSIS
@@ -668,6 +748,9 @@ function Get-SemanticFinding {
     }
 
     Get-AdapterFinding -Infra $Infra -Nodes $nodes -OwnerOf $ownerOf -Intents @(Get-List (& $v 'networking.intents') | Where-Object { $_ -is [System.Collections.IDictionary] })
+    Get-BiosPhaseFinding -Infra $Infra -Nodes $nodes
+    Get-ProvisioningNetworkFinding -Infra $Infra -Nodes $nodes -OwnerOf $ownerOf
+    Get-SanFinding -Infra $Infra -Nodes $nodes
 
     # Arc machine names: unique, and arc_machine_name rather than the deprecated arc_resource_name.
     for ($i = 0; $i -lt $nodeCount; $i++) {
@@ -845,7 +928,7 @@ function Get-AdapterFinding {
     foreach ($i in $listed) {
         foreach ($p in $ports[$i]) {
             $traffic = @(Get-List $p['roles'] | Where-Object { $_ -in 'management', 'compute', 'storage' })
-            if ($traffic -and -not $inIntent.ContainsKey(([string]$p['name']).ToLowerInvariant())) {
+            if ($traffic -and (Get-AzlInfrastructureScope -Infrastructure $Infra) -ne 'ztp' -and -not $inIntent.ContainsKey(([string]$p['name']).ToLowerInvariant())) {
                 New-Finding 'AZL-021' warning "$($p['_path'])" "Port '$($p['name'])' of node '$($Nodes[$i]['name'])' has roles [$($traffic -join ', ')] but isn't in any intent, so Network ATC doesn't configure it." $script:Learn.Intents
             }
         }
@@ -913,6 +996,141 @@ function Get-AdapterFinding {
     }
 }
 
+# AZL-026: the BIOS phases (schema 5.3). A key that holds for the OS install only (bios_during_provisioning) should also
+# be in bios, so the final state is explicit; otherwise the Restore stage sets it back to the original value it saved.
+function Get-BiosPhaseFinding {
+    param([System.Collections.IDictionary]$Infra, [object[]]$Nodes)
+    $hardware = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'hardware.bios_during_provisioning'
+    $hardwareKeys = if ($hardware -is [System.Collections.IDictionary]) { @($hardware.Keys | ForEach-Object { [string]$_ }) } else { @() }
+    $seen = [System.Collections.Generic.HashSet[string]]::new()
+    $passes = if ($Nodes.Count -gt 0) { 0..($Nodes.Count - 1) } else { @(-1) }
+    foreach ($i in $passes) {
+        $node = if ($i -ge 0) { $Nodes[$i] } else { $null }
+        $final = Get-AzlBiosSetting -Infrastructure $Infra -Node $node
+        $own = if ($node -and $node['bios_during_provisioning'] -is [System.Collections.IDictionary]) { @($node['bios_during_provisioning'].Keys | ForEach-Object { [string]$_ }) } else { @() }
+        foreach ($key in (@($hardwareKeys) + @($own) | Select-Object -Unique)) {
+            if ($final.Contains($key)) { continue }
+            $path = if ($key -in $own) { "nodes[$i].bios_during_provisioning.$key" } else { "hardware.bios_during_provisioning.$key" }
+            if ($seen.Add($path)) {
+                New-Finding 'AZL-026' warning $path "BIOS key '$key' is set for the OS install only (bios_during_provisioning) but isn't in bios, so the final state isn't explicit. azurelocal-ztp's Restore stage then sets it back to the original value it saved at Boot. Add '$key' to bios with the value the machine should end with."
+            }
+        }
+    }
+}
+
+# AZL-027: the maintenance environment's network (schema 5.3): the DHCP range ZTP scans, the per-node address, and the
+# older site method for static addresses.
+function Get-ProvisioningNetworkFinding {
+    param([System.Collections.IDictionary]$Infra, [object[]]$Nodes, [hashtable]$OwnerOf)
+    $mgmt = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'networking.management'
+    if ($mgmt -isnot [System.Collections.IDictionary]) { return }
+    $subnet = if (Test-IsCidr $mgmt['subnet']) { [string]$mgmt['subnet'] } else { $null }
+    $range = $mgmt['provisioning_dhcp_range']
+    $at = 'networking.management.provisioning_dhcp_range'
+    if ($range -is [System.Collections.IDictionary] -and (Test-IsIPv4 $range['start']) -and (Test-IsIPv4 $range['end'])) {
+        if ((ConvertTo-UInt32Address $range['start']) -gt (ConvertTo-UInt32Address $range['end'])) {
+            New-Finding 'AZL-027' error $at "The provisioning DHCP range starts at $($range['start']), after its end $($range['end'])."
+        }
+        if ($subnet -and -not ((Test-AddressInSubnet $range['start'] $subnet) -and (Test-AddressInSubnet $range['end'] $subnet))) {
+            New-Finding 'AZL-027' error $at "The provisioning DHCP range $($range['start'])-$($range['end']) isn't inside the management subnet $subnet." $script:Learn.Simplified
+        }
+    }
+    $addresses = @(for ($i = 0; $i -lt $Nodes.Count; $i++) {
+            if (Test-IsIPv4 $Nodes[$i]['maintenance_address']) { [pscustomobject]@{ Ip = [string]$Nodes[$i]['maintenance_address']; Path = "nodes[$i].maintenance_address" } }
+        })
+    foreach ($group in ($addresses | Group-Object Ip | Where-Object Count -gt 1)) {
+        New-Finding 'AZL-027' error 'nodes' "Maintenance address $($group.Name) is used by $($group.Count) nodes ($(@($group.Group.Path) -join ', ')). Each machine's maintenance environment has its own address."
+    }
+    $staticNodes = @(for ($i = 0; $i -lt $Nodes.Count; $i++) { if ($OwnerOf[$i] -and $OwnerOf[$i].IpAssignment -eq 'static') { $i } })
+    if ((Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'scenario.os_install') -eq 'simplified' -and $mgmt['static_method'] -eq 'site' -and $staticNodes.Count -gt 0) {
+        New-Finding 'AZL-027' warning 'networking.management.static_method' "static_method is site: Microsoft's OS install assigns the static address and ignores the MAC, using the first ready port (observed on Dell AX-760). The address lands on the management port only when that is the first ready port. static_method device sets it on the port with the MAC, before the claim." $script:Learn.Simplified
+    }
+}
+
+# AZL-028: the SAN (schema 5.3): the fabrics, the targets, and every machine's HBA ports or initiator name.
+function Get-SanFinding {
+    param([System.Collections.IDictionary]$Infra, [object[]]$Nodes)
+    $san = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'storage.san'
+    if ($san -isnot [System.Collections.IDictionary]) { return }
+    $type = [string]$san['type']
+    $names = [System.Collections.Generic.List[object]]::new()   # WWPNs or IQNs, with where each is
+    $nodeSan = { param([int]$i) if ($Nodes[$i]['san'] -is [System.Collections.IDictionary]) { $Nodes[$i]['san'] } else { @{} } }
+
+    if ($type -eq 'fibre_channel') {
+        $fc = $san['fibre_channel']
+        if ($fc -isnot [System.Collections.IDictionary]) { return }
+        $fabrics = @(Get-List $fc['fabrics'] | Where-Object { $_ -is [System.Collections.IDictionary] } | ForEach-Object { [string]$_['name'] })
+        foreach ($group in ($fabrics | Group-Object { $_.ToLowerInvariant() } | Where-Object Count -gt 1)) {
+            New-Finding 'AZL-028' error 'storage.san.fibre_channel.fabrics' "Fabric '$($group.Group[0])' is listed $($group.Count) times. Fabric names are unique."
+        }
+        $fabricMissing = {
+            param([object]$Fabric, [string]$Path)
+            if ([string]$Fabric -and [string]$Fabric -notin $fabrics) {
+                New-Finding 'AZL-028' error $Path "Fabric '$Fabric' isn't defined in storage.san.fibre_channel.fabrics ($(if ($fabrics) { $fabrics -join ', ' } else { 'none are listed' }))."
+            }
+        }
+        $targets = @(Get-List $fc['target_wwpns'] | Where-Object { $_ -is [System.Collections.IDictionary] })
+        if ($targets.Count -eq 0) {
+            New-Finding 'AZL-028' error 'storage.san.fibre_channel.target_wwpns' "A Fibre Channel SAN needs the array's target WWPNs: list them with the fabric each is cabled to."
+        }
+        for ($t = 0; $t -lt $targets.Count; $t++) {
+            & $fabricMissing $targets[$t]['fabric'] "storage.san.fibre_channel.target_wwpns[$t].fabric"
+            if ($targets[$t]['wwpn']) { $names.Add([pscustomobject]@{ Key = ([string]$targets[$t]['wwpn']).Replace(':', '').ToUpperInvariant(); Display = [string]$targets[$t]['wwpn']; Path = "storage.san.fibre_channel.target_wwpns[$t]" }) }
+        }
+        for ($i = 0; $i -lt $Nodes.Count; $i++) {
+            $mine = & $nodeSan $i
+            $hbas = @(Get-List $mine['hbas'] | Where-Object { $_ -is [System.Collections.IDictionary] })
+            $portCount = 0
+            for ($h = 0; $h -lt $hbas.Count; $h++) {
+                $ports = @(Get-List $hbas[$h]['ports'] | Where-Object { $_ -is [System.Collections.IDictionary] })
+                for ($p = 0; $p -lt $ports.Count; $p++) {
+                    if (-not $ports[$p]['wwpn']) { continue }
+                    $portCount++
+                    & $fabricMissing $ports[$p]['fabric'] "nodes[$i].san.hbas[$h].ports[$p].fabric"
+                    $names.Add([pscustomobject]@{ Key = ([string]$ports[$p]['wwpn']).Replace(':', '').ToUpperInvariant(); Display = [string]$ports[$p]['wwpn']; Path = "nodes[$i].san.hbas[$h].ports[$p]" })
+                }
+            }
+            if ($portCount -eq 0) {
+                New-Finding 'AZL-028' error "nodes[$i].san" "Node '$($Nodes[$i]['name'])' has no HBA port WWPNs. A Fibre Channel SAN needs every machine's HBAs (nodes[].san.hbas[].ports[].wwpn) for zoning and LUN masking."
+            }
+            if ($mine['initiator_iqn']) { New-Finding 'AZL-028' warning "nodes[$i].san.initiator_iqn" "Node '$($Nodes[$i]['name'])' lists an iSCSI initiator_iqn, but storage.san.type is fibre_channel; it is ignored." }
+        }
+    }
+    elseif ($type -eq 'iscsi') {
+        $iscsi = $san['iscsi']
+        if ($iscsi -isnot [System.Collections.IDictionary]) { return }
+        $targets = @(Get-List $iscsi['targets'] | Where-Object { $_ -is [System.Collections.IDictionary] })
+        if ($targets.Count -eq 0) {
+            New-Finding 'AZL-028' error 'storage.san.iscsi.targets' "An iSCSI SAN needs the array's targets: list each target IQN with its portals."
+        }
+        for ($t = 0; $t -lt $targets.Count; $t++) {
+            if ($targets[$t]['iqn']) { $names.Add([pscustomobject]@{ Key = ([string]$targets[$t]['iqn']).ToLowerInvariant(); Display = [string]$targets[$t]['iqn']; Path = "storage.san.iscsi.targets[$t]" }) }
+        }
+        for ($i = 0; $i -lt $Nodes.Count; $i++) {
+            $mine = & $nodeSan $i
+            if ($mine['initiator_iqn']) {
+                $names.Add([pscustomobject]@{ Key = ([string]$mine['initiator_iqn']).ToLowerInvariant(); Display = [string]$mine['initiator_iqn']; Path = "nodes[$i].san.initiator_iqn" })
+            } else {
+                New-Finding 'AZL-028' error "nodes[$i].san" "Node '$($Nodes[$i]['name'])' has no initiator_iqn. An iSCSI SAN needs every machine's initiator name (nodes[].san.initiator_iqn) for LUN masking."
+            }
+            if ($mine['hbas']) { New-Finding 'AZL-028' warning "nodes[$i].san.hbas" "Node '$($Nodes[$i]['name'])' lists Fibre Channel HBAs, but storage.san.type is iscsi; they are ignored." }
+            $iscsiPorts = @(Get-AzlNodeNetworkAdapter -Infrastructure $Infra -Node $Nodes[$i] | Where-Object { @(Get-List $_['roles'] | Where-Object { $_ -in 'iscsi:a', 'iscsi:b' }).Count -gt 0 })
+            if ($iscsiPorts.Count -eq 0) {
+                New-Finding 'AZL-028' warning "nodes[$i].network_adapters" "Node '$($Nodes[$i]['name'])' has no port with role iscsi:a or iscsi:b. List the iSCSI ports in network_adapters, with their addresses, so the SAN deployment knows where the sessions start."
+            }
+            foreach ($port in $iscsiPorts) {
+                if ([string]$port['ip_assignment'] -eq 'none') {
+                    New-Finding 'AZL-028' error "$($port['_path']).ip_assignment" "iSCSI port '$($port['name'])' of node '$($Nodes[$i]['name'])' has ip_assignment none. An iSCSI port needs a host address: static (with ip_address and prefix_length), or a DHCP reservation."
+                }
+            }
+        }
+    }
+    foreach ($group in ($names | Group-Object Key | Where-Object Count -gt 1)) {
+        $what = if ($type -eq 'iscsi') { 'IQN' } else { 'WWPN' }
+        New-Finding 'AZL-028' error $group.Group[1].Path "$what $($group.Group[0].Display) is listed $($group.Count) times ($(@($group.Group.Path) -join ', ')). Each is unique in the SAN."
+    }
+}
+
 # AZL-025: the site's management address range (simplified provisioning, static management addresses).
 function Get-SiteRangeFinding {
     param([System.Collections.IDictionary]$Infra, [object[]]$Nodes, [hashtable]$OwnerOf, [string]$Subnet, [bool]$Simplified)
@@ -943,7 +1161,7 @@ function Get-SiteRangeFinding {
             New-Finding 'AZL-025' warning $at "The site range $($range.Start)-$($range.End) overlaps the infrastructure pool $($pool['start'])-$($pool['end']), which must hold no node address." $script:Learn.Decision8
         }
     }
-    if ($Simplified -and @($modes | Select-Object -Unique).Count -gt 1) {
+    if ($Simplified -and (Get-AzlManagementStaticMethod -Infrastructure $Infra) -eq 'site' -and @($modes | Select-Object -Unique).Count -gt 1) {
         New-Finding 'AZL-025' warning 'nodes' "The management ports mix $(@($modes | Select-Object -Unique) -join ', '). The site's network setting is one for every machine: Manual for the static addresses."
     }
 }
@@ -1022,4 +1240,4 @@ function Import-AzlInfrastructure {
     return Read-InfrastructureFile $Path
 }
 
-Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlArcMachineName, Get-AzlNodeNetworkAdapter, Get-AzlManagementAdapter, Get-AzlBiosSetting, Get-AzlSiteIpRange
+Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlArcMachineName, Get-AzlNodeNetworkAdapter, Get-AzlManagementAdapter, Get-AzlBiosSetting, Get-AzlBiosProvisioningOverride, Get-AzlManagementStaticMethod, Get-AzlInfrastructureScope, Get-AzlSiteIpRange

@@ -95,6 +95,7 @@ Minor versions add optional keys; a key that is renamed keeps working until the 
 | `nodes[].arc_resource_name` (5.0) | `nodes[].arc_machine_name` (5.1). `arc_resource_name` still reads as the Arc machine name, with a deprecation warning (AZL-018). |
 | `nodes[].management` (5.0) | `nodes[].network_adapters` (5.2): the port with role `management` and an `ip_assignment` other than `none`. `nodes[].management` still works for nodes without `network_adapters`. |
 | `networking.management.ip_assignment` (5.1): `static`, `dhcp`, `preconfigured` | Each port's `ip_assignment` (5.2): `static`, `dhcp_reservation`, `dhcp`, `preconfigured`, `none`. 5.1's `dhcp` meant a reserved address, so it reads as `dhcp_reservation`. |
+| `hardware.bios`, `nodes[].bios` (5.2: set before the maintenance boot) | The machine's FINAL state (5.3). Values that hold for the OS install only go in `bios_during_provisioning`. |
 | `hardware.network_cards[].ports[]` (5.0) | Still valid as a hardware summary; `nodes[].network_adapters` (5.2) holds each machine's ports with MACs and addresses. |
 
 ## To 5.2: the ports of each machine
@@ -143,6 +144,37 @@ nodes:
 - The service overwrites the Arc machine name set at claim time (edge machine `arcMachineResourceId`): the Arc machines came out as `ROE1-<id>` and then `<device-id>-1`. `arc_machine_name` stays in the schema; tools read the name actually used from the edge machine afterwards.
 - The maintenance environment needs network access to Azure before the machine is claimed. Learn documents only the Configurator app for a static address there; whether the bootable image can carry a preset address is unresearched. So `provisioning_network: static` is a warning (AZL-024), and the example files use DHCP on a provisioning port.
 
+## To 5.3: BIOS phases, the static method and the SAN
+
+Schema 5.3 only adds keys: every 5.0 to 5.2 file stays valid. Nothing is renamed or removed.
+
+| New key | What it is for |
+| --- | --- |
+| `hardware.bios_during_provisioning`, `nodes[].bios_during_provisioning` | Temporary BIOS values for the OS install only. `hardware.bios` and `nodes[].bios` keep their keys and are now described as the machine's FINAL state. A node's map is merged over the hardware one, and during-provisioning wins over `bios`. |
+| `networking.management.static_method` | `device` (default) or `site`: who sets a static management address. |
+| `networking.management.provisioning_dhcp_range` | The DHCP range the Device stage scans (TCP 20001) to find each maintenance environment by MAC. |
+| `nodes[].maintenance_address` | The maintenance environment's address, when known (replaces the scan for that node). |
+| `provisioning.simplified.maintenance_password` | A `keyvault://` reference: the maintenance environment's password. Default: the out-of-box password Learn documents. |
+| `storage.san.array`, `storage.san.fibre_channel`, `storage.san.iscsi`, `nodes[].san` | The SAN: array, fabrics, target WWPNs, iSCSI targets and CHAP, each machine's HBA ports or initiator IQN. |
+| port role `iscsi:a`, `iscsi:b` in `nodes[].network_adapters[].roles` | The iSCSI ports; their addresses use the existing `ip_assignment`, `ip_address`, `prefix_length` and VLAN keys. |
+| `_metadata.scope` | `full` (default) or `ztp`: a file that holds only what azurelocal-ztp reads. |
+
+**What changes in behaviour.** Read these before you move a file to 5.3:
+
+- **Static addresses with simplified provisioning default to `device`.** ZTP sets each static management address through the maintenance environment before the claim, and the Arc site is Automatic. Before 5.3 the site was Manual with an address range and Microsoft's OS install assigned the address. To keep the old path, set `networking.management.static_method: site` (AZL-027 warns that Microsoft then uses the first ready port, not the MAC). `networking.management.site_ip_range` is used only with `site`.
+- **The maintenance environment's own address.** The 5.2 note still holds for the address the maintenance environment uses to reach Azure: `provisioning_network: static` stays a warning (AZL-024), because Learn documents only the Configurator app for it. What 5.3 settles is the machine's management address: with `device`, ZTP sets it through the Configurator service of the maintenance environment, which it finds by MAC (`provisioning_dhcp_range`) or at `nodes[].maintenance_address`.
+- **`bios` is the final state.** If a BIOS value was only right for the install (a Fibre Channel HBA turned off so the maintenance environment can't install onto its SAN LUN), move it to `bios_during_provisioning` and put the final value in `bios`. ZTP's Restore stage sets it back, restarts the node and waits for Arc.
+- **A `san` or `hybrid` file needs the SAN details** as before (`storage.san`), and from 5.3 the rules in AZL-028 apply to them: set `fibre_channel` or `iscsi` to match `type`, and each node's `san`.
+
+**Steps for a 5.2 file:**
+
+1. Set `_metadata.schema_version` to `5.3.0`.
+2. If a BIOS key was there only for the install, move it to `bios_during_provisioning` and set its final value in `bios`.
+3. With simplified provisioning and static addresses, add `networking.management.provisioning_dhcp_range` (or `nodes[].maintenance_address` on every node), or keep the old path with `static_method: site`.
+4. For a SAN, fill `storage.san.array`, the `fibre_channel` or `iscsi` block, and each node's `san`. For iSCSI, give the iSCSI ports the roles `iscsi:a` and `iscsi:b` in `network_adapters`.
+5. Run `Test-InfrastructureFile.ps1`. AZL-026 to AZL-028 check the new keys.
+
+**A ZTP-only file** (`_metadata.scope: ztp`) is new in 5.3. Start it from `infrastructure.ztp.example.yml`; to grow it into the full file, add the rest and set `scope: full`. See the README (Which template).
 ## From Trailwright's export
 
 | Before | Schema 5 |

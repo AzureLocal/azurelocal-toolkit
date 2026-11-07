@@ -5,11 +5,12 @@
 | Tool | Reads | Writes |
 | --- | --- | --- |
 | [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) | Everything its scripts need, through `Import-AzlInfrastructure` | No |
-| [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | `scenario`, `azure`, `key_vaults`, `nodes` (with `network_adapters` and `bios`), `hardware` (with `bios`), `networking.management`, `networking.ntp_servers`, `identity.local_admin`, `provisioning`, `tags` | No |
+| [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | `scenario`, `azure`, `key_vaults`, `nodes` (with `network_adapters`, `bios`, `bios_during_provisioning` and `maintenance_address`), `hardware` (with `bios` and `bios_during_provisioning`), `networking.management` (with `static_method` and `provisioning_dhcp_range`), `networking.ntp_servers`, `identity.local_admin`, `provisioning` (with `simplified.maintenance_password`), `tags` |
+| ARM and SAN deployment | The ARM parameters (each schema description names its parameter) and the SAN: `storage.san`, `nodes[].san` | No |
 | [Trailwright](https://labs.hybridsolutions.cloud/azurelocal-trailwright/) | The design sections | Yes: it produces the file from a guided design |
 | Beacon, Sonar, Ranger | Addresses, names and identity for their checks and reports | No |
 
-The ARM parameters for Microsoft's deployment templates come from this file. The schema descriptions name the ARM parameter each key becomes.
+The ARM parameters for Microsoft's deployment templates come from this file. The schema descriptions name the ARM parameter each key becomes. **Every key, with its type, whether it is required, its default, an example, where to get the value and which tool reads it, is in [`VARIABLES.md`](VARIABLES.md).**
 
 ## Files
 
@@ -17,12 +18,28 @@ The ARM parameters for Microsoft's deployment templates come from this file. The
 | --- | --- |
 | [`infrastructure.schema.json`](infrastructure.schema.json) | The contract: JSON Schema draft 2020-12. Its `$id` is `https://azurelocal.cloud/schemas/infrastructure/5/infrastructure.schema.json`. |
 | [`infrastructure.example.yml`](infrastructure.example.yml) | A complete file with every section and placeholder values: Active Directory, Storage Spaces Direct, switched, simplified provisioning, ARM. Start here. |
-| [`examples/`](examples) | One file per scenario: local identity and switchless with Arc gateway, disaggregated Fibre Channel with a proxy, rack aware with ZTP, disconnected operations, a single machine on a DHCP reservation, management on the onboard LOMs with ZTP (`lom-management-ztp.yml`, every port listed), and no DHCP anywhere with switchless storage (`no-dhcp-switchless.yml`). |
+| [`examples/`](examples) | One file per scenario: local identity and switchless with Arc gateway, disaggregated Fibre Channel with a proxy (the full SAN details), disaggregated iSCSI (disaggregated-iscsi.yml), rack aware with ZTP, disconnected operations, a single machine on a DHCP reservation, management on the onboard LOMs with ZTP (`lom-management-ztp.yml`, every port listed), and no DHCP anywhere with switchless storage (`no-dhcp-switchless.yml`). |
+| [`infrastructure.ztp.example.yml`](infrastructure.ztp.example.yml) | The ZTP-only template, `_metadata.scope: ztp`: only what azurelocal-ztp reads, for someone who uses it on its own. See [Which template](#which-template). |
+| [`VARIABLES.md`](VARIABLES.md) | The variables reference: every key with its type, required (full and ztp scope), default, example, where to get the value and which tool reads it. Generated from the schema by `scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1` (with `variables-reference.metadata.psd1`); a test fails when it is out of date. |
 | [`MIGRATION.md`](MIGRATION.md) | Where every key from the earlier files went: the environment file ZTP read, the toolkit's `variables.yml` (registry 4.0.0), and Trailwright's export. |
 
+## Which template
+
+Two templates come from the same schema. Pick by what runs after the OS is installed.
+
+| Template | `_metadata.scope` | Use it when | What it holds |
+| --- | --- | --- | --- |
+| [`infrastructure.example.yml`](infrastructure.example.yml) | `full` (default) | You deploy the whole instance: ZTP, then OS configuration, then the cluster deployment (ARM or portal). | Everything: design choices, machines, networks, identity, storage, security, cluster, provisioning. |
+| [`infrastructure.ztp.example.yml`](infrastructure.ztp.example.yml) | `ztp` | You use azurelocal-ztp on its own to install the OS and register the machines, and run no automation after it. | Only what ZTP reads: `azure`, `site`, `key_vaults`, `nodes` (serial number, BMC address, management and provisioning ports with MACs, BIOS), `hardware` (vendor, model, BMC login, BIOS, SBE folder), `networking.management` and `ntp_servers`, `identity.local_admin`, `provisioning`, `tags`. |
+
+With `scope: ztp` the validator requires only ZTP's keys and skips the cluster deployment's requirements: `cluster`, `environment`, `networking.intents`, `storage`, `identity` beyond `local_admin`, the infrastructure pool, and every scenario choice except `os_install` (which must be `simplified`). With `scope: full`, or no `scope`, everything is enforced as before. Rules that check what is there (addresses in the subnet, unique MACs and names, Key Vault references, the BIOS and SAN rules) run in both.
+
+**Growing a ZTP file into the full one.** The two templates use the same keys. When you want the cluster deployment too, add the rest (`cluster`, `environment`, the other `scenario` choices, `networking.intents` and the infrastructure pool, `identity`, `storage`) and change `_metadata.scope` to `full` (or delete it). The validator then tells you what is still missing.
+
+Every key, with its type, whether it is required in each scope, its default, an example, where to get the value and which tool reads it, is in [`VARIABLES.md`](VARIABLES.md).
 ## Start a file
 
-1. Copy `infrastructure.example.yml`, or the example closest to your design, to your environment repository as `infrastructure.yml`. Or produce it with Trailwright.
+1. Copy `infrastructure.example.yml` (everything), `infrastructure.ztp.example.yml` (azurelocal-ztp alone: see [Which template](#which-template)), or the example closest to your design, to your environment repository as `infrastructure.yml`. Or produce it with Trailwright.
 2. Set `scenario` first. Each choice there makes its section required: for example `identity: active_directory` needs `identity.active_directory`, and `os_install: simplified` needs `provisioning.simplified` and a serial number, BMC address and management MAC on every node.
 3. Fill in every value. Put each secret in Key Vault and reference it as `keyvault://<vault>/<secret>`. List every vault you reference under `key_vaults`, with its subscription and resource group.
 4. Check the file:
@@ -87,6 +104,41 @@ Other keys added in 5.2:
 | `provisioning.simplified.media_path`, `evidence_path` | Full paths | Where azurelocal-ztp keeps a run's downloads, images, vouchers and state, and its evidence (event log, change logs). Never inside a git working tree. |
 
 **Arc machine names.** `nodes[].arc_machine_name` stays. In live runs (2026-11) the service overwrote the name set at claim time (`arcMachineResourceId`): the Arc machines still came out as `ROE1-<id>` and then `<device-id>-1`. Why, and whether another property sets it, is an open research item.
+## BIOS phases, the static method and the SAN (schema 5.3)
+
+Schema 5.3 only adds keys; every 5.0 to 5.2 file stays valid. [`MIGRATION.md`](MIGRATION.md#to-53-bios-phases-the-static-method-and-the-san) has the steps.
+
+**BIOS in two phases.** `hardware.bios` and `nodes[].bios` are the machine's FINAL state. `hardware.bios_during_provisioning` and `nodes[].bios_during_provisioning` hold TEMPORARY values for the OS install only. A node's map is merged over the hardware one, and during-provisioning wins over `bios`. azurelocal-ztp applies them at its Boot stage; in its Restore stage, after the OS install and before Handoff, it sets each key back to its `bios` value (or the original value it saved), restarts the node and waits for Arc to reconnect. Example: a Fibre Channel HBA in slot 2 whose SAN LUN the maintenance environment would install onto:
+
+```yaml
+hardware:
+  bios: { Slot2: "Enabled" }                     # final
+  bios_during_provisioning: { Slot2: "Disabled" } # for the install only
+```
+
+On Dell, a slot can also be `BootDriverDisabled`: visible to the OS, never a boot device. Rule AZL-026 warns when a key is in `bios_during_provisioning` but not in `bios`, because Restore then falls back to the saved original value. `Get-AzlBiosSetting -Phase DuringProvisioning` returns the values for the install; `Get-AzlBiosProvisioningOverride` the keys to set back, each with its final value.
+
+**Who sets a static management address.** `networking.management.static_method` matters only when the management `ip_assignment` is static.
+
+| Value | What happens |
+| --- | --- |
+| `device` (default) | ZTP's Device stage sets the address on the management port, found by its MAC, through the maintenance environment's Configurator service, before the claim. The Arc site's network setting is Automatic and the claim carries no Manual adapter. |
+| `site` | The older path. The site's network setting is Manual with an address range (`site_ip_range`) and Microsoft's OS install assigns the address. Microsoft ignores the MAC there and uses the first ready port, which was observed live on Dell AX-760 (a warning, AZL-027). |
+
+To find each machine's maintenance environment, the Device stage uses `nodes[].maintenance_address` (IPv4, optional) when it is set; otherwise it scans `networking.management.provisioning_dhcp_range` (`start`, `end`, optional: the DHCP range on the provisioning network) on TCP 20001 for the node's MAC. The range must be inside `networking.management.subnet`, start at or below end (AZL-027). The Device stage signs in with `provisioning.simplified.maintenance_password`, a `keyvault://` reference; when it is left out the maintenance environment's out-of-box password is used, the one Microsoft Learn documents for the Configurator app. Set your own secret when your images carry another one.
+
+**The SAN.** `storage.san` records the array and its connections, and `nodes[].san` each machine's side:
+
+| Key | What it holds |
+| --- | --- |
+| `storage.san.array` | `name`, `vendor`, `model`, and an optional `management_address`. |
+| `storage.san.fibre_channel` (required for `type: fibre_channel`) | `fabrics`: `name` (A, B), optional `switch` and `zone_set`. `target_wwpns`: the array's `wwpn` and the `fabric` each is cabled to. |
+| `nodes[].san.hbas` | Per HBA: `slot` (for example `Slot2`, the BIOS key that turns it off), `model`, and `ports` with each port's `wwpn` and `fabric`. |
+| `storage.san.iscsi` (required for `type: iscsi`) | `targets`: `iqn`, `portals` (IPv4 or IPv4:port) and `fabric`. Optional `chap`: `enabled`, `username`, and `secret` (a `keyvault://` reference). |
+| `nodes[].san.initiator_iqn` | The machine's iSCSI initiator name. |
+| `nodes[].network_adapters[]` with role `iscsi:a` or `iscsi:b` | The iSCSI ports and their addresses (`ip_assignment`, `ip_address`, `prefix_length`, VLAN). No gateway. |
+
+A WWPN is 16 hex digits, written as colon-separated pairs or without colons. Rule AZL-028: a SAN needs `storage.san` (schema); Fibre Channel needs the target WWPNs and every node's HBA WWPNs; every WWPN names a defined fabric; iSCSI needs targets and every node's initiator IQN, and its ports need an address; no WWPN or IQN appears twice. Complete files: [`examples/disaggregated-fibre-channel-proxy.yml`](examples/disaggregated-fibre-channel-proxy.yml) and [`examples/disaggregated-iscsi.yml`](examples/disaggregated-iscsi.yml).
 ## What the check covers
 
 **The schema** checks structure, types, formats (IPv4, CIDR, MAC, GUID), the `keyvault://` form, name lengths (cluster and node names up to 15 characters, the LCM user up to 20), and the conditional sections above. Every section rejects unknown keys, so a misspelt key is an error, not a silently ignored value.
@@ -119,7 +171,11 @@ Other keys added in 5.2:
 | AZL-022 | Addresses on the other ports (5.2): no second default gateway; DHCP left on is a warning; a static address needs `prefix_length`; no address on two ports; a host address on a storage port, a second port in the management subnet and an address with `ip_assignment: none` are warnings |
 | AZL-023 | VLANs (5.2): the management port's host VLAN matches `networking.management.vlan_id`; a tagged port with an address has a `vlan_id`; a storage port's VLAN matches its storage network; a storage port on an access port is a warning |
 | AZL-024 | The maintenance environment (simplified provisioning): a `provisioning` port on every node (5.2); `provisioning_network: static` is a warning (unresearched); a static management port that is also the provisioning port is a warning (it needs DHCP there) |
-| AZL-025 | The site range (simplified provisioning, static addresses): start before end, inside the subnet, holds every static management address; overlapping the infrastructure pool, or mixing static and DHCP management ports, is a warning |
+| AZL-025 | The site range (simplified provisioning, static addresses): start before end, inside the subnet, holds every static management address; overlapping the infrastructure pool is a warning, and so is mixing static and DHCP management ports with `static_method: site` |
+| AZL-026 | BIOS phases (5.3): a key in `bios_during_provisioning` that `bios` doesn't name is a warning (Restore falls back to the saved original value) |
+| AZL-027 | The maintenance environment (5.3): `provisioning_dhcp_range` start at or below end and inside the management subnet; no maintenance address on two nodes; `static_method: site` with static addresses is a warning (Microsoft uses the first ready port, not the MAC) |
+| AZL-028 | The SAN (5.3): Fibre Channel needs target WWPNs and every node's HBA WWPNs, and every WWPN names a defined fabric; iSCSI needs targets and every node's initiator IQN, and an address on its `iscsi:a` / `iscsi:b` ports; no WWPN or IQN is used twice; fabric names are unique |
+| (scope) | `_metadata.scope: ztp` requires only ZTP's keys (see [Which template](#which-template)); `full` requires everything |
 Design guidance (which pattern to pick, sizing, best practices) stays in Trailwright, which cites Microsoft Learn for every rule. The toolkit's rules are the ones that stop a deployment.
 
 ## Use it from a script
@@ -129,6 +185,10 @@ Import-Module ./scripts/common/infrastructure/AzlInfrastructure.psm1
 $infra = Import-AzlInfrastructure -Path ./infrastructure.yml   # stops if the file has errors
 $gateway = $infra.networking.management.gateway
 $value = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'provisioning.simplified.site_name'
+$bios = Get-AzlBiosSetting -Infrastructure $infra -Node $infra.nodes[0] -Phase DuringProvisioning   # 5.3: the values for the OS install
+Get-AzlBiosProvisioningOverride -Infrastructure $infra -Node $infra.nodes[0]                        # the keys ZTP sets back in Restore
+Get-AzlManagementStaticMethod -Infrastructure $infra                                                 # device (default) or site
+Get-AzlInfrastructureScope -Infrastructure $infra                                                    # full (default) or ztp
 ```
 
 Without `-Path`, `Import-AzlInfrastructure` looks for `$env:AZL_INFRASTRUCTURE_FILE`, then `./infrastructure.yml`, then `./config/infrastructure.yml`. It needs the `powershell-yaml` module.
@@ -151,7 +211,7 @@ const validate = new Ajv2020({ strict: true, allErrors: true }).compile(schema);
 
 `_metadata.schema_version` is the schema version the file follows.
 
-- A **minor** version (5.1.0) adds optional keys. Files written for 5.0 stay valid.
+- A **minor** version (5.3.0) adds optional keys. Files written for 5.0 stay valid.
 - A **major** version (6.0.0) can rename or remove keys. It comes with a migration in `MIGRATION.md`, and tools refuse files from a major they don't read.
 
 Change the schema, the examples, the tests and this page together. The tests in `tests/infrastructure` validate every example and check every rule.

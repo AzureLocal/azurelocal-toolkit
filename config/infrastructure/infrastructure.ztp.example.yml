@@ -1,0 +1,151 @@
+# =============================================================================
+# infrastructure.yml, ZTP-only template: for azurelocal-ztp on its own
+# =============================================================================
+# Use this when you install the OS and register the machines with azurelocal-ztp
+# (simplified machine provisioning) and run no automation after it: no cluster
+# deployment, no OS configuration. It holds only what ZTP reads, and nothing for
+# clusters, network intents, storage or identity beyond the local administrator.
+#
+# _metadata.scope: ztp tells the validator to require only these keys. The cluster
+# deployment's sections (cluster, environment, networking.intents, storage, the
+# rest of identity, and the scenario choices) are not required, and not checked.
+#
+# To grow it into the full file: these are the same keys the full template
+# (infrastructure.example.yml) uses. Add the sections you need (cluster, intents,
+# identity, storage, ...) and change _metadata.scope to full (or remove it). The
+# validator then enforces everything.
+#
+# Schema:    infrastructure.schema.json (next to this file), schema_version 5.x
+# Variables: VARIABLES.md (next to this file): every key, whether it is required, its default,
+#            an example, where to get the value, which tool reads it, the keyvault:// secrets
+#            the file expects, and the folders it names
+# Validate:  ./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path ./infrastructure.yml
+#
+# Rules:
+#   - Keys are snake_case. Sections reject unknown keys; use extensions.
+#   - Secrets are never values. Use keyvault://<vault>/<secret> and list the
+#     vault in key_vaults. ZTP reads all its secrets from vaults in one subscription.
+#   - Values here are placeholders (the IIC example customer and documentation
+#     address ranges). Replace every one.
+# =============================================================================
+
+_metadata:
+  schema_version: "5.3.0"
+  scope: ztp # ztp | full (default)
+
+scenario:
+  os_install: simplified # the only value ZTP provisions with
+
+site:
+  code: "IIC"
+  name: "IIC Dallas"
+  time_zone: "Central Standard Time" # set on the provisioned OS
+
+tags: # on the Microsoft.Edge site and the edge machines
+  Owner: "platform-team@improbability.cloud"
+  Project: "azure-local"
+
+# -----------------------------------------------------------------------------
+# Azure: where the site and the edge machines go.
+# -----------------------------------------------------------------------------
+azure:
+  tenant_id: "00000000-0000-0000-0000-000000000000"
+  location: "eastus" # simplified provisioning: eastus only in the preview
+  subscription_id: "00000000-0000-0000-0000-000000000000"
+  resource_group: "rg-iic-azl-01"
+  hci_resource_provider_object_id: "00000000-0000-0000-0000-000000000000" # optional; ZTP looks it up when it can read the directory
+
+# Every vault a keyvault:// reference below names. ZTP needs the subscription
+# and resource group, and reads its secrets from vaults in one subscription.
+key_vaults:
+  - { name: "kv-iic-mgmt-01", subscription_id: "00000000-0000-0000-0000-000000000000", resource_group: "rg-iic-mgmt-01" }
+
+# -----------------------------------------------------------------------------
+# The machines. Each needs a serial number (it maps the machine's ownership
+# voucher), a BMC address, and a management port with its MAC.
+# -----------------------------------------------------------------------------
+nodes:
+  - name: "iic-azl-n01"
+    arc_machine_name: "iic-azl-n01" # optional; default: name. An Arc machine can't be renamed later.
+    serial_number: "SERIAL01"
+    bmc: { ip_address: "198.51.100.11", type: idrac } # the login is hardware.bmc: ZTP uses one for every node
+    # maintenance_address: "192.0.2.101" # optional; the maintenance environment's address when you know it.
+    #                                    # Without it, the Device stage scans provisioning_dhcp_range for the MAC.
+    network_adapters: # ZTP reads the management and provisioning ports; list the others if you want one record
+      - name: "Embedded NIC 1"
+        mac_address: "00:00:5E:00:53:11"
+        roles: [management]
+        ip_assignment: static # the management address; ZTP sets it by this MAC (networking.management.static_method)
+        ip_address: "192.0.2.11"
+        vlan_mode: access
+        vlan_id: 711
+      - { name: "Embedded NIC 2", mac_address: "00:00:5E:00:53:12", roles: [management], ip_assignment: none, vlan_mode: access, vlan_id: 711 } # the team partner: no address of its own
+      - { name: "Slot 3 Port 1", mac_address: "00:00:5E:00:53:13", roles: [provisioning], ip_assignment: none } # how the maintenance environment reaches Azure (DHCP)
+    # bios: {}                      # optional; this machine's final BIOS values, merged over hardware.bios
+    # bios_during_provisioning: {}  # optional; this machine's temporary values, merged over hardware.bios_during_provisioning
+  - name: "iic-azl-n02"
+    arc_machine_name: "iic-azl-n02"
+    serial_number: "SERIAL02"
+    bmc: { ip_address: "198.51.100.12", type: idrac }
+    network_adapters:
+      - { name: "Embedded NIC 1", mac_address: "00:00:5E:00:53:21", roles: [management], ip_assignment: static, ip_address: "192.0.2.12", vlan_mode: access, vlan_id: 711 }
+      - { name: "Embedded NIC 2", mac_address: "00:00:5E:00:53:22", roles: [management], ip_assignment: none, vlan_mode: access, vlan_id: 711 }
+      - { name: "Slot 3 Port 1", mac_address: "00:00:5E:00:53:23", roles: [provisioning], ip_assignment: none }
+
+hardware:
+  vendor: "Dell"
+  model: "AX-760"
+  bmc: # one BMC login for every machine
+    username: "keyvault://kv-iic-mgmt-01/bmc-username"
+    password: "keyvault://kv-iic-mgmt-01/bmc-password"
+  sbe:
+    bundle_path: 'D:\sbe\dell' # folder on the management host with the OEM's SBE files, as downloaded
+    allow_unvalidated: false # test only
+  # BIOS, Dell attribute names as the BMC's Redfish Bios resource shows them. ZTP applies them at its Boot stage.
+  bios: # the FINAL state; a node's own bios is merged over this
+    EmbNic1Nic2: "Enabled" # the LOMs ship as DisabledOs, so the OS wouldn't see the management ports
+    Slot2: "Enabled" # a Fibre Channel HBA: on again once the OS is installed
+  bios_during_provisioning: # TEMPORARY, for the OS install only; wins over bios
+    Slot2: "Disabled" # the HBA's SAN LUN would be offered as the install disk. In Restore, after the install,
+    #                   ZTP sets it back to the bios value, restarts the node and waits for Arc to reconnect.
+    #                   Dell also has BootDriverDisabled: visible to the OS, never a boot device.
+
+networking:
+  management:
+    subnet: "192.0.2.0/24"
+    gateway: "192.0.2.1"
+    vlan_id: 0 # the host doesn't tag: the LOMs are on access ports
+    dns_servers: ["192.0.2.30", "192.0.2.31"]
+    # With static addresses, who sets them:
+    #   device (default): ZTP's Device stage sets each address on the port with the MAC, through the maintenance
+    #                     environment's Configurator service, before the claim. The Arc site is Automatic.
+    #   site:             the site is Manual with site_ip_range and Microsoft's OS install assigns the address.
+    #                     It ignores the MAC and uses the first ready port (seen on Dell AX-760).
+    static_method: device
+    # The DHCP range on the provisioning network, inside the subnet. The Device stage scans it (TCP 20001) to find
+    # each maintenance environment by MAC when nodes[].maintenance_address isn't set.
+    provisioning_dhcp_range: { start: "192.0.2.100", end: "192.0.2.199" }
+    provisioning_network: dhcp # how the maintenance environment reaches Azure: dhcp (default)
+    # site_ip_range: { start: "192.0.2.11", end: "192.0.2.12" } # only with static_method: site
+  ntp_servers: ["192.0.2.30", "192.0.2.31"]
+
+identity:
+  local_admin: # the OS's local administrator after the install; not Administrator
+    username: "azl-admin"
+    password: "keyvault://kv-iic-mgmt-01/local-admin-password"
+
+provisioning:
+  os_version: "12.2610.1004.50" # pin a version
+  simplified:
+    site_name: "iic-site-01" # resource name of the Microsoft.Edge site
+    maintenance_iso: "2610" # latest | a train (2610) | a build (10.2610.0.3063) | a Microsoft URL
+    admin: # the OS's local administrator that Prepare signs in as after the install
+      username: "administrator"
+      password: "keyvault://kv-iic-mgmt-01/provisioning-admin-password"
+    # maintenance_password: "keyvault://kv-iic-mgmt-01/maintenance-password" # optional; the maintenance
+    #                       # environment's local user password. Default: the out-of-box password Microsoft Learn documents.
+    media_share: # the SMB share the BMCs mount the images from
+      name: "ztp-virtual-usb"
+      host: "198.51.100.5" # or host_adapter: <adapter name>
+    media_path: 'D:\Data\azl-ztp\iic-azl-01\media' # downloads, images, vouchers, state; outside any git repository
+    evidence_path: 'D:\Data\azl-ztp\iic-azl-01\evidence' # event log, BIOS change log, run logs
