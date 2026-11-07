@@ -95,7 +95,7 @@ function Get-FirstSentence([string]$Text, [int]$Max = 150) {
     if (-not $Text) { return '' }
     $t = ($Text -replace '\s+', ' ').Trim()
     $since = ''
-    if ($t -match '^Schema (5\.\d+)\.\s+(.*)$') { $since = " (since $($Matches[1]))"; $t = $Matches[2]; $t = $t.Substring(0, 1).ToUpperInvariant() + $t.Substring(1) }
+    if ($t -match '^Schema (5\.\d+(?:\.\d+)?)\.\s+(.*)$') { $since = " (since $($Matches[1]))"; $t = $Matches[2]; $t = $t.Substring(0, 1).ToUpperInvariant() + $t.Substring(1) }
     $m = [regex]::Match($t, '^.+?[.!?](?=\s+[A-Z(`]|$)')
     $s = if ($m.Success) { $m.Value } else { $t }
     if ($s.Length -gt $Max) { $s = $s.Substring(0, $Max - 1).TrimEnd() + '...' }

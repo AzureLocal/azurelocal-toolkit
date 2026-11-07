@@ -2054,7 +2054,7 @@
                   "default": 30
                 },
                 "adapters_minutes": {
-                  "description": "Schema 5.4.1. Network stage: how long to wait, per machine, for the edge machine to report its network adapters (the management MAC in the list) before judging the management port. The list can still be empty right after Ready. Default 10; 0 reads once. When the budget is spent the machine is not verified (adapters never reported) and the Handoff stage reads the adapters again.",
+                  "description": "Schema 5.4.1. Network stage: how long to wait for an edge machine to report its network adapters. The stage polls every poll_interval_seconds (at least 5) until the management MAC is in the list, because the list can still be empty right after Ready. Default 10; 0 reads once and does not wait. When the budget is spent without the management MAC the machine is not verified in any mode (adapters never reported, a Warning that is never a success state) and the Handoff stage reads the adapters again.",
                   "type": "integer",
                   "minimum": 0,
                   "maximum": 240,
