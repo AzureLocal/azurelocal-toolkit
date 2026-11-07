@@ -26,6 +26,8 @@ The OS configuration plan reads each node through Azure Arc Run Command, which c
 
 Order: ZTP hand-off, OS configuration with `-Execute` (it writes a JSON report), then ARM Validate, review, then ARM Deploy.
 
+The full cross-tool matrix is in the toolkit's [access-and-connectivity page](access-and-connectivity.md).
+
 ## Operator host
 
 | Tool | Version tested | Needed for | Checked |
