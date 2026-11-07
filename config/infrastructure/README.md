@@ -215,6 +215,7 @@ The mapping from slot label to attribute is data in ZTP, `config/oem/<vendor>.js
 | AZL-028 | The SAN (5.3): Fibre Channel needs target WWPNs and every node's HBA WWPNs, and every WWPN names a defined fabric; iSCSI needs targets and every node's initiator IQN, and an address on its `iscsi:a` / `iscsi:b` ports; no WWPN or IQN is used twice; fabric names are unique |
 | AZL-029 | What ZTP derives (5.4, simplified provisioning): an HBA slot is a PCIe slot label (`Slot 2`) while isolation is on, and no network port shares it; `isolate_san_adapters: true` with no HBA listed is a warning; `ntp.configuration: Manual` needs a server; the voucher budget is not longer than the Bootstrap budget |
 | AZL-030 | The SBE package's delivery (5.4.2): `hardware.sbe.delivery` is `winrm_copy`, `node_pull` or `skip`; `winrm_copy` and `node_pull` need `hardware.sbe.bundle_path`; `node_pull` needs `node_pull_url`, an `https://` (or `http://`, a warning) address or a UNC folder with no user name, password, token or query string; an address with another route is a warning (not used); `winrm_copy` warns for a node with no management `ip_address` |
+| AZL-031 | The OS configuration run (5.4.3): `os_configuration.clear_storage: true` on a SAN design warns that only local disks are wiped (the key itself must be a boolean, which the schema checks). |
 | (scope) | `_metadata.scope: ztp` requires only ZTP's keys (see [Which template](#which-template)); `full` requires everything |
 Design guidance (which pattern to pick, sizing, best practices) stays in Trailwright, which cites Microsoft Learn for every rule. The toolkit's rules are the ones that stop a deployment.
 
@@ -247,6 +248,9 @@ const validate = new Ajv2020({ strict: true, allErrors: true }).compile(schema);
 - Anything the schema doesn't define goes under `extensions.<your-key>`: settings for one environment or one tool. Tools ignore keys they don't own.
 - The file can hold subscription and tenant IDs. Keep files with real values in private environment repositories, never in a public repository.
 
+## The OS configuration switch (schema 5.4.3)
+
+`os_configuration.clear_storage` (default `false`) tells `Invoke-AzureLocalOsConfiguration.ps1` to wipe the leftover storage of re-used machines: storage pools, virtual disks and the data on local disks that are not boot, system, SAN or USB. Plan mode lists the disks per machine and wipes nothing; Apply mode wipes only what the plan listed. See [OS configuration and ARM deployment](../../docs/os-configuration-and-arm-deployment.md#run-it-in-one-go).
 ## Versioning
 
 `_metadata.schema_version` is the schema version the file follows.

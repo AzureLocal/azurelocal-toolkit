@@ -474,6 +474,38 @@ $script:RestartBody = @'
 Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; restartScheduled = $true })
 '@
 
+# Used by the OS configuration run on a machine installed from an ISO: what OS is this, before anything else touches it.
+$script:PreflightBody = @'
+$os = Get-CimInstance Win32_OperatingSystem
+$cs = Get-CimInstance Win32_ComputerSystem
+$ubr = ''
+try { $ubr = [string](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').UBR } catch { $ubr = '' }
+$agent = Test-Path -LiteralPath 'C:\Program Files\AzureConnectedMachineAgent\azcmagent.exe'
+$hasArcInit = [bool](Get-Command Invoke-AzStackHciArcInitialization -ErrorAction SilentlyContinue)
+Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; caption = [string]$os.Caption; build = [int]$os.BuildNumber; ubr = $ubr; productType = [int]$os.ProductType; sku = [int]$os.OperatingSystemSKU; domainJoined = [bool]$cs.PartOfDomain; arcAgent = $agent; arcInit = $hasArcInit })
+'@
+
+# Azure Arc registration of a machine installed from an ISO, with the ARM token the caller got from its own Azure sign-in (a Secret).
+$script:ArcRegistrationBody = @'
+$cmd = Get-Command Invoke-AzStackHciArcInitialization -ErrorAction SilentlyContinue
+if (-not $cmd) { throw 'Invoke-AzStackHciArcInitialization is not on this machine. Install the Azure Stack HCI OS (23H2 or later) image from Azure; it ships the Arc initialization module.' }
+$token = [string](Get-P $S 'armToken' '')
+if (-not $token) { throw 'No ARM access token was passed.' }
+$arguments = @{
+    SubscriptionID = [string](Get-P $P 'subscriptionId' '')
+    ResourceGroup  = [string](Get-P $P 'resourceGroup' '')
+    TenantID       = [string](Get-P $P 'tenantId' '')
+    Region         = [string](Get-P $P 'region' '')
+    Cloud          = [string](Get-P $P 'cloud' 'AzureCloud')
+    ArmAccessToken = $token
+    AccountID      = [string](Get-P $P 'accountId' '')
+}
+$gateway = [string](Get-P $P 'arcGatewayId' '')
+if ($gateway) { $arguments['ArcGatewayID'] = $gateway }
+$null = Invoke-AzStackHciArcInitialization @arguments
+Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; registered = $true })
+'@
+
 function Get-AzlNodePayload {
     <#
     .SYNOPSIS
@@ -483,12 +515,14 @@ function Get-AzlNodePayload {
     #>
     [CmdletBinding()]
     [OutputType([string])]
-    param([Parameter(Mandatory)][ValidateSet('Read', 'Apply', 'Collect', 'Restart')][string]$Name)
+    param([Parameter(Mandatory)][ValidateSet('Read', 'Apply', 'Collect', 'Restart', 'Preflight', 'ArcRegistration')][string]$Name)
     $body = switch ($Name) {
         'Read' { $script:ReadBody }
         'Apply' { $script:ApplyBody }
         'Collect' { $script:CollectBody }
         'Restart' { $script:RestartBody }
+        'Preflight' { $script:PreflightBody }
+        'ArcRegistration' { $script:ArcRegistrationBody }
     }
     return ($script:Prologue + [Environment]::NewLine + $body)
 }

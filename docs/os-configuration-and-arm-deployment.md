@@ -18,6 +18,7 @@ In the tables, **Checked** says what happens if the item is missing:
 | Step | Command (plan: reads, changes nothing) | Add `-Execute` to |
 | --- | --- | --- |
 | OS configuration | `Set-AzureLocalNodeConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json` | change the nodes. Re-running on a configured node changes nothing. |
+| OS configuration, the whole instance in one run | `Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -HandoffPath ./ztp-state -Mode Plan` | use `-Mode Apply`. See [Run it in one go](#run-it-in-one-go). Also runs unchanged in GitHub Actions and GitLab CI. |
 | ARM parameters only | `New-AzureLocalArmParameters.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json -NodeReportPath <report>` | (reads files only; always safe) |
 | ARM Validate | `Invoke-AzureLocalClusterDeployment.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json -NodeReportPath <report>` | submit `deploymentMode Validate` to the resource group, wait, report the validation steps. |
 | ARM Deploy | the same with `-Mode Deploy` | submit the real deployment. A separate, explicit run; needs a successful Validate. |
@@ -30,6 +31,126 @@ Order: ZTP hand-off, OS configuration with `-Execute` (it writes a JSON report),
 
 The diagram source is [`diagrams/os-configuration-flow.drawio`](diagrams/os-configuration-flow.drawio). It follows one run: the ZTP handoff (schema 2) and `infrastructure.yml` are read and validated; each node's management address mode (A DHCP with reservation, B static with DHCP on management, C static without management DHCP) decides what the Network step does; then the steps run in the order the script runs them, with a tag on each that says whether it skips when already correct, only reads, or only runs on request; the SBE package is delivered last by the route `hardware.sbe.delivery` names; the node is read again until it matches, and the report feeds ARM Validate and then ARM Deploy (Phase 05).
 The full cross-tool matrix is in the toolkit's [access-and-connectivity page](access-and-connectivity.md).
+
+## Run it in one go
+
+`Invoke-AzureLocalOsConfiguration.ps1` (same folder as `Set-AzureLocalNodeConfiguration.ps1`) does the whole OS configuration phase for the whole instance in one run: every handoff file, every node, plan, apply, verification, one report. The same command runs on an operator's workstation and, unchanged, in a pipeline; there is nothing pipeline-specific in it. It calls `Set-AzureLocalNodeConfiguration.ps1` once per node and adds the parts around it.
+
+```powershell
+# Plan: reads every node, changes nothing, writes the plan report and the wipe list
+./scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1 `
+    -InfrastructureFile ./infrastructure.yml -HandoffPath ./ztp-state -Mode Plan -ReportDirectory ./osconfig-report
+
+# Apply: the same command with -Mode Apply
+./scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1 `
+    -InfrastructureFile ./infrastructure.yml -HandoffPath ./ztp-state -Mode Apply -ReportDirectory ./osconfig-report
+```
+
+| Parameter | Meaning |
+| --- | --- |
+| `-InfrastructureFile` | The master `infrastructure.yml`. Required. |
+| `-HandoffPath` | A handoff file, several files, or a directory. Every `*.ztp-handoff.json` found is merged into one node-to-handoff map. A node in two files is an error that names both files. Optional: a cluster installed from ISO has no handoff. |
+| `-Node`, `-Step` | Limit the run to some nodes or steps. |
+| `-Mode` | `Plan` (default) or `Apply`. |
+| `-ReportDirectory` | Where `plan-report.json`, `report.json`, `summary.md`, `wipe-list.txt` and `node-reports/` go. |
+| `-ContinueOnNodeFailure` | Default `$true`: a node that fails does not stop the others. `-ContinueOnNodeFailure:$false` stops at the first failure and marks the rest skipped. |
+| `-Transport`, `-Method` | `Auto` (default) works both out per node; force `ArcRunCommand`/`WinRM` or `Ztp`/`Iso` for all nodes. |
+| `-Credential`, `-NodeAddress` | ISO path only: the local administrator for WinRM (default: `identity.local_admin`, password from the Key Vault) and the address to reach a node on when the installer's address is not in the file. |
+| `-ClearStorage` | Forces the storage wipe on (see below). |
+| `-ConfigPath`, `-Settings` | Optional run settings (JSON file, then a hashtable that wins): `retryTries`, `retryDelaySeconds`, `maxPasses`, `noRestart`, `failOnPendingChanges`, `nodeAddress`. |
+| `-FailOnPendingChanges` | Plan mode: exit 1 when any change is pending (drift detection). |
+
+### What the run does, in order
+
+1. **Validate the inputs.** The master file, the handoff map, the method and transport of every node, the Azure sign-in, and for ISO nodes the route, the credentials and the OS build. A failure here stops the run with exit code 2 before anything is changed.
+2. **Plan for all nodes** (read only). Writes `plan-report.json`.
+3. **Apply** (`-Mode Apply`), node by node.
+4. **Verify**: a Plan pass on every node that was changed. A node is *converged* only when this pass finds nothing left to change. The status of the commands that did the work does not decide it. A node with nothing to change in the plan is converged by the plan itself and is not read again.
+5. **Report**: `report.json` (per node: method and evidence, steps, plan, changes, errors, converged, restarted), `summary.md` and a table on the console.
+
+### Which method?
+
+OS configuration always starts after the OS is installed, however it was installed. Each node is resolved on its own, so a cluster can mix both.
+
+- **Declared**: `scenario.os_install` (`iso` or `simplified`) in the master file.
+- **Evidence**: (a) a ZTP handoff for the node that says `ready`, (b) an Arc machine for the node that is `Connected` (found by the handoff's resource ID, else by host name in `azure.resource_group`), (c) the node answers on WinRM (TCP 5985) at `nodes[].management.ip_address` or `maintenance_address` (`-NodeAddress` overrides). (c) is tried only when (a) and (b) are missing.
+
+| Declared | Evidence | Path | |
+| --- | --- | --- | --- |
+| simplified | ready handoff, or a Connected Arc machine | ZTP | |
+| iso | ready handoff | ZTP | warning naming both; fix `scenario.os_install` |
+| iso | Connected Arc machine, no handoff | ISO, reached over Arc | already registered |
+| iso | answers on WinRM | ISO, reached over WinRM | |
+| simplified | no ready handoff, no Arc machine, answers on WinRM | ISO | warning naming both |
+| any | nothing reachable | none | exit 2 with what was tried |
+| any | a handoff for another subscription or resource group than the master file | none | exit 2: contradictory evidence |
+
+The result is in the report, per node (`method.declared`, `method.resolved`, `method.source`, `evidence`), and printed at the start. `-Method Ztp|Iso` forces it.
+
+| | ZTP path | ISO path |
+| --- | --- | --- |
+| Reached with | Azure Arc Run Command (ARM only; no network path to the nodes) | WinRM with the local administrator from the master file, from a host that reaches the node's management address (or Arc Run Command when the machine is already a Connected Arc machine) |
+| Verified, not redone | OS build, Arc machine connected, the computer name ZTP gave, the handoff's `ready` | |
+| Done | management static address by MAC, DHCP off on the other ports, DNS, NTP, unused ports, local admin, RDP/ICMP, drivers and SBE, MPIO and SAN verification, storage wipe when on | all of those, plus the computer name (restart), and Azure Arc registration |
+| Up front | | route to TCP 5985, credentials, OS caption and build 25398 or later; each failure names the node and says what to fix |
+
+Arc registration on the ISO path runs `Invoke-AzStackHciArcInitialization` on the node with the ARM token of the run's own Azure sign-in (passed as a secret; never written), into `azure.resource_group`, with the Arc gateway from `networking.outbound.arc_gateway` when the outbound path uses one. It then waits for the Arc machine to be Connected. The older Phase 04 registration scripts take a different, interactive configuration, so they are not used here. WinRM from a Linux runner needs the PSWSMan module for Negotiate authentication.
+
+### Storage wipe: `os_configuration.clear_storage`
+
+Leftover local storage (storage pools, virtual disks, the data on local disks) is wiped only when the master file says so:
+
+```yaml
+os_configuration:
+  clear_storage: true   # default false
+```
+
+`-ClearStorage` forces it on. The wipe happens only in Apply mode, and only to what the plan listed. Boot, system, SAN (Fibre Channel, iSCSI) and USB disks are never touched. With `clear_storage` on, the run prints, before anything is applied, exactly which disks on which node will be wiped, taken from the plan, and writes the same list to `wipe-list.txt` and the end of `summary.md`:
+
+```text
+STORAGE WIPE (os_configuration.clear_storage in the master file). Local disks that WOULD BE WIPED if you apply. ...
+  tplabs-azl-n01: 1 pool(s), 2 virtual disk(s), disks: 3 (1000 GB) ...
+```
+
+With it off, leftover storage is reported as blocking (exit 1) and nothing is wiped.
+
+### Exit codes
+
+| Code | Meaning |
+| --- | --- |
+| 0 | Apply: every node converged. Plan: every node could be read and nothing is blocked (pending changes are expected; `-FailOnPendingChanges` makes them exit 1). |
+| 1 | A node failed, is blocked, or did not converge; or the nodes do not see the same SAN disks. |
+| 2 | Bad input or nothing reachable: a missing file, a node in two handoffs, contradictory evidence, no sign-in for Arc, a precondition of the ISO path. Nothing was changed. |
+
+### A run command that ends in state Unknown
+
+Arc Run Command can end in state `Unknown` when the node's agent briefly loses its connection (for example while its network changes). The script on the node is safe to run again, so the run is retried with a growing pause (default 3 tries, 15 s, 45 s, then 120 s; `retryTries`, `retryDelaySeconds`). After the last try the node is **read again** and the next step is decided from what the read shows. If an Apply ended in `Unknown`, the report lists a change with status `unknown`, and the node is converged if the read (and the verification pass) shows it matches. A restart that ends in `Unknown` is not a failure: the run waits for a new boot time.
+
+### How the plan and the approval gate work
+
+The plan changes nothing, so it can run unattended. Its output is what a person approves: the plan table per node, the method and transport per node, and the wipe list. In a pipeline the Plan job publishes `plan-report.json` and `wipe-list.txt` as an artifact and puts `summary.md` (with the wipe list) in the job summary. The Apply job waits for an approval: a GitHub environment (`azure-local-os-configuration`) with required reviewers, or a GitLab manual job. Apply then re-plans each node itself, so it never acts on a stale plan.
+
+### In a pipeline
+
+| Platform | File | Gate |
+| --- | --- | --- |
+| GitHub Actions | `pipelines/github/os-configuration.yml` (copy to `.github/workflows/`) | Environment `azure-local-os-configuration` with required reviewers on the `apply` job |
+| GitLab CI | `pipelines/gitlab/os-configuration.gitlab-ci.yml` | `when: manual` on the apply job; `resource_group` allows one run at a time |
+
+Both run `pwsh -File .../Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ... -HandoffPath ... -Mode Plan|Apply -ReportDirectory ...` and nothing else; the logic is the script's. The runner is a self-hosted Linux runner with PowerShell 7 and the `powershell-yaml`, `Az.Accounts` and `Az.KeyVault` modules. ZTP-provisioned nodes need only Azure from the runner; ISO-installed nodes need a runner that reaches their management addresses.
+
+**Where the files come from.** The master `infrastructure.yml` is a path in the repository (`infrastructure_file` / `INFRASTRUCTURE_FILE`). The handoff files, `<node>.ztp-handoff.json` (one per ZTP run: nodes 1 and 2 may share a file, node 3 has its own), are either committed to the repository path `handoff_path` / `HANDOFF_PATH`, or published by the ZTP run as an artifact named `ztp-handoff`; the GitHub workflow takes the ZTP run's ID (`handoff_run_id`) and downloads it, and in GitLab the job lists the ZTP job in `needs`/`dependencies`. Point `-HandoffPath` at the folder: every handoff in it is merged. A handoff file holds the subscription ID and resource IDs of your environment, so keep it in a private repository or artifact.
+
+**Permissions of the pipeline identity** (the federated app registration, or the runner's managed identity). The cross-tool matrix is in [access-and-connectivity](access-and-connectivity.md).
+
+| Needed for | Role or permission | Scope |
+| --- | --- | --- |
+| Arc Run Command on the nodes (plan and apply) | Azure Connected Machine Resource Administrator (`Microsoft.HybridCompute/machines/runCommands/*`, `machines/read`) | The resource group of the Azure Local instance |
+| The local administrator's password | Key Vault Secrets User (secret `get`) | The vault in `identity.local_admin.password` |
+| Arc registration of ISO nodes | Azure Connected Machine Onboarding, and the rights the Arc initialization needs in `azure.resource_group` | The resource group |
+| SBE source, when the package is read from Azure | Reader (and Storage Blob Data Reader on the storage account) | The SBE source |
+
+No secret is stored in a pipeline file. IDs are variable names (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`).
 
 ## Operator host
 

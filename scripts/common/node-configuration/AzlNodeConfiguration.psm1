@@ -20,12 +20,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $here = $PSScriptRoot
-Import-Module (Join-Path $here '..\infrastructure\AzlInfrastructure.psm1')
-Import-Module (Join-Path $here '..\azure-local\AzlAzure.psm1')
+Import-Module (Join-Path (Join-Path $here '..') (Join-Path 'infrastructure' 'AzlInfrastructure.psm1'))
+Import-Module (Join-Path (Join-Path $here '..') (Join-Path 'azure-local' 'AzlAzure.psm1'))
 Import-Module (Join-Path $here 'AzlNodePayload.psm1')
 Import-Module (Join-Path $here 'AzlNodeTransport.psm1')
 
-$script:ConfigRoot = Join-Path $here '..\..\..\config'
+$script:ConfigRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($here, '..', '..', '..', 'config'))
 # The order the steps run in. Sbe is last on purpose: delivering a 900 MB package is the step most likely to fail (it needs a
 # route to the node that the other steps do not), and it must not stop the others. Drivers install from the package, so they
 # run in the pass after it has landed (or at once when the node already holds it).
@@ -58,7 +58,7 @@ function Get-AzlOemConfig {
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Vendor, [string]$ConfigRoot = $script:ConfigRoot)
-    $path = Join-Path $ConfigRoot "oem\$($Vendor.ToLowerInvariant()).json"
+    $path = Join-Path (Join-Path $ConfigRoot 'oem') "$($Vendor.ToLowerInvariant()).json"
     if (-not (Test-Path -LiteralPath $path)) {
         $known = @(Get-ChildItem -LiteralPath (Join-Path $ConfigRoot 'oem') -Filter '*.json' -ErrorAction SilentlyContinue | ForEach-Object BaseName)
         throw "No OEM definition $path. Known: $($known -join ', '). Copy config/oem/dell.json to add one."
@@ -166,7 +166,7 @@ function Get-AzlSanVendor {
     #>
     [CmdletBinding()]
     param([string]$Vendor, [string]$Model, [string]$ConfigRoot = $script:ConfigRoot)
-    $table = Get-Content -LiteralPath (Join-Path $ConfigRoot 'san\msdsm-vendors.json') -Raw | ConvertFrom-Json -Depth 10
+    $table = Get-Content -LiteralPath (Join-Path (Join-Path $ConfigRoot 'san') 'msdsm-vendors.json') -Raw | ConvertFrom-Json -Depth 10
     foreach ($v in $table.vendors) {
         if ($Vendor -notmatch "(?i)^($($v.match))") { continue }
         if ($v.model -and $Model -notmatch "(?i)($($v.model))") { continue }
@@ -659,7 +659,7 @@ function Wait-AzlNodeRestart {
     Start-Sleep -Seconds 30
     while ((Get-Date) -lt $deadline) {
         try {
-            $state = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlNodePayload -Name Read) -Parameters $ReadParameters -Secrets $Secrets -TimeoutSeconds 600
+            $state = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlNodePayload -Name Read) -Parameters $ReadParameters -Secrets $Secrets -TimeoutSeconds 600 -Tries 1
             if ($state.boot -ne $PreviousBoot) { return $state }
         }
         catch { Write-Verbose "$Node isn't back yet: $($_.Exception.Message)" }
@@ -713,7 +713,7 @@ function Send-AzlSbePackage {
         foreach ($a in $copy) {
             if ($stop) { $out.Add((& $new $a 'failed' $stop)); continue }
             try {
-                $null = Send-AzlNodeFile -Transport $via -Node $node -LocalPath $a.localPath -RemotePath (Join-Path $Spec.Sbe.Dir $a.name) -Sha256 $a.sha256
+                $null = Send-AzlNodeFile -Transport $via -Node $node -LocalPath $a.localPath -RemotePath ("$($Spec.Sbe.Dir.TrimEnd('\'))\$($a.name)") -Sha256 $a.sha256
                 $out.Add((& $new $a 'changed' "$($a.name) copied over WinRM and SHA-256 verified"))
             }
             catch {
@@ -787,11 +787,19 @@ function Invoke-AzlNodeConfiguration {
         $sbeTodo = @($todo | Where-Object { $_.Apply.kind -eq 'sbe-file' })
         $failed = @()
         if ($actions.Count) {
-            $result = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Apply) -Parameters @{ actions = $actions; sbeDir = $(if ($Spec.Sbe) { $Spec.Sbe.Dir } else { 'C:\SBE' }) } -Secrets $secrets -TimeoutSeconds 3600
+            try { $result = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Apply) -Parameters @{ actions = $actions; sbeDir = $(if ($Spec.Sbe) { $Spec.Sbe.Dir } else { 'C:\SBE' }) } -Secrets $secrets -TimeoutSeconds 3600 }
+            catch {
+                # The run ended in state Unknown after every retry: we don't know what happened. Read the node again and decide from that.
+                if ($_.Exception.Data['AzlState'] -ne 'Unknown') { throw }
+                $changes.Add([pscustomobject]@{ Node = $node; Pass = $pass; Id = 'apply'; Status = 'unknown'; Detail = $_.Exception.Message })
+                continue
+            }
             foreach ($r in @($result.results)) { $changes.Add([pscustomobject]@{ Node = $node; Pass = $pass; Id = $r.id; Status = $r.status; Detail = $r.detail }) }
             $failed = @($result.results | Where-Object { $_.status -eq 'failed' })
             if (-not $failed -and $result.reboot -and -not $NoRestart) {
-                $null = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Restart) -TimeoutSeconds 300
+                # The node goes away on purpose: a restart that ends in state Unknown is not a failure, the wait below checks the boot time.
+                try { $null = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Restart) -TimeoutSeconds 300 -Tries 1 }
+                catch { if ($_.Exception.Data['AzlState'] -ne 'Unknown') { throw } }
                 $state = Wait-AzlNodeRestart -Transport $Transport -Node $node -PreviousBoot $state.boot -ReadParameters $readParameters -Secrets $secrets
                 $restarted = $true
             }

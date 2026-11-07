@@ -32,7 +32,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:DefaultSchemaPath = Join-Path $PSScriptRoot '..\..\..\config\infrastructure\infrastructure.schema.json'
+$script:DefaultSchemaPath = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'config', 'infrastructure', 'infrastructure.schema.json'))
 $script:SupportedMajor = 5
 
 $script:Learn = @{
@@ -809,6 +809,7 @@ function Get-SemanticFinding {
     Get-SanFinding -Infra $Infra -Nodes $nodes
     Get-ZtpActionFinding -Infra $Infra -Nodes $nodes
     Get-SbeDeliveryFinding -Infra $Infra -Nodes $nodes -OwnerOf $ownerOf
+    Get-OsConfigurationFinding -Infra $Infra
 
     # Arc machine names: unique, and arc_machine_name rather than the deprecated arc_resource_name.
     for ($i = 0; $i -lt $nodeCount; $i++) {
@@ -1208,6 +1209,17 @@ function Get-SanFinding {
     }
 }
 
+# AZL-031: the OS configuration run (schema 5.4.3). os_configuration.clear_storage wipes local disks. The schema makes it a
+# boolean; on a SAN design it is worth saying that only the machines' local disks are touched.
+function Get-OsConfigurationFinding {
+    param([System.Collections.IDictionary]$Infra)
+    $value = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'os_configuration.clear_storage'
+    if ($value -isnot [bool] -or -not $value) { return }
+    if ((Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'scenario.storage_architecture') -in 'san', 'hybrid') {
+        New-Finding 'AZL-031' warning 'os_configuration.clear_storage' 'clear_storage is true on a SAN design. Only the machines'' local disks are wiped; Fibre Channel and iSCSI LUNs, USB, boot and system disks are never touched. Check the wipe list the Plan mode prints before you approve.'
+    }
+}
+
 # AZL-029: what azurelocal-ztp derives from the hardware inventory and the Azure choices it makes (schema 5.4): the SAN
 # adapters whose PCIe slots it turns off for the OS install, the embedded NICs it enables, the site's time setting and the
 # stage budgets. Only for simplified provisioning, the path ZTP runs.
@@ -1397,7 +1409,7 @@ function Import-AzlInfrastructure {
         [switch]$SkipValidation
     )
     if (-not $Path) {
-        $candidates = @($env:AZL_INFRASTRUCTURE_FILE, '.\infrastructure.yml', '.\config\infrastructure.yml') | Where-Object { $_ }
+        $candidates = @($env:AZL_INFRASTRUCTURE_FILE, (Join-Path '.' 'infrastructure.yml'), (Join-Path (Join-Path '.' 'config') 'infrastructure.yml')) | Where-Object { $_ }
         $Path = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
         if (-not $Path) { throw 'No infrastructure file given, and none found at $env:AZL_INFRASTRUCTURE_FILE, .\infrastructure.yml or .\config\infrastructure.yml.' }
     }

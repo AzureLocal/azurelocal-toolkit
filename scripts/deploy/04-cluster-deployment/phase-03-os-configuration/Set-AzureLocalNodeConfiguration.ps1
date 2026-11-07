@@ -46,6 +46,11 @@
     winrm_copy) when the other steps go over Arc. Run from a host that reaches the nodes' management subnet on TCP 5985.
 .PARAMETER Step
     Limit the run to these steps. Default: all.
+.PARAMETER NodeAddress
+    -Transport WinRM only: node name -> the address to open the session to (default: the management address in the file). A node installed
+    from an ISO may still hold the address the installer gave it.
+.PARAMETER RetryTries
+    How many times a node script is tried when its Arc run command ends in state Unknown (default 3, with a growing pause).
 .PARAMETER ClearStorage
     Treat leftover local storage as a change (destroys data on local disks; never SAN LUNs). With -Execute.
 .PARAMETER NoRestart
@@ -71,6 +76,9 @@ param(
     [pscredential]$Credential,
     [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')][string[]]$Step,
     [switch]$ClearStorage,
+    [hashtable]$NodeAddress,
+    [ValidateRange(1, 10)][int]$RetryTries = 3,
+    [int[]]$RetryDelaySeconds = @(15, 45, 120),
     [switch]$NoRestart,
     [switch]$SkipValidation,
     [switch]$OfflineManifest,
@@ -82,14 +90,15 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$common = Join-Path $PSScriptRoot '..\..\..\common'
-Import-Module (Join-Path $common 'infrastructure\AzlInfrastructure.psm1') -Force
-Import-Module (Join-Path $common 'azure-local\AzlAzure.psm1') -Force
-Import-Module (Join-Path $common 'node-configuration\AzlNodeConfiguration.psm1') -Force
-Import-Module (Join-Path $common 'node-configuration\AzlNodeTransport.psm1') -Force
+$common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common'))
+Import-Module (Join-Path (Join-Path $common 'infrastructure') 'AzlInfrastructure.psm1') -Force
+Import-Module (Join-Path (Join-Path $common 'azure-local') 'AzlAzure.psm1') -Force
+Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlNodeConfiguration.psm1') -Force
+Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlNodeTransport.psm1') -Force
 
 function Write-Line([string]$Text) { Write-Information -MessageData $Text -InformationAction Continue }
 
+Set-AzlNodeRetryPolicy -Tries $RetryTries -DelaySeconds $RetryDelaySeconds
 $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation:$SkipValidation
 $handoff = if ($HandoffFile) { Read-AzlHandoff -Path $HandoffFile } else { $null }
 $allSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
@@ -141,7 +150,7 @@ if ($useArc) {
 else {
     if (-not $Credential) { throw 'The WinRM transport needs -Credential (the nodes'' local administrator).' }
     $addresses = @{}
-    foreach ($s in $specs) { $addresses[$s.Name] = $s.Management.Ip }
+    foreach ($s in $specs) { $addresses[$s.Name] = if ($NodeAddress -and $NodeAddress.ContainsKey($s.Name)) { [string]$NodeAddress[$s.Name] } else { $s.Management.Ip } }
     $nodeTransport = New-AzlWinRmTransport -Address $addresses -Credential $Credential
 }
 # The SBE package can't ride Arc Run Command. With hardware.sbe.delivery winrm_copy and the nodes reached over Arc, the copy gets
@@ -193,6 +202,8 @@ $report = [ordered]@{
     nodes         = @($results | ForEach-Object {
             [ordered]@{
                 name      = $_.Node
+                hostname  = [string](Get-AzlProp $_.State 'host' '')
+                osVersion = [string](Get-AzlProp $_.State 'os' '')
                 converged = $_.Converged
                 restarted = $_.Restarted
                 ports     = @(Get-AzlProp $_.State 'nics' @() | ForEach-Object { [ordered]@{ osName = $_.n; mac = $_.mac; status = $_.st } })

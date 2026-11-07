@@ -1,0 +1,95 @@
+# Azure Local OS configuration, GitLab CI.
+#
+# Include it from .gitlab-ci.yml (include: local: pipelines/gitlab/os-configuration.gitlab-ci.yml) or copy it. It runs the same
+# command an operator runs by hand:
+#   pwsh -File scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1 ...
+# and nothing else; the logic is in the script, not here.
+#
+# Stage `plan` is read only; it publishes the plan report and the wipe list (which disks on which node would be wiped when
+# os_configuration.clear_storage is true) as artifacts. Stage `apply` is a manual job: someone with permission to run protected
+# jobs reads the plan job's log and artifacts, then plays it. `resource_group` keeps two runs from working on the cluster at once.
+#
+# CI/CD variables (Settings > CI/CD > Variables; the values below are placeholders, set the real ones there):
+#   AZURE_AUTH              managed-identity (the runner's managed identity) or oidc (a federated app registration)
+#   AZURE_CLIENT_ID         client ID of the user-assigned managed identity, or of the app registration with a federated credential
+#                           for this project; leave empty for a system-assigned managed identity
+#   AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+#   INFRASTRUCTURE_FILE     path of the master infrastructure.yml in the repository, or in a pipeline artifact
+#   HANDOFF_PATH            a handoff file or a directory of *.ztp-handoff.json: a repository path, or the artifact of the ZTP pipeline
+#                           (add `needs: [{ pipeline: ..., job: ..., artifacts: true }]` or a `dependencies` entry below)
+# No secret is stored here. The nodes' local administrator password is read from the Key Vault named by identity.local_admin.password.
+# Runner: a Linux runner tagged azure-local with pwsh 7 (and, for ISO-installed nodes, a route to the nodes' management subnet).
+
+stages:
+  - plan
+  - apply
+
+variables:
+  OSCONFIG_SCRIPT: scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1
+  INFRASTRUCTURE_FILE: config/infrastructure.yml
+  HANDOFF_PATH: ztp-state
+  AZURE_AUTH: managed-identity # managed-identity | oidc
+  AZURE_CLIENT_ID: '<client-id-of-the-managed-identity-or-app-registration>'
+  AZURE_TENANT_ID: '<tenant-id>'
+  AZURE_SUBSCRIPTION_ID: '<subscription-id>'
+  REPORT_DIRECTORY: os-configuration-report
+
+.os-configuration:
+  tags: [azure-local, linux]
+  # OIDC: GitLab issues a token the Azure app registration trusts (federated credential, audience api://AzureADTokenExchange).
+  id_tokens:
+    AZURE_ID_TOKEN:
+      aud: api://AzureADTokenExchange
+  before_script:
+    - |
+      pwsh -NoProfile -Command '
+        foreach ($m in "powershell-yaml", "Az.Accounts", "Az.KeyVault") {
+          if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery }
+        }
+        Enable-AzContextAutosave -Scope CurrentUser | Out-Null
+        $connect = @{ Tenant = $env:AZURE_TENANT_ID; Subscription = $env:AZURE_SUBSCRIPTION_ID }
+        if ($env:AZURE_AUTH -eq "oidc") {
+          Connect-AzAccount -ServicePrincipal -ApplicationId $env:AZURE_CLIENT_ID -FederatedToken $env:AZURE_ID_TOKEN @connect | Out-Null
+        }
+        else {
+          if ($env:AZURE_CLIENT_ID -and $env:AZURE_CLIENT_ID -notlike "<*") { $connect.AccountId = $env:AZURE_CLIENT_ID }
+          Connect-AzAccount -Identity @connect | Out-Null
+        }
+        (Get-AzContext).Subscription.Id | Out-Null
+      '
+
+os-configuration-plan:
+  extends: .os-configuration
+  stage: plan
+  resource_group: azure-local-os-configuration
+  script:
+    - pwsh -NoProfile -File "$OSCONFIG_SCRIPT" -InfrastructureFile "$INFRASTRUCTURE_FILE" -HandoffPath "$HANDOFF_PATH" -Mode Plan -ReportDirectory "$REPORT_DIRECTORY/plan"
+  after_script:
+    - 'if [ -f "$REPORT_DIRECTORY/plan/summary.md" ]; then cat "$REPORT_DIRECTORY/plan/summary.md"; fi'
+  artifacts:
+    when: always
+    expire_in: 30 days
+    name: os-configuration-plan
+    paths:
+      - $REPORT_DIRECTORY/plan/
+
+os-configuration-apply:
+  extends: .os-configuration
+  stage: apply
+  needs: [os-configuration-plan]
+  # The approval gate: the job waits until someone plays it, after reading the plan job's wipe list.
+  when: manual
+  allow_failure: false
+  resource_group: azure-local-os-configuration
+  environment:
+    name: azure-local-os-configuration
+  script:
+    - pwsh -NoProfile -File "$OSCONFIG_SCRIPT" -InfrastructureFile "$INFRASTRUCTURE_FILE" -HandoffPath "$HANDOFF_PATH" -Mode Apply -ReportDirectory "$REPORT_DIRECTORY/apply"
+  after_script:
+    - 'if [ -f "$REPORT_DIRECTORY/apply/summary.md" ]; then cat "$REPORT_DIRECTORY/apply/summary.md"; fi'
+  artifacts:
+    when: always
+    expire_in: 90 days
+    name: os-configuration-report
+    paths:
+      - $REPORT_DIRECTORY/apply/

@@ -711,3 +711,73 @@ Describe 'Node payloads' {
         $text | Should -Match "'Fibre Channel', 'iSCSI', 'USB'"
     }
 }
+
+Describe 'Run commands that end in state Unknown' {
+    BeforeEach {
+        $infra = Get-Infra
+        $script:Spec = Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0]
+        Set-AzlNodeRetryPolicy -Tries 3 -DelaySeconds 1 # Start-Sleep is mocked
+        $script:Counter = [pscustomobject]@{ N = 0 }
+        Mock -ModuleName AzlNodeTransport Start-Sleep { }
+    }
+    AfterAll { Set-AzlNodeRetryPolicy -Tries 3 -DelaySeconds 15, 45, 120 }
+
+    It 'tries again after Unknown and returns the result of the try that worked' {
+        $transport = [pscustomobject]@{ Kind = 'ArcRunCommand'; Invoke = $null }
+        $encode = ${function:ConvertTo-ResultLine}
+        $counter = $script:Counter; $transport.Invoke = {
+            $counter.N++
+            if ($counter.N -lt 3) { [pscustomobject]@{ Output = ''; Failed = $true; Error = ''; State = 'Unknown' } }
+            else { [pscustomobject]@{ Output = (& $encode ([pscustomobject]@{ ok = $true })); Failed = $false; Error = ''; State = 'Succeeded' } }
+        }.GetNewClosure()
+        (Invoke-AzlNodeScript -Transport $transport -Node n1 -Script 'x').ok | Should -BeTrue
+        $script:Counter.N | Should -Be 3
+        Should -Invoke -ModuleName AzlNodeTransport Start-Sleep -Times 2 -Exactly
+    }
+    It 'gives up after the configured tries with an error that says Unknown' {
+        $transport = [pscustomobject]@{ Kind = 'ArcRunCommand'; Invoke = $null }
+        $counter = $script:Counter; $transport.Invoke = { $counter.N++; [pscustomobject]@{ Output = ''; Failed = $true; Error = ''; State = 'Unknown' } }.GetNewClosure().GetNewClosure()
+        $caught = $null
+        try { Invoke-AzlNodeScript -Transport $transport -Node n1 -Script 'x' } catch { $caught = $_ }
+        $caught.Exception.Data['AzlState'] | Should -Be 'Unknown'
+        $script:Counter.N | Should -Be 3
+        $script:Counter.N = 0
+        try { Invoke-AzlNodeScript -Transport $transport -Node n1 -Script 'x' -Tries 1 } catch { $null = $_ }
+        $script:Counter.N | Should -Be 1
+    }
+    It 'does not retry a run that Failed for another reason' {
+        $transport = [pscustomobject]@{ Kind = 'ArcRunCommand'; Invoke = $null }
+        $counter = $script:Counter; $transport.Invoke = { $counter.N++; [pscustomobject]@{ Output = ''; Failed = $true; Error = 'bad'; State = 'Failed' } }.GetNewClosure()
+        { Invoke-AzlNodeScript -Transport $transport -Node n1 -Script 'x' } | Should -Throw '*failed on n1*bad*'
+        $script:Counter.N | Should -Be 1
+    }
+    It 'after an Apply that ends in Unknown, reads the node again and decides convergence by re-planning' {
+        $bad = New-ConfiguredState $script:Spec
+        $bad.time.peers = 'time.windows.com,0x8'
+        $good = New-ConfiguredState $script:Spec
+        $t = New-FakeTransport @($bad, $good) { throw 'not reached' }
+        $inner = $t.Invoke
+        $counter = $script:Counter; $t.Invoke = {
+            param($Self, $Node, [string]$Script, [hashtable]$Parameters, [hashtable]$Secrets, [int]$TimeoutSeconds)
+            if ($Script -match 'function Invoke-Action') { $counter.N++; return [pscustomobject]@{ Output = ''; Failed = $true; Error = ''; State = 'Unknown' } }
+            & $inner $Self $Node $Script $Parameters $Secrets $TimeoutSeconds
+        }.GetNewClosure()
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver
+        $script:Counter.N | Should -Be 3
+        $r.Converged | Should -BeTrue -Because 'the second read shows the node matches, whatever the failed command said'
+        @($r.Changes | Where-Object Status -eq 'unknown').Count | Should -Be 1
+        @($t.Log | Where-Object Kind -eq 'Read').Count | Should -Be 2
+    }
+    It 'after an Apply that ends in Unknown and a node that still differs, is not converged' {
+        $bad = New-ConfiguredState $script:Spec
+        $bad.time.peers = 'time.windows.com,0x8'
+        $t = New-FakeTransport @($bad, $bad, $bad, $bad, $bad) { throw 'not reached' }
+        $inner = $t.Invoke
+        $counter = $script:Counter; $t.Invoke = {
+            param($Self, $Node, [string]$Script, [hashtable]$Parameters, [hashtable]$Secrets, [int]$TimeoutSeconds)
+            if ($Script -match 'function Invoke-Action') { return [pscustomobject]@{ Output = ''; Failed = $true; Error = ''; State = 'Unknown' } }
+            & $inner $Self $Node $Script $Parameters $Secrets $TimeoutSeconds
+        }.GetNewClosure()
+        (Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver -MaxPasses 2).Converged | Should -BeFalse
+    }
+}

@@ -62,7 +62,7 @@ About this file.
 | Path | What it is | Type | Required: full / ztp | Default | Example | Where to get the value | Read by |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `_metadata` | About this file. | object | yes / yes |  |  |  | ZTP, Trailwright |
-| `_metadata.schema_version` | The schema version this file follows. | string | yes / yes |  | `5.4.2` | Set by the template (5.3.0). Change it only with a migration. | ZTP, Trailwright |
+| `_metadata.schema_version` | The schema version this file follows. | string | yes / yes |  | `5.4.3` | Set by the template (5.3.0). Change it only with a migration. | ZTP, Trailwright |
 | `_metadata.scope` | Full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the section... (since 5.3) | one of `full`, `ztp` | no / no | `full` | `ztp` | You: ztp for a file used by azurelocal-ztp alone, full for everything. | ZTP, Trailwright |
 | `_metadata.file_version` | Your own version of this file. | string | no / no |  | `1.0.0` | You: bookkeeping for the file. | Trailwright |
 | `_metadata.last_updated` | Date of the last change, YYYY-MM-DD. | date (YYYY-MM-DD) | no / no |  | `2026-11-06` | You: bookkeeping for the file. | Trailwright |
@@ -606,6 +606,15 @@ How the OS gets onto the machines (scenario.os_install), and the OS version.
 | `provisioning.simplified.timeouts.bios_minutes` | Boot and Restore stages: how long to wait for a node's BIOS to report the new values after the restart. | integer | no / no | `30` | `30` | Optional tuning of azurelocal-ztp. The default is the value that worked on Dell AX servers; change it only when a stage fails for a reason your hardware or network explains. | ZTP |
 | `provisioning.simplified.timeouts.adapters_minutes` | Network stage: how long to wait for an edge machine to report its network adapters. (since 5.4.1) | integer | no / no | `10` | `10` | Optional tuning of azurelocal-ztp. The default is the value that worked on Dell AX servers; change it only when a stage fails for a reason your hardware or network explains. | ZTP |
 | `provisioning.simplified.timeouts.poll_interval_seconds` | Ready and Network stages: seconds between polls. | integer | no / no | `60` | `60` | Optional tuning of azurelocal-ztp. The default is the value that worked on Dell AX servers; change it only when a stage fails for a reason your hardware or network explains. | ZTP |
+
+### os_configuration
+
+How the toolkit's OS configuration run (Invoke-AzureLocalOsConfiguration.ps1) treats the machines after the OS is installed, whichever way it was ins...
+
+| Path | What it is | Type | Required: full / ztp | Default | Example | Where to get the value | Read by |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `os_configuration` | How the toolkit's OS configuration run (Invoke-AzureLocalOsConfiguration.ps1) treats the machines after the OS is installed, whichever way it was ins... | object | no / no |  |  |  | OS configuration |
+| `os_configuration.clear_storage` | Wipe the leftover local storage (storage pools, virtual disks and the data on non-boot, non-system local disks) of every machine in the OS configurat... | boolean | no / no | `false` | `false` | You: true when the machines are re-used and must start with no leftover storage. The OS configuration run lists the disks it would wipe before it wipes them. | OS configuration |
 
 ### disconnected
 

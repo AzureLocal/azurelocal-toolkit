@@ -205,6 +205,15 @@ Schema 5.4.2 only adds two optional keys; every 5.0 to 5.4.1 file stays valid. S
 
 **What changes in behaviour.** The staging storage account route is gone: `Set-AzureLocalNodeConfiguration.ps1` no longer takes `-StagingStorageAccount` or `-StagingContainer`, and nothing is uploaded to Azure. Before, a WinRM run copied the package by default and an Arc run needed a storage account. Now nothing is delivered unless `delivery` says how (`skip` is the default), the Sbe step runs last, and a package that is not delivered is reported without failing the other steps. If you used the WinRM transport to copy the package, set `delivery: winrm_copy`. If you passed `-StagingStorageAccount`, serve the SBE folder read-only from a host the nodes can reach and set `delivery: node_pull` and `node_pull_url`.
 
+## To 5.4.3: the OS configuration switch
+
+Schema 5.4.3 only adds one optional section; a 5.4.0 file is valid as it is. Nothing changes for a file that does not use it: leftover local storage is reported as blocking and nothing is wiped.
+
+| New key | What it is for |
+| --- | --- |
+| `os_configuration.clear_storage` | `true`: the OS configuration run (`Invoke-AzureLocalOsConfiguration.ps1`) wipes leftover storage pools, virtual disks and the data on non-boot, non-system local disks in Apply mode. Default `false`. |
+
+**Steps for a 5.4 file:** set `_metadata.schema_version` to `5.4.3`; add `os_configuration: { clear_storage: true }` only for machines that are re-used. Plan mode prints the wipe list; Apply never wipes a SAN LUN, a USB disk, or a boot or system disk.
 ## From Trailwright's export
 
 | Before | Schema 5 |

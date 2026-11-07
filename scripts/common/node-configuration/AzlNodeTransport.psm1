@@ -29,8 +29,9 @@ $ErrorActionPreference = 'Stop'
 
 $script:RunCommandApiVersion = '2026-09-01'
 $script:ResultPrefix = 'AZLRESULT:'
+$script:RetryPolicy = @{ Tries = 3; DelaySeconds = @(15, 45, 120) }
 
-Import-Module (Join-Path $PSScriptRoot '..\azure-local\AzlAzure.psm1')
+Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'azure-local' 'AzlAzure.psm1'))
 
 function ConvertTo-AzlNodeResult {
     <#
@@ -101,12 +102,15 @@ function New-AzlArcRunCommandTransport {
             try {
                 $deadline = (Get-Date).AddSeconds($TimeoutSeconds + 300)
                 $terminal = @('Succeeded', 'Failed', 'TimedOut', 'Canceled')
+                $unknownPolls = 0
                 do {
                     Start-Sleep -Seconds $s.Poll
                     $run = Invoke-AzlArm -Method GET -Path $path -ApiVersion $s.Api
                     $state = [string](Get-AzlProp $run 'properties.instanceView.executionState' '')
                     $provisioning = [string](Get-AzlProp $run 'properties.provisioningState' '')
-                } while ($state -notin $terminal -and $provisioning -ne 'Failed' -and (Get-Date) -lt $deadline)
+                    # Azure lost the run: it finished provisioning but the node never reported a state (twice in a row, so a run that is just starting isn't mistaken for it).
+                    $unknownPolls = if ($state -eq 'Unknown' -and $provisioning -eq 'Succeeded') { $unknownPolls + 1 } else { 0 }
+                } while ($state -notin $terminal -and $provisioning -ne 'Failed' -and $unknownPolls -lt 2 -and (Get-Date) -lt $deadline)
                 $exit = Get-AzlProp $run 'properties.instanceView.exitCode' $null
                 [pscustomobject]@{
                     Output = [string](Get-AzlProp $run 'properties.instanceView.output' '')
@@ -170,7 +174,7 @@ function New-AzlWinRmTransport {
             param($Self, $Node, [string]$LocalPath, [string]$RemotePath, [string]$Sha256)
             $session = Get-AzlWinRmSession -State $Self.State -Node $Node
             $part = "$RemotePath.part"
-            Invoke-Command -Session $session -ScriptBlock { param($Folder, $Part) New-Item -ItemType Directory -Force -Path $Folder | Out-Null; if (Test-Path -LiteralPath $Part) { Remove-Item -LiteralPath $Part -Force } } -ArgumentList (Split-Path $RemotePath), $part
+            Invoke-Command -Session $session -ScriptBlock { param($Folder, $Part) New-Item -ItemType Directory -Force -Path $Folder | Out-Null; if (Test-Path -LiteralPath $Part) { Remove-Item -LiteralPath $Part -Force } } -ArgumentList $RemotePath.Substring(0, [Math]::Max(0, $RemotePath.LastIndexOf([char]92))), $part
             Copy-Item -LiteralPath $LocalPath -Destination $part -ToSession $session -Force
             # The copy lands in a .part file; it takes its name only after its SHA-256 is what the toolkit expects.
             $verdict = Invoke-Command -Session $session -ScriptBlock {
@@ -187,12 +191,30 @@ function New-AzlWinRmTransport {
     }
 }
 
+function Set-AzlNodeRetryPolicy {
+    <#
+    .SYNOPSIS
+        How many times a node script is tried when its Arc run command ends in state 'Unknown', and how long to wait between tries.
+    .DESCRIPTION
+        State Unknown means Azure lost track of the run: the node's agent briefly lost its connection (a network change on the
+        node does it). The script may or may not have run, so Invoke-AzlNodeScript runs it again after a pause that grows
+        (-DelaySeconds, the last value repeats). The scripts are safe to run again: every action checks the item before it
+        changes it. After the last try the error carries Data['AzlState'] = 'Unknown'; Invoke-AzlNodeConfiguration then reads the
+        node and decides from what it sees, not from the failed command's status.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param([ValidateRange(1, 10)][int]$Tries = 3, [int[]]$DelaySeconds = @(15, 45, 120))
+    if ($PSCmdlet.ShouldProcess('node script retry policy', 'Set')) { $script:RetryPolicy = @{ Tries = $Tries; DelaySeconds = @($DelaySeconds) } }
+}
+
 function Invoke-AzlNodeScript {
     <#
     .SYNOPSIS
         Runs a node script on a node through a transport and returns the decoded result object.
     .DESCRIPTION
         Throws when the script failed or wrote no result. -Secrets never appear in the returned object or the messages.
+        A run that ends in state 'Unknown' without a result is tried again (Set-AzlNodeRetryPolicy; default 3 tries with a growing
+        pause). -Tries overrides the policy for one call (a restart script uses 1: the node is meant to go away).
     .EXAMPLE
         Invoke-AzlNodeScript -Transport $t -Node node-01 -Script (Get-AzlNodePayload Read) -Parameters @{ san = $false }
     #>
@@ -203,18 +225,36 @@ function Invoke-AzlNodeScript {
         [Parameter(Mandatory)][string]$Script,
         [hashtable]$Parameters = @{},
         [hashtable]$Secrets = @{},
-        [int]$TimeoutSeconds = 900
+        [int]$TimeoutSeconds = 900,
+        [ValidateRange(1, 10)][int]$Tries
     )
-    $run = & $Transport.Invoke $Transport $Node $Script $Parameters $Secrets $TimeoutSeconds
-    $result = ConvertTo-AzlNodeResult -Text $run.Output
-    if ($run.Failed -and -not $result) {
-        $detail = if ($run.Error) { $run.Error } else { "state $($run.State)" }
-        throw "The script failed on ${Node} through $($Transport.Kind): $detail"
+    $maxTries = if ($PSBoundParameters.ContainsKey('Tries')) { $Tries } else { [int]$script:RetryPolicy.Tries }
+    $attempt = 0
+    while ($true) {
+        $attempt++
+        $run = & $Transport.Invoke $Transport $Node $Script $Parameters $Secrets $TimeoutSeconds
+        $result = ConvertTo-AzlNodeResult -Text $run.Output
+        if ($result) { return $result }
+        $unknown = $run.Failed -and ([string]$run.State -eq 'Unknown')
+        if ($unknown -and $attempt -lt $maxTries) {
+            $delays = @($script:RetryPolicy.DelaySeconds)
+            $wait = if ($delays.Count) { [int]$delays[[Math]::Min($attempt - 1, $delays.Count - 1)] } else { 0 }
+            Write-Warning "${Node}: the run command ended in state Unknown (try $attempt of $maxTries; the node's agent may have lost its connection). Trying again in $wait s."
+            if ($wait -gt 0) { Start-Sleep -Seconds $wait }
+            continue
+        }
+        if ($unknown) {
+            $exception = [System.InvalidOperationException]::new("The script on $Node through $($Transport.Kind) ended in state Unknown after $attempt tries: Azure lost the run (the node's agent lost its connection?). Read the node again to see what happened.")
+            $exception.Data['AzlState'] = 'Unknown'
+            throw $exception
+        }
+        if ($run.Failed) {
+            $detail = if ($run.Error) { $run.Error } else { "state $($run.State)" }
+            throw "The script failed on ${Node} through $($Transport.Kind): $detail"
+        }
+        throw "The script on $Node through $($Transport.Kind) wrote no result. Output: $($run.Output)"
     }
-    if (-not $result) { throw "The script on $Node through $($Transport.Kind) wrote no result. Output: $($run.Output)" }
-    return $result
 }
-
 function Send-AzlNodeFile {
     <#
     .SYNOPSIS
@@ -226,4 +266,4 @@ function Send-AzlNodeFile {
     & $Transport.Stage $Transport $Node $LocalPath $RemotePath $Sha256
 }
 
-Export-ModuleMember -Function ConvertTo-AzlNodeResult, New-AzlArcRunCommandTransport, New-AzlWinRmTransport, Invoke-AzlNodeScript, Send-AzlNodeFile
+Export-ModuleMember -Function ConvertTo-AzlNodeResult, New-AzlArcRunCommandTransport, New-AzlWinRmTransport, Invoke-AzlNodeScript, Send-AzlNodeFile, Set-AzlNodeRetryPolicy
