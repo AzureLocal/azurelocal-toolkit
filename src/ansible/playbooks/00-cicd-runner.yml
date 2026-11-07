@@ -1,0 +1,40 @@
+# =============================================================================
+# Playbook 00: CI/CD runner
+# =============================================================================
+# Part 1 - CI/CD Infrastructure, Task 06: configure Linux and Windows hosts as
+# self-hosted runners for GitHub Actions, GitLab CI/CD or Azure Pipelines.
+# Use it for hosts that exist already (an on-premises VM, a Hyper-V guest, a
+# VM you built another way). The Terraform module src/terraform/modules/cicd-runner
+# does the same at first boot for Azure VMs it creates.
+#
+# Run on: cicd_runners_linux, cicd_runners_windows
+# Usage:
+#   ansible-playbook -i inventory/cicd-runners.yml playbooks/00-cicd-runner.yml
+#   ansible-playbook -i inventory/cicd-runners.yml playbooks/00-cicd-runner.yml --limit cicd_runners_windows
+#   ansible-playbook -i inventory/cicd-runners.yml playbooks/00-cicd-runner.yml --check --diff
+# The registration credential is read from Key Vault by the host. To supply it
+# yourself set cicd_runner_token_source=variable and cicd_runner_registration_token
+# from Ansible Vault.
+# =============================================================================
+---
+- name: "Part 1 | Task 06 - Linux CI/CD runners"
+  hosts: cicd_runners_linux
+  gather_facts: true
+  become: false
+  tags:
+    - cicd-runner
+    - cicd-infra
+
+  roles:
+    - role: cicd_runner
+
+- name: "Part 1 | Task 06 - Windows CI/CD runners"
+  hosts: cicd_runners_windows
+  gather_facts: true
+  become: false
+  tags:
+    - cicd-runner
+    - cicd-infra
+
+  roles:
+    - role: cicd_runner

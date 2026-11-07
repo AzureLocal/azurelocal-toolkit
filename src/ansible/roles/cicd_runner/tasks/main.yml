@@ -1,0 +1,33 @@
+# =============================================================================
+# Role: cicd_runner
+# =============================================================================
+# Mirrors: src/terraform/modules/cicd-runner (first-boot bootstrap) and
+#          scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners
+# Target:  hosts in cicd_runners_linux and cicd_runners_windows
+# Idempotent: tools are version-stamped, registration is skipped when the runner
+# is already configured. The credential never reaches disk or the log.
+# =============================================================================
+---
+- name: Check the role variables
+  ansible.builtin.assert:
+    that:
+      - cicd_runner_platform in ['github', 'gitlab', 'azure_devops']
+      - cicd_runner_scm_url | length > 0
+      - cicd_runner_purpose in ['general', 'ztp']
+      - cicd_runner_purpose != 'ztp' or cicd_runner_is_windows | bool
+      - cicd_runner_token_source in ['keyvault_managed_identity', 'variable']
+      - cicd_runner_token_source != 'keyvault_managed_identity' or (cicd_runner_key_vault_name | length > 0 and cicd_runner_secret_name | length > 0)
+      - cicd_runner_token_source != 'variable' or cicd_runner_registration_token | length > 0
+      - cicd_runner_is_windows | bool or ansible_os_family == 'Debian'
+    fail_msg: >-
+      Set cicd_runner_platform, cicd_runner_scm_url and a credential source. The ztp purpose needs a Windows host.
+      Linux hosts must be Debian family (Ubuntu 22.04 or 24.04).
+    quiet: true
+
+- name: Configure a Linux runner
+  ansible.builtin.include_tasks: linux.yml
+  when: not (cicd_runner_is_windows | bool)
+
+- name: Configure a Windows runner
+  ansible.builtin.include_tasks: windows.yml
+  when: cicd_runner_is_windows | bool

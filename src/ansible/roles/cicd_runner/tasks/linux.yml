@@ -1,0 +1,216 @@
+# =============================================================================
+# Role: cicd_runner - Linux (Ubuntu)
+# =============================================================================
+---
+- name: Install base packages
+  ansible.builtin.apt:
+    name:
+      - ca-certificates
+      - curl
+      - gnupg
+      - apt-transport-https
+      - git
+      - jq
+      - unzip
+      - tar
+      - python3
+      - python3-venv
+      - python3-pip
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+  become: true
+
+- name: Create the runner user
+  ansible.builtin.user:
+    name: "{{ cicd_runner_user }}"
+    shell: /bin/bash
+    create_home: true
+    state: present
+  become: true
+
+- name: Add the Microsoft package repository (PowerShell)
+  ansible.builtin.apt:
+    deb: "https://packages.microsoft.com/config/ubuntu/{{ ansible_distribution_version }}/packages-microsoft-prod.deb"
+    state: present
+  become: true
+
+- name: Add the Azure CLI repository
+  ansible.builtin.deb822_repository:
+    name: azure-cli
+    types: [deb]
+    uris: https://packages.microsoft.com/repos/azure-cli/
+    suites: ["{{ ansible_distribution_release }}"]
+    components: [main]
+    signed_by: https://packages.microsoft.com/keys/microsoft.asc
+    architectures: [amd64]
+    state: present
+  become: true
+
+- name: Install PowerShell 7 and the Azure CLI
+  ansible.builtin.apt:
+    name:
+      - powershell
+      - azure-cli
+    state: present
+    update_cache: true
+  become: true
+
+- name: Check for the Az, powershell-yaml and Pester modules
+  ansible.builtin.command:
+    argv:
+      - pwsh
+      - -NoProfile
+      - -NonInteractive
+      - -Command
+      - >-
+        $m = 'Az.Accounts','powershell-yaml','Pester' |
+        Where-Object { -not (Get-Module -ListAvailable -Name $_) };
+        if ($m) { 'missing' } else { 'present' }
+  register: cicd_runner_ps_modules
+  changed_when: false
+  become: true
+
+- name: Install the Az, powershell-yaml and Pester modules
+  ansible.builtin.command:
+    argv:
+      - pwsh
+      - -NoProfile
+      - -NonInteractive
+      - -Command
+      - >-
+        Set-PSResourceRepository -Name PSGallery -Trusted;
+        Install-PSResource -Name Az -Scope AllUsers -TrustRepository;
+        Install-PSResource -Name powershell-yaml -Scope AllUsers -TrustRepository;
+        Install-PSResource -Name Pester -Scope AllUsers -TrustRepository
+  when: "'missing' in cicd_runner_ps_modules.stdout"
+  changed_when: true
+  become: true
+
+- name: Install Bicep (checksum verified)
+  ansible.builtin.get_url:
+    url: "https://github.com/Azure/bicep/releases/download/v{{ cicd_runner_bicep_version }}/bicep-linux-x64"
+    dest: /usr/local/bin/bicep
+    mode: "0755"
+    checksum: "{{ ('sha256:' ~ cicd_runner_bicep_linux_sha256) if cicd_runner_bicep_linux_sha256 | length > 0 else omit }}"
+  become: true
+
+- name: Make the Azure CLI use the Bicep on PATH
+  ansible.builtin.lineinfile:
+    path: /etc/environment
+    regexp: '^AZURE_BICEP_USE_BINARY_FROM_PATH='
+    line: AZURE_BICEP_USE_BINARY_FROM_PATH=true
+  become: true
+
+- name: Create the Terraform folder for this version
+  ansible.builtin.file:
+    path: "/opt/terraform/{{ cicd_runner_terraform_version }}"
+    state: directory
+    mode: "0755"
+  become: true
+
+- name: Download Terraform (checksum from HashiCorp's SHA256SUMS)
+  ansible.builtin.get_url:
+    url: "https://releases.hashicorp.com/terraform/{{ cicd_runner_terraform_version }}/terraform_{{ cicd_runner_terraform_version }}_linux_amd64.zip"
+    dest: "/opt/terraform/{{ cicd_runner_terraform_version }}/terraform.zip"
+    checksum: "sha256:https://releases.hashicorp.com/terraform/{{ cicd_runner_terraform_version }}/terraform_{{ cicd_runner_terraform_version }}_SHA256SUMS"
+    mode: "0644"
+  become: true
+
+- name: Unpack Terraform
+  ansible.builtin.unarchive:
+    src: "/opt/terraform/{{ cicd_runner_terraform_version }}/terraform.zip"
+    dest: "/opt/terraform/{{ cicd_runner_terraform_version }}"
+    remote_src: true
+    creates: "/opt/terraform/{{ cicd_runner_terraform_version }}/terraform"
+  become: true
+
+- name: Point /usr/local/bin/terraform at this version
+  ansible.builtin.file:
+    src: "/opt/terraform/{{ cicd_runner_terraform_version }}/terraform"
+    dest: /usr/local/bin/terraform
+    state: link
+  become: true
+
+- name: Install the Ansible tooling
+  when: cicd_runner_install_ansible | bool
+  become: true
+  block:
+    - name: Install ansible-core, ansible-lint and the WinRM libraries in a virtual environment
+      ansible.builtin.pip:
+        name:
+          - ansible-core
+          - ansible-lint
+          - pywinrm
+          - pypsrp
+          - yamllint
+        virtualenv: /opt/azl-ansible
+        virtualenv_command: python3 -m venv
+
+    - name: Link the Ansible commands
+      ansible.builtin.file:
+        src: "/opt/azl-ansible/bin/{{ item }}"
+        dest: "/usr/local/bin/{{ item }}"
+        state: link
+      loop:
+        - ansible
+        - ansible-playbook
+        - ansible-galaxy
+        - ansible-lint
+        - ansible-vault
+        - yamllint
+
+    - name: Install the collections
+      ansible.builtin.command:
+        argv: ["/opt/azl-ansible/bin/ansible-galaxy", "collection", "install", "{{ item }}", "-p", "/usr/share/ansible/collections"]
+        creates: "/usr/share/ansible/collections/ansible_collections/{{ item | replace('.', '/') }}"
+      loop: "{{ cicd_runner_ansible_collections }}"
+
+# -----------------------------------------------------------------------------
+# Registration. Skipped when the runner is already configured.
+# -----------------------------------------------------------------------------
+- name: Read the registration credential from Key Vault with the managed identity
+  when: cicd_runner_token_source == 'keyvault_managed_identity'
+  no_log: true
+  block:
+    - name: Get a Key Vault token from the instance metadata service
+      ansible.builtin.uri:
+        url: >-
+          http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource={{ cicd_runner_imds_resource | urlencode }}{{
+          ('&client_id=' ~ cicd_runner_identity_client_id) if cicd_runner_identity_client_id | length > 0 else '' }}
+        headers:
+          Metadata: "true"
+        return_content: true
+      register: cicd_runner_imds
+      changed_when: false
+
+    - name: Read the secret
+      ansible.builtin.uri:
+        url: "https://{{ cicd_runner_key_vault_name }}.{{ cicd_runner_key_vault_dns_suffix }}/secrets/{{ cicd_runner_secret_name }}?api-version=7.4"
+        headers:
+          Authorization: "Bearer {{ cicd_runner_imds.json.access_token }}"
+        return_content: true
+      register: cicd_runner_secret
+      changed_when: false
+
+- name: Choose the credential
+  ansible.builtin.set_fact:
+    cicd_runner_credential: "{{ cicd_runner_secret.json.value if cicd_runner_token_source == 'keyvault_managed_identity' else cicd_runner_registration_token }}"
+  no_log: true
+
+- name: Register with GitHub Actions
+  ansible.builtin.include_tasks: linux-github.yml
+  when: cicd_runner_platform == 'github'
+
+- name: Register with GitLab CI/CD
+  ansible.builtin.include_tasks: linux-gitlab.yml
+  when: cicd_runner_platform == 'gitlab'
+
+- name: Register with Azure Pipelines
+  ansible.builtin.include_tasks: linux-azure-devops.yml
+  when: cicd_runner_platform == 'azure_devops'
+
+- name: Forget the credential
+  ansible.builtin.set_fact:
+    cicd_runner_credential: ""
+  no_log: true

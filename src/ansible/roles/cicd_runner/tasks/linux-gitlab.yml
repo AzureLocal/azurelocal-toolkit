@@ -1,0 +1,73 @@
+# =============================================================================
+# Role: cicd_runner - GitLab Runner on Linux
+# =============================================================================
+---
+- name: Download the GitLab Runner (checksum verified)
+  ansible.builtin.get_url:
+    url: "https://gitlab-runner-downloads.s3.amazonaws.com/v{{ cicd_runner_gitlab_runner_version }}/binaries/gitlab-runner-linux-amd64"
+    dest: /usr/local/bin/gitlab-runner
+    mode: "0755"
+    checksum: "{{ ('sha256:' ~ cicd_runner_gitlab_runner_linux_sha256) if cicd_runner_gitlab_runner_linux_sha256 | length > 0 else omit }}"
+  become: true
+
+- name: Create the gitlab-runner user
+  ansible.builtin.user:
+    name: gitlab-runner
+    shell: /bin/bash
+    create_home: true
+    state: present
+  become: true
+
+- name: Install the service
+  ansible.builtin.command:
+    argv: [gitlab-runner, install, --user, gitlab-runner, --working-directory, /home/gitlab-runner]
+    creates: /etc/systemd/system/gitlab-runner.service
+  become: true
+
+- name: Register the runner with an authentication token (tags are fixed when the token is created)
+  ansible.builtin.command:
+    argv:
+      - gitlab-runner
+      - register
+      - --non-interactive
+      - --url
+      - "{{ cicd_runner_scm_url }}"
+      - --token
+      - "{{ cicd_runner_credential }}"
+      - --executor
+      - shell
+      - --name
+      - "{{ cicd_runner_runner_name }}"
+    creates: /etc/gitlab-runner/config.toml
+  when: cicd_runner_credential.startswith('glrt-')
+  become: true
+  no_log: true
+
+- name: Register the runner with a legacy registration token
+  ansible.builtin.command:
+    argv:
+      - gitlab-runner
+      - register
+      - --non-interactive
+      - --url
+      - "{{ cicd_runner_scm_url }}"
+      - --registration-token
+      - "{{ cicd_runner_credential }}"
+      - --executor
+      - shell
+      - --name
+      - "{{ cicd_runner_runner_name }}"
+      - --tag-list
+      - "{{ cicd_runner_labels_csv }}"
+      - --run-untagged=false
+    creates: /etc/gitlab-runner/config.toml
+  when: not cicd_runner_credential.startswith('glrt-')
+  become: true
+  no_log: true
+
+- name: Start the runner service
+  ansible.builtin.systemd:
+    name: gitlab-runner
+    state: started
+    enabled: true
+  become: true

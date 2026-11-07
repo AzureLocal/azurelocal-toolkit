@@ -1,0 +1,58 @@
+# =============================================================================
+# Role: cicd_runner - GitHub Actions runner on Windows
+# =============================================================================
+---
+- name: Download the runner
+  ansible.windows.win_get_url:
+    url: "https://github.com/actions/runner/releases/download/v{{ cicd_runner_github_runner_version }}/actions-runner-win-x64-{{ cicd_runner_github_runner_version }}.zip"
+    dest: "{{ cicd_runner_windows_root }}\\downloads\\actions-runner-{{ cicd_runner_github_runner_version }}.zip"
+    checksum: "{{ cicd_runner_github_runner_windows_sha256 if cicd_runner_github_runner_windows_sha256 | length > 0 else omit }}"
+    checksum_algorithm: sha256
+
+- name: Unpack the runner
+  community.windows.win_unzip:
+    src: "{{ cicd_runner_windows_root }}\\downloads\\actions-runner-{{ cicd_runner_github_runner_version }}.zip"
+    dest: C:\actions-runner
+    creates: C:\actions-runner\config.cmd
+
+- name: Check whether the runner is already configured
+  ansible.windows.win_stat:
+    path: C:\actions-runner\.runner
+  register: cicd_runner_github_configured
+
+- name: Register the runner and install it as a service
+  when: not cicd_runner_github_configured.stat.exists
+  no_log: true
+  ansible.windows.win_powershell:
+    parameters:
+      Credential: "{{ cicd_runner_credential }}"
+      ScmUrl: "{{ cicd_runner_scm_url }}"
+      Labels: "{{ cicd_runner_labels_csv }}"
+      Name: "{{ cicd_runner_runner_name }}"
+      Group: "{{ cicd_runner_github_runner_group }}"
+      Kind: "{{ cicd_runner_token_kind }}"
+      Account: "{{ cicd_runner_windows_service_account }}"
+      Work: "{{ cicd_runner_windows_root }}\\work"
+    script: |
+      [CmdletBinding()]
+      param($Credential, $ScmUrl, $Labels, $Name, $Group, $Kind, $Account, $Work)
+      $ErrorActionPreference = 'Stop'
+      [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+      $registration = $Credential
+      if ($Kind -eq 'pat') {
+          $uri = [Uri]$ScmUrl
+          $segments = @($uri.AbsolutePath.Trim('/') -split '/')
+          $api = if ($uri.Host -eq 'github.com') { 'https://api.github.com' } else { "https://$($uri.Host)/api/v3" }
+          $scope = if ($segments.Count -ge 2) { "repos/$($segments[0])/$($segments[1])" } else { "orgs/$($segments[0])" }
+          $registration = (Invoke-RestMethod -UseBasicParsing -Method Post -Uri "$api/$scope/actions/runners/registration-token" `
+              -Headers @{ Authorization = "Bearer $Credential"; Accept = 'application/vnd.github+json'; 'User-Agent' = 'ansible' }).token
+      }
+      $arguments = @('--unattended', '--replace', '--url', $ScmUrl, '--token', $registration, '--name', $Name,
+          '--labels', $Labels, '--work', $Work, '--runasservice', '--windowslogonaccount', $Account)
+      if ($Group) { $arguments += @('--runnergroup', $Group) }
+      Push-Location C:\actions-runner
+      try {
+          & .\config.cmd @arguments
+          if ($LASTEXITCODE -ne 0) { throw 'config.cmd failed' }
+      }
+      finally { Pop-Location }

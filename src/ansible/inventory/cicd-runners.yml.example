@@ -1,0 +1,41 @@
+# =============================================================================
+# Ansible Inventory - CI/CD runners (example)
+# =============================================================================
+# Copy to cicd-runners.yml and change the values. No secret belongs here: keep
+# the registration credential in Key Vault (read by the host) or in Ansible Vault.
+# =============================================================================
+---
+all:
+  vars:
+    cicd_runner_platform: github                  # github | gitlab | azure_devops
+    cicd_runner_scm_url: https://github.com/example-org
+    cicd_runner_token_source: keyvault_managed_identity
+    cicd_runner_key_vault_name: kv-example-platform
+    cicd_runner_secret_name: github-runner-token
+    cicd_runner_token_kind: pat
+  children:
+    cicd_runners_linux:
+      hosts:
+        vm-example-runner-lnx-01:
+          ansible_host: 10.250.10.4
+      vars:
+        ansible_user: runneradmin
+        ansible_ssh_private_key_file: ~/.ssh/id_ed25519
+        ansible_become: true
+        cicd_runner_purpose: general
+        # cicd_runner_identity_client_id: 00000000-0000-0000-0000-000000000000   # user-assigned identity; empty uses the system-assigned one
+
+    cicd_runners_windows:
+      hosts:
+        vm-example-runner-ztp-01:
+          ansible_host: 10.250.10.68
+      vars:
+        ansible_connection: winrm
+        ansible_winrm_transport: kerberos           # or ntlm / credssp; use a domain account for Kerberos
+        ansible_winrm_server_cert_validation: ignore
+        ansible_port: 5986
+        cicd_runner_purpose: ztp
+        cicd_runner_windows_init_data_disk: true
+        cicd_runner_extra_labels: []
+        # cicd_runner_azure_devops_pool: AzureLocalZtp
+        # ansible_user and ansible_password: pass at run time (-e @vault.yml), never store them here.

@@ -1,0 +1,73 @@
+# =============================================================================
+# Role: cicd_runner - default variables
+# =============================================================================
+# Configures a Linux or Windows host as a self-hosted CI/CD runner for GitHub
+# Actions, GitLab CI/CD or Azure Pipelines. The same result as the cicd-runner
+# Terraform module's first-boot script, for hosts that already exist (an
+# on-premises VM, a Hyper-V guest, a server you did not create with Terraform).
+#
+# No secret is a default. The registration credential is read from Key Vault
+# with the host's managed identity (an Azure VM, or an Arc-enabled server), or,
+# when cicd_runner_token_source is "variable", from cicd_runner_registration_token
+# supplied by Ansible Vault or the environment.
+# =============================================================================
+
+# github | gitlab | azure_devops
+cicd_runner_platform: github
+
+# github: https://github.com/<org>[/<repo>]   gitlab: https://gitlab.com   azure_devops: https://dev.azure.com/<org>
+cicd_runner_scm_url: ""
+
+# general | ztp. ztp needs a Windows host (ZTP shares images over SMB with Windows commands).
+cicd_runner_purpose: general
+
+# Labels added to the defaults (azure, the OS, terraform and ansible on Linux, ztp for the ztp purpose).
+cicd_runner_extra_labels: []
+
+cicd_runner_github_runner_group: ""
+cicd_runner_azure_devops_pool: AzureRunners
+
+# keyvault_managed_identity | variable
+cicd_runner_token_source: keyvault_managed_identity
+
+# pat: the secret is a PAT or App token, exchanged for a registration token (GitHub only). token: use as is.
+cicd_runner_token_kind: pat
+cicd_runner_key_vault_name: ""
+cicd_runner_key_vault_dns_suffix: vault.azure.net
+cicd_runner_secret_name: ""
+# Client ID of the user-assigned managed identity. Empty uses the host's system-assigned identity.
+cicd_runner_identity_client_id: ""
+
+# Used only when cicd_runner_token_source is "variable". Keep it in Ansible Vault, never in the inventory.
+cicd_runner_registration_token: ""
+
+# Tools
+cicd_runner_terraform_version: "1.16.3"
+cicd_runner_bicep_version: "0.49.2"
+cicd_runner_bicep_linux_sha256: "0ab9de90c2493f206f8281bae74f9ee2d5ed3605548dab1adf41fef185e1f7c5"
+cicd_runner_bicep_windows_sha256: ""
+cicd_runner_github_runner_version: "2.338.2"
+cicd_runner_github_runner_linux_sha256: "baebf204307bac6193480852732f0aba2ae97b6c5597c244f4d5558390147c40"
+cicd_runner_github_runner_windows_sha256: ""
+cicd_runner_gitlab_runner_version: "19.5.3"
+cicd_runner_gitlab_runner_linux_sha256: "cd586a217b0ba4d339b3f3d645b84f8f5e1cc711e73148c30a3eec0f8c78378b"
+cicd_runner_gitlab_runner_windows_sha256: ""
+# Empty: the current release of the agent.
+cicd_runner_azure_devops_agent_version: ""
+
+# Linux
+cicd_runner_user: runner
+cicd_runner_install_ansible: true
+cicd_runner_ansible_collections:
+  - azure.azcollection
+  - microsoft.ad
+  - ansible.windows
+  - community.windows
+  - community.general
+
+# Windows
+cicd_runner_windows_root: 'C:\azl'
+# Well-known accounts that need no password: SYSTEM, NETWORK SERVICE, LOCAL SERVICE.
+cicd_runner_windows_service_account: 'NT AUTHORITY\SYSTEM'
+# Initialise a raw data disk and create the persistent folder for ZTP (AZL_ZTP_ROOT).
+cicd_runner_windows_init_data_disk: false

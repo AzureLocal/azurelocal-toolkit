@@ -1,0 +1,63 @@
+# =============================================================================
+# Role: cicd_runner - Azure Pipelines agent on Windows
+# =============================================================================
+---
+- name: Find the current agent version
+  ansible.windows.win_uri:
+    url: https://api.github.com/repos/microsoft/azure-pipelines-agent/releases/latest
+    headers:
+      User-Agent: ansible
+    return_content: true
+  register: cicd_runner_ado_latest
+  changed_when: false
+  when: cicd_runner_azure_devops_agent_version | length == 0
+
+- name: Choose the agent version
+  ansible.builtin.set_fact:
+    cicd_runner_ado_version: >-
+      {{ cicd_runner_azure_devops_agent_version if cicd_runner_azure_devops_agent_version | length > 0
+      else cicd_runner_ado_latest.json.tag_name | regex_replace('^v', '') }}
+
+- name: Download the agent
+  ansible.windows.win_get_url:
+    url: "https://download.agent.dev.azure.com/agent/{{ cicd_runner_ado_version }}/vsts-agent-win-x64-{{ cicd_runner_ado_version }}.zip"
+    dest: "{{ cicd_runner_windows_root }}\\downloads\\vsts-agent-{{ cicd_runner_ado_version }}.zip"
+
+- name: Unpack the agent
+  community.windows.win_unzip:
+    src: "{{ cicd_runner_windows_root }}\\downloads\\vsts-agent-{{ cicd_runner_ado_version }}.zip"
+    dest: C:\azagent
+    creates: C:\azagent\config.cmd
+
+- name: Write the capabilities (each label becomes <label>=true)
+  ansible.windows.win_copy:
+    dest: C:\azagent\.env
+    content: "{% for capability in cicd_runner_ado_capabilities %}{{ capability }}=true\r\n{% endfor %}"
+
+- name: Check whether the agent is already configured
+  ansible.windows.win_stat:
+    path: C:\azagent\.agent
+  register: cicd_runner_ado_configured
+
+- name: Configure the agent and install it as a service
+  when: not cicd_runner_ado_configured.stat.exists
+  no_log: true
+  ansible.windows.win_powershell:
+    parameters:
+      Credential: "{{ cicd_runner_credential }}"
+      ScmUrl: "{{ cicd_runner_scm_url }}"
+      Pool: "{{ cicd_runner_azure_devops_pool }}"
+      Name: "{{ cicd_runner_runner_name }}"
+      Account: "{{ cicd_runner_windows_service_account }}"
+      Work: "{{ cicd_runner_windows_root }}\\work"
+    script: |
+      [CmdletBinding()]
+      param($Credential, $ScmUrl, $Pool, $Name, $Account, $Work)
+      $ErrorActionPreference = 'Stop'
+      Push-Location C:\azagent
+      try {
+          & .\config.cmd --unattended --replace --acceptTeeEula --url $ScmUrl --auth pat --token $Credential --pool $Pool --agent $Name `
+              --work $Work --runAsService --windowsLogonAccount $Account
+          if ($LASTEXITCODE -ne 0) { throw 'config.cmd failed' }
+      }
+      finally { Pop-Location }

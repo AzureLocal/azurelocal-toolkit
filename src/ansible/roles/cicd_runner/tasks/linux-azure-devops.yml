@@ -1,0 +1,97 @@
+# =============================================================================
+# Role: cicd_runner - Azure Pipelines agent on Linux
+# =============================================================================
+---
+- name: Find the current agent version
+  ansible.builtin.uri:
+    url: https://api.github.com/repos/microsoft/azure-pipelines-agent/releases/latest
+    return_content: true
+  register: cicd_runner_ado_latest
+  changed_when: false
+  when: cicd_runner_azure_devops_agent_version | length == 0
+
+- name: Choose the agent version
+  ansible.builtin.set_fact:
+    cicd_runner_ado_version: >-
+      {{ cicd_runner_azure_devops_agent_version if cicd_runner_azure_devops_agent_version | length > 0
+      else cicd_runner_ado_latest.json.tag_name | regex_replace('^v', '') }}
+
+- name: Create the agent folder
+  ansible.builtin.file:
+    path: /opt/runners/azagent
+    state: directory
+    owner: "{{ cicd_runner_user }}"
+    group: "{{ cicd_runner_user }}"
+    mode: "0755"
+  become: true
+
+- name: Download and unpack the agent
+  ansible.builtin.unarchive:
+    src: "https://download.agent.dev.azure.com/agent/{{ cicd_runner_ado_version }}/vsts-agent-linux-x64-{{ cicd_runner_ado_version }}.tar.gz"
+    dest: /opt/runners/azagent
+    remote_src: true
+    owner: "{{ cicd_runner_user }}"
+    group: "{{ cicd_runner_user }}"
+    creates: /opt/runners/azagent/bin/Agent.Listener
+  become: true
+
+- name: Install the agent's operating system dependencies
+  ansible.builtin.shell: ./bin/installdependencies.sh && touch .dependencies-installed
+  args:
+    chdir: /opt/runners/azagent
+    creates: /opt/runners/azagent/.dependencies-installed
+  become: true
+
+- name: Write the capabilities (each label becomes <label>=true)
+  ansible.builtin.copy:
+    dest: /opt/runners/azagent/.env
+    content: "{% for capability in cicd_runner_ado_capabilities %}{{ capability }}=true\n{% endfor %}"
+    owner: "{{ cicd_runner_user }}"
+    group: "{{ cicd_runner_user }}"
+    mode: "0644"
+  become: true
+
+- name: Configure the agent
+  ansible.builtin.command:
+    argv:
+      - ./config.sh
+      - --unattended
+      - --replace
+      - --acceptTeeEula
+      - --url
+      - "{{ cicd_runner_scm_url }}"
+      - --auth
+      - pat
+      - --token
+      - "{{ cicd_runner_credential }}"
+      - --pool
+      - "{{ cicd_runner_azure_devops_pool }}"
+      - --agent
+      - "{{ cicd_runner_runner_name }}"
+      - --work
+      - _work
+    chdir: /opt/runners/azagent
+    creates: /opt/runners/azagent/.agent
+  become: true
+  become_user: "{{ cicd_runner_user }}"
+  no_log: true
+
+- name: Install the agent service
+  ansible.builtin.command:
+    argv: ["./svc.sh", "install", "{{ cicd_runner_user }}"]
+    chdir: /opt/runners/azagent
+    creates: /opt/runners/azagent/.service
+  become: true
+
+- name: Read the service name
+  ansible.builtin.slurp:
+    src: /opt/runners/azagent/.service
+  register: cicd_runner_ado_service
+  become: true
+
+- name: Start the agent service
+  ansible.builtin.systemd:
+    name: "{{ (cicd_runner_ado_service.content | b64decode) | trim }}"
+    state: started
+    enabled: true
+  become: true
