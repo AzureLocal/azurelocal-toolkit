@@ -44,7 +44,7 @@ locals {
     ansible_collections_csv      = join(",", var.ansible_collections)
   }
 
-  linux_bootstrap   = templatefile("${path.module}/templates/bootstrap-linux.sh.tftpl", local.bootstrap_vars)
+  linux_bootstrap   = replace(templatefile("${path.module}/templates/bootstrap-linux.sh.tftpl", local.bootstrap_vars), "\r", "")
   windows_bootstrap = templatefile("${path.module}/templates/bootstrap-windows.ps1.tftpl", local.bootstrap_vars)
   cloud_init        = templatefile("${path.module}/templates/cloud-init.yaml.tftpl", { script_b64 = base64encode(local.linux_bootstrap) })
 
