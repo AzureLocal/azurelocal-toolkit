@@ -35,6 +35,13 @@ validate → plan → deploy-foundation → configure-onprem → deploy-cluster 
 - **Features**: Service connections, environment approvals, Terraform task extension
 - **Requirements**: Terraform extension from marketplace, service connection configured
 
+## OS configuration (Phase 03)
+ entry point, `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1`, runs standalone or unchanged in a pipeline: a read-only plan job (report and wipe list as artifacts), then an apply job behind an approval gate.
+
+- GitHub Actions: `github/os-configuration.yml` (environment `azure-local-os-configuration` with required reviewers; OIDC).
+- GitLab CI: `gitlab/os-configuration.gitlab-ci.yml` (manual apply job, `resource_group`; managed identity or OIDC id_token).
+ the master file and the handoff files come from, the permissions of the pipeline identity and the exit codes are in [OS configuration and ARM deployment](../docs/os-configuration-and-arm-deployment.md#run-it-in-one-go).
+
 ## Prerequisites
 
 ### All Platforms
