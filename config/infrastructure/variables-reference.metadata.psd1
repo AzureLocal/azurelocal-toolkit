@@ -35,6 +35,7 @@
         '^hardware\.(vendor|model|network_cards)'
         '^networking\.(management|ntp_servers|intents|storage|vlans|cluster_networks)'
         '^identity\.local_admin'
+        '^hardware\.sbe\.(bundle_path|delivery|node_pull_url)$'
         '^cluster\.name$'
         '^provisioning\.os_version$'
     )
@@ -48,7 +49,7 @@
     # Keys Trailwright does not write: host-local paths and files only the operator sets on the management host.
     TrailwrightNot = @(
         '^provisioning\.simplified\.(media_path|evidence_path|maintenance_password|media_share|timeouts|usb_image|maintenance_environment|deployment_name|skip_azure_check|include_preview|max_train|retry_provision_os)'
-        '^hardware\.sbe\.bundle_path$'
+        '^hardware\.sbe\.(bundle_path|delivery|node_pull_url)$'
         '^nodes\[\]\.maintenance_address$'
     )
 
@@ -80,6 +81,8 @@
         @{ Pattern = '^nodes\[\]\.san'; Text = 'The SAN administrator: the HBA utility or the fabric switch''s name server (WWPNs), the initiator name from the OS (IQN).' }
         @{ Pattern = '^nodes\[\]\.'; Text = 'Your machine inventory and addressing plan.' }
         @{ Pattern = '^hardware\.sbe\.bundle_path$'; Text = 'A folder you create on the management host (see Folders), holding the OEM''s Solution Builder Extension as downloaded.' }
+        @{ Pattern = '^hardware\.sbe\.delivery$'; Text = 'Your decision, with the network: winrm_copy needs the host that runs the toolkit to reach the nodes'' management subnet on TCP 5985; node_pull needs a read-only location the nodes can reach; skip (default) delivers nothing.' }
+        @{ Pattern = '^hardware\.sbe\.node_pull_url$'; Text = 'The read-only web or file server you put the SBE files on, at an address the nodes (not necessarily the operator host) can reach.' }
         @{ Pattern = '^hardware\.sbe\.'; Text = 'The OEM''s Solution Builder Extension release notes.' }
         @{ Pattern = '^hardware\.bmc\.(rfs_write_attribute|verify_certificate)$'; Text = 'Your BMC: the vendor''s default is right unless the BMC firmware differs.' }
         @{ Pattern = '^hardware\.bmc\.'; Text = 'A Key Vault secret you create holding the BMC login (see Secrets).' }

@@ -16,10 +16,10 @@
     ArcRunCommand  Microsoft.HybridCompute/machines/{name}/runCommands. The operator host has no network path to the
                    nodes' management subnet, but the Connected Machine agent on each node calls out to Azure, so the
                    script goes through ARM. Needs the Arc machine's resource ID (handoff, or found by name). Secrets go
-                   in protectedParameters. A file is staged through a blob: it is uploaded to a storage account the
-                   operator names and the node downloads it with a short-lived read-only SAS.
+                   in protectedParameters. It can't carry a file: Stage throws. The SBE package reaches a node by
+                   hardware.sbe.delivery (node_pull: the node downloads it; winrm_copy: a WinRM transport copies it).
     WinRM          New-PSSession to the node. For a host that can reach the management subnet. A file is copied with
-                   Copy-Item -ToSession.
+                   Copy-Item -ToSession to a .part file, its SHA-256 is checked on the node, and it is renamed.
 
     The run command resource is created, polled until the script finishes, read, and deleted. The runCommands api-version
     (2026-09-01) is the newest generally available one on Microsoft Learn.
@@ -68,11 +68,6 @@ function New-AzlArcRunCommandTransport {
         Hashtable: node name -> the Arc machine's resource ID.
     .PARAMETER PollSeconds
         How often the run command is read while its script runs.
-    .PARAMETER StagingStorageAccount
-        Storage account (name) whose container receives files for a node to download. Needed only when a file has to reach
-        a node (the SBE package); a node that already holds the right files needs none.
-    .PARAMETER StagingContainer
-        Container for the files. Default azl-staging.
     .EXAMPLE
         New-AzlArcRunCommandTransport -ArcResourceId @{ 'node-01' = $arcId }
     #>
@@ -80,15 +75,13 @@ function New-AzlArcRunCommandTransport {
     param(
         [Parameter(Mandatory)][hashtable]$ArcResourceId,
         [int]$PollSeconds = 15,
-        [string]$StagingStorageAccount,
-        [string]$StagingContainer = 'azl-staging',
         [string]$ApiVersion = $script:RunCommandApiVersion
     )
     # The scriptblocks are not closures: they stay bound to this module (so its commands resolve, and a test can mock them)
     # and take the transport as $Self, which carries the settings in State.
     [pscustomobject]@{
         Kind   = 'ArcRunCommand'
-        State  = @{ Ids = $ArcResourceId; Poll = $PollSeconds; Api = $ApiVersion; Account = $StagingStorageAccount; Container = $StagingContainer; Uploaded = @{} }
+        State  = @{ Ids = $ArcResourceId; Poll = $PollSeconds; Api = $ApiVersion }
         Invoke = {
             param($Self, $Node, [string]$Script, [hashtable]$Parameters, [hashtable]$Secrets, [int]$TimeoutSeconds)
             $s = $Self.State
@@ -129,17 +122,7 @@ function New-AzlArcRunCommandTransport {
         }
         Stage  = {
             param($Self, $Node, [string]$LocalPath, [string]$RemotePath, [string]$Sha256)
-            $s = $Self.State
-            if (-not $s.Account) { throw "File $([IO.Path]::GetFileName($LocalPath)) has to reach $Node, and Azure Arc Run Command can't carry a file. Name a staging storage account (-StagingStorageAccount); the node downloads from it with a short-lived read-only SAS." }
-            $blob = [IO.Path]::GetFileName($LocalPath)
-            if (-not $s.Uploaded.ContainsKey($blob)) {
-                $context = New-AzStorageContext -StorageAccountName $s.Account -UseConnectedAccount
-                $null = New-AzStorageContainer -Name $s.Container -Context $context -ErrorAction SilentlyContinue
-                $null = Set-AzStorageBlobContent -File $LocalPath -Container $s.Container -Blob $blob -Context $context -Force
-                $s.Uploaded[$blob] = $context
-            }
-            $url = New-AzStorageBlobSASToken -Container $s.Container -Blob $blob -Context $s.Uploaded[$blob] -Permission r -ExpiryTime (Get-Date).AddHours(4) -FullUri
-            [pscustomobject]@{ Name = $blob; Url = [string]$url }
+            throw "File $([IO.Path]::GetFileName($LocalPath)) has to reach $Node, and Azure Arc Run Command can't carry a file. Set hardware.sbe.delivery to node_pull (the node downloads it) or winrm_copy (copied over WinRM from a host that reaches the node)."
         }
     }
 }
@@ -186,8 +169,19 @@ function New-AzlWinRmTransport {
         Stage  = {
             param($Self, $Node, [string]$LocalPath, [string]$RemotePath, [string]$Sha256)
             $session = Get-AzlWinRmSession -State $Self.State -Node $Node
-            Invoke-Command -Session $session -ScriptBlock { param($Folder) New-Item -ItemType Directory -Force -Path $Folder | Out-Null } -ArgumentList (Split-Path $RemotePath)
-            Copy-Item -LiteralPath $LocalPath -Destination $RemotePath -ToSession $session -Force
+            $part = "$RemotePath.part"
+            Invoke-Command -Session $session -ScriptBlock { param($Folder, $Part) New-Item -ItemType Directory -Force -Path $Folder | Out-Null; if (Test-Path -LiteralPath $Part) { Remove-Item -LiteralPath $Part -Force } } -ArgumentList (Split-Path $RemotePath), $part
+            Copy-Item -LiteralPath $LocalPath -Destination $part -ToSession $session -Force
+            # The copy lands in a .part file; it takes its name only after its SHA-256 is what the toolkit expects.
+            $verdict = Invoke-Command -Session $session -ScriptBlock {
+                param($Part, $Final, $Want)
+                $hash = (Get-FileHash -LiteralPath $Part -Algorithm SHA256).Hash
+                if ($Want -and $hash -ine $Want) { Remove-Item -LiteralPath $Part -Force; return "SHA-256 is $hash, expected $Want" }
+                if (Test-Path -LiteralPath $Final) { Remove-Item -LiteralPath $Final -Force }
+                Move-Item -LiteralPath $Part -Destination $Final
+                return 'ok'
+            } -ArgumentList $part, $RemotePath, $Sha256
+            if ($verdict -ne 'ok') { throw "$([IO.Path]::GetFileName($LocalPath)) copied to $Node but $verdict; the copy was removed." }
             [pscustomobject]@{ Name = [IO.Path]::GetFileName($LocalPath); Url = $null }
         }
     }
@@ -224,7 +218,8 @@ function Invoke-AzlNodeScript {
 function Send-AzlNodeFile {
     <#
     .SYNOPSIS
-        Puts a file on a node through its transport. Returns the staging record (Name, and Url for the Arc path).
+        Puts a file on a node through its transport (the WinRM transport only; the Arc transport throws, it can't carry a
+        file). The file's SHA-256 is checked on the node. Returns the staging record (Name).
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][string]$Node, [Parameter(Mandatory)][string]$LocalPath, [Parameter(Mandatory)][string]$RemotePath, [string]$Sha256)

@@ -8,7 +8,6 @@
     current state first and compares it with what infrastructure.yml says:
 
       RemoteManagement  WinRM, RDP, ICMP echo
-      Sbe               the OEM's SBE package (hardware.sbe.bundle_path) in C:\SBE, SHA-256 checked
       Drivers           the OEM's network drivers from that package, for the ports that need them
       Network           DHCP off on every port whose ip_assignment is none (so only the management port has a default
                         gateway); the management port's static address, found by MAC and set only if wrong
@@ -20,6 +19,9 @@
       SanVerify         SAN only, read only: FC ports and WWPNs, the infrastructure and performance history LUNs
                         (visible, RAW, big enough, two or more paths)
       ClearStorage      leftover local storage; wiped only with -ClearStorage -Execute
+      Sbe               LAST. The OEM's SBE package (hardware.sbe.bundle_path) in C:\SBE, SHA-256 checked. How it reaches a node is
+                        hardware.sbe.delivery: winrm_copy, node_pull or skip (default; reports 'not delivered', changes nothing, and
+                        never stops the other steps). The drivers install from it, in the pass after it has landed.
 
     Without -Execute it is a plan: one read-only script per node, then a table of what it would change. With -Execute it
     changes only the items marked Change, reads again, and repeats until the node matches (at most -MaxPasses). Re-running
@@ -40,10 +42,8 @@
 .PARAMETER Transport
     Auto (default; Arc Run Command, WinRM when -Credential is given and no Arc machine is found), ArcRunCommand or WinRM.
 .PARAMETER Credential
-    The nodes' local administrator, for -Transport WinRM.
-.PARAMETER StagingStorageAccount
-    Storage account (name) for staging the SBE package to nodes over the Arc path; the node downloads it with a read-only
-    SAS. Needed only when a node doesn't hold the package yet. You need Storage Blob Data Contributor on it.
+    The nodes' local administrator: for -Transport WinRM, and for copying the SBE package over WinRM (hardware.sbe.delivery
+    winrm_copy) when the other steps go over Arc. Run from a host that reaches the nodes' management subnet on TCP 5985.
 .PARAMETER Step
     Limit the run to these steps. Default: all.
 .PARAMETER ClearStorage
@@ -60,7 +60,7 @@
 .EXAMPLE
     ./Set-AzureLocalNodeConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json
 .EXAMPLE
-    ./Set-AzureLocalNodeConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json -StagingStorageAccount stazlstaging -Execute
+    ./Set-AzureLocalNodeConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json -Execute
 #>
 [CmdletBinding()]
 param(
@@ -69,8 +69,6 @@ param(
     [string[]]$Node,
     [ValidateSet('Auto', 'ArcRunCommand', 'WinRM')][string]$Transport = 'Auto',
     [pscredential]$Credential,
-    [string]$StagingStorageAccount,
-    [string]$StagingContainer = 'azl-staging',
     [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')][string[]]$Step,
     [switch]$ClearStorage,
     [switch]$NoRestart,
@@ -94,7 +92,7 @@ function Write-Line([string]$Text) { Write-Information -MessageData $Text -Infor
 
 $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation:$SkipValidation
 $handoff = if ($HandoffFile) { Read-AzlHandoff -Path $HandoffFile } else { $null }
-$allSteps = @('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')
+$allSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
 $steps = if ($Step) { $Step } else { $allSteps }
 
 $nodes = @($infra.nodes | Where-Object { -not $Node -or $_.name -in $Node })
@@ -138,7 +136,7 @@ if ($Transport -ne 'WinRM') {
 $useArc = $Transport -eq 'ArcRunCommand' -or ($Transport -eq 'Auto' -and $arcIds.Count -eq $specs.Count)
 if ($useArc) {
     if ($arcIds.Count -ne $specs.Count) { throw 'Not every node has an Arc machine, so the Arc Run Command transport can''t reach all of them.' }
-    $nodeTransport = New-AzlArcRunCommandTransport -ArcResourceId $arcIds -StagingStorageAccount $StagingStorageAccount -StagingContainer $StagingContainer
+    $nodeTransport = New-AzlArcRunCommandTransport -ArcResourceId $arcIds
 }
 else {
     if (-not $Credential) { throw 'The WinRM transport needs -Credential (the nodes'' local administrator).' }
@@ -146,16 +144,31 @@ else {
     foreach ($s in $specs) { $addresses[$s.Name] = $s.Management.Ip }
     $nodeTransport = New-AzlWinRmTransport -Address $addresses -Credential $Credential
 }
+# The SBE package can't ride Arc Run Command. With hardware.sbe.delivery winrm_copy and the nodes reached over Arc, the copy gets
+# its own WinRM transport (sessions open only when a file has to be copied). Without -Credential the Sbe step reports why.
+$sbeDelivery = [string](Get-AzlProp $infra 'hardware.sbe.delivery' 'skip')
+$sbeTransport = $null
+if ($bundle -and $sbeDelivery -eq 'winrm_copy' -and $nodeTransport.Kind -ne 'WinRM' -and $Credential) {
+    $sbeAddresses = @{}
+    foreach ($s in $specs) { $sbeAddresses[$s.Name] = $s.Management.Ip }
+    $sbeTransport = New-AzlWinRmTransport -Address $sbeAddresses -Credential $Credential
+}
 Write-Line "Transport: $($nodeTransport.Kind). $(if ($Execute) { 'EXECUTE: changes will be made.' } else { 'Plan only: nothing on the nodes changes. Add -Execute.' })"
 
 # ---- the nodes
 $results = foreach ($s in $specs) {
     Write-Line "== $($s.Name)"
-    Invoke-AzlNodeConfiguration -Spec $s -Transport $nodeTransport -Execute:$Execute -Step $steps -ClearStorage:$ClearStorage -NoRestart:$NoRestart -MaxPasses $MaxPasses
+    Invoke-AzlNodeConfiguration -Spec $s -Transport $nodeTransport -Execute:$Execute -Step $steps -ClearStorage:$ClearStorage -NoRestart:$NoRestart -MaxPasses $MaxPasses -SbeTransport $sbeTransport
 }
 foreach ($r in $results) {
     Write-Line (Format-AzlPlan -Plan @($r.Plan | Where-Object { $_.Action -ne 'Ok' -or -not $Execute }))
     foreach ($c in $r.Changes) { Write-Line "   [$($c.Status)] $($c.Id): $($c.Detail)" }
+}
+
+# ---- the SBE package: said plainly, because nothing else fails when it is missing
+$sbeMissing = @(if ($bundle) { $results | Where-Object { @($_.Plan | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -ne 'Ok' }).Count } })
+if ($bundle -and $sbeMissing.Count) {
+    Write-Line "SBE package NOT delivered to: $(($sbeMissing | ForEach-Object { $_.Node }) -join ', ') (hardware.sbe.delivery = $sbeDelivery). The other steps are not affected; the OEM drivers wait for the package."
 }
 
 # ---- every node must see the same SAN disks
@@ -174,6 +187,8 @@ $report = [ordered]@{
     generatedUtc  = [datetime]::UtcNow.ToString('o')
     executed      = [bool]$Execute
     transport     = $nodeTransport.Kind
+    sbeDelivery   = $sbeDelivery
+    sbeNotDelivered = @($sbeMissing | ForEach-Object { $_.Node })
     sanProblems   = $sanProblems
     nodes         = @($results | ForEach-Object {
             [ordered]@{

@@ -26,7 +26,10 @@ Import-Module (Join-Path $here 'AzlNodePayload.psm1')
 Import-Module (Join-Path $here 'AzlNodeTransport.psm1')
 
 $script:ConfigRoot = Join-Path $here '..\..\..\config'
-$script:AllSteps = @('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')
+# The order the steps run in. Sbe is last on purpose: delivering a 900 MB package is the step most likely to fail (it needs a
+# route to the node that the other steps do not), and it must not stop the others. Drivers install from the package, so they
+# run in the pass after it has landed (or at once when the node already holds it).
+$script:AllSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
 
 function ConvertTo-MacKey([AllowNull()][object]$Mac) {
     if ($null -eq $Mac) { return '' }
@@ -147,6 +150,14 @@ function Get-AzlSbeBundle {
     }
 }
 
+function Get-AzlSbePullUrl {
+    # Pure: the address a node pulls one SBE file from. Base is hardware.sbe.node_pull_url: an https:// (or http://) folder
+    # address, or a UNC folder (\\server\share\sbe).
+    param([Parameter(Mandatory)][string]$Base, [Parameter(Mandatory)][string]$Name)
+    if ($Base.StartsWith('\\')) { return ($Base.TrimEnd('\') + '\' + $Name) }
+    return ($Base.TrimEnd('/') + '/' + [Uri]::EscapeDataString($Name))
+}
+
 function Get-AzlSanVendor {
     <#
     .SYNOPSIS
@@ -236,7 +247,10 @@ function Get-AzlNodeSpec {
     $sbe = $null
     if ($SbeBundle) {
         $oem = Get-AzlOemConfig -Vendor ([string](Get-AzlProp $Infrastructure 'hardware.vendor' 'Dell')) -ConfigRoot $ConfigRoot
-        $sbe = [pscustomobject]@{ Name = $SbeBundle.Name; ZipName = $SbeBundle.ZipName; Dir = 'C:\SBE'; Files = @($SbeBundle.Files); DriverPaths = @($oem.sbe.driverPaths) }
+        $delivery = [string](Get-AzlProp $Infrastructure 'hardware.sbe.delivery' 'skip')
+        if (-not $delivery) { $delivery = 'skip' }
+        $sbe = [pscustomobject]@{ Name = $SbeBundle.Name; ZipName = $SbeBundle.ZipName; Dir = 'C:\SBE'; Files = @($SbeBundle.Files); DriverPaths = @($oem.sbe.driverPaths)
+            Delivery = $delivery; PullUrl = [string](Get-AzlProp $Infrastructure 'hardware.sbe.node_pull_url' '') }
     }
 
     [pscustomobject]@{
@@ -341,23 +355,39 @@ function Compare-AzlNodeState {
         }
     }
 
-    # ---- the SBE package in C:\SBE
+    # ---- the SBE package in C:\SBE. Worked out here (the drivers need to know whether the package is on the node) but listed
+    # last, where the step runs. How a missing file reaches the node is hardware.sbe.delivery: winrm_copy, node_pull or skip.
     $sbeReady = $false
+    $sbeItems = [System.Collections.Generic.List[object]]::new()
     if ($Spec.Sbe) {
         $sbeState = @(Get-AzlProp $State 'sbe' @())
         $missing = 0
+        $delivery = [string]$Spec.Sbe.Delivery
         foreach ($f in $Spec.Sbe.Files) {
             $have = $sbeState | Where-Object { $_.n -eq $f.Name } | Select-Object -First 1
             $ok = $have -and $have.ok
             if (-not $ok) { $missing++ }
             if ('Sbe' -in $Step) {
                 $current = if (-not $have -or $have.len -eq 0) { 'absent' } elseif (-not $have.ok) { "$($have.len) bytes, hash differs" } else { 'present, hash matches' }
-                & $add (New-AzlPlanItem $n 'Sbe' "$($Spec.Sbe.Dir)\$($f.Name)" $current 'present, SHA-256 matches' $(if ($ok) { 'Ok' } else { 'Change' }) '' $(if (-not $ok) { @{ id = "Sbe/$($f.Name)"; kind = 'sbe-file'; name = $f.Name; sha256 = $f.Sha256; localPath = $f.Path; size = $f.Size } }))
+                $path = "$($Spec.Sbe.Dir)\$($f.Name)"
+                $wanted = 'present, SHA-256 matches'
+                if ($ok) { $sbeItems.Add((New-AzlPlanItem $n 'Sbe' $path $current $wanted Ok)); continue }
+                switch ($delivery) {
+                    'node_pull' {
+                        if (-not $Spec.Sbe.PullUrl) { $sbeItems.Add((New-AzlPlanItem $n 'Sbe' $path $current $wanted Blocked 'hardware.sbe.delivery is node_pull but hardware.sbe.node_pull_url is empty.')) }
+                        else {
+                            $url = Get-AzlSbePullUrl -Base $Spec.Sbe.PullUrl -Name $f.Name
+                            $sbeItems.Add((New-AzlPlanItem $n 'Sbe' $path $current $wanted Change "node_pull: the node downloads it from $url and checks the SHA-256." @{ id = "Sbe/$($f.Name)"; kind = 'sbe-file'; route = 'node_pull'; name = $f.Name; sha256 = $f.Sha256; size = $f.Size; url = $url }))
+                        }
+                    }
+                    'winrm_copy' { $sbeItems.Add((New-AzlPlanItem $n 'Sbe' $path $current $wanted Change 'winrm_copy: copied over WinRM from the host running this script (it must reach the node on TCP 5985), then the SHA-256 is checked on the node.' @{ id = "Sbe/$($f.Name)"; kind = 'sbe-file'; route = 'winrm_copy'; name = $f.Name; sha256 = $f.Sha256; localPath = $f.Path; size = $f.Size })) }
+                    default { $sbeItems.Add((New-AzlPlanItem $n 'Sbe' $path $current $wanted Info 'NOT DELIVERED: hardware.sbe.delivery is skip (nothing configured), so the toolkit leaves the package alone and installs no OEM driver. Put the files in C:\SBE yourself, or set hardware.sbe.delivery to node_pull or winrm_copy.')) }
+                }
             }
         }
         $sbeReady = ($missing -eq 0)
     }
-    elseif ('Sbe' -in $Step) { & $add (New-AzlPlanItem $n 'Sbe' 'package' 'not configured' 'hardware.sbe.bundle_path' Info 'No SBE folder given, so no package is staged and no OEM driver is installed.') }
+    elseif ('Sbe' -in $Step) { $sbeItems.Add((New-AzlPlanItem $n 'Sbe' 'package' 'not configured' 'hardware.sbe.bundle_path' Info 'No SBE folder given, so no package is delivered and no OEM driver is installed.')) }
 
     # ---- OEM network drivers
     if ('Drivers' -in $Step -and $Spec.Sbe) {
@@ -598,6 +628,9 @@ function Compare-AzlNodeState {
         }
     }
 
+    # ---- the SBE package, last (see $script:AllSteps)
+    foreach ($i in $sbeItems) { & $add $i }
+
     # ---- build
     $installed = $Spec.Handoff.InstalledBuild
     if ($installed -and $Spec.ExpectedBuild -and $Spec.ExpectedBuild -notin 'latest', 'latest-preview' -and $installed -ne $Spec.ExpectedBuild) {
@@ -635,15 +668,76 @@ function Wait-AzlNodeRestart {
     throw "$Node didn't come back with a new boot time within $TimeoutMinutes minutes."
 }
 
+function Send-AzlSbePackage {
+    <#
+    .SYNOPSIS
+        Delivers the SBE files the plan marked Change to one node, by the route in hardware.sbe.delivery. Never throws: a
+        failure comes back as a result with Status 'failed', so the other steps of the run are not stopped by it.
+    .DESCRIPTION
+        node_pull   one Apply call; the node downloads each file from the address in the action and checks its SHA-256.
+        winrm_copy  Copy-Item over a WinRM session (the transport, or -SbeTransport when the nodes are otherwise reached over
+                    Arc), into a .part file whose SHA-256 is checked on the node before it takes its name.
+    .OUTPUTS
+        One object per file: Name, Id, Status (changed or failed), Detail.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][object]$Spec,
+        [Parameter(Mandatory)][object]$Transport,
+        [object]$SbeTransport,
+        [Parameter(Mandatory)][object[]]$Item,
+        [hashtable]$Secrets = @{}
+    )
+    $node = $Spec.Name
+    $out = [System.Collections.Generic.List[object]]::new()
+    $new = { param($a, $status, $detail) [pscustomobject]@{ Name = [string]$a.name; Id = [string]$a.id; Status = $status; Detail = $detail } }
+
+    $pull = @($Item | ForEach-Object { $_.Apply } | Where-Object { $_.route -eq 'node_pull' })
+    if ($pull.Count) {
+        try {
+            $actions = @($pull | ForEach-Object { $_.Clone() })
+            $result = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Apply) -Parameters @{ actions = $actions; sbeDir = $Spec.Sbe.Dir } -Secrets $Secrets -TimeoutSeconds 3600
+            foreach ($a in $pull) {
+                $r = @($result.results | Where-Object { $_.id -eq $a.id }) | Select-Object -First 1
+                if ($r) { $out.Add((& $new $a $r.status $r.detail)) } else { $out.Add((& $new $a 'failed' 'The node reported no result for this file.')) }
+            }
+        }
+        catch { foreach ($a in $pull) { $out.Add((& $new $a 'failed' "node_pull failed: $($_.Exception.Message)")) } }
+    }
+
+    $copy = @($Item | ForEach-Object { $_.Apply } | Where-Object { $_.route -eq 'winrm_copy' })
+    if ($copy.Count) {
+        $via = if ($SbeTransport) { $SbeTransport } elseif ($Transport.Kind -eq 'WinRM') { $Transport } else { $null }
+        $stop = $null
+        if (-not $via) { $stop = "winrm_copy needs a WinRM path to $node, and the nodes are reached through $($Transport.Kind). Run this script with -Credential (the nodes' local administrator) from a host that reaches $node on TCP 5985, or set hardware.sbe.delivery to node_pull." }
+        foreach ($a in $copy) {
+            if ($stop) { $out.Add((& $new $a 'failed' $stop)); continue }
+            try {
+                $null = Send-AzlNodeFile -Transport $via -Node $node -LocalPath $a.localPath -RemotePath (Join-Path $Spec.Sbe.Dir $a.name) -Sha256 $a.sha256
+                $out.Add((& $new $a 'changed' "$($a.name) copied over WinRM and SHA-256 verified"))
+            }
+            catch {
+                $stop = "winrm_copy failed: $($_.Exception.Message)"
+                $out.Add((& $new $a 'failed' $stop))
+            }
+        }
+    }
+    return $out.ToArray()
+}
+
 function Invoke-AzlNodeConfiguration {
     <#
     .SYNOPSIS
         Reads a node, compares it with its spec and, with -Execute, changes only what differs, until it matches.
     .DESCRIPTION
-        Plan (no -Execute): one Read, the comparison, nothing changed. Execute: Read, compare, stage any file, Apply only the
-        Change items, restart once if an action asked (and not -NoRestart), Read again, repeat up to -MaxPasses (a step can
-        wait for an earlier one: the drivers wait for the SBE), and finish with the comparison of a last Read. A node that
-        matches its spec gets one Read and no Apply.
+        Plan (no -Execute): one Read, the comparison, nothing changed. Execute: Read, compare, Apply the Change items of every
+        step except Sbe, restart once if an action asked (and not -NoRestart), deliver the SBE package last (by
+        hardware.sbe.delivery), Read again, repeat up to -MaxPasses (a step can wait for an earlier one: the drivers wait for
+        the SBE), and finish with the comparison of a last Read. A node that matches its spec gets one Read and no Apply. A
+        package that can't be delivered is reported (Sbe step not done) and does not stop the other steps.
+    .PARAMETER SbeTransport
+        A WinRM transport used only to copy the SBE package (hardware.sbe.delivery winrm_copy) when the nodes are otherwise
+        reached over Arc Run Command. Default: -Transport when that is WinRM.
     .PARAMETER SecretResolver
         Scriptblock that turns a keyvault:// reference into its value. Default Get-AzlSecret.
     .OUTPUTS
@@ -654,6 +748,7 @@ function Invoke-AzlNodeConfiguration {
     param(
         [Parameter(Mandatory)][object]$Spec,
         [Parameter(Mandatory)][object]$Transport,
+        [object]$SbeTransport,
         [switch]$Execute,
         [string[]]$Step = $script:AllSteps,
         [switch]$ClearStorage,
@@ -674,39 +769,40 @@ function Invoke-AzlNodeConfiguration {
     $passes = [System.Collections.Generic.List[object]]::new()
     $changes = [System.Collections.Generic.List[object]]::new()
     $restarted = $false
+    $sbeTried = @{}
     $state = $null
     $plan = @()
     for ($pass = 1; $pass -le $MaxPasses + 1; $pass++) {
         $state = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Read) -Parameters $readParameters -Secrets $secrets -TimeoutSeconds 900
         $plan = @(Compare-AzlNodeState -Spec $Spec -State $state -Step $Step -ClearStorage:$ClearStorage)
         $todo = @($plan | Where-Object { $_.Action -eq 'Change' -and $_.Apply })
+        # A package file the toolkit already delivered once and that is still wrong is not delivered again: the failure stays
+        # in the report (the Sbe step is not done) and the other steps carry on.
+        $todo = @($todo | Where-Object { $_.Apply.kind -ne 'sbe-file' -or -not $sbeTried.ContainsKey([string]$_.Apply.name) })
         $passes.Add([pscustomobject]@{ Pass = $pass; Changes = $todo.Count })
         if (-not $Execute -or $todo.Count -eq 0 -or $pass -gt $MaxPasses) { break }
 
-        # Files first. A WinRM copy lands in place; an Arc node downloads from a SAS address.
-        $actions = @()
-        $applySecrets = @{} + $secrets
-        foreach ($item in $todo) {
-            $a = $item.Apply.Clone()
-            if ($a.kind -eq 'sbe-file') {
-                $staged = Send-AzlNodeFile -Transport $Transport -Node $node -LocalPath $a.localPath -RemotePath (Join-Path $Spec.Sbe.Dir $a.name) -Sha256 $a.sha256
-                if (-not $staged.Url) { continue }
-                $applySecrets["sas:$($a.name)"] = $staged.Url
-                $a.Remove('localPath')
-            }
-            $actions += $a
-        }
+        # Every step except Sbe first, in one Apply call; then, if one asked, the restart; the package last.
+        $actions = @($todo | Where-Object { $_.Apply.kind -ne 'sbe-file' } | ForEach-Object { $_.Apply.Clone() })
+        $sbeTodo = @($todo | Where-Object { $_.Apply.kind -eq 'sbe-file' })
+        $failed = @()
         if ($actions.Count) {
-            $result = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Apply) -Parameters @{ actions = $actions; sbeDir = $(if ($Spec.Sbe) { $Spec.Sbe.Dir } else { 'C:\SBE' }) } -Secrets $applySecrets -TimeoutSeconds 3600
+            $result = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Apply) -Parameters @{ actions = $actions; sbeDir = $(if ($Spec.Sbe) { $Spec.Sbe.Dir } else { 'C:\SBE' }) } -Secrets $secrets -TimeoutSeconds 3600
             foreach ($r in @($result.results)) { $changes.Add([pscustomobject]@{ Node = $node; Pass = $pass; Id = $r.id; Status = $r.status; Detail = $r.detail }) }
             $failed = @($result.results | Where-Object { $_.status -eq 'failed' })
-            if ($failed) { $plan = @(Compare-AzlNodeState -Spec $Spec -State $state -Step $Step -ClearStorage:$ClearStorage); break }
-            if ($result.reboot -and -not $NoRestart) {
+            if (-not $failed -and $result.reboot -and -not $NoRestart) {
                 $null = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Restart) -TimeoutSeconds 300
                 $state = Wait-AzlNodeRestart -Transport $Transport -Node $node -PreviousBoot $state.boot -ReadParameters $readParameters -Secrets $secrets
                 $restarted = $true
             }
         }
+        if ($sbeTodo.Count) {
+            foreach ($r in @(Send-AzlSbePackage -Spec $Spec -Transport $Transport -SbeTransport $SbeTransport -Item $sbeTodo -Secrets $secrets)) {
+                $sbeTried[[string]$r.Name] = $true
+                $changes.Add([pscustomobject]@{ Node = $node; Pass = $pass; Id = $r.Id; Status = $r.Status; Detail = $r.Detail })
+            }
+        }
+        if ($failed) { $plan = @(Compare-AzlNodeState -Spec $Spec -State $state -Step $Step -ClearStorage:$ClearStorage); break }
     }
     $blocked = @($plan | Where-Object Action -eq 'Blocked')
     $pending = @($plan | Where-Object { $_.Action -eq 'Change' })
@@ -724,4 +820,4 @@ function Invoke-AzlNodeConfiguration {
     }
 }
 
-Export-ModuleMember -Function Get-AzlOemConfig, Get-AzlSbeBundle, Get-AzlSanVendor, Get-AzlNodeSpec, Get-AzlNodeReadParameter, Compare-AzlNodeState, Format-AzlPlan, Invoke-AzlNodeConfiguration
+Export-ModuleMember -Function Get-AzlOemConfig, Get-AzlSbeBundle, Get-AzlSbePullUrl, Send-AzlSbePackage, Get-AzlSanVendor, Get-AzlNodeSpec, Get-AzlNodeReadParameter, Compare-AzlNodeState, Format-AzlPlan, Invoke-AzlNodeConfiguration

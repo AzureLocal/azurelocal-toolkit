@@ -30,7 +30,7 @@
 # =============================================================================
 
 _metadata:
-  schema_version: "5.4.1"
+  schema_version: "5.4.2"
   scope: ztp # ztp | full (default)
 
 scenario:
@@ -111,6 +111,7 @@ hardware:
     # verify_certificate: false  # default false: BMCs ship a self-signed certificate
   sbe:
     bundle_path: 'D:\sbe\dell' # folder on the management host with the OEM's SBE files, as downloaded
+    # delivery: skip # 5.4.2, OS configuration only (ZTP ignores it): winrm_copy, node_pull (with node_pull_url) or skip (default)
     allow_unvalidated: false # test only
   # BIOS. You do not need to write vendor attribute names: ZTP derives them from the inventory above and its
   # config/oem/<vendor>.json (Dell today):

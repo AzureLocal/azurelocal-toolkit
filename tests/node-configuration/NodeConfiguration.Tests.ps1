@@ -16,6 +16,16 @@ BeforeAll {
 
     function Get-Infra { Import-AzlInfrastructure -Path $script:Fixture -SkipValidation }
 
+    # A node spec whose infrastructure.yml sets hardware.sbe.delivery (and node_pull_url).
+    function Get-SbeSpec([string]$Delivery, [string]$Url = '') {
+        $infra = Get-Infra
+        $infra['hardware']['sbe']['delivery'] = $Delivery
+        if ($PSBoundParameters.ContainsKey('Url')) { $infra['hardware']['sbe']['node_pull_url'] = $Url }
+        $bundle = [pscustomobject]@{ Name = 'SBE_Dell_X_1.0'; ZipName = 'SBE_Dell_X_1.0.zip'; HashSource = 'x'; Deployment = [ordered]@{}
+            Files = @([pscustomobject]@{ Name = 'SBE_Dell_X_1.0.zip'; Path = 'D:\sbe\SBE_Dell_X_1.0.zip'; Size = 100; Sha256 = 'AA' }, [pscustomobject]@{ Name = 'SBE_Dell_X_1.0.xml'; Path = 'D:\sbe\SBE_Dell_X_1.0.xml'; Size = 10; Sha256 = 'BB' }) }
+        Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0] -SbeBundle $bundle
+    }
+
     # One AZLRESULT line, as a node script writes it.
     function ConvertTo-ResultLine([object]$Object) {
         $bytes = [Text.Encoding]::UTF8.GetBytes(($Object | ConvertTo-Json -Depth 10 -Compress))
@@ -72,7 +82,7 @@ BeforeAll {
                 'Restart' { [pscustomobject]@{ Output = (& $encode ([pscustomobject]@{ restartScheduled = $true })); Failed = $false; Error = ''; State = 'Succeeded' } }
             }
         }.GetNewClosure()
-        $transport.Stage = { param($Self, $Node, $LocalPath, $RemotePath, $Sha256) [pscustomobject]@{ Name = (Split-Path $LocalPath -Leaf); Url = 'https://example.invalid/blob?sas=1' } }
+        $transport.Stage = { param($Self, $Node, $LocalPath, $RemotePath, $Sha256) [pscustomobject]@{ Name = (Split-Path $LocalPath -Leaf); Url = $null } }
         return $transport
     }
     $script:Resolver = { param($Ref) 'P@ssw0rd-from-vault' }
@@ -368,12 +378,53 @@ Describe 'Comparison: SBE and drivers' {
         $script:State = New-ConfiguredState $script:Spec
         $script:State.sbe = @([pscustomobject]@{ n = 'SBE_Dell_X_1.0.zip'; len = 100; ok = $true }, [pscustomobject]@{ n = 'SBE_Dell_X_1.0.xml'; len = 10; ok = $true })
     }
-    It 'stages a file that is absent and nothing else' {
+    It 'delivers a file that is absent and nothing else (node_pull)' {
+        $script:Spec = Get-SbeSpec node_pull 'https://sbe.example.invalid/sbe/dell/'
         $script:State.sbe = @([pscustomobject]@{ n = 'SBE_Dell_X_1.0.zip'; len = 100; ok = $true })
         $c = @(Compare-AzlNodeState -Spec $script:Spec -State $script:State | Where-Object Action -eq 'Change')
         $c.Count | Should -Be 1
         $c[0].Apply.kind | Should -Be 'sbe-file'
+        $c[0].Apply.route | Should -Be 'node_pull'
         $c[0].Apply.name | Should -Be 'SBE_Dell_X_1.0.xml'
+        $c[0].Apply.url | Should -Be 'https://sbe.example.invalid/sbe/dell/SBE_Dell_X_1.0.xml'
+        $c[0].Apply.Contains('localPath') | Should -BeFalse
+    }
+    It 'winrm_copy names the local file and no address' {
+        $script:Spec = Get-SbeSpec winrm_copy
+        $script:State.sbe = @()
+        $c = @(Compare-AzlNodeState -Spec $script:Spec -State $script:State | Where-Object { $_.Action -eq 'Change' -and $_.Step -eq 'Sbe' })
+        $c.Count | Should -Be 2
+        $c[0].Apply.route | Should -Be 'winrm_copy'
+        $c[0].Apply.localPath | Should -Be 'D:\sbe\SBE_Dell_X_1.0.zip'
+        $c[0].Apply.Contains('url') | Should -BeFalse
+    }
+    It 'skip (and no key at all) reports the package as not delivered and changes nothing' {
+        $script:State.sbe = @()
+        foreach ($spec in $script:Spec, (Get-SbeSpec skip)) {
+            $plan = @(Compare-AzlNodeState -Spec $spec -State $script:State)
+            @($plan | Where-Object Action -eq 'Change') | Should -BeNullOrEmpty
+            $sbe = @($plan | Where-Object Step -eq 'Sbe')
+            $sbe.Count | Should -Be 2
+            $sbe | ForEach-Object { $_.Action | Should -Be 'Info'; $_.Note | Should -BeLike 'NOT DELIVERED*' }
+            @($plan | Where-Object { $_.Apply -and $_.Apply.kind -eq 'sbe-file' }) | Should -BeNullOrEmpty
+        }
+    }
+    It 'node_pull with no address is blocked, not guessed' {
+        $script:Spec = Get-SbeSpec node_pull ''
+        $script:State.sbe = @()
+        @(Compare-AzlNodeState -Spec $script:Spec -State $script:State | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -eq 'Blocked' }).Count | Should -Be 2
+    }
+    It 'lists the Sbe step last' {
+        $script:Spec = Get-SbeSpec node_pull 'https://sbe.example.invalid/sbe'
+        $script:State.sbe = @()
+        $steps = @(Compare-AzlNodeState -Spec $script:Spec -State $script:State -ClearStorage | ForEach-Object Step)
+        $lastNonSbe = [array]::LastIndexOf($steps, 'ClearStorage')
+        $firstSbe = [array]::IndexOf($steps, 'Sbe')
+        $firstSbe | Should -BeGreaterThan $lastNonSbe
+    }
+    It 'builds the address a node pulls from' {
+        Get-AzlSbePullUrl -Base 'https://h/sbe/' -Name 'SBE A.zip' | Should -Be 'https://h/sbe/SBE%20A.zip'
+        Get-AzlSbePullUrl -Base '\\files\sbe\dell\' -Name 'a.zip' | Should -Be '\\files\sbe\dell\a.zip'
     }
     It 'waits for the SBE before it decides on drivers' {
         $script:State.sbe = @()
@@ -464,19 +515,103 @@ Describe 'Invoke-AzlNodeConfiguration' {
         ($r.Changes | Where-Object Status -eq 'failed').Detail | Should -Be 'denied'
         @($t.Log | Where-Object Kind -eq 'Apply').Count | Should -Be 1
     }
-    It 'sends a missing SBE file through the transport and a SAS address as a secret' {
-        $infra = Get-Infra
-        $bundle = [pscustomobject]@{ Name = 'SBE_Dell_X_1.0'; ZipName = 'SBE_Dell_X_1.0.zip'; HashSource = 'x'; Deployment = [ordered]@{}
-            Files = @([pscustomobject]@{ Name = 'SBE_Dell_X_1.0.zip'; Path = 'D:\sbe\SBE_Dell_X_1.0.zip'; Size = 100; Sha256 = 'AA' }) }
-        $spec = Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0] -SbeBundle $bundle
-        $bad = New-ConfiguredState $spec
-        $good = New-ConfiguredState $spec
-        $good.sbe = @([pscustomobject]@{ n = 'SBE_Dell_X_1.0.zip'; len = 100; ok = $true })
-        $t = New-FakeTransport @($bad, $good) { param($p) [pscustomobject]@{ reboot = $false; results = @($p.actions | ForEach-Object { [pscustomobject]@{ id = $_.id; status = 'changed'; detail = 'ok' } }) } }
-        $r = Invoke-AzlNodeConfiguration -Spec $spec -Transport $t -Execute -SecretResolver $script:Resolver
-        $apply = $t.Log | Where-Object Kind -eq 'Apply'
-        $apply.Secrets['sas:SBE_Dell_X_1.0.zip'] | Should -Match 'sas='
-        ($apply.Parameters.actions | Where-Object kind -eq 'sbe-file').PSObject.Properties.Name | Should -Not -Contain 'localPath'
+    Context 'delivering the SBE package' {
+        BeforeEach {
+            $script:OkApply = { param($p) [pscustomobject]@{ reboot = $false; results = @($p.actions | ForEach-Object { [pscustomobject]@{ id = $_.id; status = 'changed'; detail = 'ok' } }) } }
+            $script:BothPresent = @([pscustomobject]@{ n = 'SBE_Dell_X_1.0.zip'; len = 100; ok = $true }, [pscustomobject]@{ n = 'SBE_Dell_X_1.0.xml'; len = 10; ok = $true })
+        }
+        It 'node_pull sends the node an address to pull from, and no file and no secret address' {
+            $spec = Get-SbeSpec node_pull 'https://sbe.example.invalid/sbe'
+            $bad = New-ConfiguredState $spec; $bad.sbe = @()
+            $good = New-ConfiguredState $spec; $good.sbe = $script:BothPresent
+            $t = New-FakeTransport @($bad, $good) $script:OkApply
+            $r = Invoke-AzlNodeConfiguration -Spec $spec -Transport $t -Execute -SecretResolver $script:Resolver
+            $apply = @($t.Log | Where-Object Kind -eq 'Apply')
+            $apply.Count | Should -Be 1
+            @($apply[0].Secrets.Keys | Where-Object { $_ -like 'sas:*' }) | Should -BeNullOrEmpty
+            $actions = @($apply[0].Parameters.actions)
+            $actions.Count | Should -Be 2
+            $actions[0].url | Should -Be 'https://sbe.example.invalid/sbe/SBE_Dell_X_1.0.zip'
+            $actions[0].sha256 | Should -Be 'AA'
+            $actions[0].Contains('localPath') | Should -BeFalse
+            $r.Converged | Should -BeTrue
+        }
+        It 'delivers the package after every other step, in a call of its own' {
+            $spec = Get-SbeSpec node_pull 'https://sbe.example.invalid/sbe'
+            $bad = New-ConfiguredState $spec; $bad.sbe = @(); $bad.host = 'WIN-X'
+            $good = New-ConfiguredState $spec; $good.sbe = $script:BothPresent
+            $t = New-FakeTransport @($bad, $good) $script:OkApply
+            $null = Invoke-AzlNodeConfiguration -Spec $spec -Transport $t -Execute -SecretResolver $script:Resolver
+            $apply = @($t.Log | Where-Object Kind -eq 'Apply')
+            $apply.Count | Should -Be 2
+            @($apply[0].Parameters.actions | ForEach-Object kind) | Should -Contain 'hostname'
+            @($apply[0].Parameters.actions | ForEach-Object kind) | Should -Not -Contain 'sbe-file'
+            @($apply[1].Parameters.actions | ForEach-Object kind | Select-Object -Unique) | Should -Be 'sbe-file'
+        }
+        It 'skip changes nothing about the package, does not fail the node and keeps the other steps' {
+            $spec = Get-SbeSpec skip
+            $bad = New-ConfiguredState $spec; $bad.sbe = @(); $bad.host = 'WIN-X'
+            $good = New-ConfiguredState $spec; $good.sbe = @()
+            $t = New-FakeTransport @($bad, $good) $script:OkApply
+            $r = Invoke-AzlNodeConfiguration -Spec $spec -Transport $t -Execute -SecretResolver $script:Resolver
+            $apply = @($t.Log | Where-Object Kind -eq 'Apply')
+            $apply.Count | Should -Be 1
+            @($apply[0].Parameters.actions | ForEach-Object kind) | Should -Be 'hostname'
+            $r.Converged | Should -BeTrue
+            @($r.Plan | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -eq 'Info' }).Count | Should -Be 2
+        }
+        It 'a failed pull is reported, tried once, and does not undo the other steps' {
+            $spec = Get-SbeSpec node_pull 'https://sbe.example.invalid/sbe'
+            $bad = New-ConfiguredState $spec; $bad.sbe = @(); $bad.host = 'WIN-X'
+            $still = New-ConfiguredState $spec; $still.sbe = @()
+            $t = New-FakeTransport @($bad, $still) { param($p) [pscustomobject]@{ reboot = $false; results = @($p.actions | ForEach-Object { $isSbe = $_.kind -eq 'sbe-file'; [pscustomobject]@{ id = $_.id; status = $(if ($isSbe) { 'failed' } else { 'changed' }); detail = $(if ($isSbe) { 'The remote name could not be resolved' } else { 'ok' }) } }) } }
+            $r = Invoke-AzlNodeConfiguration -Spec $spec -Transport $t -Execute -SecretResolver $script:Resolver
+            @($t.Log | Where-Object Kind -eq 'Apply').Count | Should -Be 2
+            ($r.Changes | Where-Object { $_.Id -like 'Sbe/*' }).Status | Select-Object -Unique | Should -Be 'failed'
+            ($r.Changes | Where-Object Id -eq 'Hostname/name').Status | Should -Be 'changed'
+            $r.Converged | Should -BeFalse
+        }
+        It 'winrm_copy over Arc without a WinRM path says so and does not stop the other steps' {
+            $spec = Get-SbeSpec winrm_copy
+            $bad = New-ConfiguredState $spec; $bad.sbe = @(); $bad.host = 'WIN-X'
+            $still = New-ConfiguredState $spec; $still.sbe = @()
+            $t = New-FakeTransport @($bad, $still) $script:OkApply
+            $t.Kind = 'ArcRunCommand'
+            $r = Invoke-AzlNodeConfiguration -Spec $spec -Transport $t -Execute -SecretResolver $script:Resolver
+            ($r.Changes | Where-Object Id -eq 'Hostname/name').Status | Should -Be 'changed'
+            $sbe = @($r.Changes | Where-Object { $_.Id -like 'Sbe/*' })
+            $sbe.Count | Should -Be 2
+            $sbe[0].Status | Should -Be 'failed'
+            $sbe[0].Detail | Should -BeLike '*needs a WinRM path*'
+            $r.Converged | Should -BeFalse
+        }
+        It 'winrm_copy copies each file through the WinRM transport with its SHA-256' {
+            $spec = Get-SbeSpec winrm_copy
+            $bad = New-ConfiguredState $spec; $bad.sbe = @()
+            $good = New-ConfiguredState $spec; $good.sbe = $script:BothPresent
+            $arc = New-FakeTransport @($bad, $good) $script:OkApply
+            $copies = [System.Collections.Generic.List[object]]::new()
+            $winrm = [pscustomobject]@{ Kind = 'WinRM'; Stage = $null }
+            $winrm.Stage = { param($Self, $Node, $LocalPath, $RemotePath, $Sha256) $null = $Self; $copies.Add([pscustomobject]@{ Node = $Node; Local = $LocalPath; Remote = $RemotePath; Sha = $Sha256 }); [pscustomobject]@{ Name = (Split-Path $LocalPath -Leaf); Url = $null } }.GetNewClosure()
+            $r = Invoke-AzlNodeConfiguration -Spec $spec -Transport $arc -SbeTransport $winrm -Execute -SecretResolver $script:Resolver
+            $copies.Count | Should -Be 2
+            $copies[0].Local | Should -Be 'D:\sbe\SBE_Dell_X_1.0.zip'
+            $copies[0].Remote | Should -Be 'C:\SBE\SBE_Dell_X_1.0.zip'
+            $copies[0].Sha | Should -Be 'AA'
+            @($arc.Log | Where-Object Kind -eq 'Apply') | Should -BeNullOrEmpty
+            $r.Converged | Should -BeTrue
+        }
+        It 'a copy that fails once is not retried for every file' {
+            $spec = Get-SbeSpec winrm_copy
+            $bad = New-ConfiguredState $spec; $bad.sbe = @()
+            $arc = New-FakeTransport @($bad) $script:OkApply
+            $attempts = [System.Collections.Generic.List[string]]::new()
+            $winrm = [pscustomobject]@{ Kind = 'WinRM'; Stage = $null }
+            $winrm.Stage = { param($Self, $Node, $LocalPath, $RemotePath, $Sha256) $null = $Self, $Node, $RemotePath, $Sha256; $attempts.Add($LocalPath); throw 'WinRM cannot connect to 192.0.2.11:5985' }.GetNewClosure()
+            $r = Invoke-AzlNodeConfiguration -Spec $spec -Transport $arc -SbeTransport $winrm -Execute -SecretResolver $script:Resolver
+            $attempts.Count | Should -Be 1
+            @($r.Changes | Where-Object Status -eq 'failed').Count | Should -Be 2
+        }
     }
 }
 
@@ -507,9 +642,10 @@ Describe 'Transport layer' {
         ($put.Body.properties.parameters | ConvertTo-Json -Depth 5) | Should -Not -Match 'secret'
         @($calls | Where-Object Method -eq 'DELETE').Count | Should -Be 1
     }
-    It 'Arc path refuses to stage a file without a staging storage account' {
+    It 'Arc path can''t carry a file and points at hardware.sbe.delivery' {
         $t = New-AzlArcRunCommandTransport -ArcResourceId @{ n1 = '/x' }
-        { Send-AzlNodeFile -Transport $t -Node n1 -LocalPath 'D:\f.zip' -RemotePath 'C:\SBE\f.zip' } | Should -Throw '*staging storage account*'
+        { Send-AzlNodeFile -Transport $t -Node n1 -LocalPath 'D:\f.zip' -RemotePath 'C:\SBE\f.zip' } | Should -Throw '*hardware.sbe.delivery*'
+        (Get-Command New-AzlArcRunCommandTransport).Parameters.Keys | Should -Not -Contain 'StagingStorageAccount'
     }
 }
 
@@ -563,6 +699,12 @@ Describe 'Node payloads' {
         $nodes = 7
         $json = (1..$nodes | ForEach-Object { [pscustomobject]@{ n = "Port$_"; mac = '00005e005310'; st = 'Up'; pci = 'PCI\VEN_15B3&DEV_101D'; drv = '24.4.1.0'; desc = 'Mellanox ConnectX-6 Dx'; dhcp = 'Disabled'; ips = @('192.0.2.11/24/Manual'); gw = @('192.0.2.1'); dns = @('192.0.2.4', '192.0.2.5'); vlan = $null } }) | ConvertTo-Json -Compress
         (ConvertTo-ResultLine ([pscustomobject]@{ nics = $json; more = ('x' * 1500) })).Length | Should -BeLessThan 4000
+    }
+    It 'the Apply script pulls an SBE file from an address in the action and checks its SHA-256, with no SAS or blob' {
+        $text = Get-AzlNodePayload -Name Apply
+        $text | Should -Match 'Get-P \$a ''url'''
+        $text | Should -Match 'Get-FileHash -LiteralPath \$tmp'
+        $text | Should -Not -MatchExactly 'sas:|SAS|[Bb]lob'
     }
     It 'the Apply script never touches a Fibre Channel or iSCSI disk when it clears storage' {
         $text = Get-AzlNodePayload -Name Apply

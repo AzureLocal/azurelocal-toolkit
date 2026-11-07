@@ -11,7 +11,7 @@
 
     Each script takes the same two parameters:
       ParamsB64   base64 of a JSON object: what to read, or the actions to apply. Never a secret.
-      SecretsB64  base64 of a JSON object with secrets (the local administrator's password, SAS URLs). Sent as an Arc
+      SecretsB64  base64 of a JSON object with secrets (the local administrator's password). Sent as an Arc
                   protected parameter, so Azure never shows it back.
     Each writes its answer as one line, AZLRESULT:<base64 of gzip of JSON>. Arc Run Command keeps only the last 4 KB of
     output, and the compressed line is far smaller than the JSON, so a node with seven ports and six disks still fits.
@@ -271,15 +271,23 @@ function Invoke-Action($a) {
             New-Item -ItemType Directory -Force -Path $sbeDir | Out-Null
             $final = Join-Path $sbeDir ([string]$a.name)
             $tmp = $final + '.part'
-            $url = [string](Get-P $S ('sas:' + [string]$a.name) '')
+            # node_pull: the node downloads the file from the address in infrastructure.yml (hardware.sbe.node_pull_url);
+            # the toolkit never sends the file itself. A winrm_copy file never reaches this action.
+            $url = [string](Get-P $a 'url' '')
             if (-not $url) { throw ('No download address for ' + $a.name + ' and it is not in ' + $sbeDir) }
+            $need = [int64](Get-P $a 'size' 0)
+            if ($need -gt 0) {
+                $free = (Get-PSDrive -Name ($sbeDir.Substring(0, 1))).Free
+                if ($free -lt ($need + 104857600)) { throw ('Only ' + [math]::Round($free / 1MB) + ' MB free on ' + $sbeDir.Substring(0, 2) + '; ' + $a.name + ' needs ' + [math]::Round($need / 1MB) + ' MB plus 100 MB') }
+            }
             if (Test-Path $tmp) { Remove-Item $tmp -Force }
-            Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tmp
+            if ($url.StartsWith('\\')) { Copy-Item -LiteralPath $url -Destination $tmp -Force }
+            else { Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $tmp }
             $hash = (Get-FileHash -LiteralPath $tmp -Algorithm SHA256).Hash
             if ($hash -ine [string]$a.sha256) { Remove-Item $tmp -Force; throw ('SHA-256 of ' + $a.name + ' is ' + $hash + ', expected ' + $a.sha256) }
             if (Test-Path $final) { Remove-Item $final -Force }
             Move-Item -LiteralPath $tmp -Destination $final
-            return ($a.name + ' downloaded and verified')
+            return ($a.name + ' pulled from ' + $url + ' and SHA-256 verified')
         }
         'driver' {
             Add-Type -AssemblyName System.IO.Compression.FileSystem

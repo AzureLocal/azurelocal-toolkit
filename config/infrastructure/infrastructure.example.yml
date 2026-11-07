@@ -27,6 +27,7 @@
 # isolate_san_adapters and enable_embedded_nics), the Azure site choices, timeouts, retries, the USB
 # image, the maintenance environment, and hardware.bmc.rfs_write_attribute and verify_certificate.
 # Every one has the default shown, which is what ZTP did before the key existed.
+# Schema 5.4.2 adds hardware.sbe.delivery and node_pull_url: how the SBE package reaches the nodes (no storage account).
 #
 # Rules:
 #   - Keys are snake_case. Sections reject unknown keys; use extensions.
@@ -37,7 +38,7 @@
 # =============================================================================
 
 _metadata:
-  schema_version: "5.4.1"
+  schema_version: "5.4.2"
   file_version: "1.0.0"
   last_updated: "2026-11-06"
   generated_by: ""
@@ -174,6 +175,15 @@ hardware:
     version: ""
     # Folder on the management host with the OEM's SBE files, as downloaded.
     bundle_path: 'D:\sbe\dell'
+    # Schema 5.4.2. How the package reaches each node's C:\SBE during OS configuration (Azure Arc Run Command can't carry a file,
+    # and there is no storage account route). One of:
+    #   skip        (default) the toolkit does not deliver it; the Sbe step says 'not delivered'; no other step is affected.
+    #   winrm_copy  the toolkit copies it over WinRM (TCP 5985) from the host it runs on: that host must reach the nodes'
+    #               management subnet (the operator host if it can, or a runner). Needs the nodes' local administrator as -Credential.
+    #   node_pull   each node downloads it from node_pull_url, which you serve (read-only, no credential in the address) from a
+    #               host the nodes can reach; the SHA-256 is checked on the node.
+    delivery: node_pull
+    node_pull_url: 'https://sbe.iic.example/sbe/dell' # or a UNC folder, \\files.iic.example\sbe\dell
     allow_unvalidated: false # test only
   # BIOS: from 5.4 azurelocal-ztp derives the SAN-adapter slots (nodes[].san.hbas[].slot) and the embedded NICs
   # (a port with slot Embedded) itself, per vendor; the raw maps are explicit overrides that win over the derived values.
