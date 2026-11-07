@@ -31,6 +31,9 @@
 
     Exit codes: 0 all nodes converged (Plan mode: no node failed and nothing is blocked); 1 a node failed, is blocked or did not
     converge; 2 bad input or nothing reachable.
+
+    Event feed: the run appends what it does, one JSON object per line, to <ReportDirectory>\os-configuration-events.jsonl
+    (-EventLogPath overrides). The contract is in AzlOsConfigurationEvents.psm1. Writing it never fails the run.
 #>
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -40,6 +43,7 @@ Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'azure-local'
 Import-Module (Join-Path $PSScriptRoot 'AzlNodePayload.psm1')
 Import-Module (Join-Path $PSScriptRoot 'AzlNodeTransport.psm1')
 Import-Module (Join-Path $PSScriptRoot 'AzlNodeConfiguration.psm1')
+Import-Module (Join-Path $PSScriptRoot 'AzlOsConfigurationEvents.psm1')
 
 $script:SetScript = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', 'deploy', '04-cluster-deployment', 'phase-03-os-configuration', 'Set-AzureLocalNodeConfiguration.ps1'))
 $script:NodeSteps = @('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')
@@ -47,6 +51,8 @@ $script:AllSteps = $script:NodeSteps + 'ArcRegistration'
 # What ZTP already guaranteed (the computer name, Arc registration) is verified, not redone.
 $script:ZtpSteps = @('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')
 $script:IsoSteps = $script:AllSteps
+# Shown by a viewer next to the master file's schema_version; raise it when the run's behaviour or the event feed changes.
+$script:WrapperVersion = '1.0.0'
 # Azure Local OS 23H2 is build 25398; anything older cannot be an Azure Local node.
 $script:MinimumBuild = 25398
 
@@ -60,6 +66,255 @@ function Get-AzlInputError([string]$Message) {
     $exception = [System.ArgumentException]::new($Message)
     $exception.Data['AzlInput'] = $true
     return $exception
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
+# The event feed (contract: AzlOsConfigurationEvents.psm1): what the run is doing, one line at a time, for a viewer to follow
+# ---------------------------------------------------------------------------------------------------------------------
+
+function Send-AzlRunEvent {
+    <#
+    .SYNOPSIS
+        One event of this run: the standard fields from the context and the node record, appended to the feed. Never throws.
+    #>
+    [CmdletBinding()]
+    param(
+        [AllowNull()][object]$Context,
+        [Parameter(Mandatory)][string]$State,
+        [AllowNull()][System.Collections.IDictionary]$Record,
+        [string]$Step = '',
+        [string]$Evidence = '',
+        [ValidateSet('Info', 'Warning', 'Error')][string]$Level = 'Info',
+        [string]$NextAction = '',
+        [System.Collections.IDictionary]$Data
+    )
+    try {
+        if (-not $Context -or -not $Context.EventLogPath) { return }
+        $node = '*'; $method = ''; $transport = ''
+        if ($Record) {
+            $node = [string]$Record['name']
+            if ($Record.Contains('method') -and $Record['method']) { $method = [string]$Record['method'] }
+            if ($Record.Contains('transport') -and $Record['transport']) { $transport = [string]$Record['transport'] }
+        }
+        $null = Write-AzlOsConfigurationEvent -Path $Context.EventLogPath -Node $node -State $State -Step $Step -Evidence $Evidence -Level $Level -NextAction $NextAction -Method $method -Transport $transport -Data $Data
+    }
+    catch { Write-Verbose "OS configuration event skipped: $($_.Exception.Message)" }
+}
+
+function Send-AzlRetryEvent {
+    # NodeRetry: the Arc Run Command ended in state Unknown and is being tried again. $Retry is what ConvertFrom-AzlOsRetryWarning reads.
+    [CmdletBinding()]
+    param([AllowNull()][object]$Context, [AllowNull()][System.Collections.IDictionary]$Record, [string]$Phase = '', [Parameter(Mandatory)][object]$Retry)
+    Send-AzlRunEvent -Context $Context -Record $Record -State NodeRetry -Level Warning `
+        -Evidence "The Arc Run Command ended in state Unknown (the node's agent may have lost its connection). Try $($Retry.Try) of $($Retry.Tries)$(if ($Phase) { " in the $Phase pass" }); trying again in $($Retry.WaitSeconds) s." `
+        -NextAction 'Wait: the script is safe to run again and the next read decides what is done.' -Data @{ try = $Retry.Try; tries = $Retry.Tries; waitSeconds = $Retry.WaitSeconds; phase = $Phase }
+}
+
+function Get-AzlNodeVersionData {
+    <#
+    .SYNOPSIS
+        The versions a viewer shows for a node: the master file's schema_version, this wrapper's version, the OS the node reports
+        (hostname, osVersion, build, caption), and the SBE (publisher, family, version, package, delivery route). Empty values are left out.
+    #>
+    [CmdletBinding()]
+    param([AllowNull()][object]$Context, [AllowNull()][System.Collections.IDictionary]$Record)
+    $data = [ordered]@{ wrapperVersion = $script:WrapperVersion }
+    if ($Context) {
+        $schema = [string](Get-AzlProp $Context.Infra '_metadata.schema_version' '')
+        if ($schema) { $data.schemaVersion = $schema }
+        $sbe = Get-AzlProp $Context.Infra 'hardware.sbe'
+        if ($sbe) {
+            foreach ($pair in @(@('sbePublisher', 'publisher'), @('sbeFamily', 'family'), @('sbeVersion', 'version'))) {
+                $v = [string](Get-AzlProp $sbe $pair[1] '')
+                if ($v) { $data[$pair[0]] = $v }
+            }
+            $delivery = [string](Get-AzlProp $sbe 'delivery' '')
+            if (-not $delivery -and (Get-AzlProp $sbe 'bundle_path' '') -and $Record -and $Record.transport) {
+                $delivery = if ($Record.transport -eq 'WinRM') { 'copy over WinRM' } else { 'SAS download by the node (Arc Run Command)' }
+            }
+            if ($delivery) { $data.sbeDelivery = $delivery }
+        }
+    }
+    if ($Record) {
+        if ($Record.hostname) { $data.hostname = [string]$Record.hostname }
+        if ($Record.osVersion) {
+            $data.osVersion = [string]$Record.osVersion
+            $build = [regex]::Match([string]$Record.osVersion, '10\.0\.(\d{4,6})')
+            if ($build.Success) { $data.build = [int]$build.Groups[1].Value }
+        }
+        if ($Record.osCaption) { $data.osCaption = [string]$Record.osCaption }
+        if ($Record.osBuild -and -not $data.Contains('build')) { $data.build = [int]$Record.osBuild }
+        $package = @(@($Record.plan) | Where-Object { $_.Step -eq 'Sbe' -and "$($_.Item)" -match 'SBE_[^\\/]*\.zip$' } | ForEach-Object { ([string]$_.Item -split '[\\/]')[-1] } | Select-Object -First 1)
+        if ($package.Count) { $data.sbePackage = $package[0] }
+    }
+    return $data
+}
+
+function Get-AzlMethodResolvedData {
+    <#
+    .SYNOPSIS
+        The extra fields of MethodResolved: what the master file declares and what the evidence says (so a viewer can show a
+        disagreement), the method's source, the steps, the evidence found, and the versions.
+    #>
+    [CmdletBinding()]
+    param([AllowNull()][object]$Context, [System.Collections.IDictionary]$Record, [object]$Resolution)
+    $declaredMethod = switch ([string]$Resolution.Declared) { 'simplified' { 'Ztp' } 'iso' { 'Iso' } default { '' } }
+    $e = $Record.evidence
+    $data = [ordered]@{
+        declared       = [string]$Resolution.Declared
+        declaredMethod = $declaredMethod
+        source         = [string]$Resolution.Source
+        mismatch       = [bool]($declaredMethod -and $Record.method -and $declaredMethod -ne $Record.method)
+        steps          = @($Record.steps)
+        handoff        = $(if ($e.HandoffPresent) { if ($e.HandoffReady) { 'ready' } else { 'not ready' } } else { 'none' })
+        arc            = $(if ($e.ArcFound) { [string]$e.ArcStatus } else { 'none' })
+        winrm          = $(if ($e.WinRmAnswers -eq $true) { 'answers' } elseif ($null -eq $e.WinRmAnswers) { 'not tried' } else { 'no answer' })
+        warnings       = @($Resolution.Warnings)
+    }
+    foreach ($pair in (Get-AzlNodeVersionData -Context $Context -Record $Record).GetEnumerator()) { $data[$pair.Key] = $pair.Value }
+    return $data
+}
+
+function Send-AzlStepPlanEvent {
+    # StepPlanned for every step the node runs, StepSkipped for the ones it doesn't, from the plan of a Plan pass.
+    [CmdletBinding()]
+    param([AllowNull()][object]$Context, [System.Collections.IDictionary]$Record)
+    if (-not $Context -or -not $Context.EventLogPath) { return }
+    $byStep = @{}
+    foreach ($s in @(Get-AzlOsStepPlan -Plan @($Record.plan))) { $byStep[$s.Step] = $s }
+    foreach ($step in (Get-AzlOsConfigurationStepOrder)) {
+        if ($step -in @($Record.steps)) {
+            if ($byStep.ContainsKey($step)) {
+                $p = $byStep[$step]
+                Send-AzlRunEvent -Context $Context -Record $Record -State StepPlanned -Step $step -Evidence "$($p.Action): $($p.Evidence)" -Level $(if ($p.Action -eq 'Blocked') { 'Warning' } else { 'Info' }) -Data @{ action = $p.Action; item = $p.Item; current = $p.Current; desired = $p.Desired }
+            }
+            else {
+                $reason = switch ($step) {
+                    { $_ -in 'Sbe', 'Drivers' } { if (-not (Get-AzlProp $Context.Infra 'hardware.sbe.bundle_path' '')) { 'hardware.sbe.bundle_path is not set in the master file, so the SBE and the OEM drivers are skipped.' } else { 'the script found nothing to check for this step on this node.' } }
+                    'ClearStorage' { if (-not $Context.ClearStorage) { 'os_configuration.clear_storage is off, so no storage is wiped.' } else { 'the script found nothing to check for this step on this node.' } }
+                    default { 'the script found nothing to check for this step on this node (for example no SAN is configured).' }
+                }
+                Send-AzlRunEvent -Context $Context -Record $Record -State StepSkipped -Step $step -Evidence "Not applicable: $reason"
+            }
+        }
+        elseif ($Record.method -eq 'Ztp' -and $step -in 'Hostname', 'ArcRegistration') {
+            # ZTP did these two; the run checks them and doesn't change them.
+            $e = $Record.evidence
+            if ($step -eq 'Hostname') {
+                $wrong = $Record.hostname -and ($Record.hostname -ine $Record.name)
+                $text = if ($wrong) { "Verify only: the node reports '$($Record.hostname)', the master file says '$($Record.name)'. ZTP names the machine, so it is not renamed here." } elseif ($Record.hostname) { "Verify only: the node reports '$($Record.hostname)'; ZTP set the computer name." } else { 'Verify only: ZTP set the computer name; the node did not report one.' }
+                $action = if ($wrong) { 'Blocked' } else { 'Ok' }
+            }
+            else {
+                $connected = [string]$e.ArcStatus -eq 'Connected'
+                $text = "Verify only: handoff $(if ($e.HandoffPresent) { if ($e.HandoffReady) { 'ready' } else { 'not ready' } } else { 'not passed' }); Arc machine $(if ($e.ArcFound) { $e.ArcStatus } else { 'not found' }). ZTP registered the machine with Azure Arc."
+                $action = if ($connected) { 'Ok' } else { 'Blocked' }
+            }
+            Send-AzlRunEvent -Context $Context -Record $Record -State StepPlanned -Step $step -Evidence "${action}: $text" -Level $(if ($action -eq 'Blocked') { 'Warning' } else { 'Info' }) -Data @{ action = $action; verifyOnly = $true; item = $step; current = ''; desired = '' }
+        }
+        elseif ($step -ne 'ArcRegistration' -or $Record.method -eq 'Iso') {
+            Send-AzlRunEvent -Context $Context -Record $Record -State StepSkipped -Step $step -Evidence 'Not applicable: not selected with -Step.'
+        }
+    }
+}
+
+function Send-AzlStepApplyingEvent {
+    # StepApplying for each step that has a change in the plan: the apply call is about to run them.
+    [CmdletBinding()]
+    param([AllowNull()][object]$Context, [System.Collections.IDictionary]$Record, [switch]$ArcRegistration)
+    if (-not $Context -or -not $Context.EventLogPath) { return }
+    $want = $ArcRegistration.IsPresent
+    foreach ($p in @(Get-AzlOsStepPlan -Plan @($Record.plan) | Where-Object { $_.Action -eq 'Change' -and (($_.Step -eq 'ArcRegistration') -eq $want) })) {
+        Send-AzlRunEvent -Context $Context -Record $Record -State StepApplying -Step $p.Step -Evidence "Changing: $($p.Evidence)" -Data @{ item = $p.Item; current = $p.Current; desired = $p.Desired }
+    }
+}
+
+function Send-AzlStepAppliedEvent {
+    <#
+    .SYNOPSIS
+        StepApplied or StepFailed for the steps an apply call reports on. A change id is 'Step/detail'; a step with a failed change
+        failed, a step whose changes all succeeded is applied. A step the call says nothing about is decided by the verification.
+    #>
+    [CmdletBinding()]
+    param([AllowNull()][object]$Context, [System.Collections.IDictionary]$Record, [AllowEmptyCollection()][object[]]$Change = @())
+    if (-not $Context -or -not $Context.EventLogPath) { return }
+    $known = Get-AzlOsConfigurationStepOrder
+    $grouped = @{}
+    foreach ($c in @($Change)) {
+        $step = (([string]$c.id) -split '[/:]')[0]
+        if ($step -notin $known) { continue }
+        if (-not $grouped.ContainsKey($step)) { $grouped[$step] = [System.Collections.Generic.List[object]]::new() }
+        $grouped[$step].Add($c)
+    }
+    foreach ($step in $known) {
+        if (-not $grouped.ContainsKey($step)) { continue }
+        $list = @($grouped[$step])
+        $failed = @($list | Where-Object { $_.status -eq 'failed' })
+        if ($failed.Count) {
+            Send-AzlRunEvent -Context $Context -Record $Record -State StepFailed -Step $step -Evidence "Failed: $(($failed | ForEach-Object { $_.detail }) -join '; ')" -Level Error -NextAction 'Fix the cause on the node and run the OS configuration again; the step is repeated.'
+        }
+        else {
+            Send-AzlRunEvent -Context $Context -Record $Record -State StepApplied -Step $step -Evidence "Applied: $(($list | ForEach-Object { $_.detail }) -join '; ')"
+        }
+    }
+}
+
+function Send-AzlStepVerifiedEvent {
+    # After the verification pass: StepVerified for every step that now matches, StepFailed for one that still differs.
+    [CmdletBinding()]
+    param([AllowNull()][object]$Context, [System.Collections.IDictionary]$Record)
+    if (-not $Context -or -not $Context.EventLogPath) { return }
+    $byStep = @{}
+    foreach ($s in @(Get-AzlOsStepPlan -Plan @($Record.plan))) { $byStep[$s.Step] = $s }
+    foreach ($step in (Get-AzlOsConfigurationStepOrder)) {
+        if (-not $byStep.ContainsKey($step)) { continue }
+        $p = $byStep[$step]
+        if ($p.Action -in 'Change', 'Blocked') {
+            Send-AzlRunEvent -Context $Context -Record $Record -State StepFailed -Step $step -Evidence "Still differs after the apply: $($p.Evidence)" -Level Error -NextAction 'Fix what the evidence names and run the OS configuration again.' -Data @{ action = $p.Action; item = $p.Item; current = $p.Current; desired = $p.Desired }
+        }
+        else { Send-AzlRunEvent -Context $Context -Record $Record -State StepVerified -Step $step -Evidence "Verified: $($p.Evidence)" -Data @{ action = $p.Action } }
+    }
+}
+
+function Send-AzlNodeOutcomeEvent {
+    <#
+    .SYNOPSIS
+        The last word on a node, once: NodeConverged, NodeBlocked or NodeFailed, from its record. A node is not reported twice.
+        In Plan mode a node that still has changes pending has no outcome yet.
+    #>
+    [CmdletBinding()]
+    param([AllowNull()][object]$Context, [System.Collections.IDictionary]$Record, [ValidateSet('Plan', 'Apply')][string]$Mode = 'Plan')
+    if ($Record.outcomeSent) { return }
+    $errors = @($Record.errors)
+    $state = ''; $level = 'Info'; $text = ''; $next = ''
+    if ($Record.converged) {
+        $state = 'NodeConverged'
+        $made = @($Record.changes | Where-Object { $_.status -eq 'changed' }).Count
+        $text = if ($made) { "The verification pass found nothing left to change after $made change(s)$(if ($Record.restarted) { ' and a restart' })." } elseif ($Mode -eq 'Plan') { 'The node already matches the master file: nothing to change.' } else { 'Nothing to change.' }
+    }
+    elseif ($Record.status -eq 'skipped') {
+        $state = 'NodeBlocked'; $level = 'Warning'; $text = $errors -join ' '; $next = 'Fix the node that failed and run the OS configuration again.'
+    }
+    elseif ($Record.status -eq 'failed') {
+        $state = 'NodeFailed'; $level = 'Error'; $text = $errors -join ' '; $next = 'Read the error, fix the cause, and run the OS configuration again.'
+    }
+    elseif ($Mode -eq 'Plan') {
+        if ($Record.blocked -gt 0 -or $errors.Count) {
+            $state = 'NodeBlocked'; $level = 'Warning'; $next = 'Resolve what is blocked (see the StepPlanned lines), then run the OS configuration again.'
+            $text = "$($Record.blocked) item(s) blocked$(if ($errors.Count) { '. ' + ($errors -join ' ') })"
+        }
+        else { return }
+    }
+    elseif ($Record.blocked -gt 0) {
+        $state = 'NodeBlocked'; $level = 'Error'; $next = 'Resolve what is blocked, then run the OS configuration again.'
+        $text = "$($Record.blocked) item(s) still blocked after the apply$(if ($errors.Count) { '. ' + ($errors -join ' ') })"
+    }
+    else {
+        $state = 'NodeFailed'; $level = 'Error'; $next = 'Run the OS configuration again; the verification pass shows what is left.'
+        $text = if ($errors.Count) { $errors -join ' ' } else { "Not converged: $($Record.pendingChanges) change(s) left after the apply." }
+    }
+    $Record.outcomeSent = $true
+    Send-AzlRunEvent -Context $Context -Record $Record -State $state -Evidence $text -Level $level -NextAction $next
 }
 
 function Test-AzlAzureSignedIn {
@@ -405,11 +660,26 @@ function Invoke-AzlSetNodeConfiguration {
         ExitCode, Error, Unknown ($true when the error was a run that ended in state Unknown), Report (the parsed JSON, or $null).
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][hashtable]$Parameters)
+    param(
+        [Parameter(Mandatory)][hashtable]$Parameters,
+        # Where a retry of an Unknown run command goes in the event feed (NodeRetry), as the warning is written.
+        [AllowNull()][object]$EventContext,
+        [AllowNull()][System.Collections.IDictionary]$EventRecord,
+        [string]$EventPhase = ''
+    )
     $global:LASTEXITCODE = 0
     $errorText = ''; $unknown = $false; $exit = 0
     try {
-        $null = & $script:SetScript @Parameters
+        # The warnings pass through (and are written again as warnings); a retry of an Unknown run command also goes to the event feed.
+        $null = & $script:SetScript @Parameters 3>&1 | ForEach-Object {
+            if ($_ -is [System.Management.Automation.WarningRecord]) {
+                Write-Warning $_.Message
+                if ($EventContext) {
+                    $retry = ConvertFrom-AzlOsRetryWarning -Message $_.Message
+                    if ($retry) { Send-AzlRetryEvent -Context $EventContext -Record $EventRecord -Phase $EventPhase -Retry $retry }
+                }
+            }
+        }
         $exit = [int]$global:LASTEXITCODE
     }
     catch {
@@ -457,7 +727,7 @@ function Invoke-AzlNodeRun {
         $parameters.Credential = $Context.CredentialInfo.Credential
         if ($Record.address) { $parameters.NodeAddress = @{ $Record.name = $Record.address } }
     }
-    $run = Invoke-AzlSetNodeConfiguration -Parameters $parameters
+    $run = Invoke-AzlSetNodeConfiguration -Parameters $parameters -EventContext $Context -EventRecord $Record -EventPhase $Phase
     $entry = $null
     if ($run.Report) { $entry = @($run.Report.nodes | Where-Object { $_.name -ieq $Record.name } | Select-Object -First 1)[0] }
     [pscustomobject]@{ ExitCode = $run.ExitCode; Error = $run.Error; Unknown = $run.Unknown; Entry = $entry; Skipped = $false }
@@ -653,18 +923,27 @@ function Invoke-AzlApplyPhase {
     $arcPending = @($Record.plan | Where-Object { $_.Step -eq 'ArcRegistration' -and $_.Action -eq 'Change' }).Count -gt 0
     $setPending = @($Record.plan | Where-Object { $_.Step -ne 'ArcRegistration' -and $_.Action -eq 'Change' }).Count -gt 0
     if ($setPending -or $Record.blocked -gt 0) {
+        Send-AzlStepApplyingEvent -Context $Context -Record $Record
         $run = Invoke-AzlNodeRun -Context $Context -Record $Record -Phase Apply
         $Record.phases['Apply'] = [ordered]@{ exitCode = $run.ExitCode; error = $run.Error; unknown = $run.Unknown }
+        $made = @()
         if ($run.Entry) {
-            $Record.changes += @(@($run.Entry.changes) | ForEach-Object { [ordered]@{ pass = $_.Pass; id = $_.Id; status = $_.Status; detail = $_.Detail } })
-            if ($run.Entry.restarted) { $Record.restarted = $true }
+            $made = @(@($run.Entry.changes) | ForEach-Object { [ordered]@{ pass = $_.Pass; id = $_.Id; status = $_.Status; detail = $_.Detail } })
+            $Record.changes += $made
+            if ($run.Entry.restarted) {
+                $Record.restarted = $true
+                # The restart happens inside the apply call; this is written when the call reports it, before the steps of that call.
+                Send-AzlRunEvent -Context $Context -Record $Record -State NodeRestarting -Evidence 'The node restarted during the apply (a computer name, MPIO or driver change needs one) and came back with a new boot time.' -Level Warning
+            }
         }
+        Send-AzlStepAppliedEvent -Context $Context -Record $Record -Change $made
         if ($run.Error) {
             if ($run.Unknown) { $Record.warnings += "The Apply of $($Record.name) ended in state Unknown after $($Context.RetryTries) tries; convergence is decided by the verification pass, not by the command." }
             else { $Record.errors += "Apply of $($Record.name) failed: $($run.Error)" }
         }
     }
     if ($arcPending) {
+        Send-AzlStepApplyingEvent -Context $Context -Record $Record -ArcRegistration
         try {
             Resolve-AzlWinRmAddress -Context $Context -Record $Record -Node $Node
             $arc = Invoke-AzlArcRegistration -Context $Context -Record $Record -Node $Node
@@ -675,6 +954,7 @@ function Invoke-AzlApplyPhase {
             $Record.changes += [ordered]@{ pass = 1; id = 'ArcRegistration'; status = 'failed'; detail = $_.Exception.Message }
             $Record.errors += "Arc registration of $($Record.name) failed: $($_.Exception.Message)"
         }
+        Send-AzlStepAppliedEvent -Context $Context -Record $Record -Change @($Record.changes | Where-Object { $_.id -eq 'ArcRegistration' } | Select-Object -Last 1)
     }
     $Record.status = 'applied'
 }
@@ -815,7 +1095,8 @@ function Get-AzlNodeRecord {
         steps = $steps; setSteps = @($steps | Where-Object { $_ -in $script:NodeSteps })
         status = 'pending'; plan = @(); changes = @(); errors = @(); warnings = @(); verification = @(); wipe = @()
         ports = @(); sanDisks = @(); hostname = ''; osVersion = ''
-        pendingChanges = 0; blocked = 0; converged = $false; restarted = $false; phases = [ordered]@{}
+        pendingChanges = 0; blocked = 0; converged = $false; restarted = $false; phases = [ordered]@{}; outcomeSent = $false
+        osCaption = ''; osBuild = 0
     }
 }
 
@@ -853,7 +1134,8 @@ function Invoke-AzlOsConfiguration {
         [hashtable]$NodeAddress,
         [switch]$ClearStorage,
         [switch]$FailOnPendingChanges,
-        [switch]$SkipValidation
+        [switch]$SkipValidation,
+        [string]$EventLogPath
     )
     $records = @()
     $context = $null
@@ -891,9 +1173,14 @@ function Invoke-AzlOsConfiguration {
             NodeAddress = $addressOverride; Method = $Method; CredentialInfo = $null
             RetryTries = $tries; RetryDelaySeconds = $delays; MaxPasses = $(if ($run.ContainsKey('maxPasses')) { [int]$run.maxPasses } else { 3 })
             NoRestart = ($run.ContainsKey('noRestart') -and $run.noRestart -eq $true); SkipValidation = $SkipValidation.IsPresent
+            EventLogPath = $(if ($EventLogPath) { [IO.Path]::GetFullPath($EventLogPath, (Get-Location).ProviderPath) } else { Join-Path $reportDir 'os-configuration-events.jsonl' })
         }
         $context.CredentialInfo = Get-AzlLocalAdminCredential -Infrastructure $infra -Credential $Credential
         $declared = [string](Get-AzlProp $infra 'scenario.os_install' '')
+        $nodeNames = @($nodes | ForEach-Object { [string]$_['name'] })
+        $startData = Get-AzlNodeVersionData -Context $context -Record $null
+        $startData.nodes = $nodeNames; $startData.mode = $Mode; $startData.cluster = $context.ClusterName
+        Send-AzlRunEvent -Context $context -State RunStarted -Record $null -Evidence "OS configuration run started: mode $Mode, cluster $($context.ClusterName), $($nodeNames.Count) node(s): $($nodeNames -join ', ')." -Data $startData
 
         Write-AzlLine "OS configuration: $($context.ClusterName), mode $Mode, $($nodes.Count) node(s), report directory $reportDir"
         if ($merged) { Write-AzlLine "Handoffs: $($merged.Files.Count) file(s) merged, $($merged.Map.Count) node(s)." }
@@ -908,6 +1195,7 @@ function Invoke-AzlOsConfiguration {
         $nodeByName = @{}
         foreach ($n in $nodes) {
             $nodeByName[[string]$n['name']] = $n
+            Send-AzlRunEvent -Context $context -State NodeStarted -Record ([ordered]@{ name = [string]$n['name'] }) -Evidence "Looking at $($n['name']): its handoff, its Arc machine, and whether it answers on WinRM, to decide how it is configured."
             $evidence = Get-AzlNodeEvidence -Context $context -Node $n
             $resolution = Resolve-AzlNodeMethod -Node ([string]$n['name']) -Declared $declared -Evidence $evidence -Force $Method
             foreach ($e in $resolution.Errors) { $inputProblems.Add($e) }
@@ -915,6 +1203,19 @@ function Invoke-AzlOsConfiguration {
             if ($Transport -ne 'Auto' -and $resolution.Method) { $resolution.Transport = $Transport }
             $record = Get-AzlNodeRecord -Node $n -Resolution $resolution -Step $Step
             $records.Add($record)
+            if ($resolution.Method) {
+                $seen = @(
+                    $(if ($evidence.HandoffPresent) { "handoff $(if ($evidence.HandoffReady) { 'ready' } else { 'not ready' })" } else { 'no handoff' })
+                    $(if ($evidence.ArcFound) { "Arc machine $($evidence.ArcStatus)" } else { 'no Arc machine' })
+                    $(if ($evidence.WinRmAnswers -eq $true) { 'answers on WinRM' } elseif ($null -eq $evidence.WinRmAnswers) { 'WinRM not tried' } else { 'no answer on WinRM' })
+                ) -join ', '
+                Send-AzlRunEvent -Context $context -State MethodResolved -Record $record -Level $(if (@($resolution.Warnings).Count) { 'Warning' } else { 'Info' }) `
+                    -Evidence "Declared os_install '$($resolution.Declared)'; evidence: $seen; so the $($resolution.Method) path ($($resolution.Source)) over $($resolution.Transport).$(if (@($resolution.Warnings).Count) { ' Warning: ' + (@($resolution.Warnings) -join ' ') })" `
+                    -Data (Get-AzlMethodResolvedData -Context $context -Record $record -Resolution $resolution)
+            }
+            else {
+                Send-AzlRunEvent -Context $context -State NodeFailed -Record $record -Level Error -Evidence "No method could be resolved: $(@($resolution.Errors) -join ' ')" -NextAction 'Pass the node''s handoff (-HandoffPath), sign in to Azure, or make the node reachable; then run again.'
+            }
             if ($resolution.Method) { Write-AzlLine "  $($record.name): method $($record.method) ($($record.methodSource); declared $declared), transport $($record.transport)$(if ($record.address) { ", address $($record.address)" })." }
         }
         if ($inputProblems.Count) { throw (Get-AzlInputError (($inputProblems | ForEach-Object { "- $_" }) -join [Environment]::NewLine)) }
@@ -930,7 +1231,11 @@ function Invoke-AzlOsConfiguration {
         foreach ($r in @($records | Where-Object { $_.method -eq 'Iso' -and $_.transport -eq 'WinRM' })) {
             $check = Test-AzlIsoPrecondition -Context $context -Record $r
             foreach ($p in $check.Problems) { $pre.Add($p) }
-            if ($check.Seen) { $r.warnings += "OS: $(Get-AzlProp $check.Seen 'caption' '') build $(Get-AzlProp $check.Seen 'build' '')" }
+            if ($check.Seen) {
+                $r.warnings += "OS: $(Get-AzlProp $check.Seen 'caption' '') build $(Get-AzlProp $check.Seen 'build' '')"
+                $r.osCaption = [string](Get-AzlProp $check.Seen 'caption' ''); $r.osBuild = [int](Get-AzlProp $check.Seen 'build' 0)
+            }
+            if ($check.Problems.Count) { Send-AzlRunEvent -Context $context -State NodeFailed -Record $r -Level Error -Evidence ($check.Problems -join ' ') -NextAction 'Fix what is named, then run the OS configuration again.' }
         }
         if ($pre.Count) { throw (Get-AzlInputError (($pre | ForEach-Object { "- $_" }) -join [Environment]::NewLine)) }
 
@@ -943,14 +1248,32 @@ function Invoke-AzlOsConfiguration {
             Write-AzlLine "-- $($r.name)"
             try { Invoke-AzlPlanPhase -Context $context -Record $r -Node $nodeByName[$r.name] }
             catch { $r.status = 'failed'; $r.errors += "Plan of $($r.name) failed: $($_.Exception.Message)" }
+            if ($r.status -ne 'failed') {
+                # The node was read: add what it reported (hostname, OS) to the method line, then say what each step found.
+                if ($r.hostname -or $r.osVersion) {
+                    Send-AzlRunEvent -Context $context -Record $r -State MethodResolved -Level $(if (@($r.methodWarnings).Count) { 'Warning' } else { 'Info' }) -Evidence "Read from the node: computer name '$($r.hostname)', OS $($r.osVersion)$(if ($r.osCaption) { " ($($r.osCaption))" })." -Data (Get-AzlMethodResolvedData -Context $context -Record $r -Resolution ([pscustomobject]@{ Declared = $r.declared; Source = $r.methodSource; Warnings = @($r.methodWarnings) }))
+                }
+                Send-AzlStepPlanEvent -Context $context -Record $r
+            }
             if ($r.status -eq 'failed' -and -not $ContinueOnNodeFailure) { $stop = $true }
         }
         $clusterProblems = @(Test-AzlSanConsistency -Record $records)
         foreach ($r in $records) { $r.converged = ($r.status -eq 'planned' -and $r.pendingChanges -eq 0 -and $r.blocked -eq 0 -and @($r.errors).Count -eq 0) }
+        # Plan mode ends here for every node. In Apply mode only a node that is already settled (failed, skipped, nothing to change) is reported now.
+        foreach ($r in $records) { if ($Mode -eq 'Plan' -or $r.converged -or $r.status -in 'failed', 'skipped') { Send-AzlNodeOutcomeEvent -Context $context -Record $r -Mode Plan } }
         $wipe = @(Get-AzlWipeList -Record $records)
         $null = Write-AzlOsConfigurationReport -Context $context -Record $records -FileName 'plan-report.json' -ClusterProblem $clusterProblems
         $wipeText = Format-AzlWipeList -WipeList $wipe -ClearStorage $clear -Mode $Mode -Source $clearSource
         Set-Content -LiteralPath (Join-Path $reportDir 'wipe-list.txt') -Value $wipeText -Encoding utf8NoBOM
+        $planChanges = [int](@($records | Where-Object { $_.status -ne 'failed' -and $_.status -ne 'skipped' } | ForEach-Object { $_.pendingChanges } | Measure-Object -Sum).Sum)
+        $planBlocked = [int](@($records | Where-Object { $_.status -ne 'failed' -and $_.status -ne 'skipped' } | ForEach-Object { $_.blocked } | Measure-Object -Sum).Sum)
+        Send-AzlRunEvent -Context $context -State PlanCompleted -Record $null -Level $(if ($planBlocked -or $clusterProblems.Count) { 'Warning' } else { 'Info' }) `
+            -Evidence "Plan complete for $($records.Count) node(s): $planChanges change(s) pending, $planBlocked blocked. Nothing was changed.$(if ($clusterProblems.Count) { ' ' + ($clusterProblems -join ' ') })" `
+            -NextAction $(if ($Mode -eq 'Plan') { 'Review the plan and the wipe list; apply with -Mode Apply.' } else { 'Applying node by node.' }) -Data @{ changes = $planChanges; blocked = $planBlocked; mode = $Mode }
+        Send-AzlRunEvent -Context $context -State WipeListPublished -Record $null -Level $(if ($wipe.Count) { 'Warning' } else { 'Info' }) `
+            -Evidence $(if (-not $clear) { 'Storage wipe is off (os_configuration.clear_storage is false): nothing will be wiped.' } elseif ($wipe.Count -eq 0) { 'Storage wipe is on and no leftover local storage was found: nothing to wipe.' } else { "$($wipe.Count) node(s) have local disks that $(if ($Mode -eq 'Apply') { 'WILL BE WIPED NOW' } else { 'WOULD BE WIPED if you apply' }): $((@($wipe | ForEach-Object { "$($_.Node): $($_.Disks)" })) -join ' | ')" }) `
+            -NextAction $(if ($wipe.Count -and $Mode -eq 'Plan') { 'Check the disks listed in wipe-list.txt before you apply.' } else { '' }) `
+            -Data @{ wipeCount = $wipe.Count; clearStorage = [bool]$clear; wipe = @($wipe | ForEach-Object { [ordered]@{ node = $_.Node; disks = $_.Disks } }) }
         Write-AzlLine ''
         foreach ($r in $records) {
             $show = @($r.plan | Where-Object { $_.Action -ne 'Ok' })
@@ -986,6 +1309,7 @@ function Invoke-AzlOsConfiguration {
                 $r.verification = @()
                 try { Invoke-AzlPlanPhase -Context $context -Record $r -Node $nodeByName[$r.name] -Phase Verify }
                 catch { $r.status = 'failed'; $r.errors += "Verification of $($r.name) failed: $($_.Exception.Message)" }
+                if ($r.status -ne 'failed') { Send-AzlStepVerifiedEvent -Context $context -Record $r }
                 $verifyErrors = @(@($r.errors) | Select-Object -Skip $before)
                 $r.converged = ($r.status -ne 'failed' -and $r.pendingChanges -eq 0 -and $r.blocked -eq 0 -and $verifyErrors.Count -eq 0)
                 if ($r.converged -and $before -gt 0) { $r.warnings += "Recovered: the verification pass found nothing left to change although a step reported an error (errors kept in the report)." }
@@ -993,6 +1317,7 @@ function Invoke-AzlOsConfiguration {
                 Write-AzlLine "   $($r.name): $(if ($r.converged) { 'converged' } else { "NOT converged ($($r.pendingChanges) change(s) left, $($r.blocked) blocked)" })"
             }
             $clusterProblems = @(Test-AzlSanConsistency -Record $records)
+            foreach ($r in $records) { Send-AzlNodeOutcomeEvent -Context $context -Record $r -Mode Apply }
         }
         foreach ($p in $clusterProblems) { Write-Warning $p }
 
@@ -1000,6 +1325,11 @@ function Invoke-AzlOsConfiguration {
         $exit = Get-AzlOsConfigurationExitCode -Record $records -ClusterProblem $clusterProblems -Mode $Mode -FailOnPendingChanges:$failOnPending
         $reportPath = Write-AzlOsConfigurationReport -Context $context -Record $records -FileName 'report.json' -ClusterProblem $clusterProblems -ExitCode $exit
         $summary = Format-AzlOsConfigurationSummary -Record $records -Mode $Mode -ExitCode $exit
+        $convergedCount = @($records | Where-Object { $_.converged }).Count
+        Send-AzlRunEvent -Context $context -State RunCompleted -Record $null -Level $(if ($exit -eq 0) { 'Info' } else { 'Error' }) `
+            -Evidence "OS configuration run finished with exit code ${exit}: $convergedCount of $($records.Count) node(s) converged$(if ($Mode -eq 'Plan') { ' (plan only, nothing was changed)' })." `
+            -NextAction $(if ($exit -eq 0) { '' } else { 'Read the NodeFailed and NodeBlocked events, fix the cause, and run again; finished steps are not repeated.' }) `
+            -Data @{ exitCode = $exit; converged = $convergedCount; total = $records.Count; mode = $Mode }
         $markdown = (Format-AzlOsConfigurationSummary -Record $records -Mode $Mode -ExitCode $exit -Markdown) + [Environment]::NewLine + [Environment]::NewLine + '```' + [Environment]::NewLine + $wipeText + [Environment]::NewLine + '```'
         Set-Content -LiteralPath (Join-Path $reportDir 'summary.md') -Value $markdown -Encoding utf8NoBOM
         Write-AzlLine ''
@@ -1017,6 +1347,9 @@ function Invoke-AzlOsConfiguration {
                 $null = Write-AzlOsConfigurationReport -Context $context -Record @($records) -FileName 'report.json' -ExitCode $(if ($isInput) { 2 } else { 1 }) -Message $message
             }
             catch { Write-Verbose "Couldn't write the report: $($_.Exception.Message)" }
+            Send-AzlRunEvent -Context $context -State RunCompleted -Record $null -Level Error -Evidence "OS configuration run stopped with exit code $(if ($isInput) { 2 } else { 1 }) ($(if ($isInput) { 'bad input' } else { 'failed' })): $message" `
+                -NextAction $(if ($isInput) { 'Fix the input named in the message; nothing was changed.' } else { 'Read the error and run again.' }) `
+                -Data @{ exitCode = $(if ($isInput) { 2 } else { 1 }); converged = @($records | Where-Object { $_.converged }).Count; total = @($records).Count }
         }
         return [pscustomobject]@{ ExitCode = $(if ($isInput) { 2 } else { 1 }); Records = @($records); ReportPath = ''; ReportDirectory = ''; Summary = ''; WipeList = @(); Message = $message }
     }
