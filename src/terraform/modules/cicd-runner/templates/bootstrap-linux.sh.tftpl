@@ -1,0 +1,241 @@
+#!/usr/bin/env bash
+# =============================================================================
+# CI/CD runner bootstrap (Linux). Written by cloud-init from the azurelocal-toolkit
+# cicd-runner Terraform module. NO SECRET IS IN THIS FILE.
+#
+# The registration credential is read from Key Vault at boot with the VM's
+# user-assigned managed identity, held in a shell variable, and never written to
+# disk or to the log. Safe to run again: it skips what is done.
+#   Log:   /var/log/azl-runner-bootstrap.log
+#   State: /var/lib/azl-runner
+# =============================================================================
+set -euo pipefail
+exec > >(tee -a /var/log/azl-runner-bootstrap.log) 2>&1
+export DEBIAN_FRONTEND=noninteractive
+
+PLATFORM='${platform}'
+SCM_URL='${scm_url}'
+LABELS='${labels_csv}'
+GITHUB_GROUP='${github_runner_group}'
+ADO_POOL='${azure_devops_pool}'
+VAULT_NAME='${vault_name}'
+VAULT_SUFFIX='${vault_suffix}'
+SECRET_NAME='${secret_name}'
+TOKEN_KIND='${token_kind}'
+IDENTITY_CLIENT_ID='${identity_client_id}'
+PURPOSE='${purpose}'
+TF_VERSION='${terraform_version}'
+BICEP_VERSION='${bicep_version}'
+BICEP_SHA256='${bicep_sha256}'
+GH_RUNNER_VERSION='${github_runner_version}'
+GH_RUNNER_SHA256='${github_runner_sha256}'
+GL_RUNNER_VERSION='${gitlab_runner_version}'
+GL_RUNNER_SHA256='${gitlab_runner_sha256}'
+ADO_AGENT_VERSION='${azure_devops_agent_version}'
+AZ_POWERSHELL_VERSION='${az_powershell_version}'
+INSTALL_ANSIBLE='${install_ansible}'
+ANSIBLE_CORE_VERSION='${ansible_core_version}'
+ANSIBLE_COLLECTIONS='${ansible_collections_csv}'
+
+STATE=/var/lib/azl-runner
+RUNNER_USER=runner
+mkdir -p "$STATE" /opt/runners
+log() { echo "[$(date -u +%FT%TZ)] $*"; }
+
+verify_sha256() { # file expected
+  if [ -n "$2" ]; then echo "$2  $1" | sha256sum -c -; fi
+}
+
+# -----------------------------------------------------------------------------
+# 1. Base packages and the runner user
+# -----------------------------------------------------------------------------
+install_base() {
+  [ -f "$STATE/base.done" ] && return 0
+  log "Installing base packages"
+  apt-get update -y
+  apt-get install -y ca-certificates curl gnupg apt-transport-https lsb-release git jq unzip tar \
+    python3 python3-venv python3-pip sshpass
+  id "$RUNNER_USER" >/dev/null 2>&1 || useradd --create-home --shell /bin/bash "$RUNNER_USER"
+  touch "$STATE/base.done"
+}
+
+# -----------------------------------------------------------------------------
+# 2. Tooling: PowerShell 7, Azure CLI, Az, powershell-yaml, Bicep, Terraform, Ansible
+# -----------------------------------------------------------------------------
+install_tooling() {
+  [ -f "$STATE/tooling.done" ] && return 0
+  log "Installing PowerShell 7 and Azure CLI"
+  local ubuntu_version
+  ubuntu_version="$(lsb_release -rs)"
+  curl -fsSL -o /tmp/packages-microsoft-prod.deb "https://packages.microsoft.com/config/ubuntu/$ubuntu_version/packages-microsoft-prod.deb"
+  dpkg -i /tmp/packages-microsoft-prod.deb
+  rm -f /tmp/packages-microsoft-prod.deb
+  apt-get update -y
+  apt-get install -y powershell
+  curl -fsSL https://aka.ms/InstallAzureCLIDeb | bash
+
+  log "Installing the Az modules, powershell-yaml and Pester"
+  local az_version_arg=""
+  if [ -n "$AZ_POWERSHELL_VERSION" ]; then az_version_arg="-Version '$AZ_POWERSHELL_VERSION'"; fi
+  pwsh -NoProfile -NonInteractive -Command "Set-PSResourceRepository -Name PSGallery -Trusted; Install-PSResource -Name Az $az_version_arg -Scope AllUsers -TrustRepository; Install-PSResource -Name powershell-yaml -Scope AllUsers -TrustRepository; Install-PSResource -Name Pester -Scope AllUsers -TrustRepository"
+
+  log "Installing Bicep $BICEP_VERSION"
+  curl -fsSL -o /usr/local/bin/bicep "https://github.com/Azure/bicep/releases/download/v$BICEP_VERSION/bicep-linux-x64"
+  verify_sha256 /usr/local/bin/bicep "$BICEP_SHA256"
+  chmod 0755 /usr/local/bin/bicep
+  grep -q AZURE_BICEP_USE_BINARY_FROM_PATH /etc/environment || echo "AZURE_BICEP_USE_BINARY_FROM_PATH=true" >> /etc/environment
+
+  log "Installing Terraform $TF_VERSION"
+  curl -fsSL -o /tmp/terraform.zip "https://releases.hashicorp.com/terraform/$TF_VERSION/terraform_$${TF_VERSION}_linux_amd64.zip"
+  curl -fsSL -o /tmp/terraform.sums "https://releases.hashicorp.com/terraform/$TF_VERSION/terraform_$${TF_VERSION}_SHA256SUMS"
+  (cd /tmp && grep "terraform_$${TF_VERSION}_linux_amd64.zip" terraform.sums | sha256sum -c -)
+  unzip -o /tmp/terraform.zip terraform -d /usr/local/bin
+  chmod 0755 /usr/local/bin/terraform
+  rm -f /tmp/terraform.zip /tmp/terraform.sums
+
+  if [ "$INSTALL_ANSIBLE" = "true" ]; then
+    log "Installing Ansible tooling"
+    python3 -m venv /opt/azl-ansible
+    local core="ansible-core"
+    if [ -n "$ANSIBLE_CORE_VERSION" ]; then core="ansible-core==$ANSIBLE_CORE_VERSION"; fi
+    /opt/azl-ansible/bin/pip install --upgrade pip
+    /opt/azl-ansible/bin/pip install "$core" ansible-lint pywinrm pypsrp "pywinrm[kerberos]" yamllint || \
+      /opt/azl-ansible/bin/pip install "$core" ansible-lint pywinrm pypsrp yamllint
+    for tool in ansible ansible-playbook ansible-galaxy ansible-lint ansible-vault yamllint; do
+      ln -sf "/opt/azl-ansible/bin/$tool" "/usr/local/bin/$tool"
+    done
+    mkdir -p /usr/share/ansible/collections
+    IFS=',' read -r -a collections <<< "$ANSIBLE_COLLECTIONS"
+    for collection in "$${collections[@]}"; do
+      [ -n "$collection" ] && /opt/azl-ansible/bin/ansible-galaxy collection install "$collection" -p /usr/share/ansible/collections
+    done
+  fi
+
+  {
+    echo "powershell: $(pwsh -NoProfile -Command '$PSVersionTable.PSVersion.ToString()')"
+    echo "azure-cli: $(az version --query '"azure-cli"' -o tsv)"
+    echo "bicep: $(/usr/local/bin/bicep --version)"
+    echo "terraform: $(/usr/local/bin/terraform version | head -1)"
+    echo "git: $(git --version)"
+    if [ "$INSTALL_ANSIBLE" = "true" ]; then echo "ansible: $(/usr/local/bin/ansible --version | head -1)"; fi
+  } > "$STATE/versions.txt"
+  touch "$STATE/tooling.done"
+}
+
+# -----------------------------------------------------------------------------
+# 3. The registration credential, from Key Vault, with the managed identity
+# -----------------------------------------------------------------------------
+fetch_secret() {
+  local access_token
+  access_token="$(curl -fsS -H 'Metadata: true' \
+    "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net&client_id=$IDENTITY_CLIENT_ID" \
+    | jq -r .access_token)"
+  [ -n "$access_token" ] && [ "$access_token" != "null" ] || { log "No managed identity token"; return 1; }
+  curl -fsS -H "Authorization: Bearer $access_token" \
+    "https://$VAULT_NAME.$VAULT_SUFFIX/secrets/$SECRET_NAME?api-version=7.4" | jq -r .value
+}
+
+# -----------------------------------------------------------------------------
+# 4. Register the runner and run it as a service
+# -----------------------------------------------------------------------------
+register_github() {
+  local token="$1" name url scope api reg_token org repo
+  name="$(hostname)"
+  url="$SCM_URL"
+  [ -d /opt/runners/actions-runner ] || {
+    mkdir -p /opt/runners/actions-runner
+    curl -fsSL -o /tmp/actions-runner.tar.gz "https://github.com/actions/runner/releases/download/v$GH_RUNNER_VERSION/actions-runner-linux-x64-$GH_RUNNER_VERSION.tar.gz"
+    verify_sha256 /tmp/actions-runner.tar.gz "$GH_RUNNER_SHA256"
+    tar xzf /tmp/actions-runner.tar.gz -C /opt/runners/actions-runner
+    rm -f /tmp/actions-runner.tar.gz
+    /opt/runners/actions-runner/bin/installdependencies.sh
+    chown -R "$RUNNER_USER:$RUNNER_USER" /opt/runners/actions-runner
+  }
+  if [ "$TOKEN_KIND" = "pat" ]; then
+    # Exchange the PAT (or App token) for a one-hour registration token.
+    scope="$${url#https://}"
+    local host="$${scope%%/*}" path="$${scope#*/}"
+    if [ "$host" = "github.com" ]; then api="https://api.github.com"; else api="https://$host/api/v3"; fi
+    org="$${path%%/*}"
+    if [[ "$path" == */* ]]; then repo="$${path#*/}"; scope="repos/$org/$repo"; else scope="orgs/$org"; fi
+    reg_token="$(curl -fsS -X POST -H "Authorization: Bearer $token" -H 'Accept: application/vnd.github+json' \
+      "$api/$scope/actions/runners/registration-token" | jq -r .token)"
+  else
+    reg_token="$token"
+  fi
+  [ -n "$reg_token" ] && [ "$reg_token" != "null" ] || { log "No GitHub registration token"; return 1; }
+  local group_args=""
+  if [ -n "$GITHUB_GROUP" ]; then group_args="--runnergroup $GITHUB_GROUP"; fi
+  sudo -u "$RUNNER_USER" env RUNNER_REG_TOKEN="$reg_token" bash -c \
+    "cd /opt/runners/actions-runner && ./config.sh --unattended --replace --url '$url' --token \"\$RUNNER_REG_TOKEN\" --name '$name' --labels '$LABELS' --work _work $group_args"
+  (cd /opt/runners/actions-runner && ./svc.sh install "$RUNNER_USER" && ./svc.sh start)
+}
+
+register_gitlab() {
+  local token="$1" name
+  name="$(hostname)"
+  if [ ! -x /usr/local/bin/gitlab-runner ]; then
+    curl -fsSL -o /usr/local/bin/gitlab-runner "https://gitlab-runner-downloads.s3.amazonaws.com/v$GL_RUNNER_VERSION/binaries/gitlab-runner-linux-amd64"
+    verify_sha256 /usr/local/bin/gitlab-runner "$GL_RUNNER_SHA256"
+    chmod 0755 /usr/local/bin/gitlab-runner
+    id gitlab-runner >/dev/null 2>&1 || useradd --create-home --shell /bin/bash gitlab-runner
+    gitlab-runner install --user gitlab-runner --working-directory /home/gitlab-runner
+  fi
+  if [[ "$token" == glrt-* ]]; then
+    # Runner authentication token (GitLab 16 and later): tags are fixed when the token is created.
+    gitlab-runner register --non-interactive --url "$SCM_URL" --token "$token" --executor shell --name "$name"
+  else
+    gitlab-runner register --non-interactive --url "$SCM_URL" --registration-token "$token" --executor shell \
+      --name "$name" --tag-list "$LABELS" --run-untagged=false
+  fi
+  gitlab-runner start
+}
+
+register_azure_devops() {
+  local token="$1" name version
+  name="$(hostname)"
+  version="$ADO_AGENT_VERSION"
+  if [ -z "$version" ]; then
+    version="$(curl -fsS https://api.github.com/repos/microsoft/azure-pipelines-agent/releases/latest | jq -r .tag_name | sed 's/^v//')"
+  fi
+  [ -d /opt/runners/azagent ] || {
+    mkdir -p /opt/runners/azagent
+    curl -fsSL -o /tmp/vsts-agent.tar.gz "https://download.agent.dev.azure.com/agent/$version/vsts-agent-linux-x64-$version.tar.gz"
+    tar xzf /tmp/vsts-agent.tar.gz -C /opt/runners/azagent
+    rm -f /tmp/vsts-agent.tar.gz
+    /opt/runners/azagent/bin/installdependencies.sh
+    chown -R "$RUNNER_USER:$RUNNER_USER" /opt/runners/azagent
+  }
+  # Each label becomes a capability the pipeline can demand: ztp=true, terraform=true, ...
+  : > /opt/runners/azagent/.env
+  IFS=',' read -r -a label_list <<< "$LABELS"
+  for label in "$${label_list[@]}"; do
+    [ -n "$label" ] && echo "$${label//[^A-Za-z0-9_]/_}=true" >> /opt/runners/azagent/.env
+  done
+  chown "$RUNNER_USER:$RUNNER_USER" /opt/runners/azagent/.env
+  sudo -u "$RUNNER_USER" env AGENT_TOKEN="$token" bash -c \
+    "cd /opt/runners/azagent && ./config.sh --unattended --replace --acceptTeeEula --url '$SCM_URL' --auth pat --token \"\$AGENT_TOKEN\" --pool '$ADO_POOL' --agent '$name' --work _work"
+  (cd /opt/runners/azagent && ./svc.sh install "$RUNNER_USER" && ./svc.sh start)
+}
+
+register_runner() {
+  [ -f "$STATE/registered" ] && { log "Runner already registered"; return 0; }
+  log "Reading the registration credential from Key Vault $VAULT_NAME"
+  local secret
+  secret="$(fetch_secret)"
+  [ -n "$secret" ] && [ "$secret" != "null" ] || { log "The registration secret is empty"; return 1; }
+  case "$PLATFORM" in
+    github) register_github "$secret" ;;
+    gitlab) register_gitlab "$secret" ;;
+    azure_devops) register_azure_devops "$secret" ;;
+    *) log "Unknown platform $PLATFORM"; return 1 ;;
+  esac
+  unset secret
+  touch "$STATE/registered"
+  log "Runner registered with $PLATFORM as $(hostname) (labels: $LABELS)"
+}
+
+install_base
+install_tooling
+register_runner
+log "Bootstrap finished"

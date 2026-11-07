@@ -1,0 +1,246 @@
+# =============================================================================
+# CI/CD runner bootstrap (Windows). Run by Azure Run Command (as SYSTEM) from the
+# azurelocal-toolkit cicd-runner Terraform module. NO SECRET IS IN THIS FILE.
+#
+# Run Command starts Windows PowerShell 5.1, which is why this file is not a
+# PowerShell 7 script: it installs PowerShell 7 itself. The registration
+# credential is read from Key Vault at boot with the VM's managed identity,
+# held in a variable, and never written to disk or to the log.
+# Safe to run again: it skips what is done.
+#   Log:   C:\azl\logs\bootstrap.log
+#   State: C:\azl\state
+# =============================================================================
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+$Platform          = '${platform}'
+$ScmUrl            = '${scm_url}'
+$Labels            = '${labels_csv}'
+$GitHubGroup       = '${github_runner_group}'
+$AdoPool           = '${azure_devops_pool}'
+$VaultName         = '${vault_name}'
+$VaultSuffix       = '${vault_suffix}'
+$SecretName        = '${secret_name}'
+$TokenKind         = '${token_kind}'
+$IdentityClientId  = '${identity_client_id}'
+$Purpose           = '${purpose}'
+$ServiceAccount    = '${service_account}'
+$InitDataDisk      = [bool]::Parse('${init_data_disk}')
+$TfVersion         = '${terraform_version}'
+$BicepVersion      = '${bicep_version}'
+$BicepSha256       = '${bicep_windows_sha256}'
+$GhRunnerVersion   = '${github_runner_version}'
+$GhRunnerSha256    = '${github_runner_windows_sha256}'
+$GlRunnerVersion   = '${gitlab_runner_version}'
+$GlRunnerSha256    = '${gitlab_runner_windows_sha256}'
+$AdoAgentVersion   = '${azure_devops_agent_version}'
+$AzPsVersion       = '${az_powershell_version}'
+
+$Base = 'C:\azl'
+$State = Join-Path $Base 'state'
+$Logs = Join-Path $Base 'logs'
+foreach ($d in @($Base, $State, $Logs, (Join-Path $Base 'work'), (Join-Path $Base 'downloads'))) {
+    if (-not (Test-Path -LiteralPath $d)) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
+}
+Start-Transcript -Path (Join-Path $Logs 'bootstrap.log') -Append | Out-Null
+
+function Write-Step([string]$Message) { Write-Host ("[{0:u}] {1}" -f (Get-Date), $Message) }
+
+function Get-Download([string]$Url, [string]$Path, [string]$Sha256 = '') {
+    Invoke-WebRequest -UseBasicParsing -Uri $Url -OutFile $Path
+    if ($Sha256) {
+        $actual = (Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash
+        if ($actual -ne $Sha256.ToUpper()) { throw "Checksum mismatch for $Url" }
+    }
+}
+
+function Add-MachinePath([string]$Directory) {
+    $current = [Environment]::GetEnvironmentVariable('Path', 'Machine')
+    if (($current -split ';') -notcontains $Directory) {
+        [Environment]::SetEnvironmentVariable('Path', ($current.TrimEnd(';') + ';' + $Directory), 'Machine')
+    }
+    if (($env:Path -split ';') -notcontains $Directory) { $env:Path = $env:Path + ';' + $Directory }
+}
+
+function Get-LatestGitHubAsset([string]$Repository, [string]$Pattern) {
+    $release = Invoke-RestMethod -UseBasicParsing -Uri "https://api.github.com/repos/$Repository/releases/latest" -Headers @{ 'User-Agent' = 'azl-runner-bootstrap' }
+    $asset = $release.assets | Where-Object { $_.name -match $Pattern } | Select-Object -First 1
+    if (-not $asset) { throw "No asset matching $Pattern in $Repository" }
+    return $asset.browser_download_url
+}
+
+try {
+    # -------------------------------------------------------------------------
+    # 1. Data disk (ZTP media, SBE, images, vouchers) and the persistent folder
+    # -------------------------------------------------------------------------
+    if ($InitDataDisk -and -not (Test-Path (Join-Path $State 'disk.done'))) {
+        Write-Step 'Initialising the data disk'
+        $raw = Get-Disk | Where-Object { $_.PartitionStyle -eq 'RAW' } | Select-Object -First 1
+        if ($raw) {
+            $raw | Initialize-Disk -PartitionStyle GPT -PassThru |
+                New-Partition -AssignDriveLetter -UseMaximumSize |
+                Format-Volume -FileSystem NTFS -NewFileSystemLabel 'azl-data' -Confirm:$false | Out-Null
+        }
+        $volume = Get-Volume | Where-Object { $_.FileSystemLabel -eq 'azl-data' } | Select-Object -First 1
+        if ($volume) {
+            $persistent = '{0}:\azl-ztp' -f $volume.DriveLetter
+            New-Item -ItemType Directory -Path $persistent -Force | Out-Null
+            # Only SYSTEM and Administrators: vouchers and generated files are secrets.
+            & icacls.exe $persistent /inheritance:r /grant:r 'NT AUTHORITY\SYSTEM:(OI)(CI)F' 'BUILTIN\Administrators:(OI)(CI)F' | Out-Null
+            [Environment]::SetEnvironmentVariable('AZL_ZTP_ROOT', $persistent, 'Machine')
+        }
+        New-Item -ItemType File -Path (Join-Path $State 'disk.done') -Force | Out-Null
+    }
+
+    # -------------------------------------------------------------------------
+    # 2. Tooling: Git, PowerShell 7, Azure CLI, Az, powershell-yaml, Bicep, Terraform
+    # -------------------------------------------------------------------------
+    if (-not (Test-Path (Join-Path $State 'tooling.done'))) {
+        $dl = Join-Path $Base 'downloads'
+
+        Write-Step 'Installing Git'
+        $gitUrl = Get-LatestGitHubAsset 'git-for-windows/git' '^Git-.*-64-bit\.exe$'
+        Get-Download $gitUrl (Join-Path $dl 'git.exe')
+        Start-Process -FilePath (Join-Path $dl 'git.exe') -ArgumentList '/VERYSILENT', '/NORESTART', '/SUPPRESSMSGBOXES' -Wait
+        Add-MachinePath 'C:\Program Files\Git\cmd'
+
+        Write-Step 'Installing PowerShell 7'
+        $pwshUrl = Get-LatestGitHubAsset 'PowerShell/PowerShell' '^PowerShell-7\.[0-9.]+-win-x64\.msi$'
+        Get-Download $pwshUrl (Join-Path $dl 'pwsh.msi')
+        Start-Process -FilePath msiexec.exe -ArgumentList '/i', (Join-Path $dl 'pwsh.msi'), '/qn', '/norestart', 'ADD_PATH=1', 'REGISTER_MANIFEST=1' -Wait
+        Add-MachinePath 'C:\Program Files\PowerShell\7'
+
+        Write-Step 'Installing Azure CLI'
+        Get-Download 'https://aka.ms/installazurecliwindowsx64' (Join-Path $dl 'azure-cli.msi')
+        Start-Process -FilePath msiexec.exe -ArgumentList '/i', (Join-Path $dl 'azure-cli.msi'), '/qn', '/norestart' -Wait
+        Add-MachinePath 'C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin'
+
+        Write-Step 'Installing the Az modules, powershell-yaml and Pester in PowerShell 7'
+        $azVersionArg = ''
+        if ($AzPsVersion) { $azVersionArg = "-Version '$AzPsVersion'" }
+        $pwsh = 'C:\Program Files\PowerShell\7\pwsh.exe'
+        & $pwsh -NoProfile -NonInteractive -Command "Set-PSResourceRepository -Name PSGallery -Trusted; Install-PSResource -Name Az $azVersionArg -Scope AllUsers -TrustRepository; Install-PSResource -Name powershell-yaml -Scope AllUsers -TrustRepository; Install-PSResource -Name Pester -Scope AllUsers -TrustRepository"
+        if ($LASTEXITCODE -ne 0) { throw 'Installing the PowerShell modules failed' }
+
+        Write-Step "Installing Bicep $BicepVersion"
+        $bicepDir = 'C:\Program Files\Bicep'
+        New-Item -ItemType Directory -Path $bicepDir -Force | Out-Null
+        Get-Download "https://github.com/Azure/bicep/releases/download/v$BicepVersion/bicep-win-x64.exe" (Join-Path $bicepDir 'bicep.exe') $BicepSha256
+        Add-MachinePath $bicepDir
+        [Environment]::SetEnvironmentVariable('AZURE_BICEP_USE_BINARY_FROM_PATH', 'true', 'Machine')
+
+        Write-Step "Installing Terraform $TfVersion"
+        $tfDir = 'C:\Program Files\Terraform'
+        New-Item -ItemType Directory -Path $tfDir -Force | Out-Null
+        Get-Download "https://releases.hashicorp.com/terraform/$TfVersion/terraform_$($TfVersion)_windows_amd64.zip" (Join-Path $dl 'terraform.zip')
+        Expand-Archive -LiteralPath (Join-Path $dl 'terraform.zip') -DestinationPath $tfDir -Force
+        Add-MachinePath $tfDir
+
+        if ($Purpose -eq 'ztp') {
+            Write-Step 'Preparing the host for ZTP (SMB server, no sleep)'
+            Install-WindowsFeature -Name FS-FileServer | Out-Null
+            & powercfg.exe /change standby-timeout-ac 0
+            & powercfg.exe /change monitor-timeout-ac 0
+        }
+        New-Item -ItemType File -Path (Join-Path $State 'tooling.done') -Force | Out-Null
+    }
+
+    # -------------------------------------------------------------------------
+    # 3. Register the runner (the credential comes from Key Vault)
+    # -------------------------------------------------------------------------
+    if (Test-Path (Join-Path $State 'registered')) {
+        Write-Step 'Runner already registered'
+        return
+    }
+
+    Write-Step "Reading the registration credential from Key Vault $VaultName"
+    $tokenUri = 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net&client_id=' + $IdentityClientId
+    $accessToken = (Invoke-RestMethod -UseBasicParsing -Headers @{ Metadata = 'true' } -Uri $tokenUri).access_token
+    if (-not $accessToken) { throw 'No managed identity token' }
+    $secretUri = "https://$VaultName.$VaultSuffix/secrets/$($SecretName)?api-version=7.4"
+    $secret = (Invoke-RestMethod -UseBasicParsing -Headers @{ Authorization = "Bearer $accessToken" } -Uri $secretUri).value
+    if (-not $secret) { throw 'The registration secret is empty' }
+
+    $labelList = @($Labels -split ',' | Where-Object { $_ })
+
+    switch ($Platform) {
+        'github' {
+            $runnerDir = 'C:\actions-runner'
+            if (-not (Test-Path $runnerDir)) {
+                New-Item -ItemType Directory -Path $runnerDir -Force | Out-Null
+                $zip = Join-Path $Base 'downloads\actions-runner.zip'
+                Get-Download "https://github.com/actions/runner/releases/download/v$GhRunnerVersion/actions-runner-win-x64-$GhRunnerVersion.zip" $zip $GhRunnerSha256
+                Expand-Archive -LiteralPath $zip -DestinationPath $runnerDir -Force
+            }
+            $registration = $secret
+            if ($TokenKind -eq 'pat') {
+                # Exchange the PAT (or App token) for a one-hour registration token.
+                $uri = [Uri]$ScmUrl
+                $segments = @($uri.AbsolutePath.Trim('/') -split '/')
+                $api = if ($uri.Host -eq 'github.com') { 'https://api.github.com' } else { "https://$($uri.Host)/api/v3" }
+                $scope = if ($segments.Count -ge 2) { "repos/$($segments[0])/$($segments[1])" } else { "orgs/$($segments[0])" }
+                $registration = (Invoke-RestMethod -UseBasicParsing -Method Post -Uri "$api/$scope/actions/runners/registration-token" -Headers @{ Authorization = "Bearer $secret"; Accept = 'application/vnd.github+json'; 'User-Agent' = 'azl-runner-bootstrap' }).token
+            }
+            if (-not $registration) { throw 'No GitHub registration token' }
+            $arguments = @('--unattended', '--replace', '--url', $ScmUrl, '--token', $registration, '--name', $env:COMPUTERNAME,
+                '--labels', ($labelList -join ','), '--work', (Join-Path $Base 'work'), '--runasservice', '--windowslogonaccount', $ServiceAccount)
+            if ($GitHubGroup) { $arguments += @('--runnergroup', $GitHubGroup) }
+            Push-Location $runnerDir
+            try { & .\config.cmd @arguments; if ($LASTEXITCODE -ne 0) { throw 'config.cmd failed' } } finally { Pop-Location }
+        }
+        'gitlab' {
+            $runnerDir = 'C:\GitLab-Runner'
+            New-Item -ItemType Directory -Path $runnerDir -Force | Out-Null
+            $exe = Join-Path $runnerDir 'gitlab-runner.exe'
+            if (-not (Test-Path $exe)) {
+                Get-Download "https://gitlab-runner-downloads.s3.amazonaws.com/v$GlRunnerVersion/binaries/gitlab-runner-windows-amd64.exe" $exe $GlRunnerSha256
+            }
+            Push-Location $runnerDir
+            try {
+                if ($secret.StartsWith('glrt-')) {
+                    & $exe register --non-interactive --url $ScmUrl --token $secret --executor shell --shell pwsh --name $env:COMPUTERNAME
+                }
+                else {
+                    & $exe register --non-interactive --url $ScmUrl --registration-token $secret --executor shell --shell pwsh --name $env:COMPUTERNAME --tag-list ($labelList -join ',') --run-untagged=false
+                }
+                if ($LASTEXITCODE -ne 0) { throw 'gitlab-runner register failed' }
+                & $exe install
+                & $exe start
+                if ($LASTEXITCODE -ne 0) { throw 'gitlab-runner start failed' }
+            } finally { Pop-Location }
+        }
+        'azure_devops' {
+            $agentDir = 'C:\azagent'
+            if (-not (Test-Path $agentDir)) {
+                $version = $AdoAgentVersion
+                if (-not $version) {
+                    $latest = Invoke-RestMethod -UseBasicParsing -Uri 'https://api.github.com/repos/microsoft/azure-pipelines-agent/releases/latest' -Headers @{ 'User-Agent' = 'azl-runner-bootstrap' }
+                    $version = $latest.tag_name.TrimStart('v')
+                }
+                New-Item -ItemType Directory -Path $agentDir -Force | Out-Null
+                $zip = Join-Path $Base 'downloads\vsts-agent.zip'
+                Get-Download "https://download.agent.dev.azure.com/agent/$version/vsts-agent-win-x64-$version.zip" $zip
+                Expand-Archive -LiteralPath $zip -DestinationPath $agentDir -Force
+            }
+            # Each label becomes a capability the pipeline can demand: ztp=true, windows=true, ...
+            $envLines = foreach ($label in $labelList) { ($label -replace '[^A-Za-z0-9_]', '_') + '=true' }
+            Set-Content -LiteralPath (Join-Path $agentDir '.env') -Value $envLines -Encoding ASCII
+            Push-Location $agentDir
+            try {
+                & .\config.cmd --unattended --replace --acceptTeeEula --url $ScmUrl --auth pat --token $secret --pool $AdoPool --agent $env:COMPUTERNAME `
+                    --work (Join-Path $Base 'work') --runAsService --windowsLogonAccount $ServiceAccount
+                if ($LASTEXITCODE -ne 0) { throw 'config.cmd failed' }
+            } finally { Pop-Location }
+        }
+        default { throw "Unknown platform $Platform" }
+    }
+    $secret = $null
+    $accessToken = $null
+    New-Item -ItemType File -Path (Join-Path $State 'registered') -Force | Out-Null
+    Write-Step "Runner registered with $Platform as $($env:COMPUTERNAME) (labels: $Labels)"
+}
+finally {
+    Stop-Transcript | Out-Null
+}

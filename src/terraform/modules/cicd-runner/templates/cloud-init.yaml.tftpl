@@ -1,0 +1,13 @@
+#cloud-config
+# Runner provisioning for the azurelocal-toolkit cicd-runner module.
+# NOTHING SECRET IS IN THIS FILE. The script is passed as base64 so that its
+# quoting survives. It reads the registration credential from Key Vault at boot.
+package_update: false
+write_files:
+  - path: /usr/local/sbin/azl-runner-bootstrap.sh
+    permissions: '0750'
+    owner: root:root
+    encoding: b64
+    content: ${script_b64}
+runcmd:
+  - [ bash, -c, '/usr/local/sbin/azl-runner-bootstrap.sh || echo "FAILED, see /var/log/azl-runner-bootstrap.log" >> /var/log/azl-runner-bootstrap.log' ]

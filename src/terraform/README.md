@@ -38,9 +38,11 @@ src/terraform/
 │   ├── identity/               # Key Vault, RBAC, managed identities
 │   ├── monitoring/             # Log Analytics, solutions, alerts
 │   ├── security/               # Defender for Cloud, Azure Policy
-│   └── compute/                # Management VMs (DC, Jumpbox, WAC, Syslog)
+│   ├── compute/                # Management VMs (DC, Jumpbox, WAC, Syslog)
+│   └── cicd-runner/            # Self-hosted CI/CD runners (Linux, Windows, ZTP)
 ├── environments/
-│   └── azure-local/            # Root module orchestrating all child modules
+│   ├── azure-local/            # Root module orchestrating all child modules
+│   └── cicd-infra/             # CI/CD runners (task 06 of automation / 01-cicd-infra)
 │       ├── main.tf
 │       ├── providers.tf
 │       ├── backend.tf
