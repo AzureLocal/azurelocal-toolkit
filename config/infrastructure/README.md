@@ -171,11 +171,11 @@ Schema 5.4 only adds keys; every 5.0 to 5.3 file stays valid. It does two things
 
 | You write | ZTP does |
 | --- | --- |
-| `nodes[].san.hbas[].slot` (`Slot 2`; `type` is `fibre_channel` by default, or `iscsi_offload`) | Turns that PCIe slot off in the BIOS for the OS install, so the maintenance environment can't install onto a SAN LUN, and on again in the Restore stage. Switch: `provisioning.simplified.isolate_san_adapters` (default true when a node lists `san.hbas`, false otherwise). |
+| `nodes[].san.hbas[].slot` (`Slot 2`; `type` is `fibre_channel` by default, or `iscsi_offload`) | Turns that PCIe slot off in the BIOS for the OS install, so the maintenance environment can't install onto a SAN LUN, and in the Restore stage puts it back to the value it had before (the vendor's enabled value if it was already disabled). Switch: `provisioning.simplified.isolate_san_adapters` (default true when a node lists `san.hbas`, false otherwise). |
 | `nodes[].network_adapters[].slot: Embedded` on a `management` or `provisioning` port | Makes sure the embedded NICs are enabled (Dell ships them as `DisabledOs`). Switch: `provisioning.simplified.enable_embedded_nics` (default true). |
 | `hardware.bios`, `hardware.bios_during_provisioning` (and the node ones) | Explicit overrides. They win over a derived value for the same attribute. Use them for any other attribute, or for a vendor ZTP has no slot mapping for. |
 
-The mapping from slot label to attribute is data in ZTP, `config/oem/<vendor>.json`, `bios` section (Dell: `Slot{n}` with `Disabled` and `Enabled`, and `EmbNic1Nic2`). For a vendor without a mapping ZTP says so and asks for the raw attribute instead of guessing. An HBA slot is never turned off when a network port is listed in the same slot (rule AZL-029). `ports` under an HBA are for zoning and LUN masking (rule AZL-028); the BIOS action needs only the `slot`.
+The mapping from slot label to attribute is data in ZTP, `config/oem/<vendor>.json`, `bios` section (Dell: `Slot{n}` with `Disabled` and `Enabled`, and `EmbNic1Nic2`). For a vendor without a mapping, an HBA must name its own `bios_attribute` (with optional `bios_disabled_value` and `bios_enabled_value`); ZTP stops rather than guess, and an unrelated raw key does not excuse it. An HBA slot is never turned off when a network port is listed in the same slot, however the port's label is written (`Slot 2 Port 1`, `PCIe Slot 2`; rule AZL-029). `ports` under an HBA are for zoning and LUN masking (rule AZL-028); the BIOS action needs only the `slot`.
 
 ## What the check covers
 

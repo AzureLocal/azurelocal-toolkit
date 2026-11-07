@@ -17,7 +17,7 @@
         '^nodes\[\]\.(bios|bios_during_provisioning)(\.|$)'
         '^nodes\[\]\.management(\.|$)'
         '^nodes\[\]\.network_adapters(\[\]\.(name|mac_address|slot|roles|ip_assignment|ip_address|vlan_id|vlan_mode))?$'
-        '^nodes\[\]\.san(\.hbas(\[\]\.(slot|type))?)?$'
+        '^nodes\[\]\.san(\.hbas(\[\]\.(slot|type|bios_attribute|bios_disabled_value|bios_enabled_value))?)?$'
         '^hardware\.(vendor|model)$'
         '^hardware\.bmc(\.|$)'
         '^hardware\.(bios|bios_during_provisioning)(\.|$)'

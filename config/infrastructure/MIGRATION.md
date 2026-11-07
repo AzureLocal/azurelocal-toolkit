@@ -184,6 +184,7 @@ Schema 5.4 only adds optional keys; a 5.3 file is valid as it is. Nothing change
 | `provisioning.simplified.isolate_san_adapters` | Turn the PCIe slots of `nodes[].san.hbas[]` off for the OS install and on in Restore. Default: true when a node lists `san.hbas`. |
 | `provisioning.simplified.enable_embedded_nics` | Enable the embedded NICs when a management or provisioning port has `slot: Embedded`. Default true. |
 | `nodes[].san.hbas[].type`; `ports` no longer required | `fibre_channel` (default) or `iscsi_offload`. ZTP needs only the `slot`. |
+| `nodes[].san.hbas[].bios_attribute`, `bios_disabled_value`, `bios_enabled_value` | The adapter's own BIOS attribute, for a vendor ZTP has no mapping for or a label that is not `Slot <n>`. |
 | `provisioning.simplified.create_resource_group`, `configuration_name`, `managed_resource_group_name`, `apply_site_settings`, `use_key_vault_configuration`, `assign_provisioning_roles`, `assign_hci_rp_role`, `network_kind`, `ntp`, `site_mode`, `deployment_name` | The Microsoft.Edge site and its configuration. Defaults: what ZTP created before. |
 | `provisioning.simplified.timeouts.*`, `retry_provision_os`, `skip_azure_check`, `include_preview`, `max_train` | Stage budgets and the Resolve and Ready choices. Defaults: the values ZTP used. |
 | `provisioning.simplified.usb_image`, `maintenance_environment`, `media_share.account_name`, `media_share.keep` | The USB image size and name, the Configurator service's port and user, the share account. |

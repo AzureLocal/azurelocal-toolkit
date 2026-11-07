@@ -1216,6 +1216,8 @@ function Get-ZtpActionFinding {
     $simplified = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'provisioning.simplified'
     if ($simplified -isnot [System.Collections.IDictionary]) { return }
     $slotNumber = { param([object]$Label) if (([string]$Label) -match '^\s*slot[\s_-]*(\d+)\s*$') { [int]$Matches[1] } else { $null } }
+    # A port's label is read loosely (Slot 2 Port 1, PCIe Slot 2, Riser 1 Slot 2): missing a shared slot would cut the port.
+    $looseSlot = { param([object]$Label) if (([string]$Label) -match '(?i)slot\s*[_-]?\s*(\d+)') { [int]$Matches[1] } else { $null } }
 
     $listed = @($(for ($i = 0; $i -lt $Nodes.Count; $i++) {
                 $san = $Nodes[$i]['san']
@@ -1232,12 +1234,14 @@ function Get-ZtpActionFinding {
             $label = [string]$x.Item['slot']
             $n = & $slotNumber $label
             if ($null -eq $n) {
-                New-Finding 'AZL-029' error $at "The slot '$label' isn't a PCIe slot label such as 'Slot 2', so azurelocal-ztp can't derive the BIOS attribute that turns it off for the OS install. Use 'Slot <n>', or set the vendor's raw attribute in bios_during_provisioning and isolate_san_adapters to false." $script:Learn.Simplified
+                if (-not $x.Item['bios_attribute']) {
+                    New-Finding 'AZL-029' error $at "The slot '$label' isn't a PCIe slot label such as 'Slot 2', so azurelocal-ztp can't derive the BIOS attribute that turns it off for the OS install. Use 'Slot <n>', give the adapter its bios_attribute, or set isolate_san_adapters to false." $script:Learn.Simplified
+                }
                 continue
             }
             # A card in that slot that also carries network ports must stay on: the management port could be on it.
             foreach ($port in @(Get-List $Nodes[$x.Node]['network_adapters'] | Where-Object { $_ -is [System.Collections.IDictionary] })) {
-                if ((& $slotNumber $port['slot']) -eq $n -and (@(Get-List $port['roles']) | Where-Object { $_ -ne 'unused' })) {
+                if ((& $looseSlot $port['slot']) -eq $n -and (@(Get-List $port['roles']) | Where-Object { $_ -ne 'unused' })) {
                     New-Finding 'AZL-029' error $at "Slot $n holds the SAN adapter and also the network port '$($port['name'])' (roles $(@(Get-List $port['roles']) -join ', ')). Turning the slot off for the OS install would cut that port. Fix the slot of one of them, or set isolate_san_adapters to false and use a BIOS setting that hides the SAN LUN from the installer only." $script:Learn.Simplified
                 }
             }

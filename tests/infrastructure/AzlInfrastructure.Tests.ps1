@@ -929,3 +929,36 @@ Describe 'Schema 5.4: ZTP settings and the BIOS actions derived from the invento
         }
     }
 }
+
+Describe 'Schema 5.4: an adapter that names its own BIOS attribute, and port labels read loosely' {
+    BeforeAll {
+        $script:Ztp55 = Join-Path $repo 'config\infrastructure\infrastructure.ztp.example.yml'
+        function Get-Ztp55Finding([scriptblock]$Change) { Get-FindingFor -From $script:Ztp55 $Change }
+    }
+
+    It 'accepts bios_attribute with its two values, and rejects a bad attribute name or an empty value' {
+        @(Get-Ztp55Finding { param($d) $d.nodes[0].san.hbas[0]['bios_attribute'] = 'PciSlot2'; $d.nodes[0].san.hbas[0]['bios_disabled_value'] = 'Off'; $d.nodes[0].san.hbas[0]['bios_enabled_value'] = 'On' } | Where-Object Severity -eq 'error') | Should -BeNullOrEmpty
+        (Get-Ztp55Finding { param($d) $d.nodes[0].san.hbas[0]['bios_attribute'] = 'Pci Slot 2' }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'nodes[0].san.hbas[0].bios_attribute' } | Should -Not -BeNullOrEmpty
+        (Get-Ztp55Finding { param($d) $d.nodes[0].san.hbas[0]['bios_enabled_value'] = '' }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'nodes[0].san.hbas[0].bios_enabled_value' } | Should -Not -BeNullOrEmpty
+    }
+
+    It 'takes a label that is not a PCIe slot when the adapter names its attribute, and still refuses it otherwise' {
+        @(Get-Ztp55Finding { param($d) $d.nodes[0].san.hbas[0].slot = 'OCP 1'; $d.nodes[0].san.hbas[0]['bios_attribute'] = 'PciSlotOcp1' } | Where-Object Id -eq 'AZL-029') | Should -BeNullOrEmpty
+        (Get-Ztp55Finding { param($d) $d.nodes[0].san.hbas[0].slot = 'OCP 1' }) | Where-Object { $_.Id -eq 'AZL-029' -and $_.Severity -eq 'error' } | Should -Not -BeNullOrEmpty
+    }
+
+    It 'refuses to isolate a slot that a network port''s label merely contains: <Label>' -ForEach @(
+        @{ Label = 'Slot 2 Port 1' }, @{ Label = 'PCIe Slot 2' }, @{ Label = 'Riser 1 Slot 2' }
+    ) {
+        $script:portLabel = $Label
+        $f = Get-Ztp55Finding { param($d) $d.nodes[0].network_adapters.Add([ordered]@{ name = 'Extra Port'; slot = $script:portLabel; roles = @('compute'); ip_assignment = 'none' }) }
+        $f | Where-Object { $_.Id -eq 'AZL-029' -and $_.Severity -eq 'error' -and $_.Message -match 'Extra Port' } | Should -Not -BeNullOrEmpty
+    }
+
+    It 'lets a port in Slot 22 or Slot 3 through' {
+        foreach ($label in 'Slot 22 Port 1', 'Slot 3 Port 2') {
+            $script:portLabel = $label
+            @(Get-Ztp55Finding { param($d) $d.nodes[0].network_adapters.Add([ordered]@{ name = 'Extra Port'; slot = $script:portLabel; roles = @('compute'); ip_assignment = 'none' }) } | Where-Object Id -eq 'AZL-029') | Should -BeNullOrEmpty
+        }
+    }
+}

@@ -85,6 +85,8 @@ nodes:
     san: # the SAN adapters in this machine. ZTP turns their PCIe slots off for the OS install (isolate_san_adapters)
       hbas:
         - { slot: "Slot 2", type: fibre_channel, model: "Example 32G FC HBA" } # slot is enough for ZTP; add ports (WWPNs) for the SAN deployment
+        #   For a vendor ZTP has no slot mapping for, or a label that is not "Slot <n>", name the attribute yourself:
+        #   - { slot: "OCP 1", bios_attribute: "PciSlotOcp1", bios_disabled_value: "Off", bios_enabled_value: "On" }
     # bios: {}                      # optional; this machine's final BIOS values, merged over hardware.bios
     # bios_during_provisioning: {}  # optional; this machine's temporary values, merged over hardware.bios_during_provisioning
   - name: "iic-azl-n02"

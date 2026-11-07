@@ -293,7 +293,7 @@ storage:
   #     targets: [{ iqn: "iqn.2026-11.cloud.improbability:san-iic-01.a", portals: ["198.51.100.4:3260"], fabric: "A" }]
   #     chap: { enabled: true, username: "azl-chap", secret: "keyvault://kv-iic-mgmt-01/iscsi-chap-secret" }
   # and on every node (the iSCSI ports' addresses are network_adapters with role iscsi:a / iscsi:b):
-  #   san: { hbas: [{ slot: "Slot 2", type: fibre_channel, model: "Emulex LPe35002", ports: [{ wwpn: "10:00:00:00:00:00:00:11", fabric: "A" }] }] }
+  #   san: { hbas: [{ slot: "Slot 2", type: fibre_channel, bios_attribute: "Slot2", model: "Emulex LPe35002", ports: [{ wwpn: "10:00:00:00:00:00:00:11", fabric: "A" }] }] }
   #   san: { initiator_iqn: "iqn.1991-05.com.microsoft:iic-azl-n01.improbability.cloud" }
 
 security:
