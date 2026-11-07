@@ -20,12 +20,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $here = $PSScriptRoot
-Import-Module (Join-Path $here '..\infrastructure\AzlInfrastructure.psm1')
-Import-Module (Join-Path $here '..\azure-local\AzlAzure.psm1')
+Import-Module (Join-Path (Join-Path $here '..') (Join-Path 'infrastructure' 'AzlInfrastructure.psm1'))
+Import-Module (Join-Path (Join-Path $here '..') (Join-Path 'azure-local' 'AzlAzure.psm1'))
 Import-Module (Join-Path $here 'AzlNodePayload.psm1')
 Import-Module (Join-Path $here 'AzlNodeTransport.psm1')
 
-$script:ConfigRoot = Join-Path $here '..\..\..\config'
+$script:ConfigRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($here, '..', '..', '..', 'config'))
 $script:AllSteps = @('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')
 
 function ConvertTo-MacKey([AllowNull()][object]$Mac) {
@@ -55,7 +55,7 @@ function Get-AzlOemConfig {
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$Vendor, [string]$ConfigRoot = $script:ConfigRoot)
-    $path = Join-Path $ConfigRoot "oem\$($Vendor.ToLowerInvariant()).json"
+    $path = Join-Path (Join-Path $ConfigRoot 'oem') "$($Vendor.ToLowerInvariant()).json"
     if (-not (Test-Path -LiteralPath $path)) {
         $known = @(Get-ChildItem -LiteralPath (Join-Path $ConfigRoot 'oem') -Filter '*.json' -ErrorAction SilentlyContinue | ForEach-Object BaseName)
         throw "No OEM definition $path. Known: $($known -join ', '). Copy config/oem/dell.json to add one."
@@ -155,7 +155,7 @@ function Get-AzlSanVendor {
     #>
     [CmdletBinding()]
     param([string]$Vendor, [string]$Model, [string]$ConfigRoot = $script:ConfigRoot)
-    $table = Get-Content -LiteralPath (Join-Path $ConfigRoot 'san\msdsm-vendors.json') -Raw | ConvertFrom-Json -Depth 10
+    $table = Get-Content -LiteralPath (Join-Path (Join-Path $ConfigRoot 'san') 'msdsm-vendors.json') -Raw | ConvertFrom-Json -Depth 10
     foreach ($v in $table.vendors) {
         if ($Vendor -notmatch "(?i)^($($v.match))") { continue }
         if ($v.model -and $Model -notmatch "(?i)($($v.model))") { continue }
@@ -689,7 +689,7 @@ function Invoke-AzlNodeConfiguration {
         foreach ($item in $todo) {
             $a = $item.Apply.Clone()
             if ($a.kind -eq 'sbe-file') {
-                $staged = Send-AzlNodeFile -Transport $Transport -Node $node -LocalPath $a.localPath -RemotePath (Join-Path $Spec.Sbe.Dir $a.name) -Sha256 $a.sha256
+                $staged = Send-AzlNodeFile -Transport $Transport -Node $node -LocalPath $a.localPath -RemotePath ("$($Spec.Sbe.Dir.TrimEnd('\'))\$($a.name)") -Sha256 $a.sha256
                 if (-not $staged.Url) { continue }
                 $applySecrets["sas:$($a.name)"] = $staged.Url
                 $a.Remove('localPath')

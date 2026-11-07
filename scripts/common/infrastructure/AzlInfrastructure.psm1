@@ -32,7 +32,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:DefaultSchemaPath = Join-Path $PSScriptRoot '..\..\..\config\infrastructure\infrastructure.schema.json'
+$script:DefaultSchemaPath = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'config', 'infrastructure', 'infrastructure.schema.json'))
 $script:SupportedMajor = 5
 
 $script:Learn = @{
@@ -1368,7 +1368,7 @@ function Import-AzlInfrastructure {
         [switch]$SkipValidation
     )
     if (-not $Path) {
-        $candidates = @($env:AZL_INFRASTRUCTURE_FILE, '.\infrastructure.yml', '.\config\infrastructure.yml') | Where-Object { $_ }
+        $candidates = @($env:AZL_INFRASTRUCTURE_FILE, (Join-Path '.' 'infrastructure.yml'), (Join-Path (Join-Path '.' 'config') 'infrastructure.yml')) | Where-Object { $_ }
         $Path = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
         if (-not $Path) { throw 'No infrastructure file given, and none found at $env:AZL_INFRASTRUCTURE_FILE, .\infrastructure.yml or .\config\infrastructure.yml.' }
     }

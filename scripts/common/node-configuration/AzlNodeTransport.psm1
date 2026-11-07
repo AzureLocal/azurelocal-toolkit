@@ -30,7 +30,7 @@ $ErrorActionPreference = 'Stop'
 $script:RunCommandApiVersion = '2026-09-01'
 $script:ResultPrefix = 'AZLRESULT:'
 
-Import-Module (Join-Path $PSScriptRoot '..\azure-local\AzlAzure.psm1')
+Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'azure-local' 'AzlAzure.psm1'))
 
 function ConvertTo-AzlNodeResult {
     <#
@@ -186,7 +186,7 @@ function New-AzlWinRmTransport {
         Stage  = {
             param($Self, $Node, [string]$LocalPath, [string]$RemotePath, [string]$Sha256)
             $session = Get-AzlWinRmSession -State $Self.State -Node $Node
-            Invoke-Command -Session $session -ScriptBlock { param($Folder) New-Item -ItemType Directory -Force -Path $Folder | Out-Null } -ArgumentList (Split-Path $RemotePath)
+            Invoke-Command -Session $session -ScriptBlock { param($Folder) New-Item -ItemType Directory -Force -Path $Folder | Out-Null } -ArgumentList $RemotePath.Substring(0, [Math]::Max(0, $RemotePath.LastIndexOf([char]92)))
             Copy-Item -LiteralPath $LocalPath -Destination $RemotePath -ToSession $session -Force
             [pscustomobject]@{ Name = [IO.Path]::GetFileName($LocalPath); Url = $null }
         }

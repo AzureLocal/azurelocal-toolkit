@@ -84,11 +84,11 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$common = Join-Path $PSScriptRoot '..\..\..\common'
-Import-Module (Join-Path $common 'infrastructure\AzlInfrastructure.psm1') -Force
-Import-Module (Join-Path $common 'azure-local\AzlAzure.psm1') -Force
-Import-Module (Join-Path $common 'node-configuration\AzlNodeConfiguration.psm1') -Force
-Import-Module (Join-Path $common 'node-configuration\AzlNodeTransport.psm1') -Force
+$common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common'))
+Import-Module (Join-Path (Join-Path $common 'infrastructure') 'AzlInfrastructure.psm1') -Force
+Import-Module (Join-Path (Join-Path $common 'azure-local') 'AzlAzure.psm1') -Force
+Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlNodeConfiguration.psm1') -Force
+Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlNodeTransport.psm1') -Force
 
 function Write-Line([string]$Text) { Write-Information -MessageData $Text -InformationAction Continue }
 
