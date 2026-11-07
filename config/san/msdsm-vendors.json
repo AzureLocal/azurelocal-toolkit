@@ -1,0 +1,13 @@
+{
+  "source": "https://learn.microsoft.com/azure/azure-local/deploy/enable-external-storage (Step 2: register vendor with MPIO)",
+  "loadBalancePolicy": "RR",
+  "vendors": [
+    { "match": "dell", "model": "powerstore", "hardware": [ { "vendorId": "DellEMC", "productId": "PowerStore" } ],
+      "mpioSettings": { "RetryCount": 3, "CustomPathRecovery": "Enabled", "PathRecoveryInterval": 10, "DiskTimeout": 30 } },
+    { "match": "pure|everpure", "model": "flasharray", "hardware": [ { "vendorId": "PURE", "productId": "FlashArray" } ],
+      "mpioSettings": { "PathRecoveryInterval": 20, "CustomPathRecovery": "Enabled", "PDORemovePeriod": 20, "DiskTimeout": 60, "PathVerificationState": "Enabled" } },
+    { "match": "hitachi", "model": "", "hardware": [ { "mpclaim": "HITACHI OPEN-V", "vendorId": "HITACHI", "productId": "OPEN-V" } ], "mpioSettings": {} },
+    { "match": "hpe|hp", "model": "alletra|3par|primera", "hardware": [ { "vendorId": "3PARdata", "productId": "VV" } ], "mpioSettings": {} },
+    { "match": "netapp", "model": "", "hardware": [ { "vendorId": "NETAPP", "productId": "LUN C-Mode" } ], "mpioSettings": {} }
+  ]
+}

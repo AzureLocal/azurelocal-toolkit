@@ -1,0 +1,9 @@
+{
+  "oem": "Lenovo",
+  "publisher": "Lenovo",
+  "sbe": {
+    "discoveryManifestUrl": "",
+    "driverPaths": [],
+    "note": "Unverified. Set driverPaths to the folders inside the OEM's SBE zip that hold network drivers, and discoveryManifestUrl to the OEM's published discovery manifest; until then the package is checked against its own SBE_Discovery_*.xml."
+  }
+}

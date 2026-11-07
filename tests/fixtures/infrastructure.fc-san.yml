@@ -1,0 +1,101 @@
+# Test fixture: disaggregated (Fibre Channel SAN), Active Directory, two machines, ISO or ZTP OS, ARM deployment.
+# Placeholder values only (documentation address ranges, the all-zero GUID).
+_metadata:
+  schema_version: "5.3.0"
+scenario:
+  identity: active_directory
+  storage_architecture: san
+  storage_connectivity: switched
+  topology: standard
+  connectivity: connected
+  cloud: public
+  outbound_path: direct
+  os_install: iso
+  deploy_method: arm
+site: { code: "IIC", name: "IIC Dallas" }
+environment: { name: "iic-azl-01", type: lab }
+azure:
+  tenant_id: "00000000-0000-0000-0000-000000000000"
+  location: "eastus"
+  subscription_id: "00000000-0000-0000-0000-000000000000"
+  resource_group: "rg-iic-azl-01"
+  hci_resource_provider_object_id: "00000000-0000-0000-0000-000000000001"
+  custom_location: "cl-iic-azl-01"
+key_vaults:
+  - { name: "kv-iic-mgmt-01", subscription_id: "00000000-0000-0000-0000-000000000000", resource_group: "rg-iic-mgmt-01" }
+cluster:
+  name: "iic-clus01"
+  naming_prefix: "iicazl01"
+  deployment_mode: validate
+  witness: { type: cloud, storage_account: "stiicazl01wit" }
+  key_vault: { name: "kv-iic-azl-01", create_new: true, soft_delete_retention_days: 30 }
+  diagnostics: { storage_account: "stiicazl01diag", logs_retention_days: 30, storage_account_type: "Standard_LRS" }
+nodes:
+  - name: "iic-n01"
+    network_adapters:
+      - { name: "Port0", mac_address: "00:00:5E:00:53:10", roles: [management, compute], ip_assignment: static, ip_address: "192.0.2.11", model: "LOM", speed_gbps: 25 }
+      - { name: "Port1", mac_address: "00:00:5E:00:53:11", roles: [management, compute], ip_assignment: none, model: "LOM", speed_gbps: 25 }
+      - { name: "Port2", mac_address: "00:00:5E:00:53:12", roles: [storage], ip_assignment: none, model: "CX6", speed_gbps: 25 }
+      - { name: "Port3", mac_address: "00:00:5E:00:53:13", roles: [storage], ip_assignment: none, model: "CX6", speed_gbps: 25 }
+      - { name: "Port4", mac_address: "00:00:5E:00:53:14", roles: [unused], ip_assignment: none }
+    san:
+      hbas:
+        - slot: "Slot2"
+          ports:
+            - { wwpn: "10:00:00:00:00:00:00:11", fabric: "A" }
+            - { wwpn: "10:00:00:00:00:00:00:12", fabric: "B" }
+  - name: "iic-n02"
+    network_adapters:
+      - { name: "Port0", mac_address: "00:00:5E:00:53:20", roles: [management, compute], ip_assignment: static, ip_address: "192.0.2.12", model: "LOM", speed_gbps: 25 }
+      - { name: "Port1", mac_address: "00:00:5E:00:53:21", roles: [management, compute], ip_assignment: none, model: "LOM", speed_gbps: 25 }
+      - { name: "Port2", mac_address: "00:00:5E:00:53:22", roles: [storage], ip_assignment: none, model: "CX6", speed_gbps: 25 }
+      - { name: "Port3", mac_address: "00:00:5E:00:53:23", roles: [storage], ip_assignment: none, model: "CX6", speed_gbps: 25 }
+      - { name: "Port4", mac_address: "00:00:5E:00:53:24", roles: [unused], ip_assignment: none }
+    san:
+      hbas:
+        - slot: "Slot2"
+          ports:
+            - { wwpn: "10:00:00:00:00:00:00:21", fabric: "A" }
+            - { wwpn: "10:00:00:00:00:00:00:22", fabric: "B" }
+hardware:
+  vendor: "Dell"
+  model: "AX-760"
+  sbe: { publisher: "Dell", family: "", version: "", bundle_path: 'D:\sbe\dell' }
+networking:
+  management:
+    subnet: "192.0.2.0/24"
+    gateway: "192.0.2.1"
+    vlan_id: 0
+    dns_servers: ["192.0.2.4", "192.0.2.5"]
+    infrastructure_pool: { start: "192.0.2.20", end: "192.0.2.29" }
+  ntp_servers: ["192.0.2.4", "192.0.2.5"]
+  intents:
+    - { name: "mgmt_compute", traffic: [management, compute], adapters: ["Port0", "Port1"] }
+  cluster_networks:
+    - { name: "clusterNetwork-A", adapter: "Port2", vlan_id: 711, subnet: "198.51.100.0/26" }
+    - { name: "clusterNetwork-B", adapter: "Port3", vlan_id: 712, subnet: "198.51.100.64/26" }
+identity:
+  local_admin: { username: "azl-admin", password: "keyvault://kv-iic-mgmt-01/local-admin-password" }
+  active_directory:
+    domain_fqdn: "improbability.cloud"
+    ou_path: "OU=iic-clus01,OU=AzureLocal,DC=improbability,DC=cloud"
+    lcm_user: { username: "lcm-iic-clus01", password: "keyvault://kv-iic-mgmt-01/lcm-password" }
+storage:
+  configuration_mode: infra_only
+  san:
+    type: fibre_channel
+    array: { name: "san-iic-01", vendor: "Dell", model: "PowerStore 1200T" }
+    fibre_channel:
+      fabrics:
+        - { name: "A", switch: "fc-sw-a" }
+        - { name: "B", switch: "fc-sw-b" }
+      target_wwpns:
+        - { wwpn: "50:00:00:00:00:00:01:01", fabric: "A" }
+        - { wwpn: "50:00:00:00:00:00:01:02", fabric: "B" }
+    infra_volume_lun_id: "0"
+    performance_history_lun_id: "1"
+security:
+  level: recommended
+provisioning:
+  os_version: "12.2610.1004.50"
+  iso: { image_source: oem }

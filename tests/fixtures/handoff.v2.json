@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 2,
+  "generatedUtc": "2026-11-07T00:00:00Z",
+  "tool": "azurelocal-ztp",
+  "subscriptionId": "00000000-0000-0000-0000-000000000000",
+  "resourceGroup": "rg-iic-azl-01",
+  "site": { "resourceId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-azl-01/providers/Microsoft.Edge/sites/iic-site", "name": "iic-site" },
+  "solution": { "vsrVersion": "12.2610.1004.50" },
+  "nodes": [
+    { "name": "iic-n01", "serial": "SERIAL01", "edgeMachineName": "iic-n01", "edgeMachineId": "", "arcMachineName": "iic-n01",
+      "arcMachineResourceId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-azl-01/providers/Microsoft.HybridCompute/machines/iic-n01",
+      "arcMachineResourceGroup": "rg-iic-azl-01", "ready": true, "managementAddressVerified": true, "managementAddressReason": null },
+    { "name": "iic-n02", "serial": "SERIAL02", "edgeMachineName": "iic-n02", "edgeMachineId": "", "arcMachineName": "iic-n02",
+      "arcMachineResourceId": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-azl-01/providers/Microsoft.HybridCompute/machines/iic-n02",
+      "arcMachineResourceGroup": "rg-iic-azl-01", "ready": true, "managementAddressVerified": false, "managementAddressReason": "the port with the management MAC holds DHCP" }
+  ]
+}

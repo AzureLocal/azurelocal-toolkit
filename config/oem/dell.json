@@ -1,0 +1,9 @@
+{
+  "oem": "Dell",
+  "publisher": "Dell",
+  "sbe": {
+    "discoveryManifestUrl": "https://aka.ms/AzureStackSBEUpdate/DellEMC",
+    "driverPaths": [ "DriversGE/Network" ],
+    "note": "The folders inside the OEM's SBE zip that hold network drivers. Dell says the SBE can't install drivers or firmware during the deployment, so they go on the node first."
+  }
+}
