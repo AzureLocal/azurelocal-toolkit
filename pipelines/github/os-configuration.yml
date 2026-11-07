@@ -1,0 +1,179 @@
+# Azure Local OS configuration, GitHub Actions.
+#
+# Copy to .github/workflows/os-configuration.yml. It runs the same command an operator runs by hand:
+#   pwsh -File scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1 ...
+# and nothing else; the logic is in the script, not here.
+#
+# Job 1 `plan` is read only. It publishes the plan report and the wipe list (which disks on which node would be wiped, when
+# os_configuration.clear_storage is true) as an artifact and in the job summary.
+# Job 2 `apply` runs only for mode Apply, and only after a reviewer of the GitHub environment `azure-local-os-configuration`
+# approved it. The reviewer reads the plan job's summary, the wipe list included.
+#
+# Settings (Settings > Secrets and variables > Actions; names only, no value is in this file):
+#   variables  AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID   the app registration (or user-assigned managed identity)
+#              with a federated credential for this repository and the environment azure-local-os-configuration
+#   secrets    none needed. Nothing secret is stored here: the nodes' local administrator password is read from the Key Vault
+#              named by identity.local_admin.password in the master file.
+# Environment `azure-local-os-configuration`: add required reviewers (Settings > Environments). That is the approval gate.
+# Runner: a self-hosted Linux runner with pwsh 7, labelled azure-local. WinRM (ISO-installed nodes) needs a runner that reaches the
+# nodes' management subnet; ZTP-provisioned nodes need only Azure (Arc Run Command).
+#
+# Where the files come from: the master file is a path in this repository (input infrastructure_file). The handoff files
+# (<node>.ztp-handoff.json) are either a repository path (input handoff_path) or the artifact `ztp-handoff` of the ZTP run
+# (input handoff_run_id). See docs/os-configuration-and-arm-deployment.md.
+name: Azure Local OS configuration
+
+on:
+  workflow_dispatch:
+    inputs:
+      infrastructure_file:
+        description: 'Path of the master infrastructure.yml in the repository'
+        required: true
+        default: 'config/infrastructure.yml'
+      handoff_path:
+        description: 'Path of a handoff file or a directory of *.ztp-handoff.json in the repository (leave empty for an ISO-installed cluster)'
+        required: false
+        default: 'ztp-state'
+      handoff_run_id:
+        description: 'Optional: run ID of the ZTP workflow whose artifact ztp-handoff holds the handoff files (replaces handoff_path)'
+        required: false
+        default: ''
+      mode:
+        description: 'Plan only, or Plan then Apply after approval'
+        type: choice
+        options:
+          - Plan
+          - Apply
+        default: Plan
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+
+# One OS configuration at a time per repository.
+concurrency:
+  group: azure-local-os-configuration
+  cancel-in-progress: false
+
+env:
+  OSCONFIG_SCRIPT: scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1
+  INFRASTRUCTURE_FILE: ${{ inputs.infrastructure_file }}
+  HANDOFF_PATH: ${{ inputs.handoff_path }}
+
+jobs:
+  plan:
+    name: Plan (read only)
+    runs-on: [self-hosted, linux, azure-local]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the ZTP handoff artifact
+        if: ${{ inputs.handoff_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ztp-handoff
+          path: ${{ runner.temp }}/ztp-handoff
+          run-id: ${{ inputs.handoff_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Point HANDOFF_PATH at the downloaded artifact
+        if: ${{ inputs.handoff_run_id != '' }}
+        shell: bash
+        run: echo "HANDOFF_PATH=${RUNNER_TEMP}/ztp-handoff" >> "$GITHUB_ENV"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      - name: Install the PowerShell modules
+        shell: pwsh
+        run: |
+          foreach ($m in 'powershell-yaml', 'Az.Accounts', 'Az.KeyVault') {
+            if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery }
+          }
+
+      - name: Plan
+        shell: bash
+        run: |
+          pwsh -NoProfile -File "$OSCONFIG_SCRIPT" -InfrastructureFile "$INFRASTRUCTURE_FILE" -HandoffPath "$HANDOFF_PATH" -Mode Plan -ReportDirectory "$RUNNER_TEMP/osconfig-plan"
+
+      - name: Job summary (plan and wipe list)
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/osconfig-plan/summary.md" ]; then
+            { echo '## Azure Local OS configuration: plan'; cat "$RUNNER_TEMP/osconfig-plan/summary.md"; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Publish the plan report and the wipe list
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: os-configuration-plan
+          path: ${{ runner.temp }}/osconfig-plan
+          if-no-files-found: warn
+
+  apply:
+    name: Apply (needs approval)
+    needs: plan
+    if: ${{ inputs.mode == 'Apply' }}
+    runs-on: [self-hosted, linux, azure-local]
+    # Required reviewers on this environment are the approval gate.
+    environment: azure-local-os-configuration
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the ZTP handoff artifact
+        if: ${{ inputs.handoff_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ztp-handoff
+          path: ${{ runner.temp }}/ztp-handoff
+          run-id: ${{ inputs.handoff_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Point HANDOFF_PATH at the downloaded artifact
+        if: ${{ inputs.handoff_run_id != '' }}
+        shell: bash
+        run: echo "HANDOFF_PATH=${RUNNER_TEMP}/ztp-handoff" >> "$GITHUB_ENV"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      - name: Install the PowerShell modules
+        shell: pwsh
+        run: |
+          foreach ($m in 'powershell-yaml', 'Az.Accounts', 'Az.KeyVault') {
+            if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery }
+          }
+
+      - name: Apply
+        shell: bash
+        run: |
+          pwsh -NoProfile -File "$OSCONFIG_SCRIPT" -InfrastructureFile "$INFRASTRUCTURE_FILE" -HandoffPath "$HANDOFF_PATH" -Mode Apply -ReportDirectory "$RUNNER_TEMP/osconfig-apply"
+
+      - name: Job summary (result)
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/osconfig-apply/summary.md" ]; then
+            { echo '## Azure Local OS configuration: apply'; cat "$RUNNER_TEMP/osconfig-apply/summary.md"; } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Publish the report
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: os-configuration-report
+          path: ${{ runner.temp }}/osconfig-apply
+          if-no-files-found: warn
