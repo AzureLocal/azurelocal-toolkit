@@ -18,7 +18,7 @@
       ],
       "properties": {
         "schema_version": {
-          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san). 5.3 also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate.",
+          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san). 5.3 also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate.",
           "type": "string",
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
@@ -2052,6 +2052,13 @@
                   "minimum": 1,
                   "maximum": 240,
                   "default": 30
+                },
+                "adapters_minutes": {
+                  "description": "Schema 5.4.1. Network stage: how long to wait for an edge machine to report its network adapters. The stage polls every poll_interval_seconds (at least 5) until the management MAC is in the list, because the list can still be empty right after Ready. Default 10; 0 reads once and does not wait. When the budget is spent without the management MAC the machine is not verified in any mode (adapters never reported, a Warning that is never a success state) and the Handoff stage reads the adapters again.",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 240,
+                  "default": 10
                 },
                 "poll_interval_seconds": {
                   "description": "Ready and Network stages: seconds between polls. Default 60.",

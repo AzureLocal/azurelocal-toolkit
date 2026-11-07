@@ -30,7 +30,7 @@
 # =============================================================================
 
 _metadata:
-  schema_version: "5.4.0"
+  schema_version: "5.4.1"
   scope: ztp # ztp | full (default)
 
 scenario:
@@ -177,7 +177,7 @@ provisioning:
     # max_train: "2610"
     # usb_image: { size_gb: 4, name_prefix: "ztp-usb-" }
     # maintenance_environment: { port: 20001, username: "edgeuser" }
-    # timeouts: { bootstrap_minutes: 120, bootstrap_voucher_minutes: 90, bootstrap_stall_minutes: 20, voucher_wait_minutes: 120, device_minutes: 30, ready_minutes: 180, network_minutes: 60, restore_settle_minutes: 5, bios_minutes: 30, poll_interval_seconds: 60 }
+    # timeouts: { bootstrap_minutes: 120, bootstrap_voucher_minutes: 90, bootstrap_stall_minutes: 20, voucher_wait_minutes: 120, device_minutes: 30, ready_minutes: 180, network_minutes: 60, adapters_minutes: 10, restore_settle_minutes: 5, bios_minutes: 30, poll_interval_seconds: 60 }
     # The Microsoft.Edge site and its configuration:
     # create_resource_group: true     # false: stop when azure.resource_group does not exist
     # configuration_name: "default"
