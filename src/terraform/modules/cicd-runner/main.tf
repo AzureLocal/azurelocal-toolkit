@@ -185,7 +185,7 @@ locals {
 resource "azurerm_virtual_network_peering" "spoke_to_hub" {
   count = local.create_vnet && var.hub_peering.enabled ? 1 : 0
 
-  name                         = "peer-${var.vnet_name}-to-hub"
+  name                         = var.hub_peering.spoke_name != "" ? var.hub_peering.spoke_name : "peer-${var.vnet_name}-to-hub"
   resource_group_name          = local.resource_group_name
   virtual_network_name         = azurerm_virtual_network.this[0].name
   remote_virtual_network_id    = var.hub_peering.hub_vnet_id
@@ -202,7 +202,7 @@ resource "azurerm_virtual_network_peering" "hub_to_spoke" {
   provider = azurerm.hub
   count    = local.create_vnet && var.hub_peering.enabled && var.hub_peering.create_hub_side ? 1 : 0
 
-  name                         = "peer-hub-to-${var.vnet_name}"
+  name                         = var.hub_peering.hub_name != "" ? var.hub_peering.hub_name : "peer-hub-to-${var.vnet_name}"
   resource_group_name          = split("/", var.hub_peering.hub_vnet_id)[4]
   virtual_network_name         = split("/", var.hub_peering.hub_vnet_id)[8]
   remote_virtual_network_id    = azurerm_virtual_network.this[0].id
@@ -217,7 +217,7 @@ resource "azurerm_virtual_network_peering" "hub_to_spoke" {
 # Outbound: Azure, package and runner downloads (HTTPS, HTTP), the lab ranges.
 # -----------------------------------------------------------------------------
 resource "azurerm_network_security_group" "this" {
-  name                = "nsg-${var.name_prefix}"
+  name                = var.nsg_name != "" ? var.nsg_name : "nsg-${var.name_prefix}"
   location            = var.location
   resource_group_name = local.resource_group_name
   tags                = local.tags

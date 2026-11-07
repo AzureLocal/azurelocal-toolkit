@@ -1,0 +1,88 @@
+<mxfile host="app.diagrams.net" modified="2026-11-07T00:00:00.000Z" agent="azurelocal-toolkit" version="24.0.0" type="device">
+  <diagram id="cicd-infra-runners" name="CI/CD runners">
+    <mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1500" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+
+        <mxCell id="title" value="CI/CD runners for Azure Local: which runner runs which job" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontSize=18;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="20" y="10" width="800" height="30" as="geometry" />
+        </mxCell>
+
+        <!-- Source control platform -->
+        <mxCell id="scm" value="Source control platform&#xa;GitHub, GitLab or Azure DevOps&#xa;(pipelines, environments with approvals,&#xa;runner groups or pools)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="20" y="150" width="260" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- DevOps subscription -->
+        <mxCell id="sub" value="DevOps subscription: resource group for the runners" style="swimlane;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=13;startSize=28;" vertex="1" parent="1">
+          <mxGeometry x="330" y="60" width="560" height="420" as="geometry" />
+        </mxCell>
+        <mxCell id="vnet" value="Runner VNet (for example 10.250.10.0/24)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#6c8ebf;fontSize=12;startSize=26;" vertex="1" parent="sub">
+          <mxGeometry x="20" y="40" width="520" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="lnx" value="Linux runner subnet&#xa;NSG: nothing inbound&#xa;&#xa;Linux runner (label: azure, linux, terraform, ansible)&#xa;ARM, Arc, Terraform, Ansible,&#xa;OS configuration jobs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;" vertex="1" parent="vnet">
+          <mxGeometry x="15" y="40" width="235" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="ztp" value="ZTP runner subnet&#xa;NSG: inbound TCP 445 from the BMC range only&#xa;&#xa;Windows runner (label: ztp), elevated service,&#xa;data disk for ISO, SBE, images, vouchers&#xa;ZTP Boot, Bootstrap, Vouchers jobs" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=12;" vertex="1" parent="vnet">
+          <mxGeometry x="270" y="40" width="235" height="190" as="geometry" />
+        </mxCell>
+        <mxCell id="uami" value="User-assigned managed identity (one per pool)&#xa;Contributor + RBAC Administrator on the Azure Local resource group, Arc Machine Resource Administrator, Key Vault Secrets User" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="sub">
+          <mxGeometry x="20" y="310" width="520" height="90" as="geometry" />
+        </mxCell>
+
+        <!-- Key Vault -->
+        <mxCell id="kv" value="Key Vault (management subscription)&#xa;runner registration secret,&#xa;BMC login, administrator passwords" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="330" y="520" width="300" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="arm" value="Azure Resource Manager&#xa;Azure Local resource group, Arc machines" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="670" y="520" width="220" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Hub -->
+        <mxCell id="hub" value="Hub VNet + VPN gateway&#xa;(connectivity subscription)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="970" y="400" width="200" height="80" as="geometry" />
+        </mxCell>
+
+        <!-- Lab -->
+        <mxCell id="lab" value="On-premises lab (reached over the site-to-site VPN)" style="swimlane;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=12;startSize=26;" vertex="1" parent="1">
+          <mxGeometry x="1200" y="100" width="280" height="330" as="geometry" />
+        </mxCell>
+        <mxCell id="bmc" value="BMC network (iDRAC)&#xa;Redfish 443; SMB client connects out to the ZTP runner on 445" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" vertex="1" parent="lab">
+          <mxGeometry x="20" y="45" width="240" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="nodes" value="Azure Local machines&#xa;management network&#xa;WinRM 5985, SSH, HTTPS" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#b85450;fontSize=11;" vertex="1" parent="lab">
+          <mxGeometry x="20" y="140" width="240" height="70" as="geometry" />
+        </mxCell>
+        <mxCell id="fw" value="Network team owns: lab firewall allows the runner subnets,&#xa;VPN local network gateway lists the runner VNet,&#xa;route back from the BMC range to the runner VNet" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;dashed=1;" vertex="1" parent="lab">
+          <mxGeometry x="20" y="235" width="240" height="75" as="geometry" />
+        </mxCell>
+
+        <!-- Edges -->
+        <mxCell id="e1" value="outbound 443" style="endArrow=classic;html=1;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="sub" target="scm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e3" value="managed identity token, then secret read" style="endArrow=classic;html=1;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="uami" target="kv">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e4" value="Azure APIs (443)" style="endArrow=classic;html=1;fontSize=11;labelBackgroundColor=#ffffff;" edge="1" parent="1" source="uami" target="arm">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e5" value="VNet peering (gateway transit)" style="endArrow=classic;html=1;fontSize=11;labelBackgroundColor=#ffffff;startArrow=classic;" edge="1" parent="1" source="sub" target="hub">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e6" value="site-to-site VPN" style="endArrow=classic;html=1;fontSize=11;labelBackgroundColor=#ffffff;startArrow=classic;" edge="1" parent="1" source="hub" target="lab">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e7" value="BMC to runner: TCP 445 (inbound, BMC range only)" style="endArrow=classic;html=1;fontSize=11;labelBackgroundColor=#ffffff;strokeColor=#d79b00;strokeWidth=2;" edge="1" parent="1" source="bmc" target="ztp">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+
+        <!-- Legend -->
+        <mxCell id="legend" value="Which runner for which job&#xa;Linux Azure runner: ARM and Arc deployment, Terraform, Ansible, OS configuration (WinRM to the machines).&#xa;Windows ztp runner: ZTP Boot, Bootstrap and Vouchers. Approval before Boot (environment ztp-reinstall).&#xa;Secrets never in the pipeline: the runner reads its registration secret from Key Vault with its managed identity." style="rounded=0;whiteSpace=wrap;html=1;align=left;fillColor=#f5f5f5;strokeColor=#666666;fontSize=11;spacingLeft=8;" vertex="1" parent="1">
+          <mxGeometry x="20" y="640" width="1460" height="90" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

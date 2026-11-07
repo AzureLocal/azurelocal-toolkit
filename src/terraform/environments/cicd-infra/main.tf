@@ -54,11 +54,13 @@ module "runners_linux" {
     dns_suffix     = var.registration_secret.dns_suffix
   }
 
-  compute_type         = var.linux_runner.compute_type
-  runner_count         = var.linux_runner.count
-  vm_size              = var.linux_runner.vm_size
-  private_ip_addresses = var.linux_runner.private_ip_addresses
-  install_ansible      = var.linux_runner.install_ansible
+  compute_type          = var.linux_runner.compute_type
+  runner_count          = var.linux_runner.count
+  vm_size               = var.linux_runner.vm_size
+  private_ip_addresses  = var.linux_runner.private_ip_addresses
+  install_ansible       = var.linux_runner.install_ansible
+  nsg_name              = var.linux_runner.nsg_name
+  managed_identity_name = var.linux_runner.identity_name
 
   vnet_name             = var.vnet_name
   vnet_address_space    = var.vnet_address_space
@@ -112,11 +114,13 @@ module "runners_ztp" {
     dns_suffix     = var.registration_secret.dns_suffix
   }
 
-  compute_type         = "vm"
-  runner_count         = 1
-  vm_size              = var.ztp_runner.vm_size
-  data_disk_size_gb    = var.ztp_runner.data_disk_size_gb
-  private_ip_addresses = var.ztp_runner.private_ip_addresses
+  compute_type          = "vm"
+  runner_count          = 1
+  vm_size               = var.ztp_runner.vm_size
+  data_disk_size_gb     = var.ztp_runner.data_disk_size_gb
+  private_ip_addresses  = var.ztp_runner.private_ip_addresses
+  nsg_name              = var.ztp_runner.nsg_name
+  managed_identity_name = var.ztp_runner.identity_name
 
   windows_admin_password_secret_name = var.windows_admin_password_secret_name
 

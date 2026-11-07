@@ -108,6 +108,8 @@ variable "linux_runner" {
     private_ip_addresses = optional(list(string), [])
     extra_labels         = optional(list(string), [])
     install_ansible      = optional(bool, true)
+    nsg_name             = optional(string, "")
+    identity_name        = optional(string, "")
   })
   default = {}
 }
@@ -122,6 +124,8 @@ variable "ztp_runner" {
     data_disk_size_gb    = optional(number, 512)
     private_ip_addresses = optional(list(string), [])
     extra_labels         = optional(list(string), [])
+    nsg_name             = optional(string, "")
+    identity_name        = optional(string, "")
   })
   default = {}
 }
@@ -169,6 +173,8 @@ variable "hub_peering" {
     hub_vnet_id         = optional(string, "")
     use_remote_gateways = optional(bool, true)
     create_hub_side     = optional(bool, true)
+    spoke_name          = optional(string, "")
+    hub_name            = optional(string, "")
   })
   default = {}
 }

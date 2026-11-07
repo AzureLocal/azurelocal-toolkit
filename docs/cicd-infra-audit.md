@@ -9,7 +9,7 @@ The "After" column says what this branch adds. Paths are relative to the reposit
 ## Result in ten lines
 
 1. `src/terraform/modules/cicd-runner`, which the docs name in the index and in task 06, did **not exist**. It is now there.
-2. Task 06's `Deploy-CicdRunners.ps1` was a scaffold that **failed to run**: the line `-Configuration [ordered]@{` is not valid PowerShell, so the script threw before doing anything. The same line is in the standalone script of tasks 01 to 05.
+2. Task 06's `Deploy-CicdRunners.ps1` was a scaffold that **failed to run**: the line `-Configuration [ordered]@{` is not valid PowerShell, so the script threw before doing anything. The same line is in the standalone script of tasks 01 to 05 (and in six scripts of other phases).
 3. The orchestrated scripts of all six tasks call `Invoke-DeploymentOrchestrated`, which logs "standards-compliant scaffold" and, when no credential resolves, opens an interactive `Get-Credential` prompt. They create nothing.
 4. The `azurecli` variants are the same scaffold wrapper. The `bash` variants of tasks 02 to 05 are scaffolds. Only `bash` tasks 01 and 06 hold real commands, copied from the page: not idempotent, no `-WhatIf`, task 01 prints the client secret, task 06 takes the token as a `--token` argument.
 5. The pages describe a client secret (`ARM_CLIENT_SECRET`) and runner token variables (`runner_token`, `azdo_pat`). The pipelines and the new code use a federated credential (OIDC) or managed identity, and the runner reads its token from Key Vault. The page and the code differ here on purpose; the docs page needs an edit.
@@ -80,4 +80,4 @@ The "After" column says what this branch adds. Paths are relative to the reposit
 ## What stays a scaffold
 
 - The `azurecli` and `bash` variants of tasks 02 to 05 and the `bash` variants of tasks 01 and 06 keep their old content, except that the `azurecli` variants now call the PowerShell implementation. Bash is outside the repository's scripting standard; the docs page should stop pointing to it.
-- The standalone scaffold line `-Configuration [ordered]@{` is in many other task folders under `scripts/deploy`. Only the six tasks in `01-cicd-infra` are fixed here.
+- The standalone scaffold line `-Configuration [ordered]@{` was in 12 scripts under `scripts/deploy`; the six in `01-cicd-infra` are replaced here and six others remain.

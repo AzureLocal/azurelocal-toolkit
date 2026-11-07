@@ -307,12 +307,15 @@ variable "hub_peering" {
       hub_vnet_id          resource ID of the hub VNet.
       use_remote_gateways  use the hub's VPN or ExpressRoute gateway (the hub side then allows gateway transit).
       create_hub_side      create the hub half of the peering (needs rights in the hub subscription). Set false when the network team owns it.
+      spoke_name, hub_name names of the two peerings. Empty uses peer-<vnet>-to-hub and peer-hub-to-<vnet>. Set them to adopt existing peerings.
   EOT
   type = object({
     enabled             = optional(bool, false)
     hub_vnet_id         = optional(string, "")
     use_remote_gateways = optional(bool, true)
     create_hub_side     = optional(bool, true)
+    spoke_name          = optional(string, "")
+    hub_name            = optional(string, "")
   })
   default = {}
 
@@ -347,6 +350,12 @@ variable "admin_source_cidrs" {
 }
 
 # --------------------------------------------------------------- identity ----
+
+variable "nsg_name" {
+  description = "Network security group name. Empty uses nsg-<name_prefix>. Set it to adopt an existing group with terraform import."
+  type        = string
+  default     = ""
+}
 
 variable "managed_identity_name" {
   description = "User-assigned managed identity name. Empty uses id-<name_prefix>."
