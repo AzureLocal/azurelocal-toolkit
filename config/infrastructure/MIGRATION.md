@@ -22,11 +22,14 @@ Not carried over: `cluster_ip` (the deployment takes it from the infrastructure 
 | --- | --- |
 | `cluster_nodes[].name` | `nodes[].name` |
 | `cluster_nodes[].ip_address` | `nodes[].management.ip_address` |
-| `cluster_nodes[].mac_address` | `nodes[].management.mac_address` |
+| `cluster_nodes[].mac_address` | `nodes[].management.mac_address` (the management port) |
+| `cluster_nodes[].adapter_name` | `nodes[].management.adapter_name` |
+| `cluster_nodes[].arc_machine_name` | `nodes[].arc_machine_name` (schema 5.1). Default: `nodes[].name`. |
 | `cluster_nodes[].service_tag` | `nodes[].serial_number` |
 | `cluster_nodes[].idrac_ip` | `nodes[].bmc.ip_address`, with `nodes[].bmc.type: idrac` |
 | `cluster_nodes[].rack_position` | `nodes[].rack_position` |
 | `network_intents.management.subnet`, `gateway`, `vlan_id`, `dns_servers` | `networking.management.subnet`, `gateway`, `vlan_id`, `dns_servers` |
+| `network_intents.management.ip_assignment` (`static`, `dhcp`, `preconfigured`) | `networking.management.ip_assignment`, same values (schema 5.1). Default `static`. Not `networking.management.use_dhcp`, which is the deployment's ARM `useDhcp`. |
 | `network_intents.storage.subnet_1`, `subnet_2`, `vlan_id_1`, `vlan_id_2` | `networking.storage.networks[]`: `name`, `adapter`, `vlan_id`, `subnet` |
 | `network_intents.storage.rdma_enabled` | `hardware.network_cards[].ports[].rdma` |
 | `network_intents.compute` | `networking.vlans[]` and `networking.logical_networks[]` |
@@ -78,6 +81,14 @@ Not carried over: `cluster_ip` (the deployment takes it from the infrastructure 
 | Other top-level keys of one environment (for example `devops_runner`) | `devops`, or `extensions.<name>` |
 
 `hardware.bmc.username` and `nodes[].bmc.username` take either a user name or a `keyvault://` reference to a secret holding it. Tools resolve the reference when the value starts with `keyvault://`.
+
+## Within schema 5
+
+Minor versions add optional keys; a key that is renamed keeps working until the next major version.
+
+| Before | Now |
+| --- | --- |
+| `nodes[].arc_resource_name` (5.0) | `nodes[].arc_machine_name` (5.1). `arc_resource_name` still reads as the Arc machine name, with a deprecation warning (AZL-018). |
 
 ## From Trailwright's export
 

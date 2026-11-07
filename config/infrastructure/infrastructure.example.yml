@@ -22,7 +22,7 @@
 # =============================================================================
 
 _metadata:
-  schema_version: "5.0.0"
+  schema_version: "5.1.0"
   file_version: "1.0.0"
   last_updated: "2026-11-06"
   generated_by: ""
@@ -108,13 +108,17 @@ cluster:
 
 # -----------------------------------------------------------------------------
 # The machines. Simplified provisioning needs serial_number, bmc.ip_address
-# and management.mac_address on every machine.
+# and management.mac_address (the management port) on every machine.
+# arc_machine_name is the Arc machine name; it defaults to name, and an Arc
+# machine can't be renamed later.
 # -----------------------------------------------------------------------------
 nodes:
   - name: "iic-azl-n01"
+    arc_machine_name: "iic-azl-n01" # optional; default: name
     management:
       ip_address: "192.0.2.11"
-      mac_address: "00:00:5E:00:53:11"
+      mac_address: "00:00:5E:00:53:11" # the management port
+      adapter_name: "Port1" # optional; the MAC is enough
     serial_number: "SERIAL01"
     bmc:
       ip_address: "198.51.100.11"
@@ -122,9 +126,11 @@ nodes:
     rack: "R01"
     rack_position: "24"
   - name: "iic-azl-n02"
+    arc_machine_name: "iic-azl-n02"
     management:
       ip_address: "192.0.2.12"
       mac_address: "00:00:5E:00:53:12"
+      adapter_name: "Port1"
     serial_number: "SERIAL02"
     bmc:
       ip_address: "198.51.100.12"
@@ -171,7 +177,11 @@ networking:
     gateway: "192.0.2.1"
     vlan_id: 0 # 0 means untagged; can't change after deployment
     dns_servers: ["192.0.2.4", "192.0.2.5"] # can't change after deployment
-    use_dhcp: false
+    # How each machine's management port gets nodes[].management.ip_address
+    # before deployment: static (set on the port with mac_address), dhcp
+    # (reserve each address for its MAC) or preconfigured (left as it is).
+    ip_assignment: static
+    use_dhcp: false # ARM useDhcp for the deployment; not ip_assignment
     infrastructure_pool: # at least six contiguous addresses
       start: "192.0.2.20"
       end: "192.0.2.29"

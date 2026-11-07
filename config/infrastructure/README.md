@@ -49,6 +49,17 @@ The ARM parameters for Microsoft's deployment templates come from this file. The
 
 There is no unattended install from an ISO. With `iso`, the OS is installed first; the toolkit's OS configuration starts after that.
 
+## The management port and the Arc machine name
+
+Two settings decide what happens to each machine before deployment. Both are optional, schema 5.1.
+
+| Key | Values | What it does |
+| --- | --- | --- |
+| `networking.management.ip_assignment` | `static` (default), `dhcp`, `preconfigured` | How each `nodes[].management.ip_address` gets onto the management port, the one with `nodes[].management.mac_address`. `static`: the address, mask, gateway, DNS servers and `vlan_id` are set on that port. Simplified provisioning sets them at the OS install (edge machine `networkAdapters[]`, `ipAssignmentType: Manual`, keyed by the MAC). For an ISO install, the operator or the toolkit sets them. `dhcp`: the port stays on DHCP, so reserve each address for its MAC. `preconfigured`: the port is already set up, and the tools don't change it. |
+| `nodes[].arc_machine_name` | 1-54 letters, digits, `-`, `_`, `.`, not ending in `.` | The Arc machine name. Default: `nodes[].name`. Simplified provisioning sets it when it claims the machine (edge machine `arcMachineResourceId`). Without it the service names the Arc machine `ROE1-<id>`, and an Arc machine can't be renamed. An ISO install registers the Arc machine under the host name. |
+
+`ip_assignment` isn't `networking.management.use_dhcp`. `use_dhcp` is the deployment's ARM `useDhcp`, which takes the host and cluster addresses from DHCP instead of the infrastructure pool. In scripts, read both settings with `Get-AzlManagementIpAssignment` and `Get-AzlArcMachineName`, which apply the defaults.
+
 ## What the check covers
 
 **The schema** checks structure, types, formats (IPv4, CIDR, MAC, GUID), the `keyvault://` form, name lengths (cluster and node names up to 15 characters, the LCM user up to 20), and the conditional sections above. Every section rejects unknown keys, so a misspelt key is an error, not a silently ignored value.
@@ -73,6 +84,8 @@ There is no unattended install from an ISO. With `iso`, the OS is installed firs
 | AZL-014 | No public DNS servers |
 | AZL-015 | Simplified provisioning has a BMC login for every machine and the SBE folder |
 | AZL-016 | Arc gateway (and the private path) isn't used with simplified provisioning or in Azure Government |
+| AZL-017 | Management ports: no MAC is used by two nodes; with `ip_assignment: dhcp`, a warning per node to reserve its address for its MAC |
+| AZL-018 | Arc machine names (`arc_machine_name`, default the node name) are unique; the deprecated `arc_resource_name` is a warning, or an error when it disagrees with `arc_machine_name`; `arc_machine_name` on an ISO install is a warning, because the Arc machine takes the host name |
 
 Design guidance (which pattern to pick, sizing, best practices) stays in Trailwright, which cites Microsoft Learn for every rule. The toolkit's rules are the ones that stop a deployment.
 

@@ -2,7 +2,7 @@
 # OS from simplified machine provisioning (azurelocal-ztp), deployed with the ARM template. Arc gateway isn't
 # supported with simplified machine provisioning. Placeholder values only.
 _metadata:
-  schema_version: "5.0.0"
+  schema_version: "5.1.0"
 
 scenario:
   identity: active_directory
@@ -32,12 +32,14 @@ cluster:
   witness: { type: cloud, storage_account: "stiiccampuswit" } # rack aware needs a witness
   key_vault: { name: "kv-iic-campus-azl" }
 
-# Two zones with the same number of machines. Simplified provisioning: serial number, BMC address and management MAC.
+# Two zones with the same number of machines. Simplified provisioning: serial number, BMC address and management MAC
+# (the port the static address is set on). arc_machine_name defaults to the node name; set it at the first claim,
+# because an Arc machine can't be renamed.
 nodes:
-  - { name: "iic-cmp-n01", zone: "RoomA", serial_number: "SERIAL01", management: { ip_address: "192.0.2.11", mac_address: "00:00:5E:00:53:11" }, bmc: { ip_address: "198.51.100.11" } }
-  - { name: "iic-cmp-n02", zone: "RoomA", serial_number: "SERIAL02", management: { ip_address: "192.0.2.12", mac_address: "00:00:5E:00:53:12" }, bmc: { ip_address: "198.51.100.12" } }
-  - { name: "iic-cmp-n03", zone: "RoomB", serial_number: "SERIAL03", management: { ip_address: "192.0.2.13", mac_address: "00:00:5E:00:53:13" }, bmc: { ip_address: "198.51.100.13" } }
-  - { name: "iic-cmp-n04", zone: "RoomB", serial_number: "SERIAL04", management: { ip_address: "192.0.2.14", mac_address: "00:00:5E:00:53:14" }, bmc: { ip_address: "198.51.100.14" } }
+  - { name: "iic-cmp-n01", arc_machine_name: "iic-cmp-n01", zone: "RoomA", serial_number: "SERIAL01", management: { ip_address: "192.0.2.11", mac_address: "00:00:5E:00:53:11" }, bmc: { ip_address: "198.51.100.11" } }
+  - { name: "iic-cmp-n02", arc_machine_name: "iic-cmp-n02", zone: "RoomA", serial_number: "SERIAL02", management: { ip_address: "192.0.2.12", mac_address: "00:00:5E:00:53:12" }, bmc: { ip_address: "198.51.100.12" } }
+  - { name: "iic-cmp-n03", arc_machine_name: "iic-cmp-n03", zone: "RoomB", serial_number: "SERIAL03", management: { ip_address: "192.0.2.13", mac_address: "00:00:5E:00:53:13" }, bmc: { ip_address: "198.51.100.13" } }
+  - { name: "iic-cmp-n04", arc_machine_name: "iic-cmp-n04", zone: "RoomB", serial_number: "SERIAL04", management: { ip_address: "192.0.2.14", mac_address: "00:00:5E:00:53:14" }, bmc: { ip_address: "198.51.100.14" } }
 
 hardware:
   vendor: "Lenovo"
@@ -51,6 +53,7 @@ networking:
     subnet: "192.0.2.0/24"
     gateway: "192.0.2.1"
     dns_servers: ["192.0.2.4", "192.0.2.5"]
+    ip_assignment: static # simplified provisioning sets each ip_address on the port with mac_address
     infrastructure_pool: { start: "192.0.2.20", end: "192.0.2.29" }
   ntp_servers: ["192.0.2.4"]
   intents:

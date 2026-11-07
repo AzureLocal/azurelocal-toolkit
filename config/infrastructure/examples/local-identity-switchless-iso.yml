@@ -1,7 +1,7 @@
 # Scenario: local identity with Key Vault, Storage Spaces Direct, two machines with switchless (dual-link) storage,
 # outbound through Arc gateway, OS installed from an ISO, deployed from the Azure portal. Placeholder values only.
 _metadata:
-  schema_version: "5.0.0"
+  schema_version: "5.1.0"
 
 scenario:
   identity: local_identity
