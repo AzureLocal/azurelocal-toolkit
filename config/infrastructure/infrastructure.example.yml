@@ -27,6 +27,9 @@
 # isolate_san_adapters and enable_embedded_nics), the Azure site choices, timeouts, retries, the USB
 # image, the maintenance environment, and hardware.bmc.rfs_write_attribute and verify_certificate.
 # Every one has the default shown, which is what ZTP did before the key existed.
+# Schema 5.5 puts the CI/CD infrastructure in devops (tasks 01 to 06 of automation / 01-cicd-infra): the
+# project, its settings, the environments, the Azure sign-in, and the self-hosted runners (a Linux pool
+# and a Windows ztp runner) with their network and roles.
 #
 # Rules:
 #   - Keys are snake_case. Sections reject unknown keys; use extensions.
@@ -37,7 +40,7 @@
 # =============================================================================
 
 _metadata:
-  schema_version: "5.4.0"
+  schema_version: "5.5.0"
   file_version: "1.0.0"
   last_updated: "2026-11-06"
   generated_by: ""
@@ -407,10 +410,12 @@ landing_zone:
     - { name: "sub-iic-connectivity", id: "00000000-0000-0000-0000-000000000000", role: connectivity, management_group: "mg-iic-platform" }
     - { name: "sub-iic-identity", id: "00000000-0000-0000-0000-000000000000", role: identity, management_group: "mg-iic-platform" }
     - { name: "sub-iic-management", id: "00000000-0000-0000-0000-000000000000", role: management, management_group: "mg-iic-platform" }
+    - { name: "sub-iic-devops", id: "00000000-0000-0000-0000-000000000000", role: devops, management_group: "mg-iic-platform" }
     - { name: "sub-iic-azure-local", id: "00000000-0000-0000-0000-000000000000", role: azure_local, management_group: "mg-iic" }
   resource_groups:
     - { name: "rg-iic-conn-01", subscription: "sub-iic-connectivity", location: "eastus", purpose: "hub network" }
     - { name: "rg-iic-mgmt-01", subscription: "sub-iic-management", location: "eastus", purpose: "management" }
+    - { name: "rg-iic-runners-01", subscription: "sub-iic-devops", location: "eastus", purpose: "CI/CD runners" }
     - { name: "rg-iic-azl-01", subscription: "sub-iic-azure-local", location: "eastus", purpose: "Azure Local instance" }
   resource_providers: ["Microsoft.AzureStackHCI", "Microsoft.HybridCompute", "Microsoft.Edge", "Microsoft.KeyVault"]
   networks:
@@ -464,23 +469,80 @@ landing_zone:
   storage_accounts:
     - { name: "stiicazl01wit", resource_group: "rg-iic-azl-01", sku: "Standard_LRS", purpose: "cloud witness" }
 
-# Part 1 of the implementation steps: the pipeline platform and runner.
+# Part 1 of the implementation steps (tasks 01 to 06 of automation / 01-cicd-infra): the pipeline platform, the
+# project, its settings, the environments, the sign-in to Azure and the self-hosted runners. Schema 5.5.
 devops:
-  platform: github
+  platform: github # github | gitlab | azure_devops
   url: "https://github.com"
   organization: "improbability-cloud"
   project: "iic-azure-local"
-  runner:
-    name: "vm-iic-runner-01"
-    type: vm
-    resource_group: "rg-iic-mgmt-01"
-    network: "vnet-iic-mgmt-01"
-    subnet: "snet-iic-mgmt-01"
-    private_ip: "10.20.4.20"
-    size: "Standard_D2s_v5"
-    labels: ["iic-azl"]
-    registration_token: "keyvault://kv-iic-mgmt-01/runner-registration-token"
-  state: { storage_account: "stiictfstate01", container: "tfstate", resource_group: "rg-iic-mgmt-01" }
+  subscription: "sub-iic-devops" # holds the runners; a landing_zone subscription
+  resource_group: "rg-iic-runners-01"
+  create_resource_group: false
+  api_token: "keyvault://kv-iic-mgmt-01/devops-admin-token" # or GH_TOKEN, GITLAB_TOKEN, AZURE_DEVOPS_EXT_PAT in the environment
+
+  # Task 02.
+  repository:
+    name: "iic-azurelocal"
+    template: "AzureLocal/azurelocal-template" # GitHub: owner/repo; GitLab: project ID or path; Azure DevOps: clone URL
+    visibility: private
+    default_branch: main
+
+  # Task 03.
+  settings:
+    required_approvals: 2
+    reviewers: "improbability-cloud/platform-team"
+    squash_only: true
+    secret_scanning: true
+    resolve_conversations: true
+    required_status_checks: []
+
+  # Task 04. ztp-reinstall is the approval in front of the ZTP Boot stage, which reinstalls the machines.
+  environments:
+    - { name: "azr-prod-us", approval_required: true, approvers: ["platform-lead"], deployment_branch: main }
+    - { name: "azr-dev-us", approval_required: false }
+    - { name: "ztp-reinstall", approval_required: true, approvers: ["platform-lead"], deployment_branch: main }
+
+  # Tasks 01 and 05. The app registration is azure.automation_identity.name.
+  authentication:
+    method: oidc # oidc | client_secret
+    roles: ["Contributor", "User Access Administrator"]
+    grant_graph_role_management: false
+    register_encryption_at_host: true
+
+  # Task 06. One Linux general pool and at most one Windows ztp runner.
+  runners:
+    - name: "vm-iic-runner-lnx"
+      os_type: linux
+      purpose: general
+      count: 1
+      size: "Standard_D2s_v5"
+      registration_secret: "keyvault://kv-iic-mgmt-01/github-runner-token"
+      subnet: { name: "snet-iic-runner-lnx-01", prefix: "10.20.10.0/26" }
+      private_ips: ["10.20.10.4"]
+    - name: "vm-iic-runner-ztp"
+      os_type: windows
+      purpose: ztp
+      size: "Standard_D4s_v5"
+      registration_secret: "keyvault://kv-iic-mgmt-01/github-runner-token"
+      pool: "azurelocal-ztp" # GitHub runner group, or the Azure Pipelines pool
+      subnet: { name: "snet-iic-runner-ztp-01", prefix: "10.20.10.64/26" }
+      private_ips: ["10.20.10.68"]
+      data_disk_gb: 512
+  runner_network:
+    vnet_name: "vnet-iic-devops-01"
+    address_space: ["10.20.10.0/24"]
+    hub_peering: { enabled: true, hub_network: "vnet-iic-hub-01", use_remote_gateways: true, create_hub_side: true }
+    reachable_cidrs: ["192.0.2.0/24", "198.51.100.0/24"] # the lab: management and storage
+    bmc_cidrs: ["198.51.100.0/24"] # the ztp runner accepts inbound TCP 445 from these only
+    admin_source_cidrs: []
+  runner_access:
+    resource_groups: ["rg-iic-azl-01"] # default: azure.resource_group
+    rbac_administrator: true
+    arc_run_command: true
+    key_vaults: ["kv-iic-mgmt-01"] # default: every vault in key_vaults
+
+  state: { storage_account: "stiictfstate01", container: "tfstate", resource_group: "rg-iic-mgmt-01", key: "cicd-infra.tfstate" }
 
 # Anything this schema doesn't define, under its own key. Tools ignore keys they don't own.
 extensions: {}

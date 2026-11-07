@@ -1,29 +1,26 @@
-[CmdletBinding(SupportsShouldProcess = $true)]
+#Requires -Version 7.0
+<#
+.SYNOPSIS
+    Task 04. Creates the deployment environments with their approval gates. Azure CLI variant.
+
+.DESCRIPTION
+    The implementation drives the Azure CLI (az) and the platform's own CLI or REST API, so this variant runs the same
+    code as Invoke-CicdEnvironments-Orchestrated.ps1 and passes its parameters on. Needs az on PATH and az login.
+
+.PARAMETER ConfigPath
+    The infrastructure file (infrastructure.yml, schema 5.5).
+
+.PARAMETER LogPath
+    The log file.
+#>
+[CmdletBinding(SupportsShouldProcess)]
 param(
     [string]$ConfigPath = '',
     [string]$LogPath = ''
 )
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 
-function Get-DeploymentCommonModulePath {
-    $current = Get-Item -LiteralPath $PSScriptRoot
-    while ($null -ne $current) {
-        $candidate = Join-Path $current.FullName 'scripts\deploy\common\DeploymentScaffold.psm1'
-        if (Test-Path -LiteralPath $candidate) {
-            return $candidate
-        }
-
-        $current = $current.Parent
-    }
-
-    throw "Unable to locate DeploymentScaffold.psm1 from '$PSScriptRoot'."
-}
-
-Import-Module (Get-DeploymentCommonModulePath) -Force
-
-Invoke-DeploymentAzCliPowerShell `
-    -ScriptPath $PSCommandPath `
-    -TaskPath '01-cicd-infra/phase-01-cicd-setup/task-04-create-environments' `
-    -ActionName 'az-create-cicd-environments' `
-    -ConfigPath $ConfigPath `
-    -LogPath $LogPath `
-    -Parameters $PSBoundParameters
+if (-not (Get-Command -Name az -ErrorAction SilentlyContinue)) { throw "Azure CLI 'az' was not found in PATH." }
+$orchestrated = Join-Path (Split-Path -Path $PSScriptRoot -Parent) (Join-Path 'powershell' 'Invoke-CicdEnvironments-Orchestrated.ps1')
+& $orchestrated @PSBoundParameters

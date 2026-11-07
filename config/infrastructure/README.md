@@ -5,6 +5,7 @@
 | Tool | Reads | Writes |
 | --- | --- | --- |
 | [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) | Everything its scripts need, through `Import-AzlInfrastructure` | No |
+| [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) CI/CD infrastructure (`scripts/deploy/01-cicd-infra`) | The `devops` section (schema 5.5), `azure`, `key_vaults`, `landing_zone` | No |
 | [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | `scenario`, `azure`, `key_vaults`, `nodes` (with `network_adapters`, `bios`, `bios_during_provisioning` and `maintenance_address`), `hardware` (with `bios` and `bios_during_provisioning`), `networking.management` (with `static_method` and `provisioning_dhcp_range`), `networking.ntp_servers`, `identity.local_admin`, `provisioning` (with `simplified.maintenance_password`), `tags` |
 | ARM and SAN deployment | The ARM parameters (each schema description names its parameter) and the SAN: `storage.san`, `nodes[].san` | No |
 | [Trailwright](https://labs.hybridsolutions.cloud/azurelocal-trailwright/) | The design sections | Yes: it produces the file from a guided design |

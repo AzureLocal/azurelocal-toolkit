@@ -18,7 +18,7 @@
       ],
       "properties": {
         "schema_version": {
-          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san). 5.3 also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate.",
+          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san). 5.3 also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.5 puts the CI/CD infrastructure in devops: the project, its settings, the environments, the Azure sign-in, the runners (Linux, Windows, ZTP), their network and roles.",
           "type": "string",
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
@@ -2556,7 +2556,7 @@
       }
     },
     "devops": {
-      "description": "Part 1 of the implementation steps: the pipeline platform and runner. Optional.",
+      "description": "Part 1 of the implementation steps: the pipeline platform, the project and its settings, the environments, the sign-in to Azure and the self-hosted runners (tasks 01 to 06 of automation / 01-cicd-infra). Optional. Schema 5.5 added repository, settings, environments, authentication, runners, runner_network, runner_access, api_token and state.key.",
       "type": "object",
       "additionalProperties": false,
       "required": [
@@ -2579,6 +2579,386 @@
         },
         "project": {
           "type": "string"
+        },
+        "api_token": {
+          "description": "Schema 5.5. Key Vault reference to a token with administrator rights on the organization or project. The setup scripts (tasks 02 to 05) use it when the platform CLI is not already signed in. Without it they read GH_TOKEN, GITLAB_TOKEN or AZURE_DEVOPS_EXT_PAT from the environment.",
+          "$ref": "#/$defs/kv_ref"
+        },
+        "subscription": {
+          "description": "Schema 5.5. Name of the subscription in landing_zone.subscriptions that holds the runners (role devops). Default: the subscription with role devops.",
+          "type": "string"
+        },
+        "resource_group": {
+          "description": "Schema 5.5. Resource group of the runners, their identity and their network.",
+          "$ref": "#/$defs/resource_group"
+        },
+        "create_resource_group": {
+          "description": "Schema 5.5. Create devops.resource_group. False when it exists.",
+          "type": "boolean",
+          "default": false
+        },
+        "repository": {
+          "description": "Schema 5.5. The deployment repository or project that task 02 creates.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "description": "Repository name. Default: devops.project.",
+              "type": "string"
+            },
+            "template": {
+              "description": "GitHub: owner/repo of a template repository. GitLab: the ID or path of the template project. Azure DevOps: the clone URL to import. Empty creates an empty repository.",
+              "type": "string"
+            },
+            "visibility": {
+              "description": "Repository visibility.",
+              "enum": [
+                "private",
+                "internal"
+              ],
+              "default": "private"
+            },
+            "default_branch": {
+              "description": "The protected default branch.",
+              "type": "string",
+              "default": "main"
+            }
+          }
+        },
+        "settings": {
+          "description": "Schema 5.5. What task 03 sets on the repository: branch protection, approvals and security.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "required_approvals": {
+              "description": "Approvals a pull request needs before it merges. 0 for a sandbox.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 10,
+              "default": 2
+            },
+            "reviewers": {
+              "description": "The team or group whose members review: a GitHub team slug (org/team), a GitLab group path or an Azure DevOps group name.",
+              "type": "string"
+            },
+            "squash_only": {
+              "description": "Allow squash merges only.",
+              "type": "boolean",
+              "default": true
+            },
+            "secret_scanning": {
+              "description": "Turn on secret scanning and push protection (GitHub), secret push rules (GitLab) or the secret file check (Azure DevOps).",
+              "type": "boolean",
+              "default": true
+            },
+            "resolve_conversations": {
+              "description": "All conversations must be resolved before a merge.",
+              "type": "boolean",
+              "default": true
+            },
+            "required_status_checks": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Pipeline checks that must pass before a merge."
+            }
+          }
+        },
+        "environments": {
+          "description": "Schema 5.5. The deployment environments that task 04 creates, with their approval gate.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name"
+            ],
+            "properties": {
+              "name": {
+                "description": "Environment name, for example azr-prod-us, or ztp-reinstall for the approval in front of the ZTP Boot stage.",
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
+              },
+              "approval_required": {
+                "description": "A named reviewer must approve each deployment.",
+                "type": "boolean",
+                "default": false
+              },
+              "approvers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "GitHub user names or org/team slugs, GitLab user names or group paths, Azure DevOps e-mail addresses."
+              },
+              "wait_minutes": {
+                "description": "Delay before a deployment starts (GitHub).",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 43200,
+                "default": 0
+              },
+              "deployment_branch": {
+                "description": "The only branch that may deploy to the environment.",
+                "type": "string",
+                "default": "main"
+              }
+            }
+          }
+        },
+        "authentication": {
+          "description": "Schema 5.5. How the pipelines sign in to Azure (tasks 01 and 05). The app registration is azure.automation_identity.name.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "description": "oidc: a federated credential per repository and environment, no secret. client_secret: a secret, stored only in Key Vault (devops.authentication.client_secret) and in the platform as a masked variable.",
+              "enum": [
+                "oidc",
+                "client_secret"
+              ],
+              "default": "oidc"
+            },
+            "client_secret": {
+              "description": "Key Vault reference where task 01 stores the generated client secret (method client_secret).",
+              "$ref": "#/$defs/kv_ref"
+            },
+            "roles": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "Roles the service principal gets on each subscription. Default: Contributor and User Access Administrator, as the automation docs say. Narrow them when you can."
+            },
+            "grant_graph_role_management": {
+              "description": "Also add the Microsoft Graph application permission RoleManagement.ReadWrite.Directory and grant admin consent. High privilege: leave false unless a pipeline assigns Entra roles.",
+              "type": "boolean",
+              "default": false
+            },
+            "register_encryption_at_host": {
+              "description": "Register Microsoft.Compute and the EncryptionAtHost feature on each subscription.",
+              "type": "boolean",
+              "default": true
+            }
+          }
+        },
+        "runners": {
+          "description": "Schema 5.5. The self-hosted runners that task 06 deploys with Terraform. One Linux general pool and at most one Windows ztp runner; use the module directly for more. Replaces devops.runner when present.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "os_type"
+            ],
+            "properties": {
+              "name": {
+                "description": "Name prefix of the VM or VMs, for example vm-tplabs-runner-lnx.",
+                "type": "string"
+              },
+              "os_type": {
+                "description": "Operating system.",
+                "enum": [
+                  "linux",
+                  "windows"
+                ]
+              },
+              "purpose": {
+                "description": "general: ARM, Arc, Terraform, Ansible and OS configuration. ztp: the azurelocal-ztp Boot, Bootstrap and Vouchers stages (Windows only).",
+                "enum": [
+                  "general",
+                  "ztp"
+                ],
+                "default": "general"
+              },
+              "count": {
+                "description": "Number of VMs.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 20,
+                "default": 1
+              },
+              "compute_type": {
+                "description": "vm or vmss. Windows and ztp runners are VMs.",
+                "enum": [
+                  "vm",
+                  "vmss"
+                ],
+                "default": "vm"
+              },
+              "size": {
+                "description": "VM size. Default Standard_D2s_v5 (Linux) and Standard_D4s_v5 (Windows ztp).",
+                "type": "string"
+              },
+              "labels": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Labels added to the defaults (azure, the OS, terraform, ansible, ztp)."
+              },
+              "registration_secret": {
+                "description": "Key Vault reference to the secret the runner reads at boot: a PAT or App token (GitHub), the runner authentication token (GitLab), a PAT with Agent Pools read and manage (Azure DevOps). Only the reference is here.",
+                "$ref": "#/$defs/kv_ref"
+              },
+              "pool": {
+                "description": "The Azure Pipelines agent pool, or the GitHub runner group. A ztp runner gets its own.",
+                "type": "string"
+              },
+              "private_ips": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/ipv4"
+                },
+                "description": "Static private addresses, one per VM. Empty uses dynamic addresses."
+              },
+              "subnet": {
+                "description": "The runner subnet inside runner_network.address_space.",
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "name",
+                  "prefix"
+                ],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "prefix": {
+                    "$ref": "#/$defs/cidr"
+                  }
+                }
+              },
+              "data_disk_gb": {
+                "description": "Data disk for the ZTP media, images and vouchers. 512 or more for ztp.",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 32767,
+                "default": 0
+              }
+            }
+          }
+        },
+        "runner_network": {
+          "description": "Schema 5.5. The VNet of the runners, the peering with the hub and the lab ranges they reach.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "vnet_name": {
+              "type": "string"
+            },
+            "address_space": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/cidr"
+              },
+              "minItems": 1
+            },
+            "dns_servers": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ipv4"
+              }
+            },
+            "hub_peering": {
+              "description": "Peering with the hub VNet. The hub half is created in the hub subscription unless create_hub_side is false.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "description": "Peer the runner VNet with the hub.",
+                  "type": "boolean",
+                  "default": false
+                },
+                "hub_network": {
+                  "description": "Name of the hub in landing_zone.networks (its subscription and resource group give the VNet ID).",
+                  "type": "string"
+                },
+                "hub_vnet_id": {
+                  "description": "Resource ID of the hub VNet. Use it instead of hub_network.",
+                  "type": "string"
+                },
+                "use_remote_gateways": {
+                  "description": "Use the hub VPN or ExpressRoute gateway to reach the lab.",
+                  "type": "boolean",
+                  "default": true
+                },
+                "create_hub_side": {
+                  "description": "Create the hub half of the peering. False when the network team owns it.",
+                  "type": "boolean",
+                  "default": true
+                }
+              }
+            },
+            "reachable_cidrs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/cidr"
+              },
+              "description": "Lab networks the runners reach: management, storage, BMC."
+            },
+            "reachable_tcp_ports": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "description": "TCP ports allowed outbound to the lab networks. Default 22, 443, 445, 3389, 5985, 5986."
+            },
+            "bmc_cidrs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/cidr"
+              },
+              "description": "The BMC networks. The ztp runner accepts inbound TCP 445 from these only. Required for a ztp runner."
+            },
+            "admin_source_cidrs": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/cidr"
+              },
+              "description": "Ranges that may reach SSH or RDP on the runners. Empty allows none."
+            }
+          }
+        },
+        "runner_access": {
+          "description": "Schema 5.5. What the runners may do in Azure (least privilege).",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "resource_groups": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/resource_group"
+              },
+              "description": "Resource groups where the runners are Contributor. Default: azure.resource_group. Add the Azure Local managed resource group if it can take deployments."
+            },
+            "rbac_administrator": {
+              "description": "Role Based Access Control Administrator on those resource groups, which the Azure Local deployment and ZTP need.",
+              "type": "boolean",
+              "default": true
+            },
+            "rbac_delegable_role_ids": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/guid"
+              },
+              "description": "Limit the roles the runners may assign to these role definition GUIDs. Empty allows any role."
+            },
+            "arc_run_command": {
+              "description": "Azure Connected Machine Resource Administrator on those resource groups, so jobs can run Arc Run Command on the machines.",
+              "type": "boolean",
+              "default": true
+            },
+            "key_vaults": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/key_vault_name"
+              },
+              "description": "Vaults the runners read secrets from. Default: every vault in key_vaults."
+            }
+          }
         },
         "runner": {
           "type": "object",
@@ -2632,6 +3012,15 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "subscription_id": {
+              "description": "Schema 5.5. Subscription of the state storage account.",
+              "$ref": "#/$defs/guid"
+            },
+            "key": {
+              "description": "Schema 5.5. Blob name of the CI/CD runners state. Default cicd-infra.tfstate.",
+              "type": "string",
+              "default": "cicd-infra.tfstate"
+            },
             "storage_account": {
               "$ref": "#/$defs/storage_account_name"
             },

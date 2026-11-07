@@ -829,7 +829,7 @@ Describe 'Schema 5.4: ZTP settings and the BIOS actions derived from the invento
     Context 'the templates' {
         It 'are schema 5.4.0 and clean' {
             foreach ($f in $script:Ztp54, $script:Full54) {
-                (Import-AzlInfrastructure -Path $f)._metadata.schema_version | Should -Be '5.4.0'
+                (Import-AzlInfrastructure -Path $f)._metadata.schema_version | Should -Match '^5\.[45]\.0$'
                 @(Test-AzlInfrastructure -Path $f) | Should -BeNullOrEmpty
             }
         }
