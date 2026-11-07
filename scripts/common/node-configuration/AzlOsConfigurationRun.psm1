@@ -601,6 +601,10 @@ function Merge-AzlRunResult {
     $Record.sanDisks = @($Run.Entry.sanDisks)
     $Record.hostname = [string](Get-AzlProp $Run.Entry 'hostname' '')
     $Record.osVersion = [string](Get-AzlProp $Run.Entry 'osVersion' '')
+    # hardware.sbe.delivery skip: the node is not failed, but the package is not on it and the OEM drivers wait, so say it once.
+    if ($Phase -eq 'Plan' -and @($Record.plan | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -eq 'Info' -and $_.Note -match 'NOT DELIVERED' }).Count) {
+        $Record.warnings += "$($Record.name): the SBE package is NOT DELIVERED (hardware.sbe.delivery is skip or not set), so the OEM network drivers are skipped. Set hardware.sbe.delivery to node_pull or winrm_copy, or put the package in C:\SBE yourself."
+    }
     return $true
 }
 

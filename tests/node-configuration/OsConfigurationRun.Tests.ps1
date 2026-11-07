@@ -602,7 +602,19 @@ Describe 'Integration with the SBE delivery routes and the node script' {
         $call.Params.Credential.UserName | Should -Not -BeNullOrEmpty
         'Sbe' | Should -BeIn $call.Params.Step
     }
-    It '<_> on a ZTP node needs no credential' -ForEach 'skip', 'node_pull' {
+    It 'a plan that says the SBE package is NOT DELIVERED (skip) puts one warning in the node record and does not fail the node' {
+        $warnings = InModuleScope AzlOsConfigurationRun {
+            $record = [ordered]@{ name = 'n1'; phases = [ordered]@{}; plan = @(); errors = @(); warnings = @(); ports = @(); sanDisks = @(); hostname = ''; osVersion = '' }
+            $entry = [pscustomobject]@{ plan = @([pscustomobject]@{ step = 'Sbe'; item = 'C:\SBE\x.zip'; current = 'absent'; desired = 'present'; action = 'Info'; note = 'NOT DELIVERED: hardware.sbe.delivery is skip' }); ports = @(); sanDisks = @(); hostname = 'n1'; osVersion = '10.0' }
+            $run = [pscustomobject]@{ ExitCode = 0; Error = ''; Skipped = $false; Entry = $entry }
+            $ok = Merge-AzlRunResult -Record $record -Run $run -Phase Plan
+            [pscustomobject]@{ Ok = $ok; Warnings = @($record.warnings); Errors = @($record.errors) }
+        }
+        $warnings.Ok | Should -BeTrue
+        $warnings.Errors | Should -BeNullOrEmpty
+        $warnings.Warnings.Count | Should -Be 1
+        $warnings.Warnings[0] | Should -Match 'NOT DELIVERED'
+    }    It '<_> on a ZTP node needs no credential' -ForEach 'skip', 'node_pull' {
         $route = $_
         $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.hardware.sbe.delivery = $route; $d.hardware.sbe.node_pull_url = 'https://files.example.invalid/sbe' }
         $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
