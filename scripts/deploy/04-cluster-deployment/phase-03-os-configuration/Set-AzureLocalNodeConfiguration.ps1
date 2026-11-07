@@ -46,6 +46,11 @@
     SAS. Needed only when a node doesn't hold the package yet. You need Storage Blob Data Contributor on it.
 .PARAMETER Step
     Limit the run to these steps. Default: all.
+.PARAMETER NodeAddress
+    -Transport WinRM only: node name -> the address to open the session to (default: the management address in the file). A node installed
+    from an ISO may still hold the address the installer gave it.
+.PARAMETER RetryTries
+    How many times a node script is tried when its Arc run command ends in state Unknown (default 3, with a growing pause).
 .PARAMETER ClearStorage
     Treat leftover local storage as a change (destroys data on local disks; never SAN LUNs). With -Execute.
 .PARAMETER NoRestart
@@ -73,6 +78,9 @@ param(
     [string]$StagingContainer = 'azl-staging',
     [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')][string[]]$Step,
     [switch]$ClearStorage,
+    [hashtable]$NodeAddress,
+    [ValidateRange(1, 10)][int]$RetryTries = 3,
+    [int[]]$RetryDelaySeconds = @(15, 45, 120),
     [switch]$NoRestart,
     [switch]$SkipValidation,
     [switch]$OfflineManifest,
@@ -92,6 +100,7 @@ Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlNodeTransp
 
 function Write-Line([string]$Text) { Write-Information -MessageData $Text -InformationAction Continue }
 
+Set-AzlNodeRetryPolicy -Tries $RetryTries -DelaySeconds $RetryDelaySeconds
 $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation:$SkipValidation
 $handoff = if ($HandoffFile) { Read-AzlHandoff -Path $HandoffFile } else { $null }
 $allSteps = @('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')
@@ -143,7 +152,7 @@ if ($useArc) {
 else {
     if (-not $Credential) { throw 'The WinRM transport needs -Credential (the nodes'' local administrator).' }
     $addresses = @{}
-    foreach ($s in $specs) { $addresses[$s.Name] = $s.Management.Ip }
+    foreach ($s in $specs) { $addresses[$s.Name] = if ($NodeAddress -and $NodeAddress.ContainsKey($s.Name)) { [string]$NodeAddress[$s.Name] } else { $s.Management.Ip } }
     $nodeTransport = New-AzlWinRmTransport -Address $addresses -Credential $Credential
 }
 Write-Line "Transport: $($nodeTransport.Kind). $(if ($Execute) { 'EXECUTE: changes will be made.' } else { 'Plan only: nothing on the nodes changes. Add -Execute.' })"
@@ -178,6 +187,8 @@ $report = [ordered]@{
     nodes         = @($results | ForEach-Object {
             [ordered]@{
                 name      = $_.Node
+                hostname  = [string](Get-AzlProp $_.State 'host' '')
+                osVersion = [string](Get-AzlProp $_.State 'os' '')
                 converged = $_.Converged
                 restarted = $_.Restarted
                 ports     = @(Get-AzlProp $_.State 'nics' @() | ForEach-Object { [ordered]@{ osName = $_.n; mac = $_.mac; status = $_.st } })

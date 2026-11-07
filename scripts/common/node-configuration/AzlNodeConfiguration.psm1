@@ -626,7 +626,7 @@ function Wait-AzlNodeRestart {
     Start-Sleep -Seconds 30
     while ((Get-Date) -lt $deadline) {
         try {
-            $state = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlNodePayload -Name Read) -Parameters $ReadParameters -Secrets $Secrets -TimeoutSeconds 600
+            $state = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlNodePayload -Name Read) -Parameters $ReadParameters -Secrets $Secrets -TimeoutSeconds 600 -Tries 1
             if ($state.boot -ne $PreviousBoot) { return $state }
         }
         catch { Write-Verbose "$Node isn't back yet: $($_.Exception.Message)" }
@@ -697,12 +697,20 @@ function Invoke-AzlNodeConfiguration {
             $actions += $a
         }
         if ($actions.Count) {
-            $result = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Apply) -Parameters @{ actions = $actions; sbeDir = $(if ($Spec.Sbe) { $Spec.Sbe.Dir } else { 'C:\SBE' }) } -Secrets $applySecrets -TimeoutSeconds 3600
+            try { $result = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Apply) -Parameters @{ actions = $actions; sbeDir = $(if ($Spec.Sbe) { $Spec.Sbe.Dir } else { 'C:\SBE' }) } -Secrets $applySecrets -TimeoutSeconds 3600 }
+            catch {
+                # The run ended in state Unknown after every retry: we don't know what happened. Read the node again and decide from that.
+                if ($_.Exception.Data['AzlState'] -ne 'Unknown') { throw }
+                $changes.Add([pscustomobject]@{ Node = $node; Pass = $pass; Id = 'apply'; Status = 'unknown'; Detail = $_.Exception.Message })
+                continue
+            }
             foreach ($r in @($result.results)) { $changes.Add([pscustomobject]@{ Node = $node; Pass = $pass; Id = $r.id; Status = $r.status; Detail = $r.detail }) }
             $failed = @($result.results | Where-Object { $_.status -eq 'failed' })
             if ($failed) { $plan = @(Compare-AzlNodeState -Spec $Spec -State $state -Step $Step -ClearStorage:$ClearStorage); break }
             if ($result.reboot -and -not $NoRestart) {
-                $null = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Restart) -TimeoutSeconds 300
+                # The node goes away on purpose: a restart that ends in state Unknown is not a failure, the wait below checks the boot time.
+                try { $null = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Restart) -TimeoutSeconds 300 -Tries 1 }
+                catch { if ($_.Exception.Data['AzlState'] -ne 'Unknown') { throw } }
                 $state = Wait-AzlNodeRestart -Transport $Transport -Node $node -PreviousBoot $state.boot -ReadParameters $readParameters -Secrets $secrets
                 $restarted = $true
             }

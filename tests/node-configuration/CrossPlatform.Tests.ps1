@@ -10,6 +10,8 @@ BeforeDiscovery {
     $repoRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
     $script:ScanFiles = foreach ($relative in @(
             'scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Set-AzureLocalNodeConfiguration.ps1'
+            'scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1'
+            'scripts/common/node-configuration/AzlOsConfigurationRun.psm1'
             'scripts/common/node-configuration/AzlNodeConfiguration.psm1'
             'scripts/common/node-configuration/AzlNodePayload.psm1'
             'scripts/common/node-configuration/AzlNodeTransport.psm1'
