@@ -968,7 +968,7 @@ function Invoke-AzlPreClusterVerification {
     Merge-AzlPclAdapter -Into $Adapter -From (New-AzlPclAdapter)
     # The verification modules: their checks join the catalog, and the read only adapter members they bring (groups Azure, Ad, Dns, Remote, KeyVault, Clock ...) fill the gaps.
     # The default folder must hold every module of the repository; a missing one is a failing check. A folder given by a test holds what the test says.
-    $expectedModules = if ($ExtensionFolder -eq (Get-AzlPclExtensionFolder)) { @('AzlVerification.Azure', 'AzlVerification.Identity', 'AzlVerification.Network', 'AzlVerification.Nodes', 'AzlVerification.Storage', 'AzlVerification.NodeCommon') } else { @() }
+    $expectedModules = if ($ExtensionFolder -eq (Get-AzlPclExtensionFolder)) { @('AzlVerification.Azure', 'AzlVerification.Identity', 'AzlVerification.Network', 'AzlVerification.Nodes', 'AzlVerification.Storage', 'AzlVerification.NodeCommon', 'AzlVerification.Endpoints') } else { @() }
     $extension = Import-AzlPclExtension -Folder $ExtensionFolder -Expected $expectedModules
     Merge-AzlPclAdapter -Into $Adapter -From $extension.AdapterDefaults
     $definitions = @(Get-AzlPclDefinitionSet $extension)

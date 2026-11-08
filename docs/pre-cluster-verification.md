@@ -7,6 +7,7 @@ current result of this gate for the same infrastructure file.
 
 - Entry point: `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1`
 - Engine: `scripts/common/arm-deployment/AzlPreClusterVerification.psm1` (modules, adapters, runner, `-Fix`, report and feed); the contract the ARM run reads: `AzlPreClusterGate.psm1`
+- The documented endpoint list (one source for AZ-023, NW-005 and ID-DNS-003): `scripts/common/arm-deployment/verification/AzlVerification.Endpoints.psm1`
 - Check modules (the catalog below): `scripts/common/arm-deployment/verification/AzlVerification.*.psm1`; the one check the engine owns is `ARM-001`
 - Tests (fakes only): `tests/pre-cluster-verification` (the engine with a fake module, and each module), `tests/arm-deployment/ArmDeploymentRun.PreClusterVerification.Tests.ps1`
 
@@ -24,6 +25,9 @@ current result of this gate for the same infrastructure file.
 
 # 4. Optional: put the Environment Checker on the nodes for this run (removed again at the end), so RD-002 to RD-005 can run:
 ./Invoke-AzureLocalPreClusterVerification.ps1 -InfrastructureFile <infrastructure.yml> -Mode Verify -InstallEnvironmentChecker
+
+# 4b. Optional: accept a Validate on an instance whose deployment failed (the license-sync risk Learn names; AZ-018 becomes a Warning that records it):
+./Invoke-AzureLocalPreClusterVerification.ps1 -InfrastructureFile <infrastructure.yml> -Mode Verify -AllowRevalidate
 
 # 5. The ARM Validate then goes ahead:
 ./Invoke-AzureLocalArmDeployment.ps1 -InfrastructureFile <infrastructure.yml> -Mode Validate
@@ -121,6 +125,7 @@ summary and in the ARM event feed. There is no infrastructure.yml key for it, a 
 | `verificationMinDataDiskGB` | `deployment.verification_min_data_disk_gb` | 500 (Learn) |
 | `verificationMinLinkGbps` | `deployment.verification_min_link_gbps` | 10 (Learn, storage) |
 | `verificationMaxClockSkewSeconds` | `deployment.verification_max_clock_skew_seconds` | 300 (Kerberos) |
+| `allowRevalidate` | `deployment.allow_revalidate` | false (switch `-AllowRevalidate`, also on the ARM Validate) |
 | user name secret | `identity.local_admin.username_secret` (optional) | `local-admin-username` in the vault of the password |
 
 ## Verification modules (the contract for checks)
@@ -147,6 +152,26 @@ Get-AzlVerificationAdapterDefault    # optional: a table of read only scriptbloc
   repository) and an id defined by two modules each become a failing check (`EXT-<name>`), never a silent gap. A module that exports neither function is a library (`AzlVerification.NodeCommon.psm1`).
 - A definition with the Id of a built-in check (`ARM-001`) replaces it.
 
+## What the first lab run taught us
+
+The first run on the lab (3 nodes, hybrid with a Fibre Channel SAN) gave 22 blocking results. Most were the gate being wrong, not the lab. What was fixed, and the rule behind each:
+
+| What the run showed | What was wrong | The rule now |
+| --- | --- | --- |
+| AZ-023, NW-005 and ID-DNS-003 failed for `eastus.his.arc.azure.com` and `dp.kubernetesconfiguration.azure.com` | The hosts were made up. The Arc hybrid identity endpoint uses a short code of the region (`eus`), not `eastus`; the Kubernetes data plane host carries the region (`eastus.dp.kubernetesconfiguration.azure.com`) | One list, `AzlVerification.Endpoints.psm1`, taken from Learn (Firewall requirements for Azure Local, the consolidated endpoint lists of each region, and the Arc agent network requirements). The region is substituted exactly where Learn shows it; the short code only for the regions Learn lists (eastus eus, westeurope weu, australiaeast ae, canadacentral cc, centralindia pn, southeastasia sea, japaneast je, southcentralus scus). A host that does not resolve is Failed only if it is in the list; wildcards cannot be tested and are named in the result as not tested; CRL and OCSP hosts on port 80 and the entries Learn marks conditional are Warnings |
+| ID-AD-007 said the LCM user lacks create and delete computer objects although it had the entries | The check compared entries of the OU with the LCM user, and this host cannot translate SIDs of another domain | Entries are matched by SID only (the user's `objectSid` and its `tokenGroups`); the failure now names the SID and the entries it compared |
+| ND-010 failed for `NetworkATC` | Network ATC is installed by the deployment; on the lab it is only Available before it | ND-010 requires what the OS carries before the deployment (Hyper-V, Failover Clustering, Data Center Bridging, BitLocker) and never lists Network ATC |
+| AZ-005, AZ-007 and AZ-008 Skipped with "Parameter set cannot be resolved" | `Get-AzRoleAssignment` cannot take `-Scope` with `-ExpandPrincipalGroups` | The roles are listed through ARM REST (`roleAssignments?$filter=assignedTo('{objectId}')` on the scope: transitive over groups, includes what is inherited from management groups); the object id comes from `Get-AzADUser`, else Graph `/me`, or the service principal |
+| RD-004 and RD-005 Skipped | The readiness adapter never received the local administrator credential | The engine gives `Adapters.Readiness` the credential it already uses for Remote.Invoke (`.\user`) and the node addresses |
+| AZ-018 Failed on a failed deployment state | Correct by default, but the operator could not accept the risk | `-AllowRevalidate` (also on the ARM Validate) makes it a Warning that records the accepted license-sync risk; the remedy names it |
+| AZ-016 Failed for Arc machines named after the device ID | The claim that this breaks Deploy step 0.41 was seen on a prerelease build in another environment and not reproduced here | A non-blocking Warning in every phase, with the reported-not-reproduced wording and the remedies from Learn: the Arc resource name is fixed at onboarding, so set it to the host name at provisioning (simplified machine provisioning, pencil, step 3.4), with `--resource-name <hostname>` when registering, or `azcmagent disconnect` and connect again. The file keeps `nodes[].arc_machine_name`, so the ARM parameters point at the real resource whatever it is called. No check depends on this naming being a defect |
+| ST-008 said Test-Cluster fails | The LUNs were visible but MPIO already showed each once | The message says what is true now: LUNs visible, claimed once each, and that Learn still advises not zoning before the deployment |
+| RD-003 (Environment Checker, `VlanID` inconsistent values) | A legitimate warning | Stays a Warning |
+
+Ports are never assumed to have a name. NW-013 reads only what the file says (`nodes[].network_adapters[]`: its name, MAC, roles, slot; `networking.intents[].adapters`; `networking.cluster_networks[]`), finds each port on the node by MAC, and
+shows the file name next to the OS name. The same file port must have the same OS name on every node, every intent adapter must exist on every node, and the node's name must be the one the OS configuration report carries for that MAC.
+Names such as `Port1`, `Slot 3 Port 1`, `NIC1` or `Embedded NIC 2` are all the same to it.
+
 ## Where Learn and the azurelocal.cloud pages differ
 
 Learn wins; the differences are listed in `docs-2610-audit.md` of the documentation repository.
@@ -172,7 +197,7 @@ Learn wins; the differences are listed in `docs-2610-audit.md` of the documentat
 | Test-Cluster "Two disks ... cannot be distinguished" (SAN LUNs seen once per path, not declared or not claimed) | ST-004, ST-006, ST-007, ST-011 |
 | Step 0.60 environment checker: SBE not validated with the solution, or an SBE left in `C:\SBE` | ND-004, RD-003 |
 | `RoleAssignmentExists` after a portal attempt; zombie role assignments | AZ-020, AZ-019 |
-| `arc-device-id-name` (Deploy step 0.41) | AZ-016 |
+| `arc-device-id-name` (Deploy step 0.41; reported on a prerelease build in another environment, not reproduced here) | AZ-016, a Warning only |
 | Another Validate after a failed deployment (license sync) | AZ-018 |
 | `unsupported-os-version` | ND-003, ND-004 |
 | Local administrator mismatch (vault says `Administrator`, file says `azl-admin`) | AZ-013, ID-LA-001, ID-LA-003, ID-LA-004 |
@@ -253,7 +278,7 @@ Generated from the effective catalog (`Get-AzlPclCatalog`): the built-in `ARM-00
 | ND-007 | No pending restart on any node | verification module AzlVerification.Nodes | yes | [Learn: deploy/deployment-install-os](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610; azl-toolkit phase-04-arc-registration pre-registration checks) |
 | ND-008 | Processors and memory: identical processors, at least the minimum memory, virtualization on, at least what the file declares | verification module AzlVerification.Nodes | yes | [Learn: concepts/system-requirements-23h2](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements-23h2?view=azloc-2610 (Machine and storage requirements); Learn hardware validator (Processor, Memory)) |
 | ND-009 | Boot disk is at least the minimum size (the BOSS card is the boot device) | verification module AzlVerification.Nodes | yes | [Learn: concepts/system-requirements-23h2](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements-23h2?view=azloc-2610 (Boot drive: at least 200 GB)) |
-| ND-010 | Required Windows features are installed (Hyper-V, Failover Clustering, Data Center Bridging, Network ATC, BitLocker) | verification module AzlVerification.Nodes | yes | [Learn: concepts/system-requirements-23h2](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements-23h2?view=azloc-2610; azl-toolkit phase-02-os-installation Test-OsDeployment.ps1 (Get-RequiredWindowsFeatures)) |
+| ND-010 | Required Windows features are installed before the deployment (Hyper-V, Failover Clustering, Data Center Bridging, BitLocker); the deployment installs Network ATC itself | verification module AzlVerification.Nodes | yes | [Learn: concepts/system-requirements-23h2](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements-23h2?view=azloc-2610; azl-toolkit phase-02-os-installation Test-OsDeployment.ps1 (Get-RequiredWindowsFeatures)) |
 | ND-011 | Secure Boot on, TPM 2.0 present and ready, the same BIOS version on all nodes | verification module AzlVerification.Nodes | yes | [Learn: concepts/system-requirements-23h2](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements-23h2?view=azloc-2610; https://learn.microsoft.com/en-us/azure/azure-local/manage/use-environment-checker?view=azloc-2610 (hardware validator: Firmware tests)) |
 | ND-012 | No node is already a member of a cluster | verification module AzlVerification.Nodes | yes | [Learn: deploy/deployment-install-os](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610 (clean the machines before the deployment); azl-toolkit phase-03-os-configuration task-11 Clear-StorageConfiguration) |
 
@@ -265,7 +290,7 @@ Generated from the effective catalog (`Get-AzlPclCatalog`): the built-in `ARM-00
 | NW-002 | RDMA (Network Direct) only on the storage intent, on adapters that are RDMA capable; never required on management or compute | verification module AzlVerification.Network | yes | [Learn: plan/cloud-deployment-network-considerations](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610 (Decision 6: Network Direct); https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610; lab failure: RDMA operational check failed on a management intent) |
 | NW-003 | Link speed: at least 10 Gbps for compute and storage, the adapters of an intent run at one speed on every node | verification module AzlVerification.Network | yes | [Learn: concepts/host-network-requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610; https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610 (Decision 6)) |
 | NW-004 | Management network: the management adapter has the file's address, a static IP and the default gateway, and the gateway and DNS servers answer | verification module AzlVerification.Network | yes | [Learn: plan/cloud-deployment-network-considerations](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610 (Node and cluster IP assignment, DNS server and Management IP pool considerations); azl-toolkit phase-03-os-configuration task-03/04 and task-13 Task0304_StaticIP) |
-| NW-005 | Nodes reach the required Azure endpoints on 443 (directly or through the proxy) | verification module AzlVerification.Network | yes | [Learn: concepts/firewall-requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements?view=azloc-2610; https://learn.microsoft.com/en-us/azure/azure-local/manage/use-environment-checker?view=azloc-2610 (connectivity validator, RD-002, covers every endpoint); azl-toolkit phase-03-network-infrastructure task-03 firewall endpoint verification) |
+| NW-005 | Nodes reach the documented outbound endpoints (443, and 80 for revocation lists), directly or through the proxy | verification module AzlVerification.Network | yes | [Learn: concepts/firewall-requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements?view=azloc-2610 (consolidated endpoint list of the region); https://learn.microsoft.com/en-us/azure/azure-local/manage/use-environment-checker?view=azloc-2610 (connectivity validator, RD-002, covers them again); AzlVerification.Endpoints.psm1) |
 | NW-006 | Proxy: the node's proxy settings follow the file (none for a direct path; the file's proxy for a proxy path; no PAC, no credentials) | verification module AzlVerification.Network | yes | [Learn: plan/cloud-deployment-network-considerations](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610 (Proxy requirements); https://learn.microsoft.com/en-us/azure/azure-local/concepts/firewall-requirements?view=azloc-2610) |
 | NW-007 | Cluster service does not exclude adapters (ClusSvc exclusion registry values) | verification module AzlVerification.Network | no | [Learn: concepts/host-network-requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610; lab finding (ClusSvc\Parameters Exclude* values)) |
 | NW-008 | Remote NDIS device (BMC USB NIC) is noted and kept out of the way of the management network | verification module AzlVerification.Network | no | azl-toolkit phase-03-os-configuration task-04 Disable-DHCPOnAllAdapters.ps1 (Remote NDIS keeps DHCP); lab finding |
@@ -273,6 +298,7 @@ Generated from the effective catalog (`Get-AzlPclCatalog`): the built-in `ARM-00
 | NW-010 | No Network ATC intent and no stray virtual switch left from an earlier attempt | verification module AzlVerification.Network | yes | config/known-issues/arm-deployment.json (vmswitch-not-bound); [Learn: plan/cloud-deployment-network-considerations](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610) |
 | NW-011 | Unused adapters that are disconnected are disabled | verification module AzlVerification.Network | no | azl-toolkit phase-03-os-configuration task-09 Disable-UnusedAdapters.ps1 / task-13 Task09_Adapters |
 | NW-012 | Jumbo frames only for storage, the same MTU setting for an adapter on all nodes | verification module AzlVerification.Network | no | [Learn: plan/cloud-deployment-network-considerations](https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610 (Decision 6: Jumbo Packets)) |
+| NW-013 | Physical ports against the file, per node: every used port of the file is a real NIC (found by MAC), Up, at speed, not virtual, with one OS name on every node; intents and storage networks point at them | verification module AzlVerification.Network | yes | [Learn: concepts/host-network-requirements](https://learn.microsoft.com/en-us/azure/azure-local/concepts/host-network-requirements?view=azloc-2610; https://learn.microsoft.com/en-us/azure/azure-local/plan/cloud-deployment-network-considerations?view=azloc-2610 (Decision 6, 7); the file: nodes[].network_adapters, networking.intents[].adapters, networking.cluster_networks[]) |
 
 ### STORAGE
 
