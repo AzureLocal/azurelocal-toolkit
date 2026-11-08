@@ -926,7 +926,7 @@ Describe 'Event feed (os-configuration-events.jsonl)' {
         # every step is accounted for on every node: planned, or skipped with its reason
         foreach ($n in 'iic-n01', 'iic-n02') {
             $steps = @($e | Where-Object { $_.node -eq $n -and $_.state -in 'StepPlanned', 'StepSkipped' } | ForEach-Object { $_.step } | Select-Object -Unique)
-            $steps.Count | Should -Be 14
+            $steps.Count | Should -Be 15
         }
     }
     It 'MethodResolved carries the method, the declaration, the evidence and the versions; a ZTP node verifies Hostname and Arc registration instead of changing them' {

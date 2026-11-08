@@ -79,6 +79,8 @@ function Get-NicBrandFixture {
 }
 
 function Set-NicFixtureOnInfra {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Edits an in-memory test document.')]
+    [CmdletBinding()]
     <#
     .SYNOPSIS
         Puts a brand fixture on an infrastructure (the S2D shape of tests/fixtures/infrastructure.fc-san.yml): every node's network_adapters, the intents and the storage networks.

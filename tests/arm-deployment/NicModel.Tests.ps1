@@ -37,7 +37,7 @@ BeforeAll {
         foreach ($node in $States.Keys) { $by = @{}; foreach ($n in $States[$node]) { $by[$n.mac] = [string]$n.n }; $map[$node] = $by }
         $map
     }
-    function Get-NicStates([hashtable]$Fixture, [scriptblock]$Names) {
+    function Get-NicStateSet([hashtable]$Fixture, [scriptblock]$Names) {
         @{
             'iic-n01' = @(Get-NicNodeState $Fixture 1 -OsName (& $Names 1))
             'iic-n02' = @(Get-NicNodeState $Fixture 2 -OsName (& $Names 2))
@@ -45,7 +45,7 @@ BeforeAll {
     }
     function New-NicParameterSet($Infra, $Map) { New-AzlArmParameterSet -Infrastructure $Infra -Mode Validate -Catalog $script:Catalog -AdapterMap $Map -AllowUnresolvedSanLun }
     # What the NicNames step does to the nodes: the states after the renames (only ports with os_name_override change, found by MAC).
-    function Invoke-NicNamesOnStates($Infra, [hashtable]$States) {
+    function Invoke-NicNamesOnState($Infra, [hashtable]$States) {
         $after = @{}
         $i = 0
         foreach ($node in @($Infra.nodes)) {
@@ -64,7 +64,7 @@ BeforeAll {
 Describe 'No override: the deployment sends what each node calls the adapter, found by MAC: <Id>' -ForEach $script:Brands {
     BeforeAll {
         # A consistent install: both nodes name the same physical adapter alike (node 1's names), in an order that is not the BMC's.
-        $script:Same = Get-NicStates $Fixture { param($n) $Fixture.OsNames['iic-n01'] }
+        $script:Same = Get-NicStateSet $Fixture { param($n) $Fixture.OsNames['iic-n01'] }
         $script:Set = New-NicParameterSet (Get-NicInfra $Fixture) (ConvertTo-NicMap $script:Same)
         $script:Names = @{}
         for ($i = 0; $i -lt $Fixture.Ports.Count; $i++) { $script:Names[$Fixture.Ports[$i].Key] = $Fixture.OsNames['iic-n01'][$i] }
@@ -87,7 +87,7 @@ Describe 'No override: the deployment sends what each node calls the adapter, fo
         foreach ($p in $Fixture.Ports) { if ($p.Key -notin $Fixture.OsNames['iic-n01']) { $sent | Should -Not -Contain $p.Key } }
     }
     It 'does not depend on the order the nodes list the adapters: the same file and the same names give the same parameters' {
-        $shuffled = Get-NicStates $Fixture { param($n) $Fixture.OsNames['iic-n01'] }
+        $shuffled = Get-NicStateSet $Fixture { param($n) $Fixture.OsNames['iic-n01'] }
         foreach ($k in @($shuffled.Keys)) { [array]::Reverse($shuffled[$k]) }
         $again = New-NicParameterSet (Get-NicInfra $Fixture) (ConvertTo-NicMap $shuffled)
         ($again.Parameters | ConvertTo-Json -Depth 20) | Should -Be ($script:Set.Parameters | ConvertTo-Json -Depth 20)
@@ -96,14 +96,14 @@ Describe 'No override: the deployment sends what each node calls the adapter, fo
 
 Describe 'The same logical adapter has different names on different nodes: <Id>' -ForEach $script:Brands {
     It 'fails and names both ways out: install consistently, or set the override so the OS configuration renames (opt-in)' {
-        $states = Get-NicStates $Fixture { param($n) $Fixture.OsNames["iic-n0$n"] }
+        $states = Get-NicStateSet $Fixture { param($n) $Fixture.OsNames["iic-n0$n"] }
         { New-NicParameterSet (Get-NicInfra $Fixture) (ConvertTo-NicMap $states) } | Should -Throw '*same adapter name on every node*'
         { New-NicParameterSet (Get-NicInfra $Fixture) (ConvertTo-NicMap $states) } | Should -Throw '*install the nodes consistently*'
         { New-NicParameterSet (Get-NicInfra $Fixture) (ConvertTo-NicMap $states) } | Should -Throw '*os_name_override*'
         { New-NicParameterSet (Get-NicInfra $Fixture) (ConvertTo-NicMap $states) } | Should -Throw '*NicNames*'
     }
     It 'names the file port and what each node calls it' {
-        $states = Get-NicStates $Fixture { param($n) $Fixture.OsNames["iic-n0$n"] }
+        $states = Get-NicStateSet $Fixture { param($n) $Fixture.OsNames["iic-n0$n"] }
         $message = ''
         try { $null = New-NicParameterSet (Get-NicInfra $Fixture) (ConvertTo-NicMap $states) } catch { $message = $_.Exception.Message }
         $message | Should -Match 'on iic-n01'
@@ -114,18 +114,18 @@ Describe 'The same logical adapter has different names on different nodes: <Id>'
 Describe 'With os_name_override the parameters are the same whatever the OS names were: <Id>' -ForEach $script:Brands {
     It 'is identical for two installs with different names, once the NicNames step has renamed the adapters' {
         $infra = Get-NicInfra $Fixture -WithOverride
-        $installA = Get-NicStates $Fixture { param($n) $Fixture.OsNames["iic-n0$n"] }
-        $installB = Get-NicStates $Fixture { param($n) @($Fixture.OsNames["iic-n0$n"]) | ForEach-Object { "Renamed-$_" } }
-        $afterA = Invoke-NicNamesOnStates $infra $installA
-        $afterB = Invoke-NicNamesOnStates $infra $installB
+        $installA = Get-NicStateSet $Fixture { param($n) $Fixture.OsNames["iic-n0$n"] }
+        $installB = Get-NicStateSet $Fixture { param($n) @($Fixture.OsNames["iic-n0$n"]) | ForEach-Object { "Renamed-$_" } }
+        $afterA = Invoke-NicNamesOnState $infra $installA
+        $afterB = Invoke-NicNamesOnState $infra $installB
         $setA = New-NicParameterSet $infra (ConvertTo-NicMap $afterA)
         $setB = New-NicParameterSet $infra (ConvertTo-NicMap $afterB)
         ($setA.Parameters | ConvertTo-Json -Depth 20) | Should -Be ($setB.Parameters | ConvertTo-Json -Depth 20)
     }
     It 'sends the override for the ports that have one and the node''s own name for the others' {
         $infra = Get-NicInfra $Fixture -WithOverride
-        $states = Get-NicStates $Fixture { param($n) $Fixture.OsNames['iic-n01'] }
-        $after = Invoke-NicNamesOnStates $infra $states
+        $states = Get-NicStateSet $Fixture { param($n) $Fixture.OsNames['iic-n01'] }
+        $after = Invoke-NicNamesOnState $infra $states
         $set = New-NicParameterSet $infra (ConvertTo-NicMap $after)
         $sent = @($set.Parameters.intentList | ForEach-Object { $_.adapter } | ForEach-Object { $_ })
         foreach ($intent in $Fixture.Intents) {
@@ -138,7 +138,7 @@ Describe 'With os_name_override the parameters are the same whatever the OS name
     }
     It 'refuses a node that has not been renamed yet, and says to run the NicNames step' {
         $infra = Get-NicInfra $Fixture -WithOverride
-        $states = Get-NicStates $Fixture { param($n) $Fixture.OsNames['iic-n01'] }
+        $states = Get-NicStateSet $Fixture { param($n) $Fixture.OsNames['iic-n01'] }
         { New-NicParameterSet $infra (ConvertTo-NicMap $states) } | Should -Throw '*NicNames*'
     }
     It 'uses the override when there is no report at all' {
@@ -158,7 +158,7 @@ Describe 'Without a report nothing is assumed silently' {
     }
     It 'throws when the report has no port with the MAC of a port of the file' {
         $f = (Get-NicBrandFixture)[1]
-        $states = Get-NicStates $f { param($n) $f.OsNames['iic-n01'] }
+        $states = Get-NicStateSet $f { param($n) $f.OsNames['iic-n01'] }
         $states['iic-n02'] = @($states['iic-n02'] | Select-Object -Skip 1)
         { New-NicParameterSet (Get-NicInfra $f) (ConvertTo-NicMap $states) } | Should -Throw '*no port with that MAC*'
     }
