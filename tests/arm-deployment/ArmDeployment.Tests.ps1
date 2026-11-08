@@ -126,7 +126,31 @@ Describe 'Parameters for AD + Fibre Channel SAN' {
         @($i.trafficType) | Should -Be @('Management', 'Compute')
         @($i.adapter) | Should -Be @('Port0', 'Port1')
         $i.overrideQosPolicy | Should -BeFalse
-        $i.adapterPropertyOverrides.jumboPacket | Should -Be '9014'
+        # a management and compute intent has no storage traffic: RDMA off and the default packet, said explicitly
+        $i.overrideAdapterProperty | Should -BeTrue
+        $i.adapterPropertyOverrides.jumboPacket | Should -Be '1514'
+        $i.adapterPropertyOverrides.networkDirect | Should -Be 'Disabled'
+    }
+    It 'gives RDMA and jumbo frames to the storage intent only, and none to management or compute' {
+        $resolve = { param($n) $n }
+        $m = InModuleScope AzlArmDeployment { ConvertTo-AzlArmIntent -Intent @{ name = 'management'; traffic = @('management'); adapters = @('Port1', 'Port2') } -Resolve { param($n) $n } }
+        $c = InModuleScope AzlArmDeployment { ConvertTo-AzlArmIntent -Intent @{ name = 'compute'; traffic = @('compute'); adapters = @('Port3', 'Port6') } -Resolve { param($n) $n } }
+        $s = InModuleScope AzlArmDeployment { ConvertTo-AzlArmIntent -Intent @{ name = 'storage'; traffic = @('storage'); adapters = @('Port4', 'Port5') } -Resolve { param($n) $n } }
+        foreach ($x in $m, $c) {
+            $x.overrideAdapterProperty | Should -BeTrue
+            $x.adapterPropertyOverrides.networkDirect | Should -Be 'Disabled'
+            $x.adapterPropertyOverrides.jumboPacket | Should -Be '1514'
+            $x.adapterPropertyOverrides.networkDirectTechnology | Should -Be ''
+        }
+        $s.overrideAdapterProperty | Should -BeTrue
+        $s.adapterPropertyOverrides.networkDirect | Should -Be 'Enabled'
+        $s.adapterPropertyOverrides.networkDirectTechnology | Should -Be 'RoCEv2'
+        $s.adapterPropertyOverrides.jumboPacket | Should -Be '9014'
+    }
+    It 'lets the file override the defaults' {
+        $x = InModuleScope AzlArmDeployment { ConvertTo-AzlArmIntent -Intent @{ name = 'storage'; traffic = @('storage'); adapters = @('Port4'); overrides = @{ adapter = @{ network_direct = $true; network_direct_technology = 'iwarp'; jumbo_packet = 4088 } } } -Resolve { param($n) $n } }
+        $x.adapterPropertyOverrides.networkDirectTechnology | Should -Be 'iWARP'
+        $x.adapterPropertyOverrides.jumboPacket | Should -Be '4088'
     }
     It 'writes the SAN network list and the LUN identifiers translated from the node report' {
         $n = $script:P.sanNetworkList.clusterNetworkConfig.adapterIPConfig

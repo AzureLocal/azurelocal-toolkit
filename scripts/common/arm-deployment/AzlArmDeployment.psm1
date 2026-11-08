@@ -158,6 +158,18 @@ function ConvertTo-AzlArmIntent {
     $vswitch = Get-AzlProp $overrides 'virtual_switch'
     $tech = @{ iwarp = 'iWARP'; roce = 'RoCE'; roce_v2 = 'RoCEv2' }
     $balancing = @{ dynamic = 'Dynamic'; hyper_v_port = 'HyperVPort' }
+    # Microsoft's host network doc: RDMA and jumbo frames belong to the storage traffic. A management or compute intent without
+    # storage traffic (the LOM management intent, a compute intent) gets RDMA off and the default 1514 packet. The deployment
+    # is told so explicitly (overrideAdapterProperty true), because Azure's network validation checks RDMA on every adapter
+    # whose intent says networkDirect Enabled. The file's overrides.adapter values win over these defaults.
+    $traffic = @(ConvertTo-List $Intent['traffic'] | ForEach-Object { ([string]$_).ToLowerInvariant() })
+    $hasStorage = $traffic -contains 'storage'
+    $defaultDirect = if ($hasStorage) { 'Enabled' } else { 'Disabled' }
+    $defaultJumbo = if ($hasStorage) { 9014 } else { 1514 }
+    $directFromFile = Get-AzlProp $adapter 'network_direct'
+    $networkDirect = if ($null -ne $directFromFile) { $(if ([bool]$directFromFile) { 'Enabled' } else { 'Disabled' }) } else { $defaultDirect }
+    $directTech = ''
+    if ($networkDirect -eq 'Enabled') { $directTech = if (Get-AzlProp $adapter 'network_direct_technology') { $tech[[string](Get-AzlProp $adapter 'network_direct_technology')] } else { 'RoCEv2' } }
     [ordered]@{
         name                               = [string]$Intent['name']
         trafficType                        = @(ConvertTo-List $Intent['traffic'] | ForEach-Object { (Get-Culture).TextInfo.ToTitleCase([string]$_) })
@@ -173,11 +185,11 @@ function ConvertTo-AzlArmIntent {
             priorityValue8021Action_SMB     = [string](Get-AzlProp $qos 'smb_priority' 3)
             bandwidthPercentage_SMB         = [string](Get-AzlProp $qos 'smb_bandwidth_percent' 50)
         }
-        overrideAdapterProperty            = [bool]$adapter
+        overrideAdapterProperty            = $true
         adapterPropertyOverrides           = [ordered]@{
-            jumboPacket             = [string](Get-AzlProp $adapter 'jumbo_packet' 9014)
-            networkDirect           = $(if ($null -ne (Get-AzlProp $adapter 'network_direct') -and -not [bool](Get-AzlProp $adapter 'network_direct')) { 'Disabled' } else { 'Enabled' })
-            networkDirectTechnology = $(if (Get-AzlProp $adapter 'network_direct_technology') { $tech[[string](Get-AzlProp $adapter 'network_direct_technology')] } else { 'RoCEv2' })
+            jumboPacket             = [string](Get-AzlProp $adapter 'jumbo_packet' $defaultJumbo)
+            networkDirect           = $networkDirect
+            networkDirectTechnology = $directTech
         }
     }
 }
