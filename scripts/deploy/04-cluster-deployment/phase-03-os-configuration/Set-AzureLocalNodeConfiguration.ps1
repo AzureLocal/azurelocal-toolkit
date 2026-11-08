@@ -66,7 +66,11 @@
     Limit the run to these steps. Default: all.
 .PARAMETER NodeAddress
     Node name -> the address to open the session to first. Optional: without it the address is found (AzlNodeAddress.psm1): the node's ZTP handoff adapter with the management MAC, the address the Arc agent reports,
-    the management address in the file, then a MAC lookup on networking.management.subnet from this machine; the first that answers on TCP 5985/5986 wins and is named.
+    the management address in the file, then a MAC lookup on networking.management.subnet from this machine; of the addresses that answer on TCP 5985/5986, live evidence (the Arc machine
+    while Connected, or two sources agreeing) ranks above one source, and the handoff alone (historic) is the last resort. The sources that agreed or disagreed are printed.
+    The first authenticated connection then reads the machine's computer name and adapter MACs and compares them with the file (Test-AzlNodeIdentity): a machine that is not the node is
+    dropped and the next candidate tried; if none proves it, or the address you gave is another machine, the script stops with exit code 2 and changes nothing. This applies to
+    this parameter too. run setting addressResolution.verifyIdentity = $false switches the read off.
     A node installed from an ISO may still hold the address the installer gave it. The winrm_copy of the SBE package uses it too.
 .PARAMETER RetryTries
     How many times a node script is tried when its Arc run command ends in state Unknown (default 3, with a growing pause).
@@ -236,13 +240,18 @@ else {
         }
     }
     $addressByNode = @{}
+    $resolutionByNode = @{}
     $candidates = foreach ($s in $specs) {
         $nodeObject = @($infra.nodes | Where-Object { $_.name -eq $s.Name })[0]
         $override = if ($NodeAddress -and $NodeAddress.ContainsKey($s.Name)) { [string]$NodeAddress[$s.Name] } else { '' }
         $list = @(Get-AzlNodeRemotingAddress -Node $nodeObject -Override $override -ManagementMac $s.Management.Mac -ArcMachine $arcMachines[$s.Name])
         # HOOK address-resolution: standalone, no -NodeAddress needed for a node on DHCP. The same order as the one-run command: override, handoff adapters by MAC, Arc, the file, MAC lookup. Probes only.
         $resolved = Resolve-AzlNodeAddress -Infrastructure $infra -Node $nodeObject -Override $override -HandoffEntry (Get-AzlHandoffNode -Handoff $handoff -Name $s.Name -ArcMachineName $s.ArcMachineName) -ArcMachine $arcMachines[$s.Name]
+        $resolutionByNode[$s.Name] = $resolved
         if ($resolved.Answered) { Write-Line "$($s.Name): management address $($resolved.Address), found by $($resolved.Source)." } else { Write-Line $resolved.Message }
+        # HOOK address-identity: which sources agreed or disagreed (a stale handoff shows here: 'handoff says .117, Arc says .11').
+        if ($resolved.Agreement) { Write-Line "$($s.Name): address sources: $($resolved.Agreement)$(if (-not $resolved.SourcesAgree) { ' (they DISAGREE)' })." }
+        foreach ($note in @($resolved.Notes)) { if ($note -match 'disagree|historic') { Write-Line "$($s.Name): $note" } }
         $list = @(@($resolved.Candidates | ForEach-Object { $_.Address }) + $list | Select-Object -Unique)
         [pscustomobject]@{ Name = $s.Name; Addresses = $list }
     }
@@ -282,10 +291,38 @@ else {
         exit 1
     }
     foreach ($f in $findings) { $addressByNode[$f.Node] = $(if ($f.Reachable) { $f.Address } else { @($candidates | Where-Object Name -eq $f.Node)[0].Addresses[0] }) }
+    # HOOK address-identity: the first authenticated connection. Every node that answers is asked for its computer name and adapter MACs and compared with the file
+    # (also when the address is the operator's override); a machine that is not the node is dropped and the next candidate tried. No candidate proves it: exit 2, nothing changed.
+    $verifyIdentity = $true
+    if ($Settings -and $Settings.ContainsKey('addressResolution') -and $Settings['addressResolution'] -is [System.Collections.IDictionary] -and $Settings['addressResolution'].Contains('verifyIdentity')) { $verifyIdentity = [bool]$Settings['addressResolution']['verifyIdentity'] }
+    $identityReader = if ($Credential -and $verifyIdentity) { { param([string]$Address, [bool]$UseSsl, $State) Read-AzlNodeIdentity -Transport (New-AzlWinRmTransport -Address @{ $State.Name = $Address } -Credential $State.Credential -UseSsl:$UseSsl -Authentication $State.Authentication) -Node $State.Name } } else { $null }
+    $identityProblems = [System.Collections.Generic.List[string]]::new()
+    foreach ($s in $specs) {
+        $finding = @($findings | Where-Object Node -eq $s.Name)[0]
+        if (-not $finding -or -not $finding.Reachable) { continue }
+        $nodeObject = @($infra.nodes | Where-Object { $_.name -eq $s.Name })[0]
+        $chosen = [string]$addressByNode[$s.Name]
+        $resolution = $resolutionByNode[$s.Name]
+        $ordered = @([pscustomobject]@{ Address = $chosen; Source = $(if (@($resolution.Candidates | Where-Object Address -eq $chosen).Count) { @($resolution.Candidates | Where-Object Address -eq $chosen)[0].Source } else { 'remoting' }); Answers = $true; Port = $remoting.Port }) + @($resolution.Candidates | Where-Object { $_.Answers -and $_.Address -ne $chosen })
+        $selection = Select-AzlVerifiedNodeAddress -Resolution ([pscustomobject]@{ Candidates = $ordered }) -Expected (Get-AzlNodeExpectedIdentity -Infrastructure $infra -Node $nodeObject) -IdentityReader $identityReader -ReaderState @{ Name = $s.Name; Credential = $Credential; Authentication = $remoting.Authentication }
+        foreach ($dropped in @($selection.Dropped)) {
+            Write-Warning "$($dropped.Text) ($($dropped.Reason)); dropped, the next candidate is tried."
+            Send-AzlGuardEvent -Context $eventContext -Node $s.Name -State 'TransportResolved' -Step '' -Transport 'WinRM' -Evidence "$($dropped.Text) ($($dropped.Reason)); dropped (found by $($dropped.Source))." -Level Warning -Data @{ address = $dropped.Address; dropped = $true }
+        }
+        if ($selection.Verified) { $addressByNode[$s.Name] = $selection.Address }
+        elseif ($selection.Message) { $identityProblems.Add($selection.Message) }
+    }
+    if ($identityProblems.Count) {
+        $stopped = "ADDRESS IDENTITY: $($identityProblems -join ' ')"
+        Write-Line $stopped
+        [ordered]@{ schemaVersion = 1; generatedUtc = [datetime]::UtcNow.ToString('o'); executed = [bool]$Execute; error = $stopped; nodes = @() } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ReportPath -Encoding utf8NoBOM
+        exit 2
+    }
     foreach ($s in $specs) {
         $nodeTransports[$s.Name] = New-AzlWinRmTransport -Address @{ $s.Name = $addressByNode[$s.Name] } -Credential $Credential -UseSsl:$remoting.UseSsl -Authentication $remoting.Authentication
-        $why = "PowerShell remoting is the default transport; $($addressByNode[$s.Name]):$($remoting.Port) answers$(if ($bootstrapRecords.ContainsKey($s.Name)) { ' after the one-time bootstrap' }), credential from $credentialSource."
-        Send-AzlGuardEvent -Context $eventContext -Node $s.Name -State 'TransportResolved' -Step '' -Transport 'WinRM' -Evidence $why -Data @{ address = $addressByNode[$s.Name]; port = $remoting.Port; authentication = $remoting.Authentication; ssl = $remoting.UseSsl }
+        $agreement = $(if ($resolutionByNode.ContainsKey($s.Name)) { [string]$resolutionByNode[$s.Name].Agreement } else { '' })
+        $why = "PowerShell remoting is the default transport; $($addressByNode[$s.Name]):$($remoting.Port) answers$(if ($bootstrapRecords.ContainsKey($s.Name)) { ' after the one-time bootstrap' }), credential from $credentialSource.$(if ($agreement) { " Address sources: $agreement$(if (-not $resolutionByNode[$s.Name].SourcesAgree) { ' (they disagree)' })." })"
+        Send-AzlGuardEvent -Context $eventContext -Node $s.Name -State 'TransportResolved' -Step '' -Transport 'WinRM' -Evidence $why -Data @{ address = $addressByNode[$s.Name]; port = $remoting.Port; authentication = $remoting.Authentication; ssl = $remoting.UseSsl; addressAgreement = $agreement }
     }
 }
 # The SBE package can't ride Arc Run Command. With hardware.sbe.delivery winrm_copy and the nodes reached over Arc (only when -Transport ArcRunCommand was asked for),

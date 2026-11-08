@@ -591,6 +591,15 @@ $hasArcInit = [bool](Get-Command Invoke-AzStackHciArcInitialization -ErrorAction
 Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; caption = [string]$os.Caption; build = [int]$os.BuildNumber; ubr = $ubr; productType = [int]$os.ProductType; sku = [int]$os.OperatingSystemSKU; domainJoined = [bool]$cs.PartOfDomain; arcAgent = $agent; arcInit = $hasArcInit })
 '@
 
+# Used by the address resolution after the first authenticated connection: who answers on this address. The computer name and every adapter MAC, read only.
+$script:IdentityBody = @'
+$macs = @()
+try { $macs = @(Get-NetAdapter -IncludeHidden -ErrorAction Stop | ForEach-Object { [string]$_.MacAddress }) } catch { $macs = @() }
+if (-not $macs) { try { $macs = @(Get-CimInstance Win32_NetworkAdapter -ErrorAction Stop | ForEach-Object { [string]$_.MACAddress }) } catch { $macs = @() } }
+$macs = @($macs | Where-Object { $_ } | Sort-Object -Unique)
+Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; macs = $macs })
+'@
+
 # Azure Arc registration of a machine installed from an ISO, with the ARM token the caller got from its own Azure sign-in (a Secret).
 $script:ArcRegistrationBody = @'
 $cmd = Get-Command Invoke-AzStackHciArcInitialization -ErrorAction SilentlyContinue
@@ -615,19 +624,20 @@ Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; registered = $
 function Get-AzlNodePayload {
     <#
     .SYNOPSIS
-        The text of a node script: Read (changes nothing), Apply, Collect (the last Apply's result) or Restart; Preflight and ArcRegistration for the ISO path; DomainJoinProbe, DomainJoinApply, DomainJoinRestart and DomainJoinResume for the DomainJoin step.
+        The text of a node script: Read (changes nothing), Apply, Collect (the last Apply's result) or Restart; Preflight and ArcRegistration for the ISO path; Identity (computer name and adapter MACs, read only) for the address resolution; DomainJoinProbe, DomainJoinApply, DomainJoinRestart and DomainJoinResume for the DomainJoin step.
     .EXAMPLE
         Get-AzlNodePayload -Name Read
     #>
     [CmdletBinding()]
     [OutputType([string])]
-    param([Parameter(Mandatory)][ValidateSet('Read', 'Apply', 'Collect', 'Restart', 'Preflight', 'ArcRegistration', 'DomainJoinProbe', 'DomainJoinApply', 'DomainJoinOuCheck', 'DomainJoinRestart', 'DomainJoinResume')][string]$Name)
+    param([Parameter(Mandatory)][ValidateSet('Read', 'Apply', 'Collect', 'Restart', 'Preflight', 'Identity', 'ArcRegistration', 'DomainJoinProbe', 'DomainJoinApply', 'DomainJoinOuCheck', 'DomainJoinRestart', 'DomainJoinResume')][string]$Name)
     $body = switch ($Name) {
         'Read' { $script:ReadBody.Replace('#AZL-HOOK:DomainJoinRead', (Get-AzlDomainJoinReadSection)).Replace('#AZL-HOOK:StorageHelper', $script:StorageHelper) } # DOMAINJOIN HOOK
         'Apply' { $script:ApplyBody.Replace('#AZL-HOOK:StorageHelper', $script:StorageHelper) }
         'Collect' { $script:CollectBody }
         'Restart' { $script:RestartBody }
         'Preflight' { $script:PreflightBody }
+        'Identity' { $script:IdentityBody }
         'ArcRegistration' { $script:ArcRegistrationBody }
         'DomainJoinProbe' { Get-AzlDomainJoinPayloadBody -Name Probe } # DOMAINJOIN HOOK: the four DomainJoin scripts
         'DomainJoinApply' { Get-AzlDomainJoinPayloadBody -Name Apply }

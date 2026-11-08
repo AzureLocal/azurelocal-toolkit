@@ -121,6 +121,8 @@ BeforeEach {
         [pscustomobject]@{ Name = $ArcMachineName; ResourceId = "/subscriptions/x/resourceGroups/$ResourceGroup/providers/Microsoft.HybridCompute/machines/$ArcMachineName"; Location = 'eastus'; Status = $global:AzlArcStatus; Interfaces = @() }
     }
     Mock -ModuleName AzlOsConfigurationRun New-AzlWinRmTransport { [pscustomobject]@{ Kind = 'WinRM' } }
+    # The identity read (the first authenticated connection): the machine at the address is the node itself (its name and the fixture's management MACs).
+    Mock -ModuleName AzlOsConfigurationRun Get-AzlRunNodeIdentity { [pscustomobject]@{ ComputerName = $Name.ToUpperInvariant(); Mac = @('00:00:5E:00:53:10', '00:00:5E:00:53:20') } }
     Mock -ModuleName AzlOsConfigurationRun Invoke-AzlNodeScript { [pscustomobject]@{ caption = 'Microsoft Azure Stack HCI'; build = 26100; host = 'WIN-X' } }
     Mock -ModuleName AzlOsConfigurationRun Invoke-AzlArcRegistration {
         $global:AzlRegistered.Add($Record.name)
@@ -1288,8 +1290,8 @@ Describe 'Remote management profile in the run' {
     It 'dev: only the nodes'' addresses are added to TrustedHosts, and removed again' {
         $global:AzlTrustedHostsInitial = 'prior.example.invalid'
         $null = Invoke-Run -Infra (Set-Class 'dev') -Handoff (Get-TestHandoffDirectory)
-        # HOOK address-resolution: iic-n02's handoff adapter holds the DHCP address 192.0.2.120, which answers, so that address is added too.
-        $global:AzlTrustedHostsDuring | Should -Be 'prior.example.invalid,192.0.2.11,192.0.2.12,192.0.2.120'
+        # HOOK address-resolution: iic-n02's handoff adapter holds the DHCP address 192.0.2.120, which answers; the file's 192.0.2.12 answers too and ranks above a handoff-only address (live evidence over historic), so the nodes' own addresses are what is added.
+        $global:AzlTrustedHostsDuring | Should -Be 'prior.example.invalid,192.0.2.11,192.0.2.12'
         $global:AzlTrustedHosts | Should -Be 'prior.example.invalid'
     }
     It 'an unknown class is exit code 2, names the allowed values, and changes nothing' {

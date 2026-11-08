@@ -21,9 +21,19 @@
                               /22 is refused unless the run setting addressResolution.allowWideSubnet is true. Never outside that subnet.
       6. none                 nothing answered: Message names what was tried and asks for the address (the run stops with exit code 2).
 
-    Every candidate of steps 2-5 is probed (TCP 5985, then 5986). The first source, in the order above, whose address answers wins;
-    when several answer the result says which ones and why that one was chosen. A candidate that does not answer stays in Candidates,
-    behind the ones that do, so the caller's own reachability handling (the one-time bootstrap) still sees it.
+    Every candidate of steps 2-5 is probed (TCP 5985, then 5986). Of the ones that answer, LIVE evidence ranks above historic:
+      rank 0  an address the Arc machine reports while it is Connected, or one that two sources agree on
+      rank 1  an address one source reports: the Arc machine (not Connected), the infrastructure file, the MAC lookup
+      rank 2  an address only the ZTP handoff reports (historic data: a DHCP lease that may belong to another machine by now)
+    Within a rank the order above decides. When several answer the result says which ones and why that one was chosen, and
+    Agreement says what each source reported, so a stale handoff is visible ('handoff says .117, Arc says .11'). A candidate
+    that does not answer stays in Candidates, behind the ones that do, so the caller's own reachability handling (the one-time
+    bootstrap) still sees it.
+
+    An address that answers is not yet proven to be THE node. Select-AzlVerifiedNodeAddress reads the node's computer name and
+    adapter MACs over the first authenticated connection (Read-AzlNodeIdentity, a read-only node script) and compares them with the
+    file (Test-AzlNodeIdentity): a machine that is not this node is dropped and the next candidate is tried; if none proves the
+    identity the caller stops (exit 2) with a message that names what answered where. The override is final but identity-checked too.
 
     Nothing here sends a credential: the probes are TCP connects only. The module changes nothing on any node or in Azure; the sweep
     sends ICMP echo requests inside the management subnet, and nothing else leaves this machine. IPv4 only.
@@ -36,6 +46,8 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'azure-local' 'AzlAzure.psm1'))
 Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'infrastructure' 'AzlInfrastructure.psm1'))
+Import-Module (Join-Path $PSScriptRoot 'AzlNodePayload.psm1')
+Import-Module (Join-Path $PSScriptRoot 'AzlNodeTransport.psm1')
 
 # A subnet wider than this is not swept unless addressResolution.allowWideSubnet is set (a /22 is 1022 addresses).
 $script:MaxSweepPrefixLength = 22
@@ -240,7 +252,7 @@ function Get-AzlArcAddressCandidate {
         foreach ($ip in @(Get-AzlProp $nic 'ipAddresses' @())) {
             $text = if ($ip -is [string]) { $ip } else { [string](Get-AzlProp $ip 'address' '') }
             if ($null -ne (ConvertTo-AzlIPv4Number -Address $text) -and $text -notlike '169.254.*') {
-                [pscustomobject]@{ Address = $text.Trim(); Detail = "NIC $(Get-AzlProp $nic 'name' '?') of Arc machine $(Get-AzlProp $ArcMachine 'Name' '?') ($(Get-AzlProp $ArcMachine 'Status' '?'))" }
+                [pscustomobject]@{ Address = $text.Trim(); Detail = "NIC $(Get-AzlProp $nic 'name' '?') of Arc machine $(Get-AzlProp $ArcMachine 'Name' '?') ($(Get-AzlProp $ArcMachine 'Status' '?'))"; Connected = ([string](Get-AzlProp $ArcMachine 'Status' '') -eq 'Connected') }
             }
         }
     }
@@ -261,6 +273,67 @@ function Get-AzlFileAddressCandidate {
         $text = [string]$p.Value
         if ($text -and $seen.Add($text)) { [pscustomobject]@{ Address = $text.Trim(); Detail = $p.Detail } }
     }
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Ranking: live evidence above historic
+# ---------------------------------------------------------------------------------------------------------------------
+
+$script:SourceLabel = @{ 'override' = 'override'; 'ztp-handoff' = 'ZTP handoff'; 'arc' = 'Arc machine'; 'infrastructure-file' = 'infrastructure file'; 'mac-lookup' = 'MAC lookup' }
+
+function Set-AzlCandidateRank {
+    <#
+    .SYNOPSIS
+        Rank 0: reported by the Arc machine while it is Connected, or by two sources. Rank 1: one source (Arc not Connected, file, MAC
+        lookup). Rank 2: the ZTP handoff alone (historic). RankReason says why, in words for the operator.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Sets a property on an in-memory object.')]
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Candidate)
+    $sources = @($Candidate.Sources)
+    if ($sources -contains 'override') { $Candidate.Rank = 0; $Candidate.RankReason = 'it is the address you gave'; return }
+    if ($Candidate.Live -and 'arc' -in $sources) {
+        $Candidate.Rank = 0
+        $agree = @($sources | Where-Object { $_ -ne 'arc' } | ForEach-Object { $script:SourceLabel[$_] })
+        $Candidate.RankReason = "the Arc machine reports it and is Connected (live data)$(if ($agree.Count) { ", and the $($agree -join ' and ') agree" })"
+    }
+    elseif ($sources.Count -ge 2) {
+        $Candidate.Rank = 0
+        $Candidate.RankReason = "$(@($sources | ForEach-Object { $script:SourceLabel[$_] }) -join ' and ') both report it (two sources agree)"
+    }
+    elseif ($sources[0] -eq 'ztp-handoff') {
+        $Candidate.Rank = 2
+        $Candidate.RankReason = 'only the ZTP handoff reports it (historic data: a last resort among the addresses that answer)'
+    }
+    else {
+        $Candidate.Rank = 1
+        $Candidate.RankReason = "the $($script:SourceLabel[$sources[0]]) reports it and nothing live contradicts it (order of trust: Arc Connected or two sources agreeing, then Arc, the file, MAC lookup, and the ZTP handoff last)"
+    }
+}
+
+function Format-AzlSourceAgreement {
+    # 'ZTP handoff says 192.0.2.117; Arc machine says 192.0.2.11 (Connected); infrastructure file says 192.0.2.11'. '' when no source reported anything.
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowEmptyCollection()][object[]]$Candidate = @())
+    $parts = foreach ($source in 'ztp-handoff', 'arc', 'infrastructure-file', 'mac-lookup') {
+        $addresses = @($Candidate | Where-Object { $source -in @($_.Sources) } | ForEach-Object { $_.Address })
+        if ($addresses.Count) { "$($script:SourceLabel[$source]) says $($addresses -join ', ')$(if ($source -eq 'arc' -and @($Candidate | Where-Object { $_.Live }).Count) { ' (Connected)' })" }
+    }
+    return (@($parts) -join '; ')
+}
+
+function Test-AzlSourcesAgree {
+    # $true when every source that reported an address reported the same one; $false when two sources named different addresses.
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([AllowEmptyCollection()][object[]]$Candidate = @())
+    $bySource = @{}
+    foreach ($c in @($Candidate | Where-Object { 'override' -notin @($_.Sources) })) {
+        foreach ($s in $c.Sources) { if (-not $bySource.ContainsKey($s)) { $bySource[$s] = @() }; $bySource[$s] += $c.Address }
+    }
+    if ($bySource.Count -le 1) { return $true }
+    return (@($bySource.Values | ForEach-Object { (@($_ | Sort-Object -Unique)) -join ',' } | Select-Object -Unique).Count -le 1)
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -319,25 +392,34 @@ function Resolve-AzlNodeAddress {
     $tried = [System.Collections.Generic.List[string]]::new()
     $notes = [System.Collections.Generic.List[string]]::new()
     $add = {
-        param([string]$Address, [string]$Source, [string]$Detail)
-        if (@($candidates | Where-Object { $_.Address -eq $Address }).Count) { return }
+        param([string]$Address, [string]$Source, [string]$Detail, [bool]$Live = $false)
+        $same = @($candidates | Where-Object { $_.Address -eq $Address })
+        if ($same.Count) {
+            # The same address from another source: one candidate, every source that reported it (two sources agreeing is evidence).
+            if ($Source -notin $same[0].Sources) { $same[0].Sources = @($same[0].Sources) + $Source }
+            if ($Live) { $same[0].Live = $true }
+            return
+        }
         $port = & $probe $Address
-        $candidates.Add([pscustomobject]@{ Address = $Address; Source = $Source; Detail = $Detail; Answers = ($port -ne 0); Port = $port })
+        $candidates.Add([pscustomobject]@{ Address = $Address; Source = $Source; Sources = @($Source); Detail = $Detail; Answers = ($port -ne 0); Port = $port; Live = $Live; Rank = 1; RankReason = '' })
     }
     $portText = ($script:WinRmPort -join '/')
     $result = {
         param([string]$Address, [string]$Source, [int]$Port, [bool]$Answered, [object]$Layer2, [string]$Message)
-        $ordered = @(@($candidates | Where-Object { $_.Answers }) + @($candidates | Where-Object { -not $_.Answers }))
+        foreach ($c in $candidates) { Set-AzlCandidateRank -Candidate $c }
+        $answeringOrdered = @($candidates | Where-Object { $_.Answers } | Sort-Object -Property Rank -Stable)
+        $ordered = @($answeringOrdered + @($candidates | Where-Object { -not $_.Answers }))
         [pscustomobject]@{
             Node = $name; Address = $Address; Source = $Source; Port = $Port; Answered = $Answered; Candidates = $ordered
             Tried = $tried.ToArray(); Notes = $notes.ToArray(); Layer2 = $Layer2; Message = $Message
+            Agreement = (Format-AzlSourceAgreement -Candidate @($candidates)); SourcesAgree = (Test-AzlSourcesAgree -Candidate @($candidates))
         }
     }
 
     # ---- 1. override: final
     if ($Override) {
         $port = & $probe $Override
-        $candidates.Add([pscustomobject]@{ Address = $Override; Source = 'override'; Detail = '-NodeAddress / nodeAddress setting'; Answers = ($port -ne 0); Port = $port })
+        $candidates.Add([pscustomobject]@{ Address = $Override; Source = 'override'; Sources = @('override'); Detail = '-NodeAddress / nodeAddress setting'; Answers = ($port -ne 0); Port = $port; Live = $false; Rank = 0; RankReason = 'it is the address you gave' })
         $tried.Add("1. override: $Override ($(if ($port) { "answers on TCP $port" } else { "no answer on TCP $portText" }))")
         foreach ($skipped in 'ZTP handoff', 'Arc machine', 'infrastructure file', 'MAC lookup') { $tried.Add("   $($skipped): not used, an explicit address is final") }
         if (-not $port) { $notes.Add("The address you gave for $name ($Override) does not answer on TCP $portText. No other source was tried, so credentials are never sent to an address you did not give. Fix the address, or remove it so the run resolves one.") }
@@ -368,7 +450,7 @@ function Resolve-AzlNodeAddress {
         $found = @(Get-AzlArcAddressCandidate -ArcMachine $ArcMachine -MacKey $macKey)
         if (-not $found.Count) { $tried.Add("3. Arc machine: no NIC with MAC $macText reports an IPv4 address") }
         foreach ($c in $found) {
-            & $add $c.Address 'arc' $c.Detail
+            & $add $c.Address 'arc' $c.Detail ([bool]$c.Connected)
             $tried.Add("3. Arc machine: $($c.Address) from $($c.Detail) ($(if ($probeCache[$c.Address]) { "answers on TCP $($probeCache[$c.Address])" } else { "no answer on TCP $portText" }))")
         }
     }
@@ -432,10 +514,18 @@ function Resolve-AzlNodeAddress {
     # ---- the verdict
     $answering = @($candidates | Where-Object { $_.Answers })
     if ($answering.Count) {
+        foreach ($c in $candidates) { Set-AzlCandidateRank -Candidate $c }
+        $answering = @($answering | Sort-Object -Property Rank -Stable)
         $winner = $answering[0]
         if ($answering.Count -gt 1) {
-            $others = @($answering | Select-Object -Skip 1 | ForEach-Object { "$($_.Address) ($($_.Source))" }) -join ', '
-            $notes.Add("Several addresses answer for ${name}: $($winner.Address) ($($winner.Source)) and $others. Using $($winner.Address) because $($winner.Source) comes first in the order override, ZTP handoff, Arc machine, infrastructure file, MAC lookup. If the others are another machine, give the right one with -NodeAddress.")
+            $others = @($answering | Select-Object -Skip 1 | ForEach-Object { "$($_.Address) ($($_.Sources -join '+'))" }) -join ', '
+            $notes.Add("Several addresses answer for ${name}: $($winner.Address) ($($winner.Sources -join '+')) and $others. Using $($winner.Address) because $($winner.RankReason). If the others are another machine, give the right one with -NodeAddress.")
+        }
+        if (-not (Test-AzlSourcesAgree -Candidate @($candidates))) {
+            $notes.Add("The sources disagree for ${name}: $(Format-AzlSourceAgreement -Candidate @($candidates)).")
+            foreach ($s in @($candidates | Where-Object { $_.Sources.Count -eq 1 -and $_.Sources[0] -eq 'ztp-handoff' -and $_.Address -ne $winner.Address })) {
+                $notes.Add("The ZTP handoff is historic data: its address $($s.Address)$(if ($s.Answers) { ' answers, but' } else { ' does not answer, and' }) $($winner.Address) is backed by $(if ($winner.Live) { 'the live Arc machine' } else { ($winner.Sources | ForEach-Object { $script:SourceLabel[$_] }) -join ' and ' }). $($s.Address) is only a last resort, never used unless the machine that answers there proves to be $name.")
+            }
         }
         $message = "${name}: current management address $($winner.Address), found by $($winner.Source) ($($winner.Detail)); answers on TCP $($winner.Port)."
         if ($notes.Count) { $message += ' ' + ($notes -join ' ') }
@@ -447,4 +537,152 @@ function Resolve-AzlNodeAddress {
     return & $result '' 'none' 0 $false $layer2 $message
 }
 
-Export-ModuleMember -Function Resolve-AzlNodeAddress, ConvertTo-AzlAddressMacKey, ConvertFrom-AzlArpOutput, ConvertFrom-AzlCidr, Test-AzlAddressInCidr, Get-AzlNeighborEntry, Get-AzlLocalIPv4Network, Test-AzlAddressPort, Invoke-AzlSubnetSweep
+# ---------------------------------------------------------------------------------------------------------------------
+# Identity: is the machine that answers on this address the node?
+# ---------------------------------------------------------------------------------------------------------------------
+
+function Format-AzlMacText {
+    # 'C4:CB:E1:B3:6E:28' for 12 hex digits (as ConvertTo-AzlAddressMacKey returns them).
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowNull()][AllowEmptyString()][string]$MacKey)
+    if ([string]::IsNullOrWhiteSpace($MacKey) -or $MacKey.Length -ne 12) { return [string]$MacKey }
+    return ((0..5 | ForEach-Object { $MacKey.Substring($_ * 2, 2) }) -join ':').ToUpperInvariant()
+}
+
+function Get-AzlNodeExpectedIdentity {
+    <#
+    .SYNOPSIS
+        What the file says the node is: Name (the host name, nodes[].name), ManagementMac (12 hex digits, or '' when the file has none) and
+        OtherName (the names of the file's other nodes: a machine that reports one of those is not this node).
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure, [Parameter(Mandatory)][System.Collections.IDictionary]$Node)
+    $name = [string]$Node['name']
+    $adapter = Get-AzlManagementAdapter -Infrastructure $Infrastructure -Node $Node
+    $mac = if ($adapter -and $adapter.MacAddress) { [string](ConvertTo-AzlAddressMacKey -Mac ([string]$adapter.MacAddress)) } else { '' }
+    $others = @(@($Infrastructure['nodes']) | Where-Object { $_ -is [System.Collections.IDictionary] -and [string]$_['name'] -ine $name } | ForEach-Object { [string]$_['name'] })
+    [pscustomobject]@{ Name = $name; ManagementMac = $mac; OtherName = $others }
+}
+
+function Test-AzlNodeIdentity {
+    <#
+    .SYNOPSIS
+        Compares what a machine reports (computer name, adapter MACs) with what the file says the node is.
+    .DESCRIPTION
+        The management MAC is the proof: when the file has one, the machine must have an adapter with it, and it must not carry the name
+        of another node of the file. A computer name that differs while the MAC is there is accepted with a note (a node installed from an
+        ISO keeps its installer name until the Hostname step renames it). When the file has no management MAC the name decides.
+    .OUTPUTS
+        Match, Reason (why not, or the note), Found (the text 'NAME/MAC,MAC' for messages), Expected (the text of what was expected).
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Expected, [Parameter(Mandatory)][AllowNull()][object]$Found)
+    $foundName = [string](Get-AzlProp $Found 'ComputerName' '')
+    $foundMacs = @(@(Get-AzlProp $Found 'Mac' @()) | ForEach-Object { ConvertTo-AzlAddressMacKey -Mac ([string]$_) } | Where-Object { $_ } | Sort-Object -Unique)
+    $foundText = "$(if ($foundName) { $foundName } else { 'unknown name' })/$(if ($foundMacs.Count) { ($foundMacs | ForEach-Object { Format-AzlMacText -MacKey $_ }) -join ',' } else { 'no MAC reported' })"
+    $mac = [string](Get-AzlProp $Expected 'ManagementMac' '')
+    $expectedText = "$($Expected.Name)$(if ($mac) { " (management MAC $(Format-AzlMacText -MacKey $mac))" } else { ' (no management MAC in the file)' })"
+    $nameOk = $foundName -ieq [string]$Expected.Name
+    $isOther = [bool]($foundName -and @(@(Get-AzlProp $Expected 'OtherName' @()) | Where-Object { $_ -ieq $foundName }).Count -gt 0)
+    $reason = ''
+    $match = $false
+    if ($mac) {
+        if ($mac -notin $foundMacs) { $reason = "no adapter has the management MAC $(Format-AzlMacText -MacKey $mac)" }
+        elseif ($isOther) { $reason = "it carries the management MAC but reports the name of another node ($foundName)" }
+        else {
+            $match = $true
+            if (-not $nameOk) { $reason = "management MAC found; computer name is $foundName, not yet $($Expected.Name)" }
+        }
+    }
+    else {
+        if ($nameOk) { $match = $true } else { $reason = "computer name is $foundName and the file has no management MAC to prove it" }
+    }
+    [pscustomobject]@{ Match = $match; Reason = $reason; Found = $foundText; Expected = $expectedText }
+}
+
+function Read-AzlNodeIdentity {
+    <#
+    .SYNOPSIS
+        The computer name and adapter MACs a node reports, through a transport (the first authenticated connection). Read only. A fake transport in a test
+        answers with the same AZLRESULT line the Identity node script writes.
+    .OUTPUTS
+        ComputerName, Mac (12 hex digits each).
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][string]$Node, [int]$TimeoutSeconds = 120)
+    $seen = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlNodePayload -Name Identity) -Tries 1 -TimeoutSeconds $TimeoutSeconds
+    [pscustomobject]@{
+        ComputerName = [string](Get-AzlProp $seen 'host' '')
+        Mac          = @(@(Get-AzlProp $seen 'macs' @()) | ForEach-Object { ConvertTo-AzlAddressMacKey -Mac ([string]$_) } | Where-Object { $_ })
+    }
+}
+
+function Select-AzlVerifiedNodeAddress {
+    <#
+    .SYNOPSIS
+        Walks the addresses that answer, best first, and returns the first whose machine proves to be the node. A machine that is not the node is
+        dropped with 'address X answered but is NAME/MACS, not EXPECTED' and the next candidate is tried.
+    .PARAMETER Resolution
+        What Resolve-AzlNodeAddress returned (Candidates in rank order; only those that Answer are tried).
+    .PARAMETER Expected
+        Get-AzlNodeExpectedIdentity of the node.
+    .PARAMETER IdentityReader
+        { param([string]$Address, [bool]$UseSsl, $State) } returning ComputerName and Mac, or throwing. The caller owns the credential. $null: no check
+        (no credential): the first address with an endpoint is returned and the result says Checked is false.
+    .PARAMETER EndpointResolver
+        { param([string]$Address, $State) } returning Answers and UseSsl (the environment class decides HTTP or HTTPS). Default: the port the probe found.
+    .PARAMETER ReaderState
+        Handed to IdentityReader and EndpointResolver as their last argument (a script block runs in the session state it was written in, so the
+        caller's local variables are not visible to it).
+    .OUTPUTS
+        Verified, Checked, Address, Source, UseSsl, Port, Dropped (Address, Source, Reason, Text), Log (one line per candidate), Message (why none
+        proved the identity; '' when one did).
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][object]$Resolution,
+        [Parameter(Mandatory)][object]$Expected,
+        [AllowNull()][scriptblock]$IdentityReader,
+        [AllowNull()][scriptblock]$EndpointResolver,
+        [AllowNull()][object]$ReaderState
+    )
+    $name = [string]$Expected.Name
+    $log = [System.Collections.Generic.List[string]]::new()
+    $dropped = [System.Collections.Generic.List[object]]::new()
+    $unread = [System.Collections.Generic.List[string]]::new()
+    $answering = @($Resolution.Candidates | Where-Object { $_.Answers })
+    foreach ($c in $answering) {
+        $endpoint = if ($EndpointResolver) { & $EndpointResolver $c.Address $ReaderState } else { [pscustomobject]@{ Answers = $true; UseSsl = ($c.Port -eq 5986); Port = $c.Port } }
+        if (-not $endpoint.Answers) { $log.Add("address $($c.Address) ($($c.Source)) was not tried: no WinRM endpoint the profile allows answers there."); continue }
+        $useSsl = [bool]$endpoint.UseSsl
+        if (-not $IdentityReader) {
+            $log.Add("address $($c.Address) ($($c.Source)) was not identity-checked: no credential to read the node with.")
+            return [pscustomobject]@{ Verified = $true; Checked = $false; Address = $c.Address; Source = $c.Source; UseSsl = $useSsl; Port = [int](Get-AzlProp $endpoint 'Port' $c.Port); Dropped = @(); Log = $log.ToArray(); Message = '' }
+        }
+        try { $found = & $IdentityReader $c.Address $useSsl $ReaderState }
+        catch {
+            $unread.Add("$($c.Address) ($($c.Source)): $($_.Exception.Message)")
+            $log.Add("address $($c.Address) ($($c.Source)) answered but its identity could not be read: $($_.Exception.Message)")
+            continue
+        }
+        $verdict = Test-AzlNodeIdentity -Expected $Expected -Found $found
+        if ($verdict.Match) {
+            $log.Add("address $($c.Address) ($($c.Source)) is $name$(if ($verdict.Reason) { " ($($verdict.Reason))" }): $($verdict.Found).")
+            return [pscustomobject]@{ Verified = $true; Checked = $true; Address = $c.Address; Source = $c.Source; UseSsl = $useSsl; Port = [int](Get-AzlProp $endpoint 'Port' $c.Port); Dropped = $dropped.ToArray(); Log = $log.ToArray(); Message = '' }
+        }
+        $text = "address $($c.Address) answered but is $($verdict.Found), not $($verdict.Expected)"
+        $dropped.Add([pscustomobject]@{ Address = $c.Address; Source = $c.Source; Reason = $verdict.Reason; Text = $text })
+        $log.Add("$text ($($verdict.Reason)); dropped ($($c.Source)).")
+    }
+    # A refused credential is said as such (it is a credential problem, not a wrong machine); anything else that stopped the read is quoted.
+    $lines = @($dropped | ForEach-Object { "$($_.Text) ($($_.Reason)), found by $($_.Source)" }) + @($unread | ForEach-Object { if ($_ -match 'denied|logon failure|authentication|credential|unauthorized') { "the local administrator was refused at $_" } else { "could not read the identity at $_" } })
+    $silent = @($Resolution.Candidates | Where-Object { -not $_.Answers } | ForEach-Object { "$($_.Address) ($($_.Source))" })
+    $viaOverride = @($Resolution.Candidates | Where-Object { $_.Source -eq 'override' }).Count -gt 0
+    $message = if (($dropped.Count + $unread.Count) -eq 0) { '' }
+    elseif ($viaOverride) { "The address you gave for $name $(if ($dropped.Count) { 'does not belong to it' } else { 'answered, but its identity could not be proven' }): $($lines -join '; '). It was not used and nothing was changed. Give the address of $name with -NodeAddress, or remove it so the run resolves one." }
+    else { "No address proved to be $name, so nothing was changed: $($lines -join '; ').$(if ($silent.Count) { " Not answering: $($silent -join ', ')." }) Give the address $name answers on now with -NodeAddress @{ '$name' = '<ip>' } (or nodeAddress in the run settings)." }
+    [pscustomobject]@{ Verified = $false; Checked = $true; Address = ''; Source = ''; UseSsl = $false; Port = 0; Dropped = $dropped.ToArray(); Log = $log.ToArray(); Message = $message }
+}
+
+Export-ModuleMember -Function Get-AzlNodeExpectedIdentity, Test-AzlNodeIdentity, Read-AzlNodeIdentity, Select-AzlVerifiedNodeAddress, Format-AzlSourceAgreement, Resolve-AzlNodeAddress,ConvertTo-AzlAddressMacKey, ConvertFrom-AzlArpOutput, ConvertFrom-AzlCidr, Test-AzlAddressInCidr, Get-AzlNeighborEntry, Get-AzlLocalIPv4Network, Test-AzlAddressPort, Invoke-AzlSubnetSweep

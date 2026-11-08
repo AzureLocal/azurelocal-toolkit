@@ -611,6 +611,43 @@ function Resolve-AzlRunNodeAddress {
     Resolve-AzlNodeAddress -Infrastructure $Context.Infra -Node $Node -Override $override -HandoffEntry $HandoffEntry -ArcMachine $ArcMachine -PortTest { param($a, $p) Test-AzlWinRmPort -Address $a -Port $p } -Setting (Get-AzlProp $Context 'AddressResolution' @{})
 }
 
+# HOOK address-identity: the first authenticated connection to a candidate address, read only: the computer name and the adapter MACs the machine there reports,
+# so the run knows it is the node and not another machine that holds the address now. The seam a test replaces; the credential is the run's own and was never
+# sent during the port probe. The session is closed again.
+function Add-AzlRunTrustedAddress {
+    # The exact TrustedHosts policy of the run covers the addresses in the file; a found address (DHCP, Arc) is added before the first session to it. The restore at the end of the run puts back the value from before.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'The run owns the policy and restores it; Set-AzlTrustedHostsPolicy is called with -Confirm:$false as everywhere in the run.')]
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][string]$Address)
+    $state = Get-AzlProp $Context 'TrustedHostsState' $null
+    $current = Get-AzlProp $Context 'TrustedHosts' $null
+    if (-not $state -or -not $current -or $Address -in @($state.Addresses)) { return }
+    $state.Addresses = @($state.Addresses) + $Address
+    $more = Set-AzlTrustedHostsPolicy -RemotingProfile $state.Profile -Address @($state.Addresses) -Store $state.Store -Confirm:$false
+    if ($more.Changed) { $more.Previous = $current.Previous; $Context.TrustedHosts = $more }
+}
+
+function Get-AzlRunNodeIdentity {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Address, [bool]$UseSsl = $false)
+    Add-AzlRunTrustedAddress -Context $Context -Address $Address
+    $authentication = [string](Get-AzlProp $Context 'TransportSetting.Authentication' 'Negotiate')
+    $transport = New-AzlWinRmTransport -Address @{ $Name = $Address } -Credential $Context.CredentialInfo.Credential -UseSsl:$UseSsl -Authentication $authentication
+    try { Read-AzlNodeIdentity -Transport $transport -Node $Name }
+    finally { if (Test-AzlTransportMember -Transport $transport -Name CloseSession) { try { & $transport.CloseSession $transport $Name } catch { Write-Verbose "Closing the identity session: $($_.Exception.Message)" } } }
+}
+
+# The identity check of an address that answers: $null when this run cannot read a node (no credential) or the run settings switch it off
+# (addressResolution.verifyIdentity false), else the reader for Select-AzlVerifiedNodeAddress.
+function Get-AzlRunIdentityReader {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Context)
+    $setting = Get-AzlProp $Context 'AddressResolution' @{}
+    if ($setting -is [System.Collections.IDictionary] -and $setting.Contains('verifyIdentity') -and -not [bool]$setting['verifyIdentity']) { return $null }
+    if (-not (Get-AzlProp $Context 'CredentialInfo.Credential' $null)) { return $null }
+    return { param([string]$Address, [bool]$UseSsl, $State) Get-AzlRunNodeIdentity -Context $State.Context -Name $State.Name -Address $Address -UseSsl $UseSsl }
+}
+
 function Get-AzlNodeEvidence {
     <#
     .SYNOPSIS
@@ -652,6 +689,7 @@ function Get-AzlNodeEvidence {
     if ($arc) { $addresses = @($addresses + @(Get-AzlNodeRemotingAddress -Node $Node -ManagementMac ([string](Get-AzlProp (Get-AzlManagementAdapter -Infrastructure $infra -Node $Node) 'MacAddress' '')) -ArcMachine $arc) | Select-Object -Unique) }
     $winRm = $null; $winRmAddress = ''; $winRmNote = ''; $useSsl = $false; $bootstrapEligible = $false; $bootstrapNote = ''
     $resolved = $null
+    $identityError = ''; $identityLog = @(); $identityDropped = @(); $identityChecked = $false # HOOK address-identity
     # The effective transport decides whether WinRM is worth asking, not only the -Transport parameter: the run settings and the master file can choose Arc too.
     $effectiveKind = [string](Get-AzlProp $Context 'TransportSetting.Kind' (Get-AzlProp $Context 'TransportRequested' 'Auto'))
     if ($effectiveKind -notin 'ArcRunCommand') {
@@ -662,11 +700,22 @@ function Get-AzlNodeEvidence {
         else {
             $winRm = $false
             $endpoint = $null
-            foreach ($address in $addresses) {
-                $endpoint = Resolve-AzlNodeEndpoint -Context $Context -Address $address
-                if ($endpoint.Answers) { $winRm = $true; $winRmAddress = $address; $useSsl = [bool]$endpoint.UseSsl; break }
+            # HOOK address-identity: of the addresses that answer, best first, the first whose machine proves to be this node (computer name and adapter MACs against the file).
+            $state = @{ Context = $Context; Name = $name }
+            $expected = Get-AzlNodeExpectedIdentity -Infrastructure $infra -Node $Node
+            $selection = Select-AzlVerifiedNodeAddress -Resolution $resolved -Expected $expected -IdentityReader (Get-AzlRunIdentityReader -Context $Context) -EndpointResolver { param([string]$Address, $State) Resolve-AzlNodeEndpoint -Context $State.Context -Address $Address } -ReaderState $state
+            $identityLog = @($selection.Log)
+            $identityDropped = @($selection.Dropped)
+            $identityChecked = [bool]$selection.Checked
+            # The addresses handed on (the remoting pre-check, the bootstrap) leave out every machine that was shown not to be this node, and the proven one comes first.
+            $addresses = @($addresses | Where-Object { $_ -notin @($identityDropped | ForEach-Object { $_.Address }) })
+            if ($selection.Verified) { $winRm = $true; $winRmAddress = $selection.Address; $useSsl = [bool]$selection.UseSsl; $addresses = @(@($selection.Address) + @($addresses | Where-Object { $_ -ne $selection.Address })) }
+            elseif ($selection.Message) { $identityError = $selection.Message }
+            else {
+                foreach ($address in $addresses) { $endpoint = Resolve-AzlNodeEndpoint -Context $Context -Address $address }
             }
-            if (-not $winRm) {
+            if ($identityError) { $winRmNote = $identityError }
+            elseif (-not $winRm) {
                 # HOOK remoting-profiles: probe 5985/5986. Whether the one-time bootstrap may open the node is only asked here (read only); the bootstrap itself runs in the Apply,
                 # after every node is resolved and the plan is made.
                 $attempt = Invoke-AzlNodeBootstrap -Context $Context -Node $name -Address $addresses -ArcResourceId $(if ($arc) { [string]$arc.ResourceId } else { '' }) -ReadOnly
@@ -699,6 +748,13 @@ function Get-AzlNodeEvidence {
         AddressTried         = $(if ($resolved) { @($resolved.Tried) } else { @() })
         AddressNotes         = $(if ($resolved) { @($resolved.Notes) } else { @() })
         AddressCandidates    = $(if ($resolved) { @($resolved.Candidates) } else { @() })
+        # HOOK address-identity: what each source reported (a stale handoff shows here), and what the identity check did to the candidates.
+        AddressAgreement     = $(if ($resolved) { [string]$resolved.Agreement } else { '' })
+        AddressSourcesAgree  = $(if ($resolved) { [bool]$resolved.SourcesAgree } else { $true })
+        AddressIdentityChecked = $identityChecked
+        AddressIdentityLog   = @($identityLog)
+        AddressDropped       = @($identityDropped)
+        AddressIdentityError = $identityError
     }
 }
 
@@ -823,6 +879,15 @@ function Invoke-AzlNodeRun {
     }
     if ($Record.handoffFile) { $parameters.HandoffFile = $Record.handoffFile }
     if ($Context.PSObject.Properties['GuardSettings'] -and $Context.GuardSettings.Count) { $parameters.Settings = $Context.GuardSettings }
+    # The script checks the node's identity again before its first change (the override it gets is also checked); the run setting that switches the read off goes with it.
+    $addressSetting = Get-AzlProp $Context 'AddressResolution' @{}
+    if ($addressSetting -is [System.Collections.IDictionary] -and $addressSetting.Contains('verifyIdentity') -and -not [bool]$addressSetting['verifyIdentity']) {
+        $withAddress = @{}
+        $existing = $parameters['Settings']
+        if ($existing -is [System.Collections.IDictionary]) { foreach ($k in $existing.Keys) { $withAddress[$k] = $existing[$k] } }
+        $withAddress['addressResolution'] = @{ verifyIdentity = $false }
+        $parameters.Settings = $withAddress
+    }
     if ($Context.PSObject.Properties['EventLogPath'] -and $Context.EventLogPath) { $parameters.EventLogPath = $Context.EventLogPath }
     if ($Context.ClearStorage) { $parameters.ClearStorage = $true }
     # The one-shot confirmation to wipe a node that belongs to a deployed cluster: only the switch of this run, never a file.
@@ -1208,15 +1273,26 @@ function Resolve-AzlWinRmAddress {
     # A node's address can change while it is configured (the installer's address becomes the static one): find where it answers now.
     param([object]$Context, [System.Collections.IDictionary]$Record, [System.Collections.IDictionary]$Node)
     if ($Record.transport -ne 'WinRM') { return }
+    # HOOK address-identity: an address that now answers is taken only when it is this node (a DHCP lease or an old address may belong to another machine).
+    $reader = Get-AzlRunIdentityReader -Context $Context
+    $expected = Get-AzlNodeExpectedIdentity -Infrastructure $Context.Infra -Node $Node
+    $state = @{ Context = $Context; Name = [string]$Node['name'] }
     foreach ($address in @(Get-AzlNodeAddressCandidate -Infrastructure $Context.Infra -Node $Node -Override $Context.NodeAddress)) {
         $endpoint = Resolve-AzlNodeEndpoint -Context $Context -Address $address
-        if ($endpoint.Answers) { $Record.address = $address; $Record.useSsl = [bool]$endpoint.UseSsl; return }
+        if (-not $endpoint.Answers) { continue }
+        if ($reader) {
+            try { $verdict = Test-AzlNodeIdentity -Expected $expected -Found (& $reader $address ([bool]$endpoint.UseSsl) $state) }
+            catch { Write-Verbose "Identity of ${address}: $($_.Exception.Message)"; $verdict = $null }
+            if ($verdict -and -not $verdict.Match) { Write-Warning "address $address answered but is $($verdict.Found), not $($verdict.Expected); not used."; continue }
+        }
+        $Record.address = $address; $Record.useSsl = [bool]$endpoint.UseSsl; return
     }
     # HOOK address-resolution: none of the known addresses answers (a DHCP lease can change): resolve again, ignoring the address held so far.
     $again = Resolve-AzlRunNodeAddress -Context $Context -Node $Node -HandoffEntry $null -ArcMachine $null -IgnoreOverride
     if ($again.Answered) {
-        $endpoint = Resolve-AzlNodeEndpoint -Context $Context -Address $again.Address
-        if ($endpoint.Answers) { $Record.address = $again.Address; $Record.useSsl = [bool]$endpoint.UseSsl; $Context.NodeAddress[$Record.name] = $again.Address }
+        $picked = Select-AzlVerifiedNodeAddress -Resolution $again -Expected $expected -IdentityReader $reader -EndpointResolver { param([string]$Address, $State) Resolve-AzlNodeEndpoint -Context $State.Context -Address $Address } -ReaderState $state
+        foreach ($line in @($picked.Dropped | ForEach-Object { $_.Text })) { Write-Warning "$line; not used." }
+        if ($picked.Verified) { $Record.address = $picked.Address; $Record.useSsl = [bool]$picked.UseSsl; $Context.NodeAddress[$Record.name] = $picked.Address }
     }
 }
 
@@ -1512,7 +1588,7 @@ function ConvertTo-AzlNodeReport {
             handoff = [ordered]@{ present = $Record.evidence.HandoffPresent; ready = $Record.evidence.HandoffReady; file = $Record.evidence.HandoffFile }
             arc     = [ordered]@{ found = $Record.evidence.ArcFound; status = $Record.evidence.ArcStatus; error = $Record.evidence.ArcError }
             winrm   = [ordered]@{ answers = $Record.evidence.WinRmAnswers; address = $Record.evidence.WinRmAddress; note = $Record.evidence.WinRmNote }
-            address = [ordered]@{ source = [string](Get-AzlProp $Record.evidence 'AddressSource' ''); tried = @(Get-AzlProp $Record.evidence 'AddressTried' @()); notes = @(Get-AzlProp $Record.evidence 'AddressNotes' @()) } # HOOK address-resolution
+            address = [ordered]@{ source = [string](Get-AzlProp $Record.evidence 'AddressSource' ''); tried = @(Get-AzlProp $Record.evidence 'AddressTried' @()); notes = @(Get-AzlProp $Record.evidence 'AddressNotes' @()); agreement = [string](Get-AzlProp $Record.evidence 'AddressAgreement' ''); sourcesAgree = [bool](Get-AzlProp $Record.evidence 'AddressSourcesAgree' $true); identityChecked = [bool](Get-AzlProp $Record.evidence 'AddressIdentityChecked' $false); identity = @(Get-AzlProp $Record.evidence 'AddressIdentityLog' @()); dropped = @(Get-AzlProp $Record.evidence 'AddressDropped' @() | ForEach-Object { $_.Text }) } # HOOK address-resolution / address-identity
         }
         address        = $Record.address
         addressSource  = $Record.addressSource # HOOK address-resolution: override | ztp-handoff | arc | infrastructure-file | mac-lookup; what was tried is in evidence.address
@@ -1734,6 +1810,8 @@ function Invoke-AzlOsConfiguration {
         $trustedAddresses = @(@($remotingProfile.TrustedHosts.Addresses) + @($addressOverride.Values | ForEach-Object { [string]$_ }) | Where-Object { $_ } | Select-Object -Unique)
         $trustedSession = Set-AzlTrustedHostsPolicy -RemotingProfile $remotingProfile -Address $trustedAddresses -Store $trustedStore -Confirm:$false
         $context.TrustedHosts = $trustedSession
+        # HOOK address-identity: the identity read is the first authenticated connection to an address that was found (not only the file's), so TrustedHosts must cover it first.
+        $context | Add-Member -NotePropertyName TrustedHostsState -NotePropertyValue @{ Profile = $remotingProfile; Store = $trustedStore; Addresses = @($trustedAddresses) } -Force
         $declared = [string](Get-AzlProp $infra 'scenario.os_install' '')
         $nodeNames = @($nodes | ForEach-Object { [string]$_['name'] })
         $startData = Get-AzlNodeVersionData -Context $context -Record $null
@@ -1755,7 +1833,11 @@ function Invoke-AzlOsConfiguration {
             $nodeByName[[string]$n['name']] = $n
             Send-AzlRunEvent -Context $context -State NodeStarted -Record ([ordered]@{ name = [string]$n['name'] }) -Evidence "Looking at $($n['name']): its handoff, its Arc machine, and whether it answers on WinRM, to decide how it is configured."
             $evidence = Get-AzlNodeEvidence -Context $context -Node $n
+            if ($context.TrustedHosts) { $trustedSession = $context.TrustedHosts; $trustedAddresses = @($context.TrustedHostsState.Addresses) } # the identity read may have added an address
             $resolution = Resolve-AzlNodeMethod -Node ([string]$n['name']) -Declared $declared -Evidence $evidence -Force $Method
+            # HOOK address-identity: addresses answered but none proved to be this node. The run stops (exit 2) with what answered where; nothing was changed.
+            $identityError = [string](Get-AzlProp $evidence 'AddressIdentityError' '')
+            if ($identityError) { $resolution.Method = $null; $resolution.Errors = @($identityError) }
             foreach ($e in $resolution.Errors) { $inputProblems.Add($e) }
             foreach ($w in $resolution.Warnings) { Write-Warning $w }
             if ($resolution.Method) { $resolution.Transport = $context.TransportSetting.Kind }
@@ -1770,13 +1852,21 @@ function Invoke-AzlOsConfiguration {
                 Send-AzlRunEvent -Context $context -State MethodResolved -Record $record -Level $(if (@($resolution.Warnings).Count) { 'Warning' } else { 'Info' }) `
                     -Evidence "Declared os_install '$($resolution.Declared)'; evidence: $seen; so the $($resolution.Method) path ($($resolution.Source)) over $($resolution.Transport).$(if (@($resolution.Warnings).Count) { ' Warning: ' + (@($resolution.Warnings) -join ' ') })" `
                     -Data (Get-AzlMethodResolvedData -Context $context -Record $record -Resolution $resolution)
-                Send-AzlRunEvent -Context $context -State TransportResolved -Record $record -Evidence "$($record.name) is reached over $($record.transport)$(if ($record.address) { ' at ' + $record.address })$(if ($record.addressSource) { ' (address found by ' + $record.addressSource + ')' }) for every step (set by the $(Get-AzlProp $context.TransportSetting 'TransportSourceLabel' 'run settings'))." -Data @{ forced = ($Transport -ne 'Auto'); source = [string](Get-AzlProp $context.TransportSetting 'TransportSource' ''); address = [string]$record.address; addressSource = [string]$record.addressSource; addressTried = @(Get-AzlProp $evidence 'AddressTried' @()) }
+                # HOOK address-identity: an address that answered but is another machine is dropped, said as a warning in the feed, with the next candidate tried.
+                foreach ($dropped in @(Get-AzlProp $evidence 'AddressDropped' @())) {
+                    Send-AzlRunEvent -Context $context -State TransportResolved -Record $record -Level Warning -Evidence "$($dropped.Text) ($($dropped.Reason)); dropped (found by $($dropped.Source)), the next candidate is tried." -Data @{ address = [string]$dropped.Address; addressSource = [string]$dropped.Source; dropped = $true; reason = [string]$dropped.Reason }
+                }
+                Send-AzlRunEvent -Context $context -State TransportResolved -Record $record -Evidence "$($record.name) is reached over $($record.transport)$(if ($record.address) { ' at ' + $record.address })$(if ($record.addressSource) { ' (address found by ' + $record.addressSource + ')' }) for every step (set by the $(Get-AzlProp $context.TransportSetting 'TransportSourceLabel' 'run settings'))$(if (Get-AzlProp $evidence 'AddressAgreement' '') { '. Sources: ' + $evidence.AddressAgreement + $(if (-not $evidence.AddressSourcesAgree) { ' (they disagree)' }) })." -Data @{ forced = ($Transport -ne 'Auto'); source = [string](Get-AzlProp $context.TransportSetting 'TransportSource' ''); address = [string]$record.address; addressSource = [string]$record.addressSource; addressTried = @(Get-AzlProp $evidence 'AddressTried' @()); addressAgreement = [string](Get-AzlProp $evidence 'AddressAgreement' ''); addressSourcesAgree = [bool](Get-AzlProp $evidence 'AddressSourcesAgree' $true); identityChecked = [bool](Get-AzlProp $evidence 'AddressIdentityChecked' $false) }
             }
             else {
-                Send-AzlRunEvent -Context $context -State NodeFailed -Record $record -Level Error -Evidence "No method could be resolved: $(@($resolution.Errors) -join ' ')" -NextAction 'Pass the node''s handoff (-HandoffPath), sign in to Azure, or make the node reachable; then run again.'
+                if ($identityError) { Send-AzlRunEvent -Context $context -State NodeFailed -Record $record -Level Error -Evidence "Address identity check failed: $identityError" -NextAction 'Give the address this node answers on now with -NodeAddress (or the nodeAddress run setting), or fix the address in the master file; then run again.' -Data @{ addressAgreement = [string](Get-AzlProp $evidence 'AddressAgreement' ''); addressDropped = @(Get-AzlProp $evidence 'AddressDropped' @() | ForEach-Object { $_.Text }) } }
+                else { Send-AzlRunEvent -Context $context -State NodeFailed -Record $record -Level Error -Evidence "No method could be resolved: $(@($resolution.Errors) -join ' ')" -NextAction 'Pass the node''s handoff (-HandoffPath), sign in to Azure, or make the node reachable; then run again.' }
             }
             if ($resolution.Method) { Write-AzlLine "  $($record.name): method $($record.method) ($($record.methodSource); declared $declared), transport $($record.transport)$(if ($record.address) { ", address $($record.address)$(if ($record.addressSource) { " (found by $($record.addressSource))" })" })." }
             foreach ($addressNote in @(Get-AzlProp $evidence 'AddressNotes' @())) { Write-Warning $addressNote } # HOOK address-resolution: several answer / the override does not answer
+            # HOOK address-identity: which sources agreed or disagreed (a stale handoff shows here), and which answering addresses were another machine.
+            if (Get-AzlProp $evidence 'AddressAgreement' '') { Write-AzlLine "  $($record.name): address sources: $($evidence.AddressAgreement)$(if (-not $evidence.AddressSourcesAgree) { ' (they DISAGREE)' })." }
+            foreach ($dropped in @(Get-AzlProp $evidence 'AddressDropped' @())) { Write-Warning "$($dropped.Text) ($($dropped.Reason)); dropped, the next candidate is tried." }
         }
         if ($inputProblems.Count) { throw (Get-AzlInputError (($inputProblems | ForEach-Object { "- $_" }) -join [Environment]::NewLine)) }
 
