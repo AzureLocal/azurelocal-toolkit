@@ -606,9 +606,9 @@ Describe 'Storage wipe (os_configuration.clear_storage)' {
         $disk.model | Should -Be 'ACME NVMe 1T'
         $disk.bus | Should -Be 'NVMe'
         $disk.partitionStyle | Should -Be 'GPT'
-        $event = @(Get-Content -LiteralPath (Join-Path $r.Out 'os-configuration-events.jsonl') | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object state -eq 'WipeListPublished')[0]
-        $event.wipe[0].items[0].serial | Should -Be 'SN-iic-n01'
-        $event.wipe[0].items[0].partitionStyle | Should -Be 'GPT'
+        $wipeEvent = @(Get-Content -LiteralPath (Join-Path $r.Out 'os-configuration-events.jsonl') | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object state -eq 'WipeListPublished')[0]
+        $wipeEvent.wipe[0].items[0].serial | Should -Be 'SN-iic-n01'
+        $wipeEvent.wipe[0].items[0].partitionStyle | Should -Be 'GPT'
     }
     It '-ConfirmWipeDeployedCluster reaches the script only together with the storage wipe' {
         $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }

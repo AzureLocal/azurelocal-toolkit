@@ -17,11 +17,11 @@ BeforeAll {
     function Get-Infra { Import-AzlInfrastructure -Path $script:Fixture -SkipValidation }
 
     # One local disk the Read script reports as leftover (n number, id the name the wipe list uses, sn serial, uid unique id, size bytes, model, bus, ps partition style).
-    function New-WipeDisk([int]$Number, [string]$Serial, [string]$Bus = 'NVMe', [string]$Style = 'GPT') {
+    function Get-WipeDisk([int]$Number, [string]$Serial, [string]$Bus = 'NVMe', [string]$Style = 'GPT') {
         [pscustomobject]@{ n = $Number; id = $Serial; sn = $Serial; uid = "UID-$Serial"; size = [int64]1000GB; model = 'ACME NVMe 1T'; bus = $Bus; ps = $Style; why = "partition style $Style" }
     }
     # The stor section of a Read: leftover disks, and whether the node belongs to a deployed cluster (Deployed) or says nothing about it (NoClusterEvidence).
-    function New-WipeStor([object[]]$Disk, [switch]$Deployed, [switch]$NoClusterEvidence) {
+    function Get-WipeStor([object[]]$Disk, [switch]$Deployed, [switch]$NoClusterEvidence) {
         $s = [pscustomobject]@{ pools = 1; vdisks = 2; dirty = @($Disk) }
         if (-not $NoClusterEvidence) { $s | Add-Member -NotePropertyName cluster -NotePropertyValue ([pscustomobject]@{ deployed = [bool]$Deployed; why = @(if ($Deployed) { 'HKLM:\Cluster exists' }) }) }
         $s
@@ -382,7 +382,7 @@ Describe 'Comparison: SAN' {
             $script:DirtyState = New-ConfiguredState $script:Spec
         }
         It 'a node that belongs to a cluster is Blocked with the reason, although -ClearStorage is on' {
-            $script:DirtyState.stor = New-WipeStor -Disk (New-WipeDisk 3 'SN-3') -Deployed
+            $script:DirtyState.stor = Get-WipeStor -Disk (Get-WipeDisk 3 'SN-3') -Deployed
             $c = Compare-AzlNodeState -Spec $script:S2dSpec -State $script:DirtyState -Step ClearStorage -ClearStorage
             $c.Action | Should -Be 'Blocked'
             $c.Apply | Should -BeNullOrEmpty
@@ -390,7 +390,7 @@ Describe 'Comparison: SAN' {
             $c.Note | Should -Match 'ConfirmWipeDeployedCluster'
         }
         It '-ConfirmWipeDeployedCluster turns it into a Change that carries the confirmation and the disks to wipe' {
-            $script:DirtyState.stor = New-WipeStor -Disk (New-WipeDisk 3 'SN-3'), (New-WipeDisk 4 'SN-4') -Deployed
+            $script:DirtyState.stor = Get-WipeStor -Disk (Get-WipeDisk 3 'SN-3'), (Get-WipeDisk 4 'SN-4') -Deployed
             $c = Compare-AzlNodeState -Spec $script:S2dSpec -State $script:DirtyState -Step ClearStorage -ClearStorage -ConfirmWipeDeployedCluster
             $c.Action | Should -Be 'Change'
             $c.Apply.kind | Should -Be 'storage-clear'
@@ -399,27 +399,27 @@ Describe 'Comparison: SAN' {
             $c.Note | Should -Match 'DEPLOYED CLUSTER'
         }
         It 'a node with no cluster evidence is wiped without the flag, and the action does not carry the confirmation' {
-            $script:DirtyState.stor = New-WipeStor -Disk (New-WipeDisk 3 'SN-3')
+            $script:DirtyState.stor = Get-WipeStor -Disk (Get-WipeDisk 3 'SN-3')
             $c = Compare-AzlNodeState -Spec $script:S2dSpec -State $script:DirtyState -Step ClearStorage -ClearStorage
             $c.Action | Should -Be 'Change'
             $c.Apply.confirmDeployedCluster | Should -BeFalse
             @($c.Apply.serials) | Should -Be @('SN-3')
         }
         It 'a node that does not say whether it belongs to a cluster is not wiped' {
-            $script:DirtyState.stor = New-WipeStor -Disk (New-WipeDisk 3 'SN-3') -NoClusterEvidence
+            $script:DirtyState.stor = Get-WipeStor -Disk (Get-WipeDisk 3 'SN-3') -NoClusterEvidence
             $c = Compare-AzlNodeState -Spec $script:S2dSpec -State $script:DirtyState -Step ClearStorage -ClearStorage -ConfirmWipeDeployedCluster
             $c.Action | Should -Be 'Blocked'
             $c.Note | Should -Match 'did not report'
         }
         It 'a disk with no serial number and no unique id cannot be named in the wipe list, so it is Blocked' {
-            $nameless = New-WipeDisk 3 ''
-            $script:DirtyState.stor = New-WipeStor -Disk $nameless
+            $nameless = Get-WipeDisk 3 ''
+            $script:DirtyState.stor = Get-WipeStor -Disk $nameless
             $c = Compare-AzlNodeState -Spec $script:S2dSpec -State $script:DirtyState -Step ClearStorage -ClearStorage
             $c.Action | Should -Be 'Blocked'
             $c.Note | Should -Match 'neither a serial number nor a unique id'
         }
         It 'the current value names every disk by serial, size, model, bus and partition style' {
-            $script:DirtyState.stor = New-WipeStor -Disk (New-WipeDisk 3 'SN-3')
+            $script:DirtyState.stor = Get-WipeStor -Disk (Get-WipeDisk 3 'SN-3')
             $c = Compare-AzlNodeState -Spec $script:S2dSpec -State $script:DirtyState -Step ClearStorage -ClearStorage
             $c.Current | Should -Match 'SN-3'
             $c.Current | Should -Match '1000 GB'
@@ -428,7 +428,7 @@ Describe 'Comparison: SAN' {
             $c.Current | Should -Match 'GPT'
         }
         It 'a disk that is not on the approved list is Blocked, and only the approved disks are named in the action' {
-            $script:DirtyState.stor = New-WipeStor -Disk (New-WipeDisk 3 'SN-3'), (New-WipeDisk 4 'SN-4')
+            $script:DirtyState.stor = Get-WipeStor -Disk (Get-WipeDisk 3 'SN-3'), (Get-WipeDisk 4 'SN-4')
             $c = Compare-AzlNodeState -Spec $script:S2dSpec -State $script:DirtyState -Step ClearStorage -ClearStorage -ApprovedWipeId @('SN-3')
             $c.Action | Should -Be 'Blocked'
             $c.Note | Should -Match 'SN-4'
@@ -438,11 +438,11 @@ Describe 'Comparison: SAN' {
             @($ok.Apply.serials) | Should -Be @('SN-3', 'SN-4')
         }
         It 'an empty approved list approves nothing' {
-            $script:DirtyState.stor = New-WipeStor -Disk (New-WipeDisk 3 'SN-3')
+            $script:DirtyState.stor = Get-WipeStor -Disk (Get-WipeDisk 3 'SN-3')
             (Compare-AzlNodeState -Spec $script:S2dSpec -State $script:DirtyState -Step ClearStorage -ClearStorage -ApprovedWipeId @()).Action | Should -Be 'Blocked'
         }
         It 'Get-AzlNodeWipeItem gives the wipe list its serial, size, model, bus and partition style' {
-            $script:DirtyState.stor = New-WipeStor -Disk (New-WipeDisk 3 'SN-3')
+            $script:DirtyState.stor = Get-WipeStor -Disk (Get-WipeDisk 3 'SN-3')
             $plan = @(Compare-AzlNodeState -Spec $script:S2dSpec -State $script:DirtyState -Step ClearStorage -ClearStorage)
             $item = @(Get-AzlNodeWipeItem -Plan $plan -State $script:DirtyState)
             $item.Count | Should -Be 1
@@ -457,7 +457,7 @@ Describe 'Comparison: SAN' {
         }
     }
     It 'leaves leftover local storage as Blocked unless -ClearStorage is given, and never lists SAN disks for it' {
-        $script:State.stor = New-WipeStor -Disk (New-WipeDisk 3 'SN-3')
+        $script:State.stor = Get-WipeStor -Disk (Get-WipeDisk 3 'SN-3')
         $infra = Get-Infra; $infra.scenario.storage_architecture = 's2d'
         $spec = Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0]
         (Compare-AzlNodeState -Spec $spec -State $script:State -Step ClearStorage).Action | Should -Be 'Blocked'
@@ -661,7 +661,7 @@ Describe 'Invoke-AzlNodeConfiguration' {
         }
         It 'is tried once per run, even when the node still shows leftover storage on every later read' {
             $dirty = New-ConfiguredState $script:S2dSpec
-            $dirty.stor = New-WipeStor -Disk (New-WipeDisk 3 'SN-3')
+            $dirty.stor = Get-WipeStor -Disk (Get-WipeDisk 3 'SN-3')
             $t = New-FakeTransport @($dirty) $script:WipeOk
             $r = Invoke-AzlNodeConfiguration -Spec $script:S2dSpec -Transport $t -Execute -ClearStorage -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
             $wipes = @($t.Log | Where-Object Kind -eq 'Apply' | ForEach-Object { $_.Parameters.actions } | Where-Object kind -eq 'storage-clear')
@@ -672,7 +672,7 @@ Describe 'Invoke-AzlNodeConfiguration' {
         }
         It 'a deployed cluster is not wiped without -ConfirmWipeDeployedCluster: no Apply call at all' {
             $dirty = New-ConfiguredState $script:S2dSpec
-            $dirty.stor = New-WipeStor -Disk (New-WipeDisk 3 'SN-3') -Deployed
+            $dirty.stor = Get-WipeStor -Disk (Get-WipeDisk 3 'SN-3') -Deployed
             $t = New-FakeTransport @($dirty) { throw 'Apply must not run' }
             $r = Invoke-AzlNodeConfiguration -Spec $script:S2dSpec -Transport $t -Execute -ClearStorage -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
             @($t.Log | Where-Object Kind -eq 'Apply') | Should -BeNullOrEmpty
@@ -681,7 +681,7 @@ Describe 'Invoke-AzlNodeConfiguration' {
         }
         It 'with -ConfirmWipeDeployedCluster the action carries the confirmation' {
             $dirty = New-ConfiguredState $script:S2dSpec
-            $dirty.stor = New-WipeStor -Disk (New-WipeDisk 3 'SN-3') -Deployed
+            $dirty.stor = Get-WipeStor -Disk (Get-WipeDisk 3 'SN-3') -Deployed
             $t = New-FakeTransport @($dirty) $script:WipeOk
             $null = Invoke-AzlNodeConfiguration -Spec $script:S2dSpec -Transport $t -Execute -ClearStorage -ConfirmWipeDeployedCluster -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
             $wipe = @($t.Log | Where-Object Kind -eq 'Apply' | ForEach-Object { $_.Parameters.actions } | Where-Object kind -eq 'storage-clear')
@@ -690,7 +690,7 @@ Describe 'Invoke-AzlNodeConfiguration' {
         }
         It 'a disk the approval does not name is never sent to the node' {
             $dirty = New-ConfiguredState $script:S2dSpec
-            $dirty.stor = New-WipeStor -Disk (New-WipeDisk 3 'SN-3'), (New-WipeDisk 4 'SN-4')
+            $dirty.stor = Get-WipeStor -Disk (Get-WipeDisk 3 'SN-3'), (Get-WipeDisk 4 'SN-4')
             $t = New-FakeTransport @($dirty) { throw 'Apply must not run' }
             $r = Invoke-AzlNodeConfiguration -Spec $script:S2dSpec -Transport $t -Execute -ClearStorage -ApprovedWipeId @('SN-3') -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
             @($t.Log | Where-Object Kind -eq 'Apply') | Should -BeNullOrEmpty
