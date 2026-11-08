@@ -64,6 +64,28 @@ $script:MandatoryProviders = @(
     'Microsoft.HybridContainerService', 'Microsoft.Attestation', 'Microsoft.Storage', 'Microsoft.Insights', 'Microsoft.KeyVault'
 )
 $script:OptionalProviders = @()
+
+function Get-AzlArmMandatoryProvider {
+    <#
+    .SYNOPSIS
+        The 13 resource providers Microsoft Learn lists as required (one list, shared with the pre-cluster verification gate).
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param()
+    return [string[]]@($script:MandatoryProviders)
+}
+
+function Get-AzlArmRequiredAction {
+    <#
+    .SYNOPSIS
+        The Azure actions the deploying identity must be allowed on the resource group (shared with the pre-cluster verification gate).
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param()
+    return [string[]]@($script:RequiredActions)
+}
 # Registering a provider takes seconds to a few minutes; the opt-in registration waits this long, reading every 10 seconds.
 $script:ProviderRegistrationTimeoutMinutes = 15
 $script:ProviderRegistrationPollSeconds = 10
@@ -208,6 +230,7 @@ function Get-AzlArmRunSetting {
         approvalMode = 'stop'; resume = $false; requireOsConfigurationReport = $false; skipPreconditions = @(); acknowledgeKnownIssues = @()
         deploymentSettingsApiVersion = ''; revalidate = $false; allowRevalidate = $false; requireValidatedParameterHash = $false
         osReportMaxAgeHours = 48; staleSkewMinutes = 5; knownIssuesFile = ''; solutionVersion = ''; sbeCatalogPath = ''; registerResourceProviders = $false
+        skipPreClusterVerification = $false; preClusterVerificationMaxAgeHours = 4; preClusterVerificationReportDirectory = ''
     }
     $apply = {
         param($source)
@@ -219,11 +242,18 @@ function Get-AzlArmRunSetting {
             else { Stop-AzlArmInput "Unknown deployment setting '$k'. Known: $($s.Keys -join ', ')." }
         }
     }
+    # The bypass of the pre-cluster verification is never read from a file: only the explicit switch (-Settings) sets it.
+    $refuseBypass = {
+        param($source, $where)
+        foreach ($k in @($source.Keys)) { if (([string]$k -replace '_', '') -ieq 'skipPreClusterVerification') { Stop-AzlArmInput "skip_pre_cluster_verification is not a setting of $where. The only way past the pre-cluster verification is the explicit switch -SkipPreClusterVerification." } }
+    }
     $block = Get-AzlProp $Infrastructure 'deployment'
-    if ($block -is [System.Collections.IDictionary]) { & $apply $block }
+    if ($block -is [System.Collections.IDictionary]) { & $refuseBypass $block 'the master file'; & $apply $block }
     if ($ConfigPath) {
         if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) { Stop-AzlArmInput "Settings file not found: $ConfigPath" }
-        & $apply (Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json -AsHashtable -Depth 10)
+        $fromConfig = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json -AsHashtable -Depth 10
+        & $refuseBypass $fromConfig 'a settings file'
+        & $apply $fromConfig
     }
     if ($Settings) { & $apply $Settings }
     foreach ($k in 'validateTimeoutMinutes', 'deployTimeoutMinutes', 'pollSeconds', 'pollMaxSeconds', 'transientErrorLimit', 'osReportMaxAgeHours', 'staleSkewMinutes') {
@@ -235,7 +265,10 @@ function Get-AzlArmRunSetting {
     if ($s.pollMaxSeconds -lt $s.pollSeconds) { Stop-AzlArmInput 'Setting pollMaxSeconds must not be less than pollSeconds.' }
     if ([string]$s.approvalMode -notin 'stop', 'prompt', 'none') { Stop-AzlArmInput "Setting approval must be stop, prompt or none, not '$($s.approvalMode)'." }
     $s.approvalMode = [string]$s.approvalMode
-    foreach ($k in 'resume', 'requireOsConfigurationReport', 'revalidate', 'allowRevalidate', 'requireValidatedParameterHash', 'registerResourceProviders') { $s[$k] = [bool]$s[$k] }
+    foreach ($k in 'resume', 'requireOsConfigurationReport', 'revalidate', 'allowRevalidate', 'requireValidatedParameterHash', 'registerResourceProviders', 'skipPreClusterVerification') { $s[$k] = [bool]$s[$k] }
+    if ([int]$s.preClusterVerificationMaxAgeHours -lt 1 -or [int]$s.preClusterVerificationMaxAgeHours -gt 168) { Stop-AzlArmInput 'Setting preClusterVerificationMaxAgeHours must be from 1 to 168.' }
+    $s.preClusterVerificationMaxAgeHours = [int]$s.preClusterVerificationMaxAgeHours
+    $s.preClusterVerificationReportDirectory = ([string]$s.preClusterVerificationReportDirectory).Trim()
     $s.solutionVersion = ([string]$s.solutionVersion).Trim()
     if ($s.solutionVersion -and $s.solutionVersion -notmatch '^\d+\.\d+\.\d+\.\d+$') { Stop-AzlArmInput "Setting solutionVersion must be four numeric parts, for example 12.2610.1004.50, not '$($s.solutionVersion)'." }
     $s.sbeCatalogPath = ([string]$s.sbeCatalogPath).Trim()
@@ -2246,4 +2279,4 @@ function Invoke-AzlArmDeploymentRun {
 }
 
             if (-not (Get-Command Resolve-DnsName -ErrorAction SilentlyContinue)) { return $null } # not on Linux: unknown, not false
-Export-ModuleMember -Function Get-AzlArmRunSetting, Read-AzlArmSbeCatalog, Test-AzlArmSolutionVersionMatch, ConvertFrom-AzlArmOsBuild, Test-AzlArmSbeSolution, Write-AzlArmEvent, Test-AzlArmRunTransition, New-AzlArmRunState, Set-AzlArmRunState, Get-AzlArmFailedStep, Get-AzlArmFailureDetail, Get-AzlArmClusterCheck, Get-AzlArmTestClusterReportPath, Get-AzlArmEmbeddedJson, Get-AzlArmValidatorResult, Format-AzlArmFailureLine, Select-AzlArmCurrentStep, Get-AzlArmKnownIssue, Find-AzlArmKnownIssue, Get-AzlArmParameterSource, Test-AzlArmRequiredKey, Format-AzlArmParameterSource, New-AzlArmAzureAdapter, Read-AzlArmOsReport, Get-AzlArmPreconditionName, Invoke-AzlArmPrecondition, Test-AzlArmSnapshotFresh, Get-AzlArmPhaseOutcome, Wait-AzlArmPhase, Resolve-AzlArmValidateAction, Resolve-AzlArmDeployAction, Get-AzlArmParameterHash, ConvertTo-AzlArmStepStatus, Hide-AzlArmSecret, Invoke-AzlArmDeploymentRun
+Export-ModuleMember -Function Get-AzlArmMandatoryProvider, Get-AzlArmRequiredAction, Resolve-AzlArmSbeCatalogFile, Get-AzlArmRunSetting, Read-AzlArmSbeCatalog, Test-AzlArmSolutionVersionMatch, ConvertFrom-AzlArmOsBuild, Test-AzlArmSbeSolution, Write-AzlArmEvent, Test-AzlArmRunTransition, New-AzlArmRunState, Set-AzlArmRunState, Get-AzlArmFailedStep, Get-AzlArmFailureDetail, Get-AzlArmClusterCheck, Get-AzlArmTestClusterReportPath, Get-AzlArmEmbeddedJson, Get-AzlArmValidatorResult, Format-AzlArmFailureLine, Select-AzlArmCurrentStep, Get-AzlArmKnownIssue, Find-AzlArmKnownIssue, Get-AzlArmParameterSource, Test-AzlArmRequiredKey, Format-AzlArmParameterSource, New-AzlArmAzureAdapter, Read-AzlArmOsReport, Get-AzlArmPreconditionName, Invoke-AzlArmPrecondition, Test-AzlArmSnapshotFresh, Get-AzlArmPhaseOutcome, Wait-AzlArmPhase, Resolve-AzlArmValidateAction, Resolve-AzlArmDeployAction, Get-AzlArmParameterHash, ConvertTo-AzlArmStepStatus, Hide-AzlArmSecret, Invoke-AzlArmDeploymentRun

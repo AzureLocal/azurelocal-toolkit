@@ -716,7 +716,11 @@ function Invoke-DjLdapSearch {
         $auth = [System.DirectoryServices.AuthenticationTypes]::Secure -bor [System.DirectoryServices.AuthenticationTypes]::Signing -bor [System.DirectoryServices.AuthenticationTypes]::Sealing
         $entry = [System.DirectoryServices.DirectoryEntry]::new("LDAP://${server}:$port/$($Request.SearchRoot)", $Request.Credential.UserName, $plain, $auth)
         $plain = $null
-        $searcher = [System.DirectoryServices.DirectorySearcher]::new($entry, [string]$Request.Filter, [string[]]@($Request.Properties), [System.DirectoryServices.SearchScope]::Subtree)
+        # Scope (Subtree by default, Base or OneLevel) and SecurityMasks (Dacl, to read an ntSecurityDescriptor) are optional members of the request.
+        $scope = [System.DirectoryServices.SearchScope]::Subtree
+        if ($Request.PSObject.Properties['Scope'] -and [string]$Request.Scope) { $scope = [System.DirectoryServices.SearchScope]([string]$Request.Scope) }
+        $searcher = [System.DirectoryServices.DirectorySearcher]::new($entry, [string]$Request.Filter, [string[]]@($Request.Properties), $scope)
+        if ($Request.PSObject.Properties['SecurityMasks'] -and [string]$Request.SecurityMasks) { $searcher.SecurityMasks = [System.DirectoryServices.SecurityMasks]([string]$Request.SecurityMasks) }
         $searcher.ClientTimeout = [TimeSpan]::FromSeconds($seconds)
         $searcher.ServerTimeLimit = [TimeSpan]::FromSeconds($seconds)
         $searcher.SizeLimit = 10
@@ -725,7 +729,13 @@ function Invoke-DjLdapSearch {
         foreach ($r in $found) {
             $dnValues = $r.Properties['distinguishedname']
             $hostValues = $r.Properties['dnshostname']
-            $list.Add([pscustomobject]@{ distinguishedName = $(if ($dnValues.Count) { [string]$dnValues[0] } else { '' }); dnsHostName = $(if ($hostValues.Count) { [string]$hostValues[0] } else { '' }) })
+            # Every requested property, by name: a byte array (objectSid, ntSecurityDescriptor) as base64, other values as they are.
+            $props = [ordered]@{}
+            foreach ($propertyName in @($Request.Properties)) {
+                $values = $r.Properties[[string]$propertyName]
+                $props[[string]$propertyName] = @($values | ForEach-Object { if ($_ -is [byte[]]) { [Convert]::ToBase64String($_) } else { $_ } })
+            }
+            $list.Add([pscustomobject]@{ distinguishedName = $(if ($dnValues.Count) { [string]$dnValues[0] } else { '' }); dnsHostName = $(if ($hostValues.Count) { [string]$hostValues[0] } else { '' }); Properties = $props })
         }
         $result.Entries = $list.ToArray()
     }
@@ -1100,4 +1110,4 @@ function Invoke-AzlDomainJoinStep {    <#
     return [pscustomobject]$out
 }
 
-Export-ModuleMember -Function Get-AzlDomainJoinSpec, Get-AzlDomainJoinReadParameter, Get-AzlDomainJoinPlanItem, Test-AzlDomainJoinVerification, Get-AzlDomainJoinSummary, Send-AzlDomainJoinEvent, Send-AzlDomainJoinPlanEvent, Merge-AzlDomainJoinOutcome, Add-AzlDomainJoinOuCheck, Get-AzlDomainJoinLdapComputer, Add-AzlDomainJoinLdapCheck, Invoke-AzlDomainJoinStep
+Export-ModuleMember -Function Get-AzlDomainJoinSpec, Get-AzlDomainJoinReadParameter, Get-AzlDomainJoinPlanItem, Test-AzlDomainJoinVerification, Get-AzlDomainJoinSummary, Send-AzlDomainJoinEvent, Send-AzlDomainJoinPlanEvent, Merge-AzlDomainJoinOutcome, Add-AzlDomainJoinOuCheck, Get-AzlDomainJoinLdapComputer, Add-AzlDomainJoinLdapCheck, Invoke-AzlDomainJoinStep, Invoke-DjLdapSearch
