@@ -761,3 +761,36 @@ Describe 'ID-DNS-003 resolves the documented hosts of the region, not invented n
         (Invoke-Id 'ID-DNS-003' $ctx2 | Where-Object Node -eq 'azl-n01').Status | Should -Be 'Passed'
     }
 }
+Describe 'ID-AD-007 matches the entries of the OU by SID, in the shapes the preparation tool writes' {
+    It 'passes for full control over descendant Computer objects plus CreateChild and DeleteChild on Computer objects, found by SID' {
+        $sid = [System.Security.Principal.SecurityIdentifier]::new($script:SidText)
+        $A = [System.DirectoryServices.ActiveDirectoryAccessRule]
+        $sec = [System.DirectoryServices.ActiveDirectorySecurity]::new()
+        $sec.AddAccessRule($A::new($sid, [System.DirectoryServices.ActiveDirectoryRights]'ListChildren,ReadProperty,ReadControl', 'Allow', [guid]::Empty, 'All'))
+        $sec.AddAccessRule($A::new($sid, [System.DirectoryServices.ActiveDirectoryRights]::GenericAll, 'Allow', [guid]::Empty, 'Descendents', $script:ComputerGuid))
+        $sec.AddAccessRule($A::new($sid, [System.DirectoryServices.ActiveDirectoryRights]'CreateChild,DeleteChild', 'Allow', $script:ComputerGuid, 'All'))
+        $ctx = New-Ctx
+        Add-AdRoute $ctx.State 'organizationalUnit' @(New-AdEntry 'OU=azl01,DC=lab,DC=example' @{ gpoptions = @('1'); ntsecuritydescriptor = @([Convert]::ToBase64String($sec.GetSecurityDescriptorBinaryForm())) })
+        $r = (Invoke-Id 'ID-AD-007' $ctx)[0]
+        $r.Status | Should -BeIn 'Passed', 'Warning'
+        $r.Message | Should -Not -Match 'lacks'
+    }
+    It 'passes for one GenericAll entry on all classes held by a group of the user (tokenGroups SID)' {
+        $groupSid = 'S-1-5-21-111-222-333-2001'
+        $sec = [System.DirectoryServices.ActiveDirectorySecurity]::new()
+        $sec.AddAccessRule([System.DirectoryServices.ActiveDirectoryAccessRule]::new([System.Security.Principal.SecurityIdentifier]::new($groupSid), [System.DirectoryServices.ActiveDirectoryRights]::GenericAll, 'Allow', [guid]::Empty, 'All'))
+        $ctx = New-Ctx
+        Add-AdRoute $ctx.State 'organizationalUnit' @(New-AdEntry 'OU=azl01,DC=lab,DC=example' @{ gpoptions = @('1'); ntsecuritydescriptor = @([Convert]::ToBase64String($sec.GetSecurityDescriptorBinaryForm())) })
+        Add-AdRoute $ctx.State '\(objectClass=\*\)' @(New-AdEntry 'CN=lcm-azl01,OU=azl01,DC=lab,DC=example' @{ tokengroups = @((ConvertTo-SidBase64 $groupSid)) })
+        (Invoke-Id 'ID-AD-007' $ctx)[0].Status | Should -BeIn 'Passed', 'Warning'
+    }
+    It 'names the SID and the entries it compared when a right is really missing' {
+        $ctx = New-Ctx
+        Add-AdRoute $ctx.State 'organizationalUnit' @(New-AdEntry 'OU=azl01,DC=lab,DC=example' @{ gpoptions = @('1'); ntsecuritydescriptor = @((New-Descriptor -NoCreate)) })
+        $m = (Invoke-Id 'ID-AD-007' $ctx)[0]
+        $m.Status | Should -Be 'Failed'
+        $m.Message | Should -Match 'lacks: create computer objects'
+        $m.Message | Should -Match 'SID S-1-5-21-111-222-333-1105'
+        $m.Message | Should -Match 'Entries of the OU for the user'
+    }
+}

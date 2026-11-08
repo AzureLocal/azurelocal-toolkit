@@ -55,8 +55,9 @@ $script:Default = @{
     verificationMaxClockSkewSeconds = 300
 }
 
-# The Windows features the Azure Local OS carries and the deployment uses. Required are Failed when off; Advised are a Warning.
-$script:RequiredFeature = @('Hyper-V', 'Failover-Clustering', 'Data-Center-Bridging', 'NetworkATC', 'BitLocker')
+# The Windows features the Azure Local OS carries before the deployment. Required are Failed when off; Advised are a Warning.
+# Network ATC is NOT here: the deployment installs it (on the lab it is 'Available', not installed, until the deployment runs, and the ARM network configuration step passes).
+$script:RequiredFeature = @('Hyper-V', 'Failover-Clustering', 'Data-Center-Bridging', 'BitLocker')
 $script:AdvisedFeature = @('FS-Data-Deduplication', 'RSAT-AD-PowerShell', 'RSAT-Clustering-PowerShell')
 $script:PublicDns = @('8.8.8.8', '8.8.4.4', '1.1.1.1', '1.0.0.1', '9.9.9.9', '149.112.112.112', '208.67.222.222', '208.67.220.220')
 

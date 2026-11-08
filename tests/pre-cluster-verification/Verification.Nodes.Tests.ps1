@@ -139,9 +139,9 @@ Describe 'ND-008 processors and memory, ND-009 boot disk' {
 
 Describe 'ND-010 features, ND-011 firmware, ND-012 cluster membership' {
     It 'ND-010 Failed for a missing required feature, with the exact command' {
-        $f = New-VerFresh; ($f.World.Snapshot['n01'].features | Where-Object n -EQ 'NetworkATC').installed = $false
+        $f = New-VerFresh; ($f.World.Snapshot['n01'].features | Where-Object n -EQ 'Data-Center-Bridging').installed = $false
         $r = Invoke-VerRun 'ND-010' $f.World $f.Infra | Where-Object Node -EQ 'n01'
-        $r.Status | Should -Be 'Failed'; $r.Remedy | Should -Match 'Install-WindowsFeature -Name NetworkATC'
+        $r.Status | Should -Be 'Failed'; $r.Remedy | Should -Match 'Install-WindowsFeature -Name Data-Center-Bridging'
     }
     It 'ND-010 Warning for a missing advised feature' { $f = New-VerFresh; ($f.World.Snapshot['n01'].features | Where-Object n -EQ 'RSAT-AD-PowerShell').installed = $false; (Invoke-VerRun 'ND-010' $f.World $f.Infra | Where-Object Node -EQ 'n01').Status | Should -Be 'Warning' }
     It 'ND-011 Failed with Secure Boot off' { $f = New-VerFresh; $f.World.Snapshot['n01'].fw.secureBoot = $false; (Invoke-VerRun 'ND-011' $f.World $f.Infra | Where-Object Node -EQ 'n01').Status | Should -Be 'Failed' }
@@ -270,5 +270,17 @@ Describe 'Environment Checker rows: only an explicit success passes (review C3)'
         $f = New-VerFresh
         $f.World.Ec = @{ Hardware = @{ Available = $true; Results = @() } }
         (Invoke-VerRun 'RD-003' $f.World $f.Infra)[0].Status | Should -Be 'Skipped'
+    }
+}
+
+Describe 'ND-010 does not ask for Network ATC (the deployment installs it)' {
+    It 'Passes on a node where Network ATC is only Available, and never lists NetworkATC as required' {
+        $f = New-VerFresh
+        $f.World.Snapshot['n01'].features = @($f.World.Snapshot['n01'].features | Where-Object { $_.n -ne 'NetworkATC' }) + @(@{ n = 'NetworkATC'; found = $true; installed = $false })
+        $r = Invoke-VerRun 'ND-010' $f.World $f.Infra | Where-Object Node -EQ 'n01'
+        $r.Status | Should -Be 'Passed'
+        $r.Message | Should -Match 'the deployment installs it'
+        (& (Get-Module AzlVerification.NodeCommon) { $script:RequiredFeature }) | Should -Not -Contain 'NetworkATC'
+        (& (Get-Module AzlVerification.NodeCommon) { $script:AdvisedFeature }) | Should -Not -Contain 'NetworkATC'
     }
 }

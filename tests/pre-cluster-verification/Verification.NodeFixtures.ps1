@@ -62,7 +62,7 @@ function New-VerSnapshot {
         cpu = @(1..2 | ForEach-Object { @{ caption = 'Intel64 Family 6'; family = 179; manufacturer = 'GenuineIntel'; maxClock = 2000; cores = 16; logical = 32; threads = 32; vt = $true; slat = $true } })
         mem = @(1..8 | ForEach-Object { [int64]34359738368 })
         fw = @{ biosVersion = '2.1.0'; secureBoot = $true; tpmPresent = $true; tpmReady = $true; tpmSpec = '2.0, 0, 1.38' }
-        features = @(@('Hyper-V', 'Failover-Clustering', 'Data-Center-Bridging', 'NetworkATC', 'BitLocker', 'FS-Data-Deduplication', 'RSAT-AD-PowerShell', 'RSAT-Clustering-PowerShell', 'Multipath-IO') | ForEach-Object { @{ n = $_; found = $true; installed = $true } })
+        features = @(@('Hyper-V', 'Failover-Clustering', 'Data-Center-Bridging', 'BitLocker', 'FS-Data-Deduplication', 'RSAT-AD-PowerShell', 'RSAT-Clustering-PowerShell', 'Multipath-IO') | ForEach-Object { @{ n = $_; found = $true; installed = $true } })
         reboot = @{ cbs = $false; wu = $false; files = $false; rename = $false }
         time = @{ src = '192.0.2.4'; type = 'NTP'; peers = '192.0.2.4,0x8 192.0.2.5,0x8' }
         dns = @(@{ n = 'Port0'; idx = 4; servers = @('192.0.2.4', '192.0.2.5') }, @{ n = 'Port1'; idx = 5; servers = @() })

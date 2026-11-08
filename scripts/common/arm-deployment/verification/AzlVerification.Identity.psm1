@@ -372,9 +372,13 @@ function Get-VfIdOuRight {
     $security.SetSecurityDescriptorBinaryForm([Convert]::FromBase64String($DescriptorBase64))
     $got = @{ ListChildren = $false; ReadProperty = $false; ReadControl = $false; CreateComputer = $false; DeleteComputer = $false; RecoveryInformation = $false }
     $denied = [System.Collections.Generic.List[string]]::new()
+    $matched = [System.Collections.Generic.List[string]]::new()
+    $sidSet = [System.Collections.Generic.HashSet[string]]::new([string[]]$Sid, [StringComparer]::OrdinalIgnoreCase)
+    # The entries are matched by SID only, never by a name: this host often cannot translate the SIDs of another domain, and a name is not what the DC checks.
     foreach ($rule in $security.GetAccessRules($true, $true, [System.Security.Principal.SecurityIdentifier])) {
-        if ($rule.IdentityReference.Value -notin $Sid) { continue }
+        if (-not $sidSet.Contains($rule.IdentityReference.Value)) { continue }
         $m = [int]$rule.ActiveDirectoryRights
+        $matched.Add("$($rule.AccessControlType) $($rule.ActiveDirectoryRights) for $($rule.IdentityReference.Value) (object type $(if ($rule.ObjectType -eq [guid]::Empty) { 'any' } else { $rule.ObjectType }), applies to $($rule.InheritanceType), inherited object type $(if ($rule.InheritedObjectType -eq [guid]::Empty) { 'any' } else { $rule.InheritedObjectType }))")
         $all = (($m -band 0xF01FF) -eq 0xF01FF) -or (($m -band 0x10000000) -ne 0)
         $anyObject = ($rule.ObjectType -eq [guid]::Empty)
         $computerObject = ($anyObject -or $rule.ObjectType -eq $script:ComputerClass)
@@ -398,9 +402,11 @@ function Get-VfIdOuRight {
         if (($m -band 16) -and $anyObject) { $got.ReadProperty = $true }
         if ($m -band 131072) { $got.ReadControl = $true }
         if (($m -band 1) -and $computerObject) { $got.CreateComputer = $true }
+        # DeleteChild on Computer objects (or on any class); DELETE or DeleteTree over the descendant Computer objects deletes them as well.
         if (($m -band 2) -and $computerObject) { $got.DeleteComputer = $true }
+        if ($inheritsToChildren -and ($m -band (65536 + 64)) -and ($rule.InheritedObjectType -eq [guid]::Empty -or $rule.InheritedObjectType -eq $script:ComputerClass)) { $got.DeleteComputer = $true }
     }
-    [pscustomobject]@{ Right = $got; Denied = $denied.ToArray() }
+    [pscustomobject]@{ Right = $got; Denied = $denied.ToArray(); Matched = $matched.ToArray() }
 }
 
 function ConvertFrom-VfIdSidBase64([string]$Base64) {
@@ -746,7 +752,10 @@ Add-VfIdCheck -Id 'ID-AD-007' -Title 'The LCM user holds Learn''s delegated righ
         $names = [ordered]@{ ListChildren = 'list contents'; ReadProperty = 'read all properties'; ReadControl = 'read permissions'; CreateComputer = 'create computer objects'; DeleteComputer = 'delete computer objects' }
         $missing = @($names.Keys | Where-Object { -not $r[$_] } | ForEach-Object { $names[$_] })
         $remedy = "Run New-HciAdObjectsPreCreation again for this OU and user, or delegate on $($lcm.OuPath) to $($lcm.User): list contents, read all properties, read permissions, create and delete Computer objects, and full control on descendant msFVE-RecoveryInformation objects (Learn: Custom Active Directory configuration, Required permissions)."
-        if ($missing) { return New-VfIdResult Failed "On $($lcm.OuPath) the LCM user $($lcm.User) lacks: $($missing -join ', ')$note." $remedy -Evidence "missing=$($missing -join ',')" }
+        if ($missing) {
+            $theirs = @($rights.Matched | Where-Object { $_ -notmatch 'for (S-1-5-11|S-1-1-0) ' })
+            return New-VfIdResult Failed "On $($lcm.OuPath) the LCM user $($lcm.User) (SID $($sids[0])) lacks: $($missing -join ', ')$note. Entries of the OU for the user's SIDs ($($sids.Count) compared, by SID): $(if ($theirs.Count) { ($theirs | Select-Object -First 12) -join ' | ' } else { 'none' })." $remedy -Evidence "missing=$($missing -join ',')"
+        }
         if ($rights.Denied.Count) { return New-VfIdResult Warning "The LCM user holds the rights, but the OU also has $($rights.Denied -join '; '): a deny wins over an allow." 'Remove the deny entry on the OU.' -Evidence "denied=$($rights.Denied.Count)" }
         if (-not $r.RecoveryInformation) { return New-VfIdResult Warning "The LCM user can read, create and delete computer objects in $($lcm.OuPath), but no entry gives it full control of descendant msFVE-RecoveryInformation objects (BitLocker recovery information), which Learn lists$note." "Grant it with PowerShell, not the delegation wizard (Learn: Custom Active Directory configuration): the msFVE-RecoveryInformation entry, or run New-HciAdObjectsPreCreation again." -Evidence 'recovery entry not found' }
         New-VfIdResult Passed "The LCM user $($lcm.User) holds list contents, read all properties, read permissions, create and delete computer objects and the BitLocker recovery entry on $($lcm.OuPath)$note." -Evidence 'rights: 5 of 5 + recovery'

@@ -227,7 +227,7 @@ function Get-AzlVerificationCheckDefinition {
                 }
             }))
 
-    $defs.Add((New-AzlVerDefinition -Id 'ND-010' -Category nodes -Title 'Required Windows features are installed (Hyper-V, Failover Clustering, Data Center Bridging, Network ATC, BitLocker)' `
+    $defs.Add((New-AzlVerDefinition -Id 'ND-010' -Category nodes -Title 'Required Windows features are installed before the deployment (Hyper-V, Failover Clustering, Data Center Bridging, BitLocker); the deployment installs Network ATC itself' `
                 -Source "$($script:Src.SysReq); azl-toolkit phase-02-os-installation Test-OsDeployment.ps1 (Get-RequiredWindowsFeatures)" -Run {
                 param($Context)
                 $required = Get-AzlVerConstant RequiredFeature
@@ -242,7 +242,7 @@ function Get-AzlVerificationCheckDefinition {
                     elseif ($rows.Count -eq 0 -or $unknown.Count -eq $required.Count) { New-AzlVerResult Skipped "$Name does not list any of the features by name (Get-WindowsFeature is not available), so they were not verified." 'Verify by hand: Get-WindowsFeature Hyper-V, Failover-Clustering, Data-Center-Bridging, NetworkATC, BitLocker.' -Node $Name }
                     elseif ($unknown) { New-AzlVerResult Skipped "$Name does not list $(Join-AzlVerList $unknown) by that name." 'Verify the feature by hand.' -Node $Name -Evidence ($unknown -join ',') }
                     elseif ($advisedOff) { New-AzlVerResult Warning "$Name lacks the management features $(Join-AzlVerList $advisedOff) (the earlier toolkit verification expected them)." ('On the node: Install-WindowsFeature -Name ' + ($advisedOff -join ',') + ' -IncludeManagementTools') -Node $Name -Evidence ($advisedOff -join ',') }
-                    else { New-AzlVerResult Passed "$Name has Hyper-V, Failover Clustering, Data Center Bridging, Network ATC and BitLocker installed." -Node $Name }
+                    else { New-AzlVerResult Passed "$Name has Hyper-V, Failover Clustering, Data Center Bridging and BitLocker installed. Network ATC is not checked: the deployment installs it." -Node $Name }
                 }
             }))
 
