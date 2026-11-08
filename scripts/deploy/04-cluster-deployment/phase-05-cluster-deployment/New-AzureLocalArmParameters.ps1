@@ -11,7 +11,10 @@
 
     What feeds each part:
       identity, cluster name, witness, Key Vault, diagnostics, intents, storage networks, infrastructure pool, security,
-      custom location, SBE values     infrastructure.yml
+      custom location                 infrastructure.yml
+      SBE values                      hardware.sbe, only when it has a version (the SBE is opt-in; without one none of the seven
+                                      SBE parameters is written and the template defaults apply). hardware.sbe.bundle_path fills the
+                                      values hardware.sbe leaves empty.
       arcNodeResourceIds              the ZTP handoff (schema 2), else the Arc machine name in azure.resource_group
       adapter names                   infrastructure.yml's port names translated to the OS names by MAC, from the OS
                                       configuration report (-NodeReportPath)
@@ -85,6 +88,8 @@ ConvertTo-AzlArmParameterFile -ParameterSet $set -Infrastructure $infra -SecretM
 Write-Information -InformationAction Continue -MessageData "Template:   $($set.Template.Name)"
 Write-Information -InformationAction Continue -MessageData "Parameters: $($set.Parameters.Count) written to $OutputPath ($SecretMode secrets, no secret value in the file)"
 Write-Information -InformationAction Continue -MessageData "deploymentSettings api-version in that template: $($set.DeploymentSettingsApiVersion)"
+$sbeNote = if ($set.Parameters.Contains('sbeVersion') -and $set.Parameters['sbeVersion']) { "SBE $($set.Parameters['sbeFamily']) $($set.Parameters['sbeVersion'])" } else { 'no SBE configured (no SBE parameter written)' }
+Write-Information -InformationAction Continue -MessageData "SBE:        $sbeNote"
 foreach ($w in $set.Warnings) { Write-Warning $w }
 foreach ($p in $problems) { Write-Warning "PROBLEM: $p" }
 if ($problems.Count) { Write-Error "$($problems.Count) problem(s) in the parameter set." -ErrorAction Continue; exit 1 }

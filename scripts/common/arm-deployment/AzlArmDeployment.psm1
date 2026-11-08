@@ -6,7 +6,8 @@
 .DESCRIPTION
     Select-AzlArmTemplate        Which of Microsoft's quickstart templates fits the design (identity, storage, topology).
     New-AzlArmParameterSet       Every parameter of that template, from infrastructure.yml, the ZTP handoff, the OS
-                                 configuration report and the SBE folder. Secrets stay references.
+                                 configuration report and the SBE folder. The SBE parameters only when an SBE is
+                                 configured. Secrets stay references.
     Test-AzlArmParameterSet      Checks the parameters against the template's own parameter list: none unknown, none
                                  missing, types and allowed values right.
     ConvertTo-AzlArmParameterFile  The parameter file (deploymentParameters.json), with no secret value in it.
