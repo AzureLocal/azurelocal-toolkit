@@ -86,6 +86,74 @@ Not carried over: `cluster_ip` (the deployment takes it from the infrastructure 
 
 `hardware.bmc.username` and `nodes[].bmc.username` take either a user name or a `keyvault://` reference to a secret holding it. Tools resolve the reference when the value starts with `keyvault://`.
 
+## From Trailwright's export
+
+| Before | Schema 5 |
+| --- | --- |
+| `identity.mode` (`active-directory`, `local-identity-key-vault`) | `scenario.identity` (`active_directory`, `local_identity`) |
+| `identity.local_admin_username` | `identity.local_admin.username` |
+| `identity.secrets[]` (`local-admin-password`, `lcm-password`) | `identity.local_admin.password`, `identity.active_directory.lcm_user.password` |
+| `identity.active_directory.ad_domain_fqdn`, `ou_path`, `lcm_username` | `identity.active_directory.domain_fqdn`, `ou_path`, `lcm_user.username` |
+| `identity.local_identity.dns_server_config` (`UseDnsServer`), `dns_zone`, `dns_forwarders` | `identity.local_identity.dns_server_config` (`use_dns_server`), `dns_zone`, `dns_forwarders` |
+| `environment.azure_region` | `azure.location` |
+| `environment.azure_cloud` | `scenario.cloud` |
+| `environment.connectivity_mode` | `scenario.connectivity` |
+| `environment.architecture` (`hyperconverged`, `hybrid`, `disaggregated`) | `scenario.storage_architecture` (`s2d`, `hybrid`, `san`) |
+| `azure_platform.tenant_id` | `azure.tenant_id` |
+| `azure_platform.subscriptions.sub_azure_local_id` | `azure.subscription_id` |
+| `azure_platform.resource_groups.rg_azurelocal_cluster` | `azure.resource_group` |
+| `azure_platform.instance_name`, `naming_prefix` | `cluster.name`, `cluster.naming_prefix` |
+| `azure_platform.hci_resource_provider_object_id`, `custom_location` | `azure.hci_resource_provider_object_id`, `azure.custom_location` |
+| `azure_platform.key_vault.name`, `soft_delete_retention_days` | `cluster.key_vault.name`, `soft_delete_retention_days` |
+| `azure_platform.key_vault.audit_storage_account`, `audit_retention_days` | `cluster.diagnostics.storage_account`, `logs_retention_days` |
+| `azure_platform.witness_storage_account` | `cluster.witness.storage_account` |
+| `provisioning.os_install`, `deploy_method` | `scenario.os_install`, `scenario.deploy_method` |
+| `provisioning.site.time_zone`, `time_server` | `site.time_zone`, `networking.ntp_servers` |
+| `connectivity.outbound_path` (`arc-gateway`, `proxy-arc-gateway`, `private-path`) | `scenario.outbound_path` (`arc_gateway`, `proxy_arc_gateway`, `private_path`) |
+| `connectivity.proxy_url`, `arc_gateway_name`, `private_path.*` | `networking.outbound.proxy.url`, `networking.outbound.arc_gateway.name`, `networking.outbound.private_path.*` |
+| `infrastructure_network.subnet_mask` and `default_gateway` | `networking.management.subnet` (CIDR) and `gateway` |
+| `infrastructure_network.ip_pool`, `dns_servers`, `use_dhcp`, `management_vlan` | `networking.management.infrastructure_pool`, `dns_servers`, `use_dhcp`, `vlan_id` |
+| `networking.storage_mode` | `scenario.storage_connectivity` |
+| `networking.tor_switches`, `storage_auto_ip` | `networking.storage.tor_switches`, `networking.storage.auto_ip` |
+| `networking.storage_vlans` | `networking.storage.networks[].vlan_id` |
+| `networking.intents[]` (`override_qos`, `override_adapter`) | `networking.intents[]` (`overrides.qos`, `overrides.adapter`, `overrides.virtual_switch`) |
+| `networking.vlans`, `ip_plan` | `networking.vlans` |
+| `compute.cluster.topology` (`rack-aware`), `witness_type` | `scenario.topology` (`rack_aware`), `cluster.witness.type` |
+| `compute.nodes[].name`, `ip`, `serial` | `nodes[].name`, `management.ip_address`, `serial_number` |
+| `compute.nodes[].cores`, `memory_gib`, `drives` | `hardware.cpu_cores`, `memory_gib`, `drives` |
+| `storage.configuration_mode` (`Express`), `volumes[].resiliency` (`two-way`) | `storage.configuration_mode` (`express`), `volumes[].resiliency` (`two_way`) |
+| `storage.san_luns`, `infra_volume_lun_id`, `infra_performance_lun_id` | `storage.san.luns`, `infra_volume_lun_id`, `performance_history_lun_id` |
+| `sdn.logical_networks` | `networking.logical_networks` |
+| `security.level` (`Recommended`) and the other settings | `security.level` (`recommended`), same keys |
+| `operations.*` | `operations.*` |
+| `arm_parameters` | Not stored: generated from the file |
+
+## From the toolkit's variables.yml (registry 4.0.0)
+
+| Before | Schema 5 |
+| --- | --- |
+| `identity.accounts.account_local_admin_username`, `account_local_admin_password` | `identity.local_admin.username`, `password` |
+| `identity.accounts.account_lcm_username`, `account_lcm_password` | `identity.active_directory.lcm_user.username`, `password` |
+| `identity.active_directory.ad_domain_fqdn`, `ad_netbios_name`, `ad_ou_path` | `identity.active_directory.domain_fqdn`, `netbios_name`, `ou_path` |
+| `identity.active_directory.ad_dns_servers`, `networking.onprem.dns.servers` | `networking.management.dns_servers` |
+| `identity.service_principal` | `azure.automation_identity` with `type: service_principal`; its secret stays in Key Vault |
+| `networking.onprem.vlans.management.id`, `subnet`, `gateway` | `networking.management.vlan_id`, `subnet`, `gateway` |
+| `compute.azure_local.default_gateway`, `subnet_mask` | `networking.management.gateway`, `subnet` |
+| `networking.onprem.network_intents[]` (`traffic_types`, `adapter_names`) | `networking.intents[]` (`traffic`, `adapters`) |
+| `networking.onprem.network_devices.*` | `network_devices[]` |
+| `networking.azure.*`, `networking.hybrid.vpn` | `landing_zone.networks[]`, `landing_zone.connectivity` |
+| `compute.cluster_nodes[].node_hostname`, `node_management_ip`, `node_idrac_ip`, `node_service_tag` | `nodes[].name`, `management.ip_address`, `bmc.ip_address`, `serial_number` |
+| `compute.clusters.azure_local.azl_name`, `azl_resource_group` | `cluster.name`, `azure.resource_group` |
+| `compute.clusters.azure_local.azl_identity_provider`, `azl_network_topology` | `scenario.identity`, `scenario.storage_connectivity` |
+| `compute.clusters.azure_local.azl_witness_type`, `azl_deployment_mode` | `cluster.witness.type`, `cluster.deployment_mode` |
+| `compute.vms.management.*` (DCs, jump box, WAC, syslog) | `landing_zone.virtual_machines[]` |
+| `security.keyvault`, `security.key_vaults` | `key_vaults[]`, and `cluster.key_vault` for the instance's own vault |
+| `cluster_shared_volumes.volumes` | `storage.volumes` |
+| `azure_platform.azure_tenants`, `management_groups`, `subscriptions`, `resource_groups` | `azure.tenant_id`, `landing_zone.management_groups`, `subscriptions`, `resource_groups` |
+| `operations.monitoring` | `operations.monitoring` |
+| `devops.gitlab`, `devops.terraform` | `devops` |
+| Legacy roots `azure`, `platform`, `cluster`, `azure_infrastructure`, `azure_resources`, `azure_local`, `azure_vms` | The sections above; they held copies of the same values |
+
 ## Within schema 5
 
 Minor versions add optional keys; a key that is renamed keeps working until the next major version.
@@ -175,6 +243,7 @@ Schema 5.3 only adds keys: every 5.0 to 5.2 file stays valid. Nothing is renamed
 5. Run `Test-InfrastructureFile.ps1`. AZL-026 to AZL-028 check the new keys.
 
 **A ZTP-only file** (`_metadata.scope: ztp`) is new in 5.3. Start it from `infrastructure.ztp.example.yml`; to grow it into the full file, add the rest and set `scope: full`. See the README (Which template).
+
 ## To 5.4: every ZTP setting, and BIOS actions derived from the inventory
 
 Schema 5.4 only adds optional keys; a 5.3 file is valid as it is. Nothing changes for a file that uses none of them: ZTP behaves as before, with the old values as defaults.
@@ -213,89 +282,20 @@ Schema 5.4.3 only adds one optional section; a 5.4.0 file is valid as it is. Not
 | --- | --- |
 | `os_configuration.clear_storage` | `true`: the OS configuration run (`Invoke-AzureLocalOsConfiguration.ps1`) wipes leftover storage pools, virtual disks and the data on non-boot, non-system local disks in Apply mode. Default `false`. |
 
-5.4.4 adds optional keys only (existing 5.4.3 files stay valid): `os_configuration.network.confirm_minutes` (default 10) and `stable_seconds` (60), the commit-confirmed window of a guarded network change; `os_configuration.remoting.transport` (`winrm` | `winrm_https` | `arc`, default `winrm`), `bootstrap_transport` (`none` | `arc`) and `allowed_source_cidrs`. See [Changing the management address safely](../../docs/os-configuration-and-arm-deployment.md#changing-the-management-address-safely).
-
 **Steps for a 5.4 file:** set `_metadata.schema_version` to `5.4.3`; add `os_configuration: { clear_storage: true }` only for machines that are re-used. Plan mode prints the wipe list; Apply never wipes a SAN LUN, a USB disk, or a boot or system disk.
 
-## To 5.6: the remote management security profile
+## To 5.4.4: the guarded network change and the transport
 
-Schema 5.6 only adds optional keys; a 5.4.3 file is valid as it is. (The deployment block below is the other 5.6 addition.) **One behaviour changes for a file that sets nothing:** a missing `scenario.environment_class` means `production`, so the OS configuration run applies the strict profile (HTTPS, sources only from the management and out-of-band networks and `allowed_source_cidrs`, no TrustedHosts wildcard). A lab that relied on open access must say so with `environment_class: lab`.
+Schema 5.4.4 adds optional keys only; every 5.4.3 file stays valid, and a file that sets none of them behaves as before.
 
-| New key | What it does |
+| New key | What it is for |
 | --- | --- |
-| `scenario.environment_class` | `lab`, `test`, `dev`, `production` (default) or `dmz`. Picks the profile in `config/remoting-profiles.json`. |
-| `os_configuration.remoting.transport`, `bootstrap_transport` | How the run reaches the nodes (`winrm`, `winrm_https`, `arc`) and whether the one-time Arc bootstrap may open WinRM (`none`, `arc`). |
-| `os_configuration.remoting.allowed_source_cidrs` | Runner and jump server addresses, as the nodes see them. Added to the management and out-of-band networks. |
-| `os_configuration.remoting.allow_any_source`, `trusted_hosts`, `use_https`, `isolation_confirmed`, `certificate` | Refine the class. `allow_any_source` and a wildcard `trusted_hosts` are honoured in `lab` and `test` only. |
-| `networking.logical_networks[].purpose`, `networking.cluster_networks[].purpose` | `management`, `oob`, `automation`, `compute`, `storage` or `other`. `networking.vlans[].purpose` was already free text; its values `management` and `oob` (any case) now count too. |
+| `os_configuration.network.confirm_minutes` (default 10), `stable_seconds` (default 60) | The commit-confirmed window of a guarded network change: the change is undone unless the node answers on the new address and stays stable. |
+| `os_configuration.remoting.transport` | `winrm` (default), `winrm_https` or `arc`: how the run reaches the nodes. |
+| `os_configuration.remoting.bootstrap_transport` | `none` or `arc`: whether the one-time Arc bootstrap may open WinRM. (5.6 adds `smb` and `auto`.) |
+| `os_configuration.remoting.allowed_source_cidrs` | Runner and jump server addresses, as the nodes see them. |
 
-New rules AZL-060 to AZL-068 (see README). **Steps for a 5.4.3 file:** set `_metadata.schema_version` to `5.6.0`; add `scenario.environment_class` (`lab` for an isolated lab, `production` otherwise); for `dev`, `production` and `dmz` list your jump servers in `os_configuration.remoting.allowed_source_cidrs`; for production and dmz, plan the HTTPS certificate (`os_configuration.remoting.certificate`, or the self-signed pre-join certificate and its trust procedure in `docs/os-configuration-and-arm-deployment.md`).## From Trailwright's export
-
-| Before | Schema 5 |
-| --- | --- |
-| `identity.mode` (`active-directory`, `local-identity-key-vault`) | `scenario.identity` (`active_directory`, `local_identity`) |
-| `identity.local_admin_username` | `identity.local_admin.username` |
-| `identity.secrets[]` (`local-admin-password`, `lcm-password`) | `identity.local_admin.password`, `identity.active_directory.lcm_user.password` |
-| `identity.active_directory.ad_domain_fqdn`, `ou_path`, `lcm_username` | `identity.active_directory.domain_fqdn`, `ou_path`, `lcm_user.username` |
-| `identity.local_identity.dns_server_config` (`UseDnsServer`), `dns_zone`, `dns_forwarders` | `identity.local_identity.dns_server_config` (`use_dns_server`), `dns_zone`, `dns_forwarders` |
-| `environment.azure_region` | `azure.location` |
-| `environment.azure_cloud` | `scenario.cloud` |
-| `environment.connectivity_mode` | `scenario.connectivity` |
-| `environment.architecture` (`hyperconverged`, `hybrid`, `disaggregated`) | `scenario.storage_architecture` (`s2d`, `hybrid`, `san`) |
-| `azure_platform.tenant_id` | `azure.tenant_id` |
-| `azure_platform.subscriptions.sub_azure_local_id` | `azure.subscription_id` |
-| `azure_platform.resource_groups.rg_azurelocal_cluster` | `azure.resource_group` |
-| `azure_platform.instance_name`, `naming_prefix` | `cluster.name`, `cluster.naming_prefix` |
-| `azure_platform.hci_resource_provider_object_id`, `custom_location` | `azure.hci_resource_provider_object_id`, `azure.custom_location` |
-| `azure_platform.key_vault.name`, `soft_delete_retention_days` | `cluster.key_vault.name`, `soft_delete_retention_days` |
-| `azure_platform.key_vault.audit_storage_account`, `audit_retention_days` | `cluster.diagnostics.storage_account`, `logs_retention_days` |
-| `azure_platform.witness_storage_account` | `cluster.witness.storage_account` |
-| `provisioning.os_install`, `deploy_method` | `scenario.os_install`, `scenario.deploy_method` |
-| `provisioning.site.time_zone`, `time_server` | `site.time_zone`, `networking.ntp_servers` |
-| `connectivity.outbound_path` (`arc-gateway`, `proxy-arc-gateway`, `private-path`) | `scenario.outbound_path` (`arc_gateway`, `proxy_arc_gateway`, `private_path`) |
-| `connectivity.proxy_url`, `arc_gateway_name`, `private_path.*` | `networking.outbound.proxy.url`, `networking.outbound.arc_gateway.name`, `networking.outbound.private_path.*` |
-| `infrastructure_network.subnet_mask` and `default_gateway` | `networking.management.subnet` (CIDR) and `gateway` |
-| `infrastructure_network.ip_pool`, `dns_servers`, `use_dhcp`, `management_vlan` | `networking.management.infrastructure_pool`, `dns_servers`, `use_dhcp`, `vlan_id` |
-| `networking.storage_mode` | `scenario.storage_connectivity` |
-| `networking.tor_switches`, `storage_auto_ip` | `networking.storage.tor_switches`, `networking.storage.auto_ip` |
-| `networking.storage_vlans` | `networking.storage.networks[].vlan_id` |
-| `networking.intents[]` (`override_qos`, `override_adapter`) | `networking.intents[]` (`overrides.qos`, `overrides.adapter`, `overrides.virtual_switch`) |
-| `networking.vlans`, `ip_plan` | `networking.vlans` |
-| `compute.cluster.topology` (`rack-aware`), `witness_type` | `scenario.topology` (`rack_aware`), `cluster.witness.type` |
-| `compute.nodes[].name`, `ip`, `serial` | `nodes[].name`, `management.ip_address`, `serial_number` |
-| `compute.nodes[].cores`, `memory_gib`, `drives` | `hardware.cpu_cores`, `memory_gib`, `drives` |
-| `storage.configuration_mode` (`Express`), `volumes[].resiliency` (`two-way`) | `storage.configuration_mode` (`express`), `volumes[].resiliency` (`two_way`) |
-| `storage.san_luns`, `infra_volume_lun_id`, `infra_performance_lun_id` | `storage.san.luns`, `infra_volume_lun_id`, `performance_history_lun_id` |
-| `sdn.logical_networks` | `networking.logical_networks` |
-| `security.level` (`Recommended`) and the other settings | `security.level` (`recommended`), same keys |
-| `operations.*` | `operations.*` |
-| `arm_parameters` | Not stored: generated from the file |
-
-## From the toolkit's variables.yml (registry 4.0.0)
-
-| Before | Schema 5 |
-| --- | --- |
-| `identity.accounts.account_local_admin_username`, `account_local_admin_password` | `identity.local_admin.username`, `password` |
-| `identity.accounts.account_lcm_username`, `account_lcm_password` | `identity.active_directory.lcm_user.username`, `password` |
-| `identity.active_directory.ad_domain_fqdn`, `ad_netbios_name`, `ad_ou_path` | `identity.active_directory.domain_fqdn`, `netbios_name`, `ou_path` |
-| `identity.active_directory.ad_dns_servers`, `networking.onprem.dns.servers` | `networking.management.dns_servers` |
-| `identity.service_principal` | `azure.automation_identity` with `type: service_principal`; its secret stays in Key Vault |
-| `networking.onprem.vlans.management.id`, `subnet`, `gateway` | `networking.management.vlan_id`, `subnet`, `gateway` |
-| `compute.azure_local.default_gateway`, `subnet_mask` | `networking.management.gateway`, `subnet` |
-| `networking.onprem.network_intents[]` (`traffic_types`, `adapter_names`) | `networking.intents[]` (`traffic`, `adapters`) |
-| `networking.onprem.network_devices.*` | `network_devices[]` |
-| `networking.azure.*`, `networking.hybrid.vpn` | `landing_zone.networks[]`, `landing_zone.connectivity` |
-| `compute.cluster_nodes[].node_hostname`, `node_management_ip`, `node_idrac_ip`, `node_service_tag` | `nodes[].name`, `management.ip_address`, `bmc.ip_address`, `serial_number` |
-| `compute.clusters.azure_local.azl_name`, `azl_resource_group` | `cluster.name`, `azure.resource_group` |
-| `compute.clusters.azure_local.azl_identity_provider`, `azl_network_topology` | `scenario.identity`, `scenario.storage_connectivity` |
-| `compute.clusters.azure_local.azl_witness_type`, `azl_deployment_mode` | `cluster.witness.type`, `cluster.deployment_mode` |
-| `compute.vms.management.*` (DCs, jump box, WAC, syslog) | `landing_zone.virtual_machines[]` |
-| `security.keyvault`, `security.key_vaults` | `key_vaults[]`, and `cluster.key_vault` for the instance's own vault |
-| `cluster_shared_volumes.volumes` | `storage.volumes` |
-| `azure_platform.azure_tenants`, `management_groups`, `subscriptions`, `resource_groups` | `azure.tenant_id`, `landing_zone.management_groups`, `subscriptions`, `resource_groups` |
-| `operations.monitoring` | `operations.monitoring` |
-| `devops.gitlab`, `devops.terraform` | `devops` |
-| Legacy roots `azure`, `platform`, `cluster`, `azure_infrastructure`, `azure_resources`, `azure_local`, `azure_vms` | The sections above; they held copies of the same values |
+See [Changing the management address safely](../../docs/os-configuration-and-arm-deployment.md#changing-the-management-address-safely). **Steps:** nothing is required. To use the keys, set `_metadata.schema_version` to `5.4.4` or later.
 
 ## To 5.5: the domain join
 
@@ -311,7 +311,8 @@ Schema 5.5 only adds optional keys; a 5.4 file is valid as it is, and needs no n
 Rules: AZL-050 (an AD design has a join credential: the LCM user with a Key Vault password, or `domain_join_account`; the LCM user name is valid for Azure Local and differs from the local administrator), AZL-051 (`ou_path` is a valid distinguished name inside `domain_fqdn` without `& " ' < >`), AZL-052 (`domain_controllers`, when set, are the DNS servers of the management port), AZL-053 (warning: local identity with `domain_join_account` or `local_admin_members`).
 
 **Steps for a 5.4 file:** nothing is required. Make sure the OU in `ou_path` is the dedicated one with Group Policy inheritance blocked (what `New-HciAdObjectsPreCreation` creates): the OS configuration reads it and blocks the join on a production, dev or dmz design when inheritance is not blocked. Set `_metadata.schema_version` to `5.5.0` to use the new keys.
-## Schema 5.5: the CI/CD infrastructure in devops
+
+## To 5.5: the CI/CD infrastructure in devops
 
 Schema 5.5 adds optional keys to `devops`, so a 5.4 file stays valid. They are the inputs of tasks 01 to 06 of automation / 01-cicd-infra (`scripts/deploy/01-cicd-infra`).
 
@@ -324,9 +325,14 @@ Schema 5.5 adds optional keys to `devops`, so a 5.4 file stays valid. They are t
 | `cicd.runners.pool_name`, `image`, `count` | `devops.runners[]`: `name`, `os_type`, `purpose` (`general` or `ztp`), `count`, `compute_type`, `size`, `labels`, `registration_secret`, `pool`, `subnet`, `private_ips`, `data_disk_gb` |
 | (no equivalent) | `devops.runner_network` (VNet, `hub_peering`, `reachable_cidrs`, `bmc_cidrs`), `devops.runner_access` (resource groups, RBAC Administrator, Arc Run Command, vaults), `devops.subscription`, `devops.resource_group`, `devops.api_token`, `devops.state.key` |
 | `devops.runner` (one runner, 5.0 to 5.4) | Still read when `devops.runners` is absent. `devops.runners` replaces it. |
-## Schema 5.6: the deployment block
 
-Schema 5.6 adds one optional section, `deployment`, for the toolkit's ARM Validate and Deploy run (`Invoke-AzureLocalArmDeployment.ps1`; see [docs/arm-deployment-guide.md](../../docs/arm-deployment-guide.md)). It only adds keys: every 5.0 to 5.5 file stays valid, and a file without the section behaves as before, with the defaults shown below.
+## To 5.6: the deployment block and the remote management security profile
+
+Schema 5.6 only adds optional keys: every 5.0 to 5.5 file stays valid. It adds two things: the `deployment` block for the ARM Validate and Deploy run, and the remote management security profile of the OS configuration run (environment class, remoting profiles). **One behaviour changes for a file that sets nothing:** a missing `scenario.environment_class` means `production`, so the OS configuration run applies the strict profile (HTTPS, sources only from the management and out-of-band networks and `allowed_source_cidrs`, no TrustedHosts wildcard). A lab that relied on open access must say so with `environment_class: lab`.
+
+### The deployment block
+
+Schema 5.6 adds one optional section, `deployment`, for the toolkit's ARM Validate and Deploy run (`Invoke-AzureLocalArmDeployment.ps1`; see [docs/arm-deployment-guide.md](../../docs/arm-deployment-guide.md)). A file without the section behaves as before, with the defaults shown below.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -342,4 +348,18 @@ Schema 5.6 adds one optional section, `deployment`, for the toolkit's ARM Valida
 
 **Steps:** nothing is required. To use the block, set `_metadata.schema_version` to `5.6.0` and add the keys you want. AZL-040 checks them.
 
-**Version numbers.** One history, in order: 5.4.1 (adapter wait), 5.4.2 (SBE delivery), 5.4.3 (`clear_storage`), 5.4.4 (the guarded network change and the transport rules: `os_configuration.network`, `os_configuration.remoting.transport`, `bootstrap_transport`, `allowed_source_cidrs`), 5.5 (the CI/CD `devops` keys and the domain join keys), 5.6 (the `deployment` block and the remote management security profile). A file that uses any of them says `5.6.0` (the version of this release); each key's description in the schema says `since` which minor added it. Rules: AZL-030 SBE delivery, AZL-031 `clear_storage`, AZL-040 `deployment`, AZL-050 to AZL-053 domain join, AZL-060 to AZL-068 security profile, AZL-070 `devops` (the CI/CD rule was AZL-030 on its own branch).
+### The remote management security profile
+
+| New key | What it does |
+| --- | --- |
+| `scenario.environment_class` | `lab`, `test`, `dev`, `production` (default) or `dmz`. Picks the profile in `config/remoting-profiles.json`. |
+| `os_configuration.remoting.transport`, `bootstrap_transport` | How the run reaches the nodes (`winrm`, `winrm_https`, `arc`) and whether the one-time Arc bootstrap may open WinRM (`none`, `arc`). |
+| `os_configuration.remoting.allowed_source_cidrs` | Runner and jump server addresses, as the nodes see them. Added to the management and out-of-band networks. |
+| `os_configuration.remoting.allow_any_source`, `trusted_hosts`, `use_https`, `isolation_confirmed`, `certificate` | Refine the class. `allow_any_source` and a wildcard `trusted_hosts` are honoured in `lab` and `test` only. |
+| `networking.logical_networks[].purpose`, `networking.cluster_networks[].purpose` | `management`, `oob`, `automation`, `compute`, `storage` or `other`. `networking.vlans[].purpose` was already free text; its values `management` and `oob` (any case) now count too. |
+
+New rules AZL-060 to AZL-068 (see README). **Steps for a 5.5 file:** set `_metadata.schema_version` to `5.6.0`; add `scenario.environment_class` (`lab` for an isolated lab, `production` otherwise); for `dev`, `production` and `dmz` list your jump servers in `os_configuration.remoting.allowed_source_cidrs`; for production and dmz, plan the HTTPS certificate (`os_configuration.remoting.certificate`, or the self-signed pre-join certificate and its trust procedure in `docs/os-configuration-and-arm-deployment.md`). To use the `deployment` block, add the keys you want; AZL-040 checks them.
+
+## Version history
+
+One history, in order: 5.2 (the ports of each machine), 5.3 (BIOS phases, the static method, the SAN), 5.4 (every ZTP setting), 5.4.1 (adapter wait), 5.4.2 (SBE delivery), 5.4.3 (`clear_storage`), 5.4.4 (the guarded network change and the transport keys: `os_configuration.network`, `os_configuration.remoting.transport`, `bootstrap_transport`, `allowed_source_cidrs`), 5.5 (the domain join keys and the CI/CD `devops` keys), 5.6 (the `deployment` block and the remote management security profile). A file that uses any of them says `5.6.0`, the current version; each key's description in the schema says `since` which version added it. Rules: AZL-030 SBE delivery, AZL-031 `clear_storage`, AZL-040 `deployment`, AZL-050 to AZL-053 domain join, AZL-060 to AZL-068 security profile, AZL-070 `devops`.
