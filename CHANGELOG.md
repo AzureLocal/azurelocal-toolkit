@@ -31,4 +31,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - `config/infrastructure/VARIABLES.md`, a variables reference generated from the schema by `New-InfrastructureVariablesReference.ps1`, with a test that it is current.
 - Initial repository scaffold — MkDocs Material, release-please, GitHub Pages, CI/CD workflows
 - Migrate toolkit content from AzureLocalCloud-docs-azl-toolkit (scripts, configs)
+- Azure DevOps pipeline for the OS configuration, `pipelines/azure-devops/os-configuration.yml`: Plan (read only, report and wipe list as artifacts), then Apply behind the environment `azure-local-os-configuration`; WinRM by default from a self-hosted agent, Arc Run Command only when `transport` is set to it; `clear_storage` needs a second approval (environment `azure-local-os-configuration-clear-storage`) after the wipe list is shown. Test: `tests/pipelines/AzureDevOpsOsConfiguration.Tests.ps1`.
 - Branding scrub — remove all Azure Local Cloud/AzureLocalCloud/HCS references
