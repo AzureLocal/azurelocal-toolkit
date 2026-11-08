@@ -16,6 +16,9 @@
     Get-AzlDomainJoinPlanItem        The comparison (pure): Ok, Change (join, move before the deployment, add the local administrators, or finish a pending restart), Blocked with the
                                      reason, Skipped (waits for an earlier step, or local identity), Info. Never unjoins a node.
     Test-AzlDomainJoinVerification   After the restart: member, right domain, secure channel, right OU (an unknown OU is unverified, not OK).
+    Get-AzlDomainJoinLdapComputer    Host side, read only: finds the computer object over LDAP (System.DirectoryServices, no RSAT) with the join credential
+                                     and returns its distinguished name, for when the node cannot read its own yet. The node's own answer wins when it has one.
+    Add-AzlDomainJoinLdapCheck       Attaches that answer to the state as domainJoin.ldap, for a member whose node has no distinguished name.
     Invoke-AzlDomainJoinStep         The apply: join (or move), the guarded restart, the reconnect, the verification, the events.
     Get-AzlDomainJoinSummary         The record the run report shows: joined, domain, OU, errors.
     Send-AzlDomainJoinEvent          The one adapter to the event feed (section 6 of the design).
@@ -188,6 +191,10 @@ function Get-DjMainItem {
     $isMember = [bool](Get-AzlProp $ds 'partOfDomain' $false)
     $domainNow = [string](Get-AzlProp $ds 'domain' '')
     $dn = [string](Get-AzlProp $ds 'dn' '')
+    # The node's own answer wins. When it has none (Group Policy stores the distinguished name only after a refresh), the host-side LDAP answer stands in.
+    $ldap = Get-AzlProp $ds 'ldap'
+    $viaLdap = $false
+    if (-not $dn -and $ldap -and [bool](Get-AzlProp $ldap 'found' $false) -and [string](Get-AzlProp $ldap 'dn' '')) { $dn = [string]$ldap.dn; $viaLdap = $true }
     $ouNow = Get-DjOuOfDn $dn
     $out = [System.Collections.Generic.List[object]]::new()
 
@@ -198,14 +205,26 @@ function Get-DjMainItem {
         $marker = Get-AzlProp $ds 'marker'
         $restartDue = Test-DjRestartDue $ds
         $inCluster = [bool](Get-AzlProp $ds 'inCluster' $false)
+        $channelNow = Get-AzlProp $ds 'secureChannel'
+        $markerOpen = ([string](Get-AzlProp $marker 'state' '') -in $script:PendingMarkerStates) -or ([string](Get-AzlProp $marker 'state' '') -eq 'Joining')
+        $ldapNote = 'The OU was read in Active Directory over LDAP from the orchestrator, because the node could not read its distinguished name yet.'
         if ($restartDue) {
             $out.Add((New-DjPlanItem $n 'domain membership' "joined $domainNow, restart pending" "$want, restarted and verified" Change 'The join succeeded but the node has not restarted since (the durable restart marker is still set). It is restarted and verified now.' @{ id = 'DomainJoin/restart'; kind = 'domain-restart'; domain = $dj.Domain; ou = $dj.OuPath; changeId = [string](Get-AzlProp $marker 'changeId' '') }))
         }
         elseif (-not $dn) {
-            $out.Add((New-DjPlanItem $n 'domain membership' "member of $domainNow, OU not read" $want Info 'OU unverified: Group Policy has not stored the computer''s distinguished name on the node yet, so it is not known where the computer object is (an account that already existed is reused where it is). Run gpupdate /target:computer /force on the node and run again.'))
+            $why = [string](Get-AzlProp $ldap 'error' '')
+            $out.Add((New-DjPlanItem $n 'domain membership' "member of $domainNow, OU not read" $want Info "OU unverified: Group Policy has not stored the computer's distinguished name on the node yet, so it is not known where the computer object is (an account that already existed is reused where it is).$(if ($why) { " The check from the orchestrator over LDAP did not give an answer either: $why." }) Run gpupdate /target:computer /force on the node and run again."))
         }
         elseif ((ConvertTo-DjOuKey $ouNow) -eq (ConvertTo-DjOuKey $dj.OuPath)) {
-            $out.Add((New-DjPlanItem $n 'domain membership' "member of $domainNow, OU $ouNow" $want Ok))
+            $out.Add((New-DjPlanItem $n 'domain membership' "member of $domainNow, OU $ouNow" $want Ok $(if ($viaLdap) { $ldapNote } else { '' })))
+            # The join was verified in the right OU but its restart marker was never completed (the run that joined it could not verify the OU): complete it now.
+            if ($markerOpen -and $channelNow -ne $false) {
+                $out.Add((New-DjPlanItem $n 'domain join marker' "$([string](Get-AzlProp $marker 'state' ''))" 'Completed' Change 'The node joined, restarted and its computer object is in the right OU, but the durable marker of the join was never completed. It is completed now (nothing is joined or restarted).' @{ id = 'DomainJoin/finalize'; kind = 'domain-finalize'; domain = $dj.Domain; ou = $dj.OuPath; dn = $dn; verifiedBy = $(if ($viaLdap) { 'ldap' } else { 'node' }); changeId = [string](Get-AzlProp $marker 'changeId' '') }))
+            }
+        }
+        elseif ($viaLdap -and -not $inCluster) {
+            # The distinguished name comes from the orchestrator's LDAP read, not from the node: nothing is moved on that evidence, whatever allow_ou_move says.
+            $out.Add((New-DjPlanItem $n 'domain membership' "member of $domainNow, OU $ouNow" $want Blocked "The computer object $dn (read in Active Directory over LDAP) is in another OU than ou_path ($($dj.OuPath)). The node could not read its own distinguished name, so nothing is moved on that evidence. Move the computer object in Active Directory yourself, or correct identity.active_directory.ou_path to where it is. After the deployment Microsoft does not support a move."))
         }
         elseif ($inCluster) {
             $out.Add((New-DjPlanItem $n 'domain membership' "member of $domainNow, OU $ouNow" $want Blocked "The node is in a cluster (the deployment is done) and its computer object is in another OU than ou_path. Microsoft does not support moving the computer objects to a different OU after the deployment, so the toolkit never does. Correct identity.active_directory.ou_path to where the objects are, or plan the move with Microsoft's guidance (for example remove and add the node)."))
@@ -412,19 +431,27 @@ function Test-AzlDomainJoinVerification {
     $domainNow = [string](Get-AzlProp $ds 'domain' '')
     $member = [bool](Get-AzlProp $ds 'partOfDomain' $false)
     $checks = [System.Collections.Generic.List[object]]::new()
-    $checks.Add([pscustomobject]@{ Check = 'PartOfDomain'; Ok = $member; Detail = "PartOfDomain is $member" })
-    $checks.Add([pscustomobject]@{ Check = 'Domain'; Ok = ($member -and $domainNow -ieq $dj.Domain); Detail = "domain is '$domainNow', the file says '$($dj.Domain)'" })
+    $checks.Add([pscustomobject]@{ Check = 'PartOfDomain'; Ok = $member; Unverified = $false; Detail = "PartOfDomain is $member" })
+    $checks.Add([pscustomobject]@{ Check = 'Domain'; Ok = ($member -and $domainNow -ieq $dj.Domain); Unverified = $false; Detail = "domain is '$domainNow', the file says '$($dj.Domain)'" })
     $channel = Get-AzlProp $ds 'secureChannel'
-    $checks.Add([pscustomobject]@{ Check = 'SecureChannel'; Ok = ($channel -eq $true); Detail = "Test-ComputerSecureChannel returned $channel" })
+    $checks.Add([pscustomobject]@{ Check = 'SecureChannel'; Ok = ($channel -eq $true); Unverified = $false; Detail = "Test-ComputerSecureChannel returned $channel" })
     $dn = [string](Get-AzlProp $ds 'dn' '')
+    # The host-side answer (Get-AzlDomainJoinLdapComputer) stands in only when the node has no distinguished name.
+    $ldap = Get-AzlProp $ds 'ldap'
+    $ldapDn = if ($ldap -and [bool](Get-AzlProp $ldap 'found' $false)) { [string](Get-AzlProp $ldap 'dn' '') } else { '' }
     if ($dn) {
         $ouNow = Get-DjOuOfDn $dn
-        $checks.Add([pscustomobject]@{ Check = 'OU'; Ok = ((ConvertTo-DjOuKey $ouNow) -eq (ConvertTo-DjOuKey $dj.OuPath)); Detail = "the computer object is in '$ouNow', the file says '$($dj.OuPath)'" })
+        $checks.Add([pscustomobject]@{ Check = 'OU'; Ok = ((ConvertTo-DjOuKey $ouNow) -eq (ConvertTo-DjOuKey $dj.OuPath)); Unverified = $false; Detail = "the computer object is in '$ouNow', the file says '$($dj.OuPath)'" })
+    }
+    elseif ($ldapDn) {
+        $ouNow = Get-DjOuOfDn $ldapDn
+        $checks.Add([pscustomobject]@{ Check = 'OU'; Ok = ((ConvertTo-DjOuKey $ouNow) -eq (ConvertTo-DjOuKey $dj.OuPath)); Unverified = $false; Detail = "the computer object $ldapDn (read in Active Directory over LDAP from the orchestrator) is in '$ouNow', the file says '$($dj.OuPath)'" })
     }
     else {
         # No distinguished name: unverified, never OK. Add-Computer reuses a computer account that already exists, possibly in another OU, and nothing
         # moves it after the deployment.
-        $checks.Add([pscustomobject]@{ Check = 'OU'; Ok = $false; Detail = "unverified: the node has no distinguished name to read, so it is not known that the computer object is in '$($dj.OuPath)'" })
+        $why = [string](Get-AzlProp $ldap 'error' '')
+        $checks.Add([pscustomobject]@{ Check = 'OU'; Ok = $false; Unverified = $true; Detail = "unverified: the node has no distinguished name to read, so it is not known that the computer object is in '$($dj.OuPath)'$(if ($ldap) { "; the check from the orchestrator over LDAP gave no answer either ($(if ($why) { $why } else { 'no reason was reported' }))" })" })
     }
     return $checks.ToArray()
 }
@@ -466,6 +493,11 @@ function Merge-AzlDomainJoinOutcome {
     [CmdletBinding()]
     param([AllowEmptyCollection()][object[]]$Plan = @(), [object]$Failure, [switch]$Moved)
     foreach ($i in $Plan) {
+        # A join that worked but whose OU could not be verified: the later passes read the node as a member without a distinguished name (Info). That must not
+        # read as converged, so the item is Blocked with the failure while the independent steps carry on.
+        if ($Failure -and [bool](Get-AzlProp $Failure 'Unverified' $false) -and $i.Step -eq 'DomainJoin' -and $i.Action -eq 'Info' -and $i.Item -eq 'domain membership') {
+            New-DjPlanItem $i.Node $i.Item $i.Current $i.Desired Blocked "The node joined, but the check after the restart could not verify the OU: $($Failure.Error) Next: $($Failure.NextAction)".Trim(); continue
+        }
         if ($i.Step -ne 'DomainJoin' -or $i.Action -ne 'Change') { $i; continue }
         if ($Failure -and (-not (Get-AzlProp $Failure 'Kind') -or $i.Apply.kind -eq $Failure.Kind)) { New-DjPlanItem $i.Node $i.Item $i.Current $i.Desired Blocked "The join failed and is not tried again in this run: $($Failure.Error) Next: $($Failure.NextAction)".Trim(); continue }
         if ($Moved -and $i.Apply -and $i.Apply.kind -eq 'domain-move') { New-DjPlanItem $i.Node $i.Item "moved to $($i.Apply.ou)" $i.Desired Ok 'The computer object was moved; the node reads its OU again when Group Policy refreshes.'; continue }
@@ -608,6 +640,226 @@ function Add-AzlDomainJoinOuCheck {
     return $State
 }
 
+# ---------------------------------------------------------------------------------------------------------------------
+# The computer object over LDAP, from this host (read only)
+# ---------------------------------------------------------------------------------------------------------------------
+
+function Get-DjLdapFilterValue([string]$Value) {
+    # RFC 4515 escaping, so a name can never change the filter.
+    $escaped = $Value.Replace('\', '\5c').Replace('*', '\2a').Replace('(', '\28').Replace(')', '\29').Replace([string][char]0, '\00')
+    return $escaped
+}
+
+function Get-DjDomainDn([string]$Domain, [string]$OuPath) {
+    # The search root: the DC= parts of ou_path when it has them, else the domain name (improbability.cloud -> DC=improbability,DC=cloud).
+    $dc = @($OuPath -split '(?<!\\),' | ForEach-Object { $_.Trim() } | Where-Object { $_ -match '^(?i)DC=' })
+    if ($dc.Count) { return ($dc -join ',') }
+    return ((@($Domain.Split('.') | Where-Object { $_ }) | ForEach-Object { "DC=$_" }) -join ',')
+}
+
+function Test-DjLdapPort {
+    # TCP connect with a timeout. Nothing is sent.
+    param([string]$Address, [int]$Port, [int]$Milliseconds)
+    $client = [System.Net.Sockets.TcpClient]::new()
+    try {
+        $task = $client.ConnectAsync($Address, $Port)
+        return ($task.Wait($Milliseconds) -and $client.Connected)
+    }
+    catch { return $false }
+    finally { $client.Dispose() }
+}
+
+function Find-DjReachableServer {
+    # The first address of the list, in the order of the file, that answers on the port. '' when none does.
+    param([string[]]$Server = @(), [int]$Port = 389, [int]$Milliseconds = 3000, [scriptblock]$Probe = { param($Address, $PortNumber, $Ms) Test-DjLdapPort -Address $Address -Port $PortNumber -Milliseconds $Ms })
+    foreach ($s in @($Server | Where-Object { $_ })) {
+        if (& $Probe $s $Port $Milliseconds) { return [string]$s }
+    }
+    return ''
+}
+
+function Test-DjLdapAuthFailure($Exception) {
+    # A rejected credential (wrong password, locked, disabled, expired) is not "the computer object is missing": the run stops using the credential.
+    $e = $Exception
+    while ($e) {
+        $u = [BitConverter]::ToUInt32([BitConverter]::GetBytes([int]$e.HResult), 0)
+        if (($u -shr 16) -eq 0x8007 -and (($u -band 0xFFFF) -in 1326, 1327, 1328, 1329, 1330, 1331, 1793, 1909)) { return $true }
+        $ext = $e.PSObject.Properties['ExtendedError']
+        if ($ext -and ([int]$ext.Value -in 1326, 1327, 1328, 1329, 1330, 1331, 1793, 1909)) { return $true }
+        $e = $e.InnerException
+    }
+    return ([string]$Exception.Message -match '(?i)logon failure|user name or password is incorrect|account currently disabled|account has been disabled|locked out|invalid credentials|password has expired|account has expired')
+}
+
+function Invoke-DjLdapSearch {
+    <#
+    .SYNOPSIS
+        The default LDAP query of Get-AzlDomainJoinLdapComputer: binds to the first domain controller that answers on the port and searches the
+        domain for the filter, read only. System.DirectoryServices only (no RSAT, no module), so it runs where Windows does.
+    .OUTPUTS
+        Reachable, Server, Entries (distinguishedName, dnsHostName), AuthFailed, Error. Never throws; the password is not in the error.
+    #>
+    param([Parameter(Mandatory)][object]$Request)
+    $result = [pscustomobject]@{ Reachable = $false; Server = ''; Entries = @(); AuthFailed = $false; Error = '' }
+    if (-not $IsWindows) { $result.Error = 'the host-side LDAP lookup needs System.DirectoryServices, which is only on Windows'; return $result }
+    $port = [int]$Request.Port
+    $seconds = [int]$Request.TimeoutSeconds
+    $server = Find-DjReachableServer -Server @($Request.Servers) -Port $port
+    if (-not $server) { $result.Error = "no domain controller of the file answered on TCP $port from this host (tried $(@($Request.Servers) -join ', '))"; return $result }
+    $result.Reachable = $true
+    $result.Server = $server
+    $entry = $null; $searcher = $null; $found = $null
+    try {
+        Add-Type -AssemblyName System.DirectoryServices
+        $plain = $Request.Credential.GetNetworkCredential().Password
+        # Secure (Kerberos or NTLM) with signing and sealing: a domain controller that requires LDAP signing refuses a plain simple bind.
+        $auth = [System.DirectoryServices.AuthenticationTypes]::Secure -bor [System.DirectoryServices.AuthenticationTypes]::Signing -bor [System.DirectoryServices.AuthenticationTypes]::Sealing
+        $entry = [System.DirectoryServices.DirectoryEntry]::new("LDAP://${server}:$port/$($Request.SearchRoot)", $Request.Credential.UserName, $plain, $auth)
+        $plain = $null
+        $searcher = [System.DirectoryServices.DirectorySearcher]::new($entry, [string]$Request.Filter, [string[]]@($Request.Properties), [System.DirectoryServices.SearchScope]::Subtree)
+        $searcher.ClientTimeout = [TimeSpan]::FromSeconds($seconds)
+        $searcher.ServerTimeLimit = [TimeSpan]::FromSeconds($seconds)
+        $searcher.SizeLimit = 10
+        $found = $searcher.FindAll()
+        $list = [System.Collections.Generic.List[object]]::new()
+        foreach ($r in $found) {
+            $dnValues = $r.Properties['distinguishedname']
+            $hostValues = $r.Properties['dnshostname']
+            $list.Add([pscustomobject]@{ distinguishedName = $(if ($dnValues.Count) { [string]$dnValues[0] } else { '' }); dnsHostName = $(if ($hostValues.Count) { [string]$hostValues[0] } else { '' }) })
+        }
+        $result.Entries = $list.ToArray()
+    }
+    catch {
+        $result.Error = "LDAP search on ${server}:$port failed: $($_.Exception.Message)"
+        if (Test-DjLdapAuthFailure $_.Exception) { $result.AuthFailed = $true }
+    }
+    finally {
+        if ($found) { $found.Dispose() }
+        if ($searcher) { $searcher.Dispose() }
+        if ($entry) { $entry.Dispose() }
+    }
+    return $result
+}
+
+function Get-AzlDomainJoinLdapComputer {
+    <#
+    .SYNOPSIS
+        Finds the node's computer object in Active Directory over LDAP, from this host, read only, and returns where it is.
+    .DESCRIPTION
+        A node cannot always read its own distinguished name right after the join (the Group Policy machine DN value stays empty until a policy
+        refresh). This asks Active Directory instead: System.DirectoryServices.DirectorySearcher (no RSAT), bound with the join credential the run
+        already holds (lcm_user, or domain_join_account) to the first address of identity.active_directory.domain_controllers that answers on TCP 389,
+        filter (&(objectCategory=computer)(cn=<node name>)), reading distinguishedname and dnshostname. Nothing is written to Active Directory.
+        The bind is the credential's attempt of the run: a tripped -Latch stops it before the secret is read, and a rejected bind trips the latch.
+        The password is not logged, not in the result and not in an event. When no domain controller answers within the time, or anything else goes
+        wrong, the answer is "not checked" with the reason (the OU stays unverified, as before); this never throws.
+    .PARAMETER LdapQuery
+        Test seam: { param($Request) } returning Reachable, Server, Entries, AuthFailed, Error. Default Invoke-DjLdapSearch.
+    .OUTPUTS
+        checked (an answer came from a domain controller), found, dn, dnsHostName, ou (the parent of the distinguished name), server, count,
+        authFailed, error.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification = 'The secret was just read from Key Vault; it is made a SecureString at once and only ever lives in memory.')]
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][object]$Spec,
+        [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref },
+        [hashtable]$Latch,
+        [scriptblock]$LdapQuery,
+        [ValidateRange(1, 120)][int]$TimeoutSeconds = 15
+    )
+    $dj = Get-AzlProp $Spec 'DomainJoin'
+    $name = [string](Get-AzlProp $Spec 'Name' '')
+    $r = [pscustomobject]@{ checked = $false; found = $false; dn = ''; dnsHostName = ''; ou = ''; server = ''; count = 0; authFailed = $false; error = '' }
+    if (-not $dj -or -not $dj.Applicable) { $r.error = 'the design does not join a domain'; return $r }
+    if (Test-DjCredentialLocked $Latch) { $r.authFailed = $true; $r.error = Get-DjLatchText $Latch; return $r }
+    $servers = @($dj.DomainControllers | Where-Object { $_ })
+    if (-not $servers.Count) { $r.error = 'identity.active_directory.domain_controllers is empty, so there is no domain controller to ask'; return $r }
+    if (-not $dj.HasAccount) { $r.error = 'there is no join credential'; return $r }
+    $secure = $null
+    $answer = $null
+    try {
+        try {
+            $plain = [string](& $SecretResolver $dj.PasswordRef)
+            $secure = ConvertTo-SecureString -String $plain -AsPlainText -Force
+            $plain = $null
+        }
+        catch { $r.error = "Can't read the join account's password ($($dj.PasswordRef)): $($_.Exception.Message)"; return $r }
+        $prefix = if ($dj.Netbios) { [string]$dj.Netbios } elseif ($dj.Domain) { ([string]$dj.Domain).Split('.')[0].ToUpperInvariant() } else { '' }
+        $user = [string]$dj.Username
+        if ($user -notmatch '[\\@]') { $user = if ($prefix) { "$prefix\$user" } else { "$user@$($dj.Domain)" } }
+        $request = [pscustomobject]@{
+            Servers = @($servers); Port = 389; Credential = [pscredential]::new($user, $secure); SearchRoot = (Get-DjDomainDn -Domain ([string]$dj.Domain) -OuPath ([string]$dj.OuPath))
+            Filter = "(&(objectCategory=computer)(cn=$(Get-DjLdapFilterValue $name)))"; Properties = @('distinguishedname', 'dnshostname'); TimeoutSeconds = $TimeoutSeconds
+        }
+        $query = if ($LdapQuery) { $LdapQuery } else { { param($Request) Invoke-DjLdapSearch -Request $Request } }
+        try { $answer = & $query $request }
+        catch { $r.error = "the LDAP lookup of $name failed: $($_.Exception.Message)"; return $r }
+    }
+    finally { if ($secure) { $secure.Dispose() } }
+    $r.server = [string](Get-AzlProp $answer 'Server' '')
+    if ([bool](Get-AzlProp $answer 'AuthFailed' $false)) {
+        # The one use of the credential per run: a rejection stops every later use of it, on every node (repeated bad passwords lock the account).
+        $r.authFailed = $true
+        $r.error = "the domain controller rejected the join credential ($($dj.CredentialSource) $($dj.Username)): $([string](Get-AzlProp $answer 'Error' ''))"
+        Lock-DjCredential -Latch $Latch -Node $name -Reason $r.error
+        return $r
+    }
+    if (-not [bool](Get-AzlProp $answer 'Reachable' $false)) {
+        $why = [string](Get-AzlProp $answer 'Error' '')
+        $r.error = if ($why) { $why } else { "no domain controller of the file answered on TCP 389 from this host (tried $($servers -join ', '))" }
+        return $r
+    }
+    $why = [string](Get-AzlProp $answer 'Error' '')
+    if ($why) { $r.error = $why; return $r }
+    $entries = @(Get-AzlProp $answer 'Entries' @() | Where-Object { $_ })
+    $r.checked = $true
+    $r.count = $entries.Count
+    if (-not $entries.Count) { $r.error = "no computer object named $name in $($dj.Domain) on $($r.server)"; return $r }
+    # An object is this node's when its dnsHostName is empty (not set yet) or starts with the node's name.
+    $mine = @($entries | Where-Object { $h = [string](Get-AzlProp $_ 'dnsHostName' ''); -not $h -or $h -like "$name.*" -or $h -ieq $name })
+    if ($entries.Count -eq 1 -and -not $mine.Count) {
+        $r.error = "the computer object $([string](Get-AzlProp $entries[0] 'distinguishedName' '')) has dnsHostName $([string](Get-AzlProp $entries[0] 'dnsHostName' '')), which is not $name, so it is not this node's"
+        return $r
+    }
+    $exact = @($mine | Where-Object { [string](Get-AzlProp $_ 'dnsHostName' '') -like "$name.*" })
+    $pick = if ($mine.Count -eq 1) { $mine[0] } elseif ($exact.Count -eq 1) { $exact[0] } else { $null }
+    if (-not $pick) {
+        $r.error = "$($entries.Count) computer objects are named ${name}: $((@($entries | ForEach-Object { [string](Get-AzlProp $_ 'distinguishedName' '') })) -join '; '); it is not known which one is this node's"
+        return $r
+    }
+    $r.found = $true
+    $r.dn = [string](Get-AzlProp $pick 'distinguishedName' '')
+    $r.dnsHostName = [string](Get-AzlProp $pick 'dnsHostName' '')
+    $r.ou = Get-DjOuOfDn $r.dn
+    return $r
+}
+
+function Add-AzlDomainJoinLdapCheck {
+    <#
+    .SYNOPSIS
+        For a member of the right domain whose node reports no distinguished name, asks Active Directory over LDAP from this host
+        (Get-AzlDomainJoinLdapComputer) and attaches the answer to the state as domainJoin.ldap. Returns the answer, or $null when it does not apply.
+    .DESCRIPTION
+        Does nothing (and sends nothing) when the node is not a member of the domain of the file, when the node has its distinguished name (its own answer
+        wins), or when the design does not join a domain. Read only; never throws. -Cached is an answer already obtained in this call, attached again
+        instead of asking a second time.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][object]$Spec, [Parameter(Mandatory)][AllowNull()][object]$State,
+        [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref }, [hashtable]$Latch, [scriptblock]$LdapQuery, [object]$Cached
+    )
+    $dj = Get-AzlProp $Spec 'DomainJoin'
+    $ds = Get-AzlProp $State 'domainJoin'
+    if (-not $dj -or -not $dj.Applicable -or -not $ds) { return $null }
+    if (-not [bool](Get-AzlProp $ds 'partOfDomain' $false) -or [string](Get-AzlProp $ds 'domain' '') -ine $dj.Domain) { return $null }
+    if ([string](Get-AzlProp $ds 'dn' '')) { return $null }
+    $answer = if ($Cached) { $Cached } else { Get-AzlDomainJoinLdapComputer -Spec $Spec -SecretResolver $SecretResolver -Latch $Latch -LdapQuery $LdapQuery }
+    Add-Member -InputObject $ds -NotePropertyName ldap -NotePropertyValue $answer -Force
+    return $answer
+}
+
 function Invoke-AzlDomainJoinStep {    <#
     .SYNOPSIS
         Applies one DomainJoin plan item (join, move, add the local administrators, or finish a pending restart) on one node and verifies the result.
@@ -643,18 +895,19 @@ function Invoke-AzlDomainJoinStep {    <#
         [scriptblock]$WaitForRestart,
         [object]$WaitContext,
         [hashtable]$EventContext,
-        [hashtable]$Latch
+        [hashtable]$Latch,
+        [scriptblock]$LdapQuery
     )
     $node = [string]$Spec.Name
     $dj = $Spec.DomainJoin
     $kind = [string]$Item.Apply.kind
     $transportKind = [string]$Transport.Kind
     $changes = [System.Collections.Generic.List[object]]::new()
-    $out = [ordered]@{ Changes = $null; Failed = $false; Error = ''; NextAction = ''; Restarted = $false; Joined = $false; Moved = $false; State = $State; Kind = $kind }
+    $out = [ordered]@{ Changes = $null; Failed = $false; Error = ''; NextAction = ''; Restarted = $false; Joined = $false; Moved = $false; State = $State; Kind = $kind; Unverified = $false; Ldap = $null }
     $changeId = [guid]::NewGuid().ToString('N')
     # A pending restart finishes the change of the marker: the node refuses a restart for any other changeId.
     # (An empty one asks the node to accept the marker whatever its changeId.)
-    if ($kind -eq 'domain-restart') { $changeId = [string](Get-AzlProp $Item.Apply 'changeId' '') }
+    if ($kind -in 'domain-restart', 'domain-finalize') { $changeId = [string](Get-AzlProp $Item.Apply 'changeId' '') }
     $id = [string]$Item.Apply.id
     $emit = { param($name, $evidence, $level, $next, $data) Send-AzlDomainJoinEvent -EventContext $EventContext -Node $node -State $name -Evidence $evidence -Level $level -NextAction $next -Transport $transportKind -Data $data }
     $fail = {
@@ -680,6 +933,23 @@ function Invoke-AzlDomainJoinStep {    <#
             $changes.Add([pscustomobject]@{ Id = $id; Status = 'changed'; Detail = [string]$result.detail })
             & $emit 'DomainAdminsConfigured' "$node local Administrators: $($result.detail)" 'Info' '' @{ members = @($dj.LocalAdminMembers); added = @($result.added) }
         }
+        $out.Changes = $changes.ToArray()
+        return [pscustomobject]$out
+    }
+
+    if ($kind -eq 'domain-finalize') {
+        # The join was verified (the OU read, by the node or over LDAP from this host) in a run that could not complete the durable marker: complete it. Nothing is joined or restarted.
+        try { $null = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name DomainJoinApply) -Parameters @{ mode = 'finalize'; domain = $dj.Domain; ou = $dj.OuPath; changeId = $changeId } -TimeoutSeconds 300 -Tries 1 }
+        catch {
+            if ($_.Exception.Data['AzlState'] -eq 'Unknown') { $changes.Add([pscustomobject]@{ Id = $id; Status = 'unknown'; Detail = $_.Exception.Message }); $out.Changes = $changes.ToArray(); return [pscustomobject]$out }
+            & $fail "The marker of $node could not be completed: $($_.Exception.Message)" 'Run again; the join is verified and only its marker is left.' ''
+            $out.Changes = $changes.ToArray()
+            return [pscustomobject]$out
+        }
+        $by = [string](Get-AzlProp $Item.Apply 'verifiedBy' 'node')
+        $changes.Add([pscustomobject]@{ Id = $id; Status = 'changed'; Detail = "$node is a member of $($dj.Domain), OU verified$(if ($by -eq 'ldap') { ' in Active Directory over LDAP' }), join marker completed" })
+        $out.Joined = $true
+        & $emit 'DomainJoined' "$node is a member of $($dj.Domain) in $($dj.OuPath)" 'Info' '' @{ domain = $dj.Domain; ou = $dj.OuPath; netbios = $dj.Netbios; dn = [string](Get-AzlProp $Item.Apply 'dn' ''); ouVerifiedBy = $by }
         $out.Changes = $changes.ToArray()
         return [pscustomobject]$out
     }
@@ -805,19 +1075,29 @@ function Invoke-AzlDomainJoinStep {    <#
         }
         catch { Write-Verbose "The distinguished name of $node was not read: $($_.Exception.Message)" }
     }
+    # Still no distinguished name on the node (the refresh did not fill it in time, or the call failed): ask Active Directory over LDAP from this host. The node's own answer wins when it has one.
+    if (-not [string](Get-AzlProp $after 'domainJoin.dn' '') -and (Get-AzlProp $after 'domainJoin')) {
+        $ldap = Add-AzlDomainJoinLdapCheck -Spec $Spec -State $after -SecretResolver $SecretResolver -Latch $Latch -LdapQuery $LdapQuery
+        $out.Ldap = $ldap
+    }
     $bad = @(Test-AzlDomainJoinVerification -Spec $Spec -State $after | Where-Object { -not $_.Ok })
     if ($bad.Count) {
-        & $fail "The node joined $($dj.Domain) but the check after the restart failed: $(($bad | ForEach-Object { "$($_.Check) ($($_.Detail))" }) -join '; ')." 'Test-ComputerSecureChannel -Repair on the node, check the time and the domain controllers, then run again. If the OU is unverified or wrong: run gpupdate /target:computer /force on the node and check in Active Directory which OU the computer object is in (an account that already existed is reused where it is, and is not moved after the deployment).' ''
+        # Only "unverified" (the joined node is a member, secure channel and domain are right, the OU just could not be read): the other steps are independent and go on.
+        $out.Unverified = (@($bad | Where-Object { -not $_.Unverified }).Count -eq 0)
+        $next = if ($out.Unverified) { "The node is joined. Its OU could not be read from the node or from Active Directory: run again when a domain controller of identity.active_directory.domain_controllers answers on TCP 389 from the host running this command and the join credential is accepted (the join is not repeated; only the check and the marker are done), or check in Active Directory which OU the computer object is in (an account that already existed is reused where it is, and is not moved after the deployment)." } else { 'Test-ComputerSecureChannel -Repair on the node, check the time and the domain controllers, then run again. If the OU is wrong: check in Active Directory which OU the computer object is in (an account that already existed is reused where it is, and is not moved after the deployment).' }
+        & $fail "The node joined $($dj.Domain) but the check after the restart failed: $(($bad | ForEach-Object { "$($_.Check) ($($_.Detail))" }) -join '; ')." $next ''
         $out.Changes = $changes.ToArray()
         return [pscustomobject]$out
     }
     try { $null = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name DomainJoinApply) -Parameters @{ mode = 'finalize'; domain = $dj.Domain; ou = $dj.OuPath; changeId = $changeId } -TimeoutSeconds 300 -Tries 1 }
     catch { Write-Verbose "The marker of $node was not completed: $($_.Exception.Message)" }
     $out.Joined = $true
-    $changes.Add([pscustomobject]@{ Id = "$id-verified"; Status = 'changed'; Detail = "$node is a member of $($dj.Domain), secure channel ok$(if (Get-AzlProp $after 'domainJoin.dn') { ", OU $(Get-DjOuOfDn ([string]$after.domainJoin.dn))" })" })
-    & $emit 'DomainJoined' "$node is a member of $($dj.Domain) in $($dj.OuPath)" 'Info' '' @{ domain = $dj.Domain; ou = $dj.OuPath; netbios = $dj.Netbios; dn = [string](Get-AzlProp $after 'domainJoin.dn' '') }
+    $viaLdap = (-not [string](Get-AzlProp $after 'domainJoin.dn' '')) -and [bool](Get-AzlProp $after 'domainJoin.ldap.found' $false)
+    $dnNow = if ([string](Get-AzlProp $after 'domainJoin.dn' '')) { [string]$after.domainJoin.dn } elseif ($viaLdap) { [string]$after.domainJoin.ldap.dn } else { '' }
+    $changes.Add([pscustomobject]@{ Id = "$id-verified"; Status = 'changed'; Detail = "$node is a member of $($dj.Domain), secure channel ok$(if ($dnNow) { ", OU $(Get-DjOuOfDn $dnNow)" })$(if ($viaLdap) { ' (read in Active Directory over LDAP)' })" })
+    & $emit 'DomainJoined' "$node is a member of $($dj.Domain) in $($dj.OuPath)" 'Info' '' @{ domain = $dj.Domain; ou = $dj.OuPath; netbios = $dj.Netbios; dn = $dnNow; ouVerifiedBy = $(if ($viaLdap) { 'ldap' } else { 'node' }) }
     $out.Changes = $changes.ToArray()
     return [pscustomobject]$out
 }
 
-Export-ModuleMember -Function Get-AzlDomainJoinSpec, Get-AzlDomainJoinReadParameter, Get-AzlDomainJoinPlanItem, Test-AzlDomainJoinVerification, Get-AzlDomainJoinSummary, Send-AzlDomainJoinEvent, Send-AzlDomainJoinPlanEvent, Merge-AzlDomainJoinOutcome, Add-AzlDomainJoinOuCheck, Invoke-AzlDomainJoinStep
+Export-ModuleMember -Function Get-AzlDomainJoinSpec, Get-AzlDomainJoinReadParameter, Get-AzlDomainJoinPlanItem, Test-AzlDomainJoinVerification, Get-AzlDomainJoinSummary, Send-AzlDomainJoinEvent, Send-AzlDomainJoinPlanEvent, Merge-AzlDomainJoinOutcome, Add-AzlDomainJoinOuCheck, Get-AzlDomainJoinLdapComputer, Add-AzlDomainJoinLdapCheck, Invoke-AzlDomainJoinStep

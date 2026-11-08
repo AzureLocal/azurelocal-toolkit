@@ -962,6 +962,7 @@ function Invoke-AzlNodeConfiguration {
         [int]$MaxPasses = 6,
         [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref },
         [hashtable]$DomainJoinLatch, # DOMAINJOIN HOOK: shared by the nodes of one run; tripped by the first rejected join credential
+        [scriptblock]$LdapQuery, # DOMAINJOIN HOOK: test seam of the host-side LDAP lookup of the computer object (default: System.DirectoryServices)
         [hashtable]$GuardSetting,
         [object]$Clock,
         [object]$EventContext,
@@ -1006,7 +1007,7 @@ function Invoke-AzlNodeConfiguration {
     $state = $null
     $plan = @()
     # DOMAINJOIN HOOK: the join is tried once per run (a wrong password must not be sent twice); its pass does not count against -MaxPasses.
-    $djDone = @{}; $djFailure = $null; $djMoved = $false; $limit = $MaxPasses; $ouChecked = $false; $ouCheck = $null
+    $djDone = @{}; $djFailure = $null; $djMoved = $false; $limit = $MaxPasses; $ouChecked = $false; $ouCheck = $null; $ldapCheck = $null
     # The storage wipe is tried once per run, like the join: whatever the node shows afterwards, it is never wiped a second time in this run.
     $storageDone = $false
     # The result of the node so far (the final one, or the partial one that rides on an error). Converged needs no pending change, nothing blocked, no error, and every
@@ -1052,6 +1053,10 @@ function Invoke-AzlNodeConfiguration {
         if ('DomainJoin' -in $Step -and $Spec.DomainJoin.Applicable -and (Get-AzlProp $state 'domainJoin')) {
             if (-not $ouChecked) { $null = Add-AzlDomainJoinOuCheck -Spec $Spec -Transport $Transport -State $state -SecretResolver $SecretResolver -Execute:$Execute -Latch $DomainJoinLatch; $ouCheck = Get-AzlProp $state 'domainJoin.ou'; $ouChecked = [bool](Get-AzlProp $ouCheck 'checked' $false) -or [bool](Get-AzlProp $ouCheck 'authFailed' $false) }
             elseif ($ouCheck) { Add-Member -InputObject $state.domainJoin -NotePropertyName ou -NotePropertyValue $ouCheck -Force }
+            # A member whose node has no distinguished name yet (Group Policy stores it after a refresh): the computer object is looked up in Active Directory over LDAP
+            # from this host, read only, with the join credential (one attempt per node in this call, and the run-wide latch applies). The node's own answer wins when it has one.
+            $ldapAnswer = Add-AzlDomainJoinLdapCheck -Spec $Spec -State $state -SecretResolver $SecretResolver -Latch $DomainJoinLatch -LdapQuery $LdapQuery -Cached $ldapCheck
+            if ($ldapAnswer) { $ldapCheck = $ldapAnswer }
         }
         $plan = @(Compare-AzlNodeState @compareArgs -State $state)
         if ($pass -eq 1 -and 'DomainJoin' -in $Step) { Send-AzlDomainJoinPlanEvent -EventContext $djEvent -Node $node -Plan $plan -Transport $Transport.Kind } # DOMAINJOIN HOOK
@@ -1084,11 +1089,18 @@ function Invoke-AzlNodeConfiguration {
             $waitContext = @{ Transport = $Transport; Node = $node; ReadParameters = $readParameters; Secrets = $secrets }
             foreach ($djItem in $djTodo) {
                 $djDone[[string]$djItem.Apply.kind] = $true
-                $dj = Invoke-AzlDomainJoinStep -Spec $Spec -Transport $Transport -State $state -Item $djItem -SecretResolver $SecretResolver -NoRestart:$NoRestart -WaitForRestart $waitBlock -WaitContext $waitContext -EventContext $djEvent -Latch $DomainJoinLatch
+                $dj = Invoke-AzlDomainJoinStep -Spec $Spec -Transport $Transport -State $state -Item $djItem -SecretResolver $SecretResolver -NoRestart:$NoRestart -WaitForRestart $waitBlock -WaitContext $waitContext -EventContext $djEvent -Latch $DomainJoinLatch -LdapQuery $LdapQuery
                 foreach ($c in $dj.Changes) { $changes.Add([pscustomobject]@{ Node = $node; Pass = $pass; Id = $c.Id; Status = $c.Status; Detail = $c.Detail }) }
                 if ($dj.Restarted) { $restarted = $true; $state = $dj.State }
                 if ($dj.Moved) { $djMoved = $true }
-                if ($dj.Failed) { $djFailure = $dj; $plan = @(Merge-AzlDomainJoinOutcome -Plan $plan -Failure $djFailure); $stopRun = $true; break }
+                if ($dj.Ldap) { $ldapCheck = $dj.Ldap }
+                if ($dj.Failed) {
+                    $djFailure = $dj
+                    $plan = @(Merge-AzlDomainJoinOutcome -Plan $plan -Failure $djFailure)
+                    # The node joined and restarted; only the OU could not be verified. The other steps do not depend on that answer: they go on (the DomainJoin item stays
+                    # Blocked in the plan, so the node is not converged). Any other failure stops the node here, as before.
+                    if (-not $dj.Unverified) { $stopRun = $true; break }
+                }
             }
             if ($stopRun) { break }
             $limit++
