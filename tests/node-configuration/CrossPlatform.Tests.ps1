@@ -17,6 +17,11 @@ BeforeDiscovery {
             'scripts/common/node-configuration/AzlNodeTransport.psm1'
             'scripts/common/infrastructure/AzlInfrastructure.psm1'
             'scripts/common/azure-local/AzlAzure.psm1'
+            'scripts/common/remoting/AzlRemotingProfile.psm1'
+            'scripts/common/remoting/AzlRemotingPayload.psm1'
+            'scripts/common/remoting/AzlRemotingSession.psm1'
+            'scripts/common/remoting/AzlRemoteManagement.psm1'
+            'scripts/common/remoting/AzlRemotingBootstrap.psm1'
         )) {
         $path = $repoRoot
         foreach ($segment in $relative.Split('/')) { $path = Join-Path $path $segment }

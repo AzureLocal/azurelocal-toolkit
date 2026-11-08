@@ -62,6 +62,9 @@
     generator reads it. Default: the temp folder.
 .PARAMETER Execute
     Make the changes. Without it nothing on the node changes.
+.PARAMETER UseSsl
+    Open the WinRM sessions over HTTPS (TCP 5986) with a full certificate check. The remote management profile (scenario.environment_class)
+    decides which endpoint the OS configuration run uses.
 .EXAMPLE
     ./Set-AzureLocalNodeConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json
 .EXAMPLE
@@ -85,7 +88,9 @@ param(
     [switch]$SpecOnly,
     [int]$MaxPasses = 3,
     [string]$ReportPath,
-    [switch]$Execute
+    [switch]$Execute,
+    # HOOK remoting-profiles: open WinRM sessions over HTTPS (5986). The run decides it from the profile and what answers.
+    [switch]$UseSsl
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -95,12 +100,17 @@ Import-Module (Join-Path (Join-Path $common 'infrastructure') 'AzlInfrastructure
 Import-Module (Join-Path (Join-Path $common 'azure-local') 'AzlAzure.psm1') -Force
 Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlNodeConfiguration.psm1') -Force
 Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlNodeTransport.psm1') -Force
+Import-Module (Join-Path (Join-Path $common 'remoting') 'AzlRemotingProfile.psm1') -Force
 
 function Write-Line([string]$Text) { Write-Information -MessageData $Text -InformationAction Continue }
 
 Set-AzlNodeRetryPolicy -Tries $RetryTries -DelaySeconds $RetryDelaySeconds
 $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation:$SkipValidation
 $handoff = if ($HandoffFile) { Read-AzlHandoff -Path $HandoffFile } else { $null }
+# The remote management profile of the class (missing class = production). Printed first; TrustedHosts on this machine is managed by Invoke-AzureLocalOsConfiguration.ps1, not here.
+$remotingProfile = Resolve-AzlRemotingProfile -Infrastructure $infra
+foreach ($line in @(Format-AzlRemotingProfile -RemotingProfile $remotingProfile)) { Write-Line $line }
+Assert-AzlRemotingProfile -RemotingProfile $remotingProfile
 $allSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
 $steps = if ($Step) { $Step } else { $allSteps }
 
@@ -117,7 +127,7 @@ if ($bundlePath -and -not $SpecOnly -and ('Sbe' -in $steps -or 'Drivers' -in $st
 }
 elseif (-not $bundlePath) { Write-Line 'hardware.sbe.bundle_path is not set: the SBE and the OEM drivers are skipped.' }
 
-$specs = foreach ($n in $nodes) { Get-AzlNodeSpec -Infrastructure $infra -Node $n -Handoff $handoff -SbeBundle $bundle }
+$specs = foreach ($n in $nodes) { Get-AzlNodeSpec -Infrastructure $infra -Node $n -Handoff $handoff -SbeBundle $bundle -RemotingProfile $remotingProfile }
 
 if ($SpecOnly) {
     foreach ($s in $specs) {
@@ -151,7 +161,7 @@ else {
     if (-not $Credential) { throw 'The WinRM transport needs -Credential (the nodes'' local administrator).' }
     $addresses = @{}
     foreach ($s in $specs) { $addresses[$s.Name] = if ($NodeAddress -and $NodeAddress.ContainsKey($s.Name)) { [string]$NodeAddress[$s.Name] } else { $s.Management.Ip } }
-    $nodeTransport = New-AzlWinRmTransport -Address $addresses -Credential $Credential
+    $nodeTransport = New-AzlWinRmTransport -Address $addresses -Credential $Credential -UseSsl:$UseSsl
 }
 # The SBE package can't ride Arc Run Command. With hardware.sbe.delivery winrm_copy and the nodes reached over Arc, the copy gets
 # its own WinRM transport (sessions open only when a file has to be copied). Without -Credential the Sbe step reports why.
@@ -160,7 +170,7 @@ $sbeTransport = $null
 if ($bundle -and $sbeDelivery -eq 'winrm_copy' -and $nodeTransport.Kind -ne 'WinRM' -and $Credential) {
     $sbeAddresses = @{}
     foreach ($s in $specs) { $sbeAddresses[$s.Name] = if ($NodeAddress -and $NodeAddress.ContainsKey($s.Name)) { [string]$NodeAddress[$s.Name] } else { $s.Management.Ip } }
-    $sbeTransport = New-AzlWinRmTransport -Address $sbeAddresses -Credential $Credential
+    $sbeTransport = New-AzlWinRmTransport -Address $sbeAddresses -Credential $Credential -UseSsl:$UseSsl
 }
 Write-Line "Transport: $($nodeTransport.Kind). $(if ($Execute) { 'EXECUTE: changes will be made.' } else { 'Plan only: nothing on the nodes changes. Add -Execute.' })"
 

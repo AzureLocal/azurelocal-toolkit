@@ -78,7 +78,7 @@ function ConvertTo-RpBool {
     return $null
 }
 
-function New-RpIssue {
+function Get-RpIssue {
     param([string]$Id, [ValidateSet('error', 'warning', 'info')][string]$Severity, [string]$Path, [string]$Message)
     [pscustomobject]@{ Id = $Id; Severity = $Severity; Path = $Path; Message = $Message }
 }
@@ -258,8 +258,8 @@ function Resolve-AzlRemotingProfile {
         Authentication, Rdp, Icmp, Certificate, Bootstrap, Baseline, NodeToNode, AfterDomainJoin, ServerIdentity, NodeAddresses,
         Issues, Warnings, Errors. Errors is empty when the profile can be used.
     .EXAMPLE
-        $profile = Resolve-AzlRemotingProfile -Infrastructure (Import-AzlInfrastructure -Path ./infrastructure.yml)
-        $profile.Firewall.RemoteAddress
+        $RemotingProfile = Resolve-AzlRemotingProfile -Infrastructure (Import-AzlInfrastructure -Path ./infrastructure.yml)
+        $RemotingProfile.Firewall.RemoteAddress
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -271,11 +271,12 @@ function Resolve-AzlRemotingProfile {
     )
     if (-not $Data) { $Data = Get-AzlRemotingProfileData -Path $DataPath }
     $issues = [System.Collections.Generic.List[object]]::new()
-    $issue = { param($id, $severity, $path, $message) $issues.Add((New-RpIssue $id $severity $path $message)) }
+    $issue = { param($id, $severity, $path, $message) $issues.Add((Get-RpIssue $id $severity $path $message)) }
     $settings = [ordered]@{}
     $set = { param($name, $value, $source) $settings[$name] = [pscustomobject]@{ Value = $value; Source = $source } }
     $ov = @{}
-    foreach ($key in $Override.Keys) { $ov[([string]$key).Trim().ToLowerInvariant().Replace('-', '_')] = $Override[$key] }
+    # snake_case, whatever the caller wrote (AllowUnencrypted, allow-unencrypted, allow_unencrypted)
+    foreach ($key in $Override.Keys) { $ov[([regex]::Replace(([string]$key).Trim(), '([a-z0-9])([A-Z])', '$1_$2')).ToLowerInvariant().Replace('-', '_')] = $Override[$key] }
 
     # ---- the baseline: the table must keep it, and no override may touch it
     foreach ($name in $script:RequiredBaseline.Keys) {
@@ -432,7 +433,6 @@ function Resolve-AzlRemotingProfile {
             }
             & $addSource $info $network.From 'network'
         }
-        $networkSources = @($sources.ToArray())
         if ($sourceRow.includeAllowedSourceCidrs) {
             for ($i = 0; $i -lt $listed.Count; $i++) {
                 $path = "os_configuration.remoting.allowed_source_cidrs[$i]"
@@ -467,12 +467,17 @@ function Resolve-AzlRemotingProfile {
     }
     & $set 'firewall.remoteAddress' ($remoteAddress -join ', ') $(if ($effectiveAny) { "class table ($class): Any" } else { 'computed from the master file networks, allowed_source_cidrs and the node addresses' })
 
+    # ---- node to node: Azure Local needs ICMP, SMB 445 and WS-Man 5985 open between all nodes, in every class
+    $nodeCidrs = @($nodeAddresses | ForEach-Object { ConvertTo-AzlCidr -Text $_.Address } | Where-Object Valid | ForEach-Object { $_.Normalized } | Select-Object -Unique)
+
     # ---- RDP and ICMP
     $scopeOf = {
         param($scopeName)
         switch ($scopeName) {
             'sameAsWinRm' { return @($remoteAddress) }
             'managementNetworks' { return @($networkRemote) }
+            'managementNetworksAndNodes' { return @(@($networkRemote) + @($nodeCidrs) | Select-Object -Unique) }
+            'nodesOnly' { return @($nodeCidrs) }
             default { return @() }
         }
     }
@@ -558,7 +563,7 @@ function Resolve-AzlRemotingProfile {
         Summary         = [string]$row.summary
         Settings        = $settings
         Firewall        = [pscustomobject]@{
-            AnySource = $effectiveAny; RemoteAddress = $remoteAddress; Profiles = @('Domain', 'Private', 'Public'); LocalAddress = 'management IP of the node when known'
+            AnySource = $effectiveAny; RemoteAddress = $remoteAddress; NodeAddress = $nodeCidrs; Profiles = @('Domain', 'Private', 'Public'); LocalAddress = 'management IP of the node when known'
             RdpEnabled = $rdpEnabled; RdpRemoteAddress = $rdpRemote; IcmpEnabled = $icmpEnabled; IcmpRemoteAddress = $icmpRemote; Sources = $sources.ToArray()
         }
         TrustedHosts    = $trustedHosts
@@ -588,9 +593,9 @@ function Assert-AzlRemotingProfile {
         names the allowed values.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][object]$Profile)
-    if ($Profile.Errors.Count -eq 0) { return }
-    $exception = [System.ArgumentException]::new("The remote management profile can't be used:`n$(($Profile.Errors | ForEach-Object { "- $_" }) -join "`n")")
+    param([Parameter(Mandatory)][object]$RemotingProfile)
+    if ($RemotingProfile.Errors.Count -eq 0) { return }
+    $exception = [System.ArgumentException]::new("The remote management profile can't be used:`n$(($RemotingProfile.Errors | ForEach-Object { "- $_" }) -join "`n")")
     $exception.Data['AzlInput'] = $true
     throw $exception
 }
@@ -604,10 +609,10 @@ function Get-AzlRemotingFinding {
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][AllowNull()][object]$Infrastructure, [string]$DataPath = $script:DefaultDataPath)
-    $profile = $null
-    try { $profile = Resolve-AzlRemotingProfile -Infrastructure $Infrastructure -DataPath $DataPath }
+    $RemotingProfile = $null
+    try { $RemotingProfile = Resolve-AzlRemotingProfile -Infrastructure $Infrastructure -DataPath $DataPath }
     catch { return }   # a missing table is a toolkit problem, not a finding on the master file
-    foreach ($i in @($profile.Issues | Where-Object { $_.Id -like 'AZL-*' })) {
+    foreach ($i in @($RemotingProfile.Issues | Where-Object { $_.Id -like 'AZL-*' })) {
         [pscustomobject]@{ Id = $i.Id; Severity = $i.Severity; Path = $i.Path; Message = $i.Message; LearnUrl = '' }
     }
 }
@@ -624,20 +629,20 @@ function Format-AzlRemotingProfile {
     #>
     [CmdletBinding()]
     [OutputType([string[]])]
-    param([Parameter(Mandatory)][object]$Profile)
+    param([Parameter(Mandatory)][object]$RemotingProfile)
     $lines = [System.Collections.Generic.List[string]]::new()
-    $lines.Add("Remote management profile: class $($Profile.Class) ($($Profile.ClassSource)); posture $($Profile.Posture)")
-    $lines.Add("  $($Profile.Summary)")
-    foreach ($name in $Profile.Settings.Keys) {
+    $lines.Add("Remote management profile: class $($RemotingProfile.Class) ($($RemotingProfile.ClassSource)); posture $($RemotingProfile.Posture)")
+    $lines.Add("  $($RemotingProfile.Summary)")
+    foreach ($name in $RemotingProfile.Settings.Keys) {
         if ($name -eq 'class') { continue }
-        $s = $Profile.Settings[$name]
+        $s = $RemotingProfile.Settings[$name]
         $lines.Add(("  {0,-24} {1}  [{2}]" -f $name, $s.Value, $s.Source))
     }
-    $lines.Add("  WinRM $(if ($Profile.Transport.HttpsEnabled) { "HTTPS $($Profile.Transport.HttpsPort)" })$(if ($Profile.Transport.HttpsEnabled -and $Profile.Transport.HttpEnabled) { ' and ' })$(if ($Profile.Transport.HttpEnabled) { "HTTP $($Profile.Transport.HttpPort)" })$(if ($Profile.Transport.RemoveHttpAfterHttps) { '; the HTTP listener is removed once HTTPS is verified' })")
-    $lines.Add("  authentication: $($Profile.Authentication.Description)")
-    $lines.Add("  Arc bootstrap: $($Profile.Bootstrap.Reason)")
-    foreach ($w in $Profile.Warnings) { $lines.Add("  WARNING: $w") }
-    foreach ($e in $Profile.Errors) { $lines.Add("  ERROR: $e") }
+    $lines.Add("  WinRM $(if ($RemotingProfile.Transport.HttpsEnabled) { "HTTPS $($RemotingProfile.Transport.HttpsPort)" })$(if ($RemotingProfile.Transport.HttpsEnabled -and $RemotingProfile.Transport.HttpEnabled) { ' and ' })$(if ($RemotingProfile.Transport.HttpEnabled) { "HTTP $($RemotingProfile.Transport.HttpPort)" })$(if ($RemotingProfile.Transport.RemoveHttpAfterHttps) { '; the HTTP listener is removed once HTTPS is verified' })")
+    $lines.Add("  authentication: $($RemotingProfile.Authentication.Description)")
+    $lines.Add("  Arc bootstrap: $($RemotingProfile.Bootstrap.Reason)")
+    foreach ($w in $RemotingProfile.Warnings) { $lines.Add("  WARNING: $w") }
+    foreach ($e in $RemotingProfile.Errors) { $lines.Add("  ERROR: $e") }
     return $lines.ToArray()
 }
 
@@ -648,28 +653,28 @@ function ConvertTo-AzlRemotingReport {
         bootstrap and the warnings. Holds no secret (a certificate is a thumbprint or a keyvault:// reference).
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][object]$Profile)
+    param([Parameter(Mandatory)][object]$RemotingProfile)
     $settings = [ordered]@{}
-    foreach ($k in $Profile.Settings.Keys) { $settings[$k] = [ordered]@{ value = [string]$Profile.Settings[$k].Value; source = $Profile.Settings[$k].Source } }
+    foreach ($k in $RemotingProfile.Settings.Keys) { $settings[$k] = [ordered]@{ value = [string]$RemotingProfile.Settings[$k].Value; source = $RemotingProfile.Settings[$k].Source } }
     [ordered]@{
-        class           = $Profile.Class
-        classSource     = $Profile.ClassSource
-        posture         = $Profile.Posture
-        relaxed         = $Profile.Relaxed
+        class           = $RemotingProfile.Class
+        classSource     = $RemotingProfile.ClassSource
+        posture         = $RemotingProfile.Posture
+        relaxed         = $RemotingProfile.Relaxed
         settings        = $settings
         firewall        = [ordered]@{
-            anySource = $Profile.Firewall.AnySource; remoteAddress = @($Profile.Firewall.RemoteAddress); rdpEnabled = $Profile.Firewall.RdpEnabled; rdpRemoteAddress = @($Profile.Firewall.RdpRemoteAddress)
-            icmpEnabled = $Profile.Firewall.IcmpEnabled; icmpRemoteAddress = @($Profile.Firewall.IcmpRemoteAddress); profiles = @($Profile.Firewall.Profiles)
-            sources = @($Profile.Firewall.Sources | ForEach-Object { [ordered]@{ cidr = $_.Cidr; from = $_.From; kind = $_.Kind } })
+            anySource = $RemotingProfile.Firewall.AnySource; remoteAddress = @($RemotingProfile.Firewall.RemoteAddress); rdpEnabled = $RemotingProfile.Firewall.RdpEnabled; rdpRemoteAddress = @($RemotingProfile.Firewall.RdpRemoteAddress)
+            icmpEnabled = $RemotingProfile.Firewall.IcmpEnabled; icmpRemoteAddress = @($RemotingProfile.Firewall.IcmpRemoteAddress); profiles = @($RemotingProfile.Firewall.Profiles)
+            sources = @($RemotingProfile.Firewall.Sources | ForEach-Object { [ordered]@{ cidr = $_.Cidr; from = $_.From; kind = $_.Kind } })
         }
-        trustedHosts    = [ordered]@{ mode = $Profile.TrustedHosts.Mode; value = $Profile.TrustedHosts.Value; restoreAfterRun = $Profile.TrustedHosts.RestoreAfterRun }
-        transport       = [ordered]@{ scheme = $Profile.Transport.Scheme; https = $Profile.Transport.HttpsEnabled; http = $Profile.Transport.HttpEnabled; removeHttpAfterHttps = $Profile.Transport.RemoveHttpAfterHttps }
-        authentication  = $Profile.Authentication.Mode
-        certificate     = [ordered]@{ mode = $Profile.Certificate.Mode; thumbprint = $Profile.Certificate.Thumbprint; reference = $Profile.Certificate.Reference }
-        bootstrap       = [ordered]@{ chosen = $Profile.Bootstrap.Chosen; permitted = $Profile.Bootstrap.Permitted; approval = $Profile.Bootstrap.Approval; approved = $Profile.Bootstrap.Approved; reason = $Profile.Bootstrap.Reason }
-        baseline        = $Profile.Baseline
-        warnings        = @($Profile.Warnings)
-        errors          = @($Profile.Errors)
+        trustedHosts    = [ordered]@{ mode = $RemotingProfile.TrustedHosts.Mode; value = $RemotingProfile.TrustedHosts.Value; restoreAfterRun = $RemotingProfile.TrustedHosts.RestoreAfterRun }
+        transport       = [ordered]@{ scheme = $RemotingProfile.Transport.Scheme; https = $RemotingProfile.Transport.HttpsEnabled; http = $RemotingProfile.Transport.HttpEnabled; removeHttpAfterHttps = $RemotingProfile.Transport.RemoveHttpAfterHttps }
+        authentication  = $RemotingProfile.Authentication.Mode
+        certificate     = [ordered]@{ mode = $RemotingProfile.Certificate.Mode; thumbprint = $RemotingProfile.Certificate.Thumbprint; reference = $RemotingProfile.Certificate.Reference }
+        bootstrap       = [ordered]@{ chosen = $RemotingProfile.Bootstrap.Chosen; permitted = $RemotingProfile.Bootstrap.Permitted; approval = $RemotingProfile.Bootstrap.Approval; approved = $RemotingProfile.Bootstrap.Approved; reason = $RemotingProfile.Bootstrap.Reason }
+        baseline        = $RemotingProfile.Baseline
+        warnings        = @($RemotingProfile.Warnings)
+        errors          = @($RemotingProfile.Errors)
     }
 }
 

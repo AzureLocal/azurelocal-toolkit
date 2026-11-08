@@ -83,7 +83,10 @@ BeforeAll {
     function Invoke-Run {
         param([string]$Infra, [string[]]$Handoff, [string]$Mode = 'Plan', [hashtable]$Extra = @{})
         $out = Join-Path $TestDrive "out-$([guid]::NewGuid().ToString('N').Substring(0, 6))"
-        $arguments = @{ InfrastructureFile = $Infra; Mode = $Mode; ReportDirectory = $out; SkipValidation = $true } + $Extra
+        # A fake TrustedHosts store: a test never changes the setting of the machine it runs on.
+        $global:AzlTrustedHosts = ''
+        $store = [pscustomobject]@{ Supported = $true; Get = { $global:AzlTrustedHosts }; Set = { param($Value) $global:AzlTrustedHosts = $Value } }
+        $arguments = @{ InfrastructureFile = $Infra; Mode = $Mode; ReportDirectory = $out; SkipValidation = $true; TrustedHostsStore = $store } + $Extra
         if ($Handoff) { $arguments.HandoffPath = $Handoff }
         $result = Invoke-AzlOsConfiguration @arguments 6>$null 3>$null
         $result | Add-Member -NotePropertyName Out -NotePropertyValue $out -Force
@@ -474,7 +477,7 @@ Describe 'Mixed cluster and the ISO path' {
     }
     It 'no route to the node is reported with the address' {
         $global:AzlPortAnswers = $true
-        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'iso' }
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'iso'; $d.scenario.environment_class = 'lab' }
         $global:AzlArcNone = @('iic-n01', 'iic-n02')
         $calls = 0
         Mock -ModuleName AzlOsConfigurationRun Test-AzlWinRmPort { $global:AzlPortCalls++; $global:AzlPortCalls -le 2 }

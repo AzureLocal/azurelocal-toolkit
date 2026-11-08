@@ -89,6 +89,17 @@ function Get-RuleState([string]$name) {
         protocol = [string]$pf.Protocol; port = [string]$pf.LocalPort
     }
 }
+# The rules that let WinRM in, found by what they allow (inbound TCP 5985 or 5986), not by a name: the names differ by Windows version
+# (WINRM-HTTP-In-TCP, WINRM-HTTP-In-TCP-PUBLIC, ...). The rules of this tool are left out.
+function Get-WinRmRuleName {
+    $names = @()
+    foreach ($f in @(Get-NetFirewallPortFilter -Protocol TCP -ErrorAction SilentlyContinue | Where-Object { @($_.LocalPort) -contains '5985' -or @($_.LocalPort) -contains '5986' })) {
+        foreach ($r in @(Get-NetFirewallRule -AssociatedNetFirewallPortFilter $f -ErrorAction SilentlyContinue)) {
+            if ([string]$r.Direction -eq 'Inbound' -and [string]$r.Action -eq 'Allow' -and [string]$r.Name -notlike 'AzlOsConfig-*') { $names += [string]$r.Name }
+        }
+    }
+    return @($names | Select-Object -Unique)
+}
 function Get-WsmanValue([string]$path) {
     try { return [string](Get-Item -LiteralPath $path -ErrorAction Stop).Value } catch { return $null }
 }
@@ -135,10 +146,11 @@ function Get-CertState($c) {
 
 $script:ReadBody = @'
 $err = @{}
-$service = $null; $listeners = @(); $rules = @(); $certs = @(); $categories = @(); $rdp = $null; $tls = $null; $domain = $false; $addresses = @(); $wantCert = $null
+$service = $null; $listeners = @(); $rules = @(); $winrmRules = @(); $certs = @(); $categories = @(); $rdp = $null; $tls = $null; $domain = $false; $addresses = @(); $wantCert = $null
 try { $service = Get-ServiceState } catch { $err['service'] = $_.Exception.Message }
 try { $listeners = @(Get-ListenerState) } catch { $err['listeners'] = $_.Exception.Message }
 try { foreach ($n in @(Get-P $P 'ruleNames' @())) { $r = Get-RuleState ([string]$n); if ($r) { $rules += $r } } } catch { $err['rules'] = $_.Exception.Message }
+try { foreach ($n in @(Get-WinRmRuleName)) { $r = Get-RuleState $n; if ($r) { $winrmRules += $r } } } catch { $err['winrmRules'] = $_.Exception.Message }
 try {
     $min = (Get-Date).AddDays(1)
     $certs = @(Get-ChildItem Cert:\LocalMachine\My -ErrorAction SilentlyContinue | Where-Object { $_.NotAfter -gt $min -and $_.HasPrivateKey } | Select-Object -First 12 | ForEach-Object { Get-CertState $_ })
@@ -161,7 +173,7 @@ $pending = $null
 $pendingFile = Join-Path $stateRoot 'pending.json'
 if (Test-Path -LiteralPath $pendingFile) { try { $pending = Get-Content -LiteralPath $pendingFile -Raw | ConvertFrom-Json } catch { $pending = $null } }
 Write-Result ([pscustomobject]@{
-        v = 1; host = $env:COMPUTERNAME; domainJoined = $domain; service = $service; listeners = $listeners; rules = $rules; certs = $certs
+        v = 1; host = $env:COMPUTERNAME; domainJoined = $domain; service = $service; listeners = $listeners; rules = $rules; winrmRules = $winrmRules; certs = $certs
         wantCert = $wantCert; categories = $categories; rdp = $rdp; tls = $tls; addresses = $addresses; pending = $pending; err = $err
     })
 '@
@@ -284,22 +296,30 @@ function Set-ManagedRule($spec, [bool]$union) {
     else { Set-NetFirewallRule -Name $name -Enabled True -Profile Any -RemoteAddress $remote -LocalAddress $local }
     return ($name + ' from ' + ($remote -join ', '))
 }
-# A rule Windows ships (WINRM-HTTP-In-TCP, WINRM-HTTP-In-TCP-PUBLIC): enabled, on every profile, with the scope of the profile. The OS install ships
-# the Public one limited to LocalSubnet, which a remote orchestrator cannot use. Not on this node: skipped.
-function Set-BuiltinScope($spec, [bool]$union) {
-    $name = [string]$spec.name
-    if (-not (Get-NetFirewallRule -Name $name -ErrorAction SilentlyContinue)) { return ($name + ' not on this node') }
-    $remote = @($spec.remote | ForEach-Object { [string]$_ })
-    if ($union) {
-        $now = Get-RuleState $name
-        if ($now -and $now.remote -notcontains 'Any') { $remote = @(@($remote) + @($now.remote) | Select-Object -Unique) }
-        elseif ($now) { $remote = @('Any') }
+# The rules Windows ships for WinRM, found by port: enabled, on every profile, with the scope of the profile. The OS install ships the
+# Public one limited to LocalSubnet, which a remote orchestrator cannot use. None found: our own rules carry the scope.
+function Set-DiscoveredWinRmScope($spec, [bool]$union) {
+    $names = @(Get-WinRmRuleName)
+    if ($names.Count -eq 0) { return 'no built-in WinRM rule found' }
+    $done = @()
+    foreach ($name in $names) {
+        $remote = @($spec.remote | ForEach-Object { [string]$_ })
+        if ($union) {
+            $now = Get-RuleState $name
+            if ($now -and $now.remote -notcontains 'Any') { $remote = @(@($remote) + @($now.remote) | Select-Object -Unique) }
+            elseif ($now) { $remote = @('Any') }
+        }
+        if ($remote -contains 'Any') { $remote = @('Any') }
+        Set-NetFirewallRule -Name $name -Enabled True -Profile Any -RemoteAddress $remote
+        $done += ($name + ' (every profile, from ' + ($remote -join ', ') + ')')
     }
-    if ($remote -contains 'Any') { $remote = @('Any') }
-    Set-NetFirewallRule -Name $name -Enabled True -Profile Any -RemoteAddress $remote
-    return ($name + ' on every profile from ' + ($remote -join ', '))
+    return ($done -join '; ')
 }
-function Remove-ManagedRule([string]$name) {
+function Disable-DiscoveredWinRm {
+    $names = @(Get-WinRmRuleName)
+    foreach ($name in $names) { Set-NetFirewallRule -Name $name -Enabled False }
+    return ('disabled: ' + ($names -join ', '))
+}function Remove-ManagedRule([string]$name) {
     if (Get-NetFirewallRule -Name $name -ErrorAction SilentlyContinue) { Remove-NetFirewallRule -Name $name; return ($name + ' removed') }
     return ($name + ' already absent')
 }
@@ -312,7 +332,7 @@ function New-Snapshot([string]$id) {
     & icacls.exe $stateRoot /inheritance:r /grant:r 'SYSTEM:(OI)(CI)F' 'Administrators:(OI)(CI)F' | Out-Null
     $path = Join-Path $dir ($id + '.json')
     if (Test-Path -LiteralPath $path) { return $path }
-    $names = @(Get-P $P 'ruleNames' @())
+    $names = @(@(Get-P $P 'ruleNames' @()) + @(Get-WinRmRuleName) | Select-Object -Unique)
     $snap = [pscustomobject]@{
         changeId = $id; taken = (Get-Date).ToUniversalTime().ToString('o'); service = (Get-ServiceState); listeners = @(Get-ListenerState)
         rules = @($names | ForEach-Object { Get-RuleState ([string]$_) } | Where-Object { $_ }); ruleNames = $names
@@ -418,7 +438,7 @@ elseif ($mode -eq 'stage') {
         Add-Result 'listeners' 'changed' (Add-Listeners $cert)
         foreach ($r in $rules) {
             if ([string]$r.kind -eq 'managed' -and [string]$r.desired -ne 'absent') { Add-Result ([string]$r.name) 'changed' (Set-ManagedRule $r $true) }
-            elseif ([string]$r.kind -eq 'builtinScope') { Add-Result ([string]$r.name) 'changed' (Set-BuiltinScope $r $true) }
+            elseif ([string]$r.kind -eq 'discoverWinRm') { Add-Result 'winrm-builtin-rules' 'changed' (Set-DiscoveredWinRmScope $r $true) }
         }
         Set-RdpState $false
         Add-Result 'rdp' 'changed' $(if ([bool](Get-P $P 'rdpEnabled' $false)) { 'RDP allowed, NLA required' } else { 'RDP left as it is until the commit' })
@@ -449,9 +469,9 @@ elseif ($mode -eq 'commit') {
                 elseif ($desired -eq 'absent' -or ($desired -eq 'absentAfterVerify' -and $verified)) { Add-Result ([string]$r.name) 'changed' (Remove-ManagedRule ([string]$r.name)) }
                 else { Add-Result ([string]$r.name) 'skipped' 'kept: the new path is not verified yet' }
             }
-            elseif ($kind -eq 'builtinScope') {
-                if ($desired -eq 'present') { Add-Result ([string]$r.name) 'changed' (Set-BuiltinScope $r $false) }
-                elseif ($desired -eq 'absent' -or ($desired -eq 'absentAfterVerify' -and $verified)) { Add-Result ([string]$r.name) 'changed' (Disable-BuiltinRule ([string]$r.name)) }
+            elseif ($kind -eq 'discoverWinRm') {
+                if ($desired -eq 'present') { Add-Result 'winrm-builtin-rules' 'changed' (Set-DiscoveredWinRmScope $r $false) }
+                elseif ($desired -eq 'absent' -or ($desired -eq 'absentAfterVerify' -and $verified)) { Add-Result 'winrm-builtin-rules' 'changed' (Disable-DiscoveredWinRm) }
             }
             elseif ($kind -eq 'disableRule') {
                 if ($desired -eq 'absent' -or ($desired -eq 'absentAfterVerify' -and $verified)) { Add-Result ([string]$r.name) 'changed' (Disable-BuiltinRule ([string]$r.name)) }

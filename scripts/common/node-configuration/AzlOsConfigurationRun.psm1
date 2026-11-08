@@ -40,6 +40,10 @@ Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'azure-local'
 Import-Module (Join-Path $PSScriptRoot 'AzlNodePayload.psm1')
 Import-Module (Join-Path $PSScriptRoot 'AzlNodeTransport.psm1')
 Import-Module (Join-Path $PSScriptRoot 'AzlNodeConfiguration.psm1')
+# HOOK remoting-profiles
+Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'remoting' 'AzlRemotingProfile.psm1'))
+Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'remoting' 'AzlRemotingSession.psm1'))
+Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'remoting' 'AzlRemotingBootstrap.psm1'))
 
 $script:SetScript = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', 'deploy', '04-cluster-deployment', 'phase-03-os-configuration', 'Set-AzureLocalNodeConfiguration.ps1'))
 # The order the steps run in (the same as AzlNodeConfiguration): Sbe is last, so a package that can't be delivered never stops the others.
@@ -290,6 +294,43 @@ function Get-AzlLocalAdminCredential {
     catch { return [pscustomobject]@{ Credential = $null; Source = ''; Error = "Can't read the local administrator's password ($reference): $($_.Exception.Message)" } }
 }
 
+# HOOK remoting-profiles: which WinRM endpoint of a node answers (HTTPS 5986 or HTTP 5985, by the profile), and the one-time bootstrap
+# for a node whose firewall keeps this host out. Without a profile in the context both fall back to the plain 5985 probe.
+function Resolve-AzlNodeEndpoint {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][string]$Address)
+    $remoting = if ($Context.PSObject.Properties['Remoting']) { $Context.Remoting } else { $null }
+    if (-not $remoting) { return [pscustomobject]@{ Answers = [bool](Test-AzlWinRmPort -Address $Address); UseSsl = $false; Port = 5985; Message = '' } }
+    $window = $Context.BootstrapWindow.ContainsKey($Address)
+    Resolve-AzlRemotingEndpoint -RemotingProfile $remoting -Address $Address -BootstrapWindow:$window -PortTest { param($a, $p) Test-AzlWinRmPort -Address $a -Port $p }
+}
+
+function Invoke-AzlNodeBootstrap {
+    <#
+    .SYNOPSIS
+        When no WinRM endpoint of a node answers: the one-time bootstrap (smb, arc or auto, as os_configuration.remoting says and the
+        class allows). Apply mode only; Plan says what it would do. Returns Done (WinRM was opened) and Note.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][string]$Node, [Parameter(Mandatory)][string[]]$Address, [string]$ArcResourceId = '')
+    $remoting = if ($Context.PSObject.Properties['Remoting']) { $Context.Remoting } else { $null }
+    if (-not $remoting) { return [pscustomobject]@{ Done = $false; Note = '' } }
+    $verdict = Test-AzlBootstrapPermitted -Bootstrap $remoting.Bootstrap -Class $remoting.Class -ApprovedBootstrap:$Context.ApprovedBootstrap
+    if (-not $verdict.Permitted) { return [pscustomobject]@{ Done = $false; Note = $verdict.Reason } }
+    $routes = @($remoting.Bootstrap.Routes) -join ', '
+    if ($Context.Mode -ne 'Apply') { return [pscustomobject]@{ Done = $false; Note = "Plan mode changes nothing. In Apply mode the one-time bootstrap ($routes) opens WinRM on $Node first, then the run continues over WinRM." } }
+    $thumbprint = if ($remoting.Certificate.Mode -eq 'thumbprint') { $remoting.Certificate.Thumbprint } else { '' }
+    if ($remoting.Transport.Scheme -eq 'https' -and -not $remoting.Transport.BootstrapWindowHttp -and -not $thumbprint) {
+        return [pscustomobject]@{ Done = $false; Note = "The class $($remoting.Class) never opens HTTP, and the bootstrap can create an HTTPS listener only for a certificate already on the node. Set os_configuration.remoting.certificate to its thumbprint, or open WinRM from the console or the BMC." }
+    }
+    $admin = $null
+    if ($Context.CredentialInfo -and $Context.CredentialInfo.Credential) { $admin = [pscredential]::new('Administrator', $Context.CredentialInfo.Credential.Password) }
+    $result = Invoke-AzlWinRmBootstrap -RemotingProfile $remoting -Node $Node -Address $Address[0] -ArcResourceId $ArcResourceId -Credential $admin -ApprovedBootstrap:$Context.ApprovedBootstrap -Thumbprint $thumbprint -ArcWaitSeconds $Context.BootstrapArcWaitSeconds
+    $Context.Bootstraps.Add([ordered]@{ node = $Node; ok = $result.Ok; route = $result.Route; attempts = @($result.Attempts | ForEach-Object { [ordered]@{ route = $_.Route; ok = $_.Ok; reason = $_.Reason } }); reason = $result.Reason })
+    if ($result.Ok) { $Context.BootstrapWindow[$Address[0]] = $true }
+    [pscustomobject]@{ Done = [bool]$result.Ok; Note = $(if ($result.Ok) { "WinRM was opened through the $($result.Route) bootstrap." } else { "The bootstrap failed: $($result.Reason)" }) }
+}
+
 function Get-AzlNodeEvidence {
     <#
     .SYNOPSIS
@@ -329,15 +370,29 @@ function Get-AzlNodeEvidence {
 
     # Does it answer on WinRM? Only worth asking when the other evidence is missing.
     $addresses = @(Get-AzlNodeAddressCandidate -Infrastructure $infra -Node $Node -Override $Context.NodeAddress)
-    $winRm = $null; $winRmAddress = ''; $winRmNote = ''
+    $winRm = $null; $winRmAddress = ''; $winRmNote = ''; $useSsl = $false
     if (-not ($ready -or $arcConnected) -or $Context.Method -eq 'Iso') {
         if ($addresses.Count -eq 0) { $winRm = $false; $winRmNote = 'no management address in the file to try' }
         else {
             $winRm = $false
+            $endpoint = $null
             foreach ($address in $addresses) {
-                if (Test-AzlWinRmPort -Address $address) { $winRm = $true; $winRmAddress = $address; break }
+                $endpoint = Resolve-AzlNodeEndpoint -Context $Context -Address $address
+                if ($endpoint.Answers) { $winRm = $true; $winRmAddress = $address; $useSsl = [bool]$endpoint.UseSsl; break }
             }
-            if (-not $winRm) { $winRmNote = "no answer on TCP 5985 at $($addresses -join ', ')" }
+            if (-not $winRm) {
+                # HOOK remoting-profiles: probe 5985/5986, then (Apply, the class allows it, the operator chose it) the one-time bootstrap, then probe again.
+                $attempt = Invoke-AzlNodeBootstrap -Context $Context -Node $name -Address $addresses -ArcResourceId $(if ($arc) { [string]$arc.ResourceId } else { '' })
+                if ($attempt.Done) {
+                    foreach ($address in $addresses) {
+                        $endpoint = Resolve-AzlNodeEndpoint -Context $Context -Address $address
+                        if ($endpoint.Answers) { $winRm = $true; $winRmAddress = $address; $useSsl = [bool]$endpoint.UseSsl; break }
+                    }
+                }
+                if (-not $winRm) {
+                    $winRmNote = if ($endpoint -and $endpoint.Message) { "$($endpoint.Message)$(if ($attempt.Note) { " $($attempt.Note)" })" } else { "no answer on TCP 5985 at $($addresses -join ', ')" }
+                }
+            }
         }
     }
     [pscustomobject]@{
@@ -352,6 +407,7 @@ function Get-AzlNodeEvidence {
         ArcError             = $arcError
         WinRmAnswers         = $winRm
         WinRmAddress         = $winRmAddress
+        UseSsl               = $useSsl
         WinRmNote            = $winRmNote
         Addresses            = $addresses
     }
@@ -388,7 +444,7 @@ function Get-AzlRunSetting {
         foreach ($k in $file.Keys) { $result[$k] = $file[$k] }
     }
     if ($Settings) { foreach ($k in $Settings.Keys) { $result[$k] = $Settings[$k] } }
-    $known = @('retryTries', 'retryDelaySeconds', 'maxPasses', 'noRestart', 'failOnPendingChanges', 'nodeAddress')
+    $known = @('retryTries', 'retryDelaySeconds', 'maxPasses', 'noRestart', 'failOnPendingChanges', 'nodeAddress', 'approvedBootstrap', 'bootstrapArcWaitSeconds')
     foreach ($k in $result.Keys) { if ($k -notin $known) { throw (Get-AzlInputError "Unknown run setting '$k'. Known: $($known -join ', ').") } }
     return $result
 }
@@ -457,6 +513,7 @@ function Invoke-AzlNodeRun {
     if ($Record.transport -eq 'WinRM') {
         $parameters.Credential = $Context.CredentialInfo.Credential
         if ($Record.address) { $parameters.NodeAddress = @{ $Record.name = $Record.address } }
+        if ($Record.useSsl) { $parameters.UseSsl = $true }
     }
     elseif ($Context.CredentialInfo.Credential -and 'Sbe' -in $steps -and [string](Get-AzlProp $Context.Infra 'hardware.sbe.delivery' 'skip') -eq 'winrm_copy') {
         # The node is reached over Arc Run Command, which can't carry a file. hardware.sbe.delivery winrm_copy copies the SBE package
@@ -553,12 +610,15 @@ function Test-AzlIsoPrecondition {
         $problems.Add("${name}: no local administrator credential. $($Context.CredentialInfo.Error) Pass -Credential, or make identity.local_admin.password readable (Key Vault get on the secret).")
         return [pscustomobject]@{ Problems = $problems.ToArray(); Seen = $null }
     }
-    if (-not (Test-AzlWinRmPort -Address $Record.address)) {
-        $problems.Add("${name}: no route to $($Record.address):5985. The ISO path opens a WinRM session from this host, so this host (or the self-hosted runner) must reach the nodes' management subnet and WinRM must be enabled on the node.")
+    $endpoint = Resolve-AzlNodeEndpoint -Context $Context -Address $Record.address
+    if (-not $endpoint.Answers) {
+        if ($endpoint.Message) { $problems.Add("${name}: $($endpoint.Message)") }
+        else { $problems.Add("${name}: no route to $($Record.address):5985. The ISO path opens a WinRM session from this host, so this host (or the self-hosted runner) must reach the nodes' management subnet and WinRM must be enabled on the node.") }
         return [pscustomobject]@{ Problems = $problems.ToArray(); Seen = $null }
     }
+    $Record.useSsl = [bool]$endpoint.UseSsl
     try {
-        $transport = New-AzlWinRmTransport -Address @{ $name = $Record.address } -Credential $Context.CredentialInfo.Credential
+        $transport = New-AzlWinRmTransport -Address @{ $name = $Record.address } -Credential $Context.CredentialInfo.Credential -UseSsl:$endpoint.UseSsl
         $seen = Invoke-AzlNodeScript -Transport $transport -Node $name -Script (Get-AzlNodePayload -Name Preflight) -Tries 1 -TimeoutSeconds 300
     }
     catch {
@@ -654,7 +714,8 @@ function Resolve-AzlWinRmAddress {
     param([object]$Context, [System.Collections.IDictionary]$Record, [System.Collections.IDictionary]$Node)
     if ($Record.transport -ne 'WinRM') { return }
     foreach ($address in @(Get-AzlNodeAddressCandidate -Infrastructure $Context.Infra -Node $Node -Override $Context.NodeAddress)) {
-        if (Test-AzlWinRmPort -Address $address) { $Record.address = $address; return }
+        $endpoint = Resolve-AzlNodeEndpoint -Context $Context -Address $address
+        if ($endpoint.Answers) { $Record.address = $address; $Record.useSsl = [bool]$endpoint.UseSsl; return }
     }
 }
 
@@ -788,6 +849,15 @@ function ConvertTo-AzlNodeReport {
     }
 }
 
+function Get-AzlRemotingReportBlock {
+    param([Parameter(Mandatory)][object]$Context)
+    $block = ConvertTo-AzlRemotingReport -RemotingProfile $Context.Remoting
+    $block['trustedHostsPolicy'] = if ($Context.TrustedHosts) { [ordered]@{ mode = $Context.TrustedHosts.Mode; previous = $Context.TrustedHosts.Previous; applied = $Context.TrustedHosts.Applied; changed = $Context.TrustedHosts.Changed; restoreAfterRun = $Context.TrustedHosts.Restore; restored = [bool]($Context.TrustedHosts.PSObject.Properties['Restored'] -and $Context.TrustedHosts.Restored) } } else { $null }
+    $block['bootstraps'] = @($Context.Bootstraps)
+    $block['events'] = @(Get-AzlRemotingEvent | ForEach-Object { [ordered]@{ timestamp = $_.timestamp; node = $_.node; state = $_.state; level = $_.level; evidence = $_.evidence } })
+    return $block
+}
+
 function Write-AzlOsConfigurationReport {
     [CmdletBinding()]
     param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Record, [Parameter(Mandatory)][string]$FileName, [string[]]$ClusterProblem = @(), [int]$ExitCode = 0, [string]$Message = '')
@@ -802,6 +872,8 @@ function Write-AzlOsConfigurationReport {
         exitCode       = $ExitCode
         message        = $Message
         clusterProblems = @($ClusterProblem)
+        # HOOK remoting-profiles: the effective profile, the TrustedHosts policy and its restore, the bootstraps, the profile's events
+        remoting       = $(if ($Context.PSObject.Properties['Remoting'] -and $Context.Remoting) { Get-AzlRemotingReportBlock -Context $Context } else { $null })
         wipeList       = @(Get-AzlWipeList -Record $Record | ForEach-Object { [ordered]@{ node = $_.Node; disks = $_.Disks } })
         nodes          = @($Record | ForEach-Object { ConvertTo-AzlNodeReport -Record $_ })
     }
@@ -821,7 +893,7 @@ function Get-AzlNodeRecord {
     $evidence = $Resolution.Evidence
     [ordered]@{
         name = [string]$Node['name']; declared = $Resolution.Declared; method = $method; methodSource = $Resolution.Source; methodWarnings = @($Resolution.Warnings)
-        transport = $Resolution.Transport; address = $(if ($Resolution.Transport -eq 'WinRM') { $evidence.WinRmAddress } else { '' })
+        transport = $Resolution.Transport; address = $(if ($Resolution.Transport -eq 'WinRM') { $evidence.WinRmAddress } else { '' }); useSsl = [bool]($evidence.PSObject.Properties['UseSsl'] -and $evidence.UseSsl)
         handoffFile = $evidence.HandoffFile; evidence = $evidence
         steps = $steps; setSteps = @($steps | Where-Object { $_ -in $script:NodeSteps })
         status = 'pending'; plan = @(); changes = @(); errors = @(); warnings = @(); verification = @(); wipe = @()
@@ -864,10 +936,15 @@ function Invoke-AzlOsConfiguration {
         [hashtable]$NodeAddress,
         [switch]$ClearStorage,
         [switch]$FailOnPendingChanges,
-        [switch]$SkipValidation
+        [switch]$SkipValidation,
+        # HOOK remoting-profiles: the pipeline approval of the one-time bootstrap (production and dmz need it), and a TrustedHosts store for a test.
+        [switch]$ApprovedBootstrap,
+        [object]$TrustedHostsStore
     )
     $records = @()
     $context = $null
+    $trustedSession = $null
+    $trustedStore = if ($TrustedHostsStore) { $TrustedHostsStore } else { Get-AzlTrustedHostsStore }
     try {
         # ---- 1. validate the inputs
         if (-not (Test-Path -LiteralPath $InfrastructureFile -PathType Leaf)) { throw (Get-AzlInputError "Infrastructure file not found: $InfrastructureFile") }
@@ -902,8 +979,27 @@ function Invoke-AzlOsConfiguration {
             NodeAddress = $addressOverride; Method = $Method; CredentialInfo = $null
             RetryTries = $tries; RetryDelaySeconds = $delays; MaxPasses = $(if ($run.ContainsKey('maxPasses')) { [int]$run.maxPasses } else { 3 })
             NoRestart = ($run.ContainsKey('noRestart') -and $run.noRestart -eq $true); SkipValidation = $SkipValidation.IsPresent
+            Remoting = $null; ApprovedBootstrap = $false; BootstrapWindow = @{}; Bootstraps = [System.Collections.Generic.List[object]]::new(); TrustedHosts = $null
+            BootstrapArcWaitSeconds = $(if ($run.ContainsKey('bootstrapArcWaitSeconds')) { [int]$run.bootstrapArcWaitSeconds } else { 180 })
         }
         $context.CredentialInfo = Get-AzlLocalAdminCredential -Infrastructure $infra -Credential $Credential
+
+        # HOOK remoting-profiles: the effective remote management profile, printed and recorded before anything changes. A bad class
+        # (or any error in the profile) is bad input: exit code 2 with a message that names the allowed values.
+        $override = @{}
+        if ($ApprovedBootstrap) { $override.approved_bootstrap = $true; $override.approved_bootstrap_source = 'parameter' }
+        elseif ($run.ContainsKey('approvedBootstrap') -and $run.approvedBootstrap -eq $true) { $override.approved_bootstrap = $true; $override.approved_bootstrap_source = 'settings' }
+        $remotingProfile = Resolve-AzlRemotingProfile -Infrastructure $infra -Override $override
+        Set-AzlRemotingEventSink -Path (Join-Path $reportDir 'remoting-events.jsonl') -Reset -Confirm:$false
+        $context.Remoting = $remotingProfile
+        $context.ApprovedBootstrap = $ApprovedBootstrap.IsPresent -or ($run.ContainsKey('approvedBootstrap') -and $run.approvedBootstrap -eq $true)
+        Send-AzlRemotingProfileEvent -RemotingProfile $remotingProfile
+        foreach ($line in @(Format-AzlRemotingProfile -RemotingProfile $remotingProfile)) { Write-AzlLine $line }
+        Assert-AzlRemotingProfile -RemotingProfile $remotingProfile
+        # The one place the orchestrator's TrustedHosts changes; restored below (and in the finally block if the run is cut short).
+        $trustedAddresses = @(@($remotingProfile.TrustedHosts.Addresses) + @($addressOverride.Values | ForEach-Object { [string]$_ }) | Where-Object { $_ } | Select-Object -Unique)
+        $trustedSession = Set-AzlTrustedHostsPolicy -RemotingProfile $remotingProfile -Address $trustedAddresses -Store $trustedStore -Confirm:$false
+        $context.TrustedHosts = $trustedSession
         $declared = [string](Get-AzlProp $infra 'scenario.os_install' '')
 
         Write-AzlLine "OS configuration: $($context.ClusterName), mode $Mode, $($nodes.Count) node(s), report directory $reportDir"
@@ -1008,6 +1104,8 @@ function Invoke-AzlOsConfiguration {
         foreach ($p in $clusterProblems) { Write-Warning $p }
 
         # ---- 5. report
+        # HOOK remoting-profiles: TrustedHosts goes back to what it was before the report is written (it says so).
+        if ($trustedSession) { $null = Restore-AzlTrustedHostsPolicy -Session $trustedSession -Store $trustedStore -Confirm:$false }
         $exit = Get-AzlOsConfigurationExitCode -Record $records -ClusterProblem $clusterProblems -Mode $Mode -FailOnPendingChanges:$failOnPending
         $reportPath = Write-AzlOsConfigurationReport -Context $context -Record $records -FileName 'report.json' -ClusterProblem $clusterProblems -ExitCode $exit
         $summary = Format-AzlOsConfigurationSummary -Record $records -Mode $Mode -ExitCode $exit
@@ -1020,6 +1118,7 @@ function Invoke-AzlOsConfiguration {
     }
     catch {
         $isInput = [bool]$_.Exception.Data['AzlInput']
+        if ($trustedSession) { try { $null = Restore-AzlTrustedHostsPolicy -Session $trustedSession -Store $trustedStore -Confirm:$false } catch { Write-Warning "TrustedHosts was not restored: $($_.Exception.Message)" } }
         $message = $_.Exception.Message
         Write-AzlLine ''
         Write-AzlLine "$(if ($isInput) { 'BAD INPUT' } else { 'FAILED' }): $message"
@@ -1030,6 +1129,10 @@ function Invoke-AzlOsConfiguration {
             catch { Write-Verbose "Couldn't write the report: $($_.Exception.Message)" }
         }
         return [pscustomobject]@{ ExitCode = $(if ($isInput) { 2 } else { 1 }); Records = @($records); ReportPath = ''; ReportDirectory = ''; Summary = ''; WipeList = @(); Message = $message }
+    }
+    finally {
+        # HOOK remoting-profiles: never leave a TrustedHosts entry (above all a wildcard) behind, whatever happened.
+        if ($trustedSession) { try { $null = Restore-AzlTrustedHostsPolicy -Session $trustedSession -Store $trustedStore -Confirm:$false } catch { Write-Warning "TrustedHosts was not restored: $($_.Exception.Message)" } }
     }
 }
 

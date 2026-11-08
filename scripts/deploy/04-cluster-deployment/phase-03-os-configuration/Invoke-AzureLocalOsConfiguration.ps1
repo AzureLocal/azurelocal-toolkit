@@ -57,6 +57,9 @@
     Node name -> the address to open the WinRM session to, for an ISO-installed node that still holds the installer's address.
 .PARAMETER ClearStorage
     Force the storage wipe on, as os_configuration.clear_storage: true does.
+.PARAMETER ApprovedBootstrap
+    The pipeline approval of the one-time bootstrap (os_configuration.remoting.bootstrap_transport arc, smb or auto). Classes lab, test and dev need
+    none; production and dmz do not bootstrap without it (dmz: on every run).
 .PARAMETER FailOnPendingChanges
     Plan mode only: exit 1 when any change is still pending (drift detection). Without it a plan with changes exits 0.
 .EXAMPLE
@@ -81,7 +84,8 @@ param(
     [hashtable]$NodeAddress,
     [switch]$ClearStorage,
     [switch]$FailOnPendingChanges,
-    [switch]$SkipValidation
+    [switch]$SkipValidation,
+    [switch]$ApprovedBootstrap
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
