@@ -131,6 +131,25 @@ function Send-AzlRetryEvent {
         -NextAction 'Wait: the script is safe to run again and the next read decides what is done.' -Data @{ try = $Retry.Try; tries = $Retry.Tries; waitSeconds = $Retry.WaitSeconds; phase = $Phase }
 }
 
+function Get-AzlErrorText {
+    # An error as one line that says where it came from, so a raw .NET message ("Index was outside the bounds of the array.") is never the whole story.
+    param([Parameter(Mandatory)][object]$ErrorRecord)
+    $text = [string]$ErrorRecord.Exception.Message
+    $info = $ErrorRecord.InvocationInfo
+    if ($info -and $info.ScriptLineNumber -and $info.MyCommand -and $text -match '^(Index was outside the bounds of the array|The property .* cannot be found|Cannot index into a null array|Cannot bind argument)') {
+        $text = "$text (raised in $($info.MyCommand.Name), line $($info.ScriptLineNumber))"
+    }
+    return $text
+}
+function Get-AzlFirstItem {
+    # The first item of a pipeline, or $null when it is empty. Under Set-StrictMode an index into an empty array (@(...)[0]) is an error, not $null:
+    # that is how the verification read of a node that was not answering ended as "Index was outside the bounds of the array".
+    param([Parameter(ValueFromPipeline)][AllowNull()][object]$InputObject)
+    begin { $first = $null; $have = $false }
+    process { if (-not $have) { $first = $InputObject; $have = $true } }
+    end { return $first }
+}
+
 function Get-AzlNodeVersionData {
     <#
     .SYNOPSIS
@@ -743,7 +762,7 @@ function Get-AzlNodeEvidence {
         BootstrapEligible    = $bootstrapEligible
         BootstrapNote        = $bootstrapNote
         # HOOK address-resolution: where the address came from and what was tried (empty when Arc Run Command is the transport and no address is needed).
-        AddressSource        = $(if ($resolved -and $winRm -eq $true) { [string](@($resolved.Candidates | Where-Object { $_.Address -eq $winRmAddress })[0].Source) } else { '' })
+        AddressSource        = $(if ($resolved -and $winRm -eq $true) { [string](Get-AzlProp ($resolved.Candidates | Where-Object { $_.Address -eq $winRmAddress } | Get-AzlFirstItem) 'Source' '') } else { '' })
         AddressMessage       = $(if ($resolved) { [string]$resolved.Message } else { '' })
         AddressTried         = $(if ($resolved) { @($resolved.Tried) } else { @() })
         AddressNotes         = $(if ($resolved) { @($resolved.Notes) } else { @() })
@@ -921,7 +940,8 @@ function Invoke-AzlNodeRun {
     }
     $run = Invoke-AzlSetNodeConfiguration -Parameters $parameters -EventContext $Context -EventRecord $Record -EventPhase $Phase
     $entry = $null
-    if ($run.Report) { $entry = @($run.Report.nodes | Where-Object { $_.name -ieq $Record.name } | Select-Object -First 1)[0] }
+    # A report with no node in it (the script could not reach the node and wrote only its own error: "nodes": []) has no entry: $null, never an index into an empty array.
+    if ($run.Report) { $entry = @(Get-AzlProp $run.Report 'nodes' @()) | Where-Object { $_ -and [string](Get-AzlProp $_ 'name' '') -ieq $Record.name } | Get-AzlFirstItem }
     # A report the script wrote about itself (it could not start: nodes unreachable) says why in 'error'.
     $why = if ($run.Error) { $run.Error } elseif ($run.Report -and $run.Report.PSObject.Properties['error'] -and $run.Report.error) { [string]$run.Report.error } else { '' }
     [pscustomobject]@{ ExitCode = $run.ExitCode; Error = $why; Unknown = $run.Unknown; Entry = $entry; Skipped = $false }
@@ -1179,7 +1199,9 @@ function Merge-AzlRunResult {
     $Record.phases[$Phase] = [ordered]@{ exitCode = $Run.ExitCode; error = $Run.Error; skipped = $Run.Skipped }
     if ($Run.Skipped) { $Record.plan = @(); return $true }
     if (-not $Run.Entry) {
-        $Record.errors += "$Phase of $($Record.name) failed: $(if ($Run.Error) { $Run.Error } else { "the script wrote no report (exit code $($Run.ExitCode))." })"
+        # Either the script said why (its own report: NOT READY, a call that failed) or the report has no entry for this node (the node was not read at all).
+        $why = if ($Run.Error) { $Run.Error } elseif ($Run.ExitCode -eq 0) { "the report of the script has no entry for $($Record.name) (the node was not read)." } else { "the script wrote no report for $($Record.name) (exit code $($Run.ExitCode))." }
+        $Record.errors += "$Phase of $($Record.name) failed: $why"
         return $false
     }
     # The script reported that a call of its own failed or timed out (the report was still written, with what was done so far): this pass did not read the node.
@@ -1203,13 +1225,28 @@ function Merge-AzlRunResult {
         }
         $Record.pendingGuard = $still.ToArray()
     }
-    $Record.plan = @(@($Run.Entry.plan) | ForEach-Object { ConvertTo-AzlPlanItem -Item $_ -Node $Record.name })
-    $Record.ports = @($Run.Entry.ports)
-    $Record.sanDisks = @($Run.Entry.sanDisks)
-    $Record.wipeItems = @(Get-AzlProp $Run.Entry 'wipe' @() | Where-Object { $_ })
-    $Record.hostname =[string](Get-AzlProp $Run.Entry 'hostname' '')
-    $Record.osVersion = [string](Get-AzlProp $Run.Entry 'osVersion' '')
-    Merge-AzlDomainJoinResult -Record $Record -Entry $Run.Entry # DOMAINJOIN HOOK
+    # A read that returned only part of the node (a freshly restarted node answering before everything is up) must say which section is missing or unreadable,
+    # not throw a raw exception and not pass as an empty plan (which would look converged).
+    $section = 'plan'
+    try {
+        if ($null -eq (Get-AzlProp $Run.Entry 'plan' $null)) { throw 'the section is missing, so the node was read only in part' }
+        $newPlan = @(@(Get-AzlProp $Run.Entry 'plan' @()) | ForEach-Object { ConvertTo-AzlPlanItem -Item $_ -Node $Record.name })
+        $section = 'ports'; $newPorts = @(Get-AzlProp $Run.Entry 'ports' @())
+        $section = 'sanDisks'; $newSanDisks = @(Get-AzlProp $Run.Entry 'sanDisks' @())
+        $section = 'wipe'; $newWipe = @(Get-AzlProp $Run.Entry 'wipe' @() | Where-Object { $_ })
+        $section = 'hostname'; $newHostname = [string](Get-AzlProp $Run.Entry 'hostname' ''); $newOsVersion = [string](Get-AzlProp $Run.Entry 'osVersion' '')
+        $section = 'domainJoin'; Merge-AzlDomainJoinResult -Record $Record -Entry $Run.Entry # DOMAINJOIN HOOK
+    }
+    catch {
+        $Record.errors += "$Phase of $($Record.name) failed: the '$section' section of the node's report could not be read: $($_.Exception.Message)"
+        return $false
+    }
+    $Record.plan = $newPlan
+    $Record.ports = $newPorts
+    $Record.sanDisks = $newSanDisks
+    $Record.wipeItems = $newWipe
+    $Record.hostname = $newHostname
+    $Record.osVersion = $newOsVersion
     # hardware.sbe.delivery skip: the node is not failed, but the package is not on it and the OEM drivers wait, so say it once.
     if ($Phase -eq 'Plan' -and @($Record.plan | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -eq 'Info' -and $_.Note -match 'NOT DELIVERED' }).Count) {
         $Record.warnings += "$($Record.name): the SBE package is NOT DELIVERED (hardware.sbe.delivery is skip or not set), so the OEM network drivers are skipped. Set hardware.sbe.delivery to node_pull or winrm_copy, or put the package in C:\SBE yourself."
@@ -1393,8 +1430,8 @@ function Invoke-AzlRunBootstrap {
     $cidrs = @($Record.bootstrap.cidrs)
     $attempt = Invoke-AzlNodeBootstrap -Context $Context -Node $Record.name -Address @($Record.evidence.Addresses) -ArcResourceId ([string]$Record.evidence.ArcResourceId)
     if (-not $attempt.Done) { throw "The bootstrap of $($Record.name) did not open WinRM: $($attempt.Note)" }
-    $outcome = @($Context.Bootstraps | Where-Object { $_.node -eq $Record.name } | Select-Object -Last 1)[0]
-    $route = [string]$outcome.route
+    $outcome = $Context.Bootstraps | Where-Object { $_.node -eq $Record.name } | Select-Object -Last 1 | Get-AzlFirstItem
+    $route = [string](Get-AzlProp $outcome 'route' '')
     $Record.bootstrap = [ordered]@{ used = $true; pending = $false; transport = $route; route = $route; opened = @('WinRM'); scope = $cidrs; cidrs = $cidrs }
     Send-AzlGuardEvent -Context $Context.EventContext -Node $Record.name -State 'TransportResolved' -Step 'RemoteManagement' -Transport $route -Level Warning -Evidence "Bootstrap through the $route route, once, for the sources of the profile ($($cidrs -join ', ')). Everything after this goes over WinRM." -Data @{ bootstrap = $true; cidrs = $cidrs; route = $route }
     Start-Sleep -Seconds 3
@@ -1904,7 +1941,7 @@ function Invoke-AzlOsConfiguration {
             $unreachable = [System.Collections.Generic.List[object]]::new()
             foreach ($f in $findings) {
                 $r = $records | Where-Object { $_.name -eq $f.Node } | Select-Object -First 1
-                if ($f.Reachable) { $r.address = $f.Address; $r.addressSource = [string](@(Get-AzlProp $r.evidence 'AddressCandidates' @() | Where-Object { $_.Address -eq $f.Address })[0].Source); continue } # HOOK address-resolution: the source of the address that answered
+                if ($f.Reachable) { $r.address = $f.Address; $r.addressSource = [string](Get-AzlProp (Get-AzlProp $r.evidence 'AddressCandidates' @() | Where-Object { $_.Address -eq $f.Address } | Get-AzlFirstItem) 'Source' ''); continue } # HOOK address-resolution: the source of the address that answered
                 # The one-time Arc bootstrap is allowed only where the environment class allows a bootstrap and, in production and dmz, the pipeline approved it.
                 $bootstrapPermitted = $context.Remoting -and (Test-AzlBootstrapPermitted -Bootstrap $context.Remoting.Bootstrap -Class $context.Remoting.Class -ApprovedBootstrap:$context.ApprovedBootstrap).Permitted
                 # The bootstrap is the profile's (Invoke-AzlWinRmBootstrap, routes smb and arc): the scope, RDP, ICMP and HTTP window come from the profile.
@@ -1948,7 +1985,7 @@ function Invoke-AzlOsConfiguration {
             if ($stop) { $r.status = 'skipped'; $r.errors += 'Skipped: an earlier node failed and -ContinueOnNodeFailure is off.'; continue }
             Write-AzlLine "-- $($r.name)"
             try { Invoke-AzlPlanPhase -Context $context -Record $r -Node $nodeByName[$r.name] }
-            catch { $r.status = 'failed'; $r.errors += "Plan of $($r.name) failed: $($_.Exception.Message)" }
+            catch { $r.status = 'failed'; $r.errors += "Plan of $($r.name) failed: $(Get-AzlErrorText $_)" }
             if ($r.status -ne 'failed') {
                 # The node was read: add what it reported (hostname, OS) to the method line, then say what each step found.
                 if ($r.hostname -or $r.osVersion) {
@@ -2030,7 +2067,7 @@ function Invoke-AzlOsConfiguration {
                 Resolve-AzlWinRmAddress -Context $context -Record $r -Node $nodeByName[$r.name]
                 $r.verification = @()
                 try { Invoke-AzlPlanPhase -Context $context -Record $r -Node $nodeByName[$r.name] -Phase Verify }
-                catch { $r.status = 'failed'; $r.errors += "Verification of $($r.name) failed: $($_.Exception.Message)" }
+                catch { $r.status = 'failed'; $r.errors += "Verification of $($r.name) failed: $(Get-AzlErrorText $_)" }
                 if ($r.status -ne 'failed') { Send-AzlStepVerifiedEvent -Context $context -Record $r }
                 $verifyErrors = @(@($r.errors) | Select-Object -Skip $before)
                 $r.converged = ($r.status -ne 'failed' -and $r.pendingChanges -eq 0 -and $r.blocked -eq 0 -and $verifyErrors.Count -eq 0 -and @($r.pendingGuard).Count -eq 0)
