@@ -201,6 +201,36 @@ function Get-RpNetworkSource {
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
+# The one-time bootstrap: is it permitted?
+# ---------------------------------------------------------------------------------------------------------------------
+
+function Test-AzlBootstrapPermitted {
+    <#
+    .SYNOPSIS
+        Whether the one-time bootstrap (Arc Run Command or SMB) may run: the class allows it, the operator chose a route
+        (bootstrap_transport arc, smb or auto), and where the class needs a pipeline approval, it was given. Returns Permitted and
+        Reason. Pure.
+    .PARAMETER Bootstrap
+        The Bootstrap part of a resolved profile.
+    .PARAMETER ApprovedBootstrap
+        Approves the run on top of what the profile recorded (the -ApprovedBootstrap parameter of the run).
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Bootstrap, [string]$Class = '', [switch]$ApprovedBootstrap)
+    $b = $Bootstrap
+    $approved = $b.Approved -or $ApprovedBootstrap.IsPresent
+    if (-not $b.Allowed) { return [pscustomobject]@{ Permitted = $false; Reason = "The class $Class doesn't allow a bootstrap." } }
+    if (-not $b.Chosen) {
+        $why = if ($b.RequiresExplicitChoice) { "The class $Class allows the one-time bootstrap only with bootstrap_transport: arc, smb or auto in os_configuration.remoting and a pipeline approval (-ApprovedBootstrap). Otherwise open WinRM from the console or the BMC." } else { 'Not chosen: os_configuration.remoting.bootstrap_transport is none.' }
+        return [pscustomobject]@{ Permitted = $false; Reason = $why }
+    }
+    if ($b.Approval -ne 'none' -and -not $approved) {
+        return [pscustomobject]@{ Permitted = $false; Reason = "The class $Class needs the bootstrap approved by the pipeline$(if ($b.Approval -eq 'perRun') { ' on every run' }) (-ApprovedBootstrap). It is chosen (bootstrap_transport: $($b.Transport)) but not approved." }
+    }
+    [pscustomobject]@{ Permitted = $true; Reason = $(if ($b.Approval -ne 'none') { "Chosen ($($b.Transport): $(@($b.Routes) -join ', ')) and approved." } else { "Chosen ($($b.Transport): $(@($b.Routes) -join ', ')); the class allows it without an approval." }) }
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
 # The resolver
 # ---------------------------------------------------------------------------------------------------------------------
 
@@ -339,7 +369,7 @@ function Resolve-AzlRemotingProfile {
     $transport = [pscustomobject]@{
         Scheme = $scheme; HttpsEnabled = $httpsEnabled; HttpEnabled = $httpEnabled; RemoveHttpAfterHttps = ($httpsEnabled -and -not $httpEnabled)
         HttpPort = $script:HttpPort; HttpsPort = $script:HttpsPort; HttpsPolicy = $policy
-        OrchestratorMayFallBackToHttp = ($httpsEnabled -and [bool]$row.transport.orchestratorMayUseHttp)
+        OrchestratorMayFallBackToHttp = ($httpsEnabled -and [bool]$row.transport.orchestratorMayUseHttp); BootstrapWindowHttp = [bool]$row.transport.bootstrapWindowHttp
         Configured = $(if ($transportSetting.Present) { [string]$transportSetting.Value } else { 'winrm' })
     }
     & $set 'transport.scheme' $scheme $httpsSource
@@ -362,7 +392,9 @@ function Resolve-AzlRemotingProfile {
         }
     }
     if ($thMode -eq 'wildcard' -and -not $effectiveAny -and $thText -ne 'wildcard') { $thMode = 'exact'; $thSource = "class table ($class), exact because allow_any_source is false" }
-    if ($thMode -eq 'exactIfHttp') { $thMode = if ($scheme -eq 'http') { 'exact' } else { 'none' } }
+    # exactIfHttp: exact entries only when the session can be plain HTTP: the class uses HTTP, or a bootstrap (Arc or SMB) was chosen, which opens an HTTP window.
+    $bootChosenEarly = (((& $get 'bootstrap_transport').Value -as [string]) -in 'arc', 'smb', 'auto')
+    if ($thMode -eq 'exactIfHttp') { $thMode = if ($scheme -eq 'http' -or ($bootChosenEarly -and [bool]$row.transport.bootstrapWindowHttp)) { 'exact' } else { 'none' } }
     $nodeAddresses = @(Get-AzlRemotingNodeAddress -Infrastructure $Infrastructure)
     & $set 'trustedHosts.mode' $thMode $thSource
     $trustedHosts = [pscustomobject]@{
@@ -479,7 +511,7 @@ function Resolve-AzlRemotingProfile {
     # ---- the one-time Arc bootstrap
     $bootSetting = & $get 'bootstrap_transport'
     $bootText = if ($bootSetting.Present) { ([string]$bootSetting.Value).Trim().ToLowerInvariant() } else { 'none' }
-    if ($bootText -notin 'none', 'arc') { & $issue 'AZL-060' 'error' 'os_configuration.remoting.bootstrap_transport' "bootstrap_transport must be none or arc, not '$($bootSetting.Value)'."; $bootText = 'none' }
+    if ($bootText -notin 'none', 'arc', 'smb', 'auto') { & $issue 'AZL-060' 'error' 'os_configuration.remoting.bootstrap_transport' "bootstrap_transport must be none, arc, smb or auto, not '$($bootSetting.Value)'."; $bootText = 'none' }
     $approval = [string]$row.bootstrap.approval
     $approved = ($ov.ContainsKey('approved_bootstrap') -and (ConvertTo-RpBool $ov['approved_bootstrap']) -eq $true)
     $approvalSource = if ($approved) { [string]$(if ($ov.ContainsKey('approved_bootstrap_source')) { $ov['approved_bootstrap_source'] } else { 'parameter' }) } else { '' }
@@ -487,20 +519,17 @@ function Resolve-AzlRemotingProfile {
         $approved = $false
         & $issue 'RP-BOOTSTRAP' 'warning' 'approved_bootstrap' "The class $class needs the bootstrap approved on every run (-ApprovedBootstrap); an approval kept in a settings file doesn't count."
     }
-    $chosen = ($bootText -eq 'arc')
-    $reason = ''
-    $permitted = $false
-    if (-not [bool]$row.bootstrap.allowed) { $reason = "The class $class doesn't allow the Arc bootstrap." }
-    elseif (-not $chosen) { $reason = $(if ([bool]$row.bootstrap.requiresBootstrapTransportArc) { "The class $class allows the one-time Arc bootstrap only with bootstrap_transport: arc in os_configuration.remoting and a pipeline approval (-ApprovedBootstrap). Use the BMC or console to open WinRM on the node." } else { 'Not chosen: os_configuration.remoting.bootstrap_transport is none.' }) }
-    elseif ($approval -ne 'none' -and -not $approved) { $reason = "The class $class needs the Arc bootstrap approved by the pipeline$(if ($approval -eq 'perRun') { ' on every run' }) (-ApprovedBootstrap). It is chosen (bootstrap_transport: arc) but not approved." }
-    else { $permitted = $true; $reason = $(if ($approval -ne 'none') { "Chosen and approved ($approvalSource)." } else { 'Chosen; the class allows it without an approval.' }) }
-    & $set 'bootstrap' $(if ($permitted) { 'Arc bootstrap permitted' } elseif ($chosen) { 'Arc bootstrap chosen, not permitted' } else { 'no Arc bootstrap' }) $bootSetting.Source
+    $chosen = ($bootText -ne 'none')
+    $routes = @(switch ($bootText) { 'arc' { 'arc' } 'smb' { 'smb' } 'auto' { 'smb'; 'arc' } })
     $bootstrap = [pscustomobject]@{
-        Allowed = [bool]$row.bootstrap.allowed; Chosen = $chosen; Transport = $bootText; Approval = $approval
-        RequiresBootstrapTransportArc = [bool]$row.bootstrap.requiresBootstrapTransportArc; Approved = $approved; ApprovalSource = $approvalSource
-        Permitted = $permitted; Logged = [bool]$row.bootstrap.logged; Reason = $reason
+        Allowed = [bool]$row.bootstrap.allowed; Chosen = $chosen; Transport = $bootText; Routes = $routes; Approval = $approval
+        RequiresExplicitChoice = [bool]$row.bootstrap.requiresExplicitChoice; Approved = $approved; ApprovalSource = $approvalSource
+        Permitted = $false; Logged = [bool]$row.bootstrap.logged; Reason = ''
     }
-
+    $verdict = Test-AzlBootstrapPermitted -Bootstrap $bootstrap -Class $class
+    $bootstrap.Permitted = $verdict.Permitted
+    $bootstrap.Reason = $verdict.Reason
+    & $set 'bootstrap' $(if ($bootstrap.Permitted) { "bootstrap permitted ($($routes -join ', '))" } elseif ($chosen) { 'bootstrap chosen, not permitted' } else { 'no bootstrap' }) $bootSetting.Source
     # ---- the rest of the row
     & $set 'listener.bind' ([string]$row.listener.bind) "class table ($class)"
     & $set 'authentication' ([string]$row.authentication.mode) "class table ($class)"
@@ -644,4 +673,4 @@ function ConvertTo-AzlRemotingReport {
     }
 }
 
-Export-ModuleMember -Function ConvertTo-AzlCidr, Get-AzlRemotingProfileData, Get-AzlRemotingClass, Get-AzlRemotingNodeAddress, Resolve-AzlRemotingProfile, Assert-AzlRemotingProfile, Get-AzlRemotingFinding, Format-AzlRemotingProfile, ConvertTo-AzlRemotingReport
+Export-ModuleMember -Function ConvertTo-AzlCidr, Get-AzlRemotingProfileData, Get-AzlRemotingClass, Get-AzlRemotingNodeAddress, Resolve-AzlRemotingProfile, Assert-AzlRemotingProfile, Test-AzlBootstrapPermitted, Get-AzlRemotingFinding, Format-AzlRemotingProfile, ConvertTo-AzlRemotingReport

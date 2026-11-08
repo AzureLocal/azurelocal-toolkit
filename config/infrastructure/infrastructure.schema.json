@@ -2135,10 +2135,12 @@
               "default": "winrm"
             },
             "bootstrap_transport": {
-              "description": "none: a node that does not answer on 5985/5986 fails with the diagnosis. arc: one Arc Run Command per node, only to open WinRM (and RDP, ICMP, as the profile says) for the allowed sources and create the listener, because a freshly provisioned node's firewall allows its own subnet only; everything after that goes over WinRM. production and dmz also need the pipeline approval (-ApprovedBootstrap); the Arc agent needs outbound 443 only.",
+              "description": "How a node whose WinRM firewall rule blocks this host is opened once, without touching the node by hand. none: such a node fails with the diagnosis. arc: Azure Arc Run Command (outbound 443 only; the wait is capped, default 3 minutes, then the route fails cleanly). smb: TCP 445 from a Windows orchestrator to the node, the local Administrator, one small service run once with sc.exe; Windows orchestrator only. auto: the allowed routes in the order smb, arc. Each runs one small script that starts WinRM, creates the listener if none exists and sets the WinRM rules' scope, then everything else runs over WinRM. production and dmz also need the pipeline approval (-ApprovedBootstrap). The environment class decides whether a bootstrap is allowed at all.",
               "enum": [
                 "none",
-                "arc"
+                "arc",
+                "smb",
+                "auto"
               ],
               "default": "none"
             },

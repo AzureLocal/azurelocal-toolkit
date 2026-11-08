@@ -510,7 +510,7 @@ os_configuration:
   # Everything here is optional; the class above decides what is not set.
   remoting:
     transport: winrm # winrm | winrm_https | arc (how the run reaches the nodes)
-    bootstrap_transport: none # none | arc (one-time Arc Run Command that opens WinRM; production and dmz also need the pipeline approval)
+    bootstrap_transport: none # none | arc | smb | auto (one-time bootstrap that opens WinRM on a node whose firewall blocks this host; production and dmz also need the pipeline approval)
     # The runner and jump server addresses as the nodes see them (after NAT), in addition to the management and out-of-band networks.
     allowed_source_cidrs: ["198.51.100.10/32"]
     trusted_hosts: auto # auto | exact | wildcard (wildcard: lab and test only)
