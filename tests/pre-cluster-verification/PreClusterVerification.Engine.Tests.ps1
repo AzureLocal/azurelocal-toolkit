@@ -542,3 +542,26 @@ Export-ModuleMember -Function Get-AzlVerificationAdapterDefault, Get-AzlVerifica
         (Get-PclCheck $r 'RC-002').Message | Should -Be 'user=own\admin'
     }
 }
+
+Describe 'The switch port checklist in report.json and summary.md' {
+    It 'is taken from a module that offers Get-AzlVerificationSwitchPortChecklist and written to both files' {
+        $mod = @'
+function Get-AzlVerificationCheckDefinition { @(@{ Id = 'SW-001'; Category = 'network'; Title = 'sw'; Source = 'x'; Run = { param($Context) @{ Status = 'Passed'; Message = 'ok' } } }) }
+function Get-AzlVerificationSwitchPortChecklist { param($Context) [pscustomobject]@{ switch = 'tor-a'; port = 'Ethernet1/11'; node = 'iic-n01'; filePort = 'Slot 3 Port 1'; mac = 'AA:BB:CC:00:00:01'; roles = 'management+compute'; expectedMode = 'trunk'; expectedVlans = @(711, 717); hostTag = 711; source = 'port vlan_id 711; allowed_vlans 717' } }
+Export-ModuleMember -Function Get-AzlVerificationCheckDefinition, Get-AzlVerificationSwitchPortChecklist
+'@
+        $r = Invoke-PclRun -ExtensionFolder (New-PclModuleFolder -Files @{ 'AzlVerification.Sw.psm1' = $mod })
+        $report = Get-Content $r.ReportPath -Raw | ConvertFrom-Json
+        @($report.switchPortChecklist).Count | Should -Be 1
+        $report.switchPortChecklist[0].switch | Should -Be 'tor-a'
+        @($report.switchPortChecklist[0].expectedVlans) | Should -Be @(711, 717)
+        $summary = Get-Content $r.SummaryPath -Raw
+        $summary | Should -Match 'Switch port checklist'
+        $summary | Should -Match '\| tor-a \| Ethernet1/11 \| iic-n01 \| Slot 3 Port 1 \| AA:BB:CC:00:00:01 \| trunk \| 711, 717 \| 711 \|'
+    }
+    It 'is an empty list, and no table, when no module offers one' {
+        $r = Invoke-PclRun
+        @((Get-Content $r.ReportPath -Raw | ConvertFrom-Json).switchPortChecklist).Count | Should -Be 0
+        (Get-Content $r.SummaryPath -Raw) | Should -Not -Match 'Switch port checklist'
+    }
+}

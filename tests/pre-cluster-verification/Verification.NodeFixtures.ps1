@@ -42,14 +42,31 @@ function New-VerInfra {
         foreach ($n in $infra.nodes) { $n.san = [ordered]@{ hbas = @([ordered]@{ slot = 'Slot2'; ports = @([ordered]@{ wwpn = '10:00:00:00:00:00:00:11' }, [ordered]@{ wwpn = '10:00:00:00:00:00:00:12' }) }) } }
     }
     # Every port of the file has a MAC (the node snapshots below carry the same ones): the ports are matched by MAC, never by name.
-    foreach ($n in $infra.nodes) { $k = 0; foreach ($a in $n.network_adapters) { $a.mac_address = ('00:00:00:00:00:{0:x2}' -f $k); $k++ } }    return $infra
+    foreach ($n in $infra.nodes) { $k = 0; foreach ($a in $n.network_adapters) { $a.mac_address = ('00:00:00:00:00:{0:x2}' -f $k); $k++ } }
+    # The VLAN plan (the lab's: management 711, storage 712 and 713, compute 717 only). The two converged ports tag the management VLAN and allow the compute VLAN.
+    $infra.networking.management.vlan_id = 711
+    $infra.networking.vlans = @(
+        [ordered]@{ name = 'management'; id = 711; subnet = '192.0.2.0/24'; purpose = 'management' }
+        [ordered]@{ name = 'storage-a'; id = 712; subnet = '198.51.100.0/26'; purpose = 'storage' }
+        [ordered]@{ name = 'storage-b'; id = 713; subnet = '198.51.100.64/26'; purpose = 'storage' }
+        [ordered]@{ name = 'compute'; id = 717; subnet = '203.0.113.0/24'; purpose = 'compute' })
+    $infra.networking.storage = [ordered]@{ networks = @([ordered]@{ name = 'StorageNetwork1'; adapter = 'Port2'; vlan_id = 712 }, [ordered]@{ name = 'StorageNetwork2'; adapter = 'Port3'; vlan_id = 713 }) }
+    foreach ($n in $infra.nodes) {
+        $k = 0
+        foreach ($a in $n.network_adapters) {
+            $a.switch_port = [ordered]@{ switch = 'tor-a'; port = "Ethernet1/$($k + 1)" }
+            if ($k -lt 2) { $a.vlan_mode = 'tagged'; $a.vlan_id = 711; $a.allowed_vlans = @(717) }
+            $k++
+        }
+    }
+    return $infra
 }
 
 function New-VerSnapshot {
     <# What a healthy node says (the shape of the real payload). #>
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Ip, [Parameter(Mandatory)][datetime]$Now)
     $nic = { param($n, $i, $ips, $gw, $rdma, $drv, $desc) @{ n = $n; desc = $desc; st = 'Up'; admin = 'Up'; speed = 25000000000; mac = ('0000000000{0:x2}' -f $i); drvProv = $drv; drvVer = '2.0'; idx = ($i + 4); mtu = 1514; jumbo = $(if ($rdma) { '9014' } else { '1514' })
-            rdmaCapable = $rdma; rdmaEnabled = $rdma; rdmaOp = $(if ($rdma) { $true } else { $null }); ips = $ips; gw = $gw; dhcp = 'Disabled' } }
+            rdmaCapable = $rdma; rdmaEnabled = $rdma; rdmaOp = $(if ($rdma) { $true } else { $null }); ips = $ips; gw = $gw; dhcp = 'Disabled'; vlan = '0'; vlanAdv = '' } }
     $disks = @(@{ num = 0; name = 'BOSS-N1'; model = 'BOSS-N1'; serial = 'B0'; uid = 'B0'; uidFormat = 'SCSI'; bus = 'SATA'; size = 480000000000; style = 'GPT'; parts = 3; offline = $false; boot = $true; system = $true; lun = 0; port = 0; target = 0 })
     $phys = @(@{ num = 0; name = 'BOSS-N1'; serial = 'B0'; size = 480000000000; bus = 'SATA'; media = 'SSD'; canPool = $false; reason = 'Not Healthy'; health = 'Healthy'; boot = $true; system = $true; style = 'GPT'; parts = 3 })
     foreach ($i in 1..4) {
@@ -106,6 +123,8 @@ function New-VerWorld {
     param([Parameter(Mandatory)]$Infra, [datetime]$Now = [datetime]::Parse('2026-11-08T12:00:00Z', [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal))
     $snap = [ordered]@{}
     foreach ($n in $Infra.nodes) { $snap[$n.name] = New-VerSnapshot -Name $n.name -Ip ($n.network_adapters | Where-Object { $_.ip_address } | Select-Object -First 1).ip_address -Now $Now }
+    # The two management ports tag the management VLAN on the NIC, as the file says; the storage NICs carry none.
+    foreach ($s in $snap.Values) { foreach ($nic in @($s.nics)[0..1]) { $nic.vlan = '711' } }
     [pscustomobject]@{ Now = $Now; Snapshot = $snap; Down = @{}; Calls = [System.Collections.Generic.List[string]]::new(); Ec = $null }
 }
 

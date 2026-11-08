@@ -345,7 +345,7 @@ function Import-AzlPclExtension {
     #>
     [CmdletBinding()]
     param([string]$Folder = (Get-AzlPclExtensionFolder), [string[]]$Expected = @())
-    $defs = [System.Collections.Generic.List[object]]::new(); $adapters = [ordered]@{}; $modules = [System.Collections.Generic.List[object]]::new()
+    $defs = [System.Collections.Generic.List[object]]::new(); $adapters = [ordered]@{}; $modules = [System.Collections.Generic.List[object]]::new(); $checklists = [System.Collections.Generic.List[object]]::new()
     if (-not $Folder -or -not (Test-Path -LiteralPath $Folder -PathType Container)) {
         $why = "The folder of the verification modules does not exist ($Folder), so none of their checks can run."
         $modules.Add([pscustomobject]@{ Name = 'AzlVerification'; Checks = 0; Error = $why; Library = $false })
@@ -365,6 +365,8 @@ function Import-AzlPclExtension {
                 $module = Import-Module -Name $file.FullName -Force -PassThru -ErrorAction Stop
                 $getDefinitions = $module.ExportedCommands['Get-AzlVerificationCheckDefinition']
                 $getAdapters = $module.ExportedCommands['Get-AzlVerificationAdapterDefault']
+                # A module may also offer the switch port checklist (what its file expects on each switch port) for report.json and summary.md.
+                if ($module.ExportedCommands['Get-AzlVerificationSwitchPortChecklist']) { $checklists.Add($module.ExportedCommands['Get-AzlVerificationSwitchPortChecklist']) }
                 # A module that exports neither is a library the check modules share (AzlVerification.NodeCommon.psm1); it is loaded, not read.
                 if (-not $getDefinitions -and -not $getAdapters) { $modules.Add([pscustomobject]@{ Name = $name; Checks = 0; Error = ''; Library = $true }); continue }
                 if (-not $getDefinitions) { throw 'it does not export Get-AzlVerificationCheckDefinition' }
@@ -380,7 +382,7 @@ function Import-AzlPclExtension {
             }
         }
     }
-    [pscustomobject]@{ Definitions = $defs.ToArray(); AdapterDefaults = $adapters; Modules = $modules.ToArray() }
+    [pscustomobject]@{ Definitions = $defs.ToArray(); AdapterDefaults = $adapters; Modules = $modules.ToArray(); ChecklistCommands = $checklists.ToArray() }
 }
 
 function Get-AzlPclDefinitionSet {
@@ -562,6 +564,13 @@ function Format-AzlPclSummary {
             if ($c.remedy) { $l.Add("  - Fix: $($c.remedy)") }
             $l.Add("  - Source: $($c.source)")
         }
+        $l.Add('')
+    }
+    if (@($Report.switchPortChecklist).Count) {
+        $l.Add('### Switch port checklist'); $l.Add('')
+        $l.Add('The gate cannot read a switch. Verify each port against the file; the file is the authority.'); $l.Add('')
+        $l.Add('| Switch | Port | Node | File port | MAC | Expected mode | Expected VLANs | Host tags | From the file |'); $l.Add('| --- | --- | --- | --- | --- | --- | --- | --- | --- |')
+        foreach ($r in @($Report.switchPortChecklist)) { $l.Add("| $($r.switch) | $($r.port) | $($r.node) | $($r.filePort) | $($r.mac) | $($r.expectedMode) | $(@($r.expectedVlans) -join ', ') | $(if ($r.hostTag -gt 0) { $r.hostTag } else { 'untagged' }) | $($r.source -replace '\|', '/') |") }
         $l.Add('')
     }
     $l.Add('### All checks'); $l.Add(''); $l.Add('| Check | Category | Node | Status | Blocking | Title |'); $l.Add('| --- | --- | --- | --- | --- | --- |')
@@ -1066,6 +1075,13 @@ function Invoke-AzlPreClusterVerification {
         elseif (@($envChecker.errors).Count) { "The gate installed the Environment Checker on $(@($envChecker.installedOn).Count) node(s); removing it failed on some: $(@($envChecker.errors) -join '; '). Learn: uninstall it from the nodes before the deployment." }
         else { "The gate installed the Environment Checker on $(@($envChecker.installedOn).Count) node(s) for this run and REMOVED it again from $(@($envChecker.removedFrom).Count) node(s) at the end (Learn: uninstall it from the nodes before the deployment)." }
 
+        # ---- the switch port checklist: what the file expects on each switch port (the gate cannot read a switch)
+        $checklist = [System.Collections.Generic.List[object]]::new()
+        foreach ($command in @($extension.ChecklistCommands)) {
+            try { foreach ($row in @(& $command -Context (Get-AzlPclContextTable $ctx))) { $checklist.Add($row) } }
+            catch { Write-Verbose "The switch port checklist could not be made: $($_.Exception.Message)" }
+        }
+
         # ---- verdict, report, summary
         $completed = (& $Adapter.Now).ToUniversalTime()
         $expires = $completed.AddHours([int]$run.preClusterVerificationMaxAgeHours)
@@ -1077,6 +1093,7 @@ function Invoke-AzlPreClusterVerification {
             startedUtc = $started.ToString('o', [cultureinfo]::InvariantCulture); completedUtc = $completed.ToString('o', [cultureinfo]::InvariantCulture); expiresUtc = $expires.ToString('o', [cultureinfo]::InvariantCulture)
             maxAgeHours = [int]$run.preClusterVerificationMaxAgeHours; counts = $counts; acceptedSkipped = @($results | Where-Object { $_.Accepted } | ForEach-Object { $_.Id } | Select-Object -Unique); fixesApplied = [bool]$Fix
             environmentChecker = $envChecker
+            switchPortChecklist = @($checklist)
             modules = @($extension.Modules | ForEach-Object { [ordered]@{ name = $_.Name; checks = $_.Checks; error = $_.Error } })
             categories = [ordered]@{}
             checks = @($results | ForEach-Object { [ordered]@{ checkId = $_.Id; category = $_.Category; title = $_.Title; status = $_.Status; node = $_.Node; message = $_.Message; remedy = $_.Remedy; source = $_.Source; blocking = $_.Blocking; accepted = $_.Accepted; details = @($_.Details) } })

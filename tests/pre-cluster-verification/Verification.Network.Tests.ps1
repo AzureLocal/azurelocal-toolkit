@@ -13,11 +13,11 @@ BeforeAll {
 }
 
 Describe 'Contract' {
-    It 'exports the two commands and thirteen well formed definitions' {
+    It 'exports the two commands and sixteen well formed definitions' {
         $script:Mod.ExportedCommands.Keys | Should -Contain 'Get-AzlVerificationCheckDefinition'
         $script:Mod.ExportedCommands.Keys | Should -Contain 'Get-AzlVerificationAdapterDefault'
         $defs = Get-VerDefinition -Module $script:Mod
-        $defs.Count | Should -Be 13
+        $defs.Count | Should -Be 16
         foreach ($d in $defs) {
             $d.Id | Should -Match '^NW-\d{3}$'; $d.Category | Should -Be 'network'; $d.Title | Should -Not -BeNullOrEmpty; $d.Source | Should -Not -BeNullOrEmpty
             $d.Blocking | Should -BeOfType [bool]; $d.Applies | Should -BeOfType [scriptblock]; $d.Run | Should -BeOfType [scriptblock]
@@ -195,6 +195,7 @@ Describe 'NW-013 physical ports against the file (found by MAC, name-agnostic)' 
             # management ip only on the first management port of each node
             foreach ($n in $f.Infra.nodes) { $seen = $false; foreach ($pt in $n.network_adapters) { if ('management' -in $pt.roles) { if ($seen) { $pt.Remove('ip_address') } else { $seen = $true } } elseif ($pt.Contains('ip_address')) { $pt.Remove('ip_address') } } }
             $f.Infra.networking.intents = @(foreach ($k in $Intents.Keys) { [ordered]@{ name = $k; traffic = @($Intents[$k].Traffic); adapters = @($Intents[$k].Adapters) } })
+            $f.Infra.networking.storage = [ordered]@{ networks = @() }; $f.Infra.networking.management.vlan_id = 0
             if ($ClusterNets) { $f.Infra.networking.cluster_networks = @() }
             $f.World = New-VerWorld -Infra $f.Infra
             foreach ($n in $Nodes) {
@@ -324,5 +325,155 @@ Describe 'NW-013 physical ports against the file (found by MAC, name-agnostic)' 
             $code | Should -Not -Match "-(match|like|eq|ieq|ne)\s+['""]\^?Port\\d" -Because $f.Name
             $code | Should -Not -Match "\[regex\]::.*Port\\d" -Because $f.Name
         }
+    }
+}
+Describe 'NW-014 storage adapters are bare (Azure Validate: StorageAdapterReadiness)' {
+    It 'passes when the storage NICs carry no VLAN, no address and no gateway, and says Network ATC applies the storage VLANs' {
+        $f = New-VerFresh
+        $r = @(Invoke-VerRun 'NW-014' $f.World $f.Infra | Where-Object Node -EQ 'n01')[0]
+        $r.Status | Should -Be 'Passed'
+        $r.Message | Should -Match 'Network ATC applies the storage VLANs itself'
+        $r.Message | Should -Match 'networking.storage.networks\[\].vlan_id'
+    }
+    It 'fails for a VLAN ID on the NIC (Get-NetAdapter or the advanced property), with the exact commands' {
+        $f = New-VerFresh; (Get-VerNic $f.World 'n01' 'Port2').vlan = '712'; (Get-VerNic $f.World 'n01' 'Port3').vlanAdv = '713'
+        $r = @(Invoke-VerRun 'NW-014' $f.World $f.Infra | Where-Object Node -EQ 'n01')[0]
+        $r.Status | Should -Be 'Failed'
+        $r.Message | Should -Match "'Port2' \(file 'Port2'\) has a VLAN ID configured on the NIC \(vlan=712\)"
+        $r.Message | Should -Match 'vlanAdv=713'
+        $r.Remedy | Should -Match "Set-NetAdapterAdvancedProperty -Name 'Port2' -RegistryKeyword VlanID -RegistryValue 0; Restart-NetAdapter -Name 'Port2'"
+        (@(Invoke-VerRun 'NW-014' $f.World $f.Infra | Where-Object Node -EQ 'n02')[0]).Status | Should -Be 'Passed'
+    }
+    It 'fails for a manual address, DHCP and a default gateway on a storage adapter, and for duplicate adapter names' {
+        $f = New-VerFresh
+        $n = Get-VerNic $f.World 'n01' 'Port2'; $n.ips = @('198.51.100.5'); $n.gw = @('198.51.100.1')
+        (Get-VerNic $f.World 'n01' 'Port3').dhcp = 'Enabled'
+        $m = (@(Invoke-VerRun 'NW-014' $f.World $f.Infra | Where-Object Node -EQ 'n01')[0]).Message
+        $m | Should -Match 'has the IPv4 address 198.51.100.5 \(manual\)'
+        $m | Should -Match 'has the default gateway 198.51.100.1'
+        $m | Should -Match 'has DHCP enabled'
+        $g = New-VerFresh; $dup = @{} + (Get-VerNic $g.World 'n02' 'Port2'); $g.World.Snapshot['n02'].nics = @($g.World.Snapshot['n02'].nics) + @($dup)
+        (@(Invoke-VerRun 'NW-014' $g.World $g.Infra | Where-Object Node -EQ 'n02')[0]).Message | Should -Match 'exist\(s\) more than once on the node'
+    }
+    It 'resolves the storage adapters by MAC, whatever the names are' {
+        $f = New-VerFresh
+        foreach ($n in $f.Infra.nodes) { foreach ($a in $n.network_adapters) { $a.name = 'Slot 3 ' + $a.name } }
+        foreach ($i in $f.Infra.networking.intents) { $i.adapters = @($i.adapters | ForEach-Object { 'Slot 3 ' + $_ }) }
+        (Get-VerNic $f.World 'n01' 'Port3').vlan = '713'
+        $r = @(Invoke-VerRun 'NW-014' $f.World $f.Infra | Where-Object Node -EQ 'n01')[0]
+        $r.Status | Should -Be 'Failed'; $r.Message | Should -Match "file 'Slot 3 Port3'"
+    }
+}
+
+Describe 'NW-015 the VLAN plan of the file' {
+    It 'is Skipped (blocking) when the file has no networking.vlans[]' {
+        $f = New-VerFresh; $f.Infra.networking.Remove('vlans')
+        $r = @(Invoke-VerRun 'NW-015' $f.World $f.Infra)[0]
+        $r.Status | Should -Be 'Skipped'; $r.Message | Should -Match 'no networking.vlans'
+    }
+    It 'passes for the lab plan: management 711, storage 712 and 713, compute 717 allowed on the compute ports' {
+        $f = New-VerFresh
+        $r = @(Invoke-VerRun 'NW-015' $f.World $f.Infra)
+        ($r | ForEach-Object Status | Select-Object -Unique) | Should -Be 'Passed'
+        $r[0].Message | Should -Match 'management VLAN 711'
+        $r[0].Message | Should -Match 'compute VLANs 717'
+    }
+    It 'fails on a VLAN id, a name and a subnet used twice, and on overlapping subnets' {
+        $f = New-VerFresh; $v = $f.Infra.networking.vlans
+        $v[2].id = 712; $v[3].name = 'Storage-A'; $v[3].subnet = '198.51.100.0/26'
+        $m = (@(Invoke-VerRun 'NW-015' $f.World $f.Infra | Where-Object Status -EQ 'Failed')[0]).Message
+        $m | Should -Match 'VLAN id 712 is used by more than one vlans'
+        $m | Should -Match "the VLAN name 'storage-a' is used more than once"
+        $m | Should -Match 'the subnet 198.51.100.0/26 is used by more than one'
+        $g = New-VerFresh; $g.Infra.networking.vlans[3].subnet = '198.51.100.0/25'
+        (@(Invoke-VerRun 'NW-015' $g.World $g.Infra | Where-Object Status -EQ 'Failed')[0]).Message | Should -Match 'overlap'
+    }
+    It 'fails when the management subnet is in no VLAN, or in two' {
+        $f = New-VerFresh; $f.Infra.networking.management.subnet = '10.9.9.0/24'; $f.Infra.networking.management.gateway = '10.9.9.1'
+        (@(Invoke-VerRun 'NW-015' $f.World $f.Infra | Where-Object Status -EQ 'Failed')[0]).Message | Should -Match 'is in no vlans\[\] entry'
+        $g = New-VerFresh; $g.Infra.networking.vlans = @($g.Infra.networking.vlans) + @([ordered]@{ name = 'wide'; id = 800; subnet = '192.0.0.0/16'; purpose = 'other' })
+        (@(Invoke-VerRun 'NW-015' $g.World $g.Infra | Where-Object Status -EQ 'Failed')[0]).Message | Should -Match 'belongs to more than one vlans'
+    }
+    It 'fails when a management port disagrees with the management VLAN, or networking.management.vlan_id disagrees with the ports' {
+        $f = New-VerFresh; $f.Infra.nodes[0].network_adapters[0].vlan_id = 799
+        (@(Invoke-VerRun 'NW-015' $f.World $f.Infra | Where-Object Status -EQ 'Failed')[0]).Message | Should -Match "management port 'Port0' of n01 says VLAN 799"
+        $g = New-VerFresh; $g.Infra.networking.management.vlan_id = 0
+        (@(Invoke-VerRun 'NW-015' $g.World $g.Infra | Where-Object Status -EQ 'Failed')[0]).Message | Should -Match 'networking.management.vlan_id is 0'
+    }
+    It 'access ports mean untagged: the NIC VLAN must be 0, and the switch VLAN is the management VLAN' {
+        $f = New-VerFresh
+        foreach ($n in $f.Infra.nodes) { foreach ($a in @($n.network_adapters)[0..1]) { $a.vlan_mode = 'access'; $a.vlan_id = 711; $a.Remove('allowed_vlans') } }
+        $f.Infra.networking.management.vlan_id = 0
+        foreach ($s in $f.World.Snapshot.Values) { foreach ($nic in @($s.nics)[0..1]) { $nic.vlan = '0' } }
+        $r = @(Invoke-VerRun 'NW-015' $f.World $f.Infra | Where-Object Status -EQ 'Failed')
+        # access ports cannot carry the compute VLAN
+        ($r | ForEach-Object Message) -join ' ' | Should -Match 'is an access port \(VLAN 711\), but the compute VLAN\(s\) 717 must reach it'
+        ($r | ForEach-Object Message) -join ' ' | Should -Not -Match 'carries VLAN'
+        (Get-VerNic $f.World 'n01' 'Port0').vlan = '711'
+        (@(Invoke-VerRun 'NW-015' $f.World $f.Infra | Where-Object { $_.Node -eq 'n01' -and $_.Status -eq 'Failed' })[0]).Message | Should -Match "carries VLAN 711 on the NIC, the file says the host tags 0 \(access, untagged\)"
+    }
+    It 'fails when the NIC VLAN of a tagged management port is not the file''s' {
+        $f = New-VerFresh; (Get-VerNic $f.World 'n02' 'Port0').vlan = '0'
+        (@(Invoke-VerRun 'NW-015' $f.World $f.Infra | Where-Object { $_.Node -eq 'n02' -and $_.Status -eq 'Failed' })[0]).Message | Should -Match "carries VLAN 0 on the NIC, the file says the host tags 711"
+    }
+    It 'fails when a storage network VLAN is not in the plan, repeats, or is the management VLAN' {
+        $f = New-VerFresh; $f.Infra.networking.storage.networks[0].vlan_id = 799
+        (@(Invoke-VerRun 'NW-015' $f.World $f.Infra | Where-Object Status -EQ 'Failed')[0]).Message | Should -Match "storage network 'StorageNetwork1' uses VLAN 799, which is not in vlans"
+        $g = New-VerFresh; $g.Infra.networking.storage.networks[1].vlan_id = 712
+        (@(Invoke-VerRun 'NW-015' $g.World $g.Infra | Where-Object Status -EQ 'Failed')[0]).Message | Should -Match 'VLAN 712 is used by more than one storage network'
+        $h = New-VerFresh; $h.Infra.networking.storage.networks[0].vlan_id = 711
+        (@(Invoke-VerRun 'NW-015' $h.World $h.Infra | Where-Object Status -EQ 'Failed')[0]).Message | Should -Match 'uses the management VLAN 711'
+    }
+    It 'fails for a node address outside the management subnet and only warns for a DNS server outside it' {
+        $f = New-VerFresh; $f.Infra.networking.management.gateway = '10.0.0.1'
+        (@(Invoke-VerRun 'NW-015' $f.World $f.Infra | Where-Object Status -EQ 'Failed')[0]).Message | Should -Match 'the gateway 10.0.0.1 is outside the management subnet'
+        $g = New-VerFresh; $g.Infra.networking.management.dns_servers = @('10.0.0.53')
+        $w = @(Invoke-VerRun 'NW-015' $g.World $g.Infra | Where-Object { $_.Node -eq '*' })
+        ($w | ForEach-Object Status) | Should -Contain 'Warning'
+        ($w | ForEach-Object Status) | Should -Not -Contain 'Failed'
+    }
+    It 'is Skipped, never Passed, when the compute ports are tagged but the file lists no allowed VLANs' {
+        $f = New-VerFresh; foreach ($n in $f.Infra.nodes) { foreach ($a in @($n.network_adapters)[0..1]) { $a.Remove('allowed_vlans') } }
+        $r = @(Invoke-VerRun 'NW-015' $f.World $f.Infra | Where-Object Status -EQ 'Skipped')
+        $r.Count | Should -Be 1
+        $r[0].Message | Should -Match 'are tagged but the file lists no allowed VLANs'
+        $r[0].Message | Should -Match 'allowed_vlans'
+        (Get-VerDefinition -Module $script:Mod -Id 'NW-015').Blocking | Should -BeTrue
+    }
+    It 'fails when allowed_vlans misses the compute VLAN; the file is the authority, nothing is hard-coded' {
+        $f = New-VerFresh; foreach ($n in $f.Infra.nodes) { foreach ($a in @($n.network_adapters)[0..1]) { $a.allowed_vlans = @(718) } }
+        (@(Invoke-VerRun 'NW-015' $f.World $f.Infra | Where-Object Status -EQ 'Failed')[0]).Message | Should -Match "does not allow the compute VLAN\(s\) 717 \(allowed_vlans: 718\)"
+        $g = New-VerFresh
+        foreach ($v in $g.Infra.networking.vlans) { if ($v.name -eq 'compute') { $v.id = 730 } }
+        foreach ($n in $g.Infra.nodes) { foreach ($a in @($n.network_adapters)[0..1]) { $a.allowed_vlans = @(730) } }
+        (@(Invoke-VerRun 'NW-015' $g.World $g.Infra) | ForEach-Object Status | Select-Object -Unique) | Should -Be 'Passed'
+    }
+}
+
+Describe 'NW-016 the switch port checklist (the gate cannot read a switch)' {
+    It 'lists every port with switch_port data, with the VLANs the file expects, as a NotApplicable line that says to verify on the switch' {
+        $f = New-VerFresh
+        $r = @(Invoke-VerRun 'NW-016' $f.World $f.Infra)
+        $r.Count | Should -Be 8
+        ($r | ForEach-Object Status | Select-Object -Unique) | Should -Be 'NotApplicable'
+        $first = $r | Where-Object { $_.Node -eq 'n01' -and $_.Message -match 'tor-a Ethernet1/1:' }
+        $first.Message | Should -Match 'switch trunk/access config is not readable from here; verify against tor-a Ethernet1/1'
+        $first.Message | Should -Match 'expected trunk, VLANs \[711, 717\]'
+        $storage = $r | Where-Object { $_.Node -eq 'n01' -and $_.Message -match 'tor-a Ethernet1/3:' }
+        $storage.Message | Should -Match 'VLANs \[712\]'
+        (Get-VerDefinition -Module $script:Mod -Id 'NW-016').Blocking | Should -BeFalse
+    }
+    It 'the checklist function returns the rows the report carries (switch, port, node, file port, mode, VLANs, source)' {
+        $f = New-VerFresh
+        $ctx = New-VerContext -Module $script:Mod -Infra $f.Infra -World $f.World
+        $rows = @(& $script:Mod.ExportedCommands['Get-AzlVerificationSwitchPortChecklist'] -Context $ctx)
+        $rows.Count | Should -Be 8
+        foreach ($p in 'switch', 'port', 'node', 'filePort', 'mac', 'roles', 'expectedMode', 'expectedVlans', 'hostTag', 'source') { $rows[0].PSObject.Properties.Name | Should -Contain $p }
+        ($rows | Where-Object { $_.filePort -eq 'Port0' -and $_.node -eq 'n01' }).expectedVlans | Should -Be @(711, 717)
+    }
+    It 'says there is no checklist when the file has no switch_port data' {
+        $f = New-VerFresh; foreach ($n in $f.Infra.nodes) { foreach ($a in $n.network_adapters) { $a.Remove('switch_port') } }
+        $r = @(Invoke-VerRun 'NW-016' $f.World $f.Infra)
+        $r.Count | Should -Be 1; $r[0].Message | Should -Match 'no switch_port data'
     }
 }

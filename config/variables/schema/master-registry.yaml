@@ -122,7 +122,7 @@ _metadata:
   change_log:
     - date: "2026-11-08"
       version: "5.0.11"
-      change: "nodes[].network_adapters[].allowed_vlans (optional list of VLAN ids, 1 to 4094): the VLANs the switch port of an adapter allows, used by the VLAN plan checks of the pre-cluster verification (compute VLANs against the compute adapters) and by the switch port checklist in its report."
+      change: "nodes[].network_adapters[].allowed_vlans (optional list of VLAN ids, 1 to 4094): the VLANs the switch port of an adapter allows, used by the VLAN plan checks of the pre-cluster verification (compute VLANs against the compute adapters) and by the switch port checklist in its report. The report.json of the pre-cluster verification also documents categories, modules, environmentChecker and switchPortChecklist."
       reason: "The VLAN plan was never verified: the file lists the VLANs (networking.vlans[]) and the ports (nodes[].network_adapters[].vlan_id, vlan_mode, switch_port), but not which VLANs a compute trunk port allows, so the gate could not say whether the compute VLANs reach the compute adapters. The gate cannot read the switch; the file is the authority and the checklist says what to verify on the switch."
     - date: "2026-11-08"
       version: "5.0.10"
@@ -18434,6 +18434,10 @@ tools:
                 acceptedSkipped: {"name":"acceptedSkipped","type":"string","declared_type":"string[]","required":"yes","read_at":"scripts/common/arm-deployment/AzlPreClusterVerification.psm1 Write-AzlPclReport","description":"The ids the operator accepted as Skipped with -AcceptSkipped."}
                 fixesApplied: {"name":"fixesApplied","type":"boolean","declared_type":"bool","required":"yes","read_at":"scripts/common/arm-deployment/AzlPreClusterVerification.psm1 Write-AzlPclReport","description":"true when -Fix was given."}
                 checks: {"name":"checks","type":"object","declared_type":"object[]","required":"yes","read_at":"scripts/common/arm-deployment/AzlPreClusterVerification.psm1 Write-AzlPclReport","description":"One entry per check result: checkId, category, title, status, node, message, remedy, source, blocking, accepted, details."}
+                categories: {"name":"categories","type":"object","declared_type":"hashtable","required":"yes","read_at":"scripts/common/arm-deployment/AzlPreClusterVerification.psm1 Invoke-AzlPreClusterVerification","description":"Per category with results: results, blocking and the count of each status. A full run has all six."}
+                modules: {"name":"modules","type":"object","declared_type":"object[]","required":"yes","read_at":"scripts/common/arm-deployment/AzlPreClusterVerification.psm1 Invoke-AzlPreClusterVerification","description":"The verification modules of the run: name, checks, error. A module that is missing or does not load is an error here and a failing EXT- check."}
+                environmentChecker: {"name":"environmentChecker","type":"object","declared_type":"hashtable","required":"yes","read_at":"scripts/common/arm-deployment/AzlPreClusterVerification.psm1 Invoke-AzlPreClusterVerification","description":"requested, kept, installedOn, removedFrom, errors and a note: whether the gate installed the Environment Checker on the nodes for this run and removed it again."}
+                switchPortChecklist: {"name":"switchPortChecklist","type":"object","declared_type":"object[]","required":"no","read_at":"scripts/common/arm-deployment/AzlPreClusterVerification.psm1 Invoke-AzlPreClusterVerification","description":"What the file expects on each switch port (the gate cannot read a switch): switch, port, node, filePort, mac, roles, expectedMode, expectedVlans, hostTag and source. Present when the file has switch_port data; also a table in summary.md."}
         run_settings:
           type: object
           properties:

@@ -52,6 +52,8 @@ function Get-AzlVerFilePort {
                 Name = [string](Get-AzlProp $a 'name' ''); Mac = (ConvertTo-AzlVerMacKey ([string](Get-AzlProp $a 'mac_address' ''))); Roles = $roles
                 Used = ($roles.Count -gt 0 -and 'unused' -notin $roles); Slot = [string](Get-AzlProp $a 'slot' ''); SpeedGbps = [double](Get-AzlProp $a 'speed_gbps' 0)
                 VlanId = $(if ($null -ne $vlan -and "$vlan" -ne '') { [int]$vlan } else { $null }); Ip = [string](Get-AzlProp $a 'ip_address' '')
+                VlanMode = ([string](Get-AzlProp $a 'vlan_mode' '')).ToLowerInvariant(); AllowedVlans = @(ConvertTo-AzlVerList (Get-AzlProp $a 'allowed_vlans' @()) | ForEach-Object { [int]$_ })
+                SwitchName = [string](Get-AzlProp $a 'switch_port.switch' ''); SwitchPort = [string](Get-AzlProp $a 'switch_port.port' '')
             }
         })
 }
@@ -86,6 +88,123 @@ function Find-AzlVerNic {
     }
     @(ConvertTo-AzlVerList $Nics | Where-Object { [string](Get-AzlProp $_ 'n' '') -ieq $Name }) | Select-Object -First 1
 }
+function ConvertFrom-AzlVerCidr {
+    <# An IPv4 CIDR as Net, Last and Len (unsigned 64-bit arithmetic), or $null when it is not one. #>
+    param([AllowNull()][string]$Cidr)
+    if ([string]$Cidr -notmatch '^(\d{1,3}(?:\.\d{1,3}){3})/(\d{1,2})$') { return $null }
+    $len = [int]$Matches[2]; $ip = $null
+    if ($len -gt 32 -or -not [Net.IPAddress]::TryParse($Matches[1], [ref]$ip)) { return $null }
+    $b = $ip.GetAddressBytes()
+    $v = ([uint64]$b[0] -shl 24) + ([uint64]$b[1] -shl 16) + ([uint64]$b[2] -shl 8) + [uint64]$b[3]
+    $size = [uint64][math]::Pow(2, 32 - $len)
+    $net = $v - ($v % $size)
+    [pscustomobject]@{ Net = $net; Last = $net + $size - 1; Len = $len; Text = $Cidr }
+}
+
+function ConvertTo-AzlVerIpNumber {
+    param([AllowNull()][string]$Address)
+    $ip = $null
+    if (-not [Net.IPAddress]::TryParse([string]$Address, [ref]$ip) -or $ip.AddressFamily -ne 'InterNetwork') { return $null }
+    $b = $ip.GetAddressBytes()
+    ([uint64]$b[0] -shl 24) + ([uint64]$b[1] -shl 16) + ([uint64]$b[2] -shl 8) + [uint64]$b[3]
+}
+
+function Test-AzlVerIpInCidr {
+    param([AllowNull()][string]$Address, [AllowNull()][string]$Cidr)
+    $c = ConvertFrom-AzlVerCidr $Cidr; $n = ConvertTo-AzlVerIpNumber $Address
+    if (-not $c -or $null -eq $n) { return $false }
+    return ($n -ge $c.Net -and $n -le $c.Last)
+}
+
+function Test-AzlVerCidrOverlap {
+    param([AllowNull()][string]$A, [AllowNull()][string]$B)
+    $x = ConvertFrom-AzlVerCidr $A; $y = ConvertFrom-AzlVerCidr $B
+    if (-not $x -or -not $y) { return $false }
+    return ($x.Net -le $y.Last -and $y.Net -le $x.Last)
+}
+
+function Get-AzlVerVlanPlan {
+    <#
+    .SYNOPSIS
+        The VLAN plan of the file, as the file spells it: networking.vlans[] (Name, Id, Subnet, Purpose), the storage networks (networking.storage.networks[] and
+        networking.cluster_networks[]: Name, Adapter, VlanId, Subnet), the logical networks, the management network, and the compute VLAN ids (vlans[] and logical
+        networks whose purpose is compute). The file is the authority; the gate cannot read the switches.
+    #>
+    param([Parameter(Mandatory)]$Context)
+    $infra = Get-AzlVerInfra $Context
+    $vlans = @(foreach ($v in (ConvertTo-AzlVerList (Get-AzlProp $infra 'networking.vlans' @()))) {
+            $id = Get-AzlProp $v 'id' $null
+            [pscustomobject]@{ Name = [string](Get-AzlProp $v 'name' ''); Id = $(if ($null -ne $id -and "$id" -ne '') { [int]$id } else { $null }); Subnet = [string](Get-AzlProp $v 'subnet' ''); Purpose = ([string](Get-AzlProp $v 'purpose' '')).ToLowerInvariant() }
+        })
+    $storage = @(foreach ($src in 'networking.storage.networks', 'networking.cluster_networks') {
+            foreach ($s in (ConvertTo-AzlVerList (Get-AzlProp $infra $src @()))) {
+                $id = Get-AzlProp $s 'vlan_id' $null
+                [pscustomobject]@{ Name = [string](Get-AzlProp $s 'name' ''); Adapter = [string](Get-AzlProp $s 'adapter' ''); VlanId = $(if ($null -ne $id -and "$id" -ne '') { [int]$id } else { $null }); Subnet = [string](Get-AzlProp $s 'subnet' ''); From = $src }
+            }
+        })
+    $logical = @(foreach ($l in (ConvertTo-AzlVerList (Get-AzlProp $infra 'networking.logical_networks' @()))) {
+            $id = Get-AzlProp $l 'vlan_id' $null
+            [pscustomobject]@{ Name = [string](Get-AzlProp $l 'name' ''); VlanId = $(if ($null -ne $id -and "$id" -ne '') { [int]$id } else { $null }); Prefix = [string](Get-AzlProp $l 'address_prefix' ''); Purpose = ([string](Get-AzlProp $l 'purpose' '')).ToLowerInvariant() }
+        })
+    $compute = @((@($vlans | Where-Object { $_.Purpose -eq 'compute' -and $null -ne $_.Id } | ForEach-Object { $_.Id }) + @($logical | Where-Object { $_.Purpose -eq 'compute' -and $_.VlanId -gt 0 } | ForEach-Object { $_.VlanId })) | Select-Object -Unique)
+    $mv = Get-AzlProp $infra 'networking.management.vlan_id' $null
+    [pscustomobject]@{
+        Vlans = $vlans; Storage = $storage; Logical = $logical; ComputeVlans = $compute
+        MgmtSubnet = [string](Get-AzlProp $infra 'networking.management.subnet' ''); MgmtHostVlan = $(if ($null -ne $mv -and "$mv" -ne '') { [int]$mv } else { $null })
+        MgmtGateway = [string](Get-AzlProp $infra 'networking.management.gateway' '')
+        DnsServers = @(ConvertTo-AzlVerList (Get-AzlProp $infra 'networking.management.dns_servers' @()) | ForEach-Object { [string]$_ })
+        PoolStart = [string](Get-AzlProp $infra 'networking.management.infrastructure_pool.start' ''); PoolEnd = [string](Get-AzlProp $infra 'networking.management.infrastructure_pool.end' '')
+        DomainControllers = @(ConvertTo-AzlVerList (Get-AzlProp $infra 'identity.active_directory.domain_controllers' @()) | ForEach-Object { [string]$_ })
+    }
+}
+
+function Get-AzlVerMgmtVlan {
+    <# The vlans[] entry the management subnet belongs to: Entries (all that equal or contain it) so the caller can say none or more than one. #>
+    param([Parameter(Mandatory)]$Plan)
+    $m = ConvertFrom-AzlVerCidr $Plan.MgmtSubnet
+    if (-not $m) { return @() }
+    @($Plan.Vlans | Where-Object { $c = ConvertFrom-AzlVerCidr $_.Subnet; $c -and $m.Net -ge $c.Net -and $m.Last -le $c.Last })
+}
+
+function Get-AzlVerPortSwitchExpectation {
+    <#
+    .SYNOPSIS
+        What the file says the switch port of one adapter must be: Mode (access, trunk or not stated), the VLAN ids it must carry and where each comes from.
+        Host tag = what the NIC itself must tag (0 for an access port).
+    #>
+    param([Parameter(Mandatory)]$Port, [Parameter(Mandatory)]$Plan, $MgmtVlanId)
+    $own = $Port.VlanId
+    $hostTag = switch ($Port.VlanMode) { 'access' { 0 } default { if ($null -ne $own) { [int]$own } else { 0 } } }
+    $vlansNeeded = [System.Collections.Generic.List[int]]::new()
+    $why = [System.Collections.Generic.List[string]]::new()
+    if ($null -ne $own -and [int]$own -gt 0) { $vlansNeeded.Add([int]$own); $why.Add("port vlan_id $own") }
+    if ('management' -in $Port.Roles -and $null -ne $MgmtVlanId -and [int]$MgmtVlanId -notin $vlansNeeded) { $vlansNeeded.Add([int]$MgmtVlanId); $why.Add("management VLAN $MgmtVlanId") }
+    foreach ($s in @($Plan.Storage | Where-Object { $_.Adapter -ieq $Port.Name -and $null -ne $_.VlanId })) { if ([int]$s.VlanId -notin $vlansNeeded) { $vlansNeeded.Add([int]$s.VlanId); $why.Add("storage network $($s.Name) VLAN $($s.VlanId)") } }
+    if ('compute' -in $Port.Roles -and -not @($Port.AllowedVlans).Count) { foreach ($c in $Plan.ComputeVlans) { if ([int]$c -notin $vlansNeeded) { $vlansNeeded.Add([int]$c); $why.Add("compute VLAN $c") } } }
+    foreach ($a in $Port.AllowedVlans) { if ([int]$a -notin $vlansNeeded) { $vlansNeeded.Add([int]$a); $why.Add("allowed_vlans $a") } }
+    $mode = if ($Port.VlanMode -eq 'access') { 'access' } elseif ($Port.VlanMode -eq 'tagged' -or $vlansNeeded.Count -gt 1 -or $hostTag -gt 0) { 'trunk' } else { 'not stated (untagged)' }
+    [pscustomobject]@{ Mode = $mode; Vlans = @($vlansNeeded | Sort-Object); HostTag = $hostTag; Why = $why.ToArray() }
+}
+
+function Get-AzlVerificationSwitchPortChecklist {
+    <#
+    .SYNOPSIS
+        The switch port checklist: for every adapter of the file with switch_port data, the switch, the port, the node and file port, the mode and the VLANs the
+        file expects on it. The gate cannot read a switch; this is what a person verifies there. Part of report.json (switchPortChecklist) and summary.md.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$Context)
+    $plan = Get-AzlVerVlanPlan $Context
+    $mgmt = @(Get-AzlVerMgmtVlan $plan)
+    $mgmtId = if ($mgmt.Count -eq 1) { $mgmt[0].Id } else { $null }
+    foreach ($n in (Get-AzlVerNodeList $Context)) {
+        foreach ($p in @(Get-AzlVerFilePort $n | Where-Object { $_.Used -and $_.SwitchName })) {
+            $e = Get-AzlVerPortSwitchExpectation -Port $p -Plan $plan -MgmtVlanId $mgmtId
+            [pscustomobject]@{ switch = $p.SwitchName; port = $p.SwitchPort; node = $n.Name; filePort = $p.Name; mac = (Format-AzlVerMac $p.Mac); roles = ($p.Roles -join '+'); expectedMode = $e.Mode; expectedVlans = @($e.Vlans); hostTag = $e.HostTag; source = ($e.Why -join '; ') }
+        }
+    }
+}
+
 function Get-AzlVerIntentAdapter {
     param($Intent)
     @($Intent | ForEach-Object { $_.Adapters } | ForEach-Object { $_ })
@@ -94,7 +213,7 @@ function Get-AzlVerIntentAdapter {
 function Get-AzlVerificationCheckDefinition {
     <#
     .SYNOPSIS
-        The check definitions of the NETWORK category (NW-001 to NW-013).
+        The check definitions of the NETWORK category (NW-001 to NW-016).
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'The per node script blocks take the one signature (Name, Data, NodeInfo) whether a check needs all three or not.')]
     [CmdletBinding()]
@@ -401,7 +520,7 @@ function Get-AzlVerificationCheckDefinition {
                 $intents = @(Get-AzlVerIntent $Context)
                 $min = [double](Get-AzlVerSetting $Context 'verificationMinLinkGbps')
                 $arch = Get-AzlVerArchitecture $Context
-                $clusterNets = @(ConvertTo-AzlVerList (Get-AzlProp $infra 'networking.cluster_networks' @()))
+                $clusterNets = @(foreach ($src in 'networking.storage.networks', 'networking.cluster_networks') { ConvertTo-AzlVerList (Get-AzlProp $infra $src @()) })
                 $mgmtVlan = Get-AzlProp $infra 'networking.management.vlan_id' $null
                 $reportMap = Get-AzlVerOsReportMap $Context
                 $osNames = @{}
@@ -519,6 +638,143 @@ function Get-AzlVerificationCheckDefinition {
                 }
             }))
 
+    $defs.Add((New-AzlVerDefinition -Id 'NW-014' -Category network -Title 'Storage adapters are bare: no VLAN ID on the NIC, no manual or DHCP IPv4 address, no default gateway, no duplicate adapter names on the node' `
+                -Source "$($script:Src.HostNet); Azure ARM Validate step AzureLocal_Network_Test_StorageAdapterReadiness (lab failure: 'Adapter has the following VLANID configured: [ 712 ]')" -Applies $hasIntents -Run {
+                param($Context)
+                $intents = @(Get-AzlVerIntent $Context)
+                $storage = @($intents | Where-Object { 'storage' -in $_.Traffic })
+                if (-not $storage.Count) { return New-AzlVerResult NotApplicable 'The file has no storage intent, so there are no storage adapters to check.' }
+                Invoke-AzlVerPerNode -Context $Context -Section 'GetAdapters' -Body {
+                    param($Name, $D, $N)
+                    $nics = @(ConvertTo-AzlVerList (Get-AzlProp $D 'nics' @()))
+                    $problems = [System.Collections.Generic.List[string]]::new(); $fix = [System.Collections.Generic.List[string]]::new(); $rows = [System.Collections.Generic.List[string]]::new(); $unread = [System.Collections.Generic.List[string]]::new()
+                    $dupNames = @($nics | Group-Object { ([string](Get-AzlProp $_ 'n' '')).ToLowerInvariant() } | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Group[0].n })
+                    if ($dupNames.Count) { $problems.Add("$(Join-AzlVerList $dupNames) exist(s) more than once on the node: there must not be multiple storage adapters with the same name"); $fix.Add('Give every adapter a unique name: Rename-NetAdapter -Name <old> -NewName <new> (the OS configuration run names ports by MAC).') }
+                    foreach ($i in $storage) {
+                        foreach ($a in $i.Adapters) {
+                            $nic = Find-AzlVerNic $nics $a $N
+                            if (-not $nic) { $unread.Add("storage adapter '$a' of intent $($i.Name) is not on the node (NW-013 reports it)"); continue }
+                            $os = [string]$nic.n
+                            $tags = @(foreach ($k in 'vlan', 'vlanAdv') { $x = Get-AzlProp $nic $k $null; if ($null -ne $x -and "$x" -ne '' -and "$x" -ne '0') { "$k=$x" } })
+                            $ips = @(ConvertTo-AzlVerList (Get-AzlProp $nic 'ips' @()))
+                            $gw = @(ConvertTo-AzlVerList (Get-AzlProp $nic 'gw' @()))
+                            $dhcp = [string](Get-AzlProp $nic 'dhcp' '')
+                            if ($tags.Count) { $problems.Add("'$os' (file '$a') has a VLAN ID configured on the NIC ($($tags -join ', ')); a storage adapter must have none"); $fix.Add("Set-NetAdapterAdvancedProperty -Name '$os' -RegistryKeyword VlanID -RegistryValue 0; Restart-NetAdapter -Name '$os'") }
+                            if ($ips.Count) { $problems.Add("'$os' (file '$a') has the IPv4 address $($ips -join ', ') ($(if ($dhcp -eq 'Enabled') { 'DHCP' } else { 'manual' })); a storage adapter must have none (APIPA 169.254 is fine)"); $fix.Add("Remove-NetIPAddress -InterfaceAlias '$os' -AddressFamily IPv4 -Confirm:`$false; Set-NetIPInterface -InterfaceAlias '$os' -Dhcp Disabled") }
+                            elseif ($dhcp -eq 'Enabled') { $problems.Add("'$os' (file '$a') has DHCP enabled; a storage adapter must have no DHCP address"); $fix.Add("Set-NetIPInterface -InterfaceAlias '$os' -Dhcp Disabled") }
+                            if ($gw.Count) { $problems.Add("'$os' (file '$a') has the default gateway $($gw -join ', '); a storage adapter must have none"); $fix.Add("Remove-NetRoute -InterfaceAlias '$os' -DestinationPrefix 0.0.0.0/0 -Confirm:`$false") }
+                            $rows.Add("file '$a' | MAC $(Format-AzlVerMac (Get-AzlProp $nic 'mac' '')) | OS '$os' | intent $($i.Name) | VLAN $(if ($tags.Count) { $tags -join ',' } else { 'none' }) | IPv4 $(if ($ips.Count) { $ips -join ',' } else { 'none' }) | gateway $(if ($gw.Count) { $gw -join ',' } else { 'none' })")
+                        }
+                    }
+                    $note = "The file's vlan_id and vlan_mode on a node adapter are switch port metadata, not a NIC setting: Network ATC applies the storage VLANs itself (networking.storage.networks[].vlan_id), so the NIC must not carry one before the deployment."
+                    $table = $rows -join "`n"
+                    if ($problems.Count) { New-AzlVerResult Failed "${Name}: $($problems -join '; '). The Azure Validate step 'Storage adapter readiness' fails on this. $note`n$table" (($fix | Select-Object -Unique) -join '; ') -Node $Name -Evidence ($problems -join ' | ') }
+                    elseif ($unread.Count) { New-AzlVerResult Skipped "${Name}: $($unread -join '; '), so its storage adapters were not all read. $note`n$table" 'Fix NW-013 first, then run the verification again.' -Node $Name }
+                    else { New-AzlVerResult Passed "$Name's $($rows.Count) storage adapter(s) are bare: no VLAN ID, no manual or DHCP address, no gateway, no duplicate names. $note`n$table" -Node $Name }
+                }
+            }))
+
+    $defs.Add((New-AzlVerDefinition -Id 'NW-015' -Category network -Title 'The VLAN plan of the file: unique VLANs and subnets, management and storage VLANs consistent with the ports, compute VLANs allowed on the compute ports, addresses inside the management subnet' `
+                -Source "$($script:Src.NetPlan) (VLAN and subnet planning, Decision 6, 7); $($script:Src.HostNet); the file: networking.vlans[], networking.management, networking.storage.networks[], nodes[].network_adapters[].vlan_id, vlan_mode, allowed_vlans (the lab VLAN inventory is the human source, the file the authority)" -Run {
+                param($Context)
+                $infra = Get-AzlVerInfra $Context
+                $plan = Get-AzlVerVlanPlan $Context
+                if (-not $plan.Vlans.Count) { return New-AzlVerResult Skipped 'The file has no networking.vlans[], so the VLAN plan cannot be verified.' 'List every VLAN of the design in networking.vlans[] (name, id, subnet, purpose), or accept this skip.' }
+                $failed = [System.Collections.Generic.List[string]]::new(); $warn = [System.Collections.Generic.List[string]]::new()
+                # Duplicates and overlaps.
+                foreach ($g in @($plan.Vlans | Where-Object { $null -ne $_.Id } | Group-Object Id | Where-Object { $_.Count -gt 1 })) { $failed.Add("VLAN id $($g.Name) is used by more than one vlans[] entry ($(Join-AzlVerList @($g.Group | ForEach-Object { $_.Name })))") }
+                foreach ($g in @($plan.Vlans | Where-Object { $_.Name } | Group-Object { $_.Name.ToLowerInvariant() } | Where-Object { $_.Count -gt 1 })) { $failed.Add("the VLAN name '$($g.Group[0].Name)' is used more than once in vlans[]") }
+                foreach ($g in @($plan.Vlans | Where-Object { $_.Subnet } | Group-Object Subnet | Where-Object { $_.Count -gt 1 })) { $failed.Add("the subnet $($g.Name) is used by more than one vlans[] entry ($(Join-AzlVerList @($g.Group | ForEach-Object { $_.Name })))") }
+                $withSubnet = @($plan.Vlans | Where-Object { ConvertFrom-AzlVerCidr $_.Subnet })
+                for ($x = 0; $x -lt $withSubnet.Count; $x++) { for ($y = $x + 1; $y -lt $withSubnet.Count; $y++) { if ($withSubnet[$x].Subnet -ne $withSubnet[$y].Subnet -and (Test-AzlVerCidrOverlap $withSubnet[$x].Subnet $withSubnet[$y].Subnet)) { $failed.Add("the subnets of '$($withSubnet[$x].Name)' ($($withSubnet[$x].Subnet)) and '$($withSubnet[$y].Name)' ($($withSubnet[$y].Subnet)) overlap") } } }
+                # The management network belongs to exactly one VLAN of the plan.
+                $mgmtEntries = @(Get-AzlVerMgmtVlan $plan)
+                $mgmtId = $null
+                if (-not $plan.MgmtSubnet) { $failed.Add('networking.management.subnet is empty, so the management VLAN cannot be found in the plan') }
+                elseif ($mgmtEntries.Count -eq 0) { $failed.Add("the management subnet $($plan.MgmtSubnet) is in no vlans[] entry") }
+                elseif ($mgmtEntries.Count -gt 1) { $failed.Add("the management subnet $($plan.MgmtSubnet) belongs to more than one vlans[] entry ($(Join-AzlVerList @($mgmtEntries | ForEach-Object { $_.Name })))") }
+                else { $mgmtId = $mgmtEntries[0].Id }
+                # What the management ports say, against that VLAN.
+                $mgmtHostTags = @{}
+                foreach ($n in (Get-AzlVerNodeList $Context)) {
+                    foreach ($p in @(Get-AzlVerFilePort $n | Where-Object { $_.Used -and 'management' -in $_.Roles })) {
+                        $e = Get-AzlVerPortSwitchExpectation -Port $p -Plan $plan -MgmtVlanId $mgmtId
+                        $mgmtHostTags["$($n.Name)/$($p.Name)"] = $e.HostTag
+                        if ($null -ne $mgmtId -and $null -ne $p.VlanId -and [int]$p.VlanId -gt 0 -and [int]$p.VlanId -ne [int]$mgmtId) { $failed.Add("management port '$($p.Name)' of $($n.Name) says VLAN $($p.VlanId) ($(if ($p.VlanMode) { $p.VlanMode } else { 'mode not stated' })), the management VLAN of the plan is $mgmtId") }
+                        if ($null -ne $mgmtId -and $p.VlanMode -eq 'tagged' -and ($null -eq $p.VlanId -or [int]$p.VlanId -ne [int]$mgmtId)) { $failed.Add("management port '$($p.Name)' of $($n.Name) is tagged but its vlan_id is $(if ($null -eq $p.VlanId) { 'empty' } else { $p.VlanId }), not the management VLAN $mgmtId") }
+                    }
+                }
+                if ($null -ne $plan.MgmtHostVlan -and $mgmtHostTags.Count) {
+                    $tags = @($mgmtHostTags.Values | Select-Object -Unique)
+                    if ($tags.Count -gt 1) { $failed.Add("the management ports disagree on what the host tags ($(Join-AzlVerList $tags))") }
+                    elseif ([int]$tags[0] -ne [int]$plan.MgmtHostVlan) { $failed.Add("networking.management.vlan_id is $($plan.MgmtHostVlan), but the management ports' vlan_mode and vlan_id mean the host tags $($tags[0]) (access = untagged = 0)") }
+                }
+                # Storage networks: in the plan, distinct, not the management VLAN, purpose storage.
+                foreach ($s in $plan.Storage) {
+                    if ($null -eq $s.VlanId) { $failed.Add("storage network '$($s.Name)' has no vlan_id"); continue }
+                    $entry = @($plan.Vlans | Where-Object { $_.Id -eq $s.VlanId }) | Select-Object -First 1
+                    if (-not $entry) { $failed.Add("storage network '$($s.Name)' uses VLAN $($s.VlanId), which is not in vlans[]") }
+                    elseif ($entry.Purpose -and $entry.Purpose -ne 'storage') { $failed.Add("storage network '$($s.Name)' uses VLAN $($s.VlanId) ('$($entry.Name)'), whose purpose in the plan is $($entry.Purpose)") }
+                    if ($null -ne $mgmtId -and [int]$s.VlanId -eq [int]$mgmtId) { $failed.Add("storage network '$($s.Name)' uses the management VLAN $mgmtId") }
+                }
+                foreach ($g in @($plan.Storage | Where-Object { $null -ne $_.VlanId } | Group-Object VlanId | Where-Object { $_.Count -gt 1 })) { $failed.Add("VLAN $($g.Name) is used by more than one storage network ($(Join-AzlVerList @($g.Group | ForEach-Object { $_.Name })))") }
+                # Addresses inside the management subnet (the nodes, the gateway and the infrastructure pool); DNS and domain controllers may be routed.
+                if ($plan.MgmtSubnet) {
+                    foreach ($n in (Get-AzlVerNodeList $Context)) { if ($n.ManagementIp -and -not (Test-AzlVerIpInCidr $n.ManagementIp $plan.MgmtSubnet)) { $failed.Add("the management address $($n.ManagementIp) of $($n.Name) is outside the management subnet $($plan.MgmtSubnet)") } }
+                    if ($plan.MgmtGateway -and -not (Test-AzlVerIpInCidr $plan.MgmtGateway $plan.MgmtSubnet)) { $failed.Add("the gateway $($plan.MgmtGateway) is outside the management subnet $($plan.MgmtSubnet)") }
+                    foreach ($a in $plan.PoolStart, $plan.PoolEnd) { if ($a -and -not (Test-AzlVerIpInCidr $a $plan.MgmtSubnet)) { $failed.Add("the infrastructure pool address $a is outside the management subnet $($plan.MgmtSubnet)") } }
+                    $routed = @(@($plan.DnsServers) + @($plan.DomainControllers) | Where-Object { $_ -and (ConvertTo-AzlVerIpNumber $_) -and -not (Test-AzlVerIpInCidr $_ $plan.MgmtSubnet) } | Select-Object -Unique)
+                    if ($routed.Count) { $warn.Add("DNS or domain controller address(es) $(Join-AzlVerList $routed) are outside the management subnet $($plan.MgmtSubnet): fine when routed, but they must be reachable through the gateway") }
+                }
+                # Compute VLANs against the compute ports: the file must say what the port allows.
+                $computeReport = [System.Collections.Generic.List[object]]::new()
+                if ($plan.ComputeVlans.Count) {
+                    foreach ($n in (Get-AzlVerNodeList $Context)) {
+                        foreach ($p in @(Get-AzlVerFilePort $n | Where-Object { $_.Used -and 'compute' -in $_.Roles })) {
+                            if ($p.VlanMode -eq 'access') {
+                                $extra = @($plan.ComputeVlans | Where-Object { $null -eq $p.VlanId -or [int]$_ -ne [int]$p.VlanId })
+                                if ($extra.Count) { $failed.Add("compute port '$($p.Name)' of $($n.Name) is an access port (VLAN $(if ($null -eq $p.VlanId) { 'none' } else { $p.VlanId })), but the compute VLAN(s) $($extra -join ', ') must reach it") }
+                            }
+                            elseif (-not @($p.AllowedVlans).Count) { $computeReport.Add("$($n.Name)/$($p.Name)") }
+                            else {
+                                $missing = @($plan.ComputeVlans | Where-Object { [int]$_ -notin @($p.AllowedVlans) -and ($null -eq $p.VlanId -or [int]$_ -ne [int]$p.VlanId) })
+                                if ($missing.Count) { $failed.Add("compute port '$($p.Name)' of $($n.Name) does not allow the compute VLAN(s) $($missing -join ', ') (allowed_vlans: $(@($p.AllowedVlans) -join ', '))") }
+                            }
+                        }
+                    }
+                }
+                $summary = "VLANs in the plan: $(Join-AzlVerList @($plan.Vlans | ForEach-Object { "$($_.Name)=$($_.Id)" })); management VLAN $(if ($null -ne $mgmtId) { $mgmtId } else { '?' }); storage networks $(Join-AzlVerList @($plan.Storage | ForEach-Object { "$($_.Name)=$($_.VlanId)" })); compute VLANs $(if ($plan.ComputeVlans.Count) { $plan.ComputeVlans -join ', ' } else { 'none' })"
+                if ($failed.Count) { New-AzlVerResult Failed "The VLAN plan has $($failed.Count) problem(s): $($failed -join '; '). $summary" 'Fix networking.vlans[], networking.management, networking.storage.networks[] and the ports (vlan_id, vlan_mode, allowed_vlans) of the file; the file is the authority and the switch configuration must follow it (see the switch port checklist).' -Evidence ($failed -join ' | ') }
+                if ($computeReport.Count) { New-AzlVerResult Skipped "The compute ports $(Join-AzlVerList @($computeReport | Select-Object -First 8)) are tagged but the file lists no allowed VLANs: add nodes[].network_adapters[].allowed_vlans (the compute VLAN(s) $($plan.ComputeVlans -join ', ')), or accept the skip. $summary" 'Add allowed_vlans to every compute port in the file, or accept the skip with -AcceptSkipped NW-015.' }
+                if ($warn.Count) { New-AzlVerResult Warning "$($warn -join '; '). $summary" 'Confirm the routing of the DNS and domain controller addresses.' -Evidence ($warn -join ' | ') }
+                if (-not $failed.Count -and -not $computeReport.Count -and -not $warn.Count) { New-AzlVerResult Passed "The VLAN plan is consistent: unique ids, names and subnets, no overlap, the management subnet in one VLAN, storage VLANs distinct and not management, the compute VLAN(s) allowed on the compute ports, the addresses inside the management subnet. $summary" -Evidence $summary }
+                # Per node: the NIC VLAN of the management ports is what the file says the host tags.
+                Invoke-AzlVerPerNode -Context $Context -Section 'GetAdapters' -Body {
+                    param($Name, $D, $N)
+                    $nics = @(ConvertTo-AzlVerList (Get-AzlProp $D 'nics' @()))
+                    $bad = @(); $okRows = @()
+                    foreach ($p in @(Get-AzlVerFilePort $N | Where-Object { $_.Used -and 'management' -in $_.Roles })) {
+                        $nic = Find-AzlVerNic $nics $p.Name $N
+                        if (-not $nic) { continue }
+                        $want = (Get-AzlVerPortSwitchExpectation -Port $p -Plan $plan -MgmtVlanId $mgmtId).HostTag
+                        $live = Get-AzlProp $nic 'vlan' $null
+                        if ($null -eq $live -or "$live" -eq '') { continue }
+                        if ([int]$live -ne [int]$want) { $bad += "management port '$($p.Name)' ('$($nic.n)') carries VLAN $live on the NIC, the file says the host tags $want$(if ($want -eq 0) { ' (access, untagged)' })" } else { $okRows += "'$($nic.n)'=$live" }
+                    }
+                    if ($bad.Count) { New-AzlVerResult Failed "${Name}: $($bad -join '; ')." 'Set the NIC VLAN to what the file says (Set-NetAdapterAdvancedProperty -Name <adapter> -RegistryKeyword VlanID -RegistryValue <id or 0>; Restart-NetAdapter), or fix vlan_mode and vlan_id in the file.' -Node $Name -Evidence ($bad -join ' | ') }
+                    elseif ($okRows.Count) { New-AzlVerResult Passed "$Name's management NIC VLAN matches the file ($($okRows -join ', '))." -Node $Name }
+                }
+            }))
+
+    $defs.Add((New-AzlVerDefinition -Id 'NW-016' -Category network -Title 'Switch port checklist: what the file expects on each switch port (the gate cannot read a switch)' `
+                -Source "$($script:Src.NetPlan); the file: nodes[].network_adapters[].switch_port, vlan_id, vlan_mode, allowed_vlans, networking.vlans[]" -Blocking $false -Run {
+                param($Context)
+                $rows = @(Get-AzlVerificationSwitchPortChecklist -Context $Context)
+                if (-not $rows.Count) { return New-AzlVerResult NotApplicable 'The file has no switch_port data on any used adapter, so there is no switch port checklist.' }
+                foreach ($r in $rows) {
+                    New-AzlVerResult NotApplicable "switch trunk/access config is not readable from here; verify against $($r.switch) $($r.port): expected $($r.expectedMode), VLANs [$(@($r.expectedVlans) -join ', ')]$(if ($r.hostTag -gt 0) { ", the host tags $($r.hostTag)" } else { ', the host sends untagged frames' }) ($($r.node), file port '$($r.filePort)', MAC $($r.mac), roles $($r.roles); $($r.source))." -Node $r.node
+                }
+            }))
     return $defs.ToArray()
 }
 
@@ -536,4 +792,4 @@ function Get-AzlVerificationAdapterDefault {
     }
 }
 
-Export-ModuleMember -Function Get-AzlVerificationCheckDefinition, Get-AzlVerificationAdapterDefault
+Export-ModuleMember -Function Get-AzlVerificationCheckDefinition, Get-AzlVerificationAdapterDefault, Get-AzlVerificationSwitchPortChecklist
