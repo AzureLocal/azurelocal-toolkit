@@ -249,6 +249,8 @@ const validate = new Ajv2020({ strict: true, allErrors: true }).compile(schema);
 
 ## The OS configuration switch (schema 5.4.3)
 
+`os_configuration.network` and `os_configuration.remoting` (since 5.4.4) set the confirmation window of a guarded network change and how the OS configuration reaches the nodes: PowerShell remoting by default, Arc Run Command as an option, and an optional one-time Arc bootstrap that opens a closed node firewall. See [Choosing the transport](../../docs/os-configuration-and-arm-deployment.md#choosing-the-transport).
+
 `os_configuration.clear_storage` (default `false`) tells `Invoke-AzureLocalOsConfiguration.ps1` to wipe the leftover storage of re-used machines: storage pools, virtual disks and the data on local disks that are not boot, system, SAN or USB. Plan mode lists the disks per machine and wipes nothing; Apply mode wipes only what the plan listed. See [OS configuration and ARM deployment](../../docs/os-configuration-and-arm-deployment.md#run-it-in-one-go).
 ## Versioning
 

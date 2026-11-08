@@ -202,6 +202,8 @@ Schema 5.4.3 only adds one optional section; a 5.4.0 file is valid as it is. Not
 | --- | --- |
 | `os_configuration.clear_storage` | `true`: the OS configuration run (`Invoke-AzureLocalOsConfiguration.ps1`) wipes leftover storage pools, virtual disks and the data on non-boot, non-system local disks in Apply mode. Default `false`. |
 
+5.4.4 adds optional keys only (existing 5.4.3 files stay valid): `os_configuration.network.confirm_minutes` (default 10) and `stable_seconds` (60), the commit-confirmed window of a guarded network change; `os_configuration.remoting.transport` (`winrm` | `winrm_https` | `arc`, default `winrm`), `bootstrap_transport` (`none` | `arc`) and `allowed_source_cidrs`. See [Changing the management address safely](../../docs/os-configuration-and-arm-deployment.md#changing-the-management-address-safely).
+
 **Steps for a 5.4 file:** set `_metadata.schema_version` to `5.4.3`; add `os_configuration: { clear_storage: true }` only for machines that are re-used. Plan mode prints the wipe list; Apply never wipes a SAN LUN, a USB disk, or a boot or system disk.
 ## From Trailwright's export
 
