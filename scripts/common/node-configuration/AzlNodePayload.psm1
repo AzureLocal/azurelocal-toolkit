@@ -64,14 +64,27 @@ function Get-StorageDiskKey($d) {
     if ($sn) { return $sn }
     return ([string]$d.UniqueId).Trim()
 }
-# Why this node counts as a deployed cluster member (empty: it does not): HKLM:\Cluster, the Cluster service, a pool owned by a cluster, the CSV folder.
+# Why this node counts as a deployed cluster member (empty: it does not). The Azure Local OS always has the Cluster service INSTALLED (Failover Clustering is part of the
+# image), so an installed or stopped ClusSvc, or an HKLM:\Cluster key with no cluster name, proves nothing. Evidence: a Running ClusSvc; HKLM:\Cluster that names a cluster;
+# a storage pool owned by a cluster; a non-primordial (S2D) pool; cluster shared volumes under C:\ClusterStorage. Each reason says which one it is.
 function Get-DeployedClusterEvidence {
     $why = @()
-    if (Test-Path -LiteralPath 'HKLM:\Cluster') { $why += 'HKLM:\Cluster exists' }
-    if (Get-Service -Name ClusSvc -ErrorAction SilentlyContinue) { $why += 'the Cluster service (ClusSvc) is installed' }
-    $clustered = @(Get-StoragePool -ErrorAction SilentlyContinue | Where-Object { -not $_.IsPrimordial -and $_.IsClustered })
+    $svc = Get-Service -Name ClusSvc -ErrorAction SilentlyContinue
+    if ($svc -and [string]$svc.Status -eq 'Running') { $why += 'the Cluster service (ClusSvc) is running' }
+    if (Test-Path -LiteralPath 'HKLM:\Cluster') {
+        $key = Get-ItemProperty -LiteralPath 'HKLM:\Cluster' -ErrorAction SilentlyContinue
+        $clusterName = ''
+        if ($key -and $key.PSObject.Properties['ClusterName']) { $clusterName = ([string]$key.ClusterName).Trim() }
+        if ($clusterName) { $why += ('HKLM:\Cluster names the cluster ''' + $clusterName + ''' (this node is a member)') }
+    }
+    $pools = @(Get-StoragePool -ErrorAction SilentlyContinue | Where-Object { -not $_.IsPrimordial })
+    $clustered = @($pools | Where-Object { $_.IsClustered })
     if ($clustered.Count -gt 0) { $why += ('storage pool(s) owned by a cluster: ' + (($clustered | ForEach-Object { [string]$_.FriendlyName }) -join ', ')) }
-    if (Test-Path -LiteralPath 'C:\ClusterStorage') { $why += 'C:\ClusterStorage exists (cluster shared volumes)' }
+    elseif ($pools.Count -gt 0) { $why += ('an S2D / Storage Spaces pool exists: ' + (($pools | ForEach-Object { [string]$_.FriendlyName }) -join ', ')) }
+    if (Test-Path -LiteralPath 'C:\ClusterStorage') {
+        $volumes = @(Get-ChildItem -LiteralPath 'C:\ClusterStorage' -ErrorAction SilentlyContinue)
+        if ($volumes.Count -gt 0) { $why += ('C:\ClusterStorage holds ' + $volumes.Count + ' cluster shared volume(s)') }
+    }
     return $why
 }
 # The local disks a clear may touch: members of a pool that is not primordial, and partitioned or offline disks. Boot, system and skipBus disks are left out.

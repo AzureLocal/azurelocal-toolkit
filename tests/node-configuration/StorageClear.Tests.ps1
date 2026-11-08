@@ -35,8 +35,20 @@ function Test-Path {
 }
 function Get-Service {
     [CmdletBinding()] param([string]$Name)
-    if ($Name -eq 'ClusSvc') { if ($sc.service) { return [pscustomobject]@{ Name = 'ClusSvc' } }; return $null }
+    if ($Name -eq 'ClusSvc') { if ($sc.serviceStatus) { return [pscustomobject]@{ Name = 'ClusSvc'; Status = [string]$sc.serviceStatus } }; return $null }
     return (Microsoft.PowerShell.Management\Get-Service @PSBoundParameters)
+}
+function Get-ItemProperty {
+    [CmdletBinding()] param([Parameter(Position = 0)][string]$Path, [string]$LiteralPath)
+    $p = $LiteralPath; if (-not $p) { $p = $Path }
+    if ($p -eq 'HKLM:\Cluster') { if (-not $sc.registry) { return $null }; if ($sc.registryName) { return [pscustomobject]@{ ClusterName = [string]$sc.registryName } }; return [pscustomobject]@{ SomethingElse = 1 } }
+    return (Microsoft.PowerShell.Management\Get-ItemProperty @PSBoundParameters)
+}
+function Get-ChildItem {
+    [CmdletBinding()] param([Parameter(Position = 0)][string]$Path, [string]$LiteralPath)
+    $p = $LiteralPath; if (-not $p) { $p = $Path }
+    if ($p -eq 'C:\ClusterStorage') { foreach ($n in @($sc.csvFiles)) { [pscustomobject]@{ Name = [string]$n } }; return }
+    return (Microsoft.PowerShell.Management\Get-ChildItem @PSBoundParameters)
 }
 function New-Item { [CmdletBinding()] param($ItemType, [switch]$Force, $Path) }
 function Set-Content { [CmdletBinding()] param($LiteralPath, [Parameter(ValueFromPipeline = $true)]$Value, $Encoding) process { } }
@@ -71,13 +83,20 @@ function Clear-Disk { [CmdletBinding()] param($Number, [switch]$RemoveData, [swi
 
     # The node of the scenarios: a boot disk, two leftover data disks, one more data disk nobody approved, a SAN LUN, a USB stick, an old pool with two disks and a
     # virtual disk, and a second pool that holds a disk nobody approved.
-    function New-Scenario([hashtable]$With = @{}) {
+    # By default the node is a plain Azure Local node that never joined a cluster: no pool, ClusSvc not installed (serviceStatus ''), no HKLM:\Cluster, no CSV folder.
+    # -Pools adds an old pool with two disks and a virtual disk, and a second pool that holds a disk nobody approved (an S2D pool is deployed-cluster evidence).
+    function New-Scenario([hashtable]$With = @{}, [switch]$Pools) {
         $s = [ordered]@{
-            registry = $false; service = $false; csv = $false
+            registry = $false; registryName = ''; serviceStatus = ''; csv = $false; csvFiles = @()
             disks  = @((New-D 0 'BOOT-0' 'SATA' 'GPT' $true), (New-D 3 'SN-3'), (New-D 4 'SN-4'), (New-D 5 'SN-5' 'SAS'), (New-D 6 'SN-SAN' 'Fibre Channel'), (New-D 7 'SN-USB' 'USB'))
-            pools  = @([ordered]@{ FriendlyName = 'Primordial'; IsPrimordial = $true; IsClustered = $false }, [ordered]@{ FriendlyName = 'OldPool'; IsPrimordial = $false; IsClustered = $false }, [ordered]@{ FriendlyName = 'OtherPool'; IsPrimordial = $false; IsClustered = $false })
-            pdisks = @((New-PD 'SN-P1' 'OldPool' 'SAS'), (New-PD 'SN-P2' 'OldPool' 'SAS'), (New-PD 'SN-P3' 'OtherPool' 'SAS'), (New-PD 'SN-3' 'Primordial'))
-            vdisks = @([ordered]@{ FriendlyName = 'OldVD'; Pool = 'OldPool' }, [ordered]@{ FriendlyName = 'OtherVD'; Pool = 'OtherPool' })
+            pools  = @([ordered]@{ FriendlyName = 'Primordial'; IsPrimordial = $true; IsClustered = $false })
+            pdisks = @((New-PD 'SN-3' 'Primordial'))
+            vdisks = @()
+        }
+        if ($Pools) {
+            $s.pools = @([ordered]@{ FriendlyName = 'Primordial'; IsPrimordial = $true; IsClustered = $false }, [ordered]@{ FriendlyName = 'OldPool'; IsPrimordial = $false; IsClustered = $false }, [ordered]@{ FriendlyName = 'OtherPool'; IsPrimordial = $false; IsClustered = $false })
+            $s.pdisks = @((New-PD 'SN-P1' 'OldPool' 'SAS'), (New-PD 'SN-P2' 'OldPool' 'SAS'), (New-PD 'SN-P3' 'OtherPool' 'SAS'), (New-PD 'SN-3' 'Primordial'))
+            $s.vdisks = @([ordered]@{ FriendlyName = 'OldVD'; Pool = 'OldPool' }, [ordered]@{ FriendlyName = 'OtherVD'; Pool = 'OtherPool' })
         }
         foreach ($k in $With.Keys) { $s[$k] = $With[$k] }
         $s
@@ -108,27 +127,28 @@ function Clear-Disk { [CmdletBinding()] param($Number, [switch]$RemoveData, [swi
 }
 
 Describe 'storage-clear on the node: a deployed cluster is refused' -Skip:(-not $script:HasWindowsPowerShell) {
-    It '<Name>: refused with the reason, nothing is touched' -ForEach @(
-        @{ Name = 'HKLM:\Cluster exists'; With = @{ registry = $true }; Reason = 'HKLM:\\Cluster exists' }
-        @{ Name = 'ClusSvc is present'; With = @{ service = $true }; Reason = 'ClusSvc' }
-        @{ Name = 'C:\ClusterStorage exists'; With = @{ csv = $true }; Reason = 'ClusterStorage' }
+    It '<Name>: refused, the detail says which evidence tripped it, nothing is touched' -ForEach @(
+        @{ Name = 'ClusSvc is Running'; With = @{ serviceStatus = 'Running' }; Pools = $false; Reason = 'ClusSvc\) is running' }
+        @{ Name = 'HKLM:\Cluster names a cluster'; With = @{ registry = $true; registryName = 'tplabs-cl01' }; Pools = $false; Reason = "HKLM:.Cluster names the cluster 'tplabs-cl01'" }
+        @{ Name = 'C:\ClusterStorage holds a volume'; With = @{ csv = $true; csvFiles = @('Volume1') }; Pools = $false; Reason = 'C:.ClusterStorage holds' }
+        @{ Name = 'an S2D pool exists'; With = @{}; Pools = $true; Reason = 'pool exists.*OldPool' }
     ) {
-        $run = Invoke-Clear (New-Scenario $With) @('SN-3', 'SN-4')
+        $run = Invoke-Clear (New-Scenario $With -Pools:$Pools) @('SN-3', 'SN-4')
         $run.Result.results[0].status | Should -Be 'failed'
         $run.Result.results[0].detail | Should -Match 'deployed cluster'
         $run.Result.results[0].detail | Should -Match $Reason
         Get-Destructive $run | Should -BeNullOrEmpty
     }
-    It 'a pool that belongs to a cluster refuses it too' {
+    It 'a pool that belongs to a cluster refuses it too, and is named' {
         $s = New-Scenario
         $s.pools = @([ordered]@{ FriendlyName = 'Primordial'; IsPrimordial = $true; IsClustered = $false }, [ordered]@{ FriendlyName = 'S2D on cluster'; IsPrimordial = $false; IsClustered = $true })
         $run = Invoke-Clear $s @('SN-3')
         $run.Result.results[0].status | Should -Be 'failed'
-        $run.Result.results[0].detail | Should -Match 'S2D on cluster'
+        $run.Result.results[0].detail | Should -Match 'owned by a cluster: S2D on cluster'
         Get-Destructive $run | Should -BeNullOrEmpty
     }
     It 'with the confirmation in the action it goes ahead' {
-        $run = Invoke-Clear (New-Scenario @{ registry = $true }) @('SN-3') $true
+        $run = Invoke-Clear (New-Scenario @{ serviceStatus = 'Running' }) @('SN-3') $true
         $run.Result.results[0].status | Should -Be 'changed'
         @($run.Calls) | Should -Contain 'Clear-Disk 3'
     }
@@ -140,10 +160,25 @@ Describe 'storage-clear on the node: a deployed cluster is refused' -Skip:(-not 
     }
 }
 
+Describe 'storage-clear on the node: a node that never joined a cluster is not a deployed cluster' -Skip:(-not $script:HasWindowsPowerShell) {
+    # The Azure Local OS always has the Cluster service installed (Failover Clustering is part of the image). That alone is not membership.
+    It '<Name>: the wipe is allowed without the confirmation' -ForEach @(
+        @{ Name = 'ClusSvc installed and Stopped, no HKLM:\Cluster'; With = @{ serviceStatus = 'Stopped' } }
+        @{ Name = 'ClusSvc installed and Stopped, HKLM:\Cluster without a cluster name'; With = @{ serviceStatus = 'Stopped'; registry = $true } }
+        @{ Name = 'an empty C:\ClusterStorage and a stopped ClusSvc'; With = @{ serviceStatus = 'Stopped'; csv = $true; csvFiles = @() } }
+        @{ Name = 'no ClusSvc at all'; With = @{} }
+    ) {
+        $run = Invoke-Clear (New-Scenario $With) @('SN-3', 'SN-4')
+        $run.Result.results[0].status | Should -Be 'changed'
+        @($run.Calls) | Should -Contain 'Clear-Disk 3'
+        @($run.Calls) | Should -Contain 'Clear-Disk 4'
+    }
+}
+
 Describe 'storage-clear on the node: only what the action names, and never a SAN, USB, virtual, boot or system disk' -Skip:(-not $script:HasWindowsPowerShell) {
     BeforeAll {
-        # Every serial of the node is named, the SAN LUN, the USB stick and the boot disk included, except SN-5 and SN-P3.
-        $script:Run = Invoke-Clear (New-Scenario) @('SN-3', 'SN-4', 'SN-SAN', 'SN-USB', 'BOOT-0', 'SN-P1', 'SN-P2')
+        # Every serial of the node is named, the SAN LUN, the USB stick and the boot disk included, except SN-5 and SN-P3. The pools are S2D evidence, so the run confirms.
+        $script:Run = Invoke-Clear (New-Scenario -Pools) @('SN-3', 'SN-4', 'SN-SAN', 'SN-USB', 'BOOT-0', 'SN-P1', 'SN-P2') $true
     }
     It 'succeeds' { $script:Run.Result.results[0].status | Should -Be 'changed' }
     It 'clears the named local disks' {
@@ -175,7 +210,7 @@ Describe 'storage-clear on the node: only what the action names, and never a SAN
 
 Describe 'the Read script reports what the wipe list needs' -Skip:(-not $script:HasWindowsPowerShell) {
     It 'names every leftover local disk by serial, size, model, bus and partition style, and lists pool members' {
-        $run = Invoke-NodePayload -Name Read -Scenario (New-Scenario) -Parameters @{ mgmtMac = '' }
+        $run = Invoke-NodePayload -Name Read -Scenario (New-Scenario -Pools) -Parameters @{ mgmtMac = '' }
         $stor = $run.Result.stor
         $stor | Should -Not -BeNullOrEmpty
         $byId = @{}; foreach ($d in @($stor.dirty)) { $byId[$d.id] = $d }
@@ -193,12 +228,21 @@ Describe 'the Read script reports what the wipe list needs' -Skip:(-not $script:
         $d.n | Should -Be 4
         $byId['SN-P1'].why | Should -Match 'OldPool'
     }
-    It 'says whether the node belongs to a cluster, and why' {
-        $clean = (Invoke-NodePayload -Name Read -Scenario (New-Scenario) -Parameters @{ mgmtMac = '' }).Result.stor
-        $clean.cluster.deployed | Should -BeFalse
-        $deployed = (Invoke-NodePayload -Name Read -Scenario (New-Scenario @{ registry = $true; service = $true }) -Parameters @{ mgmtMac = '' }).Result.stor
-        $deployed.cluster.deployed | Should -BeTrue
-        ($deployed.cluster.why -join ' ') | Should -Match 'HKLM:\\Cluster'
-        ($deployed.cluster.why -join ' ') | Should -Match 'ClusSvc'
+    It 'a node that never joined a cluster is not deployed, whatever the image has installed (ClusSvc Stopped, an HKLM:\Cluster key without a name, an empty CSV folder)' {
+        foreach ($with in @{}, @{ serviceStatus = 'Stopped' }, @{ serviceStatus = 'Stopped'; registry = $true }, @{ serviceStatus = 'Stopped'; csv = $true; csvFiles = @() }) {
+            $stor = (Invoke-NodePayload -Name Read -Scenario (New-Scenario $with) -Parameters @{ mgmtMac = '' }).Result.stor
+            $stor.cluster.deployed | Should -BeFalse -Because ($with | ConvertTo-Json -Compress)
+            @($stor.cluster.why) | Should -BeNullOrEmpty
+        }
+    }
+    It '<Name> is deployed, and says which evidence' -ForEach @(
+        @{ Name = 'a running ClusSvc'; With = @{ serviceStatus = 'Running' }; Pools = $false; Evidence = 'ClusSvc\) is running' }
+        @{ Name = 'HKLM:\Cluster with a cluster name'; With = @{ registry = $true; registryName = 'tplabs-cl01' }; Pools = $false; Evidence = "HKLM:.Cluster names the cluster 'tplabs-cl01'" }
+        @{ Name = 'C:\ClusterStorage with a volume'; With = @{ csv = $true; csvFiles = @('Volume1') }; Pools = $false; Evidence = 'C:.ClusterStorage holds' }
+        @{ Name = 'an S2D pool'; With = @{}; Pools = $true; Evidence = 'pool exists.*OldPool' }
+    ) {
+        $stor = (Invoke-NodePayload -Name Read -Scenario (New-Scenario $With -Pools:$Pools) -Parameters @{ mgmtMac = '' }).Result.stor
+        $stor.cluster.deployed | Should -BeTrue
+        (@($stor.cluster.why) -join ' ') | Should -Match $Evidence
     }
 }

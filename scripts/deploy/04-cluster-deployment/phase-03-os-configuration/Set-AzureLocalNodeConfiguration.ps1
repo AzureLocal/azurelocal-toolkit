@@ -72,7 +72,7 @@
     How many times a node script is tried when its Arc run command ends in state Unknown (default 3, with a growing pause).
 .PARAMETER ClearStorage
     Treat leftover local storage as a change (destroys data on local disks; never SAN LUNs). With -Execute. A node that belongs to a deployed cluster
-    (HKLM:\Cluster, the Cluster service, a clustered pool or CSV) is Blocked, and the node-side clear refuses it too, unless -ConfirmWipeDeployedCluster is given.
+    (a running Cluster service, HKLM:\Cluster that names a cluster, a clustered or S2D pool, cluster shared volumes) is Blocked, and the node-side clear refuses it too, unless -ConfirmWipeDeployedCluster is given.
 .PARAMETER ApprovedBootstrap
     The pipeline approval of the one-time Arc bootstrap (remoting.bootstrapTransport arc). The environment class decides whether it is needed: lab, test and dev need none,
     production needs it, dmz on every run. Without a needed approval nothing is opened on a node.
