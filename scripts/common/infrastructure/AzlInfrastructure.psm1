@@ -957,8 +957,10 @@ function Get-AdapterFinding {
                 New-Finding 'AZL-020' error "$($o.Path).name" "Node '$name': the management port '$($o.Name)' isn't in the management intent '$($mgmtIntent['name'])' ($($members -join ', ')). The management address moves to that intent's virtual adapter." $script:Learn.Decision8
             }
             elseif ($members[0] -ne $o.Name) {
-                $severity = if ($o.IpAssignment -in 'dhcp', 'dhcp_reservation') { 'error' } else { 'warning' }
-                New-Finding 'AZL-020' $severity "$($o.Path).name" "Node '$name': the management port '$($o.Name)' isn't the first adapter of the management intent ('$($members[0])'). The management virtual adapter takes the first adapter's MAC$(if ($severity -eq 'error') { ', so the DHCP reservation must be for that MAC' }). List '$($o.Name)' first." $script:Learn.Decision8
+                # An error for a static plan too: the management virtual adapter takes the first adapter's MAC, so an address (static or reserved) on any other port of the intent
+                # leaves the management adapter without its gateway and DNS (the real failure: an IP on a Compute port, 'Embedded NIC 1 has 0 gateways, 0 DNS').
+                $why = if ($o.IpAssignment -in 'dhcp', 'dhcp_reservation') { 'so the DHCP reservation must be for that MAC' } else { 'so the static address, gateway and DNS must be on that port: on any other port of the intent the management adapter comes up with 0 gateways and 0 DNS' }
+                New-Finding 'AZL-020' error "$($o.Path).name" "Node '$name': the management port '$($o.Name)' isn't the first adapter of the management intent ('$($members[0])'). The management virtual adapter takes the first adapter's MAC, $why. List '$($o.Name)' first, or move the address to '$($members[0])'." $script:Learn.Decision8
             }
         }
     }

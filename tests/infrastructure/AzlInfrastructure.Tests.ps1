@@ -334,9 +334,10 @@ Describe 'Schema 5.2: network adapters' {
             (Get-LomFinding { param($d) (Get-Port $d 0 'Embedded NIC 1')['prefix_length'] = 25 }) | Where-Object { $_.Id -eq 'AZL-020' -and $_.Path -eq 'nodes[0].network_adapters[0].prefix_length' } | Should -Not -BeNullOrEmpty
             (Get-LomFinding { param($d) (Get-Port $d 0 'Embedded NIC 1')['dns_servers'] = @('192.0.2.30') }) | Where-Object { $_.Id -eq 'AZL-020' -and $_.Path -eq 'nodes[0].network_adapters[0].dns_servers' } | Should -Not -BeNullOrEmpty
         }
-        It 'AZL-020 wants the management port first in the management intent: a warning when static, an error with a reservation' {
+        It 'AZL-020 wants the management port first in the management intent: an error for a static plan and for a reservation' {
             $f = Get-LomFinding { param($d) $d.networking.intents[0].adapters = @('Embedded NIC 2', 'Embedded NIC 1') }
-            @($f | Where-Object { $_.Id -eq 'AZL-020' -and $_.Message -match 'first adapter' } | ForEach-Object Severity | Select-Object -Unique) | Should -Be @('warning')
+            @($f | Where-Object { $_.Id -eq 'AZL-020' -and $_.Message -match 'first adapter' } | ForEach-Object Severity | Select-Object -Unique) | Should -Be @('error')
+            $f | Where-Object { $_.Id -eq 'AZL-020' -and $_.Message -match 'first adapter' } | ForEach-Object { $_.Message } | Select-Object -First 1 | Should -Match '0 gateways and 0 DNS'
             $f = Get-FindingFor -From (Join-Path $repo 'config\infrastructure\examples\single-machine-iso.yml') { param($d) $d.networking.intents[0].adapters = @('NIC2', 'NIC1') }
             $f | Where-Object { $_.Id -eq 'AZL-020' -and $_.Severity -eq 'error' -and $_.Message -match 'DHCP reservation must be for that MAC' } | Should -Not -BeNullOrEmpty
         }
