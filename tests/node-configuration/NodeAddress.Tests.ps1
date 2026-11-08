@@ -190,16 +190,17 @@ Describe 'Resolving a node''s current management address' {
         $r.Message | Should -Match 'neither Get-NetNeighbor nor arp is available'
         Should -Invoke -ModuleName AzlNodeAddress Invoke-AzlSubnetSweep -Times 0 -Exactly
     }
-    It 'several candidates answer: the first source in order wins and the message says which and why' {
+    It 'several candidates answer: the most trusted source wins (the file over a handoff-only address) and the message says which and why' {
         $probe = Get-FakeProbe @('192.0.2.120', '192.0.2.12')
         $r = Resolve-AzlNodeAddress -Infrastructure $script:Infra -Node $script:N02 -HandoffEntry $script:Handoff02 -PortTest $probe.Block
-        $r.Address | Should -Be '192.0.2.120'
-        $r.Source | Should -Be 'ztp-handoff'
+        $r.Address | Should -Be '192.0.2.12'
+        $r.Source | Should -Be 'infrastructure-file'
         @($r.Candidates | Where-Object Answers).Count | Should -Be 2
-        $r.Notes.Count | Should -Be 1
         $r.Notes[0] | Should -Match 'Several addresses answer'
-        $r.Notes[0] | Should -Match '192\.0\.2\.12 \(infrastructure-file\)'
-        $r.Notes[0] | Should -Match 'comes first'
+        $r.Notes[0] | Should -Match '192\.0\.2\.120 \(ztp-handoff\)'
+        $r.Notes[0] | Should -Match 'order of trust'
+        ($r.Notes -join ' ') | Should -Match 'sources disagree'
+        ($r.Notes -join ' ') | Should -Match 'ZTP handoff is historic data'
     }
     It 'a candidate that answers is preferred over an earlier source that does not' {
         $probe = Get-FakeProbe @('192.0.2.12')
