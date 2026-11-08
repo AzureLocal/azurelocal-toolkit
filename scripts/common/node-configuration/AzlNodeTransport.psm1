@@ -61,6 +61,57 @@ function ConvertTo-AzlB64Json {
     return [Convert]::ToBase64String([System.Text.Encoding]::UTF8.GetBytes($json))
 }
 
+function Set-AzlTransportHeartbeat {
+    <#
+    .SYNOPSIS
+        Gives a transport a heartbeat (New-AzlWaitHeartbeat of AzlGuardedChange.psm1): every wait inside a call to a node ticks it, so the event feed shows a
+        sign of life every 60 seconds. A transport without a State (a fake in a test) is left alone.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param([Parameter(Mandatory)][object]$Transport, [AllowNull()][object]$Heartbeat)
+    if (-not $Transport.PSObject.Properties['State'] -or $Transport.State -isnot [hashtable]) { return }
+    if ($PSCmdlet.ShouldProcess($Transport.Kind, 'Set the heartbeat')) { $Transport.State['Heartbeat'] = $Heartbeat }
+}
+
+function Send-AzlTransportHeartbeat {
+    # Begin, Tick or End of the transport's heartbeat, when it has one. Never throws: a heartbeat must not break a call.
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][ValidateSet('Begin', 'Tick', 'End')][string]$Action, [string]$Text = '', [string]$Phase = '')
+    if (-not $Transport.PSObject.Properties['State'] -or $Transport.State -isnot [hashtable] -or -not $Transport.State.ContainsKey('Heartbeat')) { return }
+    $hb = $Transport.State['Heartbeat']
+    if (-not $hb) { return }
+    try {
+        switch ($Action) {
+            'Begin' { & $hb.Begin $hb $Text }
+            'Tick' { & $hb.Tick $hb $Text $Phase }
+            'End' { & $hb.End $hb }
+        }
+    }
+    catch { Write-Verbose "Heartbeat skipped: $($_.Exception.Message)" }
+}
+
+function Wait-AzlNodeJob {
+    <#
+    .SYNOPSIS
+        Waits for the job of one WinRM call in slices of a few seconds, ticking the heartbeat between slices, and gives up after the cap. $true: the job
+        finished. $false: the cap passed (the caller abandons the job and drops the session).
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory)][object]$Job, [Parameter(Mandatory)][int]$CapSeconds, [Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][string]$Node, [int]$SliceSeconds = 5)
+    $waited = 0
+    Send-AzlTransportHeartbeat -Transport $Transport -Action Begin -Text "a call to $Node"
+    try {
+        while ($true) {
+            if (Wait-Job -Job $Job -Timeout $SliceSeconds) { return $true }
+            $waited += $SliceSeconds
+            if ($waited -ge $CapSeconds) { return $false }
+            Send-AzlTransportHeartbeat -Transport $Transport -Action Tick -Text "a call to $Node"
+        }
+    }
+    finally { Send-AzlTransportHeartbeat -Transport $Transport -Action End }
+}
+
 function New-AzlArcRunCommandTransport {
     <#
     .SYNOPSIS
@@ -132,8 +183,10 @@ function New-AzlArcRunCommandTransport {
                 $deadline = (Get-Date).AddSeconds($TimeoutSeconds + 300)
                 $terminal = @('Succeeded', 'Failed', 'TimedOut', 'Canceled')
                 $unknownPolls = 0
+                Send-AzlTransportHeartbeat -Transport $Self -Action Begin -Text "the run command on $Node"
                 do {
                     Start-Sleep -Seconds $s.Poll
+                    Send-AzlTransportHeartbeat -Transport $Self -Action Tick -Text "the run command on $Node"
                     $run = Invoke-AzlArm -Method GET -Path $path -ApiVersion $s.Api
                     $state = [string](Get-AzlProp $run 'properties.instanceView.executionState' '')
                     $provisioning = [string](Get-AzlProp $run 'properties.provisioningState' '')
@@ -149,6 +202,7 @@ function New-AzlArcRunCommandTransport {
                 }
             }
             finally {
+                Send-AzlTransportHeartbeat -Transport $Self -Action End
                 try { $null = Invoke-AzlArm -Method DELETE -Path $path -ApiVersion $s.Api -AllowNotFound }
                 catch { Write-Warning "Couldn't delete run command ${name} on ${Node}: $($_.Exception.Message)" }
             }
@@ -230,7 +284,7 @@ function New-AzlWinRmTransport {
                     }
                     finally { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue }
                 } -ArgumentList $Script, $p, $q
-                if (-not (Wait-Job -Job $job -Timeout $cap)) {
+                if (-not (Wait-AzlNodeJob -Job $job -CapSeconds $cap -Transport $Self -Node $Node)) {
                     Stop-Job -Job $job -ErrorAction SilentlyContinue
                     Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
                     if ($Self.State.Sessions.ContainsKey($Node)) { Remove-PSSession -Session $Self.State.Sessions[$Node] -ErrorAction SilentlyContinue; $Self.State.Sessions.Remove($Node) }
@@ -454,4 +508,4 @@ function Test-AzlNodeConnectivity {
     }
 }
 
-Export-ModuleMember -Function ConvertTo-AzlNodeResult, New-AzlArcRunCommandTransport, New-AzlWinRmTransport, Invoke-AzlNodeScript, Send-AzlNodeFile, Set-AzlNodeRetryPolicy, Test-AzlTransportMember, Test-AzlTcpPort, Get-AzlRemotingDiagnosis, Test-AzlNodeConnectivity
+Export-ModuleMember -Function Set-AzlTransportHeartbeat, Send-AzlTransportHeartbeat, Wait-AzlNodeJob, ConvertTo-AzlNodeResult, New-AzlArcRunCommandTransport, New-AzlWinRmTransport, Invoke-AzlNodeScript, Send-AzlNodeFile, Set-AzlNodeRetryPolicy, Test-AzlTransportMember, Test-AzlTcpPort, Get-AzlRemotingDiagnosis, Test-AzlNodeConnectivity

@@ -342,7 +342,8 @@ Describe 'Idempotent re-run and the node loop' {
         $state = New-ConfiguredNode $script:NodeSpec
         $t = New-NodeTransport @($state) { throw 'no guarded change expected' } $clock
         1..2 | ForEach-Object { $r = Invoke-AzlNodeConfiguration -Spec $script:NodeSpec -Transport $t -Execute -Clock $clock -PortProbe { $true } -SecretResolver { 'x' }; $r.Converged | Should -BeTrue }
-        @($t.Log | Where-Object Kind -in 'Stage', 'Status') | Should -BeNullOrEmpty
+        @($t.Log | Where-Object Kind -eq 'Stage') | Should -BeNullOrEmpty
+        @($t.Log | Where-Object Kind -eq 'Status').Count | Should -Be 2 -Because 'one read-only status read per run (the last guarded change), never a write'
     }
 
     It 'a wrong management address is one guarded change, confirmed before the next pass reads the node again' {
@@ -392,7 +393,7 @@ Describe 'Idempotent re-run and the node loop' {
         $t | Add-Member -NotePropertyName Machine -NotePropertyValue { param($Self, $Node) [pscustomobject]@{ Found = $true; Status = 'Disconnected'; LastStatusChange = $null } }
         $ev = New-AzlGuardEventContext
         $r = Invoke-AzlNodeConfiguration -Spec $script:NodeSpec -Transport $t -Execute -Clock $clock -PortProbe { $true } -SecretResolver { 'x' } -EventContext $ev -Step Network
-        @($t.Log | Where-Object Kind -in 'Stage', 'Status') | Should -BeNullOrEmpty
+        @($t.Log | Where-Object Kind -eq 'Stage') | Should -BeNullOrEmpty
         ($r.Changes | Where-Object Status -eq 'blocked').Detail | Should -Match 'not Connected'
         (Get-Sink $ev) | Should -Contain 'NodeBlocked'
         $r.Converged | Should -BeFalse

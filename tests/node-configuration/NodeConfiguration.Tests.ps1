@@ -670,7 +670,34 @@ Describe 'The merged flow: guarded changes first, the SBE package last, a plan r
         $t | Add-Member -NotePropertyName DeleteRunCommand -NotePropertyValue ({ param($Self, $Node, $Name) $calls.Add("delete $Name") }.GetNewClosure())
         $null = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -SecretResolver $script:Resolver
         $calls.Count | Should -Be 0
-        @($t.Log | Where-Object { $_.Kind -ne 'Read' }).Count | Should -Be 0
+        @($t.Log | Where-Object { $_.Kind -notin 'Read', 'GuardStatus' }).Count | Should -Be 0 -Because 'a plan only reads: the one extra call is the read-only status of the last guarded change'
+    }
+    It 'Plan and Apply both end by reading the node''s last guarded change, with no change id, no token and no write' {
+        foreach ($execute in $false, $true) {
+            $good = New-ConfiguredState $script:Spec
+            $t = New-FakeTransport @($good) { throw 'nothing to apply' } {
+                param($Kind, $P)
+                if ($Kind -eq 'Status') { @{ v = 1; found = $true; identityOk = $true; state = @{ changeId = '5c073442ba6d'; group = 'Management'; state = 'RolledBack'; reason = 'no answer on the new address'; checks = @(@{ name = 'gateway-ping'; ok = $false; detail = 'no reply' }); repairs = @() }; log = @('line 1', 'line 2') } }
+                else { throw 'no staging in this test' }
+            }
+            $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute:$execute -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
+            $status = @($t.Log | Where-Object Kind -eq 'GuardStatus')
+            $status.Count | Should -Be 1
+            @($status[0].Parameters.Keys) | Should -Be @('logTail')
+            $status[0].Parameters.logTail | Should -Be 20
+            $r.LastGuard.State | Should -Be 'RolledBack'
+            $r.LastGuard.ChangeId | Should -Be '5c073442ba6d'
+            @($r.LastGuard.Log).Count | Should -Be 2
+            @($t.Log | Where-Object Kind -in 'GuardStage', 'Apply').Count | Should -Be 0
+        }
+    }
+    It 'a run that throws carries the node''s last guarded change on the exception, so the report can still say what the node did' {
+        $bad = New-ConfiguredState $script:Spec; $bad.admin = [pscustomobject]@{ ex = $true; en = $true; adm = $true; pw = $false }
+        $t = New-FakeTransport @($bad) { throw 'the apply call stalled' } { param($Kind, $P) if ($Kind -eq 'Stage') { throw 'unused' } else { @{ v = 1; found = $true; identityOk = $true; state = @{ changeId = 'c1'; group = 'Hostname'; state = 'InProgress'; reason = 'applying' }; log = @() } } }
+        $caught = $null
+        try { $null = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp } catch { $caught = $_ }
+        $caught | Should -Not -BeNullOrEmpty
+        $caught.Exception.Data['AzlLastGuard'].ChangeId | Should -Be 'c1'
     }
     It 'an Apply lists the leftover run commands of earlier runs once, before the node is touched' {
         $calls = [System.Collections.Generic.List[string]]::new()

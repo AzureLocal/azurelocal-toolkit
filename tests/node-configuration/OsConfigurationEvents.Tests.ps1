@@ -91,7 +91,7 @@ Describe 'The event contract (os-configuration-design.md section 6)' {
     It 'has exactly the states of the contract, by level' {
         $c = Get-AzlOsConfigurationEventState
         $c.Run -join ',' | Should -Be 'RunStarted,PlanCompleted,WipeListPublished,RunCompleted'
-        $c.Node -join ',' | Should -Be 'NodeStarted,MethodResolved,TransportResolved,NodeRetry,NodeRestarting,NodeConverged,NodeFailed,NodeBlocked,NodeReconnecting,NodeReconnected'
+        $c.Node -join ',' | Should -Be 'NodeStarted,MethodResolved,TransportResolved,NodeRetry,NodeRestarting,NodeConverged,NodeFailed,NodeBlocked,NodeReconnecting,NodeReconnected,NodeWaiting'
         $c.Step -join ',' | Should -Be 'StepPlanned,StepSkipped,StepApplying,StepApplied,StepFailed,StepVerified'
         $c.DomainJoin -join ',' | Should -Be 'DomainJoinPlanned,DomainJoinApplying,DomainJoined,DomainAdminsConfigured,DomainJoinFailed'
         $c.Guarded -join ',' | Should -Be 'NetworkChangeStaged,NetworkChangeVerifying,NetworkChangeAwaitingConfirm,NetworkChangeCommitted,NetworkChangeRepaired,NetworkChangeRolledBack,NetworkChangeRefused'

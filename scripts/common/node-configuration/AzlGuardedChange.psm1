@@ -293,6 +293,158 @@ function Get-AzlGuardNextAction {
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
+# The last guarded change on a node, read only
+# ---------------------------------------------------------------------------------------------------------------------
+
+function Get-AzlLastGuardedChange {
+    <#
+    .SYNOPSIS
+        What the node says about its newest guarded change: state, reason, the checks' verdict, the repairs and the last lines of the node-side log. Writes nothing.
+    .DESCRIPTION
+        Runs the read-only status script (Get-AzlGuardStatusPayload) with no change id (the node answers for its newest), no acknowledgement token and no
+        management MAC, so it cannot confirm a change, cannot write the acknowledgement file and does not touch the network. Plan and Apply both use it, so
+        a report always says what the node did with the last change, even when this run changed nothing. Never throws: a node that cannot be read comes back
+        with Readable false and the error, because the report is most needed when something went wrong.
+    .OUTPUTS
+        Found, Readable, Error, ChangeId, Group, State, Reason, Verdict, Checks, Repairs, OldAddress, NewAddress, UpdatedUtc, Watchdog, Log.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][string]$Node, [int]$LogLines = 20, [int]$TimeoutSeconds = 120)
+    $none = [ordered]@{ Found = $false; Readable = $true; Error = ''; ChangeId = ''; Group = ''; State = ''; Reason = ''; Verdict = ''; Checks = @(); Repairs = @(); OldAddress = ''; NewAddress = ''; UpdatedUtc = ''; Watchdog = $false; Log = @() }
+    try {
+        $status = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlGuardStatusPayload) -Parameters @{ logTail = $LogLines } -TimeoutSeconds $TimeoutSeconds -Tries 1
+    }
+    catch {
+        $none.Readable = $false; $none.Error = $_.Exception.Message
+        return [pscustomobject]$none
+    }
+    if (-not $status -or -not (Get-AzlProp $status 'found' $false)) { return [pscustomobject]$none }
+    if (Get-AzlProp $status 'unreadable' $false) { $none.Found = $true; $none.Readable = $false; $none.Error = 'the state file is being written'; $none.ChangeId = [string](Get-AzlProp $status 'changeId' ''); return [pscustomobject]$none }
+    $s = Get-AzlProp $status 'state'
+    $none.Found = $true
+    $none.ChangeId = [string](Get-AzlProp $s 'changeId' '')
+    $none.Group = [string](Get-AzlProp $s 'group' '')
+    $none.State = [string](Get-AzlProp $s 'state' '')
+    $none.Reason = [string](Get-AzlProp $s 'reason' '')
+    $none.Verdict = [string](Get-AzlProp $s 'verdict' '')
+    $none.Checks = @(Get-AzlProp $s 'checks' @() | Where-Object { $_ } | ForEach-Object { [ordered]@{ name = [string]$_.name; ok = [bool]$_.ok; detail = [string]$_.detail } })
+    $none.Repairs = @(Get-AzlProp $s 'repairs' @() | Where-Object { $_ } | ForEach-Object { [ordered]@{ rung = [string]$_.rung; item = [string](Get-AzlProp $_ 'item' ''); ok = [bool]$_.ok; detail = [string]$_.detail } })
+    $none.OldAddress = [string](Get-AzlProp $s 'oldAddress' '')
+    $none.NewAddress = [string](Get-AzlProp $s 'newAddress' '')
+    $none.UpdatedUtc = [string](Get-AzlProp $s 'updatedUtc' '')
+    $none.Watchdog = [bool](Get-AzlProp $s 'watchdog' $false)
+    $none.Log = @(Get-AzlProp $status 'log' @() | Where-Object { $null -ne $_ } | ForEach-Object { [string]$_ } | Select-Object -Last $LogLines)
+    return [pscustomobject]$none
+}
+
+function ConvertTo-AzlGuardReportEntry {
+    <#
+    .SYNOPSIS
+        The guard entries of one node's report: this run's outcomes, each with the node's own record when it is the same change, and the node's last change
+        as its own entry (source node) when this run did not make it. Pure.
+    #>
+    [CmdletBinding()]
+    param([AllowNull()][object[]]$Outcome = @(), [AllowNull()][object]$Last)
+    $entries = [System.Collections.Generic.List[object]]::new()
+    $matched = $false
+    foreach ($o in @($Outcome | Where-Object { $_ })) {
+        $same = $Last -and (Get-AzlProp $Last 'Found' $false) -and [string]$Last.ChangeId -eq [string]$o.ChangeId
+        if ($same) { $matched = $true }
+        $repairs = if ($same) { @($Last.Repairs | ForEach-Object { $_.rung }) } else { @($o.Repairs | ForEach-Object { if ($_.PSObject.Properties['rung']) { $_.rung } else { $_ } }) }
+        $entries.Add([ordered]@{
+                source = 'run'; changeId = [string]$o.ChangeId; group = [string]$o.Group; state = [string]$o.State; reason = [string]$o.Reason; nextAction = [string]$o.NextAction
+                oldAddress = [string]$o.OldAddress; newAddress = [string]$o.NewAddress; verdict = $(if ($same -and $Last.Verdict) { [string]$Last.Verdict } else { [string]$o.Verdict })
+                repairs = @($repairs); checks = @($(if ($same) { $Last.Checks } else { @() })); updatedUtc = $(if ($same) { $Last.UpdatedUtc } else { '' }); log = @($(if ($same) { $Last.Log } else { @() }))
+            })
+    }
+    if ($Last -and -not $matched) {
+        if (Get-AzlProp $Last 'Found' $false) {
+            $entries.Add([ordered]@{
+                    source = 'node'; changeId = [string]$Last.ChangeId; group = [string]$Last.Group; state = $(if ($Last.Readable) { [string]$Last.State } else { 'Unreadable' }); reason = $(if ($Last.Readable) { [string]$Last.Reason } else { [string]$Last.Error })
+                    nextAction = ''; oldAddress = [string]$Last.OldAddress; newAddress = [string]$Last.NewAddress; verdict = [string]$Last.Verdict; repairs = @($Last.Repairs | ForEach-Object { $_.rung })
+                    checks = @($Last.Checks); updatedUtc = [string]$Last.UpdatedUtc; log = @($Last.Log)
+                })
+        }
+        elseif (-not (Get-AzlProp $Last 'Readable' $true)) {
+            $entries.Add([ordered]@{ source = 'node'; changeId = ''; group = ''; state = 'Unreadable'; reason = [string]$Last.Error; nextAction = 'Read the node again; its last guarded change could not be read.'; oldAddress = ''; newAddress = ''; verdict = ''; repairs = @(); checks = @(); updatedUtc = ''; log = @() })
+        }
+    }
+    return $entries.ToArray()
+}
+
+function Format-AzlGuardSummary {
+    <#
+    .SYNOPSIS
+        The guarded changes of a report as Markdown lines (summary.md): per node the change, its state and reason, the checks, the repairs and the node-side log. Pure.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Node, [AllowNull()][object[]]$Entry = @())
+    $lines = [System.Collections.Generic.List[string]]::new()
+    foreach ($e in @($Entry | Where-Object { $_ })) {
+        $reason = if ($e.reason) { ": $($e.reason)" } else { '' }
+        $updated = if ($e.updatedUtc) { ", updated $($e.updatedUtc)" } else { '' }
+        $lines.Add("- ${Node}: change $($e.changeId) ($($e.group)) **$($e.state)**$reason [$($e.source)$updated]")
+        if ($e.verdict) { $lines.Add("  - verdict: $($e.verdict)") }
+        foreach ($c in @($e.checks)) { $lines.Add("  - check $($c.name): $(if ($c.ok) { 'ok' } else { 'FAILED' })$(if ($c.detail) { " ($($c.detail))" })") }
+        foreach ($r in @($e.repairs)) { $lines.Add("  - repair: $r") }
+        if (@($e.log).Count) {
+            $lines.Add('  - node log (last lines):')
+            foreach ($l in @($e.log)) { $lines.Add("    $l") }
+        }
+    }
+    return $lines.ToArray()
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
+# A heartbeat for every wait
+# ---------------------------------------------------------------------------------------------------------------------
+
+function New-AzlWaitHeartbeat {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds an in-memory object.')]
+    <#
+    .SYNOPSIS
+        While the host waits for a node, one NodeWaiting event every 60 seconds says what it is waiting for, for how long and which phase it read last, so a
+        silent hang cannot happen: the feed always shows the last sign of life.
+    .DESCRIPTION
+        Begin and End bracket a wait (they nest: the elapsed time counts from the outermost Begin), Tick is called by the wait loop as often as it likes
+        and writes at most one event per interval, SetPhase records the phase read last (Read, Apply, AwaitingConfirm, ...). The clock is injected.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([AllowNull()][object]$EventContext, [Parameter(Mandatory)][string]$Node, [string]$Transport = '', [object]$Clock = (New-AzlGuardClock), [int]$IntervalSeconds = 60)
+    $now = & $Clock.Now
+    [pscustomobject]@{
+        State    = @{ Context = $EventContext; Node = $Node; Transport = $Transport; Clock = $Clock; Interval = $IntervalSeconds; Depth = 0; Started = $now; Last = $now; Phase = ''; Waits = [System.Collections.Generic.List[string]]::new(); Count = 0 }
+        SetPhase = { param($Self, [string]$Phase) $Self.State.Phase = $Phase }
+        Begin    = {
+            param($Self, [string]$Waiting)
+            $s = $Self.State
+            if ($s.Depth -eq 0) { $t = & $s.Clock.Now; $s.Started = $t; $s.Last = $t }
+            $s.Depth++
+            $s.Waits.Add($Waiting)
+        }
+        End      = {
+            param($Self)
+            $s = $Self.State
+            if ($s.Waits.Count) { $s.Waits.RemoveAt($s.Waits.Count - 1) }
+            if ($s.Depth -gt 0) { $s.Depth-- }
+        }
+        Tick     = {
+            param($Self, [string]$Waiting, [string]$Phase)
+            $s = $Self.State
+            if ($Phase) { $s.Phase = $Phase }
+            $t = & $s.Clock.Now
+            if (($t - $s.Last).TotalSeconds -lt $s.Interval) { return }
+            $s.Last = $t
+            $s.Count++
+            $what = if ($Waiting) { $Waiting } elseif ($s.Waits.Count) { $s.Waits[$s.Waits.Count - 1] } else { 'the node' }
+            $elapsed = [int](($t - $s.Started).TotalSeconds)
+            Send-AzlGuardEvent -Context $s.Context -Node $s.Node -State 'NodeWaiting' -Step '' -Transport $s.Transport -Evidence "Still waiting for ${what} ($elapsed s so far; last phase read: $(if ($s.Phase) { $s.Phase } else { 'none yet' }))." -Data @{ waiting = $what; phase = [string]$s.Phase; elapsedSeconds = $elapsed; heartbeat = $s.Count }
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
 # The guarded change
 # ---------------------------------------------------------------------------------------------------------------------
 
@@ -379,6 +531,7 @@ function Invoke-AzlGuardedChange {
     Send-AzlGuardEvent -Context $EventContext -Node $Node -State 'NodeReconnecting' -Transport $Transport.Kind -Evidence "Waiting for $Node to answer again$(if ($isWinRm) { " on $newAddress (then $oldAddress) over WinRM port $port" } else { ' (Arc machine Connected with a newer last status change)' })." -Data (& $data @{})
     $reconnected = $false
     $lastPhase = ''
+    Send-AzlTransportHeartbeat -Transport $Transport -Action Begin -Text "$Node to answer again after change $changeId"
     $lastError = $stageError
     $resolved = $null
     $nodeDeadline = $null
@@ -437,11 +590,13 @@ function Invoke-AzlGuardedChange {
         # The node's published deadline has passed and the last read was not Committed: the node has reverted (or failed); read once more is done above.
         if ($nodeDeadline -and $nodeNow -and $nodeNow -gt $nodeDeadline.AddSeconds(60) -and $resolved -and -not $resolved.Final) { break }
         if ($now -ge $reconnectDeadline -and -not ($resolved -and $nodeDeadline -and $nodeNow -lt $nodeDeadline.AddSeconds(60))) { break }
+        Send-AzlTransportHeartbeat -Transport $Transport -Action Tick -Text "$Node to answer again after change $changeId" -Phase $(if ($lastPhase) { $lastPhase } elseif ($resolved) { [string]$resolved.Phase } else { 'no state read yet' })
         & $Clock.Sleep 15
         # Reading the clock once per pass keeps the nodeNow comparison honest between reads.
         if ($nodeNow) { $nodeNow = $nodeNow.AddSeconds(15) }
     }
 
+    Send-AzlTransportHeartbeat -Transport $Transport -Action End
     # ---- 3. the outcome
     if (-not $resolved -or -not $resolved.Final) {
         $what = if ($resolved) { "last state read: $($resolved.Phase)" } else { "no state could be read ($lastError)" }
@@ -474,4 +629,4 @@ function Invoke-AzlGuardedChange {
     }
 }
 
-Export-ModuleMember -Function Get-AzlGuardSetting, New-AzlGuardClock, New-AzlGuardEventContext, Send-AzlGuardEvent, Remove-AzlStaleRunCommand, Split-AzlGuardedAction, Test-AzlGuardNetworkPrecondition, Resolve-AzlGuardStatus, Get-AzlGuardToken, New-AzlChangeId, Invoke-AzlGuardedChange
+Export-ModuleMember -Function Get-AzlLastGuardedChange, ConvertTo-AzlGuardReportEntry, Format-AzlGuardSummary, New-AzlWaitHeartbeat, Get-AzlGuardSetting, New-AzlGuardClock, New-AzlGuardEventContext, Send-AzlGuardEvent, Remove-AzlStaleRunCommand, Split-AzlGuardedAction, Test-AzlGuardNetworkPrecondition, Resolve-AzlGuardStatus, Get-AzlGuardToken, New-AzlChangeId, Invoke-AzlGuardedChange

@@ -1004,7 +1004,8 @@ $token = [string](Get-P $P 'ackToken' '')
 if ($token -and $identityOk -and [string]$state.state -eq 'AwaitingConfirm') { [IO.File]::WriteAllText((Join-Path $dir ('net-' + $id + '.ack')), $token, (New-Object Text.UTF8Encoding($false))); $ack = $true }
 $log = @()
 $logPath = Join-Path $dir ($id + '.log')
-if (Test-Path -LiteralPath $logPath) { $log = @(Get-Content -LiteralPath $logPath -Tail 14 | ForEach-Object { if ($_.Length -gt 300) { $_.Substring(0, 300) } else { $_ } }) }
+if (Test-Path -LiteralPath $logPath) { $tail = [int](Get-P $P 'logTail' 14); if ($tail -lt 1) { $tail = 14 }
+    $log = @(Get-Content -LiteralPath $logPath -Tail $tail | ForEach-Object { if ($_.Length -gt 300) { $_.Substring(0, 300) } else { $_ } }) }
 $actual = ''
 $scriptPath = Join-Path $dir ('net-' + $id + '.ps1')
 if (Test-Path -LiteralPath $scriptPath) { $actual = (Get-FileHash -LiteralPath $scriptPath -Algorithm SHA256).Hash }

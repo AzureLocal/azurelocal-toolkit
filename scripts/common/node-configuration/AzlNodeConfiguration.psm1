@@ -680,15 +680,20 @@ function Format-AzlPlan {
 function Wait-AzlNodeRestart {
     param([object]$Transport, [string]$Node, [string]$PreviousBoot, [hashtable]$ReadParameters, [hashtable]$Secrets, [int]$TimeoutMinutes = 30)
     $deadline = (Get-Date).AddMinutes($TimeoutMinutes)
-    Start-Sleep -Seconds 30
-    while ((Get-Date) -lt $deadline) {
-        try {
-            $state = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlNodePayload -Name Read) -Parameters $ReadParameters -Secrets $Secrets -TimeoutSeconds 600 -Tries 1
-            if ($state.boot -ne $PreviousBoot) { return $state }
+    Send-AzlTransportHeartbeat -Transport $Transport -Action Begin -Text "$Node to come back after a restart"
+    try {
+        Start-Sleep -Seconds 30
+        while ((Get-Date) -lt $deadline) {
+            try {
+                $state = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlNodePayload -Name Read) -Parameters $ReadParameters -Secrets $Secrets -TimeoutSeconds 600 -Tries 1
+                if ($state.boot -ne $PreviousBoot) { return $state }
+            }
+            catch { Write-Verbose "$Node isn't back yet: $($_.Exception.Message)" }
+            Send-AzlTransportHeartbeat -Transport $Transport -Action Tick -Text "$Node to come back after a restart" -Phase 'restart'
+            Start-Sleep -Seconds 20
         }
-        catch { Write-Verbose "$Node isn't back yet: $($_.Exception.Message)" }
-        Start-Sleep -Seconds 20
     }
+    finally { Send-AzlTransportHeartbeat -Transport $Transport -Action End }
     throw "$Node didn't come back with a new boot time within $TimeoutMinutes minutes."
 }
 
@@ -831,6 +836,10 @@ function Invoke-AzlNodeConfiguration {
     $djEvent = ConvertTo-AzlDomainJoinEventContext -EventContext $guardEvent
     $guardSetting = Get-AzlGuardSetting -Setting $GuardSetting
     $guardContext = [pscustomobject]@{ Setting = $guardSetting; Clock = $guardClock; Event = $guardEvent; PortProbe = $PortProbe }
+    # A sign of life every 60 seconds while this host waits for the node (NodeWaiting), whatever the wait is: a call, a restart, a guarded change.
+    $heartbeat = New-AzlWaitHeartbeat -EventContext $guardEvent -Node $node -Transport $Transport.Kind -Clock $guardClock
+    Set-AzlTransportHeartbeat -Transport $Transport -Heartbeat $heartbeat -Confirm:$false
+    if ($SbeTransport) { Set-AzlTransportHeartbeat -Transport $SbeTransport -Heartbeat $heartbeat -Confirm:$false }
     # Run commands left over from an earlier run (stuck in Creating or Unknown) are removed before this node is touched; nothing else is.
     # Only with -Execute: a plan only reads, so it deletes nothing in Azure either.
     if ($Execute) { $null = Remove-AzlStaleRunCommand -Transport $Transport -Node $node -OlderThanMinutes ([int]$guardSetting.staleRunCommandMinutes) -Clock $guardClock -Event $guardEvent }
@@ -840,7 +849,10 @@ function Invoke-AzlNodeConfiguration {
     $plan = @()
     # DOMAINJOIN HOOK: the join is tried once per run (a wrong password must not be sent twice); its pass does not count against -MaxPasses.
     $djDone = @{}; $djFailure = $null; $djMoved = $false; $limit = $MaxPasses; $ouChecked = $false; $ouCheck = $null
+    $lastGuard = $null
+    try {
     for ($pass = 1; $pass -le $limit + 1; $pass++) {
+        & $heartbeat.SetPhase $heartbeat "Read (pass $pass)"
         $state = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Read) -Parameters $readParameters -Secrets $secrets -TimeoutSeconds 900
         # HOOK remoting-profiles: the step reads its own state (rules, listeners, certificates) and compares it with the profile.
         $remoting = Get-AzlProp $Spec 'Remoting'
@@ -902,6 +914,7 @@ function Invoke-AzlNodeConfiguration {
             continue
         }
 
+        & $heartbeat.SetPhase $heartbeat "Apply (pass $pass)"
         # Inline: every step that cannot cut the node off, in one Apply call. The SBE package is not part of it: it is delivered last (below), by hardware.sbe.delivery.
         $actions = @(@($parts.Inline) | ForEach-Object { $_.Apply.Clone() })
         $failed = @()
@@ -960,6 +973,16 @@ function Invoke-AzlNodeConfiguration {
             }
         }
     }
+    }
+    catch {
+        # The most needed report is the one of a run that went wrong: attach what the node says about its last guarded change to the error.
+        $caught = $_
+        try { $caught.Exception.Data['AzlLastGuard'] = (Get-AzlLastGuardedChange -Transport $Transport -Node $node) } catch { $null = $_ }
+        throw $caught
+    }
+    # Plan and Apply both end by reading the newest guarded change on the node (read only: no write, no acknowledgement token).
+    & $heartbeat.SetPhase $heartbeat 'guarded change status'
+    $lastGuard = Get-AzlLastGuardedChange -Transport $Transport -Node $node -LogLines 20
     $blocked = @($plan | Where-Object Action -eq 'Blocked')
     $pending = @($plan | Where-Object { $_.Action -eq 'Change' })
     [pscustomobject]@{
@@ -974,6 +997,7 @@ function Invoke-AzlNodeConfiguration {
         Passes    = $passes.ToArray()
         Executed  = [bool]$Execute
         Guard     = $guardOutcomes.ToArray()
+        LastGuard = $lastGuard
         Events    = @($guardEvent.Sink)
         Address   = $(if (Test-AzlTransportMember -Transport $Transport -Name 'GetAddress') { [string](& $Transport.GetAddress $Transport $node) } else { '' })
         DomainJoin = (Get-AzlDomainJoinSummary -Spec $Spec -State $state -Change $changes.ToArray()) # DOMAINJOIN HOOK

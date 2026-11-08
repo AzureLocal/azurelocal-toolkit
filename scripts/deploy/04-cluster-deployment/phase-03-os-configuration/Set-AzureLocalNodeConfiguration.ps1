@@ -307,7 +307,8 @@ $report = [ordered]@{
                 address   = $_.Address
                 stepTransports = [ordered]@{ all = $nodeTransports[$_.Node].Kind; bootstrap = $(if ($bootstrapRecords.ContainsKey($_.Node)) { 'ArcRunCommand' } else { '' }) }
                 bootstrap = $(if ($bootstrapRecords.ContainsKey($_.Node)) { [ordered]@{ used = $true; transport = 'ArcRunCommand'; opened = @($bootstrapRecords[$_.Node].Opened); scope = @($bootstrapRecords[$_.Node].Scope) } } else { [ordered]@{ used = $false } })
-                guard     = @($_.Guard | ForEach-Object { [ordered]@{ group = $_.Group; state = $_.State; changeId = $_.ChangeId; reason = $_.Reason; nextAction = $_.NextAction; oldAddress = $_.OldAddress; newAddress = $_.NewAddress; verdict = $_.Verdict; repairs = @($_.Repairs | ForEach-Object { $_.rung }) } })
+                # This run's guarded changes, each with the node's own record of it, and the node's newest change when this run made none (read only).
+                guard     = @(ConvertTo-AzlGuardReportEntry -Outcome @($_.Guard) -Last $_.LastGuard)
                 events    = @($_.Events)
                 restarted = $_.Restarted
                 domainJoin = $_.DomainJoin # DOMAINJOIN HOOK

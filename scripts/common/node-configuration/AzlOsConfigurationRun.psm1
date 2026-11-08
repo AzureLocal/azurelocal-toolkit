@@ -945,6 +945,29 @@ function Merge-AzlDomainJoinResult {
     }
     if ($Record.domainJoin.error -and $Record.domainJoin.domainJoined) { $Record.domainJoin.error = '' }
 }
+function Add-AzlRunGuardEntry {
+    # Folds the guard entries of one script call into the node record: one entry per change id and source (the later read replaces the earlier), and a warning
+    # once for the last change of an earlier run that did not end Committed.
+    param([System.Collections.IDictionary]$Record, [AllowNull()][object[]]$Entry)
+    foreach ($e in @($Entry | Where-Object { $_ })) {
+        $key = "$($e.changeId)|$($e.source)"
+        $kept = @($Record.guard | Where-Object { "$($_.changeId)|$($_.source)" -ne $key })
+        $Record.guard = @($kept) + @($e)
+        if ($e.source -eq 'node' -and $e.state -in 'RolledBack', 'Failed', 'Refused', 'Unreadable', 'InProgress', 'AwaitingConfirm' -and -not @($Record.warnings | Where-Object { $_ -like "*last guarded change $($e.changeId)*" }).Count) {
+            $Record.warnings += "$($Record.name): the last guarded change $($e.changeId) ($($e.group)) on the node is $($e.state)$(if ($e.reason) { ": $($e.reason)" }). See the guard entry of this node in the report."
+        }
+    }
+}
+
+function Format-AzlGuardSection {
+    # The guarded changes of every node as Markdown lines for summary.md; nothing when no node has one.
+    param([object[]]$Record)
+    $lines = [System.Collections.Generic.List[string]]::new()
+    foreach ($r in @($Record)) { foreach ($l in @(Format-AzlGuardSummary -Node ([string]$r.name) -Entry @($r.guard))) { $lines.Add($l) } }
+    if ($lines.Count) { return (@('### Guarded changes (what each node says about its newest one)', '') + $lines.ToArray()) -join [Environment]::NewLine }
+    return ''
+}
+
 function Merge-AzlRunResult {
     # Folds one Plan or Verify call into the node's record. Returns $true when the node could be read.
     param([System.Collections.IDictionary]$Record, [object]$Run, [string]$Phase)
@@ -964,8 +987,7 @@ function Merge-AzlRunResult {
     if ($Phase -eq 'Plan' -and @($Record.plan | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -eq 'Info' -and $_.Note -match 'NOT DELIVERED' }).Count) {
         $Record.warnings += "$($Record.name): the SBE package is NOT DELIVERED (hardware.sbe.delivery is skip or not set), so the OEM network drivers are skipped. Set hardware.sbe.delivery to node_pull or winrm_copy, or put the package in C:\SBE yourself."
     }
-    $guard = @(Get-AzlProp $Run.Entry 'guard' @())
-    if ($guard.Count) { $Record.guard = @($Record.guard) + $guard }
+    Add-AzlRunGuardEntry -Record $Record -Entry @(Get-AzlProp $Run.Entry 'guard' @())
     $events = @(Get-AzlProp $Run.Entry 'events' @())
     if ($events.Count) { $Record.events = @($Record.events) + $events }
     $finalAddress = [string](Get-AzlProp $Run.Entry 'address' '')
@@ -1060,11 +1082,11 @@ function Invoke-AzlApplyPhase {
             }
         }
         Send-AzlStepAppliedEvent -Context $Context -Record $Record -Change $made
-        foreach ($g in @(Get-AzlProp $run.Entry 'guard' @() | Where-Object { $_ -and $_.state -ne 'Committed' })) {
+        foreach ($g in @(Get-AzlProp $run.Entry 'guard' @() | Where-Object { $_ -and $_.state -ne 'Committed' -and (Get-AzlProp $_ 'source' 'run') -ne 'node' })) {
             if ($g.state -eq 'Unknown') { $Record.warnings += "PendingReconciliation: change $($g.changeId) ($($g.group)) on $($Record.name): $($g.reason) $($g.nextAction)" }
             else { $Record.errors += "Guarded change $($g.changeId) ($($g.group)) on $($Record.name) ended $($g.state): $($g.reason) $($g.nextAction)" }
         }
-        if ($run.Entry) { $Record.guard = @($Record.guard) + @(Get-AzlProp $run.Entry 'guard' @()); $Record.events = @($Record.events) + @(Get-AzlProp $run.Entry 'events' @()); $finalAddress = [string](Get-AzlProp $run.Entry 'address' ''); if ($finalAddress -and $Record.transport -eq 'WinRM') { $Record.address = $finalAddress; $Context.NodeAddress[$Record.name] = $finalAddress } }
+        if ($run.Entry) { Add-AzlRunGuardEntry -Record $Record -Entry @(Get-AzlProp $run.Entry 'guard' @()); $Record.events = @($Record.events) + @(Get-AzlProp $run.Entry 'events' @()); $finalAddress = [string](Get-AzlProp $run.Entry 'address' ''); if ($finalAddress -and $Record.transport -eq 'WinRM') { $Record.address = $finalAddress; $Context.NodeAddress[$Record.name] = $finalAddress } }
         if ($run.Error) {
             if ($run.Unknown) { $Record.warnings += "The Apply of $($Record.name) ended in state Unknown after $($Context.RetryTries) tries; convergence is decided by the verification pass, not by the command." }
             else { $Record.errors += "Apply of $($Record.name) failed: $($run.Error)" }
@@ -1571,7 +1593,9 @@ function Invoke-AzlOsConfiguration {
             -Evidence "OS configuration run finished with exit code ${exit}: $convergedCount of $($records.Count) node(s) converged$(if ($Mode -eq 'Plan') { ' (plan only, nothing was changed)' })." `
             -NextAction $(if ($exit -eq 0) { '' } else { 'Read the NodeFailed and NodeBlocked events, fix the cause, and run again; finished steps are not repeated.' }) `
             -Data @{ exitCode = $exit; converged = $convergedCount; total = $records.Count; mode = $Mode }
-        $markdown = (Format-AzlOsConfigurationSummary -Record $records -Mode $Mode -ExitCode $exit -Markdown) + [Environment]::NewLine + [Environment]::NewLine + '```' + [Environment]::NewLine + $wipeText + [Environment]::NewLine + '```'
+        $guardSection = Format-AzlGuardSection -Record $records
+        if ($guardSection) { Write-AzlLine $guardSection }
+        $markdown = (Format-AzlOsConfigurationSummary -Record $records -Mode $Mode -ExitCode $exit -Markdown) + $(if ($guardSection) { [Environment]::NewLine + [Environment]::NewLine + $guardSection } else { '' }) + [Environment]::NewLine + [Environment]::NewLine + '```' + [Environment]::NewLine + $wipeText + [Environment]::NewLine + '```'
         Set-Content -LiteralPath (Join-Path $reportDir 'summary.md') -Value $markdown -Encoding utf8NoBOM
         Write-AzlLine ''
         Write-AzlLine $summary

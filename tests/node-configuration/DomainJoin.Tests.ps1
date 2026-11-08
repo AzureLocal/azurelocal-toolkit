@@ -661,7 +661,8 @@ Describe 'Invoke-AzlNodeConfiguration with the DomainJoin step' {
     It 'Plan mode: reads once, writes DomainJoinPlanned, changes nothing, never sends the join' {
         $t = Get-DjTransport @{ OuCheck = @{ ou = [pscustomobject]@{ checked = $true; exists = $true; gpOptions = 1; blockInheritance = $true; enforcedLinks = @(); error = '' } } } @($script:Before)
         $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Step 'DomainJoin' -SecretResolver $script:Resolver -EventContext @{ Path = $script:Feed; Method = 'Iso'; Phase = 'Plan' }
-        @($t.Log | ForEach-Object Kind) | Should -Be @('Read', 'OuCheck')
+        # Read, the OU check, and the read-only status of the last guarded change that every Plan and Apply ends with (the fake counts it as a Read).
+        @($t.Log | ForEach-Object Kind) | Should -Be @('Read', 'OuCheck', 'Read')
         ($r.Plan | Where-Object Item -eq 'domain membership').Action | Should -Be 'Change'
         $r.Executed | Should -BeFalse
         @(Get-DjFeed $script:Feed | ForEach-Object state) | Should -Be @('DomainJoinPlanned')
@@ -733,7 +734,7 @@ Describe 'Invoke-AzlNodeConfiguration with the DomainJoin step' {
         $t = Get-DjTransport @{} @([pscustomobject]@{ host = 'iic-n01'; boot = 'b'; err = [pscustomobject]@{} })
         $r = Invoke-AzlNodeConfiguration -Spec $spec -Transport $t -Execute -Step 'DomainJoin'
         $r.Converged | Should -BeTrue
-        @($t.Log).Count | Should -Be 1
+        @($t.Log).Count | Should -Be 2 -Because 'the Read, and the read-only status of the last guarded change'
         ($r.Plan | Where-Object Step -eq 'DomainJoin').Note | Should -Match 'not applicable: local identity'
         $r.DomainJoin.applicable | Should -BeFalse
     }
