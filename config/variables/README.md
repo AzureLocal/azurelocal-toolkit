@@ -52,3 +52,11 @@ Invoke-Pester ./tests/variables
 ## Reports
 
 `reports/infrastructure-vs-registry-before.csv` is the gap when the registry was last behind (schema 5.6.0 against registry 4.0.0: 660 keys missing, 3 in conflict). `reports/infrastructure-vs-registry.csv` is the current state and must have no `missing` or `conflict` row.
+
+## Variables owned by tools (`tools:`)
+
+Registry 4.2.0 registers the variables each tool owns, apart from the keys of `infrastructure.yml`: `tools.<tool>.<kind>.<group>.<name>` for `os_configuration`, `ztp`, `sonar`, `arm_deployment`, `cicd_infra` and `discovery`. Kinds: `parameters`, `run_settings`, `guard_settings`, `config_keys`, `event_fields`, `state_fields`, `handoff_fields`, `secret_names`, `env_vars`, `terraform_variables`, `pipeline_variables`, `pipeline_inputs`, `ansible_variables`. The group is the script, file or feed (its `area` says which); each entry has the real `name`, `type`, `default`, `enum`, `required`, `read_at` and `description`.
+
+- A script parameter that is not registered fails `tests/variables/ToolRegistry.Tests.ps1` (`Test-ToolParameterRegistration.ps1` reads the `param()` block).
+- ZTP and Sonar live in other repositories: [`tool-mappings/`](tool-mappings/README.md) maps their names to registry paths, and the same check runs on their checkouts with `AZL_CHECK_EXTERNAL_TOOLS=1`.
+- The discovery variables describe the Dell Redfish discovery branch; its scripts are checked once it is merged.
