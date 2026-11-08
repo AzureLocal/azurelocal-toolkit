@@ -216,14 +216,18 @@ Describe 'The wait heartbeat (NodeWaiting)' {
         $global:AzlHbWaits | Should -Be 14
         @($ctx.Sink | Where-Object state -eq 'NodeWaiting').Count | Should -Be 1 -Because '14 slices of 5 seconds are 70 seconds: one heartbeat at 60'
         $global:AzlHbWaits = 0
-        Mock -ModuleName AzlNodeTransport Wait-Job { $global:AzlHbWaits++; return $null } -RemoveParameterType 'Job'
-        (Wait-AzlNodeJob -Job ([pscustomobject]@{ Id = 1 }) -CapSeconds 20 -Transport $transport -Node n2) | Should -BeFalse
+        # The wait is measured with a Stopwatch now; the elapsed time is a seam so the test needs no real wait (a slice is what Wait-Job was asked for).
+        $global:AzlHbElapsed = 0
+        Mock -ModuleName AzlNodeTransport Wait-Job { $global:AzlHbWaits++; $global:AzlHbElapsed += $Timeout; return $null } -RemoveParameterType 'Job'
+        (Wait-AzlNodeJob -Job ([pscustomobject]@{ Id = 1 }) -CapSeconds 20 -Transport $transport -Node n2 -Elapsed { $global:AzlHbElapsed }) | Should -BeFalse
         $global:AzlHbWaits | Should -Be 4
+        Remove-Variable -Name AzlHbElapsed -Scope Global -ErrorAction SilentlyContinue
     }
     It 'a WinRM call that stalls past its cap is abandoned and reported as failed, and its heartbeat is ended' {
         Mock -ModuleName AzlNodeTransport Get-AzlWinRmSession { [pscustomobject]@{ State = 'Opened' } }
         Mock -ModuleName AzlNodeTransport Invoke-Command { [pscustomobject]@{ Id = 7 } } -RemoveParameterType 'Session'
-        Mock -ModuleName AzlNodeTransport Wait-Job { return $null } -RemoveParameterType 'Job'
+        Mock -ModuleName AzlNodeTransport Wait-AzlNodeJob { $false }
+        Mock -ModuleName AzlNodeTransport Start-ThreadJob { [pscustomobject]@{ Id = 1 } }
         Mock -ModuleName AzlNodeTransport Stop-Job { } -RemoveParameterType 'Job'
         Mock -ModuleName AzlNodeTransport Remove-Job { } -RemoveParameterType 'Job'
         Mock -ModuleName AzlNodeTransport Remove-PSSession { } -RemoveParameterType 'Session'
@@ -233,8 +237,10 @@ Describe 'The wait heartbeat (NodeWaiting)' {
         Set-AzlTransportHeartbeat -Transport $t -Heartbeat $hb -Confirm:$false
         $r = & $t.Invoke $t 'n2' 'script' @{} @{} 30
         $r.Failed | Should -BeTrue
-        $r.Error | Should -Match 'did not finish within 60 seconds and was abandoned'
-        Should -Invoke -ModuleName AzlNodeTransport Stop-Job -Times 1 -Exactly
+        $r.Error | Should -Match 'did not finish within 45 seconds and was abandoned'
+        # the clean-up (Stop-Job, Remove-Job, Remove-PSSession) is a background thread job now, never on the host's thread
+        Should -Invoke -ModuleName AzlNodeTransport Start-ThreadJob -Times 1 -Exactly
+        Should -Invoke -ModuleName AzlNodeTransport Stop-Job -Times 0 -Exactly
         $hb.State.Depth | Should -Be 0
     }
 }

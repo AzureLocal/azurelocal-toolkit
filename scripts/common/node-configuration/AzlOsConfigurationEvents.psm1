@@ -33,11 +33,11 @@
     The contract is section 6 of pmo/azure-local/os-configuration-design.md. The one registry of states is Get-AzlOsConfigurationEventState (Test-AzlOsConfigurationEventState
     asks it); every state any module sends is in it. Run events (node '*'): RunStarted, PlanCompleted,
     WipeListPublished, WipeListApproved, WipeListRejected (the Apply was bound to the approved wipe list, or refused for it), RunCompleted.
-    Transport (step Transport): StaleRunCommandDeleted. Node events: NodeStarted, MethodResolved, TransportResolved, NodeRetry, NodeRestarting, NodeConverged,
+    Transport (step Transport): StaleRunCommandDeleted, NodeCallAttempt (one per attempt of a call to a node: payload, durationSeconds, address, callState, error, timeoutSeconds), SbeDeliveryProgress (the SBE package copy, every 5 percent: file, percent, sentBytes, totalBytes). Node events: NodeStarted, MethodResolved, TransportResolved, NodeRetry, NodeRestarting, NodeConverged,
     NodeFailed, NodeBlocked, NodeReconnecting, NodeReconnected, NodeWaiting (a heartbeat every 60 seconds while the host waits for a node; waiting, phase and elapsedSeconds say what for). Step events: StepPlanned, StepApplying, StepApplied, StepFailed, StepSkipped,
     StepVerified. Domain join (step DomainJoin, Active Directory designs): DomainJoinPlanned, DomainJoinApplying, DomainJoined,
     DomainAdminsConfigured (the LCM user or the listed principals were added to the node's local Administrators), DomainJoinFailed (evidence: the AD error). Guarded change events (step Network): NetworkChangeStaged, NetworkChangeVerifying, NetworkChangeAwaitingConfirm,
-    NetworkChangeCommitted, NetworkChangeRepaired, NetworkChangeRolledBack, NetworkChangeRefused; they may carry changeId, rung,
+    NetworkChangeCommitted, NetworkChangeRepaired, NetworkChangeRolledBack, NetworkChangeRefused, ObservedCommitted (the guard's status could not be read, but a Read of the node shows the change's items in place); they may carry changeId, rung,
     reason, confirmMinutes and confirmBy (UTC time the confirmation window ends).
 
     Writing the feed never fails the run: a path that can't be written is skipped (Write-Verbose says why).
@@ -53,8 +53,8 @@ $script:EventState = [ordered]@{
     Node    = @('NodeStarted', 'MethodResolved', 'TransportResolved', 'NodeRetry', 'NodeRestarting', 'NodeConverged', 'NodeFailed', 'NodeBlocked', 'NodeReconnecting', 'NodeReconnected', 'NodeWaiting')
     Step    = @('StepPlanned', 'StepSkipped', 'StepApplying', 'StepApplied', 'StepFailed', 'StepVerified')
     DomainJoin = @('DomainJoinPlanned', 'DomainJoinApplying', 'DomainJoined', 'DomainAdminsConfigured', 'DomainJoinFailed')
-    Guarded = @('NetworkChangeStaged', 'NetworkChangeVerifying', 'NetworkChangeAwaitingConfirm', 'NetworkChangeCommitted', 'NetworkChangeRepaired', 'NetworkChangeRolledBack', 'NetworkChangeRefused')
-    Transport = @('StaleRunCommandDeleted')
+    Guarded = @('NetworkChangeStaged', 'NetworkChangeVerifying', 'NetworkChangeAwaitingConfirm', 'NetworkChangeCommitted', 'NetworkChangeRepaired', 'NetworkChangeRolledBack', 'NetworkChangeRefused', 'ObservedCommitted')
+    Transport = @('StaleRunCommandDeleted', 'NodeCallAttempt', 'SbeDeliveryProgress')
 }
 # The next sequence number per feed file and run id, for a feed that can't be read back.
 $script:EventSeq = @{}

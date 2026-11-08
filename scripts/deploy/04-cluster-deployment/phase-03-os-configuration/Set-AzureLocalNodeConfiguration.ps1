@@ -420,7 +420,8 @@ try {
         }
         # A guarded change an earlier call could not read (state Unknown) is looked at, read only, before the node is called converged.
         if ($ReconcileChangeId) {
-            $pendingGuard = @(Get-AzlPendingGuardState -Transport $nodeTransports[$s.Name] -Node $s.Name -ChangeId $ReconcileChangeId -Spec $s)
+            # A status call that timed out earlier in this node's run (the circuit breaker) makes this read short.
+            $pendingGuard = @(Get-AzlPendingGuardState -Transport $nodeTransports[$s.Name] -Node $s.Name -ChangeId $ReconcileChangeId -Spec $s -StatusTimedOut:([bool](Get-AzlProp $nodeResult 'StatusTimedOut' $false)))
             Add-Member -InputObject $nodeResult -NotePropertyName PendingGuard -NotePropertyValue $pendingGuard -Force
             foreach ($g in $pendingGuard) { Write-Line "   [guard] change $($g.ChangeId): $($g.State). $($g.Reason)" }
         }

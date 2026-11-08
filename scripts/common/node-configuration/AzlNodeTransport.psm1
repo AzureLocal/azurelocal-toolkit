@@ -30,6 +30,10 @@ $ErrorActionPreference = 'Stop'
 $script:RunCommandApiVersion = '2026-09-01'
 $script:ResultPrefix = 'AZLRESULT:'
 $script:RetryPolicy = @{ Tries = 3; DelaySeconds = @(15, 45, 120) }
+# A call is abandoned at its own timeout plus this grace. A session is opened within 30 s and a cancelled call lets go within 5 s (the defaults are 3 minutes and 60 s).
+$script:CallGraceSeconds = 15
+$script:SessionOpenTimeoutMs = 30000
+$script:SessionCancelTimeoutMs = 5000
 
 Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'azure-local' 'AzlAzure.psm1'))
 
@@ -90,26 +94,107 @@ function Send-AzlTransportHeartbeat {
     catch { Write-Verbose "Heartbeat skipped: $($_.Exception.Message)" }
 }
 
+function Send-AzlTransportEvent {
+    <#
+    .SYNOPSIS
+        One event to the feed through the transport's heartbeat (its Emit member), when it has one. Never throws: an event must not break a call. A transport without a
+        State or a heartbeat (a fake in a test) is left alone.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][object]$Transport,
+        [Parameter(Mandatory)][string]$Node,
+        [Parameter(Mandatory)][string]$State,
+        [string]$Step = 'Transport',
+        [string]$Evidence = '',
+        [ValidateSet('Info', 'Warning', 'Error')][string]$Level = 'Info',
+        [hashtable]$Data = @{}
+    )
+    if (-not $Transport.PSObject.Properties['State'] -or $Transport.State -isnot [hashtable] -or -not $Transport.State.ContainsKey('Heartbeat')) { return }
+    $hb = $Transport.State['Heartbeat']
+    if (-not $hb -or -not $hb.PSObject.Properties['Emit']) { return }
+    try { & $hb.Emit $hb $Node $State $Step $Evidence $Level $Data }
+    catch { Write-Verbose "Event $State skipped: $($_.Exception.Message)" }
+}
+
+function Get-AzlNodeCallCap {
+    <#
+    .SYNOPSIS
+        The hard cap of one call to a node, in seconds: the call's own timeout plus a 15 second grace (no timeout: 900 plus the grace). Past it the call is abandoned.
+    .EXAMPLE
+        Get-AzlNodeCallCap -TimeoutSeconds 30   # 45
+    #>
+    [CmdletBinding()]
+    [OutputType([int])]
+    param([int]$TimeoutSeconds)
+    $base = if ($TimeoutSeconds -gt 0) { $TimeoutSeconds } else { 900 }
+    return ($base + $script:CallGraceSeconds)
+}
+
+function New-AzlWinRmSessionOption {
+    <#
+    .SYNOPSIS
+        The session options of every WinRM session of this toolkit: an open timeout of 30 s (a node that does not answer is given up on, not waited for) and a cancel timeout
+        of 5 s (a call that is cancelled does not hold the host for the 60 s default), with the certificate checks skipped when asked.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds an in-memory options object; changes no system state.')]
+    [CmdletBinding()]
+    param([switch]$SkipCertificateCheck)
+    if ($SkipCertificateCheck) { return (New-PSSessionOption -SkipCACheck -SkipCNCheck -SkipRevocationCheck -OpenTimeout $script:SessionOpenTimeoutMs -CancelTimeout $script:SessionCancelTimeoutMs) }
+    return (New-PSSessionOption -OpenTimeout $script:SessionOpenTimeoutMs -CancelTimeout $script:SessionCancelTimeoutMs)
+}
+
 function Wait-AzlNodeJob {
     <#
     .SYNOPSIS
         Waits for the job of one WinRM call in slices of a few seconds, ticking the heartbeat between slices, and gives up after the cap. $true: the job
         finished. $false: the cap passed (the caller abandons the job and drops the session).
+    .DESCRIPTION
+        The time that counts is the host's clock (a Stopwatch), not the sum of the slices asked for: a wait that returns early does not eat the cap, and the last slice
+        is shortened to what is left. -Elapsed replaces the stopwatch (a scriptblock returning the elapsed seconds) for a test.
     #>
     [CmdletBinding()]
     [OutputType([bool])]
-    param([Parameter(Mandatory)][object]$Job, [Parameter(Mandatory)][int]$CapSeconds, [Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][string]$Node, [int]$SliceSeconds = 5)
-    $waited = 0
-    Send-AzlTransportHeartbeat -Transport $Transport -Action Begin -Text "a call to $Node"
+    param([Parameter(Mandatory)][object]$Job, [Parameter(Mandatory)][int]$CapSeconds, [Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][string]$Node, [int]$SliceSeconds = 5, [string]$What = '', [scriptblock]$Elapsed)
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    $seconds = if ($Elapsed) { $Elapsed } else { { $watch.Elapsed.TotalSeconds } }
+    $text = if ($What) { $What } else { "a call to $Node" }
+    Send-AzlTransportHeartbeat -Transport $Transport -Action Begin -Text $text
     try {
         while ($true) {
-            if (Wait-Job -Job $Job -Timeout $SliceSeconds) { return $true }
-            $waited += $SliceSeconds
-            if ($waited -ge $CapSeconds) { return $false }
-            Send-AzlTransportHeartbeat -Transport $Transport -Action Tick -Text "a call to $Node"
+            $left = $CapSeconds - [double](& $seconds)
+            if ($left -le 0) { return $false }
+            $slice = [int][Math]::Max(1, [Math]::Min($SliceSeconds, [Math]::Ceiling($left)))
+            if (Wait-Job -Job $Job -Timeout $slice) { return $true }
+            if ([double](& $seconds) -ge $CapSeconds) { return $false }
+            Send-AzlTransportHeartbeat -Transport $Transport -Action Tick -Text $text
         }
     }
     finally { Send-AzlTransportHeartbeat -Transport $Transport -Action End }
+}
+
+function Close-AzlAbandonedCall {
+    <#
+    .SYNOPSIS
+        Cleans up a call that was abandoned at its cap WITHOUT blocking the host: Stop-Job, Remove-Job and Remove-PSSession run in a thread job of their own (each of
+        them can wait on a stalled session). The caller has already taken the session out of its table.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseUsingScopeModifierInNewRunspaces', '', Justification = 'The thread job''s script block declares its own param() and receives the job and the session through -ArgumentList.')]
+    [CmdletBinding()]
+    param([AllowNull()][object]$Job, [AllowNull()][object]$Session)
+    try {
+        # Clean-ups that have finished are removed from the job table so it does not grow.
+        Get-Job -Name 'azl-abandon' -ErrorAction SilentlyContinue | Where-Object { $_.State -ne 'Running' } | Remove-Job -Force -ErrorAction SilentlyContinue
+        $null = Start-ThreadJob -Name 'azl-abandon' -ArgumentList $Job, $Session -ScriptBlock {
+            param($StalledJob, $StalledSession)
+            if ($StalledJob) {
+                try { Stop-Job -Job $StalledJob -ErrorAction SilentlyContinue } catch { $null = $_ }
+                try { Remove-Job -Job $StalledJob -Force -ErrorAction SilentlyContinue } catch { $null = $_ }
+            }
+            if ($StalledSession) { try { Remove-PSSession -Session $StalledSession -ErrorAction SilentlyContinue } catch { $null = $_ } }
+        }
+    }
+    catch { Write-Verbose "The abandoned call could not be handed to a background clean-up: $($_.Exception.Message)" }
 }
 
 function New-AzlArcRunCommandTransport {
@@ -217,12 +302,30 @@ function New-AzlArcRunCommandTransport {
 }
 
 function Get-AzlWinRmSession {
-    param([hashtable]$State, [string]$Node)
+    <#
+    .SYNOPSIS
+        The open session to a node, or a new one. A new session is opened with New-AzlWinRmSessionOption (open timeout 30 s, cancel timeout 5 s), so it is capped by the
+        WSMan open timeout whatever the node does; the open is bracketed by the heartbeat and is one attempt event (payload Session: duration, address, error). A failure
+        names the node, the address, the port and the time it took.
+    #>
+    param([hashtable]$State, [string]$Node, [object]$Transport)
     if (-not $State.Addresses.ContainsKey($Node)) { throw "No address for node $Node." }
     if ($State.Sessions.ContainsKey($Node) -and $State.Sessions[$Node].State -eq 'Opened') { return $State.Sessions[$Node] }
-    $arguments = @{ ComputerName = $State.Addresses[$Node]; Credential = $State.Credential; Authentication = $State.Authentication; UseSSL = $State.Ssl; Port = $State.Port }
-    if ($State.SkipCertificateCheck) { $arguments.SessionOption = New-PSSessionOption -SkipCACheck -SkipCNCheck -SkipRevocationCheck }
-    $State.Sessions[$Node] = New-PSSession @arguments
+    $address = [string]$State.Addresses[$Node]
+    $arguments = @{ ComputerName = $address; Credential = $State.Credential; Authentication = $State.Authentication; UseSSL = $State.Ssl; Port = $State.Port; SessionOption = (New-AzlWinRmSessionOption -SkipCertificateCheck:([bool]$State.SkipCertificateCheck)) }
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    if ($Transport) { Send-AzlTransportHeartbeat -Transport $Transport -Action Begin -Text "a session to $Node ($address)" }
+    try { $State.Sessions[$Node] = New-PSSession @arguments }
+    catch {
+        $seconds = [Math]::Round($watch.Elapsed.TotalSeconds, 1)
+        $message = "Opening a session to $Node at ${address}:$($State.Port) failed after $seconds s (open timeout $([int]($script:SessionOpenTimeoutMs / 1000)) s): $($_.Exception.Message)"
+        if ($Transport) { Send-AzlTransportEvent -Transport $Transport -Node $Node -State 'NodeCallAttempt' -Step 'Transport' -Level Warning -Evidence $message -Data @{ payload = 'Session'; durationSeconds = $seconds; address = $address; callState = 'Failed'; error = $_.Exception.Message } }
+        $failure = [System.InvalidOperationException]::new($message, $_.Exception)
+        $failure.Data['AzlAttemptLogged'] = $true
+        throw $failure
+    }
+    finally { if ($Transport) { Send-AzlTransportHeartbeat -Transport $Transport -Action End } }
+    if ($Transport) { Send-AzlTransportEvent -Transport $Transport -Node $Node -State 'NodeCallAttempt' -Step 'Transport' -Evidence "Opened a session to $Node at ${address}:$($State.Port) in $([Math]::Round($watch.Elapsed.TotalSeconds, 1)) s." -Data @{ payload = 'Session'; durationSeconds = [Math]::Round($watch.Elapsed.TotalSeconds, 1); address = $address; callState = 'Succeeded'; error = '' } }
     return $State.Sessions[$Node]
 }
 
@@ -265,16 +368,16 @@ function New-AzlWinRmTransport {
         State  = @{ Addresses = $Address; Credential = $Credential; Ssl = [bool]$UseSsl; Authentication = $Authentication; Port = $(if ($Port -gt 0) { $Port } elseif ($UseSsl) { 5986 } else { 5985 }); SkipCertificateCheck = [bool]$SkipCertificateCheck; Sessions = @{} }
         Invoke = {
             param($Self, $Node, [string]$Script, [hashtable]$Parameters, [hashtable]$Secrets, [int]$TimeoutSeconds)
-            $session = Get-AzlWinRmSession -State $Self.State -Node $Node
+            $session = Get-AzlWinRmSession -State $Self.State -Node $Node -Transport $Self
             $p = ConvertTo-AzlB64Json $Parameters
             $q = ConvertTo-AzlB64Json $Secrets
             try {
                 # The payload runs as a FILE on the node, never as a scriptblock: a script file has a script scope of its own, and a scriptblock created from text does
                 # not, so a payload written for a file would come back empty. The file is created inside the session (UTF-8 with a byte-order mark, readable by SYSTEM and
                 # Administrators only), run with the call operator in the same session (no child process, so no secret is on a command line) and removed in finally.
-                # A hard cap: the call runs as a job and is abandoned after $TimeoutSeconds (plus a short grace), so one stalled WinRM call (a network change under
+                # A hard cap: the call runs as a job and is abandoned after $TimeoutSeconds plus a 15 second grace, so one stalled WinRM call (a network change under
                 # an open session does it) can never hang the whole run. The session is dropped so the next call opens a new one.
-                $cap = [Math]::Max(30, $(if ($TimeoutSeconds -gt 0) { $TimeoutSeconds } else { 900 })) + 30
+                $cap = Get-AzlNodeCallCap -TimeoutSeconds $TimeoutSeconds
                 $job = Invoke-Command -Session $session -AsJob -ScriptBlock {
                     param($Text, $ParamsB64, $SecretsB64)
                     $folder = 'C:\ProgramData\AzureLocal\osconfig'
@@ -293,9 +396,11 @@ function New-AzlWinRmTransport {
                     # still answered, and Invoke-AzlNodeScript decodes that line. Failed stays true: the call did not finish.
                     $partial = ''
                     try { $partial = (@(Receive-Job -Job $job -Keep -ErrorAction SilentlyContinue) | ForEach-Object { [string]$_ }) -join [Environment]::NewLine } catch { $partial = '' }
-                    Stop-Job -Job $job -ErrorAction SilentlyContinue
-                    Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
-                    if ($Self.State.Sessions.ContainsKey($Node)) { Remove-PSSession -Session $Self.State.Sessions[$Node] -ErrorAction SilentlyContinue; $Self.State.Sessions.Remove($Node) }
+                    # The session leaves the table FIRST (the next call opens a new one); then the job and the session are cleaned up in a thread job of their own, so the host
+                    # never waits on a stalled session (Stop-Job, Remove-Job and Remove-PSSession can each block on it).
+                    $stalled = $null
+                    if ($Self.State.Sessions.ContainsKey($Node)) { $stalled = $Self.State.Sessions[$Node]; $Self.State.Sessions.Remove($Node) }
+                    Close-AzlAbandonedCall -Job $job -Session $stalled
                     # What the script did on the node is not known: it may not have started, may still be running, or may have finished. The caller treats this as indeterminate.
                     return [pscustomobject]@{ Output = $partial; Error = "The call to $Node did not finish within $cap seconds and was abandoned."; Failed = $true; State = 'TimedOut' }
                 }
@@ -341,6 +446,33 @@ function Set-AzlNodeRetryPolicy {
     if ($PSCmdlet.ShouldProcess('node script retry policy', 'Set')) { $script:RetryPolicy = @{ Tries = $Tries; DelaySeconds = @($DelaySeconds) } }
 }
 
+function Get-AzlNodeCallKind {
+    # What a node script is called in the attempt event: the caller's -Kind, else the marker comment of the guard scripts, else 'Script'.
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([string]$Script, [string]$Kind = '')
+    if ($Kind) { return $Kind }
+    if ($Script -match '# AZL-GUARD-(?<which>STAGE|STATUS|ACK|ENGINE)') { return 'Guard' + $Matches['which'].Substring(0, 1) + $Matches['which'].Substring(1).ToLowerInvariant() }
+    return 'Script'
+}
+
+function Send-AzlNodeAttemptEvent {
+    # One NodeCallAttempt event for one attempt of a call to a node (payload kind, duration, address, state, error). Never throws.
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][string]$Node, [Parameter(Mandatory)][string]$Kind, [double]$Seconds, [int]$TimeoutSeconds, [int]$Attempt = 1, [int]$Tries = 1,
+        [string]$CallState = '', [string]$ErrorText = '', [bool]$Failed = $true
+    )
+    if (-not $Transport.PSObject.Properties['State'] -or $Transport.State -isnot [hashtable] -or -not $Transport.State.ContainsKey('Heartbeat') -or -not $Transport.State['Heartbeat']) { return }
+    $address = ''
+    if (Test-AzlTransportMember -Transport $Transport -Name 'GetAddress') { try { $address = [string](& $Transport.GetAddress $Transport $Node) } catch { $address = '' } }
+    $rounded = [Math]::Round($Seconds, 1)
+    $ok = ($CallState -eq 'Succeeded' -and -not $Failed)
+    $where = if ($address) { " at $address" } else { '' }
+    $evidence = "$Kind call to $Node$where`: $CallState in $rounded s (try $Attempt of $Tries, cap $(Get-AzlNodeCallCap -TimeoutSeconds $TimeoutSeconds) s)$(if ($ErrorText) { ": $ErrorText" })"
+    Send-AzlTransportEvent -Transport $Transport -Node $Node -State 'NodeCallAttempt' -Step 'Transport' -Level $(if ($ok) { 'Info' } else { 'Warning' }) -Evidence $evidence -Data @{ payload = $Kind; durationSeconds = $rounded; address = $address; attempt = $Attempt; tries = $Tries; callState = $CallState; error = $ErrorText; timeoutSeconds = $TimeoutSeconds }
+}
+
 function Invoke-AzlNodeScript {
     <#
     .SYNOPSIS
@@ -360,13 +492,23 @@ function Invoke-AzlNodeScript {
         [hashtable]$Parameters = @{},
         [hashtable]$Secrets = @{},
         [int]$TimeoutSeconds = 900,
-        [ValidateRange(1, 10)][int]$Tries
+        [ValidateRange(1, 10)][int]$Tries,
+        # What the script is, for the attempt event (Read, Apply, Restart, GuardStage, GuardStatus, GuardAck ...). Without it the kind is read from the script's marker.
+        [string]$Kind = ''
     )
     $maxTries = if ($PSBoundParameters.ContainsKey('Tries')) { $Tries } else { [int]$script:RetryPolicy.Tries }
+    $kindName = Get-AzlNodeCallKind -Script $Script -Kind $Kind
     $attempt = 0
     while ($true) {
         $attempt++
-        $run = & $Transport.Invoke $Transport $Node $Script $Parameters $Secrets $TimeoutSeconds
+        $watch = [Diagnostics.Stopwatch]::StartNew()
+        # Every attempt is one NodeCallAttempt event (payload kind, duration, address, state, error), also the attempt that threw before it had an answer.
+        try { $run = & $Transport.Invoke $Transport $Node $Script $Parameters $Secrets $TimeoutSeconds }
+        catch {
+            if (-not $_.Exception.Data['AzlAttemptLogged']) { Send-AzlNodeAttemptEvent -Transport $Transport -Node $Node -Kind $kindName -Seconds $watch.Elapsed.TotalSeconds -TimeoutSeconds $TimeoutSeconds -Attempt $attempt -Tries $maxTries -CallState 'Error' -ErrorText $_.Exception.Message }
+            throw
+        }
+        Send-AzlNodeAttemptEvent -Transport $Transport -Node $Node -Kind $kindName -Seconds $watch.Elapsed.TotalSeconds -TimeoutSeconds $TimeoutSeconds -Attempt $attempt -Tries $maxTries -CallState ([string]$run.State) -ErrorText ([string]$run.Error) -Failed ([bool]$run.Failed)
         # A call that was abandoned may carry a partial output: a result line that is cut or garbled there is no result, and the call is treated as the timeout it was.
         try { $result = ConvertTo-AzlNodeResult -Text $run.Output }
         catch { if ($run.Failed) { $result = $null } else { throw } }
@@ -526,4 +668,4 @@ function Test-AzlNodeConnectivity {
     }
 }
 
-Export-ModuleMember -Function Set-AzlTransportHeartbeat, Send-AzlTransportHeartbeat, Wait-AzlNodeJob, ConvertTo-AzlNodeResult, New-AzlArcRunCommandTransport, New-AzlWinRmTransport, Invoke-AzlNodeScript, Send-AzlNodeFile, Set-AzlNodeRetryPolicy, Test-AzlTransportMember, Test-AzlTcpPort, Get-AzlRemotingDiagnosis, Test-AzlNodeConnectivity
+Export-ModuleMember -Function Set-AzlTransportHeartbeat, Send-AzlTransportHeartbeat, Send-AzlTransportEvent, Get-AzlNodeCallCap, New-AzlWinRmSessionOption, Wait-AzlNodeJob, ConvertTo-AzlNodeResult, New-AzlArcRunCommandTransport, New-AzlWinRmTransport, Invoke-AzlNodeScript, Send-AzlNodeFile, Set-AzlNodeRetryPolicy, Test-AzlTransportMember, Test-AzlTcpPort, Get-AzlRemotingDiagnosis, Test-AzlNodeConnectivity

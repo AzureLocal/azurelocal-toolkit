@@ -121,7 +121,8 @@ Describe 'A WinRM call that is abandoned after its timeout is indeterminate, not
     It 'the transport reports State TimedOut and Invoke-AzlNodeScript throws an error marked Indeterminate (the script may have run)' {
         Mock -ModuleName AzlNodeTransport Get-AzlWinRmSession { 'session' }
         Mock -ModuleName AzlNodeTransport Invoke-Command -RemoveParameterType Session { [pscustomobject]@{ Id = 1 } }
-        Mock -ModuleName AzlNodeTransport Wait-Job -RemoveParameterType Job { $null }
+        Mock -ModuleName AzlNodeTransport Wait-AzlNodeJob { $false }
+        Mock -ModuleName AzlNodeTransport Start-ThreadJob { [pscustomobject]@{ Id = 1 } }
         Mock -ModuleName AzlNodeTransport Stop-Job -RemoveParameterType Job {}
         Mock -ModuleName AzlNodeTransport Remove-Job -RemoveParameterType Job {}
         Mock -ModuleName AzlNodeTransport Remove-PSSession -RemoveParameterType Session {}

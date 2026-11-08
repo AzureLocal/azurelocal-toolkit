@@ -292,6 +292,25 @@ The class is `scenario.environment_class`; missing means `production`. Block Inh
 
 Only with `-Transport ArcRunCommand`. Arc Run Command can end in state `Unknown` when the node's agent briefly loses its connection (for example while its network changes). The script on the node is safe to run again, so the run is retried with a growing pause (default 3 tries, 15 s, 45 s, then 120 s; `retryTries`, `retryDelaySeconds`). After the last try the node is **read again** and the next step is decided from what the read shows. If an Apply ended in `Unknown`, the report lists a change with status `unknown`, and the node is converged if the read (and the verification pass) shows it matches. A restart that ends in `Unknown` is not a failure: the run waits for a new boot time.
 
+### How long a call may take, and what an unreadable guarded change does
+
+Every call to a node has a timeout, and the hard cap over WinRM is that timeout plus 15 seconds; past the cap the call is abandoned (its session is dropped and cleaned up in a background thread job, so the host never waits on it). Sessions are opened with an open timeout of 30 s and a cancel timeout of 5 s. If the node script had already written its result line when the call was abandoned, that answer is used (it is marked as recovered from the timeout).
+
+| Call | Timeout | Hard cap |
+| --- | --- | --- |
+| Guard status, guard acknowledgement | 30 s | 45 s |
+| Guard stage | 60 s | 75 s |
+| Read | 90 s | 105 s |
+| Restart script | 60 s | 75 s |
+| Apply (inline), no storage wipe | 300 s | 315 s |
+| Apply (inline), with a storage wipe | 900 s | 915 s |
+| SBE `node_pull` (the node downloads) | 3600 s | 3615 s |
+| SBE `winrm_copy`, per 8 MiB chunk | 60 s | 75 s |
+
+Each attempt of a call is one `NodeCallAttempt` event (payload, duration, address, state, error), so the feed shows what a slow run was waiting for, and the heartbeat names the call (`Guarded change Services`, `Read (pass 2)`).
+
+**A guarded change whose status cannot be read** no longer stops the run when the node shows the change done. After the node's own confirmation window has ended, the run reads the node once (90 s) and compares it with the plan. If none of the group's items is still to do, the outcome is **`ObservedCommitted`** (an event and a warning in the report, not an error) and the run goes on with the next step; the Read at the end of the run still decides whether the node is converged. If an item is still to do, the outcome stays `Unknown`, the run stops as before and the change is reconciled by the next run (`-ReconcileChangeId`). After one status call has timed out, the reads that come last (the final guard read, the read after an error, and the pending-change read) use a 30 s cap.
+
 ### The event feed: what the run tells a viewer
 
 While it runs, the OS configuration appends what it does to a file, one JSON object per line (JSON Lines, UTF-8 without a byte-order mark, UTC timestamps). A viewer such as azurelocal-sonar follows the file; you can read it with any text tool. The default is `os-configuration-events.jsonl` in `-ReportDirectory`; `-EventLogPath` puts it somewhere else. Lines are only appended, so a path shared by several runs keeps the history of all of them. Writing the feed never fails the run: if the file cannot be written, the run goes on without it.

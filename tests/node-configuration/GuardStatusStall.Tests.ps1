@@ -54,6 +54,8 @@ Describe 'A call abandoned at its cap hands back what the node had already writt
         Mock -ModuleName AzlNodeTransport Wait-Job { return $null } -RemoveParameterType 'Job'
         Mock -ModuleName AzlNodeTransport Receive-Job { $global:StallOrder.Add('receive'); if ($Keep) { $global:StallOrder.Add('keep') }; $global:StallPartial } -RemoveParameterType 'Job'
         Mock -ModuleName AzlNodeTransport Stop-Job { $global:StallOrder.Add('stop') } -RemoveParameterType 'Job'
+        # the job is stopped and removed in a background thread job: the order that matters is the partial output being taken before that clean-up is handed over
+        Mock -ModuleName AzlNodeTransport Start-ThreadJob { $global:StallOrder.Add('cleanup'); [pscustomobject]@{ Id = 1 } }
         Mock -ModuleName AzlNodeTransport Remove-Job { $global:StallOrder.Add('remove') } -RemoveParameterType 'Job'
         Mock -ModuleName AzlNodeTransport Remove-PSSession { } -RemoveParameterType 'Session'
         Mock -ModuleName AzlNodeTransport Wait-AzlNodeJob { $false }
@@ -67,7 +69,7 @@ Describe 'A call abandoned at its cap hands back what the node had already writt
         $r.Output | Should -Match 'AZLRESULT:'
         $r.Output | Should -Match 'some noise'
         $global:StallOrder.IndexOf('keep') | Should -BeGreaterOrEqual 0
-        $global:StallOrder.IndexOf('keep') | Should -BeLessThan $global:StallOrder.IndexOf('stop')
+        $global:StallOrder.IndexOf('cleanup') | Should -BeGreaterThan $global:StallOrder.IndexOf('keep')
     }
     It 'Invoke-AzlNodeScript decodes the line the abandoned call had written and uses it, marked as recovered from the timeout' {
         $r = Invoke-AzlNodeScript -Transport $script:t -Node n2 -Script 'x' -Tries 1 -TimeoutSeconds 30

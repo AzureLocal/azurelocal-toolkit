@@ -1327,6 +1327,11 @@ function Invoke-AzlApplyPhase {
         }
         Send-AzlStepAppliedEvent -Context $Context -Record $Record -Change $made
         foreach ($g in @(Get-AzlProp $run.Entry 'guard' @() | Where-Object { $_ -and $_.state -ne 'Committed' -and (Get-AzlProp $_ 'source' 'run') -ne 'node' })) {
+            if ($g.state -eq 'ObservedCommitted') {
+                # The guard's status could not be read, but a Read of the node showed the change's items in place: a warning, not an error, and nothing is pending.
+                $Record.warnings += "ObservedCommitted: change $($g.changeId) ($($g.group)) on $($Record.name): $($g.reason)"
+                continue
+            }
             if ($g.state -eq 'Unknown') {
                 $Record.warnings += "PendingReconciliation: change $($g.changeId) ($($g.group)) on $($Record.name): $($g.reason) $($g.nextAction)"
                 # Not converged until the verification pass has read the node's own state of this change and it is Committed.

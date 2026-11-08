@@ -309,6 +309,7 @@ function Get-AzlNodeReadParameter {
 # ---------------------------------------------------------------------------------------------------------------------
 
 function New-AzlPlanItem {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds an in-memory plan item; changes no system state.')]
     param(
         [string]$Node, [string]$Step, [string]$Item, [string]$Current, [string]$Desired,
         [ValidateSet('Ok', 'Change', 'Blocked', 'Info', 'Skipped')][string]$Action,
@@ -761,7 +762,7 @@ function Wait-AzlNodeRestart {
         Start-Sleep -Seconds 30
         while ((Get-Date) -lt $deadline) {
             try {
-                $state = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlNodePayload -Name Read) -Parameters $ReadParameters -Secrets $Secrets -TimeoutSeconds 600 -Tries 1
+                $state = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlNodePayload -Name Read) -Parameters $ReadParameters -Secrets $Secrets -TimeoutSeconds 90 -Tries 1 -Kind Read
                 if ($state.boot -ne $PreviousBoot) { return $state }
             }
             catch { Write-Verbose "$Node isn't back yet: $($_.Exception.Message)" }
@@ -830,11 +831,55 @@ function Send-AzlSbePackage {
     return $out.ToArray()
 }
 
+function Confirm-AzlUnknownGuardOutcome {
+    <#
+    .SYNOPSIS
+        A guarded change that ended Unknown (its status could not be read) is not lost: ONE Read of the node (timeout 90 s) is compared with the plan. When none of the
+        group's plan items is still to do or blocked, the change is in place on the node.
+    .DESCRIPTION
+        Only once the node's own confirm window for the change has ended (the node has then committed or rolled back, so what a Read shows is final), and not for a change
+        that was never staged. The Read is the same one a pass starts with; nothing is written to the node. Observed, Reason, State (the Read), Plan, Remaining.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][object]$Spec, [Parameter(Mandatory)][object]$Outcome, [Parameter(Mandatory)][object[]]$Todo,
+        [Parameter(Mandatory)][hashtable]$CompareArgument, [hashtable]$ReadParameter = @{}, [hashtable]$Secret = @{}, [Parameter(Mandatory)][object]$GuardContext
+    )
+    $no = { param($why, $read) [pscustomobject]@{ Observed = $false; Reason = $why; State = $read; Plan = @(); Remaining = @() } }
+    if (-not (Get-AzlProp $Outcome 'Staged' $true)) { return (& $no 'the change was not staged (another change was in progress on the node)' $null) }
+    $settled = Get-AzlProp $Outcome 'SettledAfterUtc' $null
+    if ($settled -and (& $GuardContext.Clock.Now) -lt ([datetime]$settled)) { return (& $no "the node's confirm window for this change has not ended yet (it ends $(([datetime]$settled).ToUniversalTime().ToString('HH:mm:ss')) UTC), so what a Read shows is not final" $null) }
+    try { $read = Invoke-AzlNodeScript -Transport $Transport -Node $Spec.Name -Script (Get-AzlNodePayload -Name Read) -Parameters $ReadParameter -Secrets $Secret -TimeoutSeconds 90 -Tries 1 -Kind Read }
+    catch { return (& $no "the node could not be read: $($_.Exception.Message)" $null) }
+    try { $plan = @(Compare-AzlNodeState @CompareArgument -State $read) }
+    catch { return (& $no "the Read could not be compared with the plan: $($_.Exception.Message)" $read) }
+    $ids = @($Todo | ForEach-Object { [string]$_.Apply.id })
+    $keys = @($Todo | ForEach-Object { "$($_.Step)|$($_.Item)" })
+    $remaining = @($plan | Where-Object {
+            $_.Action -in 'Change', 'Blocked' -and (([string](Get-AzlProp (Get-AzlProp $_ 'Apply' $null) 'id' '') -in $ids) -or ("$($_.Step)|$($_.Item)" -in $keys))
+        })
+    if ($remaining.Count) { return (& $no "still to do on the node: $((@($remaining | ForEach-Object { "$($_.Step) $($_.Item)" })) -join '; ')" $read) }
+    [pscustomobject]@{ Observed = $true; Reason = ''; State = $read; Plan = $plan; Remaining = @() }
+}
+
 function Invoke-AzlGuardStep {
-    # One guarded change on one node, and the change records it leaves behind.
-    param($Transport, $Spec, $State, [string]$Group, [object[]]$Todo, [int]$Pass, $GuardContext, $Changes, [switch]$NoRestart)
-    $outcome = Invoke-AzlGuardedChange -Transport $Transport -Node $Spec.Name -Group $Group -Item @($Todo | ForEach-Object { $_.Apply }) -Spec $Spec -State $State -Setting $GuardContext.Setting -Clock $GuardContext.Clock -Event $GuardContext.Event -PortProbe $GuardContext.PortProbe -NoRestart:$NoRestart
-    $status = switch ($outcome.State) { 'Committed' { 'changed' } 'Unknown' { 'unknown' } default { 'failed' } }
+    # One guarded change on one node, and the change records it leaves behind. An outcome Unknown is checked once with a Read (-Reconcile: CompareArgument, ReadParameter, Secret;
+    # State comes back in it): the group's items in place on the node make it ObservedCommitted.
+    param($Transport, $Spec, $State, [string]$Group, [object[]]$Todo, [int]$Pass, $GuardContext, $Changes, [switch]$NoRestart, [hashtable]$Reconcile)
+    $outcome = Invoke-AzlGuardedChange -Transport $Transport -Node $Spec.Name -Group $Group -Item @($Todo | ForEach-Object { $_.Apply }) -Spec $Spec -State $State -Setting $GuardContext.Setting -Clock $GuardContext.Clock -Event $GuardContext.Event -PortProbe $GuardContext.PortProbe -NoRestart:$NoRestart -Breaker $GuardContext.Breaker
+    if ($outcome.State -eq 'Unknown' -and $Reconcile) {
+        $seen = Confirm-AzlUnknownGuardOutcome -Transport $Transport -Spec $Spec -Outcome $outcome -Todo $Todo -CompareArgument $Reconcile.CompareArgument -ReadParameter $Reconcile.ReadParameter -Secret $Reconcile.Secret -GuardContext $GuardContext
+        if ($seen.Observed) {
+            $ids = (@($Todo | ForEach-Object { [string]$_.Apply.id })) -join ', '
+            $outcome.Reason = "The node's status for change $($outcome.ChangeId) could not be read ($($outcome.Reason)), but a Read of the node shows its items in place ($ids). Taken as committed; the Read at the end of the run decides."
+            $outcome.State = 'ObservedCommitted'
+            $outcome.NextAction = ''
+            $Reconcile.State = $seen.State
+            Send-AzlGuardEvent -Context $GuardContext.Event -Node $Spec.Name -State 'ObservedCommitted' -Step 'Network' -Transport $Transport.Kind -Level Warning -Evidence $outcome.Reason -Data @{ changeId = $outcome.ChangeId; group = $Group; items = $ids }
+        }
+        else { $outcome.Reason = "$($outcome.Reason) A Read of the node did not settle it: $($seen.Reason)." }
+    }
+    $status = switch ($outcome.State) { 'Committed' { 'changed' } 'ObservedCommitted' { 'changed' } 'Unknown' { 'unknown' } default { 'failed' } }
     foreach ($i in $Todo) { $Changes.Add([pscustomobject]@{ Node = $Spec.Name; Pass = $Pass; Id = [string]$i.Apply.id; Status = $status; Detail = "$($outcome.State): $($outcome.Reason)" }) }
     $Changes.Add([pscustomobject]@{ Node = $Spec.Name; Pass = $Pass; Id = "NetworkChange/$Group/$($outcome.ChangeId)"; Status = $status; Detail = "$($outcome.State): $($outcome.Reason) $($outcome.NextAction)".Trim() })
     return $outcome
@@ -916,7 +961,9 @@ function Invoke-AzlNodeConfiguration {
     # The DomainJoin step takes its event context as a hashtable: the same path, method, phase and versions as the guard events.
     $djEvent = ConvertTo-AzlDomainJoinEventContext -EventContext $guardEvent
     $guardSetting = Get-AzlGuardSetting -Setting $GuardSetting
-    $guardContext = [pscustomobject]@{ Setting = $guardSetting; Clock = $guardClock; Event = $guardEvent; PortProbe = $PortProbe }
+    # Breaker: set when a status call of this run timed out (Invoke-AzlGuardedChange); the reads that come after (the catch read, the final read) are then short.
+    $guardBreaker = @{ StatusTimedOut = $false }
+    $guardContext = [pscustomobject]@{ Setting = $guardSetting; Clock = $guardClock; Event = $guardEvent; PortProbe = $PortProbe; Breaker = $guardBreaker }
     # A sign of life every 60 seconds while this host waits for the node (NodeWaiting), whatever the wait is: a call, a restart, a guarded change.
     $heartbeat = New-AzlWaitHeartbeat -EventContext $guardEvent -Node $node -Transport $Transport.Kind -Clock $guardClock
     Set-AzlTransportHeartbeat -Transport $Transport -Heartbeat $heartbeat -Confirm:$false
@@ -938,7 +985,7 @@ function Invoke-AzlNodeConfiguration {
         param([string]$Err, [bool]$Indeterminate)
         $blocked = @($plan | Where-Object Action -eq 'Blocked')
         $pending = @($plan | Where-Object { $_.Action -eq 'Change' })
-        $unfinished = @($guardOutcomes | Where-Object { $_.State -ne 'Committed' })
+        $unfinished = @($guardOutcomes | Where-Object { $_.State -notin 'Committed', 'ObservedCommitted' })
         [pscustomobject]@{
             Node      = $node
             Transport = $Transport.Kind
@@ -952,6 +999,7 @@ function Invoke-AzlNodeConfiguration {
             Executed  = [bool]$Execute
             Guard     = $guardOutcomes.ToArray()
             LastGuard = $lastGuard
+            StatusTimedOut = [bool]$guardBreaker.StatusTimedOut
             Events    = @($guardEvent.Sink)
             Address   = $(try { if (Test-AzlTransportMember -Transport $Transport -Name 'GetAddress') { [string](& $Transport.GetAddress $Transport $node) } else { '' } } catch { '' })
             DomainJoin = $(try { Get-AzlDomainJoinSummary -Spec $Spec -State $state -Change $changes.ToArray() } catch { $null }) # DOMAINJOIN HOOK
@@ -966,7 +1014,7 @@ function Invoke-AzlNodeConfiguration {
     try {
     for ($pass = 1; $pass -le $limit + 1; $pass++) {
         & $heartbeat.SetPhase $heartbeat "Read (pass $pass)"
-        $state = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Read) -Parameters $readParameters -Secrets $secrets -TimeoutSeconds 900
+        $state = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Read) -Parameters $readParameters -Secrets $secrets -TimeoutSeconds 90 -Kind Read
         # HOOK remoting-profiles: the step reads its own state (rules, listeners, certificates) and compares it with the profile.
         $remoting = Get-AzlProp $Spec 'Remoting'
         if ($remoting -and 'RemoteManagement' -in $Step) { $state | Add-Member -NotePropertyName remoting -NotePropertyValue (Read-AzlRemotingState -Spec $remoting -Transport $Transport) -Force }
@@ -1022,9 +1070,12 @@ function Invoke-AzlNodeConfiguration {
         $parts = Split-AzlGuardedAction -Todo $todo
         if (@($parts.Management).Count -or @($parts.Vlan).Count) {
             $group = if (@($parts.Management).Count) { 'Management' } else { 'Vlan' }
-            $outcome = Invoke-AzlGuardStep -Transport $Transport -Spec $Spec -State $state -Group $group -Todo @($parts.$group) -Pass $pass -GuardContext $guardContext -Changes $changes -NoRestart:$NoRestart
+            & $heartbeat.SetPhase $heartbeat "Guarded change $group"
+            $reconcile = @{ CompareArgument = $compareArgs; ReadParameter = $readParameters; Secret = $secrets; State = $null }
+            $outcome = Invoke-AzlGuardStep -Transport $Transport -Spec $Spec -State $state -Group $group -Todo @($parts.$group) -Pass $pass -GuardContext $guardContext -Changes $changes -NoRestart:$NoRestart -Reconcile $reconcile
             $guardOutcomes.Add($outcome)
-            if ($outcome.State -ne 'Committed') { $halted = $true; break }
+            if ($reconcile.State) { $state = $reconcile.State }
+            if ($outcome.State -notin 'Committed', 'ObservedCommitted') { $halted = $true; break }
             continue
         }
 
@@ -1035,7 +1086,9 @@ function Invoke-AzlNodeConfiguration {
         if ($actions.Count) {
             # Marked before the call: a call that fails, times out or ends in Unknown has still possibly wiped, so it is not sent again.
             if (@($actions | Where-Object { $_.kind -eq 'storage-clear' }).Count) { $storageDone = $true }
-            try { $result = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Apply) -Parameters @{ actions = $actions; sbeDir = $(if ($Spec.Sbe) { $Spec.Sbe.Dir } else { 'C:\SBE' }) } -Secrets $secrets -TimeoutSeconds 3600 }
+            # 300 s; 900 s when the call wipes storage.
+            $applySeconds = if (@($actions | Where-Object { $_.kind -eq 'storage-clear' }).Count) { 900 } else { 300 }
+            try { $result = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Apply) -Parameters @{ actions = $actions; sbeDir = $(if ($Spec.Sbe) { $Spec.Sbe.Dir } else { 'C:\SBE' }) } -Secrets $secrets -TimeoutSeconds $applySeconds -Kind Apply }
             catch {
                 # The run ended in state Unknown after every retry: we don't know what happened. Read the node again and decide from that.
                 if ($_.Exception.Data['AzlState'] -ne 'Unknown') { throw }
@@ -1047,7 +1100,7 @@ function Invoke-AzlNodeConfiguration {
             if ($failed) { $plan = @(Compare-AzlNodeState @compareArgs -State $state); break }
             if ($result.reboot -and -not $NoRestart) {
                 # The node goes away on purpose: a restart that ends in state Unknown is not a failure, the wait below checks the boot time.
-                try { $null = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Restart) -TimeoutSeconds 300 -Tries 1 }
+                try { $null = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Restart) -TimeoutSeconds 60 -Tries 1 -Kind Restart }
                 catch { if ($_.Exception.Data['AzlState'] -ne 'Unknown') { throw } }
                 $state = Wait-AzlNodeRestart -Transport $Transport -Node $node -PreviousBoot $state.boot -ReadParameters $readParameters -Secrets $secrets
                 $restarted = $true
@@ -1070,9 +1123,12 @@ function Invoke-AzlNodeConfiguration {
                     break
                 }
             }
-            $outcome = Invoke-AzlGuardStep -Transport $Transport -Spec $Spec -State $state -Group $group -Todo $items -Pass $pass -GuardContext $guardContext -Changes $changes -NoRestart:$NoRestart
+            & $heartbeat.SetPhase $heartbeat "Guarded change $group"
+            $reconcile = @{ CompareArgument = $compareArgs; ReadParameter = $readParameters; Secret = $secrets; State = $null }
+            $outcome = Invoke-AzlGuardStep -Transport $Transport -Spec $Spec -State $state -Group $group -Todo $items -Pass $pass -GuardContext $guardContext -Changes $changes -NoRestart:$NoRestart -Reconcile $reconcile
             $guardOutcomes.Add($outcome)
-            if ($outcome.State -ne 'Committed') { $halted = $true; break }
+            if ($reconcile.State) { $state = $reconcile.State }
+            if ($outcome.State -notin 'Committed', 'ObservedCommitted') { $halted = $true; break }
             if ($group -eq 'Hostname' -and $outcome.Restarted) { $restarted = $true }
             if ($group -in 'Services', 'Hostname') { $nextPass = $true }
             if ($group -eq 'Hostname') { break }
@@ -1095,13 +1151,13 @@ function Invoke-AzlNodeConfiguration {
         $indeterminate = ($_.Exception.Data['AzlState'] -eq 'Indeterminate')
         # The most needed report is the one of a run that went wrong: the node's last guarded change (read only) rides on the partial result too.
         $caught = $_
-        try { $lastGuard = Get-AzlLastGuardedChange -Transport $Transport -Node $node; $caught.Exception.Data['AzlLastGuard'] = $lastGuard } catch { $null = $_ }
+        try { $lastGuard = Get-AzlLastGuardedChange -Transport $Transport -Node $node -Breaker $guardBreaker; $caught.Exception.Data['AzlLastGuard'] = $lastGuard } catch { $null = $_ }
         $caught.Exception.Data['AzlPartial'] = (& $buildResult $caught.Exception.Message $indeterminate)
         throw $caught
     }
     # Plan and Apply both end by reading the newest guarded change on the node (read only: no write, no acknowledgement token).
     & $heartbeat.SetPhase $heartbeat 'guarded change status'
-    $lastGuard = Get-AzlLastGuardedChange -Transport $Transport -Node $node -LogLines 20
+    $lastGuard = Get-AzlLastGuardedChange -Transport $Transport -Node $node -LogLines 20 -Breaker $guardBreaker
     return (& $buildResult '' $false)
 }
 

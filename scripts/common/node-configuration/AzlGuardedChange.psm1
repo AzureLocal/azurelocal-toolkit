@@ -314,10 +314,15 @@ function Get-AzlLastGuardedChange {
         Found, Readable, Error, ChangeId, Group, State, Reason, Verdict, Checks, Repairs, OldAddress, NewAddress, UpdatedUtc, Watchdog, Log.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][string]$Node, [int]$LogLines = 20, [int]$TimeoutSeconds = 120)
+    param(
+        [Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][string]$Node, [int]$LogLines = 20, [int]$TimeoutSeconds = 30,
+        # The circuit breaker of the run (a hashtable with StatusTimedOut): once a status call timed out in this run, this read gets a 15 s timeout (a 30 s cap) instead of 30 s (45 s).
+        [hashtable]$Breaker
+    )
+    if ($Breaker -and $Breaker.ContainsKey('StatusTimedOut') -and $Breaker.StatusTimedOut) { $TimeoutSeconds = [Math]::Min($TimeoutSeconds, 15) }
     $none = [ordered]@{ Found = $false; Readable = $true; Error = ''; ChangeId = ''; Group = ''; State = ''; Reason = ''; Verdict = ''; Checks = @(); Repairs = @(); OldAddress = ''; NewAddress = ''; UpdatedUtc = ''; Watchdog = $false; Log = @() }
     try {
-        $status = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlGuardStatusPayload) -Parameters @{ logTail = $LogLines } -TimeoutSeconds $TimeoutSeconds -Tries 1
+        $status = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlGuardStatusPayload) -Parameters @{ logTail = $LogLines } -TimeoutSeconds $TimeoutSeconds -Tries 1 -Kind GuardStatus
     }
     catch {
         $none.Readable = $false; $none.Error = $_.Exception.Message
@@ -425,6 +430,12 @@ function New-AzlWaitHeartbeat {
     [pscustomobject]@{
         State    = @{ Context = $EventContext; Node = $Node; Transport = $Transport; Clock = $Clock; Interval = $IntervalSeconds; Depth = 0; Started = $now; Last = $now; Phase = ''; Waits = [System.Collections.Generic.List[string]]::new(); Count = 0 }
         SetPhase = { param($Self, [string]$Phase) $Self.State.Phase = $Phase }
+        # Any other event a call wants in the feed (one per attempt of a call, the SBE delivery progress): the same context and transport as the heartbeat's own.
+        Emit     = {
+            param($Self, [string]$Node, [string]$State, [string]$Step, [string]$Evidence, [string]$Level, [hashtable]$Data)
+            $s = $Self.State
+            Send-AzlGuardEvent -Context $s.Context -Node $(if ($Node) { $Node } else { $s.Node }) -State $State -Step $Step -Transport $s.Transport -Level $(if ($Level) { $Level } else { 'Info' }) -Evidence $Evidence -Data $(if ($Data) { $Data } else { @{} })
+        }
         Begin    = {
             param($Self, [string]$Waiting)
             $s = $Self.State
@@ -483,7 +494,9 @@ function Invoke-AzlGuardedChange {
         [object]$Clock = (New-AzlGuardClock),
         [Alias('Event')][object]$EventContext,
         [scriptblock]$PortProbe,
-        [switch]$NoRestart
+        [switch]$NoRestart,
+        # The circuit breaker of the run (a hashtable): a status call that times out sets StatusTimedOut, which shortens the reads that come after the guarded change.
+        [hashtable]$Breaker
     )
     $cfgSetting = Get-AzlGuardSetting -Setting $Setting
     $confirmMinutes = [int]$cfgSetting.networkRollbackMinutes
@@ -510,7 +523,7 @@ function Invoke-AzlGuardedChange {
     $scriptHash = Get-AzlGuardScriptHash -ChangeId $changeId
     $evidenceItems = ($items | ForEach-Object { $_.id }) -join ', '
     $data = { param($extra) $d = @{ changeId = $changeId; group = $Group; oldAddress = $oldAddress; newAddress = $newAddress; items = $evidenceItems }; foreach ($k in $extra.Keys) { $d[$k] = $extra[$k] }; $d }
-    $out = [ordered]@{ Group = $Group; State = 'Unknown'; Reason = ''; NextAction = ''; ChangeId = $changeId; OldAddress = $oldAddress; NewAddress = $newAddress; Repairs = @(); Verdict = ''; Restarted = $restart; Address = $oldAddress; Partial = $false }
+    $out = [ordered]@{ Group = $Group; State = 'Unknown'; Reason = ''; NextAction = ''; ChangeId = $changeId; OldAddress = $oldAddress; NewAddress = $newAddress; Repairs = @(); Verdict = ''; Restarted = $restart; Address = $oldAddress; Partial = $false; Staged = $true; SettledAfterUtc = $null }
     $finish = {
         param($state, $reason, $verdict, $repairs)
         $out.State = $state; $out.Reason = $reason; $out.Verdict = $verdict; $out.Repairs = @($repairs)
@@ -521,9 +534,10 @@ function Invoke-AzlGuardedChange {
     # ---- 1. stage
     $stageError = ''
     $stage = $null
-    try { $stage = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlGuardStagePayload -ChangeId $changeId) -Parameters @{ changeId = $changeId; scriptSha256 = $scriptHash; config = $config } -TimeoutSeconds 300 -Tries 1 }
+    try { $stage = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlGuardStagePayload -ChangeId $changeId) -Parameters @{ changeId = $changeId; scriptSha256 = $scriptHash; config = $config } -TimeoutSeconds 60 -Tries 1 -Kind GuardStage }
     catch { $stageError = $_.Exception.Message }
     if ($stage -and $stage.PSObject.Properties['busyWith'] -and $stage.busyWith) {
+        $out.Staged = $false
         return (& $finish 'Unknown' "Change $($stage.busyWith) is still in progress on $Node (one change at a time), so this one was not staged. Wait for it to finish: its node-side state decides." '' @())
     }
     if ($stageError -and -not $isWinRm -and -not $stage) {
@@ -533,6 +547,8 @@ function Invoke-AzlGuardedChange {
     $cookie = if ($stage -and $stage.PSObject.Properties['cookie']) { [string]$stage.cookie } else { '' }
     $sid = if ($stage -and $stage.PSObject.Properties['machineSid']) { [string]$stage.machineSid } else { '' }
     $stagedAt = & $Clock.Now
+    # After the node's own confirm window (plus a minute) its state is final, committed or rolled back: a read of the node then says what the change did, whatever the status could say.
+    $out.SettledAfterUtc = $stagedAt.AddMinutes([double]$config.confirmMinutes + 1)
     Send-AzlGuardEvent -Context $EventContext -Node $Node -State 'NetworkChangeStaged' -Transport $Transport.Kind -Evidence "Staged guarded change $changeId (${Group}: $evidenceItems) on the node; address $oldAddress -> $newAddress; the node applies, checks and waits for the confirmation (window $confirmMinutes minutes)." -Data (& $data @{ scriptSha256 = $scriptHash; stageError = $stageError })
 
     # ---- 2. close the session and wait
@@ -589,15 +605,16 @@ function Invoke-AzlGuardedChange {
             try {
                 if ($ackOnly) {
                     $ackSent = $true
-                    $ackResult = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlGuardAckPayload) -Parameters @{ changeId = $changeId; cookie = $cookie; machineSid = $sid; ackToken = $token } -TimeoutSeconds 30 -Tries 1
+                    $ackResult = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlGuardAckPayload) -Parameters @{ changeId = $changeId; cookie = $cookie; machineSid = $sid; ackToken = $token } -TimeoutSeconds 30 -Tries 1 -Kind GuardAck
                     if (-not (Get-AzlProp $ackResult 'written' $false)) { $lastError = "the acknowledgement was not written: $(Get-AzlProp $ackResult 'why' 'no reason given')" }
                 }
                 else {
-                    $status = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlGuardStatusPayload) -Parameters $parameters -TimeoutSeconds 180 -Tries 1
+                    $status = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlGuardStatusPayload) -Parameters $parameters -TimeoutSeconds 30 -Tries 1 -Kind GuardStatus
                     if (-not $reconnected) {
                         $reconnected = $true
                         Send-AzlGuardEvent -Context $EventContext -Node $Node -State 'NodeReconnected' -Transport $Transport.Kind -Evidence "$Node answers again$(if ($address) { " on $address" })." -Data (& $data @{ address = $address; sawDisconnect = $sawDisconnect })
                     }
+                    if ($Breaker -and (Get-AzlProp $status 'azlRecoveredFromTimeout' $false)) { $Breaker.StatusTimedOut = $true }
                     $resolved = Resolve-AzlGuardStatus -Status $status -ExpectedHash $scriptHash -ExpectedIp $(if ($isManagement) { $newAddress } else { '' })
                     if ($status.PSObject.Properties['nowUtc'] -and $status.nowUtc -and $status.state) {
                         $nodeNow = ([datetime]::Parse([string]$status.nowUtc, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)).ToUniversalTime()
@@ -616,7 +633,10 @@ function Invoke-AzlGuardedChange {
                     if ($resolved.Final) { break }
                 }
             }
-            catch { $lastError = $_.Exception.Message }
+            catch {
+                $lastError = $_.Exception.Message
+                if ($Breaker -and $_.Exception.Data['AzlState'] -eq 'Indeterminate') { $Breaker.StatusTimedOut = $true }
+            }
         }
         # The node's published deadline has passed and the last read was not Committed: the node has reverted (or failed); read once more is done above.
         if ($nodeDeadline -and $nodeNow -and $nodeNow -gt $nodeDeadline.AddSeconds(60) -and $resolved -and -not $resolved.Final) { break }
@@ -669,10 +689,15 @@ function Get-AzlPendingGuardState {
         Only Committed counts as reconciled.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][string]$Node, [Parameter(Mandatory)][string[]]$ChangeId, [Parameter(Mandatory)][object]$Spec)
+    param(
+        [Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][string]$Node, [Parameter(Mandatory)][string[]]$ChangeId, [Parameter(Mandatory)][object]$Spec,
+        # A status call timed out earlier in this run (the circuit breaker): the read gets a 15 s timeout (a 30 s cap) instead of 30 s (45 s).
+        [switch]$StatusTimedOut
+    )
+    $timeout = if ($StatusTimedOut) { 15 } else { 30 }
     foreach ($id in $ChangeId) {
         try {
-            $status = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlGuardStatusPayload) -Parameters @{ changeId = $id; mac = [string]$Spec.Management.Mac } -TimeoutSeconds 180 -Tries 1
+            $status = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlGuardStatusPayload) -Parameters @{ changeId = $id; mac = [string]$Spec.Management.Mac } -TimeoutSeconds $timeout -Tries 1 -Kind GuardStatus
             $resolved = Resolve-AzlGuardStatus -Status $status
             [pscustomobject]@{ ChangeId = $id; State = $resolved.State; Final = [bool]$resolved.Final; Reason = $resolved.Reason }
         }
