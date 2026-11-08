@@ -182,20 +182,33 @@ function Get-AzlVerificationCheckDefinition {
                 }
             }))
 
-    $defs.Add((New-AzlVerDefinition -Id 'NW-005' -Category network -Title 'Nodes reach the required Azure endpoints on 443 (directly or through the proxy)' `
-                -Source "$($script:Src.Firewall); $($script:Src.EnvChecker) (connectivity validator, RD-002, covers every endpoint); azl-toolkit phase-03-network-infrastructure task-03 firewall endpoint verification" `
-                -Applies { param($Context) if ([string](Get-AzlProp (Get-AzlVerInfra $Context) 'scenario.connectivity' 'connected') -eq 'connected') { $true } else { $false } } -Run {
+    $defs.Add((New-AzlVerDefinition -Id 'NW-005' -Category network -Title 'Nodes reach the documented outbound endpoints (443, and 80 for revocation lists), directly or through the proxy' `
+                -Source "$($script:Src.Firewall) (consolidated endpoint list of the region); $($script:Src.EnvChecker) (connectivity validator, RD-002, covers them again); AzlVerification.Endpoints.psm1" `
+                -Applies { param($Context) if ([string](Get-AzlProp (Get-AzlVerInfra $Context) 'scenario.connectivity' 'connected') -ne 'connected') { $false } elseif ([string](Get-AzlProp (Get-AzlVerInfra $Context) 'scenario.cloud' 'public') -ne 'public') { 'The documented endpoint lists are for the Azure public cloud; this design uses another cloud (the lists for it are on the Learn firewall page).' } else { $true } } -Run {
                 param($Context)
+                $set = @(Get-AzlVerEndpointList $Context)
+                $location = [string](Get-AzlProp (Get-AzlVerInfra $Context) 'azure.location' '')
                 Invoke-AzlVerPerNode -Context $Context -Section 'GetProbes' -Body {
                     param($Name, $D, $N)
-                    $rows = @(ConvertTo-AzlVerList (Get-AzlProp $D 'https' @()))
-                    if (-not $rows.Count) { return New-AzlVerResult Skipped "$Name returned no endpoint probe." 'Run the verification again; if it persists, run Invoke-AzStackHciConnectivityValidation on the node (RD-002).' -Node $Name }
-                    $bad = @($rows | Where-Object { -not $_.ok })
-                    if ($bad) { New-AzlVerResult Failed "$Name cannot reach $(Join-AzlVerList @($bad | ForEach-Object { "$($_.u) ($(if ($_.err) { $_.err } else { 'no answer' }))" })) on 443. Learn: every machine needs outbound HTTPS to the Azure endpoints through all firewalls and proxies; TLS inspection is not supported." 'Open the endpoints of the firewall requirements for the node subnet, or set networking.outbound.proxy.url when a proxy is the route; the full list is the Environment Checker connectivity validator.' -Node $Name -Evidence (($bad | ForEach-Object { $_.u }) -join ',') }
-                    else { New-AzlVerResult Passed "$Name reaches all $($rows.Count) probed endpoints on 443." -Node $Name -Evidence "endpoints=$($rows.Count)" }
+                    $web = @(ConvertTo-AzlVerList (Get-AzlProp $D 'https' @()))
+                    $tcp = @(ConvertTo-AzlVerList (Get-AzlProp $D 'tcp' @()))
+                    $result = foreach ($e in $set) {
+                        $row = if ($e.Port -eq 443) { $web | Where-Object { [string]$_.u -eq "https://$($e.Host)" } | Select-Object -First 1 } else { $tcp | Where-Object { [string]$_.h -eq $e.Host -and [int]$_.p -eq $e.Port } | Select-Object -First 1 }
+                        [pscustomobject]@{ Host = $e.Host; Port = $e.Port; Tier = $e.Tier; Row = $row }
+                    }
+                    $missing = @($result | Where-Object { -not $_.Row })
+                    if ($missing.Count -eq $result.Count) { return New-AzlVerResult Skipped "$Name returned no endpoint probe." 'Run the verification again; if it persists, run Invoke-AzStackHciConnectivityValidation on the node (RD-002).' -Node $Name }
+                    if ($missing.Count) { return New-AzlVerResult Skipped "$Name did not probe $($missing.Count) of $($result.Count) documented endpoint(s) ($(Join-AzlVerList @($missing | Select-Object -First 5 | ForEach-Object { $_.Host }))), so they were not verified." 'Run the verification again.' -Node $Name }
+                    $bad = @($result | Where-Object { -not [bool]$_.Row.ok })
+                    $badRequired = @($bad | Where-Object { $_.Tier -ne 'Optional' })
+                    $shown = { param($list) Join-AzlVerList @($list | ForEach-Object { "$($_.Host):$($_.Port) ($($why = [string](Get-AzlProp $_.Row 'err' ''); if ($why) { $why } else { 'no answer' }))" }) }
+                    $note = Format-AzlEndpointNotTested -Location $location
+                    $fix = 'Open the endpoints on the firewall or proxy (Learn: Firewall requirements for Azure Local, the consolidated endpoint list of the region); a name that does not resolve needs DNS forwarding to a resolver that answers external names. TLS inspection is not supported.'
+                    if ($badRequired.Count) { New-AzlVerResult Failed "$Name cannot reach $($badRequired.Count) of $($result.Count) documented endpoints: $(& $shown $badRequired). $note" $fix -Node $Name -Evidence "failed=$($badRequired.Count) of $($result.Count)" }
+                    elseif ($bad.Count) { New-AzlVerResult Warning "$Name cannot reach the optional documented endpoint(s) $(& $shown $bad) (revocation lists, previous URLs and alternatives are optional in the list). $note" $fix -Node $Name }
+                    else { New-AzlVerResult Passed "$Name reaches all $($result.Count) documented endpoints. $note" -Node $Name -Evidence "endpoints=$($result.Count)" }
                 }
             }))
-
     $defs.Add((New-AzlVerDefinition -Id 'NW-006' -Category network -Title 'Proxy: the node''s proxy settings follow the file (none for a direct path; the file''s proxy for a proxy path; no PAC, no credentials)' `
                 -Source "$($script:Src.NetPlan) (Proxy requirements); $($script:Src.Firewall)" -Run {
                 param($Context)

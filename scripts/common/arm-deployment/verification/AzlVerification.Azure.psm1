@@ -55,6 +55,7 @@ Import-Module ([IO.Path]::Combine($script:Common, 'infrastructure', 'AzlInfrastr
 Import-Module ([IO.Path]::Combine($script:Common, 'azure-local', 'AzlAzure.psm1'))
 Import-Module ([IO.Path]::Combine($script:Common, 'arm-deployment', 'AzlArmDeployment.psm1'))
 Import-Module ([IO.Path]::Combine($script:Common, 'arm-deployment', 'AzlArmDeploymentRun.psm1'))
+Import-Module ([IO.Path]::Combine($PSScriptRoot, 'AzlVerification.Endpoints.psm1'))
 
 $script:Learn = 'https://learn.microsoft.com/en-us/azure/azure-local'
 $script:View = 'view=azloc-2610'
@@ -617,20 +618,11 @@ function Test-AzlVerifyArcGateway {
 }
 
 function Get-AzlVerifyArcEndpoint {
-    # The Azure Arc endpoints a node must reach on 443 (Test-ArcConnectivity's list, with the region of the file).
+    # The concrete Azure Arc, authentication, management and data plane hosts a node must reach on 443: the one documented list (AzlVerification.Endpoints.psm1,
+    # from Learn's firewall requirements and the Arc agent network requirements), with the region of the file.
     param([string]$Location)
-    $region = ($Location -replace '[\s_-]', '').ToLowerInvariant()
-    $list = @(
-        @{ Name = 'Microsoft Entra ID'; Host = 'login.microsoftonline.com' }
-        @{ Name = 'Azure Resource Manager'; Host = 'management.azure.com' }
-        @{ Name = 'Arc global endpoint'; Host = 'gbl.his.arc.azure.com' }
-        @{ Name = 'Arc guest configuration'; Host = 'agentserviceapi.guestconfiguration.azure.com' }
-    )
-    if ($region) {
-        $list += @{ Name = 'Arc regional endpoint'; Host = "$region.his.arc.azure.com" }
-        $list += @{ Name = 'Arc Kubernetes data plane'; Host = "$region.dp.kubernetesconfiguration.azure.com" }
-    }
-    return @($list | ForEach-Object { [pscustomobject]@{ Name = $_.Name; Host = $_.Host; Port = 443 } })
+    @(Get-AzlEndpointSet -Location $Location -Group Arc, Auth, Management, DataPlane -Port 443 |
+            ForEach-Object { [pscustomobject]@{ Name = $_.Note; Host = $_.Host; Port = $_.Port; Tier = $_.Tier; Group = $_.Group } })
 }
 
 function Test-AzlVerifyArcEndpoint {
@@ -659,11 +651,16 @@ function Test-AzlVerifyArcEndpoint {
             if ($_.Exception.Data['AzlSkip']) { throw }
             New-AzlVerifyResult Skipped "$name could not run the probe ($($_.Exception.Message)); the endpoints were not tested from the node." 'Open WinRM to the node from this host, or run Test-ArcConnectivity.ps1 on the node.' -Node $name; continue
         }
+        $tier = @{}; foreach ($x in $targets) { $tier[[string]$x.Host] = [string]$x.Tier }
         $bad = @($rows | Where-Object { -not $_.Ok })
-        if ($bad) {
-            New-AzlVerifyResult Failed "$name cannot reach $($bad.Count) of $($rows.Count) Azure Arc endpoints on 443: $((@($bad | ForEach-Object { "$($_.Host) ($($_.Error))" })) -join '; '). Arc and the deployment need them." "On the node: Test-NetConnection <host> -Port 443. Open the endpoints on the firewall or proxy (Learn: Firewall requirements for Azure Local)." -Evidence "$($bad.Count) of $($rows.Count) failed" -Node $name
+        $badRequired = @($bad | Where-Object { $tier[[string]$_.Host] -ne 'Optional' })
+        $skipped = Format-AzlEndpointNotTested -Location $t.Location
+        $fix = 'On the node: Test-NetConnection <host> -Port 443. Open the endpoints on the firewall or proxy (Learn: Firewall requirements for Azure Local, the consolidated endpoint list of the region).'
+        if ($badRequired) {
+            New-AzlVerifyResult Failed "$name cannot reach $($badRequired.Count) of $($rows.Count) documented Azure Arc endpoints on 443: $((@($badRequired | ForEach-Object { "$($_.Host) ($($_.Error))" })) -join '; '). Arc and the deployment need them. $skipped" $fix -Evidence "$($badRequired.Count) of $($rows.Count) failed" -Node $name
         }
-        else { New-AzlVerifyResult Passed "$name reaches all $($rows.Count) Azure Arc endpoints on 443." -Evidence "$($rows.Count) reachable" -Node $name }
+        elseif ($bad) { New-AzlVerifyResult Warning "$name cannot reach the optional documented endpoint(s) $((@($bad | ForEach-Object { "$($_.Host) ($($_.Error))" })) -join '; '). $skipped" $fix -Node $name }
+        else { New-AzlVerifyResult Passed "$name reaches all $($rows.Count) documented Azure Arc endpoints on 443 (region $((Get-AzlEndpointRegion -Location $t.Location).Name)). $skipped" -Evidence "$($rows.Count) reachable" -Node $name }
     }
 }
 

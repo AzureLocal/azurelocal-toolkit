@@ -4,6 +4,8 @@
 
 $script:VerDir = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', 'scripts', 'common', 'arm-deployment', 'verification'))
 
+Import-Module ([IO.Path]::Combine($script:VerDir, 'AzlVerification.Endpoints.psm1')) -Force
+
 function Import-VerModule {
     <# Imports one category module and returns it; its two commands are called as & $mod.ExportedCommands[...]. #>
     param([Parameter(Mandatory)][ValidateSet('Nodes', 'Network', 'Storage')][string]$Name)
@@ -73,8 +75,8 @@ function New-VerSnapshot {
         vms = @{ switches = @(); intents = @() }
         mpio = @{ feature = 'Enabled'; availableHw = @(); supportedHw = @(); claims = @(); lb = 'RR'; mpclaimLines = 3 }
         fc = @(); iscsi = $null; ec = @(@{ name = 'AzStackHci.EnvironmentChecker'; version = '1.2605.1' })
-        tcp = @(@{ h = '192.0.2.4'; p = 53; ok = $true }, @{ h = '192.0.2.5'; p = 53; ok = $true })
-        https = @('https://login.microsoftonline.com', 'https://management.azure.com', 'https://gbl.his.arc.azure.com', 'https://mcr.microsoft.com', 'https://eastus.his.arc.azure.com' | ForEach-Object { @{ u = $_; ok = $true; status = '404'; err = '' } })
+        tcp = @(@(@{ h = '192.0.2.4'; p = 53; ok = $true }, @{ h = '192.0.2.5'; p = 53; ok = $true }) + @(Get-AzlEndpointSet -Location 'eastus' -Port 80 | ForEach-Object { @{ h = $_.Host; p = $_.Port; ok = $true } }))
+        https = @(Get-AzlEndpointSet -Location 'eastus' -Port 443 | ForEach-Object { @{ u = "https://$($_.Host)"; ok = $true; status = '404'; err = '' } })
         ping = @(@{ a = '192.0.2.1'; ok = $true })
     }
 }

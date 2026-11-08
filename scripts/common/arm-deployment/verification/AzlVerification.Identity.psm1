@@ -43,6 +43,7 @@ $script:Common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', 
 Import-Module ([IO.Path]::Combine($script:Common, 'azure-local', 'AzlAzure.psm1')) -ErrorAction Stop
 Import-Module ([IO.Path]::Combine($script:Common, 'infrastructure', 'AzlInfrastructure.psm1')) -ErrorAction Stop
 Import-Module ([IO.Path]::Combine($script:Common, 'node-configuration', 'AzlDomainJoin.psm1')) -ErrorAction Stop
+Import-Module ([IO.Path]::Combine($PSScriptRoot, 'AzlVerification.Endpoints.psm1')) -ErrorAction Stop
 
 $script:Learn = 'https://learn.microsoft.com/en-us/azure/azure-local'
 $script:View = 'view=azloc-2610'
@@ -71,7 +72,13 @@ $script:UnregisteredSetting = @{
 # Domain controller ports a node must reach: Active Directory Web Services, LDAP, Kerberos (Learn: firewall requirements, prepare Active Directory).
 $script:DcPort = @(9389, 389, 88)
 # The endpoints Test-DnsClientConfig.ps1 of the azl-toolkit resolves from the nodes.
-$script:DnsEndpoint = @('management.azure.com', 'login.microsoftonline.com', 'guestnotificationservice.azure.com', 'dp.kubernetesconfiguration.azure.com')
+# The names the nodes must resolve: the Arc, authentication, management and data plane hosts of the one documented list (AzlVerification.Endpoints.psm1) for the region of the file.
+function Get-VfIdDnsEndpoint {
+    param([Parameter(Mandatory)]$Context)
+    $cloud = [string](Get-AzlProp (Get-VfIdInfra $Context) 'scenario.cloud' 'public')
+    if ($cloud -ne 'public') { return @() }
+    @(Get-AzlEndpointSet -Location ([string](Get-AzlProp (Get-VfIdInfra $Context) 'azure.location' '')) -Group Arc, Auth, Management, DataPlane -Port 443)
+}
 $script:ComputerClass = [guid]'bf967a86-0de6-11d0-a285-00aa00302ce8'
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -483,7 +490,7 @@ function Get-VfIdProbeSpec {
             $queries.Add(@{ name = "_ldap._tcp.dc._msdcs.$zone"; type = 'SRV'; server = $s })
         }
         if ($identity -eq 'local_identity' -and $zone) { foreach ($n in (Get-VfIdNode $Context)) { $queries.Add(@{ name = "$([string]$n['name']).$zone"; type = 'A'; server = $s }) } }
-        foreach ($e in $script:DnsEndpoint) { $queries.Add(@{ name = $e; type = 'A'; server = $s }) }
+        foreach ($e in (Get-VfIdDnsEndpoint $Context)) { $queries.Add(@{ name = $e.Host; type = 'A'; server = $s }) }
     }
     if ($identity -eq 'active_directory') {
         foreach ($dc in (Get-VfIdLcm $Context).DomainControllers) { foreach ($p in $script:DcPort) { $tcp.Add(@{ host = $dc; port = $p }) } }
@@ -1069,12 +1076,15 @@ Add-VfIdCheck -Id 'ID-DNS-003' -Title 'The DNS servers on the nodes are the file
             $clients = @(ConvertTo-VfIdList (Get-AzlProp $D 'dnsClient' @()))
             $actual = @($clients | ForEach-Object { @(ConvertTo-VfIdList $_.servers) } | ForEach-Object { [string]$_ } | Select-Object -Unique)
             $missing = @($expected | Where-Object { $_ -notin $actual })
-            $endpoints = @(ConvertTo-VfIdList (Get-AzlProp $D 'dnsq' @()) | Where-Object { [string]$_.name -in $script:DnsEndpoint })
-            $failed = @($endpoints | Where-Object { -not $_.ok })
+            $documented = @(Get-VfIdDnsEndpoint $Context)
+            $tierOf = @{}; foreach ($x in $documented) { $tierOf[[string]$x.Host] = [string]$x.Tier }
+            $endpoints = @(ConvertTo-VfIdList (Get-AzlProp $D 'dnsq' @()) | Where-Object { $tierOf.ContainsKey([string]$_.name) })
+            $failedAll = @($endpoints | Where-Object { -not $_.ok })
+            $failed = @($failedAll | Where-Object { $tierOf[[string]$_.name] -ne 'Optional' })
             if (-not $clients.Count) { New-VfIdResult Skipped "$Name returned no DNS client configuration." 'Check the node read (ID-LA-003).' -Node $Name }
             elseif ($missing.Count) { New-VfIdResult Failed "$Name does not use DNS server(s) $($missing -join ', ') of the file (it has: $($actual -join ', ')). They can't be changed after the deployment." "On the node: Set-DnsClientServerAddress -InterfaceAlias <management adapter> -ServerAddresses $($expected -join ',')   (or run the OS configuration Dns step)" -Node $Name -Evidence "have=$($actual -join ',')" }
             elseif ($failed.Count) { New-VfIdResult Failed "$Name cannot resolve $(@($failed | ForEach-Object { "$($_.name) on $($_.server)" } | Select-Object -First 4) -join '; ') with the file's DNS servers." 'Add DNS forwarding on the DNS servers to a resolver that answers external names (Learn: set up DNS forwarding), then Resolve-DnsName management.azure.com on the node.' -Node $Name -Evidence "failed=$($failed.Count) of $($endpoints.Count)" }
-            else { New-VfIdResult Passed "$Name uses the file's DNS servers ($($expected -join ', ')) and resolves $($script:DnsEndpoint.Count) Azure endpoints with each." -Node $Name -Evidence "endpoints=$($endpoints.Count) ok" }
+            else { New-VfIdResult Passed "$Name uses the file's DNS servers ($($expected -join ', ')) and resolves the $(@($documented).Count) documented Azure endpoints with each. $(Format-AzlEndpointNotTested -Location ([string](Get-AzlProp (Get-VfIdInfra $Context) 'azure.location' '')))" -Node $Name -Evidence "endpoints=$($endpoints.Count) ok" }
         }
     }
 }

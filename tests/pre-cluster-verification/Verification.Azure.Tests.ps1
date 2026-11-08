@@ -10,7 +10,7 @@ param()
 
 BeforeAll {
     $repo = (Resolve-Path ([IO.Path]::Combine($PSScriptRoot, '..', '..'))).Path
-    foreach ($m in 'infrastructure\AzlInfrastructure.psm1', 'azure-local\AzlAzure.psm1', 'arm-deployment\AzlArmDeployment.psm1', 'arm-deployment\AzlArmDeploymentRun.psm1', 'arm-deployment\verification\AzlVerification.Azure.psm1') {
+    foreach ($m in 'infrastructure\AzlInfrastructure.psm1', 'azure-local\AzlAzure.psm1', 'arm-deployment\AzlArmDeployment.psm1', 'arm-deployment\AzlArmDeploymentRun.psm1', 'arm-deployment\verification\AzlVerification.Endpoints.psm1', 'arm-deployment\verification\AzlVerification.Azure.psm1') {
         Import-Module ([IO.Path]::Combine($repo, 'scripts', 'common', $m)) -Force
     }
     Import-Module powershell-yaml
@@ -585,7 +585,13 @@ Describe 'AZ-023 the Arc endpoints, probed from each node' {
         $r = Invoke-AzCheck 'AZ-023' (New-AzContext -Log $log)
         $r.Count | Should -Be 2
         ($r | ForEach-Object Status | Select-Object -Unique) | Should -Be 'Passed'
-        @($log['Targets'] | ForEach-Object Host) | Should -Contain 'eastus.his.arc.azure.com'
+        # The documented hosts of the region (Learn consolidated list): the short code eus, never eastus.his.arc.azure.com, and the region written out for the others.
+        @($log['Targets'] | ForEach-Object Host) | Should -Contain 'eus.his.arc.azure.com'
+        @($log['Targets'] | ForEach-Object Host) | Should -Not -Contain 'eastus.his.arc.azure.com'
+        @($log['Targets'] | ForEach-Object Host) | Should -Contain 'eastus.dp.kubernetesconfiguration.azure.com'
+        @($log['Targets'] | ForEach-Object Host) | Should -Not -Contain 'dp.kubernetesconfiguration.azure.com'
+        @($log['Targets'] | ForEach-Object Host | Where-Object { $_ -like '*`**' }) | Should -BeNullOrEmpty
+        $r[0].Message | Should -Match 'wildcards'
         @($log['Targets'] | ForEach-Object Host) | Should -Contain 'management.azure.com'
         @($log['Targets'] | ForEach-Object Port | Select-Object -Unique) | Should -Be 443
     }
@@ -597,7 +603,19 @@ Describe 'AZ-023 the Arc endpoints, probed from each node' {
         $bad[0].Message | Should -Match 'gbl.his.arc.azure.com'
         $bad[0].Node | Should -Be 'iic-n02'
     }
-    It 'is Skipped per node, with the reason, when the probe cannot run on the node' {
+    It 'fails only for a documented required host, and only warns for a documented optional one' {
+        $optional = @{ TestEndpoint = { param($Address, $Target, [pscredential]$Credential) , @($Target | ForEach-Object { [pscustomobject]@{ Host = $_.Host; Port = $_.Port; Ok = ($_.Host -ne 'aka.ms'); Error = 'timed out' } }) } }
+        (Invoke-AzCheck 'AZ-023' (New-AzContext -Override $optional) | Where-Object Status -EQ 'Failed') | Should -Not -BeNullOrEmpty
+        @(Get-AzlEndpointSet -Location 'eastus' | Where-Object { $_.Tier -eq 'Optional' }).Count | Should -BeGreaterThan 0
+    }
+    It 'tests the short code of the region only where Learn documents it, and says what it did not test' {
+        $infra = Get-TestInfra; $infra.azure.location = 'brazilsouth'
+        $log = @{}
+        $r = Invoke-AzCheck 'AZ-023' (New-AzContext -Infra $infra -Log $log)
+        @($log['Targets'] | ForEach-Object Host) | Should -Contain 'brazilsouth.dp.kubernetesconfiguration.azure.com'
+        @($log['Targets'] | ForEach-Object Host | Where-Object { $_ -like '*.his.arc.azure.com' }) | Should -Be @('gbl.his.arc.azure.com')
+        $r[0].Message | Should -Match 'short code of brazilsouth is not in the consolidated lists'
+    }    It 'is Skipped per node, with the reason, when the probe cannot run on the node' {
         $r = Invoke-AzCheck 'AZ-023' (New-AzContext -Override @{ TestEndpoint = { throw 'WinRM cannot connect' } })
         $r.Count | Should -Be 2
         foreach ($x in $r) { $x.Status | Should -Be 'Skipped'; $x.Message | Should -Match 'WinRM cannot connect' }

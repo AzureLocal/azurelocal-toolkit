@@ -100,10 +100,30 @@ Describe 'NW-004 management network' {
 }
 
 Describe 'NW-005 outbound endpoints and NW-006 proxy' {
-    It 'NW-005 Failed for an endpoint that does not answer' {
-        $f = New-VerFresh; $e = $f.World.Snapshot['n01'].https[1]; $e.ok = $false; $e.err = 'The operation timed out'
+    It 'NW-005 Passed when every documented endpoint answers, and says what it did not test (wildcards)' {
+        $f = New-VerFresh
+        $r = Invoke-VerRun 'NW-005' $f.World $f.Infra | Where-Object Node -EQ 'n01'
+        $r.Status | Should -Be 'Passed'; $r.Message | Should -Match 'wildcards'
+    }
+    It 'NW-005 Failed for a documented required endpoint that does not answer' {
+        $f = New-VerFresh; $e = $f.World.Snapshot['n01'].https | Where-Object { $_.u -eq 'https://management.azure.com' }; $e.ok = $false; $e.err = 'The operation timed out'
         $r = Invoke-VerRun 'NW-005' $f.World $f.Infra | Where-Object Node -EQ 'n01'
         $r.Status | Should -Be 'Failed'; $r.Message | Should -Match 'management.azure.com'
+    }
+    It 'NW-005 only warns for a documented optional endpoint (a revocation list host)' {
+        $f = New-VerFresh; $e = $f.World.Snapshot['n01'].tcp | Where-Object { $_.p -eq 80 } | Select-Object -First 1; $e.ok = $false
+        $r = Invoke-VerRun 'NW-005' $f.World $f.Infra | Where-Object Node -EQ 'n01'; $r.Status | Should -Be 'Warning' -Because $r.Message
+    }
+    It 'NW-005 never asks for a host that is not in the documented list (eastus.his.arc.azure.com, dp.kubernetesconfiguration.azure.com)' {
+        $hosts = @(Get-AzlEndpointSet -Location 'eastus' | ForEach-Object Host)
+        $hosts | Should -Contain 'eus.his.arc.azure.com'
+        $hosts | Should -Not -Contain 'eastus.his.arc.azure.com'
+        $hosts | Should -Not -Contain 'dp.kubernetesconfiguration.azure.com'
+        @($hosts | Where-Object { $_ -like '*`**' }) | Should -BeNullOrEmpty
+    }
+    It 'NW-005 is Skipped when the node did not probe a documented endpoint' {
+        $f = New-VerFresh; $s = $f.World.Snapshot['n01']; $s.https = @($s.https | Select-Object -First 3)
+        (Invoke-VerRun 'NW-005' $f.World $f.Infra | Where-Object Node -EQ 'n01').Status | Should -Be 'Skipped'
     }
     It 'NW-005 NotApplicable for a disconnected design' { $f = New-VerFresh; $f.Infra.scenario.connectivity = 'disconnected'; (Invoke-VerRun 'NW-005' $f.World $f.Infra).Status | Should -Be 'NotApplicable' }
     It 'NW-006 Passed with no proxy on a direct path' { $f = New-VerFresh; (Invoke-VerRun 'NW-006' $f.World $f.Infra).Status | Should -Not -Contain 'Failed' }

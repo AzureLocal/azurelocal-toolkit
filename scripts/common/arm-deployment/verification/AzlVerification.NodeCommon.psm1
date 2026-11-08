@@ -24,6 +24,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', '..', 'azure-local', 'AzlAzure.psm1'))
+Import-Module ([IO.Path]::Combine($PSScriptRoot, 'AzlVerification.Endpoints.psm1'))
 
 $script:ConfigRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'config'))
 
@@ -637,7 +638,7 @@ Invoke-Section 'https' {
     $Az.https = @(foreach ($u in @(Get-P $P 'https' @())) {
             $ok = $false; $status = ''; $err = ''
             try {
-                $a = @{ Uri = [string]$u; UseBasicParsing = $true; TimeoutSec = 10; ErrorAction = 'Stop' }
+                $a = @{ Uri = [string]$u; UseBasicParsing = $true; TimeoutSec = 6; ErrorAction = 'Stop' }
                 if ($proxy) { $a.Proxy = $proxy }
                 $r = Invoke-WebRequest @a
                 $ok = $true; $status = [string][int]$r.StatusCode
@@ -680,9 +681,9 @@ function Get-AzlVerProbeParameter {
     $proxy = [string](Get-AzlProp $infra 'networking.outbound.proxy.url' '')
     [ordered]@{
         features = @($script:RequiredFeature + $script:AdvisedFeature + 'Multipath-IO')
-        tcp      = @($dns | ForEach-Object { @{ h = $_; p = 53 } })
+        tcp      = @(@($dns | ForEach-Object { @{ h = $_; p = 53 } }) + @(Get-AzlVerEndpointList $Context | Where-Object { $_.Port -ne 443 } | ForEach-Object { @{ h = $_.Host; p = $_.Port } }))
         ping     = @($(if ($gateway) { $gateway }))
-        https    = @(Get-AzlVerEndpointList $Context)
+        https    = @(Get-AzlVerEndpointList $Context | Where-Object { $_.Port -eq 443 } | ForEach-Object { "https://$($_.Host)" })
         proxy    = $proxy
     }
 }
@@ -690,19 +691,16 @@ function Get-AzlVerProbeParameter {
 function Get-AzlVerEndpointList {
     <#
     .SYNOPSIS
-        The floor of outbound endpoints a node must reach on 443 (the Environment Checker connectivity validator, RD-002, covers them all).
+        The concrete outbound hosts a node is probed for: the one documented list (AzlVerification.Endpoints.psm1, from Learn's firewall requirements and the Arc agent
+        network requirements) with the region of the file. Host, Port, Group, Tier. Only for the Azure public cloud, the lists of Learn are for it; empty otherwise.
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)]$Context)
     $infra = Get-AzlVerInfra $Context
-    $region = [string](Get-AzlProp $infra 'azure.location' '')
     $cloud = [string](Get-AzlProp $infra 'scenario.cloud' 'public')
-    if ($cloud -eq 'government') { return @('https://login.microsoftonline.us', 'https://management.usgovcloudapi.net', 'https://gbl.his.arc.azure.us', 'https://mcr.microsoft.com') }
-    $list = @('https://login.microsoftonline.com', 'https://management.azure.com', 'https://gbl.his.arc.azure.com', 'https://mcr.microsoft.com')
-    if ($region) { $list += "https://$region.his.arc.azure.com" }
-    return $list
+    if ($cloud -ne 'public') { return @() }
+    @(Get-AzlEndpointSet -Location ([string](Get-AzlProp $infra 'azure.location' '')))
 }
-
 # ---------------------------------------------------------------------------------------------------------------------
 # Default adapter members (real, read only)
 # ---------------------------------------------------------------------------------------------------------------------

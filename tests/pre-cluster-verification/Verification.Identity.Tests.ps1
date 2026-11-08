@@ -11,6 +11,7 @@ param()
 
 BeforeAll {
     $repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
+    Import-Module ([IO.Path]::Combine($repo, 'scripts', 'common', 'arm-deployment', 'verification', 'AzlVerification.Endpoints.psm1')) -Force
     Import-Module ([IO.Path]::Combine($repo, 'scripts', 'common', 'arm-deployment', 'verification', 'AzlVerification.Identity.psm1')) -Force
     $script:Defs = @(Get-AzlVerificationCheckDefinition)
     # Test values, never real: the passwords are generated here and must never show up in any result text.
@@ -45,6 +46,7 @@ BeforeAll {
         param([ValidateSet('active_directory', 'local_identity')][string]$Identity = 'active_directory', [string[]]$Dns = @('192.0.2.4'), [string]$DnsConfig = 'use_dns_server')
         $infra = @{
             scenario   = @{ identity = $Identity }
+            azure      = @{ location = 'eastus' }
             cluster    = @{ name = 'azl01' }
             identity   = @{ local_admin = @{ username = 'azl-admin'; password = 'keyvault://kv-test/local-admin' } }
             networking = @{ management = @{ dns_servers = $Dns; use_dhcp = $false; infrastructure_pool = @{ start = '192.0.2.20'; end = '192.0.2.29' } } }
@@ -69,7 +71,7 @@ BeforeAll {
             $q += [pscustomobject]@{ name = $Zone; type = 'A'; server = $s; ok = $true; addrs = @('192.0.2.4'); error = '' }
             $q += [pscustomobject]@{ name = "_ldap._tcp.dc._msdcs.$Zone"; type = 'SRV'; server = $s; ok = $true; addrs = @('dc01.lab.example'); error = '' }
             foreach ($n in 'azl-n01', 'azl-n02') { $q += [pscustomobject]@{ name = "$n.$Zone"; type = 'A'; server = $s; ok = $true; addrs = @('192.0.2.11'); error = '' } }
-            foreach ($e in 'management.azure.com', 'login.microsoftonline.com', 'guestnotificationservice.azure.com', 'dp.kubernetesconfiguration.azure.com') { $q += [pscustomobject]@{ name = $e; type = 'A'; server = $s; ok = $true; addrs = @('203.0.113.9'); error = '' } }
+            foreach ($e in (Get-AzlEndpointSet -Location 'eastus' -Group Arc, Auth, Management, DataPlane -Port 443).Host) { $q += [pscustomobject]@{ name = $e; type = 'A'; server = $s; ok = $true; addrs = @('203.0.113.9'); error = '' } }
         }
         [pscustomobject]@{
             computer = $Name; partOfDomain = $Joined; domain = $(if ($Joined) { 'lab.example' } else { 'WORKGROUP' }); primarySuffix = $(if ($Joined) { 'lab.example' } else { '' })
@@ -735,5 +737,27 @@ Describe 'ID-DNS-003 DNS client of the nodes' {
         $ctx = New-Ctx; $ctx.State.Nodes.Remove('azl-n01')
         (Invoke-Id 'ID-DNS-003' $ctx | Where-Object Node -eq 'azl-n01').Status | Should -Be 'Skipped'
         (Invoke-Id 'ID-DNS-003' (New-Ctx -Infra (New-Infra -Dns @())))[0].Status | Should -Be 'Failed'
+    }
+}
+
+Describe 'ID-DNS-003 resolves the documented hosts of the region, not invented names' {
+    It 'asks for the documented hosts (eus.his.arc.azure.com, eastus.dp.kubernetesconfiguration.azure.com) and never for eastus.his.arc.azure.com or dp.kubernetesconfiguration.azure.com' {
+        $ctx = New-Ctx
+        $names = @(Get-AzlEndpointSet -Location 'eastus' -Group Arc, Auth, Management, DataPlane -Port 443 | ForEach-Object Host)
+        $names | Should -Contain 'eus.his.arc.azure.com'
+        $names | Should -Contain 'eastus.dp.kubernetesconfiguration.azure.com'
+        $names | Should -Not -Contain 'eastus.his.arc.azure.com'
+        $names | Should -Not -Contain 'dp.kubernetesconfiguration.azure.com'
+        (Invoke-Id 'ID-DNS-003' $ctx | Where-Object Node -eq 'azl-n01').Status | Should -Be 'Passed'
+    }
+    It 'fails for a documented required host that does not resolve, and ignores a name that is not in the list' {
+        $ctx = New-Ctx; $n = New-GoodNode 'azl-n01'
+        ($n.dnsq | Where-Object name -eq 'eastus.dp.kubernetesconfiguration.azure.com')[0].ok = $false
+        $ctx.State.Nodes['azl-n01'] = $n
+        $r = Invoke-Id 'ID-DNS-003' $ctx | Where-Object Node -eq 'azl-n01'
+        $r.Status | Should -Be 'Failed'; $r.Message | Should -Match 'eastus.dp.kubernetesconfiguration.azure.com'
+        $m = New-GoodNode 'azl-n01'; $m.dnsq += [pscustomobject]@{ name = 'eastus.his.arc.azure.com'; type = 'A'; server = '192.0.2.4'; ok = $false; addrs = @(); error = 'NXDOMAIN' }
+        $ctx2 = New-Ctx; $ctx2.State.Nodes['azl-n01'] = $m
+        (Invoke-Id 'ID-DNS-003' $ctx2 | Where-Object Node -eq 'azl-n01').Status | Should -Be 'Passed'
     }
 }
