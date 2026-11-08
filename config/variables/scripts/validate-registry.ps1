@@ -11,7 +11,7 @@ if (-not (Test-Path $RegistryPath)) {
     throw "Registry file not found: $RegistryPath"
 }
 
-function Get-YamlKeyPaths {
+function Get-YamlKeyPath {
     param([string]$FilePath)
 
     $results = New-Object System.Collections.Generic.List[string]
@@ -36,7 +36,7 @@ function Get-YamlKeyPaths {
     return $results
 }
 
-$keyPaths = Get-YamlKeyPaths -FilePath $RegistryPath
+$keyPaths = Get-YamlKeyPath -FilePath $RegistryPath
 if (-not ($keyPaths -contains '_metadata')) {
     throw "Registry validation failed: missing required _metadata section"
 }

@@ -16,7 +16,7 @@ $repoFiles = @{
     "azurelocal-vm-conversion-toolkit"= @("config/variables.example.yml")
 }
 
-function Get-YamlKeyPaths {
+function Get-YamlKeyPath {
     param(
         [string]$FilePath
     )
@@ -67,7 +67,7 @@ foreach ($repoName in $repoFiles.Keys) {
             continue
         }
 
-        $paths = Get-YamlKeyPaths -FilePath $fullPath
+        $paths = Get-YamlKeyPath -FilePath $fullPath
         foreach ($path in $paths) {
             $inventory.Add([PSCustomObject]@{
                 repo = $repoName

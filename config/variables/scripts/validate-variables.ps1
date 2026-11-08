@@ -20,6 +20,17 @@ foreach ($path in @($VariablesPath, $RegistryPath, $SchemaPath, $LegacyRootsPath
     }
 }
 
+$pythonReady = $false
+try { $null = & python -c 'import yaml, jsonschema' 2>$null; $pythonReady = ($LASTEXITCODE -eq 0) } catch { $pythonReady = $false }
+if (-not $pythonReady) {
+    # No usable Python (PyYAML and jsonschema): run the same two checks in PowerShell.
+    Write-Warning 'Python with PyYAML and jsonschema is not available; validating with Test-VariablesFile.ps1 (the same checks, in PowerShell).'
+    & (Join-Path $PSScriptRoot 'Test-VariablesFile.ps1') -VariablesPath $VariablesPath -RegistryPath $RegistryPath -SchemaPath $SchemaPath `
+        -LegacyRootsPath $LegacyRootsPath -CanonicalDriftAllowlistPath $CanonicalDriftAllowlistPath -UnknownReportCsv $UnknownReportCsv -StrictUnknown:$StrictUnknown
+    Write-Host 'PASS: variable validation completed'
+    return
+}
+
 $py = @'
 import json
 import pathlib
@@ -77,7 +88,9 @@ def build_registry_data_paths(reg_paths):
     wildcard_paths = set()
 
     for p in reg_paths:
-        # Collapse items.properties → direct child
+        # Explicit form (4.1.0): a variable written under properties: is a direct child
+        p = re.sub(r"\.properties\.", ".", p)
+        # Collapse items.properties -> direct child
         dp = re.sub(r"\.items\.properties\.", ".", p)
         # Collapse items (when items has direct children, no properties sub-key)
         dp = re.sub(r"\.items\.", ".", dp)
