@@ -614,7 +614,8 @@ Describe 'Integration with the SBE delivery routes and the node script' {
         $warnings.Errors | Should -BeNullOrEmpty
         $warnings.Warnings.Count | Should -Be 1
         $warnings.Warnings[0] | Should -Match 'NOT DELIVERED'
-    }    It '<_> on a ZTP node needs no credential' -ForEach 'skip', 'node_pull' {
+    }
+    It '<_> on a ZTP node needs no credential' -ForEach 'skip', 'node_pull' {
         $route = $_
         $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.hardware.sbe.delivery = $route; $d.hardware.sbe.node_pull_url = 'https://files.example.invalid/sbe' }
         $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
