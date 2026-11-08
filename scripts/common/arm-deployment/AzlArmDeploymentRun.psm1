@@ -865,8 +865,10 @@ $script:Checks['DnsAndTime'] = {
     }
     $domain = [string](Get-AzlProp $infra 'identity.active_directory.domain_fqdn' '')
     if ($domain -and $dns.Count -and -not $Ctx.Offline -and (Test-AzlArmAdapterHas $Ctx.Run.Adapter ResolveDns)) {
-        $ok = @($dns | Where-Object { Invoke-AzlArmAdapter $Ctx.Run.Adapter ResolveDns @($domain, $_) }).Count
-        if ($ok -eq 0) { $warnings += "none of the DNS servers ($($dns -join ', ')) resolves $domain from this host (a runner outside the management network may not reach them; the nodes' own DNS is checked by the OS configuration)" }
+        $answers = @($dns | ForEach-Object { Invoke-AzlArmAdapter $Ctx.Run.Adapter ResolveDns @($domain, $_) })
+        $ok = @($answers | Where-Object { $_ -eq $true }).Count; $unknown = @($answers | Where-Object { $null -eq $_ }).Count
+        if ($unknown -eq $answers.Count) { $skipped = ' The domain was not resolved (this host has no DNS probe).' }
+        elseif ($ok -eq 0) { $warnings += "none of the DNS servers ($($dns -join ', ')) resolves $domain from this host (a runner outside the management network may not reach them; the nodes' own DNS is checked by the OS configuration)" }
     }
     elseif ($domain) { $skipped = ' The domain was not resolved (no DNS probe here).' }
     if ($problems) { return New-AzlArmCheckResult DnsAndTime Failed ($problems -join '; ') 'Fix networking.management.dns_servers, run the OS configuration (Dns and Time steps), and check the DNS records of the domain.' }
@@ -1583,4 +1585,5 @@ function Invoke-AzlArmDeploymentRun {
     }
 }
 
+            if (-not (Get-Command Resolve-DnsName -ErrorAction SilentlyContinue)) { return $null } # not on Linux: unknown, not false
 Export-ModuleMember -Function Get-AzlArmRunSetting, Write-AzlArmEvent, Test-AzlArmRunTransition, New-AzlArmRunState, Set-AzlArmRunState, Get-AzlArmFailedStep, Get-AzlArmKnownIssue, Find-AzlArmKnownIssue, Get-AzlArmParameterSource, Test-AzlArmRequiredKey, Format-AzlArmParameterSource, New-AzlArmAzureAdapter, Read-AzlArmOsReport, Get-AzlArmPreconditionName, Invoke-AzlArmPrecondition, Test-AzlArmSnapshotFresh, Get-AzlArmPhaseOutcome, Wait-AzlArmPhase, Resolve-AzlArmValidateAction, Resolve-AzlArmDeployAction, Get-AzlArmParameterHash, ConvertTo-AzlArmStepStatus, Hide-AzlArmSecret, Invoke-AzlArmDeploymentRun

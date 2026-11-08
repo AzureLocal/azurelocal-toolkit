@@ -60,6 +60,9 @@
 .PARAMETER Offline
     Mode Plan only: do not touch Azure at all, even when someone is signed in. Reads the files, generates and checks the
     parameters, and skips every check that needs Azure.
+.PARAMETER AcknowledgeKnownIssues
+    Known issue ids (config/known-issues/arm-deployment.json) to proceed past, for example arc-device-id-name, which otherwise blocks
+    a Deploy on an affected build and a resume of a failure it explains. Comma-separated or a list. Leave empty normally.
 .PARAMETER WhatIf
     Do everything except submit; say what would be submitted.
 .PARAMETER PassThru
@@ -87,6 +90,7 @@ param(
     [ValidateSet('', 'stop', 'prompt', 'none')][string]$ApprovalMode = '',
     [switch]$ProbeOsConfiguration,
     [switch]$Offline,
+    [string[]]$AcknowledgeKnownIssues,
     [switch]$WhatIf,
     [switch]$PassThru
 )
@@ -97,10 +101,11 @@ Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common', 'ar
 
 # Every parameter of this script is a parameter of the run, except these.
 $arguments = @{}
-foreach ($key in $PSBoundParameters.Keys) { if ($key -notin 'Settings', 'ApprovalMode', 'PassThru') { $arguments[$key] = $PSBoundParameters[$key] } }
+foreach ($key in $PSBoundParameters.Keys) { if ($key -notin 'Settings', 'ApprovalMode', 'PassThru', 'AcknowledgeKnownIssues') { $arguments[$key] = $PSBoundParameters[$key] } }
 $merged = @{}
 if ($Settings) { foreach ($k in $Settings.Keys) { $merged[$k] = $Settings[$k] } }
 if ($ApprovalMode) { $merged['approvalMode'] = $ApprovalMode }
+if ($AcknowledgeKnownIssues) { $merged['acknowledgeKnownIssues'] = @($AcknowledgeKnownIssues | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
 if ($merged.Count) { $arguments.Settings = $merged }
 $result = Invoke-AzlArmDeploymentRun @arguments
 
