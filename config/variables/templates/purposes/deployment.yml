@@ -420,6 +420,12 @@ identity:
       # At least 14 characters with lowercase, uppercase, a digit and a special character.
       # required; used by: os_configuration, deployment, monitoring
       password: "keyvault://kv-iic-mgmt-01/lcm-password"
+    # Whether the instance uses group managed service accounts.
+    # default: false; used by: deployment
+    use_gmsa: false
+    # Whether the DNS servers of the management network support secure dynamic updates (Microsoft DNS integrated with Active Directory). true: th...
+    # used by: deployment
+    dns_secure_dynamic_updates: false
 
 # Volumes and the SAN.
 # when scenario.storage_architecture is san or hybrid

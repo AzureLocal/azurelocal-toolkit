@@ -856,6 +856,15 @@
                   "description": "At least 14 characters with lowercase, uppercase, a digit and a special character."
                 }
               }
+            },
+            "use_gmsa": {
+              "description": "Whether the instance uses group managed service accounts. Default false. Learn 2610 does not require a KDS root key for Azure Local (the Active Directory preparation never mentions one); a KDS root key matters only for gMSA, so the pre-cluster verification (ID-AD-012) checks it only when this is true. (since 5.6)",
+              "type": "boolean",
+              "default": false
+            },
+            "dns_secure_dynamic_updates": {
+              "description": "Whether the DNS servers of the management network support secure dynamic updates (Microsoft DNS integrated with Active Directory). true: the node, cluster (CNO) and client access point (VCO) host records are created when the machines join, so a missing record is only a warning in the pre-cluster verification. false: Learn requires the Host (A) records before the deployment, so a missing record fails it. Default when not set: true when every DNS server is one of domain_controllers, else false. (since 5.6)",
+              "type": "boolean"
             }
           }
         }

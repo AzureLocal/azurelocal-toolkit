@@ -105,7 +105,7 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.6"
+  version: "5.0.7"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.1"
   last_updated: "2026-11-08"
@@ -114,6 +114,10 @@ _metadata:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-08"
+      version: "5.0.7"
+      change: "identity.active_directory.use_gmsa (bool, default false) and identity.active_directory.dns_secure_dynamic_updates (bool, optional): the two settings the pre-cluster verification identity checks (AzlVerification.Identity.psm1) read"
+      reason: "Learn 2610 does not require a KDS root key for Azure Local, so the check only matters when the instance uses group managed service accounts (use_gmsa). Whether missing node, CNO and VCO host records fail the gate or only warn depends on whether the DNS servers support secure dynamic updates, which the gate otherwise guesses (domain controllers as DNS servers); dns_secure_dynamic_updates states it"
     - date: "2026-11-08"
       version: "5.0.6"
       change: "The pre-cluster verification gate (Invoke-AzureLocalPreClusterVerification.ps1, AzlPreClusterVerification.psm1): deployment.pre_cluster_verification_max_age_hours and deployment.pre_cluster_verification_report_directory (run settings preClusterVerificationMaxAgeHours, preClusterVerificationReportDirectory), the run setting skipPreClusterVerification and the switch -SkipPreClusterVerification (the only bypass, never a file key), the gate script parameters, and the fields of its feed (precluster-verification-events.jsonl) and report.json; identity.local_admin.username_secret (optional Key Vault secret that holds the local administrator user name, compared with username by the gate)"
@@ -2168,6 +2172,17 @@ identity:
         used_by: [os_configuration]
         items:
           {"format":"ipv4","type":"string","pattern":"^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"}
+      use_gmsa:
+        description: "Whether the instance uses group managed service accounts. Default false. Learn 2610 does not require a KDS root key for Azure Local (the Active Directory preparation never mentions one); a KDS root key matters only for gMSA, so the pre-cluster verification (ID-AD-012) checks it only when this is true. (since 5.6)"
+        type: boolean
+        required: false
+        default: false
+        used_by: [deployment]
+      dns_secure_dynamic_updates:
+        description: "Whether the DNS servers of the management network support secure dynamic updates (Microsoft DNS integrated with Active Directory). true: the node, cluster (CNO) and client access point (VCO) host records are created when the machines join, so a missing record is only a warning in the pre-cluster verification. false: Learn requires the Host (A) records before the deployment, so a missing record fails it. Default when not set: true when every DNS server is one of domain_controllers, else false. (since 5.6)"
+        type: boolean
+        required: false
+        used_by: [deployment]
       security_groups:
         description: "Groups created in the OU for administration of the instance."
         type: array

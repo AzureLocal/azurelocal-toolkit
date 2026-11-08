@@ -790,6 +790,12 @@ identity:
     # Addresses of domain controllers, for pre-checks and for the domain join.
     # used by: os_configuration
     domain_controllers: ["192.0.2.4", "192.0.2.5"]
+    # Whether the instance uses group managed service accounts.
+    # default: false; used by: deployment
+    use_gmsa: false
+    # Whether the DNS servers of the management network support secure dynamic updates (Microsoft DNS integrated with Active Directory). true: th...
+    # used by: deployment
+    dns_secure_dynamic_updates: false
     # Groups created in the OU for administration of the instance.
     security_groups:
       # required; used by: os_configuration
