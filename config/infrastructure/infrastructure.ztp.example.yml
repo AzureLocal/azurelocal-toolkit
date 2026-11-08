@@ -30,7 +30,7 @@
 # =============================================================================
 
 _metadata:
-  schema_version: "5.4.3"
+  schema_version: "5.5.0"
   scope: ztp # ztp | full (default)
 
 scenario:

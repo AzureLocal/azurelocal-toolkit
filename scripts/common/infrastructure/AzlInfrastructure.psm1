@@ -810,6 +810,7 @@ function Get-SemanticFinding {
     Get-ZtpActionFinding -Infra $Infra -Nodes $nodes
     Get-SbeDeliveryFinding -Infra $Infra -Nodes $nodes -OwnerOf $ownerOf
     Get-OsConfigurationFinding -Infra $Infra
+    Get-DomainJoinFinding -Infra $Infra -Nodes $nodes # AZL-050 to AZL-053 (domain join, schema 5.5)
 
     # Arc machine names: unique, and arc_machine_name rather than the deprecated arc_resource_name.
     for ($i = 0; $i -lt $nodeCount; $i++) {
@@ -1217,6 +1218,77 @@ function Get-OsConfigurationFinding {
     if ($value -isnot [bool] -or -not $value) { return }
     if ((Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'scenario.storage_architecture') -in 'san', 'hybrid') {
         New-Finding 'AZL-031' warning 'os_configuration.clear_storage' 'clear_storage is true on a SAN design. Only the machines'' local disks are wiped; Fibre Channel and iSCSI LUNs, USB, boot and system disks are never touched. Check the wipe list the Plan mode prints before you approve.'
+    }
+}
+
+# AZL-050 to AZL-053: the domain join (schema 5.5). With scenario.identity active_directory the OS configuration run joins each
+# machine to the domain and the OU, before the cluster validation and deployment, with identity.active_directory.domain_join_account.
+function Get-DomainJoinFinding {
+    param([System.Collections.IDictionary]$Infra, [object[]]$Nodes)
+    $identity = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'scenario.identity'
+    $ad = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'identity.active_directory'
+    $account = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'identity.active_directory.domain_join_account'
+    if ($identity -eq 'local_identity') {
+        foreach ($key in 'domain_join_account', 'local_admin_members') {
+            if (Get-AzlInfrastructureValue -Infrastructure $Infra -Path "identity.active_directory.$key") { New-Finding 'AZL-053' warning "identity.active_directory.$key" "scenario.identity is local_identity, so no machine joins a domain and $key is not used. Remove it, or set scenario.identity to active_directory." }
+        }
+        return
+    }
+    if ($identity -ne 'active_directory' -or $ad -isnot [System.Collections.IDictionary]) { return }
+    if ((Get-AzlInfrastructureScope -Infrastructure $Infra) -eq 'ztp') { return }
+
+    # AZL-050: the join credential. Default: the LCM user (Microsoft's AD preparation gives it the right to create and delete computer
+    # objects in the dedicated OU); domain_join_account overrides it. One of them must have a username and a Key Vault password.
+    $lcm = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'identity.active_directory.lcm_user'
+    $hasLcm = $lcm -is [System.Collections.IDictionary] -and $lcm['username'] -and $lcm['password']
+    $hasAccount = $account -is [System.Collections.IDictionary] -and $account['username'] -and $account['password']
+    if (-not $hasLcm -and -not $hasAccount) {
+        New-Finding 'AZL-050' error 'identity.active_directory.lcm_user' 'scenario.identity is active_directory, so the OS configuration run joins each machine to the domain and needs a join credential: identity.active_directory.lcm_user (username and a keyvault:// password; the default) or domain_join_account.'
+    }
+    if ($hasLcm) {
+        $lcmName = [string]$lcm['username']
+        if ($lcmName -notmatch '^[A-Za-z_][A-Za-z0-9_-]{0,19}$') {
+            New-Finding 'AZL-050' error 'identity.active_directory.lcm_user.username' "The LCM user name '$lcmName' is not valid for Azure Local: 1 to 20 characters, letters, numbers, hyphens and underscores only, not starting with a hyphen or a number."
+        }
+        $localAdmin = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'identity.local_admin.username'
+        if ($localAdmin -and $lcmName -ieq [string]$localAdmin) {
+            New-Finding 'AZL-050' error 'identity.active_directory.lcm_user.username' "The LCM user name '$lcmName' is the local administrator's name. Microsoft requires them to differ."
+        }
+    }
+    # AZL-051: ou_path is a distinguished name inside the domain: OU=...,DC=<each label of domain_fqdn>.
+    $ou = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'identity.active_directory.ou_path'
+    $fqdn = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'identity.active_directory.domain_fqdn'
+    if ($ou -is [string] -and $ou -and $fqdn -is [string] -and $fqdn) {
+        $rdns = @([regex]::Split($ou, '(?<!\\),') | ForEach-Object { $_.Trim() })
+        if ($ou -match '[&"''<>]') { New-Finding 'AZL-051' error 'identity.active_directory.ou_path' "'$ou' contains a character Azure Local does not support in the OU path: & , ' < > and the double quote." }
+        $bad = @($rdns | Where-Object { $_ -notmatch '^(OU|CN|DC)=[^=]+$' })
+        $dcs = @($rdns | Where-Object { $_ -match '^DC=' } | ForEach-Object { $_.Substring(3).ToLowerInvariant() })
+        $firstDc = -1
+        for ($k = 0; $k -lt $rdns.Count; $k++) { if ($firstDc -lt 0 -and $rdns[$k] -match '^DC=') { $firstDc = $k } }
+        $afterDc = $firstDc -ge 0 -and @($rdns[$firstDc..($rdns.Count - 1)] | Where-Object { $_ -notmatch '^DC=' }).Count -gt 0
+        if ($bad.Count) { New-Finding 'AZL-051' error 'identity.active_directory.ou_path' "'$ou' is not a distinguished name: '$($bad[0])' is not OU=, CN= or DC= followed by a value." }
+        elseif ($afterDc) { New-Finding 'AZL-051' error 'identity.active_directory.ou_path' "'$ou' has an OU or CN after a DC component. A distinguished name lists the OUs first (leaf to root) and the DC components of the domain last." }
+        elseif (($dcs -join '.') -ne $fqdn.ToLowerInvariant()) { New-Finding 'AZL-051' error 'identity.active_directory.ou_path' "'$ou' ends in DC=$($dcs -join ',DC='), which is the domain '$($dcs -join '.')', not domain_fqdn '$fqdn'. The OU must be inside the domain the machines join." }
+    }
+
+    # AZL-052: the domain controllers are the DNS servers the nodes use, because the join finds the domain through DNS.
+    $dcList = @(Get-List (Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'identity.active_directory.domain_controllers') | ForEach-Object { [string]$_ })
+    if ($dcList.Count) {
+        for ($i = 0; $i -lt $Nodes.Count; $i++) {
+            $o = Get-AzlManagementAdapter -Infrastructure $Infra -Node $Nodes[$i]
+            if (-not $o) { continue }
+            $dns = @($o.DnsServers | ForEach-Object { [string]$_ })
+            if (-not $dns.Count) { continue }
+            $missing = @($dcList | Where-Object { $_ -notin $dns })
+            $extra = @($dns | Where-Object { $_ -notin $dcList })
+            if ($missing.Count -or $extra.Count) {
+                $why = @()
+                if ($missing.Count) { $why += "domain controller(s) $($missing -join ', ') not among the DNS servers of the management port" }
+                if ($extra.Count) { $why += "DNS server $($extra -join ', ') is not listed in domain_controllers" }
+                New-Finding 'AZL-052' error 'identity.active_directory.domain_controllers' "Node '$($Nodes[$i]['name'])': $($why -join '; '). domain_controllers must be the DNS servers of the management port: the machines find the domain, and so join it, through them."
+                break
+            }
+        }
     }
 }
 

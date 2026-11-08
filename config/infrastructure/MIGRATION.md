@@ -281,3 +281,18 @@ Schema 5.4.3 only adds one optional section; a 5.4.0 file is valid as it is. Not
 | `operations.monitoring` | `operations.monitoring` |
 | `devops.gitlab`, `devops.terraform` | `devops` |
 | Legacy roots `azure`, `platform`, `cluster`, `azure_infrastructure`, `azure_resources`, `azure_local`, `azure_vms` | The sections above; they held copies of the same values |
+
+## To 5.5.0: the domain join
+
+Schema 5.5.0 only adds optional keys; a 5.4 file is valid as it is, and needs no new key to be joined: with `scenario.identity: active_directory` the OS configuration now joins each machine to the domain and to `identity.active_directory.ou_path` (the `DomainJoin` step, after Network, DNS, Time and Hostname) before the cluster validation and the deployment, **with the LCM user** (`identity.active_directory.lcm_user`). Microsoft's Active Directory preparation (`New-HciAdObjectsPreCreation`) gives that user the right to create and delete computer objects in the dedicated OU, and it is the account Microsoft uses for domain-join actions such as adding or repairing a node. Before, the machines stayed in a workgroup until the deployment.
+
+| New key (all optional) | What it is for |
+| --- | --- |
+| `identity.active_directory.domain_join_account.username` / `.password` | Override: join with another account (same rights on `ou_path`) instead of the LCM user. The password is a `keyvault://<vault>/<secret>` reference. |
+| `identity.active_directory.join_options.rename_after_join` | Fixed to `false`: the machine gets its final name first (the Hostname step) and is never renamed after the join. |
+| `identity.active_directory.join_options.allow_ou_move` | Default `false`. `true`: **before the deployment**, a machine already in this domain but in another OU is moved into `ou_path`. Microsoft does not support moving the computer objects after the deployment, so a machine that is already in a cluster is blocked, never moved. |
+| `identity.active_directory.local_admin_members` | Domain users and groups (names without the domain) added to the local Administrators group of every machine after the join and the restart. Default: the `security_groups` entry whose `purpose` says it administers the instance, and the LCM user. |
+
+Rules: AZL-050 (an AD design has a join credential: the LCM user with a Key Vault password, or `domain_join_account`; the LCM user name is valid for Azure Local and differs from the local administrator), AZL-051 (`ou_path` is a valid distinguished name inside `domain_fqdn` without `& " ' < >`), AZL-052 (`domain_controllers`, when set, are the DNS servers of the management port), AZL-053 (warning: local identity with `domain_join_account` or `local_admin_members`).
+
+**Steps for a 5.4 file:** nothing is required. Make sure the OU in `ou_path` is the dedicated one with Group Policy inheritance blocked (what `New-HciAdObjectsPreCreation` creates): the OS configuration reads it and blocks the join on a production, dev or dmz design when inheritance is not blocked. Set `_metadata.schema_version` to `5.5.0` to use the new keys.

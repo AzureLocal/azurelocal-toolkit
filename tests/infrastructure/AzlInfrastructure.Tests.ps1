@@ -809,6 +809,7 @@ Describe 'Import-AzlInfrastructure' {
         $doc = ConvertFrom-Yaml (Get-Content -LiteralPath $script:ExamplePath -Raw) -Ordered
         $doc.cluster.name = 'a-cluster-name-too-long'
         $doc.networking.management.dns_servers = @('8.8.8.8')
+        $doc.identity.active_directory.Remove('domain_controllers') # AZL-052 would add a third error
         Set-Content -LiteralPath $file -Value (ConvertTo-Yaml $doc)
         { Import-AzlInfrastructure -Path $file } | Should -Throw -ExpectedMessage '*2 error(s)*'
     }
@@ -827,9 +828,9 @@ Describe 'Schema 5.4: ZTP settings and the BIOS actions derived from the invento
     }
 
     Context 'the templates' {
-        It 'are schema 5.4.3 and clean' {
+        It 'are schema 5.5.0 and clean' {
             foreach ($f in $script:Ztp54, $script:Full54) {
-                (Import-AzlInfrastructure -Path $f)._metadata.schema_version | Should -Be '5.4.3'
+                (Import-AzlInfrastructure -Path $f)._metadata.schema_version | Should -Be '5.5.0'
                 @(Test-AzlInfrastructure -Path $f) | Should -BeNullOrEmpty
             }
         }
@@ -1031,5 +1032,104 @@ Describe 'Schema 5.4.3: os_configuration.clear_storage' {
         $f = @(Get-FindingFor -From $script:Full543 { param($d) $d.os_configuration.clear_storage = $true; $d.scenario.storage_architecture = 'hybrid' } | Where-Object Id -eq 'AZL-031')
         $f.Count | Should -Be 1
         $f[0].Severity | Should -Be 'warning'
+    }
+}
+
+Describe 'Schema 5.5.0: the domain join (AZL-050 to AZL-053)' {
+    BeforeAll {
+        $script:Full550 = Join-Path $repo 'config\infrastructure\infrastructure.example.yml'
+        $script:Local550 = Join-Path $repo 'config\infrastructure\examples\local-identity-switchless-iso.yml'
+        function Get-Dj550Finding([scriptblock]$Change, [string]$Rule) { @(Get-FindingFor -From $script:Full550 $Change | Where-Object { -not $Rule -or $_.Id -eq $Rule }) }
+    }
+
+    It 'the example joins with the LCM user by default (no domain_join_account), and has no finding' {
+        $ad = (Import-AzlInfrastructure -Path $script:Full550).identity.active_directory
+        $ad.Contains('domain_join_account') | Should -BeFalse
+        $ad.lcm_user.password | Should -Match '^keyvault://'
+        $ad.join_options.rename_after_join | Should -BeFalse
+        $ad.join_options.allow_ou_move | Should -BeFalse
+        @(Test-AzlInfrastructure -Path $script:Full550) | Should -BeNullOrEmpty
+    }
+    It 'the schema: domain_join_account is an optional override, allow_ou_move defaults to false, rename_after_join is fixed to false' {
+        $schema = Get-Content -LiteralPath (Join-Path $repo 'config\infrastructure\infrastructure.schema.json') -Raw | ConvertFrom-Json -AsHashtable
+        $ad = $schema.properties.identity.properties.active_directory
+        $ad.required | Should -Not -Contain 'domain_join_account'
+        $ad.properties.join_options.properties.allow_ou_move.default | Should -BeFalse
+        $ad.properties.join_options.properties.rename_after_join.const | Should -BeFalse
+        $ad.properties.domain_join_account.required | Should -Be @('username', 'password')
+        $ad.properties.local_admin_members.type | Should -Be 'array'
+    }
+    It 'accepts the optional override and local_admin_members' {
+        @(Get-Dj550Finding { param($d) $d.identity.active_directory.domain_join_account = [ordered]@{ username = 'svc-azl-join'; password = 'keyvault://kv-iic-mgmt-01/join' }; $d.identity.active_directory.local_admin_members = @('sg-iic-azl-01-admins') }) | Should -BeNullOrEmpty
+    }
+    It 'rejects rename_after_join true, an override password that is not a Key Vault reference, and an unknown key' {
+        @(Get-Dj550Finding { param($d) $d.identity.active_directory.join_options.rename_after_join = $true } | Where-Object Severity -eq 'error').Count | Should -BeGreaterThan 0
+        @(Get-Dj550Finding { param($d) $d.identity.active_directory.domain_join_account = [ordered]@{ username = 'x'; password = 'P@ssw0rd-in-clear' } } | Where-Object Severity -eq 'error').Count | Should -BeGreaterThan 0
+        @(Get-Dj550Finding { param($d) $d.identity.active_directory.join_options.rename_machines = $true } | Where-Object Severity -eq 'error').Count | Should -BeGreaterThan 0
+    }
+
+    Context 'AZL-050: an AD design has a join credential (the LCM user, or the override)' {
+        It 'is an error when the LCM user is not valid for Azure Local (Microsoft Learn: 1 to 20 characters, letters, numbers, hyphens, underscores, not first a hyphen or number)' -ForEach @('1lcm', '-lcm', 'lcm.user', 'a-name-that-is-longer-than-20') {
+            $name = $_
+            $f = Get-Dj550Finding { param($d) $d.identity.active_directory.lcm_user.username = $name } 'AZL-050'
+            @($f | Where-Object Severity -eq 'error').Count | Should -BeGreaterThan 0
+        }
+        It 'is an error when the LCM user has the name of the local administrator' {
+            $f = Get-Dj550Finding { param($d) $d.identity.active_directory.lcm_user.username = 'azl-admin' } 'AZL-050'
+            $f.Count | Should -Be 1
+            $f[0].Message | Should -Match 'local administrator'
+        }
+        It 'does not apply to a ztp-scope file' {
+            $f = Get-FindingFor -From (Join-Path $repo 'config\infrastructure\infrastructure.ztp.example.yml') { param($d) $d.scenario = @{ identity = 'active_directory' } } | Where-Object Id -eq 'AZL-050'
+            @($f) | Should -BeNullOrEmpty
+        }
+    }
+    Context 'AZL-051: ou_path is a valid distinguished name inside the domain' {
+        It 'is an error when the DC components are another domain' {
+            $f = Get-Dj550Finding { param($d) $d.identity.active_directory.ou_path = 'OU=iic-azl-01,OU=AzureLocal,DC=contoso,DC=com' } 'AZL-051'
+            $f.Count | Should -Be 1
+            $f[0].Severity | Should -Be 'error'
+            $f[0].Message | Should -Match 'contoso.com'
+        }
+        It 'is an error when a DC component is missing or an OU comes after the DC components' {
+            @(Get-Dj550Finding { param($d) $d.identity.active_directory.ou_path = 'OU=iic-azl-01,DC=improbability' } 'AZL-051').Count | Should -Be 1
+            @(Get-Dj550Finding { param($d) $d.identity.active_directory.ou_path = 'OU=a,DC=improbability,OU=b,DC=cloud' } 'AZL-051').Count | Should -Be 1
+        }
+        It 'is an error when a part is not OU=, CN= or DC=' {
+            @(Get-Dj550Finding { param($d) $d.identity.active_directory.ou_path = 'OU=a,XX=b,DC=improbability,DC=cloud' } 'AZL-051').Count | Should -Be 1
+        }
+        It 'is an error for the unsupported character <Name>' -ForEach @(
+            @{ Name = 'ampersand'; Char = '&' }, @{ Name = 'double quote'; Char = '"' }, @{ Name = 'apostrophe'; Char = "'" }, @{ Name = 'less-than'; Char = '<' }, @{ Name = 'greater-than'; Char = '>' }) {
+            $ch = $Char
+            @(Get-Dj550Finding { param($d) $d.identity.active_directory.ou_path = "OU=iic${ch}01,OU=AzureLocal,DC=improbability,DC=cloud" } 'AZL-051').Count | Should -BeGreaterThan 0
+        }
+        It 'accepts a nested OU path and different letter case' {
+            @(Get-Dj550Finding { param($d) $d.identity.active_directory.ou_path = 'ou=Leaf,OU=Mid,OU=Top,dc=Improbability,dc=CLOUD' } 'AZL-051') | Should -BeNullOrEmpty
+        }
+    }
+    Context 'AZL-052: domain_controllers are the DNS servers of the management port' {
+        It 'is an error when a domain controller is not a DNS server' {
+            $f = Get-Dj550Finding { param($d) $d.identity.active_directory.domain_controllers = @('192.0.2.4', '192.0.2.99') } 'AZL-052'
+            $f.Count | Should -Be 1
+            $f[0].Severity | Should -Be 'error'
+            $f[0].Message | Should -Match '192\.0\.2\.99'
+        }
+        It 'is an error when a DNS server is not a domain controller' {
+            $f = Get-Dj550Finding { param($d) $d.identity.active_directory.domain_controllers = @('192.0.2.4') } 'AZL-052'
+            $f.Count | Should -Be 1
+            $f[0].Message | Should -Match '192\.0\.2\.5'
+        }
+        It 'is clean in any order, and when domain_controllers is not set' {
+            @(Get-Dj550Finding { param($d) $d.identity.active_directory.domain_controllers = @('192.0.2.5', '192.0.2.4') } 'AZL-052') | Should -BeNullOrEmpty
+            @(Get-Dj550Finding { param($d) $d.identity.active_directory.Remove('domain_controllers') } 'AZL-052') | Should -BeNullOrEmpty
+        }
+    }
+    Context 'AZL-053: a local identity design with join keys' {
+        It 'warns for domain_join_account and for local_admin_members; the local identity file without them is clean' {
+            @(Get-FindingFor -From $script:Local550 { param($d) $null = $d }) | Should -BeNullOrEmpty
+            $f = @(Get-FindingFor -From $script:Local550 { param($d) $d.identity.active_directory = [ordered]@{ domain_fqdn = 'improbability.cloud'; ou_path = 'OU=x,DC=improbability,DC=cloud'; lcm_user = [ordered]@{ username = 'lcm'; password = 'keyvault://kv-iic-edge-mgmt/lcm-password' }; domain_join_account = [ordered]@{ username = 'svc-j'; password = 'keyvault://kv-iic-edge-mgmt/join' }; local_admin_members = @('g1') } } | Where-Object Id -eq 'AZL-053')
+            $f.Count | Should -Be 2
+            $f[0].Severity | Should -Be 'warning'
+        }
     }
 }

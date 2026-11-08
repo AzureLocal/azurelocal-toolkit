@@ -35,6 +35,7 @@
         '^hardware\.(vendor|model|network_cards)'
         '^networking\.(management|ntp_servers|intents|storage|vlans|cluster_networks)'
         '^identity\.local_admin'
+        '^identity\.active_directory\.(domain_fqdn|netbios_name|ou_path|domain_controllers|domain_join_account|join_options|local_admin_members)(\.|$)'
         '^hardware\.sbe\.(bundle_path|delivery|node_pull_url)$'
         '^cluster\.name$'
         '^provisioning\.os_version$'
@@ -94,6 +95,9 @@
         @{ Pattern = '^networking\.management\.'; Text = 'Your IP plan for the management network.' }
         @{ Pattern = '^networking\.'; Text = 'Your network design; Trailwright guides it.' }
         @{ Pattern = '^identity\.local_admin'; Text = 'You choose the name; the password is a Key Vault secret you create (see Secrets).' }
+        @{ Pattern = '^identity\.active_directory\.domain_join_account'; Text = 'Optional. Your Active Directory team: an account with the same rights on ou_path as the LCM user (create and delete computer objects) if your site joins machines with another account. The password is a Key Vault secret you create (see Secrets).' }
+        @{ Pattern = '^identity\.active_directory\.join_options'; Text = 'Your decision: allow_ou_move true lets the OS configuration run move a machine that is already in the domain into ou_path, before the deployment only.' }
+        @{ Pattern = '^identity\.active_directory\.local_admin_members'; Text = 'Your decision: the domain accounts and groups that administer the machines (default: the instance administrators group and the LCM user).' }
         @{ Pattern = '^identity\.'; Text = 'Your Active Directory and Microsoft Entra ID teams.' }
         @{ Pattern = '^storage\.san\.'; Text = 'The SAN administrator: the array manager and the fabric switches.' }
         @{ Pattern = '^storage\.'; Text = 'Your storage design.' }
