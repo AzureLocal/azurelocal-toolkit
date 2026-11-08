@@ -580,11 +580,15 @@ Describe 'Schema 5.3: SAN' {
     }
 
     Context 'schema' {
-        It 'needs storage.san for a SAN or hybrid, and the block that goes with its type' {
+        It 'needs storage.san for a SAN or hybrid; the block that goes with its type is not a schema requirement (a hybrid file may leave it out: AZL-028 says what is missing)' {
             (Get-FcFinding { param($d) $d.storage.Remove('san') }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Message -match 'san' } | Should -Not -BeNullOrEmpty
             (Get-FcFinding { param($d) $d.scenario.storage_architecture = 'hybrid'; $d.storage.Remove('san') }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Message -match 'san' } | Should -Not -BeNullOrEmpty
-            (Get-FcFinding { param($d) $d.storage.san.Remove('fibre_channel') }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'storage.san' -and $_.Message -match 'fibre_channel' } | Should -Not -BeNullOrEmpty
-            (Get-IscsiFinding { param($d) $d.storage.san.Remove('iscsi') }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'storage.san' -and $_.Message -match 'iscsi' } | Should -Not -BeNullOrEmpty
+            # Not a schema error any more (only storage.san.type is required): the rule says what is missing, an error for a disaggregated design and a warning for hybrid.
+            (Get-FcFinding { param($d) $d.storage.san.Remove('fibre_channel') }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'storage.san' } | Should -BeNullOrEmpty
+            (Get-IscsiFinding { param($d) $d.storage.san.Remove('iscsi') }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'storage.san' } | Should -BeNullOrEmpty
+            (Get-FcFinding { param($d) $d.storage.san.Remove('fibre_channel') }) | Where-Object { $_.Id -eq 'AZL-028' -and $_.Severity -eq 'error' -and $_.Path -eq 'storage.san.fibre_channel.target_wwpns' } | Should -Not -BeNullOrEmpty
+            (Get-IscsiFinding { param($d) $d.storage.san.Remove('iscsi') }) | Where-Object { $_.Id -eq 'AZL-028' -and $_.Severity -eq 'error' -and $_.Path -eq 'storage.san.iscsi.targets' } | Should -Not -BeNullOrEmpty
+            (Get-FcFinding { param($d) $d.scenario.storage_architecture = 'hybrid'; $d.storage.san.Remove('fibre_channel') }) | Where-Object { $_.Id -eq 'AZL-028' -and $_.Severity -eq 'warning' -and $_.Path -eq 'storage.san.fibre_channel.target_wwpns' } | Should -Not -BeNullOrEmpty
         }
         It 'checks the WWPN form: 16 hex digits, with or without colons' {
             (Get-FcFinding { param($d) $d.storage.san.fibre_channel.target_wwpns[0].wwpn = '5000000000000AAA' }) | Where-Object Severity -eq 'error' | Should -BeNullOrEmpty

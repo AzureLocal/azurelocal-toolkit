@@ -64,7 +64,7 @@ Every key, with its type, whether it is required in each scope, its default, an 
 | Key | Values | Makes required |
 | --- | --- | --- |
 | `identity` | `active_directory`, `local_identity` | `identity.active_directory` or `identity.local_identity` |
-| `storage_architecture` | `s2d`, `san`, `hybrid` | `san` and `hybrid`: `storage.san` and `networking.cluster_networks` |
+| `storage_architecture` | `s2d`, `san`, `hybrid` | `san` and `hybrid`: `storage.san` and `networking.cluster_networks`. They also **tell the solution there is a SAN**: the OS configuration then does the host-side MPIO / MSDSM work (see "SAN in the file" below) |
 | `storage_connectivity` | `switched`, `switchless` | `switchless`: `networking.storage.switchless_links` |
 | `topology` | `standard`, `rack_aware` | `rack_aware`: `nodes[].zone` |
 | `connectivity` | `connected`, `disconnected` | `disconnected`: the `disconnected` section |
@@ -163,13 +163,30 @@ To find each machine's maintenance environment, the Device stage uses `nodes[].m
 | Key | What it holds |
 | --- | --- |
 | `storage.san.array` | `name`, `vendor`, `model`, and an optional `management_address`. |
-| `storage.san.fibre_channel` (required for `type: fibre_channel`) | `fabrics`: `name` (A, B), optional `switch` and `zone_set`. `target_wwpns`: the array's `wwpn` and the `fabric` each is cabled to. |
+| `storage.san.type` (required) | `fibre_channel` or `iscsi`: **selects the OS configuration's host-side steps**. With `storage.san.array.vendor` and `.model` it is all they need. |
+| `storage.san.fibre_channel` (for zoning; needed for `type: fibre_channel` in a `san` design, optional in `hybrid`) | `fabrics`: `name` (A, B), optional `switch` and `zone_set`. `target_wwpns`: the array's `wwpn` and the `fabric` each is cabled to. |
 | `nodes[].san.hbas` | Per HBA: `slot` (a PCIe slot label such as `Slot 2`, which azurelocal-ztp turns off in the BIOS for the OS install), `type` (5.4: `fibre_channel` or `iscsi_offload`), `model`, and `ports` with each port's `wwpn` and `fabric` (needed for a Fibre Channel SAN). |
-| `storage.san.iscsi` (required for `type: iscsi`) | `targets`: `iqn`, `portals` (IPv4 or IPv4:port) and `fabric`. Optional `chap`: `enabled`, `username`, and `secret` (a `keyvault://` reference). |
+| `storage.san.iscsi` (needed for `type: iscsi` to get portals and sessions) | `targets`: `iqn`, `portals` (IPv4 or IPv4:port) and `fabric`. Optional `chap`: `enabled`, `username`, and `secret` (a `keyvault://` reference). |
 | `nodes[].san.initiator_iqn` | The machine's iSCSI initiator name. |
 | `nodes[].network_adapters[]` with role `iscsi:a` or `iscsi:b` | The iSCSI ports and their addresses (`ip_assignment`, `ip_address`, `prefix_length`, VLAN). No gateway. |
 
-A WWPN is 16 hex digits, written as colon-separated pairs or without colons. Rule AZL-028: a SAN needs `storage.san` (schema); Fibre Channel needs the target WWPNs and every node's HBA WWPNs; every WWPN names a defined fabric; iSCSI needs targets and every node's initiator IQN, and its ports need an address; no WWPN or IQN appears twice. Complete files: [`examples/disaggregated-fibre-channel-proxy.yml`](../examples/scenarios/disaggregated-fibre-channel-proxy.yml) and [`examples/disaggregated-iscsi.yml`](../examples/scenarios/disaggregated-iscsi.yml).
+A WWPN is 16 hex digits, written as colon-separated pairs or without colons. Rule AZL-028: a SAN needs `storage.san` (schema); Fibre Channel needs the target WWPNs and every node's HBA WWPNs; every WWPN names a defined fabric; iSCSI needs targets and every node's initiator IQN, and its ports need an address; no WWPN or IQN appears twice. In a `hybrid` design the missing WWPNs, targets and IQNs are warnings (they are for zoning and LUN masking, not for the host-side work); in a `san` design they are errors.
+
+**SAN in the file: fibre_channel or iscsi.** Say it in the file and the OS configuration does the rest. `scenario.storage_architecture: hybrid` (S2D plus a SAN) or `san`, or a `storage.san` block, declares a SAN; `storage.san.type: fibre_channel` or `iscsi` picks the steps. Fibre Channel: MPIO, the array's MSDSM hardware ID (from `config/san/msdsm-vendors.json`, picked by `storage.san.array.vendor` and `.model`), the load balance policy, the vendor's MPIO settings, the generic `Vendor*` entry removed for Pure, the node's WWPNs collected, a restart so MPIO claims the paths, and a check that every LUN is seen once. iSCSI: the same, plus the MSiSCSI service, MSDSM auto-claim for iSCSI, and the target portals and sessions. Every node is also checked, read only, for SAN LUNs the file does not declare. A minimal hybrid file needs only:
+
+```yaml
+scenario:
+  storage_architecture: hybrid
+storage:
+  san:
+    type: fibre_channel
+    array: { name: "arr-01", vendor: "Pure Storage", model: "FlashArray//X" }
+```
+
+(`networking.cluster_networks` is still required by the schema for `hybrid` and `san`.) The steps, their order and what they report are in [os-configuration-and-arm-deployment.md](../../../docs/os-configuration-and-arm-deployment.md#san-in-the-file-fibre_channel-or-iscsi).
+
+Complete files: [`examples/disaggregated-fibre-channel-proxy.yml`](../examples/scenarios/disaggregated-fibre-channel-proxy.yml) and [`examples/disaggregated-iscsi.yml`](../examples/scenarios/disaggregated-iscsi.yml).
+
 ## Hardware-aware BIOS actions and every ZTP setting (schema 5.4)
 
 Schema 5.4 only adds keys; every 5.0 to 5.3 file stays valid. It does two things for azurelocal-ztp:

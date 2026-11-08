@@ -18,9 +18,16 @@
                         domain_join_account (after Network, Dns, Time and Hostname; a guarded restart and a check follow). A node
                         of a local identity design gets an explicit 'not applicable: local identity' item.
       LocalAdmin        identity.local_admin as a local administrator (never the built-in Administrator)
-      Mpio              SAN only: MultipathIO, the array's MSDSM hardware ID, load balance policy, MPIO settings
-      SanVerify         SAN only, read only: FC ports and WWPNs, the infrastructure and performance history LUNs
-                        (visible, RAW, big enough, two or more paths)
+      Mpio              When the file declares a SAN (scenario.storage_architecture hybrid or san, or a storage.san block;
+                        storage.san.type is fibre_channel or iscsi): MultipathIO, the array's MSDSM hardware ID (the generic
+                        Vendor*/Product* entry removed for Pure), load balance policy, the vendor's MPIO settings, and a restart
+                        so MPIO claims the paths. iscsi also: the MSiSCSI service, MSDSM auto-claim for iSCSI, the target portals
+                        and the persistent multipath sessions. Only the type and the array vendor and model are needed.
+      SanVerify         Read only. With a SAN declared: FC ports and WWPNs (or the iSCSI IQN), each LUN seen once by UniqueId, and for
+                        san the infrastructure and performance history LUNs (visible, RAW, big enough, two or more paths). On every
+                        node, SAN declared or not: a finding when Fibre Channel or iSCSI LUNs are visible while the file declares no
+                        SAN (an unclaimed multipath is Blocked), and for a hybrid Fibre Channel design the Learn warning not to
+                        zone the HBA WWNs until after the Azure Local deployment.
       ClearStorage      leftover local storage; wiped only with -ClearStorage -Execute
       Sbe               LAST. OPT-IN ONLY: the OEM's SBE package (hardware.sbe.bundle_path) is side-loaded into C:\SBE (SHA-256 checked)
                         only when a person sets hardware.sbe.delivery to winrm_copy or node_pull. The key has no default: unset,
@@ -353,7 +360,7 @@ $results = [System.Collections.Generic.List[object]]::new()
 function Get-SbeMissing { @(if ($bundle) { $results | Where-Object { @($_.Plan | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -ne 'Ok' }).Count } }) }
 function Get-SanProblem {
     $found = @()
-    if ((Get-AzlProp $infra 'scenario.storage_architecture' 's2d') -eq 'san') {
+    if (Test-AzlSanDeclared -Infrastructure $infra) {
         $sets = @{}
         foreach ($r in $results) { if (-not (Get-AzlProp $r 'Error' '')) { $sets[$r.Node] = @(Get-AzlProp $r.State 'san.disks' @() | ForEach-Object { $_.uid } | Sort-Object) -join ',' } }
         if (@($sets.Values | Select-Object -Unique).Count -gt 1) { $found += "The nodes don't see the same SAN disks (UniqueIds differ): $(($sets.GetEnumerator() | ForEach-Object { "$($_.Key)=[$($_.Value)]" }) -join '; ')" }

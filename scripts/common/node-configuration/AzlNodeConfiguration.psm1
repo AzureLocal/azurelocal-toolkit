@@ -192,9 +192,59 @@ function Get-AzlSanVendor {
     foreach ($v in $table.vendors) {
         if ($Vendor -notmatch "(?i)^($($v.match))") { continue }
         if ($v.model -and $Model -notmatch "(?i)($($v.model))") { continue }
-        return [pscustomobject]@{ Hardware = @($v.hardware); MpioSettings = $v.mpioSettings; LoadBalancePolicy = [string]$table.loadBalancePolicy }
+        $removeGeneric = [bool]($v.PSObject.Properties['removeGenericEntry'] -and $v.removeGenericEntry)
+        return [pscustomobject]@{ Hardware = @($v.hardware); MpioSettings = $v.mpioSettings; LoadBalancePolicy = [string]$table.loadBalancePolicy; RemoveGenericEntry = $removeGeneric }
     }
     return $null
+}
+
+function Get-AzlSanDuplicate {
+    <#
+    .SYNOPSIS
+        The SAN LUNs the node sees more than once: Fibre Channel or iSCSI disks that share a UniqueId (or, for the disks left over, a SerialNumber). That is what an
+        unclaimed multipath looks like: MPIO has not claimed the paths, so each path is its own offline disk (a Pure LUN with four FC paths is four disks), and
+        Azure's Test-Cluster then fails with 'two disks that cannot be distinguished'. Pure; reads only the node's report (san.disks).
+    .OUTPUTS
+        One object per LUN seen more than once: Key (the id), KeyKind (UniqueId or SerialNumber), Serial, UniqueId, Bus, Numbers (the disk numbers), Count.
+    #>
+    [CmdletBinding()]
+    param([AllowNull()][AllowEmptyCollection()][object[]]$Disk = @())
+    $all = @($Disk | Where-Object { $_ })
+    $out = [System.Collections.Generic.List[object]]::new()
+    $taken = [System.Collections.Generic.HashSet[int]]::new()
+    foreach ($kind in 'UniqueId', 'SerialNumber') {
+        $name = if ($kind -eq 'UniqueId') { 'uid' } else { 'sn' }
+        $pool = @($all | Where-Object { -not $taken.Contains([int](Get-AzlProp $_ 'n' -1)) -and ([string](Get-AzlProp $_ $name '')).Trim() })
+        foreach ($g in @($pool | Group-Object -Property { ([string](Get-AzlProp $_ $name '')).Trim().ToLowerInvariant() } | Where-Object { $_.Count -gt 1 })) {
+            foreach ($d in $g.Group) { [void]$taken.Add([int](Get-AzlProp $d 'n' -1)) }
+            $first = $g.Group[0]
+            $out.Add([pscustomobject]@{ Key = ([string](Get-AzlProp $first $name '')).Trim(); KeyKind = $kind; Serial = [string](Get-AzlProp $first 'sn' ''); UniqueId = [string](Get-AzlProp $first 'uid' ''); Bus = [string](Get-AzlProp $first 'bus' ''); Numbers = @($g.Group | ForEach-Object { Get-AzlProp $_ 'n' }); Count = $g.Count })
+        }
+    }
+    return $out.ToArray()
+}
+
+function Test-AzlSanDeclared {
+    <#
+    .SYNOPSIS
+        Whether the infrastructure file tells the solution there is a SAN: scenario.storage_architecture san or hybrid, or a storage.san block. storage.san.type says fibre_channel or iscsi.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory)][AllowNull()][object]$Infrastructure)
+    $architecture = [string](Get-AzlProp $Infrastructure 'scenario.storage_architecture' 's2d')
+    return [bool]($architecture -in 'san', 'hybrid' -or (Get-AzlProp $Infrastructure 'storage.san'))
+}
+
+function Format-AzlSanDuplicate {
+    # The evidence for LUNs seen more than once, on one line: how many disks for how many LUNs, then each LUN with its id and the disk numbers (at most four LUNs).
+    param([AllowNull()][AllowEmptyCollection()][object[]]$Duplicate = @(), [int]$DiskCount = 0)
+    $dups = @($Duplicate | Where-Object { $_ })
+    if (-not $dups.Count) { return '' }
+    $parts = foreach ($d in ($dups | Select-Object -First 4)) { "$($d.KeyKind) $($d.Key) is $($d.Count) separate disks (#$(@($d.Numbers) -join ', #'), BusType $($d.Bus))" }
+    $text = "$DiskCount FC/iSCSI disk(s) report only $(@($dups).Count) LUN(s) that repeat: $($parts -join '; ')"
+    if ($dups.Count -gt 4) { $text += "; and $($dups.Count - 4) more LUN(s)" }
+    return $text
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -251,20 +301,36 @@ function Get-AzlNodeSpec {
 
     $local = Get-AzlProp $Infrastructure 'identity.local_admin'
     $architecture = [string](Get-AzlProp $Infrastructure 'scenario.storage_architecture' 's2d')
+    # The file tells the solution there is a SAN: scenario.storage_architecture san or hybrid, or a storage.san block. storage.san.type says fibre_channel or iscsi and, with
+    # the array vendor and model, is all the host-side work (the Mpio step) needs; the WWPNs, targets and LUN ids are for zoning, masking and the san design.
+    $sanBlock = Get-AzlProp $Infrastructure 'storage.san'
     $san = $null
-    if ($architecture -in 'san', 'hybrid') {
+    if ($architecture -in 'san', 'hybrid' -or $sanBlock) {
         $array = Get-AzlProp $Infrastructure 'storage.san.array'
         $vendor = [string](Get-AzlProp $array 'vendor' '')
         $model = [string](Get-AzlProp $array 'model' '')
+        $sanType = ([string](Get-AzlProp $Infrastructure 'storage.san.type' '')).Trim().ToLowerInvariant()
+        if ($sanType -notin 'fibre_channel', 'iscsi') { $sanType = '' }
         $wwpns = @(foreach ($hba in ConvertTo-List (Get-AzlProp $Node 'san.hbas')) { foreach ($port in ConvertTo-List (Get-AzlProp $hba 'ports')) { ConvertTo-WwpnKey (Get-AzlProp $port 'wwpn') } })
+        $targets = @(foreach ($t in ConvertTo-List (Get-AzlProp $Infrastructure 'storage.san.iscsi.targets')) {
+                [pscustomobject]@{ Iqn = [string](Get-AzlProp $t 'iqn' ''); Fabric = ([string](Get-AzlProp $t 'fabric' '')).Trim().ToUpperInvariant(); Portals = @(ConvertTo-List (Get-AzlProp $t 'portals') | ForEach-Object { [string]$_ }) }
+            })
+        $initiators = @(foreach ($p in $ports) {
+                foreach ($role in $p.Roles) { if ($role -in 'iscsi:a', 'iscsi:b') { [pscustomobject]@{ Name = $p.Name; Role = $role; Fabric = $role.Substring(6).ToUpperInvariant(); Ip = [string]$p.IpAddress } } }
+            })
         $san = [pscustomobject]@{
             Architecture = $architecture
-            Type         = [string](Get-AzlProp $Infrastructure 'storage.san.type' '')
+            DeclaredBy   = $(if ($architecture -in 'san', 'hybrid') { "scenario.storage_architecture $architecture" } else { 'storage.san' })
+            Type         = $sanType
             Vendor       = $vendor
             Model        = $model
             Msdsm        = $(if ($vendor) { Get-AzlSanVendor -Vendor $vendor -Model $model -ConfigRoot $ConfigRoot } else { $null })
             ExpectedWwpn = $wwpns
-            InfraLunId   = [string](Get-AzlProp $Infrastructure 'storage.san.infra_volume_lun_id' '')
+            InitiatorIqn = [string](Get-AzlProp $Node 'san.initiator_iqn' '')
+            IscsiTargets = $targets
+            IscsiChap    = [bool](Get-AzlProp $Infrastructure 'storage.san.iscsi.chap.enabled' $false)
+            IscsiPorts   = $initiators
+            InfraLunId   =[string](Get-AzlProp $Infrastructure 'storage.san.infra_volume_lun_id' '')
             PerfLunId    = [string](Get-AzlProp $Infrastructure 'storage.san.performance_history_lun_id' '')
             CheckLuns    = ($architecture -eq 'san')
         }
@@ -312,7 +378,9 @@ function Get-AzlNodeSpec {
 function Get-AzlNodeReadParameter {
     # What the Read script needs to know about the spec; never a secret.
     param([Parameter(Mandatory)][object]$Spec)
-    $p = @{ mgmtMac = $Spec.Management.Mac; san = [bool]$Spec.San; sanDisks = [bool]($Spec.San -and $Spec.San.CheckLuns); sanType = $(if ($Spec.San) { $Spec.San.Type } else { '' }) }
+    # san: the file declares a SAN, so the node reads MPIO, MSDSM, the FC ports and the iSCSI initiator. Whatever the file says, the node always reports the FC and iSCSI disks
+    # it sees (sanDisks, read only), so a SAN the file does not declare is found.
+    $p = @{ mgmtMac = $Spec.Management.Mac; san = [bool]$Spec.San; sanDisks = $true; sanType = $(if ($Spec.San) { $Spec.San.Type } else { '' }) }
     if ($Spec.Sbe) {
         $p.sbeDir = $Spec.Sbe.Dir
         $p.sbeZip = $Spec.Sbe.ZipName
@@ -656,14 +724,21 @@ function Compare-AzlNodeState {
         }
     }
 
-    # ---- SAN: MPIO, MSDSM, iSCSI
+    # ---- SAN: MPIO, MSDSM, iSCSI. The file declares a SAN with scenario.storage_architecture san or hybrid, or a storage.san block; storage.san.type (fibre_channel or iscsi) selects the steps.
+    # Microsoft Learn, Connect an external storage array to Azure Local: step 1 (MPIO, MSiSCSI, initiator ids), step 2 (vendor in MSDSM, load balance policy, MPIO timers, iSCSI auto-claim),
+    # step 5 (iSCSI portals and sessions), step 7 (each LUN once, by UniqueId).
     $sanState = Get-AzlProp $State 'san'
+    $sanDisks = @(Get-AzlProp $sanState 'disks' @() | Where-Object { $_ })
+    $sanDuplicate = @(Get-AzlSanDuplicate -Disk $sanDisks)
     if ('Mpio' -in $Step -and $Spec.San) {
+        if ($Spec.San.DeclaredBy -eq 'storage.san') { & $add (New-AzlPlanItem $n 'Mpio' 'SAN declared by' 'storage.san block' 'scenario.storage_architecture hybrid or san' Info "The file has a storage.san block but scenario.storage_architecture is $($Spec.Architecture): the block is taken as a SAN and the host-side work is done. Set scenario.storage_architecture to hybrid (S2D plus the SAN) or san.") }
+        if (-not $Spec.San.Type) { & $add (New-AzlPlanItem $n 'Mpio' 'SAN type' 'not set' 'fibre_channel or iscsi' Blocked "The file declares a SAN ($($Spec.San.DeclaredBy)) but not whether it is Fibre Channel or iSCSI. Set storage.san.type: it selects the host-side steps (FC: MSDSM hardware ID, policy, MPIO settings, WWPNs; iSCSI: also the MSiSCSI service, auto-claim, portals and sessions).") }
         if (-not $sanState) { & $add (New-AzlPlanItem $n 'Mpio' 'state' 'unreadable' 'readable' Info (Get-AzlProp $State 'err.san' '')) }
         else {
             $featureOn = [string]$sanState.feature -eq 'Enabled'
             & $add (New-AzlPlanItem $n 'Mpio' 'MultipathIO feature' $sanState.feature 'Enabled' $(if ($featureOn) { 'Ok' } else { 'Change' }) $(if (-not $featureOn) { 'Needs a restart. Azure Local 2604 and later enable it by default.' } else { '' }) $(if (-not $featureOn) { @{ id = 'Mpio/feature'; kind = 'mpio-feature' } }))
             if (-not $featureOn) { & $add (New-AzlPlanItem $n 'Mpio' 'MSDSM' 'unknown' 'registered' Skipped 'Checked after MPIO is enabled and the node has restarted.') }
+            elseif (-not $Spec.San.Vendor) { & $add (New-AzlPlanItem $n 'Mpio' 'MSDSM vendor' 'not in the file' 'storage.san.array.vendor and model' Blocked 'MPIO claims the array''s LUNs only when its vendor and product ID are registered with MSDSM, and the file does not name the array. Set storage.san.array.vendor and storage.san.array.model (Learn: enable-external-storage, step 2.2); the target WWPNs are not needed for this.') }
             elseif ($Spec.San.Msdsm) {
                 foreach ($hw in $Spec.San.Msdsm.Hardware) {
                     $key = "$($hw.vendorId)|$($hw.productId)"
@@ -671,6 +746,11 @@ function Compare-AzlNodeState {
                     $apply = @{ id = "Mpio/hw-$($hw.productId)"; kind = 'msdsm-hw'; vendor = $hw.vendorId; product = $hw.productId }
                     if ($hw.PSObject.Properties['mpclaim']) { $apply.mpclaim = $hw.mpclaim }
                     & $add (New-AzlPlanItem $n 'Mpio' "MSDSM $key" $(if ($have) { 'registered' } else { 'absent' }) 'registered' $(if ($have) { 'Ok' } else { 'Change' }) $(if (-not $have) { 'Needs a restart before MPIO claims the LUNs.' } else { '' }) $(if (-not $have) { $apply }))
+                }
+                # Learn step 2.2, Everpure (Pure): the generic wildcard entry is removed so MSDSM does not claim devices that are not the array's.
+                if ($Spec.San.Msdsm.RemoveGenericEntry) {
+                    $generic = @($sanState.hw | Where-Object { $_ -ieq 'Vendor*|Product*' }).Count -gt 0
+                    & $add (New-AzlPlanItem $n 'Mpio' 'MSDSM generic entry Vendor*|Product*' $(if ($generic) { 'present' } else { 'removed' }) 'removed' $(if ($generic) { 'Change' } else { 'Ok' }) $(if ($generic) { 'Learn step 2.2 for this array: Remove-MSDSMSupportedHW -VendorId ''Vendor*'' -ProductId ''Product*''. Needs a restart.' } else { '' }) $(if ($generic) { @{ id = 'Mpio/hw-generic'; kind = 'msdsm-hw-remove'; vendor = 'Vendor*'; product = 'Product*' } }))
                 }
                 $lbWant = $Spec.San.Msdsm.LoadBalancePolicy
                 $lbOk = [string]$sanState.lb -ieq $lbWant
@@ -695,13 +775,46 @@ function Compare-AzlNodeState {
                 $svcOk = [string]$sanState.iscsiSvc -eq 'Running/Automatic'
                 & $add (New-AzlPlanItem $n 'Mpio' 'MSiSCSI service' $sanState.iscsiSvc 'Running/Automatic' $(if ($svcOk) { 'Ok' } else { 'Change' }) '' $(if (-not $svcOk) { @{ id = 'Mpio/iscsi-service'; kind = 'iscsi-service' } }))
                 $claimOk = [string]$sanState.iscsiClaim -eq 'True'
-                & $add (New-AzlPlanItem $n 'Mpio' 'iSCSI auto-claim' $sanState.iscsiClaim 'True' $(if ($claimOk) { 'Ok' } else { 'Change' }) 'Restart the node if LUNs are already visible.' $(if (-not $claimOk) { @{ id = 'Mpio/iscsi-claim'; kind = 'iscsi-claim' } }))
+                & $add (New-AzlPlanItem $n 'Mpio' 'iSCSI auto-claim' $sanState.iscsiClaim 'True' $(if ($claimOk) { 'Ok' } else { 'Change' }) 'Restart the node if LUNs are already visible.' $(if (-not $claimOk) { @{ id = 'Mpio/iscsi-claim'; kind = 'iscsi-claim'; restart = ($sanDisks.Count -gt 0) } }))
+                # Learn step 5: a target portal and a persistent, multipath session from every iSCSI initiator port to every portal of every target (fabric A with iscsi:a, B with iscsi:b).
+                $targets = @($Spec.San.IscsiTargets | Where-Object { $_.Iqn })
+                if (-not $targets.Count) { & $add (New-AzlPlanItem $n 'Mpio' 'iSCSI targets' 'none in the file' 'storage.san.iscsi.targets' Info 'Portals and sessions are not made: list the array''s targets (iqn and portals) in storage.san.iscsi.targets and the OS configuration connects the node (Learn step 5).') }
+                elseif (-not @($Spec.San.IscsiPorts).Count) { & $add (New-AzlPlanItem $n 'Mpio' 'iSCSI initiator ports' 'none in the file' 'a port with role iscsi:a or iscsi:b' Info 'Portals and sessions are not made: the node''s iSCSI ports (nodes[].network_adapters with role iscsi:a / iscsi:b and their addresses) say where each session starts.') }
+                else {
+                    $portalsHave = @(Get-AzlProp $sanState 'portals' @() | Where-Object { $_ })
+                    $sessionsHave = @(Get-AzlProp $sanState 'sessions' @() | Where-Object { $_ })
+                    foreach ($t in $targets) {
+                        foreach ($rawPortal in $t.Portals) {
+                            $ip, $tcp = $rawPortal -split ':', 2
+                            $tcpPort = if ($tcp) { [int]$tcp } else { 3260 }
+                            foreach ($ini in $Spec.San.IscsiPorts) {
+                                if ($t.Fabric -and $ini.Fabric -ne $t.Fabric) { continue }
+                                if (-not $ini.Ip) { & $add (New-AzlPlanItem $n 'Mpio' "iSCSI port $($ini.Name)" 'no address in the file' 'an ip_address' Info "No session is made from $($ini.Name) (role $($ini.Role)) to $rawPortal because the port has no address in the file."); continue }
+                                $havePortal = @($portalsHave | Where-Object { [string]$_.addr -eq $ip -and [string]$_.init -eq $ini.Ip }).Count -gt 0
+                                & $add (New-AzlPlanItem $n 'Mpio' "iSCSI portal $ip via $($ini.Ip)" $(if ($havePortal) { 'registered' } else { 'absent' }) 'registered' $(if ($havePortal) { 'Ok' } else { 'Change' }) '' $(if (-not $havePortal) { @{ id = "Mpio/iscsi-portal-$ip-$($ini.Ip)"; kind = 'iscsi-portal'; portal = $ip; port = $tcpPort; initiator = $ini.Ip } }))
+                                if ($Spec.San.IscsiChap) { continue }
+                                $session = @($sessionsHave | Where-Object { [string]$_.iqn -ieq $t.Iqn -and [string]$_.portal -eq $ip -and [string]$_.init -eq $ini.Ip }) | Select-Object -First 1
+                                if ($session -and [bool](Get-AzlProp $session 'persistent' $false) -and [bool](Get-AzlProp $session 'mpio' $false)) { & $add (New-AzlPlanItem $n 'Mpio' "iSCSI session $($t.Iqn) $ip via $($ini.Ip)" 'connected, persistent, multipath' 'connected, persistent, multipath' Ok) }
+                                elseif ($session) { & $add (New-AzlPlanItem $n 'Mpio' "iSCSI session $($t.Iqn) $ip via $($ini.Ip)" 'connected, not persistent or not multipath' 'connected, persistent, multipath' Info 'Disconnect the session (Disconnect-IscsiTarget) so it is made again with persistence and multipath; the OS configuration does not drop a live session.') }
+                                else { & $add (New-AzlPlanItem $n 'Mpio' "iSCSI session $($t.Iqn) $ip via $($ini.Ip)" 'absent' 'connected, persistent, multipath' Change '' @{ id = "Mpio/iscsi-session-$($t.Iqn)-$ip-$($ini.Ip)"; kind = 'iscsi-session'; iqn = $t.Iqn; portal = $ip; port = $tcpPort; initiator = $ini.Ip }) }
+                            }
+                        }
+                    }
+                    if ($Spec.San.IscsiChap) { & $add (New-AzlPlanItem $n 'Mpio' 'iSCSI sessions' 'CHAP is enabled in the file' 'sessions made' Info 'The portals are made. CHAP sessions need the secret from Key Vault and are not made by this step: connect them with Connect-IscsiTarget -AuthenticationType ONEWAYCHAP.') }
+                }
+            }
+            # Learn step 6: a restart applies the MPIO changes. When the vendor ID is registered, nothing else is waiting for a restart and the LUN paths are still separate disks, the node restarts once so MPIO claims them.
+            if ($featureOn -and $Spec.San.Msdsm) {
+                $restartComing = @($items | Where-Object { $_.Step -eq 'Mpio' -and $_.Action -eq 'Change' -and $_.Apply -and $_.Apply.kind -in 'mpio-feature', 'msdsm-hw', 'msdsm-hw-remove', 'iscsi-claim' }).Count -gt 0
+                if ($sanDuplicate.Count -and $restartComing) { & $add (New-AzlPlanItem $n 'Mpio' 'MPIO claims the LUN paths' (Format-AzlSanDuplicate -Duplicate $sanDuplicate -DiskCount $sanDisks.Count) 'each LUN seen once' Info 'The restart that follows the changes above lets MPIO claim the paths.') }
+                elseif ($sanDuplicate.Count) { & $add (New-AzlPlanItem $n 'Mpio' 'MPIO claims the LUN paths' (Format-AzlSanDuplicate -Duplicate $sanDuplicate -DiskCount $sanDisks.Count) 'each LUN seen once' Change 'MPIO is set up but the paths are still separate disks (the claim happens at a restart). The node restarts once so MPIO claims them.' @{ id = 'Mpio/claim-restart'; kind = 'mpio-claim-restart' }) }
+                elseif ($sanDisks.Count) { & $add (New-AzlPlanItem $n 'Mpio' 'MPIO claims the LUN paths' "$($sanDisks.Count) LUN(s), each seen once" 'each LUN seen once' Ok) }
             }
         }
     }
 
-    # ---- SAN: what the node sees (read only; nothing here changes the node)
-    if ('SanVerify' -in $Step -and $Spec.San -and $sanState) {
+    # ---- SAN: what the node sees (read only; nothing here changes the node). With a SAN declared: the initiator ports, each LUN once, the infrastructure LUNs. Without one: a finding when the node sees SAN LUNs anyway.
+    if ('SanVerify' -in $Step -and $sanState -and $Spec.San) {
         if ($Spec.San.Type -ne 'iscsi') {
             $found = @($sanState.fc | Where-Object { $_ } | ForEach-Object { $_.wwpn })
             $expected = @($Spec.San.ExpectedWwpn)
@@ -714,8 +827,26 @@ function Compare-AzlNodeState {
                 foreach ($w in $found | Where-Object { $_ -notin $expected }) { & $add (New-AzlPlanItem $n 'SanVerify' "WWPN $w" 'seen' 'not in the file' Info 'Add it to nodes[].san.hbas[].ports.') }
             }
         }
+        else {
+            $iqn = @(Get-AzlProp $sanState 'iqn' @() | Where-Object { $_ })
+            if (-not $Spec.San.InitiatorIqn) { & $add (New-AzlPlanItem $n 'SanVerify' 'iSCSI initiator IQN' ($iqn -join ', ') 'nodes[].san.initiator_iqn' Info 'The file lists no initiator IQN for this node. Give it to the storage administrator for LUN masking (Learn step 1.4), and record it in nodes[].san.initiator_iqn.') }
+            elseif (@($iqn | Where-Object { $_ -ieq $Spec.San.InitiatorIqn }).Count) { & $add (New-AzlPlanItem $n 'SanVerify' 'iSCSI initiator IQN' $Spec.San.InitiatorIqn $Spec.San.InitiatorIqn Ok) }
+            else { & $add (New-AzlPlanItem $n 'SanVerify' 'iSCSI initiator IQN' ($iqn -join ', ') $Spec.San.InitiatorIqn Info 'The node''s initiator name differs from nodes[].san.initiator_iqn; LUN masking on the array uses the name the node reports.') }
+        }
+        # Learn step 7: every LUN once (compare by UniqueId). A LUN seen more than once is MPIO that has not claimed the paths; Azure's Test-Cluster then fails ('two disks that cannot be distinguished').
+        if ($sanDuplicate.Count) {
+            $claimComing = @($items | Where-Object { $_.Step -eq 'Mpio' -and $_.Action -eq 'Change' }).Count -gt 0
+            & $add (New-AzlPlanItem $n 'SanVerify' 'each LUN seen once (by UniqueId)' (Format-AzlSanDuplicate -Duplicate $sanDuplicate -DiskCount $sanDisks.Count) 'each LUN once, claimed by MPIO' $(if ($claimComing) { 'Info' } else { 'Blocked' }) $(if ($claimComing) { 'The Mpio step changes MPIO above and restarts the node; the next read checks again.' } else { 'MPIO has not claimed the paths: check Get-MSDSMSupportedHW against the array''s vendor and product ID (mpclaim -s -d), and restart the node so MPIO re-enumerates the disks.' }))
+        }
+        elseif ($sanDisks.Count) { & $add (New-AzlPlanItem $n 'SanVerify' 'each LUN seen once (by UniqueId)' "$($sanDisks.Count) LUN(s), each once" 'each LUN once' Ok) }
+        elseif ($Spec.San.Architecture -eq 'hybrid') { & $add (New-AzlPlanItem $n 'SanVerify' 'SAN LUNs' 'none visible yet' 'visible after zoning and LUN masking' Info 'Expected before the Azure Local deployment: the array''s LUNs appear once the fabric is zoned and the LUNs are mapped to this node.') }
+        # Microsoft Learn: for FC, the HBA WWNs are not zoned until after the Azure Local deployment, so the LUNs are not seen during it.
+        $fcSeen = @($sanDisks | Where-Object { [string](Get-AzlProp $_ 'bus' '') -eq 'Fibre Channel' })
+        if ($Spec.San.Type -eq 'fibre_channel' -and $Spec.San.Architecture -eq 'hybrid' -and $fcSeen.Count -and -not [bool](Get-AzlProp $State 'stor.cluster.deployed' $false)) {
+            & $add (New-AzlPlanItem $n 'SanVerify' 'Important: to avoid deployment confusion for FC LUNs, don''t zone in FC HBA WWNs until after the Azure Local deployment' "$($fcSeen.Count) Fibre Channel disk(s) are visible before the deployment: $(@($fcSeen | Select-Object -First 8 | ForEach-Object { "#$($_.n) serial $($_.sn) UniqueId $($_.uid)" }) -join '; ')" 'no FC LUN visible until the deployment is done' Info 'Microsoft Learn, Connect an external storage array to Azure Local, Fibre Channel prerequisites. Unzone the HBA WWNs (or unmap the LUNs from this node) until the deployment has finished, then zone and run the OS configuration again.')
+        }
         if ($Spec.San.CheckLuns) {
-            $disks = @($sanState.disks | Where-Object { $_ })
+            $disks = $sanDisks
             foreach ($lun in @(@{ Name = 'infrastructure volume'; Id = $Spec.San.InfraLunId; MinGb = 250 }, @{ Name = 'performance history volume'; Id = $Spec.San.PerfLunId; MinGb = 20 })) {
                 if (-not $lun.Id) { continue }
                 $disk = $disks | Where-Object { [string]$_.lun -eq $lun.Id -or $_.sn -ieq $lun.Id -or $_.uid -ieq $lun.Id } | Select-Object -First 1
@@ -730,6 +861,14 @@ function Compare-AzlNodeState {
         }
     }
     elseif ('SanVerify' -in $Step -and $Spec.San -and -not $sanState) { & $add (New-AzlPlanItem $n 'SanVerify' 'SAN state' 'unreadable' 'readable' Info (Get-AzlProp $State 'err.san' '')) }
+    elseif ('SanVerify' -in $Step -and -not $Spec.San -and $sanDisks.Count) {
+        # No SAN in the file, yet the node sees Fibre Channel or iSCSI disks (read only). A LUN seen more than once is multipath that nothing claimed: that is the failure that stops Azure's Test-Cluster.
+        $finding = 'SAN LUNs are visible but the file declares no SAN (storage.san / scenario.storage_architecture)'
+        $evidence = "$($sanDisks.Count) FC/iSCSI disk(s): $(@($sanDisks | Select-Object -First 8 | ForEach-Object { "#$($_.n) $($_.bus) serial $($_.sn) UniqueId $($_.uid) $($_.gb) GB $($_.st)" }) -join '; ')"
+        if ($sanDuplicate.Count) { $evidence = (Format-AzlSanDuplicate -Duplicate $sanDuplicate -DiskCount $sanDisks.Count) + ". MPIO has not claimed the paths. " + $evidence }
+        $fix = 'Declare the SAN in the file: scenario.storage_architecture hybrid (S2D plus the SAN) or san, and storage.san.type fibre_channel or iscsi with storage.san.array vendor and model. The OS configuration then registers the array with MSDSM and restarts the node so MPIO claims the paths. If no SAN is meant for this cluster, unzone or unmap these LUNs from the node.'
+        & $add (New-AzlPlanItem $n 'SanVerify' $finding $evidence 'declare the SAN in the file, or remove the LUNs from this node' $(if ($sanDuplicate.Count) { 'Blocked' } else { 'Info' }) $fix)
+    }
 
     # ---- storage left over from an earlier deployment
     if ('ClearStorage' -in $Step) {
@@ -1048,6 +1187,8 @@ function Invoke-AzlNodeConfiguration {
     $djDone = @{}; $djFailure = $null; $djMoved = $false; $limit = $MaxPasses; $ouChecked = $false; $ouCheck = $null; $ldapCheck = $null
     # The storage wipe is tried once per run, like the join: whatever the node shows afterwards, it is never wiped a second time in this run.
     $storageDone = $false
+    # The restart that lets MPIO claim the LUN paths is tried once per run: if the paths are still separate disks after it, the item is Blocked (not a second restart).
+    $mpioClaimTried = $false
     # The result of the node so far (the final one, or the partial one that rides on an error). Converged needs no pending change, nothing blocked, no error, and every
     # guarded change committed: an unfinished guard (Unknown) is never converged.
     $buildResult = {
@@ -1103,6 +1244,14 @@ function Invoke-AzlNodeConfiguration {
         $todo = @($plan | Where-Object { $_.Action -eq 'Change' -and $_.Apply })
         $todo = @($todo | Where-Object { $_.Apply.kind -notlike 'domain-*' -or -not $djDone.ContainsKey([string]$_.Apply.kind) }) # DOMAINJOIN HOOK: each kind once per run
         $todo = @($todo | Where-Object { $_.Apply.kind -ne 'storage-clear' -or -not $storageDone }) # the wipe: once per run
+        if ($mpioClaimTried) {
+            # Checked first: the todo list drops the item before its Apply is cleared.
+            $todo = @($todo | Where-Object { $_.Apply.kind -ne 'mpio-claim-restart' })
+            foreach ($mpioItem in @($plan | Where-Object { $_.Action -eq 'Change' -and $_.Apply -and $_.Apply.kind -eq 'mpio-claim-restart' })) {
+                $mpioItem.Action = 'Blocked'; $mpioItem.Apply = $null
+                $mpioItem.Note = 'The node restarted once for this and the LUN paths are still separate disks. Check Get-MSDSMSupportedHW against the array vendor and product ID (mpclaim -s -d) and that the load balance policy and vendor settings are in place; a second restart is not tried in this run.'
+            }
+        }
         $todo = @($todo | Where-Object { $_.Apply.kind -ne 'driver' -or -not $driverInstalled.ContainsKey([string]$_.Apply.id) }) # a driver installed in this run waits for the restart, it is not installed again
         # A package file the toolkit already delivered once and that is still wrong is not delivered again: the failure stays
         # in the report (the Sbe step is not done) and the other steps carry on.
@@ -1168,6 +1317,7 @@ function Invoke-AzlNodeConfiguration {
         if ($actions.Count) {
             # Marked before the call: a call that fails, times out or ends in Unknown has still possibly wiped, so it is not sent again.
             if (@($actions | Where-Object { $_.kind -eq 'storage-clear' }).Count) { $storageDone = $true }
+            if (@($actions | Where-Object { $_.kind -eq 'mpio-claim-restart' }).Count) { $mpioClaimTried = $true }
             # 300 s; 900 s when the call wipes storage.
             $applySeconds = if (@($actions | Where-Object { $_.kind -eq 'storage-clear' }).Count) { 900 } else { 300 }
             try { $result = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Apply) -Parameters @{ actions = $actions; sbeDir = $(if ($Spec.Sbe) { $Spec.Sbe.Dir } else { 'C:\SBE' }) } -Secrets $secrets -TimeoutSeconds $applySeconds -Kind Apply }
@@ -1271,4 +1421,4 @@ function Invoke-AzlNodeConfiguration {
     return (& $buildResult '' $false)
 }
 
-Export-ModuleMember -Function Get-AzlOemConfig, Get-AzlSbeBundle, Get-AzlSbeDeliveryRoute, Get-AzlSbePullUrl, Send-AzlSbePackage, Get-AzlSbeNotDeliveredReason, Get-AzlSanVendor, Get-AzlNodeSpec, Get-AzlNodeReadParameter, Compare-AzlNodeState, Get-AzlNodeWipeItem, Format-AzlWipeDisk, Format-AzlPlan, Invoke-AzlNodeConfiguration
+Export-ModuleMember -Function Get-AzlOemConfig, Get-AzlSbeBundle, Get-AzlSbeDeliveryRoute, Get-AzlSbePullUrl, Send-AzlSbePackage, Get-AzlSbeNotDeliveredReason, Get-AzlSanVendor, Get-AzlSanDuplicate, Test-AzlSanDeclared, Format-AzlSanDuplicate, Get-AzlNodeSpec, Get-AzlNodeReadParameter, Compare-AzlNodeState, Get-AzlNodeWipeItem, Format-AzlWipeDisk, Format-AzlPlan, Invoke-AzlNodeConfiguration

@@ -398,9 +398,12 @@ Describe 'Comparison: SAN' {
     It 'does nothing SAN-related for a Storage Spaces Direct design' {
         $infra = Get-Infra
         $infra.scenario.storage_architecture = 's2d'
+        $infra.storage.Remove('san') # a storage.san block is itself a SAN declaration (see SanMpio.Tests.ps1)
         $spec = Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0]
         $spec.San | Should -BeNullOrEmpty
-        @(Compare-AzlNodeState -Spec $spec -State (New-ConfiguredState $script:Spec) | Where-Object { $_.Step -in 'Mpio', 'SanVerify' }) | Should -BeNullOrEmpty
+        $state = New-ConfiguredState $script:Spec
+        $state.san.disks = @() # an S2D node sees no Fibre Channel or iSCSI disk
+        @(Compare-AzlNodeState -Spec $spec -State $state | Where-Object { $_.Step -in 'Mpio', 'SanVerify' }) | Should -BeNullOrEmpty
     }
     Context 'storage left over: a deployed cluster is never wiped without the one-shot flag' {
         BeforeEach {

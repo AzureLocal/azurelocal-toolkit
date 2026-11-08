@@ -24,7 +24,7 @@ scenario:
   # active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity...
   # one of: active_directory | local_identity; used by: os_configuration, deployment, monitoring
   identity: "active_directory"
-  # s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both.
+  # s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both (S2D plus a SAN). san...
   # one of: s2d | san | hybrid; used by: os_configuration, deployment
   storage_architecture: "s2d"
   # switched: storage traffic goes through top-of-rack switches. switchless: machines are cabled directly to each other for storage.
@@ -785,7 +785,7 @@ storage:
   # The external SAN of a disaggregated (san) or hybrid deployment.
   # when scenario.storage_architecture is san or hybrid; used by: deployment
   san:
-    # fibre_channel needs storage.san.fibre_channel; iscsi needs storage.san.iscsi.
+    # Whether the SAN is fibre_channel or iscsi.
     # required; one of: fibre_channel | iscsi; used by: os_configuration, deployment
     type: "fibre_channel"
     # (since 5.3) 

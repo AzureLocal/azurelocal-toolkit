@@ -652,6 +652,33 @@ Azure Arc Run Command (only with an explicit `-Transport ArcRunCommand`) carries
 
 The Sbe step runs **last**. Delivering a 900 MB package is the step most likely to fail (it needs a route to the node that the other steps do not), and it must not stop the others. The drivers install from the package, so they run in the pass after the package has landed; with no SBE requested they are skipped. A route that a person asked for and that fails leaves the node not converged (exit code 1, "NOT READY") with the reason in the report; no route requested does not. The report (`-ReportPath`) records `sbeRequested`, `sbeDelivery` (the route, empty when none was requested) and `sbeNotDelivered`. In the one-run command the same route applies: a ZTP node is reached over Arc, and for `winrm_copy` the run gives the node script the local administrator (`identity.local_admin`, or `-Credential`) for the copy only; a run with no SBE requested prints one summary line, "SBE: opt-in, no SBE side-loading requested", and no warning.
 
+## SAN in the file: fibre_channel or iscsi
+
+The infrastructure file tells the solution there is a SAN and which kind; the OS configuration then does the host-side SAN work itself ([Connect an external storage array to Azure Local](https://learn.microsoft.com/azure/azure-local/deploy/enable-external-storage), steps 1, 2, 5, 6 and 7). Nobody runs `New-MSDSMSupportedHW` or `Remove-MSDSMSupportedHW` by hand.
+
+| In the file | Meaning |
+| --- | --- |
+| `scenario.storage_architecture: hybrid` | Storage Spaces Direct **and** a SAN (the S2D disks stay S2D; the SAN LUNs become CSVs after the deployment) |
+| `scenario.storage_architecture: san` | a disaggregated deployment: the SAN only |
+| a `storage.san` block | also declares a SAN (with `s2d` the plan says so and asks you to set `hybrid` or `san`) |
+| `storage.san.type: fibre_channel` or `iscsi` | **selects the steps** (below). Required: a SAN without it is Blocked |
+| `storage.san.array.vendor` and `.model` | pick the MSDSM hardware ID from `config/san/msdsm-vendors.json`. Required for the Mpio step: without them MPIO cannot be told what to claim, and the item is Blocked |
+| `storage.san.fibre_channel`, `.iscsi`, `nodes[].san` | **not needed for the host-side work.** Target WWPNs, HBA WWPNs, IQNs and LUN ids are for zoning, LUN masking and the disaggregated checks. A hybrid file may leave them out until the zoning is planned (rule AZL-028 is then a warning; for `san` it stays an error). `iscsi` needs `.iscsi.targets` and the node's `iscsi:a` / `iscsi:b` ports with addresses for the portals and sessions, and says so when they are missing |
+
+With a SAN declared, the **Mpio** step (plan, approval, apply, verify, with the usual events for Sonar) does, on every node:
+
+| Type | Step |
+| --- | --- |
+| both | the MultipathIO feature (a restart if it was off); the array's MSDSM hardware ID (`New-MSDSMSupportedHW`, or `mpclaim` for Hitachi); for Pure (`removeGenericEntry` in the table) the generic `Vendor*` / `Product*` entry removed (Learn step 2.2); the load balance policy; the vendor's MPIO settings; then one restart so MPIO claims the paths (Learn step 6), when the hardware ID is registered and the paths are still separate disks |
+| `fibre_channel` | the node's WWPNs (`Get-InitiatorPort`) are collected and reported (SanVerify) for the fabric administrator; they are never zoned by the toolkit |
+| `iscsi` | also: the `MSiSCSI` service Automatic and running, `Enable-MSDSMAutomaticClaim -BusType iSCSI` (with a restart when LUNs are already visible), a target portal and a persistent multipath session from each `iscsi:a` / `iscsi:b` port to each portal of the targets of its fabric (`New-IscsiTargetPortal`, `Connect-IscsiTarget`); the node's IQN is reported. With CHAP on, the portals are made and the sessions are left to you |
+
+**SanVerify** (read only) then checks that each LUN is seen **once**, by UniqueId. A LUN that appears several times is MPIO that has not claimed the paths (a Pure LUN with four FC paths is four offline disks, and Azure's `Test-Cluster` fails with "two disks that cannot be distinguished"): the Mpio step restarts the node once; if the paths are still separate afterwards the item is Blocked with the UniqueIds and disk numbers, and no second restart is tried in the run.
+
+**Detection on every node, whatever the file says.** The node's Fibre Channel and iSCSI disks are always read (read only). If any are visible while the file declares no SAN, SanVerify reports `SAN LUNs are visible but the file declares no SAN (storage.san / scenario.storage_architecture)` with the evidence (disk numbers, BusType, serial, UniqueId, size). It is **Blocked** when a serial or UniqueId repeats (the multipath was not claimed), Info when each LUN is seen once. Fix it by declaring the SAN (`hybrid` or `san`, and `storage.san.type`), or by removing the LUNs from the node.
+
+For a **hybrid Fibre Channel** design, LUNs visible before the Azure Local deployment also get `Important: to avoid deployment confusion for FC LUNs, don't zone in FC HBA WWNs until after the Azure Local deployment` (Microsoft Learn, Fibre Channel prerequisites; Info, a Warning event). Unzone the HBA WWNs, or unmap the LUNs from the node, until the deployment has finished. This is not raised once the node belongs to a deployed cluster.
+
 ## SAN (Fibre Channel or iSCSI)
 
 For `storage_architecture: san` (disaggregated):
@@ -665,7 +692,7 @@ For `storage_architecture: san` (disaggregated):
 | LUN identifiers for ARM | `storage.san.infra_volume_lun_id` and `performance_history_lun_id` are LUN numbers. The ARM parameters (`infraVolLunId`, `infraPerfLunId`) take the disk's UniqueId (or serial number). The generator translates by reading the OS configuration report | Code |
 | Cluster networks | `networking.cluster_networks` (name, adapter, VLAN, subnet) on standalone ports, one per fabric: ARM `sanNetworkList` | Code (the schema) |
 
-For `hybrid` the cluster is deployed with Storage Spaces Direct and the SAN is connected afterwards. Microsoft says not to zone the HBAs until after that deployment, so the LUN checks are skipped; MPIO and MSDSM are still prepared. For `iscsi`, OS configuration enables the MSiSCSI service and MSDSM auto-claim only: connecting to targets and CHAP are not automated, and the ARM generator stops with a message (Microsoft's iSCSI template takes a different node list). See [Connect an external storage array](https://learn.microsoft.com/azure/azure-local/deploy/enable-external-storage).
+For `hybrid` the cluster is deployed with Storage Spaces Direct and the SAN is connected afterwards. Microsoft says not to zone the HBAs until after that deployment, so the infrastructure-LUN checks are skipped; MPIO and MSDSM are still prepared (see [SAN in the file](#san-in-the-file-fibre_channel-or-iscsi)). For `iscsi`, OS configuration enables the MSiSCSI service and MSDSM auto-claim and makes the portals and sessions from `storage.san.iscsi.targets`; CHAP sessions are not automated, and the ARM generator stops with a message (Microsoft's iSCSI template takes a different node list). See [Connect an external storage array](https://learn.microsoft.com/azure/azure-local/deploy/enable-external-storage).
 
 ## The ZTP hand-off file
 
@@ -717,7 +744,7 @@ Required: **yes** (the script stops or the step can't run without it), **if** (w
 | Key | Required | Example | Where to get it | Step |
 | --- | --- | --- | --- | --- |
 | `scenario.identity` | yes | `active_directory` | your design | ARM (template) |
-| `scenario.storage_architecture` | yes | `san` | your design | OS (SAN steps), ARM (template) |
+| `scenario.storage_architecture` | yes | `hybrid` | your design: `s2d`, `san` or `hybrid`; `san` and `hybrid` tell the solution there is a SAN and start the host-side SAN work | OS (SAN steps), ARM (template) |
 | `scenario.storage_connectivity` | yes | `switched` | your design | ARM (`networkingType`, `storageConnectivitySwitchless`) |
 | `scenario.topology` | yes | `standard` | your design | ARM (template, zones) |
 | `scenario.cloud`, `scenario.connectivity` | yes | `public`, `connected` | your design | ARM (template) |
@@ -778,7 +805,7 @@ Required: **yes** (the script stops or the step can't run without it), **if** (w
 | `scenario.environment_class` | no (`production`) | `lab` | decides whether an OU without blocked inheritance blocks the join (`dev`, `production`, `dmz`) or only warns (`lab`, `test`) | OS (DomainJoin) |
 | `identity.local_identity.dns_server_config`, `.dns_zone`, `.dns_forwarders` | if local identity | `use_dns_server`, `improbability.cloud` | your DNS design | ARM `dnsServerConfig`, `dnsZones` |
 | `storage.configuration_mode` | no (`express`; `infra_only` for SAN) | `infra_only` | your design | ARM `configurationMode` |
-| `storage.san.type` | if SAN | `fibre_channel` | your SAN | OS, ARM (template) |
+| `storage.san.type` | if SAN | `fibre_channel` | your SAN: `fibre_channel` or `iscsi`; selects the host-side steps | OS, ARM (template) |
 | `storage.san.array.vendor`, `.model` | if SAN | `Dell`, `PowerStore 1200T` | your SAN; picks the MSDSM entry | OS |
 | `storage.san.infra_volume_lun_id`, `.performance_history_lun_id` | if disaggregated | `0`, `1` | the array | OS (verifies), ARM `infraVolLunId`, `infraPerfLunId` |
 | `security.level`, `.drift_control`, `.credential_guard`, `.smb_signing`, `.smb_cluster_encryption`, `.bitlocker_boot_volume`, `.bitlocker_data_volumes`, `.wdac` | no (Microsoft's recommended) | `recommended` | your policy | ARM `securityLevel` and the flags |
