@@ -677,7 +677,6 @@ function Get-AzlVerificationCheckDefinition {
     $defs.Add((New-AzlVerDefinition -Id 'NW-015' -Category network -Title 'The VLAN plan of the file: unique VLANs and subnets, management and storage VLANs consistent with the ports, compute VLANs allowed on the compute ports, addresses inside the management subnet' `
                 -Source "$($script:Src.NetPlan) (VLAN and subnet planning, Decision 6, 7); $($script:Src.HostNet); the file: networking.vlans[], networking.management, networking.storage.networks[], nodes[].network_adapters[].vlan_id, vlan_mode, allowed_vlans (the lab VLAN inventory is the human source, the file the authority)" -Run {
                 param($Context)
-                $infra = Get-AzlVerInfra $Context
                 $plan = Get-AzlVerVlanPlan $Context
                 if (-not $plan.Vlans.Count) { return New-AzlVerResult Skipped 'The file has no networking.vlans[], so the VLAN plan cannot be verified.' 'List every VLAN of the design in networking.vlans[] (name, id, subnet, purpose), or accept this skip.' }
                 $failed = [System.Collections.Generic.List[string]]::new(); $warn = [System.Collections.Generic.List[string]]::new()
