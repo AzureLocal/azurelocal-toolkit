@@ -110,8 +110,8 @@ Describe 'The node scripts' {
         $script:Change | Should -Match "-Profile = 'Any'|Profile = 'Any'"
     }
     It 'finds the WinRM rules by port (5985, 5986, inbound), not by a name' {
-        $script:Change | Should -Match "LocalPort\) -contains '5985'"
-        $script:Change | Should -Match "LocalPort\) -contains '5986'"
+        $script:Change | Should -Match "Get-NetFirewallPortFilter -Protocol TCP"
+        $script:Change | Should -Match "'5985'.*'5986'|'5986'"
         $script:Change | Should -Match "Direction -eq 'Inbound'"
         $script:Change | Should -Not -Match 'WINRM-HTTP-In-TCP'
         $script:Read | Should -Not -Match 'WINRM-HTTP-In-TCP'
@@ -285,17 +285,17 @@ Describe 'Compare-AzlRemotingState' {
             $script:State.rdp.nla = 0
             (Get-Item2 (Compare-AzlRemotingState -Spec $script:S -State $script:State) 'RDP').Action | Should -Be 'Change'
         }
-        It 'the management IP not on the node is Blocked, with the reason' {
+        It 'the management IP not on the node is Info (the listener stays on *), not Blocked: the Network step sets it later' {
             $script:State.addresses = @('203.0.113.99')
             $i = Get-Item2 (Compare-AzlRemotingState -Spec $script:S -State $script:State) 'listener address'
-            $i.Action | Should -Be 'Blocked'
+            $i.Action | Should -Be 'Info'
             $i.Note | Should -Match 'Network step'
         }
-        It 'the address in use counts when the file address is not assigned yet' {
+        It 'the address in use does not count as the bind address: the listener stays on * until the node holds the file address' {
             $s = Get-NodeSpecFor 'production' $null '203.0.113.99'
             $st = Get-MatchingState $s
             $st.addresses = @('203.0.113.99')
-            Get-Item2 (Compare-AzlRemotingState -Spec $s -State $st) 'listener address' | Should -BeNullOrEmpty
+            (Get-Item2 (Compare-AzlRemotingState -Spec $s -State $st) 'listener address').Action | Should -Be 'Info'
         }
         It 'TLS 1.2 disabled on the node is Blocked (the step does not touch cipher settings)' {
             $script:State.tls.tls12ServerEnabled = 0
@@ -353,7 +353,7 @@ Describe 'Invoke-AzlRemotingApply: the guarded change with injected commands' {
         $s = Get-NodeSpecFor 'production'
         $node = Get-FakeNode $script:Good
         $r = Invoke-AzlRemotingApply -Spec $s -Item (Get-PlanItem $s) -Invoke $node.Invoke -ConfirmPath { param($Stage) [pscustomobject]@{ Ok = $true; Verified = $true; Reason = '' } }
-        @($node.Log.Mode) | Should -Be @('stage', 'commit')
+        @($node.Log.Mode) | Should -Be @('stage', 'commit', 'disarm')
         $node.Log[1].Parameters.verified | Should -BeTrue
         $r.Status | Should -Be 'committed'
         $r.Verified | Should -BeTrue
@@ -408,7 +408,7 @@ Describe 'Invoke-AzlRemotingApply: the guarded change with injected commands' {
         $s = Get-NodeSpecFor 'production'
         $node = Get-FakeNode $script:Good
         $null = Invoke-AzlRemotingApply -Spec $s -Item (Get-PlanItem $s) -Invoke $node.Invoke -ConfirmPath { param($Stage) [pscustomobject]@{ Ok = $true; Verified = $true; Reason = '' } } -State ([pscustomobject]@{ pending = [pscustomobject]@{ changeId = 'rm-old' } })
-        @($node.Log.Mode) | Should -Be @('revert', 'stage', 'commit')
+        @($node.Log.Mode) | Should -Be @('revert', 'stage', 'commit', 'disarm')
         $node.Log[0].Parameters.changeId | Should -Be 'rm-old'
     }
     It 'every call carries the same change id, and the secrets only travel as secrets' {

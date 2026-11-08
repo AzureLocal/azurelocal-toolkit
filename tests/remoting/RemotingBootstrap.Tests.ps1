@@ -58,7 +58,7 @@ Describe 'The bootstrap script' {
     }
     It 'sets Enabled, every profile and the scope on the rules it finds by port, not by name' {
         $script:Plain | Should -Match 'Enable-PSRemoting -Force -SkipNetworkProfileCheck'
-        $script:Plain | Should -Match "LocalPort\) -contains ""5985"""
+        $script:Plain | Should -Match 'LocalPort\)\.Count -eq 1'
         $script:Plain | Should -Match 'Set-NetFirewallRule -Name \$r -Enabled True -Profile Any -RemoteAddress \$ra'
         $script:Plain | Should -Match "\`$ra=@\('192\.0\.2\.0/24','198\.51\.100\.10/32'\)"
         $script:Plain | Should -Not -Match 'WINRM-HTTP-In-TCP'
@@ -74,7 +74,7 @@ Describe 'The bootstrap script' {
         $script:Full | Should -Match ('AB' * 20)
     }
     It 'writes one AZLBOOT line to the result file for smb, and only to the output for Arc' {
-        $script:Plain | Should -Match 'azl-bootstrap-winrm\.txt'
+        $script:Plain | Should -Match 'azl-bootstrap-[0-9a-f]{32}\.txt'
         $arc = New-AzlRemotingBootstrapScript -RemoteAddress @('Any') -ResultPath ''
         $arc | Should -Not -Match 'Set-Content'
         $arc | Should -Match 'Write-Output \$j'
@@ -129,7 +129,12 @@ Describe 'Invoke-AzlSmbBootstrap (sc.exe and net use are fakes)' {
         $w = Get-FakeSmb
         $r = Invoke-Smb $w
         $r.Ok | Should -BeTrue
-        @($w.Log) | Should -Be @('port 445', 'net use', 'sc create', 'sc start', 'sc delete', 'read \\192.0.2.11\C$\Windows\Temp\azl-bootstrap-winrm.txt', 'delete \\192.0.2.11\C$\Windows\Temp\azl-bootstrap-winrm.txt', 'net use /delete')
+        $log = @($w.Log)
+        $log[0..4] | Should -Be @('port 445', 'net use', 'sc create', 'sc start', 'sc delete')
+        $log[5] | Should -Match '^read \\\\192\.0\.2\.11\\C\$\\Windows\\Temp\\azl-bootstrap-[0-9a-f]{32}\.txt$'
+        $log[6] | Should -Match '^delete \\\\192\.0\.2\.11\\C\$\\Windows\\Temp\\azl-bootstrap-[0-9a-f]{32}\.txt$'
+        $log[7] | Should -Be 'net use /delete'
+        $log.Count | Should -Be 8
     }
     It 'authenticates to IPC$ as the local Administrator, and creates a LocalSystem service on demand that runs powershell with the encoded script' {
         $w = Get-FakeSmb
@@ -370,7 +375,7 @@ Describe 'Invoke-AzlWinRmBootstrap: the routes, in order, behind the gate' {
         $without.Ok | Should -BeFalse
         $without.Reason | Should -Match 'ApprovedBootstrap'
         $script:ran | Should -Be 0
-        $with = Invoke-AzlWinRmBootstrap -RemotingProfile $p -Node 'n1' -Address '192.0.2.11' -Credential $script:Credential -ApprovedBootstrap -SmbCommand { $script:ran++; Get-FakeResult $true }
+        $with = Invoke-AzlWinRmBootstrap -RemotingProfile $p -Node 'n1' -Address '192.0.2.11' -Credential $script:Credential -ApprovedBootstrap -Thumbprint ('AB' * 20) -SmbCommand { $script:ran++; Get-FakeResult $true }
         $with.Ok | Should -BeTrue
         $script:ran | Should -Be 1
     }

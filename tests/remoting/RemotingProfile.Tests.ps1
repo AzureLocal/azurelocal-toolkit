@@ -309,10 +309,10 @@ Describe 'Resolve-AzlRemotingProfile: every override and key' {
         }
         (Resolve-For 'production' $null @{ approved_bootstrap = $true }).Bootstrap.Permitted | Should -BeFalse   # approved but never chosen
     }
-    It 'dmz: an approval kept in a settings file does not count' {
+    It 'dmz and production: an approval kept in a settings file does not count' {
         $choose = { param($d) $d.os_configuration.remoting.bootstrap_transport = 'smb'; $d.os_configuration.remoting.certificate = ('AB' * 20) }
         (Resolve-For 'dmz' $choose @{ approved_bootstrap = $true; approved_bootstrap_source = 'settings' }).Bootstrap.Permitted | Should -BeFalse
-        (Resolve-For 'production' $choose @{ approved_bootstrap = $true; approved_bootstrap_source = 'settings' }).Bootstrap.Permitted | Should -BeTrue
+        (Resolve-For 'production' $choose @{ approved_bootstrap = $true; approved_bootstrap_source = 'settings' }).Bootstrap.Permitted | Should -BeFalse
     }
     It 'Test-AzlBootstrapPermitted takes the approval of the run on top' {
         $p = Resolve-For 'production' { param($d) $d.os_configuration.remoting.bootstrap_transport = 'arc' }
