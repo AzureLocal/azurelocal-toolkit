@@ -63,7 +63,7 @@ About this file.
 | Path | What it is | Type | Required: full / ztp | Default | Example | Where to get the value | Read by |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `_metadata` | About this file. | object | yes / yes |  |  |  | ZTP, Trailwright |
-| `_metadata.schema_version` | The schema version this file follows. | string | yes / yes |  | `5.6.0` | Set by the template (5.3.0). Change it only with a migration. | ZTP, Trailwright |
+| `_metadata.schema_version` | The schema version this file follows. | string | yes / yes |  | `5.6.0` | Set by the template (5.6.0). Change it only with a migration. | ZTP, Trailwright |
 | `_metadata.scope` | Full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the section... (since 5.3) | one of `full`, `ztp` | no / no | `full` | `ztp` | You: ztp for a file used by azurelocal-ztp alone, full for everything. | ZTP, Trailwright |
 | `_metadata.file_version` | Your own version of this file. | string | no / no |  | `1.0.0` | You: bookkeeping for the file. | Trailwright |
 | `_metadata.last_updated` | Date of the last change, YYYY-MM-DD. | date (YYYY-MM-DD) | no / no |  | `2026-11-06` | You: bookkeeping for the file. | Trailwright |
