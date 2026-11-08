@@ -15,7 +15,7 @@
     Get-AzlDomainJoinReadParameter   What the Read script needs to read the membership (never a secret).
     Get-AzlDomainJoinPlanItem        The comparison (pure): Ok, Change (join, move before the deployment, add the local administrators, or finish a pending restart), Blocked with the
                                      reason, Skipped (waits for an earlier step, or local identity), Info. Never unjoins a node.
-    Test-AzlDomainJoinVerification   After the restart: member, right domain, secure channel, right OU.
+    Test-AzlDomainJoinVerification   After the restart: member, right domain, secure channel, right OU (an unknown OU is unverified, not OK).
     Invoke-AzlDomainJoinStep         The apply: join (or move), the guarded restart, the reconnect, the verification, the events.
     Get-AzlDomainJoinSummary         The record the run report shows: joined, domain, OU, errors.
     Send-AzlDomainJoinEvent          The one adapter to the event feed (section 6 of the design).
@@ -182,7 +182,7 @@ function Get-DjMainItem {
             $out.Add((New-DjPlanItem $n 'domain membership' "joined $domainNow, restart pending" "$want, restarted and verified" Change 'The join succeeded but the node has not restarted since (the durable restart marker is still set). It is restarted and verified now.' @{ id = 'DomainJoin/restart'; kind = 'domain-restart'; domain = $dj.Domain; ou = $dj.OuPath; changeId = [string](Get-AzlProp $marker 'changeId' '') }))
         }
         elseif (-not $dn) {
-            $out.Add((New-DjPlanItem $n 'domain membership' "member of $domainNow, OU not read" $want Info 'The OU could not be verified: Group Policy has not stored the computer''s distinguished name on the node yet.'))
+            $out.Add((New-DjPlanItem $n 'domain membership' "member of $domainNow, OU not read" $want Info 'OU unverified: Group Policy has not stored the computer''s distinguished name on the node yet, so it is not known where the computer object is (an account that already existed is reused where it is). Run gpupdate /target:computer /force on the node and run again.'))
         }
         elseif ((ConvertTo-DjOuKey $ouNow) -eq (ConvertTo-DjOuKey $dj.OuPath)) {
             $out.Add((New-DjPlanItem $n 'domain membership' "member of $domainNow, OU $ouNow" $want Ok))
@@ -295,7 +295,8 @@ function Get-DjAdminItem {
     $have = Get-AzlProp $ds 'localAdmins'
     if ($null -eq $have) { return , (New-DjPlanItem $n 'local administrators' 'unreadable' ($wanted -join ', ') Info 'The node did not report its local Administrators group.') }
     $have = @($have | ForEach-Object { [string]$_ })
-    $missing = @($wanted | Where-Object { $w = $_; $short = $w -replace '^.*\\', ''; -not (@($have | Where-Object { $_ -ieq $w -or $_ -ieq $short }).Count) })
+    # The exact name: net localgroup shows a domain principal qualified with the domain and a bare name is a local account, which is not the domain principal.
+    $missing = @($wanted | Where-Object { $w = $_; -not (@($have | Where-Object { $_ -ieq $w }).Count) })
     if (-not $missing.Count) { return , (New-DjPlanItem $n 'local administrators' 'all present' ($wanted -join ', ') Ok) }
     return , (New-DjPlanItem $n 'local administrators' "missing: $($missing -join ', ')" ($wanted -join ', ') Change 'A domain account is not a local administrator by default. The accounts of local_admin_members are added to the local Administrators group (the deployment adds the LCM user itself later), so Kerberos remoting and log access can use a domain account.' @{ id = 'DomainJoin/admins'; kind = 'domain-admins'; members = @($missing) })
 }
@@ -364,7 +365,7 @@ function Test-AzlDomainJoinVerification {
     .SYNOPSIS
         The checks after the join and the restart: member of a domain, the right domain, the secure channel, the right OU.
     .OUTPUTS
-        Check, Ok, Detail. The OU check passes with a note when the node has no distinguished name to read yet.
+        Check, Ok, Detail. The OU check is not OK (unverified) when the node has no distinguished name to read.
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][object]$Spec, [AllowNull()][object]$State)
@@ -382,7 +383,11 @@ function Test-AzlDomainJoinVerification {
         $ouNow = Get-DjOuOfDn $dn
         $checks.Add([pscustomobject]@{ Check = 'OU'; Ok = ((ConvertTo-DjOuKey $ouNow) -eq (ConvertTo-DjOuKey $dj.OuPath)); Detail = "the computer object is in '$ouNow', the file says '$($dj.OuPath)'" })
     }
-    else { $checks.Add([pscustomobject]@{ Check = 'OU'; Ok = $true; Detail = 'not verified: the node has no distinguished name to read yet' }) }
+    else {
+        # No distinguished name: unverified, never OK. Add-Computer reuses a computer account that already exists, possibly in another OU, and nothing
+        # moves it after the deployment.
+        $checks.Add([pscustomobject]@{ Check = 'OU'; Ok = $false; Detail = "unverified: the node has no distinguished name to read, so it is not known that the computer object is in '$($dj.OuPath)'" })
+    }
     return $checks.ToArray()
 }
 
@@ -407,7 +412,7 @@ function Get-AzlDomainJoinSummary {
         secureChannel = $(if ($joined) { Get-AzlProp $ds 'secureChannel' } else { $null })
         credential   = $(if ($applicable) { $dj.CredentialSource } else { '' })
         localAdminMembers = $(if ($applicable) { @($dj.LocalAdminMembers) } else { @() })
-        localAdminsPresent = $(if ($joined -and $null -ne (Get-AzlProp $ds 'localAdmins')) { @($dj.LocalAdminMembers | Where-Object { $w = $_; $short = $w -replace '^.*\\\\', ''; -not @(@($ds.localAdmins) | Where-Object { $_ -ieq $w -or $_ -ieq $short }).Count }).Count -eq 0 } else { $null })
+        localAdminsPresent = $(if ($joined -and $null -ne (Get-AzlProp $ds 'localAdmins')) { @($dj.LocalAdminMembers | Where-Object { $w = $_; -not @(@($ds.localAdmins) | Where-Object { $_ -ieq $w }).Count }).Count -eq 0 } else { $null })
         error        = $(if ($failure.Count) { [string]$failure[0].Detail } else { '' })
     }
 }
@@ -752,9 +757,18 @@ function Invoke-AzlDomainJoinStep {    <#
     $out.State = $after
     $out.Restarted = $true
     & $emit 'NodeReconnected' "$node answers again after the restart (boot $(Get-AzlProp $after 'boot' ''))" 'Info' '' @{ boot = [string](Get-AzlProp $after 'boot' '') }
+    # Group Policy stores the computer's distinguished name only after a refresh. Without it the OU cannot be checked, and Add-Computer reuses an existing
+    # computer account wherever it sits (nothing moves it after the deployment), so the node refreshes the computer policy and reads the name again.
+    if (-not [string](Get-AzlProp $after 'domainJoin.dn' '') -and (Get-AzlProp $after 'domainJoin')) {
+        try {
+            $located = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name DomainJoinApply) -Parameters @{ mode = 'locate'; domain = $dj.Domain; ou = $dj.OuPath; changeId = $changeId } -TimeoutSeconds 600 -Tries 1
+            if ([string](Get-AzlProp $located 'dn' '')) { Add-Member -InputObject $after.domainJoin -NotePropertyName dn -NotePropertyValue ([string]$located.dn) -Force }
+        }
+        catch { Write-Verbose "The distinguished name of $node was not read: $($_.Exception.Message)" }
+    }
     $bad = @(Test-AzlDomainJoinVerification -Spec $Spec -State $after | Where-Object { -not $_.Ok })
     if ($bad.Count) {
-        & $fail "The node joined $($dj.Domain) but the check after the restart failed: $(($bad | ForEach-Object { "$($_.Check) ($($_.Detail))" }) -join '; ')." 'Test-ComputerSecureChannel -Repair on the node, check the time and the domain controllers, then run again.' ''
+        & $fail "The node joined $($dj.Domain) but the check after the restart failed: $(($bad | ForEach-Object { "$($_.Check) ($($_.Detail))" }) -join '; ')." 'Test-ComputerSecureChannel -Repair on the node, check the time and the domain controllers, then run again. If the OU is unverified or wrong: run gpupdate /target:computer /force on the node and check in Active Directory which OU the computer object is in (an account that already existed is reused where it is, and is not moved after the deployment).' ''
         $out.Changes = $changes.ToArray()
         return [pscustomobject]$out
     }

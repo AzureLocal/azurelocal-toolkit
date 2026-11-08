@@ -58,6 +58,10 @@ if (-not (Test-Path 'function:Test-DjTcp')) {
         finally { $client.Close() }
     }
 }
+function Get-DjComputerDn {
+    # The computer's distinguished name as Group Policy stored it ('' until the first policy refresh after the join).
+    try { return [string](Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy\State\Machine' -Name 'Distinguished-Name' -ErrorAction Stop).'Distinguished-Name' } catch { return '' }
+}
 function Get-DjRead($dj) {
     $domain = [string](Get-P $dj 'domain' '')
     $dcs = @(Get-P $dj 'dcs' @())
@@ -70,7 +74,7 @@ function Get-DjRead($dj) {
     $r.boot = $os.LastBootUpTime.ToUniversalTime().ToString('o')
     $r.dn = ''
     if ($cs.PartOfDomain) {
-        try { $r.dn = [string](Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy\State\Machine' -Name 'Distinguished-Name' -ErrorAction Stop).'Distinguished-Name' } catch { $r.dn = '' }
+        $r.dn = Get-DjComputerDn
     }
     $r.dnsOk = $false
     $r.dnsAddresses = @()
@@ -168,7 +172,7 @@ $changeId = [string](Get-P $P 'changeId' '')
 $expectedHost = [string](Get-P $P 'expectedHost' '')
 $jdDir = [string](Get-P $P 'stateDir' $stateDir)
 $taskName = 'AzureLocal-OSConfig-DomainJoinResume'
-$answer = [ordered]@{ v = 1; host = $env:COMPUTERNAME; finished = ''; mode = $mode; status = ''; reboot = $false; code = ''; label = ''; meaning = ''; errorText = ''; nextAction = ''; stillWorkgroup = $null; detail = ''; added = @() }
+$answer = [ordered]@{ v = 1; host = $env:COMPUTERNAME; finished = ''; mode = $mode; status = ''; reboot = $false; code = ''; label = ''; meaning = ''; errorText = ''; nextAction = ''; stillWorkgroup = $null; detail = ''; added = @(); dn = '' }
 
 function ConvertTo-DjError($ex) {
     $text = [string]$ex.Message
@@ -180,18 +184,19 @@ function ConvertTo-DjError($ex) {
         if (($u -shr 16) -eq 0x8007) { [void]$codes.Add([int]($u -band 0xFFFF)) }
         $e = $e.InnerException
     }
-    foreach ($m in [regex]::Matches($text, '(?i)(?:error(?: code)?|code|status)\D{0,3}(\d{1,5})\b')) { [void]$codes.Add([int]$m.Groups[1].Value) }
+    $textCodes = New-Object System.Collections.ArrayList
+    foreach ($m in [regex]::Matches($text, '(?i)(?:error(?: code)?|code|status)\D{0,3}(\d{1,5})\b')) { [void]$textCodes.Add([int]$m.Groups[1].Value) }
     foreach ($m in [regex]::Matches($text, '(?i)0x([0-9A-F]{8})')) {
         $u = [Convert]::ToUInt32($m.Groups[1].Value, 16)
         if (($u -shr 16) -eq 0x8007) { [void]$codes.Add([int]($u -band 0xFFFF)) }
         if ($u -eq 3221225779) { [void]$codes.Add(37) }
     }
     $table = @(
-        @{ code = 1326; label = 'bad credential'; pattern = 'user name or password is incorrect|logon failure|unknown user name'; meaning = 'The user name or password of the join account is wrong.'
+        @{ code = 1326; label = 'bad credential'; pattern = 'user name or password is incorrect|unknown user name'; meaning = 'The user name or password of the join account is wrong.'
             next = 'Check identity.active_directory.domain_join_account: the username, and the Key Vault secret behind the password. Do not run again with the same values; repeated bad passwords lock the account.' }
         @{ code = 1909; label = 'account locked out'; pattern = 'locked out'; meaning = 'The join account is locked out.'
             next = 'Unlock the account in Active Directory, check that the secret is right, then run again.' }
-        @{ code = 1331; label = 'account disabled'; pattern = 'account is currently disabled|account has been disabled'; meaning = 'The join account is disabled.'
+        @{ code = 1331; label = 'account disabled'; pattern = 'account is currently disabled|account currently disabled|account has been disabled'; meaning = 'The join account is disabled.'
             next = 'Enable the join account in Active Directory, then run again.' }
         @{ code = 1355; label = 'domain not found'; pattern = 'domain either does not exist or could not be contacted|domain .* could not be contacted'; meaning = 'The domain does not exist or no domain controller could be contacted.'
             next = 'Check that the node''s DNS servers are the domain controllers (identity.active_directory.domain_controllers, rule AZL-052), that the node reaches them on the management network, and that domain_fqdn is right.' }
@@ -203,13 +208,20 @@ function ConvertTo-DjError($ex) {
             next = 'Check routing and firewalls between the node and the domain controllers (TCP 135, 389, 445 and the dynamic RPC range) and the DNS servers of the management port.' }
         @{ code = 1722; label = 'RPC server unavailable'; pattern = 'rpc server is unavailable'; meaning = 'The node could not reach the RPC service of a domain controller.'
             next = 'Check routing and firewalls between the node and the domain controllers (TCP 135, 445 and the dynamic RPC range) and that the domain controller answers.' }
-        @{ code = 37; label = 'clock skew'; pattern = 'time difference|clock skew|krb_ap_err_skew'; meaning = 'The clock of the node differs from the domain controller by more than the 5 minutes Kerberos allows.'
+        @{ code = 37; also = 1398; label = 'clock skew'; pattern = 'time difference|clock skew|krb_ap_err_skew'; meaning = 'The clock of the node differs from the domain controller by more than the 5 minutes Kerberos allows.'
             next = 'Fix the time first (networking.ntp_servers, the Time step), check with w32tm /stripchart, then run again.' }
         @{ code = 8240; label = 'OU not found'; pattern = 'no such object|0x80072030|organizational unit .* does not exist'; meaning = 'The OU in ou_path does not exist in the domain.'
             next = 'Create the OU, or correct identity.active_directory.ou_path, then run again.' }
     )
+    # The native codes (the exception chain, 0x8007xxxx in the text, NTSTATUS) decide first, in table order; then the text of the message; then
+    # a number found in the text. A bare "logon failure" is not a bad password (it also says a disabled or locked account), so it is not a pattern.
     foreach ($row in $table) {
-        if ($codes -contains $row.code -or $text -match $row.pattern) {
+        if (($codes -contains $row.code) -or ($row.ContainsKey('also') -and ($codes -contains $row.also))) {
+            return [pscustomobject]@{ code = [string]$row.code; label = $row.label; meaning = $row.meaning; nextAction = $row.next; text = $text }
+        }
+    }
+    foreach ($row in $table) {
+        if ($text -match $row.pattern -or $textCodes -contains $row.code) {
             return [pscustomobject]@{ code = [string]$row.code; label = $row.label; meaning = $row.meaning; nextAction = $row.next; text = $text }
         }
     }
@@ -320,16 +332,35 @@ try {
         }
         catch { Set-DjResultFromError $_.Exception ('Move of ' + $dn) }
     }
+    elseif ($mode -eq 'locate') {
+        # After the restart: the computer object's distinguished name, so the host can check the OU. Group Policy stores it only after a policy
+        # refresh, so when it is not there yet the computer policy is refreshed and the name is read again. Reads and refreshes policy; changes nothing else.
+        $dn = Get-DjComputerDn
+        if (-not $dn) {
+            try { & gpupdate.exe /target:computer /force | Out-Null } catch { $null = $_ }
+            for ($try = 1; $try -le 6 -and -not $dn; $try++) {
+                $dn = Get-DjComputerDn
+                if (-not $dn) { Start-Sleep -Seconds 5 }
+            }
+        }
+        $answer.dn = $dn
+        if ($dn) { $answer.status = 'located'; $answer.detail = $dn } else { $answer.status = 'unverified'; $answer.detail = 'Group Policy has not stored the computer''s distinguished name after a refresh' }
+    }
     elseif ($mode -eq 'admins') {
         $members = @(Get-P $P 'members' @())
         $present = @(& net.exe localgroup Administrators 2>$null | ForEach-Object { ([string]$_).Trim() })
         $added = @()
         $failedMembers = @()
         foreach ($member in $members) {
-            $short = ([string]$member -replace '^.*\\', '')
-            if (@($present | Where-Object { $_ -ieq [string]$member -or $_ -ieq $short }).Count) { continue }
+            # The exact name only: net localgroup lists a domain principal as DOMAIN\name and a local account as the bare name, and a local account of
+            # the same short name is not the domain principal.
+            if (@($present | Where-Object { $_ -ieq [string]$member }).Count) { continue }
             try { Add-LocalGroupMember -Group 'Administrators' -Member ([string]$member) -ErrorAction Stop; $added += [string]$member }
-            catch { $failedMembers += ([string]$member + ': ' + $_.Exception.Message) }
+            catch {
+                # Already a member under a name net.exe lists differently (a UPN, a SID): that is the wanted state, not a failure.
+                if ($_.Exception.GetType().Name -eq 'MemberExistsException' -or $_.Exception.Message -match 'already a member') { continue }
+                $failedMembers += ([string]$member + ': ' + $_.Exception.Message)
+            }
         }
         if ($failedMembers.Count) { $answer.status = 'failed'; $answer.label = 'local administrators'; $answer.errorText = ($failedMembers -join '; '); $answer.nextAction = 'Check that each name exists in the domain (a user or a group) and that the node can reach a domain controller; fix local_admin_members, then run again.' }
         else { $answer.status = 'configured'; $answer.detail = $(if ($added.Count) { 'added to Administrators: ' + ($added -join ', ') } else { 'already members' }) }

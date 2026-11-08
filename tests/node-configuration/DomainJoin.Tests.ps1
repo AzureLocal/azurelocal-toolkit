@@ -371,10 +371,21 @@ Describe 'Comparison: the plan and compare matrix' {
             $i.Apply.kind | Should -Be 'domain-admins'
             $i.Apply.members | Should -Be @('IIC\sg-a')
         }
-        It 'all present (by qualified or short name): Ok, nothing to do (idempotent)' {
+        It 'all present (the qualified names): Ok, nothing to do (idempotent)' {
             $spec = Get-DjSpec { param($d) $d.identity.active_directory.netbios_name = 'IIC'; $d.identity.active_directory.local_admin_members = @('sg-a', 'lcm-iic-clus01') }
-            $state = Get-JoinedState @{ localAdmins = @('azl-admin', 'IIC\sg-a', 'lcm-iic-clus01') }
+            $state = Get-JoinedState @{ localAdmins = @('azl-admin', 'iic\SG-A', 'IIC\lcm-iic-clus01') }
             (Get-DjItem $spec $state | Where-Object Item -eq 'local administrators').Action | Should -Be 'Ok'
+        }
+        It 'a LOCAL account with the same short name is not the domain principal: still missing' {
+            $spec = Get-DjSpec { param($d) $d.identity.active_directory.netbios_name = 'IIC'; $d.identity.active_directory.local_admin_members = @('sg-a') }
+            $i = Get-DjItem $spec (Get-JoinedState @{ localAdmins = @('azl-admin', 'sg-a') }) | Where-Object Item -eq 'local administrators'
+            $i.Action | Should -Be 'Change'
+            $i.Apply.members | Should -Be @('IIC\sg-a')
+        }
+        It 'the summary counts the same way: a bare local name is not present, the qualified one is' {
+            $spec = Get-DjSpec { param($d) $d.identity.active_directory.netbios_name = 'IIC'; $d.identity.active_directory.local_admin_members = @('sg-a') }
+            (Get-AzlDomainJoinSummary -Spec $spec -State (Get-JoinedState @{ localAdmins = @('azl-admin', 'sg-a') })).localAdminsPresent | Should -BeFalse
+            (Get-AzlDomainJoinSummary -Spec $spec -State (Get-JoinedState @{ localAdmins = @('azl-admin', 'IIC\sg-a') })).localAdminsPresent | Should -BeTrue
         }
         It 'not joined yet: no administrators item' {
             @(Get-DjItem (Get-DjSpec) (Get-DjState) | Where-Object Item -eq 'local administrators') | Should -BeNullOrEmpty
@@ -453,6 +464,11 @@ Describe 'Verification after the restart' {
         $checks = Test-AzlDomainJoinVerification -Spec (Get-DjSpec) -State (Get-JoinedState)
         @($checks | Where-Object { -not $_.Ok }) | Should -BeNullOrEmpty
         @($checks).Count | Should -Be 4
+    }
+    It 'an empty distinguished name is unverified, never OK (the computer account may have been reused in another OU)' {
+        $bad = @(Test-AzlDomainJoinVerification -Spec (Get-DjSpec) -State (Get-JoinedState @{ dn = '' }) | Where-Object { -not $_.Ok })
+        $bad.Check | Should -Contain 'OU'
+        ($bad | Where-Object Check -eq 'OU').Detail | Should -Match 'unverified'
     }
     It 'fails on <Name>' -ForEach @(
         @{ Name = 'not a member'; Set = @{ partOfDomain = $false; domain = 'WORKGROUP' }; Check = 'PartOfDomain' }
@@ -613,6 +629,32 @@ Describe 'The step: join, restart, reconnect, verify' {
         @($t.Log | ForEach-Object Kind) | Should -Not -Contain 'Apply:finalize'
         (Get-DjFeed $script:Feed).state | Should -Not -Contain 'DomainJoined'
     }
+    It 'no distinguished name after the restart yet: the node refreshes Group Policy and reads it again, then the join completes' {
+        $dnRight = 'CN=iic-n01,OU=iic-clus01,OU=AzureLocal,DC=improbability,DC=cloud'
+        $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'joined'; reboot = $true; detail = 'x' }; Restart = @{ restartScheduled = $true }; 'Apply:locate' = @{ status = 'located'; dn = $dnRight }; 'Apply:finalize' = @{ status = 'finalized' } }
+        $noDn = Get-JoinedState @{ boot = '2026-11-07T10:09:00Z'; dn = '' }
+        $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State (Get-DjState) -Item $script:JoinItem -SecretResolver $script:Resolver -WaitForRestart { $noDn }.GetNewClosure() -EventContext $script:Ctx
+        $r.Failed | Should -BeFalse
+        @($t.Log | ForEach-Object Kind) | Should -Be @('Apply:join', 'Restart', 'Apply:locate', 'Apply:finalize')
+        $r.Joined | Should -BeTrue
+    }
+    It 'the DN stays unknown after the refresh: the OU is unverified, so the step fails and the marker is not completed' {
+        $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'joined'; reboot = $true; detail = 'x' }; Restart = @{ restartScheduled = $true }; 'Apply:locate' = @{ status = 'unverified'; dn = '' }; 'Apply:finalize' = @{ status = 'finalized' } }
+        $noDn = Get-JoinedState @{ boot = '2026-11-07T10:09:00Z'; dn = '' }
+        $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State (Get-DjState) -Item $script:JoinItem -SecretResolver $script:Resolver -WaitForRestart { $noDn }.GetNewClosure() -EventContext $script:Ctx
+        $r.Failed | Should -BeTrue
+        $r.Error | Should -Match 'OU.*unverified'
+        @($t.Log | ForEach-Object Kind) | Should -Not -Contain 'Apply:finalize'
+        (Get-DjFeed $script:Feed).state | Should -Not -Contain 'DomainJoined'
+    }
+    It 'the account turns out to be in another OU (reused): the step fails with the OU it is in' {
+        $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'joined'; reboot = $true; detail = 'x' }; Restart = @{ restartScheduled = $true }; 'Apply:locate' = @{ status = 'located'; dn = 'CN=iic-n01,OU=Old,DC=improbability,DC=cloud' }; 'Apply:finalize' = @{ status = 'finalized' } }
+        $noDn = Get-JoinedState @{ boot = '2026-11-07T10:09:00Z'; dn = '' }
+        $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State (Get-DjState) -Item $script:JoinItem -SecretResolver $script:Resolver -WaitForRestart { $noDn }.GetNewClosure() -EventContext $script:Ctx
+        $r.Failed | Should -BeTrue
+        $r.Error | Should -Match 'OU=Old'
+        @($t.Log | ForEach-Object Kind) | Should -Not -Contain 'Apply:finalize'
+    }
     It 'a pending restart (restart item): restarts and verifies without joining again' {
         $state = Get-JoinedState @{ marker = [pscustomobject]@{ state = 'RebootExpected'; changeId = 'x'; bootBefore = '2026-11-07T10:00:00Z'; domain = 'improbability.cloud'; error = '' } }
         $item = Get-DjItem $script:Spec $state | Where-Object { $_.Apply -and $_.Apply.kind -eq 'domain-restart' }
@@ -620,6 +662,22 @@ Describe 'The step: join, restart, reconnect, verify' {
         $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State $state -Item $item -SecretResolver { throw 'no secret needed' } -WaitForRestart $script:Wait
         $r.Failed | Should -BeFalse
         @($t.Log | ForEach-Object Kind) | Should -Be @('Restart', 'Apply:finalize')
+    }
+    It 'a pending restart is asked with the changeId of the marker (not a fresh one), and the marker is completed with it' {
+        $state = Get-JoinedState @{ marker = [pscustomobject]@{ state = 'Restarting'; changeId = 'abc123'; bootBefore = '2026-11-07T10:00:00Z'; domain = 'improbability.cloud'; error = '' } }
+        $item = Get-DjItem $script:Spec $state | Where-Object { $_.Apply -and $_.Apply.kind -eq 'domain-restart' }
+        $t = Get-DjTransport @{ Restart = @{ restartScheduled = $true }; 'Apply:finalize' = @{ status = 'finalized' } }
+        $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State $state -Item $item -SecretResolver { throw 'no secret needed' } -WaitForRestart $script:Wait
+        $r.Failed | Should -BeFalse
+        $t.Log[0].Parameters.changeId | Should -Be 'abc123'
+        $t.Log[1].Parameters.changeId | Should -Be 'abc123'
+    }
+    It 'a restart script that fails (not state Unknown) is a failed step with the changes kept, not an exception that ends the run' {
+        $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'joined'; reboot = $true; detail = 'joined' }; Restart = { 'the restart script crashed' } }
+        $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State (Get-DjState) -Item $script:JoinItem -SecretResolver $script:Resolver -WaitForRestart { throw 'must not wait' } -EventContext $script:Ctx
+        $r.Failed | Should -BeTrue
+        $r.Error | Should -Match 'restart'
+        @($r.Changes | Where-Object Status -eq 'changed').Count | Should -Be 1 -Because 'the join itself is kept in the report'
     }
     It 'the OU move (before the deployment, allow_ou_move) sends the DN and the target, and says DomainJoined with moved' {
         $spec = Get-DjSpec { param($d) $d.identity.active_directory.join_options = [ordered]@{ allow_ou_move = $true } }
@@ -663,22 +721,6 @@ Describe 'The password never leaves the secret channel' {
         $item = $plan | Where-Object { $_.Apply }
         $joinedNow = Get-JoinedState
         $waitJoined = { param($b) $joinedNow }.GetNewClosure()
-    It 'a pending restart is asked with the changeId of the marker (not a fresh one), and the marker is completed with it' {
-        $state = Get-JoinedState @{ marker = [pscustomobject]@{ state = 'Restarting'; changeId = 'abc123'; bootBefore = '2026-11-07T10:00:00Z'; domain = 'improbability.cloud'; error = '' } }
-        $item = Get-DjItem $script:Spec $state | Where-Object { $_.Apply -and $_.Apply.kind -eq 'domain-restart' }
-        $t = Get-DjTransport @{ Restart = @{ restartScheduled = $true }; 'Apply:finalize' = @{ status = 'finalized' } }
-        $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State $state -Item $item -SecretResolver { throw 'no secret needed' } -WaitForRestart $script:Wait
-        $r.Failed | Should -BeFalse
-        $t.Log[0].Parameters.changeId | Should -Be 'abc123'
-        $t.Log[1].Parameters.changeId | Should -Be 'abc123'
-    }
-    It 'a restart script that fails (not state Unknown) is a failed step with the changes kept, not an exception that ends the run' {
-        $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'joined'; reboot = $true; detail = 'joined' }; Restart = { 'the restart script crashed' } }
-        $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State (Get-DjState) -Item $script:JoinItem -SecretResolver $script:Resolver -WaitForRestart { throw 'must not wait' } -EventContext $script:Ctx
-        $r.Failed | Should -BeTrue
-        $r.Error | Should -Match 'restart'
-        @($r.Changes | Where-Object Status -eq 'changed').Count | Should -Be 1 -Because 'the join itself is kept in the report'
-    }
         $joinedNow = Get-JoinedState
         $waitJoined = { param($b) $joinedNow }.GetNewClosure()
         $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'joined'; reboot = $true; detail = 'joined' }; Restart = @{ restartScheduled = $true }; 'Apply:finalize' = @{ status = 'finalized' } }

@@ -26,6 +26,7 @@ BeforeAll {
     $script:Mocks = @'
 $ErrorActionPreference = 'Stop'
 $Scenario = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'scenario.json') -Raw | ConvertFrom-Json
+$script:GpupdateDone = $false
 function Add-Call([string]$Text) { Add-Content -LiteralPath (Join-Path $PSScriptRoot 'calls.log') -Value $Text }
 function Get-CimInstance {
     [CmdletBinding()]
@@ -454,6 +455,61 @@ Describe 'Apply: move, administrators, finalize' {
         $fin.Answer.status | Should -Be 'finalized' -Because $fin.Console
         $resMarker | Should -Be 'VerifiedAfterRestart' -Because $res.Console
         $fin.Marker.state | Should -Be 'Completed'
+    }
+}
+
+Describe 'Apply: locate (the computer object after the restart)' {
+    BeforeAll { $script:Dn = 'CN=iic-n01,OU=iic-clus01,OU=AzureLocal,DC=improbability,DC=cloud' }
+    It 'the name is already there: returned, no policy refresh' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params @{ mode = 'locate'; domain = 'improbability.cloud' } -Scenario @{ partOfDomain = $true; domain = 'improbability.cloud'; dn = $script:Dn }
+        $r.Answer.status | Should -Be 'located'
+        $r.Answer.dn | Should -Be $script:Dn
+        @($r.Calls | Where-Object { $_ -like 'gpupdate.exe*' }) | Should -BeNullOrEmpty
+    }
+    It 'not there yet: the computer policy is refreshed and the name read again' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params @{ mode = 'locate'; domain = 'improbability.cloud' } -Scenario @{ partOfDomain = $true; domain = 'improbability.cloud'; dn = ''; dnAfterGpupdate = $script:Dn }
+        $r.Answer.status | Should -Be 'located'
+        $r.Answer.dn | Should -Be $script:Dn
+        $r.Calls | Should -Contain 'gpupdate.exe /target:computer /force'
+    }
+    It 'never there: unverified with an empty name (not a guess)' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params @{ mode = 'locate'; domain = 'improbability.cloud' } -Scenario @{ partOfDomain = $true; domain = 'improbability.cloud'; dn = '' }
+        $r.Answer.status | Should -Be 'unverified'
+        $r.Answer.dn | Should -Be ''
+        @($r.Calls | Where-Object { $_ -like 'Add-Computer*' -or $_ -like 'MoveTo*' -or $_ -like 'shutdown*' }) | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Apply: error mapping order and local names' {
+    It 'maps the text "<Message>" to <Code>' -ForEach @(
+        @{ Message = 'Logon failure: account currently disabled.'; Code = '1331' }
+        @{ Message = 'Logon failure: unknown user name or bad password.'; Code = '1326' }
+        @{ Message = 'Computer failed to join domain with following error message: The account has been disabled.'; Code = '1331' }
+    ) {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam) -Secrets $script:Secret -Scenario @{ addComputerMessage = $Message }
+        $r.Answer.code | Should -Be $Code
+    }
+    It 'a bare "logon failure" with no further word is not called a bad password' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam) -Secrets $script:Secret -Scenario @{ addComputerMessage = 'Logon failure: the user has not been granted the requested logon type at this computer.' }
+        $r.Answer.label | Should -Be 'not mapped'
+    }
+    It 'the native code wins over the text: 1331 with a "logon failure" message is a disabled account' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam) -Secrets $script:Secret -Scenario @{ addComputerCode = 1331; addComputerMessage = 'Logon failure: the account is not what you think.' }
+        $r.Answer.code | Should -Be '1331'
+        $r.Answer.label | Should -Be 'account disabled'
+    }
+    It 'Win32 1398 (the clocks differ, whatever the language) is the clock skew' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam) -Secrets $script:Secret -Scenario @{ addComputerCode = 1398; addComputerMessage = 'Die Uhrzeit weicht ab.' }
+        $r.Answer.label | Should -Be 'clock skew'
+    }
+    It 'a local account with the short name is not the domain principal: the principal is still added' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params @{ mode = 'admins'; members = @('IIC\sg-a') } -Scenario @{ localAdmins = @('azl-admin', 'sg-a') }
+        @($r.Answer.added) | Should -Be @('IIC\sg-a')
+        $r.Calls | Should -Contain 'Add-LocalGroupMember Administrators IIC\sg-a'
+    }
+    It 'a principal Windows says is already a member (listed under another name) is not a failure' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params @{ mode = 'admins'; members = @('IIC\sg-a') } -Scenario @{ memberExists = '*sg-a' }
+        $r.Answer.status | Should -Be 'configured'
     }
 }
 
