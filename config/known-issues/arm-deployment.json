@@ -6,6 +6,7 @@
     "title": "One line.",
     "phase": "Validate, Deploy, or both. The entry only matches a failure in these phases.",
     "match": "All given members must match (regular expressions, case-insensitive). stepId is the portal's step number as text (the fullStepIndex, for example 0.41), stepName the step's name, error the step's exception text and the ARM error message together. At least one member is required.",
+    "when": "Optional. Facts about the run that must hold for the entry to match: sbeConfigured (true when the ARM parameters carry an SBE version, false when the deployment has no SBE). Each member counts as one more match member, so a conditional entry wins over an unconditional one for the same error. The run supplies the facts; Find-AzlArmKnownIssue -Context takes them.",
     "affectedBuilds": "Optional. OS build prefixes (12.2690.) for which the issue is known; a match is still reported for other builds, but marked as not yet seen on that build.",
     "cause": "Why it happens.",
     "remediation": "What to do, in order.",
@@ -280,6 +281,24 @@
       "confidence": "documented",
       "link": "https://learn.microsoft.com/azure/azure-local/update/solution-builder-extension",
       "evidence": "tplabs lab 2026-11-08, validate-3 (arm-report/validate-3/summary.md): step 0.60 InvokeEnvironmentChecker, SBE_Dell_16G-45n0c-Intel_5.0.2606.1616 with Solution version 12.2610.1004.50; Azure listed SBE_Dell_17G-Intel_5.0.2609.1715, SBE_Dell_16G-45n0c-Intel_5.0.2609.1611, SBE_Dell_AX-15G_5.0.2609.1511 and SBE_Dell_AX-14G_5.0.2609.1409 as validated. Dell's catalog (SBE_Discovery_Dell.xml, 2026-10-21) gives 5.0.2606.1616 Solution 12.*.1003.* and 12.*.1002.*, 5.0.2609.1611 Solution 12.*.1004.* and 12.*.1003.*."
+    },
+    {
+      "id": "sbe-referenced-but-not-configured",
+      "title": "Azure names an SBE problem, but no SBE is configured (hardware.sbe has no version)",
+      "phase": ["Validate", "Deploy"],
+      "when": { "sbeConfigured": false },
+      "match": { "error": "ErrorUnvalidatedSolutionAndSbeCombination|has not been validated with Solution version|Solution Builder Extension|\\bSBE\\b" },
+      "affectedBuilds": [],
+      "cause": "The Solution Builder Extension is opt-in and this deployment passed none: the ARM parameters carry no sbeVersion, sbeFamily, sbePublisher, sbeManifestSource, sbeManifestCreationDate, partnerProperties or partnerCredentiallist (the template defaults them to empty). Azure still reports an SBE, which points at an SBE package on the nodes (C:\\SBE, left by an earlier OS configuration run or delivered with the node image) that the deployment found and validated against the solution version. Without an SBE installed the update stack shows SBE version 2.1.0.0 (Microsoft Learn, solution-builder-extension).",
+      "remediation": [
+        "To deploy without an SBE: remove the SBE package from C:\\SBE on every node (the toolkit's OS configuration step does not delete it), confirm no SBE is installed, and run Validate again. Keep hardware.sbe without a version.",
+        "To deploy with an SBE: set hardware.sbe.version and hardware.sbe.family (and publisher, manifest_source, manifest_creation_date) to an SBE the OEM validated for the solution version; the precondition SbeValidatedWithSolution then checks the pair against the OEM catalog before Azure does. Run the OS configuration so the package is on every node, and run Validate again.",
+        "Read the failing step's full text in report.json (validate.failedSteps) for the SBE name and the solution version Azure compared."
+      ],
+      "retry": "after-fix",
+      "confidence": "pattern",
+      "link": "https://learn.microsoft.com/azure/azure-local/update/solution-builder-extension",
+      "evidence": "Pattern, not seen in a run yet. The toolkit can produce the state: the same Azure error as unvalidated-solution-sbe-combination (tplabs lab 2026-11-08, validate-3) with an SBE package still on the nodes and no hardware.sbe version in infrastructure.yml."
     }
   ]
 }
