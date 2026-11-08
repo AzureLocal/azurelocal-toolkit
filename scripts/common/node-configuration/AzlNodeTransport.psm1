@@ -162,9 +162,21 @@ function New-AzlWinRmTransport {
             $p = ConvertTo-AzlB64Json $Parameters
             $q = ConvertTo-AzlB64Json $Secrets
             try {
+                # The payload keeps its results in script-scope variables ($script:nics ...). That only works when it runs as a
+                # script FILE; run as a scriptblock the results are lost and every section comes back empty with no error. So
+                # it is written to a file on the node and the file is run in the same session (no child process, so the
+                # secrets never appear on a command line), then the file is removed.
                 $output = Invoke-Command -Session $session -ScriptBlock {
                     param($Text, $ParamsB64, $SecretsB64)
-                    & ([scriptblock]::Create($Text)) -ParamsB64 $ParamsB64 -SecretsB64 $SecretsB64
+                    $dir = Join-Path (Join-Path $env:ProgramData 'AzureLocal') 'osconfig'
+                    if (-not (Test-Path -LiteralPath $dir)) { New-Item -ItemType Directory -Force -Path $dir | Out-Null }
+                    $file = Join-Path $dir ('run-' + [guid]::NewGuid().ToString('N') + '.ps1')
+                    try {
+                        [IO.File]::WriteAllText($file, $Text, (New-Object Text.UTF8Encoding($true)))
+                        Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+                        & $file -ParamsB64 $ParamsB64 -SecretsB64 $SecretsB64
+                    }
+                    finally { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue }
                 } -ArgumentList $Script, $p, $q
                 [pscustomobject]@{ Output = ($output -join [Environment]::NewLine); Error = ''; Failed = $false; State = 'Succeeded' }
             }
