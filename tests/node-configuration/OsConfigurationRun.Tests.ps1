@@ -1287,7 +1287,8 @@ Describe 'Remote management profile in the run' {
     It 'dev: only the nodes'' addresses are added to TrustedHosts, and removed again' {
         $global:AzlTrustedHostsInitial = 'prior.example.invalid'
         $null = Invoke-Run -Infra (Set-Class 'dev') -Handoff (Get-TestHandoffDirectory)
-        $global:AzlTrustedHostsDuring | Should -Be 'prior.example.invalid,192.0.2.11,192.0.2.12'
+        # HOOK address-resolution: iic-n02's handoff adapter holds the DHCP address 192.0.2.120, which answers, so that address is added too.
+        $global:AzlTrustedHostsDuring | Should -Be 'prior.example.invalid,192.0.2.11,192.0.2.12,192.0.2.120'
         $global:AzlTrustedHosts | Should -Be 'prior.example.invalid'
     }
     It 'an unknown class is exit code 2, names the allowed values, and changes nothing' {

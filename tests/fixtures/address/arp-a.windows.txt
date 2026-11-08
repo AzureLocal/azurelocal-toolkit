@@ -1,0 +1,8 @@
+
+Interface: 192.0.2.50 --- 0x7
+  Internet Address      Physical Address      Type
+  192.0.2.1             00-00-5e-00-53-01     dynamic
+  192.0.2.120           00-00-5e-00-53-20     dynamic
+  192.0.2.121           00-00-5e-00-53-99     dynamic
+  192.0.2.255           ff-ff-ff-ff-ff-ff     static
+  224.0.0.22            01-00-5e-00-00-16     static

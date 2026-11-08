@@ -65,7 +65,8 @@
 .PARAMETER Step
     Limit the run to these steps. Default: all.
 .PARAMETER NodeAddress
-    Node name -> the address to open the session to first (default: the management address in the file, then the maintenance address, then the address the Arc agent reports).
+    Node name -> the address to open the session to first. Optional: without it the address is found (AzlNodeAddress.psm1): the node's ZTP handoff adapter with the management MAC, the address the Arc agent reports,
+    the management address in the file, then a MAC lookup on networking.management.subnet from this machine; the first that answers on TCP 5985/5986 wins and is named.
     A node installed from an ISO may still hold the address the installer gave it. The winrm_copy of the SBE package uses it too.
 .PARAMETER RetryTries
     How many times a node script is tried when its Arc run command ends in state Unknown (default 3, with a growing pause).
@@ -145,6 +146,7 @@ Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlNodeConfig
 Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlNodeTransport.psm1') -Force
 Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlGuardedChange.psm1') -Force
 Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlRemoting.psm1') -Force
+Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlNodeAddress.psm1') -Force # HOOK address-resolution
 Import-Module (Join-Path (Join-Path $common 'remoting') 'AzlRemotingProfile.psm1') -Force
 Import-Module (Join-Path (Join-Path $common 'remoting') 'AzlRemotingBootstrap.psm1') -Force
 
@@ -238,6 +240,10 @@ else {
         $nodeObject = @($infra.nodes | Where-Object { $_.name -eq $s.Name })[0]
         $override = if ($NodeAddress -and $NodeAddress.ContainsKey($s.Name)) { [string]$NodeAddress[$s.Name] } else { '' }
         $list = @(Get-AzlNodeRemotingAddress -Node $nodeObject -Override $override -ManagementMac $s.Management.Mac -ArcMachine $arcMachines[$s.Name])
+        # HOOK address-resolution: standalone, no -NodeAddress needed for a node on DHCP. The same order as the one-run command: override, handoff adapters by MAC, Arc, the file, MAC lookup. Probes only.
+        $resolved = Resolve-AzlNodeAddress -Infrastructure $infra -Node $nodeObject -Override $override -HandoffEntry (Get-AzlHandoffNode -Handoff $handoff -Name $s.Name -ArcMachineName $s.ArcMachineName) -ArcMachine $arcMachines[$s.Name]
+        if ($resolved.Answered) { Write-Line "$($s.Name): management address $($resolved.Address), found by $($resolved.Source)." } else { Write-Line $resolved.Message }
+        $list = @(@($resolved.Candidates | ForEach-Object { $_.Address }) + $list | Select-Object -Unique)
         [pscustomobject]@{ Name = $s.Name; Addresses = $list }
     }
     $arcAvailable = @($arcMachines.Keys | Where-Object { $arcMachines[$_].Status -eq 'Connected' })

@@ -53,6 +53,8 @@ Import-Module (Join-Path $PSScriptRoot 'AzlRemoting.psm1')
 Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'remoting' 'AzlRemotingProfile.psm1'))
 Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'remoting' 'AzlRemotingSession.psm1'))
 Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'remoting' 'AzlRemotingBootstrap.psm1'))
+# HOOK address-resolution: the node's current management address (override, ZTP handoff, Arc, the file, MAC lookup); the logic lives in AzlNodeAddress.psm1.
+Import-Module (Join-Path $PSScriptRoot 'AzlNodeAddress.psm1')
 
 $script:SetScript = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', 'deploy', '04-cluster-deployment', 'phase-03-os-configuration', 'Set-AzureLocalNodeConfiguration.ps1'))
 # The order the steps run in (the same as AzlNodeConfiguration): Sbe is last, so a package that can't be delivered never stops the others.
@@ -599,6 +601,16 @@ function Invoke-AzlNodeBootstrap {
     [pscustomobject]@{ Done = [bool]$result.Ok; Eligible = $true; Route = [string]$result.Route; Note = $(if ($result.Ok) { "WinRM was opened through the $($result.Route) bootstrap." } else { "The bootstrap failed: $($result.Reason)" }) }
 }
 
+# HOOK address-resolution: the glue between the run and AzlNodeAddress.psm1. The override is the -NodeAddress / nodeAddress value of the node; the port probe
+# is this module's Test-AzlWinRmPort (a TCP connect, no credential). -IgnoreOverride is for the look after a change of address.
+function Resolve-AzlRunNodeAddress {
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][System.Collections.IDictionary]$Node, [AllowNull()][object]$HandoffEntry, [AllowNull()][object]$ArcMachine, [switch]$IgnoreOverride)
+    $name = [string]$Node['name']
+    $override = if (-not $IgnoreOverride -and $Context.NodeAddress -and $Context.NodeAddress.ContainsKey($name) -and $Context.NodeAddress[$name]) { [string]$Context.NodeAddress[$name] } else { '' }
+    Resolve-AzlNodeAddress -Infrastructure $Context.Infra -Node $Node -Override $override -HandoffEntry $HandoffEntry -ArcMachine $ArcMachine -PortTest { param($a, $p) Test-AzlWinRmPort -Address $a -Port $p } -Setting (Get-AzlProp $Context 'AddressResolution' @{})
+}
+
 function Get-AzlNodeEvidence {
     <#
     .SYNOPSIS
@@ -639,10 +651,14 @@ function Get-AzlNodeEvidence {
     $addresses = @(Get-AzlNodeAddressCandidate -Infrastructure $infra -Node $Node -Override $Context.NodeAddress)
     if ($arc) { $addresses = @($addresses + @(Get-AzlNodeRemotingAddress -Node $Node -ManagementMac ([string](Get-AzlProp (Get-AzlManagementAdapter -Infrastructure $infra -Node $Node) 'MacAddress' '')) -ArcMachine $arc) | Select-Object -Unique) }
     $winRm = $null; $winRmAddress = ''; $winRmNote = ''; $useSsl = $false; $bootstrapEligible = $false; $bootstrapNote = ''
+    $resolved = $null
     # The effective transport decides whether WinRM is worth asking, not only the -Transport parameter: the run settings and the master file can choose Arc too.
     $effectiveKind = [string](Get-AzlProp $Context 'TransportSetting.Kind' (Get-AzlProp $Context 'TransportRequested' 'Auto'))
     if ($effectiveKind -notin 'ArcRunCommand') {
-        if ($addresses.Count -eq 0) { $winRm = $false; $winRmNote = 'no management address in the file to try' }
+        # HOOK address-resolution: the candidates, in order, with the sources named (override, ZTP handoff, Arc, the file, MAC lookup). Probes only.
+        $resolved = Resolve-AzlRunNodeAddress -Context $Context -Node $Node -HandoffEntry $entry -ArcMachine $arc
+        $addresses = @($resolved.Candidates | ForEach-Object { $_.Address })
+        if ($addresses.Count -eq 0) { $winRm = $false; $winRmNote = $resolved.Message }
         else {
             $winRm = $false
             $endpoint = $null
@@ -656,7 +672,7 @@ function Get-AzlNodeEvidence {
                 $attempt = Invoke-AzlNodeBootstrap -Context $Context -Node $name -Address $addresses -ArcResourceId $(if ($arc) { [string]$arc.ResourceId } else { '' }) -ReadOnly
                 $bootstrapEligible = [bool]$attempt.Eligible
                 $bootstrapNote = [string]$attempt.Note
-                $winRmNote = if ($endpoint -and $endpoint.Message) { "$($endpoint.Message)$(if ($attempt.Note) { " $($attempt.Note)" })" } else { "no answer on TCP 5985 at $($addresses -join ', ')" }
+                $winRmNote = if ($endpoint -and $endpoint.Message) { "$($endpoint.Message)$(if ($attempt.Note) { " $($attempt.Note)" }) $($resolved.Message)" } else { $resolved.Message }
             }
         }
     }
@@ -677,6 +693,12 @@ function Get-AzlNodeEvidence {
         Addresses            = $addresses
         BootstrapEligible    = $bootstrapEligible
         BootstrapNote        = $bootstrapNote
+        # HOOK address-resolution: where the address came from and what was tried (empty when Arc Run Command is the transport and no address is needed).
+        AddressSource        = $(if ($resolved -and $winRm -eq $true) { [string](@($resolved.Candidates | Where-Object { $_.Address -eq $winRmAddress })[0].Source) } else { '' })
+        AddressMessage       = $(if ($resolved) { [string]$resolved.Message } else { '' })
+        AddressTried         = $(if ($resolved) { @($resolved.Tried) } else { @() })
+        AddressNotes         = $(if ($resolved) { @($resolved.Notes) } else { @() })
+        AddressCandidates    = $(if ($resolved) { @($resolved.Candidates) } else { @() })
     }
 }
 
@@ -713,7 +735,7 @@ function Get-AzlRunSetting {
         foreach ($k in $file.Keys) { $result[$k] = $file[$k] }
     }
     if ($Settings) { foreach ($k in $Settings.Keys) { $result[$k] = $Settings[$k] } }
-    $known = @('retryTries', 'retryDelaySeconds', 'maxPasses', 'noRestart', 'failOnPendingChanges', 'nodeAddress', 'networkRollbackMinutes', 'networkStableSeconds', 'reconnectWaitMinutes', 'staleRunCommandMinutes', 'addressProbe', 'remoting', 'approvedBootstrap', 'bootstrapArcWaitSeconds')
+    $known = @('retryTries', 'retryDelaySeconds', 'maxPasses', 'noRestart', 'failOnPendingChanges', 'nodeAddress', 'networkRollbackMinutes', 'networkStableSeconds', 'reconnectWaitMinutes', 'staleRunCommandMinutes', 'addressProbe', 'remoting', 'approvedBootstrap', 'bootstrapArcWaitSeconds', 'addressResolution') # HOOK address-resolution: addressResolution = @{ sweep; allowWideSubnet; pingTimeoutMilliseconds }
     foreach ($k in $result.Keys) { if ($k -notin $known) { throw (Get-AzlInputError "Unknown run setting '$k'. Known: $($known -join ', ').") } }
     try { $null = Get-AzlGuardSetting -Setting $result; $null = Get-AzlRemotingSetting -Setting $result } catch { throw (Get-AzlInputError $_.Exception.Message) }
     return $result
@@ -1002,7 +1024,7 @@ function Test-AzlIsoPrecondition {
     $problems = [System.Collections.Generic.List[string]]::new()
     $seen = $null
     $name = $Record.name
-    if (-not $Record.address) { $problems.Add("${name}: no address to open a WinRM session to. Put nodes[].management.ip_address or maintenance_address in the file, or pass -NodeAddress."); return [pscustomobject]@{ Problems = $problems.ToArray(); Seen = $null } }
+    if (-not $Record.address) { $problems.Add("${name}: no address to open a WinRM session to. Put nodes[].management.ip_address or maintenance_address in the file, or pass -NodeAddress.$(if (Get-AzlProp $Record.evidence 'AddressMessage' '') { ' ' + (Get-AzlProp $Record.evidence 'AddressMessage' '') })"); return [pscustomobject]@{ Problems = $problems.ToArray(); Seen = $null } }
     if (-not $Context.CredentialInfo.Credential) {
         $problems.Add("${name}: no local administrator credential. $($Context.CredentialInfo.Error) Pass -Credential, or make identity.local_admin.password readable (Key Vault get on the secret).")
         return [pscustomobject]@{ Problems = $problems.ToArray(); Seen = $null }
@@ -1189,6 +1211,12 @@ function Resolve-AzlWinRmAddress {
     foreach ($address in @(Get-AzlNodeAddressCandidate -Infrastructure $Context.Infra -Node $Node -Override $Context.NodeAddress)) {
         $endpoint = Resolve-AzlNodeEndpoint -Context $Context -Address $address
         if ($endpoint.Answers) { $Record.address = $address; $Record.useSsl = [bool]$endpoint.UseSsl; return }
+    }
+    # HOOK address-resolution: none of the known addresses answers (a DHCP lease can change): resolve again, ignoring the address held so far.
+    $again = Resolve-AzlRunNodeAddress -Context $Context -Node $Node -HandoffEntry $null -ArcMachine $null -IgnoreOverride
+    if ($again.Answered) {
+        $endpoint = Resolve-AzlNodeEndpoint -Context $Context -Address $again.Address
+        if ($endpoint.Answers) { $Record.address = $again.Address; $Record.useSsl = [bool]$endpoint.UseSsl; $Context.NodeAddress[$Record.name] = $again.Address }
     }
 }
 
@@ -1484,8 +1512,10 @@ function ConvertTo-AzlNodeReport {
             handoff = [ordered]@{ present = $Record.evidence.HandoffPresent; ready = $Record.evidence.HandoffReady; file = $Record.evidence.HandoffFile }
             arc     = [ordered]@{ found = $Record.evidence.ArcFound; status = $Record.evidence.ArcStatus; error = $Record.evidence.ArcError }
             winrm   = [ordered]@{ answers = $Record.evidence.WinRmAnswers; address = $Record.evidence.WinRmAddress; note = $Record.evidence.WinRmNote }
+            address = [ordered]@{ source = [string](Get-AzlProp $Record.evidence 'AddressSource' ''); tried = @(Get-AzlProp $Record.evidence 'AddressTried' @()); notes = @(Get-AzlProp $Record.evidence 'AddressNotes' @()) } # HOOK address-resolution
         }
         address        = $Record.address
+        addressSource  = $Record.addressSource # HOOK address-resolution: override | ztp-handoff | arc | infrastructure-file | mac-lookup; what was tried is in evidence.address
         stepTransports = [ordered]@{ all = $Record.transport; bootstrap = $(if ($Record.bootstrap.used) { [string]$Record.bootstrap.transport } else { '' }) }
         bootstrap      = $Record.bootstrap
         guard          = @($Record.guard)
@@ -1553,7 +1583,7 @@ function Get-AzlNodeRecord {
     [ordered]@{
         name = [string]$Node['name']; declared = $Resolution.Declared; method = $method; methodSource = $Resolution.Source; methodWarnings = @($Resolution.Warnings)
         transport = $Resolution.Transport; address = $(if ($Resolution.Transport -eq 'WinRM') { $evidence.WinRmAddress } else { '' }); useSsl = [bool]($evidence.PSObject.Properties['UseSsl'] -and $evidence.UseSsl)
-        handoffFile = $evidence.HandoffFile; evidence = $evidence
+        handoffFile = $evidence.HandoffFile; evidence = $evidence; addressSource = [string](Get-AzlProp $evidence 'AddressSource' '') # HOOK address-resolution
         steps = $steps; setSteps = @($steps | Where-Object { $_ -in $script:NodeSteps })
         status = 'pending'; plan = @(); changes = @(); errors = @(); warnings = @(); verification = @(); wipe = @(); wipeItems = @()
         ports = @(); sanDisks = @(); hostname = ''; osVersion = ''; guard = @(); events = @(); bootstrap = [ordered]@{ used = $false }
@@ -1677,6 +1707,9 @@ function Invoke-AzlOsConfiguration {
             Remoting = $null; ApprovedBootstrap = $false; BootstrapWindow = @{}; Bootstraps = [System.Collections.Generic.List[object]]::new(); TrustedHosts = $null
             BootstrapArcWaitSeconds = $(if ($run.ContainsKey('bootstrapArcWaitSeconds')) { [int]$run.bootstrapArcWaitSeconds } else { 180 })
         }
+        # HOOK address-resolution: the sweep settings for the MAC lookup (sweep, allowWideSubnet, pingTimeoutMilliseconds).
+        $addressSetting = if ($run.ContainsKey('addressResolution') -and $run.addressResolution -is [System.Collections.IDictionary]) { $run.addressResolution } else { @{} }
+        $context | Add-Member -NotePropertyName AddressResolution -NotePropertyValue $addressSetting
         $context.TransportSetting = Get-AzlRemotingSetting -Infrastructure $infra -Setting $run -Transport $Transport
         foreach ($k in 'networkRollbackMinutes', 'networkStableSeconds', 'reconnectWaitMinutes', 'staleRunCommandMinutes', 'addressProbe', 'remoting') { if ($run.ContainsKey($k)) { $context.GuardSettings[$k] = $run[$k] } }
         if (-not $context.GuardSettings.ContainsKey('networkRollbackMinutes') -and (Get-AzlProp $infra 'os_configuration.network.confirm_minutes')) { $context.GuardSettings.networkRollbackMinutes = [int](Get-AzlProp $infra 'os_configuration.network.confirm_minutes') }
@@ -1737,14 +1770,23 @@ function Invoke-AzlOsConfiguration {
                 Send-AzlRunEvent -Context $context -State MethodResolved -Record $record -Level $(if (@($resolution.Warnings).Count) { 'Warning' } else { 'Info' }) `
                     -Evidence "Declared os_install '$($resolution.Declared)'; evidence: $seen; so the $($resolution.Method) path ($($resolution.Source)) over $($resolution.Transport).$(if (@($resolution.Warnings).Count) { ' Warning: ' + (@($resolution.Warnings) -join ' ') })" `
                     -Data (Get-AzlMethodResolvedData -Context $context -Record $record -Resolution $resolution)
-                Send-AzlRunEvent -Context $context -State TransportResolved -Record $record -Evidence "$($record.name) is reached over $($record.transport)$(if ($record.address) { ' at ' + $record.address }) for every step (set by the $(Get-AzlProp $context.TransportSetting 'TransportSourceLabel' 'run settings'))." -Data @{ forced = ($Transport -ne 'Auto'); source = [string](Get-AzlProp $context.TransportSetting 'TransportSource' ''); address = [string]$record.address }
+                Send-AzlRunEvent -Context $context -State TransportResolved -Record $record -Evidence "$($record.name) is reached over $($record.transport)$(if ($record.address) { ' at ' + $record.address })$(if ($record.addressSource) { ' (address found by ' + $record.addressSource + ')' }) for every step (set by the $(Get-AzlProp $context.TransportSetting 'TransportSourceLabel' 'run settings'))." -Data @{ forced = ($Transport -ne 'Auto'); source = [string](Get-AzlProp $context.TransportSetting 'TransportSource' ''); address = [string]$record.address; addressSource = [string]$record.addressSource; addressTried = @(Get-AzlProp $evidence 'AddressTried' @()) }
             }
             else {
                 Send-AzlRunEvent -Context $context -State NodeFailed -Record $record -Level Error -Evidence "No method could be resolved: $(@($resolution.Errors) -join ' ')" -NextAction 'Pass the node''s handoff (-HandoffPath), sign in to Azure, or make the node reachable; then run again.'
             }
-            if ($resolution.Method) { Write-AzlLine "  $($record.name): method $($record.method) ($($record.methodSource); declared $declared), transport $($record.transport)$(if ($record.address) { ", address $($record.address)" })." }
+            if ($resolution.Method) { Write-AzlLine "  $($record.name): method $($record.method) ($($record.methodSource); declared $declared), transport $($record.transport)$(if ($record.address) { ", address $($record.address)$(if ($record.addressSource) { " (found by $($record.addressSource))" })" })." }
+            foreach ($addressNote in @(Get-AzlProp $evidence 'AddressNotes' @())) { Write-Warning $addressNote } # HOOK address-resolution: several answer / the override does not answer
         }
         if ($inputProblems.Count) { throw (Get-AzlInputError (($inputProblems | ForEach-Object { "- $_" }) -join [Environment]::NewLine)) }
+
+        # HOOK address-resolution: an address that was found (a DHCP address from the handoff, Arc or the neighbor table) is not in the file, so the exact TrustedHosts
+        # policy set above doesn't cover it yet. Add the ones that answered, before any session opens; the restore at the end puts back the value from before this run.
+        $foundAddresses = @($records | Where-Object { $_.transport -eq 'WinRM' -and $_.address -and $_.address -notin $trustedAddresses } | ForEach-Object { [string]$_.address } | Select-Object -Unique)
+        if ($foundAddresses.Count -and $trustedSession) {
+            $moreTrusted = Set-AzlTrustedHostsPolicy -RemotingProfile $remotingProfile -Address @($trustedAddresses + $foundAddresses) -Store $trustedStore -Confirm:$false
+            if ($moreTrusted.Changed) { $moreTrusted.Previous = $trustedSession.Previous; $trustedSession = $moreTrusted; $context.TrustedHosts = $moreTrusted }
+        }
 
         # transport needs
         $arcNodes = @($records | Where-Object { $_.transport -eq 'ArcRunCommand' })
@@ -1767,7 +1809,7 @@ function Invoke-AzlOsConfiguration {
             $unreachable = [System.Collections.Generic.List[object]]::new()
             foreach ($f in $findings) {
                 $r = $records | Where-Object { $_.name -eq $f.Node } | Select-Object -First 1
-                if ($f.Reachable) { $r.address = $f.Address; continue }
+                if ($f.Reachable) { $r.address = $f.Address; $r.addressSource = [string](@(Get-AzlProp $r.evidence 'AddressCandidates' @() | Where-Object { $_.Address -eq $f.Address })[0].Source); continue } # HOOK address-resolution: the source of the address that answered
                 # The one-time Arc bootstrap is allowed only where the environment class allows a bootstrap and, in production and dmz, the pipeline approved it.
                 $bootstrapPermitted = $context.Remoting -and (Test-AzlBootstrapPermitted -Bootstrap $context.Remoting.Bootstrap -Class $context.Remoting.Class -ApprovedBootstrap:$context.ApprovedBootstrap).Permitted
                 # The bootstrap is the profile's (Invoke-AzlWinRmBootstrap, routes smb and arc): the scope, RDP, ICMP and HTTP window come from the profile.
@@ -1783,7 +1825,11 @@ function Invoke-AzlOsConfiguration {
                 if ($r.evidence.PSObject.Properties['BootstrapEligible'] -and $r.evidence.BootstrapEligible) { $r.bootstrap = [ordered]@{ used = $false; pending = $true; cidrs = @($context.Remoting.Firewall.RemoteAddress); routes = $bootRoutes }; continue }
                 $unreachable.Add($f)
             }
-            if ($unreachable.Count) { throw (Get-AzlInputError ("PowerShell remoting can't reach $($unreachable.Count) node(s); nothing was changed.$([Environment]::NewLine)$(Format-AzlRemotingPreCheckFinding -Finding @($unreachable))")) }
+            if ($unreachable.Count) {
+                # HOOK address-resolution: what the address resolution tried for each node that can't be reached.
+                $resolutionText = (@($unreachable | ForEach-Object { $f = $_; $r = $records | Where-Object { $_.name -eq $f.Node } | Select-Object -First 1; [string](Get-AzlProp $r.evidence 'AddressMessage' '') } | Where-Object { $_ }) -join [Environment]::NewLine)
+                throw (Get-AzlInputError ("PowerShell remoting can't reach $($unreachable.Count) node(s); nothing was changed.$([Environment]::NewLine)$(Format-AzlRemotingPreCheckFinding -Finding @($unreachable))$(if ($resolutionText) { [Environment]::NewLine + $resolutionText })"))
+            }
         }
 
         # ISO path: route, credentials, OS
