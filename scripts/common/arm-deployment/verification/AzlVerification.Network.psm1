@@ -24,12 +24,68 @@ Import-Module ([IO.Path]::Combine($PSScriptRoot, 'AzlVerification.NodeCommon.psm
 
 $script:Src = Get-AzlVerConstant Source
 
-function Find-AzlVerNic {
-    # The adapter of the node's snapshot by name (case insensitive), or $null.
-    param($Nics, [string]$Name)
-    @(ConvertTo-AzlVerList $Nics | Where-Object { [string](Get-AzlProp $_ 'n' '') -ieq $Name }) | Select-Object -First 1
+function ConvertTo-AzlVerMacKey {
+    # A MAC address as 12 lower case hex digits, whatever separator the file or the node uses.
+    param([AllowNull()][string]$Mac)
+    (([string]$Mac) -replace '[^0-9A-Fa-f]', '').ToLowerInvariant()
 }
 
+function Format-AzlVerMac {
+    param([AllowNull()][string]$Mac)
+    $k = ConvertTo-AzlVerMacKey $Mac
+    if ($k.Length -eq 12) { return (($k -split '(?<=\G.{2})(?!$)') -join ':').ToUpperInvariant() }
+    return $k
+}
+
+function Get-AzlVerFilePort {
+    <#
+    .SYNOPSIS
+        The ports of one node as the file spells them (nodes[].network_adapters[]): Name, Mac (normalised), Roles (lower case), Used (any role but unused),
+        Slot, SpeedGbps, VlanId, Ip. Nothing here depends on how a vendor or an installer names a port.
+    #>
+    param($NodeInfo)
+    if (-not $NodeInfo) { return @() }
+    @(foreach ($a in @($NodeInfo.Adapters)) {
+            $roles = @(ConvertTo-AzlVerList (Get-AzlProp $a 'roles' @()) | ForEach-Object { ([string]$_).ToLowerInvariant() })
+            $vlan = Get-AzlProp $a 'vlan_id' $null
+            [pscustomobject]@{
+                Name = [string](Get-AzlProp $a 'name' ''); Mac = (ConvertTo-AzlVerMacKey ([string](Get-AzlProp $a 'mac_address' ''))); Roles = $roles
+                Used = ($roles.Count -gt 0 -and 'unused' -notin $roles); Slot = [string](Get-AzlProp $a 'slot' ''); SpeedGbps = [double](Get-AzlProp $a 'speed_gbps' 0)
+                VlanId = $(if ($null -ne $vlan -and "$vlan" -ne '') { [int]$vlan } else { $null }); Ip = [string](Get-AzlProp $a 'ip_address' '')
+            }
+        })
+}
+
+function Get-AzlVerOsReportMap {
+    # node -> (MAC -> OS name) from the OS configuration report in the context, or $null when there is none.
+    param([Parameter(Mandatory)]$Context)
+    $report = Get-AzlProp $Context 'OsReport'
+    if (-not $report) { return $null }
+    $map = @{}
+    foreach ($n in @(ConvertTo-AzlVerList (Get-AzlProp $report 'nodes' @()))) {
+        $byMac = @{}
+        foreach ($port in @(ConvertTo-AzlVerList (Get-AzlProp $n 'ports' @()))) {
+            $mac = ConvertTo-AzlVerMacKey ([string](Get-AzlProp $port 'mac' ''))
+            if ($mac) { $byMac[$mac] = [string](Get-AzlProp $port 'osName' '') }
+        }
+        $map[[string](Get-AzlProp $n 'name' '')] = $byMac
+    }
+    return $map
+}
+
+function Find-AzlVerNic {
+    <#
+    .SYNOPSIS
+        The NIC of the node's snapshot that a port of the file is. With the node of the file (-Node) and a MAC in the file, by MAC: the file's name and the OS name
+        are two different things and may differ per vendor, slot and node. Without a MAC in the file, by name (case insensitive), or $null.
+    #>
+    param($Nics, [string]$Name, $Node)
+    if ($Node) {
+        $port = @(Get-AzlVerFilePort $Node | Where-Object { $_.Name -ieq $Name -and $_.Mac }) | Select-Object -First 1
+        if ($port) { return (@(ConvertTo-AzlVerList $Nics | Where-Object { (ConvertTo-AzlVerMacKey ([string](Get-AzlProp $_ 'mac' ''))) -eq $port.Mac }) | Select-Object -First 1) }
+    }
+    @(ConvertTo-AzlVerList $Nics | Where-Object { [string](Get-AzlProp $_ 'n' '') -ieq $Name }) | Select-Object -First 1
+}
 function Get-AzlVerIntentAdapter {
     param($Intent)
     @($Intent | ForEach-Object { $_.Adapters } | ForEach-Object { $_ })
@@ -38,7 +94,7 @@ function Get-AzlVerIntentAdapter {
 function Get-AzlVerificationCheckDefinition {
     <#
     .SYNOPSIS
-        The check definitions of the NETWORK category (NW-001 to NW-012).
+        The check definitions of the NETWORK category (NW-001 to NW-013).
     #>
     [CmdletBinding()]
     param()
@@ -67,7 +123,7 @@ function Get-AzlVerificationCheckDefinition {
                     $problems = @()
                     foreach ($i in $intents) {
                         foreach ($a in $i.Adapters) {
-                            $nic = Find-AzlVerNic $nics $a
+                            $nic = Find-AzlVerNic $nics $a $N
                             if (-not $nic) { $problems += "adapter '$a' of intent $($i.Name) does not exist (the node has: $(Join-AzlVerList @($nics | ForEach-Object { $_.n })))" }
                             elseif ([string]$nic.st -ne 'Up') { $problems += "adapter '$a' of intent $($i.Name) is $($nic.st), not Up" }
                         }
@@ -89,7 +145,7 @@ function Get-AzlVerificationCheckDefinition {
                         $isStorage = ('storage' -in $i.Traffic)
                         $wantRdma = Test-AzlVerNetworkDirect $i
                         foreach ($a in $i.Adapters) {
-                            $nic = Find-AzlVerNic $nics $a
+                            $nic = Find-AzlVerNic $nics $a $N
                             if (-not $nic) { continue }   # NW-001 reports it
                             $capable = [bool](Get-AzlProp $nic 'rdmaCapable' $false)
                             $enabled = [bool](Get-AzlProp $nic 'rdmaEnabled' $false)
@@ -127,7 +183,7 @@ function Get-AzlVerificationCheckDefinition {
                     foreach ($i in $intents) {
                         $speeds = @()
                         foreach ($a in $i.Adapters) {
-                            $nic = Find-AzlVerNic $nics $a
+                            $nic = Find-AzlVerNic $nics $a $N
                             if (-not $nic) { continue }
                             $g = [math]::Round([double](Get-AzlProp $nic 'speed' 0) / 1e9, 1)
                             $speeds += $g; $shown += "$a=${g}G"
@@ -275,7 +331,7 @@ function Get-AzlVerificationCheckDefinition {
                     param($Name, $D, $N)
                     $nics = @(ConvertTo-AzlVerList (Get-AzlProp $D 'nics' @()))
                     $inbox = @()
-                    foreach ($i in $intents) { foreach ($a in $i.Adapters) { $nic = Find-AzlVerNic $nics $a; if ($nic -and [string](Get-AzlProp $nic 'drvProv' '') -match '^Microsoft') { $inbox += "$a ($($nic.desc), driver $($nic.drvVer))" } } }
+                    foreach ($i in $intents) { foreach ($a in $i.Adapters) { $nic = Find-AzlVerNic $nics $a $N; if ($nic -and [string](Get-AzlProp $nic 'drvProv' '') -match '^Microsoft') { $inbox += "$a ($($nic.desc), driver $($nic.drvVer))" } } }
                     if ($inbox) { New-AzlVerResult Failed "$Name uses the inbox Microsoft driver on: $($inbox -join '; '). Learn: install the latest OEM driver before configuring networking; important capabilities may not surface with the inbox driver." 'Install the OEM driver (pnputil /add-driver <inf> /install, or the OS configuration Drivers step from an SBE), then restart.' -Node $Name -Evidence ($inbox -join '; ') }
                     else { New-AzlVerResult Passed "$Name's intent adapters use vendor drivers." -Node $Name }
                 }
@@ -323,7 +379,7 @@ function Get-AzlVerificationCheckDefinition {
                     $warn = @()
                     foreach ($i in $intents) {
                         foreach ($a in $i.Adapters) {
-                            $nic = Find-AzlVerNic $nics $a
+                            $nic = Find-AzlVerNic $nics $a $N
                             if (-not $nic) { continue }
                             $j = [string](Get-AzlProp $nic 'jumbo' '')
                             if (-not $mtus.ContainsKey($a)) { $mtus[$a] = @{} }
@@ -335,6 +391,131 @@ function Get-AzlVerificationCheckDefinition {
                     else { New-AzlVerResult Passed "$Name has jumbo frames only where storage traffic runs." -Node $Name }
                 }
                 foreach ($a in $mtus.Keys) { if (@($mtus[$a].Values | Select-Object -Unique).Count -gt 1) { New-AzlVerResult Warning "Adapter '$a' has different jumbo packet values on the nodes: $((@($mtus[$a].GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" })) -join ', ')." 'Set the same value on every node (Network ATC applies one per intent).' -Evidence $a } }
+            }))
+
+    $defs.Add((New-AzlVerDefinition -Id 'NW-013' -Category network -Title 'Physical ports against the file, per node: every used port of the file is a real NIC (found by MAC), Up, at speed, not virtual, with one OS name on every node; intents and storage networks point at them' `
+                -Source "$($script:Src.HostNet); $($script:Src.NetPlan) (Decision 6, 7); the file: nodes[].network_adapters, networking.intents[].adapters, networking.cluster_networks[]" -Run {
+                param($Context)
+                $infra = Get-AzlVerInfra $Context
+                $intents = @(Get-AzlVerIntent $Context)
+                $min = [double](Get-AzlVerSetting $Context 'verificationMinLinkGbps')
+                $arch = Get-AzlVerArchitecture $Context
+                $clusterNets = @(ConvertTo-AzlVerList (Get-AzlProp $infra 'networking.cluster_networks' @()))
+                $mgmtVlan = Get-AzlProp $infra 'networking.management.vlan_id' $null
+                $reportMap = Get-AzlVerOsReportMap $Context
+                $osNames = @{}
+                # File only: no adapter in two intents (the same adapter name may appear once in the file's intents).
+                $dup = @(Get-AzlVerIntentAdapter $intents | Group-Object { $_.ToLowerInvariant() } | Where-Object { $_.Count -gt 1 } | ForEach-Object { $_.Group[0] })
+                if ($dup.Count) { New-AzlVerResult Failed "Adapter(s) $(Join-AzlVerList $dup) are in more than one intent of the file." 'Each adapter belongs to exactly one intent: fix networking.intents[].adapters.' -Evidence ($dup -join ',') }
+                Invoke-AzlVerPerNode -Context $Context -Section 'GetAdapters' -Body {
+                    param($Name, $D, $N)
+                    $nics = @(ConvertTo-AzlVerList (Get-AzlProp $D 'nics' @()))
+                    $ndis = @(ConvertTo-AzlVerList (Get-AzlProp $D 'remoteNdis' @()) | ForEach-Object { [string](Get-AzlProp $_ 'n' '') } | Where-Object { $_ })
+                    $ports = @(Get-AzlVerFilePort $N)
+                    if (-not $ports.Count) { return New-AzlVerResult Skipped "The file lists no network_adapters for $Name, so its ports cannot be compared with the node." 'Fill nodes[].network_adapters (name, mac_address, roles) in the file.' -Node $Name }
+                    $failed = [System.Collections.Generic.List[string]]::new(); $unread = [System.Collections.Generic.List[string]]::new(); $warn = [System.Collections.Generic.List[string]]::new()
+                    $byName = @{}; foreach ($p in $ports) { $byName[$p.Name.ToLowerInvariant()] = $p }
+                    $inIntent = @{}   # lower file name -> intent
+                    foreach ($i in $intents) { foreach ($a in $i.Adapters) { $inIntent[$a.ToLowerInvariant()] = $i } }
+                    $rows = [System.Collections.Generic.List[string]]::new()
+                    $resolved = @{}
+                    foreach ($p in @($ports | Where-Object Used)) {
+                        if (-not $p.Mac) { $unread.Add("file port '$($p.Name)' has no mac_address, so it cannot be matched to a NIC of $Name"); $rows.Add("file '$($p.Name)' | MAC (none in the file) | OS name ? | link ? | roles $($p.Roles -join '+')"); continue }
+                        $nic = Find-AzlVerNic $nics $p.Name $N
+                        if (-not $nic) {
+                            $failed.Add("file port '$($p.Name)' (MAC $(Format-AzlVerMac $p.Mac)) is not on the node: no physical NIC has that MAC (the node has $(Join-AzlVerList @($nics | ForEach-Object { "$($_.n)=$(Format-AzlVerMac (Get-AzlProp $_ 'mac' ''))" })))")
+                            $rows.Add("file '$($p.Name)' | MAC $(Format-AzlVerMac $p.Mac) | NOT ON THE NODE | roles $($p.Roles -join '+')"); continue
+                        }
+                        $resolved[$p.Name] = $nic
+                        $os = [string]$nic.n
+                        if (-not $osNames.ContainsKey($p.Name.ToLowerInvariant())) { $osNames[$p.Name.ToLowerInvariant()] = @{ File = $p.Name; Nodes = @{} } }
+                        $osNames[$p.Name.ToLowerInvariant()].Nodes[$Name] = $os
+                        if ([string]$nic.desc -match '(?i)remote ndis|rndis|\busb\b|virtual|vethernet|multiplexor|wi-?fi|bluetooth' -or $os -in $ndis) { $failed.Add("file port '$($p.Name)' resolves to '$os' ($($nic.desc)), which is a virtual, USB or Remote NDIS device, not a physical port") }
+                        if ($reportMap) {
+                            if ($reportMap.ContainsKey($Name) -and $reportMap[$Name].ContainsKey($p.Mac)) {
+                                if ([string]$reportMap[$Name][$p.Mac] -cne $os) { $failed.Add("file port '$($p.Name)': the node calls the NIC '$os' but the OS configuration report says '$($reportMap[$Name][$p.Mac])' (the deployment uses the report's name; run the OS configuration again or read the node again)") }
+                            }
+                            else { $unread.Add("the OS configuration report has no port with MAC $(Format-AzlVerMac $p.Mac) for $Name, so the name the deployment will use was not compared") }
+                        }
+                        $mine = $inIntent[$p.Name.ToLowerInvariant()]
+                        $g = [math]::Round([double](Get-AzlProp $nic 'speed' 0) / 1e9, 1)
+                        $up = ([string]$nic.st -eq 'Up')
+                        if (-not $up) {
+                            $why = "file port '$($p.Name)' ('$os') is $($nic.st), not Up$(if ($mine) { " (it is in intent $($mine.Name))" })"
+                            if ($mine) { $failed.Add($why) } else { $warn.Add($why) }
+                        }
+                        if ($up -and $mine) {
+                            $need = if (('storage' -in $mine.Traffic) -or ('compute' -in $mine.Traffic)) { $min } else { 1 }
+                            if ($g -lt $need) { $failed.Add("file port '$($p.Name)' ('$os') runs at $g Gbps; intent $($mine.Name) ($($mine.Traffic -join '+')) needs at least $need Gbps") }
+                        }
+                        if ($up -and $p.SpeedGbps -gt 0 -and $g -gt 0 -and $g -lt ($p.SpeedGbps * 0.9)) { $warn.Add("file port '$($p.Name)' ('$os') runs at $g Gbps, the file says $($p.SpeedGbps) Gbps") }
+                        $vlan = Get-AzlProp $nic 'vlan' $null
+                        $rows.Add("file '$($p.Name)' | MAC $(Format-AzlVerMac $p.Mac) | OS '$os' | $($nic.st) | ${g}G | roles $($p.Roles -join '+') | intent $(if ($mine) { $mine.Name } else { '-' })$(if ($null -ne $vlan -and "$vlan" -ne '') { " | VLAN $vlan" })")
+                    }
+                    if (-not $reportMap) { $unread.Add('no OS configuration report was given, so the names the deployment will use were not compared with the node') }
+                    # Speed of the ports of one intent is one speed.
+                    foreach ($i in $intents) {
+                        $sp = @($i.Adapters | Where-Object { $resolved.ContainsKey($_) -or ($byName.ContainsKey($_.ToLowerInvariant()) -and $resolved.ContainsKey($byName[$_.ToLowerInvariant()].Name)) } | ForEach-Object { $key = if ($resolved.ContainsKey($_)) { $_ } else { $byName[$_.ToLowerInvariant()].Name }; [math]::Round([double](Get-AzlProp $resolved[$key] 'speed' 0) / 1e9, 1) })
+                        if (@($sp | Select-Object -Unique).Count -gt 1) { $failed.Add("the ports of intent $($i.Name) run at different speeds ($($sp -join ', ') Gbps); adapters in an intent must be symmetric") }
+                    }
+                    # Intents point at ports of this node, and the roles agree.
+                    foreach ($i in $intents) {
+                        foreach ($a in $i.Adapters) {
+                            if (-not $byName.ContainsKey($a.ToLowerInvariant())) { $failed.Add("intent $($i.Name) names '$a', which the file does not list for $Name"); continue }
+                            $p = $byName[$a.ToLowerInvariant()]
+                            if (-not $p.Used) { $failed.Add("intent $($i.Name) uses '$a', but the file marks that port unused"); continue }
+                            $lacking = @($i.Traffic | Where-Object { $_ -in 'management', 'compute', 'storage' -and $_ -notin $p.Roles })
+                            if ($lacking.Count) { $failed.Add("port '$a' is in intent $($i.Name) (traffic $($i.Traffic -join '+')) but the file gives it the roles $($p.Roles -join '+'), without $($lacking -join '+')") }
+                        }
+                    }
+                    foreach ($p in @($ports | Where-Object Used)) {
+                        foreach ($r in @($p.Roles | Where-Object { $_ -in 'management', 'compute', 'storage' })) {
+                            $carrier = $inIntent[$p.Name.ToLowerInvariant()]
+                            if (-not $carrier -or $r -notin $carrier.Traffic) { $failed.Add("port '$($p.Name)' has the role $r in the file but is in no intent that carries $r") }
+                        }
+                    }
+                    # Storage networks (networking.cluster_networks): on ports of this node; in the storage intent unless the design keeps them on standalone SAN ports.
+                    foreach ($cn in $clusterNets) {
+                        $a = [string](Get-AzlProp $cn 'adapter' '')
+                        if (-not $a) { continue }
+                        $cnName = [string](Get-AzlProp $cn 'name' $a)
+                        if (-not $byName.ContainsKey($a.ToLowerInvariant())) { $failed.Add("storage network '$cnName' names the adapter '$a', which the file does not list for $Name"); continue }
+                        $p = $byName[$a.ToLowerInvariant()]
+                        $carrier = $inIntent[$a.ToLowerInvariant()]
+                        $storageIntent = @($intents | Where-Object { 'storage' -in $_.Traffic })
+                        if ($arch -ne 'san' -and $storageIntent.Count -and (-not $carrier -or 'storage' -notin $carrier.Traffic)) { $failed.Add("storage network '$cnName' is on '$a', which is not a port of the storage intent") }
+                        $fv = Get-AzlProp $cn 'vlan_id' $null
+                        if ($null -ne $fv -and $null -ne $p.VlanId -and [int]$fv -ne [int]$p.VlanId) { $failed.Add("storage network '$cnName' says VLAN $fv, the file's port '$a' says VLAN $($p.VlanId)") }
+                        if ($resolved.ContainsKey($p.Name)) {
+                            $live = Get-AzlProp $resolved[$p.Name] 'vlan' $null
+                            if ($null -ne $fv -and $null -ne $live -and "$live" -ne '' -and [int]$live -ne 0 -and [int]$live -ne [int]$fv) { $warn.Add("storage network '$cnName': the node's '$($resolved[$p.Name].n)' carries VLAN $live now, the file says $fv (the deployment sets it)") }
+                        }
+                    }
+                    # The management port holds the management address of the file.
+                    if ($N.ManagementIp) {
+                        $holder = @($nics | Where-Object { $N.ManagementIp -in @(ConvertTo-AzlVerList (Get-AzlProp $_ 'ips' @())) }) | Select-Object -First 1
+                        $mgmtPort = @($ports | Where-Object { $_.Used -and 'management' -in $_.Roles -and $_.Ip -eq $N.ManagementIp }) | Select-Object -First 1
+                        if (-not $holder) { $failed.Add("no NIC of $Name holds the management address $($N.ManagementIp) of the file") }
+                        elseif ($mgmtPort -and $mgmtPort.Mac -and (ConvertTo-AzlVerMacKey (Get-AzlProp $holder 'mac' '')) -ne $mgmtPort.Mac) { $failed.Add("the management address $($N.ManagementIp) is on '$($holder.n)', but the file puts it on port '$($mgmtPort.Name)' (MAC $(Format-AzlVerMac $mgmtPort.Mac))") }
+                        if ($mgmtPort -and $resolved.ContainsKey($mgmtPort.Name) -and $null -ne $mgmtVlan -and "$mgmtVlan" -ne '' -and [int]$mgmtVlan -ne 0) {
+                            $live = Get-AzlProp $resolved[$mgmtPort.Name] 'vlan' $null
+                            if ($null -ne $live -and "$live" -ne '' -and [int]$live -ne [int]$mgmtVlan) { $warn.Add("the management port '$($resolved[$mgmtPort.Name].n)' carries VLAN $live, the file says $mgmtVlan") }
+                        }
+                    }
+                    $table = $rows -join "`n"
+                    $fixPorts = 'Compare the file with the node: Get-NetAdapter -Physical | ft Name, MacAddress, Status, LinkSpeed. Fix nodes[].network_adapters[].mac_address and the names in networking.intents[].adapters, replug or enable the port, and run the OS configuration so the names agree (it finds ports by MAC).'
+                    if ($failed.Count) { New-AzlVerResult Failed "${Name}: $($failed -join '; ').`n$table" $fixPorts -Node $Name -Evidence ($failed -join ' | ') }
+                    elseif ($unread.Count) { New-AzlVerResult Skipped "${Name}: not everything could be compared: $($unread -join '; ').`n$table" 'Give every used port its mac_address in the file, and the OS configuration report (-OsConfigurationReport), then run the verification again.' -Node $Name }
+                    elseif ($warn.Count) { New-AzlVerResult Warning "${Name}: $($warn -join '; ').`n$table" $fixPorts -Node $Name -Evidence ($warn -join ' | ') }
+                    else { New-AzlVerResult Passed "$Name's $(@($resolved.Keys).Count) used port(s) are the file's, by MAC:`n$table" -Node $Name -Evidence "ports=$(@($resolved.Keys).Count)" }
+                }
+                # Across the nodes: the same file port is the same OS adapter name everywhere (Network ATC takes the names from the deployment).
+                foreach ($k in $osNames.Keys) {
+                    $entry = $osNames[$k]
+                    if (@($entry.Nodes.Values | Select-Object -Unique).Count -gt 1) {
+                        New-AzlVerResult Failed "File port '$($entry.File)' is $((@($entry.Nodes.GetEnumerator() | Sort-Object Name | ForEach-Object { "'$($_.Value)' on $($_.Key)" })) -join ', '). Network ATC needs the same adapter name on every node." 'Rename the adapters on the nodes so the same file port has the same OS name everywhere (the OS configuration run maps them by MAC), or fix the MAC in the file.' -Evidence "port=$($entry.File)"
+                    }
+                }
             }))
 
     return $defs.ToArray()

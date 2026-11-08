@@ -563,7 +563,7 @@ Invoke-Section 'nics' {
             $ifc = Get-NetIPInterface -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
             if ($ifc) { $dhcp = [string]$ifc.Dhcp }
             @{ n = [string]$a.Name; desc = [string]$a.InterfaceDescription; st = [string]$a.Status; admin = [string]$a.AdminStatus; speed = [int64]$a.Speed; mac = ([string]$a.MacAddress -replace '[-:]', '').ToLowerInvariant(); drvProv = [string]$a.DriverProvider
-                drvVer = [string]$a.DriverVersion; idx = [int]$a.ifIndex; mtu = [int]$a.MtuSize; jumbo = $jumbo; rdmaCapable = [bool]($nd -or $rdma); rdmaEnabled = $en; rdmaOp = $op; ips = $ips; gw = $gw; dhcp = $dhcp }
+                drvVer = [string]$a.DriverVersion; idx = [int]$a.ifIndex; mtu = [int]$a.MtuSize; jumbo = $jumbo; rdmaCapable = [bool]($nd -or $rdma); rdmaEnabled = $en; rdmaOp = $op; ips = $ips; gw = $gw; dhcp = $dhcp; vlan = [string]$a.VlanID }
         })
     # Every adapter, physical or not, whose description says Remote NDIS (the BMC's USB NIC arrives as one).
     $Az.remoteNdis = @(Get-NetAdapter -IncludeHidden -ErrorAction SilentlyContinue | Where-Object { [string]$_.InterfaceDescription -match 'Remote NDIS' } | ForEach-Object { @{ n = [string]$_.Name; desc = [string]$_.InterfaceDescription; st = [string]$_.Status; admin = [string]$_.AdminStatus } })

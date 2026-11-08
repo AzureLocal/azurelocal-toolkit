@@ -15,7 +15,7 @@
     Format-AzlPlan          A plan as a table.
 
     Nothing runs on a node that the comparison didn't ask for: a node that matches its spec gets one Read and no Apply.
-    Ports are found by MAC, never by name (the installed OS names them Port0 to Port6).
+    Ports are found by MAC, never by name (the installed OS names them as it likes, for example Port0 to Port6; the file spells them its own way).
 #>
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'

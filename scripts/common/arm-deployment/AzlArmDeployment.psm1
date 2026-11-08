@@ -126,7 +126,7 @@ function Resolve-AzlAdapterName {
     .SYNOPSIS
         The name the OS gives a port that infrastructure.yml calls $FileName, the same on every node, found by MAC.
     .DESCRIPTION
-        Network ATC takes the adapter names from the deployment, so they must be the OS names (Port0 to Port6 on a Dell AX-760
+        Network ATC takes the adapter names from the deployment, so they must be the OS names (whatever the installed OS called the ports, for example Port0 to Port6 on one Dell model
         after the install). -AdapterMap is node -> (MAC -> OS name), from the OS configuration report or the Arc machines'
         network reports. Without a map the file's name is used as it is.
     #>

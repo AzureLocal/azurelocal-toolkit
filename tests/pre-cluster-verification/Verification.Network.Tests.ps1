@@ -13,11 +13,11 @@ BeforeAll {
 }
 
 Describe 'Contract' {
-    It 'exports the two commands and twelve well formed definitions' {
+    It 'exports the two commands and thirteen well formed definitions' {
         $script:Mod.ExportedCommands.Keys | Should -Contain 'Get-AzlVerificationCheckDefinition'
         $script:Mod.ExportedCommands.Keys | Should -Contain 'Get-AzlVerificationAdapterDefault'
         $defs = Get-VerDefinition -Module $script:Mod
-        $defs.Count | Should -Be 12
+        $defs.Count | Should -Be 13
         foreach ($d in $defs) {
             $d.Id | Should -Match '^NW-\d{3}$'; $d.Category | Should -Be 'network'; $d.Title | Should -Not -BeNullOrEmpty; $d.Source | Should -Not -BeNullOrEmpty
             $d.Blocking | Should -BeOfType [bool]; $d.Applies | Should -BeOfType [scriptblock]; $d.Run | Should -BeOfType [scriptblock]
@@ -34,12 +34,10 @@ Describe 'Contract' {
 
 Describe 'NW-001 intents against adapters' {
     It 'Passed when every adapter exists on every node and is Up' { $f = New-VerFresh; (Invoke-VerRun 'NW-001' $f.World $f.Infra).Status | Should -Not -Contain 'Failed' }
-    It 'Failed when an adapter of an intent has another name on one node' {
+    It 'finds the NIC of a file port by MAC, so a different OS name on one node is not a missing adapter here (NW-013 reports the names)' {
         $f = New-VerFresh; (Get-VerNic $f.World 'n02' 'Port3').n = 'SLOT 6 Port 2'
         $r = Invoke-VerRun 'NW-001' $f.World $f.Infra
-        ($r | Where-Object Node -EQ 'n02').Status | Should -Be 'Failed'
-        ($r | Where-Object Node -EQ 'n02').Message | Should -Match "adapter 'Port3'"
-        ($r | Where-Object Node -EQ 'n01').Status | Should -Be 'Passed'
+        ($r | Where-Object Node -EQ 'n02').Status | Should -Be 'Passed'
     }
     It 'Failed when the link is down' { $f = New-VerFresh; (Get-VerNic $f.World 'n01' 'Port2').st = 'Disconnected'; (Invoke-VerRun 'NW-001' $f.World $f.Infra | Where-Object Node -EQ 'n01').Message | Should -Match 'Disconnected' }
     It 'Warning for an intent with one adapter' {
@@ -173,5 +171,158 @@ Describe 'NW-009 to NW-012' {
         $r = Invoke-VerRun 'NW-009' $f.World $f.Infra
         ($r | Where-Object Node -EQ 'n02').Status | Should -Be 'Skipped'; ($r | Where-Object Node -EQ 'n02').Message | Should -Match 'connection refused'
         $f.World.Calls.Count | Should -Be 2
+    }
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
+# NW-013: the physical ports against the file. Nothing here may depend on how a port is named: two layouts with completely different names.
+# ---------------------------------------------------------------------------------------------------------------------
+Describe 'NW-013 physical ports against the file (found by MAC, name-agnostic)' {
+    BeforeAll {
+        function New-PortWorld {
+            <# A cluster of -Names (one file name per port, the same on every node), -OsNames per node (the names the OS gave the NICs), roles per port. #>
+            param([string[]]$Nodes, [string[]]$Names, [hashtable]$OsNames, [string[]]$Roles, [string[]]$Macs, [System.Collections.IDictionary]$Intents, [switch]$ClusterNets)
+            $f = New-VerFresh
+            $f.Infra.nodes = @(foreach ($n in $Nodes) {
+                    $k = 0
+                    [ordered]@{ name = $n; network_adapters = @(foreach ($name in $Names) {
+                                $r = $Roles[$k]; $mac = $Macs[$k]; $k++
+                                $o = [ordered]@{ name = $name; mac_address = $mac; roles = @($r -split '\+'); speed_gbps = 25 }
+                                if ('management' -in $o.roles) { $o.ip_address = "192.0.2.$(10 + [array]::IndexOf($Nodes, $n))" }
+                                $o
+                            }) }
+                })
+            # management ip only on the first management port of each node
+            foreach ($n in $f.Infra.nodes) { $seen = $false; foreach ($pt in $n.network_adapters) { if ('management' -in $pt.roles) { if ($seen) { $pt.Remove('ip_address') } else { $seen = $true } } elseif ($pt.Contains('ip_address')) { $pt.Remove('ip_address') } } }
+            $f.Infra.networking.intents = @(foreach ($k in $Intents.Keys) { [ordered]@{ name = $k; traffic = @($Intents[$k].Traffic); adapters = @($Intents[$k].Adapters) } })
+            if ($ClusterNets) { $f.Infra.networking.cluster_networks = @() }
+            $f.World = New-VerWorld -Infra $f.Infra
+            foreach ($n in $Nodes) {
+                $snap = $f.World.Snapshot[$n]
+                $ip = ($f.Infra.nodes | Where-Object name -EQ $n).network_adapters | Where-Object { $_.Contains('ip_address') } | Select-Object -First 1
+                $snap.nics = @(for ($k = 0; $k -lt $Names.Count; $k++) {
+                        @{ n = $OsNames[$n][$k]; desc = 'Vendor 25G NIC'; st = 'Up'; admin = 'Up'; speed = 25000000000; mac = (($Macs[$k]) -replace '[^0-9A-Fa-f]', '').ToLowerInvariant(); drvProv = 'Vendor'; drvVer = '1'; idx = $k + 4; mtu = 1514; jumbo = '1514'
+                            rdmaCapable = ('storage' -in ($Roles[$k] -split '\+')); rdmaEnabled = ('storage' -in ($Roles[$k] -split '\+')); rdmaOp = $true; ips = @($(if ($k -eq 0 -and $ip) { $ip.ip_address })); gw = @($(if ($k -eq 0) { '192.0.2.1' })); dhcp = 'Disabled'; vlan = '0' }
+                    })
+                $snap.dns = @(@{ n = $OsNames[$n][0]; idx = 4; servers = @('192.0.2.4', '192.0.2.5') })
+            }
+            $f
+        }
+        $script:LabNames = 'Port1', 'Port2', 'Port3', 'Port4', 'Port5', 'Port6'
+        $script:LabRoles = 'management', 'management', 'compute', 'storage', 'storage', 'compute'
+        $script:LabMacs = 'aa:bb:cc:00:00:01', 'aa:bb:cc:00:00:02', 'aa:bb:cc:00:00:03', 'aa:bb:cc:00:00:04', 'aa:bb:cc:00:00:05', 'aa:bb:cc:00:00:06'
+        $script:LabIntents = [ordered]@{
+            mgmt    = @{ Traffic = @('management'); Adapters = @('Port1', 'Port2') }
+            compute = @{ Traffic = @('compute'); Adapters = @('Port3', 'Port6') }
+            storage = @{ Traffic = @('storage'); Adapters = @('Port4', 'Port5') }
+        }
+        $script:AlienNames = 'Slot 3 Port 1', 'NIC1', 'Embedded NIC 2', 'SLOT 6 PORT 2', 'Ethernet 3', 'OCP 1 Port 1'
+        $script:AlienIntents = [ordered]@{
+            mgmt    = @{ Traffic = @('management'); Adapters = @('Slot 3 Port 1', 'NIC1') }
+            compute = @{ Traffic = @('compute'); Adapters = @('Embedded NIC 2', 'OCP 1 Port 1') }
+            storage = @{ Traffic = @('storage'); Adapters = @('SLOT 6 PORT 2', 'Ethernet 3') }
+        }
+        function New-Lab { New-PortWorld -Nodes 'lab-n01', 'lab-n02', 'lab-n03' -Names $script:LabNames -OsNames @{ 'lab-n01' = $script:LabNames; 'lab-n02' = $script:LabNames; 'lab-n03' = $script:LabNames } -Roles $script:LabRoles -Macs $script:LabMacs -Intents $script:LabIntents }
+        function New-Alien { New-PortWorld -Nodes 'x1', 'x2' -Names $script:AlienNames -OsNames @{ x1 = 'Port0', 'Port1', 'Port2', 'Port3', 'Port4', 'Port5'; x2 = 'Port0', 'Port1', 'Port2', 'Port3', 'Port4', 'Port5' } -Roles $script:LabRoles -Macs $script:LabMacs -Intents $script:AlienIntents }
+    }
+    It 'the lab layout (3 nodes, management Port1+Port2, compute Port3+Port6, storage Port4+Port5) passes, with a table of every port' {
+        $f = New-Lab
+        $r = @(Invoke-VerRun 'NW-013' $f.World $f.Infra)
+        ($r | ForEach-Object Status | Select-Object -Unique) | Should -Be 'Passed'
+        $r.Count | Should -Be 3
+        $r[0].Message | Should -Match "file 'Port1' \| MAC AA:BB:CC:00:00:01 \| OS 'Port1' \| Up \| 25G \| roles management \| intent mgmt"
+        $r[0].Message | Should -Match "file 'Port5'"
+    }
+    It 'a layout with completely different names passes too: the file name and the OS name are reported side by side, never assumed equal' {
+        $f = New-Alien
+        $r = @(Invoke-VerRun 'NW-013' $f.World $f.Infra)
+        ($r | ForEach-Object Status | Select-Object -Unique) | Should -Be 'Passed'
+        $r[0].Message | Should -Match "file 'Slot 3 Port 1' \| MAC AA:BB:CC:00:00:01 \| OS 'Port0'"
+        $r[0].Message | Should -Match "file 'Ethernet 3' \| MAC AA:BB:CC:00:00:05 \| OS 'Port4'"
+        # and the other checks that go by intent adapters resolve through the MAC too
+        (@(Invoke-VerRun 'NW-001' $f.World $f.Infra) | ForEach-Object Status | Select-Object -Unique) | Should -Be 'Passed'
+    }
+    It 'MACs match but the OS names differ per node: Failed across the nodes, naming the file port and both names' {
+        $f = New-Alien
+        (Get-VerNic $f.World 'x2' 'Port1').n = 'NIC-B'
+        $r = @(Invoke-VerRun 'NW-013' $f.World $f.Infra)
+        $cross = @($r | Where-Object { $_.Node -eq '*' -and $_.Status -eq 'Failed' })
+        $cross.Count | Should -Be 1
+        $cross[0].Message | Should -Match "File port 'NIC1' is 'Port1' on x1, 'NIC-B' on x2"
+    }
+    It 'names match but the MACs differ: the port is not on the node, Failed with the MACs the node has' {
+        $f = New-Lab
+        (Get-VerNic $f.World 'lab-n02' 'Port2').mac = 'ffeeddccbbaa'
+        $r = @(Invoke-VerRun 'NW-013' $f.World $f.Infra | Where-Object Node -EQ 'lab-n02')
+        $r[0].Status | Should -Be 'Failed'
+        $r[0].Message | Should -Match "file port 'Port2' \(MAC AA:BB:CC:00:00:02\) is not on the node"
+        $r[0].Message | Should -Match 'FF:EE:DD:CC:BB:AA'
+        $r[0].Message | Should -Match 'NOT ON THE NODE'
+    }
+    It 'a port whose link is down is Failed when it is in an intent, and its speed must fit the role' {
+        $f = New-Lab; (Get-VerNic $f.World 'lab-n01' 'Port4').st = 'Disconnected'
+        (@(Invoke-VerRun 'NW-013' $f.World $f.Infra | Where-Object Node -EQ 'lab-n01')[0]).Message | Should -Match "'Port4' \('Port4'\) is Disconnected, not Up \(it is in intent storage\)"
+        $g = New-Lab; (Get-VerNic $g.World 'lab-n03' 'Port3').speed = 1000000000
+        (@(Invoke-VerRun 'NW-013' $g.World $g.Infra | Where-Object Node -EQ 'lab-n03')[0]).Message | Should -Match 'runs at 1 Gbps; intent compute'
+    }
+    It 'a virtual, USB or Remote NDIS device is not a physical port' {
+        $f = New-Lab; (Get-VerNic $f.World 'lab-n01' 'Port6').desc = 'Remote NDIS Compatible Device'
+        (@(Invoke-VerRun 'NW-013' $f.World $f.Infra | Where-Object Node -EQ 'lab-n01')[0]).Message | Should -Match 'virtual, USB or Remote NDIS'
+    }
+    It 'an intent that names a port the file does not list, an unused port in an intent, and a role without an intent are Failed' {
+        $f = New-Lab; $f.Infra.networking.intents[2].adapters = @('Port4', 'PortX')
+        (@(Invoke-VerRun 'NW-013' $f.World $f.Infra | Where-Object Node -EQ 'lab-n01')[0]).Message | Should -Match "intent storage names 'PortX', which the file does not list for lab-n01"
+        $g = New-Lab; $g.Infra.networking.intents[2].adapters = @('Port4');
+        (@(Invoke-VerRun 'NW-013' $g.World $g.Infra | Where-Object Node -EQ 'lab-n01')[0]).Message | Should -Match "port 'Port5' has the role storage in the file but is in no intent that carries storage"
+        $h = New-Lab; foreach ($n in $h.Infra.nodes) { $n.network_adapters[5].roles = @('unused') }
+        (@(Invoke-VerRun 'NW-013' $h.World $h.Infra | Where-Object Node -EQ 'lab-n01')[0]).Message | Should -Match "uses 'Port6', but the file marks that port unused"
+    }
+    It 'an intent whose port has other roles in the file, and an adapter in two intents, are Failed' {
+        $f = New-Lab; $f.Infra.networking.intents[0].adapters = @('Port1', 'Port4')
+        $m = (@(Invoke-VerRun 'NW-013' $f.World $f.Infra | Where-Object Node -EQ 'lab-n01')[0]).Message
+        $m | Should -Match "port 'Port4' is in intent mgmt \(traffic management\) but the file gives it the roles storage"
+        (@(Invoke-VerRun 'NW-013' $f.World $f.Infra) | Where-Object { $_.Node -eq '*' -and $_.Status -eq 'Failed' -and $_.Message -match 'more than one intent' }).Count | Should -Be 1
+    }
+    It 'the management address must be on the NIC the file puts it on' {
+        $f = New-Lab
+        $nics = $f.World.Snapshot['lab-n01'].nics
+        $ip = $nics[0].ips; $nics[0].ips = @(); $nics[1].ips = $ip
+        (@(Invoke-VerRun 'NW-013' $f.World $f.Infra | Where-Object Node -EQ 'lab-n01')[0]).Message | Should -Match 'is on .Port2., but the file puts it on port .Port1.'
+    }
+    It 'is Skipped, with the reason, for a port with no MAC in the file and when no OS configuration report is given' {
+        $f = New-Lab; $f.Infra.nodes[0].network_adapters[2].Remove('mac_address')
+        $r = @(Invoke-VerRun 'NW-013' $f.World $f.Infra | Where-Object Node -EQ 'lab-n01')[0]
+        $r.Status | Should -Be 'Skipped'; $r.Message | Should -Match "file port 'Port3' has no mac_address"
+        $g = New-Lab
+        $ctx = New-VerContext -Module $script:Mod -Infra $g.Infra -World $g.World
+        $ctx.OsReport = $null
+        $x = @(Invoke-VerCheck -Module $script:Mod -Id 'NW-013' -Context $ctx | Where-Object Node -EQ 'lab-n01')[0]
+        $x.Status | Should -Be 'Skipped'; $x.Message | Should -Match 'no OS configuration report was given'
+    }
+    It 'fails when the OS configuration report names the NIC differently from the node' {
+        $f = New-Alien
+        $ctx = New-VerContext -Module $script:Mod -Infra $f.Infra -World $f.World
+        $ctx.OsReport.nodes[0].ports[0].osName = 'Renamed Since'
+        $r = @(Invoke-VerCheck -Module $script:Mod -Id 'NW-013' -Context $ctx | Where-Object Node -EQ 'x1')[0]
+        $r.Status | Should -Be 'Failed'; $r.Message | Should -Match "the node calls the NIC 'Port0' but the OS configuration report says 'Renamed Since'"
+    }
+    It 'storage networks must sit on ports of the storage intent; a VLAN that differs from the file port is Failed' {
+        $f = New-Alien
+        $f.Infra.networking.cluster_networks = @([ordered]@{ name = 'cn-a'; adapter = 'SLOT 6 PORT 2'; vlan_id = 711 }, [ordered]@{ name = 'cn-b'; adapter = 'Slot 3 Port 1'; vlan_id = 712 })
+        $m = (@(Invoke-VerRun 'NW-013' $f.World $f.Infra | Where-Object Node -EQ 'x1')[0]).Message
+        $m | Should -Match "storage network 'cn-b' is on 'Slot 3 Port 1', which is not a port of the storage intent"
+        $m | Should -Not -Match "storage network 'cn-a'"
+        $g = New-Alien
+        $g.Infra.nodes[0].network_adapters[3].vlan_id = 700
+        $g.Infra.networking.cluster_networks = @([ordered]@{ name = 'cn-a'; adapter = 'SLOT 6 PORT 2'; vlan_id = 711 })
+        (@(Invoke-VerRun 'NW-013' $g.World $g.Infra | Where-Object Node -EQ 'x1')[0]).Message | Should -Match "storage network 'cn-a' says VLAN 711, the file's port 'SLOT 6 PORT 2' says VLAN 700"
+    }
+    It 'no code path of the network or node modules assumes a port name (Port<n>, Slot, NIC ...)' {
+        $dir = Join-Path $PSScriptRoot '..\..\scripts\common\arm-deployment\verification'
+        foreach ($f in Get-ChildItem $dir -Filter 'AzlVerification.*.psm1') {
+            $code = (Get-Content -LiteralPath $f.FullName -Raw)
+            $code | Should -Not -Match "-(match|like|eq|ieq|ne)\s+['""]\^?Port\\d" -Because $f.Name
+            $code | Should -Not -Match "\[regex\]::.*Port\\d" -Because $f.Name
+        }
     }
 }

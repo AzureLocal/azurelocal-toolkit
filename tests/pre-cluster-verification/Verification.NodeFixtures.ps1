@@ -41,7 +41,8 @@ function New-VerInfra {
         $infra.storage = [ordered]@{ san = [ordered]@{ type = 'fibre_channel'; array = [ordered]@{ vendor = 'Pure'; model = 'FlashArray' }; infra_volume_lun_id = '0'; performance_history_lun_id = '1' } }
         foreach ($n in $infra.nodes) { $n.san = [ordered]@{ hbas = @([ordered]@{ slot = 'Slot2'; ports = @([ordered]@{ wwpn = '10:00:00:00:00:00:00:11' }, [ordered]@{ wwpn = '10:00:00:00:00:00:00:12' }) }) } }
     }
-    return $infra
+    # Every port of the file has a MAC (the node snapshots below carry the same ones): the ports are matched by MAC, never by name.
+    foreach ($n in $infra.nodes) { $k = 0; foreach ($a in $n.network_adapters) { $a.mac_address = ('00:00:00:00:00:{0:x2}' -f $k); $k++ } }    return $infra
 }
 
 function New-VerSnapshot {
@@ -132,7 +133,16 @@ function New-VerContext {
         }.GetNewClosure()
     }
     foreach ($k in $Adapter.Keys) { $adapters[$k] = $Adapter[$k] }
-    @{ Infrastructure = $Infra; Handoff = $null; OsReport = $null; Settings = $Settings; Adapters = $adapters }
+    @{ Infrastructure = $Infra; Handoff = $null; OsReport = (New-VerOsReport -Infra $Infra -World $World); Settings = $Settings; Adapters = $adapters }
+}
+
+function New-VerOsReport {
+    <# An OS configuration report whose ports are the node's real NICs (MAC -> OS name), as the OS configuration run writes it. #>
+    param([Parameter(Mandatory)]$Infra, [Parameter(Mandatory)]$World)
+    [pscustomobject]@{ nodes = @(foreach ($n in $Infra.nodes) {
+                $nics = if ($World.Snapshot.Contains($n.name)) { @($World.Snapshot[$n.name].nics) } else { @() }
+                [pscustomobject]@{ name = $n.name; ports = @($nics | ForEach-Object { [pscustomobject]@{ osName = [string]$_.n; mac = [string]$_.mac; status = [string]$_.st } }) }
+            }) }
 }
 
 function Get-VerDefinition {
