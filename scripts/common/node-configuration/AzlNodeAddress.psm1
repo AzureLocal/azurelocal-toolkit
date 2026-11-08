@@ -675,11 +675,12 @@ function Select-AzlVerifiedNodeAddress {
         $dropped.Add([pscustomobject]@{ Address = $c.Address; Source = $c.Source; Reason = $verdict.Reason; Text = $text })
         $log.Add("$text ($($verdict.Reason)); dropped ($($c.Source)).")
     }
-    $lines = @($dropped | ForEach-Object { "$($_.Text) ($($_.Reason)), found by $($_.Source)" }) + @($unread | ForEach-Object { "could not read the identity at $_" })
+    # A refused credential is said as such (it is a credential problem, not a wrong machine); anything else that stopped the read is quoted.
+    $lines = @($dropped | ForEach-Object { "$($_.Text) ($($_.Reason)), found by $($_.Source)" }) + @($unread | ForEach-Object { if ($_ -match 'denied|logon failure|authentication|credential|unauthorized') { "the local administrator was refused at $_" } else { "could not read the identity at $_" } })
     $silent = @($Resolution.Candidates | Where-Object { -not $_.Answers } | ForEach-Object { "$($_.Address) ($($_.Source))" })
     $viaOverride = @($Resolution.Candidates | Where-Object { $_.Source -eq 'override' }).Count -gt 0
     $message = if (($dropped.Count + $unread.Count) -eq 0) { '' }
-    elseif ($viaOverride) { "The address you gave for $name does not belong to it: $($lines -join '; '). It was not used and nothing was changed. Give the address of $name with -NodeAddress, or remove it so the run resolves one." }
+    elseif ($viaOverride) { "The address you gave for $name $(if ($dropped.Count) { 'does not belong to it' } else { 'answered, but its identity could not be proven' }): $($lines -join '; '). It was not used and nothing was changed. Give the address of $name with -NodeAddress, or remove it so the run resolves one." }
     else { "No address proved to be $name, so nothing was changed: $($lines -join '; ').$(if ($silent.Count) { " Not answering: $($silent -join ', ')." }) Give the address $name answers on now with -NodeAddress @{ '$name' = '<ip>' } (or nodeAddress in the run settings)." }
     [pscustomobject]@{ Verified = $false; Checked = $true; Address = ''; Source = ''; UseSsl = $false; Port = 0; Dropped = $dropped.ToArray(); Log = $log.ToArray(); Message = $message }
 }

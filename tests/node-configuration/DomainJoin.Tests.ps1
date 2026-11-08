@@ -970,6 +970,8 @@ Describe 'The wrapper run with the DomainJoin step (the OS configuration script 
         Mock -ModuleName AzlOsConfigurationRun Get-AzlSecret { 'not-the-join-password' }
         Mock -ModuleName AzlOsConfigurationRun Find-AzlArcMachine { [pscustomobject]@{ Name = $ArcMachineName; ResourceId = "/subscriptions/x/resourceGroups/$ResourceGroup/providers/Microsoft.HybridCompute/machines/$ArcMachineName"; Location = 'eastus'; Status = 'Connected'; Interfaces = @() } }
         Mock -ModuleName AzlOsConfigurationRun New-AzlWinRmTransport { [pscustomobject]@{ Kind = 'WinRM' } }
+        # The identity read (the first authenticated connection): the machine at the address is the node itself (its name and the fixture's management MACs).
+        Mock -ModuleName AzlOsConfigurationRun Get-AzlRunNodeIdentity { [pscustomobject]@{ ComputerName = $Name.ToUpperInvariant(); Mac = @('00:00:5E:00:53:10', '00:00:5E:00:53:20') } }
         Mock -ModuleName AzlOsConfigurationRun Invoke-AzlNodeScript { [pscustomobject]@{ caption = 'Microsoft Azure Stack HCI'; build = 26100; host = 'WIN-X' } }
     }
     It '<Method> run: passes DomainJoin in the steps and the event feed to the node script, notes domainJoined, domain and OU in the record and the report' -ForEach @(@{ Method = 'Iso' }, @{ Method = 'Ztp' }) {

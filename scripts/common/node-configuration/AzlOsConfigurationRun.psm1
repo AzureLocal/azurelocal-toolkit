@@ -883,7 +883,8 @@ function Invoke-AzlNodeRun {
     $addressSetting = Get-AzlProp $Context 'AddressResolution' @{}
     if ($addressSetting -is [System.Collections.IDictionary] -and $addressSetting.Contains('verifyIdentity') -and -not [bool]$addressSetting['verifyIdentity']) {
         $withAddress = @{}
-        if ($parameters.ContainsKey('Settings')) { foreach ($k in $parameters.Settings.Keys) { $withAddress[$k] = $parameters.Settings[$k] } }
+        $existing = $parameters['Settings']
+        if ($existing -is [System.Collections.IDictionary]) { foreach ($k in $existing.Keys) { $withAddress[$k] = $existing[$k] } }
         $withAddress['addressResolution'] = @{ verifyIdentity = $false }
         $parameters.Settings = $withAddress
     }

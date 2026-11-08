@@ -258,8 +258,9 @@ Describe 'Select-AzlVerifiedNodeAddress' {
         $r = Resolve-Node -Answer @('192.0.2.11') -Handoff $null -Arc $null
         $v = Select-AzlVerifiedNodeAddress -Resolution $r -Expected $script:Expected -IdentityReader (New-Reader @{} ([System.Collections.Generic.List[string]]::new()))
         $v.Verified | Should -BeFalse
-        $v.Message | Should -Match 'could not read the identity at 192\.0\.2\.11'
+        $v.Message | Should -Match 'the local administrator was refused at 192\.0\.2\.11'
         $v.Message | Should -Match 'refused the credential'
+        (Select-AzlVerifiedNodeAddress -Resolution $r -Expected $script:Expected -IdentityReader { throw 'The WinRM client cannot process the request (timed out).' }).Message | Should -Match 'could not read the identity at 192\.0\.2\.11'
     }
     It 'without a reader (no credential) nothing is checked and the best answering candidate is returned, marked unchecked' {
         $r = Resolve-Node -Answer @('192.0.2.11') -Handoff $null -Arc $null
