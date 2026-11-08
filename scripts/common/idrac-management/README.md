@@ -1,206 +1,73 @@
-# iDRAC Management Utilities
+# iDRAC management and hardware discovery
 
-> **DOCUMENT CATEGORY**: Reference
-> **SCOPE**: Dell iDRAC management automation via Redfish API
-> **PURPOSE**: Scripts for configuring and managing Dell iDRAC hardware
+Dell iDRAC tools that use the Redfish API. Hardware discovery is the **first stage of the flow**: it runs before
+azurelocal-ztp and before the OS configuration, and its output fills `infrastructure.yml`.
 
-[![Reference-Guide](https://img.shields.io/badge/Reference-Guide-purple?logo=book)](https://docs.microsoft.com/en-us/azure/cloud-adoption-framework/)
-[![Azure Local Cloud](https://img.shields.io/badge/Azure Local Cloud-AzureLocalCloud-orange)](https://Azure Local Cloud.com)
-[![PowerShell](https://img.shields.io/badge/PowerShell-Utilities-blue?logo=powershell)](https://docs.microsoft.com/en-us/powershell/)
+```text
+iDRAC addresses (Phase 01 Task 01) -> Discovery (Phase 01 Task 02) -> infrastructure.yml -> ZTP -> OS configuration -> Validate and Deploy
+```
 
-## Overview
+| What discovery reads | Where it goes | Who uses it |
+|---|---|---|
+| Service tag (Redfish `SKU`) | `nodes[].serial_number` | ZTP maps ownership vouchers by it |
+| MAC of every network port, with a suggested name and slot | `nodes[].network_adapters[].mac_address` | ZTP finds the maintenance environment by the management MAC; the OS configuration finds every port by MAC |
+| Which port is the management port | the port with role `management` (a suggestion you confirm) | ZTP Device stage, OS configuration |
+| BOSS card, its drives and whether its virtual disk exists | discovery JSON and summary | Phase 02 Task 01 (create the BOSS virtual disk) |
+| BIOS and iDRAC attributes, firmware | discovery JSON | Phase 01 Tasks 04 and 05 |
 
-This directory contains PowerShell scripts for managing Dell iDRAC (Integrated Dell Remote Access Controller) hardware using the Redfish API. These utilities automate common iDRAC configuration tasks for Azure Local infrastructure.
+## Files
 
-Scripts in this directory dot-source shared helpers from `scripts/common/utilities/helpers/` for logging, config loading, and Key Vault credential resolution.
+| File | Purpose |
+|---|---|
+| `AzlDellRedfish.psm1` | Redfish calls, credential resolution, `Get-AzlDellNodeDiscovery`, management-port selection, proposal text, VNC |
+| `Enable-IdracVnc.ps1` | Enable or disable the iDRAC VNC server (the only tool here that writes to an iDRAC; `-WhatIf` supported) |
+| `../discovery/Get-DellServerInventory-FromiDRAC.ps1` | Full inventory of any iDRAC list into `idrac-inventory.json` |
+| `../infrastructure/AzlInfrastructureEdit.psm1` | Comment-preserving edits of `infrastructure.yml` |
+| `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/` | `Invoke-HardwareDiscovery.ps1`, `Update-InfrastructureYml-FromDiscovery.ps1`, `Get-HardwareDiscovery-Standalone.ps1` |
 
-## Scripts
+## Credentials
 
-### Enable-IdracVnc.ps1
+In this order, never from a plain-text file:
 
-Enables and configures VNC access on Dell iDRAC via Redfish API.
+1. `-Credential`.
+2. The Key Vault references in `infrastructure.yml` (`nodes[].bmc` or `hardware.bmc`, `username` and `password` as `keyvault://<vault>/<secret>`), read with `Get-AzKeyVaultSecret` (needs `Az.KeyVault` and a signed-in Az session).
+3. An interactive `Get-Credential` prompt.
 
-**Supports two modes of operation:**
+The iDRAC certificate is self-signed by default, so it is not checked unless `-VerifyCertificate` is set (matching `hardware.bmc.verify_certificate`).
 
-| Mode | Description | Key Parameter |
-|------|-------------|---------------|
-| **Config-driven** (recommended) | Reads IPs, credentials, and VNC settings from `infrastructure.yml`. Iterates all nodes or a `-TargetNode` subset. | `-ConfigPath` |
-| **Standalone** | Targets a single iDRAC IP with explicit parameters. | `-IdracIP` |
-
-**Features:**
-
-- Config-driven multi-node operation from `infrastructure.yml`
-- Key Vault credential resolution (`keyvault://` URIs) with az CLI fallback
-- PSCredential support (no plaintext passwords)
-- YAML-overridable VNC settings (port, timeout, password, enable/disable)
-- `Write-Log` structured logging with automatic file output
-- `-WhatIf` dry-run support
-- `-TargetNode` filtering for specific nodes
-- Certificate validation bypass for self-signed iDRAC certs
-
-**Usage — Config-driven mode:**
+## Typical run
 
 ```powershell
-# Enable VNC on all nodes using infrastructure.yml settings
-.\Enable-IdracVnc.ps1 -ConfigPath "config/infrastructure.yml" -IgnoreCertificateErrors
+# 1. Read every node (read only), write the proposal
+.\Invoke-HardwareDiscovery.ps1 -ConfigPath .\infrastructure.yml
 
-# Target a single node
-.\Enable-IdracVnc.ps1 -ConfigPath "config/infrastructure.yml" -TargetNode "node-01"
+# 2. Review .\discovery\infrastructure.discovered.yml, then preview what would change in the file
+.\Update-InfrastructureYml-FromDiscovery.ps1 -ConfigPath .\infrastructure.yml -ManagementPort 'Slot 3 Port 1'
 
-# Dry run — show what would change without applying
-.\Enable-IdracVnc.ps1 -ConfigPath "config/infrastructure.yml" -WhatIf
-
-# Override VNC port from config default
-.\Enable-IdracVnc.ps1 -ConfigPath "config/infrastructure.yml" -VNCPort 5902
-
-# Provide credentials explicitly (skips Key Vault resolution)
-$cred = Get-Credential -UserName "idrac_admin"
-.\Enable-IdracVnc.ps1 -ConfigPath "config/infrastructure.yml" -Credential $cred
+# 3. Write serial numbers and MACs (backup first, confirmation unless -Force)
+.\Update-InfrastructureYml-FromDiscovery.ps1 -ConfigPath .\infrastructure.yml -ManagementPort 'Slot 3 Port 1' -Apply
 ```
 
-**Usage — Standalone mode:**
+Roles and IP assignment are never written: discovery cannot read them from hardware. Ports are named `Slot 3 Port 1`,
+`Embedded NIC 1`; keep one name per port on every node, because networking intents name ports by it.
+
+The output folder (`discovery/`, git-ignored) holds serial numbers and MACs. Do not commit it.
+
+## Enable-IdracVnc.ps1
 
 ```powershell
-# Single iDRAC with interactive credential prompt
-.\Enable-IdracVnc.ps1 -IdracIP "10.0.0.11" -IgnoreCertificateErrors
-
-# Single iDRAC with explicit credential
-$cred = Get-Credential -UserName "root"
-.\Enable-IdracVnc.ps1 -IdracIP "10.0.0.11" -Credential $cred -VNCPort 5902
-
-# Disable VNC on a single iDRAC
-.\Enable-IdracVnc.ps1 -IdracIP "10.0.0.11" -Credential $cred -EnableVNC "Disabled"
+.\Enable-IdracVnc.ps1 -ConfigPath .\infrastructure.yml -WhatIf          # every node with bmc.ip_address
+.\Enable-IdracVnc.ps1 -ConfigPath .\infrastructure.yml -TargetNode node-1
+.\Enable-IdracVnc.ps1 -BmcAddress '<idrac-address>' -Port 5901 -TimeoutSeconds 3600
 ```
 
-**Parameters:**
+The VNC password is a `SecureString` (`-VncPassword`) or a Key Vault reference (`-VncSecretReference`), 4 to 8 characters (an iDRAC limit).
 
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `ConfigPath` | string | No | — | Path to `infrastructure.yml`. Enables config-driven mode. |
-| `Credential` | PSCredential | No | — | iDRAC credentials. Overrides Key Vault resolution. |
-| `TargetNode` | string[] | No | all nodes | Node hostnames to target (config mode only). |
-| `LogPath` | string | No | auto | Override log file path. Default: `./logs/idrac-management/<date>_EnableVnc.log` |
-| `IdracIP` | string | No | — | Single iDRAC IP (standalone mode). |
-| `Username` | string | No | `root` | iDRAC username (standalone mode only). |
-| `VNCPort` | int | No | `5901` | VNC TCP port. Overrides YAML `vnc.port` if specified. |
-| `EnableVNC` | string | No | `Enabled` | `Enabled` or `Disabled`. Overrides YAML `vnc.enabled`. |
-| `VNCTimeout` | int | No | `1800` | VNC timeout in seconds (60–10800). Overrides YAML `vnc.timeout_seconds`. |
-| `VNCPassword` | string | No | — | VNC auth password (4–8 chars). Resolved from Key Vault in config mode. |
-| `IgnoreCertificateErrors` | switch | No | — | Skip SSL cert validation (self-signed iDRAC certs). |
+## Requirements
 
-**infrastructure.yml paths used:**
+PowerShell 7, the `powershell-yaml` module, TCP 443 to the iDRACs, iDRAC 9 with Redfish. Tests: `Invoke-Pester ./tests/discovery` (a fake iDRAC; nothing is contacted).
 
-```yaml
-security.infrastructure_credentials.idrac.username           # iDRAC admin username
-security.infrastructure_credentials.idrac.password_secret     # keyvault:// URI for iDRAC password
-security.infrastructure_credentials.idrac.vnc.enabled         # VNC enable flag
-security.infrastructure_credentials.idrac.vnc.port            # VNC port
-security.infrastructure_credentials.idrac.vnc.timeout_seconds # VNC session timeout
-security.infrastructure_credentials.idrac.vnc.password_secret # keyvault:// URI for VNC password
-compute.nodes.<key>.idrac_ip                                  # Per-node iDRAC IP
-compute.nodes.<key>.hostname                                  # Node hostname (display)
-```
+## Reference
 
-**Credential resolution order:**
-
-1. `-Credential` parameter (explicit PSCredential)
-2. Key Vault lookup via `keyvault://` URI from config (Az.KeyVault → az CLI fallback)
-3. Interactive `Get-Credential` prompt
-
-## Prerequisites
-
-- PowerShell 5.1 or later
-- Dell iDRAC 9 or later
-- Network connectivity to iDRAC interface
-- `powershell-yaml` module (auto-installed in config mode)
-- `Az.KeyVault` module or `az` CLI (for Key Vault credential resolution)
-- Shared helpers: `logging.ps1`, `config-loader.ps1`, `keyvault-helper.ps1`
-
-## Security Considerations
-
-### Credentials
-
-- **Never pass plaintext passwords** — use `-Credential` (PSCredential) or Key Vault resolution
-- The deprecated `-Password` string parameter has been removed; use `-Credential` instead
-- iDRAC passwords are stored as `keyvault://` URIs in `infrastructure.yml`
-- Credential resolution follows the standard three-step order (parameter → Key Vault → interactive)
-
-### Certificate Validation
-
-- Use `-IgnoreCertificateErrors` only for trusted internal networks with self-signed iDRAC certs
-- Production environments should use proper CA-signed certificates
-- Supports both PowerShell 5.1 (ServicePointManager) and 7+ (SkipCertificateCheck)
-
-### VNC Security
-
-- VNC is enabled with iDRAC authentication by default
-- VNC passwords should be stored in Key Vault (resolved from `vnc.password_secret`)
-- Consider firewall rules to restrict VNC access to management networks
-- Use strong iDRAC passwords
-
-## Integration Points
-
-- **Azure Local Provisioning**: Used during initial hardware setup to enable remote console access
-- **Infrastructure Configuration**: Called from deployment orchestration scripts
-- **Config-driven Operation**: Reads from the same `infrastructure.yml` used by all deployment scripts
-
-## Redfish API Reference
-
-- [Dell iDRAC 9 Redfish API Guide](https://www.dell.com/support/manuals/en-us/idrac9-lifecycle-controller-v3.x-series/idrac_3.30.30.30_redfishapiguide/)
-- [DMTF Redfish Standard](https://www.dmtf.org/standards/redfish)
-
-## Troubleshooting
-
-### Connection Errors
-
-- Verify iDRAC IP address and network connectivity (`Test-Connection -ComputerName <ip>`)
-- Check firewall rules allowing HTTPS (443) to iDRAC management network
-- Ensure iDRAC web interface is enabled
-
-### Authentication Errors
-
-- Verify credentials via iDRAC web UI first
-- Check Key Vault secret is current (`az keyvault secret show --vault-name <vault> --name <secret>`)
-- Ensure the iDRAC account is not locked
-- Use `-Credential (Get-Credential)` to test with interactive credentials
-
-### Certificate Errors
-
-- Use `-IgnoreCertificateErrors` for self-signed iDRAC certificates
-- Check: `Invoke-WebRequest -Uri "https://<idrac-ip>" -SkipCertificateCheck` (PS 7+)
-
-### Configuration Not Applied
-
-- Some settings require iDRAC reset to take effect
-- Check `@Message.ExtendedInfo` in log output for required actions
-- Allow 30–60 seconds for iDRAC to process changes
-
-## Logging
-
-Logs are written to `./logs/idrac-management/` (CWD-relative, run from repo root):
-
-```
-logs/idrac-management/2026-03-28_143022_EnableVnc.log
-```
-
-Override with `-LogPath` to write to a custom location.
-
-## Future Enhancements
-
-Planned additions to this utility module:
-
-- Power management scripts (power on/off, reset)
-- BIOS configuration management
-- Firmware update automation
-- Log collection and diagnostics
-- Health monitoring and alerting
-
----
-
-**Version Control**
-
-- Created: 2026-01-20 by AzureLocal Cloud Team Team
-- Last Edited: 2026-03-28 by AzureLocal Cloud Team Team
-- Version: 2.0.0
-- Tags: powershell, idrac, redfish, hardware, vnc, config-driven
-- Keywords: dell, idrac, redfish, hardware, automation, vnc, keyvault
+- [Dell iDRAC 9 Redfish API guide](https://www.dell.com/support/manuals/en-us/idrac9-lifecycle-controller-v3.x-series/idrac_3.30.30.30_redfishapiguide/)
+- Dell endpoints for Azure Local: `config/oem/dell-endpoints.md`

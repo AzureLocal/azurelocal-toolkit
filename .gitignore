@@ -68,3 +68,8 @@ node_modules/
 # Claude Code local settings (logs and machine-local overrides only)
 .claude/logs/
 .claude/settings.local.json
+
+# Discovery output: serial numbers and MACs, never committed
+/discovery/
+infrastructure.discovered.yml
+infrastructure*.yml.bak.*
