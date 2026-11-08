@@ -935,6 +935,7 @@ function Invoke-AzlApplyPhase {
             if ($run.Entry.restarted) {
                 $Record.restarted = $true
                 # The restart happens inside the apply call; these two are written when the call reports it, before the steps of that call.
+                Send-AzlRunEvent -Context $Context -Record $Record -State NodeRestarting -Evidence 'The apply asked the node to restart (a computer name, MPIO or driver change needs one).' -Level Warning
                 Send-AzlRunEvent -Context $Context -Record $Record -State NodeReconnecting -Evidence 'The node restarted during the apply (a computer name, MPIO or driver change needs one); the run waited for it.' -Level Warning
                 Send-AzlRunEvent -Context $Context -Record $Record -State NodeReconnected -Evidence 'The node came back with a new boot time and answered again.'
             }

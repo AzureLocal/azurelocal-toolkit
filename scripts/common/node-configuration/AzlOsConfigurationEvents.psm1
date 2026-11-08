@@ -25,9 +25,10 @@
     try, tries, waitSeconds (NodeRetry), wipe (WipeListPublished: array of { node, disks }), wipeCount.
 
     The contract is section 6 of pmo/azure-local/os-configuration-design.md. Run events (node '*'): RunStarted, PlanCompleted,
-    WipeListPublished, RunCompleted. Node events: NodeStarted, MethodResolved, TransportResolved, NodeRetry, NodeConverged, NodeFailed,
-    NodeBlocked, NodeReconnecting, NodeReconnected. Step events: StepPlanned, StepApplying, StepApplied, StepFailed, StepSkipped,
-    StepVerified. Guarded change events (step Network): NetworkChangeStaged, NetworkChangeVerifying, NetworkChangeAwaitingConfirm,
+    WipeListPublished, RunCompleted. Node events: NodeStarted, MethodResolved, TransportResolved, NodeRetry, NodeRestarting, NodeConverged,
+    NodeFailed, NodeBlocked, NodeReconnecting, NodeReconnected. Step events: StepPlanned, StepApplying, StepApplied, StepFailed, StepSkipped,
+    StepVerified. Domain join (step DomainJoin, Active Directory designs): DomainJoinPlanned, DomainJoinApplying, DomainJoined,
+    DomainJoinFailed (evidence: the AD error). Guarded change events (step Network): NetworkChangeStaged, NetworkChangeVerifying, NetworkChangeAwaitingConfirm,
     NetworkChangeCommitted, NetworkChangeRepaired, NetworkChangeRolledBack, NetworkChangeRefused; they may carry changeId, rung,
     reason, confirmMinutes and confirmBy (UTC time the confirmation window ends).
 
@@ -41,15 +42,16 @@ $script:StepOrder = @('RemoteManagement', 'Network', 'Dns', 'Time', 'Hostname', 
 $script:EventMaxText = 2000
 $script:EventState = [ordered]@{
     Run     = @('RunStarted', 'PlanCompleted', 'WipeListPublished', 'RunCompleted')
-    Node    = @('NodeStarted', 'MethodResolved', 'TransportResolved', 'NodeRetry', 'NodeConverged', 'NodeFailed', 'NodeBlocked', 'NodeReconnecting', 'NodeReconnected')
+    Node    = @('NodeStarted', 'MethodResolved', 'TransportResolved', 'NodeRetry', 'NodeRestarting', 'NodeConverged', 'NodeFailed', 'NodeBlocked', 'NodeReconnecting', 'NodeReconnected')
     Step    = @('StepPlanned', 'StepSkipped', 'StepApplying', 'StepApplied', 'StepFailed', 'StepVerified')
+    DomainJoin = @('DomainJoinPlanned', 'DomainJoinApplying', 'DomainJoined', 'DomainJoinFailed')
     Guarded = @('NetworkChangeStaged', 'NetworkChangeVerifying', 'NetworkChangeAwaitingConfirm', 'NetworkChangeCommitted', 'NetworkChangeRepaired', 'NetworkChangeRolledBack', 'NetworkChangeRefused')
 }
 
 function Get-AzlOsConfigurationEventState {
     <#
     .SYNOPSIS
-        The event states of the feed by level: Run, Node, Step and Guarded (the guarded network change).
+        The event states of the feed by level: Run, Node, Step, DomainJoin and Guarded (the guarded network change).
     #>
     [CmdletBinding()]
     param()

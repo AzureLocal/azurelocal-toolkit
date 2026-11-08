@@ -162,6 +162,7 @@ Node events:
 | `MethodResolved` | the method is decided (`evidence` names the declared `scenario.os_install`, the evidence found and any warning; `Warning` when the declaration and the evidence disagree). Written once more after the first read of the node, to add the OS it reported | `declared`, `declaredMethod` (`Ztp` or `Iso`), `source`, `mismatch`, `steps`, `handoff`, `arc`, `winrm`, `warnings`, `hostname`, `osVersion`, `build`, `osCaption` (ISO path), `schemaVersion`, `wrapperVersion`, `sbePublisher`, `sbeFamily`, `sbeVersion`, `sbePackage`, `sbeDelivery` |
 | `TransportResolved` | how the node is reached (`transport` on the line); `address` and `forced` | `address`, `forced` |
 | `NodeRetry` | an Arc Run Command ended in state `Unknown` and is tried again | `try`, `tries`, `waitSeconds`, `phase` |
+| `NodeRestarting` | the node was asked to restart (written when the apply call reports it) | |
 | `NodeReconnecting`, `NodeReconnected` | the node restarted or its address changed and the run waited for it, then reached it again. For a restart inside an apply call they are written when the call reports it, before the `StepApplied` events of that call | |
 | `NodeConverged` | the plan found nothing to change, or the verification pass found nothing left to change | |
 | `NodeFailed` | the node could not be read, a step failed, or it did not converge (`Error`) | |
@@ -177,6 +178,8 @@ Step events (`step` is one of `RemoteManagement`, `Network`, `Dns`, `Time`, `Hos
 | `StepFailed` | the apply reports a failed change, or the verification pass still finds the step different | `action`, `item`, `current`, `desired` |
 | `StepSkipped` | the step does not apply to this node or run; `evidence` starts with `Not applicable:` and says why (not selected with `-Step`, no SBE bundle, the storage wipe is off, ...) | |
 | `StepVerified` | the verification pass finds the step matching | `action` |
+
+Domain join (step `DomainJoin`, Active Directory designs): `DomainJoinPlanned`, `DomainJoinApplying`, `DomainJoined` and `DomainJoinFailed` (`evidence` is the AD error). A viewer such as azurelocal-sonar switches the account it reads a node's logs with from the local account to the domain account at `DomainJoined`.
 
 Guarded network change (step `Network`): `NetworkChangeStaged`, `NetworkChangeVerifying`, `NetworkChangeAwaitingConfirm` (`confirmMinutes`, `confirmBy`), `NetworkChangeCommitted`, `NetworkChangeRepaired` (`rung`), `NetworkChangeRolledBack` (`reason`: the node's own reason) and `NetworkChangeRefused`. They carry the optional fields `changeId`, `rung`, `reason`, `confirmMinutes` and `confirmBy` (the UTC time the confirmation window ends). The contract is section 6 of the OS configuration design in the platform repository (`pmo/azure-local/os-configuration-design.md`).
 
