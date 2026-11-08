@@ -23,6 +23,9 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# DOMAINJOIN HOOK (feat/os-config-domain-join): the DomainJoin step's node scripts live in their own module.
+Import-Module (Join-Path $PSScriptRoot 'AzlNodeDomainJoinPayload.psm1')
+
 # Shared by every payload: parameter decoding and the result line.
 $script:Prologue = @'
 param([string]$ParamsB64, [string]$SecretsB64)
@@ -230,12 +233,13 @@ if (Get-P $P 'san' $false) {
     }
 }
 
+#AZL-HOOK:DomainJoinRead
 $rebootPending = [bool]((Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') -or
     (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'))
 
 Write-Result ([pscustomobject]@{
         v = 1; host = $env:COMPUTERNAME; boot = $os.LastBootUpTime.ToUniversalTime().ToString('o'); os = ('{0}.{1}' -f $os.Version, $ubr); reboot = $rebootPending
-        nics = $nics; remote = $remote; time = $time; sbe = $sbe; drv = $drv; admin = $adm; stor = $stor; san = $san; err = $script:err
+        nics = $nics; remote = $remote; time = $time; sbe = $sbe; drv = $drv; admin = $adm; stor = $stor; san = $san; domainJoin = $domainJoin; err = $script:err
     })
 '@
 
@@ -509,20 +513,25 @@ Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; registered = $
 function Get-AzlNodePayload {
     <#
     .SYNOPSIS
-        The text of a node script: Read (changes nothing), Apply, Collect (the last Apply's result) or Restart.
+        The text of a node script: Read (changes nothing), Apply, Collect (the last Apply's result) or Restart; Preflight and ArcRegistration for the ISO path; DomainJoinProbe, DomainJoinApply, DomainJoinRestart and DomainJoinResume for the DomainJoin step.
     .EXAMPLE
         Get-AzlNodePayload -Name Read
     #>
     [CmdletBinding()]
     [OutputType([string])]
-    param([Parameter(Mandatory)][ValidateSet('Read', 'Apply', 'Collect', 'Restart', 'Preflight', 'ArcRegistration')][string]$Name)
+    param([Parameter(Mandatory)][ValidateSet('Read', 'Apply', 'Collect', 'Restart', 'Preflight', 'ArcRegistration', 'DomainJoinProbe', 'DomainJoinApply', 'DomainJoinOuCheck', 'DomainJoinRestart', 'DomainJoinResume')][string]$Name)
     $body = switch ($Name) {
-        'Read' { $script:ReadBody }
+        'Read' { $script:ReadBody.Replace('#AZL-HOOK:DomainJoinRead', (Get-AzlDomainJoinReadSection)) } # DOMAINJOIN HOOK
         'Apply' { $script:ApplyBody }
         'Collect' { $script:CollectBody }
         'Restart' { $script:RestartBody }
         'Preflight' { $script:PreflightBody }
         'ArcRegistration' { $script:ArcRegistrationBody }
+        'DomainJoinProbe' { Get-AzlDomainJoinPayloadBody -Name Probe } # DOMAINJOIN HOOK: the four DomainJoin scripts
+        'DomainJoinApply' { Get-AzlDomainJoinPayloadBody -Name Apply }
+        'DomainJoinOuCheck' { Get-AzlDomainJoinPayloadBody -Name OuCheck }
+        'DomainJoinRestart' { Get-AzlDomainJoinPayloadBody -Name Restart }
+        'DomainJoinResume' { Get-AzlDomainJoinPayloadBody -Name Resume }
     }
     return ($script:Prologue + [Environment]::NewLine + $body)
 }
