@@ -1,0 +1,333 @@
+# Azure Local OS configuration, Azure DevOps.
+#
+# Create a pipeline from this file (Pipelines > New pipeline > Existing Azure Pipelines YAML file). It runs the same entry point an
+# operator runs by hand:
+#   scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1
+# and nothing else; the logic is in the script, not here. PowerShell 7 only (pwsh: steps and AzurePowerShell@5 with pwsh: true).
+#
+# Stage Plan is read only. It publishes the plan report and the wipe list (which disks on which node would be wiped when
+# clear_storage is on) as the build artifact os-configuration-plan, and attaches summary.md to the run summary.
+# Stage ConfirmStorageWipe exists only when mode is Apply AND clear_storage is true: a second, separate approval (environment
+# azure-local-os-configuration-clear-storage) that the reviewer gives after reading the wipe list. Otherwise it is skipped.
+# Stage Apply runs only for mode Apply, and only after a reviewer of the environment azure-local-os-configuration approved it.
+#
+# Transport. WinRM is the default: the agent must have line of sight to the nodes' management network (TCP 5985, or 5986 with HTTPS).
+# Azure Arc Run Command is used only when transport is set to ArcRunCommand (for sites with no route to the nodes), never as a
+# silent fallback. approved_bootstrap opens the nodes' WinRM firewall rule once through Arc, in the Apply stage only, after the
+# approval; it needs the remoting settings (remoting.bootstrapTransport) of the OS configuration scripts.
+#
+# What to configure in the organization (names only; no value of any ID, password or key is in this file):
+#   Agent pool      a self-hosted pool (parameter agent_pool) with PowerShell 7 (pwsh), Az.Accounts and Az.KeyVault, and a route to
+#                   the nodes' management subnet. For WinRM from a Linux agent, the PSWSMan module (Negotiate authentication).
+#   Service conn.   an Azure Resource Manager service connection (parameter service_connection), ideally workload identity
+#                   federation, with Azure Connected Machine Resource Administrator and Reader on the Arc machines' resource group,
+#                   and Key Vault Secrets User on the vault named by identity.local_admin.password in the master file.
+#   Variable group  azurelocal-os-configuration (Pipelines > Library). It holds nothing this file needs as a secret: the nodes'
+#                   local administrator password is read from the Key Vault by the script. Put any site setting there, or link the
+#                   group to a Key Vault (secrets then arrive as secret variables, never in this file).
+#   Environments    azure-local-os-configuration              Approvals and checks: Approvals (required reviewers), and an
+#                                                              Exclusive lock so two runs never work on the cluster at once.
+#                   azure-local-os-configuration-clear-storage Approvals: the people allowed to approve a storage wipe. Use
+#                                                              different people than the first environment where you can.
+#                   A deployment job to an environment with no approval check runs without one, so add the checks before use.
+#
+# Where the files come from: the master file is a path in this repository (parameter infrastructure_file). The handoff files
+# (<node>.ztp-handoff.json) are a repository path (handoff_path) or the artifact ztp-handoff of a ZTP pipeline run
+# (handoff_pipeline_id and handoff_run_id). See docs/os-configuration-and-arm-deployment.md.
+name: os-configuration-$(Date:yyyyMMdd)$(Rev:.r)
+
+trigger: none
+pr: none
+
+# Runs queue one after the other, never in parallel on the same environment.
+lockBehavior: sequential
+
+parameters:
+  - name: infrastructure_file
+    displayName: 'Path of the master infrastructure.yml in the repository'
+    type: string
+    default: config/infrastructure.yml
+  - name: handoff_path
+    displayName: 'Handoff file or directory of *.ztp-handoff.json in the repository (none for an ISO-installed cluster)'
+    type: string
+    default: ztp-state
+  - name: handoff_pipeline_id
+    displayName: 'Optional: ID of the ZTP pipeline whose artifact ztp-handoff holds the handoff files (with handoff_run_id; replaces handoff_path; none to skip)'
+    type: string
+    default: none
+  - name: handoff_run_id
+    displayName: 'Optional: run ID of that ZTP pipeline (none to skip)'
+    type: string
+    default: none
+  - name: nodes
+    displayName: 'Nodes to configure, comma separated (all: every node in the file)'
+    type: string
+    default: all
+  - name: steps
+    displayName: 'Steps to run, comma separated (all: the steps of each node''s method). RemoteManagement, Sbe, Drivers, Network, Dns, Time, Hostname, UnusedAdapters, LocalAdmin, Mpio, SanVerify, ClearStorage, ArcRegistration'
+    type: string
+    default: all
+  - name: mode
+    displayName: 'Plan only, or Plan then Apply after approval'
+    type: string
+    default: Plan
+    values:
+      - Plan
+      - Apply
+  - name: transport
+    displayName: 'WinRM (default; the agent reaches the nodes) or ArcRunCommand (explicit; only for sites with no route to the nodes)'
+    type: string
+    default: WinRM
+    values:
+      - WinRM
+      - ArcRunCommand
+  - name: approved_bootstrap
+    displayName: 'Apply only: use Azure Arc once per node to open the WinRM firewall rule for this agent (remoting.bootstrapTransport arc)'
+    type: boolean
+    default: false
+  - name: clear_storage
+    displayName: 'Wipe leftover local storage (Apply needs a second approval after the wipe list is shown)'
+    type: boolean
+    default: false
+  - name: agent_pool
+    displayName: 'Self-hosted agent pool (PowerShell 7, route to the nodes)'
+    type: string
+    default: AzureLocal-SelfHosted
+  - name: service_connection
+    displayName: 'Azure Resource Manager service connection (name only)'
+    type: string
+    default: AzureLocal-ServiceConnection
+
+variables:
+  - group: azurelocal-os-configuration
+  - name: OSCONFIG_SCRIPT
+    value: scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1
+
+stages:
+  # ---------------------------------------------------------------------------------------------------------------------------
+  - stage: Plan
+    displayName: 'Plan (read only)'
+    jobs:
+      - job: Plan
+        displayName: 'Plan (read only)'
+        pool:
+          name: ${{ parameters.agent_pool }}
+          demands:
+            - pwsh
+        steps:
+          - checkout: self
+
+          - ${{ if and(ne(parameters.handoff_pipeline_id, 'none'), ne(parameters.handoff_run_id, 'none')) }}:
+              - task: DownloadPipelineArtifact@2
+                displayName: 'Fetch the ZTP handoff artifact'
+                inputs:
+                  source: specific
+                  project: $(System.TeamProjectId)
+                  pipeline: ${{ parameters.handoff_pipeline_id }}
+                  runVersion: specific
+                  runId: ${{ parameters.handoff_run_id }}
+                  artifact: ztp-handoff
+                  path: $(Pipeline.Workspace)/ztp-handoff
+
+          - pwsh: |
+              $ErrorActionPreference = 'Stop'
+              foreach ($m in 'powershell-yaml', 'Az.Accounts', 'Az.KeyVault') {
+                if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery }
+              }
+            displayName: 'Install the PowerShell modules'
+
+          - task: AzurePowerShell@5
+            displayName: 'Plan'
+            inputs:
+              azureSubscription: ${{ parameters.service_connection }}
+              azurePowerShellVersion: LatestVersion
+              pwsh: true
+              ScriptType: InlineScript
+              workingDirectory: $(Build.SourcesDirectory)
+              Inline: |
+                Set-StrictMode -Version Latest
+                $ErrorActionPreference = 'Stop'
+                $p = @{
+                  InfrastructureFile = $env:OSC_INFRASTRUCTURE_FILE
+                  Mode               = 'Plan'
+                  Transport          = $env:OSC_TRANSPORT
+                  ReportDirectory    = $env:OSC_REPORT_DIRECTORY
+                }
+                if ($env:OSC_HANDOFF_PATH -and $env:OSC_HANDOFF_PATH -ne 'none') { $p.HandoffPath = $env:OSC_HANDOFF_PATH }
+                foreach ($pair in @(@('OSC_NODES', 'Node'), @('OSC_STEPS', 'Step'))) {
+                  $list = @(([string][Environment]::GetEnvironmentVariable($pair[0])) -split '[,;\s]+' | Where-Object { $_ -and $_ -ne 'all' })
+                  foreach ($item in $list) { if ($item -notmatch '^[A-Za-z0-9._-]+$') { throw "$($pair[0]) holds an invalid name: '$item'." } }
+                  if ($list.Count) { $p[$pair[1]] = $list }
+                }
+                if ($env:OSC_CLEAR_STORAGE -eq 'true') { $p.ClearStorage = $true }
+                & $env:OSCONFIG_SCRIPT @p
+                if ($LASTEXITCODE -ne 0) { throw "Invoke-AzureLocalOsConfiguration.ps1 exited with code $LASTEXITCODE." }
+            env:
+              OSC_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
+              OSC_HANDOFF_PATH: ${{ iif(and(ne(parameters.handoff_pipeline_id, 'none'), ne(parameters.handoff_run_id, 'none')), '$(Pipeline.Workspace)/ztp-handoff', parameters.handoff_path) }}
+              OSC_NODES: ${{ parameters.nodes }}
+              OSC_STEPS: ${{ parameters.steps }}
+              OSC_TRANSPORT: ${{ parameters.transport }}
+              OSC_CLEAR_STORAGE: ${{ parameters.clear_storage }}
+              OSC_REPORT_DIRECTORY: $(Agent.TempDirectory)/osconfig-plan
+
+          - pwsh: |
+              $ErrorActionPreference = 'Stop'
+              $src = $env:OSC_REPORT_DIRECTORY
+              $dst = $env:OSC_ARTIFACT_DIRECTORY
+              New-Item -ItemType Directory -Path $dst -Force | Out-Null
+              foreach ($name in 'report.json', 'plan-report.json', 'summary.md', 'wipe-list.txt', 'os-configuration-events.jsonl') {
+                $file = Join-Path $src $name
+                if (Test-Path -LiteralPath $file -PathType Leaf) { Copy-Item -LiteralPath $file -Destination $dst }
+                else { Write-Output "##vso[task.logissue type=warning]$name was not written by this run." }
+              }
+              $summary = Join-Path $dst 'summary.md'
+              if (Test-Path -LiteralPath $summary) { Write-Output "##vso[task.uploadsummary]$summary" }
+            displayName: 'Collect the plan report and the wipe list'
+            condition: always()
+            env:
+              OSC_REPORT_DIRECTORY: $(Agent.TempDirectory)/osconfig-plan
+              OSC_ARTIFACT_DIRECTORY: $(Build.ArtifactStagingDirectory)/os-configuration-plan
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish the plan report and the wipe list'
+            condition: always()
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/os-configuration-plan
+              artifact: os-configuration-plan
+              publishLocation: pipeline
+
+  # ---------------------------------------------------------------------------------------------------------------------------
+  # Second, explicit approval for a storage wipe. Runs only for mode Apply with clear_storage on; otherwise it is skipped.
+  - stage: ConfirmStorageWipe
+    displayName: 'Confirm storage wipe (second approval)'
+    dependsOn: Plan
+    condition: and(succeeded('Plan'), eq('${{ parameters.mode }}', 'Apply'), eq('${{ parameters.clear_storage }}', 'true'))
+    jobs:
+      - deployment: ConfirmStorageWipe
+        displayName: 'Confirm storage wipe'
+        pool:
+          name: ${{ parameters.agent_pool }}
+          demands:
+            - pwsh
+        # Required reviewers on this environment are the second approval gate.
+        environment: azure-local-os-configuration-clear-storage
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - download: current
+                  artifact: os-configuration-plan
+                - pwsh: |
+                    $ErrorActionPreference = 'Stop'
+                    $list = Join-Path $env:OSC_PLAN_DIRECTORY 'wipe-list.txt'
+                    Write-Output '##[warning]Approving this stage lets the Apply stage WIPE the local storage listed below.'
+                    if (Test-Path -LiteralPath $list -PathType Leaf) { Get-Content -LiteralPath $list | ForEach-Object { Write-Output $_ } }
+                    else { throw 'The plan artifact has no wipe-list.txt, so there is nothing to approve. Reject this stage.' }
+                  displayName: 'Show the wipe list'
+                  env:
+                    OSC_PLAN_DIRECTORY: $(Pipeline.Workspace)/os-configuration-plan
+
+  # ---------------------------------------------------------------------------------------------------------------------------
+  - stage: Apply
+    displayName: 'Apply (needs approval)'
+    dependsOn:
+      - Plan
+      - ConfirmStorageWipe
+    condition: and(succeeded('Plan'), eq('${{ parameters.mode }}', 'Apply'), in(dependencies.ConfirmStorageWipe.result, 'Succeeded', 'Skipped'))
+    jobs:
+      - deployment: Apply
+        displayName: 'Apply'
+        pool:
+          name: ${{ parameters.agent_pool }}
+          demands:
+            - pwsh
+        # Required reviewers on this environment are the approval gate.
+        environment: azure-local-os-configuration
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - ${{ if and(ne(parameters.handoff_pipeline_id, 'none'), ne(parameters.handoff_run_id, 'none')) }}:
+                    - task: DownloadPipelineArtifact@2
+                      displayName: 'Fetch the ZTP handoff artifact'
+                      inputs:
+                        source: specific
+                        project: $(System.TeamProjectId)
+                        pipeline: ${{ parameters.handoff_pipeline_id }}
+                        runVersion: specific
+                        runId: ${{ parameters.handoff_run_id }}
+                        artifact: ztp-handoff
+                        path: $(Pipeline.Workspace)/ztp-handoff
+
+                - pwsh: |
+                    $ErrorActionPreference = 'Stop'
+                    foreach ($m in 'powershell-yaml', 'Az.Accounts', 'Az.KeyVault') {
+                      if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery }
+                    }
+                  displayName: 'Install the PowerShell modules'
+
+                - task: AzurePowerShell@5
+                  displayName: 'Apply'
+                  inputs:
+                    azureSubscription: ${{ parameters.service_connection }}
+                    azurePowerShellVersion: LatestVersion
+                    pwsh: true
+                    ScriptType: InlineScript
+                    workingDirectory: $(Build.SourcesDirectory)
+                    Inline: |
+                      Set-StrictMode -Version Latest
+                      $ErrorActionPreference = 'Stop'
+                      $p = @{
+                        InfrastructureFile = $env:OSC_INFRASTRUCTURE_FILE
+                        Mode               = 'Apply'
+                        Transport          = $env:OSC_TRANSPORT
+                        ReportDirectory    = $env:OSC_REPORT_DIRECTORY
+                      }
+                      if ($env:OSC_HANDOFF_PATH -and $env:OSC_HANDOFF_PATH -ne 'none') { $p.HandoffPath = $env:OSC_HANDOFF_PATH }
+                      foreach ($pair in @(@('OSC_NODES', 'Node'), @('OSC_STEPS', 'Step'))) {
+                        $list = @(([string][Environment]::GetEnvironmentVariable($pair[0])) -split '[,;\s]+' | Where-Object { $_ -and $_ -ne 'all' })
+                        foreach ($item in $list) { if ($item -notmatch '^[A-Za-z0-9._-]+$') { throw "$($pair[0]) holds an invalid name: '$item'." } }
+                        if ($list.Count) { $p[$pair[1]] = $list }
+                      }
+                      if ($env:OSC_CLEAR_STORAGE -eq 'true') { $p.ClearStorage = $true }
+                      if ($env:OSC_APPROVED_BOOTSTRAP -eq 'true') { $p.Settings = @{ remoting = @{ bootstrapTransport = 'arc' } } }
+                      & $env:OSCONFIG_SCRIPT @p
+                      if ($LASTEXITCODE -ne 0) { throw "Invoke-AzureLocalOsConfiguration.ps1 exited with code $LASTEXITCODE." }
+                  env:
+                    OSC_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
+                    OSC_HANDOFF_PATH: ${{ iif(and(ne(parameters.handoff_pipeline_id, 'none'), ne(parameters.handoff_run_id, 'none')), '$(Pipeline.Workspace)/ztp-handoff', parameters.handoff_path) }}
+                    OSC_NODES: ${{ parameters.nodes }}
+                    OSC_STEPS: ${{ parameters.steps }}
+                    OSC_TRANSPORT: ${{ parameters.transport }}
+                    OSC_CLEAR_STORAGE: ${{ parameters.clear_storage }}
+                    OSC_APPROVED_BOOTSTRAP: ${{ parameters.approved_bootstrap }}
+                    OSC_REPORT_DIRECTORY: $(Agent.TempDirectory)/osconfig-apply
+
+                - pwsh: |
+                    $ErrorActionPreference = 'Stop'
+                    $src = $env:OSC_REPORT_DIRECTORY
+                    $dst = $env:OSC_ARTIFACT_DIRECTORY
+                    New-Item -ItemType Directory -Path $dst -Force | Out-Null
+                    foreach ($name in 'report.json', 'summary.md', 'os-configuration-events.jsonl') {
+                      $file = Join-Path $src $name
+                      if (Test-Path -LiteralPath $file -PathType Leaf) { Copy-Item -LiteralPath $file -Destination $dst }
+                      else { Write-Output "##vso[task.logissue type=warning]$name was not written by this run." }
+                    }
+                    $summary = Join-Path $dst 'summary.md'
+                    if (Test-Path -LiteralPath $summary) { Write-Output "##vso[task.uploadsummary]$summary" }
+                  displayName: 'Collect the report'
+                  condition: always()
+                  env:
+                    OSC_REPORT_DIRECTORY: $(Agent.TempDirectory)/osconfig-apply
+                    OSC_ARTIFACT_DIRECTORY: $(Build.ArtifactStagingDirectory)/os-configuration-report
+
+                - task: PublishPipelineArtifact@1
+                  displayName: 'Publish the report'
+                  condition: always()
+                  inputs:
+                    targetPath: $(Build.ArtifactStagingDirectory)/os-configuration-report
+                    artifact: os-configuration-report
+                    publishLocation: pipeline

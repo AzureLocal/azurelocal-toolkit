@@ -144,10 +144,32 @@ The plan changes nothing, so it can run unattended. Its output is what a person 
 | --- | --- | --- |
 | GitHub Actions | `pipelines/github/os-configuration.yml` (copy to `.github/workflows/`) | Environment `azure-local-os-configuration` with required reviewers on the `apply` job |
 | GitLab CI | `pipelines/gitlab/os-configuration.gitlab-ci.yml` | `when: manual` on the apply job; `resource_group` allows one run at a time |
+| Azure DevOps | `pipelines/azure-devops/os-configuration.yml` | Environment `azure-local-os-configuration` (approvals) on the Apply stage; a second environment for a storage wipe |
 
 Both run `pwsh -File .../Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ... -HandoffPath ... -Mode Plan|Apply -ReportDirectory ...` and nothing else; the logic is the script's. The runner is a self-hosted Linux runner with PowerShell 7 and the `powershell-yaml`, `Az.Accounts` and `Az.KeyVault` modules. ZTP-provisioned nodes need only Azure from the runner (with `hardware.sbe.delivery: node_pull` or `skip`); ISO-installed nodes, and the `winrm_copy` route of the SBE package, need a runner that reaches the nodes' management addresses on TCP 5985.
 
 **Where the files come from.** The master `infrastructure.yml` is a path in the repository (`infrastructure_file` / `INFRASTRUCTURE_FILE`). The handoff files, `<node>.ztp-handoff.json` (one per ZTP run: nodes 1 and 2 may share a file, node 3 has its own), are either committed to the repository path `handoff_path` / `HANDOFF_PATH`, or published by the ZTP run as an artifact named `ztp-handoff`; the GitHub workflow takes the ZTP run's ID (`handoff_run_id`) and downloads it, and in GitLab the job lists the ZTP job in `needs`/`dependencies`. Point `-HandoffPath` at the folder: every handoff in it is merged. A handoff file holds the subscription ID and resource IDs of your environment, so keep it in a private repository or artifact.
+
+<!-- ado-pipeline:begin -->
+### Azure DevOps pipeline
+
+`pipelines/azure-devops/os-configuration.yml` runs the same entry point in three stages: **Plan** (read only; publishes the artifact `os-configuration-plan` with `report.json`, `plan-report.json`, `summary.md`, `wipe-list.txt` and `os-configuration-events.jsonl`, and attaches `summary.md` to the run), **ConfirmStorageWipe** and **Apply** (publishes `os-configuration-report` with `report.json`, `summary.md` and `os-configuration-events.jsonl`). It is started by hand (`trigger: none`) and runs PowerShell 7 only, on a self-hosted agent with a route to the nodes' management subnet.
+
+| Parameter | Default | Entry point parameter |
+| --- | --- | --- |
+| `infrastructure_file`, `handoff_path` | `config/infrastructure.yml`, `ztp-state` (`none` for an ISO-installed cluster) | `-InfrastructureFile`, `-HandoffPath` |
+| `handoff_pipeline_id`, `handoff_run_id` | `none` | download the artifact `ztp-handoff` of a ZTP pipeline run and use it as `-HandoffPath` |
+| `nodes`, `steps` | `all` | `-Node`, `-Step` (comma separated; `all` means no limit) |
+| `mode` | `Plan` | `-Mode` (`Plan` or `Apply`) |
+| `transport` | `WinRM` | `-Transport`. `ArcRunCommand` is the explicit option for sites with no route to the nodes; `Auto` is not offered, so Arc is never a silent choice |
+| `approved_bootstrap` | `false` | Apply only: `-Settings @{ remoting = @{ bootstrapTransport = 'arc' } }`, which uses Arc once per node to open the WinRM firewall rule for the agent. It needs the remoting settings of the OS configuration scripts; without them the run stops at once with an unknown-setting error (exit 2) and changes nothing |
+| `clear_storage` | `false` | `-ClearStorage` in Plan (so the wipe list is shown) and in Apply |
+| `agent_pool`, `service_connection` | `AzureLocal-SelfHosted`, `AzureLocal-ServiceConnection` | names only |
+
+**Two approvals for a wipe.** Approvals are checks on an Azure DevOps *environment*, so create both before the first run (Pipelines > Environments > Approvals and checks): `azure-local-os-configuration` (required reviewers; add an Exclusive lock check so two runs never work on the cluster at once) and `azure-local-os-configuration-clear-storage` (the people allowed to approve a wipe, preferably not the same as the first). The `ConfirmStorageWipe` stage runs only for `mode` Apply with `clear_storage` on; it prints the plan's wipe list and waits for the second approval, and a rejection stops the `Apply` stage. Without `clear_storage` it is skipped and only the first approval applies. A deployment job in an environment that has no check runs without waiting, so add the checks before the first run.
+
+**Sign-in and secrets.** The `AzurePowerShell@5` task signs in through the service connection (workload identity federation preferred; it needs the roles in the table below). The nodes' local administrator password is read from the Key Vault by the script. The pipeline file holds no value of any ID or secret; anything secret comes from the variable group `azurelocal-os-configuration` (which can be linked to a Key Vault). `tests/pipelines/AzureDevOpsOsConfiguration.Tests.ps1` checks the gates, the parameter names against the entry point, PowerShell 7 only and the absence of secrets.
+<!-- ado-pipeline:end -->
 
 **Permissions of the pipeline identity** (the federated app registration, or the runner's managed identity). The cross-tool matrix is in [access-and-connectivity](access-and-connectivity.md).
 
