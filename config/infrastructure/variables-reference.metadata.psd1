@@ -41,6 +41,15 @@
         '^os_configuration(\.|$)'
     )
 
+    # Keys the toolkit's CI/CD infrastructure scripts read (scripts/deploy/01-cicd-infra, schema 5.5).
+    CicdInfra     = @(
+        '^devops(\.|\[|$)'
+        '^azure\.(tenant_id|subscription_id|location|resource_group|automation_identity)(\.|$)'
+        '^key_vaults(\[\]|$)'
+        '^landing_zone\.(subscriptions|networks|resource_groups)(\[\]|$)'
+        '^tags(\.|$)'
+    )
+
     # Keys the ARM and SAN deployment reads beyond those whose schema description names an ARM parameter.
     ArmDeployment = @(
         '^storage\.san(\.|$)'

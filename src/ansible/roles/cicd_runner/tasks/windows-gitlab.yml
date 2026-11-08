@@ -1,0 +1,49 @@
+# =============================================================================
+# Role: cicd_runner - GitLab Runner on Windows
+# =============================================================================
+---
+- name: Create the GitLab Runner folder
+  ansible.windows.win_file:
+    path: C:\GitLab-Runner
+    state: directory
+
+- name: Download the GitLab Runner
+  ansible.windows.win_get_url:
+    url: "https://gitlab-runner-downloads.s3.amazonaws.com/v{{ cicd_runner_gitlab_runner_version }}/binaries/gitlab-runner-windows-amd64.exe"
+    dest: C:\GitLab-Runner\gitlab-runner.exe
+    checksum: "{{ cicd_runner_gitlab_runner_windows_sha256 if cicd_runner_gitlab_runner_windows_sha256 | length > 0 else omit }}"
+    checksum_algorithm: sha256
+
+- name: Check whether the runner is already registered
+  ansible.windows.win_stat:
+    path: C:\GitLab-Runner\config.toml
+  register: cicd_runner_gitlab_configured
+
+- name: Register the runner, install and start the service
+  when: not cicd_runner_gitlab_configured.stat.exists
+  no_log: true
+  ansible.windows.win_powershell:
+    parameters:
+      Credential: "{{ cicd_runner_credential }}"
+      ScmUrl: "{{ cicd_runner_scm_url }}"
+      Labels: "{{ cicd_runner_labels_csv }}"
+      Name: "{{ cicd_runner_runner_name }}"
+    script: |
+      [CmdletBinding()]
+      param($Credential, $ScmUrl, $Labels, $Name)
+      $ErrorActionPreference = 'Stop'
+      $exe = 'C:\GitLab-Runner\gitlab-runner.exe'
+      Push-Location C:\GitLab-Runner
+      try {
+          if ($Credential.StartsWith('glrt-')) {
+              & $exe register --non-interactive --url $ScmUrl --token $Credential --executor shell --shell pwsh --name $Name
+          }
+          else {
+              & $exe register --non-interactive --url $ScmUrl --registration-token $Credential --executor shell --shell pwsh --name $Name --tag-list $Labels --run-untagged=false
+          }
+          if ($LASTEXITCODE -ne 0) { throw 'gitlab-runner register failed' }
+          & $exe install
+          & $exe start
+          if ($LASTEXITCODE -ne 0) { throw 'gitlab-runner start failed' }
+      }
+      finally { Pop-Location }

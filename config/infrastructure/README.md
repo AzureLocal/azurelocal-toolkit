@@ -5,6 +5,7 @@
 | Tool | Reads | Writes |
 | --- | --- | --- |
 | [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) | Everything its scripts need, through `Import-AzlInfrastructure` | No |
+| [azurelocal-toolkit](https://github.com/AzureLocal/azurelocal-toolkit) CI/CD infrastructure (`scripts/deploy/01-cicd-infra`) | The `devops` section (schema 5.5), `azure`, `key_vaults`, `landing_zone` | No |
 | [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | `scenario`, `azure`, `key_vaults`, `nodes` (with `network_adapters`, `bios`, `bios_during_provisioning` and `maintenance_address`), `hardware` (with `bios` and `bios_during_provisioning`), `networking.management` (with `static_method` and `provisioning_dhcp_range`), `networking.ntp_servers`, `identity.local_admin`, `provisioning` (with `simplified.maintenance_password`), `tags` |
 | ARM and SAN deployment | The ARM parameters (each schema description names its parameter) and the SAN: `storage.san`, `nodes[].san` | No |
 | [Trailwright](https://labs.hybridsolutions.cloud/azurelocal-trailwright/) | The design sections | Yes: it produces the file from a guided design |
@@ -217,6 +218,7 @@ The mapping from slot label to attribute is data in ZTP, `config/oem/<vendor>.js
 | AZL-030 | The SBE package's delivery (5.4.2): `hardware.sbe.delivery` is `winrm_copy`, `node_pull` or `skip`; `winrm_copy` and `node_pull` need `hardware.sbe.bundle_path`; `node_pull` needs `node_pull_url`, an `https://` (or `http://`, a warning) address or a UNC folder with no user name, password, token or query string; an address with another route is a warning (not used); `winrm_copy` warns for a node with no management `ip_address` |
 | AZL-031 | The OS configuration run (5.4.3): `os_configuration.clear_storage: true` on a SAN design warns that only local disks are wiped (the key itself must be a boolean, which the schema checks). |
 | AZL-040 | The `deployment` block (5.6, ARM Validate and Deploy): `poll_max_seconds` is not less than `poll_seconds`; a Validate limit under 30 minutes, a Deploy limit under 4 hours and `approval: none` are warnings; an `acknowledge_known_issues` id that is not in `config/known-issues/arm-deployment.json` is a warning |
+| AZL-070 | The CI/CD infrastructure (5.5, `devops`; this rule was AZL-030 on its branch, which the SBE delivery rule already held): runner names are unique; one ztp runner (Windows, one VM, with `bmc_cidrs` on `runner_network`) and one Linux general pool; a Windows runner is a VM; a runner needs its `registration_secret` and a subnet inside `runner_network` that overlaps no other; `hub_peering` needs its names; `devops.resource_group` and `runner_network` are needed when runners are; environment names are unique; `authentication.method: client_secret` needs `client_secret` |
 | (scope) | `_metadata.scope: ztp` requires only ZTP's keys (see [Which template](#which-template)); `full` requires everything |
 Design guidance (which pattern to pick, sizing, best practices) stays in Trailwright, which cites Microsoft Learn for every rule. The toolkit's rules are the ones that stop a deployment.
 

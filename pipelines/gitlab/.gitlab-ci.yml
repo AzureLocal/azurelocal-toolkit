@@ -48,3 +48,4 @@ include:
   - local: 'pipelines/gitlab/stages/deploy-cluster.yml'
   - local: 'pipelines/gitlab/stages/configure-operations.yml'
   - local: 'pipelines/gitlab/stages/validate-deployment.yml'
+  - local: 'pipelines/gitlab/stages/deploy-cicd-infra.yml'

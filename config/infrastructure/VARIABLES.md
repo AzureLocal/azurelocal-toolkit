@@ -17,7 +17,7 @@ A test fails when this page is out of date (`./scripts/common/infrastructure/New
 | Default | What a tool does when the key is left out (from the schema). |
 | Example | The value in the templates and examples. Placeholders only. |
 | Where to get the value | Where the real value comes from. |
-| Read by | **ZTP**: azurelocal-ztp (the list is what its `ConvertFrom-ZtpInfrastructureV5` reads, plus the 5.3 and 5.4 keys). **OS configuration**: the toolkit's OS configuration phase (by design, by section). **ARM deployment**: the key becomes a parameter of Microsoft's ARM deployment template (the schema description names the parameter), or is part of the SAN (`storage.san`, `nodes[].san`) that the ARM and SAN deployment reads. **Trailwright**: it can write the key from its design (host-local paths and files are set by the operator). |
+| Read by | **ZTP**: azurelocal-ztp (the list is what its `ConvertFrom-ZtpInfrastructureV5` reads, plus the 5.3 and 5.4 keys). **OS configuration**: the toolkit's OS configuration phase (by design, by section). **CI/CD infrastructure**: tasks 01 to 06 of automation / 01-cicd-infra (the `devops` section, plus the Azure identifiers they sign in with). **ARM deployment**: the key becomes a parameter of Microsoft's ARM deployment template (the schema description names the parameter), or is part of the SAN (`storage.san`, `nodes[].san`) that the ARM and SAN deployment reads. **Trailwright**: it can write the key from its design (host-local paths and files are set by the operator). |
 
 Two templates start a file: [`infrastructure.example.yml`](infrastructure.example.yml) (full scope: ZTP, OS configuration and the ARM deployment) and [`infrastructure.ztp.example.yml`](infrastructure.ztp.example.yml) (ztp scope: only what azurelocal-ztp reads). See [Which template](README.md#which-template).
 
@@ -35,11 +35,12 @@ The templates expect these secrets. The names are the templates' placeholders (v
 | `identity.active_directory.lcm_user.password` | `kv-iic-mgmt-01` | `lcm-password` | At least 14 characters with lowercase, uppercase, a digit and a special character. | full |
 | `identity.active_directory.service_accounts[].password` | `kv-iic-mgmt-01` | `svc-backup-password` | Key Vault reference for the password of identity.active_directory.service_accounts[]. | full |
 | `operations.notifications.teams_webhook` | `kv-iic-mgmt-01` | `teams-webhook-url` | Key Vault reference for the teams_webhook of operations.notifications. | full |
-| `provisioning.simplified.admin.password` | `kv-iic-mgmt-01` | `provisioning-admin-password` | At least 12 characters with lowercase, uppercase, a digit and a special character. | full, ztp |
+| `provisioning.simplified.admin.password` | `kv-iic-mgmt-01` | `provisioning-admin-password` | At least 12 characters with lowercase, uppercase, a digit and a special character. | ztp, full |
 | `network_devices[].credentials.password` | `kv-iic-mgmt-01` | `switch-admin-password` | Key Vault reference for the password of network_devices[].credentials. | full |
 | `landing_zone.connectivity.vpn_gateway.site_to_site[].shared_key` | `kv-iic-mgmt-01` | `vpn-shared-key` | Key Vault reference for the shared_key of landing_zone.connectivity.vpn_gateway.site_to_site[]. | full |
 | `landing_zone.virtual_machines[].admin_password` | `kv-iic-mgmt-01` | `vm-admin-password` | Key Vault reference for the admin_password of landing_zone.virtual_machines[]. | full |
-| `devops.runner.registration_token` | `kv-iic-mgmt-01` | `runner-registration-token` | Key Vault reference for the registration_token of devops.runner. | full |
+| `devops.api_token` | `kv-iic-mgmt-01` | `devops-admin-token` | Key Vault reference to a token with administrator rights on the organization or project. (since 5.5) | full |
+| `devops.runners[].registration_secret` | `kv-iic-mgmt-01` | `github-runner-token` | Key Vault reference to the secret the runner reads at boot: a PAT or App token (GitHub), the runner authentication token (GitLab), a PAT with Agent P... | full |
 
 ZTP reads all its secrets from vaults in one subscription (the provisioning admin's vault decides which). `hardware.bmc.username` may be a reference or the user name itself.
 
@@ -119,8 +120,8 @@ Azure tags applied to the resources the tools create.
 
 | Path | What it is | Type | Required: full / ztp | Default | Example | Where to get the value | Read by |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `tags` | Azure tags applied to the resources the tools create. | map of strings | no / no |  |  |  | ZTP, Trailwright |
-| `tags.<attribute>` |  | string | no / no |  | `CostCenter: iic-it` | Your tagging policy. | ZTP, Trailwright |
+| `tags` | Azure tags applied to the resources the tools create. | map of strings | no / no |  |  |  | ZTP, CI/CD infrastructure, Trailwright |
+| `tags.<attribute>` |  | string | no / no |  | `CostCenter: iic-it` | Your tagging policy. | ZTP, CI/CD infrastructure, Trailwright |
 
 ### azure
 
@@ -128,19 +129,19 @@ The Azure targets of the instance: tenant, region, and the subscription and reso
 
 | Path | What it is | Type | Required: full / ztp | Default | Example | Where to get the value | Read by |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `azure` | The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless provisioning.... | object | yes / yes |  |  |  | ZTP, ARM deployment, Trailwright |
-| `azure.tenant_id` |  | GUID | yes / yes |  | `00000000-0000-0000-0000-000000000000` | Azure portal > Microsoft Entra ID > Overview, or az account show. | ZTP, Trailwright |
-| `azure.location` | Azure region, for example eastus. | Azure region | yes / yes |  | `eastus` | Your Azure design. Simplified provisioning works in eastus only in the preview. | ZTP, Trailwright |
-| `azure.subscription_id` |  | GUID | yes / yes |  | `00000000-0000-0000-0000-000000000000` | Azure portal > Subscriptions, or az account show. | ZTP, Trailwright |
-| `azure.resource_group` |  | resource group name | yes / yes |  | `rg-iic-azl-01` | Your Azure design: the resource group for the Arc machines and the site. | ZTP, Trailwright |
+| `azure` | The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless provisioning.... | object | yes / yes |  |  |  | ZTP, CI/CD infrastructure, ARM deployment, Trailwright |
+| `azure.tenant_id` |  | GUID | yes / yes |  | `00000000-0000-0000-0000-000000000000` | Azure portal > Microsoft Entra ID > Overview, or az account show. | ZTP, CI/CD infrastructure, Trailwright |
+| `azure.location` | Azure region, for example eastus. | Azure region | yes / yes |  | `eastus` | Your Azure design. Simplified provisioning works in eastus only in the preview. | ZTP, CI/CD infrastructure, Trailwright |
+| `azure.subscription_id` |  | GUID | yes / yes |  | `00000000-0000-0000-0000-000000000000` | Azure portal > Subscriptions, or az account show. | ZTP, CI/CD infrastructure, Trailwright |
+| `azure.resource_group` |  | resource group name | yes / yes |  | `rg-iic-azl-01` | Your Azure design: the resource group for the Arc machines and the site. | ZTP, CI/CD infrastructure, Trailwright |
 | `azure.hci_resource_provider_object_id` | Object ID of the Azure Local resource provider's service principal (application 1412d89f-b8a8-4111-b4fd-e82905cbd85d) in the tenant. | GUID | no / no |  | `00000000-0000-0000-0000-000000000000` | Microsoft Entra ID: the object ID of the Microsoft.AzureStackHCI Resource Provider service principal in your tenant. | ZTP, Trailwright |
 | `azure.custom_location` | Name of the custom location the deployment creates. | string | no / no |  | `cl-iic-azl-01` | Your Azure design (the automation identity and custom location names). | Trailwright |
-| `azure.automation_identity` | The identity that runs automation with no one signed in (pipelines, ZTP, the ARM deployment). | object | no / no |  |  | Your Azure design (the automation identity and custom location names). | ARM deployment, Trailwright |
-| `azure.automation_identity.type` |  | one of `managed_identity`, `service_principal` | if section is set / if section is set |  | `managed_identity` | Your Azure design (the automation identity and custom location names). | Trailwright |
-| `azure.automation_identity.name` | Managed identity resource name, or the service principal's display name. | string | if section is set / if section is set |  | `id-iic-cicd-01` | Your Azure design (the automation identity and custom location names). | Trailwright |
-| `azure.automation_identity.client_id` |  | GUID | no / no |  |  | Your Azure design (the automation identity and custom location names). | Trailwright |
-| `azure.automation_identity.subscription_id` |  | GUID | no / no |  | `00000000-0000-0000-0000-000000000000` | Your Azure design (the automation identity and custom location names). | Trailwright |
-| `azure.automation_identity.resource_group` |  | resource group name | no / no |  | `rg-iic-devops-01` | Your Azure design (the automation identity and custom location names). | Trailwright |
+| `azure.automation_identity` | The identity that runs automation with no one signed in (pipelines, ZTP, the ARM deployment). | object | no / no |  |  | Your Azure design (the automation identity and custom location names). | CI/CD infrastructure, ARM deployment, Trailwright |
+| `azure.automation_identity.type` |  | one of `managed_identity`, `service_principal` | if section is set / if section is set |  | `managed_identity` | Your Azure design (the automation identity and custom location names). | CI/CD infrastructure, Trailwright |
+| `azure.automation_identity.name` | Managed identity resource name, or the service principal's display name. | string | if section is set / if section is set |  | `id-iic-cicd-01` | Your Azure design (the automation identity and custom location names). | CI/CD infrastructure, Trailwright |
+| `azure.automation_identity.client_id` |  | GUID | no / no |  |  | Your Azure design (the automation identity and custom location names). | CI/CD infrastructure, Trailwright |
+| `azure.automation_identity.subscription_id` |  | GUID | no / no |  | `00000000-0000-0000-0000-000000000000` | Your Azure design (the automation identity and custom location names). | CI/CD infrastructure, Trailwright |
+| `azure.automation_identity.resource_group` |  | resource group name | no / no |  | `rg-iic-devops-01` | Your Azure design (the automation identity and custom location names). | CI/CD infrastructure, Trailwright |
 
 ### key_vaults
 
@@ -148,11 +149,11 @@ Every Key Vault that a keyvault:// reference in this file names, with where it i
 
 | Path | What it is | Type | Required: full / ztp | Default | Example | Where to get the value | Read by |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `key_vaults` | Every Key Vault that a keyvault:// reference in this file names, with where it is. | list of objects | no / yes |  |  | Azure portal > Key vaults. List every vault a keyvault:// reference names. | ZTP, Trailwright |
-| `key_vaults[].name` |  | Key Vault name | if section is set / yes |  | `kv-iic-mgmt-01` | Azure portal > Key vaults. List every vault a keyvault:// reference names. | ZTP, Trailwright |
-| `key_vaults[].subscription_id` |  | GUID | if section is set / yes |  | `00000000-0000-0000-0000-000000000000` | Azure portal > Key vaults. List every vault a keyvault:// reference names. | ZTP, Trailwright |
-| `key_vaults[].resource_group` |  | resource group name | if section is set / yes |  | `rg-iic-mgmt-01` | Azure portal > Key vaults. List every vault a keyvault:// reference names. | ZTP, Trailwright |
-| `key_vaults[].purpose` | What the vault holds, for example management, deployment or backup. | string | no / no |  | `management` | Azure portal > Key vaults. List every vault a keyvault:// reference names. | ZTP, Trailwright |
+| `key_vaults` | Every Key Vault that a keyvault:// reference in this file names, with where it is. | list of objects | no / yes |  |  | Azure portal > Key vaults. List every vault a keyvault:// reference names. | ZTP, CI/CD infrastructure, Trailwright |
+| `key_vaults[].name` |  | Key Vault name | if section is set / yes |  | `kv-iic-mgmt-01` | Azure portal > Key vaults. List every vault a keyvault:// reference names. | ZTP, CI/CD infrastructure, Trailwright |
+| `key_vaults[].subscription_id` |  | GUID | if section is set / yes |  | `00000000-0000-0000-0000-000000000000` | Azure portal > Key vaults. List every vault a keyvault:// reference names. | ZTP, CI/CD infrastructure, Trailwright |
+| `key_vaults[].resource_group` |  | resource group name | if section is set / yes |  | `rg-iic-mgmt-01` | Azure portal > Key vaults. List every vault a keyvault:// reference names. | ZTP, CI/CD infrastructure, Trailwright |
+| `key_vaults[].purpose` | What the vault holds, for example management, deployment or backup. | string | no / no |  | `management` | Azure portal > Key vaults. List every vault a keyvault:// reference names. | ZTP, CI/CD infrastructure, Trailwright |
 
 ### cluster
 
@@ -703,36 +704,36 @@ Part 2 of the implementation steps: the Azure foundation the instance depends on
 
 | Path | What it is | Type | Required: full / ztp | Default | Example | Where to get the value | Read by |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `landing_zone` | Part 2 of the implementation steps: the Azure foundation the instance depends on. | object | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
+| `landing_zone` | Part 2 of the implementation steps: the Azure foundation the instance depends on. | object | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
 | `landing_zone.management_groups` |  | list of objects | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
 | `landing_zone.management_groups[].name` |  | string | if section is set / if section is set |  | `mg-iic` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
 | `landing_zone.management_groups[].display_name` |  | string | no / no |  | `IIC` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
 | `landing_zone.management_groups[].parent` | Parent management group name; empty for the tenant root. | string | no / no |  | `mg-iic` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.subscriptions` | Subscriptions by role. azure.subscription_id is the one the instance uses. | list of objects | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.subscriptions[].name` |  | string | if section is set / if section is set |  | `sub-iic-connectivity` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.subscriptions[].id` |  | GUID | no / no |  | `00000000-0000-0000-0000-000000000000` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.subscriptions[].role` | What the subscription is for. | one of `connectivity`, `identity`, `management`, `security`, `devops`, `workload`, `azure_local` | if section is set / if section is set |  | `connectivity` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.subscriptions[].management_group` |  | string | no / no |  | `mg-iic-platform` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.resource_groups` |  | list of objects | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.resource_groups[].name` |  | resource group name | if section is set / if section is set |  | `rg-iic-conn-01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.resource_groups[].subscription` | Name of a subscription in landing_zone.subscriptions. | string | no / no |  | `sub-iic-connectivity` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.resource_groups[].location` |  | Azure region | no / no |  | `eastus` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.resource_groups[].purpose` |  | string | no / no |  | `hub network` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
+| `landing_zone.subscriptions` | Subscriptions by role. azure.subscription_id is the one the instance uses. | list of objects | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.subscriptions[].name` |  | string | if section is set / if section is set |  | `sub-iic-connectivity` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.subscriptions[].id` |  | GUID | no / no |  | `00000000-0000-0000-0000-000000000000` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.subscriptions[].role` | What the subscription is for. | one of `connectivity`, `identity`, `management`, `security`, `devops`, `workload`, `azure_local` | if section is set / if section is set |  | `connectivity` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.subscriptions[].management_group` |  | string | no / no |  | `mg-iic-platform` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.resource_groups` |  | list of objects | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.resource_groups[].name` |  | resource group name | if section is set / if section is set |  | `rg-iic-conn-01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.resource_groups[].subscription` | Name of a subscription in landing_zone.subscriptions. | string | no / no |  | `sub-iic-connectivity` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.resource_groups[].location` |  | Azure region | no / no |  | `eastus` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.resource_groups[].purpose` |  | string | no / no |  | `hub network` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
 | `landing_zone.resource_providers` | Resource provider namespaces to register, for example Microsoft.AzureStackHCI. | list of string | no / no |  | `[Microsoft.AzureStackHCI, Microsoft.HybridCompute, Micr...` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.networks` | Azure virtual networks. | list of objects | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.networks[].name` |  | string | if section is set / if section is set |  | `vnet-iic-hub-01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.networks[].subscription` |  | string | no / no |  | `sub-iic-connectivity` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.networks[].resource_group` |  | resource group name | no / no |  | `rg-iic-conn-01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.networks[].location` |  | Azure region | no / no |  | `eastus` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.networks[].role` |  | one of `hub`, `spoke` | no / no |  | `hub` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.networks[].address_space` |  | list of CIDR | if section is set / if section is set |  | `[10.20.0.0/22]` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.networks[].dns_servers` |  | list of IPv4 address | no / no |  | `[192.0.2.4, 192.0.2.5]` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.networks[].subnets` |  | list of objects | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.networks[].subnets[].name` |  | string | if section is set / if section is set |  | `GatewaySubnet` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.networks[].subnets[].prefix` |  | CIDR | if section is set / if section is set |  | `10.20.0.0/27` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.networks[].subnets[].network_security_group` |  | string | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.networks[].subnets[].route_table` |  | string | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `landing_zone.networks[].peer_with` | Names of networks this one peers with. | list of string | no / no |  | `[vnet-iic-hub-01]` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
+| `landing_zone.networks` | Azure virtual networks. | list of objects | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.networks[].name` |  | string | if section is set / if section is set |  | `vnet-iic-hub-01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.networks[].subscription` |  | string | no / no |  | `sub-iic-connectivity` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.networks[].resource_group` |  | resource group name | no / no |  | `rg-iic-conn-01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.networks[].location` |  | Azure region | no / no |  | `eastus` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.networks[].role` |  | one of `hub`, `spoke` | no / no |  | `hub` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.networks[].address_space` |  | list of CIDR | if section is set / if section is set |  | `[10.20.0.0/22]` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.networks[].dns_servers` |  | list of IPv4 address | no / no |  | `[192.0.2.4, 192.0.2.5]` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.networks[].subnets` |  | list of objects | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.networks[].subnets[].name` |  | string | if section is set / if section is set |  | `GatewaySubnet` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.networks[].subnets[].prefix` |  | CIDR | if section is set / if section is set |  | `10.20.0.0/27` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.networks[].subnets[].network_security_group` |  | string | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.networks[].subnets[].route_table` |  | string | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `landing_zone.networks[].peer_with` | Names of networks this one peers with. | list of string | no / no |  | `[vnet-iic-hub-01]` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
 | `landing_zone.connectivity` |  | object | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
 | `landing_zone.connectivity.vpn_gateway` |  | object | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
 | `landing_zone.connectivity.vpn_gateway.name` |  | string | if section is set / if section is set |  | `vpng-iic-hub-01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
@@ -786,30 +787,95 @@ Part 2 of the implementation steps: the Azure foundation the instance depends on
 
 ### devops
 
-Part 1 of the implementation steps: the pipeline platform and runner.
+Part 1 of the implementation steps: the pipeline platform, the project and its settings, the environments, the sign-in to Azure and the self-hosted r...
 
 | Path | What it is | Type | Required: full / ztp | Default | Example | Where to get the value | Read by |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `devops` | Part 1 of the implementation steps: the pipeline platform and runner. | object | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.platform` |  | one of `github`, `gitlab`, `azure_devops` | if section is set / if section is set |  | `github` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.url` |  | string | no / no |  | `https://github.com` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.organization` | Organization, group or project collection. | string | no / no |  | `improbability-cloud` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.project` |  | string | no / no |  | `iic-azure-local` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.runner` |  | object | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.runner.name` |  | string | if section is set / if section is set |  | `vm-iic-runner-01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.runner.type` |  | one of `vm`, `container_app`, `existing` | if section is set / if section is set |  | `vm` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.runner.subscription` |  | string | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.runner.resource_group` |  | resource group name | no / no |  | `rg-iic-mgmt-01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.runner.network` |  | string | no / no |  | `vnet-iic-mgmt-01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.runner.subnet` |  | string | no / no |  | `snet-iic-mgmt-01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.runner.private_ip` |  | IPv4 address | no / no |  | `10.20.4.20` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.runner.size` |  | string | no / no |  | `Standard_D2s_v5` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.runner.labels` | Runner tags or labels that jobs select. | list of string | no / no |  | `[iic-azl]` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.runner.registration_token` (secret) | Key Vault reference for the registration_token of devops.runner. | keyvault:// reference | no / no |  | `keyvault://kv-iic-mgmt-01/runner-registration-token` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.state` |  | object | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.state.storage_account` |  | storage account name | no / no |  | `stiictfstate01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.state.container` |  | string | no / no |  | `tfstate` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
-| `devops.state.resource_group` |  | resource group name | no / no |  | `rg-iic-mgmt-01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
+| `devops` | Part 1 of the implementation steps: the pipeline platform, the project and its settings, the environments, the sign-in to Azure and the self-hosted r... | object | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, ARM deployment, Trailwright |
+| `devops.platform` |  | one of `github`, `gitlab`, `azure_devops` | if section is set / if section is set |  | `github` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.url` |  | string | no / no |  | `https://github.com` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.organization` | Organization, group or project collection. | string | no / no |  | `improbability-cloud` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.project` |  | string | no / no |  | `iic-azure-local` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.api_token` (secret) | Key Vault reference to a token with administrator rights on the organization or project. (since 5.5) | keyvault:// reference | no / no |  | `keyvault://kv-iic-mgmt-01/devops-admin-token` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.subscription` | Name of the subscription in landing_zone.subscriptions that holds the runners (role devops). (since 5.5) | string | no / no | `the subscription with role devops` | `sub-iic-devops` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.resource_group` | Resource group of the runners, their identity and their network. (since 5.5) | resource group name | no / no |  | `rg-iic-runners-01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.create_resource_group` | Create devops.resource_group. (since 5.5) | boolean | no / no | `false` | `false` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.repository` | The deployment repository or project that task 02 creates. (since 5.5) | object | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.repository.name` | Repository name. | string | no / no | `devops.project` | `iic-azurelocal` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.repository.template` | GitHub: owner/repo of a template repository. | string | no / no |  | `AzureLocal/azurelocal-template` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.repository.visibility` | Repository visibility. | one of `private`, `internal` | no / no | `private` | `private` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.repository.default_branch` | The protected default branch. | string | no / no | `main` | `main` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.settings` | What task 03 sets on the repository: branch protection, approvals and security. (since 5.5) | object | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.settings.required_approvals` | Approvals a pull request needs before it merges. 0 for a sandbox. | integer | no / no | `2` | `2` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.settings.reviewers` | The team or group whose members review: a GitHub team slug (org/team), a GitLab group path or an Azure DevOps group name. | string | no / no |  | `improbability-cloud/platform-team` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.settings.squash_only` | Allow squash merges only. | boolean | no / no | `true` | `true` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.settings.secret_scanning` | Turn on secret scanning and push protection (GitHub), secret push rules (GitLab) or the secret file check (Azure DevOps). | boolean | no / no | `true` | `true` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.settings.resolve_conversations` | All conversations must be resolved before a merge. | boolean | no / no | `true` | `true` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.settings.required_status_checks` | Pipeline checks that must pass before a merge. | list of string | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.environments` | The deployment environments that task 04 creates, with their approval gate. (since 5.5) | list of objects | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.environments[].name` | Environment name, for example azr-prod-us, or ztp-reinstall for the approval in front of the ZTP Boot stage. | string | if section is set / if section is set |  | `azr-prod-us` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.environments[].approval_required` | A named reviewer must approve each deployment. | boolean | no / no | `false` | `true` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.environments[].approvers` | GitHub user names or org/team slugs, GitLab user names or group paths, Azure DevOps e-mail addresses. | list of string | no / no |  | `[platform-lead]` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.environments[].wait_minutes` | Delay before a deployment starts (GitHub). | integer | no / no | `0` |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.environments[].deployment_branch` | The only branch that may deploy to the environment. | string | no / no | `main` | `main` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.authentication` | How the pipelines sign in to Azure (tasks 01 and 05). (since 5.5) | object | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.authentication.method` | oidc: a federated credential per repository and environment, no secret. client_secret: a secret, stored only in Key Vault (devops.authentication.clie... | one of `oidc`, `client_secret` | no / no | `oidc` | `oidc` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.authentication.client_secret` (secret) | Key Vault reference where task 01 stores the generated client secret (method client_secret). | keyvault:// reference | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.authentication.roles` | Roles the service principal gets on each subscription. | list of string | no / no | `Contributor and User Access Administrator, as the automation docs say` | `[Contributor, User Access Administrator]` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.authentication.grant_graph_role_management` | Also add the Microsoft Graph application permission RoleManagement.ReadWrite.Directory and grant admin consent. | boolean | no / no | `false` | `false` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.authentication.register_encryption_at_host` | Register Microsoft.Compute and the EncryptionAtHost feature on each subscription. | boolean | no / no | `true` | `true` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runners` | The self-hosted runners that task 06 deploys with Terraform. (since 5.5) | list of objects | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, ARM deployment, Trailwright |
+| `devops.runners[].name` | Name prefix of the VM or VMs, for example vm-tplabs-runner-lnx. | string | if section is set / if section is set |  | `vm-iic-runner-lnx` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runners[].os_type` | Operating system. | one of `linux`, `windows` | if section is set / if section is set |  | `linux` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runners[].purpose` | general: ARM, Arc, Terraform, Ansible and OS configuration. ztp: the azurelocal-ztp Boot, Bootstrap and Vouchers stages (Windows only). | one of `general`, `ztp` | no / no | `general` | `general` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, ARM deployment, Trailwright |
+| `devops.runners[].count` | Number of VMs. | integer | no / no | `1` | `1` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runners[].compute_type` | vm or vmss. | one of `vm`, `vmss` | no / no | `vm` |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runners[].size` | VM size. | string | no / no |  | `Standard_D2s_v5` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runners[].labels` | Labels added to the defaults (azure, the OS, terraform, ansible, ztp). | list of string | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runners[].registration_secret` (secret) | Key Vault reference to the secret the runner reads at boot: a PAT or App token (GitHub), the runner authentication token (GitLab), a PAT with Agent P... | keyvault:// reference | no / no |  | `keyvault://kv-iic-mgmt-01/github-runner-token` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runners[].pool` | The Azure Pipelines agent pool, or the GitHub runner group. | string | no / no |  | `azurelocal-ztp` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runners[].private_ips` | Static private addresses, one per VM. | list of IPv4 address | no / no |  | `[10.20.10.4]` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runners[].subnet` | The runner subnet inside runner_network.address_space. | object | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runners[].subnet.name` |  | string | if section is set / if section is set |  | `snet-iic-runner-lnx-01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runners[].subnet.prefix` |  | CIDR | if section is set / if section is set |  | `10.20.10.0/26` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runners[].data_disk_gb` | Data disk for the ZTP media, images and vouchers. 512 or more for ztp. | integer | no / no | `0` | `512` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_network` | The VNet of the runners, the peering with the hub and the lab ranges they reach. (since 5.5) | object | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_network.vnet_name` |  | string | no / no |  | `vnet-iic-devops-01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_network.address_space` |  | list of CIDR | no / no |  | `[10.20.10.0/24]` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_network.dns_servers` |  | list of IPv4 address | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_network.hub_peering` | Peering with the hub VNet. | object | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_network.hub_peering.enabled` | Peer the runner VNet with the hub. | boolean | no / no | `false` | `true` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_network.hub_peering.hub_network` | Name of the hub in landing_zone.networks (its subscription and resource group give the VNet ID). | string | no / no |  | `vnet-iic-hub-01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_network.hub_peering.hub_vnet_id` | Resource ID of the hub VNet. | string | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_network.hub_peering.use_remote_gateways` | Use the hub VPN or ExpressRoute gateway to reach the lab. | boolean | no / no | `true` | `true` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_network.hub_peering.create_hub_side` | Create the hub half of the peering. | boolean | no / no | `true` | `true` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_network.reachable_cidrs` | Lab networks the runners reach: management, storage, BMC. | list of CIDR | no / no |  | `[192.0.2.0/24, 198.51.100.0/24]` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_network.reachable_tcp_ports` | TCP ports allowed outbound to the lab networks. | list of string | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_network.bmc_cidrs` | The BMC networks. | list of CIDR | no / no |  | `[198.51.100.0/24]` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_network.admin_source_cidrs` | Ranges that may reach SSH or RDP on the runners. | list of CIDR | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_access` | What the runners may do in Azure (least privilege). (since 5.5) | object | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_access.resource_groups` | Resource groups where the runners are Contributor. | list of resource group name | no / no | `azure.resource_group` | `[rg-iic-azl-01]` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_access.rbac_administrator` | Role Based Access Control Administrator on those resource groups, which the Azure Local deployment and ZTP need. | boolean | no / no | `true` | `true` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_access.rbac_delegable_role_ids` | Limit the roles the runners may assign to these role definition GUIDs. | list of GUID | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_access.arc_run_command` | Azure Connected Machine Resource Administrator on those resource groups, so jobs can run Arc Run Command on the machines. | boolean | no / no | `true` | `true` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner_access.key_vaults` | Vaults the runners read secrets from. | list of Key Vault name | no / no | `every vault in key_vaults` | `[kv-iic-mgmt-01]` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner` |  | object | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner.name` |  | string | if section is set / if section is set |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner.type` |  | one of `vm`, `container_app`, `existing` | if section is set / if section is set |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner.subscription` |  | string | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner.resource_group` |  | resource group name | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner.network` |  | string | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner.subnet` |  | string | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner.private_ip` |  | IPv4 address | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner.size` |  | string | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner.labels` | Runner tags or labels that jobs select. | list of string | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.runner.registration_token` (secret) | Key Vault reference for the registration_token of devops.runner. | keyvault:// reference | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.state` |  | object | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.state.subscription_id` | Subscription of the state storage account. (since 5.5) | GUID | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.state.key` | Blob name of the CI/CD runners state. (since 5.5) | string | no / no | `cicd-infra.tfstate` | `cicd-infra.tfstate` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.state.storage_account` |  | storage account name | no / no |  | `stiictfstate01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.state.container` |  | string | no / no |  | `tfstate` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
+| `devops.state.resource_group` |  | resource group name | no / no |  | `rg-iic-mgmt-01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
 
 ### extensions
 

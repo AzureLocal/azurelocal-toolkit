@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  author: Azure Local Cloud
+  description: Configure a Linux or Windows host as a self-hosted CI/CD runner for GitHub, GitLab or Azure DevOps
+  company: Azure Local Cloud
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+        - noble
+    - name: Windows
+      versions:
+        - 2022
+        - 2025
+  galaxy_tags:
+    - cicd
+    - runner
+    - azurelocal
+dependencies: []

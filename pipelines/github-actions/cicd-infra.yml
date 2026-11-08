@@ -1,0 +1,161 @@
+# =============================================================================
+# GitHub Actions workflow - CI/CD infrastructure (self-hosted runners)
+# =============================================================================
+# Task 06 of automation / 01-cicd-infra as a pipeline: validate, terraform plan,
+# manual approval, terraform apply of the plan that was reviewed.
+#
+# Copy to: .github/workflows/cicd-infra.yml
+#
+# Sign-in: OIDC (federated credential made by task 01). No client secret.
+# Secrets (task 05):   ARM_TENANT_ID, ARM_SUBSCRIPTION_ID, ARM_CLIENT_ID
+# Variable (optional): RUNNER_SSH_PUBLIC_KEY, the public key for the Linux runners
+# Environment:         cicd-infra-apply with required reviewers (the approval gate)
+#
+# Where it runs: the first time, on GitHub-hosted runners (there are no runners yet).
+# After the runners exist, choose "self-hosted" to run on [self-hosted, linux, azure].
+# The runners read their own registration credential from Key Vault at boot; this
+# workflow never sees it.
+# =============================================================================
+name: CI/CD infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      infrastructure_file:
+        description: "Path of infrastructure.yml in the repository"
+        required: true
+        default: "config/infrastructure.yml"
+      runner:
+        description: "Where the jobs run"
+        required: true
+        type: choice
+        default: github-hosted
+        options:
+          - github-hosted
+          - self-hosted
+      apply:
+        description: "Also run the apply job (it still waits for approval)"
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  id-token: write # OIDC
+
+env:
+  TF_ROOT: src/terraform/environments/cicd-infra
+  TASK06: scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners/powershell/Invoke-CicdRunners-Orchestrated.ps1
+  ARM_USE_OIDC: "true"
+  ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+  ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+  AZL_RUNNER_SSH_PUBLIC_KEY: ${{ vars.RUNNER_SSH_PUBLIC_KEY }}
+
+jobs:
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform format
+        run: terraform fmt -check -recursive src/terraform/modules/cicd-runner ${{ env.TF_ROOT }}
+
+      - name: Terraform validate (environment)
+        working-directory: ${{ env.TF_ROOT }}
+        run: |
+          terraform init -backend=false -input=false
+          terraform validate
+
+      - name: Terraform test (module, mocked providers)
+        working-directory: src/terraform/modules/cicd-runner
+        run: |
+          terraform init -backend=false -input=false
+          terraform test
+
+      - name: Check infrastructure.yml
+        shell: pwsh
+        run: |
+          Install-Module powershell-yaml -Force -Scope CurrentUser
+          ./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path '${{ inputs.infrastructure_file }}'
+
+  plan:
+    name: Plan
+    needs: validate
+    runs-on: ${{ inputs.runner == 'self-hosted' && fromJSON('["self-hosted","linux","azure"]') || 'ubuntu-latest' }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.ARM_CLIENT_ID }}
+          tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+
+      - name: Plan (nothing changes in Azure)
+        shell: pwsh
+        run: |
+          Install-Module powershell-yaml -Force -Scope CurrentUser
+          & "$env:TASK06" -ConfigPath '${{ inputs.infrastructure_file }}' -WorkingDirectory "$env:RUNNER_TEMP/cicd-infra"
+
+      - name: Show the plan for the approver
+        working-directory: ${{ env.TF_ROOT }}
+        run: |
+          terraform show -no-color "$RUNNER_TEMP/cicd-infra/cicd-infra.tfplan" > "$RUNNER_TEMP/cicd-infra/plan.txt"
+          {
+            echo '## Terraform plan: CI/CD runners'
+            echo '```'
+            cat "$RUNNER_TEMP/cicd-infra/plan.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Keep the reviewed plan
+        uses: actions/upload-artifact@v4
+        with:
+          name: cicd-infra-plan
+          path: |
+            ${{ runner.temp }}/cicd-infra/cicd-infra.tfplan
+            ${{ runner.temp }}/cicd-infra/.terraform.lock.hcl
+            ${{ runner.temp }}/cicd-infra/plan.txt
+          include-hidden-files: true
+          retention-days: 1
+
+  apply:
+    name: Apply (needs approval)
+    needs: plan
+    if: ${{ inputs.apply }}
+    runs-on: ${{ inputs.runner == 'self-hosted' && fromJSON('["self-hosted","linux","azure"]') || 'ubuntu-latest' }}
+    environment: cicd-infra-apply # required reviewers: the manual approval
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_wrapper: false
+
+      - uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.ARM_CLIENT_ID }}
+          tenant-id: ${{ secrets.ARM_TENANT_ID }}
+          subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+
+      - name: Fetch the reviewed plan
+        uses: actions/download-artifact@v4
+        with:
+          name: cicd-infra-plan
+          path: ${{ runner.temp }}/cicd-infra
+
+      - name: Apply the reviewed plan
+        shell: pwsh
+        run: |
+          Install-Module powershell-yaml -Force -Scope CurrentUser
+          & "$env:TASK06" -ConfigPath '${{ inputs.infrastructure_file }}' -PlanFile "$env:RUNNER_TEMP/cicd-infra/cicd-infra.tfplan" -Apply

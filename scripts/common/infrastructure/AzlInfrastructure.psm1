@@ -811,6 +811,7 @@ function Get-SemanticFinding {
     Get-SbeDeliveryFinding -Infra $Infra -Nodes $nodes -OwnerOf $ownerOf
     Get-OsConfigurationFinding -Infra $Infra
     Get-DeploymentOptionFinding -Infra $Infra
+    Get-CicdFinding -Infra $Infra
 
     # Arc machine names: unique, and arc_machine_name rather than the deprecated arc_resource_name.
     for ($i = 0; $i -lt $nodeCount; $i++) {
@@ -1351,6 +1352,114 @@ function Get-DeploymentOptionFinding {
         }
     }
 }
+# AZL-070: the CI/CD infrastructure in devops (schema 5.5), which tasks 01 to 06 of automation / 01-cicd-infra read: the
+# runners (one Linux general pool and at most one Windows ztp runner), their subnets, the hub peering, the environments and
+# the sign-in method.
+function Get-CicdFinding {
+    param([System.Collections.IDictionary]$Infra)
+    $devops = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'devops'
+    if ($devops -isnot [System.Collections.IDictionary]) { return }
+    $net = $devops['runner_network']
+    $runners = @(Get-List $devops['runners'] | Where-Object { $_ -is [System.Collections.IDictionary] })
+
+    foreach ($group in ($runners | Group-Object { $_['name'] } | Where-Object Count -gt 1)) {
+        New-Finding 'AZL-070' error 'devops.runners' "Runner name '$($group.Name)' is used $($group.Count) times."
+    }
+    $ztp = @($runners | Where-Object { $_['purpose'] -eq 'ztp' })
+    $linuxGeneral = @($runners | Where-Object { $_['os_type'] -eq 'linux' -and $_['purpose'] -ne 'ztp' })
+    $windowsGeneral = @($runners | Where-Object { $_['os_type'] -eq 'windows' -and $_['purpose'] -ne 'ztp' })
+    if ($ztp.Count -gt 1) {
+        New-Finding 'AZL-070' error 'devops.runners' 'Task 06 deploys one ztp runner: azurelocal-ztp keeps its state on the runner''s disk and a second runner would not share it. Use the cicd-runner module directly for more.'
+    }
+    if ($linuxGeneral.Count -gt 1) {
+        New-Finding 'AZL-070' error 'devops.runners' 'Task 06 deploys one Linux general pool. Raise count on it, or use the cicd-runner module directly for more pools.'
+    }
+    if ($windowsGeneral.Count -gt 0) {
+        New-Finding 'AZL-070' error 'devops.runners' 'Task 06 deploys a Windows runner for the ztp purpose only. Set purpose: ztp, or use the cicd-runner module directly for a general Windows runner.'
+    }
+    for ($i = 0; $i -lt $runners.Count; $i++) {
+        $r = $runners[$i]
+        $at = "devops.runners[$i]"
+        if ($r['purpose'] -eq 'ztp') {
+            if ($r['os_type'] -ne 'windows') {
+                New-Finding 'AZL-070' error "$at.os_type" 'A ztp runner must be Windows: azurelocal-ztp shares the virtual USB images over SMB with Windows commands.' $script:Learn.Simplified
+            }
+            if ($r['compute_type'] -eq 'vmss' -or ($r['count'] -and [int]$r['count'] -gt 1)) {
+                New-Finding 'AZL-070' error "$at.count" 'A ztp runner is one VM, not a scale set: the run keeps its state on the runner''s disk.'
+            }
+            if (@(Get-List $(if ($net -is [System.Collections.IDictionary]) { $net['bmc_cidrs'] })).Count -eq 0) {
+                New-Finding 'AZL-070' error 'devops.runner_network.bmc_cidrs' 'A ztp runner needs bmc_cidrs: the network security group allows inbound TCP 445 from those ranges only, and the BMCs connect to the runner there.' $script:Learn.Simplified
+            }
+            if (-not $r['data_disk_gb'] -or [int]$r['data_disk_gb'] -lt 128) {
+                New-Finding 'AZL-070' warning "$at.data_disk_gb" 'A ztp runner holds the maintenance ISO, the SBE and one image per machine. Give it a data disk of 512 GB or more.'
+            }
+        }
+        if ($r['os_type'] -eq 'windows' -and $r['compute_type'] -eq 'vmss') {
+            New-Finding 'AZL-070' error "$at.compute_type" 'A Windows runner must be a VM: its bootstrap runs through Run Command, which scale sets do not support.'
+        }
+        if (-not $r['registration_secret']) {
+            New-Finding 'AZL-070' error "$at.registration_secret" 'A runner needs registration_secret, the Key Vault reference it reads at boot. Only the reference is in the file.'
+        }
+        if ($devops['platform'] -eq 'gitlab' -and @(Get-List $r['labels']).Count -gt 0) {
+            New-Finding 'AZL-070' warning "$at.labels" 'GitLab fixes a runner''s tags when the runner authentication token is created, so labels here only apply to a legacy registration token. Set the tags where you create the token.'
+        }
+    }
+    if ($runners.Count -gt 0 -and -not $devops['resource_group']) {
+        New-Finding 'AZL-070' error 'devops.resource_group' 'Runners need devops.resource_group, the resource group that holds them, their identity and their network.'
+    }
+    if ($runners.Count -gt 0 -and $net -isnot [System.Collections.IDictionary]) {
+        New-Finding 'AZL-070' error 'devops.runner_network' 'Runners need devops.runner_network: the VNet address space and a subnet for each runner.'
+    }
+
+    if ($net -is [System.Collections.IDictionary]) {
+        $spaces = @(Get-List $net['address_space'] | Where-Object { Test-IsCidr $_ })
+        $ranges = @()
+        for ($i = 0; $i -lt $runners.Count; $i++) {
+            $subnet = $runners[$i]['subnet']
+            if ($subnet -isnot [System.Collections.IDictionary] -or -not (Test-IsCidr $subnet['prefix'])) {
+                New-Finding 'AZL-070' error "devops.runners[$i].subnet" 'Each runner needs a subnet with a name and a CIDR prefix.'
+                continue
+            }
+            $range = Get-SubnetRange $subnet['prefix']
+            $inside = @($spaces | Where-Object { $space = Get-SubnetRange $_; $range.First -ge $space.First -and $range.Last -le $space.Last })
+            if ($spaces.Count -gt 0 -and $inside.Count -eq 0) {
+                New-Finding 'AZL-070' error "devops.runners[$i].subnet.prefix" "The subnet $($subnet['prefix']) isn't inside runner_network.address_space ($($spaces -join ', '))."
+            }
+            $ranges += [pscustomobject]@{ Index = $i; Prefix = $subnet['prefix']; First = $range.First; Last = $range.Last }
+        }
+        for ($a = 0; $a -lt $ranges.Count; $a++) {
+            for ($b = $a + 1; $b -lt $ranges.Count; $b++) {
+                if ($ranges[$a].First -le $ranges[$b].Last -and $ranges[$b].First -le $ranges[$a].Last) {
+                    New-Finding 'AZL-070' error "devops.runners[$($ranges[$b].Index)].subnet.prefix" "The subnet $($ranges[$b].Prefix) overlaps $($ranges[$a].Prefix) of devops.runners[$($ranges[$a].Index)]."
+                }
+            }
+        }
+        $peering = $net['hub_peering']
+        if ($peering -is [System.Collections.IDictionary] -and $peering['enabled'] -eq $true) {
+            $hubName = [string]$peering['hub_network']
+            $hubs = @(Get-List (Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'landing_zone.networks') | Where-Object { $_ -is [System.Collections.IDictionary] -and $_['name'] -eq $hubName })
+            if (-not $peering['hub_vnet_id'] -and $hubs.Count -eq 0) {
+                New-Finding 'AZL-070' error 'devops.runner_network.hub_peering' 'Peering needs hub_vnet_id, or hub_network naming a network in landing_zone.networks.'
+            }
+        }
+    }
+
+    $environments = @(Get-List $devops['environments'] | Where-Object { $_ -is [System.Collections.IDictionary] })
+    foreach ($group in ($environments | Group-Object { $_['name'] } | Where-Object Count -gt 1)) {
+        New-Finding 'AZL-070' error 'devops.environments' "Environment name '$($group.Name)' is used $($group.Count) times."
+    }
+    for ($i = 0; $i -lt $environments.Count; $i++) {
+        $e = $environments[$i]
+        if ($e['approval_required'] -eq $true -and @(Get-List $e['approvers']).Count -eq 0) {
+            New-Finding 'AZL-070' warning "devops.environments[$i].approvers" "Environment '$($e['name'])' requires approval but lists no approvers, so no one can approve."
+        }
+    }
+    $auth = $devops['authentication']
+    if ($auth -is [System.Collections.IDictionary] -and $auth['method'] -eq 'client_secret' -and -not $auth['client_secret']) {
+        New-Finding 'AZL-070' error 'devops.authentication.client_secret' 'method client_secret needs client_secret, the Key Vault reference where task 01 stores the secret.'
+    }
+}
+
 # AZL-025: the site's management address range (simplified provisioning, static management addresses).
 function Get-SiteRangeFinding {
     param([System.Collections.IDictionary]$Infra, [object[]]$Nodes, [hashtable]$OwnerOf, [string]$Subnet, [bool]$Simplified)

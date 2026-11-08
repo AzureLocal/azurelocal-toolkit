@@ -251,6 +251,7 @@ function Add-Row($Path, $Resolved, [bool]$ReqFull, [bool]$ReqZtp, [bool]$AncFull
     $desc = [string](Get-Val $n 'description')
     $ztp = [bool](@($meta.Ztp | Where-Object { $Path -match $_ }).Count)
     $os = [bool](@($meta.OsConfiguration | Where-Object { $Path -match $_ }).Count)
+    $cicd = [bool](@($meta.CicdInfra | Where-Object { $Path -match $_ }).Count)
     $arm = ($desc -cmatch '\bARM\b') -or [bool](@($meta.ArmDeployment | Where-Object { $Path -match $_ }).Count)
     $tw = -not [bool](@($meta.TrailwrightNot | Where-Object { $Path -match $_ }).Count)
     $source = ($meta.Sources | Where-Object { $Path -match $_.Pattern } | Select-Object -First 1)
@@ -269,7 +270,7 @@ function Add-Row($Path, $Resolved, [bool]$ReqFull, [bool]$ReqZtp, [bool]$AncFull
             Default  = Get-DefaultText $Resolved
             Example  = Get-ExampleText $Path $IsMap
             Source   = $(if ($source) { $source.Text } else { '' })
-            Zt       = $ztp; Os = $os; Arm = $arm; Tw = $tw
+            Zt       = $ztp; Os = $os; Arm = $arm; Tw = $tw; Ci = $cicd
             IsSecret = ($Resolved.Ref -eq 'kv_ref')
             Deprecated = ($n -is [System.Collections.IDictionary] -and $n.Contains('deprecated') -and $n['deprecated'] -eq $true)
         })
@@ -317,6 +318,7 @@ foreach ($r in $rows) {
         if ($inside | Where-Object Zt) { $r.Zt = $true }
         if ($inside | Where-Object Os) { $r.Os = $true }
         if ($inside | Where-Object Arm) { $r.Arm = $true }
+        if ($inside | Where-Object Ci) { $r.Ci = $true }
     }
 }
 
@@ -348,7 +350,7 @@ Out-Line '| Required: full / ztp | Whether the key must be set in a file with `_
 Out-Line '| Default | What a tool does when the key is left out (from the schema). |'
 Out-Line '| Example | The value in the templates and examples. Placeholders only. |'
 Out-Line '| Where to get the value | Where the real value comes from. |'
-Out-Line '| Read by | **ZTP**: azurelocal-ztp (the list is what its `ConvertFrom-ZtpInfrastructureV5` reads, plus the 5.3 and 5.4 keys). **OS configuration**: the toolkit''s OS configuration phase (by design, by section). **ARM deployment**: the key becomes a parameter of Microsoft''s ARM deployment template (the schema description names the parameter), or is part of the SAN (`storage.san`, `nodes[].san`) that the ARM and SAN deployment reads. **Trailwright**: it can write the key from its design (host-local paths and files are set by the operator). |'
+Out-Line '| Read by | **ZTP**: azurelocal-ztp (the list is what its `ConvertFrom-ZtpInfrastructureV5` reads, plus the 5.3 and 5.4 keys). **OS configuration**: the toolkit''s OS configuration phase (by design, by section). **CI/CD infrastructure**: tasks 01 to 06 of automation / 01-cicd-infra (the `devops` section, plus the Azure identifiers they sign in with). **ARM deployment**: the key becomes a parameter of Microsoft''s ARM deployment template (the schema description names the parameter), or is part of the SAN (`storage.san`, `nodes[].san`) that the ARM and SAN deployment reads. **Trailwright**: it can write the key from its design (host-local paths and files are set by the operator). |'
 Out-Line
 Out-Line 'Two templates start a file: [`infrastructure.example.yml`](infrastructure.example.yml) (full scope: ZTP, OS configuration and the ARM deployment) and [`infrastructure.ztp.example.yml`](infrastructure.ztp.example.yml) (ztp scope: only what azurelocal-ztp reads). See [Which template](README.md#which-template).'
 Out-Line
@@ -408,6 +410,7 @@ foreach ($section in $topProps) {
         $readers = @()
         if ($r.Zt) { $readers += 'ZTP' }
         if ($r.Os) { $readers += 'OS configuration' }
+        if ($r.Ci) { $readers += 'CI/CD infrastructure' }
         if ($r.Arm) { $readers += 'ARM deployment' }
         if ($r.Tw) { $readers += 'Trailwright' }
         $meaning = $r.Meaning

@@ -1,0 +1,40 @@
+---
+argument_specs:
+  main:
+    short_description: Configure a self-hosted CI/CD runner
+    description:
+      - Installs the tools and registers the host as a runner or agent for GitHub Actions, GitLab CI/CD or Azure Pipelines, and runs it as a service.
+      - The registration credential is read from Key Vault with the host's managed identity. It is never written to disk or to the log.
+    options:
+      cicd_runner_platform:
+        type: str
+        required: true
+        choices: [github, gitlab, azure_devops]
+        description: Where the runner registers.
+      cicd_runner_scm_url:
+        type: str
+        required: true
+        description: Organization or repository URL (GitHub), instance URL (GitLab) or organization URL (Azure DevOps).
+      cicd_runner_purpose:
+        type: str
+        default: general
+        choices: [general, ztp]
+        description: ztp needs a Windows host.
+      cicd_runner_token_source:
+        type: str
+        default: keyvault_managed_identity
+        choices: [keyvault_managed_identity, variable]
+        description: Where the registration credential comes from.
+      cicd_runner_key_vault_name:
+        type: str
+        default: ""
+        description: Vault name (keyvault_managed_identity).
+      cicd_runner_secret_name:
+        type: str
+        default: ""
+        description: Secret name (keyvault_managed_identity).
+      cicd_runner_registration_token:
+        type: str
+        default: ""
+        no_log: true
+        description: The credential itself (variable). Supply from Ansible Vault.

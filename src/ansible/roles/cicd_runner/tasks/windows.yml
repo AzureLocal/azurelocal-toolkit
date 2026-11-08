@@ -1,0 +1,193 @@
+# =============================================================================
+# Role: cicd_runner - Windows Server (2022, 2025) via the ansible.windows collection
+# =============================================================================
+---
+- name: Create the working folders
+  ansible.windows.win_file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - "{{ cicd_runner_windows_root }}"
+    - "{{ cicd_runner_windows_root }}\\downloads"
+    - "{{ cicd_runner_windows_root }}\\work"
+    - "{{ cicd_runner_windows_root }}\\state"
+
+- name: Initialise the data disk and the persistent ZTP folder
+  ansible.windows.win_powershell:
+    creates: "{{ cicd_runner_windows_root }}\\state\\disk.done"
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $raw = Get-Disk | Where-Object { $_.PartitionStyle -eq 'RAW' } | Select-Object -First 1
+      if ($raw) {
+          $raw | Initialize-Disk -PartitionStyle GPT -PassThru |
+              New-Partition -AssignDriveLetter -UseMaximumSize |
+              Format-Volume -FileSystem NTFS -NewFileSystemLabel 'azl-data' -Confirm:$false | Out-Null
+      }
+      $volume = Get-Volume | Where-Object { $_.FileSystemLabel -eq 'azl-data' } | Select-Object -First 1
+      if ($volume) {
+          $persistent = '{0}:\azl-ztp' -f $volume.DriveLetter
+          New-Item -ItemType Directory -Path $persistent -Force | Out-Null
+          & icacls.exe $persistent /inheritance:r /grant:r 'NT AUTHORITY\SYSTEM:(OI)(CI)F' 'BUILTIN\Administrators:(OI)(CI)F' | Out-Null
+          [Environment]::SetEnvironmentVariable('AZL_ZTP_ROOT', $persistent, 'Machine')
+      }
+      New-Item -ItemType File -Path '{{ cicd_runner_windows_root }}\state\disk.done' -Force | Out-Null
+  when: cicd_runner_windows_init_data_disk | bool
+
+- name: Install Git for Windows
+  ansible.windows.win_powershell:
+    creates: C:\Program Files\Git\cmd\git.exe
+    script: |
+      $ErrorActionPreference = 'Stop'
+      [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+      $release = Invoke-RestMethod -UseBasicParsing -Uri 'https://api.github.com/repos/git-for-windows/git/releases/latest' -Headers @{ 'User-Agent' = 'ansible' }
+      $asset = $release.assets | Where-Object { $_.name -match '^Git-.*-64-bit\.exe$' } | Select-Object -First 1
+      $file = '{{ cicd_runner_windows_root }}\downloads\git.exe'
+      Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile $file
+      Start-Process -FilePath $file -ArgumentList '/VERYSILENT', '/NORESTART', '/SUPPRESSMSGBOXES' -Wait
+
+- name: Install PowerShell 7
+  ansible.windows.win_powershell:
+    creates: C:\Program Files\PowerShell\7\pwsh.exe
+    script: |
+      $ErrorActionPreference = 'Stop'
+      [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+      $release = Invoke-RestMethod -UseBasicParsing -Uri 'https://api.github.com/repos/PowerShell/PowerShell/releases/latest' -Headers @{ 'User-Agent' = 'ansible' }
+      $asset = $release.assets | Where-Object { $_.name -match '^PowerShell-7\.[0-9.]+-win-x64\.msi$' } | Select-Object -First 1
+      $file = '{{ cicd_runner_windows_root }}\downloads\pwsh.msi'
+      Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile $file
+      Start-Process -FilePath msiexec.exe -ArgumentList '/i', $file, '/qn', '/norestart', 'ADD_PATH=1', 'REGISTER_MANIFEST=1' -Wait
+
+- name: Install the Azure CLI
+  ansible.windows.win_package:
+    path: https://aka.ms/installazurecliwindowsx64
+    creates_path: C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd
+    arguments: /qn /norestart
+    state: present
+
+- name: Install the Az, powershell-yaml and Pester modules in PowerShell 7
+  ansible.windows.win_powershell:
+    executable: C:\Program Files\PowerShell\7\pwsh.exe
+    script: |
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $missing = 'Az.Accounts', 'powershell-yaml', 'Pester' | Where-Object { -not (Get-Module -ListAvailable -Name $_) }
+      if ($missing) {
+          Set-PSResourceRepository -Name PSGallery -Trusted
+          Install-PSResource -Name Az -Scope AllUsers -TrustRepository
+          Install-PSResource -Name powershell-yaml -Scope AllUsers -TrustRepository
+          Install-PSResource -Name Pester -Scope AllUsers -TrustRepository
+          $Ansible.Changed = $true
+      }
+
+- name: Create the Bicep and Terraform folders
+  ansible.windows.win_file:
+    path: "{{ item }}"
+    state: directory
+  loop:
+    - C:\Program Files\Bicep
+    - C:\Program Files\Terraform
+
+- name: Install Bicep
+  ansible.windows.win_get_url:
+    url: "https://github.com/Azure/bicep/releases/download/v{{ cicd_runner_bicep_version }}/bicep-win-x64.exe"
+    dest: C:\Program Files\Bicep\bicep.exe
+    checksum: "{{ cicd_runner_bicep_windows_sha256 if cicd_runner_bicep_windows_sha256 | length > 0 else omit }}"
+    checksum_algorithm: sha256
+
+- name: Download Terraform
+  ansible.windows.win_get_url:
+    url: "https://releases.hashicorp.com/terraform/{{ cicd_runner_terraform_version }}/terraform_{{ cicd_runner_terraform_version }}_windows_amd64.zip"
+    dest: "{{ cicd_runner_windows_root }}\\downloads\\terraform-{{ cicd_runner_terraform_version }}.zip"
+
+- name: Unpack Terraform
+  community.windows.win_unzip:
+    src: "{{ cicd_runner_windows_root }}\\downloads\\terraform-{{ cicd_runner_terraform_version }}.zip"
+    dest: C:\Program Files\Terraform
+    creates: C:\Program Files\Terraform\terraform.exe
+
+- name: Add the tools to the machine PATH
+  ansible.windows.win_path:
+    elements:
+      - C:\Program Files\Git\cmd
+      - C:\Program Files\PowerShell\7
+      - C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin
+      - C:\Program Files\Bicep
+      - C:\Program Files\Terraform
+    scope: machine
+    state: present
+
+- name: Make the Azure CLI use the Bicep on PATH
+  ansible.windows.win_environment:
+    name: AZURE_BICEP_USE_BINARY_FROM_PATH
+    value: "true"
+    level: machine
+    state: present
+
+- name: Prepare the host for ZTP (SMB server, no sleep)
+  when: cicd_runner_purpose == 'ztp'
+  block:
+    - name: Install the file server feature
+      ansible.windows.win_feature:
+        name: FS-FileServer
+        state: present
+
+    - name: Turn off sleep and the display timeout
+      ansible.windows.win_powershell:
+        script: |
+          $ErrorActionPreference = 'Stop'
+          $Ansible.Changed = $false
+          $current = (& powercfg.exe /query SCHEME_CURRENT SUB_SLEEP STANDBYIDLE) -join ' '
+          if ($current -notmatch 'Current AC Power Setting Index: 0x00000000') {
+              & powercfg.exe /change standby-timeout-ac 0
+              & powercfg.exe /change monitor-timeout-ac 0
+              $Ansible.Changed = $true
+          }
+
+# -----------------------------------------------------------------------------
+# Registration. Skipped when the runner is already configured.
+# -----------------------------------------------------------------------------
+- name: Read the registration credential from Key Vault with the managed identity
+  when: cicd_runner_token_source == 'keyvault_managed_identity'
+  no_log: true
+  block:
+    - name: Get a Key Vault token from the instance metadata service
+      ansible.windows.win_uri:
+        url: >-
+          http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource={{ cicd_runner_imds_resource | urlencode }}{{
+          ('&client_id=' ~ cicd_runner_identity_client_id) if cicd_runner_identity_client_id | length > 0 else '' }}
+        headers:
+          Metadata: "true"
+        return_content: true
+      register: cicd_runner_imds
+      changed_when: false
+
+    - name: Read the secret
+      ansible.windows.win_uri:
+        url: "https://{{ cicd_runner_key_vault_name }}.{{ cicd_runner_key_vault_dns_suffix }}/secrets/{{ cicd_runner_secret_name }}?api-version=7.4"
+        headers:
+          Authorization: "Bearer {{ cicd_runner_imds.json.access_token }}"
+        return_content: true
+      register: cicd_runner_secret
+      changed_when: false
+
+- name: Choose the credential
+  ansible.builtin.set_fact:
+    cicd_runner_credential: "{{ cicd_runner_secret.json.value if cicd_runner_token_source == 'keyvault_managed_identity' else cicd_runner_registration_token }}"
+  no_log: true
+
+- name: Register with GitHub Actions
+  ansible.builtin.include_tasks: windows-github.yml
+  when: cicd_runner_platform == 'github'
+
+- name: Register with GitLab CI/CD
+  ansible.builtin.include_tasks: windows-gitlab.yml
+  when: cicd_runner_platform == 'gitlab'
+
+- name: Register with Azure Pipelines
+  ansible.builtin.include_tasks: windows-azure-devops.yml
+  when: cicd_runner_platform == 'azure_devops'
+
+- name: Forget the credential
+  ansible.builtin.set_fact:
+    cicd_runner_credential: ""
+  no_log: true

@@ -284,6 +284,19 @@ Schema 5.4.3 only adds one optional section; a 5.4.0 file is valid as it is. Not
 | `devops.gitlab`, `devops.terraform` | `devops` |
 | Legacy roots `azure`, `platform`, `cluster`, `azure_infrastructure`, `azure_resources`, `azure_local`, `azure_vms` | The sections above; they held copies of the same values |
 
+## Schema 5.5: the CI/CD infrastructure in devops
+
+Schema 5.5 adds optional keys to `devops`, so a 5.4 file stays valid. They are the inputs of tasks 01 to 06 of automation / 01-cicd-infra (`scripts/deploy/01-cicd-infra`).
+
+| Earlier shape | Schema 5.5 |
+| --- | --- |
+| `cicd.project.name`, `cicd.organization.url`, `cicd.repository.name` (the automation pages' `variables.yml` paths, never in the registry) | `devops.project`, `devops.url`, `devops.organization`, `devops.repository.name` |
+| `cicd.project.default_branch`, `branch_policy`, `pipeline_path` | `devops.repository.default_branch`, `devops.settings` (`required_approvals`, `squash_only`, `secret_scanning`, `resolve_conversations`, `required_status_checks`, `reviewers`) |
+| `cicd.environments[].name`, `approval_required`, `approvers` | `devops.environments[]`: `name`, `approval_required`, `approvers`, `wait_minutes`, `deployment_branch` |
+| `identity.service_principal.app_id`, the client secret | `azure.automation_identity` (name, `client_id`) and `devops.authentication` (`method`: `oidc` or `client_secret`, `client_secret` as a Key Vault reference, `roles`) |
+| `cicd.runners.pool_name`, `image`, `count` | `devops.runners[]`: `name`, `os_type`, `purpose` (`general` or `ztp`), `count`, `compute_type`, `size`, `labels`, `registration_secret`, `pool`, `subnet`, `private_ips`, `data_disk_gb` |
+| (no equivalent) | `devops.runner_network` (VNet, `hub_peering`, `reachable_cidrs`, `bmc_cidrs`), `devops.runner_access` (resource groups, RBAC Administrator, Arc Run Command, vaults), `devops.subscription`, `devops.resource_group`, `devops.api_token`, `devops.state.key` |
+| `devops.runner` (one runner, 5.0 to 5.4) | Still read when `devops.runners` is absent. `devops.runners` replaces it. |
 ## Schema 5.6: the deployment block
 
 Schema 5.6 adds one optional section, `deployment`, for the toolkit's ARM Validate and Deploy run (`Invoke-AzureLocalArmDeployment.ps1`; see [docs/arm-deployment-guide.md](../../docs/arm-deployment-guide.md)). It only adds keys: every 5.0 to 5.5 file stays valid, and a file without the section behaves as before, with the defaults shown below.

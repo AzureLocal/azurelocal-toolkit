@@ -1,0 +1,18 @@
+# =============================================================================
+# Role: cicd_runner - derived values (do not override)
+# =============================================================================
+---
+cicd_runner_is_windows: "{{ ansible_os_family == 'Windows' }}"
+
+cicd_runner_default_labels: >-
+  {{ ['azure', 'windows' if cicd_runner_is_windows else 'linux']
+  + ([] if cicd_runner_is_windows else ['terraform', 'ansible'])
+  + (['ztp'] if cicd_runner_purpose == 'ztp' else []) }}
+cicd_runner_labels: "{{ (cicd_runner_default_labels + cicd_runner_extra_labels) | unique }}"
+cicd_runner_labels_csv: "{{ cicd_runner_labels | join(',') }}"
+
+# Capability names for Azure Pipelines: each label becomes <label>=true in the agent's .env file.
+cicd_runner_ado_capabilities: "{{ cicd_runner_labels | map('regex_replace', '[^A-Za-z0-9_]', '_') | list }}"
+
+cicd_runner_imds_resource: "https://vault.azure.net"
+cicd_runner_runner_name: "{{ inventory_hostname_short | lower }}"
