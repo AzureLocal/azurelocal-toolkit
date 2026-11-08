@@ -26,6 +26,7 @@ BeforeAll {
     $script:Mocks = @'
 $ErrorActionPreference = 'Stop'
 $Scenario = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'scenario.json') -Raw | ConvertFrom-Json
+$script:GpupdateDone = $false
 function Add-Call([string]$Text) { Add-Content -LiteralPath (Join-Path $PSScriptRoot 'calls.log') -Value $Text }
 function Get-CimInstance {
     [CmdletBinding()]
@@ -38,7 +39,11 @@ function Get-ItemProperty {
     [CmdletBinding()]
     param([string]$Path, [string]$Name)
     Add-Call "Get-ItemProperty $Name"
-    if ($Name -eq 'Distinguished-Name' -and $Scenario.dn) { return [pscustomobject]@{ 'Distinguished-Name' = $Scenario.dn } }
+    if ($Name -eq 'Distinguished-Name') {
+        $dnNow = [string]$Scenario.dn
+        if ($script:GpupdateDone -and $Scenario.dnAfterGpupdate) { $dnNow = [string]$Scenario.dnAfterGpupdate }
+        if ($dnNow) { return [pscustomobject]@{ 'Distinguished-Name' = $dnNow } }
+    }
     throw 'not found'
 }
 function Get-Service { [CmdletBinding()] param([Parameter(Position = 0)][string]$Name) if ($Scenario.inCluster) { return [pscustomobject]@{ Status = 'Running' } }; return $null }
@@ -65,6 +70,7 @@ function Add-LocalGroupMember {
     param([string]$Group, [string]$Member)
     Add-Call "Add-LocalGroupMember $Group $Member"
     if ($Scenario.failMember -and $Member -like $Scenario.failMember) { throw "Principal $Member was not found." }
+    if ($Scenario.memberExists -and $Member -like $Scenario.memberExists) { throw "Member $Member is already a member of group Administrators." }
 }
 function Add-Computer {
     [CmdletBinding()]
@@ -80,9 +86,17 @@ function Add-Computer {
 function New-ScheduledTaskAction { [CmdletBinding()] param($Execute, $Argument) Add-Call "New-ScheduledTaskAction $Execute $Argument"; 'action' }
 function New-ScheduledTaskTrigger { [CmdletBinding()] param([switch]$AtStartup) Add-Call "New-ScheduledTaskTrigger AtStartup=$($AtStartup.IsPresent)"; 'trigger' }
 function New-ScheduledTaskPrincipal { [CmdletBinding()] param($UserId, $LogonType, $RunLevel) Add-Call "New-ScheduledTaskPrincipal $UserId $RunLevel"; 'principal' }
-function Register-ScheduledTask { [CmdletBinding()] param($TaskName, $Action, $Trigger, $Principal, [switch]$Force) Add-Call "Register-ScheduledTask $TaskName"; 'task' }
+function Register-ScheduledTask {
+    [CmdletBinding()]
+    param($TaskName, $Action, $Trigger, $Principal, [switch]$Force)
+    Add-Call "Register-ScheduledTask $TaskName"
+    if ($Scenario.registerFails) { throw 'Access is denied (the task scheduler refused the task).' }
+    'task'
+}
 function Unregister-ScheduledTask { [CmdletBinding()] param($TaskName, [switch]$Confirm) Add-Call "Unregister-ScheduledTask $TaskName" }
-function shutdown.exe { Add-Call "shutdown.exe $args" }
+function shutdown.exe { Add-Call "shutdown.exe $args"; $global:LASTEXITCODE = [int]$Scenario.shutdownExit }
+function icacls.exe { Add-Call "icacls.exe $args"; $global:LASTEXITCODE = [int]$Scenario.icaclsExit }
+function gpupdate.exe { Add-Call "gpupdate.exe $args"; $script:GpupdateDone = $true; $global:LASTEXITCODE = 0 }
 function Start-Sleep { [CmdletBinding()] param($Seconds) Add-Call "Start-Sleep $Seconds" }
 function New-Object {
     param([Parameter(Position = 0)][string]$TypeName, [Parameter(Position = 1)]$ArgumentList)
@@ -97,14 +111,18 @@ function New-Object {
         }
         Add-Member -InputObject $entry -MemberType NoteProperty -Name Properties -Value $bag
         Add-Member -InputObject $entry -MemberType ScriptMethod -Name MoveTo -Value { param($target) Add-Call ('MoveTo ' + $target.Path); if ($Scenario.moveFails) { throw 'Access is denied.' } }
-        Add-Member -InputObject $entry -MemberType ScriptMethod -Name RefreshCache -Value { param($names) if ($Scenario.ouMissing -and $this.Path -like ('*/' + $Scenario.ouPath)) { throw 'There is no such object on the server.' } }
+        Add-Member -InputObject $entry -MemberType ScriptMethod -Name RefreshCache -Value {
+            param($names)
+            if ($Scenario.authFails) { throw (New-Object System.Runtime.InteropServices.COMException($Scenario.authFailsMessage, [int]$Scenario.authFailsHResult)) }
+            if ($Scenario.ouMissing -and $this.Path -like ('*/' + $Scenario.ouPath)) { throw 'There is no such object on the server.' }
+        }
         return $entry
     }
     if ($null -ne $ArgumentList) { return Microsoft.PowerShell.Utility\New-Object -TypeName $TypeName -ArgumentList $ArgumentList }
     return Microsoft.PowerShell.Utility\New-Object -TypeName $TypeName
 }
 function Test-DjMockInstalled { $true }
-foreach ($required in 'Add-Computer', 'shutdown.exe', 'Register-ScheduledTask', 'Get-CimInstance', 'New-Object') {
+foreach ($required in 'Add-Computer', 'shutdown.exe', 'icacls.exe', 'gpupdate.exe', 'Register-ScheduledTask', 'Get-CimInstance', 'New-Object') {
     if ((Get-Command $required).CommandType -ne 'Function') { throw "safety stop: $required is not mocked" }
 }
 '@
@@ -120,6 +138,8 @@ foreach ($required in 'Add-Computer', 'shutdown.exe', 'Register-ScheduledTask', 
             dnsOk = $true; srvOk = $true; dcReachable = $true; skewText = '+00.0004120s'; secureChannel = $true; localAdmins = @('azl-admin', 'Administrator')
             expectedPassword = $script:Password; ouPath = 'OU=iic-clus01,OU=AzureLocal,DC=improbability,DC=cloud'; ldap = @{}
             addComputerCode = 0; addComputerMessage = ''; failMember = ''; moveFails = $false; ouMissing = $false
+            authFails = $false; authFailsMessage = 'Logon failure: unknown user name or bad password.'; authFailsHResult = -2147023570
+            registerFails = $false; setContentFails = $false; shutdownExit = 0; dnAfterGpupdate = ''; icaclsExit = 0; memberExists = ''
         }
         foreach ($k in $Scenario.Keys) { $sc[$k] = $Scenario[$k] }
         ($sc | ConvertTo-Json -Depth 8) | Set-Content -LiteralPath (Join-Path $dir 'scenario.json') -Encoding UTF8
@@ -286,6 +306,27 @@ Describe 'Apply: join' {
         ($r.Calls -join "`n") | Should -Match 'New-ScheduledTaskPrincipal SYSTEM Highest'
         (Get-Content -LiteralPath (Join-Path $r.State 'domainjoin-resume.ps1') -Raw) | Should -Match 'the resume script text'
     }
+    It 'the node is joined but the resume task cannot be registered: still joined, reboot true, the marker is RebootExpected (the restart is not skipped)' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam) -Secrets $script:Secret -Scenario @{ registerFails = $true }
+        $r.Answer.status | Should -Be 'joined'
+        $r.Answer.reboot | Should -BeTrue
+        $r.Answer.detail | Should -Match 'resume task'
+        $r.Marker.state | Should -Be 'RebootExpected'
+    }
+    It 'the state folder is restricted to SYSTEM and Administrators before the marker is written' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam) -Secrets $script:Secret
+        $acl = @($r.Calls | Where-Object { $_ -like 'icacls.exe*' })
+        $acl.Count | Should -BeGreaterThan 0
+        $acl[0] | Should -Match '/inheritance:r'
+        $acl[0] | Should -Match 'S-1-5-18'
+        $acl[0] | Should -Match 'S-1-5-32-544'
+        $acl[0] | Should -Match ([regex]::Escape($r.State))
+    }
+    It 'the folder cannot be restricted: nothing is joined (fail closed)' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam) -Secrets $script:Secret -Scenario @{ icaclsExit = 5 }
+        $r.Answer.status | Should -Be 'failed'
+        @($r.Calls | Where-Object { $_ -like 'Add-Computer*' }) | Should -BeNullOrEmpty
+    }
     It 'qualifies a plain user name with the NetBIOS name, and with the domain when there is none; keeps NETBIOS\name and name@domain as they are' {
         (Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam) -Secrets $script:Secret).Calls -join "`n" | Should -Match 'User=IIC\\lcm-iic-clus01'
         (Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam @{ netbios = '' }) -Secrets $script:Secret).Calls -join "`n" | Should -Match 'User=lcm-iic-clus01@improbability.cloud'
@@ -400,6 +441,76 @@ Describe 'Apply: move, administrators, finalize' {
         $r.Marker.state | Should -Be 'Completed'
         $r.Calls | Should -Contain 'Unregister-ScheduledTask AzureLocal-OSConfig-DomainJoinResume'
     }
+    It 'finalize and the resume script can both write the marker: a temporary file held open by the other one does not stop it' {
+        $dir = Join-Path $TestDrive 'fin-state2'
+        $null = New-Item -ItemType Directory -Path $dir
+        '{"state":"RebootExpected","changeId":"c1","bootBefore":"2026-11-07T10:00:00Z","domain":"improbability.cloud","error":""}' | Set-Content -LiteralPath (Join-Path $dir 'domainjoin-state.json')
+        $held = [System.IO.FileStream]::new((Join-Path $dir 'domainjoin-state.json.tmp'), [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+        try {
+            $res = Invoke-DjNode -Payload DomainJoinResume -StateDir $dir -Scenario @{ boot = '2026-11-07T10:09:00Z'; partOfDomain = $true; domain = 'improbability.cloud'; secureChannel = $true }
+            $resMarker = $res.Marker.state
+            $fin = Invoke-DjNode -Payload DomainJoinApply -Params @{ mode = 'finalize'; domain = 'improbability.cloud'; ou = 'OU=x'; changeId = 'c1' } -StateDir $dir
+        }
+        finally { $held.Dispose() }
+        $fin.Answer.status | Should -Be 'finalized' -Because $fin.Console
+        $resMarker | Should -Be 'VerifiedAfterRestart' -Because $res.Console
+        $fin.Marker.state | Should -Be 'Completed'
+    }
+}
+
+Describe 'Apply: locate (the computer object after the restart)' {
+    BeforeAll { $script:Dn = 'CN=iic-n01,OU=iic-clus01,OU=AzureLocal,DC=improbability,DC=cloud' }
+    It 'the name is already there: returned, no policy refresh' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params @{ mode = 'locate'; domain = 'improbability.cloud' } -Scenario @{ partOfDomain = $true; domain = 'improbability.cloud'; dn = $script:Dn }
+        $r.Answer.status | Should -Be 'located'
+        $r.Answer.dn | Should -Be $script:Dn
+        @($r.Calls | Where-Object { $_ -like 'gpupdate.exe*' }) | Should -BeNullOrEmpty
+    }
+    It 'not there yet: the computer policy is refreshed and the name read again' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params @{ mode = 'locate'; domain = 'improbability.cloud' } -Scenario @{ partOfDomain = $true; domain = 'improbability.cloud'; dn = ''; dnAfterGpupdate = $script:Dn }
+        $r.Answer.status | Should -Be 'located'
+        $r.Answer.dn | Should -Be $script:Dn
+        $r.Calls | Should -Contain 'gpupdate.exe /target:computer /force'
+    }
+    It 'never there: unverified with an empty name (not a guess)' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params @{ mode = 'locate'; domain = 'improbability.cloud' } -Scenario @{ partOfDomain = $true; domain = 'improbability.cloud'; dn = '' }
+        $r.Answer.status | Should -Be 'unverified'
+        $r.Answer.dn | Should -Be ''
+        @($r.Calls | Where-Object { $_ -like 'Add-Computer*' -or $_ -like 'MoveTo*' -or $_ -like 'shutdown*' }) | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Apply: error mapping order and local names' {
+    It 'maps the text "<Message>" to <Code>' -ForEach @(
+        @{ Message = 'Logon failure: account currently disabled.'; Code = '1331' }
+        @{ Message = 'Logon failure: unknown user name or bad password.'; Code = '1326' }
+        @{ Message = 'Computer failed to join domain with following error message: The account has been disabled.'; Code = '1331' }
+    ) {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam) -Secrets $script:Secret -Scenario @{ addComputerMessage = $Message }
+        $r.Answer.code | Should -Be $Code
+    }
+    It 'a bare "logon failure" with no further word is not called a bad password' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam) -Secrets $script:Secret -Scenario @{ addComputerMessage = 'Logon failure: the user has not been granted the requested logon type at this computer.' }
+        $r.Answer.label | Should -Be 'not mapped'
+    }
+    It 'the native code wins over the text: 1331 with a "logon failure" message is a disabled account' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam) -Secrets $script:Secret -Scenario @{ addComputerCode = 1331; addComputerMessage = 'Logon failure: the account is not what you think.' }
+        $r.Answer.code | Should -Be '1331'
+        $r.Answer.label | Should -Be 'account disabled'
+    }
+    It 'Win32 1398 (the clocks differ, whatever the language) is the clock skew' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam) -Secrets $script:Secret -Scenario @{ addComputerCode = 1398; addComputerMessage = 'Die Uhrzeit weicht ab.' }
+        $r.Answer.label | Should -Be 'clock skew'
+    }
+    It 'a local account with the short name is not the domain principal: the principal is still added' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params @{ mode = 'admins'; members = @('IIC\sg-a') } -Scenario @{ localAdmins = @('azl-admin', 'sg-a') }
+        @($r.Answer.added) | Should -Be @('IIC\sg-a')
+        $r.Calls | Should -Contain 'Add-LocalGroupMember Administrators IIC\sg-a'
+    }
+    It 'a principal Windows says is already a member (listed under another name) is not a failure' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params @{ mode = 'admins'; members = @('IIC\sg-a') } -Scenario @{ memberExists = '*sg-a' }
+        $r.Answer.status | Should -Be 'configured'
+    }
 }
 
 Describe 'Restart: guarded by the marker' {
@@ -418,6 +529,35 @@ Describe 'Restart: guarded by the marker' {
         (Invoke-DjNode -Payload DomainJoinRestart -Params @{ changeId = 'c1' } -StateDir $script:Dir).Answer.restartScheduled | Should -BeFalse
         '{"state":"JoinFailed","changeId":"c1","bootBefore":"b","domain":"d","error":"x"}' | Set-Content -LiteralPath (Join-Path $script:Dir 'domainjoin-state.json')
         (Invoke-DjNode -Payload DomainJoinRestart -Params @{ changeId = 'c1' } -StateDir $script:Dir).Answer.restartScheduled | Should -BeFalse
+    }
+    It 'a marker already at Restarting (an earlier restart attempt did not take) is accepted: the restart is scheduled again' {
+        '{"state":"Restarting","changeId":"c1","bootBefore":"2026-11-07T10:00:00Z","domain":"improbability.cloud","ou":"OU=x","host":"iic-n01","error":""}' | Set-Content -LiteralPath (Join-Path $script:Dir 'domainjoin-state.json')
+        $r = Invoke-DjNode -Payload DomainJoinRestart -Params @{ changeId = 'c1' } -StateDir $script:Dir
+        $r.Answer.restartScheduled | Should -BeTrue
+        @($r.Calls | Where-Object { $_ -like 'shutdown.exe*' }).Count | Should -Be 1
+    }
+    It 'shutdown.exe fails: restartScheduled is false and says why (no false "scheduled")' {
+        '{"state":"RebootExpected","changeId":"c1","bootBefore":"2026-11-07T10:00:00Z","domain":"improbability.cloud","ou":"OU=x","host":"iic-n01","error":""}' | Set-Content -LiteralPath (Join-Path $script:Dir 'domainjoin-state.json')
+        $r = Invoke-DjNode -Payload DomainJoinRestart -Params @{ changeId = 'c1' } -StateDir $script:Dir -Scenario @{ shutdownExit = 5 }
+        $r.Answer.restartScheduled | Should -BeFalse
+        $r.Answer.reason | Should -Match 'shutdown.exe.*5'
+    }
+    It 'a marker left at Joining on a node that is a member (the process died after Add-Computer) counts as RebootExpected; not a member, it does not' {
+        '{"state":"Joining","changeId":"c1","bootBefore":"2026-11-07T10:00:00Z","domain":"improbability.cloud","ou":"OU=x","host":"iic-n01","error":""}' | Set-Content -LiteralPath (Join-Path $script:Dir 'domainjoin-state.json')
+        $member = Invoke-DjNode -Payload DomainJoinRestart -Params @{ changeId = 'c1' } -StateDir $script:Dir -Scenario @{ partOfDomain = $true; domain = 'improbability.cloud' }
+        $member.Answer.restartScheduled | Should -BeTrue
+        @($member.Calls | Where-Object { $_ -like 'shutdown.exe*' }).Count | Should -Be 1
+        '{"state":"Joining","changeId":"c1","bootBefore":"2026-11-07T10:00:00Z","domain":"improbability.cloud","ou":"OU=x","host":"iic-n01","error":""}' | Set-Content -LiteralPath (Join-Path $script:Dir 'domainjoin-state.json')
+        $workgroup = Invoke-DjNode -Payload DomainJoinRestart -Params @{ changeId = 'c1' } -StateDir $script:Dir -Scenario @{ partOfDomain = $false }
+        $workgroup.Answer.restartScheduled | Should -BeFalse
+    }
+    It 'works while an older temporary file of the marker is still held open (the temporary name is unique)' {
+        '{"state":"RebootExpected","changeId":"c1","bootBefore":"2026-11-07T10:00:00Z","domain":"improbability.cloud","ou":"OU=x","host":"iic-n01","error":""}' | Set-Content -LiteralPath (Join-Path $script:Dir 'domainjoin-state.json')
+        $held = [System.IO.FileStream]::new((Join-Path $script:Dir 'domainjoin-state.json.tmp'), [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+        try { $r = Invoke-DjNode -Payload DomainJoinRestart -Params @{ changeId = 'c1' } -StateDir $script:Dir }
+        finally { $held.Dispose() }
+        $r.Answer.restartScheduled | Should -BeTrue -Because $r.Console
+        $r.Marker.state | Should -Be 'Restarting'
     }
     It 'with the marker: writes Restarting (flushed) first, then schedules the restart in 20 seconds' {
         '{"state":"RebootExpected","changeId":"c1","bootBefore":"2026-11-07T10:00:00Z","domain":"improbability.cloud","ou":"OU=x","host":"iic-n01","error":""}' | Set-Content -LiteralPath (Join-Path $script:Dir 'domainjoin-state.json')
@@ -490,6 +630,24 @@ Describe 'OuCheck: the dedicated OU over LDAP with the credential' {
         $r.Answer.ou.exists | Should -BeFalse
         $r.Answer.ou.checked | Should -BeFalse
         $r.Answer.ou.error | Should -Match 'no such object'
+    }
+    It 'a rejected credential (<Name>) is authFailed, not "the OU is missing", and nothing else is bound after it' -ForEach @(
+        @{ Name = 'HRESULT 0x8007052E'; HResult = -2147023570; Message = 'Logon failure: unknown user name or bad password.' }
+        @{ Name = 'account disabled 0x80070533'; HResult = -2147023565; Message = 'Logon failure: account currently disabled.' }
+        @{ Name = 'locked out 0x80070775'; HResult = -2147022987; Message = 'The referenced account is currently locked out and may not be logged on to.' }
+        @{ Name = 'text only'; HResult = -2147467259; Message = 'The user name or password is incorrect.' }
+    ) {
+        $ldap = @{ $script:OuPath = @{ gPOptions = 1 }; 'OU=AzureLocal,DC=improbability,DC=cloud' = @{ gPLink = '[LDAP://cn={AAAA},cn=policies,cn=system,DC=improbability,DC=cloud;2]' } }
+        $r = Invoke-DjNode -Payload DomainJoinOuCheck -Params $script:OuParams -Secrets $script:Secret -Scenario @{ ldap = $ldap; authFails = $true; authFailsHResult = $HResult; authFailsMessage = $Message }
+        $r.Exit | Should -Be 0 -Because $r.Console
+        $r.Answer.ou.authFailed | Should -BeTrue
+        $r.Answer.ou.checked | Should -BeFalse
+        $r.Answer.ou.error | Should -Not -BeNullOrEmpty
+        @($r.Calls | Where-Object { $_ -like 'DirectoryEntry*' }).Count | Should -Be 1 -Because 'one bind with a wrong password is all the account may take'
+    }
+    It 'a missing OU and a good bind are not authFailed' {
+        (Invoke-DjNode -Payload DomainJoinOuCheck -Params $script:OuParams -Secrets $script:Secret -Scenario @{ ouMissing = $true }).Answer.ou.authFailed | Should -BeFalse
+        (Invoke-DjNode -Payload DomainJoinOuCheck -Params $script:OuParams -Secrets $script:Secret -Scenario @{ ldap = @{ $script:OuPath = @{ gPOptions = 1 } } }).Answer.ou.authFailed | Should -BeFalse
     }
     It 'it only reads: no Add-Computer, no MoveTo, no restart' {
         $r = Invoke-DjNode -Payload DomainJoinOuCheck -Params $script:OuParams -Secrets $script:Secret -Scenario @{ ldap = @{ $script:OuPath = @{ gPOptions = 1 } } }

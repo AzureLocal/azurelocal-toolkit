@@ -886,6 +886,7 @@ function Invoke-AzlNodeConfiguration {
         [switch]$NoRestart,
         [int]$MaxPasses = 6,
         [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref },
+        [hashtable]$DomainJoinLatch, # DOMAINJOIN HOOK: shared by the nodes of one run; tripped by the first rejected join credential
         [hashtable]$GuardSetting,
         [object]$Clock,
         [object]$EventContext,
@@ -933,6 +934,7 @@ function Invoke-AzlNodeConfiguration {
     $storageDone = $false
     $compareArgs = @{ Spec = $Spec; Step = $Step; ClearStorage = $ClearStorage; ConfirmWipeDeployedCluster = $ConfirmWipeDeployedCluster }
     if ($PSBoundParameters.ContainsKey('ApprovedWipeId')) { $compareArgs.ApprovedWipeId = @($ApprovedWipeId) }
+    if (-not $DomainJoinLatch) { $DomainJoinLatch = @{ Tripped = $false; Reason = '' } } # a wrong password is never sent twice in a run
     $lastGuard = $null
     try {
     for ($pass = 1; $pass -le $limit + 1; $pass++) {
@@ -943,7 +945,7 @@ function Invoke-AzlNodeConfiguration {
         if ($remoting -and 'RemoteManagement' -in $Step) { $state | Add-Member -NotePropertyName remoting -NotePropertyValue (Read-AzlRemotingState -Spec $remoting -Transport $Transport) -Force }
         # DOMAINJOIN HOOK: the dedicated OU (exists, Group Policy inheritance blocked, enforced links) is read from the node with the join credential; asked again until it could be read.
         if ('DomainJoin' -in $Step -and $Spec.DomainJoin.Applicable -and (Get-AzlProp $state 'domainJoin')) {
-            if (-not $ouChecked) { $null = Add-AzlDomainJoinOuCheck -Spec $Spec -Transport $Transport -State $state -SecretResolver $SecretResolver; $ouCheck = Get-AzlProp $state 'domainJoin.ou'; $ouChecked = [bool](Get-AzlProp $ouCheck 'checked' $false) }
+            if (-not $ouChecked) { $null = Add-AzlDomainJoinOuCheck -Spec $Spec -Transport $Transport -State $state -SecretResolver $SecretResolver -Execute:$Execute -Latch $DomainJoinLatch; $ouCheck = Get-AzlProp $state 'domainJoin.ou'; $ouChecked = [bool](Get-AzlProp $ouCheck 'checked' $false) -or [bool](Get-AzlProp $ouCheck 'authFailed' $false) }
             elseif ($ouCheck) { Add-Member -InputObject $state.domainJoin -NotePropertyName ou -NotePropertyValue $ouCheck -Force }
         }
         $plan = @(Compare-AzlNodeState @compareArgs -State $state)
@@ -977,7 +979,7 @@ function Invoke-AzlNodeConfiguration {
             $waitContext = @{ Transport = $Transport; Node = $node; ReadParameters = $readParameters; Secrets = $secrets }
             foreach ($djItem in $djTodo) {
                 $djDone[[string]$djItem.Apply.kind] = $true
-                $dj = Invoke-AzlDomainJoinStep -Spec $Spec -Transport $Transport -State $state -Item $djItem -SecretResolver $SecretResolver -NoRestart:$NoRestart -WaitForRestart $waitBlock -WaitContext $waitContext -EventContext $djEvent
+                $dj = Invoke-AzlDomainJoinStep -Spec $Spec -Transport $Transport -State $state -Item $djItem -SecretResolver $SecretResolver -NoRestart:$NoRestart -WaitForRestart $waitBlock -WaitContext $waitContext -EventContext $djEvent -Latch $DomainJoinLatch
                 foreach ($c in $dj.Changes) { $changes.Add([pscustomobject]@{ Node = $node; Pass = $pass; Id = $c.Id; Status = $c.Status; Detail = $c.Detail }) }
                 if ($dj.Restarted) { $restarted = $true; $state = $dj.State }
                 if ($dj.Moved) { $djMoved = $true }

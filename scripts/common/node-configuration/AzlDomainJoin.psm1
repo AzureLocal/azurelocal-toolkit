@@ -15,7 +15,7 @@
     Get-AzlDomainJoinReadParameter   What the Read script needs to read the membership (never a secret).
     Get-AzlDomainJoinPlanItem        The comparison (pure): Ok, Change (join, move before the deployment, add the local administrators, or finish a pending restart), Blocked with the
                                      reason, Skipped (waits for an earlier step, or local identity), Info. Never unjoins a node.
-    Test-AzlDomainJoinVerification   After the restart: member, right domain, secure channel, right OU.
+    Test-AzlDomainJoinVerification   After the restart: member, right domain, secure channel, right OU (an unknown OU is unverified, not OK).
     Invoke-AzlDomainJoinStep         The apply: join (or move), the guarded restart, the reconnect, the verification, the events.
     Get-AzlDomainJoinSummary         The record the run report shows: joined, domain, OU, errors.
     Send-AzlDomainJoinEvent          The one adapter to the event feed (section 6 of the design).
@@ -39,6 +39,32 @@ if (Test-Path -LiteralPath $script:EventsModule -PathType Leaf) { Import-Module 
 $script:SkewLimitSeconds = 300
 $script:PayloadVersion = '1'
 $script:PendingMarkerStates = @('RebootExpected', 'Restarting')
+# LastBootUpTime is computed from the clock, so stepping the clock (W32Time after the join) moves it by seconds; a real restart moves it by minutes.
+$script:BootToleranceSeconds = 120
+
+function ConvertTo-DjUtc([object]$Value) {
+    if ($Value -is [datetime]) { return $Value.ToUniversalTime() }
+    $text = [string]$Value
+    $parsed = [datetime]::MinValue
+    $styles = [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal
+    if ($text -and [datetime]::TryParse($text, [cultureinfo]::InvariantCulture, $styles, [ref]$parsed)) { return $parsed }
+    return $null
+}
+function Test-DjSameBoot([object]$First, [object]$Second) {
+    # The same boot: the two times agree within the tolerance (an unreadable time falls back to the exact text).
+    $a = ConvertTo-DjUtc $First
+    $b = ConvertTo-DjUtc $Second
+    if ($null -eq $a -or $null -eq $b) { return ([string]$First -eq [string]$Second) }
+    return ([math]::Abs(($a - $b).TotalSeconds) -le $script:BootToleranceSeconds)
+}
+function Test-DjRestartDue([object]$DomainState) {
+    # The join happened but the node has not restarted since: the marker says RebootExpected or Restarting, or it was left at Joining by a process that
+    # died after Add-Computer (the node is a member), and the boot is still the one the marker recorded.
+    $marker = Get-AzlProp $DomainState 'marker'
+    $markerState = [string](Get-AzlProp $marker 'state' '')
+    $pending = ($markerState -in $script:PendingMarkerStates) -or ($markerState -eq 'Joining' -and [bool](Get-AzlProp $DomainState 'partOfDomain' $false))
+    return ($pending -and (Test-DjSameBoot (Get-AzlProp $marker 'bootBefore' '') (Get-AzlProp $DomainState 'boot' '')))
+}
 
 # ---------------------------------------------------------------------------------------------------------------------
 # The desired state
@@ -150,14 +176,13 @@ function Get-DjMainItem {
             return , (New-DjPlanItem $n 'domain membership' "member of $domainNow" $want Blocked "The node is joined to a different domain. It is never unjoined automatically: if $domainNow is wrong, run Remove-Computer on the node yourself (then it joins $($dj.Domain)), or correct identity.active_directory.domain_fqdn.")
         }
         $marker = Get-AzlProp $ds 'marker'
-        $markerState = [string](Get-AzlProp $marker 'state' '')
-        $restartDue = $markerState -in $script:PendingMarkerStates -and [string](Get-AzlProp $marker 'bootBefore' '') -eq [string](Get-AzlProp $ds 'boot' '')
+        $restartDue = Test-DjRestartDue $ds
         $inCluster = [bool](Get-AzlProp $ds 'inCluster' $false)
         if ($restartDue) {
-            $out.Add((New-DjPlanItem $n 'domain membership' "joined $domainNow, restart pending" "$want, restarted and verified" Change 'The join succeeded but the node has not restarted since (the durable restart marker is still set). It is restarted and verified now.' @{ id = 'DomainJoin/restart'; kind = 'domain-restart'; domain = $dj.Domain; ou = $dj.OuPath }))
+            $out.Add((New-DjPlanItem $n 'domain membership' "joined $domainNow, restart pending" "$want, restarted and verified" Change 'The join succeeded but the node has not restarted since (the durable restart marker is still set). It is restarted and verified now.' @{ id = 'DomainJoin/restart'; kind = 'domain-restart'; domain = $dj.Domain; ou = $dj.OuPath; changeId = [string](Get-AzlProp $marker 'changeId' '') }))
         }
         elseif (-not $dn) {
-            $out.Add((New-DjPlanItem $n 'domain membership' "member of $domainNow, OU not read" $want Info 'The OU could not be verified: Group Policy has not stored the computer''s distinguished name on the node yet.'))
+            $out.Add((New-DjPlanItem $n 'domain membership' "member of $domainNow, OU not read" $want Info 'OU unverified: Group Policy has not stored the computer''s distinguished name on the node yet, so it is not known where the computer object is (an account that already existed is reused where it is). Run gpupdate /target:computer /force on the node and run again.'))
         }
         elseif ((ConvertTo-DjOuKey $ouNow) -eq (ConvertTo-DjOuKey $dj.OuPath)) {
             $out.Add((New-DjPlanItem $n 'domain membership' "member of $domainNow, OU $ouNow" $want Ok))
@@ -225,13 +250,19 @@ function Get-DjOuItem {
     $ou = Get-AzlProp (Get-AzlProp $State 'domainJoin') 'ou'
     if (-not $ou) { return @() }
     $items = [System.Collections.Generic.List[object]]::new()
+    if ([bool](Get-AzlProp $ou 'authFailed' $false)) {
+        # The domain controller rejected the join credential (wrong password, locked, disabled, expired). Never "the OU is missing", and never tried again.
+        $why = [string](Get-AzlProp $ou 'error' '')
+        $items.Add((New-DjPlanItem $n 'organizational unit' 'join credential rejected' "$($dj.OuPath), inheritance blocked" Blocked "The domain controller rejected the join credential ($($dj.CredentialSource) $($dj.Username)): $why The credential is not sent again in this run, to any node (repeated bad passwords lock the account). Check the Key Vault secret and the account (locked, disabled, expired) in Active Directory, then run again."))
+        return $items.ToArray()
+    }
     if (-not [bool](Get-AzlProp $ou 'checked' $false)) {
         $reason = [string](Get-AzlProp $ou 'error' '')
         if ([bool](Get-AzlProp $ou 'exists' $true) -eq $false -and $reason -match 'no such object|0x80072030|does not exist') {
             $items.Add((New-DjPlanItem $n 'organizational unit' 'not found' $dj.OuPath Blocked "The OU $($dj.OuPath) does not exist in the domain. Create it with New-HciAdObjectsPreCreation (it also blocks Group Policy inheritance and gives the LCM user its rights), or correct identity.active_directory.ou_path."))
         }
         else {
-            $items.Add((New-DjPlanItem $n 'organizational unit' 'not checked' "$($dj.OuPath), inheritance blocked" Info "The OU and its Group Policy inheritance were not checked: $(if ($reason) { $reason } else { 'the join credential could not be used yet' })."))
+            $items.Add((New-DjPlanItem $n 'organizational unit' 'not verified' "$($dj.OuPath), inheritance blocked" Info "OU not verified: the OU and its Group Policy inheritance were not checked ($(if ($reason) { $reason } else { 'the join credential could not be used yet' }))."))
         }
         return $items.ToArray()
     }
@@ -260,12 +291,12 @@ function Get-DjAdminItem {
     $ds = Get-AzlProp $State 'domainJoin'
     $wanted = @($dj.LocalAdminMembers)
     if (-not $wanted.Count -or -not [bool](Get-AzlProp $ds 'partOfDomain' $false) -or [string](Get-AzlProp $ds 'domain' '') -ine $dj.Domain) { return @() }
-    $marker = Get-AzlProp $ds 'marker'
-    if ([string](Get-AzlProp $marker 'state' '') -in $script:PendingMarkerStates -and [string](Get-AzlProp $marker 'bootBefore' '') -eq [string](Get-AzlProp $ds 'boot' '')) { return @() }
+    if (Test-DjRestartDue $ds) { return @() }
     $have = Get-AzlProp $ds 'localAdmins'
     if ($null -eq $have) { return , (New-DjPlanItem $n 'local administrators' 'unreadable' ($wanted -join ', ') Info 'The node did not report its local Administrators group.') }
     $have = @($have | ForEach-Object { [string]$_ })
-    $missing = @($wanted | Where-Object { $w = $_; $short = $w -replace '^.*\\', ''; -not (@($have | Where-Object { $_ -ieq $w -or $_ -ieq $short }).Count) })
+    # The exact name: net localgroup shows a domain principal qualified with the domain and a bare name is a local account, which is not the domain principal.
+    $missing = @($wanted | Where-Object { $w = $_; -not (@($have | Where-Object { $_ -ieq $w }).Count) })
     if (-not $missing.Count) { return , (New-DjPlanItem $n 'local administrators' 'all present' ($wanted -join ', ') Ok) }
     return , (New-DjPlanItem $n 'local administrators' "missing: $($missing -join ', ')" ($wanted -join ', ') Change 'A domain account is not a local administrator by default. The accounts of local_admin_members are added to the local Administrators group (the deployment adds the LCM user itself later), so Kerberos remoting and log access can use a domain account.' @{ id = 'DomainJoin/admins'; kind = 'domain-admins'; members = @($missing) })
 }
@@ -334,7 +365,7 @@ function Test-AzlDomainJoinVerification {
     .SYNOPSIS
         The checks after the join and the restart: member of a domain, the right domain, the secure channel, the right OU.
     .OUTPUTS
-        Check, Ok, Detail. The OU check passes with a note when the node has no distinguished name to read yet.
+        Check, Ok, Detail. The OU check is not OK (unverified) when the node has no distinguished name to read.
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][object]$Spec, [AllowNull()][object]$State)
@@ -352,7 +383,11 @@ function Test-AzlDomainJoinVerification {
         $ouNow = Get-DjOuOfDn $dn
         $checks.Add([pscustomobject]@{ Check = 'OU'; Ok = ((ConvertTo-DjOuKey $ouNow) -eq (ConvertTo-DjOuKey $dj.OuPath)); Detail = "the computer object is in '$ouNow', the file says '$($dj.OuPath)'" })
     }
-    else { $checks.Add([pscustomobject]@{ Check = 'OU'; Ok = $true; Detail = 'not verified: the node has no distinguished name to read yet' }) }
+    else {
+        # No distinguished name: unverified, never OK. Add-Computer reuses a computer account that already exists, possibly in another OU, and nothing
+        # moves it after the deployment.
+        $checks.Add([pscustomobject]@{ Check = 'OU'; Ok = $false; Detail = "unverified: the node has no distinguished name to read, so it is not known that the computer object is in '$($dj.OuPath)'" })
+    }
     return $checks.ToArray()
 }
 
@@ -377,7 +412,7 @@ function Get-AzlDomainJoinSummary {
         secureChannel = $(if ($joined) { Get-AzlProp $ds 'secureChannel' } else { $null })
         credential   = $(if ($applicable) { $dj.CredentialSource } else { '' })
         localAdminMembers = $(if ($applicable) { @($dj.LocalAdminMembers) } else { @() })
-        localAdminsPresent = $(if ($joined -and $null -ne (Get-AzlProp $ds 'localAdmins')) { @($dj.LocalAdminMembers | Where-Object { $w = $_; $short = $w -replace '^.*\\\\', ''; -not @(@($ds.localAdmins) | Where-Object { $_ -ieq $w -or $_ -ieq $short }).Count }).Count -eq 0 } else { $null })
+        localAdminsPresent = $(if ($joined -and $null -ne (Get-AzlProp $ds 'localAdmins')) { @($dj.LocalAdminMembers | Where-Object { $w = $_; -not @(@($ds.localAdmins) | Where-Object { $_ -ieq $w }).Count }).Count -eq 0 } else { $null })
         error        = $(if ($failure.Count) { [string]$failure[0].Detail } else { '' })
     }
 }
@@ -481,21 +516,39 @@ function Send-AzlDomainJoinPlanEvent {
 # The apply
 # ---------------------------------------------------------------------------------------------------------------------
 
+function Lock-DjCredential {
+    # The run-wide latch: after the domain controller rejected the join credential once, nothing in the run sends it again (to any node).
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Sets a flag in the hashtable of the run.')]
+    param([hashtable]$Latch, [string]$Node, [string]$Reason)
+    if ($Latch -and -not [bool]$Latch['Tripped']) { $Latch['Tripped'] = $true; $Latch['Reason'] = "${Node}: $Reason".Trim() }
+}
+function Test-DjCredentialLocked([hashtable]$Latch) { return [bool]($Latch -and $Latch.ContainsKey('Tripped') -and $Latch['Tripped']) }
+function Get-DjLatchText([hashtable]$Latch) { return "The join credential was rejected earlier in this run ($([string]$Latch['Reason'])), so it is not sent again." }
+
 function Add-AzlDomainJoinOuCheck {
     <#
     .SYNOPSIS
         Reads the dedicated OU over LDAP from the node with the join credential (it exists, gPOptions says inheritance is blocked, the
         enforced GPO links above it) and attaches the answer to the state as domainJoin.ou. Returns the state. Never throws: when the
         credential or the domain controller is not usable yet, the answer says why and the plan shows Info.
+    .DESCRIPTION
+        The credential is sent only with -Execute: a plan never sends it ("OU not verified"). A credential the domain controller rejects is
+        reported as authFailed (the plan shows Blocked) and trips -Latch, the run-wide latch: while it is tripped no node gets an OU check or a join.
+    .PARAMETER Execute
+        Without it nothing is sent to the node and the OU is reported as not verified.
+    .PARAMETER Latch
+        A hashtable (Tripped, Reason) shared by the nodes of one run.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification = 'The secret was just read from Key Vault; it is made a SecureString at once and only ever lives in memory.')]
     [CmdletBinding()]
-    param([Parameter(Mandatory)][object]$Spec, [Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][object]$State, [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref })
+    param([Parameter(Mandatory)][object]$Spec, [Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][object]$State, [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref }, [switch]$Execute, [hashtable]$Latch)
     $dj = $Spec.DomainJoin
     $ds = Get-AzlProp $State 'domainJoin'
     if (-not $dj -or -not $dj.Applicable -or -not $ds) { return $State }
-    $ou = [pscustomobject]@{ checked = $false; exists = $true; gpOptions = $null; blockInheritance = $false; enforcedLinks = @(); error = '' }
-    if (-not [bool](Get-AzlProp $ds 'dcReachable' $false)) { $ou.error = 'no domain controller is reachable from the node yet' }
+    $ou = [pscustomobject]@{ checked = $false; exists = $true; authFailed = $false; gpOptions = $null; blockInheritance = $false; enforcedLinks = @(); error = '' }
+    if (-not $Execute) { $ou.error = 'a plan never sends the join credential to a node; the OU is read with -Execute' }
+    elseif (Test-DjCredentialLocked $Latch) { $ou.authFailed = $true; $ou.error = Get-DjLatchText $Latch }
+    elseif (-not [bool](Get-AzlProp $ds 'dcReachable' $false)) { $ou.error = 'no domain controller is reachable from the node yet' }
     elseif (-not $dj.HasAccount) { $ou.error = 'there is no join credential' }
     else {
         $secrets = $null
@@ -506,6 +559,8 @@ function Add-AzlDomainJoinOuCheck {
             $secrets = @{ joinUser = [string]$dj.Username; joinPassword = [System.Net.NetworkCredential]::new('', $secure).Password }
             $r = Invoke-AzlNodeScript -Transport $Transport -Node ([string]$Spec.Name) -Script (Get-AzlNodePayload -Name DomainJoinOuCheck) -Parameters @{ domain = $dj.Domain; netbios = $dj.Netbios; ou = $dj.OuPath; dcs = @($dj.DomainControllers) } -Secrets $secrets -TimeoutSeconds 300 -Tries 1
             $ou = $r.ou
+            if (-not (Get-AzlProp $ou 'authFailed')) { Add-Member -InputObject $ou -NotePropertyName authFailed -NotePropertyValue $false -Force }
+            if ([bool](Get-AzlProp $ou 'authFailed' $false)) { Lock-DjCredential -Latch $Latch -Node ([string]$Spec.Name) -Reason ([string](Get-AzlProp $ou 'error' 'the domain controller rejected the credential')) }
         }
         catch { $ou.error = "can't read the OU: $($_.Exception.Message)" }
         finally { if ($secrets) { $secrets.Clear() } }
@@ -548,7 +603,8 @@ function Invoke-AzlDomainJoinStep {    <#
         [switch]$NoRestart,
         [scriptblock]$WaitForRestart,
         [object]$WaitContext,
-        [hashtable]$EventContext
+        [hashtable]$EventContext,
+        [hashtable]$Latch
     )
     $node = [string]$Spec.Name
     $dj = $Spec.DomainJoin
@@ -557,6 +613,9 @@ function Invoke-AzlDomainJoinStep {    <#
     $changes = [System.Collections.Generic.List[object]]::new()
     $out = [ordered]@{ Changes = $null; Failed = $false; Error = ''; NextAction = ''; Restarted = $false; Joined = $false; Moved = $false; State = $State; Kind = $kind }
     $changeId = [guid]::NewGuid().ToString('N')
+    # A pending restart finishes the change of the marker: the node refuses a restart for any other changeId.
+    # (An empty one asks the node to accept the marker whatever its changeId.)
+    if ($kind -eq 'domain-restart') { $changeId = [string](Get-AzlProp $Item.Apply 'changeId' '') }
     $id = [string]$Item.Apply.id
     $emit = { param($name, $evidence, $level, $next, $data) Send-AzlDomainJoinEvent -EventContext $EventContext -Node $node -State $name -Evidence $evidence -Level $level -NextAction $next -Transport $transportKind -Data $data }
     $fail = {
@@ -564,6 +623,8 @@ function Invoke-AzlDomainJoinStep {    <#
         $out.Failed = $true; $out.Error = $text; $out.NextAction = $next
         $changes.Add([pscustomobject]@{ Id = $id; Status = 'failed'; Detail = "$text$(if ($next) { " Next: $next" })" })
         & $emit 'DomainJoinFailed' $text 'Error' $next @{ code = $code; domain = $dj.Domain; ou = $dj.OuPath }
+        # A rejected credential (bad password 1326, disabled 1331, locked out 1909) stops every later use of it in the run, on every node.
+        if ([string]$code -in '1326', '1331', '1909') { Lock-DjCredential -Latch $Latch -Node $node -Reason $text }
     }
 
     if ($kind -eq 'domain-admins') {
@@ -586,6 +647,12 @@ function Invoke-AzlDomainJoinStep {    <#
 
     # The join account. Held as a SecureString; the plain text exists only in the hashtable handed to the transport.
     $secure = $null
+    if (($kind -in 'domain-join', 'domain-move') -and (Test-DjCredentialLocked $Latch)) {
+        # A wrong password must not be sent twice: after the first rejection no node in the run gets the credential.
+        & $fail (Get-DjLatchText $Latch) 'Fix the secret or the account (locked, disabled, expired), then run again.' ''
+        $out.Changes = $changes.ToArray()
+        return [pscustomobject]$out
+    }
     if ($kind -in 'domain-join', 'domain-move') {
         try {
             $plain = [string](& $SecretResolver $dj.PasswordRef)
@@ -671,7 +738,14 @@ function Invoke-AzlDomainJoinStep {    <#
             return [pscustomobject]$out
         }
     }
-    catch { if ($_.Exception.Data['AzlState'] -ne 'Unknown') { throw } }
+    catch {
+        # The node going away mid-call (state Unknown) is expected. Any other error is a failed step: it must not end the run of all nodes and lose the changes so far.
+        if ($_.Exception.Data['AzlState'] -ne 'Unknown') {
+            & $fail "The restart script failed on ${node}: $($_.Exception.Message)" 'Run again; the join step reads the marker and finishes the restart.' ''
+            $out.Changes = $changes.ToArray()
+            return [pscustomobject]$out
+        }
+    }
     try {
         $after = if ($WaitForRestart) { & $WaitForRestart ([string](Get-AzlProp $State 'boot' '')) $WaitContext } else { $State }
     }
@@ -683,9 +757,18 @@ function Invoke-AzlDomainJoinStep {    <#
     $out.State = $after
     $out.Restarted = $true
     & $emit 'NodeReconnected' "$node answers again after the restart (boot $(Get-AzlProp $after 'boot' ''))" 'Info' '' @{ boot = [string](Get-AzlProp $after 'boot' '') }
+    # Group Policy stores the computer's distinguished name only after a refresh. Without it the OU cannot be checked, and Add-Computer reuses an existing
+    # computer account wherever it sits (nothing moves it after the deployment), so the node refreshes the computer policy and reads the name again.
+    if (-not [string](Get-AzlProp $after 'domainJoin.dn' '') -and (Get-AzlProp $after 'domainJoin')) {
+        try {
+            $located = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name DomainJoinApply) -Parameters @{ mode = 'locate'; domain = $dj.Domain; ou = $dj.OuPath; changeId = $changeId } -TimeoutSeconds 600 -Tries 1
+            if ([string](Get-AzlProp $located 'dn' '')) { Add-Member -InputObject $after.domainJoin -NotePropertyName dn -NotePropertyValue ([string]$located.dn) -Force }
+        }
+        catch { Write-Verbose "The distinguished name of $node was not read: $($_.Exception.Message)" }
+    }
     $bad = @(Test-AzlDomainJoinVerification -Spec $Spec -State $after | Where-Object { -not $_.Ok })
     if ($bad.Count) {
-        & $fail "The node joined $($dj.Domain) but the check after the restart failed: $(($bad | ForEach-Object { "$($_.Check) ($($_.Detail))" }) -join '; ')." 'Test-ComputerSecureChannel -Repair on the node, check the time and the domain controllers, then run again.' ''
+        & $fail "The node joined $($dj.Domain) but the check after the restart failed: $(($bad | ForEach-Object { "$($_.Check) ($($_.Detail))" }) -join '; ')." 'Test-ComputerSecureChannel -Repair on the node, check the time and the domain controllers, then run again. If the OU is unverified or wrong: run gpupdate /target:computer /force on the node and check in Active Directory which OU the computer object is in (an account that already existed is reused where it is, and is not moved after the deployment).' ''
         $out.Changes = $changes.ToArray()
         return [pscustomobject]$out
     }

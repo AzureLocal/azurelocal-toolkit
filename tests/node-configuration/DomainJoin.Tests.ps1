@@ -250,6 +250,26 @@ Describe 'Comparison: the plan and compare matrix' {
         $state = Get-JoinedState @{ marker = [pscustomobject]@{ state = 'RebootExpected'; changeId = 'x'; bootBefore = '2026-11-06T08:00:00Z'; domain = 'improbability.cloud'; error = '' } }
         (Get-DjItem (Get-DjSpec) $state | Where-Object Item -eq 'domain membership').Action | Should -Be 'Ok'
     }
+    It 'the restart item carries the changeId of the marker, so the node accepts the restart of that change' {
+        $state = Get-JoinedState @{ marker = [pscustomobject]@{ state = 'RebootExpected'; changeId = 'abc123'; bootBefore = '2026-11-07T10:00:00Z'; domain = 'improbability.cloud'; error = '' } }
+        (Get-DjItem (Get-DjSpec) $state | Where-Object Item -eq 'domain membership').Apply.changeId | Should -Be 'abc123'
+    }
+    It 'a marker at <State> with the same boot is a restart still due' -ForEach @(@{ State = 'Restarting' }, @{ State = 'Joining' }) {
+        $state = Get-JoinedState @{ marker = [pscustomobject]@{ state = $State; changeId = 'x'; bootBefore = '2026-11-07T10:00:00Z'; domain = 'improbability.cloud'; error = '' } }
+        $i = Get-DjItem (Get-DjSpec) $state | Where-Object Item -eq 'domain membership'
+        $i.Action | Should -Be 'Change'
+        $i.Apply.kind | Should -Be 'domain-restart'
+    }
+    It 'a marker at Joining on a node that is not a member is not a restart (the join failed or never happened)' {
+        $state = Get-DjState @{ marker = [pscustomobject]@{ state = 'Joining'; changeId = 'x'; bootBefore = '2026-11-07T10:00:00Z'; domain = 'improbability.cloud'; error = '' } }
+        (Get-DjItem (Get-DjSpec) $state | Where-Object Item -eq 'domain membership').Apply.kind | Should -Be 'domain-join'
+    }
+    It 'a boot time that moved a few seconds (the clock was stepped) is still the same boot: the restart is still due' {
+        $state = Get-JoinedState @{ boot = '2026-11-07T10:00:07Z'; marker = [pscustomobject]@{ state = 'RebootExpected'; changeId = 'x'; bootBefore = '2026-11-07T10:00:00Z'; domain = 'improbability.cloud'; error = '' } }
+        (Get-DjItem (Get-DjSpec) $state | Where-Object Item -eq 'domain membership').Apply.kind | Should -Be 'domain-restart'
+        $moved = Get-JoinedState @{ boot = '2026-11-07T10:09:00Z'; marker = [pscustomobject]@{ state = 'RebootExpected'; changeId = 'x'; bootBefore = '2026-11-07T10:00:00Z'; domain = 'improbability.cloud'; error = '' } }
+        (Get-DjItem (Get-DjSpec) $moved | Where-Object Item -eq 'domain membership').Action | Should -Be 'Ok'
+    }
     It 'the secure channel is broken: Blocked' {
         $i = Get-DjItem (Get-DjSpec) (Get-JoinedState @{ secureChannel = $false }) | Where-Object Item -eq 'secure channel'
         $i.Action | Should -Be 'Blocked'
@@ -323,6 +343,18 @@ Describe 'Comparison: the plan and compare matrix' {
             $items = Get-DjItem (Get-DjSpec) (Add-DjOu (Get-DjState) @{ checked = $false; error = 'no domain controller is reachable from the node yet' }) @('DomainJoin')
             ($items | Where-Object Item -eq 'organizational unit').Action | Should -Be 'Info'
         }
+        It 'the OU check was rejected by the domain controller (authFailed): Blocked, and the join is Blocked with it' {
+            $items = Get-DjItem (Get-DjSpec) (Add-DjOu (Get-DjState) @{ checked = $false; authFailed = $true; error = 'Logon failure: unknown user name or bad password.' }) @('DomainJoin')
+            $ou = $items | Where-Object Item -eq 'organizational unit'
+            $ou.Action | Should -Be 'Blocked'
+            $ou.Note | Should -Match 'Logon failure'
+            $ou.Note | Should -Match 'not (sent|used|tried) again'
+            ($items | Where-Object Item -eq 'domain membership').Action | Should -Be 'Blocked'
+        }
+        It 'a bad password is not mistaken for a missing OU, whatever the error text says' {
+            $items = Get-DjItem (Get-DjSpec) (Add-DjOu (Get-DjState) @{ checked = $false; exists = $false; authFailed = $true; error = 'no such object' }) @('DomainJoin')
+            ($items | Where-Object Item -eq 'organizational unit').Note | Should -Not -Match 'does not exist'
+        }
         It 'a blocked OU blocks the move too' {
             $spec = Get-DjSpec { param($d) $d.identity.active_directory.join_options = [ordered]@{ allow_ou_move = $true } }
             $state = Add-DjOu (Get-JoinedState @{ dn = 'CN=iic-n01,OU=Elsewhere,DC=improbability,DC=cloud' }) @{ gpOptions = 0; blockInheritance = $false }
@@ -339,10 +371,21 @@ Describe 'Comparison: the plan and compare matrix' {
             $i.Apply.kind | Should -Be 'domain-admins'
             $i.Apply.members | Should -Be @('IIC\sg-a')
         }
-        It 'all present (by qualified or short name): Ok, nothing to do (idempotent)' {
+        It 'all present (the qualified names): Ok, nothing to do (idempotent)' {
             $spec = Get-DjSpec { param($d) $d.identity.active_directory.netbios_name = 'IIC'; $d.identity.active_directory.local_admin_members = @('sg-a', 'lcm-iic-clus01') }
-            $state = Get-JoinedState @{ localAdmins = @('azl-admin', 'IIC\sg-a', 'lcm-iic-clus01') }
+            $state = Get-JoinedState @{ localAdmins = @('azl-admin', 'iic\SG-A', 'IIC\lcm-iic-clus01') }
             (Get-DjItem $spec $state | Where-Object Item -eq 'local administrators').Action | Should -Be 'Ok'
+        }
+        It 'a LOCAL account with the same short name is not the domain principal: still missing' {
+            $spec = Get-DjSpec { param($d) $d.identity.active_directory.netbios_name = 'IIC'; $d.identity.active_directory.local_admin_members = @('sg-a') }
+            $i = Get-DjItem $spec (Get-JoinedState @{ localAdmins = @('azl-admin', 'sg-a') }) | Where-Object Item -eq 'local administrators'
+            $i.Action | Should -Be 'Change'
+            $i.Apply.members | Should -Be @('IIC\sg-a')
+        }
+        It 'the summary counts the same way: a bare local name is not present, the qualified one is' {
+            $spec = Get-DjSpec { param($d) $d.identity.active_directory.netbios_name = 'IIC'; $d.identity.active_directory.local_admin_members = @('sg-a') }
+            (Get-AzlDomainJoinSummary -Spec $spec -State (Get-JoinedState @{ localAdmins = @('azl-admin', 'sg-a') })).localAdminsPresent | Should -BeFalse
+            (Get-AzlDomainJoinSummary -Spec $spec -State (Get-JoinedState @{ localAdmins = @('azl-admin', 'IIC\sg-a') })).localAdminsPresent | Should -BeTrue
         }
         It 'not joined yet: no administrators item' {
             @(Get-DjItem (Get-DjSpec) (Get-DjState) | Where-Object Item -eq 'local administrators') | Should -BeNullOrEmpty
@@ -421,6 +464,11 @@ Describe 'Verification after the restart' {
         $checks = Test-AzlDomainJoinVerification -Spec (Get-DjSpec) -State (Get-JoinedState)
         @($checks | Where-Object { -not $_.Ok }) | Should -BeNullOrEmpty
         @($checks).Count | Should -Be 4
+    }
+    It 'an empty distinguished name is unverified, never OK (the computer account may have been reused in another OU)' {
+        $bad = @(Test-AzlDomainJoinVerification -Spec (Get-DjSpec) -State (Get-JoinedState @{ dn = '' }) | Where-Object { -not $_.Ok })
+        $bad.Check | Should -Contain 'OU'
+        ($bad | Where-Object Check -eq 'OU').Detail | Should -Match 'unverified'
     }
     It 'fails on <Name>' -ForEach @(
         @{ Name = 'not a member'; Set = @{ partOfDomain = $false; domain = 'WORKGROUP' }; Check = 'PartOfDomain' }
@@ -542,6 +590,23 @@ Describe 'The step: join, restart, reconnect, verify' {
         $r.Changes[-1].Status | Should -Be 'pending'
         $r.Changes[-1].Detail | Should -Match 'restart'
     }
+    It 'a tripped latch (an earlier node had the credential rejected): Failed before the password is read or anything is sent' {
+        $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'joined'; reboot = $true; detail = 'must not run' } }
+        $latch = @{ Tripped = $true; Reason = 'iic-n01: Logon failure' }
+        $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State (Get-DjState) -Item $script:JoinItem -SecretResolver { throw 'must not read the secret' } -Latch $latch -EventContext $script:Ctx
+        $r.Failed | Should -BeTrue
+        $r.Error | Should -Match 'iic-n01'
+        @($t.Log).Count | Should -Be 0
+    }
+    It 'a join the domain rejects with <Code> trips the latch; another error does not' -ForEach @(
+        @{ Code = '1326'; Trips = $true }, @{ Code = '1331'; Trips = $true }, @{ Code = '1909'; Trips = $true }, @{ Code = '1355'; Trips = $false }, @{ Code = '5'; Trips = $false }
+    ) {
+        $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'failed'; code = $Code; label = 'x'; errorText = 'rejected'; nextAction = 'fix it'; stillWorkgroup = $true } }
+        $latch = @{ Tripped = $false; Reason = '' }
+        $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State (Get-DjState) -Item $script:JoinItem -SecretResolver $script:Resolver -Latch $latch -EventContext $script:Ctx
+        $r.Failed | Should -BeTrue
+        $latch.Tripped | Should -Be $Trips
+    }
     It 'the node refuses to restart without its marker: Failed, nothing waits' {
         $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'joined'; reboot = $true; detail = 'x' }; Restart = @{ restartScheduled = $false; reason = 'No durable restart marker' } }
         $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State (Get-DjState) -Item $script:JoinItem -SecretResolver $script:Resolver -WaitForRestart { throw 'must not wait' }
@@ -564,6 +629,32 @@ Describe 'The step: join, restart, reconnect, verify' {
         @($t.Log | ForEach-Object Kind) | Should -Not -Contain 'Apply:finalize'
         (Get-DjFeed $script:Feed).state | Should -Not -Contain 'DomainJoined'
     }
+    It 'no distinguished name after the restart yet: the node refreshes Group Policy and reads it again, then the join completes' {
+        $dnRight = 'CN=iic-n01,OU=iic-clus01,OU=AzureLocal,DC=improbability,DC=cloud'
+        $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'joined'; reboot = $true; detail = 'x' }; Restart = @{ restartScheduled = $true }; 'Apply:locate' = @{ status = 'located'; dn = $dnRight }; 'Apply:finalize' = @{ status = 'finalized' } }
+        $noDn = Get-JoinedState @{ boot = '2026-11-07T10:09:00Z'; dn = '' }
+        $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State (Get-DjState) -Item $script:JoinItem -SecretResolver $script:Resolver -WaitForRestart { $noDn }.GetNewClosure() -EventContext $script:Ctx
+        $r.Failed | Should -BeFalse
+        @($t.Log | ForEach-Object Kind) | Should -Be @('Apply:join', 'Restart', 'Apply:locate', 'Apply:finalize')
+        $r.Joined | Should -BeTrue
+    }
+    It 'the DN stays unknown after the refresh: the OU is unverified, so the step fails and the marker is not completed' {
+        $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'joined'; reboot = $true; detail = 'x' }; Restart = @{ restartScheduled = $true }; 'Apply:locate' = @{ status = 'unverified'; dn = '' }; 'Apply:finalize' = @{ status = 'finalized' } }
+        $noDn = Get-JoinedState @{ boot = '2026-11-07T10:09:00Z'; dn = '' }
+        $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State (Get-DjState) -Item $script:JoinItem -SecretResolver $script:Resolver -WaitForRestart { $noDn }.GetNewClosure() -EventContext $script:Ctx
+        $r.Failed | Should -BeTrue
+        $r.Error | Should -Match 'OU.*unverified'
+        @($t.Log | ForEach-Object Kind) | Should -Not -Contain 'Apply:finalize'
+        (Get-DjFeed $script:Feed).state | Should -Not -Contain 'DomainJoined'
+    }
+    It 'the account turns out to be in another OU (reused): the step fails with the OU it is in' {
+        $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'joined'; reboot = $true; detail = 'x' }; Restart = @{ restartScheduled = $true }; 'Apply:locate' = @{ status = 'located'; dn = 'CN=iic-n01,OU=Old,DC=improbability,DC=cloud' }; 'Apply:finalize' = @{ status = 'finalized' } }
+        $noDn = Get-JoinedState @{ boot = '2026-11-07T10:09:00Z'; dn = '' }
+        $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State (Get-DjState) -Item $script:JoinItem -SecretResolver $script:Resolver -WaitForRestart { $noDn }.GetNewClosure() -EventContext $script:Ctx
+        $r.Failed | Should -BeTrue
+        $r.Error | Should -Match 'OU=Old'
+        @($t.Log | ForEach-Object Kind) | Should -Not -Contain 'Apply:finalize'
+    }
     It 'a pending restart (restart item): restarts and verifies without joining again' {
         $state = Get-JoinedState @{ marker = [pscustomobject]@{ state = 'RebootExpected'; changeId = 'x'; bootBefore = '2026-11-07T10:00:00Z'; domain = 'improbability.cloud'; error = '' } }
         $item = Get-DjItem $script:Spec $state | Where-Object { $_.Apply -and $_.Apply.kind -eq 'domain-restart' }
@@ -571,6 +662,22 @@ Describe 'The step: join, restart, reconnect, verify' {
         $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State $state -Item $item -SecretResolver { throw 'no secret needed' } -WaitForRestart $script:Wait
         $r.Failed | Should -BeFalse
         @($t.Log | ForEach-Object Kind) | Should -Be @('Restart', 'Apply:finalize')
+    }
+    It 'a pending restart is asked with the changeId of the marker (not a fresh one), and the marker is completed with it' {
+        $state = Get-JoinedState @{ marker = [pscustomobject]@{ state = 'Restarting'; changeId = 'abc123'; bootBefore = '2026-11-07T10:00:00Z'; domain = 'improbability.cloud'; error = '' } }
+        $item = Get-DjItem $script:Spec $state | Where-Object { $_.Apply -and $_.Apply.kind -eq 'domain-restart' }
+        $t = Get-DjTransport @{ Restart = @{ restartScheduled = $true }; 'Apply:finalize' = @{ status = 'finalized' } }
+        $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State $state -Item $item -SecretResolver { throw 'no secret needed' } -WaitForRestart $script:Wait
+        $r.Failed | Should -BeFalse
+        $t.Log[0].Parameters.changeId | Should -Be 'abc123'
+        $t.Log[1].Parameters.changeId | Should -Be 'abc123'
+    }
+    It 'a restart script that fails (not state Unknown) is a failed step with the changes kept, not an exception that ends the run' {
+        $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'joined'; reboot = $true; detail = 'joined' }; Restart = { 'the restart script crashed' } }
+        $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State (Get-DjState) -Item $script:JoinItem -SecretResolver $script:Resolver -WaitForRestart { throw 'must not wait' } -EventContext $script:Ctx
+        $r.Failed | Should -BeTrue
+        $r.Error | Should -Match 'restart'
+        @($r.Changes | Where-Object Status -eq 'changed').Count | Should -Be 1 -Because 'the join itself is kept in the report'
     }
     It 'the OU move (before the deployment, allow_ou_move) sends the DN and the target, and says DomainJoined with moved' {
         $spec = Get-DjSpec { param($d) $d.identity.active_directory.join_options = [ordered]@{ allow_ou_move = $true } }
@@ -658,14 +765,64 @@ Describe 'Invoke-AzlNodeConfiguration with the DomainJoin step' {
         $script:After = Add-DjOu (Get-JoinedState @{ boot = '2026-11-07T10:09:00Z' })
         $script:After.boot = '2026-11-07T10:09:00Z'
     }
-    It 'Plan mode: reads once, writes DomainJoinPlanned, changes nothing, never sends the join' {
+    It 'Plan mode: reads once, writes DomainJoinPlanned, changes nothing, never sends the join, and never sends the credential (OU not verified)' {
         $t = Get-DjTransport @{ OuCheck = @{ ou = [pscustomobject]@{ checked = $true; exists = $true; gpOptions = 1; blockInheritance = $true; enforcedLinks = @(); error = '' } } } @($script:Before)
-        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Step 'DomainJoin' -SecretResolver $script:Resolver -EventContext @{ Path = $script:Feed; Method = 'Iso'; Phase = 'Plan' }
-        # Read, the OU check, and the read-only status of the last guarded change that every Plan and Apply ends with (the fake counts it as a Read).
-        @($t.Log | ForEach-Object Kind) | Should -Be @('Read', 'OuCheck', 'Read')
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Step 'DomainJoin' -SecretResolver { throw 'a plan must not read the join secret' } -EventContext @{ Path = $script:Feed; Method = 'Iso'; Phase = 'Plan' }
+        # The Read, and the read-only status of the last guarded change that every Plan and Apply ends with (the fake counts it as a Read).
+        @($t.Log | ForEach-Object Kind) | Should -Be @('Read', 'Read')
         ($r.Plan | Where-Object Item -eq 'domain membership').Action | Should -Be 'Change'
+        $ou = $r.Plan | Where-Object Item -eq 'organizational unit'
+        $ou.Action | Should -Be 'Info'
+        $ou.Current | Should -Be 'not verified'
+        $ou.Note | Should -Match 'OU not verified'
         $r.Executed | Should -BeFalse
         @(Get-DjFeed $script:Feed | ForEach-Object state) | Should -Be @('DomainJoinPlanned')
+    }
+    It 'Execute: a join credential the domain controller rejects at the OU check is sent once, the join is Blocked and nothing is sent to join' {
+        $rejected = @{ OuCheck = @{ ou = [pscustomobject]@{ checked = $false; exists = $true; authFailed = $true; gpOptions = $null; blockInheritance = $false; enforcedLinks = @(); error = 'Logon failure: unknown user name or bad password.' } }; 'Apply:join' = @{ status = 'joined'; reboot = $false; detail = 'must not run' } }
+        $t = Get-DjTransport $rejected @($script:Before, $script:Before, $script:Before)
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -Step 'DomainJoin' -SecretResolver $script:Resolver -EventContext $script:Ctx
+        @($t.Log | Where-Object Kind -eq 'OuCheck').Count | Should -Be 1
+        @($t.Log | Where-Object Kind -like 'Apply:*') | Should -BeNullOrEmpty
+        $r.Converged | Should -BeFalse
+        @($r.Blocked | Where-Object Item -eq 'organizational unit').Count | Should -Be 1
+        @($r.Blocked | Where-Object Item -eq 'domain membership').Count | Should -Be 1
+    }
+    It 'a run-wide latch: after the first rejected credential no later node gets an OU check or a join, and a second pass asks again for nothing' {
+        $rejected = @{ OuCheck = @{ ou = [pscustomobject]@{ checked = $false; exists = $true; authFailed = $true; gpOptions = $null; blockInheritance = $false; enforcedLinks = @(); error = 'Logon failure: unknown user name or bad password.' } }; 'Apply:join' = @{ status = 'joined'; reboot = $false; detail = 'must not run' } }
+        $latch = @{ Tripped = $false; Reason = '' }
+        $logs = foreach ($i in 0..1) {
+            $spec = Get-DjSpec -Node $i
+            $read = Get-DjState @{ host = $spec.Name }
+            $t = Get-DjTransport $rejected @($read, $read, $read)
+            $null = Invoke-AzlNodeConfiguration -Spec $spec -Transport $t -Execute -Step 'DomainJoin' -SecretResolver $script:Resolver -DomainJoinLatch $latch
+            , @($t.Log | ForEach-Object Kind)
+        }
+        $latch.Tripped | Should -BeTrue
+        @($logs | ForEach-Object { $_ | Where-Object { $_ -eq 'OuCheck' } }).Count | Should -Be 1 -Because 'two nodes, one bad password, one attempt'
+        @($logs | ForEach-Object { $_ | Where-Object { $_ -like 'Apply:*' } }) | Should -BeNullOrEmpty
+        for ($i = 1; $i -lt $logs.Count; $i++) { $logs[$i] | Should -Be @('Read', 'Read') -Because 'the Read and the read-only status of the last guarded change; no OU check, no join' }
+    }
+    It 'a join that fails with a bad credential (1326) trips the latch, so the next node is not sent the same password' {
+        $ou = @{ OuCheck = @{ ou = [pscustomobject]@{ checked = $true; exists = $true; gpOptions = 1; blockInheritance = $true; enforcedLinks = @(); error = '' } } }
+        $failed = @{ status = 'failed'; code = '1326'; label = 'bad credential'; errorText = 'The user name or password is incorrect.'; nextAction = 'Check the secret.'; stillWorkgroup = $true }
+        $latch = @{ Tripped = $false; Reason = '' }
+        $spec1 = Get-DjSpec -Node 0; $spec2 = Get-DjSpec -Node 1
+        $r1state = Get-DjState @{ host = $spec1.Name }; $r2state = Get-DjState @{ host = $spec2.Name }
+        $t1 = Get-DjTransport ($ou + @{ 'Apply:join' = $failed }) @($r1state, $r1state)
+        $t2 = Get-DjTransport ($ou + @{ 'Apply:join' = $failed }) @($r2state, $r2state)
+        $null = Invoke-AzlNodeConfiguration -Spec $spec1 -Transport $t1 -Execute -Step 'DomainJoin' -SecretResolver $script:Resolver -DomainJoinLatch $latch
+        $r2 = Invoke-AzlNodeConfiguration -Spec $spec2 -Transport $t2 -Execute -Step 'DomainJoin' -SecretResolver $script:Resolver -DomainJoinLatch $latch
+        @($t1.Log | Where-Object Kind -eq 'Apply:join').Count | Should -Be 1
+        $latch.Tripped | Should -BeTrue
+        @($t2.Log | ForEach-Object Kind) | Should -Be @('Read', 'Read')
+        $r2.Converged | Should -BeFalse
+    }
+    It 'without a latch from the caller a run still keeps its own: the credential is not asked again in a later pass' {
+        $rejected = @{ OuCheck = @{ ou = [pscustomobject]@{ checked = $false; exists = $true; authFailed = $true; error = 'Logon failure' } } }
+        $t = Get-DjTransport $rejected @($script:Before, $script:Before, $script:Before)
+        $null = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -Step 'DomainJoin' -SecretResolver $script:Resolver
+        @($t.Log | Where-Object Kind -eq 'OuCheck').Count | Should -Be 1
     }
     It 'Execute: joins first, restarts, re-reads, converges; the OU is read with the credential before the join' {
         $ou = @{ OuCheck = @{ ou = [pscustomobject]@{ checked = $true; exists = $true; gpOptions = 1; blockInheritance = $true; enforcedLinks = @(); error = '' } } }
