@@ -372,6 +372,23 @@ Describe 'Invoke-AzlArmDeployment' {
         ($calls | Where-Object Method -eq 'PUT').Body.properties.parameters.deploymentMode.value | Should -Be 'Deploy'
         $r.ProvisioningState | Should -Be 'Succeeded'
     }
+    It 'Deploy: a validation that Azure reports as Success (2610 word) counts as green, like Succeeded' {
+        $calls = $script:Calls
+        Mock -ModuleName AzlArmDeployment Invoke-AzlArm {
+            $calls.Add([pscustomobject]@{ Method = $Method; Path = $Path; Body = $Body })
+            if ($Path -like '*deploymentSettings*') { return (New-HciState 'Succeeded' 'Success' '') }
+            if ($Method -eq 'GET') { return [pscustomobject]@{ properties = [pscustomobject]@{ provisioningState = 'Succeeded' } } }
+            [pscustomobject]@{}
+        }
+        { Invoke-AzlArmDeployment -ParameterSet $script:Set -Template $script:Template -SubscriptionId 's' -ResourceGroup 'r' -Mode Deploy -SecretResolver $script:Resolver } | Should -Not -Throw
+        (@($calls | Where-Object Method -eq 'PUT')).Count | Should -BeGreaterThan 0
+    }
+    It 'Deploy: still refuses when the validation status is InProgress or Failed' {
+        foreach ($word in 'InProgress', 'Failed', 'Error', '') {
+            Mock -ModuleName AzlArmDeployment Invoke-AzlArm { New-HciState 'Succeeded' $word '' }
+            { Invoke-AzlArmDeployment -ParameterSet $script:Set -Template $script:Template -SubscriptionId 's' -ResourceGroup 'r' -Mode Deploy -SecretResolver $script:Resolver } | Should -Throw '*No successful validation*'
+        }
+    }
     It 'patches the deploymentSettings api-version only when asked' {
         $calls = $script:Calls
         Mock -ModuleName AzlArmDeployment Invoke-AzlArm {

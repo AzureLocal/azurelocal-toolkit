@@ -693,7 +693,8 @@ function Invoke-AzlArmDeployment {
         throw "The instance $clusterName is in a failed deployment state ($($before.ProvisioningState), deployment $($before.DeploymentStatus)). Microsoft: don't run Validate again after a failed deployment; it resets the system properties and can break license sync. Fix the cause and redeploy with Mode Deploy, or get support's guidance (-AllowRevalidate)."
     }
     if ($Mode -eq 'Deploy' -and -not $SkipValidationCheck) {
-        if (-not $before -or $before.ValidationStatus -ne 'Succeeded') { throw "No successful validation to deploy from (validation status '$(if ($before) { $before.ValidationStatus } else { 'no cluster resource' })'). Run Mode Validate first and let it succeed." }
+        # Azure reports a green validation as 'Success' (2610) or 'Succeeded' (older builds); both mean the same.
+        if (-not $before -or ([string]$before.ValidationStatus -replace '[\s_\-]', '') -notin 'Success', 'Succeeded', 'ValidationSuccess') { throw "No successful validation to deploy from (validation status '$(if ($before) { $before.ValidationStatus } else { 'no cluster resource' })'). Run Mode Validate first and let it succeed." }
     }
 
     # ---- secrets into memory, then the request
