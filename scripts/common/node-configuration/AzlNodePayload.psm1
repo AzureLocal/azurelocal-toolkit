@@ -519,4 +519,15 @@ function Get-AzlNodePayload {
     return ($script:Prologue + [Environment]::NewLine + $body)
 }
 
-Export-ModuleMember -Function Get-AzlNodePayload
+function Get-AzlNodePrologue {
+    <#
+    .SYNOPSIS
+        The shared start of every node script: parameter decoding, Get-P, Write-Result, the state directory.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+    return $script:Prologue
+}
+
+Export-ModuleMember -Function Get-AzlNodePayload, Get-AzlNodePrologue
