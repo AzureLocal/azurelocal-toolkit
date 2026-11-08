@@ -251,6 +251,32 @@ Describe 'NW-013 physical ports against the file (found by MAC, name-agnostic)' 
         $cross.Count | Should -Be 1
         $cross[0].Message | Should -Match "File port 'NIC1' is 'Port1' on x1, 'NIC-B' on x2"
     }
+    It 'the cross-node failure says both ways out: install consistently, or set os_name_override so the OS configuration renames (opt-in)' {
+        $f = New-Alien
+        (Get-VerNic $f.World 'x2' 'Port1').n = 'NIC-B'
+        $cross = @(Invoke-VerRun 'NW-013' $f.World $f.Infra | Where-Object { $_.Node -eq '*' -and $_.Status -eq 'Failed' })
+        $cross[0].Remedy | Should -Match 'Install the nodes consistently'
+        $cross[0].Remedy | Should -Match 'os_name_override'
+        $cross[0].Remedy | Should -Match 'NicNames'
+        $cross[0].Remedy | Should -Match 'opt-in'
+    }
+    It 'an os_name_override the node does not have yet is Failed on that node and says to run the NicNames step' {
+        $f = New-Alien
+        foreach ($n in $f.Infra.nodes) { $n.network_adapters[1].os_name_override = 'Mgmt2' }
+        $r = @(Invoke-VerRun 'NW-013' $f.World $f.Infra | Where-Object Node -EQ 'x1')[0]
+        $r.Status | Should -Be 'Failed'
+        $r.Message | Should -Match "file port 'NIC1' has os_name_override 'Mgmt2', but the node calls the adapter 'Port1'"
+        $r.Message | Should -Match 'NicNames'
+    }
+    It 'an os_name_override the node already has passes (the adapter was renamed, found by MAC)' {
+        $f = New-Alien
+        foreach ($n in $f.Infra.nodes) { $n.network_adapters[1].os_name_override = 'Mgmt2' }
+        foreach ($node in 'x1', 'x2') { (Get-VerNic $f.World $node 'Port1').n = 'Mgmt2' }
+        $ctx = New-VerContext -Module $script:Mod -Infra $f.Infra -World $f.World
+        $ctx.OsReport.nodes | ForEach-Object { foreach ($p in $_.ports) { if ($p.mac -eq 'aabbcc000002') { $p.osName = 'Mgmt2' } } }
+        $r = @(Invoke-VerCheck -Module $script:Mod -Id 'NW-013' -Context $ctx)
+        ($r | ForEach-Object Status | Select-Object -Unique) | Should -Be 'Passed'
+    }
     It 'names match but the MACs differ: the port is not on the node, Failed with the MACs the node has' {
         $f = New-Lab
         (Get-VerNic $f.World 'lab-n02' 'Port2').mac = 'ffeeddccbbaa'

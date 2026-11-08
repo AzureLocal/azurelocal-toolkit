@@ -54,6 +54,7 @@ function Get-AzlVerFilePort {
                 VlanId = $(if ($null -ne $vlan -and "$vlan" -ne '') { [int]$vlan } else { $null }); Ip = [string](Get-AzlProp $a 'ip_address' '')
                 VlanMode = ([string](Get-AzlProp $a 'vlan_mode' '')).ToLowerInvariant(); AllowedVlans = @(ConvertTo-AzlVerList (Get-AzlProp $a 'allowed_vlans' @()) | ForEach-Object { [int]$_ })
                 SwitchName = [string](Get-AzlProp $a 'switch_port.switch' ''); SwitchPort = [string](Get-AzlProp $a 'switch_port.port' '')
+                OsNameOverride = [string](Get-AzlProp $a 'os_name_override' '')
             }
         })
 }
@@ -248,7 +249,7 @@ function Get-AzlVerificationCheckDefinition {
                             elseif ([string]$nic.st -ne 'Up') { $problems += "adapter '$a' of intent $($i.Name) is $($nic.st), not Up" }
                         }
                     }
-                    if ($problems) { New-AzlVerResult Failed "${Name}: $($problems -join '; '). Network ATC takes the adapter names from the deployment, so they must exist and be identical on every node." 'Rename the adapters on the nodes (the OS configuration run maps them by MAC), fix networking.intents[].adapters, and connect the cables of the adapters that are not Up.' -Node $Name -Evidence ($problems -join ' | ') }
+                    if ($problems) { New-AzlVerResult Failed "${Name}: $($problems -join '; '). Network ATC takes the adapter names from the deployment, so they must exist and be identical on every node." 'Fix networking.intents[].adapters (it names ports of nodes[].network_adapters[].name, which the tools find on the node by MAC), correct the MAC of the port in the file, and connect the cables of the adapters that are not Up. To give the adapters a name of your choice, set os_name_override on the port and run the OS configuration NicNames step (opt-in).' -Node $Name -Evidence ($problems -join ' | ') }
                     else { New-AzlVerResult Passed "$Name has all $($all.Count) intent adapters, each Up." -Node $Name -Evidence "adapters=$($all -join ',')" }
                 }
             }))
@@ -548,6 +549,8 @@ function Get-AzlVerificationCheckDefinition {
                         }
                         $resolved[$p.Name] = $nic
                         $os = [string]$nic.n
+                        # The user's explicit name (opt-in rename): the node must already have it, or the deployment would send a name the adapter does not have.
+                        if ($p.OsNameOverride -and $os -cne $p.OsNameOverride) { $failed.Add("file port '$($p.Name)' has os_name_override '$($p.OsNameOverride)', but the node calls the adapter '$os'; run the OS configuration with the NicNames step (it renames the adapter, opt-in) or remove os_name_override") }
                         if (-not $osNames.ContainsKey($p.Name.ToLowerInvariant())) { $osNames[$p.Name.ToLowerInvariant()] = @{ File = $p.Name; Nodes = @{} } }
                         $osNames[$p.Name.ToLowerInvariant()].Nodes[$Name] = $os
                         if ([string]$nic.desc -match '(?i)remote ndis|rndis|\busb\b|virtual|vethernet|multiplexor|wi-?fi|bluetooth' -or $os -in $ndis) { $failed.Add("file port '$($p.Name)' resolves to '$os' ($($nic.desc)), which is a virtual, USB or Remote NDIS device, not a physical port") }
@@ -633,7 +636,7 @@ function Get-AzlVerificationCheckDefinition {
                 foreach ($k in $osNames.Keys) {
                     $entry = $osNames[$k]
                     if (@($entry.Nodes.Values | Select-Object -Unique).Count -gt 1) {
-                        New-AzlVerResult Failed "File port '$($entry.File)' is $((@($entry.Nodes.GetEnumerator() | Sort-Object Name | ForEach-Object { "'$($_.Value)' on $($_.Key)" })) -join ', '). Network ATC needs the same adapter name on every node." 'Rename the adapters on the nodes so the same file port has the same OS name everywhere (the OS configuration run maps them by MAC), or fix the MAC in the file.' -Evidence "port=$($entry.File)"
+                        New-AzlVerResult Failed "File port '$($entry.File)' is $((@($entry.Nodes.GetEnumerator() | Sort-Object Name | ForEach-Object { "'$($_.Value)' on $($_.Key)" })) -join ', '). Network ATC needs the same adapter name on every node." 'Two ways out. (1) Install the nodes consistently so the OS names this adapter the same on every node (same BIOS/NIC settings and the same install method), then run the OS configuration again to take a new report. (2) Set nodes[].network_adapters[].os_name_override for this port (the same value on every node) and run the OS configuration NicNames step: it finds each adapter by MAC and renames it (opt-in, a guarded change). If the MAC in the file is wrong, fix it.' -Evidence "port=$($entry.File)"
                     }
                 }
             }))

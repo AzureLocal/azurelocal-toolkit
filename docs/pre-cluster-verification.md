@@ -188,6 +188,10 @@ Ports are never assumed to have a name. NW-013 reads only what the file says (`n
 shows the file name next to the OS name. The same file port must have the same OS name on every node, every intent adapter must exist on every node, and the node's name must be the one the OS configuration report carries for that MAC.
 Names such as `Port1`, `Slot 3 Port 1`, `NIC1` or `Embedded NIC 2` are all the same to it.
 
+The adapter model behind it: `mac_address` is the identity of a port; `slot`, `port_index`, `pci_location`, `vendor`, `model`, `speed_gbps` and `rdma` say which connector it is and what it can do (hardware discovery writes them from the BMC, for any vendor, through the same keys). Intents and storage networks refer to `nodes[].network_adapters[].name`, the key of the port in the file. The OS adapter name is never assumed: it is read from the node by MAC.
+
+When the same file port has different OS names on different nodes, NW-013 fails (Network ATC needs one adapter name per intent adapter on every node) and the remedy gives the two ways out: install the nodes consistently so the OS names the adapter alike everywhere, or set `nodes[].network_adapters[].os_name_override` for the port (the same value on every node) and run the OS configuration `NicNames` step, which finds each adapter by MAC and renames it. The rename is opt-in: without `os_name_override` nothing is renamed. A port that has an `os_name_override` the node does not carry yet is Failed on that node with the same remedy. A different PCI location on the node than `pci_location` in the file is reported by the OS configuration, never by this gate as a failure.
+
 ## Where Learn and the azurelocal.cloud pages differ
 
 Learn wins; the differences are listed in `docs-2610-audit.md` of the documentation repository.

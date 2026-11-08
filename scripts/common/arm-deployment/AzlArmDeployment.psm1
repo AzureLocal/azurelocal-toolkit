@@ -111,24 +111,42 @@ function Select-AzlArmTemplate {
 # ---------------------------------------------------------------------------------------------------------------------
 
 function ConvertTo-AzlOsAdapterName {
-    # The OS name of a schema port, found by MAC through the OS configuration report's map; the file's name when there is no map.
-    param([string]$FileName, [System.Collections.IDictionary]$PortMacByName, [System.Collections.IDictionary]$OsNameByMac, [string]$Node, [System.Collections.Generic.List[string]]$Warnings)
-    if (-not $OsNameByMac -or $OsNameByMac.Count -eq 0) { return $FileName }
-    if (-not $PortMacByName.Contains($FileName)) { return $FileName }
-    $mac = ConvertTo-MacKey $PortMacByName[$FileName]
-    if (-not $mac) { $Warnings.Add("Port $FileName on $Node has no MAC in the file, so its OS name can't be looked up; using $FileName."); return $FileName }
+    # The name the deployment sends for a port of the file. The port is found on the node by its MAC (never by a name): the name is what the node calls that adapter, read
+    # from the OS configuration report's MAC -> name map, or the user's os_name_override (opt-in; the NicNames step renames the adapter to it). Nothing is assumed: without a
+    # map the override is used when the file has one, else the file's name is sent as it is and the run says so (a warning), because the OS name was not read.
+    param([string]$FileName, [System.Collections.IDictionary]$PortByName, [System.Collections.IDictionary]$OsNameByMac, [string]$Node, [System.Collections.Generic.List[string]]$Warnings)
+    if (-not $PortByName.Contains($FileName)) { return $FileName }
+    $port = $PortByName[$FileName]
+    $override = if ($port.Contains('os_name_override') -and "$($port['os_name_override'])" -ne '') { [string]$port['os_name_override'] } else { '' }
+    $mac = ConvertTo-MacKey $port['mac_address']
+    if (-not $OsNameByMac -or $OsNameByMac.Count -eq 0) {
+        if ($override) { return $override }
+        $text = "Node ${Node}: no OS configuration report, so the OS name of port '$FileName' was not read from the node; the file's name '$FileName' is sent as it is. Give the OS configuration report (-NodeReportPath) so the name is read by MAC."
+        if (-not $Warnings.Contains($text)) { $Warnings.Add($text) }
+        return $FileName
+    }
+    if (-not $mac) {
+        if ($override) { return $override }
+        $Warnings.Add("Port $FileName on $Node has no MAC in the file, so its OS name can't be looked up; using $FileName.")
+        return $FileName
+    }
     if (-not $OsNameByMac.Contains($mac)) { throw "Port $FileName on $Node has MAC $mac, but the node's report has no port with that MAC." }
-    return [string]$OsNameByMac[$mac]
+    $actual = [string]$OsNameByMac[$mac]
+    if ($override -and $actual -cne $override) {
+        throw "Port $FileName on ${Node}: the file's os_name_override is '$override', but the node calls the adapter (MAC $mac) '$actual'. Run the OS configuration (the NicNames step renames the adapter to the override; renaming is opt-in) and take a new report, or remove os_name_override to use the node's name."
+    }
+    return $actual
 }
 
 function Resolve-AzlAdapterName {
     <#
     .SYNOPSIS
-        The name the OS gives a port that infrastructure.yml calls $FileName, the same on every node, found by MAC.
+        The name the deployment sends for a port that infrastructure.yml calls $FileName (nodes[].network_adapters[].name), the same on every node, found by MAC.
     .DESCRIPTION
-        Network ATC takes the adapter names from the deployment, so they must be the OS names (whatever the installed OS called the ports, for example Port0 to Port6 on one Dell model
-        after the install). -AdapterMap is node -> (MAC -> OS name), from the OS configuration report or the Arc machines'
-        network reports. Without a map the file's name is used as it is.
+        Network ATC takes the adapter names from the deployment, so they must be the names the OS gives the adapters (whatever the installed OS called them: Port0, SLOT 3 Port 1, NIC1).
+        -AdapterMap is node -> (MAC -> OS name), from the OS configuration report or the Arc machines' network reports; each port of the file is found on its node by MAC. A port
+        with os_name_override sends that name (the OS configuration renames the adapter to it, opt-in, and the name is checked against the node). Without a map and without an
+        override the file's name is sent as it is, with a warning. The same file port must come out as one name on every node, or this throws and says the two ways out.
     #>
     [CmdletBinding()]
     param(
@@ -137,15 +155,18 @@ function Resolve-AzlAdapterName {
         [hashtable]$AdapterMap,
         [System.Collections.Generic.List[string]]$Warnings = ([System.Collections.Generic.List[string]]::new())
     )
-    $names = @()
+    $names = [ordered]@{}
     foreach ($node in ConvertTo-List $Infrastructure['nodes']) {
         $byName = @{}
-        foreach ($p in Get-AzlNodeNetworkAdapter -Infrastructure $Infrastructure -Node $node) { $byName[[string]$p['name']] = $p['mac_address'] }
+        foreach ($p in Get-AzlNodeNetworkAdapter -Infrastructure $Infrastructure -Node $node) { $byName[[string]$p['name']] = $p }
         $map = if ($AdapterMap -and $AdapterMap.ContainsKey($node['name'])) { $AdapterMap[$node['name']] } else { $null }
-        $names += ConvertTo-AzlOsAdapterName -FileName $FileName -PortMacByName $byName -OsNameByMac $map -Node ([string]$node['name']) -Warnings $Warnings
+        $names[[string]$node['name']] = ConvertTo-AzlOsAdapterName -FileName $FileName -PortByName $byName -OsNameByMac $map -Node ([string]$node['name']) -Warnings $Warnings
     }
-    $distinct = @($names | Select-Object -Unique)
-    if ($distinct.Count -gt 1) { throw "Port $FileName is $($distinct -join ' and ') on different nodes. Network ATC needs the same adapter name on every node; rename the adapters on the nodes or fix the file." }
+    $distinct = @($names.Values | Select-Object -Unique)
+    if ($distinct.Count -gt 1) {
+        $detail = (@($names.GetEnumerator() | ForEach-Object { "'$($_.Value)' on $($_.Key)" })) -join ', '
+        throw "Port $FileName is $detail. Network ATC needs the same adapter name on every node. Either install the nodes consistently so the OS names the adapter alike everywhere, or set nodes[].network_adapters[].os_name_override for this port (the same value on every node) and run the OS configuration NicNames step, which renames the adapters (opt-in)."
+    }
     return $distinct[0]
 }
 
@@ -241,7 +262,8 @@ function New-AzlArmParameterSet {
         node name -> the Arc machine's resource ID (the handoff has them). A node without one gets the ID the Arc machine would
         have in azure.resource_group under its Arc machine name; Invoke-AzlArmDeployment checks that it exists.
     .PARAMETER AdapterMap
-        node name -> (MAC -> OS adapter name). Needed when infrastructure.yml's port names are not the OS's.
+        node name -> (MAC -> OS adapter name), from the OS configuration report. Each port of the file is found on its node by MAC and the deployment sends the name the node
+        calls it (or the port's os_name_override). Without a map the file's names are sent as they are, with a warning.
     .PARAMETER NodeReport
         The OS configuration report's nodes (for the SAN disks, to translate LUN numbers).
     .PARAMETER SbeDeployment
