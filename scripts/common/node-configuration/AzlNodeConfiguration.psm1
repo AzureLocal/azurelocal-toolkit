@@ -8,6 +8,7 @@
     Get-AzlSbeBundle        The OEM's SBE package from hardware.sbe.bundle_path: the three files, the SHA-256 checked against
                             the OEM's manifest, and the SBE values the ARM deployment takes.
     Get-AzlNodeSpec         What one node should look like, from infrastructure.yml and the ZTP handoff.
+    Get-AzlSbeDeliveryRoute The SBE is opt-in: winrm_copy or node_pull when a person set hardware.sbe.delivery, else '' (no SBE side-loading).
     Compare-AzlNodeState    The spec against a node's state (what the Read script returned): one item per thing, each Ok,
                             Change, Blocked, Info or Skipped. Pure; no node is touched.
     Invoke-AzlNodeConfiguration  The loop: read, compare, and with -Execute apply, restart if needed, read again.
@@ -155,6 +156,22 @@ function Get-AzlSbeBundle {
     }
 }
 
+function Get-AzlSbeDeliveryRoute {
+    <#
+    .SYNOPSIS
+        The route a person asked for to side-load the SBE: winrm_copy or node_pull, else '' (no SBE side-loading requested). Pure.
+    .DESCRIPTION
+        The SBE is opt-in only. Microsoft: perform the driver and firmware step only if the hardware partner provides an SBE.
+        hardware.sbe.delivery has no default: unset, empty, none, skip or any other value is not a request, and nothing is delivered.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowNull()][object]$Value)
+    $route = ([string]$Value).Trim().ToLowerInvariant()
+    if ($route -in 'winrm_copy', 'node_pull') { return $route }
+    return ''
+}
+
 function Get-AzlSbePullUrl {
     # Pure: the address a node pulls one SBE file from. Base is hardware.sbe.node_pull_url: an https:// (or http://) folder
     # address, or a UNC folder (\\server\share\sbe).
@@ -193,7 +210,8 @@ function Get-AzlNodeSpec {
         port is the one Get-AzlManagementAdapter names, and it is found on the node by its MAC.
         The handoff adds the Arc machine's resource ID, the installed build and managementAddressVerified.
     .PARAMETER SbeBundle
-        The result of Get-AzlSbeBundle. Without it the SBE and driver steps are reported as not configured.
+        The result of Get-AzlSbeBundle. Without it, or when hardware.sbe.delivery is not winrm_copy or node_pull (the SBE is opt-in
+        only), the spec carries no SBE and the SBE and driver steps are reported as not configured.
     .EXAMPLE
         Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0] -Handoff (Read-AzlHandoff ./ztp-handoff.json)
     #>
@@ -252,13 +270,15 @@ function Get-AzlNodeSpec {
         }
     }
 
+    # The SBE is opt-in: it is side-loaded only when hardware.sbe.delivery is winrm_copy or node_pull, which a person sets. The key has
+    # no default; unset, none, skip (or anything else) means no SBE is configured, and then the spec carries no package at all,
+    # so the node is never asked to hash, read or open C:\SBE.
+    $sbeDelivery = Get-AzlSbeDeliveryRoute -Value (Get-AzlProp $Infrastructure 'hardware.sbe.delivery')
     $sbe = $null
-    if ($SbeBundle) {
+    if ($SbeBundle -and $sbeDelivery) {
         $oem = Get-AzlOemConfig -Vendor ([string](Get-AzlProp $Infrastructure 'hardware.vendor' 'Dell')) -ConfigRoot $ConfigRoot
-        $delivery = [string](Get-AzlProp $Infrastructure 'hardware.sbe.delivery' 'skip')
-        if (-not $delivery) { $delivery = 'skip' }
         $sbe = [pscustomobject]@{ Name = $SbeBundle.Name; ZipName = $SbeBundle.ZipName; Dir = 'C:\SBE'; Files = @($SbeBundle.Files); DriverPaths = @($oem.sbe.driverPaths)
-            Delivery = $delivery; PullUrl = [string](Get-AzlProp $Infrastructure 'hardware.sbe.node_pull_url' '') }
+            Delivery = $sbeDelivery; PullUrl = [string](Get-AzlProp $Infrastructure 'hardware.sbe.node_pull_url' '') }
     }
 
     [pscustomobject]@{
@@ -272,7 +292,8 @@ function Get-AzlNodeSpec {
         Ntp            = @(ConvertTo-List (Get-AzlProp $Infrastructure 'networking.ntp_servers') | ForEach-Object { [string]$_ })
         LocalAdmin     = $(if ($local) { [pscustomobject]@{ Username = [string](Get-AzlProp $local 'username' ''); PasswordRef = [string](Get-AzlProp $local 'password' '') } } else { $null })
         Sbe            = $sbe
-        DomainJoin     = (Get-AzlDomainJoinSpec -Infrastructure $Infrastructure) # DOMAINJOIN HOOK
+        SbeDelivery    = $sbeDelivery # '' unless a person asked for winrm_copy or node_pull
+        DomainJoin    = (Get-AzlDomainJoinSpec -Infrastructure $Infrastructure) # DOMAINJOIN HOOK
         San            = $san
         Architecture   = $architecture
         Handoff        = [pscustomobject]@{
@@ -429,14 +450,16 @@ function Compare-AzlNodeState {
         }
     }
 
-    # ---- the SBE package in C:\SBE. Worked out here (the drivers need to know whether the package is on the node) but listed
-    # last, where the step runs. How a missing file reaches the node is hardware.sbe.delivery: winrm_copy, node_pull or skip.
+    # ---- the SBE package in C:\SBE. OPT-IN ONLY: it is side-loaded when a person set hardware.sbe.delivery to winrm_copy or node_pull,
+    # never by default. Worked out here (the drivers need to know whether the package is on the node) but listed last, where the step runs.
+    # With no SBE requested the step does nothing on the node: no copy, no pull, no read of the package, no removal; it is Skipped.
     $sbeReady = $false
     $sbeItems = [System.Collections.Generic.List[object]]::new()
-    if ($Spec.Sbe) {
+    $sbeRoute = Get-AzlSbeDeliveryRoute -Value (Get-AzlProp $Spec 'Sbe.Delivery')
+    if ($Spec.Sbe -and $sbeRoute) {
         $sbeState = @(Get-AzlProp $State 'sbe' @())
         $missing = 0
-        $delivery = [string]$Spec.Sbe.Delivery
+        $delivery = $sbeRoute
         foreach ($f in $Spec.Sbe.Files) {
             $have = $sbeState | Where-Object { $_.n -eq $f.Name } | Select-Object -First 1
             $ok = $have -and $have.ok
@@ -451,19 +474,31 @@ function Compare-AzlNodeState {
                         if (-not $Spec.Sbe.PullUrl) { $sbeItems.Add((New-AzlPlanItem $n 'Sbe' $path $current $wanted Blocked 'hardware.sbe.delivery is node_pull but hardware.sbe.node_pull_url is empty.')) }
                         else {
                             $url = Get-AzlSbePullUrl -Base $Spec.Sbe.PullUrl -Name $f.Name
-                            $sbeItems.Add((New-AzlPlanItem $n 'Sbe' $path $current $wanted Change "node_pull: the node downloads it from $url and checks the SHA-256." @{ id = "Sbe/$($f.Name)"; kind = 'sbe-file'; route = 'node_pull'; name = $f.Name; sha256 = $f.Sha256; size = $f.Size; url = $url }))
+                            $sbeItems.Add((New-AzlPlanItem $n 'Sbe' $path $current $wanted Change "node_pull (requested): the node downloads it from $url and checks the SHA-256." @{ id = "Sbe/$($f.Name)"; kind = 'sbe-file'; route = 'node_pull'; name = $f.Name; sha256 = $f.Sha256; size = $f.Size; url = $url }))
                         }
                     }
-                    'winrm_copy' { $sbeItems.Add((New-AzlPlanItem $n 'Sbe' $path $current $wanted Change 'winrm_copy: copied over WinRM from the host running this script (it must reach the node on TCP 5985), then the SHA-256 is checked on the node.' @{ id = "Sbe/$($f.Name)"; kind = 'sbe-file'; route = 'winrm_copy'; name = $f.Name; sha256 = $f.Sha256; localPath = $f.Path; size = $f.Size })) }
-                    default { $sbeItems.Add((New-AzlPlanItem $n 'Sbe' $path $current $wanted Info 'NOT DELIVERED: hardware.sbe.delivery is skip (nothing configured), so the toolkit leaves the package alone and installs no OEM driver. Put the files in C:\SBE yourself, or set hardware.sbe.delivery to node_pull or winrm_copy.')) }
+                    'winrm_copy' { $sbeItems.Add((New-AzlPlanItem $n 'Sbe' $path $current $wanted Change 'winrm_copy (requested): copied over WinRM from the host running this script (it must reach the node on TCP 5985), then the SHA-256 is checked on the node.' @{ id = "Sbe/$($f.Name)"; kind = 'sbe-file'; route = 'winrm_copy'; name = $f.Name; sha256 = $f.Sha256; localPath = $f.Path; size = $f.Size })) }
                 }
             }
         }
         $sbeReady = ($missing -eq 0)
     }
-    elseif ('Sbe' -in $Step) { $sbeItems.Add((New-AzlPlanItem $n 'Sbe' 'package' 'not configured' 'hardware.sbe.bundle_path' Info 'No SBE folder given, so no package is delivered and no OEM driver is installed.')) }
+    elseif ('Sbe' -in $Step) {
+        $asked = Get-AzlSbeDeliveryRoute -Value (Get-AzlProp $Spec 'SbeDelivery')
+        if ($asked) {
+            # A person asked for the SBE, so a missing package is a problem they must hear about, not something to skip quietly.
+            $sbeItems.Add((New-AzlPlanItem $n 'Sbe' 'package' 'no package loaded' 'hardware.sbe.bundle_path' Blocked "hardware.sbe.delivery is $asked (SBE side-loading was requested) but no SBE package was loaded: set hardware.sbe.bundle_path to the folder with the OEM's SBE files."))
+        }
+        else {
+            $sbeItems.Add((New-AzlPlanItem $n 'Sbe' 'package' 'not requested' 'hardware.sbe.delivery winrm_copy or node_pull (opt-in)' Skipped 'no SBE side-loading requested'))
+            # Files an earlier delivery left in C:\SBE are only named (the Read lists the folder, read only). Removing them is a separate, explicit operator action.
+            $held = @(Get-AzlProp $State 'sbeHeld' @() | Where-Object { $_ } | ForEach-Object { [string]$_ })
+            if ($held.Count) { $sbeItems.Add((New-AzlPlanItem $n 'Sbe' 'C:\SBE' ($held -join ', ') 'left as it is' Info "C:\SBE holds SBE files that this run did not request: $($held -join ', '); it does not remove them")) }
+        }
+    }
 
-    # ---- OEM network drivers
+    # ---- OEM network drivers (they come from the SBE; with no SBE configured the step is Skipped)
+    if ('Drivers' -in $Step -and -not $Spec.Sbe) { & $add (New-AzlPlanItem $n 'Drivers' 'network drivers' 'not applicable' 'SBE versions' Skipped 'no SBE configured') }
     if ('Drivers' -in $Step -and $Spec.Sbe) {
         if (-not $sbeReady) { & $add (New-AzlPlanItem $n 'Drivers' 'network drivers' 'unknown' 'SBE versions' Skipped 'Decided after the SBE is on the node.') }
         else {
@@ -777,7 +812,7 @@ function Wait-AzlNodeRestart {
 function Send-AzlSbePackage {
     <#
     .SYNOPSIS
-        Delivers the SBE files the plan marked Change to one node, by the route in hardware.sbe.delivery. Never throws: a
+        Delivers the SBE files the plan marked Change to one node, by the route a person asked for in hardware.sbe.delivery (opt-in: the plan marks nothing Change without one). Never throws: a
         failure comes back as a result with Status 'failed', so the other steps of the run are not stopped by it.
     .DESCRIPTION
         node_pull   one Apply call; the node downloads each file from the address in the action and checks its SHA-256.
@@ -871,7 +906,7 @@ function Get-AzlSbeNotDeliveredReason {
         Why the SBE package is not (completely) on a node, in one sentence, from the node's result of Invoke-AzlNodeConfiguration. Pure.
     .DESCRIPTION
         An Sbe change entry means the delivery was tried: 'attempted and failed: <the real error>'. No entry means it never started, and the sentence says what stopped the run:
-        'not attempted: run stopped at guarded change <id> (<state>)', the error the run ended with, or that the run ended before the step (or the delivery is skip).
+        'not attempted: run stopped at guarded change <id> (<state>)', the error the run ended with, or that the run ended before the step (or no SBE is requested).
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -882,7 +917,7 @@ function Get-AzlSbeNotDeliveredReason {
         if ($failed.Count) { return "attempted and failed: $((@($failed | ForEach-Object { [string]$_.Detail } | Where-Object { $_ } | Select-Object -Unique)) -join '; ')" }
         return 'attempted: the files were delivered but the last Read of the node still does not show the package complete'
     }
-    if ($Delivery -eq 'skip') { return 'not attempted: hardware.sbe.delivery is skip (nothing configured)' }
+    if ($PSBoundParameters.ContainsKey('Delivery') -and -not (Get-AzlSbeDeliveryRoute -Value $Delivery)) { return 'not requested: no SBE side-loading requested (hardware.sbe.delivery is not winrm_copy or node_pull)' }
     $stop = @(Get-AzlProp $Result 'Guard' @() | Where-Object { $_ -and $_.State -notin 'Committed', 'ObservedCommitted' }) | Select-Object -Last 1
     if ($stop) { return "not attempted: run stopped at guarded change $($stop.ChangeId) ($($stop.State))" }
     $err = [string](Get-AzlProp $Result 'Error' '')
@@ -1236,4 +1271,4 @@ function Invoke-AzlNodeConfiguration {
     return (& $buildResult '' $false)
 }
 
-Export-ModuleMember -Function Get-AzlOemConfig, Get-AzlSbeBundle, Get-AzlSbePullUrl, Send-AzlSbePackage, Get-AzlSbeNotDeliveredReason, Get-AzlSanVendor, Get-AzlNodeSpec, Get-AzlNodeReadParameter, Compare-AzlNodeState, Get-AzlNodeWipeItem, Format-AzlWipeDisk, Format-AzlPlan, Invoke-AzlNodeConfiguration
+Export-ModuleMember -Function Get-AzlOemConfig, Get-AzlSbeBundle, Get-AzlSbeDeliveryRoute, Get-AzlSbePullUrl, Send-AzlSbePackage, Get-AzlSbeNotDeliveredReason, Get-AzlSanVendor, Get-AzlNodeSpec, Get-AzlNodeReadParameter, Compare-AzlNodeState, Get-AzlNodeWipeItem, Format-AzlWipeDisk, Format-AzlPlan, Invoke-AzlNodeConfiguration

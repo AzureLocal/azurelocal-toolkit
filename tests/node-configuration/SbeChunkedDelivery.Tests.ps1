@@ -303,9 +303,9 @@ Describe 'The report says why the SBE package is not on a node' {
         $text | Should -Match '^not attempted: the run ended with an error'
         $text | Should -Match 'timed out'
     }
-    It 'nothing stopped the run and nothing was tried: not attempted, run ended before the step; skip says skip' {
+    It 'nothing stopped the run and nothing was tried: not attempted, run ended before the step; no route says it was not requested' {
         (Get-AzlSbeNotDeliveredReason -Result (New-Result $script:SbePlan) -Delivery winrm_copy) | Should -Match '^not attempted: the run ended before the SBE step'
-        (Get-AzlSbeNotDeliveredReason -Result (New-Result $script:SbePlan) -Delivery skip) | Should -Match 'hardware\.sbe\.delivery is skip'
+        foreach ($none in 'none', 'skip', '') { (Get-AzlSbeNotDeliveredReason -Result (New-Result $script:SbePlan) -Delivery $none) | Should -Match 'no SBE side-loading requested' }
     }
     It 'an ObservedCommitted guard did not stop the run, so it is not named as the stop' {
         $guard = @([pscustomobject]@{ ChangeId = 'abc123def456'; Group = 'Services'; State = 'ObservedCommitted'; Reason = 'x' })
