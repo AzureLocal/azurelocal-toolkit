@@ -39,6 +39,32 @@ if (Test-Path -LiteralPath $script:EventsModule -PathType Leaf) { Import-Module 
 $script:SkewLimitSeconds = 300
 $script:PayloadVersion = '1'
 $script:PendingMarkerStates = @('RebootExpected', 'Restarting')
+# LastBootUpTime is computed from the clock, so stepping the clock (W32Time after the join) moves it by seconds; a real restart moves it by minutes.
+$script:BootToleranceSeconds = 120
+
+function ConvertTo-DjUtc([object]$Value) {
+    if ($Value -is [datetime]) { return $Value.ToUniversalTime() }
+    $text = [string]$Value
+    $parsed = [datetime]::MinValue
+    $styles = [Globalization.DateTimeStyles]::AssumeUniversal -bor [Globalization.DateTimeStyles]::AdjustToUniversal
+    if ($text -and [datetime]::TryParse($text, [cultureinfo]::InvariantCulture, $styles, [ref]$parsed)) { return $parsed }
+    return $null
+}
+function Test-DjSameBoot([object]$First, [object]$Second) {
+    # The same boot: the two times agree within the tolerance (an unreadable time falls back to the exact text).
+    $a = ConvertTo-DjUtc $First
+    $b = ConvertTo-DjUtc $Second
+    if ($null -eq $a -or $null -eq $b) { return ([string]$First -eq [string]$Second) }
+    return ([math]::Abs(($a - $b).TotalSeconds) -le $script:BootToleranceSeconds)
+}
+function Test-DjRestartDue([object]$DomainState) {
+    # The join happened but the node has not restarted since: the marker says RebootExpected or Restarting, or it was left at Joining by a process that
+    # died after Add-Computer (the node is a member), and the boot is still the one the marker recorded.
+    $marker = Get-AzlProp $DomainState 'marker'
+    $markerState = [string](Get-AzlProp $marker 'state' '')
+    $pending = ($markerState -in $script:PendingMarkerStates) -or ($markerState -eq 'Joining' -and [bool](Get-AzlProp $DomainState 'partOfDomain' $false))
+    return ($pending -and (Test-DjSameBoot (Get-AzlProp $marker 'bootBefore' '') (Get-AzlProp $DomainState 'boot' '')))
+}
 
 # ---------------------------------------------------------------------------------------------------------------------
 # The desired state
@@ -150,11 +176,10 @@ function Get-DjMainItem {
             return , (New-DjPlanItem $n 'domain membership' "member of $domainNow" $want Blocked "The node is joined to a different domain. It is never unjoined automatically: if $domainNow is wrong, run Remove-Computer on the node yourself (then it joins $($dj.Domain)), or correct identity.active_directory.domain_fqdn.")
         }
         $marker = Get-AzlProp $ds 'marker'
-        $markerState = [string](Get-AzlProp $marker 'state' '')
-        $restartDue = $markerState -in $script:PendingMarkerStates -and [string](Get-AzlProp $marker 'bootBefore' '') -eq [string](Get-AzlProp $ds 'boot' '')
+        $restartDue = Test-DjRestartDue $ds
         $inCluster = [bool](Get-AzlProp $ds 'inCluster' $false)
         if ($restartDue) {
-            $out.Add((New-DjPlanItem $n 'domain membership' "joined $domainNow, restart pending" "$want, restarted and verified" Change 'The join succeeded but the node has not restarted since (the durable restart marker is still set). It is restarted and verified now.' @{ id = 'DomainJoin/restart'; kind = 'domain-restart'; domain = $dj.Domain; ou = $dj.OuPath }))
+            $out.Add((New-DjPlanItem $n 'domain membership' "joined $domainNow, restart pending" "$want, restarted and verified" Change 'The join succeeded but the node has not restarted since (the durable restart marker is still set). It is restarted and verified now.' @{ id = 'DomainJoin/restart'; kind = 'domain-restart'; domain = $dj.Domain; ou = $dj.OuPath; changeId = [string](Get-AzlProp $marker 'changeId' '') }))
         }
         elseif (-not $dn) {
             $out.Add((New-DjPlanItem $n 'domain membership' "member of $domainNow, OU not read" $want Info 'The OU could not be verified: Group Policy has not stored the computer''s distinguished name on the node yet.'))
@@ -266,8 +291,7 @@ function Get-DjAdminItem {
     $ds = Get-AzlProp $State 'domainJoin'
     $wanted = @($dj.LocalAdminMembers)
     if (-not $wanted.Count -or -not [bool](Get-AzlProp $ds 'partOfDomain' $false) -or [string](Get-AzlProp $ds 'domain' '') -ine $dj.Domain) { return @() }
-    $marker = Get-AzlProp $ds 'marker'
-    if ([string](Get-AzlProp $marker 'state' '') -in $script:PendingMarkerStates -and [string](Get-AzlProp $marker 'bootBefore' '') -eq [string](Get-AzlProp $ds 'boot' '')) { return @() }
+    if (Test-DjRestartDue $ds) { return @() }
     $have = Get-AzlProp $ds 'localAdmins'
     if ($null -eq $have) { return , (New-DjPlanItem $n 'local administrators' 'unreadable' ($wanted -join ', ') Info 'The node did not report its local Administrators group.') }
     $have = @($have | ForEach-Object { [string]$_ })
@@ -584,6 +608,9 @@ function Invoke-AzlDomainJoinStep {    <#
     $changes = [System.Collections.Generic.List[object]]::new()
     $out = [ordered]@{ Changes = $null; Failed = $false; Error = ''; NextAction = ''; Restarted = $false; Joined = $false; Moved = $false; State = $State; Kind = $kind }
     $changeId = [guid]::NewGuid().ToString('N')
+    # A pending restart finishes the change of the marker: the node refuses a restart for any other changeId.
+    # (An empty one asks the node to accept the marker whatever its changeId.)
+    if ($kind -eq 'domain-restart') { $changeId = [string](Get-AzlProp $Item.Apply 'changeId' '') }
     $id = [string]$Item.Apply.id
     $emit = { param($name, $evidence, $level, $next, $data) Send-AzlDomainJoinEvent -EventContext $EventContext -Node $node -State $name -Evidence $evidence -Level $level -NextAction $next -Transport $transportKind -Data $data }
     $fail = {
@@ -706,7 +733,14 @@ function Invoke-AzlDomainJoinStep {    <#
             return [pscustomobject]$out
         }
     }
-    catch { if ($_.Exception.Data['AzlState'] -ne 'Unknown') { throw } }
+    catch {
+        # The node going away mid-call (state Unknown) is expected. Any other error is a failed step: it must not end the run of all nodes and lose the changes so far.
+        if ($_.Exception.Data['AzlState'] -ne 'Unknown') {
+            & $fail "The restart script failed on ${node}: $($_.Exception.Message)" 'Run again; the join step reads the marker and finishes the restart.' ''
+            $out.Changes = $changes.ToArray()
+            return [pscustomobject]$out
+        }
+    }
     try {
         $after = if ($WaitForRestart) { & $WaitForRestart ([string](Get-AzlProp $State 'boot' '')) $WaitContext } else { $State }
     }

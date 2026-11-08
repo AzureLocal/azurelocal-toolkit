@@ -38,7 +38,11 @@ function Get-ItemProperty {
     [CmdletBinding()]
     param([string]$Path, [string]$Name)
     Add-Call "Get-ItemProperty $Name"
-    if ($Name -eq 'Distinguished-Name' -and $Scenario.dn) { return [pscustomobject]@{ 'Distinguished-Name' = $Scenario.dn } }
+    if ($Name -eq 'Distinguished-Name') {
+        $dnNow = [string]$Scenario.dn
+        if ($script:GpupdateDone -and $Scenario.dnAfterGpupdate) { $dnNow = [string]$Scenario.dnAfterGpupdate }
+        if ($dnNow) { return [pscustomobject]@{ 'Distinguished-Name' = $dnNow } }
+    }
     throw 'not found'
 }
 function Get-Service { [CmdletBinding()] param([Parameter(Position = 0)][string]$Name) if ($Scenario.inCluster) { return [pscustomobject]@{ Status = 'Running' } }; return $null }
@@ -65,6 +69,7 @@ function Add-LocalGroupMember {
     param([string]$Group, [string]$Member)
     Add-Call "Add-LocalGroupMember $Group $Member"
     if ($Scenario.failMember -and $Member -like $Scenario.failMember) { throw "Principal $Member was not found." }
+    if ($Scenario.memberExists -and $Member -like $Scenario.memberExists) { throw "Member $Member is already a member of group Administrators." }
 }
 function Add-Computer {
     [CmdletBinding()]
@@ -80,9 +85,17 @@ function Add-Computer {
 function New-ScheduledTaskAction { [CmdletBinding()] param($Execute, $Argument) Add-Call "New-ScheduledTaskAction $Execute $Argument"; 'action' }
 function New-ScheduledTaskTrigger { [CmdletBinding()] param([switch]$AtStartup) Add-Call "New-ScheduledTaskTrigger AtStartup=$($AtStartup.IsPresent)"; 'trigger' }
 function New-ScheduledTaskPrincipal { [CmdletBinding()] param($UserId, $LogonType, $RunLevel) Add-Call "New-ScheduledTaskPrincipal $UserId $RunLevel"; 'principal' }
-function Register-ScheduledTask { [CmdletBinding()] param($TaskName, $Action, $Trigger, $Principal, [switch]$Force) Add-Call "Register-ScheduledTask $TaskName"; 'task' }
+function Register-ScheduledTask {
+    [CmdletBinding()]
+    param($TaskName, $Action, $Trigger, $Principal, [switch]$Force)
+    Add-Call "Register-ScheduledTask $TaskName"
+    if ($Scenario.registerFails) { throw 'Access is denied (the task scheduler refused the task).' }
+    'task'
+}
 function Unregister-ScheduledTask { [CmdletBinding()] param($TaskName, [switch]$Confirm) Add-Call "Unregister-ScheduledTask $TaskName" }
-function shutdown.exe { Add-Call "shutdown.exe $args" }
+function shutdown.exe { Add-Call "shutdown.exe $args"; $global:LASTEXITCODE = [int]$Scenario.shutdownExit }
+function icacls.exe { Add-Call "icacls.exe $args"; $global:LASTEXITCODE = [int]$Scenario.icaclsExit }
+function gpupdate.exe { Add-Call "gpupdate.exe $args"; $script:GpupdateDone = $true; $global:LASTEXITCODE = 0 }
 function Start-Sleep { [CmdletBinding()] param($Seconds) Add-Call "Start-Sleep $Seconds" }
 function New-Object {
     param([Parameter(Position = 0)][string]$TypeName, [Parameter(Position = 1)]$ArgumentList)
@@ -108,7 +121,7 @@ function New-Object {
     return Microsoft.PowerShell.Utility\New-Object -TypeName $TypeName
 }
 function Test-DjMockInstalled { $true }
-foreach ($required in 'Add-Computer', 'shutdown.exe', 'Register-ScheduledTask', 'Get-CimInstance', 'New-Object') {
+foreach ($required in 'Add-Computer', 'shutdown.exe', 'icacls.exe', 'gpupdate.exe', 'Register-ScheduledTask', 'Get-CimInstance', 'New-Object') {
     if ((Get-Command $required).CommandType -ne 'Function') { throw "safety stop: $required is not mocked" }
 }
 '@
@@ -292,6 +305,27 @@ Describe 'Apply: join' {
         ($r.Calls -join "`n") | Should -Match 'New-ScheduledTaskPrincipal SYSTEM Highest'
         (Get-Content -LiteralPath (Join-Path $r.State 'domainjoin-resume.ps1') -Raw) | Should -Match 'the resume script text'
     }
+    It 'the node is joined but the resume task cannot be registered: still joined, reboot true, the marker is RebootExpected (the restart is not skipped)' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam) -Secrets $script:Secret -Scenario @{ registerFails = $true }
+        $r.Answer.status | Should -Be 'joined'
+        $r.Answer.reboot | Should -BeTrue
+        $r.Answer.detail | Should -Match 'resume task'
+        $r.Marker.state | Should -Be 'RebootExpected'
+    }
+    It 'the state folder is restricted to SYSTEM and Administrators before the marker is written' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam) -Secrets $script:Secret
+        $acl = @($r.Calls | Where-Object { $_ -like 'icacls.exe*' })
+        $acl.Count | Should -BeGreaterThan 0
+        $acl[0] | Should -Match '/inheritance:r'
+        $acl[0] | Should -Match 'S-1-5-18'
+        $acl[0] | Should -Match 'S-1-5-32-544'
+        $acl[0] | Should -Match ([regex]::Escape($r.State))
+    }
+    It 'the folder cannot be restricted: nothing is joined (fail closed)' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam) -Secrets $script:Secret -Scenario @{ icaclsExit = 5 }
+        $r.Answer.status | Should -Be 'failed'
+        @($r.Calls | Where-Object { $_ -like 'Add-Computer*' }) | Should -BeNullOrEmpty
+    }
     It 'qualifies a plain user name with the NetBIOS name, and with the domain when there is none; keeps NETBIOS\name and name@domain as they are' {
         (Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam) -Secrets $script:Secret).Calls -join "`n" | Should -Match 'User=IIC\\lcm-iic-clus01'
         (Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam @{ netbios = '' }) -Secrets $script:Secret).Calls -join "`n" | Should -Match 'User=lcm-iic-clus01@improbability.cloud'
@@ -406,6 +440,21 @@ Describe 'Apply: move, administrators, finalize' {
         $r.Marker.state | Should -Be 'Completed'
         $r.Calls | Should -Contain 'Unregister-ScheduledTask AzureLocal-OSConfig-DomainJoinResume'
     }
+    It 'finalize and the resume script can both write the marker: a temporary file held open by the other one does not stop it' {
+        $dir = Join-Path $TestDrive 'fin-state2'
+        $null = New-Item -ItemType Directory -Path $dir
+        '{"state":"RebootExpected","changeId":"c1","bootBefore":"2026-11-07T10:00:00Z","domain":"improbability.cloud","error":""}' | Set-Content -LiteralPath (Join-Path $dir 'domainjoin-state.json')
+        $held = [System.IO.FileStream]::new((Join-Path $dir 'domainjoin-state.json.tmp'), [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+        try {
+            $res = Invoke-DjNode -Payload DomainJoinResume -StateDir $dir -Scenario @{ boot = '2026-11-07T10:09:00Z'; partOfDomain = $true; domain = 'improbability.cloud'; secureChannel = $true }
+            $resMarker = $res.Marker.state
+            $fin = Invoke-DjNode -Payload DomainJoinApply -Params @{ mode = 'finalize'; domain = 'improbability.cloud'; ou = 'OU=x'; changeId = 'c1' } -StateDir $dir
+        }
+        finally { $held.Dispose() }
+        $fin.Answer.status | Should -Be 'finalized' -Because $fin.Console
+        $resMarker | Should -Be 'VerifiedAfterRestart' -Because $res.Console
+        $fin.Marker.state | Should -Be 'Completed'
+    }
 }
 
 Describe 'Restart: guarded by the marker' {
@@ -424,6 +473,35 @@ Describe 'Restart: guarded by the marker' {
         (Invoke-DjNode -Payload DomainJoinRestart -Params @{ changeId = 'c1' } -StateDir $script:Dir).Answer.restartScheduled | Should -BeFalse
         '{"state":"JoinFailed","changeId":"c1","bootBefore":"b","domain":"d","error":"x"}' | Set-Content -LiteralPath (Join-Path $script:Dir 'domainjoin-state.json')
         (Invoke-DjNode -Payload DomainJoinRestart -Params @{ changeId = 'c1' } -StateDir $script:Dir).Answer.restartScheduled | Should -BeFalse
+    }
+    It 'a marker already at Restarting (an earlier restart attempt did not take) is accepted: the restart is scheduled again' {
+        '{"state":"Restarting","changeId":"c1","bootBefore":"2026-11-07T10:00:00Z","domain":"improbability.cloud","ou":"OU=x","host":"iic-n01","error":""}' | Set-Content -LiteralPath (Join-Path $script:Dir 'domainjoin-state.json')
+        $r = Invoke-DjNode -Payload DomainJoinRestart -Params @{ changeId = 'c1' } -StateDir $script:Dir
+        $r.Answer.restartScheduled | Should -BeTrue
+        @($r.Calls | Where-Object { $_ -like 'shutdown.exe*' }).Count | Should -Be 1
+    }
+    It 'shutdown.exe fails: restartScheduled is false and says why (no false "scheduled")' {
+        '{"state":"RebootExpected","changeId":"c1","bootBefore":"2026-11-07T10:00:00Z","domain":"improbability.cloud","ou":"OU=x","host":"iic-n01","error":""}' | Set-Content -LiteralPath (Join-Path $script:Dir 'domainjoin-state.json')
+        $r = Invoke-DjNode -Payload DomainJoinRestart -Params @{ changeId = 'c1' } -StateDir $script:Dir -Scenario @{ shutdownExit = 5 }
+        $r.Answer.restartScheduled | Should -BeFalse
+        $r.Answer.reason | Should -Match 'shutdown.exe.*5'
+    }
+    It 'a marker left at Joining on a node that is a member (the process died after Add-Computer) counts as RebootExpected; not a member, it does not' {
+        '{"state":"Joining","changeId":"c1","bootBefore":"2026-11-07T10:00:00Z","domain":"improbability.cloud","ou":"OU=x","host":"iic-n01","error":""}' | Set-Content -LiteralPath (Join-Path $script:Dir 'domainjoin-state.json')
+        $member = Invoke-DjNode -Payload DomainJoinRestart -Params @{ changeId = 'c1' } -StateDir $script:Dir -Scenario @{ partOfDomain = $true; domain = 'improbability.cloud' }
+        $member.Answer.restartScheduled | Should -BeTrue
+        @($member.Calls | Where-Object { $_ -like 'shutdown.exe*' }).Count | Should -Be 1
+        '{"state":"Joining","changeId":"c1","bootBefore":"2026-11-07T10:00:00Z","domain":"improbability.cloud","ou":"OU=x","host":"iic-n01","error":""}' | Set-Content -LiteralPath (Join-Path $script:Dir 'domainjoin-state.json')
+        $workgroup = Invoke-DjNode -Payload DomainJoinRestart -Params @{ changeId = 'c1' } -StateDir $script:Dir -Scenario @{ partOfDomain = $false }
+        $workgroup.Answer.restartScheduled | Should -BeFalse
+    }
+    It 'works while an older temporary file of the marker is still held open (the temporary name is unique)' {
+        '{"state":"RebootExpected","changeId":"c1","bootBefore":"2026-11-07T10:00:00Z","domain":"improbability.cloud","ou":"OU=x","host":"iic-n01","error":""}' | Set-Content -LiteralPath (Join-Path $script:Dir 'domainjoin-state.json')
+        $held = [System.IO.FileStream]::new((Join-Path $script:Dir 'domainjoin-state.json.tmp'), [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+        try { $r = Invoke-DjNode -Payload DomainJoinRestart -Params @{ changeId = 'c1' } -StateDir $script:Dir }
+        finally { $held.Dispose() }
+        $r.Answer.restartScheduled | Should -BeTrue -Because $r.Console
+        $r.Marker.state | Should -Be 'Restarting'
     }
     It 'with the marker: writes Restarting (flushed) first, then schedules the restart in 20 seconds' {
         '{"state":"RebootExpected","changeId":"c1","bootBefore":"2026-11-07T10:00:00Z","domain":"improbability.cloud","ou":"OU=x","host":"iic-n01","error":""}' | Set-Content -LiteralPath (Join-Path $script:Dir 'domainjoin-state.json')

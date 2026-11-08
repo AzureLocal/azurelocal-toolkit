@@ -250,6 +250,26 @@ Describe 'Comparison: the plan and compare matrix' {
         $state = Get-JoinedState @{ marker = [pscustomobject]@{ state = 'RebootExpected'; changeId = 'x'; bootBefore = '2026-11-06T08:00:00Z'; domain = 'improbability.cloud'; error = '' } }
         (Get-DjItem (Get-DjSpec) $state | Where-Object Item -eq 'domain membership').Action | Should -Be 'Ok'
     }
+    It 'the restart item carries the changeId of the marker, so the node accepts the restart of that change' {
+        $state = Get-JoinedState @{ marker = [pscustomobject]@{ state = 'RebootExpected'; changeId = 'abc123'; bootBefore = '2026-11-07T10:00:00Z'; domain = 'improbability.cloud'; error = '' } }
+        (Get-DjItem (Get-DjSpec) $state | Where-Object Item -eq 'domain membership').Apply.changeId | Should -Be 'abc123'
+    }
+    It 'a marker at <State> with the same boot is a restart still due' -ForEach @(@{ State = 'Restarting' }, @{ State = 'Joining' }) {
+        $state = Get-JoinedState @{ marker = [pscustomobject]@{ state = $State; changeId = 'x'; bootBefore = '2026-11-07T10:00:00Z'; domain = 'improbability.cloud'; error = '' } }
+        $i = Get-DjItem (Get-DjSpec) $state | Where-Object Item -eq 'domain membership'
+        $i.Action | Should -Be 'Change'
+        $i.Apply.kind | Should -Be 'domain-restart'
+    }
+    It 'a marker at Joining on a node that is not a member is not a restart (the join failed or never happened)' {
+        $state = Get-DjState @{ marker = [pscustomobject]@{ state = 'Joining'; changeId = 'x'; bootBefore = '2026-11-07T10:00:00Z'; domain = 'improbability.cloud'; error = '' } }
+        (Get-DjItem (Get-DjSpec) $state | Where-Object Item -eq 'domain membership').Apply.kind | Should -Be 'domain-join'
+    }
+    It 'a boot time that moved a few seconds (the clock was stepped) is still the same boot: the restart is still due' {
+        $state = Get-JoinedState @{ boot = '2026-11-07T10:00:07Z'; marker = [pscustomobject]@{ state = 'RebootExpected'; changeId = 'x'; bootBefore = '2026-11-07T10:00:00Z'; domain = 'improbability.cloud'; error = '' } }
+        (Get-DjItem (Get-DjSpec) $state | Where-Object Item -eq 'domain membership').Apply.kind | Should -Be 'domain-restart'
+        $moved = Get-JoinedState @{ boot = '2026-11-07T10:09:00Z'; marker = [pscustomobject]@{ state = 'RebootExpected'; changeId = 'x'; bootBefore = '2026-11-07T10:00:00Z'; domain = 'improbability.cloud'; error = '' } }
+        (Get-DjItem (Get-DjSpec) $moved | Where-Object Item -eq 'domain membership').Action | Should -Be 'Ok'
+    }
     It 'the secure channel is broken: Blocked' {
         $i = Get-DjItem (Get-DjSpec) (Get-JoinedState @{ secureChannel = $false }) | Where-Object Item -eq 'secure channel'
         $i.Action | Should -Be 'Blocked'
@@ -643,6 +663,22 @@ Describe 'The password never leaves the secret channel' {
         $item = $plan | Where-Object { $_.Apply }
         $joinedNow = Get-JoinedState
         $waitJoined = { param($b) $joinedNow }.GetNewClosure()
+    It 'a pending restart is asked with the changeId of the marker (not a fresh one), and the marker is completed with it' {
+        $state = Get-JoinedState @{ marker = [pscustomobject]@{ state = 'Restarting'; changeId = 'abc123'; bootBefore = '2026-11-07T10:00:00Z'; domain = 'improbability.cloud'; error = '' } }
+        $item = Get-DjItem $script:Spec $state | Where-Object { $_.Apply -and $_.Apply.kind -eq 'domain-restart' }
+        $t = Get-DjTransport @{ Restart = @{ restartScheduled = $true }; 'Apply:finalize' = @{ status = 'finalized' } }
+        $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State $state -Item $item -SecretResolver { throw 'no secret needed' } -WaitForRestart $script:Wait
+        $r.Failed | Should -BeFalse
+        $t.Log[0].Parameters.changeId | Should -Be 'abc123'
+        $t.Log[1].Parameters.changeId | Should -Be 'abc123'
+    }
+    It 'a restart script that fails (not state Unknown) is a failed step with the changes kept, not an exception that ends the run' {
+        $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'joined'; reboot = $true; detail = 'joined' }; Restart = { 'the restart script crashed' } }
+        $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State (Get-DjState) -Item $script:JoinItem -SecretResolver $script:Resolver -WaitForRestart { throw 'must not wait' } -EventContext $script:Ctx
+        $r.Failed | Should -BeTrue
+        $r.Error | Should -Match 'restart'
+        @($r.Changes | Where-Object Status -eq 'changed').Count | Should -Be 1 -Because 'the join itself is kept in the report'
+    }
         $joinedNow = Get-JoinedState
         $waitJoined = { param($b) $joinedNow }.GetNewClosure()
         $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'joined'; reboot = $true; detail = 'joined' }; Restart = @{ restartScheduled = $true }; 'Apply:finalize' = @{ status = 'finalized' } }

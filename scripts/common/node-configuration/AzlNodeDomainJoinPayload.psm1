@@ -129,6 +129,32 @@ if (Get-P $P 'domainJoin' $null) {
 }
 '@
 
+# The marker writer of Apply, Restart and Resume (the Read script does not need it). One place, so the three write it the same way.
+$script:MarkerFunctions = @'
+function Write-DjMarker($o) {
+    # Durable: the bytes go to a temporary file, are flushed to the disk, and only then take the marker's name. The temporary name is unique:
+    # the resume task and the orchestrator's finalize can write the marker at the same time and must not share a file.
+    $path = Get-DjMarkerPath
+    $dir = Split-Path -Parent $path
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    # The folder holds the marker and the SYSTEM resume script: only SYSTEM and Administrators may change it (S-1-5-18, S-1-5-32-544).
+    $global:LASTEXITCODE = 0
+    & icacls.exe $dir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw ('Could not restrict the access to ' + $dir + ' to SYSTEM and Administrators (icacls exit code ' + $LASTEXITCODE + ').') }
+    $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes((ConvertTo-Json -InputObject $o -Depth 4 -Compress))
+    $tmp = $path + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
+    try {
+        $fs = New-Object System.IO.FileStream($tmp, [System.IO.FileMode]::CreateNew, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
+        try { $fs.Write($bytes, 0, $bytes.Length); $fs.Flush($true) } finally { $fs.Dispose() }
+        if (Test-Path -LiteralPath $path) { [System.IO.File]::Replace($tmp, $path, ($path + '.bak')) } else { [System.IO.File]::Move($tmp, $path) }
+    }
+    catch {
+        if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force -ErrorAction SilentlyContinue }
+        throw
+    }
+}
+'@
+
 $script:ProbeBody = @'
 Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; domainJoin = (Get-DjRead $P) })
 '@
@@ -143,17 +169,6 @@ $expectedHost = [string](Get-P $P 'expectedHost' '')
 $jdDir = [string](Get-P $P 'stateDir' $stateDir)
 $taskName = 'AzureLocal-OSConfig-DomainJoinResume'
 $answer = [ordered]@{ v = 1; host = $env:COMPUTERNAME; finished = ''; mode = $mode; status = ''; reboot = $false; code = ''; label = ''; meaning = ''; errorText = ''; nextAction = ''; stillWorkgroup = $null; detail = ''; added = @() }
-
-function Write-DjMarker($o) {
-    # Durable: the bytes go to a temporary file, are flushed to the disk, and only then take the marker's name.
-    $path = Get-DjMarkerPath
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $path) | Out-Null
-    $bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes((ConvertTo-Json -InputObject $o -Depth 4 -Compress))
-    $tmp = $path + '.tmp'
-    $fs = New-Object System.IO.FileStream($tmp, [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
-    try { $fs.Write($bytes, 0, $bytes.Length); $fs.Flush($true) } finally { $fs.Dispose() }
-    if (Test-Path -LiteralPath $path) { [System.IO.File]::Replace($tmp, $path, ($path + '.bak')) } else { [System.IO.File]::Move($tmp, $path) }
-}
 
 function ConvertTo-DjError($ex) {
     $text = [string]$ex.Message
@@ -262,18 +277,28 @@ try {
                 Write-DjMarker ([ordered]@{ state = 'JoinFailed'; changeId = $changeId; domain = $domain; ou = $ouPath; host = $cs.Name; bootBefore = $bootNow; error = ($why + ' ' + $answer.code).Trim() })
             }
             if ($joined) {
-                Write-DjMarker ([ordered]@{ state = 'RebootExpected'; changeId = $changeId; domain = $domain; ou = $ouPath; host = $cs.Name; bootBefore = $bootNow; joinedUtc = (Get-Date).ToUniversalTime().ToString('o'); error = '' })
+                # From here the node IS a member: nothing below may turn the answer into "failed". If the marker cannot be updated it stays at Joining,
+                # which the host and the restart script read as "joined, restart expected" when the node is a member.
+                $markerNote = ''
+                try { Write-DjMarker ([ordered]@{ state = 'RebootExpected'; changeId = $changeId; domain = $domain; ou = $ouPath; host = $cs.Name; bootBefore = $bootNow; joinedUtc = (Get-Date).ToUniversalTime().ToString('o'); error = '' }) }
+                catch { $markerNote = '; the marker stays at Joining (' + $_.Exception.Message + ')' }
                 $resume = [string](Get-P $P 'resumeScript' '')
+                $answer.detail = 'joined ' + $domain + '; restart expected'
                 if ($resume) {
-                    $resumePath = Join-Path $jdDir 'domainjoin-resume.ps1'
-                    Set-Content -LiteralPath $resumePath -Value $resume -Encoding UTF8
-                    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -ExecutionPolicy Bypass -File "' + $resumePath + '"')
-                    $trigger = New-ScheduledTaskTrigger -AtStartup
-                    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-                    Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
-                    $answer.detail = 'joined ' + $domain + '; restart expected; resume task registered'
+                    # The resume task is a convenience (it records the verification after the restart). The node IS joined: whatever goes wrong
+                    # here, the answer stays "joined, reboot expected" so the orchestrator still restarts it.
+                    try {
+                        $resumePath = Join-Path $jdDir 'domainjoin-resume.ps1'
+                        Set-Content -LiteralPath $resumePath -Value $resume -Encoding UTF8
+                        $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -ExecutionPolicy Bypass -File "' + $resumePath + '"')
+                        $trigger = New-ScheduledTaskTrigger -AtStartup
+                        $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+                        Register-ScheduledTask -TaskName $taskName -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
+                        $answer.detail = 'joined ' + $domain + '; restart expected; resume task registered'
+                    }
+                    catch { $answer.detail = 'joined ' + $domain + '; restart expected; the resume task could not be registered (' + $_.Exception.Message + ')' }
                 }
-                else { $answer.detail = 'joined ' + $domain + '; restart expected' }
+                $answer.detail = $answer.detail + $markerNote
                 $answer.status = 'joined'
                 $answer.reboot = $true
             }
@@ -391,17 +416,33 @@ $script:RestartBody = @'
 $changeId = [string](Get-P $P 'changeId' '')
 $delay = [int](Get-P $P 'delaySeconds' 20)
 $m = Read-DjMarker
-if (-not $m -or [string](Get-P $m 'state' '') -ne 'RebootExpected' -or ($changeId -and [string](Get-P $m 'changeId' '') -ne $changeId)) {
-    Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; restartScheduled = $false; reason = 'No durable restart marker for this change (state ' + $(if ($m) { [string](Get-P $m 'state' '') } else { 'none' }) + '); the node is not restarted.' })
+$markerState = ''
+if ($m) { $markerState = [string](Get-P $m 'state' '') }
+# RebootExpected: the join was recorded. Restarting: an earlier restart attempt did not take (shutdown.exe failed or was cancelled), so it is asked again.
+# Joining: the process died between Add-Computer and the RebootExpected marker; if the node is a member of the marker's domain the join happened.
+$allowed = ($markerState -eq 'RebootExpected' -or $markerState -eq 'Restarting')
+if ($m -and $markerState -eq 'Joining') {
+    try {
+        $csNow = Get-CimInstance Win32_ComputerSystem
+        $wantDomain = [string](Get-P $m 'domain' '')
+        $allowed = ([bool]$csNow.PartOfDomain) -and (-not $wantDomain -or [string]$csNow.Domain -ieq $wantDomain)
+    }
+    catch { $allowed = $false }
+}
+if (-not $m -or -not $allowed -or ($changeId -and [string](Get-P $m 'changeId' '') -ne $changeId)) {
+    Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; restartScheduled = $false; reason = 'No durable restart marker for this change (state ' + $(if ($m) { $markerState } else { 'none' }) + '); the node is not restarted.' })
     return
 }
-$path = Get-DjMarkerPath
 $next = [ordered]@{ state = 'Restarting'; changeId = [string](Get-P $m 'changeId' ''); domain = [string](Get-P $m 'domain' ''); ou = [string](Get-P $m 'ou' ''); host = [string](Get-P $m 'host' ''); bootBefore = [string](Get-P $m 'bootBefore' ''); restartingUtc = (Get-Date).ToUniversalTime().ToString('o'); error = '' }
-$bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes((ConvertTo-Json -InputObject $next -Depth 4 -Compress))
-$fs = New-Object System.IO.FileStream(($path + '.tmp'), [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
-try { $fs.Write($bytes, 0, $bytes.Length); $fs.Flush($true) } finally { $fs.Dispose() }
-[System.IO.File]::Replace(($path + '.tmp'), $path, ($path + '.bak'))
+Write-DjMarker $next
+$global:LASTEXITCODE = 0
 & shutdown.exe /r /t $delay /d p:2:4 /c 'Azure Local OS configuration: restart to finish joining the domain'
+$shutdownExit = $LASTEXITCODE
+if ($shutdownExit -ne 0) {
+    # Not scheduled. The marker stays at Restarting, which the next run accepts and asks again.
+    Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; restartScheduled = $false; reason = 'shutdown.exe returned ' + $shutdownExit + '; the restart was not scheduled.'; exitCode = $shutdownExit })
+    return
+}
 Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; restartScheduled = $true; seconds = $delay })
 '@
 
@@ -429,12 +470,8 @@ for ($try = 1; $try -le 8; $try++) {
     if ($ok) { break }
     Start-Sleep -Seconds 15
 }
-$path = Get-DjMarkerPath
 $next = [ordered]@{ state = $(if ($ok) { 'VerifiedAfterRestart' } else { 'VerifyFailedAfterRestart' }); changeId = [string](Get-P $m 'changeId' ''); domain = $wantDomain; ou = [string](Get-P $m 'ou' ''); host = [string](Get-P $m 'host' ''); bootBefore = [string](Get-P $m 'bootBefore' ''); verifiedUtc = (Get-Date).ToUniversalTime().ToString('o'); error = $(if ($ok) { '' } else { $detail }) }
-$bytes = (New-Object System.Text.UTF8Encoding($false)).GetBytes((ConvertTo-Json -InputObject $next -Depth 4 -Compress))
-$fs = New-Object System.IO.FileStream(($path + '.tmp'), [System.IO.FileMode]::Create, [System.IO.FileAccess]::Write, [System.IO.FileShare]::None)
-try { $fs.Write($bytes, 0, $bytes.Length); $fs.Flush($true) } finally { $fs.Dispose() }
-[System.IO.File]::Replace(($path + '.tmp'), $path, ($path + '.bak'))
+Write-DjMarker $next
 try { Unregister-ScheduledTask -TaskName $taskName -Confirm:$false -ErrorAction SilentlyContinue } catch { $null = $_ }
 '@
 
@@ -462,10 +499,10 @@ function Get-AzlDomainJoinPayloadBody {
     param([Parameter(Mandatory)][ValidateSet('Probe', 'Apply', 'OuCheck', 'Restart', 'Resume')][string]$Name)
     switch ($Name) {
         'Probe' { return ($script:ReadFunctions + [Environment]::NewLine + $script:ProbeBody) }
-        'Apply' { return ($script:ReadFunctions + [Environment]::NewLine + $script:ApplyBody) }
+        'Apply' { return ($script:ReadFunctions + [Environment]::NewLine + $script:MarkerFunctions + [Environment]::NewLine + $script:ApplyBody) }
         'OuCheck' { return ($script:ReadFunctions + [Environment]::NewLine + $script:OuCheckBody) }
-        'Restart' { return ($script:ReadFunctions + [Environment]::NewLine + $script:RestartBody) }
-        'Resume' { return ($script:ReadFunctions + [Environment]::NewLine + $script:ResumeBody) }
+        'Restart' { return ($script:ReadFunctions + [Environment]::NewLine + $script:MarkerFunctions + [Environment]::NewLine + $script:RestartBody) }
+        'Resume' { return ($script:ReadFunctions + [Environment]::NewLine + $script:MarkerFunctions + [Environment]::NewLine + $script:ResumeBody) }
     }
 }
 
