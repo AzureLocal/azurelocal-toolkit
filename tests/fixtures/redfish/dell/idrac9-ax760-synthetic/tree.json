@@ -1,0 +1,1961 @@
+{
+  "_fixture": {
+    "kind": "synthetic",
+    "vendor": "Dell",
+    "bmc": "iDRAC9",
+    "schemaVariant": "classic (NetworkPorts, Power, Thermal)",
+    "note": "NOT a real capture. Built by New-DellFixture.ps1 in the shape of the lab AX-760 scan, documentation values only."
+  },
+  "/redfish/v1": {
+    "@odata.id": "/redfish/v1",
+    "Id": "RootService",
+    "Name": "Root Service",
+    "RedfishVersion": "1.17.0",
+    "Vendor": "Dell",
+    "Product": "Integrated Dell Remote Access Controller",
+    "Systems": {
+      "@odata.id": "/redfish/v1/Systems"
+    },
+    "Chassis": {
+      "@odata.id": "/redfish/v1/Chassis"
+    },
+    "Managers": {
+      "@odata.id": "/redfish/v1/Managers"
+    },
+    "UpdateService": {
+      "@odata.id": "/redfish/v1/UpdateService"
+    },
+    "SessionService": {
+      "@odata.id": "/redfish/v1/SessionService"
+    },
+    "AccountService": {
+      "@odata.id": "/redfish/v1/AccountService"
+    },
+    "Oem": {
+      "Dell": {
+        "@odata.type": "#DellServiceRoot.v1_0_0.ServiceRootExtensions",
+        "IsBranded": 0,
+        "ManagerMACAddress": "00:00:5E:00:53:01",
+        "ServiceTag": "DOCTAG1"
+      }
+    }
+  },
+  "/redfish/v1/Systems": {
+    "@odata.id": "/redfish/v1/Systems",
+    "Name": "Computer System Collection",
+    "Members@odata.count": 1,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1"
+      }
+    ]
+  },
+  "/redfish/v1/Chassis": {
+    "@odata.id": "/redfish/v1/Chassis",
+    "Name": "Chassis Collection",
+    "Members@odata.count": 1,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Chassis/System.Embedded.1"
+      }
+    ]
+  },
+  "/redfish/v1/Managers": {
+    "@odata.id": "/redfish/v1/Managers",
+    "Name": "Manager Collection",
+    "Members@odata.count": 1,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1"
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1",
+    "Id": "System.Embedded.1",
+    "Name": "System",
+    "SKU": "DOCTAG1",
+    "SerialNumber": "DOCSERIAL0001",
+    "Model": "AX-760",
+    "Manufacturer": "Dell Inc.",
+    "PartNumber": "0DOC00A00",
+    "UUID": "00000000-0000-4000-8000-000000000001",
+    "HostName": "doc-node-1.invalid",
+    "BiosVersion": "2.0.0",
+    "PowerState": "On",
+    "AssetTag": "",
+    "IndicatorLED": "Off",
+    "LocationIndicatorActive": false,
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    },
+    "ProcessorSummary": {
+      "Count": 2,
+      "Model": "Intel(R) Xeon(R) Gold 6430",
+      "CoreCount": 64,
+      "LogicalProcessorCount": 128,
+      "Status": {
+        "Health": "OK",
+        "HealthRollup": "OK",
+        "State": "Enabled"
+      }
+    },
+    "MemorySummary": {
+      "TotalSystemMemoryGiB": 256,
+      "MemoryMirroring": "System",
+      "Status": {
+        "Health": "OK",
+        "HealthRollup": "OK",
+        "State": "Enabled"
+      }
+    },
+    "Boot": {
+      "BootSourceOverrideEnabled": "Disabled",
+      "BootSourceOverrideTarget": "None",
+      "BootSourceOverrideMode": "UEFI",
+      "BootOrder": [
+        "HardDisk.List.1-1",
+        "NIC.Slot.3-1-1"
+      ],
+      "TrustedModuleRequiredToBoot": "Disabled"
+    },
+    "TrustedModules": [
+      {
+        "FirmwareVersion": "7.2.3.1",
+        "InterfaceType": "TPM2_0",
+        "Status": {
+          "State": "Enabled"
+        }
+      }
+    ],
+    "Processors": {
+      "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Processors"
+    },
+    "Memory": {
+      "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Memory"
+    },
+    "Storage": {
+      "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage"
+    },
+    "NetworkAdapters": {
+      "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters"
+    },
+    "EthernetInterfaces": {
+      "@odata.id": "/redfish/v1/Systems/System.Embedded.1/EthernetInterfaces"
+    },
+    "Bios": {
+      "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Bios"
+    },
+    "SecureBoot": {
+      "@odata.id": "/redfish/v1/Systems/System.Embedded.1/SecureBoot"
+    },
+    "Links": {
+      "Chassis": [
+        {
+          "@odata.id": "/redfish/v1/Chassis/System.Embedded.1"
+        }
+      ],
+      "ManagedBy": [
+        {
+          "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1"
+        }
+      ],
+      "PCIeDevices": [
+        {
+          "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/0-25"
+        },
+        {
+          "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/59-0"
+        },
+        {
+          "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/7-0"
+        }
+      ]
+    },
+    "Oem": {
+      "Dell": {
+        "DellSystem": {
+          "@odata.type": "#DellSystem.v1_0_0.DellSystem",
+          "ChassisServiceTag": "DOCTAG1",
+          "ExpressServiceCode": "00000000001",
+          "BIOSReleaseDate": "01/01/2026",
+          "SystemGeneration": "16G Monolithic",
+          "MaxDIMMSlots": 32,
+          "MaxPCIeSlots": 8,
+          "NodeID": "DOCTAG1"
+        }
+      }
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Processors": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Processors",
+    "Name": "Processors Collection",
+    "Members@odata.count": 2,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Processors/CPU.Socket.1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Processors/CPU.Socket.2"
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Processors/CPU.Socket.1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Processors/CPU.Socket.1",
+    "Id": "CPU.Socket.1",
+    "Name": "CPU 1",
+    "Socket": "CPU.Socket.1",
+    "Model": "Intel(R) Xeon(R) Gold 6430",
+    "Manufacturer": "Intel",
+    "ProcessorType": "CPU",
+    "ProcessorArchitecture": "x86",
+    "InstructionSet": "x86-64",
+    "TotalCores": 32,
+    "TotalThreads": 64,
+    "MaxSpeedMHz": 4100,
+    "ProcessorId": {
+      "VendorId": "GenuineIntel",
+      "MicrocodeInfo": "0x2b000461"
+    },
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Processors/CPU.Socket.2": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Processors/CPU.Socket.2",
+    "Id": "CPU.Socket.2",
+    "Name": "CPU 2",
+    "Socket": "CPU.Socket.2",
+    "Model": "Intel(R) Xeon(R) Gold 6430",
+    "Manufacturer": "Intel",
+    "ProcessorType": "CPU",
+    "ProcessorArchitecture": "x86",
+    "InstructionSet": "x86-64",
+    "TotalCores": 32,
+    "TotalThreads": 64,
+    "MaxSpeedMHz": 4100,
+    "ProcessorId": {
+      "VendorId": "GenuineIntel",
+      "MicrocodeInfo": "0x2b000461"
+    },
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Memory": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Memory",
+    "Name": "Memory Collection",
+    "Members@odata.count": 5,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Memory/DIMM.Socket.A1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Memory/DIMM.Socket.A2"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Memory/DIMM.Socket.B1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Memory/DIMM.Socket.B2"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Memory/DIMM.Socket.A3"
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Memory/DIMM.Socket.A1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Memory/DIMM.Socket.A1",
+    "Id": "DIMM.Socket.A1",
+    "Name": "DIMM A1",
+    "DeviceLocator": "DIMM A1",
+    "CapacityMiB": 65536,
+    "MemoryDeviceType": "DDR5",
+    "BaseModuleType": "RDIMM",
+    "OperatingSpeedMhz": 4800,
+    "Manufacturer": "Doc Memory Co",
+    "PartNumber": "DOC-PART-64G",
+    "SerialNumber": "DOCDIMM0000",
+    "ErrorCorrection": "MultiBitECC",
+    "RankCount": 2,
+    "MemoryLocation": {
+      "Socket": 1,
+      "MemoryController": 1,
+      "Channel": 1,
+      "Slot": 1
+    },
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Memory/DIMM.Socket.A2": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Memory/DIMM.Socket.A2",
+    "Id": "DIMM.Socket.A2",
+    "Name": "DIMM A2",
+    "DeviceLocator": "DIMM A2",
+    "CapacityMiB": 65536,
+    "MemoryDeviceType": "DDR5",
+    "BaseModuleType": "RDIMM",
+    "OperatingSpeedMhz": 4800,
+    "Manufacturer": "Doc Memory Co",
+    "PartNumber": "DOC-PART-64G",
+    "SerialNumber": "DOCDIMM0001",
+    "ErrorCorrection": "MultiBitECC",
+    "RankCount": 2,
+    "MemoryLocation": {
+      "Socket": 1,
+      "MemoryController": 1,
+      "Channel": 1,
+      "Slot": 1
+    },
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Memory/DIMM.Socket.B1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Memory/DIMM.Socket.B1",
+    "Id": "DIMM.Socket.B1",
+    "Name": "DIMM B1",
+    "DeviceLocator": "DIMM B1",
+    "CapacityMiB": 65536,
+    "MemoryDeviceType": "DDR5",
+    "BaseModuleType": "RDIMM",
+    "OperatingSpeedMhz": 4800,
+    "Manufacturer": "Doc Memory Co",
+    "PartNumber": "DOC-PART-64G",
+    "SerialNumber": "DOCDIMM0002",
+    "ErrorCorrection": "MultiBitECC",
+    "RankCount": 2,
+    "MemoryLocation": {
+      "Socket": 1,
+      "MemoryController": 1,
+      "Channel": 1,
+      "Slot": 1
+    },
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Memory/DIMM.Socket.B2": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Memory/DIMM.Socket.B2",
+    "Id": "DIMM.Socket.B2",
+    "Name": "DIMM B2",
+    "DeviceLocator": "DIMM B2",
+    "CapacityMiB": 65536,
+    "MemoryDeviceType": "DDR5",
+    "BaseModuleType": "RDIMM",
+    "OperatingSpeedMhz": 4800,
+    "Manufacturer": "Doc Memory Co",
+    "PartNumber": "DOC-PART-64G",
+    "SerialNumber": "DOCDIMM0003",
+    "ErrorCorrection": "MultiBitECC",
+    "RankCount": 2,
+    "MemoryLocation": {
+      "Socket": 1,
+      "MemoryController": 1,
+      "Channel": 1,
+      "Slot": 1
+    },
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Memory/DIMM.Socket.A3": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Memory/DIMM.Socket.A3",
+    "Id": "DIMM.Socket.A3",
+    "Name": "DIMM A3",
+    "DeviceLocator": "DIMM A3",
+    "CapacityMiB": 0,
+    "MemoryDeviceType": "DDR5",
+    "BaseModuleType": "RDIMM",
+    "OperatingSpeedMhz": null,
+    "Manufacturer": null,
+    "PartNumber": null,
+    "SerialNumber": null,
+    "ErrorCorrection": "MultiBitECC",
+    "RankCount": 2,
+    "MemoryLocation": {
+      "Socket": 1,
+      "MemoryController": 1,
+      "Channel": 1,
+      "Slot": 1
+    },
+    "Status": {
+      "Health": null,
+      "State": "Absent"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters",
+    "Name": "Network Adapter Collection",
+    "Members@odata.count": 3,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6"
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1",
+    "Id": "NIC.Embedded.1",
+    "Name": "Network Adapter - NIC.Embedded.1",
+    "Manufacturer": "Broadcom Inc. and subsidiaries",
+    "Model": "",
+    "Description": "",
+    "Controllers": [
+      {
+        "FirmwarePackageVersion": "23.31.1",
+        "ControllerCapabilities": {
+          "NetworkPortCount": 2,
+          "NetworkDeviceFunctionCount": 2
+        },
+        "Links": {
+          "PCIeDevices": [
+            {
+              "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/0-25"
+            }
+          ]
+        }
+      }
+    ],
+    "NetworkPorts": {
+      "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkPorts"
+    },
+    "NetworkDeviceFunctions": {
+      "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkDeviceFunctions"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkPorts": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkPorts",
+    "Name": "Network Port Collection",
+    "Members@odata.count": 2,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkPorts/NIC.Embedded.1-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkPorts/NIC.Embedded.2-1"
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkDeviceFunctions": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkDeviceFunctions",
+    "Name": "Network Device Function Collection",
+    "Members@odata.count": 2,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkDeviceFunctions/NIC.Embedded.1-1-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkDeviceFunctions/NIC.Embedded.2-1-1"
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkPorts/NIC.Embedded.1-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkPorts/NIC.Embedded.1-1",
+    "Id": "NIC.Embedded.1-1",
+    "Name": "Network Port - NIC.Embedded.1-1",
+    "PhysicalPortNumber": "1",
+    "LinkStatus": "Up",
+    "CurrentLinkSpeedMbps": 1000,
+    "ActiveLinkTechnology": "Ethernet",
+    "AssociatedNetworkAddresses": [
+      "00:00:5E:00:53:10"
+    ],
+    "FlowControlStatus": "None",
+    "SupportedLinkCapabilities": [
+      {
+        "LinkNetworkTechnology": "Ethernet",
+        "LinkSpeedMbps": 1000
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkDeviceFunctions/NIC.Embedded.1-1-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkDeviceFunctions/NIC.Embedded.1-1-1",
+    "Id": "NIC.Embedded.1-1-1",
+    "DeviceEnabled": true,
+    "NetDevFuncType": "Ethernet",
+    "NetDevFuncCapabilities": [
+      "Ethernet"
+    ],
+    "Ethernet": {
+      "MACAddress": "00:00:5E:00:53:10",
+      "PermanentMACAddress": "00:00:5E:00:53:10",
+      "MTUSize": 1500
+    },
+    "Oem": {
+      "Dell": {
+        "DellNIC": {
+          "ProductName": "Broadcom Gigabit Ethernet BCM5720 - 00:00:5E:00:53:10",
+          "VendorName": "Broadcom",
+          "FamilyVersion": "23.31.1"
+        }
+      }
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkPorts/NIC.Embedded.2-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkPorts/NIC.Embedded.2-1",
+    "Id": "NIC.Embedded.2-1",
+    "Name": "Network Port - NIC.Embedded.2-1",
+    "PhysicalPortNumber": "2",
+    "LinkStatus": "Up",
+    "CurrentLinkSpeedMbps": 1000,
+    "ActiveLinkTechnology": "Ethernet",
+    "AssociatedNetworkAddresses": [
+      "00:00:5E:00:53:11"
+    ],
+    "FlowControlStatus": "None",
+    "SupportedLinkCapabilities": [
+      {
+        "LinkNetworkTechnology": "Ethernet",
+        "LinkSpeedMbps": 1000
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkDeviceFunctions/NIC.Embedded.2-1-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1/NetworkDeviceFunctions/NIC.Embedded.2-1-1",
+    "Id": "NIC.Embedded.2-1-1",
+    "DeviceEnabled": true,
+    "NetDevFuncType": "Ethernet",
+    "NetDevFuncCapabilities": [
+      "Ethernet"
+    ],
+    "Ethernet": {
+      "MACAddress": "00:00:5E:00:53:11",
+      "PermanentMACAddress": "00:00:5E:00:53:11",
+      "MTUSize": 1500
+    },
+    "Oem": {
+      "Dell": {
+        "DellNIC": {
+          "ProductName": "Broadcom Gigabit Ethernet BCM5720 - 00:00:5E:00:53:11",
+          "VendorName": "Broadcom",
+          "FamilyVersion": "23.31.1"
+        }
+      }
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3",
+    "Id": "NIC.Slot.3",
+    "Name": "Network Adapter - NIC.Slot.3",
+    "Manufacturer": "Doc Networks",
+    "Model": "DOC 100GbE 2P ConnectX6 Adpt",
+    "PartNumber": "DOC-NIC-100G",
+    "SerialNumber": "DOCNIC-NIC.Slot.3",
+    "Controllers": [
+      {
+        "FirmwarePackageVersion": "22.44.10.36",
+        "Links": {
+          "PCIeDevices": {
+            "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/59-0"
+          }
+        }
+      }
+    ],
+    "NetworkPorts": {
+      "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkPorts"
+    },
+    "NetworkDeviceFunctions": {
+      "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkDeviceFunctions"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkPorts": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkPorts",
+    "Name": "Network Port Collection",
+    "Members@odata.count": 2,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkPorts/NIC.Slot.3-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkPorts/NIC.Slot.3-2"
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkDeviceFunctions": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkDeviceFunctions",
+    "Name": "Network Device Function Collection",
+    "Members@odata.count": 2,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkDeviceFunctions/NIC.Slot.3-1-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkDeviceFunctions/NIC.Slot.3-2-1"
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkPorts/NIC.Slot.3-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkPorts/NIC.Slot.3-1",
+    "Id": "NIC.Slot.3-1",
+    "Name": "Network Port - NIC.Slot.3-1",
+    "PhysicalPortNumber": "1",
+    "LinkStatus": "Up",
+    "CurrentLinkSpeedMbps": 100000,
+    "ActiveLinkTechnology": "Ethernet",
+    "AssociatedNetworkAddresses": "00:00:5E:00:53:21",
+    "SupportedLinkCapabilities": [
+      {
+        "LinkNetworkTechnology": "Ethernet",
+        "LinkSpeedMbps": 100000
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkDeviceFunctions/NIC.Slot.3-1-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkDeviceFunctions/NIC.Slot.3-1-1",
+    "Id": "NIC.Slot.3-1-1",
+    "DeviceEnabled": true,
+    "NetDevFuncType": "Ethernet",
+    "NetDevFuncCapabilities": [
+      "Ethernet"
+    ],
+    "Ethernet": {
+      "PermanentMACAddress": "00:00:5E:00:53:21",
+      "MTUSize": 9000
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkPorts/NIC.Slot.3-2": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkPorts/NIC.Slot.3-2",
+    "Id": "NIC.Slot.3-2",
+    "Name": "Network Port - NIC.Slot.3-2",
+    "PhysicalPortNumber": "2",
+    "LinkStatus": "Up",
+    "CurrentLinkSpeedMbps": 100000,
+    "ActiveLinkTechnology": "Ethernet",
+    "AssociatedNetworkAddresses": "00:00:5E:00:53:22",
+    "SupportedLinkCapabilities": [
+      {
+        "LinkNetworkTechnology": "Ethernet",
+        "LinkSpeedMbps": 100000
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkDeviceFunctions/NIC.Slot.3-2-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkDeviceFunctions/NIC.Slot.3-2-1",
+    "Id": "NIC.Slot.3-2-1",
+    "DeviceEnabled": true,
+    "NetDevFuncType": "Ethernet",
+    "NetDevFuncCapabilities": [
+      "Ethernet"
+    ],
+    "Ethernet": {
+      "PermanentMACAddress": "00:00:5E:00:53:22",
+      "MTUSize": 9000
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6",
+    "Id": "NIC.Slot.6",
+    "Name": "Network Adapter - NIC.Slot.6",
+    "Manufacturer": "Doc Networks",
+    "Model": "DOC 100GbE 2P ConnectX6 Adpt",
+    "PartNumber": "DOC-NIC-100G",
+    "SerialNumber": "DOCNIC-NIC.Slot.6",
+    "Controllers": [
+      {
+        "FirmwarePackageVersion": "22.44.10.36",
+        "Links": {
+          "PCIeDevices": null
+        }
+      }
+    ],
+    "NetworkPorts": {
+      "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6/NetworkPorts"
+    },
+    "NetworkDeviceFunctions": {
+      "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6/NetworkDeviceFunctions"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6/NetworkPorts": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6/NetworkPorts",
+    "Name": "Network Port Collection",
+    "Members@odata.count": 2,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6/NetworkPorts/NIC.Slot.6-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6/NetworkPorts/NIC.Slot.6-2"
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6/NetworkDeviceFunctions": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6/NetworkDeviceFunctions",
+    "Name": "Network Device Function Collection",
+    "Members@odata.count": 2,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6/NetworkDeviceFunctions/NIC.Slot.6-1-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6/NetworkDeviceFunctions/NIC.Slot.6-2-1"
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6/NetworkPorts/NIC.Slot.6-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6/NetworkPorts/NIC.Slot.6-1",
+    "Id": "NIC.Slot.6-1",
+    "Name": "Network Port - NIC.Slot.6-1",
+    "PhysicalPortNumber": "1",
+    "LinkStatus": "Up",
+    "CurrentLinkSpeedMbps": 100000,
+    "ActiveLinkTechnology": "Ethernet",
+    "AssociatedNetworkAddresses": null,
+    "SupportedLinkCapabilities": [
+      {
+        "LinkNetworkTechnology": "Ethernet",
+        "LinkSpeedMbps": 100000
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6/NetworkDeviceFunctions/NIC.Slot.6-1-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6/NetworkDeviceFunctions/NIC.Slot.6-1-1",
+    "Id": "NIC.Slot.6-1-1",
+    "DeviceEnabled": true,
+    "NetDevFuncType": "Ethernet",
+    "NetDevFuncCapabilities": [
+      "Ethernet"
+    ],
+    "Ethernet": {
+      "PermanentMACAddress": "00:00:5E:00:53:31",
+      "MTUSize": 9000
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6/NetworkPorts/NIC.Slot.6-2": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6/NetworkPorts/NIC.Slot.6-2",
+    "Id": "NIC.Slot.6-2",
+    "Name": "Network Port - NIC.Slot.6-2",
+    "PhysicalPortNumber": "2",
+    "LinkStatus": "Up",
+    "CurrentLinkSpeedMbps": 100000,
+    "ActiveLinkTechnology": "Ethernet",
+    "AssociatedNetworkAddresses": null,
+    "SupportedLinkCapabilities": [
+      {
+        "LinkNetworkTechnology": "Ethernet",
+        "LinkSpeedMbps": 100000
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6/NetworkDeviceFunctions/NIC.Slot.6-2-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.6/NetworkDeviceFunctions/NIC.Slot.6-2-1",
+    "Id": "NIC.Slot.6-2-1",
+    "DeviceEnabled": true,
+    "NetDevFuncType": "Ethernet",
+    "NetDevFuncCapabilities": [
+      "Ethernet"
+    ],
+    "Ethernet": {
+      "PermanentMACAddress": "00:00:5E:00:53:32",
+      "MTUSize": 9000
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/EthernetInterfaces": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/EthernetInterfaces",
+    "Name": "Ethernet Interface Collection",
+    "Members@odata.count": 1,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/EthernetInterfaces/NIC.Embedded.1-1-1"
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/EthernetInterfaces/NIC.Embedded.1-1-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/EthernetInterfaces/NIC.Embedded.1-1-1",
+    "Id": "NIC.Embedded.1-1-1",
+    "MACAddress": "00:00:5E:00:53:10",
+    "PermanentMACAddress": "00:00:5E:00:53:10",
+    "SpeedMbps": 1000,
+    "LinkStatus": "LinkUp",
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Storage": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage",
+    "Name": "Storage Collection",
+    "Members@odata.count": 3,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/AHCI.Embedded.1-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/BOSS.SL.12-1"
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1",
+    "Id": "CPU.1",
+    "Name": "CPU.1",
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    },
+    "StorageControllers": [
+      {
+        "Model": "",
+        "Manufacturer": "",
+        "FirmwareVersion": ""
+      }
+    ],
+    "Drives": [
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Drives/Disk.Bay.0:Enclosure.Internal.0-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Drives/Disk.Bay.1:Enclosure.Internal.0-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Drives/Disk.Bay.2:Enclosure.Internal.0-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Drives/Disk.Bay.3:Enclosure.Internal.0-1"
+      }
+    ],
+    "Volumes": {
+      "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Volumes"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Volumes": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Volumes",
+    "Name": "Volume Collection",
+    "Members@odata.count": 4,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Volumes/Disk.Bay.0:Enclosure.Internal.0-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Volumes/Disk.Bay.1:Enclosure.Internal.0-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Volumes/Disk.Bay.2:Enclosure.Internal.0-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Volumes/Disk.Bay.3:Enclosure.Internal.0-1"
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Drives/Disk.Bay.0:Enclosure.Internal.0-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Drives/Disk.Bay.0:Enclosure.Internal.0-1",
+    "Id": "Disk.Bay.0:Enclosure.Internal.0-1",
+    "Name": "PCIe SSD in Slot 0 in Bay 1",
+    "Model": "Doc NVMe RI U.2 3.84TB",
+    "Manufacturer": "Doc Flash",
+    "SerialNumber": "DOCDRV0000",
+    "PartNumber": "DOC-U2-3840",
+    "Revision": "DOC1",
+    "CapacityBytes": 3840755982336,
+    "MediaType": "SSD",
+    "Protocol": "PCIe",
+    "PredictedMediaLifeLeftPercent": 100,
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    },
+    "PhysicalLocation": {
+      "PartLocation": {
+        "ServiceLabel": "PCIe SSD in Slot 0 in Bay 1",
+        "LocationOrdinalValue": 0
+      }
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Volumes/Disk.Bay.0:Enclosure.Internal.0-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Volumes/Disk.Bay.0:Enclosure.Internal.0-1",
+    "Id": "Disk.Bay.0:Enclosure.Internal.0-1",
+    "Name": "PCIe SSD in Slot 0 in Bay 1",
+    "VolumeType": "RawDevice",
+    "RAIDType": null,
+    "CapacityBytes": 3840755982336,
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Drives/Disk.Bay.1:Enclosure.Internal.0-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Drives/Disk.Bay.1:Enclosure.Internal.0-1",
+    "Id": "Disk.Bay.1:Enclosure.Internal.0-1",
+    "Name": "PCIe SSD in Slot 1 in Bay 1",
+    "Model": "Doc NVMe RI U.2 3.84TB",
+    "Manufacturer": "Doc Flash",
+    "SerialNumber": "DOCDRV0001",
+    "PartNumber": "DOC-U2-3840",
+    "Revision": "DOC1",
+    "CapacityBytes": 3840755982336,
+    "MediaType": "SSD",
+    "Protocol": "PCIe",
+    "PredictedMediaLifeLeftPercent": 100,
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    },
+    "PhysicalLocation": {
+      "PartLocation": {
+        "ServiceLabel": "PCIe SSD in Slot 1 in Bay 1",
+        "LocationOrdinalValue": 1
+      }
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Volumes/Disk.Bay.1:Enclosure.Internal.0-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Volumes/Disk.Bay.1:Enclosure.Internal.0-1",
+    "Id": "Disk.Bay.1:Enclosure.Internal.0-1",
+    "Name": "PCIe SSD in Slot 1 in Bay 1",
+    "VolumeType": "RawDevice",
+    "RAIDType": null,
+    "CapacityBytes": 3840755982336,
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Drives/Disk.Bay.2:Enclosure.Internal.0-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Drives/Disk.Bay.2:Enclosure.Internal.0-1",
+    "Id": "Disk.Bay.2:Enclosure.Internal.0-1",
+    "Name": "PCIe SSD in Slot 2 in Bay 1",
+    "Model": "Doc NVMe RI U.2 3.84TB",
+    "Manufacturer": "Doc Flash",
+    "SerialNumber": "DOCDRV0002",
+    "PartNumber": "DOC-U2-3840",
+    "Revision": "DOC1",
+    "CapacityBytes": 3840755982336,
+    "MediaType": "SSD",
+    "Protocol": "PCIe",
+    "PredictedMediaLifeLeftPercent": 100,
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    },
+    "PhysicalLocation": {
+      "PartLocation": {
+        "ServiceLabel": "PCIe SSD in Slot 2 in Bay 1",
+        "LocationOrdinalValue": 2
+      }
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Volumes/Disk.Bay.2:Enclosure.Internal.0-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Volumes/Disk.Bay.2:Enclosure.Internal.0-1",
+    "Id": "Disk.Bay.2:Enclosure.Internal.0-1",
+    "Name": "PCIe SSD in Slot 2 in Bay 1",
+    "VolumeType": "RawDevice",
+    "RAIDType": null,
+    "CapacityBytes": 3840755982336,
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Drives/Disk.Bay.3:Enclosure.Internal.0-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Drives/Disk.Bay.3:Enclosure.Internal.0-1",
+    "Id": "Disk.Bay.3:Enclosure.Internal.0-1",
+    "Name": "PCIe SSD in Slot 3 in Bay 1",
+    "Model": "Doc NVMe RI U.2 3.84TB",
+    "Manufacturer": "Doc Flash",
+    "SerialNumber": "DOCDRV0003",
+    "PartNumber": "DOC-U2-3840",
+    "Revision": "DOC1",
+    "CapacityBytes": 3840755982336,
+    "MediaType": "SSD",
+    "Protocol": "PCIe",
+    "PredictedMediaLifeLeftPercent": 100,
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    },
+    "PhysicalLocation": {
+      "PartLocation": {
+        "ServiceLabel": "PCIe SSD in Slot 3 in Bay 1",
+        "LocationOrdinalValue": 3
+      }
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Volumes/Disk.Bay.3:Enclosure.Internal.0-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/CPU.1/Volumes/Disk.Bay.3:Enclosure.Internal.0-1",
+    "Id": "Disk.Bay.3:Enclosure.Internal.0-1",
+    "Name": "PCIe SSD in Slot 3 in Bay 1",
+    "VolumeType": "RawDevice",
+    "RAIDType": null,
+    "CapacityBytes": 3840755982336,
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Storage/AHCI.Embedded.1-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/AHCI.Embedded.1-1",
+    "Id": "AHCI.Embedded.1-1",
+    "Name": "Doc SATA AHCI Controller",
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    },
+    "StorageControllers": [
+      {
+        "Model": "Doc SATA AHCI Controller",
+        "Manufacturer": "DELL",
+        "FirmwareVersion": ""
+      }
+    ],
+    "Drives": [],
+    "Volumes": {
+      "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/AHCI.Embedded.1-1/Volumes"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Storage/AHCI.Embedded.1-1/Volumes": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/AHCI.Embedded.1-1/Volumes",
+    "Name": "Volume Collection",
+    "Members@odata.count": 0,
+    "Members": []
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Storage/BOSS.SL.12-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/BOSS.SL.12-1",
+    "Id": "BOSS.SL.12-1",
+    "Name": "BOSS-N1 Monolithic",
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    },
+    "StorageControllers": [
+      {
+        "Model": "BOSS-N1 Monolithic",
+        "Manufacturer": "DELL",
+        "FirmwareVersion": "2.1.13.2037",
+        "SupportedRAIDTypes": [
+          "RAID1"
+        ],
+        "SupportedDeviceProtocols": [
+          "PCIe"
+        ]
+      }
+    ],
+    "Drives": [
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/BOSS.SL.12-1/Drives/Disk.Direct.0-0:BOSS.SL.12-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/BOSS.SL.12-1/Drives/Disk.Direct.1-1:BOSS.SL.12-1"
+      }
+    ],
+    "Volumes": {
+      "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/BOSS.SL.12-1/Volumes"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Storage/BOSS.SL.12-1/Drives/Disk.Direct.0-0:BOSS.SL.12-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/BOSS.SL.12-1/Drives/Disk.Direct.0-0:BOSS.SL.12-1",
+    "Id": "Disk.Direct.0-0:BOSS.SL.12-1",
+    "Name": "NVMe 0",
+    "Model": "Doc NVMe RI M.2 960GB",
+    "Manufacturer": "Doc Flash",
+    "SerialNumber": "DOCM20000",
+    "CapacityBytes": 960197124096,
+    "MediaType": "SSD",
+    "Protocol": "PCIe",
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Storage/BOSS.SL.12-1/Drives/Disk.Direct.1-1:BOSS.SL.12-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/BOSS.SL.12-1/Drives/Disk.Direct.1-1:BOSS.SL.12-1",
+    "Id": "Disk.Direct.1-1:BOSS.SL.12-1",
+    "Name": "NVMe 1",
+    "Model": "Doc NVMe RI M.2 960GB",
+    "Manufacturer": "Doc Flash",
+    "SerialNumber": "DOCM20001",
+    "CapacityBytes": 960197124096,
+    "MediaType": "SSD",
+    "Protocol": "PCIe",
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Storage/BOSS.SL.12-1/Volumes": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/BOSS.SL.12-1/Volumes",
+    "Name": "Volume Collection",
+    "Members@odata.count": 1,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/BOSS.SL.12-1/Volumes/Disk.Virtual.0:BOSS.SL.12-1"
+      }
+    ]
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Storage/BOSS.SL.12-1/Volumes/Disk.Virtual.0:BOSS.SL.12-1": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/BOSS.SL.12-1/Volumes/Disk.Virtual.0:BOSS.SL.12-1",
+    "Id": "Disk.Virtual.0:BOSS.SL.12-1",
+    "Name": "BOSS_RAID1",
+    "RAIDType": "RAID1",
+    "VolumeType": "Mirrored",
+    "CapacityBytes": 960129662976,
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    },
+    "Links": {
+      "Drives": [
+        {
+          "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/BOSS.SL.12-1/Drives/Disk.Direct.0-0:BOSS.SL.12-1"
+        },
+        {
+          "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Storage/BOSS.SL.12-1/Drives/Disk.Direct.1-1:BOSS.SL.12-1"
+        }
+      ]
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Bios": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Bios",
+    "Id": "BIOS",
+    "Name": "BIOS Configuration Current Settings",
+    "AttributeRegistry": "BiosAttributeRegistry2.0.0",
+    "@Redfish.Settings": {
+      "SettingsObject": {
+        "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Bios/Settings"
+      }
+    },
+    "Attributes": {
+      "ProcVirtualization": "Enabled",
+      "SriovGlobalEnable": "Enabled",
+      "BootMode": "Uefi",
+      "SecureBoot": "Enabled",
+      "SysProfile": "PerfOptimized",
+      "ProcCStates": "Disabled",
+      "SetupPassword": null,
+      "SysPassword": "doc-redaction-check",
+      "MemTest": "Disabled"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/Bios/Settings": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/Bios/Settings",
+    "Id": "Settings",
+    "Name": "Pending BIOS settings",
+    "Attributes": {
+      "ProcCStates": "Enabled"
+    }
+  },
+  "/redfish/v1/Systems/System.Embedded.1/SecureBoot": {
+    "@odata.id": "/redfish/v1/Systems/System.Embedded.1/SecureBoot",
+    "Id": "SecureBoot",
+    "SecureBootEnable": true,
+    "SecureBootCurrentBoot": "Enabled",
+    "SecureBootMode": "DeployedMode"
+  },
+  "/redfish/v1/Chassis/System.Embedded.1": {
+    "@odata.id": "/redfish/v1/Chassis/System.Embedded.1",
+    "Id": "System.Embedded.1",
+    "Name": "Computer System Chassis",
+    "ChassisType": "RackMount",
+    "Manufacturer": "Dell Inc.",
+    "Model": "AX-760",
+    "SerialNumber": "DOCSERIAL0001",
+    "SKU": "DOCTAG1",
+    "AssetTag": "",
+    "PartNumber": "0DOC00A00",
+    "IndicatorLED": "Off",
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    },
+    "Power": {
+      "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/Power"
+    },
+    "Thermal": {
+      "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/Thermal"
+    },
+    "PCIeDevices": {
+      "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices"
+    },
+    "Links": {
+      "ComputerSystems": [
+        {
+          "@odata.id": "/redfish/v1/Systems/System.Embedded.1"
+        }
+      ],
+      "ManagedBy": [
+        {
+          "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1"
+        }
+      ]
+    }
+  },
+  "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices": {
+    "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices",
+    "Name": "PCIe Device Collection",
+    "Members@odata.count": 3,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/0-25"
+      },
+      {
+        "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/59-0"
+      },
+      {
+        "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/7-0"
+      }
+    ]
+  },
+  "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/0-25": {
+    "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/0-25",
+    "Id": "0-25",
+    "Name": "Embedded NIC 1",
+    "Description": "Broadcom Gigabit Ethernet BCM5720",
+    "Manufacturer": "Broadcom",
+    "FirmwareVersion": "1.0.0",
+    "DeviceType": "MultiFunction",
+    "PCIeInterface": {
+      "LanesInUse": 1,
+      "MaxLanes": 1,
+      "PCIeType": "Gen4",
+      "MaxPCIeType": "Gen4"
+    },
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    },
+    "Links": {
+      "PCIeFunctions": [
+        {
+          "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/0-25/PCIeFunctions/0-25-0"
+        }
+      ]
+    }
+  },
+  "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/0-25/PCIeFunctions/0-25-0": {
+    "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/0-25/PCIeFunctions/0-25-0",
+    "Id": "0-25-0",
+    "Name": "Broadcom Gigabit Ethernet BCM5720",
+    "DeviceId": "0x165f",
+    "VendorId": "0x14e4",
+    "SubsystemId": "0x0001",
+    "SubsystemVendorId": "0x14e4",
+    "ClassCode": "0x020000",
+    "DeviceClass": "NetworkController",
+    "FunctionType": "Physical",
+    "FunctionId": 0,
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    }
+  },
+  "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/59-0": {
+    "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/59-0",
+    "Id": "59-0",
+    "Name": "Slot 3 NIC",
+    "Description": "DOC 100GbE 2P ConnectX6 Adpt",
+    "Manufacturer": "Doc Networks",
+    "FirmwareVersion": "1.0.0",
+    "DeviceType": "MultiFunction",
+    "PCIeInterface": {
+      "LanesInUse": 16,
+      "MaxLanes": 16,
+      "PCIeType": "Gen4",
+      "MaxPCIeType": "Gen4"
+    },
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    },
+    "Links": {
+      "PCIeFunctions": [
+        {
+          "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/59-0/PCIeFunctions/59-0-0"
+        }
+      ]
+    }
+  },
+  "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/59-0/PCIeFunctions/59-0-0": {
+    "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/59-0/PCIeFunctions/59-0-0",
+    "Id": "59-0-0",
+    "Name": "DOC 100GbE 2P ConnectX6 Adpt",
+    "DeviceId": "0x101d",
+    "VendorId": "0x15b3",
+    "SubsystemId": "0x0001",
+    "SubsystemVendorId": "0x15b3",
+    "ClassCode": "0x020000",
+    "DeviceClass": "NetworkController",
+    "FunctionType": "Physical",
+    "FunctionId": 0,
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    }
+  },
+  "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/7-0": {
+    "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/7-0",
+    "Id": "7-0",
+    "Name": "Slot 7 GPU",
+    "Description": "DOC A2 16GB Accelerator",
+    "Manufacturer": "Doc Graphics",
+    "FirmwareVersion": "1.0.0",
+    "DeviceType": "MultiFunction",
+    "PCIeInterface": {
+      "LanesInUse": 8,
+      "MaxLanes": 8,
+      "PCIeType": "Gen4",
+      "MaxPCIeType": "Gen4"
+    },
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    },
+    "Links": {
+      "PCIeFunctions": [
+        {
+          "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/7-0/PCIeFunctions/7-0-0"
+        }
+      ]
+    }
+  },
+  "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/7-0/PCIeFunctions/7-0-0": {
+    "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/PCIeDevices/7-0/PCIeFunctions/7-0-0",
+    "Id": "7-0-0",
+    "Name": "DOC A2 16GB Accelerator",
+    "DeviceId": "0x25b6",
+    "VendorId": "0x10de",
+    "SubsystemId": "0x0001",
+    "SubsystemVendorId": "0x10de",
+    "ClassCode": "0x030200",
+    "DeviceClass": "DisplayController",
+    "FunctionType": "Physical",
+    "FunctionId": 0,
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    }
+  },
+  "/redfish/v1/Chassis/System.Embedded.1/Thermal": {
+    "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/Thermal",
+    "Id": "Thermal",
+    "Name": "Thermal",
+    "Temperatures": [
+      {
+        "Name": "System Board Inlet Temp",
+        "ReadingCelsius": 22,
+        "UpperThresholdCritical": 42,
+        "UpperThresholdNonCritical": 38,
+        "Status": {
+          "Health": "OK",
+          "State": "Enabled"
+        }
+      }
+    ],
+    "Fans": [
+      {
+        "Name": "System Board Fan1A",
+        "Reading": 7000,
+        "ReadingUnits": "RPM",
+        "Status": {
+          "Health": "OK",
+          "State": "Enabled"
+        }
+      }
+    ]
+  },
+  "/redfish/v1/Chassis/System.Embedded.1/Power": {
+    "@odata.id": "/redfish/v1/Chassis/System.Embedded.1/Power",
+    "Id": "Power",
+    "Name": "Power",
+    "PowerControl": [
+      {
+        "Name": "System Power Control",
+        "PowerConsumedWatts": 350,
+        "PowerCapacityWatts": 1400
+      }
+    ],
+    "PowerSupplies": [
+      {
+        "Name": "PS1 Status",
+        "Model": "DOC PWR SPLY,1400W",
+        "SerialNumber": "DOCPSU0001",
+        "FirmwareVersion": "00.1B.7D",
+        "PowerCapacityWatts": 1400,
+        "LineInputVoltage": 230,
+        "Status": {
+          "Health": "OK",
+          "State": "Enabled"
+        }
+      },
+      {
+        "Name": "PS2 Status",
+        "Model": "DOC PWR SPLY,1400W",
+        "SerialNumber": "DOCPSU0002",
+        "FirmwareVersion": "00.1B.7D",
+        "PowerCapacityWatts": 1400,
+        "LineInputVoltage": 230,
+        "Status": {
+          "Health": "OK",
+          "State": "Enabled"
+        }
+      }
+    ],
+    "Voltages": [
+      {
+        "Name": "CPU1 VCORE PG",
+        "ReadingVolts": 1,
+        "Status": {
+          "Health": "OK",
+          "State": "Enabled"
+        }
+      }
+    ],
+    "Redundancy": [
+      {
+        "Name": "System Board PS Redundancy",
+        "Mode": "N+1",
+        "MinNumNeeded": 1,
+        "Status": {
+          "Health": "OK",
+          "State": "Enabled"
+        }
+      }
+    ]
+  },
+  "/redfish/v1/Managers/iDRAC.Embedded.1": {
+    "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1",
+    "Id": "iDRAC.Embedded.1",
+    "Name": "Manager",
+    "Model": "16G Monolithic",
+    "FirmwareVersion": "7.20.30.00",
+    "ManagerType": "BMC",
+    "UUID": "00000000-0000-4000-8000-0000000000a1",
+    "DateTime": "2026-01-01T00:00:00+00:00",
+    "DateTimeLocalOffset": "+00:00",
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    },
+    "EthernetInterfaces": {
+      "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/EthernetInterfaces"
+    },
+    "NetworkProtocol": {
+      "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/NetworkProtocol"
+    },
+    "LogServices": {
+      "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices"
+    },
+    "Attributes": {
+      "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/Attributes"
+    },
+    "Links": {
+      "ManagerForServers": [
+        {
+          "@odata.id": "/redfish/v1/Systems/System.Embedded.1"
+        }
+      ]
+    },
+    "Oem": {
+      "Dell": {
+        "@odata.type": "#DellManager.v1_0_0.DellManager",
+        "DelliDRACCard": {
+          "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/Oem/Dell/DelliDRACCardService"
+        }
+      }
+    }
+  },
+  "/redfish/v1/Managers/iDRAC.Embedded.1/EthernetInterfaces": {
+    "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/EthernetInterfaces",
+    "Name": "Ethernet Interface Collection",
+    "Members@odata.count": 1,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/EthernetInterfaces/NIC.1"
+      }
+    ]
+  },
+  "/redfish/v1/Managers/iDRAC.Embedded.1/EthernetInterfaces/NIC.1": {
+    "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/EthernetInterfaces/NIC.1",
+    "Id": "NIC.1",
+    "Name": "Manager Ethernet Interface",
+    "MACAddress": "00:00:5E:00:53:01",
+    "PermanentMACAddress": "00:00:5E:00:53:01",
+    "SpeedMbps": 1000,
+    "LinkStatus": "LinkUp",
+    "HostName": "doc-idrac-1",
+    "FQDN": "doc-idrac-1.invalid",
+    "VLAN": {
+      "VLANEnable": false,
+      "VLANId": 1
+    },
+    "IPv4Addresses": [
+      {
+        "Address": "192.0.2.21",
+        "SubnetMask": "255.255.255.0",
+        "AddressOrigin": "DHCP",
+        "Gateway": "192.0.2.1"
+      }
+    ],
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    }
+  },
+  "/redfish/v1/Managers/iDRAC.Embedded.1/NetworkProtocol": {
+    "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/NetworkProtocol",
+    "Id": "ManagerNetworkProtocol",
+    "HostName": "doc-idrac-1",
+    "FQDN": "doc-idrac-1.invalid",
+    "Status": {
+      "Health": "OK",
+      "HealthRollup": "OK",
+      "State": "Enabled"
+    },
+    "HTTPS": {
+      "ProtocolEnabled": true,
+      "Port": 443,
+      "Certificates": {
+        "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/NetworkProtocol/HTTPS/Certificates"
+      }
+    },
+    "HTTP": {
+      "ProtocolEnabled": false,
+      "Port": 80
+    },
+    "IPMI": {
+      "ProtocolEnabled": true,
+      "Port": 623
+    },
+    "SSH": {
+      "ProtocolEnabled": true,
+      "Port": 22
+    },
+    "SNMP": {
+      "ProtocolEnabled": true,
+      "Port": 161
+    },
+    "KVMIP": {
+      "ProtocolEnabled": true,
+      "Port": 5900
+    },
+    "NTP": {
+      "ProtocolEnabled": false,
+      "NTPServers": []
+    }
+  },
+  "/redfish/v1/Managers/iDRAC.Embedded.1/NetworkProtocol/HTTPS/Certificates": {
+    "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/NetworkProtocol/HTTPS/Certificates",
+    "Name": "Certificate Collection",
+    "Members@odata.count": 1,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/NetworkProtocol/HTTPS/Certificates/SecurityCertificate.1"
+      }
+    ]
+  },
+  "/redfish/v1/Managers/iDRAC.Embedded.1/NetworkProtocol/HTTPS/Certificates/SecurityCertificate.1": {
+    "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/NetworkProtocol/HTTPS/Certificates/SecurityCertificate.1",
+    "Id": "SecurityCertificate.1",
+    "CertificateType": "PEM",
+    "Subject": {
+      "CommonName": "doc-idrac-1.invalid",
+      "Organization": "Doc Org"
+    },
+    "Issuer": {
+      "CommonName": "doc-idrac-1.invalid"
+    },
+    "ValidNotBefore": "2026-01-01T00:00:00Z",
+    "ValidNotAfter": "2036-01-01T00:00:00Z"
+  },
+  "/redfish/v1/Managers/iDRAC.Embedded.1/Attributes": {
+    "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/Attributes",
+    "Id": "iDRACAttributes",
+    "Name": "Manager Attributes",
+    "Attributes": {
+      "Info.1.Product": "Integrated Dell Remote Access Controller",
+      "IPv4.1.Enable": "Enabled",
+      "VNCServer.1.Enable": "Disabled",
+      "VNCServer.1.Port": 5901,
+      "VNCServer.1.Password": null,
+      "SNMP.1.AgentCommunity": "doc-redaction-check",
+      "Users.2.UserName": "doc-user",
+      "Users.2.Password": "doc-redaction-check",
+      "NTPConfigGroup.1.NTPEnable": "Disabled"
+    }
+  },
+  "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices": {
+    "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices",
+    "Name": "Log Service Collection",
+    "Members@odata.count": 2,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel"
+      },
+      {
+        "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Lclog"
+      }
+    ]
+  },
+  "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel": {
+    "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel",
+    "Id": "Sel",
+    "Name": "System Event Log",
+    "MaxNumberOfRecords": 512,
+    "OverWritePolicy": "WrapsWhenFull",
+    "DateTime": "2026-01-01T00:00:00+00:00",
+    "Entries": {
+      "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries"
+    }
+  },
+  "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Lclog": {
+    "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Lclog",
+    "Id": "Lclog",
+    "Name": "Lifecycle Log",
+    "MaxNumberOfRecords": 20000,
+    "OverWritePolicy": "WrapsWhenFull",
+    "Entries": {
+      "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Lclog/Entries"
+    }
+  },
+  "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries": {
+    "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries",
+    "Name": "System Event Log Entries",
+    "Members@odata.count": 12,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries/1",
+        "Id": "1",
+        "EntryType": "SEL",
+        "Severity": "OK",
+        "Created": "2026-01-01T00:00:00+00:00",
+        "Message": "Doc event 1",
+        "MessageId": "DOC0001"
+      },
+      {
+        "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries/2",
+        "Id": "2",
+        "EntryType": "SEL",
+        "Severity": "OK",
+        "Created": "2026-01-01T00:01:00+00:00",
+        "Message": "Doc event 2",
+        "MessageId": "DOC0001"
+      },
+      {
+        "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries/3",
+        "Id": "3",
+        "EntryType": "SEL",
+        "Severity": "Warning",
+        "Created": "2026-01-01T00:02:00+00:00",
+        "Message": "Doc event 3",
+        "MessageId": "DOC0001"
+      },
+      {
+        "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries/4",
+        "Id": "4",
+        "EntryType": "SEL",
+        "Severity": "OK",
+        "Created": "2026-01-01T00:03:00+00:00",
+        "Message": "Doc event 4",
+        "MessageId": "DOC0001"
+      },
+      {
+        "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries/5",
+        "Id": "5",
+        "EntryType": "SEL",
+        "Severity": "Critical",
+        "Created": "2026-01-01T00:04:00+00:00",
+        "Message": "Doc event 5",
+        "MessageId": "DOC0001"
+      },
+      {
+        "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries/6",
+        "Id": "6",
+        "EntryType": "SEL",
+        "Severity": "OK",
+        "Created": "2026-01-01T00:05:00+00:00",
+        "Message": "Doc event 6",
+        "MessageId": "DOC0001"
+      },
+      {
+        "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries/7",
+        "Id": "7",
+        "EntryType": "SEL",
+        "Severity": "OK",
+        "Created": "2026-01-01T00:06:00+00:00",
+        "Message": "Doc event 7",
+        "MessageId": "DOC0001"
+      },
+      {
+        "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries/8",
+        "Id": "8",
+        "EntryType": "SEL",
+        "Severity": "Warning",
+        "Created": "2026-01-01T00:07:00+00:00",
+        "Message": "Doc event 8",
+        "MessageId": "DOC0001"
+      },
+      {
+        "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries/9",
+        "Id": "9",
+        "EntryType": "SEL",
+        "Severity": "OK",
+        "Created": "2026-01-01T00:08:00+00:00",
+        "Message": "Doc event 9",
+        "MessageId": "DOC0001"
+      },
+      {
+        "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries/10",
+        "Id": "10",
+        "EntryType": "SEL",
+        "Severity": "OK",
+        "Created": "2026-01-01T00:09:00+00:00",
+        "Message": "Doc event 10",
+        "MessageId": "DOC0001"
+      },
+      {
+        "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries/11",
+        "Id": "11",
+        "EntryType": "SEL",
+        "Severity": "OK",
+        "Created": "2026-01-01T00:10:00+00:00",
+        "Message": "Doc event 11",
+        "MessageId": "DOC0001"
+      },
+      {
+        "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries/12",
+        "Id": "12",
+        "EntryType": "SEL",
+        "Severity": "OK",
+        "Created": "2026-01-01T00:11:00+00:00",
+        "Message": "Doc event 12",
+        "MessageId": "DOC0001"
+      }
+    ]
+  },
+  "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Lclog/Entries": {
+    "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Lclog/Entries",
+    "Name": "Lifecycle Log Entries",
+    "Members@odata.count": 0,
+    "Members": []
+  },
+  "/redfish/v1/UpdateService": {
+    "@odata.id": "/redfish/v1/UpdateService",
+    "Id": "UpdateService",
+    "FirmwareInventory": {
+      "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory"
+    },
+    "ServiceEnabled": true
+  },
+  "/redfish/v1/UpdateService/FirmwareInventory": {
+    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory",
+    "Name": "Software Inventory Collection",
+    "Members@odata.count": 10,
+    "Members": [
+      {
+        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-2.0.0__BIOS.Setup.1-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-7.20.30.00__iDRAC.Embedded.1-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Previous-0-7.10.00.00__iDRAC.Embedded.1-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-22.44.10.36__NIC.Slot.3-1-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-23.31.1__NIC.Embedded.1-1-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-2.1.13.2037__BOSS.SL.12-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-DOC1__Disk.Bay.0:Enclosure.Internal.0-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-00.1B.7D__PSU.Slot.1"
+      },
+      {
+        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-1.0.5__CPLD.Embedded.1"
+      },
+      {
+        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-1.0.0__GPU.Slot.7"
+      }
+    ]
+  },
+  "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-2.0.0__BIOS.Setup.1-1": {
+    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-2.0.0__BIOS.Setup.1-1",
+    "Id": "Installed-0-2.0.0__BIOS.Setup.1-1",
+    "Name": "BIOS",
+    "Version": "2.0.0",
+    "Updateable": true,
+    "Status": {
+      "Health": "OK",
+      "State": "Enabled"
+    },
+    "ReleaseDate": "2026-01-01T00:00:00Z",
+    "SoftwareId": "2.0.0__BIOS.Setup.1-1",
+    "RelatedItem": []
+  },
+  "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-7.20.30.00__iDRAC.Embedded.1-1": {
+    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-7.20.30.00__iDRAC.Embedded.1-1",
+    "Id": "Installed-0-7.20.30.00__iDRAC.Embedded.1-1",
+    "Name": "Integrated Dell Remote Access Controller",
+    "Version": "7.20.30.00",
+    "Updateable": true,
+    "Status": {
+      "Health": "OK",
+      "State": "Enabled"
+    },
+    "ReleaseDate": "2026-01-01T00:00:00Z",
+    "SoftwareId": "7.20.30.00__iDRAC.Embedded.1-1",
+    "RelatedItem": []
+  },
+  "/redfish/v1/UpdateService/FirmwareInventory/Previous-0-7.10.00.00__iDRAC.Embedded.1-1": {
+    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Previous-0-7.10.00.00__iDRAC.Embedded.1-1",
+    "Id": "Previous-0-7.10.00.00__iDRAC.Embedded.1-1",
+    "Name": "Integrated Dell Remote Access Controller",
+    "Version": "7.10.00.00",
+    "Updateable": true,
+    "Status": {
+      "Health": "OK",
+      "State": "Enabled"
+    },
+    "ReleaseDate": "2026-01-01T00:00:00Z",
+    "SoftwareId": "7.10.00.00__iDRAC.Embedded.1-1",
+    "RelatedItem": []
+  },
+  "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-22.44.10.36__NIC.Slot.3-1-1": {
+    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-22.44.10.36__NIC.Slot.3-1-1",
+    "Id": "Installed-0-22.44.10.36__NIC.Slot.3-1-1",
+    "Name": "Mellanox ConnectX-6 Network Adapter - 00:00:5E:00:53:21",
+    "Version": "22.44.10.36",
+    "Updateable": true,
+    "Status": {
+      "Health": "OK",
+      "State": "Enabled"
+    },
+    "ReleaseDate": "2026-01-01T00:00:00Z",
+    "SoftwareId": "22.44.10.36__NIC.Slot.3-1-1",
+    "RelatedItem": []
+  },
+  "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-23.31.1__NIC.Embedded.1-1-1": {
+    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-23.31.1__NIC.Embedded.1-1-1",
+    "Id": "Installed-0-23.31.1__NIC.Embedded.1-1-1",
+    "Name": "Broadcom Gigabit Ethernet BCM5720 - 00:00:5E:00:53:10",
+    "Version": "23.31.1",
+    "Updateable": true,
+    "Status": {
+      "Health": "OK",
+      "State": "Enabled"
+    },
+    "ReleaseDate": "2026-01-01T00:00:00Z",
+    "SoftwareId": "23.31.1__NIC.Embedded.1-1-1",
+    "RelatedItem": []
+  },
+  "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-2.1.13.2037__BOSS.SL.12-1": {
+    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-2.1.13.2037__BOSS.SL.12-1",
+    "Id": "Installed-0-2.1.13.2037__BOSS.SL.12-1",
+    "Name": "BOSS-N1 Monolithic",
+    "Version": "2.1.13.2037",
+    "Updateable": true,
+    "Status": {
+      "Health": "OK",
+      "State": "Enabled"
+    },
+    "ReleaseDate": "2026-01-01T00:00:00Z",
+    "SoftwareId": "2.1.13.2037__BOSS.SL.12-1",
+    "RelatedItem": []
+  },
+  "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-DOC1__Disk.Bay.0:Enclosure.Internal.0-1": {
+    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-DOC1__Disk.Bay.0:Enclosure.Internal.0-1",
+    "Id": "Installed-0-DOC1__Disk.Bay.0:Enclosure.Internal.0-1",
+    "Name": "PCIe SSD in Slot 0 in Bay 1",
+    "Version": "DOC1",
+    "Updateable": true,
+    "Status": {
+      "Health": "OK",
+      "State": "Enabled"
+    },
+    "ReleaseDate": "2026-01-01T00:00:00Z",
+    "SoftwareId": "DOC1__Disk.Bay.0:Enclosure.Internal.0-1",
+    "RelatedItem": []
+  },
+  "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-00.1B.7D__PSU.Slot.1": {
+    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-00.1B.7D__PSU.Slot.1",
+    "Id": "Installed-0-00.1B.7D__PSU.Slot.1",
+    "Name": "PS1 Status",
+    "Version": "00.1B.7D",
+    "Updateable": true,
+    "Status": {
+      "Health": "OK",
+      "State": "Enabled"
+    },
+    "ReleaseDate": "2026-01-01T00:00:00Z",
+    "SoftwareId": "00.1B.7D__PSU.Slot.1",
+    "RelatedItem": []
+  },
+  "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-1.0.5__CPLD.Embedded.1": {
+    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-1.0.5__CPLD.Embedded.1",
+    "Id": "Installed-0-1.0.5__CPLD.Embedded.1",
+    "Name": "System CPLD",
+    "Version": "1.0.5",
+    "Updateable": false,
+    "Status": {
+      "Health": "OK",
+      "State": "Enabled"
+    },
+    "ReleaseDate": "2026-01-01T00:00:00Z",
+    "SoftwareId": "1.0.5__CPLD.Embedded.1",
+    "RelatedItem": []
+  },
+  "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-1.0.0__GPU.Slot.7": {
+    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-1.0.0__GPU.Slot.7",
+    "Id": "Installed-0-1.0.0__GPU.Slot.7",
+    "Name": "DOC A2 16GB Accelerator",
+    "Version": "1.0.0",
+    "Updateable": false,
+    "Status": {
+      "Health": "OK",
+      "State": "Enabled"
+    },
+    "ReleaseDate": "2026-01-01T00:00:00Z",
+    "SoftwareId": "1.0.0__GPU.Slot.7",
+    "RelatedItem": []
+  }
+}
