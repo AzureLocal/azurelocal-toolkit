@@ -71,7 +71,7 @@
     Force the storage wipe on, as os_configuration.clear_storage: true does.
 .PARAMETER ConfirmWipeDeployedCluster
     One-shot, per run, never read from a file or from os_configuration.clear_storage: lets the storage wipe touch a node that belongs to a deployed cluster
-    (HKLM:\Cluster exists, the Cluster service is installed, or a pool or cluster shared volume belongs to a cluster). Without it such a node is Blocked in the plan
+    (a running Cluster service, HKLM:\Cluster that names a cluster, a clustered or S2D pool, or cluster shared volumes; a Cluster service that is only installed does not count). Without it such a node is Blocked in the plan
     with the reason, and the node-side clear refuses it too. Only meaningful together with the storage wipe.
 .PARAMETER ApprovedWipeList
     The approval of the storage wipe, bound to what the reviewer saw. A Plan run writes wipe-list.json (node, disk serials and a SHA-256 of them) next to plan-report.json;

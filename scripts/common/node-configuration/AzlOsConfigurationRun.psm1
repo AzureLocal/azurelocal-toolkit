@@ -1647,7 +1647,7 @@ function Invoke-AzlOsConfiguration {
         [pscredential]$Credential,
         [hashtable]$NodeAddress,
         [switch]$ClearStorage,
-        # One-shot, per run, never read from a file: wipe leftover storage on a node that belongs to a deployed cluster (HKLM:\Cluster, ClusSvc, a clustered pool or CSV).
+        # One-shot, per run, never read from a file: wipe leftover storage on a node that belongs to a deployed cluster (a running ClusSvc, HKLM:\Cluster with a cluster name, a clustered pool or CSV).
         [switch]$ConfirmWipeDeployedCluster,
         # Apply mode with a non-empty wipe list needs this: the wipe-list.json (or the plan-report.json) of the Plan run the reviewer approved. A disk on this run's list that is not in it stops the run (exit 2) before anything is changed.
         [string]$ApprovedWipeList,
