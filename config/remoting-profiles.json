@@ -1,5 +1,5 @@
 {
-  "$comment": "Remote management security profiles for the OS configuration run. One row per environment class (scenario.environment_class in infrastructure.yml). Read by Resolve-AzlRemotingProfile (scripts/common/remoting/AzlRemotingProfile.psm1); edit the values here, not in code. The 'baseline' block is the denylist: it holds in every class, no override can change it, and the resolver refuses a file that weakens it. No network, subscription, host or lab name belongs in this file.",
+  "$comment": "Remote management security profiles for the OS configuration run. One row per environment class (scenario.environment_class in infrastructure.yml). Read by Resolve-AzlRemotingProfile (scripts/common/remoting/AzlRemotingProfile.psm1); edit the values here, not in code. The 'baseline' block is the denylist: it holds in every class, no override can change it, and the resolver refuses a file that weakens it. The per-class widestPrefixV4/V6, transport.httpsPolicy, bootstrap.approval and sources.any are checked too: a class may be made stricter here, never looser than the floor kept in code (AzlRemotingProfile.psm1, RequiredClassBaseline). No network, subscription, host or lab name belongs in this file.",
   "version": "1.0.0",
   "defaultClass": "production",
   "baseline": {

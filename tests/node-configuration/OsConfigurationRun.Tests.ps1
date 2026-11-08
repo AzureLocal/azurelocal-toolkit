@@ -975,9 +975,11 @@ Describe 'Event feed (os-configuration-events.jsonl)' {
 Describe 'Transport: PowerShell remoting by default, Arc only when asked' {
     BeforeEach {
         $global:AzlBootstrap = [System.Collections.Generic.List[object]]::new()
-        Mock -ModuleName AzlOsConfigurationRun Invoke-AzlRemotingBootstrap {
-            $global:AzlBootstrap.Add([pscustomobject]@{ Node = $Node; Cidr = @($Cidr); Rdp = $Rdp.IsPresent })
-            [pscustomobject]@{ Node = $Node; Opened = @('WINRM-HTTP-In-TCP'); Scope = @('LocalSubnet') + @($Cidr); Listeners = 1; Transport = 'ArcRunCommand' }
+        # The one bootstrap there is: the profile-driven one. The fake records what the profile gave it (sources, RDP, HTTP window) and opens the node.
+        Mock -ModuleName AzlOsConfigurationRun Invoke-AzlWinRmBootstrap {
+            $global:AzlBootstrap.Add([pscustomobject]@{ Node = $Node; Address = $Address; Cidr = @($RemotingProfile.Firewall.RemoteAddress); Rdp = [bool]$RemotingProfile.Firewall.RdpEnabled; Http = [bool]$RemotingProfile.Transport.BootstrapWindowHttp; Approved = $ApprovedBootstrap.IsPresent })
+            $global:AzlOpened += $Address
+            [pscustomobject]@{ Node = $Node; Ok = $true; Route = 'arc'; Attempts = @(); Reason = ''; Result = $null }
         }
         Mock -ModuleName AzlOsConfigurationRun New-AzlArcRunCommandTransport { [pscustomobject]@{ Kind = 'ArcRunCommand' } }
         Mock -ModuleName AzlOsConfigurationRun Start-Sleep {}
@@ -1027,19 +1029,38 @@ Describe 'Transport: PowerShell remoting by default, Arc only when asked' {
         $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply -Extra @{ ApprovedBootstrap = $true; Settings = @{ remoting = @{ bootstrapTransport = 'arc'; allowedSourceCidrs = @('198.51.100.0/24') } } }
         $global:AzlBootstrap.Count | Should -Be 2
         @($global:AzlBootstrap.Node | Sort-Object) | Should -Be @('iic-n01', 'iic-n02')
-        foreach ($b in $global:AzlBootstrap) { $b.Cidr | Should -Contain '198.51.100.0/24'; $b.Cidr | Should -Contain '192.0.2.0/24' }
+        foreach ($b in $global:AzlBootstrap) { $b.Cidr | Should -Contain '198.51.100.0/24'; $b.Cidr | Should -Contain '192.0.2.0/24'; $b.Cidr | Should -Not -Contain 'LocalSubnet'; $b.Http | Should -BeTrue }
         # the bootstrap happens before the node is read or changed, and every call of the script after it uses WinRM
         $global:AzlCalls.Count | Should -BeGreaterThan 0
         foreach ($c in $global:AzlCalls) { $c.Params.Transport | Should -Be 'WinRM' }
         foreach ($rec in $r.Records) {
             $rec.bootstrap.used | Should -BeTrue
-            $rec.bootstrap.transport | Should -Be 'ArcRunCommand'
+            $rec.bootstrap.transport | Should -Be 'arc'
             ($rec.changes | Where-Object id -eq 'RemoteManagement/bootstrap').status | Should -Be 'changed'
         }
         $report = Get-Content -LiteralPath $r.ReportPath -Raw | ConvertFrom-Json -Depth 20
         $report.nodes[0].stepTransports.all | Should -Be 'WinRM'
-        $report.nodes[0].stepTransports.bootstrap | Should -Be 'ArcRunCommand'
+        $report.nodes[0].stepTransports.bootstrap | Should -Be 'arc'
         $report.nodes[0].bootstrap.used | Should -BeTrue
+    }
+
+    It 'bootstrapTransport smb, apply: the pre-check path uses the profile bootstrap for smb too (no separate Arc-only bootstrap)' {
+        Mock -ModuleName AzlOsConfigurationRun Invoke-AzlRemotingPreCheck {
+            foreach ($c in $Candidate) { [pscustomobject]@{ Node = $c.Name; Reachable = $false; Address = @($c.Addresses)[0]; Port = 5985; Result = 'TimedOut'; Credential = 'vault'; Diagnosis = 'closed'; Tried = @($c.Addresses) } }
+        }
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply -Extra @{ ApprovedBootstrap = $true; Settings = @{ remoting = @{ bootstrapTransport = 'smb' } } }
+        $global:AzlBootstrap.Count | Should -Be 2
+        foreach ($b in $global:AzlBootstrap) { $b.Approved | Should -BeTrue; $b.Cidr | Should -Not -Contain 'LocalSubnet' }
+    }
+
+    It 'the legacy Arc bootstrap is gone: no OpenRemoting node script, no Invoke-AzlRemotingBootstrap, no Get-AzlRemotingAllowedCidr' {
+        { Get-AzlNodePayload -Name OpenRemoting } | Should -Throw
+        Get-Command Invoke-AzlRemotingBootstrap -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
+        Get-Command Get-AzlRemotingAllowedCidr -ErrorAction SilentlyContinue | Should -BeNullOrEmpty
+        (Get-Content -LiteralPath $script:ModulePath -Raw) | Should -Not -Match 'Invoke-AzlRemotingBootstrap|Get-AzlRemotingAllowedCidr|OpenRemoting'
+        $setScript = Join-Path (Split-Path $script:EntryScript -Parent) 'Set-AzureLocalNodeConfiguration.ps1'
+        (Get-Content -LiteralPath $setScript -Raw) | Should -Not -Match 'Invoke-AzlRemotingBootstrap|Get-AzlRemotingAllowedCidr|OpenRemoting'
     }
 
     It 'a node whose Arc machine is not Connected is not bootstrapped: the run fails with the diagnosis' {

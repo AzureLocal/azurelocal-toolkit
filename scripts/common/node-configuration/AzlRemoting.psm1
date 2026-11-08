@@ -2,18 +2,19 @@
 <#
 .SYNOPSIS
     How the OS configuration reaches the nodes: PowerShell remoting (WinRM) by default, Azure Arc Run Command only when asked for, and the one-time
-    Arc bootstrap that opens a closed node firewall.
+    bootstrap that opens a closed node firewall (that one lives in scripts/common/remoting: Invoke-AzlWinRmBootstrap, driven by the profile).
 
 .DESCRIPTION
-    Get-AzlRemotingSetting       transport (winrm | winrm_https | arc), UseSsl, Authentication, Port, BootstrapTransport (none | arc | smb | auto; this module's Arc bootstrap acts on 'arc' only, smb and auto are the profile's routes in scripts/common/remoting), AllowedSourceCidrs.
+    Get-AzlRemotingSetting       transport (winrm | winrm_https | arc), UseSsl, Authentication, Port, BootstrapTransport (none | arc | smb | auto; the routes are the profile's, in scripts/common/remoting), AllowedSourceCidrs.
                                  Order of precedence: the run's -Settings (remoting = @{ ... }), the master file (os_configuration.remoting.*), the defaults.
     Get-AzlNodeRemotingAddress   The addresses to try for a node, in order: an override, nodes[].management.ip_address, maintenance_address, the addresses the Arc
                                  agent reports for the management MAC (the address the node holds now).
-    Get-AzlRemotingAllowedCidr   The management network of the file plus the runner and jump server CIDRs that were given.
     Get-AzlRemotingPreCheckFinding       The pre-check, as rows: which node answers on which address, or why not (port closed, timeout, no route, no credential).
     Format-AzlRemotingPreCheckFinding    The one table.
-    Invoke-AzlRemotingBootstrap  Arc Run Command, ONCE per node and only for this: WinRM listener, WinRM-In (and RDP and ICMP when they are in the plan) for the
-                                 source CIDRs. Everything after that goes over WinRM. Arc is never used for any other step in this mode.
+
+    There is no bootstrap in this module. The earlier Arc bootstrap (a node script that opened the management subnet at any width, 5985 and 5986 in every
+    class, RDP without NLA and ICMP regardless of the class) was removed: the one bootstrap is Invoke-AzlWinRmBootstrap, which takes every scope and flag
+    from the remote management profile.
 
     There is no silent fallback to Arc: a node that can't be reached over remoting fails with what is missing and what to do.
 #>
@@ -82,20 +83,6 @@ function Get-AzlRemotingSetting {
     }
 }
 
-function Get-AzlRemotingAllowedCidr {
-    <#
-    .SYNOPSIS
-        The source CIDRs the bootstrap opens WinRM, RDP and ICMP for: the management network of the file plus the runner and jump server CIDRs given.
-    #>
-    [CmdletBinding()]
-    param([System.Collections.IDictionary]$Infrastructure, [string[]]$RunnerCidr = @())
-    $list = [System.Collections.Generic.List[string]]::new()
-    $subnet = if ($Infrastructure) { [string](Get-AzlProp $Infrastructure 'networking.management.subnet' '') } else { '' }
-    if ($subnet) { $list.Add($subnet) }
-    foreach ($c in $RunnerCidr) { if ($c) { $list.Add($c) } }
-    return @($list | Select-Object -Unique)
-}
-
 function Get-AzlNodeRemotingAddress {
     <#
     .SYNOPSIS
@@ -160,18 +147,4 @@ function Format-AzlRemotingPreCheckFinding {
     return ($lines -join [Environment]::NewLine)
 }
 
-function Invoke-AzlRemotingBootstrap {
-    <#
-    .SYNOPSIS
-        Opens remote management on one node through Arc Run Command, once: WinRM listener and WinRM-In (and RDP, ICMP when asked) for the source CIDRs.
-        Returns what the node opened. Throws when the Arc run fails.
-    .PARAMETER ArcTransport
-        An Arc Run Command transport for this node. It is used for this one script and nothing else.
-    #>
-    [CmdletBinding()]
-    param([Parameter(Mandatory)][object]$ArcTransport, [Parameter(Mandatory)][string]$Node, [Parameter(Mandatory)][string[]]$Cidr, [switch]$Rdp, [switch]$Icmp, [switch]$Https)
-    $result = Invoke-AzlNodeScript -Transport $ArcTransport -Node $Node -Script (Get-AzlNodePayload -Name OpenRemoting) -Parameters @{ cidrs = @($Cidr); rdp = $Rdp.IsPresent; icmp = $Icmp.IsPresent; https = $Https.IsPresent } -TimeoutSeconds 300
-    [pscustomobject]@{ Node = $Node; Opened = @($result.opened); Scope = @($result.scope); Listeners = [int]$result.listeners; Transport = $ArcTransport.Kind }
-}
-
-Export-ModuleMember -Function ConvertTo-AzlRemotingProfileOverride, Get-AzlRemotingSetting, Get-AzlRemotingAllowedCidr, Get-AzlNodeRemotingAddress, Get-AzlRemotingPreCheckFinding, Format-AzlRemotingPreCheckFinding, Invoke-AzlRemotingBootstrap
+Export-ModuleMember -Function ConvertTo-AzlRemotingProfileOverride, Get-AzlRemotingSetting, Get-AzlNodeRemotingAddress, Get-AzlRemotingPreCheckFinding, Format-AzlRemotingPreCheckFinding

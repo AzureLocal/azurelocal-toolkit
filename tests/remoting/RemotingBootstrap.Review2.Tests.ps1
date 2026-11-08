@@ -81,7 +81,7 @@ Describe 'F5: no HTTP window, no HTTP from the bootstrap' {
     It 'dmz: the profile has no HTTP window, so the scripts the routes get are the HTTPS-only ones' {
         $script:seen = $null
         $p = Resolve-For 'dmz'
-        $r = Invoke-AzlWinRmBootstrap -RemotingProfile $p -Node 'n1' -Address '192.0.2.11' -Credential $script:Credential -ApprovedBootstrap -Thumbprint $script:Thumb -SmbCommand { param($Node, $Address, $Script, $Cred) $script:seen = $Script; [pscustomobject]@{ Route = 'smb'; Ok = $true; Reason = ''; Result = [pscustomobject]@{ ok = $true } } }
+        $r = Invoke-AzlWinRmBootstrap -RemotingProfile $p -Node 'n1' -Address '192.0.2.11' -Credential $script:Credential -ApprovedBootstrap -Thumbprint $script:Thumb -SmbCommand { param($Node, $Address, $Script, $Account) $script:seen = $Script; [pscustomobject]@{ Route = 'smb'; Ok = $true; Reason = ''; Result = [pscustomobject]@{ ok = $true } } }
         $r.Ok | Should -BeTrue
         $script:seen | Should -Match 'Remove-Item'
         $script:seen | Should -Match 'Enabled False'
@@ -93,7 +93,7 @@ Describe 'F5: no HTTP window, no HTTP from the bootstrap' {
     }
     It 'production keeps the bootstrap window: HTTP is opened, and later removed by the RemoteManagement step' {
         $script:seen = $null
-        $null = Invoke-AzlWinRmBootstrap -RemotingProfile (Resolve-For 'production') -Node 'n1' -Address '192.0.2.11' -Credential $script:Credential -ApprovedBootstrap -SmbCommand { param($Node, $Address, $Script, $Cred) $script:seen = $Script; [pscustomobject]@{ Route = 'smb'; Ok = $true; Reason = ''; Result = $null } }
+        $null = Invoke-AzlWinRmBootstrap -RemotingProfile (Resolve-For 'production') -Node 'n1' -Address '192.0.2.11' -Credential $script:Credential -ApprovedBootstrap -SmbCommand { param($Node, $Address, $Script, $Account) $script:seen = $Script; [pscustomobject]@{ Route = 'smb'; Ok = $true; Reason = ''; Result = $null } }
         $script:seen | Should -Match 'Enable-PSRemoting'
         $script:seen | Should -Not -Match 'Remove-Item'
     }
@@ -161,7 +161,7 @@ Describe 'F6: the smb result file' {
     }
     It 'two runs use two different files and nonces' {
         $script:scripts = [System.Collections.Generic.List[string]]::new()
-        $cmd = { param($Node, $Address, $Script, $Cred) $script:scripts.Add($Script); [pscustomobject]@{ Route = 'smb'; Ok = $true; Reason = ''; Result = $null } }
+        $cmd = { param($Node, $Address, $Script, $Account) $script:scripts.Add($Script); [pscustomobject]@{ Route = 'smb'; Ok = $true; Reason = ''; Result = $null } }
         $p = Resolve-For 'lab'
         $null = Invoke-AzlWinRmBootstrap -RemotingProfile $p -Node 'n1' -Address '192.0.2.11' -Credential $script:Credential -SmbCommand $cmd
         $null = Invoke-AzlWinRmBootstrap -RemotingProfile $p -Node 'n1' -Address '192.0.2.11' -Credential $script:Credential -SmbCommand $cmd
