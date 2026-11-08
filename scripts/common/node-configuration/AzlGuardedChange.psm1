@@ -117,13 +117,13 @@ function Send-AzlGuardEvent {
     $transportName = if ($Transport -in 'ArcRunCommand', 'WinRM') { $Transport } else { '' }
     $methodName = if ($Method -in 'Ztp', 'Iso') { $Method } else { '' }
     try {
-        $entry = [ordered]@{ timestamp = (Get-AzlOsEventTimestamp); node = $Node; stage = 'OsConfiguration'; step = $Step; state = $State; evidence = $Evidence; level = $Level; nextAction = $NextAction; method = $methodName; transport = $transportName }
-        foreach ($k in $Data.Keys) { if (-not $entry.Contains($k)) { $entry[$k] = $Data[$k] } }
+        # The sink goes into the report, so its text is redacted like the feed's.
+        $entry = [ordered]@{ timestamp = (Get-AzlOsEventTimestamp); runId = [string]$env:AZL_OSCONFIG_RUN_ID; node = $Node; stage = 'OsConfiguration'; step = $Step; state = $State; evidence = (Protect-AzlOsEventText -Text $Evidence); level = $Level; nextAction = (Protect-AzlOsEventText -Text $NextAction); method = $methodName; transport = $transportName }
+        foreach ($k in $Data.Keys) { if (-not $entry.Contains($k)) { $entry[$k] = Protect-AzlOsEventValue -Value $Data[$k] } }
         $Context.Sink.Add([pscustomobject]$entry)
         if (-not $Context.Path) { return }
-        # The feed carries the states of the contract only; anything else stays in the sink (and so in the report).
-        $contract = @((Get-AzlOsConfigurationEventState).Values | ForEach-Object { $_ })
-        if ($State -notin $contract) { Write-Verbose "Event $State is not in the feed's contract; kept in the report only."; return }
+        # The feed carries the states of the one registry (Get-AzlOsConfigurationEventState); anything else stays in the sink (and so in the report).
+        if (-not (Test-AzlOsConfigurationEventState -State $State)) { Write-Verbose "Event $State is not in the registry of states; kept in the report only."; return }
         $schema = if ($Context.PSObject.Properties['SchemaVersion']) { [string]$Context.SchemaVersion } else { '' }
         $payload = if ($Context.PSObject.Properties['PayloadVersion']) { [string]$Context.PayloadVersion } else { '' }
         $null = Write-AzlOsConfigurationEvent -Path $Context.Path -Node $Node -State $State -Step $Step -Evidence $Evidence -Level $Level -NextAction $NextAction -Method $methodName -Transport $transportName -PayloadVersion $payload -SchemaVersion $schema -Data $Data
@@ -381,15 +381,19 @@ function Format-AzlGuardSummary {
     param([Parameter(Mandatory)][string]$Node, [AllowNull()][object[]]$Entry = @())
     $lines = [System.Collections.Generic.List[string]]::new()
     foreach ($e in @($Entry | Where-Object { $_ })) {
-        $reason = if ($e.reason) { ": $($e.reason)" } else { '' }
-        $updated = if ($e.updatedUtc) { ", updated $($e.updatedUtc)" } else { '' }
-        $lines.Add("- ${Node}: change $($e.changeId) ($($e.group)) **$($e.state)**$reason [$($e.source)$updated]")
-        if ($e.verdict) { $lines.Add("  - verdict: $($e.verdict)") }
-        foreach ($c in @($e.checks)) { $lines.Add("  - check $($c.name): $(if ($c.ok) { 'ok' } else { 'FAILED' })$(if ($c.detail) { " ($($c.detail))" })") }
-        foreach ($r in @($e.repairs)) { $lines.Add("  - repair: $r") }
-        if (@($e.log).Count) {
+        # An entry from an older node script may lack fields: every one is read with a default.
+        $g = { param($n, $d) Get-AzlProp $e $n $d }
+        $reasonText = [string](& $g 'reason' ''); $updatedText = [string](& $g 'updatedUtc' '')
+        $reason = if ($reasonText) { ": $reasonText" } else { '' }
+        $updated = if ($updatedText) { ", updated $updatedText" } else { '' }
+        $lines.Add("- ${Node}: change $(& $g 'changeId' '') ($(& $g 'group' '')) **$(& $g 'state' '')**$reason [$(& $g 'source' 'run')$updated]")
+        if (& $g 'verdict' '') { $lines.Add("  - verdict: $(& $g 'verdict' '')") }
+        foreach ($c in @(& $g 'checks' @())) { $lines.Add("  - check $($c.name): $(if ($c.ok) { 'ok' } else { 'FAILED' })$(if ($c.detail) { " ($($c.detail))" })") }
+        foreach ($r in @(& $g 'repairs' @())) { $lines.Add("  - repair: $r") }
+        $log = @(& $g 'log' @())
+        if ($log.Count) {
             $lines.Add('  - node log (last lines):')
-            foreach ($l in @($e.log)) { $lines.Add("    $l") }
+            foreach ($l in $log) { $lines.Add("    $l") }
         }
     }
     return $lines.ToArray()
@@ -528,7 +532,9 @@ function Invoke-AzlGuardedChange {
 
     # ---- 2. close the session and wait
     if (Test-AzlTransportMember -Transport $Transport -Name 'CloseSession') { & $Transport.CloseSession $Transport $Node }
-    $reconnectDeadline = $stagedAt.AddMinutes([double]$cfgSetting.reconnectWaitMinutes + $confirmMinutes * 0)
+    # A hard deadline on the HOST's clock: the wait never outlasts reconnectWaitMinutes, whatever the node's clock says (a frozen or wrong node clock, a slow read).
+    $reconnectDeadline = $stagedAt.AddMinutes([double]$cfgSetting.reconnectWaitMinutes)
+    $lastNow = $stagedAt
     $token = if ($cookie) { Get-AzlGuardToken -ChangeId $changeId -ScriptHash $scriptHash -Cookie $cookie } else { '' }
     Send-AzlGuardEvent -Context $EventContext -Node $Node -State 'NodeReconnecting' -Transport $Transport.Kind -Evidence "Waiting for $Node to answer again$(if ($isWinRm) { " on $newAddress (then $oldAddress) over WinRM port $port" } else { ' (Arc machine Connected with a newer last status change)' })." -Data (& $data @{})
     $reconnected = $false
@@ -542,6 +548,9 @@ function Invoke-AzlGuardedChange {
     $lastQuietRead = $stagedAt
     while ($true) {
         $now = & $Clock.Now
+        # The node's clock between two reads moves by the time that really passed on the host, not by what a sleep was asked for.
+        if ($nodeNow -and $now -gt $lastNow) { $nodeNow = $nodeNow.Add($now - $lastNow) }
+        $lastNow = $now
         $address = ''
         $readNow = $false
         if ($isWinRm) {
@@ -579,6 +588,7 @@ function Invoke-AzlGuardedChange {
                     $nodeNow = ([datetime]::Parse([string]$status.nowUtc, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)).ToUniversalTime()
                     $deadlineText = [string](Get-AzlProp $status.state 'deadlineUtc' '')
                     if ($deadlineText) { $nodeDeadline = ([datetime]::Parse($deadlineText, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)).ToUniversalTime() }
+                    $lastNow = & $Clock.Now
                 }
                 if ($resolved.Phase -ne $lastPhase) {
                     $lastPhase = $resolved.Phase
@@ -591,11 +601,10 @@ function Invoke-AzlGuardedChange {
         }
         # The node's published deadline has passed and the last read was not Committed: the node has reverted (or failed); read once more is done above.
         if ($nodeDeadline -and $nodeNow -and $nodeNow -gt $nodeDeadline.AddSeconds(60) -and $resolved -and -not $resolved.Final) { break }
-        if ($now -ge $reconnectDeadline -and -not ($resolved -and $nodeDeadline -and $nodeNow -lt $nodeDeadline.AddSeconds(60))) { break }
+        # The hard stop. The clock is read again here: a read can take minutes, and the stale $now from the top of the pass must not hide that.
+        if ((& $Clock.Now) -ge $reconnectDeadline) { break }
         Send-AzlTransportHeartbeat -Transport $Transport -Action Tick -Text "$Node to answer again after change $changeId" -Phase $(if ($lastPhase) { $lastPhase } elseif ($resolved) { [string]$resolved.Phase } else { 'no state read yet' })
         & $Clock.Sleep 15
-        # Reading the clock once per pass keeps the nodeNow comparison honest between reads.
-        if ($nodeNow) { $nodeNow = $nodeNow.AddSeconds(15) }
     }
 
     Send-AzlTransportHeartbeat -Transport $Transport -Action End
@@ -631,4 +640,25 @@ function Invoke-AzlGuardedChange {
     }
 }
 
-Export-ModuleMember -Function Get-AzlLastGuardedChange, ConvertTo-AzlGuardReportEntry, Format-AzlGuardSummary, New-AzlWaitHeartbeat, Get-AzlGuardSetting, New-AzlGuardClock, New-AzlGuardEventContext, Send-AzlGuardEvent, Remove-AzlStaleRunCommand, Split-AzlGuardedAction, Test-AzlGuardNetworkPrecondition, Resolve-AzlGuardStatus, Get-AzlGuardToken, New-AzlChangeId, Invoke-AzlGuardedChange
+function Get-AzlPendingGuardState {
+    <#
+    .SYNOPSIS
+        Reads, once and without changing anything, what the node says about guarded changes whose outcome an earlier call could not read (state Unknown). No
+        confirmation token and no cookie are sent, so a change still awaiting its confirmation is only looked at, never confirmed.
+    .OUTPUTS
+        One object per change id: ChangeId, State (Committed, RolledBack, Refused, Failed, InProgress, NotFound or Unknown when the node could not be read), Final, Reason.
+        Only Committed counts as reconciled.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][string]$Node, [Parameter(Mandatory)][string[]]$ChangeId, [Parameter(Mandatory)][object]$Spec)
+    foreach ($id in $ChangeId) {
+        try {
+            $status = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlGuardStatusPayload) -Parameters @{ changeId = $id; mac = [string]$Spec.Management.Mac } -TimeoutSeconds 180 -Tries 1
+            $resolved = Resolve-AzlGuardStatus -Status $status
+            [pscustomobject]@{ ChangeId = $id; State = $resolved.State; Final = [bool]$resolved.Final; Reason = $resolved.Reason }
+        }
+        catch { [pscustomobject]@{ ChangeId = $id; State = 'Unknown'; Final = $false; Reason = "the node could not be read: $($_.Exception.Message)" } }
+    }
+}
+
+Export-ModuleMember -Function Get-AzlPendingGuardState, Get-AzlLastGuardedChange, ConvertTo-AzlGuardReportEntry, Format-AzlGuardSummary, New-AzlWaitHeartbeat, Get-AzlGuardSetting, New-AzlGuardClock, New-AzlGuardEventContext, Send-AzlGuardEvent, Remove-AzlStaleRunCommand, Split-AzlGuardedAction, Test-AzlGuardNetworkPrecondition, Resolve-AzlGuardStatus, Get-AzlGuardToken, New-AzlChangeId, Invoke-AzlGuardedChange

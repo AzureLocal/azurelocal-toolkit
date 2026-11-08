@@ -646,6 +646,40 @@ Describe 'Invoke-AzlNodeConfiguration' {
         ($r.Changes | Where-Object Status -eq 'failed').Detail | Should -Be 'denied'
         @($t.Log | Where-Object Kind -eq 'Apply').Count | Should -Be 1
     }
+    Context 'a call that is cut off' {
+        It 'the error carries the result so far; a timeout is marked indeterminate and the plan and the changes made before it are kept' {
+            $bad = New-ConfiguredState $script:Spec; $bad.san.feature = 'Disabled'
+            $t = New-FakeTransport @($bad) { throw 'Apply is replaced below' }
+            $inner = $t.Invoke
+            $t.Invoke = {
+                param($Self, $Node, [string]$Script, [hashtable]$Parameters, [hashtable]$Secrets, [int]$TimeoutSeconds)
+                if ($Script -match 'function Invoke-Action') { return [pscustomobject]@{ Output = ''; Failed = $true; Error = 'The call to n1 did not finish within 930 seconds and was abandoned.'; State = 'TimedOut' } }
+                & $inner $Self $Node $Script $Parameters $Secrets $TimeoutSeconds
+            }.GetNewClosure()
+            $caught = $null
+            try { $null = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp } catch { $caught = $_ }
+            $caught | Should -Not -BeNullOrEmpty
+            $caught.Exception.Data['AzlState'] | Should -Be 'Indeterminate'
+            $caught.Exception.Message | Should -Match 'INDETERMINATE'
+            $partial = $caught.Exception.Data['AzlPartial']
+            $partial | Should -Not -BeNullOrEmpty
+            $partial.Indeterminate | Should -BeTrue
+            $partial.Converged | Should -BeFalse
+            $partial.Error | Should -Match 'INDETERMINATE'
+            @($partial.Plan | Where-Object { $_.Step -eq 'Mpio' -and $_.Action -eq 'Change' }).Count | Should -BeGreaterThan 0
+            @($partial.Passes).Count | Should -Be 1
+        }
+        It 'a guarded change that is still Unknown at the end is never converged' {
+            $bad = New-ConfiguredState $script:Spec
+            $bad.time.peers = 'time.windows.com,0x8'
+            $good = New-ConfiguredState $script:Spec
+            $unknown = { param($Kind, $P) if ($Kind -eq 'Stage') { @{ v = 1; staged = $true; changeId = $P.changeId; cookie = 'cookie1'; machineSid = 'S-1-5-21-1' } } else { @{ v = 1; found = $true; identityOk = $true; nowUtc = '2026-11-07T10:00:00Z'; state = @{ state = 'Verifying'; reason = 'still checking'; repairs = @(); deadlineUtc = '2026-11-07T11:00:00Z' } } } }
+            $t = New-FakeTransport @($bad, $good) { throw 'no inline apply' } $unknown
+            $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp -GuardSetting @{ reconnectWaitMinutes = 1 }
+            @($r.Guard | Where-Object State -eq 'Unknown').Count | Should -Be 1
+            $r.Converged | Should -BeFalse
+        }
+    }
     Context 'the storage wipe' {
         BeforeEach {
             $infra = Get-Infra; $infra.scenario.storage_architecture = 's2d'

@@ -72,6 +72,14 @@
 .PARAMETER ClearStorage
     Treat leftover local storage as a change (destroys data on local disks; never SAN LUNs). With -Execute. A node that belongs to a deployed cluster
     (HKLM:\Cluster, the Cluster service, a clustered pool or CSV) is Blocked, and the node-side clear refuses it too, unless -ConfirmWipeDeployedCluster is given.
+.PARAMETER ApprovedBootstrap
+    The pipeline approval of the one-time Arc bootstrap (remoting.bootstrapTransport arc). The environment class decides whether it is needed: lab, test and dev need none,
+    production needs it, dmz on every run. Without a needed approval nothing is opened on a node.
+.PARAMETER ReconcileChangeId
+    Guarded changes whose outcome an earlier call could not read (state Unknown). Each is read once, read only (no confirmation is sent), and the report lists its state
+    under pendingGuard. A node is converged only when every one of them is Committed.
+.PARAMETER RunId
+    The id of the run this call belongs to; written on every event line (runId) next to a sequence number (seq). Default: a new id.
 .PARAMETER ConfirmWipeDeployedCluster
     One-shot, per run, never read from a file: lets -ClearStorage wipe a node that belongs to a deployed cluster.
 .PARAMETER ApprovedWipeId
@@ -111,6 +119,9 @@ param(
     [switch]$ClearStorage,
     [switch]$ConfirmWipeDeployedCluster,
     [hashtable]$ApprovedWipeId,
+    [switch]$ApprovedBootstrap,
+    [string[]]$ReconcileChangeId,
+    [string]$RunId,
     [hashtable]$NodeAddress,
     [ValidateSet('', 'Ztp', 'Iso')][string]$EventMethod = '',
     [ValidateSet('', 'Plan', 'Apply', 'Verify')][string]$EventPhase = '',
@@ -122,8 +133,6 @@ param(
     [switch]$SpecOnly,
     [int]$MaxPasses = 6,
     [string]$ReportPath,
-    # The pipeline approval of the one-time bootstrap (production and dmz need it; a settings file can't give it).
-    [switch]$ApprovedBootstrap,
     [switch]$Execute
 )
 Set-StrictMode -Version Latest
@@ -140,6 +149,9 @@ Import-Module (Join-Path (Join-Path $common 'remoting') 'AzlRemotingProfile.psm1
 Import-Module (Join-Path (Join-Path $common 'remoting') 'AzlRemotingBootstrap.psm1') -Force
 
 function Write-Line([string]$Text) { Write-Information -MessageData $Text -InformationAction Continue }
+
+# One run id on every event line: the wrapper's, else a new one for this call.
+if ($RunId) { $env:AZL_OSCONFIG_RUN_ID = $RunId } elseif (-not $env:AZL_OSCONFIG_RUN_ID) { $env:AZL_OSCONFIG_RUN_ID = '{0:yyyyMMddTHHmmssZ}-{1}' -f [datetime]::UtcNow, [guid]::NewGuid().ToString('N').Substring(0, 6) }
 
 Set-AzlNodeRetryPolicy -Tries $RetryTries -DelaySeconds $RetryDelaySeconds
 $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation:$SkipValidation
@@ -286,74 +298,118 @@ $guardSetting = @{}
 if ($Settings) { foreach ($k in 'networkRollbackMinutes', 'networkStableSeconds', 'reconnectWaitMinutes', 'staleRunCommandMinutes', 'addressProbe') { if ($Settings.ContainsKey($k)) { $guardSetting[$k] = $Settings[$k] } } }
 $null = Get-AzlGuardSetting -Setting $guardSetting
 $djLatch = @{ Tripped = $false; Reason = '' } # DOMAINJOIN HOOK: one latch for all nodes; the first rejected join credential stops every later use of it
-$results = foreach ($s in $specs) {
-    Write-Line "== $($s.Name)"
-    $wipeArgs = @{}
-    if ($ApprovedWipeId) { $wipeArgs.ApprovedWipeId = $(if ($ApprovedWipeId.ContainsKey($s.Name)) { @($ApprovedWipeId[$s.Name]) } else { @() }) }
-    Invoke-AzlNodeConfiguration -Spec $s -Transport $nodeTransports[$s.Name] -Execute:$Execute -Step $steps -ClearStorage:$ClearStorage -ConfirmWipeDeployedCluster:$ConfirmWipeDeployedCluster @wipeArgs -NoRestart:$NoRestart -MaxPasses $MaxPasses -GuardSetting $guardSetting -EventContext $eventContext -SbeTransport $sbeTransport -DomainJoinLatch $djLatch
+$results = [System.Collections.Generic.List[object]]::new()
+
+# ---- what the report and the closing lines say about the run, from the results so far (a run that is cut short still has a true report)
+function Get-SbeMissing { @(if ($bundle) { $results | Where-Object { @($_.Plan | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -ne 'Ok' }).Count } }) }
+function Get-SanProblem {
+    $found = @()
+    if ((Get-AzlProp $infra 'scenario.storage_architecture' 's2d') -eq 'san') {
+        $sets = @{}
+        foreach ($r in $results) { if (-not (Get-AzlProp $r 'Error' '')) { $sets[$r.Node] = @(Get-AzlProp $r.State 'san.disks' @() | ForEach-Object { $_.uid } | Sort-Object) -join ',' } }
+        if (@($sets.Values | Select-Object -Unique).Count -gt 1) { $found += "The nodes don't see the same SAN disks (UniqueIds differ): $(($sets.GetEnumerator() | ForEach-Object { "$($_.Key)=[$($_.Value)]" }) -join '; ')" }
+    }
+    return $found
 }
-foreach ($r in $results) {
-    Write-Line (Format-AzlPlan -Plan @($r.Plan | Where-Object { $_.Action -ne 'Ok' -or -not $Execute }))
-    foreach ($c in $r.Changes) { Write-Line "   [$($c.Status)] $($c.Id): $($c.Detail)" }
+function Write-NodeReport {
+    # The report the ARM parameter generator and the one-run wrapper read. Written in finally, so a run that was cut short leaves the changes made so far, and says which call
+    # failed and whether its outcome is indeterminate.
+    $sbeMissing = @(Get-SbeMissing)
+    $report = [ordered]@{
+        schemaVersion = 1
+        generatedUtc  = [datetime]::UtcNow.ToString('o')
+        executed      = [bool]$Execute
+        complete      = ($results.Count -eq @($specs).Count)
+        transport     = $remoting.Kind
+        sbeDelivery   = $sbeDelivery
+        sbeNotDelivered = @($sbeMissing | ForEach-Object { $_.Node })
+        remoting      = [ordered]@{ transport = $remoting.Transport; authentication = $remoting.Authentication; ssl = $remoting.UseSsl; port = $remoting.Port; bootstrapTransport = $remoting.BootstrapTransport }
+        sanProblems   = @(Get-SanProblem)
+        nodes         = @($results | ForEach-Object {
+                $pendingGuard = @(Get-AzlProp $_ 'PendingGuard' @())
+                [ordered]@{
+                    name      = $_.Node
+                    hostname  = [string](Get-AzlProp $_.State 'host' '')
+                    osVersion = [string](Get-AzlProp $_.State 'os' '')
+                    converged = ([bool]$_.Converged -and -not (Get-AzlProp $_ 'Error' '') -and @($pendingGuard | Where-Object { $_.State -ne 'Committed' }).Count -eq 0)
+                    error     = [string](Get-AzlProp $_ 'Error' '')
+                    indeterminate = [bool](Get-AzlProp $_ 'Indeterminate' $false)
+                    transport = $nodeTransports[$_.Node].Kind
+                    address   = $_.Address
+                    stepTransports = [ordered]@{ all = $nodeTransports[$_.Node].Kind; bootstrap = $(if ($bootstrapRecords.ContainsKey($_.Node)) { [string]$bootstrapRecords[$_.Node].Route } else { '' }) }
+                    bootstrap = $(if ($bootstrapRecords.ContainsKey($_.Node)) { [ordered]@{ used = $true; transport = [string]$bootstrapRecords[$_.Node].Route; opened = @($bootstrapRecords[$_.Node].Opened); scope = @($bootstrapRecords[$_.Node].Scope) } } else { [ordered]@{ used = $false } })
+                    # This run's guarded changes, each with the node's own record of it, and the node's newest change when this run made none (read only).
+                    guard     = @(ConvertTo-AzlGuardReportEntry -Outcome @($_.Guard) -Last (Get-AzlProp $_ 'LastGuard'))
+                    pendingGuard = @($pendingGuard | ForEach-Object { [ordered]@{ changeId = $_.ChangeId; group = (Get-AzlProp $_ 'Group' ''); state = $_.State; reason = $_.Reason } })
+                    events    = @($_.Events)
+                    restarted = $_.Restarted
+                    domainJoin = $_.DomainJoin # DOMAINJOIN HOOK
+                    ports     = @(Get-AzlProp $_.State 'nics' @() | ForEach-Object { [ordered]@{ osName = $_.n; mac = $_.mac; status = $_.st } })
+                    sanDisks  = @(Get-AzlProp $_.State 'san.disks' @())
+                    fcPorts   = @(Get-AzlProp $_.State 'san.fc' @())
+                    changes   = @($_.Changes)
+                    wipe      = @(Get-AzlNodeWipeItem -Plan $_.Plan -State $_.State)
+                    plan      = @($_.Plan | ForEach-Object { [ordered]@{ step = $_.Step; item = $_.Item; current = $_.Current; desired = $_.Desired; action = $_.Action; note = $_.Note } })
+                }
+            })
+    }
+    $report | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $ReportPath -Encoding utf8NoBOM
+    Write-Line "Report: $ReportPath"
 }
 
-# ---- the SBE package: said plainly, because nothing else fails when it is missing
-$sbeMissing = @(if ($bundle) { $results | Where-Object { @($_.Plan | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -ne 'Ok' }).Count } })
-if ($bundle -and $sbeMissing.Count) {
-    Write-Line "SBE package NOT delivered to: $(($sbeMissing | ForEach-Object { $_.Node }) -join ', ') (hardware.sbe.delivery = $sbeDelivery). The other steps are not affected; the OEM drivers wait for the package."
-}
-
-# ---- every node must see the same SAN disks
-$sanProblems = @()
-if ((Get-AzlProp $infra 'scenario.storage_architecture' 's2d') -eq 'san') {
-    $sets = @{}
-    foreach ($r in $results) { $sets[$r.Node] = @(Get-AzlProp $r.State 'san.disks' @() | ForEach-Object { $_.uid } | Sort-Object) -join ',' }
-    if (@($sets.Values | Select-Object -Unique).Count -gt 1) { $sanProblems += "The nodes don't see the same SAN disks (UniqueIds differ): $(($sets.GetEnumerator() | ForEach-Object { "$($_.Key)=[$($_.Value)]" }) -join '; ')" }
-}
-foreach ($p in $sanProblems) { Write-Warning $p }
-
-# ---- the report the ARM parameter generator reads
-$report = [ordered]@{
-    schemaVersion = 1
-    generatedUtc  = [datetime]::UtcNow.ToString('o')
-    executed      = [bool]$Execute
-    transport     = $remoting.Kind
-    sbeDelivery   = $sbeDelivery
-    sbeNotDelivered = @($sbeMissing | ForEach-Object { $_.Node })
-    remoting      = [ordered]@{ transport = $remoting.Transport; authentication = $remoting.Authentication; ssl = $remoting.UseSsl; port = $remoting.Port; bootstrapTransport = $remoting.BootstrapTransport }
-    sanProblems   = $sanProblems
-    nodes         = @($results | ForEach-Object {
-            [ordered]@{
-                name      = $_.Node
-                hostname  = [string](Get-AzlProp $_.State 'host' '')
-                osVersion = [string](Get-AzlProp $_.State 'os' '')
-                converged = $_.Converged
-                transport = $nodeTransports[$_.Node].Kind
-                address   = $_.Address
-                stepTransports = [ordered]@{ all = $nodeTransports[$_.Node].Kind; bootstrap = $(if ($bootstrapRecords.ContainsKey($_.Node)) { [string]$bootstrapRecords[$_.Node].Route } else { '' }) }
-                bootstrap = $(if ($bootstrapRecords.ContainsKey($_.Node)) { [ordered]@{ used = $true; transport = [string]$bootstrapRecords[$_.Node].Route; opened = @($bootstrapRecords[$_.Node].Opened); scope = @($bootstrapRecords[$_.Node].Scope) } } else { [ordered]@{ used = $false } })
-                # This run's guarded changes, each with the node's own record of it, and the node's newest change when this run made none (read only).
-                guard     = @(ConvertTo-AzlGuardReportEntry -Outcome @($_.Guard) -Last $_.LastGuard)
-                events    = @($_.Events)
-                restarted = $_.Restarted
-                domainJoin = $_.DomainJoin # DOMAINJOIN HOOK
-                ports     = @(Get-AzlProp $_.State 'nics' @() | ForEach-Object { [ordered]@{ osName = $_.n; mac = $_.mac; status = $_.st } })
-                sanDisks  = @(Get-AzlProp $_.State 'san.disks' @())
-                fcPorts   = @(Get-AzlProp $_.State 'san.fc' @())
-                changes   = @($_.Changes)
-                wipe      = @(Get-AzlNodeWipeItem -Plan $_.Plan -State $_.State)
-                plan      =@($_.Plan | ForEach-Object { [ordered]@{ step = $_.Step; item = $_.Item; current = $_.Current; desired = $_.Desired; action = $_.Action; note = $_.Note } })
+try {
+    foreach ($s in $specs) {
+        Write-Line "== $($s.Name)"
+        $wipeArgs = @{}
+        if ($ApprovedWipeId) { $wipeArgs.ApprovedWipeId = $(if ($ApprovedWipeId.ContainsKey($s.Name)) { @($ApprovedWipeId[$s.Name]) } else { @() }) }
+        $nodeResult = $null
+        try {
+            $nodeResult = Invoke-AzlNodeConfiguration -Spec $s -Transport $nodeTransports[$s.Name] -Execute:$Execute -Step $steps -ClearStorage:$ClearStorage -ConfirmWipeDeployedCluster:$ConfirmWipeDeployedCluster @wipeArgs -NoRestart:$NoRestart -MaxPasses $MaxPasses -GuardSetting $guardSetting -EventContext $eventContext -SbeTransport $sbeTransport -DomainJoinLatch $djLatch
+        }
+        catch {
+            # A call that failed or timed out ends this node, not the report: what was done so far is kept, the error is on the node, and the exit code is 1.
+            $indeterminate = ($_.Exception.Data['AzlState'] -eq 'Indeterminate')
+            $nodeResult = $_.Exception.Data['AzlPartial']
+            if (-not $nodeResult) {
+                $nodeResult = [pscustomobject]@{ Node = $s.Name; Transport = $nodeTransports[$s.Name].Kind; Plan = @(); Changes = @(); Blocked = @(); Restarted = $false; Converged = $false; State = $null; Passes = @(); Executed = [bool]$Execute; Guard = @(); Events = @(); Address = ''; DomainJoin = $null; Error = $_.Exception.Message; Indeterminate = $indeterminate }
             }
-        })
+            Write-Warning "$($s.Name): $($_.Exception.Message)$(if ($indeterminate) { ' (indeterminate: read the node again before anything else)' })"
+        }
+        # A guarded change an earlier call could not read (state Unknown) is looked at, read only, before the node is called converged.
+        if ($ReconcileChangeId) {
+            $pendingGuard = @(Get-AzlPendingGuardState -Transport $nodeTransports[$s.Name] -Node $s.Name -ChangeId $ReconcileChangeId -Spec $s)
+            Add-Member -InputObject $nodeResult -NotePropertyName PendingGuard -NotePropertyValue $pendingGuard -Force
+            foreach ($g in $pendingGuard) { Write-Line "   [guard] change $($g.ChangeId): $($g.State). $($g.Reason)" }
+        }
+        $results.Add($nodeResult)
+    }
+    foreach ($r in $results) {
+        Write-Line (Format-AzlPlan -Plan @($r.Plan | Where-Object { $_.Action -ne 'Ok' -or -not $Execute }))
+        foreach ($c in $r.Changes) { Write-Line "   [$($c.Status)] $($c.Id): $($c.Detail)" }
+    }
+
+    # ---- the SBE package: said plainly, because nothing else fails when it is missing
+    $sbeMissing = @(Get-SbeMissing)
+    if ($bundle -and $sbeMissing.Count) {
+        Write-Line "SBE package NOT delivered to: $(($sbeMissing | ForEach-Object { $_.Node }) -join ', ') (hardware.sbe.delivery = $sbeDelivery). The other steps are not affected; the OEM drivers wait for the package."
+    }
+
+    # ---- every node must see the same SAN disks
+    $sanProblems = @(Get-SanProblem)
+    foreach ($p in $sanProblems) { Write-Warning $p }
 }
-$report | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $ReportPath -Encoding utf8NoBOM
-Write-Line "Report: $ReportPath"
+finally {
+    # The report is written whatever happened above: with the changes so far, and the error and the indeterminate mark of a call that was cut off.
+    Write-NodeReport
+}
 
 $blocked = @($results | ForEach-Object { $_.Blocked })
+$errored = @($results | Where-Object { Get-AzlProp $_ 'Error' '' })
+$unreconciled = @($results | ForEach-Object { Get-AzlProp $_ 'PendingGuard' @() } | Where-Object { $_.State -ne 'Committed' })
 $notConverged = @($results | Where-Object { $Execute -and -not $_.Converged })
 $pending = @($results | ForEach-Object { $_.Plan } | Where-Object { $_.Action -eq 'Change' })
-if ($blocked.Count -or $notConverged.Count -or $sanProblems.Count) {
-    Write-Line "NOT READY: $($blocked.Count) blocked item(s), $($notConverged.Count) node(s) not converged."
+if ($blocked.Count -or $notConverged.Count -or $sanProblems.Count -or $errored.Count -or $unreconciled.Count) {
+    Write-Line "NOT READY: $($blocked.Count) blocked item(s), $($notConverged.Count) node(s) not converged, $($errored.Count) node(s) with a failed or timed-out call$(if (@($errored | Where-Object { $_.Indeterminate }).Count) { ' (indeterminate)' }), $($unreconciled.Count) guarded change(s) not yet confirmed."
     exit 1
 }
 if (-not $Execute) { Write-Line "Plan: $($pending.Count) change(s) needed across $($results.Count) node(s)." }
