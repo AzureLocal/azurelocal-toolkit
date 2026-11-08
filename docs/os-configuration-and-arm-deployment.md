@@ -303,6 +303,7 @@ Run events (node `*`):
 | `RunStarted` | the inputs are valid and the run begins. `evidence` names the nodes | `nodes` (array of names; a viewer clears exactly these nodes), `mode`, `cluster`, `schemaVersion` (the master file's `_metadata.schema_version`), `wrapperVersion` |
 | `PlanCompleted` | every node was planned (read only) | `changes`, `blocked`, `mode` |
 | `WipeListPublished` | the wipe list was written (`Warning` when disks will be wiped) | `wipeCount`, `clearStorage`, `wipe` (array of `{ node, disks }`) |
+| `WipeListApproved`, `WipeListRejected` | Apply was bound to the approved wipe list (`-ApprovedWipeList`): it matched, or a disk was not on it and the run stopped with exit code 2 before anything changed | `wipeCount`, `hash`, `approvedHash` |
 | `RunCompleted` | last event; also written when the run stops on bad input or an error | `exitCode`, `converged`, `total`, `mode` |
 
 Node events:
@@ -333,6 +334,8 @@ Step events (`step` is one of `RemoteManagement`, `Network`, `Dns`, `Time`, `Hos
 Domain join (step `DomainJoin`, Active Directory designs): `DomainJoinPlanned`, `DomainJoinApplying`, `DomainJoined`, `DomainAdminsConfigured` (the LCM user, or the listed principals, were added to the node's local Administrators) and `DomainJoinFailed` (`evidence` is the AD error). A viewer such as azurelocal-sonar switches the account it reads a node's logs with from the local account to the domain account only after both `DomainJoined` and `DomainAdminsConfigured`: before the second, a domain account is not an administrator of the node.
 
 Guarded network change (step `Network`): `NetworkChangeStaged`, `NetworkChangeVerifying`, `NetworkChangeAwaitingConfirm` (`confirmMinutes`, `confirmBy`), `NetworkChangeCommitted`, `NetworkChangeRepaired` (`rung`), `NetworkChangeRolledBack` (`reason`: the node's own reason) and `NetworkChangeRefused`. They carry the optional fields `changeId`, `rung`, `reason`, `confirmMinutes` and `confirmBy` (the UTC time the confirmation window ends). The contract is section 6 of the OS configuration design in the platform repository (`pmo/azure-local/os-configuration-design.md`).
+
+Every line carries `runId` (the id of the run; a feed path that is reused keeps the lines of every run, and the id tells them apart) and `seq` (1, 2, 3 ... per run id in the file). Free text is redacted before it is written (passwords, tokens, bearer headers, SAS signatures, keys, node result lines become `***`). The one registry of states is `Get-AzlOsConfigurationEventState`; besides the tables above it holds `StaleRunCommandDeleted` (step `Transport`). Apply with a non-empty wipe list needs `-ApprovedWipeList` (the `wipe-list.json` of the Plan run, with node and disk serials and a SHA-256), and a node that belongs to a deployed cluster is wiped only with the one-shot `-ConfirmWipeDeployedCluster`.
 
 Order for one node in Apply mode: `NodeStarted`, `MethodResolved`, `StepPlanned`/`StepSkipped` for every step, `StepApplying`, `StepApplied` (or `StepFailed`), `StepVerified`, then `NodeConverged`, `NodeFailed` or `NodeBlocked`. A node whose plan shows nothing to change goes straight to `NodeConverged`. Run `Get-Content os-configuration-events.jsonl -Wait` to watch a run.
 
