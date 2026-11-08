@@ -90,7 +90,7 @@ function Get-RuleState([string]$name) {
     }
 }
 # The rules that let WinRM in, found by what they allow (inbound TCP 5985 or 5986), not by a name: the names differ by Windows version
-# (WINRM-HTTP-In-TCP, WINRM-HTTP-In-TCP-PUBLIC, ...). The rules of this tool are left out.
+# (they differ by Windows version). The rules of this tool are left out.
 function Get-WinRmRuleName {
     $names = @()
     foreach ($f in @(Get-NetFirewallPortFilter -Protocol TCP -ErrorAction SilentlyContinue | Where-Object { @($_.LocalPort) -contains '5985' -or @($_.LocalPort) -contains '5986' })) {

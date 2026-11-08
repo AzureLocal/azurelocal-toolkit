@@ -269,8 +269,9 @@ function Compare-AzlRemotingState {
     $desiredLocal = @($Spec.ManagementIp, $Spec.CurrentAddress | Where-Object { $_ -and $_ -in $own } | Select-Object -Unique | ForEach-Object { ConvertTo-RmAddress $_ })
     if ($desiredLocal.Count -eq 0) { $desiredLocal = @('Any') }
     foreach ($r in $Spec.Rules) {
-        $have = @($rules | Where-Object { $_.name -eq $r.name }) | Select-Object -First 1
-        $label = "firewall $($r.name)"
+        $ruleName = if ($r.Contains('name')) { [string]$r['name'] } else { '' }
+        $have = @($rules | Where-Object { $ruleName -and $_.name -eq $ruleName }) | Select-Object -First 1
+        $label = "firewall $ruleName"
         switch ($r.kind) {
             'managed' {
                 if ($r.desired -eq 'present') {

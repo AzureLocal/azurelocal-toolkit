@@ -184,7 +184,7 @@ function Invoke-AzlSmbBootstrap {
     $steps.Add("node $Node")
     $password = $Credential.GetNetworkCredential().Password
     $user = $Credential.UserName
-    $fail = { param($why) [pscustomobject]@{ Route = 'smb'; Ok = $false; Reason = (Format-AzlRedacted $why @($password)); Result = $null; Steps = $steps.ToArray() } }
+    $fail = { param($why) [pscustomobject]@{ Route = 'smb'; Ok = $false; Reason = (Format-AzlRedacted $why @($password)); Result = $null; Steps = $steps } }
     if (-not $SkipPlatformCheck -and -not $IsWindows) { return (& $fail 'The smb route needs a Windows orchestrator (sc.exe and net use). This host is not Windows; use the arc route or open WinRM from the console or the BMC.') }
     if (-not (& $PortTest $Address 445)) { return (& $fail "TCP 445 on $Address is not reachable from this host.") }
     $steps.Add('TCP 445 answers')
@@ -227,7 +227,7 @@ function Invoke-AzlSmbBootstrap {
     $result = Read-AzlBootstrapResult -Text $text
     if (-not $result) { return (& $fail "No result from the node within $WaitSeconds s (the script did not write $($script:ResultFile)).") }
     if (-not $result.ok) { return (& $fail "The script on the node failed: $(Format-AzlRedacted ([string]$result.err) @($password))") }
-    [pscustomobject]@{ Route = 'smb'; Ok = $true; Reason = ''; Result = $result; Steps = $steps.ToArray() }
+    [pscustomobject]@{ Route = 'smb'; Ok = $true; Reason = ''; Result = $result; Steps = $steps }
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -288,7 +288,7 @@ function Invoke-AzlArcBootstrap {
     )
     $steps = [System.Collections.Generic.List[string]]::new()
     $steps.Add("node $Node")
-    $fail = { param($why, $timedOut) [pscustomobject]@{ Route = 'arc'; Ok = $false; Reason = $why; Result = $null; Steps = $steps.ToArray(); TimedOut = [bool]$timedOut } }
+    $fail = { param($why, $timedOut) [pscustomobject]@{ Route = 'arc'; Ok = $false; Reason = $why; Result = $null; Steps = $steps; TimedOut = [bool]$timedOut } }
     try {
         $stale = @(Remove-AzlStaleRunCommand -MachineId $ArcResourceId -Arm $Arm -Now (& $Clock))
         if ($stale.Count) { $steps.Add("deleted $($stale.Count) stale run command(s): $($stale -join ', ')") }
@@ -321,7 +321,7 @@ function Invoke-AzlArcBootstrap {
         if ($state -ne 'Succeeded' -and -not $result) { return (& $fail "The run command ended in state '$state': $([string](Get-AzlProp $run 'properties.instanceView.error' ''))" $false) }
         if (-not $result) { return (& $fail 'The run command finished but wrote no result line.' $false) }
         if (-not $result.ok) { return (& $fail "The script on the node failed: $([string]$result.err)" $false) }
-        return [pscustomobject]@{ Route = 'arc'; Ok = $true; Reason = ''; Result = $result; Steps = $steps.ToArray(); TimedOut = $false }
+        return [pscustomobject]@{ Route = 'arc'; Ok = $true; Reason = ''; Result = $result; Steps = $steps; TimedOut = $false }
     }
     catch { return (& $fail "The Arc call failed: $($_.Exception.Message)" $false) }
     finally {
