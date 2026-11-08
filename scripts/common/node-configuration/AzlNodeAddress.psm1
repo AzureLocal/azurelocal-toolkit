@@ -618,6 +618,25 @@ function Read-AzlNodeIdentity {
     }
 }
 
+function Get-AzlSessionFailureKind {
+    <#
+    .SYNOPSIS
+        What a failed attempt to open a session or read a node means: 'Refused' (the node answered and said no to the credential), 'Unreachable' (it did not
+        answer: down, restarting, a timeout, a connection reset or closed) or 'Other' (anything else; quoted as it is).
+    .DESCRIPTION
+        Only a real refusal is a credential problem: WinRM 'Access is denied', 0x80070005, 'The user name or password is incorrect', HTTP 401. A node that is
+        shutting down or starting up gives timeouts, resets and 'the connection was closed'; those are retried, never reported as a refused credential. The phrases
+        are specific on purpose: the word 'authentication' alone also appears in WinRM errors about a domain controller that cannot be reached.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowNull()][AllowEmptyString()][string]$Message)
+    if ([string]::IsNullOrWhiteSpace($Message)) { return 'Other' }
+    if ($Message -match 'access is denied|0x80070005|user name or password is incorrect|\b401\b|logon failure|unauthori[sz]ed|refused the credential|credentials? (was|were|is|are) (refused|rejected|not accepted)|authentication failed|bad credentials') { return 'Refused' }
+    if ($Message -match 'timed out|time out|timeout|did not (answer|respond|finish)|no response|connection (was )?(reset|closed|aborted|lost)|closed by the remote host|forcibly closed|actively refused|connection refused|0x80338[0-9a-f]{3}|0x80072e[ef][0-9a-f]|cannot be resolved|name resolution|network (path|is unreachable)|host is (down|unreachable)|no route to host|broken pipe|i/o operation has been aborted|is shutting down|restarting|abandoned|cannot complete the operation') { return 'Unreachable' }
+    return 'Other'
+}
+
 function Select-AzlVerifiedNodeAddress {
     <#
     .SYNOPSIS
@@ -645,12 +664,16 @@ function Select-AzlVerifiedNodeAddress {
         [Parameter(Mandatory)][object]$Expected,
         [AllowNull()][scriptblock]$IdentityReader,
         [AllowNull()][scriptblock]$EndpointResolver,
-        [AllowNull()][object]$ReaderState
+        [AllowNull()][object]$ReaderState,
+        # A read that finds the node unreachable (restarting, a timeout, a reset) is tried again: this many tries, this many seconds apart. A refusal is never retried.
+        [ValidateRange(1, 20)][int]$UnreachableTries = 3,
+        [ValidateRange(0, 300)][int]$UnreachableDelaySeconds = 10,
+        [AllowNull()][scriptblock]$Sleeper
     )
     $name = [string]$Expected.Name
     $log = [System.Collections.Generic.List[string]]::new()
     $dropped = [System.Collections.Generic.List[object]]::new()
-    $unread = [System.Collections.Generic.List[string]]::new()
+    $unread = [System.Collections.Generic.List[object]]::new()
     $answering = @($Resolution.Candidates | Where-Object { $_.Answers })
     foreach ($c in $answering) {
         $endpoint = if ($EndpointResolver) { & $EndpointResolver $c.Address $ReaderState } else { [pscustomobject]@{ Answers = $true; UseSsl = ($c.Port -eq 5986); Port = $c.Port } }
@@ -660,10 +683,27 @@ function Select-AzlVerifiedNodeAddress {
             $log.Add("address $($c.Address) ($($c.Source)) was not identity-checked: no credential to read the node with.")
             return [pscustomobject]@{ Verified = $true; Checked = $false; Address = $c.Address; Source = $c.Source; UseSsl = $useSsl; Port = [int](Get-AzlProp $endpoint 'Port' $c.Port); Dropped = @(); Log = $log.ToArray(); Message = '' }
         }
-        try { $found = & $IdentityReader $c.Address $useSsl $ReaderState }
-        catch {
-            $unread.Add("$($c.Address) ($($c.Source)): $($_.Exception.Message)")
-            $log.Add("address $($c.Address) ($($c.Source)) answered but its identity could not be read: $($_.Exception.Message)")
+        $found = $null
+        $failure = $null
+        for ($try = 1; $try -le $UnreachableTries; $try++) {
+            try { $found = & $IdentityReader $c.Address $useSsl $ReaderState; $failure = $null; break }
+            catch {
+                $kind = Get-AzlSessionFailureKind -Message $_.Exception.Message
+                $failure = [pscustomobject]@{ Kind = $kind; Message = $_.Exception.Message }
+                if ($kind -ne 'Unreachable') { break }
+                if ($try -lt $UnreachableTries) {
+                    $log.Add("address $($c.Address) ($($c.Source)) did not answer (restarting?), try $try of ${UnreachableTries}: $($_.Exception.Message) Trying again in $UnreachableDelaySeconds s.")
+                    if ($Sleeper) { & $Sleeper $UnreachableDelaySeconds } elseif ($UnreachableDelaySeconds -gt 0) { Start-Sleep -Seconds $UnreachableDelaySeconds }
+                }
+            }
+        }
+        if ($failure) {
+            $unread.Add([pscustomobject]@{ Address = $c.Address; Source = $c.Source; Kind = $failure.Kind; Message = $failure.Message })
+            $log.Add($(switch ($failure.Kind) {
+                        'Refused' { "address $($c.Address) ($($c.Source)) refused the local administrator: $($failure.Message)" }
+                        'Unreachable' { "address $($c.Address) ($($c.Source)) did not answer (restarting?) after $UnreachableTries tries: $($failure.Message)" }
+                        default { "address $($c.Address) ($($c.Source)) answered but its identity could not be read: $($failure.Message)" }
+                    }))
             continue
         }
         $verdict = Test-AzlNodeIdentity -Expected $Expected -Found $found
@@ -675,14 +715,24 @@ function Select-AzlVerifiedNodeAddress {
         $dropped.Add([pscustomobject]@{ Address = $c.Address; Source = $c.Source; Reason = $verdict.Reason; Text = $text })
         $log.Add("$text ($($verdict.Reason)); dropped ($($c.Source)).")
     }
-    # A refused credential is said as such (it is a credential problem, not a wrong machine); anything else that stopped the read is quoted.
-    $lines = @($dropped | ForEach-Object { "$($_.Text) ($($_.Reason)), found by $($_.Source)" }) + @($unread | ForEach-Object { if ($_ -match 'denied|logon failure|authentication|credential|unauthorized') { "the local administrator was refused at $_" } else { "could not read the identity at $_" } })
+    # Only a real refusal is said to be a refusal (a credential problem, not a wrong machine); a node that did not answer is said to have not answered (restarting?);
+    # anything else that stopped the read is quoted.
+    $lines = @($dropped | ForEach-Object { "$($_.Text) ($($_.Reason)), found by $($_.Source)" }) + @($unread | ForEach-Object {
+            $u = $_
+            switch ($u.Kind) {
+                'Refused' { "the local administrator was refused at $($u.Address) ($($u.Source)): $($u.Message)" }
+                'Unreachable' { "$($u.Address) ($($u.Source)) did not answer (restarting?): $($u.Message)" }
+                default { "could not read the identity at $($u.Address) ($($u.Source)): $($u.Message)" }
+            }
+        })
+    $onlyUnreachable = ($dropped.Count -eq 0 -and $unread.Count -gt 0 -and @($unread | Where-Object { $_.Kind -ne 'Unreachable' }).Count -eq 0)
     $silent = @($Resolution.Candidates | Where-Object { -not $_.Answers } | ForEach-Object { "$($_.Address) ($($_.Source))" })
     $viaOverride = @($Resolution.Candidates | Where-Object { $_.Source -eq 'override' }).Count -gt 0
     $message = if (($dropped.Count + $unread.Count) -eq 0) { '' }
+    elseif ($onlyUnreachable) { "$name did not answer (restarting?) at $(@($unread | ForEach-Object { "$($_.Address) ($($_.Source))" }) -join ', '), so its identity could not be proven and nothing was changed: $($lines -join '; '). Run it again when the node is back; a node that was restarted needs a few minutes." }
     elseif ($viaOverride) { "The address you gave for $name $(if ($dropped.Count) { 'does not belong to it' } else { 'answered, but its identity could not be proven' }): $($lines -join '; '). It was not used and nothing was changed. Give the address of $name with -NodeAddress, or remove it so the run resolves one." }
     else { "No address proved to be $name, so nothing was changed: $($lines -join '; ').$(if ($silent.Count) { " Not answering: $($silent -join ', ')." }) Give the address $name answers on now with -NodeAddress @{ '$name' = '<ip>' } (or nodeAddress in the run settings)." }
-    [pscustomobject]@{ Verified = $false; Checked = $true; Address = ''; Source = ''; UseSsl = $false; Port = 0; Dropped = $dropped.ToArray(); Log = $log.ToArray(); Message = $message }
+    [pscustomobject]@{ Verified = $false; Checked = $true; Address = ''; Source = ''; UseSsl = $false; Port = 0; Dropped = $dropped.ToArray(); Log = $log.ToArray(); Message = $message; Unreachable = $onlyUnreachable }
 }
 
-Export-ModuleMember -Function Get-AzlNodeExpectedIdentity, Test-AzlNodeIdentity, Read-AzlNodeIdentity, Select-AzlVerifiedNodeAddress, Format-AzlSourceAgreement, Resolve-AzlNodeAddress,ConvertTo-AzlAddressMacKey, ConvertFrom-AzlArpOutput, ConvertFrom-AzlCidr, Test-AzlAddressInCidr, Get-AzlNeighborEntry, Get-AzlLocalIPv4Network, Test-AzlAddressPort, Invoke-AzlSubnetSweep
+Export-ModuleMember -Function Get-AzlSessionFailureKind, Get-AzlNodeExpectedIdentity, Test-AzlNodeIdentity, Read-AzlNodeIdentity, Select-AzlVerifiedNodeAddress, Format-AzlSourceAgreement, Resolve-AzlNodeAddress,ConvertTo-AzlAddressMacKey, ConvertFrom-AzlArpOutput, ConvertFrom-AzlCidr, Test-AzlAddressInCidr, Get-AzlNeighborEntry, Get-AzlLocalIPv4Network, Test-AzlAddressPort, Invoke-AzlSubnetSweep

@@ -260,7 +260,7 @@ Describe 'Select-AzlVerifiedNodeAddress' {
         $v.Verified | Should -BeFalse
         $v.Message | Should -Match 'the local administrator was refused at 192\.0\.2\.11'
         $v.Message | Should -Match 'refused the credential'
-        (Select-AzlVerifiedNodeAddress -Resolution $r -Expected $script:Expected -IdentityReader { throw 'The WinRM client cannot process the request (timed out).' }).Message | Should -Match 'could not read the identity at 192\.0\.2\.11'
+        (Select-AzlVerifiedNodeAddress -Resolution $r -Expected $script:Expected -IdentityReader { throw 'The node script returned something this host cannot read.' }).Message | Should -Match 'could not read the identity at 192\.0\.2\.11'
     }
     It 'without a reader (no credential) nothing is checked and the best answering candidate is returned, marked unchecked' {
         $r = Resolve-Node -Answer @('192.0.2.11') -Handoff $null -Arc $null
@@ -282,5 +282,87 @@ Describe 'Select-AzlVerifiedNodeAddress' {
         $v = Select-AzlVerifiedNodeAddress -Resolution $r -Expected $script:Expected -IdentityReader $reader -EndpointResolver { param($a) [pscustomobject]@{ Answers = $true; UseSsl = $true; Port = 5986 } }
         $v.UseSsl | Should -BeTrue
         $seen[0] | Should -Be '192.0.2.11|True'
+    }
+}
+
+Describe 'Identity read failures: refused versus unreachable (a node that restarts is not a node that refuses the credential)' {
+    BeforeAll {
+        # The text of the failures the lab saw and the ones WinRM gives while a node goes down or comes up.
+        $script:Denied = 'Opening a session to iic-n01 at 192.0.2.11:5985 failed after 0.1 s (open timeout 30 s): Connecting to remote server 192.0.2.11 failed with the following error message : Access is denied. For more information, see the about_Remote_Troubleshooting Help topic.'
+        $script:Timeout = 'Opening a session to iic-n01 at 192.0.2.11:5985 failed after 30.1 s (open timeout 30 s): Connecting to remote server 192.0.2.11 failed with the following error message : The WinRM client cannot process the request because the server name cannot be resolved. The operation has timed out.'
+        $script:Closed = 'Opening a session to iic-n01 at 192.0.2.11:5985 failed after 2.0 s (open timeout 30 s): Connecting to remote server 192.0.2.11 failed with the following error message : The connection was closed by the remote host (an existing connection was forcibly closed by the remote host).'
+        $script:Sleeps = [System.Collections.Generic.List[int]]::new()
+        $script:Sleeper = { param([int]$Seconds) $script:Sleeps.Add($Seconds) }
+        $script:Answering = { Resolve-AzlNodeAddress -Infrastructure $script:Infra -Node $script:N01 -Override '192.0.2.11' -HandoffEntry $null -ArcMachine $null -PortTest { param($a, $p) $p -eq 5985 -and $a -eq '192.0.2.11' } }
+    }
+    BeforeEach { $script:Sleeps.Clear() }
+
+    It '<Kind>: <Text>' -ForEach @(
+        @{ Kind = 'Refused'; Text = 'Connecting to remote server 192.0.2.11 failed with the following error message : Access is denied.' }
+        @{ Kind = 'Refused'; Text = 'The WinRM client cannot process the request. 0x80070005 occurred' }
+        @{ Kind = 'Refused'; Text = 'The user name or password is incorrect.' }
+        @{ Kind = 'Refused'; Text = 'The server returned HTTP status 401 (Unauthorized)' }
+        @{ Kind = 'Refused'; Text = 'WinRM cannot process the request: 192.0.2.11 refused the credential' }
+        @{ Kind = 'Unreachable'; Text = 'The operation has timed out.' }
+        @{ Kind = 'Unreachable'; Text = 'The connection was closed by the remote host' }
+        @{ Kind = 'Unreachable'; Text = 'An existing connection was forcibly closed by the remote host' }
+        @{ Kind = 'Unreachable'; Text = 'Connection reset by peer' }
+        @{ Kind = 'Unreachable'; Text = 'No connection could be made because the target machine actively refused it' }
+        @{ Kind = 'Unreachable'; Text = 'WinRM cannot complete the operation. Verify that the specified computer name is valid, that the computer is accessible over the network (0x80338126)' }
+        @{ Kind = 'Unreachable'; Text = 'The call to iic-n01 did not finish within 105 seconds and was abandoned.' }
+        @{ Kind = 'Other'; Text = 'The node script returned something this host cannot read.' }
+    ) {
+        Get-AzlSessionFailureKind -Message $Text | Should -Be $Kind
+    }
+
+    It 'the lab case: the session open is denied after 0.1 s while the node restarts, and only a refusal says refused' {
+        Get-AzlSessionFailureKind -Message $script:Denied | Should -Be 'Refused'
+        Get-AzlSessionFailureKind -Message $script:Timeout | Should -Be 'Unreachable'
+        Get-AzlSessionFailureKind -Message $script:Closed | Should -Be 'Unreachable'
+    }
+
+    It 'a session that cannot be opened because the node is restarting is unreachable, said as "did not answer (restarting?)", never as a refused credential' {
+        $r = & $script:Answering; $closed = $script:Closed; $timeout = $script:Timeout; $denied = $script:Denied
+        $calls = [System.Collections.Generic.List[int]]::new()
+        $reader = { param([string]$Address, [bool]$UseSsl) $calls.Add(1); throw $closed }.GetNewClosure()
+        $v = Select-AzlVerifiedNodeAddress -Resolution $r -Expected $script:Expected -IdentityReader $reader -Sleeper $script:Sleeper
+        $v.Verified | Should -BeFalse
+        $v.Unreachable | Should -BeTrue
+        $v.Message | Should -Match 'did not answer \(restarting\?\)'
+        $v.Message | Should -Not -Match 'refused'
+        $calls.Count | Should -Be 3
+        $script:Sleeps.Count | Should -Be 2
+    }
+
+    It 'an unreachable read is retried and the node that answers on the second try is verified' {
+        $r = & $script:Answering; $closed = $script:Closed; $timeout = $script:Timeout; $denied = $script:Denied
+        $n = [ref]0
+        $reader = { param([string]$Address, [bool]$UseSsl) $n.Value++; if ($n.Value -lt 3) { throw $timeout }; [pscustomobject]@{ ComputerName = 'IIC-N01'; Mac = @('00005e005310') } }.GetNewClosure()
+        $v = Select-AzlVerifiedNodeAddress -Resolution $r -Expected $script:Expected -IdentityReader $reader -Sleeper $script:Sleeper
+        $v.Verified | Should -BeTrue
+        $v.Message | Should -BeNullOrEmpty
+        $n.Value | Should -Be 3
+        ($v.Log -join ' ') | Should -Match 'did not answer \(restarting\?\).*trying again'
+    }
+
+    It 'a real refusal is refused, once: it is not retried' {
+        $r = & $script:Answering; $closed = $script:Closed; $timeout = $script:Timeout; $denied = $script:Denied
+        $n = [ref]0
+        $reader = { param([string]$Address, [bool]$UseSsl) $n.Value++; throw $denied }.GetNewClosure()
+        $v = Select-AzlVerifiedNodeAddress -Resolution $r -Expected $script:Expected -IdentityReader $reader -Sleeper $script:Sleeper
+        $v.Verified | Should -BeFalse
+        $v.Unreachable | Should -BeFalse
+        $v.Message | Should -Match 'the local administrator was refused at 192\.0\.2\.11'
+        $n.Value | Should -Be 1
+        $script:Sleeps.Count | Should -Be 0
+    }
+
+    It 'the number of tries and the pause are the caller''s' {
+        $r = & $script:Answering; $closed = $script:Closed; $timeout = $script:Timeout; $denied = $script:Denied
+        $n = [ref]0
+        $reader = { param([string]$Address, [bool]$UseSsl) $n.Value++; throw $timeout }.GetNewClosure()
+        $null = Select-AzlVerifiedNodeAddress -Resolution $r -Expected $script:Expected -IdentityReader $reader -UnreachableTries 5 -UnreachableDelaySeconds 7 -Sleeper $script:Sleeper
+        $n.Value | Should -Be 5
+        @($script:Sleeps | Select-Object -Unique) | Should -Be @(7)
     }
 }

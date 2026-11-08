@@ -374,7 +374,7 @@ Describe 'Set-AzureLocalNodeConfiguration.ps1 (standalone) uses the same resolut
         $transport | Should -BeGreaterThan $select
         $text | Should -Match 'Get-AzlNodeExpectedIdentity -Infrastructure \$infra -Node \$nodeObject'
         $text | Should -Match 'Read-AzlNodeIdentity -Transport \(New-AzlWinRmTransport'
-        $text | Should -Match 'if \(\$identityProblems\.Count\) \{[\s\S]*?exit 2'
+        $text | Should -Match 'if \(\$identityProblems\.Count\) \{[\s\S]*?exit \$\(if \(\$identityRefusedOrWrong\) \{ 2 \} else \{ 1 \}\)'   # a wrong machine or a refused credential is bad input (2); a node that did not answer (restarting?) is a failure (1)
         $text | Should -Match 'Address sources: '
         $text | Should -Match 'verifyIdentity'
         # The credential is never part of the port probe: the reader is the only code that builds a transport for a candidate.

@@ -297,6 +297,7 @@ else {
     if ($Settings -and $Settings.ContainsKey('addressResolution') -and $Settings['addressResolution'] -is [System.Collections.IDictionary] -and $Settings['addressResolution'].Contains('verifyIdentity')) { $verifyIdentity = [bool]$Settings['addressResolution']['verifyIdentity'] }
     $identityReader = if ($Credential -and $verifyIdentity) { { param([string]$Address, [bool]$UseSsl, $State) Read-AzlNodeIdentity -Transport (New-AzlWinRmTransport -Address @{ $State.Name = $Address } -Credential $State.Credential -UseSsl:$UseSsl -Authentication $State.Authentication) -Node $State.Name } } else { $null }
     $identityProblems = [System.Collections.Generic.List[string]]::new()
+    $identityRefusedOrWrong = $false # a node that did not answer (restarting?) is not a wrong machine and not a refused credential: exit 1, not 2
     foreach ($s in $specs) {
         $finding = @($findings | Where-Object Node -eq $s.Name)[0]
         if (-not $finding -or -not $finding.Reachable) { continue }
@@ -310,13 +311,13 @@ else {
             Send-AzlGuardEvent -Context $eventContext -Node $s.Name -State 'TransportResolved' -Step '' -Transport 'WinRM' -Evidence "$($dropped.Text) ($($dropped.Reason)); dropped (found by $($dropped.Source))." -Level Warning -Data @{ address = $dropped.Address; dropped = $true }
         }
         if ($selection.Verified) { $addressByNode[$s.Name] = $selection.Address }
-        elseif ($selection.Message) { $identityProblems.Add($selection.Message) }
+        elseif ($selection.Message) { $identityProblems.Add($selection.Message); if (-not $selection.Unreachable) { $identityRefusedOrWrong = $true } }
     }
     if ($identityProblems.Count) {
         $stopped = "ADDRESS IDENTITY: $($identityProblems -join ' ')"
         Write-Line $stopped
         [ordered]@{ schemaVersion = 1; generatedUtc = [datetime]::UtcNow.ToString('o'); executed = [bool]$Execute; error = $stopped; nodes = @() } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ReportPath -Encoding utf8NoBOM
-        exit 2
+        exit $(if ($identityRefusedOrWrong) { 2 } else { 1 })
     }
     foreach ($s in $specs) {
         $nodeTransports[$s.Name] = New-AzlWinRmTransport -Address @{ $s.Name = $addressByNode[$s.Name] } -Credential $Credential -UseSsl:$remoting.UseSsl -Authentication $remoting.Authentication
