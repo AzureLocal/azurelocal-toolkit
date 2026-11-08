@@ -7,7 +7,7 @@
     The format is JSON Lines, UTF-8 without a byte-order mark, one event per line, appended as the run goes. It has the same shape the
     azurelocal-ztp event file has, so one reader follows both:
 
-        timestamp   UTC, ISO-8601, 'yyyy-MM-ddTHH:mm:ss.fffZ'
+        timestamp   UTC, ISO-8601 round-trip format ('o': 2026-11-07T19:01:59.5360000Z)
         node        the node's name, or '*' for an event about the whole run
         stage       always 'OsConfiguration'
         step        the step the event is about (RemoteManagement, Network, ...), '' for node and run events
@@ -17,14 +17,19 @@
         nextAction  what to do next, '' when nothing
         method      'Ztp' | 'Iso' | '' (not known yet, or a run event)
         transport   'ArcRunCommand' | 'WinRM' | ''
+        payloadVersion  the version of the node payload (the result format the nodes answer in)
+        schemaVersion   the master file's _metadata.schema_version
 
     Optional fields, present when they apply: nodes (RunStarted: array of node names), mode (Plan|Apply), cluster, exitCode,
     converged, total (RunCompleted), action (StepPlanned: Ok|Change|Blocked|Info), item, current, desired (StepPlanned, StepFailed),
     try, tries, waitSeconds (NodeRetry), wipe (WipeListPublished: array of { node, disks }), wipeCount.
 
-    Run events (node '*'): RunStarted, PlanCompleted, WipeListPublished, RunCompleted.
-    Node events: NodeStarted, MethodResolved, NodeRetry, NodeRestarting, NodeConverged, NodeFailed, NodeBlocked.
-    Step events: StepPlanned, StepApplying, StepApplied, StepFailed, StepSkipped, StepVerified.
+    The contract is section 6 of pmo/azure-local/os-configuration-design.md. Run events (node '*'): RunStarted, PlanCompleted,
+    WipeListPublished, RunCompleted. Node events: NodeStarted, MethodResolved, TransportResolved, NodeRetry, NodeConverged, NodeFailed,
+    NodeBlocked, NodeReconnecting, NodeReconnected. Step events: StepPlanned, StepApplying, StepApplied, StepFailed, StepSkipped,
+    StepVerified. Guarded change events (step Network): NetworkChangeStaged, NetworkChangeVerifying, NetworkChangeAwaitingConfirm,
+    NetworkChangeCommitted, NetworkChangeRepaired, NetworkChangeRolledBack, NetworkChangeRefused; they may carry changeId, rung,
+    reason, confirmMinutes and confirmBy (UTC time the confirmation window ends).
 
     Writing the feed never fails the run: a path that can't be written is skipped (Write-Verbose says why).
 #>
@@ -34,6 +39,22 @@ $ErrorActionPreference = 'Stop'
 # The 12 steps of the OS configuration, in the order a reader shows them, and the Arc registration an ISO-installed machine also gets.
 $script:StepOrder = @('RemoteManagement', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe', 'Drivers', 'ArcRegistration')
 $script:EventMaxText = 2000
+$script:EventState = [ordered]@{
+    Run     = @('RunStarted', 'PlanCompleted', 'WipeListPublished', 'RunCompleted')
+    Node    = @('NodeStarted', 'MethodResolved', 'TransportResolved', 'NodeRetry', 'NodeConverged', 'NodeFailed', 'NodeBlocked', 'NodeReconnecting', 'NodeReconnected')
+    Step    = @('StepPlanned', 'StepSkipped', 'StepApplying', 'StepApplied', 'StepFailed', 'StepVerified')
+    Guarded = @('NetworkChangeStaged', 'NetworkChangeVerifying', 'NetworkChangeAwaitingConfirm', 'NetworkChangeCommitted', 'NetworkChangeRepaired', 'NetworkChangeRolledBack', 'NetworkChangeRefused')
+}
+
+function Get-AzlOsConfigurationEventState {
+    <#
+    .SYNOPSIS
+        The event states of the feed by level: Run, Node, Step and Guarded (the guarded network change).
+    #>
+    [CmdletBinding()]
+    param()
+    return $script:EventState
+}
 
 function Get-AzlOsConfigurationStepOrder {
     <#
@@ -47,10 +68,10 @@ function Get-AzlOsConfigurationStepOrder {
 }
 
 function Get-AzlOsEventTimestamp {
-    # UTC, ISO-8601, millisecond precision, invariant culture.
+    # UTC, ISO-8601 round-trip ('o'), invariant culture.
     [OutputType([string])]
     param([datetime]$Now = [datetime]::UtcNow)
-    return $Now.ToUniversalTime().ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", [cultureinfo]::InvariantCulture)
+    return $Now.ToUniversalTime().ToString('o', [cultureinfo]::InvariantCulture)
 }
 
 function Limit-AzlOsEventText([string]$Text, [int]$Max = $script:EventMaxText) {
@@ -82,6 +103,8 @@ function Write-AzlOsConfigurationEvent {
         [string]$NextAction = '',
         [ValidateSet('', 'Ztp', 'Iso')][string]$Method = '',
         [ValidateSet('', 'ArcRunCommand', 'WinRM')][string]$Transport = '',
+        [string]$PayloadVersion = '',
+        [string]$SchemaVersion = '',
         [System.Collections.IDictionary]$Data,
         [datetime]$Now = [datetime]::UtcNow
     )
@@ -98,6 +121,8 @@ function Write-AzlOsConfigurationEvent {
             nextAction = Limit-AzlOsEventText $NextAction
             method     = $Method
             transport  = $Transport
+            payloadVersion = $PayloadVersion
+            schemaVersion  = $SchemaVersion
         }
         if ($Data) {
             foreach ($key in $Data.Keys) {
@@ -188,4 +213,4 @@ function ConvertFrom-AzlOsRetryWarning {
     }
 }
 
-Export-ModuleMember -Function Get-AzlOsConfigurationStepOrder, Get-AzlOsEventTimestamp, Write-AzlOsConfigurationEvent, Get-AzlOsStepPlan, ConvertFrom-AzlOsRetryWarning
+Export-ModuleMember -Function Get-AzlOsConfigurationEventState, Get-AzlOsConfigurationStepOrder, Get-AzlOsEventTimestamp, Write-AzlOsConfigurationEvent, Get-AzlOsStepPlan, ConvertFrom-AzlOsRetryWarning

@@ -53,6 +53,8 @@ $script:ZtpSteps = @('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Ti
 $script:IsoSteps = $script:AllSteps
 # Shown by a viewer next to the master file's schema_version; raise it when the run's behaviour or the event feed changes.
 $script:WrapperVersion = '1.0.0'
+# The result format of the node payloads (the v of their answer); part of every event.
+$script:PayloadVersion = '1'
 # Azure Local OS 23H2 is build 25398; anything older cannot be an Azure Local node.
 $script:MinimumBuild = 25398
 
@@ -96,7 +98,7 @@ function Send-AzlRunEvent {
             if ($Record.Contains('method') -and $Record['method']) { $method = [string]$Record['method'] }
             if ($Record.Contains('transport') -and $Record['transport']) { $transport = [string]$Record['transport'] }
         }
-        $null = Write-AzlOsConfigurationEvent -Path $Context.EventLogPath -Node $node -State $State -Step $Step -Evidence $Evidence -Level $Level -NextAction $NextAction -Method $method -Transport $transport -Data $Data
+        $null = Write-AzlOsConfigurationEvent -Path $Context.EventLogPath -Node $node -State $State -Step $Step -Evidence $Evidence -Level $Level -NextAction $NextAction -Method $method -Transport $transport -PayloadVersion $script:PayloadVersion -SchemaVersion ([string](Get-AzlProp $Context 'SchemaVersion' '')) -Data $Data
     }
     catch { Write-Verbose "OS configuration event skipped: $($_.Exception.Message)" }
 }
@@ -932,8 +934,9 @@ function Invoke-AzlApplyPhase {
             $Record.changes += $made
             if ($run.Entry.restarted) {
                 $Record.restarted = $true
-                # The restart happens inside the apply call; this is written when the call reports it, before the steps of that call.
-                Send-AzlRunEvent -Context $Context -Record $Record -State NodeRestarting -Evidence 'The node restarted during the apply (a computer name, MPIO or driver change needs one) and came back with a new boot time.' -Level Warning
+                # The restart happens inside the apply call; these two are written when the call reports it, before the steps of that call.
+                Send-AzlRunEvent -Context $Context -Record $Record -State NodeReconnecting -Evidence 'The node restarted during the apply (a computer name, MPIO or driver change needs one); the run waited for it.' -Level Warning
+                Send-AzlRunEvent -Context $Context -Record $Record -State NodeReconnected -Evidence 'The node came back with a new boot time and answered again.'
             }
         }
         Send-AzlStepAppliedEvent -Context $Context -Record $Record -Change $made
@@ -1173,6 +1176,7 @@ function Invoke-AzlOsConfiguration {
             NodeAddress = $addressOverride; Method = $Method; CredentialInfo = $null
             RetryTries = $tries; RetryDelaySeconds = $delays; MaxPasses = $(if ($run.ContainsKey('maxPasses')) { [int]$run.maxPasses } else { 3 })
             NoRestart = ($run.ContainsKey('noRestart') -and $run.noRestart -eq $true); SkipValidation = $SkipValidation.IsPresent
+            SchemaVersion = [string](Get-AzlProp $infra '_metadata.schema_version' '')
             EventLogPath = $(if ($EventLogPath) { [IO.Path]::GetFullPath($EventLogPath, (Get-Location).ProviderPath) } else { Join-Path $reportDir 'os-configuration-events.jsonl' })
         }
         $context.CredentialInfo = Get-AzlLocalAdminCredential -Infrastructure $infra -Credential $Credential
@@ -1212,6 +1216,7 @@ function Invoke-AzlOsConfiguration {
                 Send-AzlRunEvent -Context $context -State MethodResolved -Record $record -Level $(if (@($resolution.Warnings).Count) { 'Warning' } else { 'Info' }) `
                     -Evidence "Declared os_install '$($resolution.Declared)'; evidence: $seen; so the $($resolution.Method) path ($($resolution.Source)) over $($resolution.Transport).$(if (@($resolution.Warnings).Count) { ' Warning: ' + (@($resolution.Warnings) -join ' ') })" `
                     -Data (Get-AzlMethodResolvedData -Context $context -Record $record -Resolution $resolution)
+                Send-AzlRunEvent -Context $context -State TransportResolved -Record $record -Evidence "$($record.name) is reached over $($record.transport)$(if ($record.address) { ' at ' + $record.address }) for every step ($(if ($Transport -ne 'Auto') { '-Transport forces it' } else { 'chosen from the method and the evidence' }))." -Data @{ forced = ($Transport -ne 'Auto'); address = [string]$record.address }
             }
             else {
                 Send-AzlRunEvent -Context $context -State NodeFailed -Record $record -Level Error -Evidence "No method could be resolved: $(@($resolution.Errors) -join ' ')" -NextAction 'Pass the node''s handoff (-HandoffPath), sign in to Azure, or make the node reachable; then run again.'

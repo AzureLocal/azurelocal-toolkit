@@ -132,7 +132,7 @@ Every line has the shape azurelocal-ztp's event file has, so one reader follows 
 
 | Field | Meaning |
 | --- | --- |
-| `timestamp` | UTC, `yyyy-MM-ddTHH:mm:ss.fffZ` |
+| `timestamp` | UTC, ISO-8601 round-trip (`2026-11-07T19:01:59.5360000Z`) |
 | `node` | the node's name, or `*` for an event about the whole run |
 | `stage` | always `OsConfiguration` |
 | `step` | the step the event is about, empty for node and run events |
@@ -142,6 +142,8 @@ Every line has the shape azurelocal-ztp's event file has, so one reader follows 
 | `nextAction` | what to do next, empty when nothing |
 | `method` | `Ztp` or `Iso`; empty for a run event and before the method is known |
 | `transport` | `ArcRunCommand` or `WinRM` |
+| `payloadVersion` | the version of the node payload (the format the nodes answer in) |
+| `schemaVersion` | the master file's `_metadata.schema_version` |
 
 Run events (node `*`):
 
@@ -158,8 +160,9 @@ Node events:
 | --- | --- | --- |
 | `NodeStarted` | the run starts on the node. A viewer starts a new attempt for the node here | |
 | `MethodResolved` | the method is decided (`evidence` names the declared `scenario.os_install`, the evidence found and any warning; `Warning` when the declaration and the evidence disagree). Written once more after the first read of the node, to add the OS it reported | `declared`, `declaredMethod` (`Ztp` or `Iso`), `source`, `mismatch`, `steps`, `handoff`, `arc`, `winrm`, `warnings`, `hostname`, `osVersion`, `build`, `osCaption` (ISO path), `schemaVersion`, `wrapperVersion`, `sbePublisher`, `sbeFamily`, `sbeVersion`, `sbePackage`, `sbeDelivery` |
+| `TransportResolved` | how the node is reached (`transport` on the line); `address` and `forced` | `address`, `forced` |
 | `NodeRetry` | an Arc Run Command ended in state `Unknown` and is tried again | `try`, `tries`, `waitSeconds`, `phase` |
-| `NodeRestarting` | the apply reports that the node restarted (the restart itself happens inside the apply call, so this comes before the `StepApplied` events of that call) | |
+| `NodeReconnecting`, `NodeReconnected` | the node restarted or its address changed and the run waited for it, then reached it again. For a restart inside an apply call they are written when the call reports it, before the `StepApplied` events of that call | |
 | `NodeConverged` | the plan found nothing to change, or the verification pass found nothing left to change | |
 | `NodeFailed` | the node could not be read, a step failed, or it did not converge (`Error`) | |
 | `NodeBlocked` | an item is blocked (`Warning` in Plan mode, `Error` after an apply), or the node was skipped because an earlier node failed | |
@@ -174,6 +177,8 @@ Step events (`step` is one of `RemoteManagement`, `Network`, `Dns`, `Time`, `Hos
 | `StepFailed` | the apply reports a failed change, or the verification pass still finds the step different | `action`, `item`, `current`, `desired` |
 | `StepSkipped` | the step does not apply to this node or run; `evidence` starts with `Not applicable:` and says why (not selected with `-Step`, no SBE bundle, the storage wipe is off, ...) | |
 | `StepVerified` | the verification pass finds the step matching | `action` |
+
+Guarded network change (step `Network`): `NetworkChangeStaged`, `NetworkChangeVerifying`, `NetworkChangeAwaitingConfirm` (`confirmMinutes`, `confirmBy`), `NetworkChangeCommitted`, `NetworkChangeRepaired` (`rung`), `NetworkChangeRolledBack` (`reason`: the node's own reason) and `NetworkChangeRefused`. They carry the optional fields `changeId`, `rung`, `reason`, `confirmMinutes` and `confirmBy` (the UTC time the confirmation window ends). The contract is section 6 of the OS configuration design in the platform repository (`pmo/azure-local/os-configuration-design.md`).
 
 Order for one node in Apply mode: `NodeStarted`, `MethodResolved`, `StepPlanned`/`StepSkipped` for every step, `StepApplying`, `StepApplied` (or `StepFailed`), `StepVerified`, then `NodeConverged`, `NodeFailed` or `NodeBlocked`. A node whose plan shows nothing to change goes straight to `NodeConverged`. Run `Get-Content os-configuration-events.jsonl -Wait` to watch a run.
 

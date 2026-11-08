@@ -33,7 +33,7 @@ Describe 'Write-AzlOsConfigurationEvent' {
         $e[0].level | Should -Be 'Info'
         $e[0].PSObject.Properties.Name | Should -Contain 'step'
         $e[0].PSObject.Properties.Name | Should -Contain 'nextAction'
-        $raw[0] | Should -Match '"timestamp":"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z"'
+        $raw[0] | Should -Match '"timestamp":"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{7}Z"'
         $e[1].level | Should -Be 'Error'
         $e[1].nextAction | Should -Be 'fix it'
     }
@@ -47,7 +47,7 @@ Describe 'Write-AzlOsConfigurationEvent' {
         finally { [cultureinfo]::CurrentCulture = $old }
         $e = Read-FeedEvent $file
         $e[0].evidence | Should -Be "caf$([char]0xE9) line two"
-        (Get-Content -LiteralPath $file -Raw) | Should -Match '\"timestamp\":\"2026-11-07T19:01:59.536Z\"'
+        (Get-Content -LiteralPath $file -Raw) | Should -Match '\"timestamp\":\"2026-11-07T19:01:59.5360000Z\"'
     }
     It 'adds extra fields after the standard ones and never lets them replace a standard field' {
         $file = Join-Path $TestDrive 'c.jsonl'
@@ -84,6 +84,26 @@ Describe 'Write-AzlOsConfigurationEvent' {
     It 'rejects a level or transport outside the contract' {
         { Write-AzlOsConfigurationEvent -Path (Join-Path $TestDrive 'g.jsonl') -Node 'n' -State A -Level Fatal } | Should -Throw
         { Write-AzlOsConfigurationEvent -Path (Join-Path $TestDrive 'g.jsonl') -Node 'n' -State A -Transport SSH } | Should -Throw
+    }
+}
+
+Describe 'The event contract (os-configuration-design.md section 6)' {
+    It 'has exactly the states of the contract, by level' {
+        $c = Get-AzlOsConfigurationEventState
+        $c.Run -join ',' | Should -Be 'RunStarted,PlanCompleted,WipeListPublished,RunCompleted'
+        $c.Node -join ',' | Should -Be 'NodeStarted,MethodResolved,TransportResolved,NodeRetry,NodeConverged,NodeFailed,NodeBlocked,NodeReconnecting,NodeReconnected'
+        $c.Step -join ',' | Should -Be 'StepPlanned,StepSkipped,StepApplying,StepApplied,StepFailed,StepVerified'
+        $c.Guarded -join ',' | Should -Be 'NetworkChangeStaged,NetworkChangeVerifying,NetworkChangeAwaitingConfirm,NetworkChangeCommitted,NetworkChangeRepaired,NetworkChangeRolledBack,NetworkChangeRefused'
+    }
+    It 'every line carries the contract fields, including payloadVersion and schemaVersion' {
+        $file = Join-Path $TestDrive 'contract.jsonl'
+        $null = Write-AzlOsConfigurationEvent -Path $file -Node n1 -State NetworkChangeRolledBack -Step Network -Level Error -Evidence 'reason' -Method Iso -Transport WinRM -PayloadVersion '1' -SchemaVersion '5.3.0' -Data @{ reason = 'gateway unreachable'; confirmBy = '2026-11-07T19:11:59.0000000Z' }
+        $e = (Read-FeedEvent $file)[0]
+        $names = $e.PSObject.Properties.Name
+        foreach ($f in 'timestamp', 'node', 'stage', 'step', 'state', 'evidence', 'level', 'nextAction', 'method', 'transport', 'payloadVersion', 'schemaVersion') { $names | Should -Contain $f }
+        $e.payloadVersion | Should -Be '1'
+        $e.schemaVersion | Should -Be '5.3.0'
+        $e.reason | Should -Be 'gateway unreachable'
     }
 }
 

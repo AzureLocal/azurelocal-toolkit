@@ -594,8 +594,11 @@ Describe 'Event feed (os-configuration-events.jsonl)' {
         $names = @($e | ForEach-Object { $_.state })
         $names.IndexOf('PlanCompleted') | Should -BeLessThan $names.IndexOf('WipeListPublished')
         $names.IndexOf('WipeListPublished') | Should -BeLessThan $names.IndexOf('RunCompleted')
-        (Get-NodeState $e 'iic-n01')[0..1] | Should -Be @('NodeStarted', 'MethodResolved')
-        foreach ($line in $raw) { $line | Should -Match '"timestamp":"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z"' }
+        (Get-NodeState $e 'iic-n01')[0..2] | Should -Be @('NodeStarted', 'MethodResolved', 'TransportResolved')
+        $e[0].payloadVersion | Should -Be '1'
+        $e[0].schemaVersion | Should -Be '5.3.0'
+        ($e | Where-Object { $_.node -eq 'iic-n01' -and $_.state -eq 'TransportResolved' }).transport | Should -Be 'ArcRunCommand'
+        foreach ($line in $raw) { $line | Should -Match '"timestamp":"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{7}Z"' }
         foreach ($x in $e) { $x.stage | Should -Be 'OsConfiguration'; $x.level | Should -BeIn @('Info', 'Warning', 'Error') }
         [IO.File]::ReadAllBytes($file)[0] | Should -Not -Be 0xEF
         # every step is accounted for on every node: planned, or skipped with its reason

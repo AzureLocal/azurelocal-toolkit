@@ -43,9 +43,9 @@
     The event feed: one JSON object per line (JSON Lines, UTF-8, UTC timestamps) that says what the run is doing, for a viewer such as
     azurelocal-sonar to follow. Default: os-configuration-events.jsonl in the report directory. Lines are appended, so a path shared with an
     earlier run keeps its history. Run events (node '*'): RunStarted, PlanCompleted, WipeListPublished, RunCompleted. Node events:
-    NodeStarted, MethodResolved, NodeRetry, NodeRestarting, NodeConverged, NodeFailed, NodeBlocked. Step events: StepPlanned, StepApplying,
+    NodeStarted, MethodResolved, TransportResolved, NodeRetry, NodeConverged, NodeFailed, NodeBlocked, NodeReconnecting, NodeReconnected. Step events: StepPlanned, StepApplying,
     StepApplied, StepFailed, StepSkipped, StepVerified. Each line has timestamp, node, stage ('OsConfiguration'), step, state, evidence, level
-    (Info|Warning|Error), nextAction, method (Ztp|Iso) and transport (ArcRunCommand|WinRM). Writing it never fails the run.
+    (Info|Warning|Error), nextAction, method (Ztp|Iso), transport (ArcRunCommand|WinRM), payloadVersion and schemaVersion. The guarded network change adds\n    the NetworkChange* states. Contract: pmo/azure-local/os-configuration-design.md section 6. Writing it never fails the run.
 .PARAMETER ReportDirectory
     Where plan-report.json, report.json, summary.md, wipe-list.txt and node-reports/ go. Default: a folder in the temp directory.
 .PARAMETER ConfigPath
