@@ -32,6 +32,17 @@ $script:RequiredBaseline = [ordered]@{
     allowUnencrypted = $false; basicAuth = $false; credSsp = $false; cbtHardeningLevel = 'Strict'; httpSysCompatListener = $false
     skipCACheck = $false; skipCNCheck = $false; minimumTls = '1.2'; rdpNla = $true; icmpEchoOnly = $true; explicitRemoteAddress = $true
 }
+# What the editable class table may not weaken, per class (the table can make a class stricter, never looser). Prefixes are the widest
+# network a source may be (a higher number is narrower); the ranks order the policies from the loosest to the strictest.
+$script:HttpsRank = @{ preferred = 0; warn = 1; required = 2 }
+$script:ApprovalRank = @{ none = 0; pipeline = 1; perRun = 2 }
+$script:RequiredClassBaseline = [ordered]@{
+    lab        = @{ PrefixV4 = 9; PrefixV6 = 9; Https = 'preferred'; Approval = 'none'; AnyAllowed = $true }
+    test       = @{ PrefixV4 = 9; PrefixV6 = 9; Https = 'preferred'; Approval = 'none'; AnyAllowed = $true }
+    dev        = @{ PrefixV4 = 24; PrefixV6 = 64; Https = 'warn'; Approval = 'none'; AnyAllowed = $false }
+    production = @{ PrefixV4 = 24; PrefixV6 = 64; Https = 'required'; Approval = 'pipeline'; AnyAllowed = $false }
+    dmz        = @{ PrefixV4 = 32; PrefixV6 = 128; Https = 'required'; Approval = 'perRun'; AnyAllowed = $false }
+}
 $script:KnownOverride = @('environment_class', 'allow_any_source', 'allowed_source_cidrs', 'trusted_hosts', 'use_https', 'isolation_confirmed', 'bootstrap_transport', 'transport', 'certificate', 'approved_bootstrap', 'approved_bootstrap_source')
 $script:HttpPort = 5985
 $script:HttpsPort = 5986
@@ -104,6 +115,8 @@ function ConvertTo-AzlCidr {
     if (-not [System.Net.IPAddress]::TryParse($addressText, [ref]$address)) { return (& $bad 'not an IP address') }
     if ($addressText.Contains('%')) { return (& $bad 'a scope id is not allowed') }
     $isV4 = $address.AddressFamily -eq [System.Net.Sockets.AddressFamily]::InterNetwork
+    # ::ffff:0:0/96 is a /96 to the width check and every IPv4 address to the firewall: refuse the whole family, write the IPv4 form instead.
+    if (-not $isV4 -and $address.IsIPv4MappedToIPv6) { return (& $bad 'an IPv4-mapped IPv6 address is not allowed: write the IPv4 address or CIDR') }
     if ($isV4 -and $addressText -notmatch '^\d{1,3}(\.\d{1,3}){3}$') { return (& $bad 'IPv4 needs four dotted parts') }
     $max = if ($isV4) { 32 } else { 128 }
     $prefix = $max
@@ -134,7 +147,7 @@ function Get-AzlRemotingProfileData {
     #>
     [CmdletBinding()]
     param([string]$Path = $script:DefaultDataPath)
-    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "The remote management profile table isn't there: $Path" }
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw [System.IO.FileNotFoundException]::new("The remote management profile table isn't there: $Path", $Path) }
     try { $data = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -AsHashtable -Depth 20 }
     catch { throw "The remote management profile table $Path isn't valid JSON: $($_.Exception.Message)" }
     foreach ($class in $script:AllowedClasses) {
@@ -290,6 +303,22 @@ function Resolve-AzlRemotingProfile {
     if ($haveProfiles -ne (($profilesWanted | Sort-Object) -join ',')) {
         & $issue 'RP-BASELINE' 'error' 'baseline.firewallProfiles' 'The profile table must apply the firewall rules on Domain, Private and Public.'
     }
+    foreach ($className in $script:RequiredClassBaseline.Keys) {
+        $need = $script:RequiredClassBaseline[$className]
+        $classRow = Get-RpValue $Data "classes.$className"
+        if ($null -eq $classRow) { continue }
+        $weak = { param($what, $must, $is) & $issue 'RP-BASELINE' 'error' "classes.$className.$what" "The profile table weakens the baseline: classes.$className.$what must be $must and is '$is'. The table can make a class stricter, never looser." }
+        foreach ($pair in @(@('sources.widestPrefixV4', $need.PrefixV4), @('sources.widestPrefixV6', $need.PrefixV6))) {
+            $have = Get-RpValue $classRow $pair[0]
+            $number = 0
+            if ($null -eq $have -or -not [int]::TryParse([string]$have, [ref]$number) -or $number -lt $pair[1]) { & $weak $pair[0] "/$($pair[1]) or narrower" $have }
+        }
+        $httpsHave = [string](Get-RpValue $classRow 'transport.httpsPolicy' '')
+        if (-not $script:HttpsRank.ContainsKey($httpsHave) -or $script:HttpsRank[$httpsHave] -lt $script:HttpsRank[$need.Https]) { & $weak 'transport.httpsPolicy' "'$($need.Https)' or stricter" $httpsHave }
+        $approvalHave = [string](Get-RpValue $classRow 'bootstrap.approval' '')
+        if (-not $script:ApprovalRank.ContainsKey($approvalHave) -or $script:ApprovalRank[$approvalHave] -lt $script:ApprovalRank[$need.Approval]) { & $weak 'bootstrap.approval' "'$($need.Approval)' or stricter" $approvalHave }
+        if (-not $need.AnyAllowed -and (Get-RpValue $classRow 'sources.any' $false) -eq $true) { & $weak 'sources.any' 'false' 'true' }
+    }
     $denied = @(Get-RpList (Get-RpValue $Data 'deniedOverrideKeys') | ForEach-Object { ([string]$_).ToLowerInvariant() })
     foreach ($key in $ov.Keys) {
         if ($key -in $denied) { & $issue 'RP-BASELINE' 'error' "override.$key" "The override '$key' would change the baseline (AllowUnencrypted false, Basic and CredSSP off, no SkipCACheck or SkipCNCheck, TLS 1.2 or higher). No override can change it." }
@@ -409,7 +438,8 @@ function Resolve-AzlRemotingProfile {
     $widest6 = [int]$sourceRow.widestPrefixV6
     $floor4 = [int](Get-RpValue $Data 'widestPrefix.hardFloorV4' 9)
     $floor6 = [int](Get-RpValue $Data 'widestPrefix.hardFloorV6' 9)
-    $limitFor = { param($info) if ($info.Family -eq 'IPv4') { $widest4 } else { $widest6 } }
+    # The table can only narrow the width a class takes: the hard floor is the widest that is ever possible, whatever the table says.
+    $limitFor = { param($info) if ($info.Family -eq 'IPv4') { [Math]::Max($widest4, $floor4) } else { [Math]::Max($widest6, $floor6) } }
     $floorFor = { param($info) if ($info.Family -eq 'IPv4') { $floor4 } else { $floor6 } }
     $sources = [System.Collections.Generic.List[object]]::new()
     $seen = @{}
@@ -427,6 +457,10 @@ function Resolve-AzlRemotingProfile {
         foreach ($network in @(Get-RpNetworkSource -Infrastructure $Infrastructure -Purposes @($sourceRow.networkPurposes))) {
             $info = ConvertTo-AzlCidr -Text $network.Cidr
             if (-not $info.Valid) { continue }   # the schema reports a malformed subnet
+            if ($info.Prefix -lt (& $floorFor $info)) {
+                & $issue 'AZL-062' 'warning' $network.From "The $($network.Purpose) network $($info.Normalized) is /$($info.Prefix): networks from /0 to /8 are never a source, so it is left out of the nodes' firewall scope. List the controller addresses in os_configuration.remoting.allowed_source_cidrs."
+                continue
+            }
             if ($info.Prefix -lt (& $limitFor $info)) {
                 & $issue 'AZL-062' 'warning' $network.From "The $($network.Purpose) network $($info.Normalized) is wider than the class $class allows ($($info.Family) /$(& $limitFor $info)), so it is left out of the nodes' firewall scope. List the controller addresses in os_configuration.remoting.allowed_source_cidrs."
                 continue
@@ -520,9 +554,10 @@ function Resolve-AzlRemotingProfile {
     $approval = [string]$row.bootstrap.approval
     $approved = ($ov.ContainsKey('approved_bootstrap') -and (ConvertTo-RpBool $ov['approved_bootstrap']) -eq $true)
     $approvalSource = if ($approved) { [string]$(if ($ov.ContainsKey('approved_bootstrap_source')) { $ov['approved_bootstrap_source'] } else { 'parameter' }) } else { '' }
-    if ($approved -and $approval -eq 'perRun' -and $approvalSource -eq 'settings') {
+    # Where the class needs an approval, only the explicit run switch counts. An approval kept in a settings file (or any other source) is dropped.
+    if ($approved -and $approval -ne 'none' -and $approvalSource -ne 'parameter') {
         $approved = $false
-        & $issue 'RP-BOOTSTRAP' 'warning' 'approved_bootstrap' "The class $class needs the bootstrap approved on every run (-ApprovedBootstrap); an approval kept in a settings file doesn't count."
+        & $issue 'RP-BOOTSTRAP' 'warning' 'approved_bootstrap' "The class $class needs the bootstrap approved by the pipeline$(if ($approval -eq 'perRun') { ' on every run' }) (-ApprovedBootstrap); an approval kept in a settings file doesn't count."
     }
     $chosen = ($bootText -ne 'none')
     $routes = @(switch ($bootText) { 'arc' { 'arc' } 'smb' { 'smb' } 'auto' { 'smb'; 'arc' } })
@@ -611,7 +646,13 @@ function Get-AzlRemotingFinding {
     param([Parameter(Mandatory)][AllowNull()][object]$Infrastructure, [string]$DataPath = $script:DefaultDataPath)
     $RemotingProfile = $null
     try { $RemotingProfile = Resolve-AzlRemotingProfile -Infrastructure $Infrastructure -DataPath $DataPath }
-    catch { return }   # a missing table is a toolkit problem, not a finding on the master file
+    catch {
+        # A missing table file is a toolkit problem, not a finding on the master file. Anything else (a table that is not JSON, a class row
+        # that is gone) must not turn the validator green: it is a finding.
+        if ($_.Exception -is [System.IO.FileNotFoundException]) { return }
+        [pscustomobject]@{ Id = 'AZL-060'; Severity = 'error'; Path = 'os_configuration.remoting'; Message = "The remote management profile could not be evaluated, so it is not validated: $($_.Exception.Message)"; LearnUrl = '' }
+        return
+    }
     foreach ($i in @($RemotingProfile.Issues | Where-Object { $_.Id -like 'AZL-*' })) {
         [pscustomobject]@{ Id = $i.Id; Severity = $i.Severity; Path = $i.Path; Message = $i.Message; LearnUrl = '' }
     }

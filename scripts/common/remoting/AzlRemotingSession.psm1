@@ -130,6 +130,8 @@ function Get-AzlTrustedHostsStore {
     }
     [pscustomobject]@{
         Supported = $true
+        # Where the previous and the applied value are kept while this machine's TrustedHosts is changed, so a run that is killed can be undone at the next start.
+        StatePath = (Join-Path (Join-Path (Join-Path ([Environment]::GetFolderPath('CommonApplicationData')) 'AzureLocal') 'osconfig') 'trustedhosts-state.json')
         Get       = { try { [string](Get-Item -LiteralPath 'WSMan:\localhost\Client\TrustedHosts' -ErrorAction Stop).Value } catch { '' } }
         Set       = { param($Value) Set-Item -LiteralPath 'WSMan:\localhost\Client\TrustedHosts' -Value $Value -Force }
     }
@@ -137,6 +139,88 @@ function Get-AzlTrustedHostsStore {
 
 function Split-AzlTrustedHost([AllowNull()][string]$Value) {
     return @(([string]$Value) -split '[,;]' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+}
+
+function Test-AzlTrustedHostEntry {
+    <#
+    .SYNOPSIS
+        Whether a value is one TrustedHosts entry this tool may write: an IP address or a plain host name. Never a wildcard, never a list
+        (a comma or a semicolon), never a space or a scope id.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([AllowNull()][string]$Value)
+    if ([string]::IsNullOrWhiteSpace($Value)) { return $false }
+    if ($Value -ne $Value.Trim() -or $Value -match '[\*,;\s%]') { return $false }
+    $bare = $Value
+    if ($bare.StartsWith('[') -and $bare.EndsWith(']')) { $bare = $bare.Substring(1, $bare.Length - 2) }
+    $address = $null
+    if ([System.Net.IPAddress]::TryParse($bare, [ref]$address)) { return ($bare -match ':' -or $bare -match '^\d{1,3}(\.\d{1,3}){3}$') }
+    return ($Value -match '^[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?(\.[A-Za-z0-9]([A-Za-z0-9-]{0,61}[A-Za-z0-9])?)*$')
+}
+
+function Get-AzlTrustedHostsStatePath([object]$Store) {
+    if ($Store -and $Store.PSObject.Properties['StatePath'] -and $Store.StatePath) { return [string]$Store.StatePath }
+    return ''
+}
+
+function Remove-AzlTrustedHostsState([string]$Path) {
+    if ($Path -and (Test-Path -LiteralPath $Path -PathType Leaf)) { Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue }
+}
+
+function Restore-AzlStaleTrustedHost {
+    <#
+    .SYNOPSIS
+        Undoes what a run that was killed (so its finally block never ran) left in TrustedHosts: the state file it wrote before it changed
+        the value says what the value was and what the run set. The previous value goes back only when the value is still the one the
+        killed run set; something changed in the meantime is left alone. A run that is still alive in another process is never undone.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param([object]$Store = (Get-AzlTrustedHostsStore))
+    $path = Get-AzlTrustedHostsStatePath $Store
+    if (-not $path -or -not (Test-Path -LiteralPath $path -PathType Leaf)) { return }
+    $record = $null
+    try { $record = Get-Content -LiteralPath $path -Raw | ConvertFrom-Json }
+    catch { Write-Warning "The TrustedHosts state file $path is damaged and was removed; TrustedHosts was not touched."; Remove-AzlTrustedHostsState $path; return }
+    if ($null -eq $record -or -not $record.PSObject.Properties['previous'] -or -not $record.PSObject.Properties['applied']) {
+        Write-Warning "The TrustedHosts state file $path is not one this tool wrote and was removed; TrustedHosts was not touched."
+        Remove-AzlTrustedHostsState $path
+        return
+    }
+    $ownerId = $(if ($record.PSObject.Properties['processId']) { [int]$record.processId } else { 0 })
+    if ($ownerId -gt 0 -and $ownerId -ne $PID) {
+        $owner = Get-Process -Id $ownerId -ErrorAction SilentlyContinue
+        $sameStart = $false
+        if ($owner -and $record.PSObject.Properties['processStart']) { try { $sameStart = ($owner.StartTime.ToUniversalTime().Ticks -eq [long]$record.processStart) } catch { $sameStart = $false } }
+        if ($owner -and $sameStart) {
+            Write-Warning "TrustedHosts was changed by a run that is still active (process $ownerId); it is not undone."
+            return
+        }
+    }
+    $current = [string](& $Store.Get)
+    if ($current -ne [string]$record.applied) {
+        Write-Warning "A run that was cut short left a TrustedHosts record, but TrustedHosts is now '$current', not the '$($record.applied)' that run set. It is left as it is."
+        if ($PSCmdlet.ShouldProcess($path, 'Remove the TrustedHosts state file')) { Remove-AzlTrustedHostsState $path }
+        return
+    }
+    if ($PSCmdlet.ShouldProcess('TrustedHosts', "Restore '$($record.previous)' (left behind by a run that was cut short)")) {
+        & $Store.Set ([string]$record.previous)
+        Remove-AzlTrustedHostsState $path
+        Write-Warning "A run that was cut short had left TrustedHosts at '$($record.applied)'; it was put back to '$($record.previous)'."
+        Write-AzlRemotingEvent -State TrustedHostsRestored -Level Warning -Evidence "TrustedHosts restored to '$($record.previous)': an earlier run was cut short and had left '$($record.applied)'." -Data ([ordered]@{ restored = [string]$record.previous; replaced = [string]$record.applied; stale = $true })
+    }
+}
+
+function Write-AzlTrustedHostsState {
+    [CmdletBinding(SupportsShouldProcess)]
+    param([string]$Path, [string]$Previous, [string]$Applied)
+    if (-not $Path) { return }
+    if (-not $PSCmdlet.ShouldProcess($Path, 'Record the TrustedHosts values before they change')) { return }
+    $directory = [IO.Path]::GetDirectoryName([IO.Path]::GetFullPath($Path))
+    if ($directory -and -not (Test-Path -LiteralPath $directory -PathType Container)) { $null = New-Item -ItemType Directory -Force -Path $directory }
+    $me = Get-Process -Id $PID
+    $record = [ordered]@{ previous = $Previous; applied = $Applied; processId = $PID; processStart = $me.StartTime.ToUniversalTime().Ticks; written = [datetime]::UtcNow.ToString('o') }
+    Set-Content -LiteralPath $Path -Value (ConvertTo-Json -InputObject $record -Compress) -Encoding utf8NoBOM
 }
 
 function Set-AzlTrustedHostsPolicy {
@@ -158,6 +242,9 @@ function Set-AzlTrustedHostsPolicy {
         [object]$Store = (Get-AzlTrustedHostsStore)
     )
     $mode = [string]$RemotingProfile.TrustedHosts.Mode
+    # A run that was killed leaves its wildcard behind; put the old value back first, so it is never taken for the "previous" value of this run.
+    if ($Store.Supported) { Restore-AzlStaleTrustedHost -Store $Store -WhatIf:$WhatIfPreference -Confirm:$false }
+    $statePath = Get-AzlTrustedHostsStatePath $Store
     $previous = [string](& $Store.Get)
     $existing = Split-AzlTrustedHost $previous
     $warnings = [System.Collections.Generic.List[string]]::new()
@@ -174,6 +261,12 @@ function Set-AzlTrustedHostsPolicy {
             }
             'exact' {
                 $wanted = @($Address | Where-Object { $_ } | Select-Object -Unique)
+                $bad = @($wanted | Where-Object { -not (Test-AzlTrustedHostEntry $_) })
+                if ($bad.Count) {
+                    $exception = [System.ArgumentException]::new("TrustedHosts takes an IP address or a host name for each node, and nothing else: no wildcard, no list. Not accepted: $($bad -join ' | '). Fix -NodeAddress or the node addresses in the master file.")
+                    $exception.Data['AzlInput'] = $true
+                    throw $exception
+                }
                 $missing = @($wanted | Where-Object { $existing -notcontains $_ -and $existing -notcontains '*' })
                 if ($missing.Count) { $applied = (@($existing) + @($missing)) -join ','; $changed = $true }
             }
@@ -181,14 +274,18 @@ function Set-AzlTrustedHostsPolicy {
                 if ($existing -contains '*') { $warnings.Add("TrustedHosts on this machine already contains '*' (not set by this run). The class $($RemotingProfile.Class) never sets it and does not copy it; remove it when this machine is no longer a lab-only machine.") }
             }
         }
-        if ($changed -and $PSCmdlet.ShouldProcess('TrustedHosts', "Set to '$applied'")) { & $Store.Set $applied }
+        if ($changed -and $PSCmdlet.ShouldProcess('TrustedHosts', "Set to '$applied'")) {
+            # The previous and the applied value are on disk BEFORE the value changes: a hard kill after this line is undone at the next start.
+            if ($RemotingProfile.TrustedHosts.RestoreAfterRun) { Write-AzlTrustedHostsState -Path $statePath -Previous $previous -Applied $applied -Confirm:$false }
+            & $Store.Set $applied
+        }
         elseif ($changed) { $changed = $false; $applied = $previous }
     }
     if ($changed) {
         Write-AzlRemotingEvent -State TrustedHostsChanged -Level $(if ($applied -eq '*') { 'Warning' } else { 'Info' }) -Evidence "TrustedHosts changed from '$previous' to '$applied' (class $($RemotingProfile.Class), mode $mode). It is restored after the run$(if (-not $RemotingProfile.TrustedHosts.RestoreAfterRun) { ' is NOT' })." -Data ([ordered]@{ class = $RemotingProfile.Class; mode = $mode; previous = $previous; applied = $applied })
     }
     foreach ($w in $warnings) { Write-Warning $w }
-    [pscustomobject]@{ Mode = $mode; Previous = $previous; Applied = $applied; Changed = $changed; Supported = [bool]$Store.Supported; Restore = [bool]$RemotingProfile.TrustedHosts.RestoreAfterRun; Warnings = $warnings.ToArray() }
+    [pscustomobject]@{ Mode = $mode; Previous = $previous; Applied = $applied; Changed = $changed; Supported = [bool]$Store.Supported; Restore = [bool]$RemotingProfile.TrustedHosts.RestoreAfterRun; Warnings = $warnings.ToArray(); StatePath = $statePath }
 }
 
 function Restore-AzlTrustedHostsPolicy {
@@ -200,14 +297,17 @@ function Restore-AzlTrustedHostsPolicy {
     [CmdletBinding(SupportsShouldProcess)]
     param([Parameter(Mandatory)][object]$Session, [object]$Store = (Get-AzlTrustedHostsStore))
     if ($Session.PSObject.Properties['Restored'] -and $Session.Restored) { return [pscustomobject]@{ Restored = $true; Reason = 'already restored' } }
+    $statePath = $(if ($Session.PSObject.Properties['StatePath']) { [string]$Session.StatePath } else { '' })
     if (-not $Session.Changed -or -not $Session.Restore) { return [pscustomobject]@{ Restored = $false; Reason = $(if (-not $Session.Changed) { 'the policy changed nothing' } else { 'the profile keeps the value' }) } }
     $current = [string](& $Store.Get)
     if ($current -ne $Session.Applied) {
         Write-Warning "TrustedHosts is '$current', not the '$($Session.Applied)' this run set; it was changed meanwhile and is left as it is."
+        Remove-AzlTrustedHostsState $statePath
         return [pscustomobject]@{ Restored = $false; Reason = 'changed by something else meanwhile' }
     }
     if ($PSCmdlet.ShouldProcess('TrustedHosts', "Restore '$($Session.Previous)'")) {
         & $Store.Set $Session.Previous
+        Remove-AzlTrustedHostsState $statePath
         $Session | Add-Member -NotePropertyName Restored -NotePropertyValue $true -Force
         Write-AzlRemotingEvent -State TrustedHostsRestored -Evidence "TrustedHosts restored to '$($Session.Previous)'." -Data ([ordered]@{ restored = $Session.Previous; replaced = $Session.Applied })
         return [pscustomobject]@{ Restored = $true; Reason = '' }
@@ -293,4 +393,4 @@ function Format-AzlWinRmUnreachableMessage {
     "${who}no answer on $Address TCP $($Port -join '/'). A freshly provisioned node's firewall allows WinRM from its own subnet only, so the node firewall probably limits WinRM to its own subnet and this host is outside it. $options Class $($RemotingProfile.Class) allows these sources: $(@($RemotingProfile.Firewall.RemoteAddress) -join ', ')."
 }
 
-Export-ModuleMember -Function Set-AzlRemotingEventSink, Get-AzlRemotingEvent, Write-AzlRemotingEvent, Send-AzlRemotingProfileEvent, Get-AzlTrustedHostsStore, Set-AzlTrustedHostsPolicy, Restore-AzlTrustedHostsPolicy, Invoke-AzlWithRemotingSession, Resolve-AzlRemotingEndpoint, Format-AzlWinRmUnreachableMessage
+Export-ModuleMember -Function Set-AzlRemotingEventSink, Get-AzlRemotingEvent, Write-AzlRemotingEvent, Send-AzlRemotingProfileEvent, Get-AzlTrustedHostsStore, Test-AzlTrustedHostEntry, Restore-AzlStaleTrustedHost, Set-AzlTrustedHostsPolicy, Restore-AzlTrustedHostsPolicy, Invoke-AzlWithRemotingSession, Resolve-AzlRemotingEndpoint, Format-AzlWinRmUnreachableMessage
