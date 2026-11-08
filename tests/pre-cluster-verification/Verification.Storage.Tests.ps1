@@ -200,3 +200,21 @@ Describe 'A pool or cluster section whose read failed is not read as a clean nod
         $r[0].Message | Should -Match 'storage service not running'
     }
 }
+
+Describe 'ST-006 aligns with the OS configuration SAN logic: MPIO''s own device list (MPDEV MPIOSupportedDeviceList)' {
+    It 'is Failed when the array is multipathed and registered with MSDSM but not in MPIOSupportedDeviceList, with the mpclaim -n -i -d command' {
+        $f = New-VerLab -Claimed
+        $f.World.Snapshot['n01'].mpio.mpdevRead = $true; $f.World.Snapshot['n01'].mpio.mpdev = @()
+        $r = Invoke-VerRun 'ST-006' $f.World $f.Infra | Where-Object Node -EQ 'n01'
+        $r.Status | Should -Be 'Failed'
+        $r.Message | Should -Match 'MPIOSupportedDeviceList'
+        $r.Remedy | Should -Match 'mpclaim -n -i -d'
+    }
+    It 'passes when the list holds the vendor and product, and is not judged when the key could not be read' {
+        $f = New-VerLab -Claimed
+        $f.World.Snapshot['n01'].mpio.mpdevRead = $true; $f.World.Snapshot['n01'].mpio.mpdev = @(@{ vendor = 'PURE'; product = 'FlashArray' })
+        (Invoke-VerRun 'ST-006' $f.World $f.Infra | Where-Object Node -EQ 'n01').Status | Should -Be 'Passed'
+        $g = New-VerLab -Claimed
+        (Invoke-VerRun 'ST-006' $g.World $g.Infra | Where-Object Node -EQ 'n01').Status | Should -Be 'Passed'
+    }
+}

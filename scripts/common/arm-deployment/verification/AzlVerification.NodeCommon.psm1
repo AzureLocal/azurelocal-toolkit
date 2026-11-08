@@ -604,7 +604,14 @@ Invoke-Section 'mpio' {
     foreach ($line in $raw) {
         if ($line -match '^\s*MPIO Disk\s*(\d+)\s+(?:Disk\s*)?(\d+)?\s*(\S+)?\s+(.*?)\s*$') { $claims += @{ mpio = [int]$Matches[1]; disk = $Matches[2]; policy = $Matches[3]; dsm = $Matches[4] } }
     }
-    $Az.mpio = @{ feature = $feature; availableHw = $avail; supportedHw = $supp; claims = $claims; lb = $lb; mpclaimLines = $raw.Count }
+    # What MPIO itself will claim: HKLM\SYSTEM\CurrentControlSet\Control\MPDEV\MPIOSupportedDeviceList, each entry the vendor padded to 8 and the product padded to 16 (what mpclaim -n -i -d writes).
+    $mpdev = @(); $mpdevRead = $false
+    $mpdevKey = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\MPDEV' -ErrorAction SilentlyContinue
+    if ($mpdevKey) {
+        $mpdevRead = $true
+        if ($mpdevKey.PSObject.Properties['MPIOSupportedDeviceList']) { $mpdev = @($mpdevKey.MPIOSupportedDeviceList | ForEach-Object { $e = [string]$_; if ($e.Length -gt 8) { @{ vendor = $e.Substring(0, 8).Trim(); product = $e.Substring(8).Trim() } } else { @{ vendor = $e.Trim(); product = '' } } }) }
+    }
+    $Az.mpio = @{ feature = $feature; availableHw = $avail; supportedHw = $supp; claims = $claims; lb = $lb; mpclaimLines = $raw.Count; mpdev = $mpdev; mpdevRead = $mpdevRead }
 }
 Invoke-Section 'fc' {
     $Az.fc = @(Get-InitiatorPort -ErrorAction SilentlyContinue | Where-Object { [string]$_.ConnectionType -match 'Fibre' } | ForEach-Object { @{ wwpn = [string]$_.PortAddress; wwnn = [string]$_.NodeAddress } })
