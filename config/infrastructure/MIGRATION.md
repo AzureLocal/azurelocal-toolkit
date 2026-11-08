@@ -261,3 +261,23 @@ Schema 5.4 only adds optional keys; a 5.3 file is valid as it is. Nothing change
 | `operations.monitoring` | `operations.monitoring` |
 | `devops.gitlab`, `devops.terraform` | `devops` |
 | Legacy roots `azure`, `platform`, `cluster`, `azure_infrastructure`, `azure_resources`, `azure_local`, `azure_vms` | The sections above; they held copies of the same values |
+
+## Schema 5.6: the deployment block
+
+Schema 5.6 adds one optional section, `deployment`, for the toolkit's ARM Validate and Deploy run (`Invoke-AzureLocalArmDeployment.ps1`; see [docs/arm-deployment-guide.md](../../docs/arm-deployment-guide.md)). It only adds keys: every 5.0 to 5.5 file stays valid, and a file without the section behaves as before, with the defaults shown below.
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `deployment.validate_timeout_minutes` | 90 | How long the run waits for a Validate |
+| `deployment.deploy_timeout_minutes` | 360 | How long the run waits for a Deploy |
+| `deployment.poll_seconds`, `poll_max_seconds` | 15, 120 | First and longest delay between status reads (the delay grows by half each read) |
+| `deployment.approval` | `stop` | `ValidateAndDeploy`: `stop` ends after a good Validate, `prompt` asks, `none` continues |
+| `deployment.resume` | `false` | Allow a failed Deploy to be resubmitted |
+| `deployment.require_os_configuration_report` | `false` | A missing OS configuration report fails a precondition instead of being skipped |
+| `deployment.skip_preconditions` | none | Preconditions to skip on purpose (reported as Skipped) |
+| `deployment.acknowledge_known_issues` | none | Known issue ids you accept (`config/known-issues/arm-deployment.json`) |
+| `deployment.deployment_settings_api_version` | the template's | Patch Microsoft's template api-version |
+
+**Steps:** nothing is required. To use the block, set `_metadata.schema_version` to `5.6.0` and add the keys you want. AZL-040 checks them.
+
+**Version numbers.** Other branches of this repository also add keys and bump the minor version (the OS configuration branch uses 5.4.3, the CI/CD branch 5.5). 5.6 is the next number above both. When the branches are merged the numbers are settled once, in one place; the key names do not change.

@@ -1,6 +1,6 @@
 # infrastructure.yml variables reference
 
-Every key of [`infrastructure.yml`](README.md), schema 5.3, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](infrastructure.schema.json), the templates and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don't edit it: change those and run:
+Every key of [`infrastructure.yml`](README.md), schema 5.6, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](infrastructure.schema.json), the templates and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don't edit it: change those and run:
 
 ```powershell
 ./scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1
@@ -176,6 +176,24 @@ The Azure Local instance (the cluster deployment).
 | `cluster.diagnostics.storage_account` |  | storage account name | no / no |  | `stiicazl01diag` | Your naming standard and witness design. | Trailwright |
 | `cluster.diagnostics.logs_retention_days` |  | integer | no / no |  | `30` | Your naming standard and witness design. | Trailwright |
 | `cluster.diagnostics.storage_account_type` |  | string | no / no |  | `Standard_LRS` | Your naming standard and witness design. | Trailwright |
+
+### deployment
+
+How the toolkit's ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks for approval and recovers.
+
+| Path | What it is | Type | Required: full / ztp | Default | Example | Where to get the value | Read by |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `deployment` | How the toolkit's ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks for approval and recovers. | object | no / no |  |  |  | ARM deployment, Trailwright |
+| `deployment.validate_timeout_minutes` | How long the run waits for a Validate before it stops waiting (state ValidationTimedOut; Azure keeps working and the next run attaches to it). | integer | no / no | `90` |  | Your run policy for Invoke-AzureLocalArmDeployment.ps1: how long to wait, whether to ask before the Deploy, whether a failed Deploy may be resumed. The defaults suit most runs. | ARM deployment, Trailwright |
+| `deployment.deploy_timeout_minutes` | How long the run waits for a Deploy before it stops waiting (state DeploymentTimedOut). | integer | no / no | `360` |  | Your run policy for Invoke-AzureLocalArmDeployment.ps1: how long to wait, whether to ask before the Deploy, whether a failed Deploy may be resumed. The defaults suit most runs. | ARM deployment, Trailwright |
+| `deployment.poll_seconds` | Seconds between the first reads of the validation or deployment status. | integer | no / no | `15` |  | Your run policy for Invoke-AzureLocalArmDeployment.ps1: how long to wait, whether to ask before the Deploy, whether a failed Deploy may be resumed. The defaults suit most runs. | ARM deployment, Trailwright |
+| `deployment.poll_max_seconds` | The longest delay between two reads. | integer | no / no | `120` |  | Your run policy for Invoke-AzureLocalArmDeployment.ps1: how long to wait, whether to ask before the Deploy, whether a failed Deploy may be resumed. The defaults suit most runs. | ARM deployment, Trailwright |
+| `deployment.approval` | Mode ValidateAndDeploy: what happens between a good Validate and the Deploy. stop (default): the run ends in state AwaitingApproval and a later run w... | one of `stop`, `prompt`, `none` | no / no | `stop` |  | Your run policy for Invoke-AzureLocalArmDeployment.ps1: how long to wait, whether to ask before the Deploy, whether a failed Deploy may be resumed. The defaults suit most runs. | ARM deployment, Trailwright |
+| `deployment.resume` | Allow the run to resubmit a failed Deploy (and attach to a running one). | boolean | no / no | `false` |  | Your run policy for Invoke-AzureLocalArmDeployment.ps1: how long to wait, whether to ask before the Deploy, whether a failed Deploy may be resumed. The defaults suit most runs. | ARM deployment, Trailwright |
+| `deployment.require_os_configuration_report` | Fail the precondition OsConfigurationConverged when no OS configuration report is given, instead of skipping it with a warning. | boolean | no / no | `false` |  | Your run policy for Invoke-AzureLocalArmDeployment.ps1: how long to wait, whether to ask before the Deploy, whether a failed Deploy may be resumed. The defaults suit most runs. | ARM deployment, Trailwright |
+| `deployment.skip_preconditions` | Preconditions to skip on purpose. | list of one of `AzureContext`, `ResourceGroup`, `ResourceProviders`, `Permissions`, `NamesAvailable`, `KeyVaultSecrets`, `ArcMachinesConnected`, `ArcMachineNaming`, `OsConfigurationConverged`, `OsBuildConsistent` | no / no |  |  | Your run policy for Invoke-AzureLocalArmDeployment.ps1: how long to wait, whether to ask before the Deploy, whether a failed Deploy may be resumed. The defaults suit most runs. | ARM deployment, Trailwright |
+| `deployment.acknowledge_known_issues` | Ids from config/known-issues/arm-deployment.json that you accept, so a precondition or a resume that a known issue would block goes ahead (for exampl... | list of string | no / no |  |  | Your run policy for Invoke-AzureLocalArmDeployment.ps1: how long to wait, whether to ask before the Deploy, whether a failed Deploy may be resumed. The defaults suit most runs. | ARM deployment, Trailwright |
+| `deployment.deployment_settings_api_version` | Patch the deploymentSettings api-version in Microsoft's template (for example 2026-10-01) when the template's own preview version is retired. | string | no / no | `the template's` |  | Your run policy for Invoke-AzureLocalArmDeployment.ps1: how long to wait, whether to ask before the Deploy, whether a failed Deploy may be resumed. The defaults suit most runs. | ARM deployment, Trailwright |
 
 ### nodes
 
