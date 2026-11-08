@@ -110,6 +110,8 @@ What the Arc option needs:
 
 ### SBE delivery: how the package reaches the nodes
 
+Opt-in only: with no `hardware.sbe` block, or a block with no `delivery`, nothing is copied to any node. The routes below apply when you set `hardware.sbe.delivery` yourself.
+
 Run Command carries scripts, not files, and there is no storage account in this design. `hardware.sbe.delivery` in `infrastructure.yml` (schema 5.4.2) chooses the route. Every route ends with the SHA-256 checked on the node; the SBE step runs last and a route that cannot be used never stops the other steps (OS/ARM page, SBE; Code).
 
 | `delivery` | What carries the file | The path it needs | Notes |

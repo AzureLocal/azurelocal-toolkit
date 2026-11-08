@@ -206,9 +206,9 @@ The mapping from slot label to attribute is data in ZTP, `config/oem/<vendor>.js
 | AZL-010 | Storage networks use storage-intent adapters; with `auto_ip: false` every network has a subnet and every node an address on each |
 | AZL-011 | Intent adapters exist in `hardware.network_cards`, when the cards are described |
 | AZL-012 | Rack aware volumes are two-way or four-way mirror |
-| AZL-013 | Warnings: the OS version isn't pinned, an unvalidated SBE is allowed, simplified provisioning outside eastus |
+| AZL-013 | Warnings: the OS version isn't pinned, an unvalidated SBE is allowed (only when `hardware.sbe` is there), simplified provisioning outside eastus |
 | AZL-014 | No public DNS servers |
-| AZL-015 | Simplified provisioning has a BMC login for every machine and the SBE folder |
+| AZL-015 | Simplified provisioning has a BMC login for every machine. The SBE is optional: only a `hardware.sbe` that is there and incomplete is an error (it needs `bundle_path`, from which publisher, family and version are read, or `publisher`, `family` and `version` for an SBE you placed in `C:\SBE` yourself; in a `ztp` file, `bundle_path`) |
 | AZL-016 | Arc gateway (and the private path) isn't used with simplified provisioning or in Azure Government |
 | AZL-017 | Management ports: no MAC is used by two nodes; with `ip_assignment: dhcp`, a warning per node to reserve its address for its MAC |
 | AZL-018 | Arc machine names (`arc_machine_name`, default the node name) are unique; the deprecated `arc_resource_name` is a warning, or an error when it disagrees with `arc_machine_name`; `arc_machine_name` on an ISO install is a warning, because the Arc machine takes the host name |
@@ -223,6 +223,7 @@ The mapping from slot label to attribute is data in ZTP, `config/oem/<vendor>.js
 | AZL-027 | The maintenance environment (5.3): `provisioning_dhcp_range` start at or below end and inside the management subnet; no maintenance address on two nodes; `static_method: site` with static addresses is a warning (Microsoft uses the first ready port, not the MAC) |
 | AZL-028 | The SAN (5.3): Fibre Channel needs target WWPNs and every node's HBA WWPNs, and every WWPN names a defined fabric; iSCSI needs targets and every node's initiator IQN, and an address on its `iscsi:a` / `iscsi:b` ports; no WWPN or IQN is used twice; fabric names are unique |
 | AZL-029 | What ZTP derives (5.4, simplified provisioning): an HBA slot is a PCIe slot label (`Slot 2`) while isolation is on, and no network port shares it; `isolate_san_adapters: true` with no HBA listed is a warning; `ntp.configuration: Manual` needs a server; the voucher budget is not longer than the Bootstrap budget |
+| AZL-032 | Info, not a warning: the file has no `hardware.sbe`, so it deploys without a Solution Builder Extension (the OS keeps the OEM drivers already installed). An SBE is opt-in; nothing adds the block or a delivery setting for you. |
 | AZL-030 | The SBE package's delivery (5.4.2): `hardware.sbe.delivery` is `winrm_copy`, `node_pull` or `skip`; `winrm_copy` and `node_pull` need `hardware.sbe.bundle_path`; `node_pull` needs `node_pull_url`, an `https://` (or `http://`, a warning) address or a UNC folder with no user name, password, token or query string; an address with another route is a warning (not used); `winrm_copy` warns for a node with no management `ip_address` |
 | AZL-031 | The OS configuration run (5.4.3): `os_configuration.clear_storage: true` on a SAN design warns that only local disks are wiped (the key itself must be a boolean, which the schema checks). |
 | AZL-040 | The `deployment` block (5.6, ARM Validate and Deploy): `poll_max_seconds` is not less than `poll_seconds`; a Validate limit under 30 minutes, a Deploy limit under 4 hours and `approval: none` are warnings; an `acknowledge_known_issues` id that is not in `config/known-issues/arm-deployment.json` is a warning |

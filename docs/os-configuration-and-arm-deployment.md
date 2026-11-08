@@ -624,6 +624,8 @@ The deployment's local administrator is not the built-in Administrator: the depl
 
 ## SBE (the OEM's Solution Builder Extension)
 
+**The SBE is optional and opt-in.** Microsoft uses an SBE only if your hardware partner provides one for your solution version. With **no `hardware.sbe` block** in `infrastructure.yml` you deploy without a Solution Builder Extension: the OS keeps the OEM drivers already installed, OS configuration has no Sbe or Drivers work, the ARM deployment passes no SBE value, and the validator says so with the Info AZL-032. Nothing in the toolkit adds the block or a `hardware.sbe.delivery` setting; the package is copied to a node only when you set `delivery` to `winrm_copy` or `node_pull`. The rest of this section applies only when the block is there.
+
 | Prepare | Detail | Checked |
 | --- | --- | --- |
 | A folder outside any repository | `hardware.sbe.bundle_path`, for example `D:\sbe\dell`: one `SBE_*.zip`, its `SBE_*.xml` and `SBE_Discovery_*.xml`, as downloaded from the OEM | Code |

@@ -274,6 +274,17 @@ Schema 5.4.2 only adds two optional keys; every 5.0 to 5.4.1 file stays valid. S
 
 **What changes in behaviour.** The staging storage account route is gone: `Set-AzureLocalNodeConfiguration.ps1` no longer takes `-StagingStorageAccount` or `-StagingContainer`, and nothing is uploaded to Azure. Before, a WinRM run copied the package by default and an Arc run needed a storage account. Now nothing is delivered unless `delivery` says how (`skip` is the default), the Sbe step runs last, and a package that is not delivered is reported without failing the other steps. If you used the WinRM transport to copy the package, set `delivery: winrm_copy`. If you passed `-StagingStorageAccount`, serve the SBE folder read-only from a host the nodes can reach and set `delivery: node_pull` and `node_pull_url`.
 
+## Registry 5.0.2: the SBE is optional (no schema version change)
+
+`hardware.sbe` was never a required key, but rule AZL-015 asked simplified provisioning for `hardware.sbe.bundle_path`. That is gone: **no `hardware.sbe` means deploy without a Solution Builder Extension** (the OS keeps the OEM drivers already installed; Microsoft Learn: the SBE is used only if the hardware partner provides one). A 5.x file stays valid as it is.
+
+| If your file | Then |
+| --- | --- |
+| has no `hardware.sbe` | Valid. AZL-032 says so as an Info. The OS configuration run has nothing to do for the Sbe and Drivers steps and the ARM deployment passes no SBE parameter. |
+| has `hardware.sbe` | It must be complete: `bundle_path` (publisher, family and version are read from the package), or `publisher`, `family` and `version` for an SBE you placed in `C:\SBE` yourself (a `ztp` file needs `bundle_path`). Otherwise AZL-015 is an error. |
+
+**Opt-in only.** Nothing adds a `hardware.sbe` block, and no tool sets `hardware.sbe.delivery` for you: `skip` stays the default and a block with no `delivery` copies nothing. A package is delivered to `C:\SBE` only when you set `delivery` to `winrm_copy` or `node_pull`.
+
 ## To 5.4.3: the OS configuration switch
 
 Schema 5.4.3 only adds one optional section; a 5.4.0 file is valid as it is. Nothing changes for a file that does not use it: leftover local storage is reported as blocking and nothing is wiped.
