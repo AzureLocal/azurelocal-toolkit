@@ -30,6 +30,11 @@ azurelocal_os_configuration_transport: Auto
 azurelocal_os_configuration_method: Auto
 # -ClearStorage forces the storage wipe on (Apply only). os_configuration.clear_storage in the master file does the same.
 azurelocal_os_configuration_clear_storage: false
+# -ApprovedBootstrap: the pipeline approval of the one-time bootstrap (the environment classes production and dmz need it). Apply phase only; the
+# route itself (arc, smb or auto) is chosen in the master file (os_configuration.remoting.bootstrap_transport).
+azurelocal_os_configuration_approved_bootstrap: false
+# -EventLogPath: the event feed (JSON Lines) a viewer follows. Empty: os-configuration-events.jsonl in the report folder of the phase.
+azurelocal_os_configuration_event_log_path: ""
 # -FailOnPendingChanges: Plan phase only; drift detection.
 azurelocal_os_configuration_fail_on_pending_changes: false
 # -ConfigPath, -Settings, -NodeAddress, -SkipValidation

@@ -50,6 +50,7 @@
       ContinueOnNodeFailure: "{{ azurelocal_os_configuration_continue_on_node_failure | bool }}"
       Transport: "{{ azurelocal_os_configuration_transport }}"
       Method: "{{ azurelocal_os_configuration_method }}"
+      EventLogPath: "{{ azurelocal_os_configuration_event_log_path if azurelocal_os_configuration_event_log_path else (azurelocal_os_configuration__report_dir ~ '/os-configuration-events.jsonl') }}"
     azurelocal_os_configuration__args_optional:
       HandoffPath: "{{ azurelocal_os_configuration_handoff_path }}"
       Node: "{{ azurelocal_os_configuration_nodes }}"
@@ -59,6 +60,7 @@
       NodeAddress: "{{ azurelocal_os_configuration_node_address }}"
     azurelocal_os_configuration__args_switches:
       ClearStorage: "{{ azurelocal_os_configuration_clear_storage | bool }}"
+      ApprovedBootstrap: "{{ azurelocal_os_configuration_approved_bootstrap | bool and azurelocal_os_configuration__phase == 'Apply' }}"
       FailOnPendingChanges: "{{ azurelocal_os_configuration_fail_on_pending_changes | bool and azurelocal_os_configuration__phase == 'Plan' }}"
       SkipValidation: "{{ azurelocal_os_configuration_skip_validation | bool }}"
 

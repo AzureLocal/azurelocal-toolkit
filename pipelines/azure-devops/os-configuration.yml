@@ -13,8 +13,9 @@
 #
 # Transport. WinRM is the default: the agent must have line of sight to the nodes' management network (TCP 5985, or 5986 with HTTPS).
 # Azure Arc Run Command is used only when transport is set to ArcRunCommand (for sites with no route to the nodes), never as a
-# silent fallback. approved_bootstrap opens the nodes' WinRM firewall rule once through Arc, in the Apply stage only, after the
-# approval; it needs the remoting settings (remoting.bootstrapTransport) of the OS configuration scripts.
+# silent fallback. approved_bootstrap passes -ApprovedBootstrap to the entry point, in the Apply stage only, after the reviewer's
+# approval: it is the pipeline approval the environment classes production and dmz need before the one-time bootstrap may open the nodes'
+# WinRM firewall rule. The route itself (arc, smb or auto) is chosen in the master file (os_configuration.remoting.bootstrap_transport).
 #
 # What to configure in the organization (names only; no value of any ID, password or key is in this file):
 #   Agent pool      a self-hosted pool (parameter agent_pool) with PowerShell 7 (pwsh), Az.Accounts and Az.KeyVault, and a route to
@@ -64,7 +65,7 @@ parameters:
     type: string
     default: all
   - name: steps
-    displayName: 'Steps to run, comma separated (all: the steps of each node''s method). RemoteManagement, Sbe, Drivers, Network, Dns, Time, Hostname, UnusedAdapters, LocalAdmin, Mpio, SanVerify, ClearStorage, ArcRegistration'
+    displayName: 'Steps to run, comma separated (all: the steps of each node''s method). RemoteManagement, Sbe, Drivers, Network, Dns, Time, Hostname, UnusedAdapters, DomainJoin, LocalAdmin, Mpio, SanVerify, ClearStorage, ArcRegistration'
     type: string
     default: all
   - name: mode
@@ -152,6 +153,7 @@ stages:
                   Mode               = 'Plan'
                   Transport          = $env:OSC_TRANSPORT
                   ReportDirectory    = $env:OSC_REPORT_DIRECTORY
+                  EventLogPath       = Join-Path $env:OSC_REPORT_DIRECTORY 'os-configuration-events.jsonl'
                 }
                 if ($env:OSC_HANDOFF_PATH -and $env:OSC_HANDOFF_PATH -ne 'none') { $p.HandoffPath = $env:OSC_HANDOFF_PATH }
                 foreach ($pair in @(@('OSC_NODES', 'Node'), @('OSC_STEPS', 'Step'))) {
@@ -285,6 +287,7 @@ stages:
                         Mode               = 'Apply'
                         Transport          = $env:OSC_TRANSPORT
                         ReportDirectory    = $env:OSC_REPORT_DIRECTORY
+                        EventLogPath       = Join-Path $env:OSC_REPORT_DIRECTORY 'os-configuration-events.jsonl'
                       }
                       if ($env:OSC_HANDOFF_PATH -and $env:OSC_HANDOFF_PATH -ne 'none') { $p.HandoffPath = $env:OSC_HANDOFF_PATH }
                       foreach ($pair in @(@('OSC_NODES', 'Node'), @('OSC_STEPS', 'Step'))) {
@@ -293,7 +296,7 @@ stages:
                         if ($list.Count) { $p[$pair[1]] = $list }
                       }
                       if ($env:OSC_CLEAR_STORAGE -eq 'true') { $p.ClearStorage = $true }
-                      if ($env:OSC_APPROVED_BOOTSTRAP -eq 'true') { $p.Settings = @{ remoting = @{ bootstrapTransport = 'arc' } } }
+                      if ($env:OSC_APPROVED_BOOTSTRAP -eq 'true') { $p.ApprovedBootstrap = $true }
                       & $env:OSCONFIG_SCRIPT @p
                       if ($LASTEXITCODE -ne 0) { throw "Invoke-AzureLocalOsConfiguration.ps1 exited with code $LASTEXITCODE." }
                   env:

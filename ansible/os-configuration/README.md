@@ -96,6 +96,8 @@ Each role variable passes one wrapper parameter. Empty values are left out, so t
 | `-Transport` | `azurelocal_os_configuration_transport` | `Auto` |
 | `-Method` | `azurelocal_os_configuration_method` | `Auto` |
 | `-ClearStorage` | `azurelocal_os_configuration_clear_storage` | `false` |
+| `-ApprovedBootstrap` | `azurelocal_os_configuration_approved_bootstrap` (Apply phase only) | `false` |
+| `-EventLogPath` | `azurelocal_os_configuration_event_log_path` | empty (`os-configuration-events.jsonl` in the report folder of the phase) |
 | `-FailOnPendingChanges` | `azurelocal_os_configuration_fail_on_pending_changes` (Plan phase only) | `false` |
 | `-ConfigPath` | `azurelocal_os_configuration_config_path` | empty |
 | `-Settings` | `azurelocal_os_configuration_settings` | `{}` |

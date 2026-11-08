@@ -34,7 +34,7 @@ argument_specs:
         type: list
         elements: str
         default: []
-        choices: [RemoteManagement, Sbe, Drivers, Network, Dns, Time, Hostname, UnusedAdapters, LocalAdmin, Mpio, SanVerify, ClearStorage, ArcRegistration]
+        choices: [RemoteManagement, Sbe, Drivers, Network, Dns, Time, Hostname, UnusedAdapters, DomainJoin, LocalAdmin, Mpio, SanVerify, ClearStorage, ArcRegistration]
         description: Wrapper -Step.
       azurelocal_os_configuration_continue_on_node_failure:
         type: bool
@@ -54,6 +54,14 @@ argument_specs:
         type: bool
         default: false
         description: Wrapper -ClearStorage.
+      azurelocal_os_configuration_approved_bootstrap:
+        type: bool
+        default: false
+        description: Wrapper -ApprovedBootstrap (the pipeline approval of the one-time bootstrap; Apply phase only).
+      azurelocal_os_configuration_event_log_path:
+        type: str
+        default: ""
+        description: Wrapper -EventLogPath (the event feed). Empty means os-configuration-events.jsonl in the report folder of the phase.
       azurelocal_os_configuration_fail_on_pending_changes:
         type: bool
         default: false

@@ -132,9 +132,10 @@ Describe 'Azure DevOps OS configuration pipeline: approval gates' {
         $planScript = (Get-AzureStep 'Plan')['inputs']['Inline']
         $applyScript = (Get-AzureStep 'Apply')['inputs']['Inline']
         $planScript | Should -Match "Mode\s+=\s+'Plan'"
-        $planScript | Should -Not -Match 'Apply|bootstrapTransport|OSC_APPROVED_BOOTSTRAP'
+        $planScript | Should -Not -Match 'Apply|ApprovedBootstrap|OSC_APPROVED_BOOTSTRAP'
         $applyScript | Should -Match "Mode\s+=\s+'Apply'"
-        $applyScript | Should -Match "bootstrapTransport = 'arc'"
+        $applyScript | Should -Match '\$p\.ApprovedBootstrap = \$true'
+        $applyScript | Should -Not -Match 'bootstrapTransport'
         $applyScript | Should -Match "OSC_APPROVED_BOOTSTRAP -eq 'true'"
     }
 }
@@ -142,9 +143,9 @@ Describe 'Azure DevOps OS configuration pipeline: approval gates' {
 Describe 'Azure DevOps OS configuration pipeline: the entry point and PowerShell 7' {
     It 'the entry point has every parameter the pipeline passes (<Stage>)' -ForEach @(@{ Stage = 'Plan' }, @{ Stage = 'Apply' }) {
         $used = @(Get-UsedEntryParameter (Get-AzureStep $Stage)['inputs']['Inline'])
-        foreach ($n in 'InfrastructureFile', 'Mode', 'Transport', 'ReportDirectory', 'HandoffPath', 'Node', 'Step', 'ClearStorage') { $used | Should -Contain $n }
+        foreach ($n in 'InfrastructureFile', 'Mode', 'Transport', 'ReportDirectory', 'EventLogPath', 'HandoffPath', 'Node', 'Step', 'ClearStorage') { $used | Should -Contain $n }
         foreach ($u in $used) { $script:EntryParameters | Should -Contain $u }
-        if ($Stage -eq 'Apply') { $used | Should -Contain 'Settings' }
+        if ($Stage -eq 'Apply') { $used | Should -Contain 'ApprovedBootstrap' }
     }
     It 'calls the script through the OSCONFIG_SCRIPT variable and fails the task on a non-zero exit code (<Stage>)' -ForEach @(@{ Stage = 'Plan' }, @{ Stage = 'Apply' }) {
         $inline = (Get-AzureStep $Stage)['inputs']['Inline']

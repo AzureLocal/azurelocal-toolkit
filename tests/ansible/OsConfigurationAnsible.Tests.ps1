@@ -213,6 +213,18 @@ Describe 'The parameters match Invoke-AzureLocalOsConfiguration.ps1' {
         $script:ArgsVars['azurelocal_os_configuration__args_always']['Method'] | Should -Match 'azurelocal_os_configuration_method'
         $script:ArgsVars['azurelocal_os_configuration__args_always']['Transport'] | Should -Match 'azurelocal_os_configuration_transport'
     }
+    It 'the parameters added by the other OS configuration branches are accepted: ApprovedBootstrap, EventLogPath, ClearStorage, the Transport values, Method and the DomainJoin step' {
+        foreach ($p in 'ApprovedBootstrap', 'EventLogPath', 'ClearStorage', 'Transport', 'Method') { $script:WrapperParameters | Should -Contain $p }
+        $script:ArgsSwitches | Should -Contain 'ApprovedBootstrap'
+        $script:ArgsAlways | Should -Contain 'EventLogPath'
+        foreach ($v in 'Auto', 'ArcRunCommand', 'WinRM') { $script:WrapperSets['Transport'] | Should -Contain $v }
+        foreach ($v in 'Auto', 'Ztp', 'Iso') { $script:WrapperSets['Method'] | Should -Contain $v }
+        $script:WrapperSets['Step'] | Should -Contain 'DomainJoin'
+        $options = $script:Specs['argument_specs']['main']['options']
+        @($options['azurelocal_os_configuration_steps']['choices']) | Should -Contain 'DomainJoin'
+        $options.Keys | Should -Contain 'azurelocal_os_configuration_approved_bootstrap'
+        $options.Keys | Should -Contain 'azurelocal_os_configuration_event_log_path'
+    }
     It 'the README names every wrapper parameter' {
         $readme = Get-Content -LiteralPath (Join-Path $script:Root 'README.md') -Raw
         foreach ($p in $script:WrapperParameters) { $readme | Should -Match "-$p\b" -Because $p }
