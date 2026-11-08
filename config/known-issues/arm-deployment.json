@@ -1,0 +1,181 @@
+{
+  "schemaVersion": 1,
+  "description": "Known failures of the Azure Local ARM Validate and Deploy, matched against the failing step of the deployment steps tree. Read by scripts/common/arm-deployment/AzlArmDeploymentRun.psm1. Add an entry when a failure is understood; the run then prints the cause and the remediation and writes the id into the event feed (DeploymentFailed.knownIssue). Nothing here is executed.",
+  "fields": {
+    "id": "Stable identifier; goes into events and reports.",
+    "title": "One line.",
+    "phase": "Validate, Deploy, or both. The entry only matches a failure in these phases.",
+    "match": "All given members must match (regular expressions, case-insensitive). stepId is the portal's step number as text (the fullStepIndex, for example 0.41), stepName the step's name, error the step's exception text and the ARM error message together. At least one member is required.",
+    "affectedBuilds": "Optional. OS build prefixes (12.2690.) for which the issue is known; a match is still reported for other builds, but marked as not yet seen on that build.",
+    "cause": "Why it happens.",
+    "remediation": "What to do, in order.",
+    "retry": "What the tool may do next. none: do not resubmit until the cause is fixed. after-fix: resubmit (Deploy: resume) after the remediation. resubmit-once: safe to submit the same thing once more without a fix (a transient error). no-validate: never run Validate again for this instance (Deploy resume only).",
+    "confidence": "documented (Microsoft Learn says so), observed (seen on our own deployments, evidence given), pattern (matched by name or error text, not seen in a run yet).",
+    "link": "Where to read more.",
+    "evidence": "Where it was seen."
+  },
+  "issues": [
+    {
+      "id": "arc-device-id-name",
+      "title": "Deploy fails at the Arc infrastructure step because the Arc machine is named after the device ID",
+      "phase": ["Deploy"],
+      "match": { "stepName": "Arc infrastructure|ArcExtension|Deploy Arc", "error": "ParentResourceNotFound" },
+      "affectedBuilds": ["12.2690."],
+      "cause": "Simplified machine provisioning names each Arc machine <device-id>-1, not the host name. On build 2690 the step that deploys the Arc infrastructure components looks the Arc machine up by the host name (the computer name) and does not find it (ParentResourceNotFound). Validate does not reach this step, so Validate passes. A Microsoft bug; no documented workaround.",
+      "remediation": [
+        "Do not run Validate again for this instance (license sync).",
+        "Check the precondition ArcMachineNaming before Deploy: it reports every node whose Arc machine name is not its host name.",
+        "Route A: wait for a Microsoft build that fixes the lookup, then Resume the Deploy.",
+        "Route B: install the nodes from the Microsoft image and register them with Azure Arc under the host name (the OS configuration run does this for ISO-installed nodes), then Validate and Deploy.",
+        "Send the failed step, the Arc machine names and the build to Microsoft support."
+      ],
+      "retry": "none",
+      "confidence": "observed",
+      "link": "https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template",
+      "evidence": "tierpointpoc 2026-10 (nic26-clus01) and 2026-11-06: Validate passed after ZTP, Deploy failed at step 0.41 (Deploy Arc infrastructure components, ParentResourceNotFound) on 12.2690.1003.15. tierpointpoc/.ai/memory/DECISIONS.md, docs/discovery-report.md."
+    },
+    {
+      "id": "arc-device-id-name-step-0-41",
+      "title": "Deploy fails at step 0.41 (any text): device-ID Arc machine names are the first thing to rule out",
+      "phase": ["Deploy"],
+      "match": { "stepId": "^0\\.41$" },
+      "affectedBuilds": ["12.2690."],
+      "cause": "Step 0.41 is where the 2026-11-06 deployment on build 2690 stopped. If the Arc machines are named <device-id>-1, it is the same Microsoft bug as arc-device-id-name even when the error text is different or empty.",
+      "remediation": [
+        "Look at the Arc machine names in the resource group. If they are not the host names, follow arc-device-id-name.",
+        "If they are the host names, copy the step's error text from the portal (Deployments, error details) to Microsoft support and add the text to this file."
+      ],
+      "retry": "none",
+      "confidence": "observed",
+      "link": "https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template",
+      "evidence": "tierpointpoc 2026-11-06: step 0.41 on build 2690."
+    },
+    {
+      "id": "unsupported-os-version",
+      "title": "The portal or the validation reports an unsupported OS version",
+      "phase": ["Validate", "Deploy"],
+      "match": { "error": "Unsupported OS version|OS version .*(not supported|unsupported)|not a supported (OS|operating system) version" },
+      "cause": "The OS build on the machines is not one the service accepts for a new deployment in this subscription and release train (an older build, a build that is not in the catalog the subscription is entitled to, or machines on different builds). Seen on our lab: build 2609 is refused for new deployments, 2690 is a prerelease that only the entitled subscription accepts.",
+      "remediation": [
+        "Read the build on every node (the OS configuration report and the Arc machine's osVersion) and compare with the build the design pins (hardware or solution version in infrastructure.yml, the ZTP handoff's vsrVersion).",
+        "Install the build the deployment accepts on every node. All nodes must run the same build; mixed builds fail the machine validation.",
+        "For a prerelease build, deploy only in the subscription that is entitled to it.",
+        "Run Validate again only if the instance is not in a failed deployment state."
+      ],
+      "retry": "after-fix",
+      "confidence": "observed",
+      "link": "https://learn.microsoft.com/azure/azure-local/deploy/deploy-via-portal",
+      "evidence": "tierpointpoc DECISIONS.md decision 2 (Validate refuses 2609 for new deployments). The exact portal text is not on Microsoft Learn."
+    },
+    {
+      "id": "registration-5901",
+      "title": "Registration or provisioning error 5901 (403 on the target Arc machine)",
+      "phase": ["Validate", "Deploy"],
+      "match": { "error": "\\b5901\\b" },
+      "cause": "The service identity got HTTP 403 on the target Arc machine, although the role assignment existed. Seen for about 21 minutes after the role was assigned; the same request passed after a resubmit. Cause unconfirmed (role assignment propagation is the suspect).",
+      "remediation": [
+        "Check the role assignments at the resource group (Azure Connected Machine Resource Manager and the Azure Local roles) and that the assignment is a few minutes old, not seconds.",
+        "Wait 5 to 10 minutes and submit again once. For a Deploy, resume instead of starting over.",
+        "If it fails again, collect the correlation ID of the error and open a support ticket."
+      ],
+      "retry": "resubmit-once",
+      "confidence": "observed",
+      "link": "https://learn.microsoft.com/azure/azure-local/deploy/deployment-arc-register-server-permissions",
+      "evidence": "tierpointpoc docs/design.md, 'The 5901 on node 1': resubmit passed it."
+    },
+    {
+      "id": "role-assignment-already-exists",
+      "title": "Role assignment already exists",
+      "phase": ["Validate", "Deploy"],
+      "match": { "error": "RoleAssignmentExists|role assignment already exists|AzureStackHCIDeviceManagementRole" },
+      "cause": "The deployment was tried from the portal first in the same resource group, so another identity already holds the equivalent role assignment and the template cannot create it.",
+      "remediation": [
+        "The failed resource names the role assignment (for example AzureStackHCIDeviceManagementRole-RoleAssignment).",
+        "In the resource group, open Access control (IAM), Role assignments, find the assignment of that role and delete it.",
+        "Submit the deployment again."
+      ],
+      "retry": "after-fix",
+      "confidence": "documented",
+      "link": "https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template#known-issues-for-arm-template-deployment",
+      "evidence": "Microsoft Learn, ARM template deployment, known issues."
+    },
+    {
+      "id": "role-assignment-zombie",
+      "title": "Tenant ID, application ID, principal ID, and scope aren't allowed to be updated",
+      "phase": ["Validate", "Deploy"],
+      "match": { "error": "aren.t allowed to be updated|not allowed to be updated|RoleAssignmentUpdateNotPermitted" },
+      "cause": "Zombie role assignments: a former deployment's resources were deleted, but its role assignments stayed in the resource group.",
+      "remediation": [
+        "Access control (IAM), Role assignments, filter Type: Unknown. Assignments shown as 'Identity not found' are the zombies.",
+        "Delete them and submit again."
+      ],
+      "retry": "after-fix",
+      "confidence": "documented",
+      "link": "https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template#known-issues-for-arm-template-deployment",
+      "evidence": "Microsoft Learn, ARM template deployment, known issues."
+    },
+    {
+      "id": "license-sync-after-failed-validate",
+      "title": "Another Validate after a failed deployment resets the system properties (license sync)",
+      "phase": ["Validate"],
+      "match": { "error": "license sync|LicenseSync|license synchroni" },
+      "cause": "Starting a deployment in Validate mode while the instance is in the Deployment failed state resets its system properties, which can break license sync.",
+      "remediation": [
+        "Do not run Validate again. Fix the cause of the failed deployment and resume the Deploy.",
+        "If a Validate already ran, open a support ticket before doing anything else."
+      ],
+      "retry": "no-validate",
+      "confidence": "documented",
+      "link": "https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template#license-sync-issue",
+      "evidence": "Microsoft Learn, ARM template deployment, known issues."
+    },
+    {
+      "id": "ad-prerequisites",
+      "title": "Active Directory preparation is missing or incomplete (OU, LCM user, GPO, permissions)",
+      "phase": ["Validate", "Deploy"],
+      "match": { "error": "ExternalActiveDirectory|AD OU|Active Directory (preparation|prerequisite|validat)|organizational unit|OU path|LCM (user|admin).*(not found|denied|invalid)|Cannot find an object with identity" },
+      "cause": "The Active Directory preparation tool was not run, or the OU path or the LCM user in the deployment does not match what it created, or the deployment user lacks rights on the OU.",
+      "remediation": [
+        "Run the precondition ActiveDirectoryPrepared (it checks the OU and the LCM user named in infrastructure.yml from a domain-joined host), or Invoke-AzStackHciExternalActiveDirectoryValidation from a domain-joined machine.",
+        "Check identity.active_directory.ou_path (not the top level of the domain) and identity.active_directory.lcm_user.username (20 characters at most) against what the preparation tool created.",
+        "Check that the LCM user can create computer objects in the OU (GenericAll on the OU) and that no GPO blocks it.",
+        "Submit again after the fix."
+      ],
+      "retry": "after-fix",
+      "confidence": "pattern",
+      "link": "https://learn.microsoft.com/azure/azure-local/manage/use-environment-checker",
+      "evidence": "Learn: Environment Checker, Active Directory validator. The text patterns have not been seen in one of our runs yet."
+    },
+    {
+      "id": "dns-resolution",
+      "title": "A node or the deployment cannot resolve a name (domain controller, Azure endpoint, NTP)",
+      "phase": ["Validate", "Deploy"],
+      "match": { "error": "No such host is known|name resolution|could not be resolved|DNS (server|resolution|lookup)|Unable to find a default server with Active Directory Web Services" },
+      "cause": "The DNS servers in networking.management.dns_servers do not resolve the domain (Active Directory) or the Azure endpoints, or a node still holds a DHCP DNS setting. For Active Directory the domain controller's Active Directory Web Services (TCP 9389) may also be unreachable.",
+      "remediation": [
+        "Run the OS configuration verification again (DNS and Time steps) and read the DNS servers each node reports.",
+        "From a node: Resolve-DnsName <domain_fqdn> -Server <dns server>; Test-NetConnection <domain controller> -Port 9389.",
+        "Fix networking.management.dns_servers or the DNS records, apply the OS configuration, submit again."
+      ],
+      "retry": "after-fix",
+      "confidence": "pattern",
+      "link": "https://learn.microsoft.com/azure/azure-local/manage/use-environment-checker",
+      "evidence": "Learn Q&A on ADWS; environment validator descriptions. The patterns have not been seen in one of our runs yet."
+    },
+    {
+      "id": "vmswitch-not-bound",
+      "title": "The selected physical network adapter is not bound to the management virtual switch",
+      "phase": ["Validate"],
+      "match": { "error": "not binded to the management virtual switch|not bound to the management virtual switch" },
+      "cause": "A failed validation left cloud-side switch data (the validation's temporary VM switch) in the Edge device resource, and the Device Management extension did not notice that the switch was deleted.",
+      "remediation": [
+        "Follow Microsoft's steps: remove the validation VM switch, restart DeviceManagementService on the node, check the edgeDevices resource, then submit again.",
+        "Do not keep retrying Validate; every retry makes the stale data worse."
+      ],
+      "retry": "after-fix",
+      "confidence": "documented",
+      "link": "https://learn.microsoft.com/azure/azure-local/manage/troubleshoot-deployment",
+      "evidence": "Microsoft Learn, Troubleshoot Azure portal deployment validation issues."
+    }
+  ]
+}
