@@ -1559,7 +1559,7 @@ devops:
   # (since 5.5) 
   # used by: cicd_infra
   runners:
-    # Name prefix of the VM or VMs, for example vm-tplabs-runner-lnx.
+    # Name prefix of the VM or VMs, for example vm-contoso-runner-lnx.
     # required; used by: cicd_infra
     - name: "vm-iic-runner-lnx"
       # Operating system.

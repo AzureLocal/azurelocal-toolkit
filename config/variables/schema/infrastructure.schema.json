@@ -3680,7 +3680,7 @@
             "additionalProperties": false,
             "properties": {
               "name": {
-                "description": "Name prefix of the VM or VMs, for example vm-tplabs-runner-lnx.",
+                "description": "Name prefix of the VM or VMs, for example vm-contoso-runner-lnx.",
                 "type": "string"
               },
               "os_type": {
