@@ -24,12 +24,14 @@ Import-Module (Join-Path (Join-Path $here '..') (Join-Path 'infrastructure' 'Azl
 Import-Module (Join-Path (Join-Path $here '..') (Join-Path 'azure-local' 'AzlAzure.psm1'))
 Import-Module (Join-Path $here 'AzlNodePayload.psm1')
 Import-Module (Join-Path $here 'AzlNodeTransport.psm1')
+Import-Module (Join-Path $here 'AzlDomainJoin.psm1') # DOMAINJOIN HOOK
 
 $script:ConfigRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($here, '..', '..', '..', 'config'))
 # The order the steps run in. Sbe is last on purpose: delivering a 900 MB package is the step most likely to fail (it needs a
 # route to the node that the other steps do not), and it must not stop the others. Drivers install from the package, so they
-# run in the pass after it has landed (or at once when the node already holds it).
-$script:AllSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
+# run in the pass after it has landed (or at once when the node already holds it). DomainJoin follows Network, Dns, Time, Hostname and
+# UnusedAdapters and comes before LocalAdmin (design 4.10): the join needs the controllers reachable by name and the final computer name.
+$script:AllSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
 
 function ConvertTo-MacKey([AllowNull()][object]$Mac) {
     if ($null -eq $Mac) { return '' }
@@ -263,6 +265,7 @@ function Get-AzlNodeSpec {
         Ntp            = @(ConvertTo-List (Get-AzlProp $Infrastructure 'networking.ntp_servers') | ForEach-Object { [string]$_ })
         LocalAdmin     = $(if ($local) { [pscustomobject]@{ Username = [string](Get-AzlProp $local 'username' ''); PasswordRef = [string](Get-AzlProp $local 'password' '') } } else { $null })
         Sbe            = $sbe
+        DomainJoin     = (Get-AzlDomainJoinSpec -Infrastructure $Infrastructure) # DOMAINJOIN HOOK
         San            = $san
         Architecture   = $architecture
         Handoff        = [pscustomobject]@{
@@ -287,6 +290,8 @@ function Get-AzlNodeReadParameter {
         $p.sbeFiles = @($Spec.Sbe.Files | ForEach-Object { @{ name = $_.Name; size = $_.Size; sha256 = $_.Sha256 } })
     }
     if ($Spec.LocalAdmin -and $Spec.LocalAdmin.Username) { $p.adminUser = $Spec.LocalAdmin.Username }
+    $djParameter = Get-AzlDomainJoinReadParameter -Spec $Spec # DOMAINJOIN HOOK: the domain membership is read with the rest
+    if ($djParameter) { $p.domainJoin = $djParameter }
     return $p
 }
 
@@ -520,6 +525,9 @@ function Compare-AzlNodeState {
         }
     }
 
+    # ---- DOMAINJOIN HOOK (feat/os-config-domain-join): the domain join, after the steps it depends on and before LocalAdmin (design 4.10).
+    if ('DomainJoin' -in $Step) { foreach ($i in @(Get-AzlDomainJoinPlanItem -Spec $Spec -State $State -Step $Step -Prior $items.ToArray())) { & $add $i } }
+
     # ---- the deployment's local administrator
     if ('LocalAdmin' -in $Step -and $Spec.LocalAdmin -and $Spec.LocalAdmin.Username) {
         $user = $Spec.LocalAdmin.Username
@@ -740,6 +748,9 @@ function Invoke-AzlNodeConfiguration {
         reached over Arc Run Command. Default: -Transport when that is WinRM.
     .PARAMETER SecretResolver
         Scriptblock that turns a keyvault:// reference into its value. Default Get-AzlSecret.
+    .PARAMETER EventContext
+        Path (the event feed file), Method (Ztp or Iso), SchemaVersion: where the DomainJoin step writes DomainJoinPlanned, DomainJoinApplying,
+        DomainJoined, DomainJoinFailed, NodeRestarting and NodeReconnected. Without a Path no event is written.
     .OUTPUTS
         One object per node: Node, Transport, Plan (the final comparison), Changes (what the Apply calls did), Blocked,
         Restarted, Converged, State (the last Read), Passes.
@@ -754,7 +765,8 @@ function Invoke-AzlNodeConfiguration {
         [switch]$ClearStorage,
         [switch]$NoRestart,
         [int]$MaxPasses = 3,
-        [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref }
+        [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref },
+        [hashtable]$EventContext # DOMAINJOIN HOOK: Path, Method, SchemaVersion of the event feed; the DomainJoin step writes its events there
     )
     $node = $Spec.Name
     $readParameters = Get-AzlNodeReadParameter -Spec $Spec
@@ -772,15 +784,46 @@ function Invoke-AzlNodeConfiguration {
     $sbeTried = @{}
     $state = $null
     $plan = @()
-    for ($pass = 1; $pass -le $MaxPasses + 1; $pass++) {
+    # DOMAINJOIN HOOK: the join is tried once per run (a wrong password must not be sent twice); its pass does not count against -MaxPasses.
+    $djDone = @{}; $djFailure = $null; $djMoved = $false; $limit = $MaxPasses; $ouChecked = $false; $ouCheck = $null
+    for ($pass = 1; $pass -le $limit + 1; $pass++) {
         $state = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Read) -Parameters $readParameters -Secrets $secrets -TimeoutSeconds 900
+        # DOMAINJOIN HOOK: the dedicated OU (exists, Group Policy inheritance blocked, enforced links) is read from the node with the join credential; asked again until it could be read.
+        if ('DomainJoin' -in $Step -and $Spec.DomainJoin.Applicable -and (Get-AzlProp $state 'domainJoin')) {
+            if (-not $ouChecked) { $null = Add-AzlDomainJoinOuCheck -Spec $Spec -Transport $Transport -State $state -SecretResolver $SecretResolver; $ouCheck = Get-AzlProp $state 'domainJoin.ou'; $ouChecked = [bool](Get-AzlProp $ouCheck 'checked' $false) }
+            elseif ($ouCheck) { Add-Member -InputObject $state.domainJoin -NotePropertyName ou -NotePropertyValue $ouCheck -Force }
+        }
         $plan = @(Compare-AzlNodeState -Spec $Spec -State $state -Step $Step -ClearStorage:$ClearStorage)
+        if ($pass -eq 1 -and 'DomainJoin' -in $Step) { Send-AzlDomainJoinPlanEvent -EventContext $EventContext -Node $node -Plan $plan -Transport $Transport.Kind } # DOMAINJOIN HOOK
+        if ($djDone.Count) { $plan = @(Merge-AzlDomainJoinOutcome -Plan $plan -Failure $djFailure -Moved:$djMoved) } # DOMAINJOIN HOOK
         $todo = @($plan | Where-Object { $_.Action -eq 'Change' -and $_.Apply })
+        $todo = @($todo | Where-Object { $_.Apply.kind -notlike 'domain-*' -or -not $djDone.ContainsKey([string]$_.Apply.kind) }) # DOMAINJOIN HOOK: each kind once per run
         # A package file the toolkit already delivered once and that is still wrong is not delivered again: the failure stays
         # in the report (the Sbe step is not done) and the other steps carry on.
         $todo = @($todo | Where-Object { $_.Apply.kind -ne 'sbe-file' -or -not $sbeTried.ContainsKey([string]$_.Apply.name) })
         $passes.Add([pscustomobject]@{ Pass = $pass; Changes = $todo.Count })
-        if (-not $Execute -or $todo.Count -eq 0 -or $pass -gt $MaxPasses) { break }
+        if (-not $Execute -or $todo.Count -eq 0 -or $pass -gt $limit) { break }
+
+        # DOMAINJOIN HOOK (feat/os-config-domain-join): the domain join runs before the other steps' changes (design 4.10) and has its own restart,
+        # reconnect and verification (AzlDomainJoin.psm1). The pass then starts again with a fresh Read.
+        $djTodo = @($todo | Where-Object { $_.Apply.kind -like 'domain-*' })
+        if ($djTodo.Count) {
+            $stopRun = $false
+            # Not a closure (a closure loses this module's private Wait-AzlNodeRestart); the values travel in -WaitContext.
+            $waitBlock = { param($PreviousBoot, $W) Wait-AzlNodeRestart -Transport $W.Transport -Node $W.Node -PreviousBoot $PreviousBoot -ReadParameters $W.ReadParameters -Secrets $W.Secrets }
+            $waitContext = @{ Transport = $Transport; Node = $node; ReadParameters = $readParameters; Secrets = $secrets }
+            foreach ($djItem in $djTodo) {
+                $djDone[[string]$djItem.Apply.kind] = $true
+                $dj = Invoke-AzlDomainJoinStep -Spec $Spec -Transport $Transport -State $state -Item $djItem -SecretResolver $SecretResolver -NoRestart:$NoRestart -WaitForRestart $waitBlock -WaitContext $waitContext -EventContext $EventContext
+                foreach ($c in $dj.Changes) { $changes.Add([pscustomobject]@{ Node = $node; Pass = $pass; Id = $c.Id; Status = $c.Status; Detail = $c.Detail }) }
+                if ($dj.Restarted) { $restarted = $true; $state = $dj.State }
+                if ($dj.Moved) { $djMoved = $true }
+                if ($dj.Failed) { $djFailure = $dj; $plan = @(Merge-AzlDomainJoinOutcome -Plan $plan -Failure $djFailure); $stopRun = $true; break }
+            }
+            if ($stopRun) { break }
+            $limit++
+            continue
+        }
 
         # Every step except Sbe first, in one Apply call; then, if one asked, the restart; the package last.
         $actions = @($todo | Where-Object { $_.Apply.kind -ne 'sbe-file' } | ForEach-Object { $_.Apply.Clone() })
@@ -825,6 +868,7 @@ function Invoke-AzlNodeConfiguration {
         State     = $state
         Passes    = $passes.ToArray()
         Executed  = [bool]$Execute
+        DomainJoin = (Get-AzlDomainJoinSummary -Spec $Spec -State $state -Change $changes.ToArray()) # DOMAINJOIN HOOK
     }
 }
 

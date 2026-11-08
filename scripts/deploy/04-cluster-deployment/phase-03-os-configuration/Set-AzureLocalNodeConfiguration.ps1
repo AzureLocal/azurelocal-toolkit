@@ -14,6 +14,9 @@
       Dns, Time         DNS servers on the management port; NTP peers
       Hostname          the computer name (needs a restart)
       UnusedAdapters    ports marked unused are disabled
+      DomainJoin        Active Directory designs only: joins the node to identity.active_directory.domain_fqdn, in ou_path, with
+                        domain_join_account (after Network, Dns, Time and Hostname; a guarded restart and a check follow). A node
+                        of a local identity design gets an explicit 'not applicable: local identity' item.
       LocalAdmin        identity.local_admin as a local administrator (never the built-in Administrator)
       Mpio              SAN only: MultipathIO, the array's MSDSM hardware ID, load balance policy, MPIO settings
       SanVerify         SAN only, read only: FC ports and WWPNs, the infrastructure and performance history LUNs
@@ -55,6 +58,8 @@
     Treat leftover local storage as a change (destroys data on local disks; never SAN LUNs). With -Execute.
 .PARAMETER NoRestart
     Don't restart a node that needs it (hostname, MPIO, a driver); the report says which need one.
+.PARAMETER EventContext
+    Path (the event feed file), Method (Ztp or Iso) and SchemaVersion: where the DomainJoin step writes its events. Optional.
 .PARAMETER SpecOnly
     Print what each node should look like and stop. Reads only the files (and the SBE folder); touches no node, no Azure resource and no Key Vault.
 .PARAMETER ReportPath
@@ -74,9 +79,10 @@ param(
     [string[]]$Node,
     [ValidateSet('Auto', 'ArcRunCommand', 'WinRM')][string]$Transport = 'Auto',
     [pscredential]$Credential,
-    [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')][string[]]$Step,
+    [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')][string[]]$Step,
     [switch]$ClearStorage,
     [hashtable]$NodeAddress,
+    [hashtable]$EventContext, # DOMAINJOIN HOOK
     [ValidateRange(1, 10)][int]$RetryTries = 3,
     [int[]]$RetryDelaySeconds = @(15, 45, 120),
     [switch]$NoRestart,
@@ -101,7 +107,7 @@ function Write-Line([string]$Text) { Write-Information -MessageData $Text -Infor
 Set-AzlNodeRetryPolicy -Tries $RetryTries -DelaySeconds $RetryDelaySeconds
 $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation:$SkipValidation
 $handoff = if ($HandoffFile) { Read-AzlHandoff -Path $HandoffFile } else { $null }
-$allSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
+$allSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
 $steps = if ($Step) { $Step } else { $allSteps }
 
 $nodes = @($infra.nodes | Where-Object { -not $Node -or $_.name -in $Node })
@@ -167,7 +173,7 @@ Write-Line "Transport: $($nodeTransport.Kind). $(if ($Execute) { 'EXECUTE: chang
 # ---- the nodes
 $results = foreach ($s in $specs) {
     Write-Line "== $($s.Name)"
-    Invoke-AzlNodeConfiguration -Spec $s -Transport $nodeTransport -Execute:$Execute -Step $steps -ClearStorage:$ClearStorage -NoRestart:$NoRestart -MaxPasses $MaxPasses -SbeTransport $sbeTransport
+    Invoke-AzlNodeConfiguration -Spec $s -Transport $nodeTransport -Execute:$Execute -Step $steps -ClearStorage:$ClearStorage -NoRestart:$NoRestart -MaxPasses $MaxPasses -SbeTransport $sbeTransport -EventContext $EventContext
 }
 foreach ($r in $results) {
     Write-Line (Format-AzlPlan -Plan @($r.Plan | Where-Object { $_.Action -ne 'Ok' -or -not $Execute }))
@@ -206,6 +212,7 @@ $report = [ordered]@{
                 osVersion = [string](Get-AzlProp $_.State 'os' '')
                 converged = $_.Converged
                 restarted = $_.Restarted
+                domainJoin = $_.DomainJoin # DOMAINJOIN HOOK
                 ports     = @(Get-AzlProp $_.State 'nics' @() | ForEach-Object { [ordered]@{ osName = $_.n; mac = $_.mac; status = $_.st } })
                 sanDisks  = @(Get-AzlProp $_.State 'san.disks' @())
                 fcPorts   = @(Get-AzlProp $_.State 'san.fc' @())
