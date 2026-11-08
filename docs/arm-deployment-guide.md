@@ -187,6 +187,32 @@ removed), and looks it up in `config/known-issues/arm-deployment.json`:
 
 Add an entry when you understand a new failure; the run then explains it the next time.
 
+### The whole reason, not a cut-off line
+
+Azure reports a failed validation step (for example `0.170` *ValidateCluster*) with a long text: the EnvironmentValidator results
+as JSON, and inside the Test-Cluster result the lines `[!!Failed!!]` and `[!!Warning!!]` with the sentences that say why (for
+example *Storage - List Disks: Two disks have been found on node ... that cannot be distinguished from one another ... disk
+signature ... SCSI page 83h VPD ...*). The run keeps all of it:
+
+| Where | What you get |
+| --- | --- |
+| `report.json`, `validate.failedSteps[]` | `errors`: the full text of every exception, never cut. `results`: every EnvironmentValidator result with `name`, `title`, `description`, `status`, `severity`, `remediation` and `detail` (AdditionalData.Detail). `checks`: the Test-Cluster checks (`Failed`, `Warning`, `Info`) with their whole message. `testClusterReportFile`: the `AzStackHciEnvironmentChecker-ClusterValidationReport-*.htm` path **on the node**, to open there. `validate.error` is the whole error text too. |
+| `summary.md` | Per failed step: the Test-Cluster report path, then each failed or warned check with its message; for any other EnvironmentValidator step each result that did not pass with its description, `Remediation` URL and detail. Steps with no structure show the whole error text. |
+| `arm-deployment-events.jsonl` | The step event and the `ValidationFailed` / `DeploymentFailed` event carry the whole text in `detail`, the checks in `checks` and the node path in `testClusterReportFile`. |
+| Console and `evidence` | One line only. This is the only place text is cut, and the line always ends with `(full text: <path of report.json>)`. |
+
+Secrets are still removed from every text.
+
+### Steps of an earlier run are not this run's
+
+The cluster resource keeps the steps of every earlier attempt until a new attempt runs them again, so a Validate that was
+submitted now could be blamed for an old error (a `0.60` *InvokeEnvironmentChecker* failure of the previous run). The run
+therefore ignores a step when its latest start or end time is more than the allowed clock skew (`staleSkewMinutes`, 5) older than the
+moment this run submitted, or when its text names another deployment (`azl-validate-<hash>` or `azl-deploy-<hash>` with a different
+hash than this run's). Ignored steps are listed in `report.json` (`validate.ignoredSteps`), in `summary.md` and in one
+`StaleStepsIgnored` event; they are never the failing step and get no step event. A run that **attaches** to its own running
+deployment keeps the steps it finds, because they belong to that deployment.
+
 ## What you get
 
 | File | For |
@@ -206,7 +232,7 @@ required key missing, an unsupported design, no Azure sign-in when one is needed
 Verified by tests that use a fake Azure and a fake clock (`tests/arm-deployment/`, no subscription touched): parameters for AD and
 local identity, S2D and SAN, switchless and switched, 1, 2, 4 and 16 machines, and the key messages; every precondition with a
 passing and a failing case; the state machine; the wait on a fake clock including a 6 hour time-out; skip, attach, submit and
-resume decisions; the known-issue mapping on a fixture that copies the 2026-11-06 failure (step 0.41, build 2690); the event
+resume decisions; the full failure text kept in report.json, summary.md and the events (with a fake payload shaped like the real ValidateCluster failure) and the steps of earlier runs ignored; the known-issue mapping on a fixture that copies the 2026-11-06 failure (step 0.41, build 2690); the event
 feed, report, exit codes and secret scrubbing; the three pipeline files parse and carry the approval gate; no backslash path
 literal in the new files; schema 5.6 and rule AZL-040.
 

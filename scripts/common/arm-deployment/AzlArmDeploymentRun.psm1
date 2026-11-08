@@ -30,6 +30,8 @@ $script:KnownIssuesPath = [IO.Path]::Combine($script:RepoRoot, 'config', 'known-
 $script:ParameterSourcesPath = [IO.Path]::Combine($script:RepoRoot, 'config', 'azure', 'arm-templates', 'parameter-sources.json')
 $script:SecretValues = [System.Collections.Generic.List[string]]::new()
 $script:EventMaxText = 2000
+# Event data members that carry the whole Azure text of a failure (the evidence member is the one-line form). Not cut; secrets still removed.
+$script:EventFullTextKeys = @('detail', 'checks', 'ignoredSteps')
 $script:ReportSchemaVersion = 1
 
 $script:Transitions = @{
@@ -118,6 +120,23 @@ function Hide-AzlArmSecret {
     $out = $Text
     foreach ($s in $script:SecretValues) { $out = $out.Replace($s, '***') }
     return $out
+}
+
+function Hide-AzlArmSecretDeep {
+    # Hide-AzlArmSecret for a string, and for every string inside a dictionary, a list or an object. Never cuts.
+    param([AllowNull()][object]$Value)
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [string]) { return (Hide-AzlArmSecret $Value) }
+    if ($Value -is [System.Collections.IDictionary]) {
+        $copy = [ordered]@{}
+        foreach ($k in $Value.Keys) { $copy[$k] = Hide-AzlArmSecretDeep $Value[$k] }
+        return $copy
+    }
+    if ($Value -is [System.Collections.IEnumerable]) { return , @($Value | ForEach-Object { Hide-AzlArmSecretDeep $_ }) }
+    if ($Value -is [ValueType]) { return $Value }
+    $copy = [ordered]@{}
+    foreach ($p in $Value.PSObject.Properties) { $copy[$p.Name] = Hide-AzlArmSecretDeep $p.Value }
+    return $copy
 }
 
 function Limit-AzlArmText([AllowNull()][string]$Text, [int]$Max = $script:EventMaxText) {
@@ -262,7 +281,7 @@ function Write-AzlArmEvent {
             foreach ($key in $Data.Keys) {
                 if ($entry.Contains([string]$key)) { continue }
                 $value = $Data[$key]
-                $entry[[string]$key] = if ($value -is [string]) { Limit-AzlArmText $value } else { $value }
+                $entry[[string]$key] = if ([string]$key -in $script:EventFullTextKeys) { Hide-AzlArmSecretDeep $value } elseif ($value -is [string]) { Limit-AzlArmText $value } else { $value }
             }
         }
         $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes((ConvertTo-Json -InputObject $entry -Compress -Depth 6) + "`n")
@@ -337,7 +356,7 @@ function Get-AzlArmFailedStep {
         The failing steps of a flattened step list (Get-AzlDeploymentState): steps in an error status that have no failing step
         below them, in the order of the list. The first one is the failing step the portal points at.
     .OUTPUTS
-        FullStepIndex, Name, Status, Errors, Depth.
+        FullStepIndex, Name, Status, Errors (the full text, never cut), ErrorJson, Description, Depth.
     #>
     [CmdletBinding()]
     param([AllowNull()][object[]]$Steps)
@@ -350,9 +369,290 @@ function Get-AzlArmFailedStep {
         for ($j = $i + 1; $j -lt $list.Count -and $list[$j].Depth -gt $s.Depth; $j++) {
             if ((ConvertTo-AzlArmStepStatus $list[$j].Status) -eq 'error') { $hasFailedChild = $true; break }
         }
-        if (-not $hasFailedChild) { $out.Add([pscustomobject]@{ FullStepIndex = [string](Get-AzlProp $s 'FullStepIndex' ''); Name = [string]$s.Name; Status = [string]$s.Status; Errors = @($s.Errors); Depth = $s.Depth }) }
+        if (-not $hasFailedChild) {
+            $out.Add([pscustomobject]@{
+                FullStepIndex = [string](Get-AzlProp $s 'FullStepIndex' ''); Name = [string]$s.Name; Status = [string]$s.Status; Errors = @($s.Errors)
+                ErrorJson = @(Get-AzlProp $s 'ErrorJson' @()); Description = [string](Get-AzlProp $s 'Description' ''); Depth = $s.Depth
+            })
+        }
     }
     return $out.ToArray()
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
+# The full reason of a failed step: EnvironmentValidator results, Test-Cluster checks, the report file on the node
+# ---------------------------------------------------------------------------------------------------------------------
+
+function Get-AzlArmEmbeddedJson {
+    <#
+    .SYNOPSIS
+        The JSON arrays and objects embedded in a text (Azure puts the EnvironmentValidator results inside the exception text),
+        parsed. A bracket that does not start valid JSON (for example the Test-Cluster marker [!!Failed!!]) is skipped. Text whose
+        quotes are escaped once more (\") is read both as it is and unescaped.
+    #>
+    [CmdletBinding()]
+    param([AllowNull()][string]$Text)
+    $found = [System.Collections.Generic.List[object]]::new()
+    if ([string]::IsNullOrEmpty($Text)) { return $found.ToArray() }
+    $variants = [System.Collections.Generic.List[string]]::new()
+    $variants.Add($Text)
+    if ($Text.Contains('\"')) { $variants.Add($Text.Replace('\"', '"').Replace('\\', '\')) }
+    foreach ($source in $variants) {
+        $i = 0
+        while ($i -lt $source.Length) {
+            $c = $source[$i]
+            if ($c -ne '[' -and $c -ne '{') { $i++; continue }
+            $depth = 0; $inString = $false; $escaped = $false; $end = -1
+            for ($j = $i; $j -lt $source.Length; $j++) {
+                $d = $source[$j]
+                if ($inString) {
+                    if ($escaped) { $escaped = $false } elseif ($d -eq '\') { $escaped = $true } elseif ($d -eq '"') { $inString = $false }
+                    continue
+                }
+                if ($d -eq '"') { $inString = $true }
+                elseif ($d -eq '[' -or $d -eq '{') { $depth++ }
+                elseif ($d -eq ']' -or $d -eq '}') { $depth--; if ($depth -eq 0) { $end = $j; break } }
+            }
+            if ($end -lt 0) { $i++; continue }
+            $parsed = $null
+            try { $parsed = ConvertFrom-Json -InputObject $source.Substring($i, $end - $i + 1) -Depth 50 -ErrorAction Stop } catch { $parsed = $null }
+            if ($null -ne $parsed -and $parsed -isnot [string] -and $parsed -isnot [ValueType]) { $found.Add($parsed); $i = $end + 1 } else { $i++ }
+        }
+    }
+    return $found.ToArray()
+}
+
+function Get-AzlArmValidatorResult {
+    <#
+    .SYNOPSIS
+        The EnvironmentValidator results found in parsed JSON: every object that has a Name and a Status or a Description, at any depth.
+    .OUTPUTS
+        Name, Title, Description, Status, Severity, Remediation, Detail (AdditionalData.Detail), Source, Target. Every text in full.
+    #>
+    [CmdletBinding()]
+    param([AllowNull()][object]$Value)
+    $out = [System.Collections.Generic.List[object]]::new()
+    $walk = {
+        param($v)
+        if ($null -eq $v -or $v -is [string] -or $v -is [ValueType]) { return }
+        if ($v -is [System.Collections.IDictionary]) { $names = @($v.Keys) }
+        elseif ($v -is [System.Collections.IEnumerable]) { foreach ($item in $v) { & $walk $item }; return }
+        else { $names = @($v.PSObject.Properties.Name) }
+        $hasName = @($names | Where-Object { $_ -ieq 'Name' }).Count -gt 0
+        $hasWhat = @($names | Where-Object { $_ -ieq 'Status' -or $_ -ieq 'Description' }).Count -gt 0
+        if ($hasName -and $hasWhat) {
+            $get = { param($n) $x = Get-AzlProp $v $n; if ($null -eq $x) { '' } else { [string]$x } }
+            $add = Get-AzlProp $v 'AdditionalData'
+            $detail = ''
+            if ($null -ne $add) {
+                if ($add -is [string]) { $detail = $add }
+                else { $d = Get-AzlProp $add 'Detail'; $detail = if ($null -eq $d) { ConvertTo-Json -InputObject $add -Depth 20 -Compress } else { [string]$d } }
+            }
+            $out.Add([pscustomobject]@{
+                Name = & $get 'Name'; Title = & $get 'Title'; Description = & $get 'Description'; Status = & $get 'Status'; Severity = & $get 'Severity'
+                Remediation = & $get 'Remediation'; Detail = $detail; Source = & $get 'Source'; Target = & $get 'TargetResourceName'
+            })
+            return
+        }
+        $values = if ($v -is [System.Collections.IDictionary]) { @($v.Values) } else { @($v.PSObject.Properties.Value) }
+        foreach ($child in $values) { & $walk $child }
+    }
+    & $walk $Value
+    return $out.ToArray()
+}
+
+function Get-AzlArmClusterCheck {
+    <#
+    .SYNOPSIS
+        The checks of a Test-Cluster text: the '[!!Failed!!]' and '[!!Warning!!]' lines, and the 'Storage - List Disks: <sentence>' lines
+        with the sentences that follow them (for example the two disks that cannot be told apart).
+    .OUTPUTS
+        Status (Failed, Warning, Info), Name, Message. The message is whole, never cut.
+    #>
+    [CmdletBinding()]
+    param([AllowNull()][string]$Text)
+    $checks = [System.Collections.Generic.List[object]]::new()
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $checks.ToArray() }
+    # Text that went through a JSON string once more can hold the two characters \ n instead of a line break.
+    $body = if ($Text -notmatch "[\r\n]" -and $Text -match '\\r\\n|\\n') { $Text -replace '\\r\\n|\\n', "`n" } else { $Text }
+    $raw = [System.Collections.Generic.List[object]]::new()
+    $current = $null
+    foreach ($line in ($body -split "\r?\n")) {
+        $trim = $line.Trim()
+        if ($trim -match '^\[!!(?<s>Failed|Warning)!!\]\s*(?<r>.*)$') {
+            $status = $Matches['s']; $rest = $Matches['r'].Trim(); $name = $rest; $message = ''
+            if ($rest -match '^(?<n>[^:]+?):\s+(?<m>.+)$') { $name = $Matches['n'].Trim(); $message = $Matches['m'].Trim() }
+            $current = [pscustomobject]@{ Status = $status; Name = $name; Message = $message }
+            $raw.Add($current)
+            continue
+        }
+        if ($trim -match '^(?<n>[A-Z][A-Za-z0-9]*(?: [A-Za-z0-9]+)* - [A-Za-z0-9][A-Za-z0-9 /\-]*?):\s+(?<m>\S.*)$') {
+            $n = $Matches['n'].Trim(); $m = $Matches['m'].Trim()
+            if ($current -and $current.Name -eq $n) { $current.Message = ($current.Message + ' ' + $m).Trim(); continue }
+            $current = [pscustomobject]@{ Status = 'Info'; Name = $n; Message = $m }
+            $raw.Add($current)
+            continue
+        }
+        if (-not $trim) { $current = $null; continue }
+        # A sentence that continues the check above it.
+        if ($current) { $current.Message = ($current.Message + ' ' + $trim).Trim() }
+    }
+    # One entry per check name: a marker line and a later 'Name: sentence' line are the same check.
+    foreach ($c in $raw) {
+        $same = $checks | Where-Object { $_.Name -eq $c.Name } | Select-Object -First 1
+        if ($same) {
+            if ($c.Message -and $same.Message -notlike "*$($c.Message)*") { $same.Message = ($same.Message + ' ' + $c.Message).Trim() }
+            if ($same.Status -eq 'Info' -and $c.Status -ne 'Info') { $same.Status = $c.Status }
+        }
+        else { $checks.Add($c) }
+    }
+    return $checks.ToArray()
+}
+
+function Get-AzlArmTestClusterReportPath {
+    <#
+    .SYNOPSIS
+        The Test-Cluster report file on the node (AzStackHciEnvironmentChecker-ClusterValidationReport-*.htm) named in a text, or ''.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowNull()][string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return '' }
+    $m = [regex]::Match($Text, '[A-Za-z]:(?:\\{1,2}[^\\/:*?"<>|\r\n]+)+?\\{1,2}AzStackHciEnvironmentChecker-ClusterValidationReport-[^\\/:*?"<>|\s]*?\.htm', 'IgnoreCase')
+    if (-not $m.Success) { return '' }
+    return ($m.Value -replace '\\{2,}', '\')
+}
+
+function Test-AzlArmResultFailing([AllowNull()][string]$Status) {
+    # A validator result that is not a pass (Success, Succeeded, Passed, OK, Skipped, Not applicable, Info are passes).
+    return $Status -notmatch '^\s*(success|succeeded|passed|pass|ok|skipped|notapplicable|not applicable|info|informational)\s*$'
+}
+
+function Get-AzlArmFailureDetail {
+    <#
+    .SYNOPSIS
+        Everything a failed step says about why, in full: the error text, the EnvironmentValidator Results (Name, Description, Status,
+        Remediation, AdditionalData.Detail), the Test-Cluster checks (failed and warned) and the Test-Cluster report file on the node.
+    .PARAMETER Step
+        A failed step (Get-AzlArmFailedStep): Errors, ErrorJson.
+    .OUTPUTS
+        Text (all error texts joined by a blank line), Results, Checks, ReportFile. Nothing is cut.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Step)
+    $errors = @(Get-AzlProp $Step 'Errors' @() | ForEach-Object { [string]$_ })
+    $jsonTexts = @(Get-AzlProp $Step 'ErrorJson' @() | ForEach-Object { [string]$_ })
+    $results = [System.Collections.Generic.List[object]]::new()
+    foreach ($t in (@($errors) + @($jsonTexts))) {
+        foreach ($doc in (Get-AzlArmEmbeddedJson $t)) {
+            foreach ($r in (Get-AzlArmValidatorResult $doc)) {
+                $dup = $results | Where-Object { $_.Name -eq $r.Name -and $_.Status -eq $r.Status -and $_.Description -eq $r.Description -and $_.Detail -eq $r.Detail } | Select-Object -First 1
+                if (-not $dup) { $results.Add($r) }
+            }
+        }
+    }
+    # Test-Cluster text: the Detail of a result, and the exception text itself.
+    $clusterSources = @(@($results | ForEach-Object { $_.Detail; $_.Description }) + @($errors) | Where-Object { $_ })
+    $checks = [System.Collections.Generic.List[object]]::new()
+    foreach ($t in $clusterSources) {
+        if ($t -notmatch '\[!!(Failed|Warning)!!\]' -and $t -notmatch '(?m)^\s*[A-Z]\w* - [\w /-]+:\s+\S') { continue }
+        foreach ($c in (Get-AzlArmClusterCheck $t)) {
+            $dup = $checks | Where-Object { $_.Name -eq $c.Name -and $_.Message -eq $c.Message } | Select-Object -First 1
+            if (-not $dup) { $checks.Add($c) }
+        }
+    }
+    $reportFile = ''
+    foreach ($t in (@($clusterSources) + @($jsonTexts))) { $reportFile = Get-AzlArmTestClusterReportPath $t; if ($reportFile) { break } }
+    [pscustomobject]@{
+        Text = (@($errors | Where-Object { $_ }) -join ([Environment]::NewLine + [Environment]::NewLine))
+        Results = $results.ToArray(); Checks = $checks.ToArray(); ReportFile = $reportFile
+    }
+}
+
+function Format-AzlArmFailureLine {
+    <#
+    .SYNOPSIS
+        One line for the console and the event's evidence: what failed, cut at -Max characters, and always ending with the path of the
+        report that has the whole text. Only this one-line form is cut; report.json and summary.md keep everything.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][object]$Detail, [int]$Max = 600, [string]$ReportPath = '')
+    $parts = [System.Collections.Generic.List[string]]::new()
+    foreach ($c in @($Detail.Checks | Where-Object { $_.Status -in 'Failed', 'Warning' })) { $parts.Add("[$($c.Status)] $($c.Name)$(if ($c.Message) { ': ' + $c.Message })") }
+    if (-not $parts.Count) {
+        foreach ($r in @($Detail.Results | Where-Object { Test-AzlArmResultFailing $_.Status })) { $parts.Add("[$($r.Status)] $($r.Name)$(if ($r.Description) { ': ' + $r.Description })") }
+    }
+    $text = if ($parts.Count) { $parts -join '; ' } else { [string]$Detail.Text }
+    $one = ((Hide-AzlArmSecret $text) -replace '\s*[\r\n]+\s*', ' ').Trim()
+    if ($one.Length -gt $Max) { $one = $one.Substring(0, $Max - 3) + '...' }
+    if ($ReportPath) { $one = ($one + " (full text: $ReportPath)").Trim() }
+    return $one
+}
+
+function ConvertTo-AzlArmFailedStepReport {
+    # The failedSteps entry of report.json: the whole text, every nested result, every check, the Test-Cluster report file. Not cut.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds an in-memory object; changes no system state.')]
+    [CmdletBinding()]
+    [OutputType([System.Collections.Specialized.OrderedDictionary])]
+    param([Parameter(Mandatory)][object]$Step)
+    $d = Get-AzlArmFailureDetail -Step $Step
+    [ordered]@{
+        step = $Step.FullStepIndex; name = $Step.Name; status = $Step.Status; description = [string](Get-AzlProp $Step 'Description' '')
+        errors = @($Step.Errors | ForEach-Object { [string]$_ })
+        results = @($d.Results | ForEach-Object { [ordered]@{ name = $_.Name; title = $_.Title; description = $_.Description; status = $_.Status; severity = $_.Severity; remediation = $_.Remediation; detail = $_.Detail; source = $_.Source; target = $_.Target } })
+        checks = @($d.Checks | ForEach-Object { [ordered]@{ status = $_.Status; name = $_.Name; message = $_.Message } })
+        testClusterReportFile = $d.ReportFile
+    }
+}
+
+# ---------------------------------------------------------------------------------------------------------------------
+# Steps of this run only
+# ---------------------------------------------------------------------------------------------------------------------
+
+function Select-AzlArmCurrentStep {
+    <#
+    .SYNOPSIS
+        Splits a step list into the steps of this run and the steps of an earlier one. The cluster resource keeps the steps of every
+        earlier attempt until they run again, so an old failing step (for example 0.60 InvokeEnvironmentChecker) must not be blamed
+        on the run that is now waiting.
+    .DESCRIPTION
+        A step is from an earlier run when (1) -Since is given and the latest of its StartTime and EndTime is older than -Since minus
+        -SkewMinutes, or (2) it names a deployment (a DeploymentName member, or an azl-validate-<hash> / azl-deploy-<hash> name in its
+        text) whose hash is not the hash of -DeploymentName. A step with no time and no name is kept: nothing says it is old.
+    .OUTPUTS
+        Current (steps), Ignored (FullStepIndex, Name, Status, Reason).
+    #>
+    [CmdletBinding()]
+    param([AllowNull()][object[]]$Steps, [datetime]$Since = [datetime]::MinValue, [string]$DeploymentName = '', [int]$SkewMinutes = 5)
+    $current = [System.Collections.Generic.List[object]]::new()
+    $ignored = [System.Collections.Generic.List[object]]::new()
+    $hash = if ($DeploymentName -match '-(?<h>[0-9a-fA-F]{12})$') { $Matches['h'].ToLowerInvariant() } else { '' }
+    $cutoff = if ($Since -gt [datetime]::MinValue) { $Since.ToUniversalTime().AddMinutes(-$SkewMinutes) } else { [datetime]::MinValue }
+    foreach ($s in @($Steps | Where-Object { $_ })) {
+        $reason = ''
+        if ($cutoff -gt [datetime]::MinValue) {
+            $latest = [datetime]::MinValue; $any = $false
+            foreach ($p in 'StartTime', 'EndTime') {
+                $text = [string](Get-AzlProp $s $p ''); $t = [datetime]::MinValue
+                if ($text -and [datetime]::TryParse($text, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal, [ref]$t)) { $any = $true; if ($t -gt $latest) { $latest = $t } }
+            }
+            if ($any -and $latest -lt $cutoff) { $reason = "Its last activity ($($latest.ToString('o', [cultureinfo]::InvariantCulture))) is before this run started." }
+        }
+        if (-not $reason -and $hash) {
+            $named = [string](Get-AzlProp $s 'DeploymentName' '')
+            $texts = @($named, [string](Get-AzlProp $s 'Description' '')) + @(Get-AzlProp $s 'Errors' @() | ForEach-Object { [string]$_ })
+            foreach ($t in $texts) {
+                foreach ($m in [regex]::Matches($t, 'azl-(?:validate|deploy)-(?<h>[0-9a-fA-F]{12})')) {
+                    if ($m.Groups['h'].Value.ToLowerInvariant() -ne $hash) { $reason = "It belongs to deployment $($m.Value), not $DeploymentName."; break }
+                }
+                if ($reason) { break }
+            }
+        }
+        if ($reason) { $ignored.Add([pscustomobject]@{ FullStepIndex = [string](Get-AzlProp $s 'FullStepIndex' ''); Name = [string]$s.Name; Status = [string]$s.Status; Reason = $reason }) }
+        else { $current.Add($s) }
+    }
+    [pscustomobject]@{ Current = $current.ToArray(); Ignored = $ignored.ToArray() }
 }
 
 function Get-AzlArmKnownIssue {
@@ -1335,18 +1635,23 @@ function Get-AzlArmPhaseOutcome {
         Outcome, Reason, Steps, Status, ArmState, ArmError, Fresh.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][ValidateSet('Validate', 'Deploy')][string]$Phase, [AllowNull()]$Arm, [AllowNull()]$State, [Parameter(Mandatory)][datetime]$Submitted, [int]$SkewMinutes = 5)
+    param([Parameter(Mandatory)][ValidateSet('Validate', 'Deploy')][string]$Phase, [AllowNull()]$Arm, [AllowNull()]$State, [Parameter(Mandatory)][datetime]$Submitted, [int]$SkewMinutes = 5, [datetime]$StepsSince = [datetime]::MinValue, [string]$DeploymentName = '')
     $armState = if ($Arm) { ConvertTo-AzlArmStepStatus $Arm.ProvisioningState } else { 'notstarted' }
     $armTerminal = $armState -in 'success', 'error'
     $armError = if ($Arm) { [string]$Arm.Error } else { '' }
-    $steps = @(); $raw = ''
+    $steps = @(); $raw = ''; $ignored = @()
     if ($State) {
         $steps = @(if ($Phase -eq 'Validate') { $State.ValidationSteps } else { $State.DeploymentSteps })
         $raw = [string]$(if ($Phase -eq 'Validate') { $State.ValidationStatus } else { $State.DeploymentStatus })
     }
     $status = ConvertTo-AzlArmStepStatus $raw
     $fresh = Test-AzlArmSnapshotFresh -Steps $steps -Submitted $Submitted -ArmTerminal $armTerminal -SkewMinutes $SkewMinutes
-    $make = { param($o, $r) [pscustomobject]@{ Outcome = $o; Reason = $r; Steps = $steps; Status = $raw; ArmState = $armState; ArmError = $armError; Fresh = $fresh } }
+    # Steps of an earlier run stay on the cluster resource; they are not this run's (see Select-AzlArmCurrentStep).
+    if ($steps.Count -and ($StepsSince -gt [datetime]::MinValue -or $DeploymentName)) {
+        $split = Select-AzlArmCurrentStep -Steps $steps -Since $StepsSince -DeploymentName $DeploymentName -SkewMinutes $SkewMinutes
+        $steps = @($split.Current); $ignored = @($split.Ignored)
+    }
+    $make = { param($o, $r) [pscustomobject]@{ Outcome = $o; Reason = $r; Steps = $steps; Status = $raw; ArmState = $armState; ArmError = $armError; Fresh = $fresh; IgnoredSteps = $ignored } }
     if ($armState -eq 'error') { return (& $make 'Failed' 'The ARM deployment failed.') }
     if ($fresh -and $status -eq 'error') { return (& $make 'Failed' "The $($Phase.ToLowerInvariant()) status is $raw.") }
     if ($fresh -and $status -eq 'success') {
@@ -1366,8 +1671,17 @@ function Publish-AzlArmStepEvent {
         if ($norm -eq 'notstarted') { continue }
         if ($Seen.ContainsKey($key) -and $Seen[$key] -eq $norm) { continue }
         $Seen[$key] = $norm
-        $err = if (@($s.Errors).Count) { ' - ' + (@($s.Errors)[0]) } else { '' }
-        Send-AzlArmEvent -Run $Run -State "${Phase}Step" -Step $key -Evidence "$($s.Name): $($s.Status)$err" -Level $(if ($norm -eq 'error') { 'Error' } else { 'Info' }) -Data @{ status = $norm; rawStatus = [string]$s.Status; stepName = [string]$s.Name; depth = [int]$s.Depth }
+        $data = @{ status = $norm; rawStatus = [string]$s.Status; stepName = [string]$s.Name; depth = [int]$s.Depth }
+        $err = ''
+        if (@($s.Errors).Count) {
+            # The evidence is one line (cut, ending with the report path); detail and checks carry the whole Azure text.
+            $detail = Get-AzlArmFailureDetail -Step $s
+            $err = ' - ' + (Format-AzlArmFailureLine -Detail $detail -Max 1400 -ReportPath $Run.ReportPath)
+            $data.detail = $detail.Text
+            $data.checks = @($detail.Checks | ForEach-Object { [ordered]@{ status = $_.Status; name = $_.Name; message = $_.Message } })
+            if ($detail.ReportFile) { $data.testClusterReportFile = $detail.ReportFile }
+        }
+        Send-AzlArmEvent -Run $Run -State "${Phase}Step" -Step $key -Evidence "$($s.Name): $($s.Status)$err" -Level $(if ($norm -eq 'error') { 'Error' } else { 'Info' }) -Data $data
     }
 }
 
@@ -1380,12 +1694,12 @@ function Wait-AzlArmPhase {
         The Get-AzlArmPhaseOutcome object, with Outcome TimedOut when the limit passed, and Polls.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)]$Run, [Parameter(Mandatory)][ValidateSet('Validate', 'Deploy')][string]$Phase, [Parameter(Mandatory)][string]$DeploymentName, [Parameter(Mandatory)][datetime]$Submitted, [Parameter(Mandatory)][int]$TimeoutMinutes)
+    param([Parameter(Mandatory)]$Run, [Parameter(Mandatory)][ValidateSet('Validate', 'Deploy')][string]$Phase, [Parameter(Mandatory)][string]$DeploymentName, [Parameter(Mandatory)][datetime]$Submitted, [Parameter(Mandatory)][int]$TimeoutMinutes, [datetime]$StepsSince = [datetime]::MinValue)
     $a = $Run.Adapter; $set = $Run.Settings
     $start = & $a.Now
     $deadline = $start.AddMinutes($TimeoutMinutes)
     $delay = [double]$set.pollSeconds
-    $seen = @{}; $consecutive = 0; $polls = 0
+    $seen = @{}; $ignoredSeen = @{}; $consecutive = 0; $polls = 0
     $eventPhase = if ($Phase -eq 'Validate') { 'Validation' } else { 'Deployment' }
     while ($true) {
         $outcome = $null
@@ -1393,21 +1707,26 @@ function Wait-AzlArmPhase {
             $arm = Invoke-AzlArmAdapter $a GetArmDeployment @($Run.Subscription, $Run.ResourceGroup, $DeploymentName)
             $state = Invoke-AzlArmAdapter $a GetDeploymentState @($Run.Subscription, $Run.ResourceGroup, $Run.Cluster)
             $polls++; $consecutive = 0
-            $outcome = Get-AzlArmPhaseOutcome -Phase $Phase -Arm $arm -State $state -Submitted $Submitted -SkewMinutes $set.staleSkewMinutes
+            $outcome = Get-AzlArmPhaseOutcome -Phase $Phase -Arm $arm -State $state -Submitted $Submitted -SkewMinutes $set.staleSkewMinutes -StepsSince $StepsSince -DeploymentName $DeploymentName
+            $newIgnored = @($outcome.IgnoredSteps | Where-Object { $_ -and -not $ignoredSeen.ContainsKey($_.FullStepIndex + '|' + $_.Name) })
+            if ($newIgnored.Count) {
+                foreach ($g in $newIgnored) { $ignoredSeen[$g.FullStepIndex + '|' + $g.Name] = $true }
+                Send-AzlArmEvent -Run $Run -State StaleStepsIgnored -Evidence ('{0} step(s) of an earlier run on the cluster resource are not this run''s and are ignored: {1}.' -f $newIgnored.Count, (($newIgnored | ForEach-Object { $_.FullStepIndex + ' ' + $_.Name }) -join ', ')) -Data @{ deploymentName = $DeploymentName; ignoredSteps = @($newIgnored | ForEach-Object { [ordered]@{ step = $_.FullStepIndex; name = $_.Name; status = $_.Status; reason = $_.Reason } }) }
+            }
             Publish-AzlArmStepEvent -Run $Run -Phase $eventPhase -Steps $outcome.Steps -Seen $seen
         }
         catch {
             $consecutive++
             Send-AzlArmEvent -Run $Run -State PollError -Evidence "Reading the $($Phase.ToLowerInvariant()) status failed ($consecutive in a row): $($_.Exception.Message)" -Level Warning -Data @{ consecutive = $consecutive }
             if ($consecutive -ge $set.transientErrorLimit) {
-                return [pscustomobject]@{ Outcome = 'Failed'; Reason = "Reading the status failed $consecutive times in a row: $($_.Exception.Message)"; Steps = @(); Status = ''; ArmState = ''; ArmError = ''; Fresh = $false; Polls = $polls }
+                return [pscustomobject]@{ Outcome = 'Failed'; Reason = "Reading the status failed $consecutive times in a row: $($_.Exception.Message)"; Steps = @(); Status = ''; ArmState = ''; ArmError = ''; Fresh = $false; IgnoredSteps = @(); Polls = $polls }
             }
         }
         if ($outcome -and $outcome.Outcome -ne 'Running') { $outcome | Add-Member -NotePropertyName Polls -NotePropertyValue $polls -Force; return $outcome }
         $now = & $a.Now
         if ($now -ge $deadline) {
-            $last = if ($outcome) { $outcome } else { [pscustomobject]@{ Steps = @(); Status = ''; ArmState = ''; ArmError = ''; Fresh = $false } }
-            return [pscustomobject]@{ Outcome = 'TimedOut'; Reason = "Still running after $TimeoutMinutes minutes."; Steps = $last.Steps; Status = $last.Status; ArmState = $last.ArmState; ArmError = $last.ArmError; Fresh = $last.Fresh; Polls = $polls }
+            $last = if ($outcome) { $outcome } else { [pscustomobject]@{ Steps = @(); Status = ''; ArmState = ''; ArmError = ''; Fresh = $false; IgnoredSteps = @() } }
+            return [pscustomobject]@{ Outcome = 'TimedOut'; Reason = "Still running after $TimeoutMinutes minutes."; Steps = $last.Steps; Status = $last.Status; ArmState = $last.ArmState; ArmError = $last.ArmError; Fresh = $last.Fresh; IgnoredSteps = $last.IgnoredSteps; Polls = $polls }
         }
         $remaining = ($deadline - $now).TotalSeconds
         & $a.Sleep ([math]::Min($delay, $remaining))
@@ -1529,12 +1848,15 @@ function Invoke-AzlArmPhase {
     }
 
     $submitted = & $a.Now
+    # Only a submission made now has a start time to compare steps with; an attached deployment owns the steps it already has.
+    $stepsSince = [datetime]::MinValue
     if ($action.Kind -in 'Submit', 'Resubmit') {
         if ($Run.WhatIf) {
             $section.status = 'WhatIf'; $section.wouldSubmit = "Mode $mode as deployment $name"
             $Run.Message = "WhatIf: would submit $mode as deployment $name."
             return $true
         }
+        $stepsSince = $submitted
         if ($Phase -eq 'Validate') { Move-AzlArmRunState -Run $Run -To Validating -Reason $action.Reason }
         elseif ($action.Kind -eq 'Resubmit') {
             Move-AzlArmRunState -Run $Run -To Resumed -Reason $action.Reason
@@ -1569,8 +1891,9 @@ function Invoke-AzlArmPhase {
     }
 
     $limit = if ($Phase -eq 'Validate') { $set.validateTimeoutMinutes } else { $set.deployTimeoutMinutes }
-    $outcome = Wait-AzlArmPhase -Run $Run -Phase $Phase -DeploymentName $name -Submitted $submitted -TimeoutMinutes $limit
+    $outcome = Wait-AzlArmPhase -Run $Run -Phase $Phase -DeploymentName $name -Submitted $submitted -TimeoutMinutes $limit -StepsSince $stepsSince
     $section.status = $outcome.Outcome; $section.reportedStatus = $outcome.Status; $section.armState = $outcome.ArmState
+    $section.ignoredSteps = @($outcome.IgnoredSteps | ForEach-Object { [ordered]@{ step = $_.FullStepIndex; name = $_.Name; status = $_.Status; reason = $_.Reason } })
     $section.polls = $outcome.Polls; $section.steps = @($outcome.Steps | ForEach-Object { [ordered]@{ step = $_.FullStepIndex; name = $_.Name; status = $_.Status; depth = $_.Depth } })
     if ($outcome.Outcome -eq 'Succeeded') {
         $section.failedSteps = @()
@@ -1587,8 +1910,10 @@ function Invoke-AzlArmPhase {
     if ($outcome.Outcome -ne 'TimedOut' -or $primary) {
         $issue = Find-AzlArmKnownIssue -Phase $Phase -StepId $(if ($primary) { $primary.FullStepIndex } else { '' }) -StepName $(if ($primary) { $primary.Name } else { '' }) -ErrorText $errorText -Build $Run.Build -Context (Get-AzlArmIssueContext -Run $Run) -Issues $Run.KnownIssues
     }
-    $section.failedSteps = @($failed | ForEach-Object { [ordered]@{ step = $_.FullStepIndex; name = $_.Name; status = $_.Status; errors = @($_.Errors | ForEach-Object { Limit-AzlArmText $_ 800 }) } })
-    $section.error = Limit-AzlArmText $errorText 1500
+    # report.json is a file: the whole text of every failed step, every nested result and every check, not cut. Only the one-line forms are cut.
+    $section.failedSteps = @($failed | ForEach-Object { ConvertTo-AzlArmFailedStepReport -Step $_ })
+    $section.error = $errorText
+    $primaryDetail = if ($primary) { Get-AzlArmFailureDetail -Step $primary } else { $null }
     $Run.Report.knownIssue = $issue
     $stepText = if ($primary) { "step $($primary.FullStepIndex) '$($primary.Name)'" } else { 'no step' }
     if ($outcome.Outcome -eq 'TimedOut') {
@@ -1601,9 +1926,9 @@ function Invoke-AzlArmPhase {
     else {
         $toState = if ($Phase -eq 'Validate') { 'ValidationFailed' } else { 'DeploymentFailed' }
         Move-AzlArmRunState -Run $Run -To $toState -Reason $outcome.Reason
-        $Run.Message = "$label failed at $stepText$(if ($errorText.Trim()) { ': ' + (Limit-AzlArmText $errorText 600) })"
+        $Run.Message = "$label failed at $stepText$(if ($primaryDetail) { ': ' + (Format-AzlArmFailureLine -Detail $primaryDetail -Max 600 -ReportPath $Run.ReportPath) } elseif ($errorText.Trim()) { ': ' + (Limit-AzlArmText $errorText 600) + $(if ($Run.ReportPath) { " (full text: $($Run.ReportPath))" }) })"
         $Run.NextAction = Get-AzlArmNextAction $issue $(if ($Phase -eq 'Validate') { 'Fix the failing step and run again. The instance is not in a failed deployment state, so Validate can run again.' } else { 'Read the failing step. Do not run Validate again; fix the cause and run Mode Deploy -Resume.' })
-        Send-AzlArmEvent -Run $Run -State "${label}Failed" -Step $(if ($primary) { $primary.FullStepIndex } else { '' }) -Evidence $Run.Message -Level Error -NextAction $Run.NextAction -Data @{ knownIssue = $(if ($issue) { $issue.Id } else { '' }); stepName = $(if ($primary) { $primary.Name } else { '' }); status = $outcome.Status }
+        Send-AzlArmEvent -Run $Run -State "${label}Failed" -Step $(if ($primary) { $primary.FullStepIndex } else { '' }) -Evidence $Run.Message -Level Error -NextAction $Run.NextAction -Data @{ knownIssue = $(if ($issue) { $issue.Id } else { '' }); stepName = $(if ($primary) { $primary.Name } else { '' }); status = $outcome.Status; detail = $(if ($primaryDetail) { $primaryDetail.Text } else { $errorText }); checks = @($(if ($primaryDetail) { $primaryDetail.Checks | ForEach-Object { [ordered]@{ status = $_.Status; name = $_.Name; message = $_.Message } } })); testClusterReportFile = $(if ($primaryDetail) { $primaryDetail.ReportFile } else { '' }) }
     }
     return $false
 }
@@ -1631,6 +1956,34 @@ function Get-AzlArmExitCode {
     return 0
 }
 
+function Format-AzlArmFailedStepSummary {
+    # The summary.md lines of one failed step (a report.json failedSteps entry): the checks and results one by one, in full.
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param([Parameter(Mandatory)]$Step)
+    $l = [System.Collections.Generic.List[string]]::new()
+    $oneLine = { param($x) (([string]$x) -replace '\s*[\r\n]+\s*', ' ').Trim() }
+    $l.Add("- **Failed step $($Step.step)** $($Step.name) (status $($Step.status))")
+    if ($Step.description) { $l.Add("  - What it does: $(& $oneLine $Step.description)") }
+    if ($Step.testClusterReportFile) { $l.Add("  - Test-Cluster report on the node: ``$($Step.testClusterReportFile)``") }
+    $checks = @($Step.checks | Where-Object { $_ })
+    $results = @($Step.results | Where-Object { $_ })
+    foreach ($c in @($checks | Where-Object { $_.status -in 'Failed', 'Warning' })) { $l.Add("  - **$($c.status)** $($c.name)$(if ($c.message) { ': ' + (& $oneLine $c.message) })") }
+    $bad = @($results | Where-Object { Test-AzlArmResultFailing $_.status })
+    foreach ($r in $bad) {
+        $title = if ($r.title) { "$($r.name) ($($r.title))" } else { $r.name }
+        $l.Add("  - **$($r.status)** ``$title``$(if ($r.description) { ': ' + (& $oneLine $r.description) })")
+        if ($r.remediation) { $l.Add("    - Remediation: $(& $oneLine $r.remediation)") }
+        if ($r.detail -and -not ($checks.Count -and $r.detail -match '\[!!(Failed|Warning)!!\]')) { $l.Add("    - Detail: $(& $oneLine $r.detail)") }
+    }
+    if ($results.Count -gt $bad.Count) { $l.Add("  - $($results.Count - $bad.Count) other check(s) passed (listed in report.json).") }
+    if (-not $checks.Count -and -not $results.Count) {
+        foreach ($e in @($Step.errors | Where-Object { $_ })) { $l.Add(''); $l.Add('  ```text'); foreach ($line in (([string]$e) -split "\r?\n")) { $l.Add("  $line") }; $l.Add('  ```') }
+    }
+    else { $l.Add('  - The whole text of the error is in report.json (failedSteps, errors).') }
+    return $l.ToArray()
+}
+
 function Format-AzlArmSummary {
     # summary.md: for a person and for a pipeline's job summary.
     param([Parameter(Mandatory)]$Report)
@@ -1651,7 +2004,8 @@ function Format-AzlArmSummary {
         if (-not $s -or -not $s.status) { continue }
         $l.Add("### $($phase.Substring(0,1).ToUpperInvariant() + $phase.Substring(1))"); $l.Add('')
         $l.Add("- Deployment: ``$($s.deploymentName)``, action $($s.action), status $($s.status)")
-        foreach ($f in @($s.failedSteps)) { $l.Add("- **Failed step $($f.step)** $($f.name): $(($f.errors -join ' | '))") }
+        foreach ($f in @($s.failedSteps)) { foreach ($line in (Format-AzlArmFailedStepSummary -Step $f)) { $l.Add($line) } }
+        if (@(Get-AzlProp $s 'ignoredSteps' @()).Count) { $ig = @(Get-AzlProp $s 'ignoredSteps' @()); $l.Add("- Ignored $($ig.Count) step(s) of an earlier run: $(($ig | ForEach-Object { "$($_.step) $($_.name)" }) -join ', ')") }
         $l.Add('')
     }
     if ($Report.knownIssue) {
@@ -1718,14 +2072,14 @@ function Invoke-AzlArmDeploymentRun {
         schemaVersion = $script:ReportSchemaVersion; runId = [guid]::NewGuid().ToString('N').Substring(0, 12); generatedUtc = ''; mode = $Mode; cluster = ''
         infrastructure = $InfrastructureFile; template = [ordered]@{ name = ''; uri = '' }; deploymentSettingsApiVersion = ''; parameterHash = ''
         state = 'Start'; stateHistory = @(); exitCode = 0; message = ''; nextAction = ''; preconditions = @(); approval = $null
-        validate = [ordered]@{ status = ''; deploymentName = ''; action = ''; actionReason = ''; failedSteps = @(); steps = @() }
-        deploy = [ordered]@{ status = ''; deploymentName = ''; action = ''; actionReason = ''; failedSteps = @(); steps = @() }
+        validate = [ordered]@{ status = ''; deploymentName = ''; action = ''; actionReason = ''; failedSteps = @(); ignoredSteps = @(); steps = @() }
+        deploy = [ordered]@{ status = ''; deploymentName = ''; action = ''; actionReason = ''; failedSteps = @(); ignoredSteps = @(); steps = @() }
         knownIssue = $null; warnings = @(); settings = $null
     }
     $run = [ordered]@{
         RunId = $report.runId; Mode = $Mode; Cluster = ''; SchemaVersion = ''; EventPath = ''; Adapter = $Adapter; Settings = $null; State = (New-AzlArmRunState)
         Report = $report; Message = ''; NextAction = ''; Subscription = ''; ResourceGroup = ''; Build = ''; KnownIssues = @(); ParameterSet = $null; Template = $null
-        ValidateName = ''; DeployName = ''; WhatIf = [bool]$WhatIf
+        ValidateName = ''; DeployName = ''; WhatIf = [bool]$WhatIf; ReportPath = ''
     }
     $exit = 0; $refused = $false; $preFailed = $false; $reportDir = ''
     try {
@@ -1753,6 +2107,7 @@ function Invoke-AzlArmDeploymentRun {
         $reportDir = if ($ReportDirectory) { $ReportDirectory } else { Join-Path ([IO.Path]::GetTempPath()) "azl-arm-$cluster" }
         $null = New-Item -ItemType Directory -Force -Path $reportDir
         $run.EventPath = Join-Path $reportDir 'arm-deployment-events.jsonl'
+        $run.ReportPath = Join-Path $reportDir 'report.json'
         $nodes = @(ConvertTo-AzlArmArray $infra['nodes'])
         Send-AzlArmEvent -Run $run -State RunStarted -Evidence "ARM deployment run: mode $Mode, $($nodes.Count) node(s)." -Data @{ nodes = @($nodes | ForEach-Object { [string]$_['name'] }); runMode = $Mode }
         Move-AzlArmRunState -Run $run -To Prepared -Reason 'Inputs read.'
@@ -1891,4 +2246,4 @@ function Invoke-AzlArmDeploymentRun {
 }
 
             if (-not (Get-Command Resolve-DnsName -ErrorAction SilentlyContinue)) { return $null } # not on Linux: unknown, not false
-Export-ModuleMember -Function Get-AzlArmRunSetting, Read-AzlArmSbeCatalog, Test-AzlArmSolutionVersionMatch, ConvertFrom-AzlArmOsBuild, Test-AzlArmSbeSolution, Write-AzlArmEvent, Test-AzlArmRunTransition, New-AzlArmRunState, Set-AzlArmRunState, Get-AzlArmFailedStep, Get-AzlArmKnownIssue, Find-AzlArmKnownIssue, Get-AzlArmParameterSource, Test-AzlArmRequiredKey, Format-AzlArmParameterSource, New-AzlArmAzureAdapter, Read-AzlArmOsReport, Get-AzlArmPreconditionName, Invoke-AzlArmPrecondition, Test-AzlArmSnapshotFresh, Get-AzlArmPhaseOutcome, Wait-AzlArmPhase, Resolve-AzlArmValidateAction, Resolve-AzlArmDeployAction, Get-AzlArmParameterHash, ConvertTo-AzlArmStepStatus, Hide-AzlArmSecret, Invoke-AzlArmDeploymentRun
+Export-ModuleMember -Function Get-AzlArmRunSetting, Read-AzlArmSbeCatalog, Test-AzlArmSolutionVersionMatch, ConvertFrom-AzlArmOsBuild, Test-AzlArmSbeSolution, Write-AzlArmEvent, Test-AzlArmRunTransition, New-AzlArmRunState, Set-AzlArmRunState, Get-AzlArmFailedStep, Get-AzlArmFailureDetail, Get-AzlArmClusterCheck, Get-AzlArmTestClusterReportPath, Get-AzlArmEmbeddedJson, Get-AzlArmValidatorResult, Format-AzlArmFailureLine, Select-AzlArmCurrentStep, Get-AzlArmKnownIssue, Find-AzlArmKnownIssue, Get-AzlArmParameterSource, Test-AzlArmRequiredKey, Format-AzlArmParameterSource, New-AzlArmAzureAdapter, Read-AzlArmOsReport, Get-AzlArmPreconditionName, Invoke-AzlArmPrecondition, Test-AzlArmSnapshotFresh, Get-AzlArmPhaseOutcome, Wait-AzlArmPhase, Resolve-AzlArmValidateAction, Resolve-AzlArmDeployAction, Get-AzlArmParameterHash, ConvertTo-AzlArmStepStatus, Hide-AzlArmSecret, Invoke-AzlArmDeploymentRun
