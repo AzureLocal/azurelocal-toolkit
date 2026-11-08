@@ -49,14 +49,16 @@ BeforeAll {
     # What the Read script returns for the parts of a node these tests look at.
     function New-SanState {
         param([object[]]$Disk = @(), [string[]]$Hw = @('PURE|FlashArray'), [string]$Lb = 'RR', [string]$Feature = 'Enabled', [string]$Boot = '2026-11-07T01:00:00Z', [switch]$Deployed,
-            [string]$IscsiSvc = '', [string]$IscsiClaim = '', [object[]]$Portal = @(), [object[]]$Session = @(), [object[]]$Fc = @())
+            [string]$IscsiSvc = '', [string]$IscsiClaim = '', [object[]]$Portal = @(), [object[]]$Session = @(), [object[]]$Fc = @(),
+            # MPIO's own list (MPIOSupportedDeviceList) and Get-MPIOAvailableHW: by default the array is claimed.
+            [string[]]$Mpdev = @('PURE|FlashArray'), [object[]]$Avail = @([pscustomobject]@{ vendor = 'PURE'; product = 'FlashArray'; multipathed = $true }), [bool]$MpioRead = $true)
         [pscustomobject]@{
             v = 1; host = 'iic-n01'; boot = $Boot; os = '10.0.26100.1'; reboot = $false; nics = @()
             stor = [pscustomobject]@{ pools = 0; vdisks = 0; dirty = @(); cluster = [pscustomobject]@{ deployed = [bool]$Deployed; why = @() } }
             san = [pscustomobject]@{
                 feature = $Feature; hw = @($Hw); lb = $Lb
                 set = [pscustomobject]@{ UseCustomPathRecoveryTime = 'Enabled'; CustomPathRecoveryTime = '20'; PDORemovePeriod = '20'; DiskTimeoutValue = '60'; PathVerificationState = 'Enabled' }
-                fc = @($Fc); iqn = @(); disks = @($Disk); iscsiSvc = $IscsiSvc; iscsiClaim = $IscsiClaim; portals = @($Portal); sessions = @($Session)
+                fc = @($Fc); iqn = @(); disks = @($Disk); iscsiSvc = $IscsiSvc; iscsiClaim = $IscsiClaim; portals = @($Portal); sessions = @($Session); avail = @($Avail); mpdev = @($Mpdev); mpdevRead = $true; mpioRead = $MpioRead
             }
             err = [pscustomobject]@{}
         }
@@ -209,7 +211,7 @@ Describe 'Fibre Channel: the host-side steps (Learn: Connect an external storage
         $verify = @(Compare-AzlNodeState -Spec $spec -State $state -Step SanVerify | Where-Object { $_.Item -eq 'each LUN seen once (by UniqueId)' })
         $verify.Action | Should -Be 'Blocked'
         $verify.Current | Should -Match '4 FC/iSCSI disk\(s\) report only 1 LUN\(s\)'
-        $verify.Note | Should -Match 'Get-MSDSMSupportedHW'
+        $verify.Note | Should -Match 'mpclaim -n -i -d'
     }
     It 'reports the initiator WWPNs when the file lists none (the fabric administrator needs them for zoning)' {
         $state = New-SanState -Fc @([pscustomobject]@{ wwpn = '10000090fa000001'; up = 'Online' }, [pscustomobject]@{ wwpn = '10000090fa000002'; up = 'Online' })
@@ -235,6 +237,40 @@ Describe 'Fibre Channel: the host-side steps (Learn: Connect an external storage
         $state = New-SanState -Disk @((Get-LunClaimed 1 3))
         @(Get-Plan (Get-SpecOf $san) $state | Where-Object { $_.Item -like 'infrastructure volume*' }).Count | Should -Be 1
         @(Get-Plan $script:Spec $state | Where-Object { $_.Item -like 'infrastructure volume*' }) | Should -BeNullOrEmpty
+    }
+    It 'the lab case: MSDSM already lists PURE FlashArray but MPIO has not claimed it, so the eight disks stay separate: mpclaim -n -i -d claims it and the node restarts' {
+        $state = New-SanState -Mpdev @() -Avail @([pscustomobject]@{ vendor = 'PURE'; product = 'FlashArray'; multipathed = $false }) -Disk (@(Get-LunPath 1 3) + @(Get-LunPath 2 7))
+        $plan = Get-Plan $script:Spec $state
+        ($plan | Where-Object { $_.Item -eq 'MSDSM PURE|FlashArray' }).Action | Should -Be 'Ok' -Because 'Azure Local ships the hardware ID registered; that alone does not claim the paths'
+        $claim = $plan | Where-Object { $_.Item -eq 'MPIO claims PURE|FlashArray' }
+        $claim.Action | Should -Be 'Change'
+        $claim.Apply.kind | Should -Be 'mpio-claim'
+        $claim.Apply.vendor | Should -Be 'PURE'
+        $claim.Apply.product | Should -Be 'FlashArray'
+        $claim.Current | Should -Match 'not in MPIOSupportedDeviceList; Get-MPIOAvailableHW: IsMultipathed False'
+        @($plan | Where-Object { $_.Apply -and $_.Apply.kind -eq 'mpio-claim-restart' }) | Should -BeNullOrEmpty -Because 'the claim restarts the node already'
+    }
+    It 'before any LUN is presented the array is still claimed, so the paths are claimed when the LUNs appear' {
+        $claim = Get-Plan $script:Spec (New-SanState -Mpdev @() -Avail @()) | Where-Object { $_.Item -eq 'MPIO claims PURE|FlashArray' }
+        $claim.Action | Should -Be 'Change'
+        $claim.Current | Should -Match 'not listed by Get-MPIOAvailableHW'
+    }
+    It 'IsMultipathed True counts as claimed' {
+        $state = New-SanState -Mpdev @() -Avail @([pscustomobject]@{ vendor = 'PURE'; product = 'FlashArray'; multipathed = $true })
+        (Get-Plan $script:Spec $state | Where-Object { $_.Item -eq 'MPIO claims PURE|FlashArray' }).Action | Should -Be 'Ok'
+    }
+    It 'a node whose MPIO list could not be read is not told to claim' {
+        $state = New-SanState -Mpdev @(); $state.san.mpdevRead = $false
+        @(Get-Plan $script:Spec $state | Where-Object { $_.Item -like 'MPIO claims*' }) | Should -BeNullOrEmpty
+    }
+    It 'mpclaim -s -d must list every LUN seen once: a disk with no MPIO path is Blocked, an MPIO disk is Ok, and an unread MPIO state says nothing' {
+        $noPath = [pscustomobject]@{ n = 3; bus = 'Fibre Channel'; gb = 1024; ps = 'RAW'; sn = 'PURELUN1'; uid = 'UID1'; lun = 1; paths = 0; st = 'Offline' }
+        $item = Get-Plan $script:Spec (New-SanState -Disk @($noPath)) | Where-Object { $_.Item -eq 'mpclaim -s -d lists every LUN' }
+        $item.Action | Should -Be 'Blocked'
+        $item.Current | Should -Match '#3'
+        $good = New-SanState -Disk @((Get-LunClaimed 1 3), (Get-LunClaimed 2 4))
+        (Get-Plan $script:Spec $good | Where-Object { $_.Item -eq 'mpclaim -s -d lists every LUN' }).Action | Should -Be 'Ok'
+        @(Get-Plan $script:Spec (New-SanState -MpioRead $false -Disk @($noPath)) | Where-Object { $_.Item -eq 'mpclaim -s -d lists every LUN' }) | Should -BeNullOrEmpty
     }
     It 'does nothing until MPIO is on: the feature is enabled first and the rest waits for the restart' {
         $plan = Get-Plan $script:Spec (New-SanState -Feature Disabled -Hw @())
@@ -314,7 +350,7 @@ Describe 'iSCSI: the host-side steps' {
         $script:DellSet = [pscustomobject]@{ UseCustomPathRecoveryTime = 'Enabled'; CustomPathRecoveryTime = '10'; RetryCount = '3'; DiskTimeoutValue = '30' }
     }
     It 'starts the MSiSCSI service, enables MSDSM auto-claim for iSCSI, and makes a portal and a session per initiator port and target of its fabric' {
-        $state = New-SanState -Hw $script:DellHw -IscsiSvc 'Stopped/Manual' -IscsiClaim 'False'
+        $state = New-SanState -Hw $script:DellHw -Mpdev @('DellEMC|PowerStore') -IscsiSvc 'Stopped/Manual' -IscsiClaim 'False'
         $state.san.set = $script:DellSet
         $plan = Get-Plan $script:Spec $state
         ($plan | Where-Object { $_.Item -eq 'MSiSCSI service' }).Apply.kind | Should -Be 'iscsi-service'
@@ -330,7 +366,7 @@ Describe 'iSCSI: the host-side steps' {
         $sessions[0].Apply.iqn | Should -Match '^iqn\.2010-06\.com\.example:array-'
     }
     It 'makes nothing that is already there, and leaves a live session that is not persistent alone with a note' {
-        $state = New-SanState -Hw $script:DellHw -IscsiSvc 'Running/Automatic' -IscsiClaim 'True' `
+        $state = New-SanState -Hw $script:DellHw -Mpdev @('DellEMC|PowerStore') -IscsiSvc 'Running/Automatic' -IscsiClaim 'True' `
             -Portal @([pscustomobject]@{ addr = '198.51.100.10'; port = 3260; init = '198.51.100.21' }, [pscustomobject]@{ addr = '198.51.100.74'; port = 3261; init = '198.51.100.85' }) `
             -Session @([pscustomobject]@{ iqn = 'iqn.2010-06.com.example:array-a'; portal = '198.51.100.10'; init = '198.51.100.21'; persistent = $true; mpio = $true }, [pscustomobject]@{ iqn = 'iqn.2010-06.com.example:array-b'; portal = '198.51.100.74'; init = '198.51.100.85'; persistent = $false; mpio = $true })
         $state.san.set = $script:DellSet
@@ -339,7 +375,7 @@ Describe 'iSCSI: the host-side steps' {
         ($plan | Where-Object { $_.Item -like 'iSCSI session*array-b*' }).Action | Should -Be 'Info'
     }
     It 'asks for a restart with the auto-claim when LUNs are already visible (Learn step 2.5), and not otherwise' {
-        $state = New-SanState -Hw $script:DellHw -IscsiSvc 'Running/Automatic' -IscsiClaim 'False' -Disk (Get-LunPath 1 3 -Paths 2 -Bus iSCSI)
+        $state = New-SanState -Hw $script:DellHw -Mpdev @('DellEMC|PowerStore') -IscsiSvc 'Running/Automatic' -IscsiClaim 'False' -Disk (Get-LunPath 1 3 -Paths 2 -Bus iSCSI)
         $state.san.set = $script:DellSet
         (Get-Plan $script:Spec $state | Where-Object { $_.Item -eq 'iSCSI auto-claim' }).Apply.restart | Should -BeTrue
         $state.san.disks = @()
@@ -347,7 +383,7 @@ Describe 'iSCSI: the host-side steps' {
     }
     It 'makes no session when CHAP is on, and says so' {
         $infra = $script:Infra; $infra.storage.san.iscsi.chap = [ordered]@{ enabled = $true; username = 'u'; secret = 'keyvault://kv/chap' }
-        $state = New-SanState -Hw $script:DellHw -IscsiSvc 'Running/Automatic' -IscsiClaim 'True'
+        $state = New-SanState -Hw $script:DellHw -Mpdev @('DellEMC|PowerStore') -IscsiSvc 'Running/Automatic' -IscsiClaim 'True'
         $state.san.set = $script:DellSet
         $plan = Get-Plan (Get-SpecOf $infra) $state
         @($plan | Where-Object { $_.Apply -and $_.Apply.kind -eq 'iscsi-session' }) | Should -BeNullOrEmpty
@@ -355,7 +391,7 @@ Describe 'iSCSI: the host-side steps' {
     }
     It 'with no targets in the file it makes no portals and says what is missing' {
         $infra = $script:Infra; $infra.storage.san.Remove('iscsi')
-        $state = New-SanState -Hw $script:DellHw -IscsiSvc 'Running/Automatic' -IscsiClaim 'True'
+        $state = New-SanState -Hw $script:DellHw -Mpdev @('DellEMC|PowerStore') -IscsiSvc 'Running/Automatic' -IscsiClaim 'True'
         $state.san.set = $script:DellSet
         $plan = Get-Plan (Get-SpecOf $infra) $state
         ($plan | Where-Object { $_.Item -eq 'iSCSI targets' }).Action | Should -Be 'Info'
@@ -375,6 +411,20 @@ Describe 'The apply: plan, approval, apply, verify' {
     BeforeEach {
         $script:Spec = Get-SpecOf (Get-HybridInfra -Incomplete)
         Mock -ModuleName AzlNodeConfiguration Start-Sleep {}
+    }
+    It 'the lab case end to end: claim with mpclaim, one restart, each LUN once and listed by MPIO: converged' {
+        $before = New-SanState -Mpdev @() -Avail @([pscustomobject]@{ vendor = 'PURE'; product = 'FlashArray'; multipathed = $false }) -Disk (@(Get-LunPath 1 3) + @(Get-LunPath 2 7))
+        $after = New-SanState -Boot '2026-11-07T02:00:00Z' -Disk @((Get-LunClaimed 1 3), (Get-LunClaimed 2 4))
+        $t = New-FakeTransport @($before, $after, $after) { param($p) [pscustomobject]@{ reboot = $true; results = @($p.actions | ForEach-Object { [pscustomobject]@{ id = $_.id; status = 'changed'; detail = $_.kind } }) } }
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -Step $script:Steps -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
+        $applied = @($t.Log | Where-Object Kind -eq 'Apply')
+        $applied.Count | Should -Be 1
+        $claim = @($applied[0].Parameters.actions | Where-Object { $_.kind -eq 'mpio-claim' })
+        $claim.Count | Should -Be 1
+        $claim[0].vendor | Should -Be 'PURE'
+        @($t.Log | Where-Object Kind -eq 'Restart').Count | Should -Be 1
+        $r.Converged | Should -BeTrue
+        ($r.Plan | Where-Object { $_.Item -eq 'mpclaim -s -d lists every LUN' }).Action | Should -Be 'Ok'
     }
     It 'registers MSDSM, restarts once, and the node comes back with every LUN claimed: converged' {
         $before = New-SanState -Hw @('Vendor*|Product*') -Lb 'None' -Disk (@(Get-LunPath 1 3) + @(Get-LunPath 2 7))
@@ -434,12 +484,17 @@ Describe 'The node scripts' {
         $text | Should -Not -Match 'if \(Get-P \$P ''san'' \$false\) \{\s*Invoke-Section'
         $text | Should -Match "@\('Fibre Channel', 'iSCSI'\) -contains"
         $text | Should -Match 'Get-IscsiTargetPortal'
+        $text | Should -Match 'Get-MPIOAvailableHW'
+        $text | Should -Match 'MPIOSupportedDeviceList'
         $text | Should -Match 'Get-IscsiSession'
     }
     It 'the Apply script knows the new actions' {
         $text = Get-AzlNodePayload -Name Apply
-        foreach ($kind in 'msdsm-hw-remove', 'mpio-claim-restart', 'iscsi-portal', 'iscsi-session') { $text | Should -Match "'$kind'" }
+        foreach ($kind in 'msdsm-hw-remove', 'mpio-claim', 'mpio-claim-restart', 'iscsi-portal', 'iscsi-session') { $text | Should -Match "'$kind'" }
         $text | Should -Match 'Remove-MSDSMSupportedHW'
+        $text | Should -Match 'mpclaim\.exe -n -i -d \$device'
+        $text | Should -Match '\{0,-8\}\{1,-16\}' -Because 'the vendor is padded to 8 characters and the product to 16'
+        $text | Should -Match 'MPIOSupportedDeviceList'
         $text | Should -Match 'New-IscsiTargetPortal'
         $text | Should -Match 'Connect-IscsiTarget'
         $text | Should -Match 'IsMultipathEnabled = \$true'

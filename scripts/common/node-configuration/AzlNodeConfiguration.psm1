@@ -747,6 +747,21 @@ function Compare-AzlNodeState {
                     if ($hw.PSObject.Properties['mpclaim']) { $apply.mpclaim = $hw.mpclaim }
                     & $add (New-AzlPlanItem $n 'Mpio' "MSDSM $key" $(if ($have) { 'registered' } else { 'absent' }) 'registered' $(if ($have) { 'Ok' } else { 'Change' }) $(if (-not $have) { 'Needs a restart before MPIO claims the LUNs.' } else { '' }) $(if (-not $have) { $apply }))
                 }
+                # Registering the hardware ID with MSDSM is NOT enough (proven on the tplabs lab: Azure Local already ships PURE|FlashArray registered in MSDSM, yet eight FC disks, two LUNs
+                # over four paths, stayed separate). MPIO claims a device only when it is in its own list, HKLM\SYSTEM\CurrentControlSet\Control\MPDEV\MPIOSupportedDeviceList, which
+                # `mpclaim -n -i -d "<vendor padded to 8><product padded to 16>"` writes; Get-MPIOAvailableHW shows IsMultipathed False before it. A restart makes MPIO use it.
+                if ($sanState.PSObject.Properties['mpdev'] -and [bool](Get-AzlProp $sanState 'mpdevRead' $true)) {
+                    $availHw = @(Get-AzlProp $sanState 'avail' @() | Where-Object { $_ })
+                    foreach ($hw in $Spec.San.Msdsm.Hardware) {
+                        $key = "$($hw.vendorId)|$($hw.productId)"
+                        $inList = @($sanState.mpdev | Where-Object { $_ -ieq $key }).Count -gt 0
+                        $seenHw = @($availHw | Where-Object { "$($_.vendor)|$($_.product)" -ieq $key }) | Select-Object -First 1
+                        $multipathed = [bool]($seenHw -and [bool](Get-AzlProp $seenHw 'multipathed' $false))
+                        $claimed = $inList -or $multipathed
+                        $current = if ($claimed) { 'claimed by MPIO' } else { "not in MPIOSupportedDeviceList$(if ($seenHw) { '; Get-MPIOAvailableHW: IsMultipathed False' } else { '; not listed by Get-MPIOAvailableHW (no LUN presented yet)' })" }
+                        & $add (New-AzlPlanItem $n 'Mpio' "MPIO claims $key" $current 'in MPIOSupportedDeviceList' $(if ($claimed) { 'Ok' } else { 'Change' }) $(if (-not $claimed) { 'mpclaim -n -i -d adds the device to MPIO''s list; the node restarts so MPIO claims the paths.' } else { '' }) $(if (-not $claimed) { @{ id = "Mpio/claim-$($hw.productId)"; kind = 'mpio-claim'; vendor = $hw.vendorId; product = $hw.productId } }))
+                    }
+                }
                 # Learn step 2.2, Everpure (Pure): the generic wildcard entry is removed so MSDSM does not claim devices that are not the array's.
                 if ($Spec.San.Msdsm.RemoveGenericEntry) {
                     $generic = @($sanState.hw | Where-Object { $_ -ieq 'Vendor*|Product*' }).Count -gt 0
@@ -805,7 +820,7 @@ function Compare-AzlNodeState {
             }
             # Learn step 6: a restart applies the MPIO changes. When the vendor ID is registered, nothing else is waiting for a restart and the LUN paths are still separate disks, the node restarts once so MPIO claims them.
             if ($featureOn -and $Spec.San.Msdsm) {
-                $restartComing = @($items | Where-Object { $_.Step -eq 'Mpio' -and $_.Action -eq 'Change' -and $_.Apply -and $_.Apply.kind -in 'mpio-feature', 'msdsm-hw', 'msdsm-hw-remove', 'iscsi-claim' }).Count -gt 0
+                $restartComing = @($items | Where-Object { $_.Step -eq 'Mpio' -and $_.Action -eq 'Change' -and $_.Apply -and $_.Apply.kind -in 'mpio-feature', 'msdsm-hw', 'mpio-claim', 'msdsm-hw-remove', 'iscsi-claim' }).Count -gt 0
                 if ($sanDuplicate.Count -and $restartComing) { & $add (New-AzlPlanItem $n 'Mpio' 'MPIO claims the LUN paths' (Format-AzlSanDuplicate -Duplicate $sanDuplicate -DiskCount $sanDisks.Count) 'each LUN seen once' Info 'The restart that follows the changes above lets MPIO claim the paths.') }
                 elseif ($sanDuplicate.Count) { & $add (New-AzlPlanItem $n 'Mpio' 'MPIO claims the LUN paths' (Format-AzlSanDuplicate -Duplicate $sanDuplicate -DiskCount $sanDisks.Count) 'each LUN seen once' Change 'MPIO is set up but the paths are still separate disks (the claim happens at a restart). The node restarts once so MPIO claims them.' @{ id = 'Mpio/claim-restart'; kind = 'mpio-claim-restart' }) }
                 elseif ($sanDisks.Count) { & $add (New-AzlPlanItem $n 'Mpio' 'MPIO claims the LUN paths' "$($sanDisks.Count) LUN(s), each seen once" 'each LUN seen once' Ok) }
@@ -836,9 +851,18 @@ function Compare-AzlNodeState {
         # Learn step 7: every LUN once (compare by UniqueId). A LUN seen more than once is MPIO that has not claimed the paths; Azure's Test-Cluster then fails ('two disks that cannot be distinguished').
         if ($sanDuplicate.Count) {
             $claimComing = @($items | Where-Object { $_.Step -eq 'Mpio' -and $_.Action -eq 'Change' }).Count -gt 0
-            & $add (New-AzlPlanItem $n 'SanVerify' 'each LUN seen once (by UniqueId)' (Format-AzlSanDuplicate -Duplicate $sanDuplicate -DiskCount $sanDisks.Count) 'each LUN once, claimed by MPIO' $(if ($claimComing) { 'Info' } else { 'Blocked' }) $(if ($claimComing) { 'The Mpio step changes MPIO above and restarts the node; the next read checks again.' } else { 'MPIO has not claimed the paths: check Get-MSDSMSupportedHW against the array''s vendor and product ID (mpclaim -s -d), and restart the node so MPIO re-enumerates the disks.' }))
+            & $add (New-AzlPlanItem $n 'SanVerify' 'each LUN seen once (by UniqueId)' (Format-AzlSanDuplicate -Duplicate $sanDuplicate -DiskCount $sanDisks.Count) 'each LUN once, claimed by MPIO' $(if ($claimComing) { 'Info' } else { 'Blocked' }) $(if ($claimComing) { 'The Mpio step changes MPIO above and restarts the node; the next read checks again.' } else { 'MPIO has not claimed the paths: the array must be in MPIO''s own list (mpclaim -n -i -d "<vendor><product>"; Get-MPIOAvailableHW shows IsMultipathed False and mpclaim -s -d lists no MPIO disk for it), and the node must restart after that so MPIO claims the paths.' }))
         }
         elseif ($sanDisks.Count) { & $add (New-AzlPlanItem $n 'SanVerify' 'each LUN seen once (by UniqueId)' "$($sanDisks.Count) LUN(s), each once" 'each LUN once' Ok) }
+        # mpclaim -s -d (MPIO_DISK_INFO) must list each LUN seen once: a disk with no MPIO path is a LUN MPIO does not manage.
+        if (-not $sanDuplicate.Count -and $sanDisks.Count -and [bool](Get-AzlProp $sanState 'mpioRead' $false)) {
+            $notListed = @($sanDisks | Where-Object { [int](Get-AzlProp $_ 'paths' 0) -lt 1 })
+            if ($notListed.Count) {
+                $pending = @($items | Where-Object { $_.Step -eq 'Mpio' -and $_.Action -eq 'Change' }).Count -gt 0
+                & $add (New-AzlPlanItem $n 'SanVerify' 'mpclaim -s -d lists every LUN' "$($notListed.Count) of $($sanDisks.Count) disk(s) have no MPIO path: #$(@($notListed | ForEach-Object { $_.n }) -join ', #')" 'every LUN is an MPIO disk with 2 or more paths' $(if ($pending) { 'Info' } else { 'Blocked' }) 'MPIO does not manage these disks: add the array to MPIO''s list (mpclaim -n -i -d) and restart the node.')
+            }
+            else { & $add (New-AzlPlanItem $n 'SanVerify' 'mpclaim -s -d lists every LUN' "$($sanDisks.Count) MPIO disk(s), $(@($sanDisks | ForEach-Object { [int](Get-AzlProp $_ 'paths' 0) } | Sort-Object -Unique) -join '/') path(s) each" 'every LUN is an MPIO disk' Ok) }
+        }
         elseif ($Spec.San.Architecture -eq 'hybrid') { & $add (New-AzlPlanItem $n 'SanVerify' 'SAN LUNs' 'none visible yet' 'visible after zoning and LUN masking' Info 'Expected before the Azure Local deployment: the array''s LUNs appear once the fabric is zoned and the LUNs are mapped to this node.') }
         # Microsoft Learn: for FC, the HBA WWNs are not zoned until after the Azure Local deployment, so the LUNs are not seen during it.
         $fcSeen = @($sanDisks | Where-Object { [string](Get-AzlProp $_ 'bus' '') -eq 'Fibre Channel' })
@@ -1249,7 +1273,7 @@ function Invoke-AzlNodeConfiguration {
             $todo = @($todo | Where-Object { $_.Apply.kind -ne 'mpio-claim-restart' })
             foreach ($mpioItem in @($plan | Where-Object { $_.Action -eq 'Change' -and $_.Apply -and $_.Apply.kind -eq 'mpio-claim-restart' })) {
                 $mpioItem.Action = 'Blocked'; $mpioItem.Apply = $null
-                $mpioItem.Note = 'The node restarted once for this and the LUN paths are still separate disks. Check Get-MSDSMSupportedHW against the array vendor and product ID (mpclaim -s -d) and that the load balance policy and vendor settings are in place; a second restart is not tried in this run.'
+                $mpioItem.Note = 'The node restarted once for this and the LUN paths are still separate disks. Check that the array''s vendor and product ID (padded to 8 and 16 characters) are in MPIOSupportedDeviceList (Get-MPIOAvailableHW IsMultipathed, mpclaim -s -d) and in Get-MSDSMSupportedHW; a second restart is not tried in this run.'
             }
         }
         $todo = @($todo | Where-Object { $_.Apply.kind -ne 'driver' -or -not $driverInstalled.ContainsKey([string]$_.Apply.id) }) # a driver installed in this run waits for the restart, it is not installed again

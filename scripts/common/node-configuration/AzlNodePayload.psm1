@@ -267,7 +267,11 @@ Invoke-Section 'san' {
     $ports = @()
     $iqn = @()
     $paths = @{}
-    try { foreach ($d in @((Get-CimInstance -Namespace root/wmi -ClassName MPIO_DISK_INFO -ErrorAction Stop).DriveInfo)) { $paths[([string]$d.SerialNumber).Trim()] = [int]$d.NumberPaths } } catch { $paths = @{} }
+    $mpioRead = $false
+    try { foreach ($d in @((Get-CimInstance -Namespace root/wmi -ClassName MPIO_DISK_INFO -ErrorAction Stop).DriveInfo)) { $paths[([string]$d.SerialNumber).Trim()] = [int]$d.NumberPaths }; $mpioRead = $true } catch { $paths = @{} }
+    $avail = @()
+    $mpdev = @()
+    $mpdevRead = $false
     $disks = @(Get-Disk -ErrorAction SilentlyContinue | Where-Object { @('Fibre Channel', 'iSCSI') -contains [string]$_.BusType } | Select-Object -First 64 | ForEach-Object {
             $lun = $null
             if ([string]$_.Location -match 'L(\d+)\)?$') { $lun = [int]$Matches[1] }
@@ -287,6 +291,18 @@ Invoke-Section 'san' {
             $lb = [string](Get-MSDSMGlobalDefaultLoadBalancePolicy -ErrorAction SilentlyContinue)
             $m = Get-MPIOSetting -ErrorAction SilentlyContinue
             if ($m) { foreach ($prop in $m.PSObject.Properties) { if ($prop.Value -is [ValueType] -or $prop.Value -is [string]) { $set[$prop.Name] = [string]$prop.Value } } }
+        }
+        # What MPIO itself claims (mpclaim -s -d): Get-MPIOAvailableHW (IsMultipathed) and MPIO's own device list, HKLM\SYSTEM\CurrentControlSet\Control\MPDEV\MPIOSupportedDeviceList
+        # (each entry is the vendor padded to 8 characters and the product padded to 16). A device in the MSDSM list but not in this one is not claimed.
+        if (Get-Command Get-MPIOAvailableHW -ErrorAction SilentlyContinue) {
+            try { $avail = @(Get-MPIOAvailableHW -ErrorAction Stop | ForEach-Object { [pscustomobject]@{ vendor = ([string]$_.VendorId).Trim(); product = ([string]$_.ProductId).Trim(); multipathed = [bool]$_.IsMultipathed } }) } catch { $avail = @() }
+        }
+        $mpdevKey = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\MPDEV' -ErrorAction SilentlyContinue
+        if ($mpdevKey) {
+            $mpdevRead = $true
+            if ($mpdevKey.PSObject.Properties['MPIOSupportedDeviceList']) {
+                $mpdev = @($mpdevKey.MPIOSupportedDeviceList | ForEach-Object { $entry = [string]$_; if ($entry.Length -gt 8) { ('{0}|{1}' -f $entry.Substring(0, 8).Trim(), $entry.Substring(8).Trim()) } else { ('{0}|' -f $entry.Trim()) } })
+            }
         }
         $ports = @(Get-InitiatorPort -ErrorAction SilentlyContinue | Where-Object { [string]$_.ConnectionType -eq 'Fibre Channel' } |
                 ForEach-Object { [pscustomobject]@{ wwpn = (([string]$_.PortAddress) -replace '[:\-\s]', '').ToLowerInvariant(); up = [string]$_.OperationalStatus } })
@@ -308,7 +324,7 @@ Invoke-Section 'san' {
             }
         }
     }
-    $Az.san = [pscustomobject]@{ feature = $feature; hw = $hw; lb = $lb; set = $set; fc = $ports; iqn = $iqn; disks = $disks; iscsiSvc = $iscsiSvc; iscsiClaim = $iscsiClaim; portals = $portals; sessions = $sessions }
+    $Az.san = [pscustomobject]@{ feature = $feature; hw = $hw; lb = $lb; set = $set; fc = $ports; iqn = $iqn; disks = $disks; iscsiSvc = $iscsiSvc; iscsiClaim = $iscsiClaim; portals = $portals; sessions = $sessions; avail = $avail; mpdev = $mpdev; mpdevRead = $mpdevRead; mpioRead = $mpioRead }
 }
 
 #AZL-HOOK:DomainJoinRead
@@ -529,6 +545,18 @@ function Invoke-Action($a) {
             # The vendor ID is registered, the MPIO settings are in place, and the paths are still separate disks: only a restart makes MPIO claim them.
             $Az.reboot = $true
             return 'restart so MPIO claims the LUN paths'
+        }
+        'mpio-claim' {
+            # Proven on the lab: MSDSM already lists PURE FlashArray, and the paths still stayed separate disks. MPIO claims only what is in its own list; mpclaim -n -i -d puts it there
+            # (-n: no restart now, the run restarts the node). The device is the vendor padded to 8 characters and the product padded to 16.
+            $device = ('{0,-8}{1,-16}' -f ([string]$a.vendor), ([string]$a.product))
+            $out = & mpclaim.exe -n -i -d $device 2>&1
+            $listed = $false
+            $mk = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\MPDEV' -ErrorAction SilentlyContinue
+            if ($mk -and $mk.PSObject.Properties['MPIOSupportedDeviceList']) { $listed = (@($mk.MPIOSupportedDeviceList | Where-Object { ([string]$_).TrimEnd() -eq $device.TrimEnd() }).Count -gt 0) }
+            if (-not $listed) { throw ('mpclaim did not add ' + $device.TrimEnd() + ' to MPIOSupportedDeviceList: ' + ($out -join ' ')) }
+            $Az.reboot = $true
+            return ('MPIO claims ' + $device.TrimEnd() + ' (mpclaim -n -i -d; restart so the paths are claimed)')
         }
         'msdsm-lb' {
             Set-MSDSMGlobalDefaultLoadBalancePolicy -Policy ([string]$a.policy)
