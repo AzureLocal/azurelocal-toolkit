@@ -1141,12 +1141,16 @@ function Get-SanFinding {
     $san = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'storage.san'
     if ($san -isnot [System.Collections.IDictionary]) { return }
     $type = [string]$san['type']
+    # What zoning and LUN masking need (the array's target WWPNs or iSCSI targets, each machine's WWPNs or IQN) is not needed for the host-side MPIO work of the OS configuration, which
+    # takes only storage.san.type and the array vendor and model. A hybrid design (S2D plus the SAN) may therefore leave them out until the zoning is planned: a warning there, an error
+    # for a disaggregated (san) design.
+    $need = if ([string](Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'scenario.storage_architecture') -eq 'hybrid') { 'warning' } else { 'error' }
     $names = [System.Collections.Generic.List[object]]::new()   # WWPNs or IQNs, with where each is
     $nodeSan = { param([int]$i) if ($Nodes[$i]['san'] -is [System.Collections.IDictionary]) { $Nodes[$i]['san'] } else { @{} } }
 
     if ($type -eq 'fibre_channel') {
         $fc = $san['fibre_channel']
-        if ($fc -isnot [System.Collections.IDictionary]) { return }
+        if ($fc -isnot [System.Collections.IDictionary]) { $fc = @{} }
         $fabrics = @(Get-List $fc['fabrics'] | Where-Object { $_ -is [System.Collections.IDictionary] } | ForEach-Object { [string]$_['name'] })
         foreach ($group in ($fabrics | Group-Object { $_.ToLowerInvariant() } | Where-Object Count -gt 1)) {
             New-Finding 'AZL-028' error 'storage.san.fibre_channel.fabrics' "Fabric '$($group.Group[0])' is listed $($group.Count) times. Fabric names are unique."
@@ -1159,7 +1163,7 @@ function Get-SanFinding {
         }
         $targets = @(Get-List $fc['target_wwpns'] | Where-Object { $_ -is [System.Collections.IDictionary] })
         if ($targets.Count -eq 0) {
-            New-Finding 'AZL-028' error 'storage.san.fibre_channel.target_wwpns' "A Fibre Channel SAN needs the array's target WWPNs: list them with the fabric each is cabled to."
+            New-Finding 'AZL-028' $need 'storage.san.fibre_channel.target_wwpns' "A Fibre Channel SAN needs the array's target WWPNs for zoning: list them with the fabric each is cabled to.$(if ($need -eq 'warning') { ' The OS configuration''s MPIO work does not need them.' })"
         }
         for ($t = 0; $t -lt $targets.Count; $t++) {
             & $fabricMissing $targets[$t]['fabric'] "storage.san.fibre_channel.target_wwpns[$t].fabric"
@@ -1179,17 +1183,17 @@ function Get-SanFinding {
                 }
             }
             if ($portCount -eq 0) {
-                New-Finding 'AZL-028' error "nodes[$i].san" "Node '$($Nodes[$i]['name'])' has no HBA port WWPNs. A Fibre Channel SAN needs every machine's HBAs (nodes[].san.hbas[].ports[].wwpn) for zoning and LUN masking."
+                New-Finding 'AZL-028' $need "nodes[$i].san" "Node '$($Nodes[$i]['name'])' has no HBA port WWPNs. A Fibre Channel SAN needs every machine's HBAs (nodes[].san.hbas[].ports[].wwpn) for zoning and LUN masking; the OS configuration reports the node's WWPNs (SanVerify) so they can be recorded."
             }
             if ($mine['initiator_iqn']) { New-Finding 'AZL-028' warning "nodes[$i].san.initiator_iqn" "Node '$($Nodes[$i]['name'])' lists an iSCSI initiator_iqn, but storage.san.type is fibre_channel; it is ignored." }
         }
     }
     elseif ($type -eq 'iscsi') {
         $iscsi = $san['iscsi']
-        if ($iscsi -isnot [System.Collections.IDictionary]) { return }
+        if ($iscsi -isnot [System.Collections.IDictionary]) { $iscsi = @{} }
         $targets = @(Get-List $iscsi['targets'] | Where-Object { $_ -is [System.Collections.IDictionary] })
         if ($targets.Count -eq 0) {
-            New-Finding 'AZL-028' error 'storage.san.iscsi.targets' "An iSCSI SAN needs the array's targets: list each target IQN with its portals."
+            New-Finding 'AZL-028' $need 'storage.san.iscsi.targets' "An iSCSI SAN needs the array's targets: list each target IQN with its portals (without them the OS configuration makes no portals or sessions)."
         }
         for ($t = 0; $t -lt $targets.Count; $t++) {
             if ($targets[$t]['iqn']) { $names.Add([pscustomobject]@{ Key = ([string]$targets[$t]['iqn']).ToLowerInvariant(); Display = [string]$targets[$t]['iqn']; Path = "storage.san.iscsi.targets[$t]" }) }
@@ -1199,7 +1203,7 @@ function Get-SanFinding {
             if ($mine['initiator_iqn']) {
                 $names.Add([pscustomobject]@{ Key = ([string]$mine['initiator_iqn']).ToLowerInvariant(); Display = [string]$mine['initiator_iqn']; Path = "nodes[$i].san.initiator_iqn" })
             } else {
-                New-Finding 'AZL-028' error "nodes[$i].san" "Node '$($Nodes[$i]['name'])' has no initiator_iqn. An iSCSI SAN needs every machine's initiator name (nodes[].san.initiator_iqn) for LUN masking."
+                New-Finding 'AZL-028' $need "nodes[$i].san" "Node '$($Nodes[$i]['name'])' has no initiator_iqn. An iSCSI SAN needs every machine's initiator name (nodes[].san.initiator_iqn) for LUN masking."
             }
             if ($mine['hbas']) { New-Finding 'AZL-028' warning "nodes[$i].san.hbas" "Node '$($Nodes[$i]['name'])' lists Fibre Channel HBAs, but storage.san.type is iscsi; they are ignored." }
             $iscsiPorts = @(Get-AzlNodeNetworkAdapter -Infrastructure $Infra -Node $Nodes[$i] | Where-Object { @(Get-List $_['roles'] | Where-Object { $_ -in 'iscsi:a', 'iscsi:b' }).Count -gt 0 })

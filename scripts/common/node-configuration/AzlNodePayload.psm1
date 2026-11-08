@@ -256,45 +256,75 @@ Invoke-Section 'storage' {
     $Az.stor = [pscustomobject]@{ pools = $pools; vdisks = $vdisks; dirty = $dirty; cluster = [pscustomobject]@{ deployed = ($why.Count -gt 0); why = $why } }
 }
 
-# ---- SAN: MPIO, MSDSM, FC ports, iSCSI initiator, the LUNs this node sees
-if (Get-P $P 'san' $false) {
-    Invoke-Section 'san' {
-        $feature = ''
+# ---- SAN. Always, read only: the Fibre Channel and iSCSI disks this node sees, so a SAN the file does not declare is found (disks: one entry per disk, so an unclaimed multipath shows as
+# the same UniqueId on several disks). When the file declares a SAN (san): also MPIO, MSDSM, the FC ports, the iSCSI initiator, portals and sessions.
+Invoke-Section 'san' {
+    $declared = [bool](Get-P $P 'san' $false)
+    $feature = ''
+    $hw = @()
+    $lb = ''
+    $set = @{}
+    $ports = @()
+    $iqn = @()
+    $paths = @{}
+    $mpioRead = $false
+    try { foreach ($d in @((Get-CimInstance -Namespace root/wmi -ClassName MPIO_DISK_INFO -ErrorAction Stop).DriveInfo)) { $paths[([string]$d.SerialNumber).Trim()] = [int]$d.NumberPaths }; $mpioRead = $true } catch { $paths = @{} }
+    $avail = @()
+    $mpdev = @()
+    $mpdevRead = $false
+    $disks = @(Get-Disk -ErrorAction SilentlyContinue | Where-Object { @('Fibre Channel', 'iSCSI') -contains [string]$_.BusType } | Select-Object -First 64 | ForEach-Object {
+            $lun = $null
+            if ([string]$_.Location -match 'L(\d+)\)?$') { $lun = [int]$Matches[1] }
+            $serial = ([string]$_.SerialNumber).Trim()
+            $count = 0
+            if ($paths.ContainsKey($serial)) { $count = $paths[$serial] }
+            [pscustomobject]@{ n = $_.Number; bus = [string]$_.BusType; gb = [math]::Round($_.Size / 1GB, 1); ps = [string]$_.PartitionStyle; sn = $serial; uid = ([string]$_.UniqueId).Trim(); lun = $lun; paths = $count; st = [string]$_.OperationalStatus }
+        })
+    $iscsiSvc = ''
+    $iscsiClaim = ''
+    $portals = @()
+    $sessions = @()
+    if ($declared) {
         try { $feature = [string](Get-WindowsOptionalFeature -Online -FeatureName MultipathIO).State } catch { $feature = 'Unknown' }
-        $hw = @()
-        $lb = ''
-        $set = @{}
         if (Get-Command Get-MSDSMSupportedHW -ErrorAction SilentlyContinue) {
             $hw = @(Get-MSDSMSupportedHW -ErrorAction SilentlyContinue | ForEach-Object { ('{0}|{1}' -f ([string]$_.VendorId).Trim(), ([string]$_.ProductId).Trim()) })
             $lb = [string](Get-MSDSMGlobalDefaultLoadBalancePolicy -ErrorAction SilentlyContinue)
             $m = Get-MPIOSetting -ErrorAction SilentlyContinue
             if ($m) { foreach ($prop in $m.PSObject.Properties) { if ($prop.Value -is [ValueType] -or $prop.Value -is [string]) { $set[$prop.Name] = [string]$prop.Value } } }
         }
+        # What MPIO itself claims (mpclaim -s -d): Get-MPIOAvailableHW (IsMultipathed) and MPIO's own device list, HKLM\SYSTEM\CurrentControlSet\Control\MPDEV\MPIOSupportedDeviceList
+        # (each entry is the vendor padded to 8 characters and the product padded to 16). A device in the MSDSM list but not in this one is not claimed.
+        if (Get-Command Get-MPIOAvailableHW -ErrorAction SilentlyContinue) {
+            try { $avail = @(Get-MPIOAvailableHW -ErrorAction Stop | ForEach-Object { [pscustomobject]@{ vendor = ([string]$_.VendorId).Trim(); product = ([string]$_.ProductId).Trim(); multipathed = [bool]$_.IsMultipathed } }) } catch { $avail = @() }
+        }
+        $mpdevKey = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\MPDEV' -ErrorAction SilentlyContinue
+        if ($mpdevKey) {
+            $mpdevRead = $true
+            if ($mpdevKey.PSObject.Properties['MPIOSupportedDeviceList']) {
+                $mpdev = @($mpdevKey.MPIOSupportedDeviceList | ForEach-Object { $entry = [string]$_; if ($entry.Length -gt 8) { ('{0}|{1}' -f $entry.Substring(0, 8).Trim(), $entry.Substring(8).Trim()) } else { ('{0}|' -f $entry.Trim()) } })
+            }
+        }
         $ports = @(Get-InitiatorPort -ErrorAction SilentlyContinue | Where-Object { [string]$_.ConnectionType -eq 'Fibre Channel' } |
                 ForEach-Object { [pscustomobject]@{ wwpn = (([string]$_.PortAddress) -replace '[:\-\s]', '').ToLowerInvariant(); up = [string]$_.OperationalStatus } })
         $iqn = @(Get-InitiatorPort -ErrorAction SilentlyContinue | Where-Object { [string]$_.ConnectionType -eq 'iSCSI' } | ForEach-Object { [string]$_.NodeAddress })
-        $paths = @{}
-        try { foreach ($d in @((Get-CimInstance -Namespace root/wmi -ClassName MPIO_DISK_INFO -ErrorAction Stop).DriveInfo)) { $paths[([string]$d.SerialNumber).Trim()] = [int]$d.NumberPaths } } catch { $paths = @{} }
-        $disks = @()
-        if (Get-P $P 'sanDisks' $false) {
-            $disks = @(Get-Disk -ErrorAction SilentlyContinue | Where-Object { @('Fibre Channel', 'iSCSI') -contains [string]$_.BusType } | ForEach-Object {
-                    $lun = $null
-                    if ([string]$_.Location -match 'L(\d+)\)?$') { $lun = [int]$Matches[1] }
-                    $serial = ([string]$_.SerialNumber).Trim()
-                    $count = 0
-                    if ($paths.ContainsKey($serial)) { $count = $paths[$serial] }
-                    [pscustomobject]@{ n = $_.Number; bus = [string]$_.BusType; gb = [math]::Round($_.Size / 1GB, 1); ps = [string]$_.PartitionStyle; sn = $serial; uid = [string]$_.UniqueId; lun = $lun; paths = $count; st = [string]$_.OperationalStatus }
-                })
-        }
-        $iscsiSvc = ''
-        $iscsiClaim = ''
         if ((Get-P $P 'sanType' '') -eq 'iscsi') {
             $svc = Get-Service MSiSCSI -ErrorAction SilentlyContinue
             if ($svc) { $iscsiSvc = ('{0}/{1}' -f $svc.Status, $svc.StartType) }
             if (Get-Command Get-MSDSMAutomaticClaimSettings -ErrorAction SilentlyContinue) { $iscsiClaim = [string](Get-MSDSMAutomaticClaimSettings).iSCSI }
+            if ($svc -and [string]$svc.Status -eq 'Running' -and (Get-Command Get-IscsiTargetPortal -ErrorAction SilentlyContinue)) {
+                try { $portals = @(Get-IscsiTargetPortal -ErrorAction Stop | ForEach-Object { [pscustomobject]@{ addr = [string]$_.TargetPortalAddress; port = [int]$_.TargetPortalPortNumber; init = [string]$_.InitiatorPortalAddress } }) } catch { $portals = @() }
+                try {
+                    $sessions = @(Get-IscsiSession -ErrorAction Stop | ForEach-Object {
+                            $sess = $_
+                            $conn = $sess | Get-IscsiConnection -ErrorAction SilentlyContinue | Select-Object -First 1
+                            if ($conn) { [pscustomobject]@{ iqn = [string]$sess.TargetNodeAddress; portal = [string]$conn.TargetAddress; init = [string]$conn.InitiatorAddress; persistent = [bool]$sess.IsPersistent; mpio = [bool]$sess.IsMultipathEnabled } }
+                        })
+                }
+                catch { $sessions = @() }
+            }
         }
-        $Az.san = [pscustomobject]@{ feature = $feature; hw = $hw; lb = $lb; set = $set; fc = $ports; iqn = $iqn; disks = $disks; iscsiSvc = $iscsiSvc; iscsiClaim = $iscsiClaim }
     }
+    $Az.san = [pscustomobject]@{ feature = $feature; hw = $hw; lb = $lb; set = $set; fc = $ports; iqn = $iqn; disks = $disks; iscsiSvc = $iscsiSvc; iscsiClaim = $iscsiClaim; portals = $portals; sessions = $sessions; avail = $avail; mpdev = $mpdev; mpdevRead = $mpdevRead; mpioRead = $mpioRead }
 }
 
 #AZL-HOOK:DomainJoinRead
@@ -504,6 +534,30 @@ function Invoke-Action($a) {
             $Az.reboot = $true
             return ('MSDSM hardware ' + $a.vendor + ' ' + $a.product + ' registered (restart so MPIO claims the LUNs)')
         }
+        'msdsm-hw-remove' {
+            # Learn step 2.2 (Everpure): the generic wildcard entry goes, so MSDSM claims only the array's devices.
+            $have = @(Get-MSDSMSupportedHW -ErrorAction SilentlyContinue | Where-Object { ([string]$_.VendorId).Trim() -eq [string]$a.vendor -and ([string]$_.ProductId).Trim() -eq [string]$a.product })
+            if ($have.Count -gt 0) { Remove-MSDSMSupportedHW -VendorId ([string]$a.vendor) -ProductId ([string]$a.product) | Out-Null }
+            $Az.reboot = $true
+            return ('MSDSM generic entry ' + $a.vendor + ' ' + $a.product + ' removed (restart so MPIO applies it)')
+        }
+        'mpio-claim-restart' {
+            # The vendor ID is registered, the MPIO settings are in place, and the paths are still separate disks: only a restart makes MPIO claim them.
+            $Az.reboot = $true
+            return 'restart so MPIO claims the LUN paths'
+        }
+        'mpio-claim' {
+            # Proven on the lab: MSDSM already lists PURE FlashArray, and the paths still stayed separate disks. MPIO claims only what is in its own list; mpclaim -n -i -d puts it there
+            # (-n: no restart now, the run restarts the node). The device is the vendor padded to 8 characters and the product padded to 16.
+            $device = ('{0,-8}{1,-16}' -f ([string]$a.vendor), ([string]$a.product))
+            $out = & mpclaim.exe -n -i -d $device 2>&1
+            $listed = $false
+            $mk = Get-ItemProperty -LiteralPath 'HKLM:\SYSTEM\CurrentControlSet\Control\MPDEV' -ErrorAction SilentlyContinue
+            if ($mk -and $mk.PSObject.Properties['MPIOSupportedDeviceList']) { $listed = (@($mk.MPIOSupportedDeviceList | Where-Object { ([string]$_).TrimEnd() -eq $device.TrimEnd() }).Count -gt 0) }
+            if (-not $listed) { throw ('mpclaim did not add ' + $device.TrimEnd() + ' to MPIOSupportedDeviceList: ' + ($out -join ' ')) }
+            $Az.reboot = $true
+            return ('MPIO claims ' + $device.TrimEnd() + ' (mpclaim -n -i -d; restart so the paths are claimed)')
+        }
         'msdsm-lb' {
             Set-MSDSMGlobalDefaultLoadBalancePolicy -Policy ([string]$a.policy)
             return ('load balance policy ' + $a.policy)
@@ -523,7 +577,29 @@ function Invoke-Action($a) {
         }
         'iscsi-claim' {
             Enable-MSDSMAutomaticClaim -BusType iSCSI
+            # Learn step 2.5: LUNs that are already visible are claimed only after a restart.
+            if ([bool](Get-P $a 'restart' $false)) { $Az.reboot = $true; return 'MSDSM claims iSCSI disks automatically (restart so the visible LUNs are claimed)' }
             return 'MSDSM claims iSCSI disks automatically'
+        }
+        'iscsi-portal' {
+            # Learn step 5: discover the target portal from this initiator address.
+            $args3 = @{ TargetPortalAddress = [string]$a.portal; InitiatorPortalAddress = [string]$a.initiator }
+            if ([int](Get-P $a 'port' 3260) -ne 3260) { $args3['TargetPortalPortNumber'] = [int]$a.port }
+            New-IscsiTargetPortal @args3 | Out-Null
+            return ('iSCSI target portal ' + $a.portal + ' via ' + $a.initiator)
+        }
+        'iscsi-session' {
+            # Learn step 5: connect with persistence and multipath. The session is made only when it is not there.
+            $exists = $false
+            foreach ($sess in @(Get-IscsiSession -ErrorAction SilentlyContinue)) {
+                $conn = $sess | Get-IscsiConnection -ErrorAction SilentlyContinue | Select-Object -First 1
+                if ($conn -and [string]$sess.TargetNodeAddress -eq [string]$a.iqn -and [string]$conn.TargetAddress -eq [string]$a.portal -and [string]$conn.InitiatorAddress -eq [string]$a.initiator) { $exists = $true }
+            }
+            if ($exists) { return ('iSCSI session ' + $a.iqn + ' via ' + $a.initiator + ' already connected') }
+            $args4 = @{ NodeAddress = [string]$a.iqn; TargetPortalAddress = [string]$a.portal; InitiatorPortalAddress = [string]$a.initiator; IsPersistent = $true; IsMultipathEnabled = $true }
+            if ([int](Get-P $a 'port' 3260) -ne 3260) { $args4['TargetPortalPortNumber'] = [int]$a.port }
+            Connect-IscsiTarget @args4 | Out-Null
+            return ('iSCSI session ' + $a.iqn + ' ' + $a.portal + ' via ' + $a.initiator + ' connected (persistent, multipath)')
         }
         'storage-clear' {
             # Touches only the disks the action names (the serials the operator approved), and of those never a SAN LUN, USB or virtual media, a boot or a system

@@ -16,6 +16,8 @@
 param()
 
 BeforeAll {
+    # The scripts under test set AZL_OSCONFIG_RUN_ID in this process; put back what was there so the files that run after this one (OsConfigurationRun.Tests.ps1) see it unset.
+    $script:RunIdBefore = $env:AZL_OSCONFIG_RUN_ID
     $repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
     $script:Repo = $repo
     $common = Join-Path (Join-Path $repo 'scripts') 'common'
@@ -120,6 +122,7 @@ BeforeAll {
 }
 
 AfterAll {
+    $env:AZL_OSCONFIG_RUN_ID = $script:RunIdBefore
     foreach ($f in 'Get-AzContext', 'Start-Sleep', 'Invoke-AzRestMethod') { Remove-Item -LiteralPath "Function:\$f" -ErrorAction SilentlyContinue }
     Remove-Variable -Name AzlE2e -Scope Global -ErrorAction SilentlyContinue
 }

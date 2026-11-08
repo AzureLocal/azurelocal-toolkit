@@ -224,7 +224,7 @@ function Send-AzlStepPlanEvent {
         if ($step -in @($Record.steps)) {
             if ($byStep.ContainsKey($step)) {
                 $p = $byStep[$step]
-                Send-AzlRunEvent -Context $Context -Record $Record -State StepPlanned -Step $step -Evidence "$($p.Action): $($p.Evidence)" -Level $(if ($p.Action -eq 'Blocked') { 'Warning' } else { 'Info' }) -Data @{ action = $p.Action; item = $p.Item; current = $p.Current; desired = $p.Desired }
+                Send-AzlRunEvent -Context $Context -Record $Record -State StepPlanned -Step $step -Evidence "$($p.Action): $($p.Evidence)" -Level $(if ($p.Action -eq 'Blocked' -or [string]$p.Item -match '^(SAN LUNs are visible but|Important: to avoid deployment confusion)') { 'Warning' } else { 'Info' }) -Data @{ action = $p.Action; item = $p.Item; current = $p.Current; desired = $p.Desired }
             }
             else {
                 $reason = switch ($step) {
@@ -1816,8 +1816,9 @@ function Get-AzlBootstrapSummary {
 }
 
 function Test-AzlSanConsistency {
-    # Every node must see the same SAN disks (the same UniqueIds).
-    param([object[]]$Record)
+    # Every node must see the same SAN disks (the same UniqueIds). Checked when the file declares a SAN (a hybrid design before the zoning shows none on every node, which is consistent).
+    param([object[]]$Record, [bool]$Declared = $true)
+    if (-not $Declared) { return @() }
     $sets = @{}
     foreach ($r in $Record) {
         if ($r.status -in 'failed', 'skipped' -or @($r.sanDisks).Count -eq 0) { continue }
@@ -2079,7 +2080,7 @@ function Invoke-AzlOsConfiguration {
             }
             if ($r.status -eq 'failed' -and -not $ContinueOnNodeFailure) { $stop = $true }
         }
-        $clusterProblems = @(Test-AzlSanConsistency -Record $records)
+        $clusterProblems = @(Test-AzlSanConsistency -Record $records -Declared (Test-AzlSanDeclared -Infrastructure $infra))
         foreach ($r in $records) { $r.converged = ($r.status -eq 'planned' -and $r.pendingChanges -eq 0 -and $r.blocked -eq 0 -and @($r.errors).Count -eq 0) }
         # Plan mode ends here for every node. In Apply mode only a node that is already settled (failed, skipped, nothing to change) is reported now.
         foreach ($r in $records) { if ($Mode -eq 'Plan' -or $r.converged -or $r.status -in 'failed', 'skipped') { Send-AzlNodeOutcomeEvent -Context $context -Record $r -Mode Plan } }
@@ -2169,7 +2170,7 @@ function Invoke-AzlOsConfiguration {
                 if (-not $r.converged -and $r.status -ne 'failed') { $r.status = 'applied' }
                 Write-AzlLine "   $($r.name): $(if ($r.converged) { 'converged' } else { "NOT converged ($($r.pendingChanges) change(s) left, $($r.blocked) blocked)" })"
             }
-            $clusterProblems = @(Test-AzlSanConsistency -Record $records)
+            $clusterProblems = @(Test-AzlSanConsistency -Record $records -Declared (Test-AzlSanDeclared -Infrastructure $infra))
             foreach ($r in $records) { Send-AzlNodeOutcomeEvent -Context $context -Record $r -Mode Apply }
         }
         foreach ($p in $clusterProblems) { Write-Warning $p }

@@ -1,7 +1,7 @@
 # =============================================================================
 # Master Variable Registry - AzureLocal Cloud Team Cloud Management Platform
 # =============================================================================
-# Version: 5.0.2
+# Version: 5.0.6
 # Schema: variables.schema.json (v5.0.0)
 # Last Updated: 2026-11-08
 #
@@ -39,6 +39,12 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log:
+#   v5.0.6 (2026-11-08):
+#     - The file tells the solution there is a SAN and whether it is Fibre Channel or iSCSI: scenario.storage_architecture
+#       (hybrid or san) and storage.san.type (fibre_channel or iscsi) drive the OS configuration's host-side SAN work
+#       (Mpio and SanVerify steps). storage.san.fibre_channel and storage.san.iscsi are no longer required by the schema (a hybrid
+#       file whose array WWPNs are not known yet still gets MPIO); the config key vendors[].removeGenericEntry is registered.
+#
 #   v5.0.0 (2026-11-08):
 #     - MAJOR: the registry is the source of infrastructure.yml's schema. infrastructure.schema.json, the master
 #       template, the purpose templates and schemas, the scenario templates, the stubs in config/infrastructure and the
@@ -105,7 +111,7 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.8"
+  version: "5.0.9"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.1"
   last_updated: "2026-11-08"
@@ -115,17 +121,21 @@ _metadata:
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
     - date: "2026-11-08"
-      version: "5.0.8"
+      version: "5.0.9"
       change: "The thresholds of the pre-cluster verification node checks (deployment.verification_min_memory_gib, verification_min_boot_disk_gb, verification_min_data_disk_gb, verification_min_link_gbps, verification_max_clock_skew_seconds) and the Environment Checker choice of the gate (switches -InstallEnvironmentChecker and -KeepEnvironmentChecker, run settings installEnvironmentChecker and keepEnvironmentChecker)"
       reason: "The node checks read their minimums from the run settings (Learn: 32 GB memory, 200 GB boot drive, 500 GB data drives, 10 Gbps for storage; Kerberos allows 300 seconds of clock skew) and the defaults are now registered. Learn says to uninstall the Environment Checker from the nodes before the deployment, while the readiness checks need it on the nodes: the gate never installs it unless asked, and removes it again at the end of the run"
     - date: "2026-11-08"
-      version: "5.0.7"
+      version: "5.0.8"
       change: "identity.active_directory.use_gmsa (bool, default false) and identity.active_directory.dns_secure_dynamic_updates (bool, optional): the two settings the pre-cluster verification identity checks (AzlVerification.Identity.psm1) read"
       reason: "Learn 2610 does not require a KDS root key for Azure Local, so the check only matters when the instance uses group managed service accounts (use_gmsa). Whether missing node, CNO and VCO host records fail the gate or only warn depends on whether the DNS servers support secure dynamic updates, which the gate otherwise guesses (domain controllers as DNS servers); dns_secure_dynamic_updates states it"
     - date: "2026-11-08"
-      version: "5.0.6"
+      version: "5.0.7"
       change: "The pre-cluster verification gate (Invoke-AzureLocalPreClusterVerification.ps1, AzlPreClusterVerification.psm1): deployment.pre_cluster_verification_max_age_hours and deployment.pre_cluster_verification_report_directory (run settings preClusterVerificationMaxAgeHours, preClusterVerificationReportDirectory), the run setting skipPreClusterVerification and the switch -SkipPreClusterVerification (the only bypass, never a file key), the gate script parameters, and the fields of its feed (precluster-verification-events.jsonl) and report.json; identity.local_admin.username_secret (optional Key Vault secret that holds the local administrator user name, compared with username by the gate)"
       reason: "An ARM Validate must never fail for something the toolkit could have checked. The gate checks everything Microsoft Learn (view azloc-2610) and the azurelocal.cloud documentation list as a prerequisite, in a stage of its own between the OS configuration and the ARM Validate, and the ARM run refuses to Validate or Deploy without a passing, current result for the same infrastructure file"
+    - date: "2026-11-08"
+      version: "5.0.6"
+      change: "scenario.storage_architecture (hybrid or san) and storage.san.type (fibre_channel or iscsi) are registered as the switches of the OS configuration's host-side SAN work (MPIO, MSDSM, the MPIO claim of the device with mpclaim -n -i -d, iSCSI initiator, WWPN collection, each LUN once and listed by mpclaim -s -d); storage.san.fibre_channel and storage.san.iscsi are no longer required (only type is; the array vendor and model select the MSDSM hardware ID); config key vendors[].removeGenericEntry (config/san/msdsm-vendors.json) added; the device string for mpclaim is built from vendors[].hardware[].vendorId and productId"
+      reason: "On the tplabs lab a hybrid design (S2D plus Pure FlashArray over Fibre Channel) saw each LUN as four offline disks because MPIO had not claimed the paths (registering PURE FlashArray with MSDSM was not enough; Azure Local ships it registered; only mpclaim -n -i -d PURE-padded-FlashArray-padded plus a restart claimed them); the Mpio step was SAN-only and was skipped for a file that said s2d. The file must say there is a SAN and which kind, and the automation then does the host-side work"
     - date: "2026-11-08"
       version: "5.0.5"
       change: "Docs and consistency pass: networking.intents[].overrides and about 70 undescribed infrastructure.yml variables now have descriptions with the Learn 2610 values (adapter overrides: jumbo packet 1514, 4088 or 9014; RDMA technology iWARP, RoCEv2 or RoCE; network direct sent to ARM as Enabled or Disabled); the legacy jumbo_packet_size, jumbo_frames_mtu, network_direct_* and azl_storage_rdma_* variables take only the values Learn lists and are deprecated in favour of networking.intents[].overrides.adapter.*; the sonar parameter names lose their leading hyphen so Test-ToolParameterRegistration passes for sonar; stale uncommitted markers removed; the env vars of the Azure DevOps and GitLab OS configuration pipelines are registered"
@@ -14398,7 +14408,7 @@ scenario:
       example: "active_directory"
     storage_architecture:
       used_by: [os_configuration, deployment]
-      description: "s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both."
+      description: "s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both (S2D plus a SAN). san and hybrid TELL THE SOLUTION THERE IS A SAN: the OS configuration then does the host-side SAN work itself (the Mpio step: MPIO, MSDSM hardware ID, the MPIO claim of the device (mpclaim -n -i -d), load balance policy, vendor MPIO settings; for iSCSI the initiator service, auto-claim, portals and sessions) and checks each LUN is seen once (SanVerify). storage.san.type says whether the SAN is fibre_channel or iscsi. On every node the OS configuration also looks, read only, for FC or iSCSI LUNs that are visible while the file declares no SAN, and reports them. https://learn.microsoft.com/azure/azure-local/deploy/enable-external-storage"
       required: false
       enum: ["s2d", "san", "hybrid"]
       example: "s2d"
@@ -15560,16 +15570,15 @@ storage:
             enum: ["two_way", "three_way", "four_way", "parity", "nested_two_way"]
             example: "two_way"
     san:
-      description: "The external SAN of a disaggregated (san) or hybrid deployment. From 5.3 it also records the array, the Fibre Channel fabrics and target WWPNs or the iSCSI targets, which the SAN deployment and zoning work read; each machine's own HBAs or initiator are nodes[].san."
+      description: "The external SAN of a disaggregated (san) or hybrid deployment. Its presence, and scenario.storage_architecture san or hybrid, tell the solution there is a SAN; type says fibre_channel or iscsi, and the OS configuration does the host-side MPIO and MSDSM work from that (type, array.vendor and array.model are all it needs). From 5.3 it also records the array, the Fibre Channel fabrics and target WWPNs or the iSCSI targets, which the SAN deployment and zoning work read; each machine's own HBAs or initiator are nodes[].san."
       type: object
       required: false
       used_by: [deployment]
       applies_when: "scenario.storage_architecture is san or hybrid"
       additionalProperties: false
-      schema_extra: {"allOf":[{"if":{"type":"object","required":["type"],"properties":{"type":{"const":"fibre_channel"}}},"then":{"type":"object","required":["fibre_channel"],"properties":{"fibre_channel":true}}},{"if":{"type":"object","required":["type"],"properties":{"type":{"const":"iscsi"}}},"then":{"type":"object","required":["iscsi"],"properties":{"iscsi":true}}}]}
       properties:
         type:
-          description: "fibre_channel needs storage.san.fibre_channel; iscsi needs storage.san.iscsi."
+          description: "Whether the SAN is fibre_channel or iscsi. This selects the OS configuration's host-side steps: fibre_channel registers the array's MSDSM hardware ID (config/san/msdsm-vendors.json), CLAIMS it for MPIO (mpclaim -n -i -d with the vendor padded to 8 and the product padded to 16 characters, which puts it in MPIOSupportedDeviceList; the MSDSM registration alone is not enough, Azure Local already ships PURE FlashArray registered and the paths stayed separate), sets the load balance policy and the vendor MPIO settings, collects the WWPNs (Get-InitiatorPort) and restarts so MPIO claims the paths, then checks each LUN is seen once and listed by mpclaim -s -d; iscsi does the same and also starts the MSiSCSI service, enables MSDSM auto-claim for iSCSI and makes the target portals and sessions from storage.san.iscsi. Only type, and the array vendor and model (storage.san.array), are needed for the host-side work; the target WWPNs and the nodes' HBA WWPNs are needed later, for zoning and LUN masking (with fibre_channel, do not zone the HBA WWNs until after the Azure Local deployment)."
           required: true
           enum: ["fibre_channel", "iscsi"]
           used_by: [os_configuration, deployment]
@@ -15605,7 +15614,7 @@ storage:
               pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
               used_by: [deployment]
         fibre_channel:
-          description: "Schema 5.3. Required when type is fibre_channel: the fabrics and the array's target ports. Each machine's HBA ports are nodes[].san.hbas."
+          description: "Schema 5.3. Used when type is fibre_channel: the fabrics and the array's target ports, for zoning. Optional for the OS configuration's host-side work (MPIO needs only type and the array vendor and model); a hybrid file may leave it out until the zoning is planned. Each machine's HBA ports are nodes[].san.hbas."
           type: object
           since: "5.3"
           required: false
@@ -15660,7 +15669,7 @@ storage:
                     minLength: 1
                     used_by: [deployment]
         iscsi:
-          description: "Schema 5.3. Required when type is iscsi: the array's targets and CHAP. Each machine's initiator IQN is nodes[].san.initiator_iqn; the addresses of its iSCSI ports are on nodes[].network_adapters with role iscsi:a and iscsi:b."
+          description: "Schema 5.3. Used when type is iscsi: the array's targets and CHAP. The OS configuration makes a target portal and a session (persistent, multipath) from every iscsi:a / iscsi:b port of every machine to every portal of every target (a target with a fabric A or B is reached only from the port with the matching role); with CHAP enabled it makes none and says so. Each machine's initiator IQN is nodes[].san.initiator_iqn; the addresses of its iSCSI ports are on nodes[].network_adapters with role iscsi:a and iscsi:b."
           type: object
           since: "5.3"
           required: false
@@ -19335,6 +19344,7 @@ tools:
                 config_san_msdsm_vendors_json_vendors_match: {"name":"config/san/msdsm-vendors.json : vendors[].match","type":"regex","declared_type":"regex","required":"yes (SAN)","read_at":"node-configuration/AzlNodeConfiguration.psm1:176","description":"Regex matched (case-insensitive, anchored at start) against storage.san.array.vendor."}
                 config_san_msdsm_vendors_json_vendors_model: {"name":"config/san/msdsm-vendors.json : vendors[].model","type":"regex","declared_type":"regex","required":"no","read_at":"node-configuration/AzlNodeConfiguration.psm1:177","description":"Optional regex matched against storage.san.array.model."}
                 config_san_msdsm_vendors_json_vendors_hardware: {"name":"config/san/msdsm-vendors.json : vendors[].hardware","type":"object","declared_type":"object[]","enum":["vendorId, productId, mpclaim"],"required":"yes (SAN)","read_at":"node-configuration/AzlNodeConfiguration.psm1:178","description":"MSDSM hardware IDs."}
+                config_san_msdsm_vendors_json_vendors_removeGenericEntry: {"name":"config/san/msdsm-vendors.json : vendors[].removeGenericEntry","type":"boolean","declared_type":"bool","default":"false","required":"no","read_at":"node-configuration/AzlNodeConfiguration.psm1:Get-AzlSanVendor","description":"true: the Mpio step removes the generic MSDSM wildcard entry (VendorId Vendor*, ProductId Product*) so MSDSM does not claim non-array devices. Microsoft Learn (enable external storage, step 2.2) asks for it for Everpure (Pure) FlashArray."}
                 config_san_msdsm_vendors_json_vendors_mpioSettings: {"name":"config/san/msdsm-vendors.json : vendors[].mpioSettings","type":"object","declared_type":"object","enum":["RetryCount, CustomPathRecovery, PathRecoveryInterval, PDORemovePeriod, DiskTimeout, PathVerificationState"],"required":"no","read_at":"node-configuration/AzlNodeConfiguration.psm1:178","description":"MPIO settings applied by the Mpio step."}
             wipe_list_json_plan_report_json_approved_wipe_list:
               type: object
