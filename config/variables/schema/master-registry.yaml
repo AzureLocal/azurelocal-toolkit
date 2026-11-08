@@ -1,8 +1,8 @@
 # =============================================================================
 # Master Variable Registry - AzureLocal Cloud Team Cloud Management Platform
 # =============================================================================
-# Version: 4.2.0
-# Schema: variables.schema.json (v4.2.0)
+# Version: 5.0.0
+# Schema: variables.schema.json (v5.0.0)
 # Last Updated: 2026-11-08
 #
 # This file defines ALL variable names, types, and descriptions used across
@@ -39,6 +39,20 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log:
+#   v5.0.0 (2026-11-08):
+#     - MAJOR: the registry is the source of infrastructure.yml's schema. infrastructure.schema.json, the master
+#       template, the purpose templates and schemas, the scenario templates, the stubs in config/infrastructure and the
+#       variables reference (docs/VARIABLES.md) are generated from this file by
+#       config/variables/scripts/New-InfrastructureArtifacts.ps1; a test regenerates and diffs them.
+#     - Moved: config/infrastructure (schema, examples, MIGRATION, README, metadata, VARIABLES.md) under config/variables.
+#     - Added: used_by for monitoring (Sonar) and discovery, from the tool inventories; applies_when on every conditional section;
+#       file_schema on the shared sections (site, environment, tags, networking, identity, security, operations, devops).
+#     - infrastructure.yml schema 5.x history (was in config/infrastructure/MIGRATION.md): 5.0 the one environment file; 5.1 management
+#       IP assignment and Arc machine name; 5.2 every port of every machine; 5.3 BIOS phases, static method, SAN, ztp scope; 5.4 every ZTP
+#       setting; 5.4.1 adapter wait; 5.4.2 SBE delivery; 5.4.3 os_configuration.clear_storage; 5.4.4 guarded network change and transport;
+#       5.5 domain join and the devops CI/CD keys; 5.6 the deployment block and the remote management security profile; 5.6.1
+#       identity.active_directory.security_groups[].local_groups.
+#
 #   v4.2.0 (2026-11-08):
 #     - Added: the tools section (tools.<tool>.<kind>.<group>.<name>): 2292 variables owned by os_configuration, ztp,
 #       sonar, arm_deployment, cicd_infra and discovery (parameters, settings, config keys, events, state and handoff fields,
@@ -91,15 +105,19 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "4.2.0"
-  schema_version: "4.2.0"
-  infrastructure_schema_version: "5.6.0"
+  version: "5.0.0"
+  schema_version: "5.0.0"
+  infrastructure_schema_version: "5.6.1"
   last_updated: "2026-11-08"
   total_variables: "2300+"
   maintainers:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-08"
+      version: "5.0.0"
+      change: "The registry is the source of the infrastructure.yml schema: schema, master and purpose templates, scenario templates, stubs and the variables reference are generated from it; config/infrastructure moved under config/variables"
+      reason: "One master for every variable; hand edits happen only here"
     - date: "2026-11-08"
       version: "4.2.0"
       change: "Added the tools section: 2292 tool-owned variables (parameters, settings, config keys, events, secrets, environment variables) for os_configuration, ztp, sonar, arm_deployment, cicd_infra, discovery; security_groups[].local_groups"
@@ -220,11 +238,14 @@ infrastructure_scenarios:
 # 3. SITE
 # =============================================================================
 site:
+  file_schema: {"description":"Where the machines are.","type":"object","additionalProperties":false,"required":["code","name"]}
   _meta:
     solutions: ["all"]
     tier: required
     description: "Physical site metadata — included in all solutions"
   code:
+    file_schema: {"description":"Short site code, 2 to 8 uppercase letters or digits.","type":"string","pattern":"^[A-Z0-9]{2,8}$"}
+    used_by: [ztp]
     type: string
     description: "Short site code, 2 to 8 uppercase letters or digits."
     required: true
@@ -239,12 +260,14 @@ site:
     example: "Azure Local Cloud Raleigh"
 
   location:
+    file_schema: {"description":"Physical location, for example a city.","type":"string"}
     type: string
     description: "Physical location"
     required: false
     example: "Raleigh, NC"
 
   datacenter:
+    file_schema: {"type":"string"}
     type: string
     description: "Datacenter code"
     required: false
@@ -296,6 +319,8 @@ site:
 
   # ─── short-form aliases (canonical nested convenience keys) ───
   name:
+    file_schema: {"description":"Display name of the site. Also the display name of the Microsoft.Edge site in simplified provisioning.","type":"string","minLength":1}
+    used_by: [ztp]
     type: string
     description: "Site display name (short alias for site_name)"
     required: false
@@ -303,6 +328,7 @@ site:
     example: "Azure Local Cloud"
 
   owner:
+    file_schema: {"type":"string"}
     type: string
     description: "Site owner (short alias for site_owner)"
     required: false
@@ -405,6 +431,7 @@ site:
 # 4. ENVIRONMENT
 # =============================================================================
 environment:
+  file_schema: {"description":"Which environment this file describes.","type":"object","additionalProperties":false,"required":["name","type"]}
   _meta:
     solutions: ["all"]
     tier: required
@@ -470,6 +497,8 @@ environment:
 # 5. TAGS
 # =============================================================================
 tags:
+  file_schema: {"description":"Azure tags applied to the resources the tools create. A policy that requires tags isn't supported by simplified provisioning.","type":"object","additionalProperties":{"type":"string"}}
+  used_by: [ztp, cicd_infra]
   additionalProperties:
     type: string
     description: "Any other tag name and its value (infrastructure.yml tags is a map of strings)."
@@ -1133,6 +1162,7 @@ azure_platform:
 # 7. IDENTITY
 # =============================================================================
 identity:
+  file_schema: {"description":"Accounts and the identity provider (scenario.identity).","type":"object","additionalProperties":false,"required":["local_admin"]}
   # ─── accounts ───
   accounts:
     _meta:
@@ -1795,6 +1825,8 @@ identity:
       example: "keyvault://kv-azlc-mgmt/cloud-witness-storage-key"
   # ─── active_directory ───
   active_directory:
+    applies_when: "scenario.identity is active_directory"
+    file_schema: {"type":"object","additionalProperties":false,"required":["domain_fqdn","ou_path","lcm_user"]}
     _meta:
       solutions: ["all"]
       tier: required
@@ -2021,7 +2053,7 @@ identity:
         required: false
         pattern: "^[A-Za-z0-9][A-Za-z0-9-]{0,14}$"
         example: "IIC"
-        used_by: [deployment]
+        used_by: [os_configuration, deployment, monitoring]
       ou_path:
         description: "Distinguished name of the dedicated OU. ARM adouPath. https://learn.microsoft.com/azure/azure-local/deploy/deployment-prep-active-directory"
         type: string
@@ -2033,10 +2065,11 @@ identity:
         description: "The LCM deployment user, created in the OU by the AD preparation module. ARM AzureStackLCMAdminUsername and AzureStackLCMAdminPassword."
         type: object
         required: true
-        used_by: [deployment]
+        used_by: [deployment, monitoring]
         additionalProperties: false
         properties:
           username:
+            used_by: [os_configuration, deployment, monitoring]
             description: "Name only, no domain. Up to 20 characters."
             type: string
             required: true
@@ -2045,6 +2078,7 @@ identity:
             maxLength: 20
             example: "lcm-iic-azl-01"
           password:
+            used_by: [os_configuration, deployment, monitoring]
             description: "At least 14 characters with lowercase, uppercase, a digit and a special character."
             type: string
             format: kv_ref
@@ -2064,7 +2098,7 @@ identity:
             type: string
             required: true
             minLength: 1
-            used_by: [os_configuration]
+            used_by: [os_configuration, monitoring]
           password:
             description: "A Key Vault secret reference. The toolkit reads it on the machine that runs the OS configuration, passes it to the node as a secret and never writes it to disk, a log, the event feed or the report. (since 5.5)"
             type: string
@@ -2072,7 +2106,7 @@ identity:
             sensitive: true
             required: true
             pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
-            used_by: [os_configuration]
+            used_by: [os_configuration, monitoring]
       local_admin_members:
         description: "Domain principals the OS configuration adds to the local Administrators group of every machine after the join and the restart, so a domain account can be used for remoting and log access (a domain account is not a local administrator by default; the deployment adds the LCM user itself later). Names without the domain; users and groups. Default: the security_groups entries whose purpose says they administer the instance, and the LCM user. (since 5.5)"
         type: array
@@ -2119,10 +2153,12 @@ identity:
           additionalProperties: false
           properties:
             name:
+              used_by: [os_configuration]
               type: string
               required: true
               example: "sg-iic-azl-01-admins"
             purpose:
+              used_by: [os_configuration]
               type: string
               required: false
               example: "Administrators of the instance"
@@ -2545,7 +2581,7 @@ identity:
           required: true
           minLength: 1
           example: "azl-admin"
-          used_by: [ztp, os_configuration]
+          used_by: [ztp, os_configuration, deployment, monitoring]
           schema_extra: {"not":{"type":"string","pattern":"^([Aa][Dd][Mm][Ii][Nn][Ii][Ss][Tt][Rr][Aa][Tt][Oo][Rr]|[Gg][Uu][Ee][Ss][Tt])$"}}
         password:
           description: "At least 14 characters with lowercase, uppercase, a digit and a special character."
@@ -2555,7 +2591,7 @@ identity:
           required: true
           pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
           example: "keyvault://kv-iic-mgmt-01/local-admin-password"
-          used_by: [ztp, os_configuration]
+          used_by: [ztp, os_configuration, deployment]
     local_identity:
       description: "Local identity with Key Vault. The instance's secrets go to cluster.key_vault."
       type: object
@@ -2569,9 +2605,11 @@ identity:
           enum: ["use_dns_server", "use_forwarder"]
           used_by: [deployment]
         dns_zone:
+          used_by: [deployment]
           type: string
           required: false
         dns_forwarders:
+          used_by: [deployment]
           type: array
           required: false
           items:
@@ -2630,6 +2668,7 @@ identity:
 # 8. NETWORKING
 # =============================================================================
 networking:
+  file_schema: {"description":"The on-premises networks.","type":"object","additionalProperties":false,"required":["management"]}
   # ═══════════════════════════════════════
   # AZURE NETWORKING
   # ═══════════════════════════════════════
@@ -7037,14 +7076,14 @@ networking:
               required: true
               pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
               example: "192.0.2.20"
-              used_by: [os_configuration]
+              used_by: [os_configuration, deployment]
             end:
               type: string
               format: ipv4
               required: true
               pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
               example: "192.0.2.29"
-              used_by: [os_configuration]
+              used_by: [os_configuration, deployment]
     oob:
       description: "The out-of-band network of the BMCs."
       type: object
@@ -7052,6 +7091,7 @@ networking:
       additionalProperties: false
       properties:
         subnet:
+          used_by: [os_configuration]
           type: string
           format: cidr
           required: false
@@ -7073,7 +7113,7 @@ networking:
       type: array
       required: false
       example: [["192.0.2.4", "192.0.2.5"]]
-      used_by: [ztp, os_configuration]
+      used_by: [ztp, os_configuration, deployment]
       items:
         {"type":"string","minLength":1}
     intents:
@@ -7092,14 +7132,14 @@ networking:
             required: true
             minLength: 1
             example: "management"
-            used_by: [os_configuration]
+            used_by: [os_configuration, deployment]
           traffic:
             type: array
             required: true
             minItems: 1
             uniqueItems: true
             example: [["management"]]
-            used_by: [os_configuration]
+            used_by: [os_configuration, deployment]
             items:
               {"enum":["management","compute","storage"]}
           adapters:
@@ -7109,7 +7149,7 @@ networking:
             minItems: 1
             uniqueItems: true
             example: [["Port1", "Port2"]]
-            used_by: [os_configuration]
+            used_by: [os_configuration, deployment]
             items:
               {"type":"string","minLength":1}
           overrides:
@@ -7130,19 +7170,19 @@ networking:
                     required: false
                     minimum: 0
                     maximum: 7
-                    used_by: [os_configuration]
+                    used_by: [os_configuration, deployment]
                   smb_priority:
                     type: integer
                     required: false
                     minimum: 0
                     maximum: 7
-                    used_by: [os_configuration]
+                    used_by: [os_configuration, deployment]
                   smb_bandwidth_percent:
                     type: integer
                     required: false
                     minimum: 1
                     maximum: 100
-                    used_by: [os_configuration]
+                    used_by: [os_configuration, deployment]
               adapter:
                 type: object
                 required: false
@@ -7152,15 +7192,15 @@ networking:
                   jumbo_packet:
                     required: false
                     enum: [1514, 4088, 9014]
-                    used_by: [os_configuration]
+                    used_by: [os_configuration, deployment]
                   network_direct:
                     type: boolean
                     required: false
-                    used_by: [os_configuration]
+                    used_by: [os_configuration, deployment]
                   network_direct_technology:
                     required: false
                     enum: ["iwarp", "roce", "roce_v2"]
-                    used_by: [os_configuration]
+                    used_by: [os_configuration, deployment]
               virtual_switch:
                 type: object
                 required: false
@@ -7170,11 +7210,11 @@ networking:
                   enable_iov:
                     type: boolean
                     required: false
-                    used_by: [os_configuration]
+                    used_by: [os_configuration, deployment]
                   load_balancing_algorithm:
                     required: false
                     enum: ["dynamic", "hyper_v_port"]
-                    used_by: [os_configuration]
+                    used_by: [os_configuration, deployment]
     storage:
       description: "Storage networks (Storage Spaces Direct). ARM storageNetworkList, enableStorageAutoIp and storageConnectivitySwitchless."
       type: object
@@ -7188,7 +7228,7 @@ networking:
           type: boolean
           required: false
           example: true
-          used_by: [os_configuration]
+          used_by: [os_configuration, deployment]
         switchless_links:
           description: "Switchless only: one or two links between each pair of machines."
           required: false
@@ -7222,13 +7262,13 @@ networking:
                 type: string
                 required: true
                 example: "StorageNetwork1"
-                used_by: [os_configuration]
+                used_by: [os_configuration, deployment]
               adapter:
                 description: "Adapter name in the OS."
                 type: string
                 required: true
                 example: "Port3"
-                used_by: [os_configuration]
+                used_by: [os_configuration, deployment]
               vlan_id:
                 description: "Network ATC defaults are 711 and 712."
                 type: integer
@@ -7236,14 +7276,14 @@ networking:
                 minimum: 1
                 maximum: 4094
                 example: 711
-                used_by: [os_configuration]
+                used_by: [os_configuration, deployment]
               subnet:
                 description: "Needed when auto_ip is false."
                 type: string
                 format: cidr
                 required: false
                 pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])$"
-                used_by: [os_configuration]
+                used_by: [os_configuration, deployment]
     cluster_networks:
       description: "Disaggregated (SAN) only: the cluster networks on standalone ports, fabric A and B. ARM sanNetworkList."
       type: array
@@ -7257,23 +7297,23 @@ networking:
           name:
             type: string
             required: true
-            used_by: [os_configuration]
+            used_by: [os_configuration, deployment]
           adapter:
             type: string
             required: true
-            used_by: [os_configuration]
+            used_by: [os_configuration, deployment]
           vlan_id:
             type: integer
             required: true
             minimum: 1
             maximum: 4094
-            used_by: [os_configuration]
+            used_by: [os_configuration, deployment]
           subnet:
             type: string
             format: cidr
             required: true
             pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])$"
-            used_by: [os_configuration]
+            used_by: [os_configuration, deployment]
           purpose:
             description: "What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote management security profile adds its subnet to the allowed sources of dev and production (a candidate, not a trust: prefer listing the controller addresses in os_configuration.remoting.allowed_source_cidrs). automation, compute, storage and other have no effect on remote management."
             required: false
@@ -7326,6 +7366,7 @@ networking:
             required: true
             example: "lnet-workloads"
           purpose:
+            used_by: [os_configuration]
             description: "What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote management security profile adds its subnet to the allowed sources of dev and production (a candidate, not a trust: prefer listing the controller addresses in os_configuration.remoting.allowed_source_cidrs). automation, compute, storage and other have no effect on remote management."
             required: false
             enum: ["management", "oob", "automation", "compute", "storage", "other"]
@@ -7337,6 +7378,7 @@ networking:
             maximum: 4094
             example: 2204
           address_prefix:
+            used_by: [os_configuration]
             type: string
             format: cidr
             required: false
@@ -7401,9 +7443,11 @@ networking:
           additionalProperties: false
           properties:
             name:
+              used_by: [os_configuration]
               type: string
               required: true
             resource_group:
+              used_by: [os_configuration]
               type: string
               format: resource_group
               required: false
@@ -11626,6 +11670,7 @@ marketplace_images:
 # 13. SECURITY
 # =============================================================================
 security:
+  file_schema: {"description":"Security settings of the deployment. Omitted settings take Microsoft's recommended defaults.","type":"object","additionalProperties":false}
   # ─── credentials (nested form used in example) ───
   credentials:
     type: object
@@ -12406,30 +12451,37 @@ security:
       example: "recommended"
       used_by: [deployment]
     drift_control:
+      used_by: [deployment]
       type: boolean
       required: false
       example: true
     credential_guard:
+      used_by: [deployment]
       type: boolean
       required: false
       example: true
     smb_signing:
+      used_by: [deployment]
       type: boolean
       required: false
       example: true
     smb_cluster_encryption:
+      used_by: [deployment]
       type: boolean
       required: false
       example: false
     bitlocker_boot_volume:
+      used_by: [deployment]
       type: boolean
       required: false
       example: true
     bitlocker_data_volumes:
+      used_by: [deployment]
       type: boolean
       required: false
       example: true
     wdac:
+      used_by: [deployment]
       type: boolean
       required: false
       example: true
@@ -12444,14 +12496,17 @@ security:
       additionalProperties: false
       properties:
         streaming_data:
+          used_by: [deployment]
           type: boolean
           required: false
           example: true
         episodic_data_upload:
+          used_by: [deployment]
           type: boolean
           required: false
           example: true
         eu_location:
+          used_by: [deployment]
           type: boolean
           required: false
           example: false
@@ -12461,8 +12516,10 @@ security:
 # 14. OPERATIONS
 # =============================================================================
 operations:
+  file_schema: {"type":"object","additionalProperties":false}
   # ─── monitoring ───
   monitoring:
+    file_schema: {"type":"object","additionalProperties":false,"required":["enabled"]}
     _meta:
       solutions: ["all"]
       tier: required
@@ -13576,6 +13633,7 @@ operations:
           type: boolean
           required: false
 devops:
+  file_schema: {"description":"Part 1 of the implementation steps: the pipeline platform, the project and its settings, the environments, the sign-in to Azure and the self-hosted runners (tasks 01 to 06 of automation / 01-cicd-infra). Optional. Schema 5.5 added repository, settings, environments, authentication, runners, runner_network, runner_access, api_token and state.key.","type":"object","additionalProperties":false,"required":["platform"]}
   # ─── gitlab ───
   gitlab:
     _meta:
@@ -14239,36 +14297,43 @@ scenario:
   additionalProperties: false
   properties:
     identity:
+      used_by: [os_configuration, deployment, monitoring]
       description: "active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity.local_identity). https://learn.microsoft.com/azure/azure-local/deploy/deployment-local-identity-with-key-vault"
       required: false
       enum: ["active_directory", "local_identity"]
       example: "active_directory"
     storage_architecture:
+      used_by: [os_configuration, deployment]
       description: "s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both."
       required: false
       enum: ["s2d", "san", "hybrid"]
       example: "s2d"
     storage_connectivity:
+      used_by: [deployment]
       description: "switched: storage traffic goes through top-of-rack switches. switchless: machines are cabled directly to each other for storage. A single machine uses switched."
       required: false
       enum: ["switched", "switchless"]
       example: "switched"
     topology:
+      used_by: [deployment]
       description: "standard, or rack_aware (machines split across two local availability zones; every node needs a zone)."
       required: false
       enum: ["standard", "rack_aware"]
       example: "standard"
     connectivity:
+      used_by: [deployment]
       description: "connected to Azure, or disconnected operations (needs the disconnected section)."
       required: false
       enum: ["connected", "disconnected"]
       example: "connected"
     cloud:
+      used_by: [os_configuration, deployment]
       description: "Azure public cloud or Azure Government."
       required: false
       enum: ["public", "government"]
       example: "public"
     outbound_path:
+      used_by: [os_configuration]
       description: "How the machines reach Azure. Paths with a proxy need networking.outbound.proxy; paths with Arc gateway need networking.outbound.arc_gateway; private_path needs networking.outbound.private_path."
       required: false
       enum: ["direct", "proxy", "arc_gateway", "proxy_arc_gateway", "private_path"]
@@ -14278,7 +14343,7 @@ scenario:
       required: false
       enum: ["iso", "simplified"]
       example: "simplified"
-      used_by: [ztp]
+      used_by: [ztp, os_configuration, monitoring]
     deploy_method:
       description: "How the cluster is deployed: the Azure portal or an ARM template."
       required: false
@@ -14286,6 +14351,7 @@ scenario:
       example: "arm"
       used_by: [deployment]
     environment_class:
+      used_by: [os_configuration]
       description: "What kind of environment this is. It picks the remote management security profile of the OS configuration run (WinRM, RDP and ICMP scope on the nodes, HTTP or HTTPS, the TrustedHosts policy of the machine running the automation, the one-time Arc bootstrap): see docs/os-configuration-and-arm-deployment.md and config/remoting-profiles.json. lab and test are relaxed with the wildcard (TrustedHosts '*', sources Any, HTTP 5985 allowed) and a warning says so; dev, production and dmz are strict. Optional. Missing means production (fail closed); another value is rejected. (since 5.6)"
       required: false
       default: "production"
@@ -14304,7 +14370,7 @@ azure:
       required: true
       pattern: "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
       example: "00000000-0000-0000-0000-000000000000"
-      used_by: [ztp, cicd_infra]
+      used_by: [ztp, os_configuration, deployment, cicd_infra]
     location:
       description: "Azure region, for example eastus. Simplified provisioning works only in eastus in the preview."
       type: string
@@ -14312,21 +14378,21 @@ azure:
       required: true
       pattern: "^[a-z][a-z0-9]{2,30}$"
       example: "eastus"
-      used_by: [ztp, cicd_infra]
+      used_by: [ztp, os_configuration, deployment, cicd_infra, monitoring]
     subscription_id:
       type: string
       format: guid
       required: true
       pattern: "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
       example: "00000000-0000-0000-0000-000000000000"
-      used_by: [ztp, cicd_infra]
+      used_by: [ztp, os_configuration, deployment, cicd_infra, monitoring]
     resource_group:
       type: string
       format: resource_group
       required: true
       pattern: "^[-\\w\\._\\(\\)]{1,90}$"
       example: "rg-iic-azl-01"
-      used_by: [ztp, cicd_infra]
+      used_by: [ztp, os_configuration, deployment, cicd_infra, monitoring]
     hci_resource_provider_object_id:
       description: "Object ID of the Azure Local resource provider's service principal (application 1412d89f-b8a8-4111-b4fd-e82905cbd85d) in the tenant. Optional: tools look it up when they can read the directory."
       type: string
@@ -14334,8 +14400,9 @@ azure:
       required: false
       pattern: "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
       example: "00000000-0000-0000-0000-000000000000"
-      used_by: [ztp]
+      used_by: [ztp, deployment]
     custom_location:
+      used_by: [deployment]
       description: "Name of the custom location the deployment creates."
       type: string
       required: false
@@ -14394,21 +14461,21 @@ key_vaults:
         required: true
         pattern: "^[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]$"
         example: "kv-iic-mgmt-01"
-        used_by: [ztp, cicd_infra]
+        used_by: [ztp, deployment, cicd_infra]
       subscription_id:
         type: string
         format: guid
         required: true
         pattern: "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
         example: "00000000-0000-0000-0000-000000000000"
-        used_by: [ztp, cicd_infra]
+        used_by: [ztp, deployment, cicd_infra]
       resource_group:
         type: string
         format: resource_group
         required: true
         pattern: "^[-\\w\\._\\(\\)]{1,90}$"
         example: "rg-iic-mgmt-01"
-        used_by: [ztp, cicd_infra]
+        used_by: [ztp, deployment, cicd_infra]
       purpose:
         description: "What the vault holds, for example management, deployment or backup."
         type: string
@@ -14429,7 +14496,7 @@ cluster:
       required: true
       pattern: "^[A-Za-z0-9][A-Za-z0-9-]{0,14}$"
       example: "iic-azl-01"
-      used_by: [os_configuration, deployment]
+      used_by: [os_configuration, deployment, monitoring]
     naming_prefix:
       description: "Prefix of the Azure resources the deployment creates. ARM parameter namingPrefix."
       type: string
@@ -14450,6 +14517,7 @@ cluster:
       schema_extra: {"allOf":[{"if":{"type":"object","properties":{"type":{"const":"cloud"}}},"then":{"type":"object","required":["storage_account"],"properties":{"storage_account":true}}},{"if":{"type":"object","properties":{"type":{"const":"file_share"}}},"then":{"type":"object","required":["path"],"properties":{"path":true}}}]}
       properties:
         type:
+          used_by: [deployment]
           description: "cloud (an Azure Storage account), file_share (disconnected operations), or none. Two machines need a witness. https://learn.microsoft.com/azure/azure-local/concepts/cluster-witness"
           required: true
           enum: ["cloud", "file_share", "none"]
@@ -14474,6 +14542,7 @@ cluster:
       additionalProperties: false
       properties:
         name:
+          used_by: [deployment]
           type: string
           format: key_vault_name
           required: true
@@ -14486,6 +14555,7 @@ cluster:
           example: true
           used_by: [deployment]
         soft_delete_retention_days:
+          used_by: [deployment]
           type: integer
           required: false
           minimum: 7
@@ -14499,17 +14569,20 @@ cluster:
       additionalProperties: false
       properties:
         storage_account:
+          used_by: [deployment]
           type: string
           format: storage_account_name
           required: false
           pattern: "^[a-z0-9]{3,24}$"
           example: "stiicazl01diag"
         logs_retention_days:
+          used_by: [deployment]
           type: integer
           required: false
           minimum: 0
           example: 30
         storage_account_type:
+          used_by: [deployment]
           type: string
           required: false
           example: "Standard_LRS"
@@ -14598,7 +14671,7 @@ nodes:
   required: false
   minItems: 1
   maxItems: 64
-  used_by: [deployment]
+  used_by: [deployment, monitoring]
   items:
     type: object
     format: node
@@ -14612,7 +14685,7 @@ nodes:
         required: true
         pattern: "^[A-Za-z0-9][A-Za-z0-9-]{0,14}$"
         example: "iic-azl-n01"
-        used_by: [ztp, os_configuration]
+        used_by: [ztp, os_configuration, deployment, monitoring, discovery]
       management:
         description: "The machine's management port and address (schema 5.0 and 5.1). From 5.2, network_adapters describes it instead: the port with role management and an ip_assignment other than none. When both are given they must agree; prefer network_adapters."
         type: object
@@ -14627,7 +14700,7 @@ nodes:
             required: true
             pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
             example: "192.0.2.11"
-            used_by: [ztp, os_configuration, deployment]
+            used_by: [ztp, os_configuration, deployment, monitoring]
           mac_address:
             description: "MAC of the management port. Provisioning finds and targets the port by it: simplified provisioning names the port by this MAC when it sets the static address (edge machine networkAdapters[].macAddress), and node preparation finds the adapter by it. With ip_assignment dhcp, reserve ip_address for this MAC. Required with simplified provisioning."
             type: string
@@ -14635,7 +14708,7 @@ nodes:
             required: false
             pattern: "^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$"
             example: "00:00:5E:00:53:11"
-            used_by: [ztp, os_configuration]
+            used_by: [ztp, os_configuration, discovery]
             applies_when: "scenario.os_install is simplified"
           adapter_name:
             description: "Name of the management port in the installed OS, for example 'SLOT 3 Port 1'. Optional: mac_address identifies the port. Simplified provisioning also sends it with the port's settings; leave it out unless you know the name the OS gives the port."
@@ -14661,7 +14734,7 @@ nodes:
               required: true
               minLength: 1
               example: "Embedded NIC 1"
-              used_by: [ztp, os_configuration]
+              used_by: [ztp, os_configuration, discovery]
             mac_address:
               description: "The port's MAC. Tools find the port by it (simplified provisioning keys the management address to it; node preparation finds the adapter by it). Needed for a DHCP reservation, and for every management port with simplified provisioning."
               type: string
@@ -14669,19 +14742,19 @@ nodes:
               required: false
               pattern: "^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$"
               example: "00:00:5E:00:53:11"
-              used_by: [ztp, os_configuration]
+              used_by: [ztp, os_configuration, discovery]
             slot:
               description: "Where the port is, for example Embedded (a LOM), Slot 3 or OCP 1. From 5.4 azurelocal-ztp reads it: a management or provisioning port in slot Embedded makes it enable the embedded NICs in the BIOS (provisioning.simplified.enable_embedded_nics), and a slot that also holds a SAN adapter (nodes[].san.hbas[].slot) is never turned off."
               type: string
               required: false
               example: "Embedded"
-              used_by: [ztp, os_configuration]
+              used_by: [ztp, os_configuration, discovery]
             model:
               description: "Card model, for example 'NVIDIA ConnectX-6 Dx'. Ports in one intent must be the same make, model and speed."
               type: string
               required: false
               example: "Example 25GbE NIC"
-              used_by: [os_configuration]
+              used_by: [ztp, os_configuration, discovery]
             speed_gbps:
               type: number
               required: false
@@ -14698,15 +14771,15 @@ nodes:
               minItems: 1
               uniqueItems: true
               example: [["management"]]
-              used_by: [ztp, os_configuration]
+              used_by: [ztp, os_configuration, monitoring, discovery]
               items:
                 {"enum":["management","compute","storage","provisioning","iscsi:a","iscsi:b","unused"]}
             ip_assignment:
-              description: "How the installed OS gets this port's host address before deployment. For the management port this is the management address mode (config/infrastructure/README.md): dhcp_reservation is Mode A (Reserved, recommended); static is Mode B (Static with DHCP) or Mode C (Static without management DHCP). static: ip_address is set on the port (with simplified provisioning azurelocal-ztp's Device stage sets it by MAC before the OS install, the install resets every port to DHCP, and OS configuration sets it again by MAC; otherwise the operator or the toolkit). dhcp_reservation: the port keeps DHCP and the DHCP server reserves ip_address for mac_address. dhcp: the port keeps DHCP with no reservation, so its address can change (a warning). preconfigured: the port is already configured; tools leave it alone. none: no host address before deployment (Network ATC or the storage networks give it one, or it isn't used); node preparation turns DHCP off on it. Exactly one management port per machine owns the management address: the one with role management and an ip_assignment other than none."
+              description: "How the installed OS gets this port's host address before deployment. For the management port this is the management address mode (config/variables/docs/infrastructure-file.md): dhcp_reservation is Mode A (Reserved, recommended); static is Mode B (Static with DHCP) or Mode C (Static without management DHCP). static: ip_address is set on the port (with simplified provisioning azurelocal-ztp's Device stage sets it by MAC before the OS install, the install resets every port to DHCP, and OS configuration sets it again by MAC; otherwise the operator or the toolkit). dhcp_reservation: the port keeps DHCP and the DHCP server reserves ip_address for mac_address. dhcp: the port keeps DHCP with no reservation, so its address can change (a warning). preconfigured: the port is already configured; tools leave it alone. none: no host address before deployment (Network ATC or the storage networks give it one, or it isn't used); node preparation turns DHCP off on it. Exactly one management port per machine owns the management address: the one with role management and an ip_assignment other than none."
               required: true
               enum: ["static", "dhcp_reservation", "dhcp", "preconfigured", "none"]
               example: "static"
-              used_by: [ztp, os_configuration]
+              used_by: [ztp, os_configuration, monitoring, discovery]
             ip_address:
               description: "The host address. For the management port this is ARM physicalNodesSettings[].ipv4Address. Required with static. With dhcp_reservation give the reserved address: without it the tools can only check that the port has a DHCP address (a warning), and the deployment still needs it unless use_dhcp is true (a file with scope ztp doesn't deploy)."
               type: string
@@ -14714,7 +14787,7 @@ nodes:
               required: false
               pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
               example: "192.0.2.11"
-              used_by: [ztp, os_configuration, deployment]
+              used_by: [ztp, os_configuration, deployment, monitoring]
             prefix_length:
               description: "Prefix length of ip_address. Default for the management port: from networking.management.subnet, which it must match."
               type: integer
@@ -14781,7 +14854,7 @@ nodes:
         required: false
         minLength: 1
         example: "SERIAL01"
-        used_by: [ztp]
+        used_by: [ztp, discovery]
         applies_when: "scenario.os_install is simplified"
       bmc:
         type: object
@@ -14796,17 +14869,20 @@ nodes:
             required: false
             pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
             example: "198.51.100.11"
-            used_by: [ztp]
+            used_by: [ztp, discovery]
             applies_when: "scenario.os_install is simplified"
           type:
+            used_by: [ztp, discovery]
             required: false
             enum: ["idrac", "ilo", "xcc", "other"]
             example: "idrac"
           username:
+            used_by: [ztp, discovery]
             type: string
             required: false
             minLength: 1
           password:
+            used_by: [ztp, discovery]
             description: "A Key Vault secret reference: keyvault://<vault>/<secret>. The vault must be listed in key_vaults."
             type: string
             format: kv_ref
@@ -14832,7 +14908,7 @@ nodes:
         description: "Storage address on each storage network, in networking.storage.networks order, when networking.storage.auto_ip is false."
         type: array
         required: false
-        used_by: [os_configuration]
+        used_by: [os_configuration, deployment]
         items:
           {"format":"ipv4","type":"string","pattern":"^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"}
       arc_machine_name:
@@ -14841,13 +14917,13 @@ nodes:
         required: false
         pattern: "^[A-Za-z0-9_.-]{0,53}[A-Za-z0-9_-]$"
         example: "iic-azl-n01"
-        used_by: [ztp, os_configuration, deployment]
+        used_by: [ztp, os_configuration, deployment, monitoring]
       arc_resource_name:
         description: "Deprecated: use arc_machine_name. Read as arc_machine_name when that isn't set."
         type: string
         deprecated: true
         required: false
-        used_by: [ztp]
+        used_by: [ztp, os_configuration]
       bios:
         description: "BIOS attributes for this machine in their FINAL state, merged over hardware.bios (a key here wins). See hardware.bios."
         type: object
@@ -14878,7 +14954,7 @@ nodes:
         since: "5.3"
         required: false
         pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
-        used_by: [ztp]
+        used_by: [ztp, os_configuration]
       san:
         description: "Schema 5.3. This machine's SAN connections: its Fibre Channel HBAs and their WWPNs (storage.san.type fibre_channel), or its iSCSI initiator IQN (storage.san.type iscsi; the iSCSI ports' addresses are on network_adapters with role iscsi:a and iscsi:b). Needed on every machine when storage.san.type is set."
         type: object
@@ -14938,7 +15014,7 @@ nodes:
                   type: string
                   required: false
                   example: "Example 32G FC HBA"
-                  used_by: [deployment]
+                  used_by: [ztp, deployment]
                 ports:
                   type: array
                   required: false
@@ -14954,7 +15030,7 @@ nodes:
                         format: wwpn
                         required: true
                         pattern: "^([0-9A-Fa-f]{2}:){7}[0-9A-Fa-f]{2}$|^[0-9A-Fa-f]{16}$"
-                        used_by: [deployment]
+                        used_by: [os_configuration, deployment]
                       fabric:
                         description: "A name in storage.san.fibre_channel.fabrics."
                         type: string
@@ -14981,7 +15057,7 @@ hardware:
       required: true
       minLength: 1
       example: "Dell"
-      used_by: [ztp, os_configuration]
+      used_by: [ztp, os_configuration, deployment]
     model:
       description: "Model, for example AX-760. Used to select the SBE."
       type: string
@@ -15031,7 +15107,7 @@ hardware:
           required: true
           minLength: 1
           example: "keyvault://kv-iic-mgmt-01/bmc-username"
-          used_by: [ztp]
+          used_by: [ztp, discovery]
         password:
           description: "A Key Vault secret reference: keyvault://<vault>/<secret>. The vault must be listed in key_vaults."
           type: string
@@ -15040,14 +15116,14 @@ hardware:
           required: true
           pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
           example: "keyvault://kv-iic-mgmt-01/bmc-password"
-          used_by: [ztp]
+          used_by: [ztp, discovery]
         rfs_write_attribute:
           description: "Schema 5.4. azurelocal-ztp, Boot stage: also set the iDRAC Remote File Share attribute RFS.<n>.WriteProtected to Read Write before it inserts the virtual media. iDRAC 7.30 rejects WriteProtected=false in InsertMedia, and the maintenance environment cannot write its voucher to a read-only drive. Default: true for Dell (azurelocal-ztp config/oem/dell.json, bmc.rfsWriteAttribute), false for the other vendors, whose BMCs have no such attribute. Set it when your BMC differs from its vendor's usual behaviour."
           type: boolean
           since: "5.4"
           required: false
           example: true
-          used_by: [ztp]
+          used_by: [ztp, discovery]
         verify_certificate:
           description: "Schema 5.4. Check the BMCs' TLS certificates. Default false: BMCs ship a self-signed certificate, so azurelocal-ztp accepts it. Set true once the BMCs carry a certificate that the management host trusts."
           type: boolean
@@ -15055,7 +15131,7 @@ hardware:
           required: false
           default: false
           example: false
-          used_by: [ztp]
+          used_by: [ztp, discovery]
     bios:
       description: "BIOS attributes for every machine, as they are when the machine is finished (schema 5.2; from 5.3 this is the FINAL state): a node's bios is merged over it. azurelocal-ztp applies them at its Boot stage, and in its Restore stage sets back to these values any key that bios_during_provisioning changed for the OS install. See $defs/bios_settings."
       type: object
@@ -15083,23 +15159,28 @@ hardware:
       description: "Solution Builder Extension. The version is the one validated with provisioning.os_version. ARM sbeVersion, sbeFamily, sbePublisher, sbeManifestSource and sbeManifestCreationDate."
       type: object
       required: false
-      used_by: [deployment]
+      used_by: [ztp, deployment]
       additionalProperties: false
       properties:
         publisher:
+          used_by: [os_configuration, deployment]
           type: string
           required: false
           example: "Dell"
         family:
+          used_by: [os_configuration, deployment]
           type: string
           required: false
         version:
+          used_by: [os_configuration, deployment]
           type: string
           required: false
         manifest_source:
+          used_by: [deployment]
           type: string
           required: false
         manifest_creation_date:
+          used_by: [deployment]
           type: string
           required: false
         bundle_path:
@@ -15107,7 +15188,7 @@ hardware:
           type: string
           required: false
           example: "D:\\sbe\\dell"
-          used_by: [ztp, os_configuration]
+          used_by: [ztp, os_configuration, deployment]
         delivery:
           description: "Schema 5.4.2. How the SBE package reaches the nodes. It lands in each node's C:\\SBE during OS configuration. winrm_copy: the toolkit copies the files over WinRM (a PSSession, TCP 5985) from the host it runs on, so that host must reach the nodes' management subnet (the operator host if it can, or a runner that can); needs the nodes' local administrator as -Credential. node_pull: each node downloads the files itself from node_pull_url, a read-only HTTPS or SMB location that you serve from a host the nodes can reach; the toolkit checks the SHA-256 on the node after the download. skip (default, also when the key is absent): the toolkit does not deliver the package, the Sbe step reports it as not delivered, and no other step is affected. There is no Azure storage account route: Azure Arc Run Command cannot carry a file."
           type: string
@@ -15274,7 +15355,7 @@ storage:
           description: "fibre_channel needs storage.san.fibre_channel; iscsi needs storage.san.iscsi."
           required: true
           enum: ["fibre_channel", "iscsi"]
-          used_by: [deployment]
+          used_by: [os_configuration, deployment]
         array:
           description: "Schema 5.3. The storage array that presents the LUNs."
           type: object
@@ -15293,12 +15374,12 @@ storage:
               type: string
               required: true
               minLength: 1
-              used_by: [deployment]
+              used_by: [os_configuration, deployment]
             model:
               type: string
               required: true
               minLength: 1
-              used_by: [deployment]
+              used_by: [os_configuration, deployment]
             management_address:
               description: "The array's management address, when the SAN deployment drives it."
               type: string
@@ -15429,12 +15510,12 @@ storage:
           description: "LUN of the infrastructure volume (250 GB minimum). ARM infraVolLunId."
           type: string
           required: false
-          used_by: [deployment]
+          used_by: [os_configuration, deployment]
         performance_history_lun_id:
           description: "LUN of the performance history volume (20 GB minimum). ARM infraPerfLunId."
           type: string
           required: false
-          used_by: [deployment]
+          used_by: [os_configuration, deployment]
         luns:
           type: array
           required: false
@@ -15518,7 +15599,7 @@ provisioning:
           required: true
           pattern: "^[A-Za-z0-9][A-Za-z0-9-]{0,62}$"
           example: "iic-site-01"
-          used_by: [ztp]
+          used_by: [ztp, monitoring]
         subscription_id:
           description: "Subscription of the site and edge machines, when it isn't azure.subscription_id."
           type: string
@@ -15630,7 +15711,7 @@ provisioning:
           required: false
           minLength: 1
           example: "D:\\Data\\azl-ztp\\iic-azl-01\\evidence"
-          used_by: [ztp]
+          used_by: [ztp, monitoring]
         isolate_san_adapters:
           description: "Schema 5.4. While the OS installs, turn off the PCIe slots that hold the SAN adapters listed in nodes[].san.hbas[], so the maintenance environment can't install onto a SAN LUN; put each back in the Restore stage to the value it had before the install (the vendor's enabled value if it was already disabled). azurelocal-ztp derives the BIOS attribute from the slot label and the vendor (config/oem/<vendor>.json, bios section). Default: true when any node lists san.hbas, false otherwise. An explicit hardware.bios or bios_during_provisioning key for the same attribute wins. A vendor without a slot mapping needs the raw attribute in bios_during_provisioning."
           type: boolean
@@ -16681,7 +16762,7 @@ file_metadata:
       required: true
       pattern: "^5\\.[0-9]+\\.[0-9]+$"
       example: "5.6.0"
-      used_by: [ztp]
+      used_by: [ztp, os_configuration, deployment, monitoring]
     scope:
       description: "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity beyond local_admin) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key)."
       since: "5.3"
@@ -16712,6 +16793,31 @@ file_metadata:
 
 # Header of the generated infrastructure.schema.json (kept verbatim).
 _schema_root:
+  sections:
+    - file_metadata
+    - scenario
+    - site
+    - environment
+    - tags
+    - azure
+    - key_vaults
+    - cluster
+    - deployment
+    - nodes
+    - hardware
+    - networking
+    - identity
+    - storage
+    - security
+    - sdn
+    - operations
+    - provisioning
+    - os_configuration
+    - disconnected
+    - network_devices
+    - landing_zone
+    - devops
+    - extensions
   $schema: https://json-schema.org/draft/2020-12/schema
   $id: https://azurelocal.cloud/schemas/infrastructure/5/infrastructure.schema.json
   title: Azure Local infrastructure.yml
@@ -17240,7 +17346,7 @@ _schema_defs:
           - iscsi:b
           - unused
       ip_assignment:
-        description: "How the installed OS gets this port's host address before deployment. For the management port this is the management address mode (config/infrastructure/README.md): dhcp_reservation is Mode A (Reserved, recommended); static is Mode B (Static with DHCP) or Mode C (Static without management DHCP). static: ip_address is set on the port (with simplified provisioning azurelocal-ztp's Device stage sets it by MAC before the OS install, the install resets every port to DHCP, and OS configuration sets it again by MAC; otherwise the operator or the toolkit). dhcp_reservation: the port keeps DHCP and the DHCP server reserves ip_address for mac_address. dhcp: the port keeps DHCP with no reservation, so its address can change (a warning). preconfigured: the port is already configured; tools leave it alone. none: no host address before deployment (Network ATC or the storage networks give it one, or it isn't used); node preparation turns DHCP off on it. Exactly one management port per machine owns the management address: the one with role management and an ip_assignment other than none."
+        description: "How the installed OS gets this port's host address before deployment. For the management port this is the management address mode (config/variables/docs/infrastructure-file.md): dhcp_reservation is Mode A (Reserved, recommended); static is Mode B (Static with DHCP) or Mode C (Static without management DHCP). static: ip_address is set on the port (with simplified provisioning azurelocal-ztp's Device stage sets it by MAC before the OS install, the install resets every port to DHCP, and OS configuration sets it again by MAC; otherwise the operator or the toolkit). dhcp_reservation: the port keeps DHCP and the DHCP server reserves ip_address for mac_address. dhcp: the port keeps DHCP with no reservation, so its address can change (a warning). preconfigured: the port is already configured; tools leave it alone. none: no host address before deployment (Network ATC or the storage networks give it one, or it isn't used); node preparation turns DHCP off on it. Exactly one management port per machine owns the management address: the one with role management and an ip_assignment other than none."
         enum:
         - static
         - dhcp_reservation
@@ -18225,7 +18331,7 @@ tools:
               type: object
               area: "pipelines/github-actions/arm-deployment.yml"
               properties:
-                infrastructure_file: {"name":"infrastructure_file","type":"string","declared_type":"string","default":"config/infrastructure.yml","required":"System.Object[]","read_at":"tk-integrate2/pipelines/github-actions/arm-deployment.yml:36","description":"[pipelines/github-actions/arm-deployment.yml] Path of the master infrastructure.yml in the repository"}
+                infrastructure_file: {"name":"infrastructure_file","type":"string","declared_type":"string","default":"config/infrastructure.yml","read_at":"tk-integrate2/pipelines/github-actions/arm-deployment.yml:36","description":"[pipelines/github-actions/arm-deployment.yml] Path of the master infrastructure.yml in the repository"}
                 os_configuration_run_id: {"name":"os_configuration_run_id","type":"string","declared_type":"string","required":"N","read_at":"tk-integrate2/pipelines/github-actions/arm-deployment.yml:40","description":"[pipelines/github-actions/arm-deployment.yml] Run ID of the OS configuration workflow whose artifact os-configuration-report holds the report (leave empty to use os_configuration_report)"}
                 os_configuration_report: {"name":"os_configuration_report","type":"string","declared_type":"string","required":"N","read_at":"tk-integrate2/pipelines/github-actions/arm-deployment.yml:44","description":"[pipelines/github-actions/arm-deployment.yml] Repository path of an OS configuration report directory or report.json (used when no run ID is given; may stay empty)"}
                 handoff_file: {"name":"handoff_file","type":"string","declared_type":"string","required":"N","read_at":"tk-integrate2/pipelines/github-actions/arm-deployment.yml:48","description":"[pipelines/github-actions/arm-deployment.yml] Repository path of the ZTP handoff file (optional)"}
@@ -18237,19 +18343,19 @@ tools:
               area: "pipelines/github-actions/azure-local-deploy.yml"
               properties:
                 skip_steps: {"name":"skip_steps","type":"string","declared_type":"string","required":"N","read_at":"tk-integrate2/pipelines/github-actions/azure-local-deploy.yml:28","description":"[pipelines/github-actions/azure-local-deploy.yml] Comma-separated steps to skip"}
-                deploy_target: {"name":"deploy_target","type":"choice","declared_type":"choice","default":"lab","enum":["lab","staging","production"],"required":"System.Object[]","read_at":"tk-integrate2/pipelines/github-actions/azure-local-deploy.yml:32","description":"[pipelines/github-actions/azure-local-deploy.yml] Deployment target environment"}
+                deploy_target: {"name":"deploy_target","type":"choice","declared_type":"choice","default":"lab","enum":["lab","staging","production"],"read_at":"tk-integrate2/pipelines/github-actions/azure-local-deploy.yml:32","description":"[pipelines/github-actions/azure-local-deploy.yml] Deployment target environment"}
             pipelines_github_actions_cicd_infra_yml:
               type: object
               area: "pipelines/github-actions/cicd-infra.yml"
               properties:
-                infrastructure_file: {"name":"infrastructure_file","type":"string","declared_type":"string","default":"config/infrastructure.yml","required":"System.Object[]","read_at":"tk-integrate2/pipelines/github-actions/cicd-infra.yml:24","description":"[pipelines/github-actions/cicd-infra.yml] Path of infrastructure.yml in the repository"}
-                runner: {"name":"runner","type":"choice","declared_type":"choice","default":"github-hosted","enum":["github-hosted","self-hosted"],"required":"System.Object[]","read_at":"tk-integrate2/pipelines/github-actions/cicd-infra.yml:28","description":"[pipelines/github-actions/cicd-infra.yml] Where the jobs run"}
-                apply: {"name":"apply","type":"boolean","declared_type":"boolean","default":"false","required":"System.Object[]","read_at":"tk-integrate2/pipelines/github-actions/cicd-infra.yml:36","description":"[pipelines/github-actions/cicd-infra.yml] Also run the apply job (it still waits for approval)"}
+                infrastructure_file: {"name":"infrastructure_file","type":"string","declared_type":"string","default":"config/infrastructure.yml","read_at":"tk-integrate2/pipelines/github-actions/cicd-infra.yml:24","description":"[pipelines/github-actions/cicd-infra.yml] Path of infrastructure.yml in the repository"}
+                runner: {"name":"runner","type":"choice","declared_type":"choice","default":"github-hosted","enum":["github-hosted","self-hosted"],"read_at":"tk-integrate2/pipelines/github-actions/cicd-infra.yml:28","description":"[pipelines/github-actions/cicd-infra.yml] Where the jobs run"}
+                apply: {"name":"apply","type":"boolean","declared_type":"boolean","default":"false","read_at":"tk-integrate2/pipelines/github-actions/cicd-infra.yml:36","description":"[pipelines/github-actions/cicd-infra.yml] Also run the apply job (it still waits for approval)"}
             pipelines_github_os_configuration_yml:
               type: object
               area: "pipelines/github/os-configuration.yml"
               properties:
-                infrastructure_file: {"name":"infrastructure_file","type":"string","declared_type":"string","default":"config/infrastructure.yml","required":"System.Object[]","read_at":"tk-integrate2/pipelines/github/os-configuration.yml:32","description":"[pipelines/github/os-configuration.yml] Path of the master infrastructure.yml in the repository"}
+                infrastructure_file: {"name":"infrastructure_file","type":"string","declared_type":"string","default":"config/infrastructure.yml","read_at":"tk-integrate2/pipelines/github/os-configuration.yml:32","description":"[pipelines/github/os-configuration.yml] Path of the master infrastructure.yml in the repository"}
                 handoff_path: {"name":"handoff_path","type":"string","declared_type":"string","default":"ztp-state","required":"N","read_at":"tk-integrate2/pipelines/github/os-configuration.yml:36","description":"[pipelines/github/os-configuration.yml] Path of a handoff file or a directory of *.ztp-handoff.json in the repository (leave empty for an ISO-installed cluster)"}
                 handoff_run_id: {"name":"handoff_run_id","type":"string","declared_type":"string","required":"N","read_at":"tk-integrate2/pipelines/github/os-configuration.yml:40","description":"[pipelines/github/os-configuration.yml] Optional: run ID of the ZTP workflow whose artifact ztp-handoff holds the handoff files (replaces handoff_path)"}
                 approved_bootstrap: {"name":"approved_bootstrap","type":"boolean","declared_type":"boolean","default":"false","required":"N","read_at":"tk-integrate2/pipelines/github/os-configuration.yml:44","description":"[pipelines/github/os-configuration.yml] Approve the one-time WinRM bootstrap (os_configuration.remoting.bootstrap_transport arc, smb or auto) for this run. Production and dmz do not bootstrap without it; an smb bootstrap needs a Windows runner"}
