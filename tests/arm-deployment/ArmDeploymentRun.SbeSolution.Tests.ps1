@@ -245,11 +245,6 @@ Describe 'Precondition SbeValidatedWithSolution' {
         (Get-Pre $r SbeValidatedWithSolution).result | Should -Be 'Warning'
         (Get-Pre $r SbeValidatedWithSolution).evidence | Should -Match 'could not be read'
     }
-    It 'is SKIPPED when no SBE is configured (SbeConsistent already warns)' {
-        $r = Invoke-TestRun -World (Get-FakeWorld) -Mode Plan -Settings @{ sbeCatalogPath = $script:Catalog; solutionVersion = '12.2610.1004.50' }
-        (Get-Pre $r SbeConsistent).result | Should -Be 'Warning'
-        (Get-Pre $r SbeValidatedWithSolution).result | Should -Be 'Skipped'
-    }
     It 'can be skipped on purpose and then shows as Skipped' {
         $r = Invoke-TestRun -World (Get-FakeWorld) -Infra (Get-SbeInfra) -Mode Plan -Settings @{ sbeCatalogPath = $script:Catalog; solutionVersion = '12.2610.1004.50'; skipPreconditions = @('SbeValidatedWithSolution') }
         (Get-Pre $r SbeValidatedWithSolution).result | Should -Be 'Skipped'
@@ -277,6 +272,37 @@ Describe 'Run settings solutionVersion and sbeCatalogPath' {
     }
 }
 
+Describe 'Without a Solution Builder Extension (opt-in)' {
+    It 'SbeValidatedWithSolution is Passed with the note, not Skipped or Warning, when hardware.sbe has no version' {
+        $r = Invoke-TestRun -World (Get-FakeWorld) -Mode Plan -Settings @{ sbeCatalogPath = $script:Catalog; solutionVersion = '12.2610.1004.50' }
+        $p = Get-Pre $r SbeValidatedWithSolution
+        $p.result | Should -Be 'Passed'
+        $p.evidence | Should -Match 'deploying without a Solution Builder Extension'
+    }
+    It 'is Passed with the note when there is no hardware.sbe block at all, even with no catalog and no solution version' {
+        $infra = Get-TestInfra
+        $infra.hardware.Remove('sbe')
+        $r = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Plan
+        $p = Get-Pre $r SbeValidatedWithSolution
+        $p.result | Should -Be 'Passed'
+        $p.evidence | Should -Match 'deploying without a Solution Builder Extension'
+        $p.nextAction | Should -BeNullOrEmpty
+    }
+    It 'neither SBE precondition blocks Validate or Deploy, and the plan has no failed or warning SBE entry' {
+        $infra = Get-TestInfra
+        $infra.hardware.Remove('sbe')
+        $r = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Plan
+        @($r.Preconditions | Where-Object { $_.name -like 'Sbe*' -and $_.result -ne 'Passed' }) | Should -BeNullOrEmpty
+    }
+    It 'the ARM parameter file of the run carries no SBE parameter' {
+        $infra = Get-TestInfra
+        $infra.hardware.Remove('sbe')
+        $r = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Plan
+        $file = Get-ChildItem -LiteralPath $r.ReportDirectory -Filter '*.parameters.json' -Recurse | Select-Object -First 1
+        $file | Should -Not -BeNullOrEmpty
+        (Get-Content -LiteralPath $file.FullName -Raw) | Should -Not -Match '"sbe|partner'
+    }
+}
 Describe 'Known issue unvalidated-solution-sbe-combination' {
     BeforeAll {
         # The error text of the real failure (validate-3, step 0.60 InvokeEnvironmentChecker, 2026-11-08)

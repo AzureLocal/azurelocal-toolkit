@@ -998,21 +998,27 @@ $script:Checks['OsBuildConsistent'] = {
     New-AzlArmCheckResult OsBuildConsistent Passed "Every node runs OS build $($known[0])$(if ($Ctx.Build) { "; the handoff's solution build is $($Ctx.Build)" })."
 }
 
+# The Solution Builder Extension is opt-in. These two checks run only against an SBE somebody configured; with none, the parameter
+# set carries no SBE parameter (New-AzlArmParameterSet) and both are Passed with this note.
+$script:NoSbeNote = 'No SBE configured (hardware.sbe has no version): deploying without a Solution Builder Extension. No SBE parameter is passed to the template.'
+
 $script:Checks['SbeConsistent'] = {
     param($Ctx)
     if (-not $Ctx.Set.Parameters.Contains('sbeVersion') -or -not $Ctx.Set.Parameters['sbeVersion']) {
-        return New-AzlArmCheckResult SbeConsistent Warning 'No SBE values: hardware.sbe is empty and no SBE folder was read. The deployment uses the SBE the OS install discovered, if any.' 'Fill hardware.sbe (version, family, publisher, manifest source and date) or set hardware.sbe.bundle_path.'
+        return New-AzlArmCheckResult SbeConsistent Passed $script:NoSbeNote
+    }
+    if (-not $Ctx.Set.Parameters['sbeFamily']) {
+        return New-AzlArmCheckResult SbeConsistent Warning "SBE version $($Ctx.Set.Parameters['sbeVersion']) is set without a family." 'Set hardware.sbe.family (the family of the SBE package, for example 16G-45n0c-Intel), or remove hardware.sbe.version to deploy without an SBE.'
     }
     New-AzlArmCheckResult SbeConsistent Passed "SBE $($Ctx.Set.Parameters['sbeFamily']) $($Ctx.Set.Parameters['sbeVersion']) is set."
 }
-
 $script:Checks['SbeValidatedWithSolution'] = {
     param($Ctx)
     $check = 'SbeValidatedWithSolution'
     $parameters = $Ctx.Set.Parameters
     $version = if ($parameters.Contains('sbeVersion')) { [string]$parameters['sbeVersion'] } else { '' }
     $family = if ($parameters.Contains('sbeFamily')) { [string]$parameters['sbeFamily'] } else { '' }
-    if (-not $version) { return New-AzlArmCheckResult $check Skipped 'No SBE is configured (see SbeConsistent), so there is nothing to compare with the solution version.' }
+    if (-not $version) { return New-AzlArmCheckResult $check Passed $script:NoSbeNote }
     $source = Resolve-AzlArmSbeCatalogFile $Ctx
     if (-not $source.File) { return New-AzlArmCheckResult $check Skipped $source.Reason }
     try { $catalog = @(Read-AzlArmSbeCatalog -Path $source.File) }
