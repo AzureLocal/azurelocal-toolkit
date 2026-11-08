@@ -25,6 +25,8 @@ The nodes are not Ansible hosts. The play runs on **one runner** (the inventory 
 - for ISO-installed nodes, and for `hardware.sbe.delivery: winrm_copy`, a route to the nodes' management addresses on TCP 5985
   (WinRM, the default for ISO nodes; from a Linux runner the PSWSMan module is needed for Negotiate). ZTP-provisioned nodes need only Azure.
 
+The Solution Builder Extension is **opt-in**. The role never sets or implies an SBE: with no `hardware.sbe` in `infrastructure.yml` the Sbe and Drivers steps are not applicable, and with one nothing is copied to the nodes unless you set `hardware.sbe.delivery` (`winrm_copy` or `node_pull`) in that file. The default step list (`azurelocal_os_configuration_steps: []`) therefore delivers nothing by itself.
+
 The `infrastructure.yml` and the ZTP handoff files are paths **on the runner**.
 
 ## Run it

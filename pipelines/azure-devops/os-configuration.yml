@@ -65,7 +65,7 @@ parameters:
     type: string
     default: all
   - name: steps
-    displayName: 'Steps to run, comma separated (all: the steps of each node''s method). RemoteManagement, Sbe, Drivers, Network, Dns, Time, Hostname, UnusedAdapters, DomainJoin, LocalAdmin, Mpio, SanVerify, ClearStorage, ArcRegistration'
+    displayName: 'Steps to run, comma separated (all: the steps of each node''s method; Sbe delivers a package only when infrastructure.yml sets hardware.sbe.delivery to winrm_copy or node_pull, and does nothing without hardware.sbe). RemoteManagement, Sbe, Drivers, Network, Dns, Time, Hostname, UnusedAdapters, DomainJoin, LocalAdmin, Mpio, SanVerify, ClearStorage, ArcRegistration'
     type: string
     default: all
   - name: mode

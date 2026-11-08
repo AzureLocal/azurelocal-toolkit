@@ -2,7 +2,8 @@
 # Copy to inventory/hosts.yml and edit. One runner only: it must have PowerShell 7 (pwsh) with the powershell-yaml, Az.Accounts and
 # Az.KeyVault modules, an Azure sign-in, a checkout of this repository, and (for ISO-installed nodes, or hardware.sbe.delivery
 # winrm_copy) a route to the nodes' management addresses on TCP 5985. The nodes themselves are NOT Ansible hosts: the wrapper
-# reaches them (Azure Arc Run Command or WinRM), not Ansible.
+# reaches them (Azure Arc Run Command or WinRM), not Ansible. The SBE is opt-in: nothing is delivered unless infrastructure.yml sets
+# hardware.sbe.delivery (winrm_copy or node_pull); nothing here sets it.
 all:
   children:
     os_config_runner:
