@@ -194,7 +194,7 @@ function Get-AzlVerificationCheckDefinition {
                     if ($unclaimed.Count) { New-AzlVerResult Failed "On $Name MPIO does not claim $(Join-AzlVerList @($unclaimed | ForEach-Object { "$($_.vendor) $($_.product)" })) (IsMultipathed is False). Unclaimed, every path to a LUN is a separate disk and Azure's Test-Cluster fails with 'Two disks ... cannot be distinguished'." $fix -Node $Name -Evidence $seen }
                     elseif ($notRegistered.Count -and -not $avail.Count) { New-AzlVerResult Failed "On $Name MSDSM does not list $(Join-AzlVerList @($notRegistered | ForEach-Object { "$($_.Vendor) $($_.Product)" })) as supported hardware (Get-MSDSMSupportedHW: $(if ($supported.Count) { $supported -join ', ' } else { 'nothing registered' }))." $fix -Node $Name -Evidence "supported=$($supported -join ',')" }
                     elseif ($notRegistered.Count) { New-AzlVerResult Warning "On $Name $(Join-AzlVerList @($notRegistered | ForEach-Object { "$($_.Vendor) $($_.Product)" })) is multipathed but not in the MSDSM supported hardware list (Get-MSDSMSupportedHW)." $fix -Node $Name -Evidence $seen }
-                    elseif (-not $avail.Count) { New-AzlVerResult Warning "$Name lists no Fibre Channel or iSCSI hardware in Get-MPIOAvailableHW although it sees SAN disks (the MPIO cmdlets may be missing)." 'Install the MPIO feature (ST-005) and run Get-MPIOAvailableHW on the node.' -Node $Name }
+                    elseif (-not $avail.Count) { New-AzlVerResult Skipped "$Name lists no Fibre Channel or iSCSI hardware in Get-MPIOAvailableHW although it sees SAN disks (the MPIO cmdlets may be missing)." 'Install the MPIO feature (ST-005) and run Get-MPIOAvailableHW on the node.' -Node $Name }
                     else { New-AzlVerResult Passed "${Name}: MPIO claims $(Join-AzlVerList @($avail | ForEach-Object { "$($_.vendor) $($_.product)" }))." -Node $Name -Evidence $seen }
                 }
             }))
@@ -281,7 +281,7 @@ function Get-AzlVerificationCheckDefinition {
                         foreach ($p in (ConvertTo-AzlVerList (Get-AzlProp $hba 'ports' @()))) { $wanted += ([string](Get-AzlProp $p 'wwpn' '') -replace '[:\-]', '').ToLowerInvariant() }
                     }
                     $have = @(ConvertTo-AzlVerList (Get-AzlProp $D 'fc' @()) | ForEach-Object { ([string]$_.wwpn -replace '[:\-]', '').ToLowerInvariant() })
-                    if (-not $wanted.Count) { return New-AzlVerResult Warning "The file lists no HBA port (nodes[].san.hbas[].ports[].wwpn) for $Name." 'Record the WWPNs: Get-InitiatorPort on the node.' -Node $Name }
+                    if (-not $wanted.Count) { return New-AzlVerResult Skipped "The file lists no HBA port (nodes[].san.hbas[].ports[].wwpn) for $Name." 'Record the WWPNs: Get-InitiatorPort on the node.' -Node $Name }
                     $missing = @($wanted | Where-Object { $_ -notin $have })
                     if ($missing) { New-AzlVerResult Failed "$Name does not show the HBA port(s) $(Join-AzlVerList $missing) of the file (it shows $(if ($have.Count) { $have -join ', ' } else { 'none' }))." 'Check the HBA, its driver and the WWPNs in the file (Get-InitiatorPort).' -Node $Name -Evidence "have=$($have -join ',')" }
                     else { New-AzlVerResult Passed "$Name shows all $($wanted.Count) HBA port(s) of the file." -Node $Name }

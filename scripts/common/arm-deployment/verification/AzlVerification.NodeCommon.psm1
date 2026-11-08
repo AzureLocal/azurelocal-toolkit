@@ -754,9 +754,23 @@ function Get-AzlVerNodeSection {
     $snapshot = Get-AzlVerAdapterMember -Context $Context -Group 'Node' -Name 'GetSnapshot'
     if (-not $snapshot) { Stop-AzlVerSkip 'The adapter has no Node.GetSnapshot here (nodes are not reachable from this host).' 'Run the verification from the host that reaches the nodes over WinRM.' }
     $snap = & $snapshot $Node $Context
+    # The node script records a section that threw in err.<section> and leaves the value at its default (no features, no pending restart, no pool). A check
+    # that reads such a section would pass on nothing, so a section whose read failed is not handed out: the caller reports the node Skipped with the reason.
+    $needs = @{
+        GetOsBuild = @('base', 'os', 'cs'); GetHardware = @('base', 'cs', 'cpu', 'mem', 'fw', 'disks'); GetTime = @('base', 'time'); GetDns = @('dns', 'nics')
+        GetFeatures = @('features'); GetReboot = @('reboot'); GetDisks = @('disks', 'pools', 'cluster'); GetAdapters = @('nics', 'dns', 'clussvc', 'proxy', 'vms')
+        GetMpio = @('mpio', 'disks', 'fc'); GetProbes = @('tcp', 'https', 'ping', 'proxy'); GetEnvChecker = @('ec')
+    }
+    $err = Get-AzlProp $snap 'err' $null
+    $errNames = @(); if ($err -is [System.Collections.IDictionary]) { $errNames = @($err.Keys) } elseif ($err) { $errNames = @($err.PSObject.Properties | ForEach-Object { $_.Name }) }
+    $broken = @($needs[$Name] | Where-Object { $_ -and ($_ -in $errNames) })
+    if ($broken.Count) {
+        $why = @($broken | ForEach-Object { $e = if ($err -is [System.Collections.IDictionary]) { $err[$_] } else { $err.$_ }; "$_ ($e)" })
+        throw "The read of $($broken -join ', ') failed on the node: $($why -join '; ')"
+    }
     $o = [ordered]@{}
     foreach ($p in $map[$Name]) { $o[$p] = Get-AzlProp $snap $p $null }
-    $o['err'] = Get-AzlProp $snap 'err' $null
+    $o['err'] = $err
     [pscustomobject]$o
 }
 function New-AzlVerNodeAdapterDefault {

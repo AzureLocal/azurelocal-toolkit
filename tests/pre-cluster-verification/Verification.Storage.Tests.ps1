@@ -190,3 +190,13 @@ Describe 'Unreadable nodes' {
         (Invoke-VerRun 'ST-009' $f.World $f.Infra)[0].Status | Should -Be 'Skipped'
     }
 }
+
+Describe 'A pool or cluster section whose read failed is not read as a clean node (review C1)' {
+    It 'ST-003 is Skipped with the reason when the pool read failed' {
+        $f = New-VerFresh; $f.World.Snapshot['n01'].err = @{ pools = 'storage service not running' }
+        $r = @(Invoke-VerRun 'ST-003' $f.World $f.Infra | Where-Object Node -EQ 'n01')
+        ($r | Where-Object Status -EQ 'Passed') | Should -BeNullOrEmpty
+        $r[0].Status | Should -Be 'Skipped'
+        $r[0].Message | Should -Match 'storage service not running'
+    }
+}

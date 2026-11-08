@@ -155,10 +155,10 @@ Describe 'AZ-001 the tenant and subscription of the file' {
         $r.Status | Should -Be 'Failed'
         $r.Message | Should -Match 'Nobody is signed in'
     }
-    It 'warns when azure.tenant_id is empty in the file' {
+    It 'is Skipped (never a Warning) when azure.tenant_id is empty in the file' {
         $infra = Get-TestInfra; $infra.azure.tenant_id = ''
         $r = (Invoke-AzCheck 'AZ-001' (New-AzContext -Infra $infra))[0]
-        $r.Status | Should -Be 'Warning'
+        $r.Status | Should -Be 'Skipped'
         $r.Message | Should -Match 'azure.tenant_id is empty'
     }
 }

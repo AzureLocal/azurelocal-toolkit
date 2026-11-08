@@ -74,9 +74,9 @@ Describe 'ND-001 nodes answer' {
         ($o | Where-Object Node -EQ 'n02').Status | Should -Be 'Skipped'
         ($o | Where-Object Node -EQ 'n01').Status | Should -Be 'Passed'
     }
-    It 'Warning when parts of the read failed' {
+    It 'Failed (never Passed) when parts of the read failed' {
         $f = New-VerFresh; $f.World.Snapshot['n01'].err = @{ mpio = 'cmdlet missing' }
-        (Invoke-VerRun 'ND-001' $f.World $f.Infra | Where-Object Node -EQ 'n01').Status | Should -Be 'Warning'
+        (Invoke-VerRun 'ND-001' $f.World $f.Infra | Where-Object Node -EQ 'n01').Status | Should -Be 'Failed'
     }
     It 'Skipped, not Failed, when the adapter has no Remote.Invoke' {
         $f = New-VerFresh
@@ -104,7 +104,7 @@ Describe 'ND-003 and ND-004 OS build' {
         $r = Invoke-VerRun 'ND-004' $f.World $f.Infra -Settings @{ solutionVersion = '12.2611.1002.10' }
         $r[0].Status | Should -Be 'Failed'; $r[0].Message | Should -Match '12.2611.1002.10'
     }
-    It 'ND-004 Warning for an OS build that is not in the table' { $f = New-VerFresh; $f.World.Snapshot['n01'].os.build = '10.0.26100.99999'; (Invoke-VerRun 'ND-004' $f.World $f.Infra | Where-Object Node -EQ 'n01').Status | Should -Be 'Warning' }
+    It 'ND-004 Skipped (could not compare, not a Warning) for an OS build that is not in the table' { $f = New-VerFresh; $f.World.Snapshot['n01'].os.build = '10.0.26100.99999'; (Invoke-VerRun 'ND-004' $f.World $f.Infra | Where-Object Node -EQ 'n01').Status | Should -Be 'Skipped' }
     It 'ND-004 NotApplicable without a target' { $f = New-VerFresh; $f.Infra.provisioning = @{}; (Invoke-VerRun 'ND-004' $f.World $f.Infra).Status | Should -Be 'NotApplicable' }
 }
 
@@ -222,5 +222,53 @@ Describe 'The default adapter' {
         $errors | Should -BeNullOrEmpty
         $verbs = @($ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true) | ForEach-Object { $_.GetCommandName() } | Where-Object { $_ -match "^(Set|Remove|Install|New|Add|Enable|Disable|Clear|Start|Stop|Restart|Update|Register|Uninstall)-" -and $_ -ne "New-Object" })
         $verbs | Should -BeNullOrEmpty -Because "found: $($verbs -join ', ')"
+    }
+}
+
+Describe 'A section whose read failed is never read as fine (review C1)' {
+    It '<Id> is Skipped on the node whose <Section> read failed, with the reason, and not Passed' -ForEach @(
+        @{ Id = 'ND-010'; Section = 'features' }
+        @{ Id = 'ND-007'; Section = 'reboot' }
+        @{ Id = 'ND-012'; Section = 'cluster' }
+    ) {
+        $f = New-VerFresh; $f.World.Snapshot['n01'].err = @{ $Section = 'access denied' }
+        $r = @(Invoke-VerRun $Id $f.World $f.Infra | Where-Object Node -EQ 'n01')
+        $r.Count | Should -BeGreaterThan 0
+        ($r | Where-Object Status -EQ 'Passed') | Should -BeNullOrEmpty
+        ($r | Select-Object -First 1).Status | Should -Be 'Skipped'
+        ($r | Select-Object -First 1).Message | Should -Match 'access denied'
+    }
+    It 'the other node is still checked' {
+        $f = New-VerFresh; $f.World.Snapshot['n01'].err = @{ features = 'access denied' }
+        (Invoke-VerRun 'ND-010' $f.World $f.Infra | Where-Object Node -EQ 'n02').Status | Should -Be 'Passed'
+    }
+}
+Describe 'Could not verify is Skipped, never Warning (review C2)' {
+    It 'ND-010 is Skipped when the node lists none of the required features' {
+        $f = New-VerFresh; $f.World.Snapshot['n01'].features = @()
+        $r = @(Invoke-VerRun 'ND-010' $f.World $f.Infra | Where-Object Node -EQ 'n01')
+        $r[0].Status | Should -Be 'Skipped'
+    }
+}
+
+Describe 'Environment Checker rows: only an explicit success passes (review C3)' {
+    It 'a row with status <Status> and severity <Severity> is <Expected>' -ForEach @(
+        @{ Status = 'ERROR'; Severity = 'CRITICAL'; Expected = 'Failed' }
+        @{ Status = ''; Severity = 'CRITICAL'; Expected = 'Failed' }
+        @{ Status = 'ABORTED'; Severity = ''; Expected = 'Failed' }
+        @{ Status = 'UNKNOWNSTATE'; Severity = 'weird'; Expected = 'Failed' }
+        @{ Status = 'FAILURE'; Severity = ''; Expected = 'Failed' }
+        @{ Status = 'SKIPPED'; Severity = 'CRITICAL'; Expected = 'Skipped' }
+        @{ Status = 'FAILURE'; Severity = 'WARNING'; Expected = 'Warning' }
+        @{ Status = 'SUCCESS'; Severity = 'CRITICAL'; Expected = 'Passed' }
+    ) {
+        $f = New-VerFresh
+        $f.World.Ec = @{ Hardware = @{ Available = $true; Results = @(@{ Node = 'n01'; Name = 'T1'; Title = 'T one'; Status = $Status; Severity = $Severity; Description = 'd'; Remediation = ''; Target = 'n01' }) } }
+        (Invoke-VerRun 'RD-003' $f.World $f.Infra)[0].Status | Should -Be $Expected
+    }
+    It 'no result rows at all is Skipped, not Passed' {
+        $f = New-VerFresh
+        $f.World.Ec = @{ Hardware = @{ Available = $true; Results = @() } }
+        (Invoke-VerRun 'RD-003' $f.World $f.Infra)[0].Status | Should -Be 'Skipped'
     }
 }

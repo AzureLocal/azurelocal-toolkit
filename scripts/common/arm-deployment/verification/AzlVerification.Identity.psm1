@@ -642,7 +642,11 @@ Add-VfIdCheck -Id 'ID-AD-004' -Title 'The LCM user exists, is enabled, not locke
         if (-not $u.Entries.Count) { return New-VfIdResult Failed "The LCM user $($lcm.User) does not exist in $($lcm.Domain)." "New-HciAdObjectsPreCreation -AzureStackLCMUserCredential (Get-Credential) -AsHciOUName '$($lcm.OuPath)'   (creates the user in the OU)" -Evidence "user=$($lcm.User)" }
         if ($u.Entries.Count -gt 1) { return New-VfIdResult Failed "$($u.Entries.Count) accounts match the LCM user name $($lcm.User): $((@($u.Entries | ForEach-Object { [string]$_.distinguishedName })) -join '; '). The name must be unique." 'Remove or rename the duplicates.' }
         $e = $u.Entries[0]
-        foreach ($p in 'useraccountcontrol') { Assert-VfIdEntryProperty $e $p }
+        # An attribute the DC did not return is an empty list, and [int]$null is 0 (enabled, not locked, never expires): a missing value is Skipped, never read as healthy.
+        foreach ($p in 'useraccountcontrol', 'msds-user-account-control-computed', 'accountexpires') {
+            Assert-VfIdEntryProperty $e $p
+            if (@(ConvertTo-VfIdList (Get-VfIdEntryProperty $e $p)).Count -eq 0 -or [string]::IsNullOrWhiteSpace([string](Get-VfIdEntryProperty $e $p))) { Stop-VfIdSkip "The domain controller returned no value for '$p' of the LCM user, so the account state could not be read over LDAP." 'Check the account by hand: Get-ADUser <user> -Properties Enabled, LockedOut, AccountExpirationDate.' }
+        }
         $uac = [int](Get-VfIdEntryProperty $e 'useraccountcontrol')
         $computed = [int](Get-VfIdEntryProperty $e 'msds-user-account-control-computed')
         $expires = [int64](Get-VfIdEntryProperty $e 'accountexpires')

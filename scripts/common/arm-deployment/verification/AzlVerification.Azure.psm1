@@ -349,7 +349,7 @@ function Test-AzlVerifyAzureContext {
     $rows = @(Invoke-AzlVerifyArmPrecondition -Context $Context -Name AzureContext)
     foreach ($r in $rows) {
         if ($r.Status -eq 'Passed' -and -not $target.Tenant) {
-            New-AzlVerifyResult Warning ($r.Message + ' azure.tenant_id is empty in the file, so the tenant of the context could not be compared.') 'Set azure.tenant_id in the master file.' -Evidence $r.Evidence
+            New-AzlVerifyResult Skipped ($r.Message + ' azure.tenant_id is empty in the file, so the tenant of the context could not be compared.') 'Set azure.tenant_id in the master file.' -Evidence $r.Evidence
         }
         elseif ($r.Status -eq 'Failed') {
             New-AzlVerifyResult Failed ($r.Message + ' Registering the machines or deploying in another tenant fails later and cannot be moved.') "Connect-AzAccount -Tenant '$($target.Tenant)' -Subscription '$($target.Subscription)'; Set-AzContext -Subscription '$($target.Subscription)'   (or fix azure.tenant_id and azure.subscription_id in the file)" -Evidence $r.Evidence
@@ -429,9 +429,9 @@ function Test-AzlVerifyHciResourceProvider {
     $roles = @()
     if (Test-AzlVerifyAdapterHas $Context 'GetPrincipalRoles') {
         try { $roles = @(Invoke-AzlVerifyAdapter $Context GetPrincipalRoles @([string]$objectId, $scope) | ForEach-Object { [string]$_.Role }) }
-        catch { return New-AzlVerifyResult Warning "The service principal exists ($(Format-AzlVerifyId ([string]$objectId))); its roles could not be read ($($_.Exception.Message))." 'Check Access control (IAM) of the subscription.' -Evidence 'roles not read' }
+        catch { return New-AzlVerifyResult Skipped "The service principal exists ($(Format-AzlVerifyId ([string]$objectId))); its roles could not be read ($($_.Exception.Message))." 'Check Access control (IAM) of the subscription.' -Evidence 'roles not read' }
     }
-    else { return New-AzlVerifyResult Warning "The service principal exists ($(Format-AzlVerifyId ([string]$objectId)))$(if ($inFile) { ' and matches the file' }); its roles were not read (no GetPrincipalRoles in the adapter)." '' -Evidence 'roles not read' }
+    else { return New-AzlVerifyResult Skipped "The service principal exists ($(Format-AzlVerifyId ([string]$objectId)))$(if ($inFile) { ' and matches the file' }); its roles were not read (no GetPrincipalRoles in the adapter)." '' -Evidence 'roles not read' }
     if ($script:HciResourceProviderRole -notin $roles) {
         return New-AzlVerifyResult Warning "The Azure Local resource provider's service principal ($(Format-AzlVerifyId ([string]$objectId))) does not hold '$script:HciResourceProviderRole' on the subscription. Learn does not list this role; the Microsoft Azure Verified Module for Azure Local clusters lists it as a prerequisite (extension reconciliation and hybrid compute operations). Treat as a warning unless Validate reports it." "New-AzRoleAssignment -ObjectId '$objectId' -RoleDefinitionName '$script:HciResourceProviderRole' -Scope '$scope'" -Evidence "roles: $(Join-AzlVerifyList $roles)"
     }

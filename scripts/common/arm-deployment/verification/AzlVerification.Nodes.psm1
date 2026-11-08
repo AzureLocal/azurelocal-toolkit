@@ -63,7 +63,7 @@ function Get-AzlVerificationCheckDefinition {
                     if ($err -is [System.Collections.IDictionary]) { $sections = @($err.Keys) }
                     elseif ($err) { $sections = @($err.PSObject.Properties | ForEach-Object { $_.Name }) }
                     $build = [string](Get-AzlProp $D 'os.build' 'unknown')
-                    if ($sections.Count) { New-AzlVerResult Warning "$Name answered (OS $build) but these parts of the read failed: $(Join-AzlVerList $sections). Checks that need them may be Skipped or wrong." "On the node run the failing read by hand (Get-Disk, Get-NetAdapter, Get-WindowsFeature, mpclaim) and fix what stops it." -Node $Name -Evidence ($sections -join ',') }
+                    if ($sections.Count) { New-AzlVerResult Failed "$Name answered (OS $build) but these parts of the read failed: $(Join-AzlVerList $sections). Checks that need them are Skipped for this node, never read as fine." "On the node run the failing read by hand (Get-Disk, Get-NetAdapter, Get-WindowsFeature, mpclaim) and fix what stops it." -Node $Name -Evidence ($sections -join ',') }
                     else { New-AzlVerResult Passed "$Name answered over WinRM (OS $build)." -Node $Name -Evidence "os.build=$build" }
                 }
             }))
@@ -107,7 +107,7 @@ function Get-AzlVerificationCheckDefinition {
                     param($Name, $D, $N)
                     $build = [string](Get-AzlProp $D 'os.build' '')
                     $map = ConvertFrom-AzlVerOsBuild $build
-                    if (-not $map) { New-AzlVerResult Warning "$Name runs OS build $build, which is not in the table of builds seen with a solution version, so it cannot be compared with the target $target. Azure refuses an OS build it does not accept for new deployments (Unsupported OS version)." "Install the OS build of solution $target (the lab: solution 12.2610.1004.50 is OS build 26100.33650)." -Node $Name -Evidence "os.build=$build" }
+                    if (-not $map) { New-AzlVerResult Skipped "$Name runs OS build $build, which is not in the table of builds seen with a solution version, so it cannot be compared with the target $target. Azure refuses an OS build it does not accept for new deployments (Unsupported OS version)." "Install the OS build of solution $target (the lab: solution 12.2610.1004.50 is OS build 26100.33650)." -Node $Name -Evidence "os.build=$build" }
                     elseif ($map.Version -eq $line) { New-AzlVerResult Passed "$Name's OS build $build ships with solution $($map.Version), the line of the target $target." -Node $Name -Evidence "os.build=$build target=$target" }
                     else { New-AzlVerResult Failed "$Name's OS build $build ships with solution $($map.Version), but the deployment targets $target." "Install the OS build of solution $target on $Name, or change provisioning.os_version." -Node $Name -Evidence "os.build=$build target=$target" }
                 }
@@ -238,8 +238,8 @@ function Get-AzlVerificationCheckDefinition {
                     $unknown = @($rows | Where-Object { $_.n -in $required -and -not $_.found } | ForEach-Object { $_.n })
                     $advisedOff = @($rows | Where-Object { $_.n -in $advised -and $_.found -and $_.installed -eq $false } | ForEach-Object { $_.n })
                     if ($off) { New-AzlVerResult Failed "On $Name these Windows features are not installed: $(Join-AzlVerList $off)." ('On the node: Install-WindowsFeature -Name ' + ($off -join ',') + ' -IncludeManagementTools (restart if asked)') -Node $Name -Evidence ($off -join ',') }
-                    elseif ($unknown.Count -eq $required.Count) { New-AzlVerResult Warning "$Name does not list any of the features by name (Get-WindowsFeature is not available), so they were not verified." 'Verify by hand: Get-WindowsFeature Hyper-V, Failover-Clustering, Data-Center-Bridging, NetworkATC, BitLocker.' -Node $Name }
-                    elseif ($unknown) { New-AzlVerResult Warning "$Name does not list $(Join-AzlVerList $unknown) by that name." 'Verify the feature by hand.' -Node $Name -Evidence ($unknown -join ',') }
+                    elseif ($rows.Count -eq 0 -or $unknown.Count -eq $required.Count) { New-AzlVerResult Skipped "$Name does not list any of the features by name (Get-WindowsFeature is not available), so they were not verified." 'Verify by hand: Get-WindowsFeature Hyper-V, Failover-Clustering, Data-Center-Bridging, NetworkATC, BitLocker.' -Node $Name }
+                    elseif ($unknown) { New-AzlVerResult Skipped "$Name does not list $(Join-AzlVerList $unknown) by that name." 'Verify the feature by hand.' -Node $Name -Evidence ($unknown -join ',') }
                     elseif ($advisedOff) { New-AzlVerResult Warning "$Name lacks the management features $(Join-AzlVerList $advisedOff) (the earlier toolkit verification expected them)." ('On the node: Install-WindowsFeature -Name ' + ($advisedOff -join ',') + ' -IncludeManagementTools') -Node $Name -Evidence ($advisedOff -join ',') }
                     else { New-AzlVerResult Passed "$Name has Hyper-V, Failover Clustering, Data Center Bridging, Network ATC and BitLocker installed." -Node $Name }
                 }
@@ -336,18 +336,26 @@ function ConvertFrom-AzlVerValidatorAnswer {
     }
     $rows = @(ConvertTo-AzlVerList (Get-AzlProp $Answer 'Results' @()))
     if (-not $rows.Count) { Stop-AzlVerSkip "The $Name validator ran but wrote no result." $script:EcInstallNode }
-    $failed = @($rows | Where-Object { [string](Get-AzlProp $_ 'Status' '') -match '^(?i)fail' })
+    # Only an explicit success counts as a pass. A status that is empty, ERROR, ABORTED, SKIPPED or one a newer module adds is not a success; a
+    # skipped test did not run (Skipped), anything else that is not a success is a finding. A finding is critical unless its severity is explicitly
+    # WARNING or INFORMATIONAL: an empty or unknown severity is read as the worst.
+    $isSuccess = { param($r) [string](Get-AzlProp $r 'Status' '') -match '^(?i)\s*(success|succeeded|pass|passed)\s*$' }
+    $isSkip = { param($r) [string](Get-AzlProp $r 'Status' '') -match '^(?i)\s*skip' }
+    $failed = @($rows | Where-Object { -not (& $isSuccess $_) -and -not (& $isSkip $_) })
+    $skippedRows = @($rows | Where-Object { & $isSkip $_ })
     $nodes = @($rows | ForEach-Object { [string](Get-AzlProp $_ 'Node' '*') } | Select-Object -Unique)
     foreach ($nd in $nodes) {
         $mine = @($rows | Where-Object { [string](Get-AzlProp $_ 'Node' '*') -eq $nd })
         $bad = @($failed | Where-Object { [string](Get-AzlProp $_ 'Node' '*') -eq $nd })
-        $critical = @($bad | Where-Object { [string](Get-AzlProp $_ 'Severity' '') -match '^(?i)crit' })
+        $notRun = @($skippedRows | Where-Object { [string](Get-AzlProp $_ 'Node' '*') -eq $nd })
+        $critical = @($bad | Where-Object { [string](Get-AzlProp $_ 'Severity' '') -notmatch '^(?i)\s*(warn|info)' })
         $line = { param($r) "$(Get-AzlProp $r 'Title' (Get-AzlProp $r 'Name' '')) [$(Get-AzlProp $r 'Target' '')]: $(Get-AzlProp $r 'Description' '')" }
         $remedy = (@($bad | ForEach-Object { [string](Get-AzlProp $_ 'Remediation' '') } | Where-Object { $_ } | Select-Object -Unique) -join '; ')
         $evidence = (@($bad | ForEach-Object { "$($_.Severity) $($_.Name)" }) -join ', ')
         if ($critical.Count) { New-AzlVerResult Failed "The $Name validator reports $($critical.Count) critical issue(s) of $($mine.Count) tests: $((@($critical | ForEach-Object { & $line $_ })) -join ' | ')" $(if ($remedy) { $remedy } else { 'Fix what the validator names and run it again.' }) -Node $nd -Evidence $evidence }
+        elseif ($notRun.Count) { New-AzlVerResult Skipped "The $Name validator skipped $($notRun.Count) of $($mine.Count) tests on this node, so they were not verified: $((@($notRun | ForEach-Object { & $line $_ })) -join ' | ')" $script:EcInstallNode -Node $nd -Evidence (@($notRun | ForEach-Object { "$($_.Name)" }) -join ', ') }
         elseif ($bad.Count) { New-AzlVerResult Warning "The $Name validator reports $($bad.Count) warning(s) of $($mine.Count) tests: $((@($bad | ForEach-Object { & $line $_ })) -join ' | ')" $remedy -Node $nd -Evidence $evidence }
-        else { New-AzlVerResult Passed "The $Name validator ran $($mine.Count) test(s); all succeeded." -Node $nd }
+        else { New-AzlVerResult Passed "The $Name validator ran $($mine.Count) test(s); all reported success." -Node $nd }
     }
 }
 

@@ -99,7 +99,7 @@ BeforeAll {
         $lcmDn = "CN=lcm-azl01,$ouDn"
         Add-AdRoute $state 'domainDNS' @(New-AdEntry 'DC=lab,DC=example')
         Add-AdRoute $state 'organizationalUnit' @(New-AdEntry $ouDn @{ gpoptions = @('1'); gplink = @(''); ntsecuritydescriptor = @((New-Descriptor)) })
-        Add-AdRoute $state 'sAMAccountName=lcm-azl01' @(New-AdEntry $lcmDn @{ useraccountcontrol = @('512'); accountexpires = @('0'); objectsid = @((ConvertTo-SidBase64 $script:SidText)) })
+        Add-AdRoute $state 'sAMAccountName=lcm-azl01' @(New-AdEntry $lcmDn @{ useraccountcontrol = @('512'); 'msds-user-account-control-computed' = @('0'); accountexpires = @('0'); objectsid = @((ConvertTo-SidBase64 $script:SidText)) })
         Add-AdRoute $state '\(objectClass=\*\)' @(New-AdEntry $lcmDn @{ tokengroups = @() })
         Add-AdRoute $state 'distinguishedName=DC=lab' @(New-AdEntry 'DC=lab,DC=example' @{ gplink = @('') })
         # Nothing pre-created.
@@ -284,10 +284,10 @@ Describe 'ID-AD-003 OU exists' {
 Describe 'ID-AD-004 LCM user' {
     It 'passes' { (Invoke-Id 'ID-AD-004' (New-Ctx))[0].Status | Should -Be 'Passed' }
     It 'fails for <Name>' -ForEach @(
-        @{ Name = 'a disabled account'; Data = @{ useraccountcontrol = @('514'); accountexpires = @('0'); objectsid = @() } }
+        @{ Name = 'a disabled account'; Data = @{ useraccountcontrol = @('514'); 'msds-user-account-control-computed' = @('0'); accountexpires = @('0'); objectsid = @() } }
         @{ Name = 'a locked account'; Data = @{ useraccountcontrol = @('512'); 'msds-user-account-control-computed' = @('16'); accountexpires = @('0') } }
-        @{ Name = 'a smart card account'; Data = @{ useraccountcontrol = @('262656'); accountexpires = @('0') } }
-        @{ Name = 'an expired account'; Data = @{ useraccountcontrol = @('512'); accountexpires = @(([datetime]'2026-01-01').ToFileTimeUtc().ToString()) } }
+        @{ Name = 'a smart card account'; Data = @{ useraccountcontrol = @('262656'); 'msds-user-account-control-computed' = @('0'); accountexpires = @('0') } }
+        @{ Name = 'an expired account'; Data = @{ useraccountcontrol = @('512'); 'msds-user-account-control-computed' = @('0'); accountexpires = @(([datetime]'2026-01-01').ToFileTimeUtc().ToString()) } }
     ) {
         $ctx = New-Ctx; Add-AdRoute $ctx.State 'sAMAccountName=lcm-azl01' @(New-AdEntry 'CN=lcm-azl01,OU=azl01,DC=lab,DC=example' $Data)
         (Invoke-Id 'ID-AD-004' $ctx)[0].Status | Should -Be 'Failed'
@@ -296,8 +296,18 @@ Describe 'ID-AD-004 LCM user' {
         $ctx = New-Ctx; Add-AdRoute $ctx.State 'sAMAccountName=lcm-azl01' @()
         (Invoke-Id 'ID-AD-004' $ctx)[0].Status | Should -Be 'Failed'
     }
+    It 'is Skipped, not Passed, when the domain controller returns no <Missing> (review C10: [int]$null is 0)' -ForEach @(
+        @{ Missing = 'useraccountcontrol'; Data = @{ 'msds-user-account-control-computed' = @('0'); accountexpires = @('0') } }
+        @{ Missing = 'msds-user-account-control-computed'; Data = @{ useraccountcontrol = @('512'); accountexpires = @('0') } }
+        @{ Missing = 'accountexpires'; Data = @{ useraccountcontrol = @('512'); 'msds-user-account-control-computed' = @('0') } }
+    ) {
+        $ctx = New-Ctx; Add-AdRoute $ctx.State 'sAMAccountName=lcm-azl01' @(New-AdEntry 'CN=lcm-azl01,OU=azl01,DC=lab,DC=example' $Data)
+        $r = (Invoke-Id 'ID-AD-004' $ctx)[0]
+        $r.Status | Should -Be 'Skipped'
+        $r.Message | Should -Match $Missing
+    }
     It 'warns when the user is outside the OU (Learn allows it anywhere)' {
-        $ctx = New-Ctx; Add-AdRoute $ctx.State 'sAMAccountName=lcm-azl01' @(New-AdEntry 'CN=lcm-azl01,CN=Users,DC=lab,DC=example' @{ useraccountcontrol = @('512'); accountexpires = @('0') })
+        $ctx = New-Ctx; Add-AdRoute $ctx.State 'sAMAccountName=lcm-azl01' @(New-AdEntry 'CN=lcm-azl01,CN=Users,DC=lab,DC=example' @{ useraccountcontrol = @('512'); 'msds-user-account-control-computed' = @('0'); accountexpires = @('0') })
         $r = Invoke-Id 'ID-AD-004' $ctx
         $r[0].Status | Should -Be 'Warning'
         $r[0].Message | Should -Match 'anywhere'
