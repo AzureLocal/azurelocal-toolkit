@@ -309,7 +309,7 @@ $script:ApplyBody = @'
 $sbeDir =[string](Get-P $P 'sbeDir' 'C:\SBE')
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $results = New-Object System.Collections.ArrayList
-$Az = @{ reboot = $false }
+$Az = @{ reboot = $false; restartRequired = $false }
 function Add-Result([string]$id, [string]$status, [string]$detail) { [void]$results.Add([pscustomobject]@{ id = $id; status = $status; detail = $detail }) }
 function Get-NicByMac([string]$mac) {
     return (Get-NetAdapter -Physical | Where-Object { (Get-MacKey $_.MacAddress) -eq (Get-MacKey $mac) } | Select-Object -First 1)
@@ -383,7 +383,7 @@ function Invoke-Action($a) {
             $out = & pnputil.exe /add-driver $infPath /install 2>&1
             $code = $LASTEXITCODE
             if ($code -notin 0, 259, 3010) { throw ('pnputil ' + $a.inf + ' exit ' + $code + ': ' + ($out -join ' ')) }
-            if ($code -eq 3010) { $Az.reboot = $true }
+            if ($code -eq 3010) { $Az.restartRequired = $true }
             return ('driver ' + $a.inf + ' ' + $a.ver + ' installed (pnputil ' + $code + ')')
         }
         'nic-clean' {
@@ -563,7 +563,7 @@ foreach ($a in @(Get-P $P 'actions' @())) {
     catch { Add-Result $id 'failed' $_.Exception.Message }
 }
 
-$answer = [pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; finished = (Get-Date).ToUniversalTime().ToString('o'); reboot = $Az.reboot; results = @($results) }
+$answer = [pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; finished = (Get-Date).ToUniversalTime().ToString('o'); reboot = $Az.reboot; restartRequired = [bool]$Az.restartRequired; results = @($results) }
 New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
 ConvertTo-Json -InputObject $answer -Depth 6 -Compress | Set-Content -LiteralPath (Join-Path $stateDir 'last-apply.json') -Encoding UTF8
 Write-Result $answer

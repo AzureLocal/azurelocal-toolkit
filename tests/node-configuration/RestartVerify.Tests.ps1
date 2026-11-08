@@ -54,14 +54,14 @@ BeforeAll {
         if ($phase -eq 'Apply') { $rs.Applied = $true; if ($rs.Restart) { $rs.Active = $true } }
         $plan = @([pscustomobject]@{ step = 'Dns'; item = 'DNS servers'; current = 'x'; desired = 'y'; action = $(if ($rs.Applied) { 'Ok' } else { 'Change' }); note = '' })
         $entry = [pscustomobject]@{
-            name = $name; hostname = $name; osVersion = '10.0.26100.1'; converged = $rs.Applied; restarted = [bool]($phase -eq 'Apply' -and $rs.Restart); ports = @(); sanDisks = @([pscustomobject]@{ uid = 'UID1' })
+            name = $name; hostname = $name; osVersion = '10.0.26100.1'; converged = $rs.Applied; restarted = [bool]($phase -eq 'Apply' -and $rs.Restart); restartRequired = [bool]($phase -eq 'Apply' -and $rs.RestartRequiredOnly); ports = @(); sanDisks = @([pscustomobject]@{ uid = 'UID1' })
             changes = @(if ($phase -eq 'Apply') { [pscustomobject]@{ Pass = 1; Id = 'Drivers/b57nd60a.inf'; Status = 'changed'; Detail = 'driver b57nd60a.inf 221.0.8.0 installed (pnputil 3010)' } }); plan = $plan; wipe = @(); guard = @(); pendingGuard = @()
         }
         [pscustomobject]@{ ExitCode = 0; Error = ''; Unknown = $false; Report = [pscustomobject]@{ nodes = @($entry) } }
     }
-    function Reset-Rs {
+    function Reset-RestartFake {
         $global:AzlRs = @{
-            Restart = $true; Active = $false; Applied = $false; DeniedText = $script:DeniedText
+            Restart = $true; RestartRequiredOnly = $false; Active = $false; Applied = $false; DeniedText = $script:DeniedText
             PortDown = 3        # port probes that find the port closed while the node restarts
             Denied = 2          # session opens that are refused ("Access is denied") once the port is open again
             Now = [datetime]::SpecifyKind([datetime]'2026-11-08T10:00:00', [DateTimeKind]::Utc)
@@ -85,7 +85,7 @@ BeforeAll {
 
 Describe 'The final verify waits for a node that was asked to restart' {
     BeforeEach {
-        Reset-Rs
+        Reset-RestartFake
         Mock -ModuleName AzlOsConfigurationRun Invoke-AzlSetNodeConfiguration { New-RsSetResult $Parameters }
         Mock -ModuleName AzlOsConfigurationRun Test-AzlAzureSignedIn { $true }
         Mock -ModuleName AzlOsConfigurationRun Get-AzlSecret { 'P@ssw0rd-from-the-vault-not-printed' }
@@ -180,6 +180,18 @@ Describe 'The final verify waits for a node that was asked to restart' {
         $text = @($r.Records[0].errors) -join ' '
         $text | Should -Match 'did not come back within 1 minute'
         $text | Should -Match 'Access is denied'
+    }
+
+    It 'a restart that is required but switched off (noRestart) is not waited for, and the record and the report say it is still required' {
+        $global:AzlRs.Restart = $false
+        $global:AzlRs.RestartRequiredOnly = $true
+        $r = Invoke-Run -Extra @{ Settings = @{ noRestart = $true } }
+        @(Read-RunEvent $r | Where-Object state -eq 'NodeWaiting') | Should -BeNullOrEmpty
+        $r.Records[0].restartRequired | Should -BeTrue
+        $r.Records[0].restarted | Should -BeFalse
+        (@($r.Records[0].warnings) -join ' ') | Should -Match 'a restart is required.*NOT done'
+        $report = Get-Content -LiteralPath (Join-Path $r.Out 'report.json') -Raw | ConvertFrom-Json
+        $report.nodes[0].restartRequired | Should -BeTrue
     }
 
     It 'a node that was not asked to restart is verified at once: no wait, no NodeWaiting' {

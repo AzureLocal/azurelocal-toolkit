@@ -481,7 +481,7 @@ function Compare-AzlNodeState {
                 if ($planned.ContainsKey($match.inf)) { & $add (New-AzlPlanItem $n 'Drivers' $nic.n $nic.drv $match.ver Change "Same driver as $($planned[$match.inf])."); continue }
                 $planned[$match.inf] = $nic.n
                 $folder = ($match.entry -replace '[\\/]', '_') -replace '[^A-Za-z0-9_.-]', ''
-                & $add (New-AzlPlanItem $n 'Drivers' $nic.n $nic.drv $match.ver Change $match.inf @{ id = "Drivers/$($match.inf)"; kind = 'driver'; zip = $Spec.Sbe.ZipName; entry = $match.entry; inf = $match.inf; ver = $match.ver; folder = "$($Spec.Sbe.Name)_$folder" })
+                & $add (New-AzlPlanItem $n 'Drivers' $nic.n $nic.drv $match.ver Change "$($match.inf). Restart required: pnputil 3010 after the install; the run restarts the node once, at the end of the apply." @{ id = "Drivers/$($match.inf)"; kind = 'driver'; zip = $Spec.Sbe.ZipName; entry = $match.entry; inf = $match.inf; ver = $match.ver; folder = "$($Spec.Sbe.Name)_$folder" })
             }
         }
     }
@@ -982,6 +982,9 @@ function Invoke-AzlNodeConfiguration {
     $changes = [System.Collections.Generic.List[object]]::new()
     $guardOutcomes = [System.Collections.Generic.List[object]]::new()
     $halted = $false
+    # A driver install that returns pnputil 3010 needs a restart. It is recorded, the node is restarted ONCE per run at the very end of the apply (after every other step), and a driver
+    # that was installed is not installed again while the old version is still read (the new binding loads at the restart).
+    $restartRequired = $false; $restartRecorded = $false; $applyFailed = $false; $driverInstalled = @{}
     $guardClock = if ($Clock) { $Clock } else { New-AzlGuardClock }
     # The context is the object of New-AzlGuardEventContext; a hashtable (Path, Method, SchemaVersion, PayloadVersion, Phase) is turned into one.
     if ($EventContext -is [System.Collections.IDictionary]) {
@@ -1024,6 +1027,7 @@ function Invoke-AzlNodeConfiguration {
             Changes   = $changes.ToArray()
             Blocked   = $blocked
             Restarted = $restarted
+            RestartRequired = $restartRequired
             Converged = ($pending.Count -eq 0 -and $blocked.Count -eq 0 -and -not $Err -and $unfinished.Count -eq 0)
             State     = $state
             Passes    = $passes.ToArray()
@@ -1064,6 +1068,7 @@ function Invoke-AzlNodeConfiguration {
         $todo = @($plan | Where-Object { $_.Action -eq 'Change' -and $_.Apply })
         $todo = @($todo | Where-Object { $_.Apply.kind -notlike 'domain-*' -or -not $djDone.ContainsKey([string]$_.Apply.kind) }) # DOMAINJOIN HOOK: each kind once per run
         $todo = @($todo | Where-Object { $_.Apply.kind -ne 'storage-clear' -or -not $storageDone }) # the wipe: once per run
+        $todo = @($todo | Where-Object { $_.Apply.kind -ne 'driver' -or -not $driverInstalled.ContainsKey([string]$_.Apply.id) }) # a driver installed in this run waits for the restart, it is not installed again
         # A package file the toolkit already delivered once and that is still wrong is not delivered again: the failure stays
         # in the report (the Sbe step is not done) and the other steps carry on.
         $todo = @($todo | Where-Object { $_.Apply.kind -ne 'sbe-file' -or -not $sbeTried.ContainsKey([string]$_.Apply.name) })
@@ -1137,9 +1142,20 @@ function Invoke-AzlNodeConfiguration {
                 $changes.Add([pscustomobject]@{ Node = $node; Pass = $pass; Id = 'apply'; Status = 'unknown'; Detail = $_.Exception.Message })
                 continue
             }
-            foreach ($r in @($result.results)) { $changes.Add([pscustomobject]@{ Node = $node; Pass = $pass; Id = $r.id; Status = $r.status; Detail = $r.detail }) }
+            foreach ($r in @($result.results)) {
+                $changes.Add([pscustomobject]@{ Node = $node; Pass = $pass; Id = $r.id; Status = $r.status; Detail = $r.detail })
+                if ([string]$r.id -like 'Drivers/*' -and $r.status -eq 'changed') { $driverInstalled[[string]$r.id] = $true }
+            }
+            if ([bool](Get-AzlProp $result 'restartRequired' $false)) {
+                $restartRequired = $true
+                if (-not $restartRecorded) {
+                    $restartRecorded = $true
+                    $why = (@($result.results | Where-Object { $_.status -eq 'changed' -and [string]$_.detail -match 'pnputil 3010' } | ForEach-Object { $_.detail }) -join '; ')
+                    $changes.Add([pscustomobject]@{ Node = $node; Pass = $pass; Id = 'Drivers/restart'; Status = 'restart-required'; Detail = "restart required$(if ($why) { " ($why)" }): $(if ($NoRestart) { 'NOT done (restart is switched off); restart the node, then run again' } else { 'the node is restarted once, at the end of the apply, after every other step' })." })
+                }
+            }
             $failed = @($result.results | Where-Object { $_.status -eq 'failed' })
-            if ($failed) { $plan = @(Compare-AzlNodeState @compareArgs -State $state); break }
+            if ($failed) { $applyFailed = $true; $plan = @(Compare-AzlNodeState @compareArgs -State $state); break }
             if ($result.reboot -and -not $NoRestart) {
                 # The node goes away on purpose: a restart that ends in state Unknown is not a failure, the wait below checks the boot time.
                 try { $null = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Restart) -TimeoutSeconds 60 -Tries 1 -Kind Restart }
@@ -1196,6 +1212,23 @@ function Invoke-AzlNodeConfiguration {
         try { $lastGuard = Get-AzlLastGuardedChange -Transport $Transport -Node $node -Breaker $guardBreaker; $caught.Exception.Data['AzlLastGuard'] = $lastGuard } catch { $null = $_ }
         $caught.Exception.Data['AzlPartial'] = (& $buildResult $caught.Exception.Message $indeterminate)
         throw $caught
+    }
+    # The restart a driver install asked for (pnputil 3010), once, after every other step; the node is read again after it and the plan is made from that read.
+    if ($Execute -and $restartRequired -and -not $NoRestart -and -not $halted -and -not $applyFailed -and $state) {
+        try {
+            & $heartbeat.SetPhase $heartbeat 'Restart (driver install, pnputil 3010)'
+            try { $null = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Restart) -TimeoutSeconds 60 -Tries 1 -Kind Restart }
+            catch { if ($_.Exception.Data['AzlState'] -ne 'Unknown') { throw } }
+            $state = Wait-AzlNodeRestart -Transport $Transport -Node $node -PreviousBoot $state.boot -ReadParameters $readParameters -Secrets $secrets
+            $restarted = $true
+            $changes.Add([pscustomobject]@{ Node = $node; Pass = $passes.Count; Id = 'Drivers/restarted'; Status = 'restarted'; Detail = 'restarted once, at the end of the apply, for the driver install (pnputil 3010); the node came back with a new boot time.' })
+            $plan = @(Compare-AzlNodeState @compareArgs -State $state)
+        }
+        catch {
+            $caught = $_
+            $caught.Exception.Data['AzlPartial'] = (& $buildResult $caught.Exception.Message $false)
+            throw $caught
+        }
     }
     # Plan and Apply both end by reading the newest guarded change on the node (read only: no write, no acknowledgement token).
     & $heartbeat.SetPhase $heartbeat 'guarded change status'

@@ -388,6 +388,7 @@ function Write-NodeReport {
                     pendingGuard = @($pendingGuard | ForEach-Object { [ordered]@{ changeId = $_.ChangeId; group = (Get-AzlProp $_ 'Group' ''); state = $_.State; reason = $_.Reason } })
                     events    = @($_.Events)
                     restarted = $_.Restarted
+                    restartRequired = [bool](Get-AzlProp $_ 'RestartRequired' $false)
                     domainJoin = $_.DomainJoin # DOMAINJOIN HOOK
                     ports     = @(Get-AzlProp $_.State 'nics' @() | ForEach-Object { [ordered]@{ osName = $_.n; mac = $_.mac; status = $_.st } })
                     sanDisks  = @(Get-AzlProp $_.State 'san.disks' @())

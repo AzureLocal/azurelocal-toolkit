@@ -1143,3 +1143,79 @@ Describe 'SBE delivered last, together with the Unknown handling of the node scr
         $copied | ForEach-Object { $_ | Should -Match '^C:\\SBE\\SBE_Dell_X_1\.0\.(zip|xml)$' }
     }
 }
+
+Describe 'A driver install that returns pnputil 3010 (restart required)' {
+    BeforeEach {
+        $infra = Get-Infra
+        $bundle = [pscustomobject]@{ Name = 'SBE_Dell_X_1.0'; ZipName = 'SBE_Dell_X_1.0.zip'; HashSource = 'x'; Deployment = [ordered]@{}
+            Files = @([pscustomobject]@{ Name = 'SBE_Dell_X_1.0.zip'; Path = 'D:\sbe\SBE_Dell_X_1.0.zip'; Size = 100; Sha256 = 'AA' }, [pscustomobject]@{ Name = 'SBE_Dell_X_1.0.xml'; Path = 'D:\sbe\SBE_Dell_X_1.0.xml'; Size = 10; Sha256 = 'BB' }) }
+        $script:Spec = Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0] -SbeBundle $bundle
+        $drv = @([pscustomobject]@{ inf = 'mlx5.inf'; ver = '25.1.2.0'; entry = 'DriversGE/Network/Mellanox/mlx5.inf'; ids = @('PCI\VEN_15B3&DEV_101D') })
+        $sbe = @([pscustomobject]@{ n = 'SBE_Dell_X_1.0.zip'; len = 100; ok = $true }, [pscustomobject]@{ n = 'SBE_Dell_X_1.0.xml'; len = 10; ok = $true })
+        # before the restart the node still reports the old driver version (the new binding is loaded at the next boot), also after the install
+        $script:Old = New-ConfiguredState $script:Spec; $script:Old.drv = $drv; $script:Old.sbe = $sbe
+        $script:After = New-ConfiguredState $script:Spec -Boot '2026-11-07T02:00:00Z'; $script:After.drv = $drv; $script:After.sbe = $sbe
+        foreach ($n in $script:After.nics) { $n.drv = '25.1.2.0' }
+        # pnputil returned 3010: the Apply payload answers restartRequired (not reboot), as the node script does
+        $script:Install = { param($p) [pscustomobject]@{ reboot = $false; restartRequired = $true; results = @($p.actions | ForEach-Object { [pscustomobject]@{ id = $_.id; status = 'changed'; detail = 'driver mlx5.inf 25.1.2.0 installed (pnputil 3010)' } }) } }
+        Mock -ModuleName AzlNodeConfiguration Start-Sleep {}
+    }
+    It 'the plan shows the restart as a note of the driver step' {
+        $c = @(Compare-AzlNodeState -Spec $script:Spec -State $script:Old | Where-Object { $_.Step -eq 'Drivers' -and $_.Action -eq 'Change' -and $_.Apply })
+        $c.Count | Should -Be 1
+        $c[0].Note | Should -Match 'restart required'
+        $c[0].Note | Should -Match 'pnputil 3010'
+        $c[0].Note | Should -Match 'once, at the end of the apply'
+    }
+    It 'is recorded as restart required, installed once, and the node is restarted once, after every other call, then verified' {
+        $t = New-FakeTransport @($script:Old, $script:Old, $script:After) $script:Install
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
+        @($t.Log | Where-Object Kind -eq 'Apply').Count | Should -Be 1
+        @($t.Log | Where-Object Kind -eq 'Restart').Count | Should -Be 1
+        $kinds = @($t.Log | ForEach-Object Kind)
+        [array]::LastIndexOf($kinds, 'Apply') | Should -BeLessThan ([array]::IndexOf($kinds, 'Restart'))
+        $r.RestartRequired | Should -BeTrue
+        $r.Restarted | Should -BeTrue
+        $required = @($r.Changes | Where-Object Status -eq 'restart-required')
+        $required.Count | Should -Be 1
+        $required[0].Detail | Should -Match 'restart required'
+        $required[0].Detail | Should -Match 'pnputil 3010'
+        # the read after the restart shows the new driver: nothing is left, nothing was installed twice
+        $r.Converged | Should -BeTrue
+    }
+    It 'the restart is once per run, however many passes there are' {
+        $t = New-FakeTransport @($script:Old, $script:Old, $script:Old, $script:After) $script:Install
+        $null = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
+        @($t.Log | Where-Object Kind -eq 'Apply').Count | Should -Be 1
+        @($t.Log | Where-Object Kind -eq 'Restart').Count | Should -Be 1
+    }
+    It '-NoRestart leaves it pending and says so: required, not done, not converged' {
+        $t = New-FakeTransport @($script:Old, $script:Old) $script:Install
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -NoRestart -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
+        @($t.Log | Where-Object Kind -eq 'Restart') | Should -BeNullOrEmpty
+        $r.RestartRequired | Should -BeTrue
+        $r.Restarted | Should -BeFalse
+        $r.Converged | Should -BeFalse
+        @($r.Changes | Where-Object Status -eq 'restart-required').Count | Should -Be 1
+    }
+    It 'a plan (no -Execute) installs and restarts nothing' {
+        $t = New-FakeTransport @($script:Old) { throw 'Apply must not run' }
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
+        @($t.Log | Where-Object Kind -in 'Apply', 'Restart') | Should -BeNullOrEmpty
+        $r.RestartRequired | Should -BeFalse
+    }
+    It 'a driver that failed to install asks for no restart' {
+        $t = New-FakeTransport @($script:Old, $script:Old) { param($p) [pscustomobject]@{ reboot = $false; restartRequired = $false; results = @($p.actions | ForEach-Object { [pscustomobject]@{ id = $_.id; status = 'failed'; detail = 'pnputil mlx5.inf exit 1' } }) } }
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
+        @($t.Log | Where-Object Kind -eq 'Restart') | Should -BeNullOrEmpty
+        $r.RestartRequired | Should -BeFalse
+    }
+    It 'the Apply payload reports a 3010 as restartRequired (not as an immediate reboot), in Windows PowerShell 5.1 syntax' {
+        $text = Get-AzlNodePayload -Name Apply
+        $text | Should -Match '\$code -eq 3010\) \{ \$Az\.restartRequired = \$true \}'
+        $text | Should -Match 'restartRequired = \[bool\]\$Az\.restartRequired'
+        $errors = $null
+        [void][System.Management.Automation.Language.Parser]::ParseInput($text, [ref]$null, [ref]$errors)
+        $errors | Should -BeNullOrEmpty
+    }
+}

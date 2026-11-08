@@ -695,7 +695,8 @@ function Wait-AzlRunNodeRestart {
     )
     $name = [string]$Record.name
     $minutes = [int](Get-AzlProp $Context 'RestartWaitMinutes' 15)
-    $addresses = @(@([string]$Record.address) + @($Record.evidence.Addresses) | Where-Object { $_ } | Select-Object -Unique)
+    # Only the address the identity check proved to be this node: the credential is never sent to another candidate while the node is down.
+    $addresses = @(@([string]$Record.address) | Where-Object { $_ })
     if ($Record.transport -ne 'WinRM' -or $addresses.Count -eq 0) { return [pscustomobject]@{ Back = $true; Message = ''; WaitedSeconds = 0 } }
     $hasCredential = [bool](Get-AzlProp $Context 'CredentialInfo.Credential' $null)
     $started = Get-AzlRunUtcNow
