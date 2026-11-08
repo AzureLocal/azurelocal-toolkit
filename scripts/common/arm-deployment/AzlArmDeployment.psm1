@@ -232,7 +232,7 @@ function New-AzlArmParameterSet {
     .PARAMETER NodeReport
         The OS configuration report's nodes (for the SAN disks, to translate LUN numbers).
     .PARAMETER SbeDeployment
-        The SBE values from Get-AzlSbeBundle (Deployment), used where hardware.sbe leaves them empty.
+        The SBE values from Get-AzlSbeBundle (Deployment), used where hardware.sbe leaves them empty. Without a version from either, no SBE parameter is passed.
     .PARAMETER Mode
         Validate or Deploy. Default: cluster.deployment_mode.
     .OUTPUTS
@@ -320,7 +320,14 @@ function New-AzlArmParameterSet {
         if (-not $value -and $SbeDeployment -and $SbeDeployment.Contains($pair[2])) { $value = [string]$SbeDeployment[$pair[2]] }
         $sbe[$pair[0]] = $value
     }
-    if (-not $sbe.sbeVersion) { $warnings.Add('No SBE values: hardware.sbe is empty and no SBE folder was read. The deployment then uses the SBE the OS install discovered, if any.') }
+    # The Solution Builder Extension is opt-in. A deployment without one passes none of the seven SBE parameters (the quickstart
+    # template defaults them to empty strings and empty lists, so an omitted parameter is the same as an empty one).
+    # An SBE is configured when it has a version.
+    $sbeConfigured = [bool]$sbe.sbeVersion
+    if (-not $sbeConfigured) {
+        $leftover = @($sbe.Keys | Where-Object { $sbe[$_] } | Sort-Object)
+        if ($leftover) { $warnings.Add("hardware.sbe gives $($leftover -join ', ') but no version, so no SBE is configured and none of the SBE parameters is passed. Set hardware.sbe.version to deploy with an SBE.") }
+    }
 
     $kvRef = { param($ref) if ($ref) { [ordered]@{ KeyVault = [string]$ref } } else { $null } }
     $p = [ordered]@{}
@@ -363,9 +370,11 @@ function New-AzlArmParameterSet {
     $p.intentList = $intents
     $p.storageConnectivitySwitchless = $switchless
     $p.customLocation = [string](& $g 'azure.custom_location' "$clusterName-cl")
-    foreach ($k in $sbe.Keys) { $p[$k] = $sbe[$k] }
-    $p.partnerProperties = @()
-    $p.partnerCredentiallist = @()
+    if ($sbeConfigured) {
+        foreach ($k in $sbe.Keys) { $p[$k] = $sbe[$k] }
+        $p.partnerProperties = @()
+        $p.partnerCredentiallist = @()
+    }
 
     # ---- Active Directory or local identity
     if ($identity -eq 'active_directory') {
