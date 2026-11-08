@@ -1372,7 +1372,7 @@ Register-AzlPclCheck -Id 'IDN-011' -Category identity -Title 'Nodes resolve the 
         $adws = @($tcp | Where-Object { $_.p -eq 9389 })
         $adwsDown = $adws.Count -gt 0 -and @($adws | Where-Object { $_.ok }).Count -eq 0
         $others = @($tcp | Where-Object { $_.p -ne 9389 -and -not $_.ok })
-        if ($badDns.Count) { New-AzlPclResult Failed "$Name cannot resolve $domain with DNS server $(Join-AzlPclList @($badDns | ForEach-Object { $_.server })): $(@($badDns | ForEach-Object { $_.error } | Where-Object { $_ } | Select-Object -First 1)). Azure fails with 'No such host is known' or 'Unable to find a default server with Active Directory Web Services'." "On the node: Resolve-DnsName $domain -Server <dns server>. Fix networking.management.dns_servers and the zone, then run the OS configuration (Dns step)." -Node $Name }
+        if ($badDns.Count) { New-AzlPclResult Failed "$Name cannot resolve $domain with DNS server $(Join-AzlPclList @($badDns | ForEach-Object { $_.server })): $(@($badDns | ForEach-Object { $_.err } | Where-Object { $_ } | Select-Object -First 1)). Azure fails with 'No such host is known' or 'Unable to find a default server with Active Directory Web Services'." "On the node: Resolve-DnsName $domain -Server <dns server>. Fix networking.management.dns_servers and the zone, then run the OS configuration (Dns step)." -Node $Name }
         elseif ($adwsDown) { New-AzlPclResult Failed "$Name cannot reach Active Directory Web Services (TCP 9389) on any domain controller ($(Join-AzlPclList @($adws | ForEach-Object { $_.h })))." "On the node: Test-NetConnection <domain controller> -Port 9389. Open ADWS and the Active Directory Gateway Management Service on the firewall (Learn: Firewall requirements)." -Node $Name }
         elseif ($others.Count) { New-AzlPclResult Warning "$Name cannot reach $(Join-AzlPclList @($others | ForEach-Object { "$($_.h):$($_.p)" })); domain join and the deployment use them." 'Open the ports between the node and the domain controllers.' -Node $Name }
         else { New-AzlPclResult Passed "$Name resolves $domain on every DNS server and reaches ADWS (9389), LDAP (389) and Kerberos (88) on the domain controllers." -Node $Name }
@@ -1398,6 +1398,7 @@ Register-AzlPclCheck -Id 'IDN-012' -Category identity -Title 'Nodes are in a wor
         }
         $dj = Get-AzlDomainJoinSpec -Infrastructure $Ctx.Infra
         $dj.Username = $lcm.User; $dj.PasswordRef = $lcm.PasswordRef; $dj.HasAccount = [bool]($lcm.User -and $lcm.PasswordRef)
+        if (-not @($dj.DomainControllers).Count) { $dj.DomainControllers = @($lcm.Domain) }
         $query = { param($Request) & $Ctx.Adapter.LdapSearch $Request }
         $ldap = Get-AzlDomainJoinLdapComputer -Spec ([pscustomobject]@{ Name = $Name; DomainJoin = $dj }) -SecretResolver { param($Ref) & $Ctx.Adapter.GetSecret $Ref } -Latch $Ctx.LdapLatch -LdapQuery $query
         if ($ldap.found) {

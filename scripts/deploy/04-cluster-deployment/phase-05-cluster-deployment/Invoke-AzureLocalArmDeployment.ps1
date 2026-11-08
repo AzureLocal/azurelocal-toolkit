@@ -56,6 +56,12 @@
     and wait until they are Registered. Needs Owner or Contributor on the subscription. Without it nothing in Azure is changed and
     a mandatory provider that is not registered fails the precondition ResourceProviders (with the command for each). Never done in
     Plan or with -WhatIf. Same as deployment.register_resource_providers.
+.PARAMETER SkipPreClusterVerification
+    Bypass the precondition PreClusterVerification (Mode Validate, Deploy or ValidateAndDeploy). Without it the run goes ahead only when the
+    latest result of the pre-cluster verification gate (Invoke-AzureLocalPreClusterVerification.ps1 -Mode Verify) has the verdict Pass, was made
+    for this infrastructure file (same SHA-256), has not expired (deployment.pre_cluster_verification_max_age_hours, default 4) and covers all
+    six categories; the failure names the command to run. This switch is the only way past it (there is no file key): it is warned loudly and
+    recorded in report.json (preClusterVerification.status Bypassed), the summary and the event feed.
 .PARAMETER AutoApprove
     ValidateAndDeploy: continue to Deploy without asking (same as -ApprovalMode none).
 .PARAMETER ApprovalMode
@@ -92,6 +98,7 @@ param(
     [switch]$Resume,
     [switch]$AllowRevalidate,
     [switch]$RegisterResourceProviders,
+    [switch]$SkipPreClusterVerification,
     [switch]$AutoApprove,
     [ValidateSet('', 'stop', 'prompt', 'none')][string]$ApprovalMode = '',
     [switch]$ProbeOsConfiguration,

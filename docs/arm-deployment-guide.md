@@ -16,6 +16,20 @@ infrastructure.yml  +  OS configuration report  +  ZTP handoff (optional)
         -> Plan (preconditions) -> Validate -> approval -> Deploy -> report, events, exit code
 ```
 
+## Run the pre-cluster verification first
+
+Mode Validate and Deploy go ahead only after the pre-cluster verification gate passed for the same infrastructure file. It checks, read only, everything Microsoft Learn lists as a prerequisite
+(Azure, Active Directory, the nodes, the network, the storage, Microsoft's Environment Checker) so that the Validate does not fail for something that could have been caught:
+
+```powershell
+./Invoke-AzureLocalPreClusterVerification.ps1 -InfrastructureFile ./infrastructure.yml -OsConfigurationReport ./osconfig-report -Mode Verify
+```
+
+The result (`report.json`, `precluster-verification-events.jsonl`, `summary.md`) lands in `arm-report\verification\live` of the environment data folder. The ARM run reads it: the verdict must be
+`Pass`, the hash of the infrastructure file must match, it must not be older than `deployment.pre_cluster_verification_max_age_hours` (4) and it must cover all six categories. Otherwise the
+precondition `PreClusterVerification` fails and names the command to run. The only way past it is the explicit switch `-SkipPreClusterVerification` (warned, and recorded in the report as
+`Bypassed`). See [pre-cluster-verification.md](pre-cluster-verification.md).
+
 ## Run it from a jump server
 
 PowerShell 7 on Windows or Linux, `powershell-yaml`, `Az.Accounts` and `Az.KeyVault`, and a sign-in. The script does not sign in.
@@ -46,6 +60,7 @@ everything except submit.
 | `-AcknowledgeKnownIssues` | Known issue ids you accept, for example `arc-device-id-name`. |
 | `-Settings`, `-ConfigPath` | Run settings as a hashtable or JSON file; they win over the master file's `deployment` block. |
 | `-AllowRevalidate` | Validate an instance in a failed deployment state. Microsoft says not to; support-guided recovery only. |
+| `-SkipPreClusterVerification` | The only bypass of the precondition `PreClusterVerification`: the run goes ahead without a passing, current result of the pre-cluster verification gate. Warned loudly and recorded in the report (`preClusterVerification.status` `Bypassed`). There is no file key for it. |
 | `-RegisterResourceProviders` | Opt in: register the mandatory resource providers that are not registered and wait until they are Registered (Validate and Deploy only). Without it the run never changes Azure. Same as `deployment.register_resource_providers`. |
 | `-TemplateFile` | A local copy of the quickstart template instead of the download. |
 | `-Offline` | Plan only: no Azure call at all. |
@@ -75,6 +90,7 @@ Each check is `Passed`, `Failed` (stops the run, exit 1), `Warning`, or `Skipped
 
 | Check | What it looks for | Typical fix |
 | --- | --- | --- |
+| `PreClusterVerification` | The latest result of the pre-cluster verification gate is a Pass for this file, covers all categories and has not expired (Failed in Validate and Deploy, a Warning in Plan) | Run `Invoke-AzureLocalPreClusterVerification.ps1 -Mode Verify` (the report prints the exact command) |
 | `AzureContext` | Signed in; the subscription and tenant are the file's | `Set-AzContext`, or fix `azure.subscription_id` |
 | `ResourceGroup` | `azure.resource_group` exists | Create it |
 | `ResourceProviders` | All 13 resource providers Microsoft requires are Registered (list below). Any one that is not is **Failed**, never a Warning, with its own command in the report | `Register-AzResourceProvider -ProviderNamespace <name>`, or run with `-RegisterResourceProviders` |

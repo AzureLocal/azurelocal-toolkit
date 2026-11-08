@@ -135,11 +135,11 @@ Describe 'A declared SAN (disaggregated)' {
         $c.Message | Should -Match 'UID-INFRA'
     }
     It 'fails nodes that see different LUNs or different LUN IDs' {
-        $r = Invoke-StorageRun (Get-SanInfra) { param($d, $q) & $script:GoodSan $d $q; $d.Read.san.disks = @($d.Read.san.disks | Select-Object -First 1) } @('iic-n02')
+        $r = Invoke-StorageRun (Get-SanInfra) { param($d, $q) & $script:GoodSan $d $q; if ($d.Pcl.host -eq 'iic-n02') { $d.Read.san.disks = @($d.Read.san.disks | Select-Object -First 1) } }
         $c = Get-PclCheck $r 'STO-008'
         $c.Status | Should -Be 'Failed'
         $c.Message | Should -Match 'iic-n02 does not see LUN'
-        $r2 = Invoke-StorageRun (Get-SanInfra) { param($d, $q) & $script:GoodSan $d $q; $d.Read.san.disks[0].lun = 9 } @('iic-n02')
+        $r2 = Invoke-StorageRun (Get-SanInfra) { param($d, $q) & $script:GoodSan $d $q; if ($d.Pcl.host -eq 'iic-n02') { $d.Read.san.disks[0].lun = 9 } }
         (Get-PclCheck $r2 'STO-008').Message | Should -Match 'different LUN IDs'
     }
     It 'fails a system LUN that was initialized, and one that is too small' {

@@ -172,7 +172,7 @@ Describe 'DNS records and name resolution' {
         $w.DnsSilent = @($infra.networking.management.dns_servers)
         $c = Get-PclCheck (Invoke-PclRun -World $w -Infra $infra) 'IDN-008' 'iic-n01'
         $c.Status | Should -Be 'Failed'
-        $c.Message | Should -Match 'did not answer'
+        $c.Message | Should -Match 'answered the query'
     }
     It 'fails on a node that cannot resolve the domain or reach ADWS (DNS/AD name resolution)' {
         $infra = Get-PclInfra

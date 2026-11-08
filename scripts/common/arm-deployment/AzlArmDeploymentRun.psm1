@@ -24,6 +24,8 @@ $ErrorActionPreference = 'Stop'
 Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'infrastructure', 'AzlInfrastructure.psm1'))
 Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'azure-local', 'AzlAzure.psm1'))
 Import-Module ([IO.Path]::Combine($PSScriptRoot, 'AzlArmDeployment.psm1'))
+# The contract with the pre-cluster verification gate: where its result is and when it counts (the gate itself loads this module, so only the contract is imported).
+Import-Module ([IO.Path]::Combine($PSScriptRoot, 'AzlPreClusterGate.psm1'))
 
 $script:RepoRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..'))
 $script:KnownIssuesPath = [IO.Path]::Combine($script:RepoRoot, 'config', 'known-issues', 'arm-deployment.json')
@@ -1587,6 +1589,32 @@ $script:CheckOrder = @(
     @{ Name = 'ValidatedBeforeDeploy'; Phases = , 'Deploy'; Azure = $true }
 )
 
+function Test-AzlArmPreClusterVerification {
+    <#
+    .SYNOPSIS
+        The precondition PreClusterVerification: the ARM Validate and Deploy go ahead only when the latest result of the pre-cluster verification gate
+        (Invoke-AzureLocalPreClusterVerification.ps1 -Mode Verify) has the verdict Pass, belongs to this infrastructure file (same SHA-256), has not expired and
+        covers all six categories. Otherwise it is Failed (Warning in Mode Plan, which never blocks) and the next action is the exact command to run.
+        -SkipPreClusterVerification (run setting skipPreClusterVerification) is the only bypass: warned loudly, recorded in the report as Bypassed.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$Run, [string]$InfrastructureFile, [System.Collections.IDictionary]$Infrastructure, [string]$HandoffFile, [string]$OsConfigurationReport)
+    $s = $Run.Settings
+    $directory = Resolve-AzlPclReportDirectory -InfrastructureFile $InfrastructureFile -Configured ([string]$s.preClusterVerificationReportDirectory) -Infrastructure $Infrastructure
+    $command = Get-AzlPclCommand -InfrastructureFile $InfrastructureFile -ReportDirectory ([string]$s.preClusterVerificationReportDirectory) -HandoffFile $HandoffFile -OsConfigurationReport $OsConfigurationReport
+    if ($s.skipPreClusterVerification) {
+        $text = 'BYPASSED: the pre-cluster verification was skipped on purpose (-SkipPreClusterVerification). Nothing checked the prerequisites of Microsoft Learn before this run, so Azure may fail for something the gate would have caught.'
+        Write-Warning $text
+        $Run.Report.preClusterVerification = [ordered]@{ status = 'Bypassed'; bypassed = $true; directory = $directory; reason = 'The operator passed -SkipPreClusterVerification.'; command = $command; runId = ''; verdict = ''; fileHash = ''; expiresUtc = '' }
+        return New-AzlArmCheckResult PreClusterVerification Warning $text "Run the gate to get a real result: $command"
+    }
+    $t = Test-AzlPclGateResult -InfrastructureFile $InfrastructureFile -Directory $directory -Now (& $Run.Adapter.Now) -HandoffFile $HandoffFile -OsConfigurationReport $OsConfigurationReport
+    $Run.Report.preClusterVerification = [ordered]@{ status = $(if ($t.Passed) { 'Passed' } else { 'Failed' }); bypassed = $false; directory = $directory; reason = $t.Reason; command = $t.Command; runId = $t.RunId; verdict = $t.Verdict; fileHash = $t.FileHash; expiresUtc = $t.ExpiresUtc }
+    if ($t.Passed) { return New-AzlArmCheckResult PreClusterVerification Passed $t.Reason }
+    $result = if ($Run.Mode -eq 'Plan') { 'Warning' } else { 'Failed' }
+    New-AzlArmCheckResult PreClusterVerification $result "The pre-cluster verification does not allow this run: $($t.Reason)" "Run the pre-cluster verification first: $($t.Command)"
+}
+
 function Get-AzlArmPreconditionName {
     <#
     .SYNOPSIS
@@ -2032,6 +2060,15 @@ function Format-AzlArmSummary {
         foreach ($p in $Report.preconditions) { $l.Add("| $($p.name) | $($p.node) | $($p.result) | $(($p.evidence -replace '\|', '/')) |") }
         $l.Add('')
     }
+    if ($Report.preClusterVerification) {
+        $g = $Report.preClusterVerification
+        $l.Add('### Pre-cluster verification'); $l.Add('')
+        $l.Add("- **Status:** $($g.status)$(if ($g.bypassed) { ' (BYPASSED with -SkipPreClusterVerification: nothing checked the Learn prerequisites before this run)' })")
+        $l.Add("- $($g.reason)")
+        if ($g.runId) { $l.Add("- Gate run $($g.runId), verdict $($g.verdict), valid until $($g.expiresUtc), file hash $($g.fileHash)") }
+        if ($g.status -ne 'Passed') { $l.Add("- Run: ``$($g.command)``") }
+        $l.Add('')
+    }
     foreach ($phase in 'validate', 'deploy') {
         $s = $Report[$phase]
         if (-not $s -or -not $s.status) { continue }
@@ -2089,6 +2126,8 @@ function Invoke-AzlArmDeploymentRun {
         [switch]$AllowRevalidate,
         # Opt in: register the mandatory resource providers that are not registered (Validate and Deploy only). Default: Azure is not changed.
         [switch]$RegisterResourceProviders,
+        # The only bypass of the precondition PreClusterVerification: warned loudly and recorded in the report (status Bypassed). There is no file key for it.
+        [switch]$SkipPreClusterVerification,
         [switch]$AutoApprove,
         [switch]$ProbeOsConfiguration,
         # Plan only: do not read Azure at all (no Get-AzContext, no REST call), whoever is signed in. Files only.
@@ -2107,7 +2146,7 @@ function Invoke-AzlArmDeploymentRun {
         state = 'Start'; stateHistory = @(); exitCode = 0; message = ''; nextAction = ''; preconditions = @(); approval = $null
         validate = [ordered]@{ status = ''; deploymentName = ''; action = ''; actionReason = ''; failedSteps = @(); ignoredSteps = @(); steps = @() }
         deploy = [ordered]@{ status = ''; deploymentName = ''; action = ''; actionReason = ''; failedSteps = @(); ignoredSteps = @(); steps = @() }
-        knownIssue = $null; warnings = @(); settings = $null
+        knownIssue = $null; warnings = @(); settings = $null; preClusterVerification = $null
     }
     $run = [ordered]@{
         RunId = $report.runId; Mode = $Mode; Cluster = ''; SchemaVersion = ''; EventPath = ''; Adapter = $Adapter; Settings = $null; State = (New-AzlArmRunState)
@@ -2132,6 +2171,7 @@ function Invoke-AzlArmDeploymentRun {
         if ($Resume) { $settingsOverride['resume'] = $true }
         if ($AllowRevalidate) { $settingsOverride['allowRevalidate'] = $true }
         if ($RegisterResourceProviders) { $settingsOverride['registerResourceProviders'] = $true }
+        if ($SkipPreClusterVerification) { $settingsOverride['skipPreClusterVerification'] = $true }
         if ($AutoApprove) { $settingsOverride['approvalMode'] = 'none' }
         $run.Settings = Get-AzlArmRunSetting -Infrastructure $infra -ConfigPath $ConfigPath -Settings $settingsOverride
         $report.settings = $run.Settings
@@ -2194,6 +2234,9 @@ function Invoke-AzlArmDeploymentRun {
         if (-not $offline) { $context.State = Invoke-AzlArmAdapter $Adapter GetDeploymentState @($run.Subscription, $run.ResourceGroup, $cluster) }
         $pre = [System.Collections.Generic.List[object]]::new()
         $firstPhase = if ($Mode -eq 'Deploy') { 'Deploy' } else { 'Validate' }
+        $gate = Test-AzlArmPreClusterVerification -Run $run -InfrastructureFile $InfrastructureFile -Infrastructure $infra -HandoffFile $HandoffFile -OsConfigurationReport $(if ($OsConfigurationReport -is [string]) { $OsConfigurationReport } else { '' })
+        $pre.Add($gate)
+        Send-AzlArmEvent -Run $run -State PreconditionChecked -Step PreClusterVerification -Evidence $gate.Evidence -Level $(switch ($gate.Result) { 'Failed' { 'Error' } 'Warning' { 'Warning' } default { 'Info' } }) -NextAction $gate.NextAction -Data @{ name = 'PreClusterVerification'; result = $gate.Result }
         foreach ($r in (Invoke-AzlArmPrecondition -Run $run -Context $context -Phase $firstPhase -Offline:$offline)) { $pre.Add($r) }
         $report.preconditions = @($pre | ForEach-Object { [ordered]@{ name = $_.Name; node = $_.Node; result = $_.Result; evidence = (Limit-AzlArmText $_.Evidence 600); nextAction = (Limit-AzlArmText $_.NextAction 400) } })
         $failedChecks = @($pre | Where-Object { $_.Result -eq 'Failed' })
@@ -2237,7 +2280,8 @@ function Invoke-AzlArmDeploymentRun {
             if ($ok -and $Mode -in 'Deploy', 'ValidateAndDeploy' -and $report.validate.status -ne 'WhatIf') {
                 if ($Mode -eq 'ValidateAndDeploy') {
                     $context.State = Invoke-AzlArmAdapter $Adapter GetDeploymentState @($run.Subscription, $run.ResourceGroup, $cluster)
-                    $second = @(Invoke-AzlArmPrecondition -Run $run -Context $context -Phase Deploy)
+                    $second = @(Test-AzlArmPreClusterVerification -Run $run -InfrastructureFile $InfrastructureFile -Infrastructure $infra -HandoffFile $HandoffFile -OsConfigurationReport $(if ($OsConfigurationReport -is [string]) { $OsConfigurationReport } else { '' }))
+                    $second += @(Invoke-AzlArmPrecondition -Run $run -Context $context -Phase Deploy)
                     foreach ($r in $second) { $pre.Add($r) }
                     $report.preconditions = @($pre | ForEach-Object { [ordered]@{ name = $_.Name; node = $_.Node; result = $_.Result; evidence = (Limit-AzlArmText $_.Evidence 600); nextAction = (Limit-AzlArmText $_.NextAction 400) } })
                     $failed2 = @($second | Where-Object { $_.Result -eq 'Failed' })
@@ -2279,4 +2323,4 @@ function Invoke-AzlArmDeploymentRun {
 }
 
             if (-not (Get-Command Resolve-DnsName -ErrorAction SilentlyContinue)) { return $null } # not on Linux: unknown, not false
-Export-ModuleMember -Function Get-AzlArmMandatoryProvider, Get-AzlArmRequiredAction, Resolve-AzlArmSbeCatalogFile, Get-AzlArmRunSetting, Read-AzlArmSbeCatalog, Test-AzlArmSolutionVersionMatch, ConvertFrom-AzlArmOsBuild, Test-AzlArmSbeSolution, Write-AzlArmEvent, Test-AzlArmRunTransition, New-AzlArmRunState, Set-AzlArmRunState, Get-AzlArmFailedStep, Get-AzlArmFailureDetail, Get-AzlArmClusterCheck, Get-AzlArmTestClusterReportPath, Get-AzlArmEmbeddedJson, Get-AzlArmValidatorResult, Format-AzlArmFailureLine, Select-AzlArmCurrentStep, Get-AzlArmKnownIssue, Find-AzlArmKnownIssue, Get-AzlArmParameterSource, Test-AzlArmRequiredKey, Format-AzlArmParameterSource, New-AzlArmAzureAdapter, Read-AzlArmOsReport, Get-AzlArmPreconditionName, Invoke-AzlArmPrecondition, Test-AzlArmSnapshotFresh, Get-AzlArmPhaseOutcome, Wait-AzlArmPhase, Resolve-AzlArmValidateAction, Resolve-AzlArmDeployAction, Get-AzlArmParameterHash, ConvertTo-AzlArmStepStatus, Hide-AzlArmSecret, Invoke-AzlArmDeploymentRun
+Export-ModuleMember -Function Test-AzlArmPreClusterVerification, Get-AzlArmMandatoryProvider, Get-AzlArmRequiredAction, Resolve-AzlArmSbeCatalogFile, Get-AzlArmRunSetting, Read-AzlArmSbeCatalog, Test-AzlArmSolutionVersionMatch, ConvertFrom-AzlArmOsBuild, Test-AzlArmSbeSolution, Write-AzlArmEvent, Test-AzlArmRunTransition, New-AzlArmRunState, Set-AzlArmRunState, Get-AzlArmFailedStep, Get-AzlArmFailureDetail, Get-AzlArmClusterCheck, Get-AzlArmTestClusterReportPath, Get-AzlArmEmbeddedJson, Get-AzlArmValidatorResult, Format-AzlArmFailureLine, Select-AzlArmCurrentStep, Get-AzlArmKnownIssue, Find-AzlArmKnownIssue, Get-AzlArmParameterSource, Test-AzlArmRequiredKey, Format-AzlArmParameterSource, New-AzlArmAzureAdapter, Read-AzlArmOsReport, Get-AzlArmPreconditionName, Invoke-AzlArmPrecondition, Test-AzlArmSnapshotFresh, Get-AzlArmPhaseOutcome, Wait-AzlArmPhase, Resolve-AzlArmValidateAction, Resolve-AzlArmDeployAction, Get-AzlArmParameterHash, ConvertTo-AzlArmStepStatus, Hide-AzlArmSecret, Invoke-AzlArmDeploymentRun

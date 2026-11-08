@@ -72,7 +72,8 @@ Describe 'NOD-002 to NOD-006 name, OS build, time and DNS' {
         $c.Status | Should -Be 'Warning'
         $infra2 = Get-PclInfra; $infra2['provisioning'] = [ordered]@{ os_version = '12.2609.1002.10' }
         (Get-PclCheck (Invoke-NodeRun -Infra $infra2) 'NOD-004' 'iic-n01').Status | Should -Be 'Failed'
-        (Get-PclCheck (Invoke-NodeRun) 'NOD-004').Status | Should -Be 'NotApplicable'
+        $infra3 = Get-PclInfra; $infra3.provisioning.Remove('os_version')
+        (Get-PclCheck (Invoke-NodeRun -Infra $infra3) 'NOD-004').Status | Should -Be 'NotApplicable'
     }
     It 'fails the local CMOS clock and a clock far from this host' {
         (Get-PclCheck (Invoke-NodeRun { param($d, $q) $d.Pcl.time.src = 'Local CMOS Clock' }) 'NOD-005' 'iic-n01').Message | Should -Match 'CMOS'
@@ -164,7 +165,7 @@ Describe 'NET-001 to NET-004 the intents against the adapters (RDMA on a managem
     It 'fails RDMA that the file asks for on a management intent while RDMA is not operational on the adapter (the Azure failure)' {
         $infra = Get-PclInfra
         $infra.networking.intents[0]['overrides'] = [ordered]@{ adapter = [ordered]@{ network_direct = $true; network_direct_technology = 'roce_v2' } }
-        $c = Get-PclCheck (Invoke-NodeRun -Infra $infra) 'NET-003' 'iic-n01'
+        $c = Get-PclCheck (Invoke-NodeRun { param($d, $q) foreach ($n in $d.Pcl.nics) { if ($n.n -in 'Port0', 'Port1') { $n.rdmaCapable = $true; $n.rdmaOp = $false } } } -Infra $infra) 'NET-003' 'iic-n01'
         $c.Status | Should -Be 'Failed'
         $c.Message | Should -Match 'carries no storage traffic but asks for RDMA'
         $c.Message | Should -Match 'Azure''s network validation fails on exactly this'

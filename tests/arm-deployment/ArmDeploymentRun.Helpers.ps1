@@ -145,12 +145,16 @@ function Invoke-TestRun {
     <# Runs the module's run with a fake adapter. Returns the result. #>
     param(
         [Parameter(Mandatory)]$World, [System.Collections.IDictionary]$Infra, [string]$Mode = 'Plan', [object]$OsReport, [hashtable]$Settings = @{}, [string]$Dir,
-        [switch]$Resume, [switch]$AutoApprove, [switch]$DryRun, [hashtable]$Override = @{}, [string]$Handoff
+        [switch]$Resume, [switch]$AutoApprove, [switch]$DryRun, [hashtable]$Override = @{}, [string]$Handoff, [string]$InfraFile
     )
+    # These tests are about the ARM run, not about the pre-cluster verification gate (tests/arm-deployment/ArmDeploymentRun.PreClusterVerification.Tests.ps1):
+    # the precondition PreClusterVerification is bypassed unless a test says otherwise.
+    if (-not $Settings.ContainsKey('skipPreClusterVerification')) { $Settings = $Settings.Clone(); $Settings['skipPreClusterVerification'] = $true }
     if (-not $Infra) { $Infra = Get-TestInfra }
     if (-not $Dir) { $Dir = Join-Path $TestDrive ('run-' + [guid]::NewGuid().ToString('N').Substring(0, 6)) }
     if (-not $PSBoundParameters.ContainsKey('OsReport')) { $OsReport = Get-TestOsReport -Infra $Infra }
     $arguments = @{ Infrastructure = $Infra; Mode = $Mode; ReportDirectory = $Dir; Settings = $Settings; Adapter = (Get-FakeAdapter -World $World -Override $Override); TemplateFile = $script:TemplateFile }
+    if ($InfraFile) { $arguments.InfrastructureFile = $InfraFile }
     if ($OsReport) { $arguments.OsConfigurationReport = $OsReport }
     if ($Handoff) { $arguments.HandoffFile = $Handoff }
     if ($Resume) { $arguments.Resume = $true }
