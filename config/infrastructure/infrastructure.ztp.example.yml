@@ -191,3 +191,7 @@ provisioning:
     # ntp: { configuration: Automatic }  # or { configuration: Manual, server: "192.0.2.30", alternate_server: "192.0.2.31" }
     # site_mode: Auto                    # Auto | Create | Reuse
     # deployment_name: "ztp-iic-site-01" # default: ztp-<site_name>
+
+# Schema 5.4.3, OS configuration only (ZTP ignores it): the one-run OS configuration wipes leftover local storage in Apply mode when true.
+# os_configuration:
+#   clear_storage: false

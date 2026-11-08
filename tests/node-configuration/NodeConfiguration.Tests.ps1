@@ -842,7 +842,7 @@ Describe 'SBE delivered last, together with the Unknown handling of the node scr
         $arc = New-FakeTransport @($s1, $s2) $script:Ok
         $copied = [System.Collections.Generic.List[string]]::new()
         $win = [pscustomobject]@{ Kind = 'WinRM'; Stage = $null }
-        $win.Stage = { param($Self, $Node, $LocalPath, $RemotePath, $Sha256) $copied.Add($RemotePath); [pscustomobject]@{ Name = 'x'; Url = $null } }.GetNewClosure()
+        $win.Stage = { $copied.Add([string]$args[3]); [pscustomobject]@{ Name = 'x'; Url = $null } }.GetNewClosure()
         $null = Invoke-AzlNodeConfiguration -Spec $spec -Transport $arc -SbeTransport $win -Execute -SecretResolver $script:Resolver
         $copied.Count | Should -Be 2
         $copied | ForEach-Object { $_ | Should -Match '^C:\\SBE\\SBE_Dell_X_1\.0\.(zip|xml)$' }
