@@ -418,7 +418,7 @@
   "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1": {
     "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1",
     "Id": "NIC.Embedded.1",
-    "Name": "Network Adapter - NIC.Embedded.1",
+    "Name": "Network Adapter View",
     "Manufacturer": "Broadcom Inc. and subsidiaries",
     "Model": "",
     "Description": "",
@@ -1238,7 +1238,7 @@
     "FirmwareVersion": "7.20.30.00",
     "ManagerType": "BMC",
     "UUID": "00000000-0000-4000-8000-0000000000a1",
-    "DateTime": "2025-12-31T19:00:00-05:00",
+    "DateTime": "2026-01-01T00:00:00+00:00",
     "DateTimeLocalOffset": "+00:00",
     "Status": {
       "Health": "OK",
@@ -1412,7 +1412,7 @@
     "Name": "System Event Log",
     "MaxNumberOfRecords": 512,
     "OverWritePolicy": "WrapsWhenFull",
-    "DateTime": "2025-12-31T19:00:00-05:00",
+    "DateTime": "2026-01-01T00:00:00+00:00",
     "Entries": {
       "@odata.id": "/redfish/v1/Managers/iDRAC.Embedded.1/LogServices/Sel/Entries"
     }
@@ -1437,7 +1437,7 @@
         "Id": "1",
         "EntryType": "SEL",
         "Severity": "OK",
-        "Created": "2025-12-31T19:00:00-05:00",
+        "Created": "2026-01-01T00:00:00+00:00",
         "Message": "Doc event 1",
         "MessageId": "DOC0001"
       },
@@ -1446,7 +1446,7 @@
         "Id": "2",
         "EntryType": "SEL",
         "Severity": "OK",
-        "Created": "2025-12-31T19:01:00-05:00",
+        "Created": "2026-01-01T00:01:00+00:00",
         "Message": "Doc event 2",
         "MessageId": "DOC0001"
       },
@@ -1455,7 +1455,7 @@
         "Id": "3",
         "EntryType": "SEL",
         "Severity": "Warning",
-        "Created": "2025-12-31T19:02:00-05:00",
+        "Created": "2026-01-01T00:02:00+00:00",
         "Message": "Doc event 3",
         "MessageId": "DOC0001"
       },
@@ -1464,7 +1464,7 @@
         "Id": "4",
         "EntryType": "SEL",
         "Severity": "OK",
-        "Created": "2025-12-31T19:03:00-05:00",
+        "Created": "2026-01-01T00:03:00+00:00",
         "Message": "Doc event 4",
         "MessageId": "DOC0001"
       },
@@ -1473,7 +1473,7 @@
         "Id": "5",
         "EntryType": "SEL",
         "Severity": "Critical",
-        "Created": "2025-12-31T19:04:00-05:00",
+        "Created": "2026-01-01T00:04:00+00:00",
         "Message": "Doc event 5",
         "MessageId": "DOC0001"
       },
@@ -1482,7 +1482,7 @@
         "Id": "6",
         "EntryType": "SEL",
         "Severity": "OK",
-        "Created": "2025-12-31T19:05:00-05:00",
+        "Created": "2026-01-01T00:05:00+00:00",
         "Message": "Doc event 6",
         "MessageId": "DOC0001"
       },
@@ -1491,7 +1491,7 @@
         "Id": "7",
         "EntryType": "SEL",
         "Severity": "OK",
-        "Created": "2025-12-31T19:06:00-05:00",
+        "Created": "2026-01-01T00:06:00+00:00",
         "Message": "Doc event 7",
         "MessageId": "DOC0001"
       },
@@ -1500,7 +1500,7 @@
         "Id": "8",
         "EntryType": "SEL",
         "Severity": "Warning",
-        "Created": "2025-12-31T19:07:00-05:00",
+        "Created": "2026-01-01T00:07:00+00:00",
         "Message": "Doc event 8",
         "MessageId": "DOC0001"
       },
@@ -1509,7 +1509,7 @@
         "Id": "9",
         "EntryType": "SEL",
         "Severity": "OK",
-        "Created": "2025-12-31T19:08:00-05:00",
+        "Created": "2026-01-01T00:08:00+00:00",
         "Message": "Doc event 9",
         "MessageId": "DOC0001"
       },
@@ -1518,7 +1518,7 @@
         "Id": "10",
         "EntryType": "SEL",
         "Severity": "OK",
-        "Created": "2025-12-31T19:09:00-05:00",
+        "Created": "2026-01-01T00:09:00+00:00",
         "Message": "Doc event 10",
         "MessageId": "DOC0001"
       },
@@ -1527,7 +1527,7 @@
         "Id": "11",
         "EntryType": "SEL",
         "Severity": "OK",
-        "Created": "2025-12-31T19:10:00-05:00",
+        "Created": "2026-01-01T00:10:00+00:00",
         "Message": "Doc event 11",
         "MessageId": "DOC0001"
       },
@@ -1536,7 +1536,7 @@
         "Id": "12",
         "EntryType": "SEL",
         "Severity": "OK",
-        "Created": "2025-12-31T19:11:00-05:00",
+        "Created": "2026-01-01T00:11:00+00:00",
         "Message": "Doc event 12",
         "MessageId": "DOC0001"
       }
@@ -1559,7 +1559,7 @@
   "/redfish/v1/UpdateService/FirmwareInventory": {
     "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory",
     "Name": "Software Inventory Collection",
-    "Members@odata.count": 10,
+    "Members@odata.count": 12,
     "Members": [
       {
         "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-2.0.0__BIOS.Setup.1-1"
@@ -1574,7 +1574,13 @@
         "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-22.44.10.36__NIC.Slot.3-1-1"
       },
       {
-        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-23.31.1__NIC.Embedded.1-1-1"
+        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-110420-23.31.1__NIC.Embedded.1-1-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-110420-23.31.1__NIC.Embedded.2-1-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Current-159-2.0.0__BIOS.Setup.1-1"
       },
       {
         "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-2.1.13.2037__BOSS.SL.12-1"
@@ -1649,10 +1655,10 @@
     "SoftwareId": "22.44.10.36__NIC.Slot.3-1-1",
     "RelatedItem": []
   },
-  "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-23.31.1__NIC.Embedded.1-1-1": {
-    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-23.31.1__NIC.Embedded.1-1-1",
-    "Id": "Installed-0-23.31.1__NIC.Embedded.1-1-1",
-    "Name": "Broadcom Gigabit Ethernet BCM5720 - 00:00:5E:00:53:10",
+  "/redfish/v1/UpdateService/FirmwareInventory/Installed-110420-23.31.1__NIC.Embedded.1-1-1": {
+    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-110420-23.31.1__NIC.Embedded.1-1-1",
+    "Id": "Installed-110420-23.31.1__NIC.Embedded.1-1-1",
+    "Name": "Broadcom NetXtreme Gigabit Ethernet (BCM5720) - 00:00:5E:00:53:10",
     "Version": "23.31.1",
     "Updateable": true,
     "Status": {
@@ -1661,6 +1667,34 @@
     },
     "ReleaseDate": "2026-01-01T00:00:00Z",
     "SoftwareId": "23.31.1__NIC.Embedded.1-1-1",
+    "RelatedItem": []
+  },
+  "/redfish/v1/UpdateService/FirmwareInventory/Installed-110420-23.31.1__NIC.Embedded.2-1-1": {
+    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-110420-23.31.1__NIC.Embedded.2-1-1",
+    "Id": "Installed-110420-23.31.1__NIC.Embedded.2-1-1",
+    "Name": "Broadcom NetXtreme Gigabit Ethernet (BCM5720) - 00:00:5E:00:53:11",
+    "Version": "23.31.1",
+    "Updateable": true,
+    "Status": {
+      "Health": "OK",
+      "State": "Enabled"
+    },
+    "ReleaseDate": "2026-01-01T00:00:00Z",
+    "SoftwareId": "23.31.1__NIC.Embedded.2-1-1",
+    "RelatedItem": []
+  },
+  "/redfish/v1/UpdateService/FirmwareInventory/Current-159-2.0.0__BIOS.Setup.1-1": {
+    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Current-159-2.0.0__BIOS.Setup.1-1",
+    "Id": "Current-159-2.0.0__BIOS.Setup.1-1",
+    "Name": "BIOS",
+    "Version": "2.0.0",
+    "Updateable": true,
+    "Status": {
+      "Health": "OK",
+      "State": "Enabled"
+    },
+    "ReleaseDate": "2026-01-01T00:00:00Z",
+    "SoftwareId": "2.0.0__BIOS.Setup.1-1",
     "RelatedItem": []
   },
   "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-2.1.13.2037__BOSS.SL.12-1": {

@@ -26,6 +26,7 @@ param([string]$OutputRoot = $PSScriptRoot)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$script:OutputRoot = $OutputRoot
 
 function L([string]$Uri) { return [ordered]@{ '@odata.id' = $Uri } }
 function Collection($Tree, [string]$Uri, [string[]]$Member, [string]$Name = 'Collection') {
@@ -33,7 +34,7 @@ function Collection($Tree, [string]$Uri, [string[]]$Member, [string]$Name = 'Col
 }
 $ok = [ordered]@{ Health = 'OK'; HealthRollup = 'OK'; State = 'Enabled' }
 
-function New-ClassicTree {
+function Build-ClassicTree {
     $t = [ordered]@{}
     $t['_fixture'] = [ordered]@{
         kind = 'synthetic'; vendor = 'Dell'; bmc = 'iDRAC9'; schemaVariant = 'classic (NetworkPorts, Power, Thermal)'
@@ -94,7 +95,7 @@ function New-ClassicTree {
     $na = "$sys/NetworkAdapters"
     Collection $t $na @("$na/NIC.Embedded.1", "$na/NIC.Slot.3", "$na/NIC.Slot.6") 'Network Adapter Collection'
     $t["$na/NIC.Embedded.1"] = [ordered]@{
-        '@odata.id' = "$na/NIC.Embedded.1"; Id = 'NIC.Embedded.1'; Name = 'Network Adapter - NIC.Embedded.1'; Manufacturer = 'Broadcom Inc. and subsidiaries'; Model = ''; Description = ''
+        '@odata.id' = "$na/NIC.Embedded.1"; Id = 'NIC.Embedded.1'; Name = 'Network Adapter View'; Manufacturer = 'Broadcom Inc. and subsidiaries'; Model = ''; Description = ''
         Controllers = @([ordered]@{ FirmwarePackageVersion = '23.31.1'; ControllerCapabilities = [ordered]@{ NetworkPortCount = 2; NetworkDeviceFunctionCount = 2 }; Links = [ordered]@{ PCIeDevices = @(L "$ch/PCIeDevices/0-25") } })
         NetworkPorts = L "$na/NIC.Embedded.1/NetworkPorts"; NetworkDeviceFunctions = L "$na/NIC.Embedded.1/NetworkDeviceFunctions"
     }
@@ -275,7 +276,9 @@ function New-ClassicTree {
         @{ Id = 'Installed-0-7.20.30.00__iDRAC.Embedded.1-1'; Name = 'Integrated Dell Remote Access Controller'; V = '7.20.30.00'; U = $true }
         @{ Id = 'Previous-0-7.10.00.00__iDRAC.Embedded.1-1'; Name = 'Integrated Dell Remote Access Controller'; V = '7.10.00.00'; U = $true }
         @{ Id = 'Installed-0-22.44.10.36__NIC.Slot.3-1-1'; Name = 'Mellanox ConnectX-6 Network Adapter - 00:00:5E:00:53:21'; V = '22.44.10.36'; U = $true }
-        @{ Id = 'Installed-0-23.31.1__NIC.Embedded.1-1-1'; Name = 'Broadcom Gigabit Ethernet BCM5720 - 00:00:5E:00:53:10'; V = '23.31.1'; U = $true }
+        @{ Id = 'Installed-110420-23.31.1__NIC.Embedded.1-1-1'; Name = 'Broadcom NetXtreme Gigabit Ethernet (BCM5720) - 00:00:5E:00:53:10'; V = '23.31.1'; U = $true }
+        @{ Id = 'Installed-110420-23.31.1__NIC.Embedded.2-1-1'; Name = 'Broadcom NetXtreme Gigabit Ethernet (BCM5720) - 00:00:5E:00:53:11'; V = '23.31.1'; U = $true }
+        @{ Id = 'Current-159-2.0.0__BIOS.Setup.1-1'; Name = 'BIOS'; V = '2.0.0'; U = $true }
         @{ Id = 'Installed-0-2.1.13.2037__BOSS.SL.12-1'; Name = 'BOSS-N1 Monolithic'; V = '2.1.13.2037'; U = $true }
         @{ Id = 'Installed-0-DOC1__Disk.Bay.0:Enclosure.Internal.0-1'; Name = 'PCIe SSD in Slot 0 in Bay 1'; V = 'DOC1'; U = $true }
         @{ Id = 'Installed-0-00.1B.7D__PSU.Slot.1'; Name = 'PS1 Status'; V = '00.1B.7D'; U = $true }
@@ -292,10 +295,10 @@ function New-ClassicTree {
     return $t
 }
 
-function New-NewSchemaTree($Classic) {
+function Build-NewSchemaTree($Classic) {
     # Same node, newer schema: Ports (not NetworkPorts), PowerSubsystem, ThermalSubsystem and Sensors (not Power and Thermal).
     $t = [ordered]@{}
-    foreach ($k in $Classic.Keys) { $t[$k] = ($Classic[$k] | ConvertTo-Json -Depth 30 | ConvertFrom-Json -AsHashtable -Depth 30) }
+    foreach ($k in $Classic.Keys) { $t[$k] = ($Classic[$k] | ConvertTo-Json -Depth 30 | ConvertFrom-Json -AsHashtable -Depth 30 -DateKind String) }
     $t['_fixture'] = [ordered]@{
         kind = 'synthetic'; vendor = 'Dell'; bmc = 'iDRAC9'; schemaVariant = 'newer (Ports, PowerSubsystem, ThermalSubsystem, Sensors)'
         note = 'NOT a real capture. Derived from the classic synthetic tree by New-DellFixture.ps1; documentation values only.'
@@ -341,13 +344,13 @@ function New-NewSchemaTree($Classic) {
 }
 
 function Write-Tree([string]$Name, $Tree) {
-    $dir = Join-Path $OutputRoot $Name
+    $dir = Join-Path $script:OutputRoot $Name
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     $json = $Tree | ConvertTo-Json -Depth 30
     [System.IO.File]::WriteAllText((Join-Path $dir 'tree.json'), $json + "`n", [System.Text.UTF8Encoding]::new($false))
     Write-Information "$Name : $($Tree.Count) entries" -InformationAction Continue
 }
 
-$classic = New-ClassicTree
+$classic = Build-ClassicTree
 Write-Tree 'idrac9-ax760-synthetic' $classic
-Write-Tree 'idrac9-newschema-synthetic' (New-NewSchemaTree $classic)
+Write-Tree 'idrac9-newschema-synthetic' (Build-NewSchemaTree $classic)

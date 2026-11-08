@@ -5,7 +5,7 @@
 
 .DESCRIPTION
     Reads each iDRAC and keeps one consolidated file, idrac-inventory.json, with the nodes keyed by service tag and updated in
-    place on every run. Per node: identity (service tag, model, BIOS), the BMC MAC, every network port with its MAC, storage
+    place on every run. Per node (schemaVersion 2.0 report of the Redfish core): identity (service tag, model, BIOS), the BMC MAC, every network port with its MAC, storage
     and the BOSS card, and with the default -Detail Full also chassis, power, thermal, PCIe, processors, memory, firmware and
     every BIOS and iDRAC attribute.
 
@@ -62,7 +62,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
-Import-Module ([System.IO.Path]::Combine($PSScriptRoot, '..', 'idrac-management', 'AzlDellRedfish.psm1'))
+Import-Module ([System.IO.Path]::Combine($PSScriptRoot, '..', 'redfish', 'AzlRedfishCore.psm1'))
+Import-Module ([System.IO.Path]::Combine($PSScriptRoot, '..', 'redfish', 'AzlRedfishDell.psm1'))
 
 $infrastructure = $null
 $targets = [System.Collections.Generic.List[object]]::new()
@@ -95,17 +96,20 @@ $summary = [System.Collections.Generic.List[object]]::new()
 foreach ($t in $targets) {
     Write-Information "Reading iDRAC $($t.Address) ($Detail)..."
     try {
-        $d = Get-AzlDellNodeDiscovery -BmcAddress $t.Address -Credential $cred -Detail $Detail -VerifyCertificate:$VerifyCertificate
-        $tag = if ($d.Identity.ServiceTag) { $d.Identity.ServiceTag } else { "UNKNOWN-$($t.Address)" }
+        $d = Invoke-AzlRedfishDiscovery -BmcAddress $t.Address -Credential $cred -Detail $Detail -VerifyCertificate:$VerifyCertificate
+        $tag = if ($d.identity.serviceTag) { $d.identity.serviceTag } elseif ($d.identity.serialNumber) { $d.identity.serialNumber } else { "UNKNOWN-$($t.Address)" }
         $state = if ($consolidated.Nodes.Contains($tag)) { 'updated' } else { 'new' }
         $consolidated.Nodes[$tag] = $d
         if ($KeepTimestampedFiles) {
             $stamp = [datetime]::UtcNow.ToString('yyyyMMdd-HHmmss')
             $d | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath (Join-Path $OutputPath "idrac-inventory-$tag-$stamp.json") -Encoding utf8
         }
-        foreach ($w in $d.Warnings) { Write-Warning "$tag : $w" }
-        Write-Information "  $tag ($($d.Identity.Model)): $(@($d.NetworkPorts).Count) port(s), BOSS: $(if ($d.Boss.Present) { 'yes' } else { 'no' }), $state."
-        $summary.Add([pscustomobject]@{ ServiceTag = $tag; Model = $d.Identity.Model; Ports = @($d.NetworkPorts).Count; Boss = $d.Boss.Present; Warnings = @($d.Warnings).Count; State = $state })
+        foreach ($w in $d.warnings) { Write-Warning "$tag : $w" }
+        $portCount = 0
+        foreach ($adapter in @($d.network.adapters)) { $portCount += @($adapter.ports).Count }
+        $hasBoss = ($d.storage.bootDevice.kind -eq 'boss')
+        Write-Information "  $tag ($($d.identity.model)): $portCount port(s), BOSS: $(if ($hasBoss) { 'yes' } else { 'no' }), $state."
+        $summary.Add([pscustomobject]@{ ServiceTag = $tag; Model = $d.identity.model; Ports = $portCount; Boss = $hasBoss; Warnings = @($d.warnings).Count; State = $state })
     }
     catch {
         $failed.Add($t.Address)
