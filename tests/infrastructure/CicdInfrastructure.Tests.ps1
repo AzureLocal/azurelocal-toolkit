@@ -19,9 +19,9 @@ BeforeAll {
 }
 
 Describe 'Schema 5.5: devops' {
-    It 'the example is schema 5.5.0 and clean, with the runners and environments' {
+    It 'the example is schema 5.6.0 (the devops keys are since 5.5) and clean, with the runners and environments' {
         $infra = Import-AzlInfrastructure -Path $script:ExamplePath
-        $infra._metadata.schema_version | Should -Be '5.5.0'
+        $infra._metadata.schema_version | Should -Be '5.6.0'
         @(Test-AzlInfrastructure -Path $script:ExamplePath) | Should -BeNullOrEmpty
         @($infra.devops.runners).Count | Should -Be 2
         $infra.devops.runners[1].purpose | Should -Be 'ztp'

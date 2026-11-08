@@ -1035,7 +1035,7 @@ Describe 'Schema 5.4.3: os_configuration.clear_storage' {
     }
 }
 
-Describe 'Schema 5.5.0: the domain join (AZL-050 to AZL-053)' {
+Describe 'Schema 5.5: the domain join (AZL-050 to AZL-053)' {
     BeforeAll {
         $script:Full550 = Join-Path $repo 'config\infrastructure\infrastructure.example.yml'
         $script:Local550 = Join-Path $repo 'config\infrastructure\examples\local-identity-switchless-iso.yml'

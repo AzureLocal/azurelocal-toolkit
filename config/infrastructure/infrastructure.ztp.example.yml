@@ -195,6 +195,6 @@ provisioning:
 # Schema 5.4.3, OS configuration only (ZTP ignores it): the one-run OS configuration wipes leftover local storage in Apply mode when true.
 # os_configuration:
 #   clear_storage: false
-#   remoting: # schema 5.6.0, the remote management security profile; scenario.environment_class picks it (missing means production)
+#   remoting: # schema 5.6, the remote management security profile; scenario.environment_class picks it (missing means production)
 #     bootstrap_transport: none
 #     allowed_source_cidrs: ["198.51.100.10/32"]

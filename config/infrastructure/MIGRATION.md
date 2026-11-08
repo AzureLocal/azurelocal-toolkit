@@ -217,9 +217,9 @@ Schema 5.4.3 only adds one optional section; a 5.4.0 file is valid as it is. Not
 
 **Steps for a 5.4 file:** set `_metadata.schema_version` to `5.4.3`; add `os_configuration: { clear_storage: true }` only for machines that are re-used. Plan mode prints the wipe list; Apply never wipes a SAN LUN, a USB disk, or a boot or system disk.
 
-## To 5.6.0: the remote management security profile
+## To 5.6: the remote management security profile
 
-Schema 5.6.0 only adds optional keys; a 5.4.3 file is valid as it is. (5.4.4 and 5.5.0 are used on other branches of the OS configuration work; 5.6.0 is the next free minor.) **One behaviour changes for a file that sets nothing:** a missing `scenario.environment_class` means `production`, so the OS configuration run applies the strict profile (HTTPS, sources only from the management and out-of-band networks and `allowed_source_cidrs`, no TrustedHosts wildcard). A lab that relied on open access must say so with `environment_class: lab`.
+Schema 5.6 only adds optional keys; a 5.4.3 file is valid as it is. (The deployment block below is the other 5.6 addition.) **One behaviour changes for a file that sets nothing:** a missing `scenario.environment_class` means `production`, so the OS configuration run applies the strict profile (HTTPS, sources only from the management and out-of-band networks and `allowed_source_cidrs`, no TrustedHosts wildcard). A lab that relied on open access must say so with `environment_class: lab`.
 
 | New key | What it does |
 | --- | --- |
@@ -297,9 +297,9 @@ New rules AZL-060 to AZL-068 (see README). **Steps for a 5.4.3 file:** set `_met
 | `devops.gitlab`, `devops.terraform` | `devops` |
 | Legacy roots `azure`, `platform`, `cluster`, `azure_infrastructure`, `azure_resources`, `azure_local`, `azure_vms` | The sections above; they held copies of the same values |
 
-## To 5.5.0: the domain join
+## To 5.5: the domain join
 
-Schema 5.5.0 only adds optional keys; a 5.4 file is valid as it is, and needs no new key to be joined: with `scenario.identity: active_directory` the OS configuration now joins each machine to the domain and to `identity.active_directory.ou_path` (the `DomainJoin` step, after Network, DNS, Time and Hostname) before the cluster validation and the deployment, **with the LCM user** (`identity.active_directory.lcm_user`). Microsoft's Active Directory preparation (`New-HciAdObjectsPreCreation`) gives that user the right to create and delete computer objects in the dedicated OU, and it is the account Microsoft uses for domain-join actions such as adding or repairing a node. Before, the machines stayed in a workgroup until the deployment.
+Schema 5.5 only adds optional keys; a 5.4 file is valid as it is, and needs no new key to be joined: with `scenario.identity: active_directory` the OS configuration now joins each machine to the domain and to `identity.active_directory.ou_path` (the `DomainJoin` step, after Network, DNS, Time and Hostname) before the cluster validation and the deployment, **with the LCM user** (`identity.active_directory.lcm_user`). Microsoft's Active Directory preparation (`New-HciAdObjectsPreCreation`) gives that user the right to create and delete computer objects in the dedicated OU, and it is the account Microsoft uses for domain-join actions such as adding or repairing a node. Before, the machines stayed in a workgroup until the deployment.
 
 | New key (all optional) | What it is for |
 | --- | --- |
@@ -342,4 +342,4 @@ Schema 5.6 adds one optional section, `deployment`, for the toolkit's ARM Valida
 
 **Steps:** nothing is required. To use the block, set `_metadata.schema_version` to `5.6.0` and add the keys you want. AZL-040 checks them.
 
-**Version numbers.** Other branches of this repository also add keys and bump the minor version (the OS configuration branch uses 5.4.3, the CI/CD branch 5.5). 5.6 is the next number above both. When the branches are merged the numbers are settled once, in one place; the key names do not change.
+**Version numbers.** One history, in order: 5.4.1 (adapter wait), 5.4.2 (SBE delivery), 5.4.3 (`clear_storage`), 5.4.4 (the guarded network change and the transport rules: `os_configuration.network`, `os_configuration.remoting.transport`, `bootstrap_transport`, `allowed_source_cidrs`), 5.5 (the CI/CD `devops` keys and the domain join keys), 5.6 (the `deployment` block and the remote management security profile). A file that uses any of them says `5.6.0` (the version of this release); each key's description in the schema says `since` which minor added it. Rules: AZL-030 SBE delivery, AZL-031 `clear_storage`, AZL-040 `deployment`, AZL-050 to AZL-053 domain join, AZL-060 to AZL-068 security profile, AZL-070 `devops` (the CI/CD rule was AZL-030 on its own branch).
