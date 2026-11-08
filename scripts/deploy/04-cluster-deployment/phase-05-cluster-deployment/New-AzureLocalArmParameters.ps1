@@ -50,11 +50,11 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$common = Join-Path $PSScriptRoot '..\..\..\common'
-Import-Module (Join-Path $common 'infrastructure\AzlInfrastructure.psm1') -Force
-Import-Module (Join-Path $common 'azure-local\AzlAzure.psm1') -Force
-Import-Module (Join-Path $common 'node-configuration\AzlNodeConfiguration.psm1') -Force
-Import-Module (Join-Path $common 'arm-deployment\AzlArmDeployment.psm1') -Force
+$common = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common')
+Import-Module ([IO.Path]::Combine($common, 'infrastructure', 'AzlInfrastructure.psm1')) -Force
+Import-Module ([IO.Path]::Combine($common, 'azure-local', 'AzlAzure.psm1')) -Force
+Import-Module ([IO.Path]::Combine($common, 'node-configuration', 'AzlNodeConfiguration.psm1')) -Force
+Import-Module ([IO.Path]::Combine($common, 'arm-deployment', 'AzlArmDeployment.psm1')) -Force
 
 $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation:$SkipValidation
 $handoff = if ($HandoffFile) { Read-AzlHandoff -Path $HandoffFile } else { $null }
