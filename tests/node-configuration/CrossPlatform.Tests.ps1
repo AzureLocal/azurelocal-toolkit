@@ -15,6 +15,8 @@ BeforeDiscovery {
             'scripts/common/node-configuration/AzlNodeConfiguration.psm1'
             'scripts/common/node-configuration/AzlNodePayload.psm1'
             'scripts/common/node-configuration/AzlNodeTransport.psm1'
+            'scripts/common/node-configuration/AzlDomainJoin.psm1'
+            'scripts/common/node-configuration/AzlNodeDomainJoinPayload.psm1'
             'scripts/common/infrastructure/AzlInfrastructure.psm1'
             'scripts/common/azure-local/AzlAzure.psm1'
         )) {
