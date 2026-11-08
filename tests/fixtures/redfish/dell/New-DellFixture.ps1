@@ -26,6 +26,7 @@ param([string]$OutputRoot = $PSScriptRoot)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$script:OutputRoot = $OutputRoot
 
 function L([string]$Uri) { return [ordered]@{ '@odata.id' = $Uri } }
 function Collection($Tree, [string]$Uri, [string[]]$Member, [string]$Name = 'Collection') {
@@ -33,7 +34,7 @@ function Collection($Tree, [string]$Uri, [string[]]$Member, [string]$Name = 'Col
 }
 $ok = [ordered]@{ Health = 'OK'; HealthRollup = 'OK'; State = 'Enabled' }
 
-function New-ClassicTree {
+function Build-ClassicTree {
     $t = [ordered]@{}
     $t['_fixture'] = [ordered]@{
         kind = 'synthetic'; vendor = 'Dell'; bmc = 'iDRAC9'; schemaVariant = 'classic (NetworkPorts, Power, Thermal)'
@@ -294,7 +295,7 @@ function New-ClassicTree {
     return $t
 }
 
-function New-NewSchemaTree($Classic) {
+function Build-NewSchemaTree($Classic) {
     # Same node, newer schema: Ports (not NetworkPorts), PowerSubsystem, ThermalSubsystem and Sensors (not Power and Thermal).
     $t = [ordered]@{}
     foreach ($k in $Classic.Keys) { $t[$k] = ($Classic[$k] | ConvertTo-Json -Depth 30 | ConvertFrom-Json -AsHashtable -Depth 30 -DateKind String) }
@@ -343,13 +344,13 @@ function New-NewSchemaTree($Classic) {
 }
 
 function Write-Tree([string]$Name, $Tree) {
-    $dir = Join-Path $OutputRoot $Name
+    $dir = Join-Path $script:OutputRoot $Name
     New-Item -ItemType Directory -Path $dir -Force | Out-Null
     $json = $Tree | ConvertTo-Json -Depth 30
     [System.IO.File]::WriteAllText((Join-Path $dir 'tree.json'), $json + "`n", [System.Text.UTF8Encoding]::new($false))
     Write-Information "$Name : $($Tree.Count) entries" -InformationAction Continue
 }
 
-$classic = New-ClassicTree
+$classic = Build-ClassicTree
 Write-Tree 'idrac9-ax760-synthetic' $classic
-Write-Tree 'idrac9-newschema-synthetic' (New-NewSchemaTree $classic)
+Write-Tree 'idrac9-newschema-synthetic' (Build-NewSchemaTree $classic)

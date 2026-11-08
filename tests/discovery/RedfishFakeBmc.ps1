@@ -2,6 +2,10 @@
 # Test helper (dot-sourced by the Redfish tests): a fake BMC that answers from a synthetic fixture tree.
 # Nothing here touches a network, a BMC, a node or an Azure resource. The core's HTTP layer calls Invoke-WebRequest; each test
 # mocks that one cmdlet with $script:FakeBmcResponder, so the test sees every request the code makes (method, path, auth, TLS).
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification = 'Pester mocks run in module scope and read the fake BMC through a global.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test helpers that edit an in-memory fixture.')]
+param()
+
 Set-StrictMode -Version Latest
 
 $script:FixtureRoot = [System.IO.Path]::Combine($PSScriptRoot, '..', 'fixtures', 'redfish')

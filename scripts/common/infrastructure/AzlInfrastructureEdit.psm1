@@ -17,6 +17,7 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Import-Module ([System.IO.Path]::Combine($PSScriptRoot, '..', 'redfish', 'AzlRedfishCore.psm1'))
 Import-Module ([System.IO.Path]::Combine($PSScriptRoot, '..', 'idrac-management', 'AzlDellRedfish.psm1'))
 
 function Get-LineIndent([string]$Line) { return $Line.Length - $Line.TrimStart().Length }

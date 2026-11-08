@@ -438,7 +438,7 @@ Describe 'Capability report' {
 
 Describe 'Bounded parallelism' {
     It 'runs one after another with a throttle of 1' {
-        $r = Invoke-AzlRedfishBatch -Item 1, 2, 3 -ScriptBlock { param($i, $s) $i * 2 } -ThrottleLimit 1
+        $r = Invoke-AzlRedfishBatch -Item 1, 2, 3 -ScriptBlock { param($i) $i * 2 } -ThrottleLimit 1
         ($r | ForEach-Object Result) | Should -Be @(2, 4, 6)
     }
     It 'never runs more than ThrottleLimit at once' {
@@ -456,7 +456,7 @@ Describe 'Bounded parallelism' {
         $shared.Max.Value | Should -BeGreaterThan 1
     }
     It 'a failing item does not stop the others' {
-        $r = Invoke-AzlRedfishBatch -Item 1, 2, 3 -ScriptBlock { param($i, $s) if ($i -eq 2) { throw 'node 2 unreachable' }; $i } -ThrottleLimit 3
+        $r = Invoke-AzlRedfishBatch -Item 1, 2, 3 -ScriptBlock { param($i) if ($i -eq 2) { throw 'node 2 unreachable' }; $i } -ThrottleLimit 3
         @($r | Where-Object Error).Count | Should -Be 1
         ($r | Where-Object Error).Error | Should -Match 'node 2 unreachable'
         @($r | Where-Object { -not $_.Error }).Count | Should -Be 2

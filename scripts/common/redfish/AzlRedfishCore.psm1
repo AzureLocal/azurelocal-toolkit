@@ -114,6 +114,7 @@ function Remove-AzlRedfishSecret {
         Applied to attribute dictionaries (BIOS, BMC) and to raw vendor blocks before they go into the output. The key stays,
         so the output still shows that the attribute exists.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'In-memory bookkeeping of one discovery run; no system state changes.')]
     [CmdletBinding()]
     param([AllowNull()]$InputObject, [int]$Depth = 0)
     if ($null -eq $InputObject -or $Depth -gt 25) { return $InputObject }
@@ -232,6 +233,7 @@ function New-AzlRedfishContext {
         Log in with a Redfish session (X-Auth-Token) instead of Basic on every request. The session POST and its DELETE are
         then the only non-GET requests, and the DELETE is guaranteed in Invoke-AzlRedfishDiscovery's finally.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'In-memory bookkeeping of one discovery run; no system state changes.')]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][string]$BmcAddress,
@@ -495,6 +497,7 @@ function Close-AzlRedfishSession {
 #region capability areas
 
 function Start-AzlRedfishArea {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'In-memory bookkeeping of one discovery run; no system state changes.')]
     [CmdletBinding()]
     param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)][string]$Name)
     if (-not $Context.Areas.Contains($Name)) {
@@ -508,6 +511,7 @@ function Stop-AzlRedfishArea {
     .SYNOPSIS
         Closes the current area and decides its status: ok | partial | notSupported | denied | error | skipped.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'In-memory bookkeeping of one discovery run; no system state changes.')]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)]$Context,
@@ -743,7 +747,7 @@ function Resolve-AzlRfPath {
 }
 
 function Get-AzlRfIdentity {
-    param($Context, $Report, $Sys, $Chassis)
+    param($Sys, $Chassis)
     $serials = [System.Collections.Generic.List[object]]::new()
     $add = { param($v, $src) if ($v -and -not ($serials | Where-Object { $_.value -eq $v })) { $serials.Add([ordered]@{ value = $v; source = $src }) } }
     & $add (Get-RfText $Sys 'SKU') 'System.SKU'
@@ -761,7 +765,7 @@ function Get-AzlRfIdentity {
 }
 
 function Get-AzlRfBmc {
-    param($Context, $Report, $Manager, $ManagerPath, [string]$Detail)
+    param($Context, $Manager, [string]$Detail)
     $interfaces = @(foreach ($e in (Get-AzlRedfishMember -Context $Context -Path (Get-RfLink $Manager 'EthernetInterfaces'))) {
             $v4 = @(foreach ($a in @(Get-RfProp $e 'IPv4Addresses' @())) { [ordered]@{ address = (Get-RfText $a 'Address'); subnetMask = (Get-RfText $a 'SubnetMask'); origin = (Get-RfText $a 'AddressOrigin'); gateway = (Get-RfText $a 'Gateway') } })
             [ordered]@{
@@ -948,7 +952,7 @@ function Get-AzlRfNicModel {
     if ($hit) { return $hit }
     $hint = Get-RfProp (Get-RfProp $AdapterDef 'Hooks') 'NicModelHint'
     if ($hint) {
-        $h = & $hint $Context $Adapter $Functions
+        $h = & $hint $Context $Functions
         if ($h) { $hit = & $try ([string]$h.Model) ([string]$h.Source); if ($hit) { return $hit } }
     }
     foreach ($c in @($Controllers)) {
@@ -967,7 +971,7 @@ function Get-AzlRfNicModel {
     return [pscustomobject]@{ Model = $null; Source = 'none'; Rejected = @($rejected) }
 }
 function Get-AzlRfNetwork {
-    param($Context, $Report, $Sys, $Chassis, $AdapterDef, [string]$Detail)
+    param($Context, $Sys, $Chassis, $AdapterDef, [string]$Detail)
     $adaptersPath = Get-RfLink $Sys 'NetworkAdapters'
     $origin = 'Systems'
     if (-not $adaptersPath) { $adaptersPath = Get-RfLink $Chassis 'NetworkAdapters'; $origin = 'Chassis' }
@@ -1159,7 +1163,7 @@ function Get-AzlRfFirmware {
         })
 }
 
-function Get-AzlRfBios {
+function Get-AzlRfBiosSetting {
     param($Context, $Sys)
     $link = Get-RfLink $Sys 'Bios'
     if (-not $link) { return $null }
@@ -1370,12 +1374,12 @@ function Invoke-AzlRedfishDiscovery {
             events = [ordered]@{ logServices = @(); summary = $null }
             raw = [ordered]@{}; capabilities = $null; readErrors = @(); warnings = @()
         }
-        $report.identity = Get-AzlRfIdentity -Context $ctx -Report $report -Sys $sys -Chassis $chassis
+        $report.identity = Get-AzlRfIdentity -Sys $sys -Chassis $chassis
         Invoke-RfHook $ctx $adapter 'OemSystem' $report $paths $Detail
         Stop-AzlRedfishArea -Context $ctx -Count 1
 
         Start-AzlRedfishArea -Context $ctx -Name bmc
-        $report.bmc = if ($manager) { Get-AzlRfBmc -Context $ctx -Report $report -Manager $manager -ManagerPath $paths.Manager -Detail $Detail } else { $null }
+        $report.bmc = if ($manager) { Get-AzlRfBmc -Context $ctx -Manager $manager -Detail $Detail } else { $null }
         Invoke-RfHook $ctx $adapter 'OemBmc' $report $paths $Detail
         if ($manager) { Stop-AzlRedfishArea -Context $ctx -Count @($report.bmc.interfaces).Count -Variant $(if ($full) { 'ManagerNetworkProtocol' } else { 'EthernetInterfaces' }) }
         else { Stop-AzlRedfishArea -Context $ctx -Status notSupported -Reason 'No manager is linked from the system.' }
@@ -1420,7 +1424,7 @@ function Invoke-AzlRedfishDiscovery {
         }
 
         Start-AzlRedfishArea -Context $ctx -Name network
-        $net = Get-AzlRfNetwork -Context $ctx -Report $report -Sys $sys -Chassis $chassis -AdapterDef $adapter -Detail $Detail
+        $net = Get-AzlRfNetwork -Context $ctx -Sys $sys -Chassis $chassis -AdapterDef $adapter -Detail $Detail
         $report.network = $net.Network
         foreach ($w in $net.Warnings) { $ctx.Warnings.Add($w) }
         Invoke-RfHook $ctx $adapter 'OemNetwork' $report $paths $Detail
@@ -1441,7 +1445,7 @@ function Invoke-AzlRedfishDiscovery {
             else { Stop-AzlRedfishArea -Context $ctx -Count 0 -Reason 'UpdateService does not link a FirmwareInventory.' }
 
             Start-AzlRedfishArea -Context $ctx -Name bios
-            $report.settings.bios = Get-AzlRfBios -Context $ctx -Sys $sys
+            $report.settings.bios = Get-AzlRfBiosSetting -Context $ctx -Sys $sys
             Invoke-RfHook $ctx $adapter 'OemSettings' $report $paths $Detail
             if ($report.settings.bios) { Stop-AzlRedfishArea -Context $ctx -Variant 'Bios' -Count @($report.settings.bios.attributes.Keys).Count }
             else { Stop-AzlRedfishArea -Context $ctx -Count 0 -Reason 'The system does not link a Bios resource.' }

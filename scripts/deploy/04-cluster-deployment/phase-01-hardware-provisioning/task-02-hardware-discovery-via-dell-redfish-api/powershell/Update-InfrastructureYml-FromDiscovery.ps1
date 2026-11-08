@@ -4,7 +4,7 @@
     Writes the serial numbers and port MACs found by hardware discovery into infrastructure.yml.
 
 .DESCRIPTION
-    Reads the <ServiceTag>.json files of Invoke-HardwareDiscovery.ps1 and shows what would change in infrastructure.yml:
+    Reads the <ServiceTag>.json files of Invoke-HardwareDiscovery.ps1 (schemaVersion 2.0; the older 1.0 files are still read) and shows what would change in infrastructure.yml:
 
       nodes[].serial_number                       from the service tag
       nodes[].network_adapters[].mac_address      for the entry with the same name as the discovered port
@@ -63,6 +63,7 @@ function Get-ToolkitRoot {
     throw "The toolkit root was not found above $PSScriptRoot."
 }
 $root = Get-ToolkitRoot
+Import-Module ([System.IO.Path]::Combine($root, 'scripts', 'common', 'redfish', 'AzlRedfishCore.psm1'))
 Import-Module ([System.IO.Path]::Combine($root, 'scripts', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))
 Import-Module ([System.IO.Path]::Combine($root, 'scripts', 'common', 'infrastructure', 'AzlInfrastructureEdit.psm1'))
 
@@ -78,6 +79,13 @@ $files = @(Get-ChildItem -LiteralPath $DiscoveryPath -Filter '*.json' -File -Err
 if ($files.Count -eq 0) { throw "No discovery files in $DiscoveryPath. Run Invoke-HardwareDiscovery.ps1 first." }
 $items = foreach ($f in $files) {
     $d = Get-Content -LiteralPath $f.FullName -Raw | ConvertFrom-Json -Depth 50
+    if ($d.PSObject.Properties['schemaVersion'] -and $d.PSObject.Properties['nodeName'] -and $d.PSObject.Properties['identity']) {
+        # schema 2.0: the flat view of the report is what the infrastructure.yml edit reads
+        $view = ConvertTo-AzlDiscoveryLegacyView -Report $d
+        $view['NodeName'] = [string]$d.nodeName
+        [pscustomobject]@{ NodeName = [string]$d.nodeName; Discovery = [pscustomobject]$view; ManagementPort = $ManagementPort }
+        continue
+    }
     if (-not $d.PSObject.Properties['NodeName'] -or -not $d.PSObject.Properties['Identity']) { Write-Warning "$($f.Name) is not a discovery file of Invoke-HardwareDiscovery.ps1: skipped."; continue }
     [pscustomobject]@{ NodeName = [string]$d.NodeName; Discovery = $d; ManagementPort = $ManagementPort }
 }

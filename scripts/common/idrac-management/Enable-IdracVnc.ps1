@@ -74,6 +74,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
+Import-Module ([System.IO.Path]::Combine($PSScriptRoot, '..', 'redfish', 'AzlRedfishCore.psm1'))
 Import-Module ([System.IO.Path]::Combine($PSScriptRoot, 'AzlDellRedfish.psm1'))
 
 $infrastructure = $null

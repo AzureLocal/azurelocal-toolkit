@@ -11,6 +11,8 @@ param()
 BeforeDiscovery {
     $repoRoot = (Resolve-Path ([System.IO.Path]::Combine($PSScriptRoot, '..', '..'))).Path
     $script:Shipped = @(
+        'scripts/common/redfish/AzlRedfishCore.psm1'
+        'scripts/common/redfish/AzlRedfishDell.psm1'
         'scripts/common/idrac-management/AzlDellRedfish.psm1'
         'scripts/common/infrastructure/AzlInfrastructureEdit.psm1'
         'scripts/common/discovery/Get-DellServerInventory-FromiDRAC.ps1'
@@ -25,6 +27,9 @@ BeforeDiscovery {
 BeforeAll {
     $repo = (Resolve-Path ([System.IO.Path]::Combine($PSScriptRoot, '..', '..'))).Path
     $script:Redfish = [System.IO.Path]::Combine($repo, 'scripts', 'common', 'idrac-management', 'AzlDellRedfish.psm1')
+    . (Join-Path $PSScriptRoot 'RedfishFakeBmc.ps1')
+    Import-Module ([System.IO.Path]::Combine($repo, 'scripts', 'common', 'redfish', 'AzlRedfishCore.psm1')) -Force
+    Import-Module ([System.IO.Path]::Combine($repo, 'scripts', 'common', 'redfish', 'AzlRedfishDell.psm1')) -Force
     Import-Module $script:Redfish -Force
     Import-Module ([System.IO.Path]::Combine($repo, 'scripts', 'common', 'infrastructure', 'AzlInfrastructure.psm1')) -Force
     Import-Module ([System.IO.Path]::Combine($repo, 'scripts', 'common', 'infrastructure', 'AzlInfrastructureEdit.psm1')) -Force
@@ -37,7 +42,15 @@ BeforeAll {
     $script:InventoryScript = [System.IO.Path]::Combine($repo, 'scripts', 'common', 'discovery', 'Get-DellServerInventory-FromiDRAC.ps1')
     $script:Cred = [pscredential]::new('admin', (ConvertTo-SecureString 'not-a-real-secret' -AsPlainText -Force))
 
-    # The fake iDRAC: Redfish path -> response. Dell shapes: a LOM port that reports its MAC, and a slot card whose ports do not
+    # Discovery of the synthetic fixture, as the flat view the infrastructure.yml tools read.
+    function Get-FixtureDiscovery {
+        $report = Invoke-AzlRedfishDiscovery -BmcAddress 'bmc.invalid' -Credential $script:Cred -Detail Summary -RetryDelaySeconds 0
+        $view = ConvertTo-AzlDiscoveryLegacyView -Report $report
+        $view['NodeName'] = 'node-1'
+        return $view
+    }
+
+    # The old fake iDRAC (used by the standalone script test only): Redfish path -> response. Dell shapes: a LOM port that reports its MAC, and a slot card whose ports do not
     # (the MAC is on the network device function). BOSS-S2 with two M.2 drives and no virtual disk.
     function Get-FakeIdrac([switch]$BossHasVolume) {
         $o = { param($Id) @{ '@odata.id' = $Id } }
@@ -101,118 +114,14 @@ nodes:
 '@
 }
 
-Describe 'MAC and port naming' {
+Describe 'MAC notation' {
     It 'normalises <In>' -ForEach @(
         @{ In = '00-00-5e-00-53-0a'; Out = '00:00:5E:00:53:0A' }
         @{ In = '00005E00530A'; Out = '00:00:5E:00:53:0A' }
         @{ In = '0000.5E00.530A'; Out = '00:00:5E:00:53:0A' }
     ) { ConvertTo-AzlMacAddress $In | Should -Be $Out }
     It 'rejects <In>' -ForEach @(@{ In = '' }, @{ In = 'not a mac' }, @{ In = '00:00:5E:00:53' }, @{ In = '00:00:5E:00:53:0G' }) { ConvertTo-AzlMacAddress $In | Should -BeNullOrEmpty }
-    It 'labels <Adapter> / <Port>' -ForEach @(
-        @{ Adapter = 'NIC.Slot.3'; Port = 'NIC.Slot.3-2-1'; Name = 'Slot 3 Port 2'; Slot = 'Slot 3' }
-        @{ Adapter = 'NIC.Slot.3'; Port = 'NIC.Slot.3-1'; Name = 'Slot 3 Port 1'; Slot = 'Slot 3' }
-        @{ Adapter = 'NIC.Embedded.2'; Port = 'NIC.Embedded.2-1-1'; Name = 'Embedded NIC 2'; Slot = 'Embedded' }
-        # Real lab shape: ONE embedded adapter carries both LOM ports and the NIC number is in the port id.
-        @{ Adapter = 'NIC.Embedded.1'; Port = 'NIC.Embedded.1-1'; Name = 'Embedded NIC 1'; Slot = 'Embedded' }
-        @{ Adapter = 'NIC.Embedded.1'; Port = 'NIC.Embedded.2-1'; Name = 'Embedded NIC 2'; Slot = 'Embedded' }
-        @{ Adapter = 'NIC.Integrated.1'; Port = 'NIC.Integrated.1-2-1'; Name = 'Integrated NIC 1 Port 2'; Slot = 'Integrated 1' }
-    ) {
-        $l = Get-AzlDellPortLabel -AdapterId $Adapter -PortId $Port
-        $l.Name | Should -Be $Name
-        $l.Slot | Should -Be $Slot
-    }
 }
-
-Describe 'Get-AzlDellAdapterModel' {
-    It 'uses the adapter Model when there is one' {
-        Get-AzlDellAdapterModel -Adapter ([pscustomobject]@{ Model = 'MLNX 100GbE 2P ConnectX6 Adpt'; Name = 'x' }) | Should -Be 'MLNX 100GbE 2P ConnectX6 Adpt'
-    }
-    It 'falls back to the adapter Name without the MAC suffix when the embedded card has an empty Model (lab defect)' {
-        Get-AzlDellAdapterModel -Adapter ([pscustomobject]@{ Model = ''; Name = 'Broadcom Gigabit Ethernet BCM5720 - C4:CB:E1:B3:6F:C6' }) | Should -Be 'Broadcom Gigabit Ethernet BCM5720'
-    }
-    It 'does not take a bare adapter id as a model' {
-        Get-AzlDellAdapterModel -Adapter ([pscustomobject]@{ Model = $null; Name = 'NIC.Embedded.1' }) -Function ([pscustomobject]@{ Name = 'Broadcom NetXtreme Gigabit Ethernet' }) | Should -Be 'Broadcom NetXtreme Gigabit Ethernet'
-    }
-    It 'returns an empty string when nothing names the card' {
-        Get-AzlDellAdapterModel -Adapter ([pscustomobject]@{ Model = $null; Name = $null }) | Should -Be ''
-    }
-}
-
-Describe 'Get-AzlDellNodeDiscovery' {
-    BeforeEach {
-        $global:AzlTestIdrac = Get-FakeIdrac
-        Mock -ModuleName AzlDellRedfish Invoke-AzlRedfish {
-            if (-not $global:AzlTestIdrac.ContainsKey($Path)) { throw "404 $Path" }
-            $global:AzlTestIdrac[$Path] | ConvertFrom-Json -Depth 20
-        }
-    }
-    AfterAll { Remove-Variable -Name AzlTestIdrac -Scope Global -ErrorAction SilentlyContinue }
-
-    It 'reads the identity: the service tag is the SKU' {
-        $d = Get-AzlDellNodeDiscovery -BmcAddress 'bmc.invalid' -Credential $script:Cred -Detail Summary
-        $d.Identity.ServiceTag | Should -Be 'SVCTAG1'
-        $d.Identity.SerialNumber | Should -Be 'CHASSIS1'
-        $d.Identity.Model | Should -Be 'AX-760'
-        $d.Bmc.MacAddress | Should -Be '00:00:5E:00:53:01'
-    }
-    It 'returns one entry per port with its MAC, from the port or from the device function' {
-        $d = Get-AzlDellNodeDiscovery -BmcAddress 'bmc.invalid' -Credential $script:Cred -Detail Summary
-        $d.NetworkPorts.Count | Should -Be 3
-        $byName = @{}; foreach ($p in $d.NetworkPorts) { $byName[$p.Name] = $p }
-        $byName['Embedded NIC 1'].MacAddress | Should -Be '00:00:5E:00:53:10'
-        $byName['Embedded NIC 1'].MacSource | Should -Be 'Port'
-        $byName['Slot 3 Port 1'].MacAddress | Should -Be '00:00:5E:00:53:21'
-        $byName['Slot 3 Port 1'].MacSource | Should -Be 'Function'
-        $byName['Slot 3 Port 2'].MacAddress | Should -Be '00:00:5E:00:53:22'
-        $byName['Slot 3 Port 1'].LinkUp | Should -BeTrue
-        $byName['Slot 3 Port 2'].LinkUp | Should -BeFalse
-        $byName['Slot 3 Port 1'].Slot | Should -Be 'Slot 3'
-        $byName['Embedded NIC 1'].Slot | Should -Be 'Embedded'
-    }
-    It 'finds the BOSS card and that it has no virtual disk' {
-        $d = Get-AzlDellNodeDiscovery -BmcAddress 'bmc.invalid' -Credential $script:Cred -Detail Summary
-        $d.Boss.Present | Should -BeTrue
-        $d.Boss.ControllerId | Should -Be 'AHCI.Slot.6-1'
-        $d.Boss.DriveCount | Should -Be 2
-        $d.Boss.HasVirtualDisk | Should -BeFalse
-        $d.Boss.NeedsVirtualDisk | Should -BeTrue
-        $d.Boss.Drives[0].SerialNumber | Should -Be 'M2SERIAL0'
-    }
-    It 'sees a BOSS virtual disk' {
-        $global:AzlTestIdrac = Get-FakeIdrac -BossHasVolume
-        $d = Get-AzlDellNodeDiscovery -BmcAddress 'bmc.invalid' -Credential $script:Cred -Detail Summary
-        $d.Boss.HasVirtualDisk | Should -BeTrue
-        $d.Boss.NeedsVirtualDisk | Should -BeFalse
-        $d.Boss.Volumes[0].RaidType | Should -Be 'RAID1'
-    }
-    It 'reports no BOSS when there is no such controller' {
-        $global:AzlTestIdrac['/redfish/v1/Systems/System.Embedded.1/Storage'] = (@{ Members = @(@{ '@odata.id' = '/redfish/v1/Systems/System.Embedded.1/Storage/RAID.Integrated.1-1' }) } | ConvertTo-Json -Depth 5)
-        $d = Get-AzlDellNodeDiscovery -BmcAddress 'bmc.invalid' -Credential $script:Cred -Detail Summary
-        $d.Boss.Present | Should -BeFalse
-        $d.Boss.NeedsVirtualDisk | Should -BeFalse
-    }
-    It 'records a failing optional section as a warning and keeps going' {
-        $d = Get-AzlDellNodeDiscovery -BmcAddress 'bmc.invalid' -Credential $script:Cred -Detail Full
-        $d.Identity.ServiceTag | Should -Be 'SVCTAG1'
-        ($d.Warnings -join ' ') | Should -Match 'Chassis'
-        ($d.Warnings -join ' ') | Should -Match 'Firmware'
-    }
-    It 'warns about a port without a MAC instead of dropping it silently' {
-        $global:AzlTestIdrac['/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Slot.3/NetworkDeviceFunctions/NIC.Slot.3-1-1'] = (@{ Id = 'NIC.Slot.3-1-1' } | ConvertTo-Json)
-        $d = Get-AzlDellNodeDiscovery -BmcAddress 'bmc.invalid' -Credential $script:Cred -Detail Summary
-        $d.NetworkPorts.Count | Should -Be 2
-        ($d.Warnings -join ' ') | Should -Match 'NIC.Slot.3-1 .*no MAC'
-    }
-    It 'throws when the system cannot be read' {
-        $global:AzlTestIdrac.Remove('/redfish/v1/Systems/System.Embedded.1')
-        { Get-AzlDellNodeDiscovery -BmcAddress 'bmc.invalid' -Credential $script:Cred -Detail Summary } | Should -Throw '*404*'
-    }
-    It 'only reads: no PATCH, POST or other method is issued' {
-        Get-AzlDellNodeDiscovery -BmcAddress 'bmc.invalid' -Credential $script:Cred -Detail Full | Out-Null
-        Should -Invoke -ModuleName AzlDellRedfish Invoke-AzlRedfish -Times 0 -ParameterFilter { $Method -and $Method -ne 'Get' }
-    }
-}
-
 Describe 'Select-AzlManagementPort' {
     BeforeAll {
         $script:Ports = @(
@@ -246,53 +155,57 @@ Describe 'Select-AzlManagementPort' {
 
 Describe 'ConvertTo-AzlDiscoveryProposal' {
     BeforeAll {
-        $global:AzlTestIdrac = Get-FakeIdrac
-        Mock -ModuleName AzlDellRedfish Invoke-AzlRedfish { $global:AzlTestIdrac[$Path] | ConvertFrom-Json -Depth 20 }
-        $d = Get-AzlDellNodeDiscovery -BmcAddress 'bmc.invalid' -Credential $script:Cred -Detail Summary
+        Use-FakeBmc
+        Mock -ModuleName AzlRedfishCore Invoke-WebRequest $script:FakeBmcResponder
+        $d = Get-FixtureDiscovery
         $script:Proposal = ConvertTo-AzlDiscoveryProposal -Item @([pscustomobject]@{ NodeName = 'node-1'; Discovery = $d; ManagementPort = 'Slot 3 Port 1'; ExistingManagementMac = '' })
         $script:ProposalYaml = ConvertFrom-Yaml $script:Proposal -Ordered
     }
-    AfterAll { Remove-Variable -Name AzlTestIdrac -Scope Global -ErrorAction SilentlyContinue }
+    AfterAll { Remove-FakeBmc }
     It 'is valid YAML with the service tag as serial_number' {
         $script:ProposalYaml.nodes[0].name | Should -Be 'node-1'
-        $script:ProposalYaml.nodes[0].serial_number | Should -Be 'SVCTAG1'
+        $script:ProposalYaml.nodes[0].serial_number | Should -Be 'DOCTAG1'
     }
     It 'lists every port with its MAC, slot and model' {
         $ports = @($script:ProposalYaml.nodes[0].network_adapters)
-        $ports.Count | Should -Be 3
+        $ports.Count | Should -Be 6
         ($ports | ForEach-Object { $_.mac_address }) | Should -Contain '00:00:5E:00:53:22'
         ($ports | Where-Object name -eq 'Slot 3 Port 1').slot | Should -Be 'Slot 3'
-        ($ports | Where-Object name -eq 'Slot 3 Port 1').model | Should -Be 'Test 25G Card'
+        ($ports | Where-Object name -eq 'Slot 3 Port 1').model | Should -Be 'DOC 100GbE 2P ConnectX6 Adpt'
+        ($ports | Where-Object name -eq 'Embedded NIC 2').mac_address | Should -Be '00:00:5E:00:53:11'
+        ($ports | Where-Object name -eq 'Embedded NIC 2').model | Should -Be 'Broadcom Gigabit Ethernet BCM5720'
+    }
+    It 'never writes a generic label as a model' {
+        $script:Proposal | Should -Not -Match 'Network Adapter View'
     }
     It 'marks only the chosen port management and leaves roles for the others as unused' {
         $ports = @($script:ProposalYaml.nodes[0].network_adapters)
         ($ports | Where-Object { $_.roles -contains 'management' }).name | Should -Be 'Slot 3 Port 1'
-        @($ports | Where-Object { $_.roles -contains 'unused' }).Count | Should -Be 2
-        $script:Proposal | Should -Match 'BOSS: controller AHCI.Slot.6-1, 2 drive\(s\), no virtual disk yet'
+        @($ports | Where-Object { $_.roles -contains 'unused' }).Count | Should -Be 5
+        $script:Proposal | Should -Match 'BOSS: controller BOSS.SL.12-1, 2 drive\(s\), a virtual disk exists'
     }
     It 'says in a comment that nothing is applied' { $script:Proposal | Should -Match 'Nothing is applied' }
 }
-
 Describe 'Resolve-AzlBmcCredential' {
     BeforeAll {
         $script:Infra = [ordered]@{ hardware = [ordered]@{ bmc = [ordered]@{ username = 'keyvault://vault-test/bmc-user'; password = 'keyvault://vault-test/bmc-pass' } } }
     }
     BeforeEach {
-        Mock -ModuleName AzlDellRedfish Get-AzlBmcKeyVaultSecret {
-            if ($AsPlainText) { return "user-of-$($Reference.Split('/')[-1])" }
+        Mock -ModuleName AzlRedfishCore Get-AzlBmcKeyVaultSecret {
+            if ($PesterBoundParameters.ContainsKey('AsPlainText')) { return "user-of-$($Reference.Split('/')[-1])" }
             return (ConvertTo-SecureString "pw-of-$($Reference.Split('/')[-1])" -AsPlainText -Force)
         }
-        Mock -ModuleName AzlDellRedfish Get-Credential { [pscredential]::new('prompted', (ConvertTo-SecureString 'x' -AsPlainText -Force)) }
+        Mock -ModuleName AzlRedfishCore Get-Credential { [pscredential]::new('prompted', (ConvertTo-SecureString 'x' -AsPlainText -Force)) }
     }
     It 'prefers the credential parameter and never calls Key Vault' {
         (Resolve-AzlBmcCredential -Credential $script:Cred -Infrastructure $script:Infra).UserName | Should -Be 'admin'
-        Should -Invoke -ModuleName AzlDellRedfish Get-AzlBmcKeyVaultSecret -Times 0
+        Should -Invoke -ModuleName AzlRedfishCore Get-AzlBmcKeyVaultSecret -Times 0
     }
     It 'reads hardware.bmc from Key Vault' {
         $c = Resolve-AzlBmcCredential -Infrastructure $script:Infra
         $c.UserName | Should -Be 'user-of-bmc-user'
         $c.GetNetworkCredential().Password | Should -Be 'pw-of-bmc-pass'
-        Should -Invoke -ModuleName AzlDellRedfish Get-Credential -Times 0
+        Should -Invoke -ModuleName AzlRedfishCore Get-Credential -Times 0
     }
     It 'lets the node block win over hardware.bmc and accepts a plain user name' {
         $node = [ordered]@{ bmc = [ordered]@{ username = 'plainuser'; password = 'keyvault://vault-test/node-pass' } }
@@ -304,7 +217,7 @@ Describe 'Resolve-AzlBmcCredential' {
         (Resolve-AzlBmcCredential -Infrastructure ([ordered]@{})).UserName | Should -Be 'prompted'
     }
     It 'warns and prompts when Key Vault fails, without printing a secret' {
-        Mock -ModuleName AzlDellRedfish Get-AzlBmcKeyVaultSecret { throw 'vault unreachable' }
+        Mock -ModuleName AzlRedfishCore Get-AzlBmcKeyVaultSecret { throw 'vault unreachable' }
         $c = Resolve-AzlBmcCredential -Infrastructure $script:Infra -WarningVariable w -WarningAction SilentlyContinue
         $c.UserName | Should -Be 'prompted'
         ($w -join ' ') | Should -Match 'vault unreachable'
@@ -316,7 +229,7 @@ Describe 'Set-AzlDellIdracVnc' {
     BeforeEach {
         $global:AzlTestPatch = $null
         Mock -ModuleName AzlDellRedfish Invoke-AzlRedfish {
-            if ($Method -eq 'Patch') { $global:AzlTestPatch = @{ Path = $Path; Body = $Body }; return [pscustomobject]@{} }
+            if ($PesterBoundParameters["Method"] -eq 'Patch') { $global:AzlTestPatch = @{ Path = $Path; Body = $Body }; return [pscustomobject]@{} }
             [pscustomobject]@{ Attributes = [pscustomobject]@{ 'VNCServer.1.Enable' = 'Disabled'; 'VNCServer.1.Port' = 5901; 'VNCServer.1.Timeout' = 300 } }
         }
     }
@@ -380,12 +293,12 @@ Describe 'Edit-AzlYamlValue' {
 
 Describe 'Get-AzlDiscoveryChange and Invoke-AzlYamlEdit' {
     BeforeAll {
-        $global:AzlTestIdrac = Get-FakeIdrac
-        Mock -ModuleName AzlDellRedfish Invoke-AzlRedfish { $global:AzlTestIdrac[$Path] | ConvertFrom-Json -Depth 20 }
-        $script:Discovery = Get-AzlDellNodeDiscovery -BmcAddress 'bmc.invalid' -Credential $script:Cred -Detail Summary
+        Use-FakeBmc
+        Mock -ModuleName AzlRedfishCore Invoke-WebRequest $script:FakeBmcResponder
+        $script:Discovery = Get-FixtureDiscovery
         $script:Infra = ConvertFrom-Yaml $script:NodeYaml -Ordered
     }
-    AfterAll { Remove-Variable -Name AzlTestIdrac -Scope Global -ErrorAction SilentlyContinue }
+    AfterAll { Remove-FakeBmc }
     It 'plans the serial number and the MAC of the adapter that has none or a wrong one' {
         $plan = Get-AzlDiscoveryChange -Infrastructure $script:Infra -Item @([pscustomobject]@{ NodeName = 'node-1'; Discovery = $script:Discovery })
         ($plan.Changes | ForEach-Object { $_.Display }) | Should -Contain 'nodes[node-1].serial_number'
@@ -414,7 +327,7 @@ Describe 'Get-AzlDiscoveryChange and Invoke-AzlYamlEdit' {
         $text | Should -Match '# first machine'
         $text | Should -Match '# Test file'
         $doc = ConvertFrom-Yaml $text -Ordered
-        $doc.nodes[0].serial_number | Should -Be 'SVCTAG1'
+        $doc.nodes[0].serial_number | Should -Be 'DOCTAG1'
         ($doc.nodes[0].network_adapters | Where-Object name -eq 'Slot 3 Port 2').mac_address | Should -Be '00:00:5E:00:53:22'
         (Get-Content $edit.Backup -Raw) | Should -Match 'OLDTAG'
     }
@@ -430,60 +343,111 @@ Describe 'Get-AzlDiscoveryChange and Invoke-AzlYamlEdit' {
 
 Describe 'Scripts end to end (fake iDRAC)' {
     BeforeAll {
-        $global:AzlTestIdrac = Get-FakeIdrac
-        Mock -ModuleName AzlDellRedfish Invoke-AzlRedfish { $global:AzlTestIdrac[$Path] | ConvertFrom-Json -Depth 20 }
+        Use-FakeBmc
+        Mock -ModuleName AzlRedfishCore Invoke-WebRequest $script:FakeBmcResponder
         $script:Cfg = Join-Path $TestDrive 'infrastructure.yml'
         Set-Content $script:Cfg $script:NodeYaml
         $script:Out = Join-Path $TestDrive 'discovery'
     }
-    AfterAll { Remove-Variable -Name AzlTestIdrac -Scope Global -ErrorAction SilentlyContinue }
+    AfterAll { Remove-FakeBmc }
 
     It 'Invoke-HardwareDiscovery writes the node file, the summary and the proposal, and leaves infrastructure.yml alone' {
         $before = Get-Content $script:Cfg -Raw
-        & $script:InvokeScript -ConfigPath $script:Cfg -OutputPath $script:Out -Credential $script:Cred -TargetNode 'node-1' -Detail Summary -ManagementPort 'Embedded NIC 1' -InformationAction SilentlyContinue
-        Test-Path (Join-Path $script:Out 'SVCTAG1.json') | Should -BeTrue
+        & $script:InvokeScript -ConfigPath $script:Cfg -OutputPath $script:Out -Credential $script:Cred -TargetNode 'node-1' -Detail Summary -ManagementPort 'Embedded NIC 1' -ThrottleLimit 1 -InformationAction SilentlyContinue -WarningAction SilentlyContinue
+        Test-Path (Join-Path $script:Out 'DOCTAG1.json') | Should -BeTrue
         $summary = Get-Content (Join-Path $script:Out 'discovery-summary.json') -Raw | ConvertFrom-Json
-        $summary[0].ServiceTag | Should -Be 'SVCTAG1'
+        $summary[0].ServiceTag | Should -Be 'DOCTAG1'
+        $summary[0].Vendor | Should -Be 'Dell'
         $summary[0].ManagementMac | Should -Be '00:00:5E:00:53:10'
-        $summary[0].Boss.NeedsVirtualDisk | Should -BeTrue
-        (Get-Content (Join-Path $script:Out 'infrastructure.discovered.yml') -Raw) | Should -Match 'serial_number: "SVCTAG1"'
+        $summary[0].Boss.HasVirtualDisk | Should -BeTrue
+        $summary[0].Complete | Should -BeTrue
+        (Get-Content (Join-Path $script:Out 'infrastructure.discovered.yml') -Raw) | Should -Match 'serial_number: "DOCTAG1"'
         (Get-Content $script:Cfg -Raw) | Should -Be $before
     }
-    It 'the node file holds no password' {
-        (Get-Content (Join-Path $script:Out 'SVCTAG1.json') -Raw) | Should -Not -Match 'not-a-real-secret'
+    It 'the node file is a schema 2.0 report with the capability report, and holds no password' {
+        $text = Get-Content (Join-Path $script:Out 'DOCTAG1.json') -Raw
+        $text | Should -Not -Match 'not-a-real-secret'
+        $r = $text | ConvertFrom-Json
+        $r.schemaVersion | Should -Be '2.0'
+        $r.nodeName | Should -Be 'node-1'
+        $r.vendor.name | Should -Be 'Dell'
+        $r.capabilities.areas.network.status | Should -Be 'ok'
+        $r.PSObject.Properties.Name | Should -Contain 'readErrors'
+    }
+    It 'Invoke-HardwareDiscovery -Detail Full writes the full detail for every node it reads' {
+        $out = Join-Path $TestDrive 'full'
+        & $script:InvokeScript -ConfigPath $script:Cfg -OutputPath $out -Credential $script:Cred -TargetNode 'node-1' -Detail Full -ThrottleLimit 1 -InformationAction SilentlyContinue -WarningAction SilentlyContinue
+        $r = Get-Content (Join-Path $out 'DOCTAG1.json') -Raw | ConvertFrom-Json
+        @($r.firmware).Count | Should -BeGreaterThan 5
+        @($r.pcie).Count | Should -Be 3
+        $r.capabilities.summary.ok | Should -Be 12
+    }
+    It 'Invoke-HardwareDiscovery names a non-Dell BMC as unsupported in this version and still fails the run' {
+        $root = Get-FakeResource '/redfish/v1'
+        $root.Oem = @{ Hpe = @{} }; $root.Vendor = 'HPE'
+        Set-FakeResource '/redfish/v1' $root
+        $sys = Get-FakeResource '/redfish/v1/Systems/System.Embedded.1'
+        $sys.Oem = @{ Hpe = @{} }; $sys.Manufacturer = 'HPE'
+        Set-FakeResource '/redfish/v1/Systems/System.Embedded.1' $sys
+        $mgr = Get-FakeResource '/redfish/v1/Managers/iDRAC.Embedded.1'
+        $mgr.Oem = @{ Hpe = @{} }; $mgr.Model = 'iLO 5'
+        Set-FakeResource '/redfish/v1/Managers/iDRAC.Embedded.1' $mgr
+        $err = $null
+        try { & $script:InvokeScript -ConfigPath $script:Cfg -OutputPath (Join-Path $TestDrive 'hpe') -Credential $script:Cred -Detail Summary -ThrottleLimit 1 -InformationAction SilentlyContinue -ErrorVariable ev -ErrorAction SilentlyContinue } catch { $err = $_.Exception.Message }
+        $err | Should -Match 'could not be discovered'
+        ($ev | ForEach-Object { $_.ToString() }) -join ' ' | Should -Match 'Unsupported vendor in this version'
+        Use-FakeBmc
+    }
+    It '-Vendor Dell forces the Dell adapter' {
+        $root = Get-FakeResource '/redfish/v1'
+        $root.Remove('Oem'); $root.Remove('Vendor'); $root.Product = 'BMC'
+        Set-FakeResource '/redfish/v1' $root
+        $sys = Get-FakeResource '/redfish/v1/Systems/System.Embedded.1'
+        $sys.Remove('Oem'); $sys.Manufacturer = 'Contoso'
+        Set-FakeResource '/redfish/v1/Systems/System.Embedded.1' $sys
+        $mgr = Get-FakeResource '/redfish/v1/Managers/iDRAC.Embedded.1'
+        $mgr.Remove('Oem'); $mgr.Model = 'BMC'
+        Set-FakeResource '/redfish/v1/Managers/iDRAC.Embedded.1' $mgr
+        $out = Join-Path $TestDrive 'forced'
+        & $script:InvokeScript -ConfigPath $script:Cfg -OutputPath $out -Credential $script:Cred -Detail Summary -Vendor Dell -ThrottleLimit 1 -InformationAction SilentlyContinue -WarningAction SilentlyContinue
+        (Get-Content (Join-Path $out 'DOCTAG1.json') -Raw | ConvertFrom-Json).vendor.confidence | Should -Be 'override'
+        Use-FakeBmc
     }
     It 'Update-InfrastructureYml-FromDiscovery previews without -Apply' {
         $before = Get-Content $script:Cfg -Raw
         & $script:UpdateScript -ConfigPath $script:Cfg -DiscoveryPath $script:Out -InformationAction SilentlyContinue -WarningAction SilentlyContinue
         (Get-Content $script:Cfg -Raw) | Should -Be $before
     }
-    It 'Update-InfrastructureYml-FromDiscovery -Apply -Force writes serial and MACs' {
+    It 'Update-InfrastructureYml-FromDiscovery -Apply -Force writes serial and MACs from a schema 2.0 file' {
         & $script:UpdateScript -ConfigPath $script:Cfg -DiscoveryPath $script:Out -Apply -Force -InformationAction SilentlyContinue -WarningAction SilentlyContinue
         $doc = ConvertFrom-Yaml (Get-Content $script:Cfg -Raw) -Ordered
-        $doc.nodes[0].serial_number | Should -Be 'SVCTAG1'
+        $doc.nodes[0].serial_number | Should -Be 'DOCTAG1'
         ($doc.nodes[0].network_adapters | Where-Object name -eq 'Slot 3 Port 1').mac_address | Should -Be '00:00:5E:00:53:21'
-        (Get-ChildItem (Split-Path $script:Cfg) -Filter 'infrastructure.yml.bak.*').Count | Should -BeGreaterThan 0
+        @(Get-ChildItem (Split-Path $script:Cfg) -Filter 'infrastructure.yml.bak.*').Count | Should -BeGreaterThan 0
     }
     It 'Get-DellServerInventory-FromiDRAC keeps one consolidated file keyed by service tag' {
         $dir = Join-Path $TestDrive 'inventory'
-        & $script:InventoryScript -BmcAddress 'bmc.invalid' -Credential $script:Cred -OutputPath $dir -Detail Summary -InformationAction SilentlyContinue | Out-Null
-        & $script:InventoryScript -BmcAddress 'bmc.invalid' -Credential $script:Cred -OutputPath $dir -Detail Summary -InformationAction SilentlyContinue | Out-Null
+        & $script:InventoryScript -BmcAddress 'bmc.invalid' -Credential $script:Cred -OutputPath $dir -Detail Summary -InformationAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
+        & $script:InventoryScript -BmcAddress 'bmc.invalid' -Credential $script:Cred -OutputPath $dir -Detail Summary -InformationAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
         $inv = Get-Content (Join-Path $dir 'idrac-inventory.json') -Raw | ConvertFrom-Json
         $inv.Metadata.NodeCount | Should -Be 1
-        $inv.Nodes.SVCTAG1.NetworkPorts.Count | Should -Be 3
+        $inv.Nodes.DOCTAG1.schemaVersion | Should -Be '2.0'
+        @($inv.Nodes.DOCTAG1.network.adapters).Count | Should -Be 3
     }
     It 'Invoke-HardwareDiscovery fails (after writing the others) when a node cannot be read' {
-        $global:AzlTestIdrac.Remove('/redfish/v1/Systems/System.Embedded.1')
-        { & $script:InvokeScript -ConfigPath $script:Cfg -OutputPath (Join-Path $TestDrive 'fail') -Credential $script:Cred -Detail Summary -InformationAction SilentlyContinue -ErrorAction SilentlyContinue } | Should -Throw '*could not be discovered*'
+        Remove-FakeResource '/redfish/v1/Systems/System.Embedded.1'
+        { & $script:InvokeScript -ConfigPath $script:Cfg -OutputPath (Join-Path $TestDrive 'fail') -Credential $script:Cred -Detail Summary -ThrottleLimit 1 -InformationAction SilentlyContinue -ErrorAction SilentlyContinue -WarningAction SilentlyContinue } | Should -Throw '*could not be discovered*'
+        Use-FakeBmc
+    }
+    It 'sends only GET requests during the whole scripted run' {
+        @(Get-FakeCall | Where-Object Method -ne 'Get').Count | Should -Be 0
     }
     It 'Enable-IdracVnc -WhatIf touches no iDRAC' {
-        $global:AzlTestIdrac = Get-FakeIdrac
-        $global:AzlTestIdrac['/redfish/v1/Managers/iDRAC.Embedded.1/Attributes'] = (@{ Attributes = @{ 'VNCServer.1.Enable' = 'Disabled' } } | ConvertTo-Json -Depth 5)
+        Mock -ModuleName AzlDellRedfish Invoke-AzlRedfish { [pscustomobject]@{ Attributes = [pscustomobject]@{ 'VNCServer.1.Enable' = 'Disabled' } } }
         $r = & $script:VncScript -BmcAddress 'bmc.invalid' -Credential $script:Cred -WhatIf -InformationAction SilentlyContinue
         $r.Status | Should -Be 'WhatIf'
     }
 }
-
 Describe 'Standalone script' {
     It 'prints the MAC of every port and saves the file, with Invoke-RestMethod mocked' {
         $global:AzlTestIdrac = Get-FakeIdrac

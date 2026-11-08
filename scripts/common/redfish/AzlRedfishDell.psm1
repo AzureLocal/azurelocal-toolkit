@@ -117,7 +117,7 @@ function Get-AzlRedfishDellAdapter {
     # (Dell DellNIC class; INFERRED: not seen in the lab scan, which was summary level). The PCIe device (a standard link) is tried next
     # by the core.
     $hooks.NicModelHint = {
-        param($Context, $Adapter, $Functions)
+        param($Context, $Functions)
         foreach ($f in @($Functions)) {
             $name = Get-RfText (Get-RfProp (Get-DellOemBlock $f) 'DellNIC') 'ProductName'
             $clean = if ($name) { ($name -replace '\s+-\s+([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\s*$', '').Trim() } else { $null }
@@ -131,7 +131,7 @@ function Get-AzlRedfishDellAdapter {
 
     # Identity: the service tag is the Redfish System SKU (lab-observed). DellSystem carries the express service code (documented).
     $hooks.OemSystem = {
-        param($Context, $Report, $Paths, $Detail)
+        param($Context, $Report, $Paths)
         $sys = Read-AzlRedfishResource -Context $Context -Path $Paths.System
         $chassis = if ($Paths.Chassis) { Read-AzlRedfishResource -Context $Context -Path $Paths.Chassis } else { $null }
         $tag = Get-RfText $sys 'SKU'
@@ -165,7 +165,7 @@ function Get-AzlRedfishDellAdapter {
 
     # Storage: the BOSS card and the boot device. BOSS is a Storage controller named BOSS-* (lab-observed: BOSS.SL.12-1, 'BOSS-N1 Monolithic').
     $hooks.OemStorage = {
-        param($Context, $Report, $Paths, $Detail)
+        param($Context, $Report, $Paths)
         $controllers = @($Report.storage.controllers)
         $boss = $controllers | Where-Object { "$($_.id) $($_.name) $($_.model)" -match 'BOSS' } | Select-Object -First 1
         $how = 'name'
@@ -188,7 +188,7 @@ function Get-AzlRedfishDellAdapter {
 
     # Firmware: Dell lists 'Installed-...' and 'Previous-...' (rollback) entries (INFERRED from the ID prefix; not re-read).
     $hooks.OemFirmware = {
-        param($Context, $Report, $Paths, $Detail)
+        param($Context, $Report)
         $any = $false
         foreach ($f in @($Report.firmware)) {
             $state = if ("$($f.id)" -like 'Installed-*') { 'installed' } elseif ("$($f.id)" -like 'Current-*') { 'current' } elseif ("$($f.id)" -like 'Previous-*') { 'previous' } else { $null }
@@ -216,7 +216,7 @@ function Get-AzlRedfishDellAdapter {
     # Settings: virtualization switches from the BIOS attributes (Dell BIOS attribute registry: ProcVirtualization, SriovGlobalEnable;
     # IommuSupport is INFERRED and read only when present).
     $hooks.OemSettings = {
-        param($Context, $Report, $Paths, $Detail)
+        param($Context, $Report)
         $attr = Get-RfProp $Report.settings.bios 'attributes'
         if (-not $attr) { return }
         $on = { param($v) if ($null -eq $v) { $null } else { [string]$v -eq 'Enabled' } }
