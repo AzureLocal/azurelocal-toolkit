@@ -280,7 +280,7 @@ Describe 'ND-010 does not ask for Network ATC (the deployment installs it)' {
         $r = Invoke-VerRun 'ND-010' $f.World $f.Infra | Where-Object Node -EQ 'n01'
         $r.Status | Should -Be 'Passed'
         $r.Message | Should -Match 'the deployment installs it'
-        (& (Get-Module AzlVerification.NodeCommon) { $script:RequiredFeature }) | Should -Not -Contain 'NetworkATC'
-        (& (Get-Module AzlVerification.NodeCommon) { $script:AdvisedFeature }) | Should -Not -Contain 'NetworkATC'
+        (& (Get-Module -All AzlVerification.NodeCommon | Select-Object -First 1) { $script:RequiredFeature }) | Should -Not -Contain 'NetworkATC'
+        (& (Get-Module -All AzlVerification.NodeCommon | Select-Object -First 1) { $script:AdvisedFeature }) | Should -Not -Contain 'NetworkATC'
     }
 }
