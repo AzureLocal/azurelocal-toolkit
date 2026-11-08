@@ -24,7 +24,7 @@ BeforeAll {
 
 Describe 'The deployment block (schema 5.6)' {
     It 'the example file is clean, and so is a file with every key set to a good value' {
-        @(Get-Finding { param($i) }) | Should -BeNullOrEmpty
+        @(Get-Finding { }) | Should -BeNullOrEmpty
         $f = Get-Finding { param($i) $i.deployment = [ordered]@{
                 validate_timeout_minutes = 120; deploy_timeout_minutes = 480; poll_seconds = 10; poll_max_seconds = 60; approval = 'prompt'; resume = $true
                 require_os_configuration_report = $true; skip_preconditions = @('NamesAvailable'); acknowledge_known_issues = @('arc-device-id-name'); deployment_settings_api_version = '2026-10-01' } }

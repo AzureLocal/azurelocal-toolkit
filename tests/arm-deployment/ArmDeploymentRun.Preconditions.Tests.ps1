@@ -38,11 +38,11 @@ Describe 'AzureContext, ResourceGroup, ResourceProviders, Permissions' {
         (Get-Pre $r ResourceGroup).nextAction | Should -Match 'azure.resource_group'
     }
     It 'an unregistered required provider fails with the command; an unregistered recommended one only warns' {
-        $r = Invoke-TestRun -World (Get-FakeWorld) -Mode Plan -Override @{ GetProviderState = { param($Subscription, $Namespace) if ($Namespace -eq 'Microsoft.AzureStackHCI') { 'NotRegistered' } else { 'Registered' } } }
+        $r = Invoke-TestRun -World (Get-FakeWorld) -Mode Plan -Override @{ GetProviderState = { param($Subscription, $Namespace) $null = $Subscription; if ($Namespace -eq 'Microsoft.AzureStackHCI') { 'NotRegistered' } else { 'Registered' } } }
         (Get-Pre $r ResourceProviders).result | Should -Be 'Failed'
         (Get-Pre $r ResourceProviders).evidence | Should -Match 'Microsoft.AzureStackHCI'
         (Get-Pre $r ResourceProviders).nextAction | Should -Match 'az provider register --namespace Microsoft.AzureStackHCI'
-        $r2 = Invoke-TestRun -World (Get-FakeWorld) -Mode Plan -Override @{ GetProviderState = { param($Subscription, $Namespace) if ($Namespace -eq 'Microsoft.Insights') { 'NotRegistered' } else { 'Registered' } } }
+        $r2 = Invoke-TestRun -World (Get-FakeWorld) -Mode Plan -Override @{ GetProviderState = { param($Subscription, $Namespace) $null = $Subscription; if ($Namespace -eq 'Microsoft.Insights') { 'NotRegistered' } else { 'Registered' } } }
         (Get-Pre $r2 ResourceProviders).result | Should -Be 'Warning'
         $r2.ExitCode | Should -Be 0
     }
@@ -63,7 +63,7 @@ Describe 'AzureContext, ResourceGroup, ResourceProviders, Permissions' {
 
 Describe 'NamesAvailable and KeyVaultSecrets' {
     It 'a taken storage account name fails; a name that is already in the resource group passes (a re-run)' {
-        $taken = Invoke-TestRun -World (Get-FakeWorld) -Mode Validate -Override @{ TestNameAvailable = { param($Subscription, $ResourceGroup, $Type, $Name) [pscustomobject]@{ Available = ($Name -ne 'stiicazl01diag'); ExistsInResourceGroup = $false; Reason = 'already taken' } } }
+        $taken = Invoke-TestRun -World (Get-FakeWorld) -Mode Validate -Override @{ TestNameAvailable = { param($Subscription, $ResourceGroup, $Type, $Name) $null = $Subscription, $ResourceGroup, $Type; [pscustomobject]@{ Available = ($Name -ne 'stiicazl01diag'); ExistsInResourceGroup = $false; Reason = 'already taken' } } }
         (Get-Pre $taken NamesAvailable).result | Should -Be 'Failed'
         (Get-Pre $taken NamesAvailable).evidence | Should -Match 'stiicazl01diag'
         $again = Invoke-TestRun -World (Get-FakeWorld) -Mode Validate -Override @{ TestNameAvailable = { [pscustomobject]@{ Available = $false; ExistsInResourceGroup = $true; Reason = '' } } }
@@ -73,12 +73,12 @@ Describe 'NamesAvailable and KeyVaultSecrets' {
         $infra = Get-TestInfra
         $infra.cluster.key_vault.create_new = $false
         $seen = [System.Collections.Generic.List[string]]::new()
-        $null = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Validate -Override @{ TestNameAvailable = { param($Subscription, $ResourceGroup, $Type, $Name) $seen.Add("$Type/$Name"); [pscustomobject]@{ Available = $true; ExistsInResourceGroup = $false; Reason = '' } }.GetNewClosure() }
+        $null = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Validate -Override @{ TestNameAvailable = { param($Subscription, $ResourceGroup, $Type, $Name) $null = $Subscription, $ResourceGroup, $Type; $seen.Add("$Type/$Name"); [pscustomobject]@{ Available = $true; ExistsInResourceGroup = $false; Reason = '' } }.GetNewClosure() }
         $seen | Should -Not -Contain 'keyvault/kv-iic-azl-01'
         $seen | Should -Contain 'storage/stiicazl01diag'
     }
     It 'a secret that is not in the vault fails and names the parameter, the vault and the secret, not the value' {
-        $r = Invoke-TestRun -World (Get-FakeWorld) -Mode Plan -Override @{ TestSecret = { param($Vault, $Secret) $Secret -ne 'lcm-password' } }
+        $r = Invoke-TestRun -World (Get-FakeWorld) -Mode Plan -Override @{ TestSecret = { param($Vault, $Secret) $null = $Vault; $Secret -ne 'lcm-password' } }
         $c = Get-Pre $r KeyVaultSecrets
         $c.result | Should -Be 'Failed'
         $c.evidence | Should -Match 'AzureStackLCMAdminPassword'
