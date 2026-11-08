@@ -614,11 +614,201 @@ Describe 'Integration with the SBE delivery routes and the node script' {
         $warnings.Errors | Should -BeNullOrEmpty
         $warnings.Warnings.Count | Should -Be 1
         $warnings.Warnings[0] | Should -Match 'NOT DELIVERED'
-    }    It '<_> on a ZTP node needs no credential' -ForEach 'skip', 'node_pull' {
+    }
+    It '<_> on a ZTP node needs no credential' -ForEach 'skip', 'node_pull' {
         $route = $_
         $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.hardware.sbe.delivery = $route; $d.hardware.sbe.node_pull_url = 'https://files.example.invalid/sbe' }
         $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
         $global:AzlCalls[0].Params.ContainsKey('Credential') | Should -BeFalse
+    }
+}
+
+Describe 'Event feed (os-configuration-events.jsonl)' {
+    BeforeAll {
+        function Read-RunEvent([string]$Path) { @(Get-Content -LiteralPath $Path -Encoding utf8 | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json }) }
+        function Get-NodeState($Events, [string]$Node) { @($Events | Where-Object { $_.node -eq $Node } | ForEach-Object { $_.state }) }
+    }
+    It 'Plan, two ZTP nodes: RunStarted with the nodes array first, per node NodeStarted then MethodResolved, the plan, PlanCompleted, WipeListPublished, RunCompleted last' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
+        $file = Join-Path $r.Out 'os-configuration-events.jsonl'
+        Test-Path -LiteralPath $file | Should -BeTrue
+        $raw = Get-Content -LiteralPath $file -Encoding utf8
+        $e = Read-RunEvent $file
+        $e[0].state | Should -Be 'RunStarted'
+        $e[0].node | Should -Be '*'
+        @($e[0].nodes) | Should -Be @('iic-n01', 'iic-n02')
+        $e[0].evidence | Should -Match 'iic-n01, iic-n02'
+        $e[0].mode | Should -Be 'Plan'
+        $e[0].wrapperVersion | Should -Not -BeNullOrEmpty
+        $e[0].schemaVersion | Should -Not -BeNullOrEmpty
+        $e[-1].state | Should -Be 'RunCompleted'
+        $e[-1].exitCode | Should -Be 0
+        $e[-1].total | Should -Be 2
+        $names = @($e | ForEach-Object { $_.state })
+        $names.IndexOf('PlanCompleted') | Should -BeLessThan $names.IndexOf('WipeListPublished')
+        $names.IndexOf('WipeListPublished') | Should -BeLessThan $names.IndexOf('RunCompleted')
+        (Get-NodeState $e 'iic-n01')[0..2] | Should -Be @('NodeStarted', 'MethodResolved', 'TransportResolved')
+        $e[0].payloadVersion | Should -Be '1'
+        $e[0].schemaVersion | Should -Be '5.3.0'
+        ($e | Where-Object { $_.node -eq 'iic-n01' -and $_.state -eq 'TransportResolved' }).transport | Should -Be 'ArcRunCommand'
+        foreach ($line in $raw) { $line | Should -Match '"timestamp":"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{7}Z"' }
+        foreach ($x in $e) { $x.stage | Should -Be 'OsConfiguration'; $x.level | Should -BeIn @('Info', 'Warning', 'Error') }
+        [IO.File]::ReadAllBytes($file)[0] | Should -Not -Be 0xEF
+        # every step is accounted for on every node: planned, or skipped with its reason
+        foreach ($n in 'iic-n01', 'iic-n02') {
+            $steps = @($e | Where-Object { $_.node -eq $n -and $_.state -in 'StepPlanned', 'StepSkipped' } | ForEach-Object { $_.step } | Select-Object -Unique)
+            $steps.Count | Should -Be 13
+        }
+    }
+    It 'MethodResolved carries the method, the declaration, the evidence and the versions; a ZTP node verifies Hostname and Arc registration instead of changing them' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
+        $e = Read-RunEvent (Join-Path $r.Out 'os-configuration-events.jsonl')
+        $m = @($e | Where-Object { $_.node -eq 'iic-n01' -and $_.state -eq 'MethodResolved' })
+        $m.Count | Should -Be 2 -Because 'once when the method is decided, once after the first read adds the OS'
+        $m[0].method | Should -Be 'Ztp'
+        $m[0].transport | Should -Be 'ArcRunCommand'
+        $m[0].declared | Should -Be 'simplified'
+        $m[0].declaredMethod | Should -Be 'Ztp'
+        $m[0].mismatch | Should -BeFalse
+        $m[0].handoff | Should -Be 'ready'
+        $m[0].arc | Should -Be 'Connected'
+        $m[0].sbePublisher | Should -Be 'Dell'
+        $m[0].sbeDelivery | Should -Match 'SAS'
+        $m[0].PSObject.Properties.Name | Should -Not -Contain 'osVersion'
+        $m[1].osVersion | Should -Be '10.0.26100.1'
+        $m[1].build | Should -Be 26100
+        $m[1].hostname | Should -Be 'iic-n01'
+        $host1 = $e | Where-Object { $_.node -eq 'iic-n01' -and $_.step -eq 'Hostname' }
+        $host1.state | Should -Be 'StepPlanned'
+        $host1.verifyOnly | Should -BeTrue
+        $host1.action | Should -Be 'Ok'
+        $arc1 = $e | Where-Object { $_.node -eq 'iic-n01' -and $_.step -eq 'ArcRegistration' }
+        $arc1.verifyOnly | Should -BeTrue
+        $dns = $e | Where-Object { $_.node -eq 'iic-n01' -and $_.step -eq 'Dns' }
+        $dns.state | Should -Be 'StepPlanned'
+        $dns.action | Should -Be 'Change'
+        $dns.current | Should -Be 'x'
+        $dns.desired | Should -Be 'y'
+        $dns.evidence | Should -Match 'x -> y'
+    }
+    It 'a mixed cluster: the ISO node says Iso over WinRM, warns that the declaration disagrees, plans a real Arc registration' {
+        $global:AzlArcNone = @('iic-n02')
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.nodes[1].maintenance_address = '192.0.2.112' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory -Nodes @('iic-n01'))
+        $e = Read-RunEvent (Join-Path $r.Out 'os-configuration-events.jsonl')
+        $m1 = @($e | Where-Object { $_.node -eq 'iic-n01' -and $_.state -eq 'MethodResolved' })[0]
+        $m2 = @($e | Where-Object { $_.node -eq 'iic-n02' -and $_.state -eq 'MethodResolved' })[-1]
+        $m1.method | Should -Be 'Ztp'
+        $m2.method | Should -Be 'Iso'
+        $m2.transport | Should -Be 'WinRM'
+        $m2.mismatch | Should -BeTrue
+        $m2.declaredMethod | Should -Be 'Ztp'
+        $m2.level | Should -Be 'Warning'
+        @($e | Where-Object { $_.node -eq 'iic-n02' -and $_.state -eq 'MethodResolved' })[0].evidence | Should -Match 'declared'
+        @($m2.warnings).Count | Should -Be 1
+        $m2.osCaption | Should -Be 'Microsoft Azure Stack HCI'
+        $m2.build | Should -Be 26100
+        $m2.sbeDelivery | Should -Match 'WinRM'
+        $arc2 = $e | Where-Object { $_.node -eq 'iic-n02' -and $_.step -eq 'ArcRegistration' }
+        $arc2.action | Should -Be 'Change'
+        $arc2.PSObject.Properties.Name | Should -Not -Contain 'verifyOnly'
+        $host2 = $e | Where-Object { $_.node -eq 'iic-n02' -and $_.step -eq 'Hostname' }
+        $host2.state | Should -Be 'StepSkipped' -Because 'the fake script reports no Hostname item; the reason is given'
+        $host2.evidence | Should -Match '^Not applicable'
+    }
+    It 'Apply: StepApplying, StepApplied, StepVerified in order, then NodeConverged, and RunCompleted counts the converged nodes' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply
+        $e = Read-RunEvent (Join-Path $r.Out 'os-configuration-events.jsonl')
+        $dns = @($e | Where-Object { $_.node -eq 'iic-n01' -and $_.step -eq 'Dns' } | ForEach-Object { $_.state })
+        $dns | Should -Be @('StepPlanned', 'StepApplying', 'StepApplied', 'StepVerified')
+        $states = Get-NodeState $e 'iic-n01'
+        $states[-1] | Should -Be 'NodeConverged'
+        @($states | Where-Object { $_ -eq 'NodeConverged' }).Count | Should -Be 1
+        $e[-1].state | Should -Be 'RunCompleted'
+        $e[-1].converged | Should -Be 2
+        $e[-1].mode | Should -Be 'Apply'
+    }
+    It 'a node whose apply fails gets NodeFailed (Error) once, the other node converges, and the run ends with exit code 1 as an Error' {
+        $global:AzlFail = @('iic-n01')
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply
+        $e = Read-RunEvent (Join-Path $r.Out 'os-configuration-events.jsonl')
+        $f = @($e | Where-Object { $_.node -eq 'iic-n01' -and $_.state -in 'NodeFailed', 'NodeConverged', 'NodeBlocked' })
+        $f.Count | Should -Be 1
+        $f[0].state | Should -Be 'NodeFailed'
+        $f[0].level | Should -Be 'Error'
+        $f[0].evidence | Should -Match 'boom'
+        $f[0].nextAction | Should -Not -BeNullOrEmpty
+        (Get-NodeState $e 'iic-n02')[-1] | Should -Be 'NodeConverged'
+        $e[-1].exitCode | Should -Be 1
+        $e[-1].level | Should -Be 'Error'
+        $e[-1].converged | Should -Be 1
+    }
+    It 'Plan mode on a node that already matches: NodeConverged; a node with changes pending has no outcome yet' {
+        $global:AzlConverged = @('iic-n01')
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
+        $e = Read-RunEvent (Join-Path $r.Out 'os-configuration-events.jsonl')
+        (Get-NodeState $e 'iic-n01') | Should -Contain 'NodeConverged'
+        (Get-NodeState $e 'iic-n02') | Should -Not -Contain 'NodeConverged'
+        $e[-1].converged | Should -Be 1
+    }
+    It 'bad input ends with RunCompleted exit code 2 and a NodeFailed for a node nothing reaches' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $global:AzlPortAnswers = $false
+        $global:AzlArcNone = @('iic-n01', 'iic-n02')
+        $r = Invoke-Run -Infra $infra
+        $r.ExitCode | Should -Be 2
+        $e = Read-RunEvent (Join-Path $r.Out 'os-configuration-events.jsonl')
+        $e[-1].state | Should -Be 'RunCompleted'
+        $e[-1].exitCode | Should -Be 2
+        @($e | Where-Object { $_.state -eq 'NodeFailed' }).Count | Should -BeGreaterThan 0
+    }
+    It 'WipeListPublished lists the disks of the plan when the storage wipe is on' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.os_configuration = @{ clear_storage = $true } }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
+        $e = Read-RunEvent (Join-Path $r.Out 'os-configuration-events.jsonl')
+        $w = $e | Where-Object { $_.state -eq 'WipeListPublished' }
+        $w.level | Should -Be 'Warning'
+        $w.wipeCount | Should -Be 2
+        @($w.wipe).Count | Should -Be 2
+        @($w.wipe)[0].node | Should -Be 'iic-n01'
+        $w.evidence | Should -Match 'WOULD BE WIPED'
+    }
+    It '-EventLogPath puts the feed elsewhere and appends to what is there' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $shared = Join-Path $TestDrive 'shared\events.jsonl'
+        $r1 = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ EventLogPath = $shared }
+        $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ EventLogPath = $shared }
+        Test-Path (Join-Path $r1.Out 'os-configuration-events.jsonl') | Should -BeFalse
+        $e = Read-RunEvent $shared
+        @($e | Where-Object { $_.state -eq 'RunStarted' }).Count | Should -Be 2
+        @($e | Where-Object { $_.state -eq 'RunCompleted' }).Count | Should -Be 2
+    }
+    It 'a feed that cannot be written never fails the run' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ EventLogPath = $TestDrive }
+        $r.ExitCode | Should -Be 0
+        Test-Path (Join-Path $r.Out 'report.json') | Should -BeTrue
+    }
+    It 'a retry of an Unknown run command is written as NodeRetry with the try number, while the call runs' {
+        Mock -ModuleName AzlOsConfigurationRun Invoke-AzlSetNodeConfiguration {
+            & (Get-Module AzlOsConfigurationRun) { param($c, $r, $p, $retry) Send-AzlRetryEvent -Context $c -Record $r -Phase $p -Retry $retry } $EventContext $EventRecord $EventPhase ([pscustomobject]@{ Node = $Parameters.Node[0]; Try = 2; Tries = 3; WaitSeconds = 45 })
+            New-FakeSetResult $Parameters
+        }
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Node = @('iic-n01') }
+        $e = Read-RunEvent (Join-Path $r.Out 'os-configuration-events.jsonl')
+        $retry = @($e | Where-Object { $_.state -eq 'NodeRetry' })
+        $retry.Count | Should -Be 1
+        $retry[0].node | Should -Be 'iic-n01'
+        $retry[0].try | Should -Be 2
+        $retry[0].tries | Should -Be 3
+        $retry[0].level | Should -Be 'Warning'
+        $retry[0].transport | Should -Be 'ArcRunCommand'
     }
 }
 }

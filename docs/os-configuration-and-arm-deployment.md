@@ -65,6 +65,7 @@ The full cross-tool matrix is in the toolkit's [access-and-connectivity page](ac
 | `-Transport`, `-Method` | `Auto` (default) works both out per node; force `ArcRunCommand`/`WinRM` or `Ztp`/`Iso` for all nodes. |
 | `-Credential`, `-NodeAddress` | The local administrator for WinRM (default: `identity.local_admin`, password from the Key Vault) and the address to reach a node on when the installer's address is not in the file. Used for ISO-installed nodes, and, on a ZTP node reached over Arc, only to copy the SBE package when `hardware.sbe.delivery` is `winrm_copy`. |
 | `-ClearStorage` | Forces the storage wipe on (see below). |
+| `-EventLogPath` | The event feed (JSON Lines) a viewer follows. Default: `os-configuration-events.jsonl` in `-ReportDirectory`. See [the event feed](#the-event-feed-what-the-run-tells-a-viewer). |
 | `-ConfigPath`, `-Settings` | Optional run settings (JSON file, then a hashtable that wins): `retryTries`, `retryDelaySeconds`, `maxPasses`, `noRestart`, `failOnPendingChanges`, `nodeAddress`. |
 | `-FailOnPendingChanges` | Plan mode: exit 1 when any change is pending (drift detection). |
 
@@ -133,6 +134,69 @@ With it off, leftover storage is reported as blocking (exit 1) and nothing is wi
 ### A run command that ends in state Unknown
 
 Arc Run Command can end in state `Unknown` when the node's agent briefly loses its connection (for example while its network changes). The script on the node is safe to run again, so the run is retried with a growing pause (default 3 tries, 15 s, 45 s, then 120 s; `retryTries`, `retryDelaySeconds`). After the last try the node is **read again** and the next step is decided from what the read shows. If an Apply ended in `Unknown`, the report lists a change with status `unknown`, and the node is converged if the read (and the verification pass) shows it matches. A restart that ends in `Unknown` is not a failure: the run waits for a new boot time.
+
+### The event feed: what the run tells a viewer
+
+While it runs, the OS configuration appends what it does to a file, one JSON object per line (JSON Lines, UTF-8 without a byte-order mark, UTC timestamps). A viewer such as azurelocal-sonar follows the file; you can read it with any text tool. The default is `os-configuration-events.jsonl` in `-ReportDirectory`; `-EventLogPath` puts it somewhere else. Lines are only appended, so a path shared by several runs keeps the history of all of them. Writing the feed never fails the run: if the file cannot be written, the run goes on without it.
+
+Every line has the shape azurelocal-ztp's event file has, so one reader follows both:
+
+| Field | Meaning |
+| --- | --- |
+| `timestamp` | UTC, ISO-8601 round-trip (`2026-11-07T19:01:59.5360000Z`) |
+| `node` | the node's name, or `*` for an event about the whole run |
+| `stage` | always `OsConfiguration` |
+| `step` | the step the event is about, empty for node and run events |
+| `state` | what happened (the tables below) |
+| `evidence` | one line of plain text: what was found, changed or failed |
+| `level` | `Info`, `Warning` or `Error` |
+| `nextAction` | what to do next, empty when nothing |
+| `method` | `Ztp` or `Iso`; empty for a run event and before the method is known |
+| `transport` | `ArcRunCommand` or `WinRM` |
+| `payloadVersion` | the version of the node payload (the format the nodes answer in) |
+| `schemaVersion` | the master file's `_metadata.schema_version` |
+
+Run events (node `*`):
+
+| State | When | Extra fields |
+| --- | --- | --- |
+| `RunStarted` | the inputs are valid and the run begins. `evidence` names the nodes | `nodes` (array of names; a viewer clears exactly these nodes), `mode`, `cluster`, `schemaVersion` (the master file's `_metadata.schema_version`), `wrapperVersion` |
+| `PlanCompleted` | every node was planned (read only) | `changes`, `blocked`, `mode` |
+| `WipeListPublished` | the wipe list was written (`Warning` when disks will be wiped) | `wipeCount`, `clearStorage`, `wipe` (array of `{ node, disks }`) |
+| `RunCompleted` | last event; also written when the run stops on bad input or an error | `exitCode`, `converged`, `total`, `mode` |
+
+Node events:
+
+| State | When | Extra fields |
+| --- | --- | --- |
+| `NodeStarted` | the run starts on the node. A viewer starts a new attempt for the node here | |
+| `MethodResolved` | the method is decided (`evidence` names the declared `scenario.os_install`, the evidence found and any warning; `Warning` when the declaration and the evidence disagree). Written once more after the first read of the node, to add the OS it reported | `declared`, `declaredMethod` (`Ztp` or `Iso`), `source`, `mismatch`, `steps`, `handoff`, `arc`, `winrm`, `warnings`, `hostname`, `osVersion`, `build`, `osCaption` (ISO path), `schemaVersion`, `wrapperVersion`, `sbePublisher`, `sbeFamily`, `sbeVersion`, `sbePackage`, `sbeDelivery` |
+| `TransportResolved` | how the node is reached (`transport` on the line); `address` and `forced` | `address`, `forced` |
+| `NodeRetry` | an Arc Run Command ended in state `Unknown` and is tried again | `try`, `tries`, `waitSeconds`, `phase` |
+| `NodeRestarting` | the node was asked to restart (written when the apply call reports it) | |
+| `NodeReconnecting`, `NodeReconnected` | the node restarted or its address changed and the run waited for it, then reached it again. For a restart inside an apply call they are written when the call reports it, before the `StepApplied` events of that call | |
+| `NodeConverged` | the plan found nothing to change, or the verification pass found nothing left to change | |
+| `NodeFailed` | the node could not be read, a step failed, or it did not converge (`Error`) | |
+| `NodeBlocked` | an item is blocked (`Warning` in Plan mode, `Error` after an apply), or the node was skipped because an earlier node failed | |
+
+Step events (`step` is one of `RemoteManagement`, `Network`, `Dns`, `Time`, `Hostname`, `UnusedAdapters`, `LocalAdmin`, `Mpio`, `SanVerify`, `ClearStorage`, `Sbe`, `Drivers`, `ArcRegistration`):
+
+| State | When | Extra fields |
+| --- | --- | --- |
+| `StepPlanned` | after the plan pass. `evidence` starts with the action and shows the items that decide it as `item: current -> desired` | `action` (`Ok`, `Change`, `Blocked` or `Info`), `item`, `current`, `desired`, `verifyOnly` (ZTP nodes: Hostname and ArcRegistration are checked, not changed) |
+| `StepApplying` | the apply call is about to change the step | `item`, `current`, `desired` |
+| `StepApplied` | the apply call reports the step's changes as done | |
+| `StepFailed` | the apply reports a failed change, or the verification pass still finds the step different | `action`, `item`, `current`, `desired` |
+| `StepSkipped` | the step does not apply to this node or run; `evidence` starts with `Not applicable:` and says why (not selected with `-Step`, no SBE bundle, the storage wipe is off, ...) | |
+| `StepVerified` | the verification pass finds the step matching | `action` |
+
+Domain join (step `DomainJoin`, Active Directory designs): `DomainJoinPlanned`, `DomainJoinApplying`, `DomainJoined`, `DomainAdminsConfigured` (the LCM user, or the listed principals, were added to the node's local Administrators) and `DomainJoinFailed` (`evidence` is the AD error). A viewer such as azurelocal-sonar switches the account it reads a node's logs with from the local account to the domain account only after both `DomainJoined` and `DomainAdminsConfigured`: before the second, a domain account is not an administrator of the node.
+
+Guarded network change (step `Network`): `NetworkChangeStaged`, `NetworkChangeVerifying`, `NetworkChangeAwaitingConfirm` (`confirmMinutes`, `confirmBy`), `NetworkChangeCommitted`, `NetworkChangeRepaired` (`rung`), `NetworkChangeRolledBack` (`reason`: the node's own reason) and `NetworkChangeRefused`. They carry the optional fields `changeId`, `rung`, `reason`, `confirmMinutes` and `confirmBy` (the UTC time the confirmation window ends). The contract is section 6 of the OS configuration design in the platform repository (`pmo/azure-local/os-configuration-design.md`).
+
+Order for one node in Apply mode: `NodeStarted`, `MethodResolved`, `StepPlanned`/`StepSkipped` for every step, `StepApplying`, `StepApplied` (or `StepFailed`), `StepVerified`, then `NodeConverged`, `NodeFailed` or `NodeBlocked`. A node whose plan shows nothing to change goes straight to `NodeConverged`. Run `Get-Content os-configuration-events.jsonl -Wait` to watch a run.
+
+What differs by method: on the ZTP path `Hostname` and `ArcRegistration` are planned as `verifyOnly` steps (the computer name the node reports, the handoff's `ready`, the Arc machine's state); on the ISO path they are real steps (a restart for the name, the Arc registration). `method` and `transport` are on every node line, so a cluster that mixes both is read line by line.
 
 ### How the plan and the approval gate work
 
