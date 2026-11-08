@@ -69,6 +69,14 @@
     Node name -> the address to open the WinRM session to first, for a node that still holds the installer's address.
 .PARAMETER ClearStorage
     Force the storage wipe on, as os_configuration.clear_storage: true does.
+.PARAMETER ConfirmWipeDeployedCluster
+    One-shot, per run, never read from a file or from os_configuration.clear_storage: lets the storage wipe touch a node that belongs to a deployed cluster
+    (HKLM:\Cluster exists, the Cluster service is installed, or a pool or cluster shared volume belongs to a cluster). Without it such a node is Blocked in the plan
+    with the reason, and the node-side clear refuses it too. Only meaningful together with the storage wipe.
+.PARAMETER ApprovedWipeList
+    The approval of the storage wipe, bound to what the reviewer saw. A Plan run writes wipe-list.json (node, disk serials and a SHA-256 of them) next to plan-report.json;
+    an Apply run whose own wipe list is not empty needs that file (or the plan-report.json) here, and stops with exit code 2, before anything is changed, when it holds
+    a disk that is not in it. A pipeline passes the Plan stage's artifact. Each node call is then told which disks it may wipe, and wipes nothing else.
 .PARAMETER ApprovedBootstrap
     The pipeline approval of the one-time bootstrap (os_configuration.remoting.bootstrap_transport arc, smb or auto). Classes lab, test and dev need
     none; production and dmz do not bootstrap without it (dmz: on every run).
@@ -95,6 +103,8 @@ param(
     [pscredential]$Credential,
     [hashtable]$NodeAddress,
     [switch]$ClearStorage,
+    [switch]$ConfirmWipeDeployedCluster,
+    [string]$ApprovedWipeList,
     [switch]$FailOnPendingChanges,
     [switch]$SkipValidation,
     [string]$EventLogPath,

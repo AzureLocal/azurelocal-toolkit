@@ -55,6 +55,57 @@ $S = ConvertFrom-B64Json $SecretsB64
 $stateDir = 'C:\ProgramData\AzureLocal\osconfig'
 '@
 
+# Shared by the Read and the Apply script (put in place of #AZL-HOOK:StorageHelper): the disks a storage clear may touch, and whether the node belongs to a cluster.
+$script:StorageHelper = @'
+# Never wiped, whatever a list says: SAN LUNs, USB, virtual media, and the Spaces/Unknown bus types.
+$skipBus = @('Fibre Channel', 'iSCSI', 'USB', 'File Backed Virtual', 'Spaces', 'Virtual', 'Unknown')
+function Get-StorageDiskKey($d) {
+    $sn = ([string]$d.SerialNumber).Trim()
+    if ($sn) { return $sn }
+    return ([string]$d.UniqueId).Trim()
+}
+# Why this node counts as a deployed cluster member (empty: it does not): HKLM:\Cluster, the Cluster service, a pool owned by a cluster, the CSV folder.
+function Get-DeployedClusterEvidence {
+    $why = @()
+    if (Test-Path -LiteralPath 'HKLM:\Cluster') { $why += 'HKLM:\Cluster exists' }
+    if (Get-Service -Name ClusSvc -ErrorAction SilentlyContinue) { $why += 'the Cluster service (ClusSvc) is installed' }
+    $clustered = @(Get-StoragePool -ErrorAction SilentlyContinue | Where-Object { -not $_.IsPrimordial -and $_.IsClustered })
+    if ($clustered.Count -gt 0) { $why += ('storage pool(s) owned by a cluster: ' + (($clustered | ForEach-Object { [string]$_.FriendlyName }) -join ', ')) }
+    if (Test-Path -LiteralPath 'C:\ClusterStorage') { $why += 'C:\ClusterStorage exists (cluster shared volumes)' }
+    return $why
+}
+# The local disks a clear may touch: members of a pool that is not primordial, and partitioned or offline disks. Boot, system and skipBus disks are left out.
+function Get-StorageWipeCandidate {
+    $list = New-Object System.Collections.ArrayList
+    $seen = @{}
+    $disks = @(Get-Disk -ErrorAction SilentlyContinue)
+    $bootKeys = @{}
+    foreach ($d in $disks) { if ($d.IsBoot -or $d.IsSystem) { $bootKeys[(Get-StorageDiskKey $d)] = $true } }
+    foreach ($pool in @(Get-StoragePool -ErrorAction SilentlyContinue | Where-Object { -not $_.IsPrimordial })) {
+        foreach ($pd in @(Get-PhysicalDisk -StoragePool $pool -ErrorAction SilentlyContinue)) {
+            $key = Get-StorageDiskKey $pd
+            if ($skipBus -contains [string]$pd.BusType) { continue }
+            if ($key -and $bootKeys.ContainsKey($key)) { continue }
+            if ($key -and $seen.ContainsKey($key)) { continue }
+            if ($key) { $seen[$key] = $true }
+            [void]$list.Add([pscustomobject]@{ n = $null; id = $key; sn = ([string]$pd.SerialNumber).Trim(); uid = ([string]$pd.UniqueId).Trim(); size = [int64]$pd.Size; model = ([string]$pd.Model).Trim(); bus = [string]$pd.BusType; ps = ''; why = ('member of pool ' + [string]$pool.FriendlyName) })
+        }
+    }
+    foreach ($d in $disks) {
+        if ($d.IsBoot -or $d.IsSystem) { continue }
+        if ($skipBus -contains [string]$d.BusType) { continue }
+        if ([string]$d.PartitionStyle -eq 'RAW' -and [string]$d.OperationalStatus -eq 'Online') { continue }
+        $key = Get-StorageDiskKey $d
+        if ($key -and $seen.ContainsKey($key)) { continue }
+        if ($key) { $seen[$key] = $true }
+        $model = ([string]$d.Model).Trim()
+        if (-not $model) { $model = ([string]$d.FriendlyName).Trim() }
+        [void]$list.Add([pscustomobject]@{ n = [int]$d.Number; id = $key; sn = ([string]$d.SerialNumber).Trim(); uid = ([string]$d.UniqueId).Trim(); size = [int64]$d.Size; model = $model; bus = [string]$d.BusType; ps = [string]$d.PartitionStyle; why = ('partition style ' + [string]$d.PartitionStyle + ', ' + [string]$d.OperationalStatus) })
+    }
+    return $list.ToArray()
+}
+'@
+
 $script:ReadBody = @'
 $Az = @{ err = @{}; nics = @(); remote = $null; time = $null; sbe = @(); drv = @(); adm = $null; stor = $null; san = $null; domainJoin = $null; reboot = $false }
 function Invoke-Section([string]$name, [scriptblock]$sb) {
@@ -174,14 +225,14 @@ Invoke-Section 'admin' {
     $Az.adm = [pscustomobject]@{ ex = [bool]$u; en = $(if ($u) { [bool]$u.Enabled } else { $false }); adm = $inAdmins; pw = $pwOk }
 }
 
-# ---- storage left over from an earlier deployment (counts and a short list; nothing is changed)
+# ---- storage left over from an earlier deployment (counts, the disks a clear could touch with serial, size, model, bus and partition style, and whether the node belongs to a cluster; nothing is changed)
+#AZL-HOOK:StorageHelper
 Invoke-Section 'storage' {
     $pools = @(Get-StoragePool -ErrorAction SilentlyContinue | Where-Object { -not $_.IsPrimordial }).Count
     $vdisks = @(Get-VirtualDisk -ErrorAction SilentlyContinue).Count
-    $skipBus = @('Fibre Channel', 'iSCSI', 'USB', 'File Backed Virtual', 'Spaces', 'Virtual', 'Unknown')
-    $dirty = @(Get-Disk -ErrorAction SilentlyContinue | Where-Object { -not $_.IsBoot -and -not $_.IsSystem -and ($skipBus -notcontains [string]$_.BusType) -and ([string]$_.PartitionStyle -ne 'RAW' -or [string]$_.OperationalStatus -ne 'Online') } |
-            ForEach-Object { '{0}:{1}:{2}' -f $_.Number, $_.BusType, $_.PartitionStyle })
-    $Az.stor = [pscustomobject]@{ pools = $pools; vdisks = $vdisks; dirty = $dirty }
+    $dirty = @(Get-StorageWipeCandidate)
+    $why = @(Get-DeployedClusterEvidence)
+    $Az.stor = [pscustomobject]@{ pools = $pools; vdisks = $vdisks; dirty = $dirty; cluster = [pscustomobject]@{ deployed = ($why.Count -gt 0); why = $why } }
 }
 
 # ---- SAN: MPIO, MSDSM, FC ports, iSCSI initiator, the LUNs this node sees
@@ -241,7 +292,8 @@ Write-Result ([pscustomobject]@{
 '@
 
 $script:ApplyBody = @'
-$sbeDir = [string](Get-P $P 'sbeDir' 'C:\SBE')
+#AZL-HOOK:StorageHelper
+$sbeDir =[string](Get-P $P 'sbeDir' 'C:\SBE')
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $results = New-Object System.Collections.ArrayList
 $Az = @{ reboot = $false }
@@ -453,20 +505,40 @@ function Invoke-Action($a) {
             return 'MSDSM claims iSCSI disks automatically'
         }
         'storage-clear' {
-            # Never touches SAN LUNs, USB or virtual media, boot or system disks.
+            # Touches only the disks the action names (the serials the operator approved), and of those never a SAN LUN, USB or virtual media, a boot or a system
+            # disk. A node that belongs to a cluster is refused unless the action carries the one-shot confirmation of this run.
+            $approved = @{}
+            foreach ($s in @(Get-P $a 'serials' @())) { if (([string]$s).Trim()) { $approved[([string]$s).Trim()] = $true } }
+            if ($approved.Count -eq 0) { throw 'storage-clear refused: the action names no approved disk serial, so no disk is wiped.' }
+            $why = @(Get-DeployedClusterEvidence)
+            if ($why.Count -gt 0 -and -not [bool](Get-P $a 'confirmDeployedCluster' $false)) {
+                throw ('storage-clear refused: this node belongs to a deployed cluster (' + ($why -join '; ') + '). Nothing was wiped. To wipe it anyway, run with -ConfirmWipeDeployedCluster (a one-shot flag of this run, never read from a file).')
+            }
             Update-StorageProviderCache -ErrorAction SilentlyContinue
-            Get-StoragePool -ErrorAction SilentlyContinue | Where-Object { -not $_.IsPrimordial } | Set-StoragePool -IsReadOnly $false -ErrorAction SilentlyContinue
-            Get-VirtualDisk -ErrorAction SilentlyContinue | Remove-VirtualDisk -Confirm:$false
-            Get-StoragePool -ErrorAction SilentlyContinue | Where-Object { -not $_.IsPrimordial } | Remove-StoragePool -Confirm:$false
-            Get-PhysicalDisk -ErrorAction SilentlyContinue | Where-Object { @('Fibre Channel', 'iSCSI', 'USB') -notcontains [string]$_.BusType } | Reset-PhysicalDisk -ErrorAction SilentlyContinue
-            $skipBus = @('Fibre Channel', 'iSCSI', 'USB', 'File Backed Virtual', 'Spaces', 'Virtual', 'Unknown')
+            $bootKeys = @{}
+            foreach ($d in @(Get-Disk -ErrorAction SilentlyContinue)) { if ($d.IsBoot -or $d.IsSystem) { $bootKeys[(Get-StorageDiskKey $d)] = $true } }
+            $mayTouch = { param($disk) $k = Get-StorageDiskKey $disk; return ($k -and $approved.ContainsKey($k) -and -not $bootKeys.ContainsKey($k) -and ($skipBus -notcontains [string]$disk.BusType)) }
+            $leftPools = @()
+            foreach ($pool in @(Get-StoragePool -ErrorAction SilentlyContinue | Where-Object { -not $_.IsPrimordial })) {
+                $members = @(Get-PhysicalDisk -StoragePool $pool -ErrorAction SilentlyContinue)
+                $outside = @($members | Where-Object { -not (& $mayTouch $_) })
+                if ($members.Count -eq 0 -or $outside.Count -gt 0) { $leftPools += [string]$pool.FriendlyName; continue }
+                $pool | Set-StoragePool -IsReadOnly $false -ErrorAction SilentlyContinue
+                Get-VirtualDisk -StoragePool $pool -ErrorAction SilentlyContinue | Remove-VirtualDisk -Confirm:$false
+                $pool | Remove-StoragePool -Confirm:$false
+            }
+            foreach ($pd in @(Get-PhysicalDisk -ErrorAction SilentlyContinue)) {
+                if (& $mayTouch $pd) { $pd | Reset-PhysicalDisk -ErrorAction SilentlyContinue }
+            }
             $cleared = @()
-            foreach ($d in @(Get-Disk | Where-Object { -not $_.IsBoot -and -not $_.IsSystem -and ($skipBus -notcontains [string]$_.BusType) })) {
+            foreach ($d in @(Get-Disk -ErrorAction SilentlyContinue)) {
+                if ($d.IsBoot -or $d.IsSystem) { continue }
+                if (-not (& $mayTouch $d)) { continue }
                 if ($d.IsOffline) { Set-Disk -Number $d.Number -IsOffline $false -ErrorAction SilentlyContinue }
                 if ($d.IsReadOnly) { Set-Disk -Number $d.Number -IsReadOnly $false -ErrorAction SilentlyContinue }
                 if ([string]$d.PartitionStyle -ne 'RAW') { Clear-Disk -Number $d.Number -RemoveData -RemoveOEM -Confirm:$false; $cleared += $d.Number }
             }
-            return ('storage cleared; disks reset: ' + ($cleared -join ','))
+            return ('storage cleared; disks reset: ' + ($cleared -join ',') + $(if ($leftPools.Count) { '; pool(s) left alone because they hold a disk that was not approved: ' + ($leftPools -join ', ') } else { '' }))
         }
         default { throw ('Unknown action ' + [string](Get-P $a 'kind' '')) }
     }
@@ -570,8 +642,8 @@ function Get-AzlNodePayload {
     [OutputType([string])]
     param([Parameter(Mandatory)][ValidateSet('Read', 'Apply', 'Collect', 'Restart', 'Preflight', 'ArcRegistration', 'OpenRemoting', 'DomainJoinProbe', 'DomainJoinApply', 'DomainJoinOuCheck', 'DomainJoinRestart', 'DomainJoinResume')][string]$Name)
     $body = switch ($Name) {
-        'Read' { $script:ReadBody.Replace('#AZL-HOOK:DomainJoinRead', (Get-AzlDomainJoinReadSection)) } # DOMAINJOIN HOOK
-        'Apply' { $script:ApplyBody }
+        'Read' { $script:ReadBody.Replace('#AZL-HOOK:DomainJoinRead', (Get-AzlDomainJoinReadSection)).Replace('#AZL-HOOK:StorageHelper', $script:StorageHelper) } # DOMAINJOIN HOOK
+        'Apply' { $script:ApplyBody.Replace('#AZL-HOOK:StorageHelper', $script:StorageHelper) }
         'Collect' { $script:CollectBody }
         'Restart' { $script:RestartBody }
         'Preflight' { $script:PreflightBody }

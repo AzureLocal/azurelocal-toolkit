@@ -192,6 +192,39 @@ Describe 'Invoke-AzlSetNodeConfiguration and the retry events' {
     BeforeAll {
         Import-Module (Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') '..') (Join-Path 'scripts' 'common')) (Join-Path 'node-configuration' 'AzlOsConfigurationRun.psm1')) -Force
     }
+    BeforeAll {
+        # Runs the real Invoke-AzlSetNodeConfiguration against a stand-in for the script. Returns its result.
+        function Invoke-StandIn([string[]]$ScriptLine, [string]$ReportPath) {
+            $standIn = Join-Path $TestDrive "standin-$([guid]::NewGuid().ToString('N').Substring(0, 6)).ps1"
+            Set-Content -LiteralPath $standIn -Value $ScriptLine
+            InModuleScope AzlOsConfigurationRun -Parameters @{ FakeScript = $standIn; Report = $ReportPath } {
+                param($FakeScript, $Report)
+                $old = $script:SetScript
+                $script:SetScript = $FakeScript
+                try { Invoke-AzlSetNodeConfiguration -Parameters @{ ReportPath = $Report } 3>$null }
+                finally { $script:SetScript = $old }
+            }
+        }
+    }
+    It 'a stale report with an exit code 0 and no new report is a failure (exit 1), not a success' {
+        $report = Join-Path $TestDrive 'stale.json'
+        '{ "nodes": [ { "name": "iic-n01", "converged": true, "plan": [] } ] }' | Set-Content -LiteralPath $report
+        $run = Invoke-StandIn @('param($ReportPath)', 'exit 0') $report
+        $run.ExitCode | Should -Be 1
+        $run.Report | Should -BeNullOrEmpty
+        $run.Error | Should -Match 'no readable report'
+        Test-Path -LiteralPath $report | Should -BeFalse
+    }
+    It 'a script that exits early without a report is a failure even when it says 0' {
+        $run = Invoke-StandIn @('param($ReportPath)', 'exit 0') (Join-Path $TestDrive 'never-written.json')
+        $run.ExitCode | Should -Be 1
+    }
+    It 'a script that writes its report is read as before' {
+        $report = Join-Path $TestDrive 'fresh.json'
+        $run = Invoke-StandIn @('param($ReportPath)', "'{ ""nodes"": [ { ""name"": ""iic-n01"" } ] }' | Set-Content -LiteralPath `$ReportPath", 'exit 0') $report
+        $run.ExitCode | Should -Be 0
+        $run.Report.nodes[0].name | Should -Be 'iic-n01'
+    }
     It 'writes NodeRetry for the retry warning of the script while it runs, passes every warning on, drops the output, and keeps the exit code' {
         $script = Join-Path $TestDrive 'fake-set.ps1'
         $lines = @(

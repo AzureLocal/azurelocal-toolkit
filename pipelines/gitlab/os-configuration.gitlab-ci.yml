@@ -82,6 +82,7 @@ os-configuration-plan:
 os-configuration-apply:
   extends: .os-configuration
   stage: apply
+  # needs downloads the plan job's artifacts: $REPORT_DIRECTORY/plan/wipe-list.json is the wipe list the person who plays this job approved, and Apply is bound to it.
   needs: [os-configuration-plan]
   # The approval gate: the job waits until someone plays it, after reading the plan job's wipe list.
   when: manual
@@ -91,7 +92,7 @@ os-configuration-apply:
     name: azure-local-os-configuration
   script:
     - approval=''; if [ "$APPROVED_BOOTSTRAP" = 'true' ]; then approval='-ApprovedBootstrap'; fi
-    - pwsh -NoProfile -File "$OSCONFIG_SCRIPT" -InfrastructureFile "$INFRASTRUCTURE_FILE" -HandoffPath "$HANDOFF_PATH" -Mode Apply -ReportDirectory "$REPORT_DIRECTORY/apply" $approval
+    - pwsh -NoProfile -File "$OSCONFIG_SCRIPT" -InfrastructureFile "$INFRASTRUCTURE_FILE" -HandoffPath "$HANDOFF_PATH" -Mode Apply -ReportDirectory "$REPORT_DIRECTORY/apply" -ApprovedWipeList "$REPORT_DIRECTORY/plan/wipe-list.json" $approval
   after_script:
     - 'if [ -f "$REPORT_DIRECTORY/apply/summary.md" ]; then cat "$REPORT_DIRECTORY/apply/summary.md"; fi'
   artifacts:

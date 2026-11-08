@@ -74,6 +74,13 @@ $script:MinimumBuild = 25398
 
 function Write-AzlLine([string]$Text) { Write-Information -MessageData $Text -InformationAction Continue }
 
+function New-AzlRunId {
+    # A run id: UTC start time and six random hex digits. Names the run's node-report folder and (with the event feed) every line the run writes.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds a string.')]
+    param()
+    return ('{0:yyyyMMddTHHmmssZ}-{1}' -f [datetime]::UtcNow, [guid]::NewGuid().ToString('N').Substring(0, 6))
+}
+
 function Get-AzlInputError([string]$Message) {
     $exception = [System.ArgumentException]::new($Message)
     $exception.Data['AzlInput'] = $true
@@ -732,6 +739,8 @@ function Invoke-AzlSetNodeConfiguration {
     )
     $global:LASTEXITCODE = 0
     $errorText = ''; $unknown = $false; $exit = 0
+    # A report left by an earlier call (or an earlier run in a reused folder) must never be read as this call's answer: it is deleted first.
+    if ($Parameters.ContainsKey('ReportPath') -and (Test-Path -LiteralPath $Parameters.ReportPath -PathType Leaf)) { Remove-Item -LiteralPath $Parameters.ReportPath -Force }
     try {
         # The warnings pass through (and are written again as warnings); a retry of an Unknown run command also goes to the event feed.
         $null = & $script:SetScript @Parameters 3>&1 | ForEach-Object {
@@ -751,8 +760,15 @@ function Invoke-AzlSetNodeConfiguration {
         $exit = 1
     }
     $report = $null
-    if ($Parameters.ContainsKey('ReportPath') -and (Test-Path -LiteralPath $Parameters.ReportPath -PathType Leaf)) {
-        try { $report = Get-Content -LiteralPath $Parameters.ReportPath -Raw | ConvertFrom-Json -Depth 20 } catch { $report = $null }
+    if ($Parameters.ContainsKey('ReportPath')) {
+        if (Test-Path -LiteralPath $Parameters.ReportPath -PathType Leaf) {
+            try { $report = Get-Content -LiteralPath $Parameters.ReportPath -Raw | ConvertFrom-Json -Depth 20 } catch { $report = $null }
+        }
+        # No report is a failure, never a success: whatever the exit code says, a call that left no readable report did not finish its job.
+        if (-not $report) {
+            if ($exit -eq 0) { $exit = 1 }
+            if (-not $errorText) { $errorText = "the script exited with code $($global:LASTEXITCODE) and left no readable report at $($Parameters.ReportPath)." }
+        }
     }
     [pscustomobject]@{ ExitCode = $exit; Error = $errorText; Unknown = $unknown; Report = $report }
 }
@@ -785,9 +801,16 @@ function Invoke-AzlNodeRun {
     if ($Context.PSObject.Properties['GuardSettings'] -and $Context.GuardSettings.Count) { $parameters.Settings = $Context.GuardSettings }
     if ($Context.PSObject.Properties['EventLogPath'] -and $Context.EventLogPath) { $parameters.EventLogPath = $Context.EventLogPath }
     if ($Context.ClearStorage) { $parameters.ClearStorage = $true }
+    # The one-shot confirmation to wipe a node that belongs to a deployed cluster: only the switch of this run, never a file.
+    if ($Context.ClearStorage -and (Get-AzlProp $Context 'ConfirmWipeDeployedCluster' $false)) { $parameters.ConfirmWipeDeployedCluster = $true }
     if ($Context.NoRestart) { $parameters.NoRestart = $true }
     if ($Context.SkipValidation) { $parameters.SkipValidation = $true }
     if ($Phase -eq 'Apply') { $parameters.Execute = $true }
+    # The approved wipe list binds the apply to what the reviewer saw: the node call may wipe only the disks listed for this node (an empty list approves nothing).
+    if ($Phase -eq 'Apply' -and $Context.ClearStorage -and (Get-AzlProp $Context 'ApprovedWipe')) {
+        $approvedIds = @(Get-AzlProp $Context.ApprovedWipe $Record.name @())
+        $parameters.ApprovedWipeId = @{ $Record.name = [string[]]$approvedIds }
+    }
     # The same feed gets the method and the phase of this call, so the events the script writes (guarded change, DomainJoin) carry them.
     if ($Context.PSObject.Properties['EventLogPath'] -and $Context.EventLogPath) { $parameters.EventMethod = [string]$Record.method; $parameters.EventPhase = $Phase }
     if ($Record.transport -eq 'WinRM') {
@@ -805,7 +828,9 @@ function Invoke-AzlNodeRun {
     $run = Invoke-AzlSetNodeConfiguration -Parameters $parameters -EventContext $Context -EventRecord $Record -EventPhase $Phase
     $entry = $null
     if ($run.Report) { $entry = @($run.Report.nodes | Where-Object { $_.name -ieq $Record.name } | Select-Object -First 1)[0] }
-    [pscustomobject]@{ ExitCode = $run.ExitCode; Error = $run.Error; Unknown = $run.Unknown; Entry = $entry; Skipped = $false }
+    # A report the script wrote about itself (it could not start: nodes unreachable) says why in 'error'.
+    $why = if ($run.Error) { $run.Error } elseif ($run.Report -and $run.Report.PSObject.Properties['error'] -and $run.Report.error) { [string]$run.Report.error } else { '' }
+    [pscustomobject]@{ ExitCode = $run.ExitCode; Error = $why; Unknown = $run.Unknown; Entry = $entry; Skipped = $false }
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -980,7 +1005,8 @@ function Merge-AzlRunResult {
     $Record.plan = @(@($Run.Entry.plan) | ForEach-Object { ConvertTo-AzlPlanItem -Item $_ -Node $Record.name })
     $Record.ports = @($Run.Entry.ports)
     $Record.sanDisks = @($Run.Entry.sanDisks)
-    $Record.hostname = [string](Get-AzlProp $Run.Entry 'hostname' '')
+    $Record.wipeItems = @(Get-AzlProp $Run.Entry 'wipe' @() | Where-Object { $_ })
+    $Record.hostname =[string](Get-AzlProp $Run.Entry 'hostname' '')
     $Record.osVersion = [string](Get-AzlProp $Run.Entry 'osVersion' '')
     Merge-AzlDomainJoinResult -Record $Record -Entry $Run.Entry # DOMAINJOIN HOOK
     # hardware.sbe.delivery skip: the node is not failed, but the package is not on it and the OEM drivers wait, so say it once.
@@ -1000,7 +1026,7 @@ function Merge-AzlRecordCount {
     $Record.pendingChanges = @($Record.plan | Where-Object { $_.Action -eq 'Change' }).Count
     $Record.blocked = @($Record.plan | Where-Object { $_.Action -eq 'Blocked' }).Count
     $Record.wipe = @($Record.plan | Where-Object { $_.Step -eq 'ClearStorage' -and $_.Action -eq 'Change' } | ForEach-Object {
-            [ordered]@{ node = $Record.name; disks = $_.Current; note = $_.Note }
+            [ordered]@{ node = $Record.name; disks = $_.Current; note = $_.Note; items = @($Record.wipeItems) }
         })
 }
 
@@ -1146,7 +1172,100 @@ function Get-AzlWipeList {
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][object[]]$Record)
-    @($Record | Where-Object { @($_.wipe).Count } | ForEach-Object { foreach ($w in $_.wipe) { [pscustomobject]@{ Node = $w.node; Disks = $w.disks; Note = $w.note } } })
+    @($Record | Where-Object { @($_.wipe).Count } | ForEach-Object { foreach ($w in $_.wipe) { [pscustomobject]@{ Node = $w.node; Disks = $w.disks; Note = $w.note; Items = @($w.items) } } })
+}
+
+function Get-AzlWipeKey {
+    # The identity of a wipe list: one 'node|disk id' per disk, sorted. A node on the list with no identified disk gets 'node|(unidentified)', which can never be approved.
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param([AllowEmptyCollection()][object[]]$WipeList = @())
+    $keys = foreach ($w in @($WipeList)) {
+        $node = [string](Get-AzlProp $w 'Node' (Get-AzlProp $w 'node' ''))
+        $ids = @(@(Get-AzlProp $w 'Items' (Get-AzlProp $w 'items' @())) | Where-Object { $_ } | ForEach-Object { [string](Get-AzlProp $_ 'id' '') })
+        if (-not $ids.Count) { "$node|(unidentified)" }
+        foreach ($id in $ids) { if ($id) { "$node|$id" } else { "$node|(unidentified)" } }
+    }
+    return [string[]]@($keys | Sort-Object -Unique -CaseSensitive:$false)
+}
+
+function Get-AzlWipeHash {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowEmptyCollection()][string[]]$Key = @())
+    $bytes = [System.Text.UTF8Encoding]::new($false).GetBytes((@($Key) -join "`n"))
+    return ([System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::HashData($bytes)) -replace '-', '').ToLowerInvariant()
+}
+
+function New-AzlWipeListDocument {
+    <#
+    .SYNOPSIS
+        wipe-list.json: the wipe list of a plan as a document a later Apply can be bound to (-ApprovedWipeList): node and disk ids, the run id, and a SHA-256 of the list.
+    #>
+    [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds an object.')]
+    param([Parameter(Mandatory)][object]$Context, [AllowEmptyCollection()][object[]]$WipeList = @())
+    $keys = Get-AzlWipeKey -WipeList $WipeList
+    [ordered]@{
+        schemaVersion = 1
+        runId         = [string](Get-AzlProp $Context 'RunId' '')
+        generatedUtc  = [datetime]::UtcNow.ToString('o')
+        cluster       = $Context.ClusterName
+        hash          = (Get-AzlWipeHash -Key $keys)
+        entries       = @($WipeList | ForEach-Object { ConvertTo-AzlWipeEntry -Wipe $_ })
+    }
+}
+
+function Read-AzlApprovedWipeList {
+    <#
+    .SYNOPSIS
+        Reads an approved wipe list: the wipe-list.json of a Plan run, or its plan-report.json (the wipeList in it). The hash inside wipe-list.json must match its
+        entries. Returns Path, Key (node|disk id), Hash and ById (node -> disk ids). Throws bad input when the file is missing, unreadable or altered.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw (Get-AzlInputError "The approved wipe list $Path doesn't exist.") }
+    try { $doc = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json -Depth 20 } catch { throw (Get-AzlInputError "The approved wipe list $Path isn't valid JSON: $($_.Exception.Message)") }
+    $entries = if ($doc.PSObject.Properties['entries']) { @($doc.entries) } elseif ($doc.PSObject.Properties['wipeList']) { @($doc.wipeList) } else { throw (Get-AzlInputError "$Path is neither a wipe-list.json nor a plan-report.json: it has no 'entries' and no 'wipeList'.") }
+    $keys = Get-AzlWipeKey -WipeList $entries
+    $hash = Get-AzlWipeHash -Key $keys
+    if ($doc.PSObject.Properties['hash'] -and [string]$doc.hash -and [string]$doc.hash -ne $hash) {
+        throw (Get-AzlInputError "The approved wipe list $Path was altered: its hash says $($doc.hash), its entries hash to $hash.")
+    }
+    $byId = @{}
+    foreach ($k in $keys) { $node, $id = $k -split '\|', 2; if (-not $byId.ContainsKey($node)) { $byId[$node] = [System.Collections.Generic.List[string]]::new() }; $byId[$node].Add($id) }
+    $plain = @{}
+    foreach ($node in $byId.Keys) { $plain[$node] = [string[]]@($byId[$node]) }
+    [pscustomobject]@{ Path = $Path; Key = $keys; Hash = $hash; ById = $plain }
+}
+
+function Test-AzlWipeApproval {
+    <#
+    .SYNOPSIS
+        The wipe list of this run against the approved one. Returns the problems (empty: approved). A disk that is on this run's list and not on the approved list, and a
+        disk with no serial or unique id, are problems; a disk the approval names that is no longer there is fine (less is wiped, never more).
+    #>
+    [CmdletBinding()]
+    param([AllowEmptyCollection()][object[]]$WipeList = @(), [Parameter(Mandatory)][object]$Approved)
+    $problems = [System.Collections.Generic.List[string]]::new()
+    foreach ($k in (Get-AzlWipeKey -WipeList $WipeList)) {
+        $node, $id = $k -split '\|', 2
+        if ($id -eq '(unidentified)') { $problems.Add("${node}: a disk on the wipe list has neither a serial number nor a unique id, so it can't be approved.") }
+        elseif ($k -notin @($Approved.Key)) { $problems.Add("${node}: disk $id is on this run's wipe list but not on the approved list $($Approved.Path).") }
+    }
+    return $problems.ToArray()
+}
+
+function ConvertTo-AzlWipeEntry {
+    # The wipe list as the report and the event carry it: node, the text of the plan, and one entry per disk with serial, size, model, bus and partition style.
+    param([Parameter(Mandatory)][object]$Wipe)
+    [ordered]@{
+        node  = $Wipe.Node
+        disks = $Wipe.Disks
+        items = @(@($Wipe.Items) | Where-Object { $_ } | ForEach-Object {
+                [ordered]@{ number = (Get-AzlProp $_ 'number'); serial = [string](Get-AzlProp $_ 'serial' ''); id = [string](Get-AzlProp $_ 'id' ''); uniqueId = [string](Get-AzlProp $_ 'uniqueId' ''); sizeGb = (Get-AzlProp $_ 'sizeGb' 0); model = [string](Get-AzlProp $_ 'model' ''); bus = [string](Get-AzlProp $_ 'bus' ''); partitionStyle = [string](Get-AzlProp $_ 'partitionStyle' ''); reason = [string](Get-AzlProp $_ 'reason' '') }
+            })
+    }
 }
 
 function Format-AzlWipeList {
@@ -1157,7 +1276,15 @@ function Format-AzlWipeList {
     $verb = if ($Mode -eq 'Apply') { 'WILL BE WIPED NOW' } else { 'WOULD BE WIPED if you apply' }
     $lines.Add("STORAGE WIPE ($Source). Local disks that $verb. Boot, system, SAN (FC, iSCSI) and USB disks are never touched.")
     if (@($WipeList).Count -eq 0) { $lines.Add('  Nothing to wipe: no leftover local storage was found on any node.') }
-    foreach ($w in $WipeList) { $lines.Add("  $($w.Node): $($w.Disks)") }
+    foreach ($w in $WipeList) {
+        $items = @(Get-AzlProp $w 'Items' @() | Where-Object { $_ })
+        if ($items.Count) {
+            # One line per disk, named by serial, size, model, bus and partition style, so the reviewer can match it with the hardware.
+            $lines.Add("  $($w.Node): $($items.Count) disk(s); $(([string]$w.Disks -replace ', disks: .*$', ''))")
+            foreach ($d in $items) { $lines.Add("      $(Format-AzlWipeDisk -Disk $d)") }
+        }
+        else { $lines.Add("  $($w.Node): $($w.Disks)") }
+    }
     return ($lines -join [Environment]::NewLine)
 }
 
@@ -1264,14 +1391,14 @@ function Write-AzlOsConfigurationReport {
         mode           = $Context.Mode
         cluster        = $Context.ClusterName
         infrastructure = $Context.InfrastructureFile
-        clearStorage   = [ordered]@{ enabled = [bool]$Context.ClearStorage; source = $Context.ClearStorageSource }
+        clearStorage   = [ordered]@{ enabled = [bool]$Context.ClearStorage; source = $Context.ClearStorageSource; confirmWipeDeployedCluster = [bool](Get-AzlProp $Context 'ConfirmWipeDeployedCluster' $false) }
         handoffFiles   = @($Context.HandoffFiles)
         exitCode       = $ExitCode
         message        = $Message
         clusterProblems = @($ClusterProblem)
         # HOOK remoting-profiles: the effective profile, the TrustedHosts policy and its restore, the bootstraps, the profile's events
         remoting       = $(if ($Context.PSObject.Properties['Remoting'] -and $Context.Remoting) { Get-AzlRemotingReportBlock -Context $Context } else { $null })
-        wipeList       = @(Get-AzlWipeList -Record $Record | ForEach-Object { [ordered]@{ node = $_.Node; disks = $_.Disks } })
+        wipeList       = @(Get-AzlWipeList -Record $Record | ForEach-Object { ConvertTo-AzlWipeEntry -Wipe $_ })
         nodes          = @($Record | ForEach-Object { ConvertTo-AzlNodeReport -Record $_ })
     }
     $path = Join-Path $Context.ReportDirectory $FileName
@@ -1293,7 +1420,7 @@ function Get-AzlNodeRecord {
         transport = $Resolution.Transport; address = $(if ($Resolution.Transport -eq 'WinRM') { $evidence.WinRmAddress } else { '' }); useSsl = [bool]($evidence.PSObject.Properties['UseSsl'] -and $evidence.UseSsl)
         handoffFile = $evidence.HandoffFile; evidence = $evidence
         steps = $steps; setSteps = @($steps | Where-Object { $_ -in $script:NodeSteps })
-        status = 'pending'; plan = @(); changes = @(); errors = @(); warnings = @(); verification = @(); wipe = @()
+        status = 'pending'; plan = @(); changes = @(); errors = @(); warnings = @(); verification = @(); wipe = @(); wipeItems = @()
         ports = @(); sanDisks = @(); hostname = ''; osVersion = ''; guard = @(); events = @(); bootstrap = [ordered]@{ used = $false }
         pendingChanges = 0; blocked = 0; converged = $false; restarted = $false; phases = [ordered]@{}; outcomeSent = $false
         osCaption = ''; osBuild = 0; lastGuard = $null
@@ -1334,6 +1461,10 @@ function Invoke-AzlOsConfiguration {
         [pscredential]$Credential,
         [hashtable]$NodeAddress,
         [switch]$ClearStorage,
+        # One-shot, per run, never read from a file: wipe leftover storage on a node that belongs to a deployed cluster (HKLM:\Cluster, ClusSvc, a clustered pool or CSV).
+        [switch]$ConfirmWipeDeployedCluster,
+        # Apply mode with a non-empty wipe list needs this: the wipe-list.json (or the plan-report.json) of the Plan run the reviewer approved. A disk on this run's list that is not in it stops the run (exit 2) before anything is changed.
+        [string]$ApprovedWipeList,
         [switch]$FailOnPendingChanges,
         [switch]$SkipValidation,
         [string]$EventLogPath,
@@ -1359,7 +1490,9 @@ function Invoke-AzlOsConfiguration {
 
         $reportDir = if ($ReportDirectory) { $ReportDirectory } else { Join-Path ([IO.Path]::GetTempPath()) 'azl-osconfig' }
         $null = New-Item -ItemType Directory -Force -Path $reportDir
-        $nodeReportDir = Join-Path $reportDir 'node-reports'
+        # Every run gets its own id and its own folder of node reports, so a report of an earlier run in the same report directory is never read by this one.
+        $runId = New-AzlRunId
+        $nodeReportDir = Join-Path (Join-Path $reportDir 'node-reports') $runId
         $null = New-Item -ItemType Directory -Force -Path $nodeReportDir
 
         $clearFromFile = (Get-AzlProp $infra 'os_configuration.clear_storage' $false) -eq $true
@@ -1373,8 +1506,9 @@ function Invoke-AzlOsConfiguration {
         $failOnPending = $FailOnPendingChanges.IsPresent -or ($run.ContainsKey('failOnPendingChanges') -and $run.failOnPendingChanges -eq $true)
 
         $context = [pscustomobject]@{
+            RunId = $runId; ApprovedWipe = $null
             Infra = $infra; InfrastructureFile = $InfrastructureFile; Mode = $Mode; Handoff = $merged; HandoffFiles = $(if ($merged) { $merged.Files } else { @() })
-            ClearStorage = $clear; ClearStorageSource = $clearSource; ReportDirectory = $reportDir; NodeReportDirectory = $nodeReportDir
+            ClearStorage = $clear; ClearStorageSource = $clearSource; ConfirmWipeDeployedCluster = $ConfirmWipeDeployedCluster.IsPresent; ReportDirectory = $reportDir; NodeReportDirectory = $nodeReportDir
             ClusterName = [string](Get-AzlProp $infra 'cluster.name' 'cluster'); AzureSignedIn = (Test-AzlAzureSignedIn)
             NodeAddress = $addressOverride; Method = $Method; CredentialInfo = $null
             RetryTries = $tries; RetryDelaySeconds = $delays; MaxPasses = $(if ($run.ContainsKey('maxPasses')) { [int]$run.maxPasses } else { 6 })
@@ -1526,6 +1660,9 @@ function Invoke-AzlOsConfiguration {
         $null = Write-AzlOsConfigurationReport -Context $context -Record $records -FileName 'plan-report.json' -ClusterProblem $clusterProblems
         $wipeText = Format-AzlWipeList -WipeList $wipe -ClearStorage $clear -Mode $Mode -Source $clearSource
         Set-Content -LiteralPath (Join-Path $reportDir 'wipe-list.txt') -Value $wipeText -Encoding utf8NoBOM
+        # The same list as a document: what a later Apply is bound to (-ApprovedWipeList), with a hash of the node and disk ids.
+        $wipeDocument = New-AzlWipeListDocument -Context $context -WipeList $wipe
+        $wipeDocument | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $reportDir 'wipe-list.json') -Encoding utf8NoBOM
         $planChanges = [int](@($records | Where-Object { $_.status -ne 'failed' -and $_.status -ne 'skipped' } | ForEach-Object { $_.pendingChanges } | Measure-Object -Sum).Sum)
         $planBlocked = [int](@($records | Where-Object { $_.status -ne 'failed' -and $_.status -ne 'skipped' } | ForEach-Object { $_.blocked } | Measure-Object -Sum).Sum)
         Send-AzlRunEvent -Context $context -State PlanCompleted -Record $null -Level $(if ($planBlocked -or $clusterProblems.Count) { 'Warning' } else { 'Info' }) `
@@ -1534,7 +1671,7 @@ function Invoke-AzlOsConfiguration {
         Send-AzlRunEvent -Context $context -State WipeListPublished -Record $null -Level $(if ($wipe.Count) { 'Warning' } else { 'Info' }) `
             -Evidence $(if (-not $clear) { 'Storage wipe is off (os_configuration.clear_storage is false): nothing will be wiped.' } elseif ($wipe.Count -eq 0) { 'Storage wipe is on and no leftover local storage was found: nothing to wipe.' } else { "$($wipe.Count) node(s) have local disks that $(if ($Mode -eq 'Apply') { 'WILL BE WIPED NOW' } else { 'WOULD BE WIPED if you apply' }): $((@($wipe | ForEach-Object { "$($_.Node): $($_.Disks)" })) -join ' | ')" }) `
             -NextAction $(if ($wipe.Count -and $Mode -eq 'Plan') { 'Check the disks listed in wipe-list.txt before you apply.' } else { '' }) `
-            -Data @{ wipeCount = $wipe.Count; clearStorage = [bool]$clear; wipe = @($wipe | ForEach-Object { [ordered]@{ node = $_.Node; disks = $_.Disks } }) }
+            -Data @{ wipeCount = $wipe.Count; clearStorage = [bool]$clear; wipe = @($wipe | ForEach-Object { ConvertTo-AzlWipeEntry -Wipe $_ }) }
         Write-AzlLine ''
         foreach ($r in $records) {
             $show = @($r.plan | Where-Object { $_.Action -ne 'Ok' })
@@ -1545,6 +1682,24 @@ function Invoke-AzlOsConfiguration {
 
         # ---- 3. apply
         if ($Mode -eq 'Apply') {
+            # The plan and the apply share one process, so the reviewer's approval is bound to the list: with disks to wipe, the approved list is required and must name
+            # every one of them. Checked before the first node is applied; a mismatch is bad input (exit 2).
+            if ($ApprovedWipeList) {
+                $approved = Read-AzlApprovedWipeList -Path $ApprovedWipeList
+                $context.ApprovedWipe = $approved.ById
+            }
+            if ($wipe.Count) {
+                if (-not $ApprovedWipeList) {
+                    Send-AzlRunEvent -Context $context -State WipeListRejected -Record $null -Level Error -Evidence "$($wipe.Count) node(s) have disks to wipe and no approved wipe list was given. Nothing was changed." -NextAction 'Pass -ApprovedWipeList with the wipe-list.json of the Plan run that was approved.' -Data @{ wipeCount = $wipe.Count; hash = $wipeDocument.hash }
+                    throw (Get-AzlInputError "The wipe list is not empty ($($wipe.Count) node(s)), so Apply needs -ApprovedWipeList: the wipe-list.json (or plan-report.json) of the Plan run the reviewer approved. Nothing was changed. This run's list hashes to $($wipeDocument.hash).")
+                }
+                $mismatch = @(Test-AzlWipeApproval -WipeList $wipe -Approved $approved)
+                if ($mismatch.Count) {
+                    Send-AzlRunEvent -Context $context -State WipeListRejected -Record $null -Level Error -Evidence ($mismatch -join ' ') -NextAction 'Plan again, review the new wipe list and approve that one.' -Data @{ wipeCount = $wipe.Count; hash = $wipeDocument.hash; approvedHash = $approved.Hash }
+                    throw (Get-AzlInputError ("The wipe list of this run doesn't match the approved list. Nothing was changed.$([Environment]::NewLine)" + (($mismatch | ForEach-Object { "- $_" }) -join [Environment]::NewLine)))
+                }
+                Send-AzlRunEvent -Context $context -State WipeListApproved -Record $null -Level Warning -Evidence "The wipe list of this run matches the approved list $($approved.Path) (hash $($approved.Hash))." -Data @{ wipeCount = $wipe.Count; hash = $wipeDocument.hash; approvedHash = $approved.Hash }
+            }
             Write-AzlLine ''
             Write-AzlLine '== Apply: node by node'
             $stop = $false
@@ -1625,4 +1780,4 @@ function Invoke-AzlOsConfiguration {
     }
 }
 
-Export-ModuleMember -Function Get-AzlHandoffFile, Merge-AzlHandoff, Find-AzlMergedHandoff, Resolve-AzlNodeMethod, Get-AzlNodeStepList, Get-AzlNodeEvidence, Get-AzlRunSetting, Get-AzlWipeList, Format-AzlWipeList, Get-AzlOsConfigurationExitCode, Format-AzlOsConfigurationSummary, Test-AzlIsoPrecondition, Invoke-AzlOsConfiguration
+Export-ModuleMember -Function Get-AzlWipeKey, Get-AzlWipeHash, New-AzlWipeListDocument, Read-AzlApprovedWipeList, Test-AzlWipeApproval, Get-AzlHandoffFile, Merge-AzlHandoff, Find-AzlMergedHandoff, Resolve-AzlNodeMethod, Get-AzlNodeStepList, Get-AzlNodeEvidence, Get-AzlRunSetting, Get-AzlWipeList, Format-AzlWipeList, Get-AzlOsConfigurationExitCode, Format-AzlOsConfigurationSummary, Test-AzlIsoPrecondition, Invoke-AzlOsConfiguration

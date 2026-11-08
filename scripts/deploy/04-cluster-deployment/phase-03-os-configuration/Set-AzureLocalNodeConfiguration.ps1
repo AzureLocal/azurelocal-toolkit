@@ -69,7 +69,13 @@
 .PARAMETER RetryTries
     How many times a node script is tried when its Arc run command ends in state Unknown (default 3, with a growing pause).
 .PARAMETER ClearStorage
-    Treat leftover local storage as a change (destroys data on local disks; never SAN LUNs). With -Execute.
+    Treat leftover local storage as a change (destroys data on local disks; never SAN LUNs). With -Execute. A node that belongs to a deployed cluster
+    (HKLM:\Cluster, the Cluster service, a clustered pool or CSV) is Blocked, and the node-side clear refuses it too, unless -ConfirmWipeDeployedCluster is given.
+.PARAMETER ConfirmWipeDeployedCluster
+    One-shot, per run, never read from a file: lets -ClearStorage wipe a node that belongs to a deployed cluster.
+.PARAMETER ApprovedWipeId
+    Hashtable: node name -> the disks (serial, else unique id) approved for that node. A leftover disk that is not in the node's list blocks the wipe, and only the listed
+    disks are named in the clear. Without it the plan of this call is the list.
 .PARAMETER NoRestart
     Don't restart a node that needs it (hostname, MPIO, a driver); the report says which need one.
 .PARAMETER EventMethod
@@ -102,6 +108,8 @@ param(
     [string]$EventLogPath,
     [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')][string[]]$Step,
     [switch]$ClearStorage,
+    [switch]$ConfirmWipeDeployedCluster,
+    [hashtable]$ApprovedWipeId,
     [hashtable]$NodeAddress,
     [ValidateSet('', 'Ztp', 'Iso')][string]$EventMethod = '',
     [ValidateSet('', 'Plan', 'Apply', 'Verify')][string]$EventPhase = '',
@@ -131,6 +139,7 @@ function Write-Line([string]$Text) { Write-Information -MessageData $Text -Infor
 
 Set-AzlNodeRetryPolicy -Tries $RetryTries -DelaySeconds $RetryDelaySeconds
 $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation:$SkipValidation
+if (-not $ReportPath) { $ReportPath = Join-Path ([IO.Path]::GetTempPath()) ("azl-osconfig-{0}-{1:yyyyMMddHHmmss}.json" -f (Get-AzlProp $infra 'cluster.name' 'cluster'), (Get-Date)) }
 $handoff = if ($HandoffFile) { Read-AzlHandoff -Path $HandoffFile } else { $null }
 # The remote management profile of the class (missing class = production). Printed first; TrustedHosts on this machine is managed by Invoke-AzureLocalOsConfiguration.ps1, not here.
 $remotingProfile = Resolve-AzlRemotingProfile -Infrastructure $infra -Override (ConvertTo-AzlRemotingProfileOverride -Setting $Settings)
@@ -237,7 +246,10 @@ else {
     }
     Write-Line (Format-AzlRemotingPreCheckFinding -Finding $findings)
     if (@($findings | Where-Object { -not $_.Reachable }).Count -and -not ($remoting.BootstrapTransport -eq 'arc' -and -not $Execute -and @($findings | Where-Object { -not $_.Reachable -and $_.Node -in $arcAvailable }).Count -eq @($findings | Where-Object { -not $_.Reachable }).Count)) {
-        Write-Line "NOT READY: $(@($findings | Where-Object { -not $_.Reachable }).Count) node(s) can't be reached over PowerShell remoting. Nothing was changed."
+        $notReady = "NOT READY: $(@($findings | Where-Object { -not $_.Reachable }).Count) node(s) can't be reached over PowerShell remoting. Nothing was changed."
+        Write-Line $notReady
+        # The caller reads the report, so a call that stops here leaves one that says so (never none, and never an older one).
+        [ordered]@{ schemaVersion = 1; generatedUtc = [datetime]::UtcNow.ToString('o'); executed = [bool]$Execute; error = $notReady; nodes = @() } | ConvertTo-Json -Depth 4 | Set-Content -LiteralPath $ReportPath -Encoding utf8NoBOM
         exit 1
     }
     foreach ($f in $findings) { $addressByNode[$f.Node] = $(if ($f.Reachable) { $f.Address } else { @($candidates | Where-Object Name -eq $f.Node)[0].Addresses[0] }) }
@@ -264,7 +276,9 @@ if ($Settings) { foreach ($k in 'networkRollbackMinutes', 'networkStableSeconds'
 $null = Get-AzlGuardSetting -Setting $guardSetting
 $results = foreach ($s in $specs) {
     Write-Line "== $($s.Name)"
-    Invoke-AzlNodeConfiguration -Spec $s -Transport $nodeTransports[$s.Name] -Execute:$Execute -Step $steps -ClearStorage:$ClearStorage -NoRestart:$NoRestart -MaxPasses $MaxPasses -GuardSetting $guardSetting -EventContext $eventContext -SbeTransport $sbeTransport
+    $wipeArgs = @{}
+    if ($ApprovedWipeId) { $wipeArgs.ApprovedWipeId = $(if ($ApprovedWipeId.ContainsKey($s.Name)) { @($ApprovedWipeId[$s.Name]) } else { @() }) }
+    Invoke-AzlNodeConfiguration -Spec $s -Transport $nodeTransports[$s.Name] -Execute:$Execute -Step $steps -ClearStorage:$ClearStorage -ConfirmWipeDeployedCluster:$ConfirmWipeDeployedCluster @wipeArgs -NoRestart:$NoRestart -MaxPasses $MaxPasses -GuardSetting $guardSetting -EventContext $eventContext -SbeTransport $sbeTransport
 }
 foreach ($r in $results) {
     Write-Line (Format-AzlPlan -Plan @($r.Plan | Where-Object { $_.Action -ne 'Ok' -or -not $Execute }))
@@ -287,7 +301,6 @@ if ((Get-AzlProp $infra 'scenario.storage_architecture' 's2d') -eq 'san') {
 foreach ($p in $sanProblems) { Write-Warning $p }
 
 # ---- the report the ARM parameter generator reads
-if (-not $ReportPath) { $ReportPath = Join-Path ([IO.Path]::GetTempPath()) ("azl-osconfig-{0}-{1:yyyyMMddHHmmss}.json" -f (Get-AzlProp $infra 'cluster.name' 'cluster'), (Get-Date)) }
 $report = [ordered]@{
     schemaVersion = 1
     generatedUtc  = [datetime]::UtcNow.ToString('o')
@@ -316,7 +329,8 @@ $report = [ordered]@{
                 sanDisks  = @(Get-AzlProp $_.State 'san.disks' @())
                 fcPorts   = @(Get-AzlProp $_.State 'san.fc' @())
                 changes   = @($_.Changes)
-                plan      = @($_.Plan | ForEach-Object { [ordered]@{ step = $_.Step; item = $_.Item; current = $_.Current; desired = $_.Desired; action = $_.Action; note = $_.Note } })
+                wipe      = @(Get-AzlNodeWipeItem -Plan $_.Plan -State $_.State)
+                plan      =@($_.Plan | ForEach-Object { [ordered]@{ step = $_.Step; item = $_.Item; current = $_.Current; desired = $_.Desired; action = $_.Action; note = $_.Note } })
             }
         })
 }
