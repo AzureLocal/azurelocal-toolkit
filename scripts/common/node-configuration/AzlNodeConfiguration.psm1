@@ -24,6 +24,7 @@ Import-Module (Join-Path (Join-Path $here '..') (Join-Path 'infrastructure' 'Azl
 Import-Module (Join-Path (Join-Path $here '..') (Join-Path 'azure-local' 'AzlAzure.psm1'))
 Import-Module (Join-Path $here 'AzlNodePayload.psm1')
 Import-Module (Join-Path $here 'AzlNodeTransport.psm1')
+Import-Module (Join-Path $here 'AzlGuardedChange.psm1')
 
 $script:ConfigRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($here, '..', '..', '..', 'config'))
 $script:AllSteps = @('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')
@@ -408,7 +409,7 @@ function Compare-AzlNodeState {
                     $ok = $addressOk -and $gwOk -and $nic.dhcp -eq 'Disabled'
                     $current = "$(@($routable) -join ',') gw $(@($nic.gw) -join ',') dhcp $($nic.dhcp)"
                     $note = if ($ok) { '' } elseif ($Spec.Handoff.Present -and $Spec.Handoff.ManagementAddressVerified -eq $false) { "ZTP didn't verify it: $($Spec.Handoff.Reason)" } else { "$($mgmt.ModeLabel): set by MAC (Microsoft's OS install resets every port to DHCP)." }
-                    & $add (New-AzlPlanItem $n 'Network' "management $label" $current "static $want gw $($mgmt.Gateway)" $(if ($ok) { 'Ok' } else { 'Change' }) $note $(if (-not $ok) { @{ id = "Network/$($nic.mac)"; kind = 'nic-static'; mac = $nic.mac; ip = $mgmt.Ip; prefix = $mgmt.Prefix; gateway = $mgmt.Gateway } }))
+                    & $add (New-AzlPlanItem $n 'Network' "management $label" $current "static $want gw $($mgmt.Gateway)" $(if ($ok) { 'Ok' } else { 'Change' }) $note $(if (-not $ok) { @{ id = "Network/$($nic.mac)"; kind = 'nic-static'; management = $true; mac = $nic.mac; ip = $mgmt.Ip; prefix = $mgmt.Prefix; gateway = $mgmt.Gateway; dns = @($mgmt.Dns) } }))
                 }
                 else {
                     # Never changed: dhcp_reservation (Mode A) keeps DHCP and is verified; dhcp and preconfigured are left alone.
@@ -427,7 +428,10 @@ function Compare-AzlNodeState {
                         default { & $add (New-AzlPlanItem $n 'Network' "management $label" $current $mgmt.Mode Ok 'Left as it is.') }
                     }
                 }
-                if ($mgmt.Vlan -gt 0 -and $nic.vlan -ne $mgmt.Vlan) { & $add (New-AzlPlanItem $n 'Network' "management VLAN" "$($nic.vlan)" "$($mgmt.Vlan)" Info 'The host should tag this VLAN (vlan_mode tagged). This tool does not set it; set it on the port or the switch.') }
+                if ($mgmt.Vlan -gt 0 -and $nic.vlan -ne $mgmt.Vlan) {
+                    if ($null -ne $nic.vlan) { & $add (New-AzlPlanItem $n 'Network' "management VLAN" "$($nic.vlan)" "$($mgmt.Vlan)" Change 'Its own guarded change (one VLAN mutation per change): the link goes down for a moment.' @{ id = "Network/vlan/$($nic.mac)"; kind = 'nic-vlan'; mac = $nic.mac; vlan = $mgmt.Vlan }) }
+                    else { & $add (New-AzlPlanItem $n 'Network' "management VLAN" "$($nic.vlan)" "$($mgmt.Vlan)" Info 'The node does not report a VLAN id for this port (the driver may not expose one). Set the VLAN on the switch port or the host by another means.') }
+                }
                 if ($hasGw -or $mgmt.Mode -eq 'static') { $gatewayHolders.Add($nic.n) }
                 continue
             }
@@ -485,6 +489,7 @@ function Compare-AzlNodeState {
         foreach ($p in $Spec.Ports | Where-Object { @($_.Roles).Count -eq 1 -and $_.Roles[0] -eq 'unused' }) {
             $nic = $nics | Where-Object { $_.mac -eq $p.Mac } | Select-Object -First 1
             if (-not $nic) { & $add (New-AzlPlanItem $n 'UnusedAdapters' $p.Name 'not found' 'disabled' Info "No port with MAC $($p.Mac)."); continue }
+            if ($nic.mac -eq $Spec.Management.Mac -or @($nic.gw).Count -gt 0) { & $add (New-AzlPlanItem $n 'UnusedAdapters' "$($nic.n) ($($nic.mac))" $nic.st 'Disabled' Blocked $(if ($nic.mac -eq $Spec.Management.Mac) { 'The file marks the management port unused. A node can''t be managed over a disabled port: fix network_adapters roles in the file.' } else { 'This port holds a default gateway (the route the node, and its Arc agent, reach Azure through). It is not disabled.' })); continue }
             $ok = $nic.st -eq 'Disabled'
             & $add (New-AzlPlanItem $n 'UnusedAdapters' "$($nic.n) ($($nic.mac))" $nic.st 'Disabled' $(if ($ok) { 'Ok' } else { 'Change' }) '' $(if (-not $ok) { @{ id = "UnusedAdapters/$($nic.mac)"; kind = 'nic-disable'; mac = $nic.mac } }))
         }
@@ -635,6 +640,15 @@ function Wait-AzlNodeRestart {
     throw "$Node didn't come back with a new boot time within $TimeoutMinutes minutes."
 }
 
+function Invoke-AzlGuardStep {
+    # One guarded change on one node, and the change records it leaves behind.
+    param($Transport, $Spec, $State, [string]$Group, [object[]]$Todo, [int]$Pass, $GuardContext, $Changes, [switch]$NoRestart)
+    $outcome = Invoke-AzlGuardedChange -Transport $Transport -Node $Spec.Name -Group $Group -Item @($Todo | ForEach-Object { $_.Apply }) -Spec $Spec -State $State -Setting $GuardContext.Setting -Clock $GuardContext.Clock -Event $GuardContext.Event -PortProbe $GuardContext.PortProbe -NoRestart:$NoRestart
+    $status = switch ($outcome.State) { 'Committed' { 'changed' } 'Unknown' { 'unknown' } default { 'failed' } }
+    foreach ($i in $Todo) { $Changes.Add([pscustomobject]@{ Node = $Spec.Name; Pass = $Pass; Id = [string]$i.Apply.id; Status = $status; Detail = "$($outcome.State): $($outcome.Reason)" }) }
+    $Changes.Add([pscustomobject]@{ Node = $Spec.Name; Pass = $Pass; Id = "NetworkChange/$Group/$($outcome.ChangeId)"; Status = $status; Detail = "$($outcome.State): $($outcome.Reason) $($outcome.NextAction)".Trim() })
+    return $outcome
+}
 function Invoke-AzlNodeConfiguration {
     <#
     .SYNOPSIS
@@ -658,8 +672,12 @@ function Invoke-AzlNodeConfiguration {
         [string[]]$Step = $script:AllSteps,
         [switch]$ClearStorage,
         [switch]$NoRestart,
-        [int]$MaxPasses = 3,
-        [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref }
+        [int]$MaxPasses = 6,
+        [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref },
+        [hashtable]$GuardSetting,
+        [object]$Clock,
+        [object]$EventContext,
+        [scriptblock]$PortProbe
     )
     $node = $Spec.Name
     $readParameters = Get-AzlNodeReadParameter -Spec $Spec
@@ -673,6 +691,14 @@ function Invoke-AzlNodeConfiguration {
     }
     $passes = [System.Collections.Generic.List[object]]::new()
     $changes = [System.Collections.Generic.List[object]]::new()
+    $guardOutcomes = [System.Collections.Generic.List[object]]::new()
+    $halted = $false
+    $guardClock = if ($Clock) { $Clock } else { New-AzlGuardClock }
+    $guardEvent = if ($EventContext) { $EventContext } else { New-AzlGuardEventContext }
+    $guardSetting = Get-AzlGuardSetting -Setting $GuardSetting
+    $guardContext = [pscustomobject]@{ Setting = $guardSetting; Clock = $guardClock; Event = $guardEvent; PortProbe = $PortProbe }
+    # Run commands left over from an earlier run (stuck in Creating or Unknown) are removed before this node is touched; nothing else is.
+    $null = Remove-AzlStaleRunCommand -Transport $Transport -Node $node -OlderThanMinutes ([int]$guardSetting.staleRunCommandMinutes) -Clock $guardClock -Event $guardEvent
     $restarted = $false
     $state = $null
     $plan = @()
@@ -683,10 +709,21 @@ function Invoke-AzlNodeConfiguration {
         $passes.Add([pscustomobject]@{ Pass = $pass; Changes = $todo.Count })
         if (-not $Execute -or $todo.Count -eq 0 -or $pass -gt $MaxPasses) { break }
 
-        # Files first. A WinRM copy lands in place; an Arc node downloads from a SAS address.
+        # The management address (and, separately, the VLAN) is a guarded change by itself: the node applies, checks and rolls back on its own, and
+        # nothing else is touched until the orchestrator has confirmed it through a new session. Then the next pass reads the node again.
+        $parts = Split-AzlGuardedAction -Todo $todo
+        if (@($parts.Management).Count -or @($parts.Vlan).Count) {
+            $group = if (@($parts.Management).Count) { 'Management' } else { 'Vlan' }
+            $outcome = Invoke-AzlGuardStep -Transport $Transport -Spec $Spec -State $state -Group $group -Todo @($parts.$group) -Pass $pass -GuardContext $guardContext -Changes $changes -NoRestart:$NoRestart
+            $guardOutcomes.Add($outcome)
+            if ($outcome.State -ne 'Committed') { $halted = $true; break }
+            continue
+        }
+
+        # Inline: files first (a WinRM copy lands in place; an Arc node downloads from a SAS address), then the actions that cannot cut the node off.
         $actions = @()
         $applySecrets = @{} + $secrets
-        foreach ($item in $todo) {
+        foreach ($item in @($parts.Inline)) {
             $a = $item.Apply.Clone()
             if ($a.kind -eq 'sbe-file') {
                 $staged = Send-AzlNodeFile -Transport $Transport -Node $node -LocalPath $a.localPath -RemotePath ("$($Spec.Sbe.Dir.TrimEnd('\'))\$($a.name)") -Sha256 $a.sha256
@@ -715,6 +752,32 @@ function Invoke-AzlNodeConfiguration {
                 $restarted = $true
             }
         }
+
+        # Services (remote management rules, time, DNS): one guarded change. Then the computer name, its own change with a restart. DHCP off on the other
+        # ports and disabled adapters come last, and only while the management port has a default gateway.
+        $nextPass = $false
+        foreach ($group in 'Services', 'Hostname', 'Network') {
+            $items = @($parts.$group)
+            if (-not $items.Count) { continue }
+            if ($group -eq 'Network' -and $nextPass) { break }
+            if ($group -eq 'Network') {
+                $gate = Test-AzlGuardNetworkPrecondition -Spec $Spec -State $state -Transport $Transport -Node $node
+                if (-not $gate.Ok) {
+                    foreach ($i in $items) { $changes.Add([pscustomobject]@{ Node = $node; Pass = $pass; Id = $i.Apply.id; Status = 'blocked'; Detail = $gate.Reason }) }
+                    Send-AzlGuardEvent -Context $guardContext.Event -Node $node -State 'NodeBlocked' -Step 'Network' -Transport $Transport.Kind -Level Warning -Evidence $gate.Reason -NextAction 'Fix the management port (address and default gateway) and run again.'
+                    $halted = $true
+                    break
+                }
+            }
+            $outcome = Invoke-AzlGuardStep -Transport $Transport -Spec $Spec -State $state -Group $group -Todo $items -Pass $pass -GuardContext $guardContext -Changes $changes -NoRestart:$NoRestart
+            $guardOutcomes.Add($outcome)
+            if ($outcome.State -ne 'Committed') { $halted = $true; break }
+            if ($group -eq 'Hostname' -and $outcome.Restarted) { $restarted = $true }
+            if ($group -in 'Services', 'Hostname') { $nextPass = $true }
+            if ($group -eq 'Hostname') { break }
+        }
+        if ($halted) { break }
+        if ($nextPass) { continue }
     }
     $blocked = @($plan | Where-Object Action -eq 'Blocked')
     $pending = @($plan | Where-Object { $_.Action -eq 'Change' })
@@ -729,6 +792,9 @@ function Invoke-AzlNodeConfiguration {
         State     = $state
         Passes    = $passes.ToArray()
         Executed  = [bool]$Execute
+        Guard     = $guardOutcomes.ToArray()
+        Events    = @($guardEvent.Sink)
+        Address   = $(if (Test-AzlTransportMember -Transport $Transport -Name 'GetAddress') { [string](& $Transport.GetAddress $Transport $node) } else { '' })
     }
 }
 
