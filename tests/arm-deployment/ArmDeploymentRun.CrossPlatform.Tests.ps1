@@ -64,7 +64,7 @@ Describe 'The entry point in a child pwsh (no Azure: -Offline)' {
     BeforeAll {
         $repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
         $script:Entry = [IO.Path]::Combine($repo, 'scripts', 'deploy', '04-cluster-deployment', 'phase-05-cluster-deployment', 'Invoke-AzureLocalArmDeployment.ps1')
-        $script:Example = [IO.Path]::Combine($repo, 'config', 'infrastructure', 'infrastructure.example.yml')
+        $script:Example = [IO.Path]::Combine($repo, 'config', 'variables', 'examples', 'infrastructure.example.yml')
         function Invoke-Entry([string[]]$Arguments) {
             $out = & pwsh -NoProfile -NonInteractive -File $script:Entry @Arguments 2>&1
             [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = ($out | Out-String) }

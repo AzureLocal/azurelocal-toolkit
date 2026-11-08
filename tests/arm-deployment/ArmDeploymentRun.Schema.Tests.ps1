@@ -9,8 +9,8 @@ BeforeAll {
     Import-Module ([IO.Path]::Combine($repo, 'scripts', 'common', 'arm-deployment', 'AzlArmDeployment.psm1')) -Force
     Import-Module ([IO.Path]::Combine($repo, 'scripts', 'common', 'arm-deployment', 'AzlArmDeploymentRun.psm1')) -Force
     Import-Module powershell-yaml
-    $script:Example = [IO.Path]::Combine($repo, 'config', 'infrastructure', 'infrastructure.example.yml')
-    $script:Schema = Get-Content -LiteralPath ([IO.Path]::Combine($repo, 'config', 'infrastructure', 'infrastructure.schema.json')) -Raw | ConvertFrom-Json -AsHashtable -Depth 100
+    $script:Example = [IO.Path]::Combine($repo, 'config', 'variables', 'examples', 'infrastructure.example.yml')
+    $script:Schema = Get-Content -LiteralPath ([IO.Path]::Combine($repo, 'config', 'variables', 'schema', 'infrastructure.schema.json')) -Raw | ConvertFrom-Json -AsHashtable -Depth 100
     $script:Repo = $repo
     function Get-Finding([scriptblock]$Change) {
         $infra = Import-AzlInfrastructure -Path $script:Example
@@ -88,7 +88,7 @@ Describe 'The variables reference' {
         $LASTEXITCODE | Should -Be 0 -Because $out
     }
     It 'documents every key of the deployment block' {
-        $text = Get-Content -LiteralPath ([IO.Path]::Combine($script:Repo, 'config', 'infrastructure', 'VARIABLES.md')) -Raw
+        $text = Get-Content -LiteralPath ([IO.Path]::Combine($script:Repo, 'config', 'variables', 'docs', 'VARIABLES.md')) -Raw
         foreach ($k in $script:Schema.properties.deployment.properties.Keys) { $text | Should -Match ([regex]::Escape("``deployment.$k``")) }
     }
 }

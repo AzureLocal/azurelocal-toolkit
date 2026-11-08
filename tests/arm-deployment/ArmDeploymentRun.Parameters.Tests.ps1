@@ -133,7 +133,7 @@ Describe 'The parameter-source map' {
         @($missing) | Should -BeNullOrEmpty
     }
     It 'every infrastructure.yml key it names exists in the schema or is a documented generated value' {
-        $schemaText = Get-Content -LiteralPath ([IO.Path]::Combine($PSScriptRoot, '..', '..', 'config', 'infrastructure', 'infrastructure.schema.json')) -Raw
+        $schemaText = Get-Content -LiteralPath ([IO.Path]::Combine($PSScriptRoot, '..', '..', 'config', 'variables', 'schema', 'infrastructure.schema.json')) -Raw
         $sources = Get-AzlArmParameterSource
         $unknown = foreach ($name in $sources.Keys) {
             foreach ($key in @($sources[$name]['keys'])) {
