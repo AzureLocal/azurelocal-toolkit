@@ -956,7 +956,8 @@ function Invoke-AzlPreClusterVerification {
         [System.Collections.IDictionary]$Adapter,
         [string]$ExtensionFolder = (Get-AzlPclExtensionFolder),
         [switch]$InstallEnvironmentChecker,
-        [switch]$KeepEnvironmentChecker
+        [switch]$KeepEnvironmentChecker,
+        [switch]$AllowRevalidate
     )
     $script:Secrets.Clear()
     # No -Adapter: the engine builds everything. A table the caller gives holds only what the caller wants to replace (a test's fakes).
@@ -990,6 +991,7 @@ function Invoke-AzlPreClusterVerification {
         if ($Settings) { foreach ($k in $Settings.Keys) { if ([string]$k -eq 'remoting') { $remotingRaw = $Settings[$k] } else { $armSettings[$k] = $Settings[$k] } } }
         if ($InstallEnvironmentChecker) { $armSettings['installEnvironmentChecker'] = $true }
         if ($KeepEnvironmentChecker) { $armSettings['keepEnvironmentChecker'] = $true }
+        if ($AllowRevalidate) { $armSettings['allowRevalidate'] = $true }
         if ($AcknowledgeKnownIssues) { $armSettings['acknowledgeKnownIssues'] = @($AcknowledgeKnownIssues | ForEach-Object { ([string]$_).Split(',') } | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
         $run = Get-AzlArmRunSetting -Infrastructure $infra -ConfigPath $ConfigPath -Settings $armSettings
         $remoting = try { Get-AzlRemotingSetting -Infrastructure $infra -Setting $(if ($remotingRaw) { @{ remoting = $remotingRaw } } else { @{} }) } catch { Stop-AzlPclInput $_.Exception.Message }

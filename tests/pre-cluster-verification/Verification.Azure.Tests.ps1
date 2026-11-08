@@ -459,9 +459,14 @@ Describe 'AZ-016 the Arc machines are named after the host (ARM precondition Arc
         $script:Handoff2690 = [pscustomobject]@{ VsrVersion = '12.2690.1003.15'; Nodes = @{} }
     }
     It 'passes when named after the host' { (Invoke-AzCheck 'AZ-016' (New-AzContext))[0].Status | Should -Be 'Passed' }
-    It 'fails on the build the known issue was seen on, when the name is the device id' {
+    It 'is a non-blocking Warning, with the reported-not-reproduced wording, even on the build the report named' {
         $r = (Invoke-AzCheck 'AZ-016' (New-AzContext -Override @{ GetArcMachine = $script:DeviceId } -Handoff $script:Handoff2690))[0]
-        $r.Status | Should -Be 'Failed'; $r.Message | Should -Match 'arc-device-id-name'
+        $r.Status | Should -Be 'Warning'
+        $r.Message | Should -Match 'is named by device ID, not after the host'
+        $r.Message | Should -Match 'reported against a prerelease build in another environment'
+        $r.Message | Should -Match 'has not been reproduced in this environment'
+        $r.Message | Should -Match 'Nothing to do unless the Deploy hits it'
+        $r.Message | Should -Not -Match 'On build 2690'
     }
     It 'warns when the operator acknowledged the known issue' {
         $r = (Invoke-AzCheck 'AZ-016' (New-AzContext -Override @{ GetArcMachine = $script:DeviceId } -Handoff $script:Handoff2690 -Settings @{ acknowledgeKnownIssues = @('arc-device-id-name') }))[0]
@@ -675,5 +680,33 @@ Describe 'GetCallerRoles and GetPrincipalRoles list through REST, never mixing G
         }
         $null = @(& $script:Adapter.GetCallerRoles $script:Scope)
         Should -Invoke -ModuleName AzlVerification.Azure Invoke-AzRestMethod -ParameterFilter { $Path -like "*assignedTo('33333333-3333-3333-3333-333333333333')*" }
+    }
+}
+
+Describe 'AZ-016 and AZ-018 follow what the operator accepted (lab run 1)' {
+    BeforeAll {
+        $script:DeviceId2 = { param($Node, $ResourceId, $ArcMachineName, $Subscription, $ResourceGroup) [pscustomobject]@{ Name = 'a1b2c3d4e5f60718293a4b5c6d7e8f90-1'; ResourceId = "/subscriptions/$Subscription/resourceGroups/$ResourceGroup/providers/Microsoft.HybridCompute/machines/a1b2c3d4e5f60718293a4b5c6d7e8f90-1"; Status = 'Connected'; ComputerName = $Node } }
+        $script:H2690 = [pscustomobject]@{ VsrVersion = '12.2690.1003.15'; Nodes = @{} }
+    }
+    It 'AZ-016 is a Warning in every phase and puts the real remedies (Learn: the Arc resource name is fixed at onboarding) in the remedy' {
+        foreach ($settings in @{}, @{ acknowledgeKnownIssues = @() }) {
+            $r = (Invoke-AzCheck 'AZ-016' (New-AzContext -Override @{ GetArcMachine = $script:DeviceId2 } -Handoff $script:H2690 -Settings $settings))[0]
+            $r.Status | Should -Be 'Warning'
+            $r.Remedy | Should -Match 'fixed at onboarding'
+            $r.Remedy | Should -Match 'pencil'
+            $r.Remedy | Should -Match '--resource-name <hostname>'
+            $r.Remedy | Should -Match 'azcmagent disconnect'
+            $r.Remedy | Should -Match 'nodes\[\]\.arc_machine_name'
+        }
+    }
+    It 'AZ-018 names -AllowRevalidate on Mode Validate in the remedy when it fails' {
+        $r = (Invoke-AzCheck 'AZ-018' (New-AzContext -Override @{ GetDeploymentState = { Get-TestState -Prov 'Failed' -Deployment 'Failed' } }))[0]
+        $r.Status | Should -Be 'Failed'; $r.Remedy | Should -Match '-AllowRevalidate to Mode Validate'
+    }
+    It 'AZ-018 is a Warning that records the accepted risk when allowRevalidate is set' {
+        $r = (Invoke-AzCheck 'AZ-018' (New-AzContext -Override @{ GetDeploymentState = { Get-TestState -Prov 'Failed' -Deployment 'Failed' } } -Settings @{ allowRevalidate = $true }))[0]
+        $r.Status | Should -Be 'Warning'
+        $r.Message | Should -Match 'operator accepted the risk'
+        $r.Message | Should -Match 'license sync'
     }
 }

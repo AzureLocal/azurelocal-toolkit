@@ -121,18 +121,20 @@ Describe 'Arc machines' {
         $w = Get-FakeWorld; Get-DeviceIdArc $w 'iic-n01', 'iic-n02'
         $r = Invoke-TestRun -World $w -Mode Plan -Handoff $script:Handoff2690
         @(Get-Pre $r ArcMachineNaming | Where-Object result -eq 'Warning').Count | Should -Be 2
-        (Get-Pre $r ArcMachineNaming iic-n01).evidence | Should -Match 'arc-device-id-name'
+        (Get-Pre $r ArcMachineNaming iic-n01).evidence | Should -Match 'has not been reproduced in this environment'
         $r.ExitCode | Should -Be 0
     }
-    It 'device-ID Arc names on build 2690 BLOCK the Deploy, and no Deploy is submitted' {
+    It 'device-ID Arc names never block, in any phase: a Warning with the reported-not-reproduced wording, and the Deploy is submitted' {
         $hash = (Invoke-TestRun -World (Get-FakeWorld) -Mode Plan).Report.parameterHash
         $w = Get-FakeWorld; Get-DeviceIdArc $w 'iic-n01', 'iic-n02'
         $w.Before = Get-TestState -Validation 'Succeeded' -Deployment 'NotStarted'; $w.BeforeArm["azl-validate-$hash"] = [pscustomobject]@{ ProvisioningState = 'Succeeded'; Error = ''; Timestamp = '' }
         $r = Invoke-TestRun -World $w -Mode Deploy -Handoff $script:Handoff2690
-        @(Get-Pre $r ArcMachineNaming | Where-Object result -eq 'Failed').Count | Should -Be 2
-        $r.ExitCode | Should -Be 1
-        $w.SubmitCalls.Count | Should -Be 0
-        (Get-Pre $r ArcMachineNaming iic-n01).nextAction | Should -Match 'acknowledge_known_issues'
+        @(Get-Pre $r ArcMachineNaming | Where-Object result -eq 'Failed') | Should -BeNullOrEmpty
+        @(Get-Pre $r ArcMachineNaming | Where-Object result -eq 'Warning').Count | Should -Be 2
+        (Get-Pre $r ArcMachineNaming iic-n01).evidence | Should -Match 'has not been reproduced in this environment'
+        (Get-Pre $r ArcMachineNaming iic-n01).evidence | Should -Not -Match 'On build 2690'
+        (Get-Pre $r ArcMachineNaming iic-n01).nextAction | Should -Match 'fixed at onboarding'
+        (Get-Pre $r ArcMachineNaming iic-n01).nextAction | Should -Match 'azcmagent disconnect'
     }
     It 'the same on another build only warns, and an acknowledged issue only warns' {
         $hash = (Invoke-TestRun -World (Get-FakeWorld) -Mode Plan).Report.parameterHash
@@ -299,7 +301,7 @@ Describe 'Leftover state, the runner and the skip list' {
     }
     It '-AllowRevalidate lets a Validate through a failed state (support-guided only)' {
         $w = Get-FakeWorld; $w.Before = Get-TestState -Prov 'Failed' -Validation 'Succeeded' -Deployment 'Error'
-        (Get-Pre (Invoke-TestRun -World $w -Mode Plan -Settings @{ allowRevalidate = $true }) NoLeftoverFailedDeployment).result | Should -Be 'Passed'
+        (Get-Pre (Invoke-TestRun -World $w -Mode Plan -Settings @{ allowRevalidate = $true }) NoLeftoverFailedDeployment).result | Should -Be 'Warning'
     }
     It 'a precondition on the skip list is recorded as Skipped on purpose, not hidden' {
         $r = Invoke-TestRun -World (Get-FakeWorld) -Mode Plan -Settings @{ skipPreconditions = @('Permissions') } -Override @{ GetPermission = { , @([pscustomobject]@{ Actions = @('*/read'); NotActions = @() }) } }

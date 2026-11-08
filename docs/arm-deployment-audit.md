@@ -87,7 +87,7 @@ reads code, tests and documents.
 | G3 | Poll is a fixed 30 s sleep; timeout throws and loses the state | A pipeline job that ends at the limit cannot tell "still running" from "failed" and cannot continue | Backoff polling, state `DeploymentTimedOut`, `-Resume` attaches to the running deployment |
 | G4 | No resume | A Deploy that fails at step 0.41 can only be started again by hand, and the tool does not know whether Azure supports it | Resume rules (design section 7) |
 | G5 | Step failures are listed by `Name` only. `Get-AzlDeploymentState` drops `fullStepIndex` (the "0.41" shown in the portal), start and end times | The failing step cannot be quoted or matched | `FullStepIndex` added to the flattened steps |
-| G6 | No knowledge of known failures | The same Microsoft bug (device-ID Arc names, step 0.41, build 2690) was met by hand twice | `config/known-issues/arm-deployment.json` and the matcher |
+| G6 | No knowledge of known failures | A failure reported in another environment (device-ID Arc names, step 0.41, prerelease build; not reproduced here) was met by hand twice | `config/known-issues/arm-deployment.json` and the matcher |
 | G7 | No event feed, no `report.json`, no `summary.md` | Sonar cannot follow the run from the pipeline's side; a pipeline job summary has nothing to show | Events JSONL, report, summary |
 | G8 | Exit code: 1 on failure, an uncaught exception otherwise (a throw gives 1 too, bad input is not distinguished) | A pipeline cannot tell "fix the input" from "the deployment failed" | Exit codes 0, 1, 2 |
 | G9 | No approval gate between Validate and Deploy | In a pipeline, Deploy has to be a separate manual run | `-Mode ValidateAndDeploy` with an approval mode; pipeline environments |

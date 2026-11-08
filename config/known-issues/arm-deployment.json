@@ -18,38 +18,39 @@
   "issues": [
     {
       "id": "arc-device-id-name",
-      "title": "Deploy fails at the Arc infrastructure step because the Arc machine is named after the device ID",
+      "title": "Deploy step 0.41 (Arc infrastructure) reported to fail with ParentResourceNotFound when the Arc machine is named after the device ID",
       "phase": ["Deploy"],
       "match": { "stepName": "Arc infrastructure|ArcExtension|Deploy Arc", "error": "ParentResourceNotFound" },
       "affectedBuilds": ["12.2690."],
-      "cause": "Simplified machine provisioning names each Arc machine <device-id>-1, not the host name. On build 2690 the step that deploys the Arc infrastructure components looks the Arc machine up by the host name (the computer name) and does not find it (ParentResourceNotFound). Validate does not reach this step, so Validate passes. A Microsoft bug; no documented workaround.",
+      "cause": "Simplified machine provisioning names each Arc machine <device-id>-1, not the host name, and the Arc resource name is fixed at onboarding. A failure at the Deploy step that deploys the Arc infrastructure components (step 0.41, ParentResourceNotFound: the machine is looked up by host name) was reported against a prerelease build in another environment. It has not been reproduced in this environment, so a device-ID name is only a Warning in the gate and in the ARM precondition ArcMachineNaming, in every phase. Nothing to do unless the Deploy hits it.",
       "remediation": [
-        "Do not run Validate again for this instance (license sync).",
-        "Check the precondition ArcMachineNaming before Deploy: it reports every node whose Arc machine name is not its host name.",
-        "Route A: wait for a Microsoft build that fixes the lookup, then Resume the Deploy.",
-        "Route B: install the nodes from the Microsoft image and register them with Azure Arc under the host name (the OS configuration run does this for ISO-installed nodes), then Validate and Deploy.",
+        "Look at the Arc machine names in the resource group. If they are not the host names, set the Arc resource name to the host name where the machine is onboarded (the name is fixed at onboarding).",
+        "With simplified machine provisioning: after adding the machines in the portal, select the pencil and enter the machine name as the Azure Arc resource name (Learn, simplified machine provisioning, step 3.4).",
+        "When registering with the Configurator app or an Arc registration, give --resource-name <hostname>.",
+        "For a machine that is already registered: azcmagent disconnect, then azcmagent connect with --resource-name <hostname>.",
+        "The file keeps nodes[].arc_machine_name per node, so the ARM parameters point at the real resource whatever it is called. Do not run Validate again for this instance (license sync).",
         "Send the failed step, the Arc machine names and the build to Microsoft support."
       ],
       "retry": "none",
-      "confidence": "observed",
+      "confidence": "pattern",
       "link": "https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template",
-      "evidence": "tierpointpoc 2026-10 (nic26-clus01) and 2026-11-06: Validate passed after ZTP, Deploy failed at step 0.41 (Deploy Arc infrastructure components, ParentResourceNotFound) on 12.2690.1003.15. tierpointpoc/.ai/memory/DECISIONS.md, docs/discovery-report.md."
+      "evidence": "Reported once against a prerelease build in another environment (Validate passed, Deploy failed at step 0.41 with ParentResourceNotFound, Arc machines named <device-id>-1). Not reproduced in this environment."
     },
     {
       "id": "arc-device-id-name-step-0-41",
-      "title": "Deploy fails at step 0.41 (any text): device-ID Arc machine names are the first thing to rule out",
+      "title": "Deploy fails at step 0.41 (any text): device-ID Arc machine names are the first thing to look at",
       "phase": ["Deploy"],
       "match": { "stepId": "^0\\.41$" },
       "affectedBuilds": ["12.2690."],
-      "cause": "Step 0.41 is where the 2026-11-06 deployment on build 2690 stopped. If the Arc machines are named <device-id>-1, it is the same Microsoft bug as arc-device-id-name even when the error text is different or empty.",
+      "cause": "Step 0.41 is where a deployment on a prerelease build in another environment stopped. If the Arc machines are named <device-id>-1 the failure may be the same as arc-device-id-name even when the error text is different or empty. This is reported, not reproduced here.",
       "remediation": [
         "Look at the Arc machine names in the resource group. If they are not the host names, follow arc-device-id-name.",
         "If they are the host names, copy the step's error text from the portal (Deployments, error details) to Microsoft support and add the text to this file."
       ],
       "retry": "none",
-      "confidence": "observed",
+      "confidence": "pattern",
       "link": "https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template",
-      "evidence": "tierpointpoc 2026-11-06: step 0.41 on build 2690."
+      "evidence": "Reported in another environment (step 0.41 on a prerelease build). Not reproduced here."
     },
     {
       "id": "unsupported-os-version",

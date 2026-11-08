@@ -96,10 +96,10 @@ Exit code 0: the part you asked for succeeded. 1: a precondition failed, or the 
 
 ## The known failures it recognises
 
-The table in `docs/arm-deployment-guide.md` (section "When it fails") lists them. The most important one for current builds: on
-build 2690, machines provisioned by simplified provisioning get Arc machine names of the form `<device-id>-1`, and the Deploy
-step that sets up the Arc infrastructure (step 0.41) looks the machine up by host name and fails with `ParentResourceNotFound`.
-Validate does not reach that step, so it passes. The run warns before the Validate and blocks the Deploy until you decide.
+The table in `docs/arm-deployment-guide.md` (section "When it fails") lists them. One to know: machines provisioned by simplified provisioning get Arc machine names of the form `<device-id>-1`. A failure of the Deploy step that
+sets up the Arc infrastructure (step 0.41, `ParentResourceNotFound`, the machine is looked up by host name) was reported against a prerelease build in
+another environment; it has not been reproduced here. The run only warns, in every phase, and the remedy says how to set the Arc resource name to the host name
+(it is fixed at onboarding). Nothing to do unless the Deploy hits it.
 
 ## What is not proven yet
 

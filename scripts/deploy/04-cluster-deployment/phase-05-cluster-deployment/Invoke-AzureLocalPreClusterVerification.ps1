@@ -55,6 +55,9 @@
     and the readiness checks are Skipped where the module is missing (they block unless accepted). The nodes need to reach the PowerShell Gallery.
 .PARAMETER KeepEnvironmentChecker
     With -InstallEnvironmentChecker: do not remove the module at the end. The report then says it is still installed.
+.PARAMETER AllowRevalidate
+    Accept that the Validate runs again on an instance whose deployment failed (Learn: another Validate resets the system properties and can break license sync).
+    AZ-018 is then a Warning that records the accepted risk instead of a Failed. Give the same -AllowRevalidate to Invoke-AzureLocalArmDeployment.ps1 Mode Validate.
 .PARAMETER Category
     Run only these categories: azure, identity, nodes, network, storage, readiness. A partial run never passes the ARM precondition.
 .PARAMETER Settings
@@ -87,6 +90,7 @@ param(
     [switch]$Fix,
     [switch]$InstallEnvironmentChecker,
     [switch]$KeepEnvironmentChecker,
+    [switch]$AllowRevalidate,
     [ValidateSet('azure', 'identity', 'nodes', 'network', 'storage', 'readiness')][string[]]$Category,
     [hashtable]$Settings,
     [string]$ConfigPath,

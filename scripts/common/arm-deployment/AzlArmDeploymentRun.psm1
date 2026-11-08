@@ -1356,16 +1356,11 @@ $script:Checks['ArcMachineNaming'] = {
         $hostName = if ($m.ComputerName) { $m.ComputerName } else { $name }
         if ($m.Name -ieq $hostName -or $m.Name -ieq $name) { New-AzlArmCheckResult ArcMachineNaming Passed "Arc machine $($m.Name) is named after the host." -Node $name; continue }
         if ($m.Name -notmatch $guid) { New-AzlArmCheckResult ArcMachineNaming Warning "Arc machine $($m.Name) is not named after the host ($hostName). Check that nodes[].arc_machine_name is intended." -Node $name; continue }
-        $issueId = 'arc-device-id-name'
-        $knownBad = (-not $Ctx.Build) -or (@(ConvertTo-AzlArmArray $Ctx.DeviceIdIssue.affectedBuilds) | Where-Object { $Ctx.Build.StartsWith([string]$_) })
-        $acknowledged = ($issueId -in $Ctx.Settings.acknowledgeKnownIssues) -or ('*' -in $Ctx.Settings.acknowledgeKnownIssues)
-        $text = "Arc machine $($m.Name) is named by device ID, not after the host ($hostName). On build 2690 the Deploy step 0.41 (Arc infrastructure) looks the machine up by host name and fails with ParentResourceNotFound (known issue $issueId)."
-        if ($Ctx.Phase -eq 'Deploy' -and $knownBad -and -not $acknowledged) {
-            New-AzlArmCheckResult ArcMachineNaming Failed $text 'Do not Deploy yet. Wait for a fixed build, or install from the Microsoft image and register under the host name. To deploy anyway, set deployment.acknowledge_known_issues to arc-device-id-name.' -Node $name
-        }
-        else {
-            New-AzlArmCheckResult ArcMachineNaming Warning ($text + $(if (-not $knownBad) { " Build $($Ctx.Build) is not one it was seen on." } elseif ($acknowledged) { ' Acknowledged.' } else { ' Validate does not reach that step.' })) 'Deploy will fail at that step on an affected build; see config/known-issues/arm-deployment.json.' -Node $name
-        }
+        # Not a defect of the machine and not a blocker in any phase: a failure at Deploy step 0.41 (ParentResourceNotFound) was reported against a prerelease build in
+        # another environment and has not been reproduced here. The file keeps nodes[].arc_machine_name, so the ARM parameters point at the real resource whatever it is called.
+        $text = "The Arc machine $($m.Name) is named by device ID, not after the host ($hostName). A failure at Deploy step 0.41 (ParentResourceNotFound) was reported against a prerelease build in another environment; it has not been reproduced in this environment. Nothing to do unless the Deploy hits it."
+        $remedy = 'Only if the Deploy hits it: the Arc resource name is fixed at onboarding, so set it to the host name where the machine is onboarded. With simplified machine provisioning, after adding the machines in the portal select the pencil and enter the machine name as the Azure Arc resource name (Learn, simplified machine provisioning, step 3.4); when registering with the Configurator app or an Arc registration, give --resource-name <hostname>; for a machine that is already registered, azcmagent disconnect, then azcmagent connect with --resource-name <hostname>. The file keeps nodes[].arc_machine_name per node, so the ARM parameters point at the real resource whatever it is called.'
+        New-AzlArmCheckResult ArcMachineNaming Warning $text $remedy -Node $name
     }
 }
 
@@ -1548,7 +1543,8 @@ $script:Checks['NoLeftoverFailedDeployment'] = {
     if ($Ctx.Phase -eq 'Validate') {
         if ($dep -eq 'success') { return New-AzlArmCheckResult NoLeftoverFailedDeployment Failed 'The instance is already deployed.' 'Nothing to validate.' }
         if ($dep -eq 'running') { return New-AzlArmCheckResult NoLeftoverFailedDeployment Failed 'A deployment is running.' 'Wait for it, or run Mode Deploy to attach to it.' }
-        if ($failed -and -not ($Ctx.Settings.allowRevalidate)) { return New-AzlArmCheckResult NoLeftoverFailedDeployment Failed "The instance is in a failed deployment state (provisioning $($s.ProvisioningState), deployment $($s.DeploymentStatus)). Microsoft: another Validate resets the system properties and can break license sync." 'Fix the cause and resume with Mode Deploy -Resume. -AllowRevalidate is for support-guided recovery only.' }
+        if ($failed -and -not ($Ctx.Settings.allowRevalidate)) { return New-AzlArmCheckResult NoLeftoverFailedDeployment Failed "The instance is in a failed deployment state (provisioning $($s.ProvisioningState), deployment $($s.DeploymentStatus)). Microsoft: another Validate resets the system properties and can break license sync." 'Fix the cause and resume with Mode Deploy -Resume. To validate again anyway and accept the license-sync risk, give -AllowRevalidate to Mode Validate (and to the pre-cluster verification); that is for support-guided recovery.' }
+        if ($failed) { return New-AzlArmCheckResult NoLeftoverFailedDeployment Warning "The instance is in a failed deployment state (provisioning $($s.ProvisioningState), deployment $($s.DeploymentStatus)) and -AllowRevalidate was given: the Validate runs again, and the operator accepted the risk Microsoft names (another Validate resets the system properties and can break license sync)." 'Prefer Mode Deploy -Resume after fixing the cause; keep the failed step and the license state in view.' }
         return New-AzlArmCheckResult NoLeftoverFailedDeployment Passed 'The instance is not in a failed or running deployment.'
     }
     if ($dep -eq 'success') { return New-AzlArmCheckResult NoLeftoverFailedDeployment Passed 'The instance is already deployed; nothing to do.' }
@@ -2252,7 +2248,7 @@ function Invoke-AzlArmDeploymentRun {
         $pre.Add($gate)
         Send-AzlArmEvent -Run $run -State PreconditionChecked -Step PreClusterVerification -Evidence $gate.Evidence -Level $(switch ($gate.Result) { 'Failed' { 'Error' } 'Warning' { 'Warning' } default { 'Info' } }) -NextAction $gate.NextAction -Data @{ name = 'PreClusterVerification'; result = $gate.Result }
         foreach ($r in (Invoke-AzlArmPrecondition -Run $run -Context $context -Phase $firstPhase -Offline:$offline)) { $pre.Add($r) }
-        $report.preconditions = @($pre | ForEach-Object { [ordered]@{ name = $_.Name; node = $_.Node; result = $_.Result; evidence = (Limit-AzlArmText $_.Evidence 600); nextAction = (Limit-AzlArmText $_.NextAction $(if ($_.Name -eq 'PreClusterVerification') { 4000 } else { 400 })) } })
+        $report.preconditions = @($pre | ForEach-Object { [ordered]@{ name = $_.Name; node = $_.Node; result = $_.Result; evidence = (Limit-AzlArmText $_.Evidence 600); nextAction = (Limit-AzlArmText $_.NextAction $(if ($_.Name -in 'PreClusterVerification', 'ArcMachineNaming') { 4000 } else { 400 })) } })
         $failedChecks = @($pre | Where-Object { $_.Result -eq 'Failed' })
         $preFailed = $failedChecks.Count -gt 0
         if ($preFailed) {
@@ -2297,7 +2293,7 @@ function Invoke-AzlArmDeploymentRun {
                     $second = @(Test-AzlArmPreClusterVerification -Run $run -InfrastructureFile $InfrastructureFile -Infrastructure $infra -HandoffFile $HandoffFile -OsConfigurationReport $(if ($OsConfigurationReport -is [string]) { $OsConfigurationReport } else { '' }))
                     $second += @(Invoke-AzlArmPrecondition -Run $run -Context $context -Phase Deploy)
                     foreach ($r in $second) { $pre.Add($r) }
-                    $report.preconditions = @($pre | ForEach-Object { [ordered]@{ name = $_.Name; node = $_.Node; result = $_.Result; evidence = (Limit-AzlArmText $_.Evidence 600); nextAction = (Limit-AzlArmText $_.NextAction $(if ($_.Name -eq 'PreClusterVerification') { 4000 } else { 400 })) } })
+                    $report.preconditions = @($pre | ForEach-Object { [ordered]@{ name = $_.Name; node = $_.Node; result = $_.Result; evidence = (Limit-AzlArmText $_.Evidence 600); nextAction = (Limit-AzlArmText $_.NextAction $(if ($_.Name -in 'PreClusterVerification', 'ArcMachineNaming') { 4000 } else { 400 })) } })
                     $failed2 = @($second | Where-Object { $_.Result -eq 'Failed' })
                     if ($failed2.Count) { $preFailed = $true; $ok = $false; $run.Message = "$($failed2.Count) precondition(s) failed before the Deploy: " + ((@($failed2.Name | Select-Object -Unique)) -join ', ') + '.'; $run.NextAction = $failed2[0].NextAction }
                 }

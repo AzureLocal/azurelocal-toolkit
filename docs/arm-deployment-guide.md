@@ -98,7 +98,7 @@ Each check is `Passed`, `Failed` (stops the run, exit 1), `Warning`, or `Skipped
 | `NamesAvailable` | Diagnostic and witness storage account names, and the new Key Vault's name, are free | Pick another name; a soft-deleted vault keeps its name |
 | `KeyVaultSecrets` | Every `keyvault://` reference points at a listed vault and an existing secret (the value is not read) | Create the secret; grant `Get` on secrets |
 | `ArcMachinesConnected` | Each node's Arc machine exists, is Connected, is in the instance's resource group | Finish ZTP or Arc registration |
-| `ArcMachineNaming` | The Arc machine is named after the host. A device-ID name (`<id>-1`) fails the Deploy at step 0.41 on build 2690 | See the known issue below |
+| `ArcMachineNaming` | The Arc machine is named after the host. A device-ID name (`<id>-1`) is only a Warning in every phase: a failure at Deploy step 0.41 was reported against a prerelease build in another environment and has not been reproduced here | Nothing unless the Deploy hits it; the remedy text and the known issue below say how to set the Arc resource name to the host name |
 | `OsConfigurationConverged` | The OS configuration report says every node converged, for this cluster | Run the OS configuration with `-Mode Apply` |
 | `OsBuildConsistent` | Every node runs the same OS build | Install the same build everywhere |
 | `SbeConsistent` | The SBE is opt-in. No `hardware.sbe.version`: Passed, "deploying without a Solution Builder Extension". With a version: the family must be set too (Warning if not) | Set `hardware.sbe.family`, or remove the version to deploy without an SBE |
@@ -190,7 +190,7 @@ removed), and looks it up in `config/known-issues/arm-deployment.json`:
 
 | Id | Meaning | Retry |
 | --- | --- | --- |
-| `arc-device-id-name` | Step *Deploy Arc infrastructure components*, `ParentResourceNotFound`: Arc machines named `<device-id>-1`, looked up by host name (build 2690) | no |
+| `arc-device-id-name` | Step *Deploy Arc infrastructure components*, `ParentResourceNotFound`: Arc machines named `<device-id>-1`, looked up by host name (reported against a prerelease build in another environment, not reproduced here) | no |
 | `arc-device-id-name-step-0-41` | Any failure at step 0.41: rule the above out first | no |
 | `unsupported-os-version` | "Unsupported OS version": a build the subscription does not accept, or nodes on different builds | after the fix |
 | `registration-5901` | 403 on the target Arc machine soon after the role assignment | once, after a wait |

@@ -111,7 +111,7 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.9"
+  version: "5.0.10"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.1"
   last_updated: "2026-11-08"
@@ -120,6 +120,10 @@ _metadata:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-08"
+      version: "5.0.10"
+      change: "The pre-cluster verification gate takes -AllowRevalidate (run setting allowRevalidate, already registered): AZ-018 (a failed deployment state) is then a Warning that records the accepted license-sync risk instead of a Failed, and its remedy names -AllowRevalidate on Mode Validate."
+      reason: "The first lab run of the gate failed on AZ-018 although the operator may knowingly validate again (Learn: another Validate resets the system properties and can break license sync). The gate must say what the operator accepted. AZ-016 (device-ID Arc names) became a Warning in every phase in the same change: the failure at Deploy step 0.41 was reported on a prerelease build in another environment and is not reproduced here."
     - date: "2026-11-08"
       version: "5.0.9"
       change: "The thresholds of the pre-cluster verification node checks (deployment.verification_min_memory_gib, verification_min_boot_disk_gb, verification_min_data_disk_gb, verification_min_link_gbps, verification_max_clock_skew_seconds) and the Environment Checker choice of the gate (switches -InstallEnvironmentChecker and -KeepEnvironmentChecker, run settings installEnvironmentChecker and keepEnvironmentChecker)"
@@ -18361,6 +18365,7 @@ tools:
                 AcknowledgeKnownIssues: {"name":"AcknowledgeKnownIssues","type":"string","declared_type":"string[]","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1","description":"Invoke-AzureLocalPreClusterVerification.ps1. Known issue ids (config/known-issues/arm-deployment.json) to proceed past, for example arc-device-id-name: the check then reports a Warning instead of a Failed."}
                 InstallEnvironmentChecker: {"name":"InstallEnvironmentChecker","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1","description":"Invoke-AzureLocalPreClusterVerification.ps1. Opt in (Mode Verify): install the Environment Checker module on the nodes for this run, because the readiness checks (RD-*) run it there, and remove it again at the end (a finally block) unless -KeepEnvironmentChecker is given. Without it nothing is installed on a node and the readiness checks are Skipped where the module is missing (Learn: uninstall it from the nodes before the deployment). Needs the nodes to reach the PowerShell Gallery."}
                 KeepEnvironmentChecker: {"name":"KeepEnvironmentChecker","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1","description":"Invoke-AzureLocalPreClusterVerification.ps1. With -InstallEnvironmentChecker: do not remove the module from the nodes at the end of the run. Learn says to remove it before the deployment, so the report then says it is still installed."}
+                AllowRevalidate: {"name":"AllowRevalidate","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1","description":"Invoke-AzureLocalPreClusterVerification.ps1. Accept that the Validate runs again on an instance whose deployment failed (Learn: another Validate resets the system properties and can break license sync): AZ-018 is then a Warning that records the accepted risk, not a Failed. Sets run setting allowRevalidate; give the same -AllowRevalidate to Invoke-AzureLocalArmDeployment.ps1 Mode Validate."}
                 PassThru: {"name":"PassThru","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1","description":"Invoke-AzureLocalPreClusterVerification.ps1. Also return the result object (verdict, counts, paths, checks)."}
         event_fields:
           type: object

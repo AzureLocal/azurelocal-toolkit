@@ -275,9 +275,9 @@ function Get-AzlVerifyArmBridge {
     if ($azure) { foreach ($k in $azure.Keys) { if ($null -ne $azure[$k]) { $adapter[$k] = $azure[$k] } } }
     $acknowledged = @(Get-AzlVerifyList (Get-AzlProp (Get-AzlProp $Context 'Settings') 'acknowledgeKnownIssues' @()))
     $settings = Get-AzlArmRunSetting -Infrastructure $infra -Settings @{ acknowledgeKnownIssues = @($acknowledged | ForEach-Object { [string]$_ }) }
-    # The gate reads: it never registers a provider, and a failed deployment is never "allowed to be validated again".
+    # The gate reads: it never registers a provider. A failed deployment may be validated again only when the operator said so (-AllowRevalidate): then AZ-018 is a Warning that records it.
     $settings.registerResourceProviders = $false
-    $settings.allowRevalidate = $false
+    $settings.allowRevalidate = [bool](Get-AzlProp (Get-AzlProp $Context 'Settings') 'allowRevalidate' $false)
     $run = [ordered]@{ RunId = 'pre-cluster-verification'; Mode = 'Verify'; Cluster = $target.Cluster; SchemaVersion = ''; EventPath = ''; Adapter = $adapter; Settings = $settings; WhatIf = $true }
     $deviceIdIssue = Get-AzlArmKnownIssue | Where-Object { $_['id'] -eq 'arc-device-id-name' } | Select-Object -First 1
     $handoff = Get-AzlProp $Context 'Handoff'
@@ -776,7 +776,12 @@ function Test-AzlVerifyKeyVaultSecret { param($Context) Invoke-AzlVerifyArmPreco
 function Test-AzlVerifyNameAvailable { param($Context) Invoke-AzlVerifyArmPrecondition -Context $Context -Name NamesAvailable -NeedParameterSet }
 function Test-AzlVerifyArcConnected { param($Context) Invoke-AzlVerifyArmPrecondition -Context $Context -Name ArcMachinesConnected }
 # Phase Deploy: the precondition then Fails (not only Warns) on a build where the device-ID name is known to break the Deploy, unless acknowledged.
-function Test-AzlVerifyArcNaming { param($Context) Invoke-AzlVerifyArmPrecondition -Context $Context -Name ArcMachineNaming -Phase Deploy }
+function Test-AzlVerifyArcNaming {
+    # AZ-016. A device-ID Arc machine name is a Warning in every phase: a failure at Deploy step 0.41 was reported against a prerelease build in another environment and has not
+    # been reproduced here. The remedies (Learn: the Arc resource name is fixed at onboarding) are in the remedy text; nothing depends on this naming being a defect.
+    param($Context)
+    Invoke-AzlVerifyArmPrecondition -Context $Context -Name ArcMachineNaming -Phase Validate
+}
 
 # ---------------------------------------------------------------------------------------------------------------------
 # The default adapter (real, read only)

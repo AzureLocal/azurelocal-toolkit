@@ -101,7 +101,7 @@ skipped on purpose with `deployment.skip_preconditions` or `-Settings @{ skipPre
 | `NamesAvailable` | run | The diagnostic and witness storage account names, and the Key Vault name when `create_new` is true, are free (or already in this resource group). A soft-deleted vault holds its name | Failed | Validate |
 | `KeyVaultSecrets` | run | Every `keyvault://` reference the parameters use points at a vault listed in `key_vaults` and the secret exists (the value is not read) | Failed | all |
 | `ArcMachinesConnected` | node | The node's Arc machine exists (handoff ID, else name), is Connected, and sits in the instance's subscription and resource group | Failed | all |
-| `ArcMachineNaming` | node | The Arc machine is named after the node's host name. A device-ID name (`<id>-1`) is the cause of the step 0.41 failure on build 2690 (known issue `arc-device-id-name`) | Warning in Validate, Failed in Deploy unless the issue is acknowledged | all |
+| `ArcMachineNaming` | node | The Arc machine is named after the node's host name. A device-ID name (`<id>-1`) is reported, not reproduced here, as the cause of a step 0.41 failure on a prerelease build in another environment (known issue `arc-device-id-name`) | Warning in every phase (never a blocker); the remedy says how to set the Arc resource name to the host name | all |
 | `OsConfigurationConverged` | node | The OS configuration report says the node converged (or planned nothing to change) and is for this cluster; without a report: `Skipped` with a warning, or Failed when `require_os_configuration_report` | Failed | all |
 | `OsBuildConsistent` | run | Every node runs the same OS build (Arc `osVersion`, else the OS report); the handoff's solution build (`vsrVersion`) is shown, not compared, because its format differs from the OS version | Failed | all |
 | `SbeConsistent` | run | The SBE values are known (`hardware.sbe` or the SBE folder), else a Warning: the deployment then uses the SBE the OS install discovered | Warning | all |
@@ -234,7 +234,7 @@ with secrets scrubbed.
 
 | Id | Match | Cause in one line | Retry | Seen |
 | --- | --- | --- | --- | --- |
-| `arc-device-id-name` | step name Arc infrastructure, error ParentResourceNotFound (Deploy) | Arc machines are named `<device-id>-1`; the step looks them up by host name (Microsoft bug, build 2690) | none | observed |
+| `arc-device-id-name` | step name Arc infrastructure, error ParentResourceNotFound (Deploy) | Arc machines are named `<device-id>-1`; the step looks them up by host name (reported against a prerelease build in another environment, not reproduced here) | none | pattern |
 | `arc-device-id-name-step-0-41` | step id `0.41` (Deploy) | Same, when the text is different | none | observed |
 | `unsupported-os-version` | error text "Unsupported OS version" | The build is not accepted for a new deployment in this subscription, or nodes differ | after-fix | observed |
 | `registration-5901` | error 5901 | 403 on the target Arc machine soon after the role assignment | resubmit-once | observed |
