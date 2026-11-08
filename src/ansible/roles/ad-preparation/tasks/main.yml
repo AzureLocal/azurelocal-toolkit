@@ -49,7 +49,7 @@
     scope: global
     path: "OU=Groups,OU=AzureLocal,OU=Servers,{{ ad_domain_dn }}"
     state: present
-    description: "{{ item.scope }} for {{ cluster_name }}"
+    description: "{{ item.purpose | default(item.name) }} for {{ cluster_name }}"
   loop: "{{ security_groups }}"
 
 # ---------------------------------------------------------------

@@ -2011,7 +2011,7 @@ identity:
         required: false
         pattern: "^[A-Za-z0-9][A-Za-z0-9-]{0,14}$"
         example: "IIC"
-        used_by: [os_configuration]
+        used_by: [deployment]
       ou_path:
         description: "Distinguished name of the dedicated OU. ARM adouPath. https://learn.microsoft.com/azure/azure-local/deploy/deployment-prep-active-directory"
         type: string
@@ -2121,6 +2121,14 @@ identity:
               required: false
               items:
                 {"type":"string"}
+            local_groups:
+              description: "Schema 5.6.1. The local groups of every machine this AD group is added to after the deployment (for example Administrators, Remote Management Users). Empty or missing: the group is not added to any local group (WAC groups are applied on the WAC server only). Read by the post-deployment task that applies the security groups and by the Ansible AD preparation role."
+              type: array
+              since: "5.6.1"
+              required: false
+              used_by: [os_configuration]
+              items:
+                {"type":"string","minLength":1}
       service_accounts:
         description: "Service and administration accounts, apart from the LCM user."
         type: array

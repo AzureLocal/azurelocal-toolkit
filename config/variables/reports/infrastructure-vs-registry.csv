@@ -288,6 +288,7 @@
 "identity.active_directory.security_groups[].name","ok","string","string","","","","","",""
 "identity.active_directory.security_groups[].purpose","ok","string","string","","","","","",""
 "identity.active_directory.security_groups[].members","ok","array","array","","","","","",""
+"identity.active_directory.security_groups[].local_groups","ok","array","array","","","","","5.6.1",""
 "identity.active_directory.service_accounts","ok","array","array","","","","","",""
 "identity.active_directory.service_accounts[].name","ok","string","string","","","","","",""
 "identity.active_directory.service_accounts[].purpose","ok","string","string","","","","","",""

@@ -58,21 +58,28 @@ onprem_vlans:
     gateway: "10.0.2.1"
 
 # --- Security Groups (Cluster-Specific) ---
+# The canonical form: identity.active_directory.security_groups of infrastructure.yml (name, purpose, local_groups).
 security_groups:
   - name: "SG-IIC-azlocal-iic-01-AZL-Administrators"
-    scope: "Administrators"
+    purpose: "Administrators of the instance"
+    local_groups: ["Administrators"]
   - name: "SG-IIC-azlocal-iic-01-AZL-Operations"
-    scope: "Remote Management Users,Remote Desktop Users"
+    purpose: "Operate the instance"
+    local_groups: ["Remote Management Users", "Remote Desktop Users"]
   - name: "SG-IIC-azlocal-iic-01-AZL-ReadOnly"
-    scope: "Event Log Readers,Performance Monitor Users"
+    purpose: "Read-only access"
+    local_groups: ["Event Log Readers", "Performance Monitor Users"]
   - name: "SG-IIC-azlocal-iic-01-AZL-WAC-Administrators"
-    scope: "WAC Administrators"
+    purpose: "Windows Admin Center administrators (applied on the WAC server only)"
+    local_groups: []
   - name: "SG-IIC-azlocal-iic-01-AZL-WAC-Users"
-    scope: "WAC Users"
+    purpose: "Windows Admin Center users (applied on the WAC server only)"
+    local_groups: []
   - name: "SG-IIC-azlocal-iic-01-AZL-HyperV-Administrators"
-    scope: "Hyper-V Administrators"
+    purpose: "Hyper-V administrators"
+    local_groups: ["Hyper-V Administrators"]
   - name: "SG-IIC-azlocal-iic-01-AZL-Storage-Administrators"
-    scope: "Storage Administrators"
-
+    purpose: "Storage administrators"
+    local_groups: ["Storage Administrators"]
 # --- Monitoring ---
 log_analytics_workspace_name: "law-iic-monitor-01"

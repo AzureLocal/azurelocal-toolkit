@@ -2,7 +2,7 @@
 # ==============================================================================
 # Script : Invoke-ApplySecurityGroups-Orchestrated.ps1
 # Purpose: Add AD security groups to local groups on every cluster node,
-#          driven by active_directory.security_groups[*].local_groups in
+#          driven by identity.active_directory.security_groups[].local_groups in
 #          infrastructure.yml. Skips entries where local_groups is empty
 #          (wac_admins, wac_users — those are applied on the WAC server only).
 # Run    : From management server — reads infrastructure.yml, uses PSRemoting
@@ -61,22 +61,21 @@ Import-Module powershell-yaml -ErrorAction Stop
 Write-Log "Loading config: $ConfigPath"
 $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 
-# ── Build per-group → local_groups mapping (skip entries with empty local_groups) ─
-$domainNetbios = $cfg.identity.active_directory.domain.netbios                # identity.active_directory.domain.netbios
-$sgConfig      = $cfg.identity.active_directory.security_groups               # identity.active_directory.security_groups
-
-# Only process keyed group entries (hashtable values); skip scalar metadata keys
-$groupKeys = $sgConfig.Keys | Where-Object { $sgConfig[$_] -is [System.Collections.IDictionary] }
+# ── Build the AD group -> local groups list ────────────────────────────────────
+# identity.active_directory.security_groups[] of infrastructure.yml: name, purpose, local_groups (registry 4.1.0).
+$domainNetbios = $cfg.identity.active_directory.netbios_name                  # identity.active_directory.netbios_name
+$sgConfig      = @($cfg.identity.active_directory.security_groups)            # identity.active_directory.security_groups[]
 
 # Build assignment list: [ { AdGroup, LocalGroups } ... ] — skip where local_groups is empty
 $assignments = @()
-foreach ($key in $groupKeys) {
-    $localGroups = @($sgConfig[$key]['local_groups'])                          # active_directory.security_groups.<key>.local_groups
-    if ($localGroups.Count -eq 0 -or ($localGroups.Count -eq 1 -and $localGroups[0] -eq $null)) {
+foreach ($group in $sgConfig) {
+    $key         = [string]$group['name']                                     # identity.active_directory.security_groups[].name
+    $localGroups = @($group['local_groups'] | Where-Object { $_ })            # identity.active_directory.security_groups[].local_groups
+    if ($localGroups.Count -eq 0) {
         Write-Log "Skipping '$key' — local_groups is empty (WAC server only)" 'WARN'
         continue
     }
-    $adGroupFqdn = "$domainNetbios\$($sgConfig[$key]['name'])"                 # active_directory.security_groups.<key>.name
+    $adGroupFqdn = "$domainNetbios\$key"
     $assignments += [PSCustomObject]@{
         Key         = $key
         AdGroup     = $adGroupFqdn
@@ -84,7 +83,6 @@ foreach ($key in $groupKeys) {
     }
     Write-Log "Will assign: $adGroupFqdn → [$($localGroups -join ', ')]"
 }
-
 if ($assignments.Count -eq 0) {
     Write-Log "No groups with local_groups assignments found — check configuration" 'WARN'
     return

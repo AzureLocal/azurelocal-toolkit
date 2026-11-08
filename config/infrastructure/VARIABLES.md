@@ -435,6 +435,7 @@ Accounts and the identity provider (scenario.identity).
 | `identity.active_directory.security_groups[].name` |  | string | if section is set / if section is set |  | `sg-iic-azl-01-admins` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
 | `identity.active_directory.security_groups[].purpose` |  | string | no / no |  | `Administrators of the instance` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
 | `identity.active_directory.security_groups[].members` |  | list of string | no / no |  |  | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
+| `identity.active_directory.security_groups[].local_groups` | The local groups of every machine this AD group is added to after the deployment (for example Administrators, Remote Management Users). (since 5.6.1) | list of string | no / no |  |  | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
 | `identity.active_directory.service_accounts` | Service and administration accounts, apart from the LCM user. | list of objects | no / no |  |  | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
 | `identity.active_directory.service_accounts[].name` |  | string | if section is set / if section is set |  | `svc-iic-azl-backup` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
 | `identity.active_directory.service_accounts[].purpose` |  | string | no / no |  | `Backup agent` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
