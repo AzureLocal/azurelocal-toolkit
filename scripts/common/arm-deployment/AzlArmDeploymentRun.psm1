@@ -162,8 +162,8 @@ function Get-AzlArmRunSetting {
         Keys (camel case): validateTimeoutMinutes 90, deployTimeoutMinutes 360, pollSeconds 15, pollMaxSeconds 120,
         pollFactor 1.5, transientErrorLimit 5, approvalMode stop|prompt|none, resume false, requireOsConfigurationReport false,
         skipPreconditions [], acknowledgeKnownIssues [], deploymentSettingsApiVersion '', revalidate false, allowRevalidate false,
-        requireValidatedParameterHash false, osReportMaxAgeHours 48, staleSkewMinutes 5, knownIssuesFile ''.
-        The master file's deployment block uses the same names in snake_case.
+        requireValidatedParameterHash false, osReportMaxAgeHours 48, staleSkewMinutes 5, knownIssuesFile '', solutionVersion '',
+        sbeCatalogPath ''. The master file's deployment block uses the same names in snake_case.
     #>
     [CmdletBinding()]
     param([System.Collections.IDictionary]$Infrastructure, [string]$ConfigPath, [System.Collections.IDictionary]$Settings)
@@ -171,7 +171,7 @@ function Get-AzlArmRunSetting {
         validateTimeoutMinutes = 90; deployTimeoutMinutes = 360; pollSeconds = 15; pollMaxSeconds = 120; pollFactor = 1.5; transientErrorLimit = 5
         approvalMode = 'stop'; resume = $false; requireOsConfigurationReport = $false; skipPreconditions = @(); acknowledgeKnownIssues = @()
         deploymentSettingsApiVersion = ''; revalidate = $false; allowRevalidate = $false; requireValidatedParameterHash = $false
-        osReportMaxAgeHours = 48; staleSkewMinutes = 5; knownIssuesFile = ''
+        osReportMaxAgeHours = 48; staleSkewMinutes = 5; knownIssuesFile = ''; solutionVersion = ''; sbeCatalogPath = ''
     }
     $apply = {
         param($source)
@@ -200,6 +200,9 @@ function Get-AzlArmRunSetting {
     if ([string]$s.approvalMode -notin 'stop', 'prompt', 'none') { Stop-AzlArmInput "Setting approval must be stop, prompt or none, not '$($s.approvalMode)'." }
     $s.approvalMode = [string]$s.approvalMode
     foreach ($k in 'resume', 'requireOsConfigurationReport', 'revalidate', 'allowRevalidate', 'requireValidatedParameterHash') { $s[$k] = [bool]$s[$k] }
+    $s.solutionVersion = ([string]$s.solutionVersion).Trim()
+    if ($s.solutionVersion -and $s.solutionVersion -notmatch '^\d+\.\d+\.\d+\.\d+$') { Stop-AzlArmInput "Setting solutionVersion must be four numeric parts, for example 12.2610.1004.50, not '$($s.solutionVersion)'." }
+    $s.sbeCatalogPath = ([string]$s.sbeCatalogPath).Trim()
     $s.skipPreconditions = @(ConvertTo-AzlArmArray $s.skipPreconditions | ForEach-Object { [string]$_ })
     $s.acknowledgeKnownIssues = @(ConvertTo-AzlArmArray $s.acknowledgeKnownIssues | ForEach-Object { [string]$_ })
     return $s
@@ -654,6 +657,168 @@ function Get-AzlArmArcMachineCached {
     return $machine
 }
 
+# ---------------------------------------------------------------------------------------------------------------------
+# SBE and solution version: is the SBE validated with the solution the nodes run?
+# ---------------------------------------------------------------------------------------------------------------------
+
+# OS build -> the solution line it ships with (first three parts of the solution version; the last part is the build of the
+# solution package and is not known from the OS build). Add a row only when both were seen together on a real deployment.
+$script:SolutionOsBuilds = @(
+    [pscustomobject]@{ OsBuild = '10.0.26100.33650'; Solution = '12.2610.1004'; Evidence = 'tplabs lab 2026-11-08: nodes on 10.0.26100.33650, Azure reported Solution version 12.2610.1004.50' }
+)
+
+function Read-AzlArmSbeCatalog {
+    <#
+    .SYNOPSIS
+        An OEM's SBE discovery catalog (SBE_Discovery_Dell.xml): one entry per ApplicableUpdate, with the Solution version
+        patterns of its ValidatedConfigurations/RequiredPackages. Reads the file only; DTDs are refused.
+    .OUTPUTS
+        Name (UpdateName), Version, Family, SolutionPatterns (Pattern, MinVersionRequired).
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { throw "SBE discovery catalog not found: $Path" }
+    $settings = [System.Xml.XmlReaderSettings]::new()
+    $settings.DtdProcessing = [System.Xml.DtdProcessing]::Prohibit
+    $settings.XmlResolver = $null
+    $xml = [xml]::new()
+    $reader = [System.Xml.XmlReader]::Create((Resolve-Path -LiteralPath $Path).ProviderPath, $settings)
+    try { $xml.Load($reader) } finally { $reader.Dispose() }
+    $root = $xml.SelectSingleNode('/SBEUpdatesManifest')
+    if (-not $root) { throw "$Path is not an SBE discovery catalog (no SBEUpdatesManifest root)." }
+    foreach ($node in $root.SelectNodes('ApplicableUpdate')) {
+        $patterns = foreach ($package in $node.SelectNodes('ValidatedConfigurations/RequiredPackages/Package[@Type="Solution"]')) {
+            [pscustomobject]@{ Pattern = [string]$package.GetAttribute('Version'); MinVersionRequired = [string]$package.GetAttribute('MinVersionRequired') }
+        }
+        [pscustomobject]@{
+            Name             = [string]$node.SelectSingleNode('UpdateInfo/UpdateName')?.InnerText
+            Version          = [string]$node.GetAttribute('Version')
+            Family           = [string]$node.GetAttribute('Family')
+            SolutionPatterns = @($patterns)
+        }
+    }
+}
+
+function Test-AzlArmSolutionVersionMatch {
+    <#
+    .SYNOPSIS
+        $true when a solution version matches a catalog pattern (12.*.1004.*; * stands for any text). A three-part version (the
+        solution line derived from the OS build) is compared on the first three parts, and a MinVersionRequired it cannot prove
+        is not held against it.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory)][string]$Pattern, [Parameter(Mandatory)][string]$Version, [string]$MinVersionRequired = '')
+    $parts = $Version.Split('.')
+    $effective = $Pattern
+    if ($parts.Count -eq 3) { $effective = (($Pattern.Split('.') | Select-Object -First 3) -join '.') }
+    $regex = '^' + ((($effective -split '\*') | ForEach-Object { [regex]::Escape($_) }) -join '.*') + '$'
+    if (-not [regex]::IsMatch($Version, $regex)) { return $false }
+    if ($MinVersionRequired -and $parts.Count -eq 4) {
+        $have = $null; $min = $null
+        if ([version]::TryParse($Version, [ref]$have) -and [version]::TryParse($MinVersionRequired, [ref]$min) -and $have -lt $min) { return $false }
+    }
+    return $true
+}
+
+function ConvertFrom-AzlArmOsBuild {
+    <#
+    .SYNOPSIS
+        The solution line (three parts, for example 12.2610.1004) a node's OS build ships with, or $null. Conservative: only a
+        build in the table that was seen on a real deployment maps; any other build is unknown. The result is always derived.
+    .OUTPUTS
+        Version (three parts), OsBuild, Derived ($true), Note.
+    #>
+    [CmdletBinding()]
+    param([AllowEmptyString()][AllowNull()][string]$OsBuild)
+    if (-not $OsBuild) { return $null }
+    $row = $script:SolutionOsBuilds | Where-Object { $_.OsBuild -eq $OsBuild.Trim() } | Select-Object -First 1
+    if (-not $row) { return $null }
+    [pscustomobject]@{ Version = $row.Solution; OsBuild = $row.OsBuild; Derived = $true; Note = "derived from OS build $($row.OsBuild) ($($row.Evidence))" }
+}
+
+function Test-AzlArmSbeSolution {
+    <#
+    .SYNOPSIS
+        Looks up an SBE (family and version) in a catalog from Read-AzlArmSbeCatalog and says whether it is validated with a solution
+        version.
+    .OUTPUTS
+        Status (Validated, NotValidated, NotListed), Entry, Patterns (the SBE's Solution patterns), MatchedPattern,
+        ValidatedVersions (SBE versions of the same family that are validated with the solution, newest first), ValidatedElsewhere
+        (names of validated SBEs of other families; only when the family has none).
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Catalog, [Parameter(Mandatory)][string]$Family, [Parameter(Mandatory)][string]$Version, [Parameter(Mandatory)][string]$Solution)
+    $wanted = $Solution
+    $validated = {
+        param($entry)
+        foreach ($p in @($entry.SolutionPatterns)) { if (Test-AzlArmSolutionVersionMatch -Pattern $p.Pattern -Version $wanted -MinVersionRequired $p.MinVersionRequired) { return $p.Pattern } }
+        return $null
+    }
+    $entry = @($Catalog | Where-Object { $_.Family -ieq $Family -and $_.Version -eq $Version }) | Select-Object -First 1
+    if (-not $entry) { return [pscustomobject]@{ Status = 'NotListed'; Entry = $null; Patterns = @(); MatchedPattern = $null; ValidatedVersions = @(); ValidatedElsewhere = @() } }
+    $matched = & $validated $entry
+    $sameFamily = @($Catalog | Where-Object { $_.Family -ieq $Family -and (& $validated $_) } | Sort-Object { $v = $null; if ([version]::TryParse($_.Version, [ref]$v)) { $v } else { [version]'0.0' } } -Descending | ForEach-Object { $_.Version })
+    $elsewhere = @()
+    if (-not $matched -and $sameFamily.Count -eq 0) { $elsewhere = @($Catalog | Where-Object { $_.Family -ine $Family -and (& $validated $_) } | ForEach-Object { $_.Name }) }
+    [pscustomobject]@{
+        Status = $(if ($matched) { 'Validated' } else { 'NotValidated' }); Entry = $entry; Patterns = @($entry.SolutionPatterns | ForEach-Object { $_.Pattern })
+        MatchedPattern = $matched; ValidatedVersions = $sameFamily; ValidatedElsewhere = $elsewhere
+    }
+}
+
+function Join-AzlArmList([string[]]$Item) {
+    if ($Item.Count -le 1) { return ($Item -join '') }
+    return (($Item | Select-Object -SkipLast 1) -join ', ') + ' and ' + $Item[-1]
+}
+
+function Resolve-AzlArmSbeCatalogFile {
+    # The catalog file the run reads, and where the path came from: the run setting sbeCatalogPath, else the SBE_Discovery_*.xml in
+    # hardware.sbe.bundle_path. A folder is searched for SBE_Discovery_*.xml. Nothing is downloaded.
+    param($Ctx)
+    $path = [string]$Ctx.Settings.sbeCatalogPath
+    $from = 'run setting sbeCatalogPath'
+    if (-not $path) { $path = [string](Get-AzlProp $Ctx.Infra 'hardware.sbe.bundle_path' ''); $from = 'hardware.sbe.bundle_path' }
+    if (-not $path) { return [pscustomobject]@{ File = ''; Reason = 'No SBE discovery catalog is available: set hardware.sbe.bundle_path (the folder with the SBE files, including SBE_Discovery_*.xml) or the run setting sbeCatalogPath (deployment.sbe_catalog_path). Nothing is downloaded.' } }
+    if (Test-Path -LiteralPath $path -PathType Container) {
+        $found = @(Get-ChildItem -LiteralPath $path -File -Filter 'SBE_Discovery_*.xml' | Sort-Object Name)
+        if ($found.Count -eq 0) { return [pscustomobject]@{ File = ''; Reason = "No SBE_Discovery_*.xml in $path ($from), so the SBE was not compared with the solution version. Nothing is downloaded." } }
+        return [pscustomobject]@{ File = $found[0].FullName; Reason = '' }
+    }
+    if (Test-Path -LiteralPath $path -PathType Leaf) { return [pscustomobject]@{ File = (Resolve-Path -LiteralPath $path).ProviderPath; Reason = '' } }
+    [pscustomobject]@{ File = ''; Reason = "The SBE discovery catalog $path ($from) is not on this host, so the SBE was not compared with the solution version. Nothing is downloaded." }
+}
+
+function Resolve-AzlArmSolutionVersion {
+    # The solution version the nodes run: the run setting, else the ZTP handoff's, else derived from the nodes' OS build (only a
+    # build that maps unambiguously). Returns Version, Derived, Source; or Version $null with Source holding the reason.
+    param($Ctx)
+    if ($Ctx.Settings.solutionVersion) { return [pscustomobject]@{ Version = $Ctx.Settings.solutionVersion; Derived = $false; Source = 'run setting solutionVersion' } }
+    if ([string]$Ctx.Build -match '^\d+\.\d+\.\d+\.\d+$') { return [pscustomobject]@{ Version = [string]$Ctx.Build; Derived = $false; Source = "the ZTP handoff's solution version" } }
+    $builds = [ordered]@{}
+    $problem = ''
+    foreach ($n in $Ctx.Nodes) {
+        $name = [string]$n['name']
+        $v = ''
+        if (-not $Ctx.Offline) {
+            try { $m = Get-AzlArmArcMachineCached $Ctx $n; if ($m -and $m.OsVersion) { $v = [string]$m.OsVersion } }
+            catch { $problem = " The Arc machine could not be read ($($_.Exception.Message))." }
+        }
+        if (-not $v -and $Ctx.OsReport) {
+            $r = @(ConvertTo-AzlArmArray (Get-AzlProp $Ctx.OsReport 'nodes' @()) | Where-Object { ([string]$_.name) -ieq $name }) | Select-Object -First 1
+            if ($r) { $v = [string](Get-AzlProp $r 'osVersion' '') }
+        }
+        $builds[$name] = $v
+    }
+    $known = @($builds.Values | Where-Object { $_ } | Select-Object -Unique)
+    if ($known.Count -eq 0) { return [pscustomobject]@{ Version = $null; Derived = $false; Source = "No node reports its OS build and neither the run setting solutionVersion nor a ZTP handoff gives the solution version.$problem" } }
+    $mapped = @(foreach ($b in $known) { $one = ConvertFrom-AzlArmOsBuild -OsBuild $b; if ($one) { $one } })
+    if ($mapped.Count -eq $known.Count -and @($mapped | ForEach-Object { $_.Version } | Select-Object -Unique).Count -eq 1) {
+        return [pscustomobject]@{ Version = $mapped[0].Version; Derived = $true; Source = $mapped[0].Note }
+    }
+    [pscustomobject]@{ Version = $null; Derived = $false; Source = "OS build $($known -join ', ') does not map unambiguously to a solution version (nothing is guessed).$problem" }
+}
+
 $script:Checks = [ordered]@{}
 
 $script:Checks['AzureContext'] = {
@@ -841,6 +1006,47 @@ $script:Checks['SbeConsistent'] = {
     New-AzlArmCheckResult SbeConsistent Passed "SBE $($Ctx.Set.Parameters['sbeFamily']) $($Ctx.Set.Parameters['sbeVersion']) is set."
 }
 
+$script:Checks['SbeValidatedWithSolution'] = {
+    param($Ctx)
+    $check = 'SbeValidatedWithSolution'
+    $parameters = $Ctx.Set.Parameters
+    $version = if ($parameters.Contains('sbeVersion')) { [string]$parameters['sbeVersion'] } else { '' }
+    $family = if ($parameters.Contains('sbeFamily')) { [string]$parameters['sbeFamily'] } else { '' }
+    if (-not $version) { return New-AzlArmCheckResult $check Skipped 'No SBE is configured (see SbeConsistent), so there is nothing to compare with the solution version.' }
+    $source = Resolve-AzlArmSbeCatalogFile $Ctx
+    if (-not $source.File) { return New-AzlArmCheckResult $check Skipped $source.Reason }
+    try { $catalog = @(Read-AzlArmSbeCatalog -Path $source.File) }
+    catch { return New-AzlArmCheckResult $check Warning "The SBE discovery catalog $($source.File) could not be read ($($_.Exception.Message)), so SBE $version was not compared with the solution version." 'Copy SBE_Discovery_*.xml again from the Dell download (hardware.sbe.bundle_path) or point the run setting sbeCatalogPath at a good copy.' }
+    $solution = Resolve-AzlArmSolutionVersion $Ctx
+    if (-not $solution.Version) {
+        return New-AzlArmCheckResult $check Warning "The solution version could not be determined, so SBE $version was not compared with the catalog. $($solution.Source)" 'Set the run setting solutionVersion (deployment.solution_version), for example 12.2610.1004.50, to the solution version this deployment installs. Azure refuses an SBE that is not validated with it (ErrorUnvalidatedSolutionAndSbeCombination) only after 10 to 15 minutes of Validate.'
+    }
+    $shown = if ($solution.Derived) { "$($solution.Version).x" } else { $solution.Version }
+    $how = if ($solution.Derived) { $solution.Source } else { "from $($solution.Source)" }
+    $r = Test-AzlArmSbeSolution -Catalog $catalog -Family $family -Version $version -Solution $solution.Version
+    $file = Split-Path -Leaf $source.File
+    if ($r.Status -eq 'NotListed') {
+        return New-AzlArmCheckResult $check Warning "SBE $version (family $family) is not listed in the catalog $file, so it was not compared with Solution $shown." "Use the SBE_Discovery_*.xml that came with the package (it lists the package), and check hardware.sbe.family ($family) and hardware.sbe.version ($version)."
+    }
+    if ($r.Status -eq 'Validated') {
+        return New-AzlArmCheckResult $check Passed "SBE $version ($family) is validated with Solution $($r.MatchedPattern) in $file; this deployment uses $shown ($how)."
+    }
+    $patterns = Join-AzlArmList @($r.Entry.SolutionPatterns | ForEach-Object { $_.Pattern })
+    $minimums = @($r.Entry.SolutionPatterns | Where-Object { $_.MinVersionRequired } | ForEach-Object { "$($_.Pattern) from $($_.MinVersionRequired)" })
+    $evidence = "SBE $version is validated for Solution $patterns, this deployment uses $shown ($how)."
+    if ($minimums.Count) { $evidence += " Minimum versions: $($minimums -join '; ')." }
+    $evidence += " Catalog: $file. Azure would stop the Validate at step 0.60 (InvokeEnvironmentChecker) with ErrorUnvalidatedSolutionAndSbeCombination."
+    if (@($r.ValidatedVersions).Count) {
+        $best = @($r.ValidatedVersions)[0]
+        $fix = "Use SBE $best (validated: $(@($r.ValidatedVersions) -join ', ') for family $family and Solution $shown): download it from Dell support, set hardware.sbe.version and hardware.sbe.bundle_path, run OS configuration to deliver it to C:\SBE."
+    }
+    else {
+        $others = if (@($r.ValidatedElsewhere).Count) { " The catalog validates these SBEs with it: $(@($r.ValidatedElsewhere) -join ', ')." } else { '' }
+        $fix = "No SBE of family $family in $file is validated with Solution $shown.$others Use an SBE of your hardware's family from a newer catalog, or install a solution version SBE $version is validated for ($patterns); then set hardware.sbe.family, hardware.sbe.version and bundle_path and run OS configuration."
+    }
+    New-AzlArmCheckResult $check Failed $evidence $fix
+}
+
 $script:Checks['DnsAndTime'] = {
     param($Ctx)
     $infra = $Ctx.Infra
@@ -949,6 +1155,7 @@ $script:CheckOrder = @(
     @{ Name = 'OsConfigurationConverged'; Phases = 'Validate', 'Deploy'; Azure = $false }
     @{ Name = 'OsBuildConsistent'; Phases = 'Validate', 'Deploy'; Azure = $true }
     @{ Name = 'SbeConsistent'; Phases = 'Validate', 'Deploy'; Azure = $false }
+    @{ Name = 'SbeValidatedWithSolution'; Phases = 'Validate', 'Deploy'; Azure = $false }
     @{ Name = 'DnsAndTime'; Phases = 'Validate', 'Deploy'; Azure = $false }
     @{ Name = 'ActiveDirectoryPrepared'; Phases = 'Validate', 'Deploy'; Azure = $false; Identity = 'active_directory' }
     @{ Name = 'LocalIdentityPrerequisites'; Phases = 'Validate', 'Deploy'; Azure = $false; Identity = 'local_identity' }
@@ -1586,4 +1793,4 @@ function Invoke-AzlArmDeploymentRun {
 }
 
             if (-not (Get-Command Resolve-DnsName -ErrorAction SilentlyContinue)) { return $null } # not on Linux: unknown, not false
-Export-ModuleMember -Function Get-AzlArmRunSetting, Write-AzlArmEvent, Test-AzlArmRunTransition, New-AzlArmRunState, Set-AzlArmRunState, Get-AzlArmFailedStep, Get-AzlArmKnownIssue, Find-AzlArmKnownIssue, Get-AzlArmParameterSource, Test-AzlArmRequiredKey, Format-AzlArmParameterSource, New-AzlArmAzureAdapter, Read-AzlArmOsReport, Get-AzlArmPreconditionName, Invoke-AzlArmPrecondition, Test-AzlArmSnapshotFresh, Get-AzlArmPhaseOutcome, Wait-AzlArmPhase, Resolve-AzlArmValidateAction, Resolve-AzlArmDeployAction, Get-AzlArmParameterHash, ConvertTo-AzlArmStepStatus, Hide-AzlArmSecret, Invoke-AzlArmDeploymentRun
+Export-ModuleMember -Function Get-AzlArmRunSetting, Read-AzlArmSbeCatalog, Test-AzlArmSolutionVersionMatch, ConvertFrom-AzlArmOsBuild, Test-AzlArmSbeSolution, Write-AzlArmEvent, Test-AzlArmRunTransition, New-AzlArmRunState, Set-AzlArmRunState, Get-AzlArmFailedStep, Get-AzlArmKnownIssue, Find-AzlArmKnownIssue, Get-AzlArmParameterSource, Test-AzlArmRequiredKey, Format-AzlArmParameterSource, New-AzlArmAzureAdapter, Read-AzlArmOsReport, Get-AzlArmPreconditionName, Invoke-AzlArmPrecondition, Test-AzlArmSnapshotFresh, Get-AzlArmPhaseOutcome, Wait-AzlArmPhase, Resolve-AzlArmValidateAction, Resolve-AzlArmDeployAction, Get-AzlArmParameterHash, ConvertTo-AzlArmStepStatus, Hide-AzlArmSecret, Invoke-AzlArmDeploymentRun

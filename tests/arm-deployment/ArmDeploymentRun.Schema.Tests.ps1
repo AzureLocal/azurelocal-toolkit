@@ -27,7 +27,8 @@ Describe 'The deployment block (schema 5.6)' {
         @(Get-Finding { }) | Should -BeNullOrEmpty
         $f = Get-Finding { param($i) $i.deployment = [ordered]@{
                 validate_timeout_minutes = 120; deploy_timeout_minutes = 480; poll_seconds = 10; poll_max_seconds = 60; approval = 'prompt'; resume = $true
-                require_os_configuration_report = $true; skip_preconditions = @('NamesAvailable'); acknowledge_known_issues = @('arc-device-id-name'); deployment_settings_api_version = '2026-10-01' } }
+                require_os_configuration_report = $true; skip_preconditions = @('NamesAvailable'); acknowledge_known_issues = @('arc-device-id-name'); deployment_settings_api_version = '2026-10-01'
+                solution_version = '12.2610.1004.50'; sbe_catalog_path = 'D:/sbe/dell/SBE_Discovery_Dell.xml' } }
         $f | Should -BeNullOrEmpty
     }
     It 'rejects an unknown key, a bad approval, a timeout out of range and an unknown precondition name' {
@@ -54,7 +55,7 @@ Describe 'The deployment block (schema 5.6)' {
     It 'every key of the block is a setting of the run' {
         foreach ($k in $script:Schema.properties.deployment.properties.Keys) {
             $def = $script:Schema.properties.deployment.properties[$k]
-            $value = if ($def.Contains('default')) { $def.default } elseif ($def.type -eq 'array') { @() } else { 'x' }
+            $value = if ($def.Contains('default')) { $def.default } elseif ($def.type -eq 'array') { @() } elseif ($def.Contains('pattern')) { '12.2610.1004.50' } else { 'x' }
             { Get-AzlArmRunSetting -Infrastructure @{ deployment = @{ $k = $value } } } | Should -Not -Throw
         }
     }}

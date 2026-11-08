@@ -261,6 +261,25 @@
       "confidence": "observed",
       "link": "https://learn.microsoft.com/azure/azure-local/deploy/deployment-arc-register-server-permissions",
       "evidence": "azl-toolkit lessons (proven repo): a node reboot during the bootstrap."
+    },
+    {
+      "id": "unvalidated-solution-sbe-combination",
+      "title": "Validate fails at step 0.60 (InvokeEnvironmentChecker): the SBE is not validated with the solution version",
+      "phase": ["Validate", "Deploy"],
+      "match": { "error": "ErrorUnvalidatedSolutionAndSbeCombination|has not been validated with Solution version" },
+      "affectedBuilds": [],
+      "cause": "Azure checks the SBE package and its manifest against the solution version the deployment installs, and refuses an SBE that the OEM has not validated with that solution (ErrorUnvalidatedSolutionAndSbeCombination). The message names the SBE, the solution version and the SBE packages that are validated. The failure shows after about 13 minutes of Validate. The OEM's SBE discovery catalog (Dell: SBE_Discovery_Dell.xml, https://aka.ms/AzureStackSBEUpdate/DellEMC) lists, per SBE version and family, the solution versions it is validated with (RequiredPackages, Type Solution, wildcards such as 12.*.1004.*). The precondition SbeConsistent only checks that an SBE is set, so it does not catch this; SbeValidatedWithSolution does.",
+      "remediation": [
+        "Read the precondition SbeValidatedWithSolution in the plan report: it compares hardware.sbe.version and hardware.sbe.family with the solution version (run setting solutionVersion, the ZTP handoff, or the nodes' OS build) using the SBE discovery catalog, and names the SBE versions of the family that are validated.",
+        "Download the validated SBE from the OEM's support site (Dell support for AX nodes), put it in hardware.sbe.bundle_path with its .xml and SBE_Discovery_*.xml, and set hardware.sbe.version (and hardware.sbe.family if it differs).",
+        "Run the OS configuration (Invoke-AzureLocalOsConfiguration.ps1 -Mode Apply) so the package is delivered to C:\\SBE on every node.",
+        "Alternatively pin the solution version (provisioning.os_version) that the SBE you have is validated for, and install that build on the nodes.",
+        "Run Validate again; the instance is not in a failed deployment state after this error."
+      ],
+      "retry": "after-fix",
+      "confidence": "documented",
+      "link": "https://learn.microsoft.com/azure/azure-local/update/solution-builder-extension",
+      "evidence": "tplabs lab 2026-11-08, validate-3 (arm-report/validate-3/summary.md): step 0.60 InvokeEnvironmentChecker, SBE_Dell_16G-45n0c-Intel_5.0.2606.1616 with Solution version 12.2610.1004.50; Azure listed SBE_Dell_17G-Intel_5.0.2609.1715, SBE_Dell_16G-45n0c-Intel_5.0.2609.1611, SBE_Dell_AX-15G_5.0.2609.1511 and SBE_Dell_AX-14G_5.0.2609.1409 as validated. Dell's catalog (SBE_Discovery_Dell.xml, 2026-10-21) gives 5.0.2606.1616 Solution 12.*.1003.* and 12.*.1002.*, 5.0.2609.1611 Solution 12.*.1004.* and 12.*.1003.*."
     }
   ]
 }
