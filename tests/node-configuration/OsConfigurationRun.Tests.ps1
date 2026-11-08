@@ -640,6 +640,29 @@ Describe 'Storage wipe (os_configuration.clear_storage)' {
     }
 }
 
+Describe 'Event feed: run id and sequence' {
+    It 'every line of a run has the same run id (the one in the node report folder) and seq counts 1..n; a second run in the same feed has another id and starts at 1' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $out = Join-Path $TestDrive 'feed-out'
+        $store = [pscustomobject]@{ Supported = $true; Get = { '' }; Set = { param($Value) $null = $Value } }
+        $null = Invoke-AzlOsConfiguration -InfrastructureFile $infra -HandoffPath (Get-TestHandoffDirectory) -ReportDirectory $out -SkipValidation -TrustedHostsStore $store 6>$null 3>$null
+        $firstRunId = Split-Path (Split-Path $global:AzlCalls[0].Params.ReportPath -Parent) -Leaf
+        $global:AzlCalls[0].Params.RunId | Should -Be $firstRunId
+        $null = Invoke-AzlOsConfiguration -InfrastructureFile $infra -HandoffPath (Get-TestHandoffDirectory) -ReportDirectory $out -SkipValidation -TrustedHostsStore $store 6>$null 3>$null
+        $events = @(Get-Content -LiteralPath (Join-Path $out 'os-configuration-events.jsonl') | ForEach-Object { $_ | ConvertFrom-Json })
+        $runs = @($events | ForEach-Object { $_.runId } | Select-Object -Unique)
+        $runs.Count | Should -Be 2
+        $runs[0] | Should -Be $firstRunId
+        foreach ($id in $runs) {
+            $mine = @($events | Where-Object runId -eq $id)
+            @($mine | ForEach-Object { $_.seq }) | Should -Be @(1..$mine.Count)
+            $mine[0].state | Should -Be 'RunStarted'
+            $mine[-1].state | Should -Be 'RunCompleted'
+        }
+        $env:AZL_OSCONFIG_RUN_ID | Should -BeNullOrEmpty -Because 'the run puts back what it found'
+    }
+}
+
 Describe 'Storage wipe: the apply is bound to the approved wipe list' {
     BeforeAll {
         function Get-WipeInfra { Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.os_configuration = [ordered]@{ clear_storage = $true } } }

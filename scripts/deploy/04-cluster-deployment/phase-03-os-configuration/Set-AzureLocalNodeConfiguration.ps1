@@ -148,6 +148,9 @@ Import-Module (Join-Path (Join-Path $common 'remoting') 'AzlRemotingProfile.psm1
 
 function Write-Line([string]$Text) { Write-Information -MessageData $Text -InformationAction Continue }
 
+# One run id on every event line: the wrapper's, else a new one for this call.
+if ($RunId) { $env:AZL_OSCONFIG_RUN_ID = $RunId } elseif (-not $env:AZL_OSCONFIG_RUN_ID) { $env:AZL_OSCONFIG_RUN_ID = '{0:yyyyMMddTHHmmssZ}-{1}' -f [datetime]::UtcNow, [guid]::NewGuid().ToString('N').Substring(0, 6) }
+
 Set-AzlNodeRetryPolicy -Tries $RetryTries -DelaySeconds $RetryDelaySeconds
 $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation:$SkipValidation
 if (-not $ReportPath) { $ReportPath = Join-Path ([IO.Path]::GetTempPath()) ("azl-osconfig-{0}-{1:yyyyMMddHHmmss}.json" -f (Get-AzlProp $infra 'cluster.name' 'cluster'), (Get-Date)) }

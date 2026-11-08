@@ -117,13 +117,13 @@ function Send-AzlGuardEvent {
     $transportName = if ($Transport -in 'ArcRunCommand', 'WinRM') { $Transport } else { '' }
     $methodName = if ($Method -in 'Ztp', 'Iso') { $Method } else { '' }
     try {
-        $entry = [ordered]@{ timestamp = (Get-AzlOsEventTimestamp); node = $Node; stage = 'OsConfiguration'; step = $Step; state = $State; evidence = $Evidence; level = $Level; nextAction = $NextAction; method = $methodName; transport = $transportName }
-        foreach ($k in $Data.Keys) { if (-not $entry.Contains($k)) { $entry[$k] = $Data[$k] } }
+        # The sink goes into the report, so its text is redacted like the feed's.
+        $entry = [ordered]@{ timestamp = (Get-AzlOsEventTimestamp); runId = [string]$env:AZL_OSCONFIG_RUN_ID; node = $Node; stage = 'OsConfiguration'; step = $Step; state = $State; evidence = (Protect-AzlOsEventText -Text $Evidence); level = $Level; nextAction = (Protect-AzlOsEventText -Text $NextAction); method = $methodName; transport = $transportName }
+        foreach ($k in $Data.Keys) { if (-not $entry.Contains($k)) { $entry[$k] = Protect-AzlOsEventValue -Value $Data[$k] } }
         $Context.Sink.Add([pscustomobject]$entry)
         if (-not $Context.Path) { return }
-        # The feed carries the states of the contract only; anything else stays in the sink (and so in the report).
-        $contract = @((Get-AzlOsConfigurationEventState).Values | ForEach-Object { $_ })
-        if ($State -notin $contract) { Write-Verbose "Event $State is not in the feed's contract; kept in the report only."; return }
+        # The feed carries the states of the one registry (Get-AzlOsConfigurationEventState); anything else stays in the sink (and so in the report).
+        if (-not (Test-AzlOsConfigurationEventState -State $State)) { Write-Verbose "Event $State is not in the registry of states; kept in the report only."; return }
         $schema = if ($Context.PSObject.Properties['SchemaVersion']) { [string]$Context.SchemaVersion } else { '' }
         $payload = if ($Context.PSObject.Properties['PayloadVersion']) { [string]$Context.PayloadVersion } else { '' }
         $null = Write-AzlOsConfigurationEvent -Path $Context.Path -Node $Node -State $State -Step $Step -Evidence $Evidence -Level $Level -NextAction $NextAction -Method $methodName -Transport $transportName -PayloadVersion $payload -SchemaVersion $schema -Data $Data

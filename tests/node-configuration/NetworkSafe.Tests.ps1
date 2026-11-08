@@ -609,10 +609,16 @@ Describe 'Guard events go through the feed writer and stay inside its contract' 
         $line.newAddress | Should -Be '192.0.2.60'
         $line.transport | Should -Be 'WinRM'
     }
-    It 'a state outside the contract (StaleRunCommandDeleted) stays in the sink and out of the feed' {
+    It 'a state outside the registry stays in the sink and out of the feed; StaleRunCommandDeleted is registered and reaches the feed' {
         $file = Join-Path $TestDrive 'guard-feed2.jsonl'
         $ev = New-AzlGuardEventContext -Path $file
+        Send-AzlGuardEvent -Context $ev -Node n1 -State SomethingUnregistered -Step Transport -Evidence 'x'
+        @(Get-Content -LiteralPath $file -ErrorAction SilentlyContinue | Where-Object { $_ }).Count | Should -Be 0
         Send-AzlGuardEvent -Context $ev -Node n1 -State StaleRunCommandDeleted -Step Transport -Evidence 'x'
+        @(Get-Content -LiteralPath $file -Encoding utf8 | Where-Object { $_ }).Count | Should -Be 1
+        $file = Join-Path $TestDrive 'guard-feed3.jsonl'
+        $ev = New-AzlGuardEventContext -Path $file
+        Send-AzlGuardEvent -Context $ev -Node n1 -State SomethingUnregistered -Step Transport -Evidence 'x'
         Send-AzlGuardEvent -Context $ev -Node n1 -State NodeBlocked -Step Network -Evidence 'y'
         @($ev.Sink).Count | Should -Be 2
         @(Get-Content -LiteralPath $file -Encoding utf8 | Where-Object { $_ }).Count | Should -Be 1

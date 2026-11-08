@@ -90,7 +90,8 @@ Describe 'Write-AzlOsConfigurationEvent' {
 Describe 'The event contract (os-configuration-design.md section 6)' {
     It 'has exactly the states of the contract, by level' {
         $c = Get-AzlOsConfigurationEventState
-        $c.Run -join ',' | Should -Be 'RunStarted,PlanCompleted,WipeListPublished,RunCompleted'
+        $c.Run -join ',' | Should -Be 'RunStarted,PlanCompleted,WipeListPublished,WipeListApproved,WipeListRejected,RunCompleted'
+        $c.Transport -join ',' | Should -Be 'StaleRunCommandDeleted'
         $c.Node -join ',' | Should -Be 'NodeStarted,MethodResolved,TransportResolved,NodeRetry,NodeRestarting,NodeConverged,NodeFailed,NodeBlocked,NodeReconnecting,NodeReconnected'
         $c.Step -join ',' | Should -Be 'StepPlanned,StepSkipped,StepApplying,StepApplied,StepFailed,StepVerified'
         $c.DomainJoin -join ',' | Should -Be 'DomainJoinPlanned,DomainJoinApplying,DomainJoined,DomainAdminsConfigured,DomainJoinFailed'
@@ -105,6 +106,102 @@ Describe 'The event contract (os-configuration-design.md section 6)' {
         $e.payloadVersion | Should -Be '1'
         $e.schemaVersion | Should -Be '5.3.0'
         $e.reason | Should -Be 'gateway unreachable'
+    }
+}
+
+Describe 'One registry of states' {
+    It 'every state the node-configuration code sends to the feed is registered' {
+        $dir = Join-Path (Join-Path $PSScriptRoot '..\..') (Join-Path 'scripts' (Join-Path 'common' 'node-configuration'))
+        $registry = @((Get-AzlOsConfigurationEventState).Values | ForEach-Object { $_ })
+        $used = [System.Collections.Generic.List[object]]::new()
+        $files = @(Get-ChildItem -LiteralPath $dir -Filter '*.psm1') + @(Get-ChildItem -LiteralPath (Join-Path (Join-Path $PSScriptRoot '..\..') 'scripts\deploy\04-cluster-deployment\phase-03-os-configuration') -Filter '*.ps1' -File)
+        foreach ($f in $files) {
+            foreach ($line in Get-Content -LiteralPath $f.FullName) {
+                if ($line -match '(Send-Azl\w*Event|Write-AzlOsConfigurationEvent)\b.*?-State:?\s+''?(?<state>[A-Z][A-Za-z]+)''?') { $used.Add([pscustomobject]@{ File = $f.Name; State = $Matches['state'] }) }
+            }
+        }
+        $used.Count | Should -BeGreaterThan 20
+        foreach ($u in $used) { $registry | Should -Contain $u.State -Because "$($u.State) is sent from $($u.File)" }
+    }
+    It 'the states the guard sends outside the old contract are registered, and reach the feed file' {
+        foreach ($s in 'StaleRunCommandDeleted', 'NodeRestarting', 'DomainJoined', 'DomainAdminsConfigured', 'NetworkChangeRepaired', 'NodeReconnecting') { Test-AzlOsConfigurationEventState -State $s | Should -BeTrue -Because $s }
+        Test-AzlOsConfigurationEventState -State 'Made-Up' | Should -BeFalse
+        Import-Module (Join-Path (Join-Path (Join-Path $PSScriptRoot '..\..') 'scripts\common\node-configuration') 'AzlGuardedChange.psm1') -Force
+        $file = Join-Path $TestDrive 'registry.jsonl'
+        $ctx = New-AzlGuardEventContext -Path $file
+        Send-AzlGuardEvent -Context $ctx -Node n1 -State StaleRunCommandDeleted -Step Transport -Evidence 'Deleted azl-osconfig-x'
+        Send-AzlGuardEvent -Context $ctx -Node n1 -State NotInTheRegistry -Evidence 'stays in the sink'
+        @(Read-FeedEvent $file).state | Should -Be @('StaleRunCommandDeleted')
+        @($ctx.Sink).Count | Should -Be 2
+    }
+}
+
+Describe 'Every line carries the run id and a sequence number' {
+    It 'runId is the one given, seq counts 1, 2, 3 within a run and starts again at 1 for another run in the same file' {
+        $file = Join-Path $TestDrive 'runs.jsonl'
+        $null = Write-AzlOsConfigurationEvent -Path $file -Node '*' -State RunStarted -RunId 'run-A'
+        $null = Write-AzlOsConfigurationEvent -Path $file -Node 'n1' -State NodeStarted -RunId 'run-A'
+        $null = Write-AzlOsConfigurationEvent -Path $file -Node '*' -State RunCompleted -RunId 'run-A'
+        $null = Write-AzlOsConfigurationEvent -Path $file -Node '*' -State RunStarted -RunId 'run-B'
+        $null = Write-AzlOsConfigurationEvent -Path $file -Node '*' -State RunCompleted -RunId 'run-B'
+        $e = Read-FeedEvent $file
+        @($e | ForEach-Object { $_.runId }) | Should -Be @('run-A', 'run-A', 'run-A', 'run-B', 'run-B')
+        @($e | ForEach-Object { $_.seq }) | Should -Be @(1, 2, 3, 1, 2)
+        # an old RunCompleted is told from the new one by its run id
+        @($e | Where-Object { $_.state -eq 'RunCompleted' } | ForEach-Object { $_.runId }) | Should -Be @('run-A', 'run-B')
+    }
+    It 'a writer that is given no run id uses the one of the process (AZL_OSCONFIG_RUN_ID), so every module of one run agrees' {
+        $file = Join-Path $TestDrive 'env.jsonl'
+        $old = $env:AZL_OSCONFIG_RUN_ID
+        try {
+            $env:AZL_OSCONFIG_RUN_ID = 'run-from-env'
+            $null = Write-AzlOsConfigurationEvent -Path $file -Node 'n' -State A
+            $null = Write-AzlOsConfigurationEvent -Path $file -Node 'n' -State B
+        }
+        finally { $env:AZL_OSCONFIG_RUN_ID = $old }
+        $e = Read-FeedEvent $file
+        @($e.runId | Select-Object -Unique) | Should -Be @('run-from-env')
+        @($e.seq) | Should -Be @(1, 2)
+    }
+    It 'the guard adapter writes them too' {
+        Import-Module (Join-Path (Join-Path (Join-Path $PSScriptRoot '..\..') 'scripts\common\node-configuration') 'AzlGuardedChange.psm1') -Force
+        $file = Join-Path $TestDrive 'guard-run.jsonl'
+        $old = $env:AZL_OSCONFIG_RUN_ID
+        try {
+            $env:AZL_OSCONFIG_RUN_ID = 'run-G'
+            $ctx = New-AzlGuardEventContext -Path $file
+            Send-AzlGuardEvent -Context $ctx -Node n1 -State NetworkChangeStaged -Evidence 'x'
+            Send-AzlGuardEvent -Context $ctx -Node n1 -State NetworkChangeCommitted -Evidence 'y'
+        }
+        finally { $env:AZL_OSCONFIG_RUN_ID = $old }
+        $e = Read-FeedEvent $file
+        @($e.runId) | Should -Be @('run-G', 'run-G')
+        @($e.seq) | Should -Be @(1, 2)
+    }
+}
+
+Describe 'Free text in the feed is redacted' {
+    It '<Name>' -ForEach @(
+        @{ Name = 'a password in a connection string'; Text = 'connect failed: Server=x;Password=Hunter2!;Port=1'; Secret = 'Hunter2' }
+        @{ Name = 'password: value'; Text = 'the join said password: Sup3rS3cret for the account'; Secret = 'Sup3rS3cret' }
+        @{ Name = 'a bearer token'; Text = 'sent Authorization: Bearer abcdef0123456789ABCDEF.ghi-jkl_mno to ARM'; Secret = 'abcdef0123456789ABCDEF' }
+        @{ Name = 'a JWT'; Text = 'token eyJhbGciOiJSUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJlMTIzNDU2 was refused'; Secret = 'eyJhbGciOiJSUzI1NiJ9' }
+        @{ Name = 'a SAS signature in a URL'; Text = 'GET https://x.blob.core.windows.net/c/f.zip?sv=2024-01-01&sig=AbCdEfGh%2Bij12345&se=2026'; Secret = 'AbCdEfGh' }
+        @{ Name = 'a storage account key'; Text = 'AccountKey=QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo=;EndpointSuffix=core.windows.net'; Secret = 'QUJDREVGR0hJSktMTU5PUFFSU1RVVldYWVo' }
+        @{ Name = 'a node result line'; Text = ('output: AZLRESULT:' + ('A1b2' * 60)); Secret = 'A1b2A1b2A1b2A1b2' }
+        @{ Name = 'a private key'; Text = "-----BEGIN RSA PRIVATE KEY-----`nMIIEowIBAAKCAQEA1234`n-----END RSA PRIVATE KEY-----"; Secret = 'MIIEowIBAAKCAQEA1234' }
+    ) {
+        $file = Join-Path $TestDrive "redact-$([guid]::NewGuid().ToString('N').Substring(0, 6)).jsonl"
+        $null = Write-AzlOsConfigurationEvent -Path $file -Node 'n' -State StepFailed -Evidence $Text -NextAction $Text -Data @{ detail = $Text; list = @($Text); nested = @{ inner = $Text } }
+        $raw = Get-Content -LiteralPath $file -Raw
+        $raw | Should -Not -Match ([regex]::Escape($Secret))
+        $raw | Should -Match '\*\*\*'
+    }
+    It 'leaves ordinary evidence alone' {
+        $file = Join-Path $TestDrive 'plain.jsonl'
+        $text = 'LocalAdmin: password differs; present, enabled, in Administrators, password from Key Vault. 192.0.2.11 on port 5985 (token window 10 minutes).'
+        $null = Write-AzlOsConfigurationEvent -Path $file -Node 'n' -State StepPlanned -Evidence $text
+        (Read-FeedEvent $file)[0].evidence | Should -Be $text
     }
 }
 
@@ -190,9 +287,7 @@ Describe 'ConvertFrom-AzlOsRetryWarning' {
 
 Describe 'Invoke-AzlSetNodeConfiguration and the retry events' {
     BeforeAll {
-        Import-Module (Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') '..') (Join-Path 'scripts' 'common')) (Join-Path 'node-configuration' 'AzlOsConfigurationRun.psm1')) -Force
-    }
-    BeforeAll {
+        Import-Module (Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot "..") "..") (Join-Path "scripts" "common")) (Join-Path "node-configuration" "AzlOsConfigurationRun.psm1")) -Force
         # Runs the real Invoke-AzlSetNodeConfiguration against a stand-in for the script. Returns its result.
         function Invoke-StandIn([string[]]$ScriptLine, [string]$ReportPath) {
             $standIn = Join-Path $TestDrive "standin-$([guid]::NewGuid().ToString('N').Substring(0, 6)).ps1"

@@ -806,6 +806,7 @@ function Invoke-AzlNodeRun {
     # The one-shot confirmation to wipe a node that belongs to a deployed cluster: only the switch of this run, never a file.
     if ($Context.ClearStorage -and (Get-AzlProp $Context 'ConfirmWipeDeployedCluster' $false)) { $parameters.ConfirmWipeDeployedCluster = $true }
     if ($Context.NoRestart) { $parameters.NoRestart = $true }
+    if (Get-AzlProp $Context 'RunId' '') { $parameters.RunId = [string]$Context.RunId }
     # The approval the wrapper checked is passed on, so the node script applies the same rule to its own bootstrap.
     if (Get-AzlProp $Context 'ApprovedBootstrap' $false) { $parameters.ApprovedBootstrap = $true }
     if ($Context.SkipValidation) { $parameters.SkipValidation = $true }
@@ -1525,6 +1526,7 @@ function Invoke-AzlOsConfiguration {
     )
     $records = @()
     $context = $null
+    $previousRunId = $env:AZL_OSCONFIG_RUN_ID
     $trustedSession = $null
     $trustedStore = if ($TrustedHostsStore) { $TrustedHostsStore } else { Get-AzlTrustedHostsStore }
     try {
@@ -1543,6 +1545,7 @@ function Invoke-AzlOsConfiguration {
         $null = New-Item -ItemType Directory -Force -Path $reportDir
         # Every run gets its own id and its own folder of node reports, so a report of an earlier run in the same report directory is never read by this one.
         $runId = New-AzlRunId
+        $env:AZL_OSCONFIG_RUN_ID = $runId # every module of this run writes this id on its event lines
         $nodeReportDir = Join-Path (Join-Path $reportDir 'node-reports') $runId
         $null = New-Item -ItemType Directory -Force -Path $nodeReportDir
 
@@ -1828,6 +1831,7 @@ function Invoke-AzlOsConfiguration {
         return [pscustomobject]@{ ExitCode = $(if ($isInput) { 2 } else { 1 }); Records = @($records); ReportPath = ''; ReportDirectory = ''; Summary = ''; WipeList = @(); Message = $message }
     }
     finally {
+        $env:AZL_OSCONFIG_RUN_ID = $previousRunId
         # HOOK remoting-profiles: never leave a TrustedHosts entry (above all a wildcard) behind, whatever happened.
         if ($trustedSession) { try { $null = Restore-AzlTrustedHostsPolicy -Session $trustedSession -Store $trustedStore -Confirm:$false } catch { Write-Warning "TrustedHosts was not restored: $($_.Exception.Message)" } }
     }
