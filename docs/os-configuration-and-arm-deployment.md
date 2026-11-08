@@ -78,7 +78,7 @@ The full cross-tool matrix is in the toolkit's [access-and-connectivity page](ac
 1. **Validate the inputs.** The master file, the handoff map, the method of every node, the **remoting pre-check** (every node probed at the same time on every candidate address, one table of what is unreachable and why), the credentials and the OS build of every node reached over WinRM. A failure here stops the run with exit code 2 before anything is changed.
 2. **Plan for all nodes** (read only). Writes `plan-report.json` and `wipe-list.txt`.
 3. **Apply** (`-Mode Apply`), node by node.
-   Each node's steps run in the order of the diagram, `RemoteManagement` first and the SBE package last (by `hardware.sbe.delivery`). With an Active Directory design the order is Network, Dns, Time, Hostname, UnusedAdapters, **DomainJoin** (see [Joining the domain](#joining-the-domain)), LocalAdmin, MPIO, then the rest. A change that can cut the node off is a guarded change. A node whose plan says the package is NOT DELIVERED (`hardware.sbe.delivery` is `skip`) is not failed; its record carries a warning.
+   Each node's steps run in the order of the diagram, `RemoteManagement` first and the SBE package last (by `hardware.sbe.delivery`). With an Active Directory design the order is NicNames (opt-in, see [Adapter identity and names](#adapter-identity-and-names-the-nicnames-step)), Network, Dns, Time, Hostname, UnusedAdapters, **DomainJoin** (see [Joining the domain](#joining-the-domain)), LocalAdmin, MPIO, then the rest. A change that can cut the node off is a guarded change. A node whose plan says the package is NOT DELIVERED (`hardware.sbe.delivery` is `skip`) is not failed; its record carries a warning.
 4. **Verify**: a Plan pass on every node that was changed. A node is *converged* only when this pass finds nothing left to change. The status of the commands that did the work does not decide it. A node with nothing to change in the plan is converged by the plan itself and is not read again.
 5. **Report**: `report.json` (per node: method and evidence, steps, plan, changes, errors, converged, restarted), `summary.md` and a table on the console.
 
@@ -105,7 +105,7 @@ The result is in the report, per node (`method.declared`, `method.resolved`, `me
 | --- | --- | --- |
 | Reached with | PowerShell remoting (WinRM) with the local administrator from the master file, from a host that reaches the node's management address | the same |
 | Verified, not redone | OS build, Arc machine connected, the computer name ZTP gave, the handoff's `ready` | |
-| Done | management static address by MAC, DHCP off on the other ports, DNS, NTP, unused ports, local admin, RDP/ICMP, OEM drivers, MPIO and SAN verification, storage wipe when on, and last the SBE package (by `hardware.sbe.delivery`) | all of those, plus the computer name (restart), and Azure Arc registration |
+| Done | adapter names (only for ports with `os_name_override`; opt-in), management static address by MAC, DHCP off on the other ports, DNS, NTP, unused ports, local admin, RDP/ICMP, OEM drivers, MPIO and SAN verification, storage wipe when on, and last the SBE package (by `hardware.sbe.delivery`) | all of those, plus the computer name (restart), and Azure Arc registration |
 | Up front | route to TCP 5985/5986, credentials, OS caption and build 25398 or later | the same; each failure names the node and says what to fix |
 
 Arc registration on the ISO path runs `Invoke-AzStackHciArcInitialization` on the node with the ARM token of the run's own Azure sign-in (passed as a secret; never written), into `azure.resource_group`, with the Arc gateway from `networking.outbound.arc_gateway` when the outbound path uses one. It then waits for the Arc machine to be Connected. The older Phase 04 registration scripts take a different, interactive configuration, so they are not used here. WinRM from a Linux runner needs the PSWSMan module for Negotiate authentication. Arc registration is done over WinRM too.
@@ -359,7 +359,7 @@ Node events:
 | `NodeFailed` | the node could not be read, a step failed, or it did not converge (`Error`) | |
 | `NodeBlocked` | an item is blocked (`Warning` in Plan mode, `Error` after an apply), or the node was skipped because an earlier node failed | |
 
-Step events (`step` is one of `RemoteManagement`, `Network`, `Dns`, `Time`, `Hostname`, `UnusedAdapters`, `LocalAdmin`, `Mpio`, `SanVerify`, `ClearStorage`, `Sbe`, `Drivers`, `ArcRegistration`):
+Step events (`step` is one of `RemoteManagement`, `NicNames`, `Network`, `Dns`, `Time`, `Hostname`, `UnusedAdapters`, `LocalAdmin`, `Mpio`, `SanVerify`, `ClearStorage`, `Sbe`, `Drivers`, `ArcRegistration`):
 
 | State | When | Extra fields |
 | --- | --- | --- |
@@ -705,7 +705,36 @@ For `hybrid` the cluster is deployed with Storage Spaces Direct and the SAN is c
 | `solution.vsrVersion` | compared with `provisioning.os_version`; a difference is reported |
 | `nodes[].name`, `arcMachineName` | matching the entry to the node |
 
-The OS configuration's own **report** (`-ReportPath`, JSON, no secrets) feeds the ARM step: the OS adapter names by MAC (Network ATC needs the real names, `Port0` to `Port6`, the same on every node) and the SAN disks by LUN.
+The OS configuration's own **report** (`-ReportPath`, JSON, no secrets) feeds the ARM step: the OS adapter names by MAC (Network ATC needs the real names, whatever the OS called them, the same on every node) and the SAN disks by LUN.
+
+### Adapter identity and names (the NicNames step)
+
+Nothing about adapter names is assumed or hard-coded, for any NIC brand (Mellanox/NVIDIA, Broadcom, Intel, Marvell/QLogic, Chelsio, Emulex and the rest go through the same keys). The OS names change between installs and between ZTP and ISO installs (`Port1`, `SLOT 3 Port 1`, `NIC1`, `Ethernet 3`, `Embedded NIC 1`), so the file never relies on them.
+
+**What the file says** (all in `nodes[].network_adapters[]`, written by hardware discovery from the BMC; no new model, the keys that already existed are reused):
+
+| Key | Meaning |
+| --- | --- |
+| `mac_address` | The identity. Every tool finds the physical adapter on a node by it (case and separators ignored). Required. |
+| `slot`, `port_index`, `pci_location` (`bus`, `device`, `function`), `vendor`, `model`, `speed_gbps`, `rdma` | Which physical connector it is and what it can do. Informational and used for verification (a different PCI location on the node is reported, nothing is changed); no tool behaves differently for a brand. |
+| `name` | The key of the port in the file, the same on every machine. `networking.intents[].adapters`, `networking.storage.networks[].adapter` and `networking.cluster_networks[].adapter` refer to it. Discovery derives it from the slot and the port (`Slot 3 Port 1`), never from an OS name. |
+| `roles`, `ip_assignment`, `switch_port`, `allowed_vlans` | What the port is used for (management, compute, storage ...) and where it is cabled. With the intents they say which adapters each intent uses. |
+| `os_name_override` | **Optional, off by default.** The name you want the adapter to have in the OS. See below. |
+
+**Default: no rename.** Without `os_name_override` the step does nothing (the run shows it as not applicable) and the adapters keep the names the OS gave them. The deployment sends what each node calls the adapter, found by MAC from the OS configuration report. If the same logical adapter has different names on different nodes, `New-AzlArmParameterSet` stops and the pre-cluster verification (NW-013) fails with the two ways out: **(1)** install the nodes consistently so the OS names the adapter alike everywhere, or **(2)** set `os_name_override` for the port (the same value on every node) and run the NicNames step.
+
+**Opt-in rename.** With `os_name_override` the NicNames step, per node, plan, approval, apply, verify:
+
+1. Finds each file adapter by its MAC. A MAC that no adapter has is Info (nothing is renamed). Two adapters that report one MAC, a virtual / USB / Remote NDIS device, two ports asking for one name, and a name that another adapter (not renamed by this run) already has are **Blocked** and nothing is renamed for that port.
+2. Reports `current -> desired` per port. An adapter that already has the name (a difference in letter case only is also fine) is Ok: running it again changes nothing.
+3. Applies the renames as a **guarded change** in the Network group, with `Rename-NetAdapter`. A name that another adapter of the same change holds is moved out of the way through a temporary name (`AzlTmp-<mac>`). The **management adapter is renamed last**. The adapter's address, gateway and DNS stay with the interface. If the check after the rename fails, the guard restores every old name from its snapshot (also the adapter that was moved out of the way).
+4. Verifies by reading the node again: the plan must show every renamed port as Ok.
+
+Adapters the file does not list, ports without an override and unused adapters are left alone. Because the deployment sends the override only when the node already has it, `New-AzlArmParameterSet` and NW-013 refuse a node that has not been renamed yet and say to run the NicNames step.
+
+**Validation of the file** (`Test-AzlInfrastructure`): `mac_address` is required on every port; the same MAC on two ports is an error whatever the notation; `os_name_override` must be a usable Windows adapter name (1 to 64 characters, letters, digits, space, `_ . ( ) -`), unique on a machine, and the same on every node for the same port (or on none).
+
+**Migration notes.** Existing files stay valid. A `name` that is the OS name keeps working as the key; nothing is renamed and the deployment sends the name the node reports for that MAC (the old behaviour whenever the OS name equals the file name). To get the same adapter names on every node whatever the install did: add `os_name_override` for each used port (for example `Mgmt1`, `Mgmt2`, `Compute1`, `Storage1`, `Storage2`), keep `name` and the intents as they are (they are keys), run the OS configuration (`-Step NicNames` or all steps), take a new report and run the pre-cluster verification. Run hardware discovery again to add `port_index`, `pci_location` (when the BMC reports it) and `vendor` to the proposal.
 
 ### The Network step, per management address mode
 
@@ -734,7 +763,8 @@ A port the file lists as `dhcp` or `dhcp_reservation` keeps DHCP; if it holds a 
 | Arc machines exist and are `Connected` | ARM with `-Preflight` or `-Execute` | stops |
 | Validate after a failed deployment | ARM | refused (Microsoft: it resets system properties and can break license sync) |
 | Deploy without a successful Validate | ARM | refused |
-| Same adapter name on every node | ARM | stops |
+| Same adapter name on every node (found by MAC) | ARM, gate NW-013 | stops / Failed, with the two ways out |
+| NicNames: duplicate MAC, virtual / USB / Remote NDIS device, a name already used by an adapter that is not renamed | Compare | Blocked |
 | Domain join: joined to another domain, name differs, DNS/SRV/controller/clock, OU missing or not blocking inheritance | DomainJoin step (Plan) | Blocked |
 
 ## Values table: every `infrastructure.yml` key these scripts read
@@ -767,8 +797,10 @@ Required: **yes** (the script stops or the step can't run without it), **if** (w
 | `cluster.diagnostics.logs_retention_days`, `.storage_account_type` | no (30, `Standard_LRS`) | `30`, `Standard_LRS` | your policy | ARM |
 | `nodes[].name` | yes | `iic-n01` | the host name; up to 15 characters | OS (host name), ARM (`physicalNodesSettings`) |
 | `nodes[].arc_machine_name` | no (the node name) | `iic-n01` | the Arc machine's name | OS, ARM (lookup) |
-| `nodes[].network_adapters[].mac_address` | yes (management port); recommended on all | `00:00:5E:00:53:10` | iDRAC or the ZTP discovery | OS (finds every port by MAC), ARM (name translation) |
-| `nodes[].network_adapters[].name` | yes | `Port0` | the OS name, or a label (then the OS report maps it) | OS, ARM (`intentList`, networks) |
+| `nodes[].network_adapters[].mac_address` | yes (every port: it is the identity) | `00:00:5E:00:53:10` | iDRAC or the ZTP discovery | OS (finds every port by MAC), ARM (name translation), the gate |
+| `nodes[].network_adapters[].name` | yes | `Slot 3 Port 1` | the key of the port in the file (intents refer to it); discovery derives it from the slot and the port; it need not be the OS name | OS, ARM (`intentList`, networks) |
+| `nodes[].network_adapters[].os_name_override` | no (no rename) | `Storage1` | the name you want the adapter to have; the same on every node; the NicNames step renames to it | OS (NicNames), ARM, the gate |
+| `nodes[].network_adapters[].slot`, `.port_index`, `.pci_location`, `.vendor`, `.model`, `.speed_gbps`, `.rdma` | no | `Slot 3`, `1`, `{ bus: 59, device: 0, function: 0 }` | hardware discovery | OS (verification), the gate |
 | `nodes[].network_adapters[].roles` | yes | `[management, compute]` | your design; `unused` ports are disabled | OS |
 | `nodes[].network_adapters[].ip_assignment` | yes | `static` | `none` turns DHCP off on the port | OS |
 | `nodes[].network_adapters[].ip_address`, `.prefix_length` | if `static` | `192.0.2.11`, `24` | your IP plan | OS, ARM (`physicalNodesSettings`) |
