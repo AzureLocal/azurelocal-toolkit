@@ -1,5 +1,17 @@
 # Phase 05: cluster deployment
 
+**Use `Invoke-AzureLocalArmDeployment.ps1`.** One command for a jump server or a pipeline: read-only preconditions (the OS
+configuration converged, Arc machines, Key Vault secrets, providers, permissions, DNS, Active Directory, no leftover failed
+deployment), Validate, an approval gate, Deploy, polling with a time limit, the failing step matched to a known issue, an event
+feed, `report.json` and exit codes 0, 1 and 2. A failed Deploy is resumed rather than started over; a Validate that already
+passed with the same parameters is not run again. Guide: [docs/arm-deployment-guide.md](../../../../docs/arm-deployment-guide.md).
+Pipelines: `pipelines/github-actions/arm-deployment.yml`, `pipelines/gitlab/stages/arm-deployment.yml`,
+`pipelines/azure-devops/arm-deployment.yml`.
+
+`Invoke-AzureLocalClusterDeployment.ps1` below is the earlier, lower-level script (one mode per run, no report, no resume). The
+`active-directory` and `local-identity` folders and the `*-Orchestrated.ps1` / `az-deploy-*` wrappers are legacy or scaffolds; the
+audit lists which ([docs/arm-deployment-audit.md](../../../../docs/arm-deployment-audit.md)).
+
 **Schema 5 path (current):** ARM Validate, then Deploy, generated from `infrastructure.yml`.
 
 ```powershell

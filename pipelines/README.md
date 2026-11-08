@@ -35,6 +35,13 @@ validate → plan → deploy-foundation → configure-onprem → deploy-cluster 
 - **Features**: Service connections, environment approvals, Terraform task extension
 - **Requirements**: Terraform extension from marketplace, service connection configured
 
+### ARM Validate and Deploy (schema 5, one script)
+The Terraform and Ansible pipelines above do not call the schema 5 deployment script. These do, with an approval between Validate and
+Deploy, OIDC sign-in and no client secret. Guide: [docs/arm-deployment-guide.md](../docs/arm-deployment-guide.md).
+- **GitHub Actions**: `github-actions/arm-deployment.yml` (environment `azure-local-deploy`)
+- **GitLab CI**: `gitlab/stages/arm-deployment.yml` (declares its own stages; include it from a pipeline of its own)
+- **Azure DevOps**: `azure-devops/arm-deployment.yml` (environment `azure-local-deploy` with an Approvals check)
+
 ## Prerequisites
 
 ### All Platforms

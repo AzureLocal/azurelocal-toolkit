@@ -103,7 +103,7 @@ skipped on purpose with `deployment.skip_preconditions` or `-Settings @{ skipPre
 | `ArcMachinesConnected` | node | The node's Arc machine exists (handoff ID, else name), is Connected, and sits in the instance's subscription and resource group | Failed | all |
 | `ArcMachineNaming` | node | The Arc machine is named after the node's host name. A device-ID name (`<id>-1`) is the cause of the step 0.41 failure on build 2690 (known issue `arc-device-id-name`) | Warning in Validate, Failed in Deploy unless the issue is acknowledged | all |
 | `OsConfigurationConverged` | node | The OS configuration report says the node converged (or planned nothing to change) and is for this cluster; without a report: `Skipped` with a warning, or Failed when `require_os_configuration_report` | Failed | all |
-| `OsBuildConsistent` | run | Every node runs the same OS build (Arc `osVersion`, else the report), and it matches the handoff's `vsrVersion` when there is one | Failed | all |
+| `OsBuildConsistent` | run | Every node runs the same OS build (Arc `osVersion`, else the OS report); the handoff's solution build (`vsrVersion`) is shown, not compared, because its format differs from the OS version | Failed | all |
 | `SbeConsistent` | run | The SBE values are known (`hardware.sbe` or the SBE folder), else a Warning: the deployment then uses the SBE the OS install discovered | Warning | all |
 | `DnsAndTime` | run | DNS servers set and valid (unless DHCP), NTP servers set; the OS report's `Dns` and `Time` steps are fine; for Active Directory the DNS server resolves the domain (when it can be asked) | Failed / Warning | all |
 | `ActiveDirectoryPrepared` | run | Active Directory only: `ou_path` is not the top level, the LCM user name is 20 characters or fewer, and (from a domain-joined host with the ActiveDirectory module) the OU and the LCM user exist | Failed / Skipped | all |
@@ -289,6 +289,8 @@ runId, mode, cluster`, plus per event data. `node` is `*` for the run and the no
 | `DeploymentResumed` | | `deploymentName`, `previous` (Failed, InProgress, Succeeded) |
 | `DeploymentSucceeded` / `DeploymentFailed` / `DeploymentTimedOut` | failing step | `knownIssue`, `stepName`, `status` |
 | `PollError` | | `consecutive` |
+| `PhaseRefused` | | `phase`, `knownIssue` (a Validate or Deploy that was not started, with the reason) |
+| `RunFailed` | | the message (an input error or an unexpected failure) |
 | `RunCompleted` | | `exitCode`, `state` |
 
 Sonar needs nothing new to read it: the fields are those of the ZTP and OS configuration feeds, and the step number matches
@@ -326,7 +328,9 @@ All tests run without Azure (the adapter is replaced). See `tests/arm-deployment
 | Parameters per scenario (AD or local identity; S2D or SAN; switchless or switched; 1, 2, 4, 16 nodes) and the key check | `ArmDeploymentRun.Parameters.Tests.ps1` |
 | Preconditions | `ArmDeploymentRun.Preconditions.Tests.ps1` |
 | State machine, polling with a fake clock, failing step, known issues, resume, approval, events, exit codes, secret scrub | `ArmDeploymentRun.Tests.ps1` |
-| Pipelines parse and contain the gates; backslash scan of the new and changed files | `ArmDeploymentRun.Pipelines.Tests.ps1`, `ArmDeploymentRun.CrossPlatform.Tests.ps1` |
+| Pipelines parse and contain the gates | `ArmDeploymentRun.Pipelines.Tests.ps1` |
+| Backslash scan of the new and changed files; the entry point in a child pwsh (`-Offline`) | `ArmDeploymentRun.CrossPlatform.Tests.ps1` |
+| Schema 5.6 deployment block, AZL-040, the variables reference | `ArmDeploymentRun.Schema.Tests.ps1` |
 
 **Verified** (by tests with mocks): the parameter generation and key messages per scenario; the precondition logic on fake
 Azure and fake nodes; the state machine; the wait and its limits on a fake clock; the idempotency table; resume decisions;

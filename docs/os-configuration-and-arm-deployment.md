@@ -21,6 +21,7 @@ In the tables, **Checked** says what happens if the item is missing:
 | ARM parameters only | `New-AzureLocalArmParameters.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json -NodeReportPath <report>` | (reads files only; always safe) |
 | ARM Validate | `Invoke-AzureLocalClusterDeployment.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json -NodeReportPath <report>` | submit `deploymentMode Validate` to the resource group, wait, report the validation steps. |
 | ARM Deploy | the same with `-Mode Deploy` | submit the real deployment. A separate, explicit run; needs a successful Validate. |
+| **ARM Validate and Deploy, automated** | `Invoke-AzureLocalArmDeployment.ps1 -InfrastructureFile ./infrastructure.yml -OsConfigurationReport <report directory> -Mode Plan` | `-Mode Validate`, then `-Mode Deploy` (or `ValidateAndDeploy`): preconditions, idempotent re-runs, resume, approval gate, event feed, exit codes 0, 1, 2. Jump server or pipeline. See [arm-deployment-guide.md](arm-deployment-guide.md). |
 
 The OS configuration plan reads each node through Azure Arc Run Command, which creates and deletes one transient `runCommands` resource per read; nothing on the node changes. `-SpecOnly` reads no node and no Azure resource: it prints what each node should look like. The ARM plan (no `-Execute`) reads files only, unless you add `-Preflight`.
 
