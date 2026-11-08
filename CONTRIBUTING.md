@@ -60,6 +60,8 @@ Examples:
 
 ## Development Guidelines
 
+- **Variables: registry first.** A new or changed variable (a key in `infrastructure.yml`, a script setting, a pipeline input) goes into `config/variables/schema/master-registry.yaml` before anything else uses it; the schema, examples, scripts and documents conform to it. A test fails when `infrastructure.schema.json` has a key the registry lacks. See [config/variables/README.md](config/variables/README.md).
+
 ### PowerShell Style
 
 - Use approved PowerShell verbs (`Get-`, `Set-`, `New-`, `Remove-`, etc.)
