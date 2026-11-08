@@ -27,6 +27,7 @@ $ErrorActionPreference = 'Stop'
 $script:ToolVersion = '2.0.0'
 $script:SchemaVersion = '2.0'
 $script:SupportedVendors = @('Dell')
+$script:JsonHasDateKind = (Get-Command ConvertFrom-Json).Parameters.ContainsKey('DateKind')
 $script:SecretKeyPattern = '(?i)pass(word|phrase)?|secret|token|community|private.?key|auth.?key|product.?key|session.?id|credential'
 
 #region helpers
@@ -46,6 +47,7 @@ function Get-RfText {
     param($Object, [string]$Name)
     $v = Get-RfProp $Object $Name
     if ($null -eq $v -or $v -is [System.Collections.IDictionary] -or $v -is [pscustomobject]) { return $null }
+    if ($v -is [datetime]) { return $v.ToString('yyyy-MM-ddTHH:mm:sszzz', [System.Globalization.CultureInfo]::InvariantCulture) }
     $s = ([string]$v).Trim()
     if ($s.Length -eq 0) { return $null }
     return $s
@@ -362,9 +364,11 @@ function Invoke-AzlRedfishRequest {
         $text = [string]$response.Content
         $body = $null
         if ($text.Trim().Length -gt 0) {
-            try { $body = $text | ConvertFrom-Json -Depth 50 }
+            $json = @{ Depth = 50 }
+            if ($script:JsonHasDateKind) { $json.DateKind = 'String' }
+            try { $body = $text | ConvertFrom-Json @json }
             catch {
-                try { $body = $text | ConvertFrom-Json -AsHashtable -Depth 50 }
+                try { $body = $text | ConvertFrom-Json -AsHashtable @json }
                 catch { $body = $null; if ($status -lt 300) { $status = 502; $failure = 'The response was not valid JSON.' } }
             }
         }
@@ -494,7 +498,7 @@ function Start-AzlRedfishArea {
     [CmdletBinding()]
     param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)][string]$Name)
     if (-not $Context.Areas.Contains($Name)) {
-        $Context.Areas[$Name] = @{ Attempted = 0; Ok = 0; Failures = [System.Collections.Generic.List[string]]::new(); Paths = [System.Collections.Generic.List[string]]::new(); MorePaths = 0; Status = $null; Variant = $null; Count = $null; Reason = $null }
+        $Context.Areas[$Name] = @{ Attempted = 0; Ok = 0; Failures = [System.Collections.Generic.List[string]]::new(); Paths = [System.Collections.Generic.List[string]]::new(); MorePaths = 0; Status = $null; Variant = $null; Count = $null; Reason = $null; Notes = [System.Collections.Generic.List[string]]::new() }
     }
     $Context.CurrentArea = $Name
 }
@@ -528,6 +532,17 @@ function Stop-AzlRedfishArea {
         $a.Reason = $(if ($first) { "$($first.path): $($first.message)" } else { 'The BMC does not link this resource.' })
     }
     $Context.CurrentArea = $null
+}
+
+function Add-AzlRedfishNote {
+    <#
+    .SYNOPSIS
+        Adds a note to an area of the capability report: something that was readable but not usable, and why.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)][string]$Area, [Parameter(Mandatory)][string]$Text)
+    if (-not $Context.Areas.Contains($Area)) { Start-AzlRedfishArea -Context $Context -Name $Area; $Context.CurrentArea = $null }
+    $Context.Areas[$Area].Notes.Add((Hide-AzlRedfishSecretText -Text $Text -Context $Context))
 }
 
 function Skip-AzlRedfishArea {
@@ -564,7 +579,7 @@ function Get-AzlRfCapabilityReport {
         $a = $Context.Areas[$name]
         $paths = @($a.Paths)
         if ($a.MorePaths -gt 0) { $paths += "... and $($a.MorePaths) more" }
-        $areas[$name] = [ordered]@{ status = $a.Status; paths = $paths; schemaVariant = $a.Variant; count = $a.Count; reason = $a.Reason }
+        $areas[$name] = [ordered]@{ status = $a.Status; paths = $paths; schemaVariant = $a.Variant; count = $a.Count; reason = $a.Reason; notes = @($a.Notes) }
     }
     $statuses = @($areas.Values | ForEach-Object { $_.status })
     $unproven = @($Context.OemPaths | Where-Object { $_.basis -eq 'inferred' } | ForEach-Object { "$($_.area): $($_.path)" })
@@ -841,17 +856,39 @@ function Get-AzlRfMemory {
     return [ordered]@{ totalGiB = $Summary; modules = $modules }
 }
 
-function Get-AzlRfPcie {
-    param($Context, $Sys, $Chassis)
-    $links = [System.Collections.Generic.List[string]]::new()
-    foreach ($l in @(Get-RfLinkList (Get-RfProp (Get-RfProp $Sys 'Links') 'PCIeDevices')) + @(Get-RfLinkList (Get-RfProp $Sys 'PCIeDevices'))) { if ($l -and -not $links.Contains($l)) { $links.Add($l) } }
-    $chassisLink = Get-RfLink $Chassis 'PCIeDevices'
-    if ($chassisLink) {
-        $coll = Read-AzlRedfishResource -Context $Context -Path $chassisLink
-        foreach ($l in @(Get-RfLinkList (Get-RfProp $coll 'Members'))) { if ($l -and -not $links.Contains($l)) { $links.Add($l) } }
+function Get-AzlRfPcieDevice {
+    # PCIe device paths: the Chassis collection first (where Dell iDRAC9 has it), then the Systems collection. The first source that
+    # lists a device wins and is recorded; a source that answers 404 is not an error while another one works.
+    param($Context, $Paths, $Sys, $Chassis)
+    $sources = @(
+        [pscustomobject]@{ Variant = 'Chassis/PCIeDevices'; Collections = @((Get-RfLink $Chassis 'PCIeDevices')); Direct = @(Get-RfLinkList (Get-RfProp (Get-RfProp $Chassis 'Links') 'PCIeDevices')); WellKnown = $(if ($Paths.Chassis) { "$($Paths.Chassis)/PCIeDevices" } else { $null }) }
+        [pscustomobject]@{ Variant = 'Systems/PCIeDevices'; Collections = @((Get-RfLink $Sys 'PCIeDevices')); Direct = @(Get-RfLinkList (Get-RfProp (Get-RfProp $Sys 'Links') 'PCIeDevices')) + @(Get-RfLinkList (Get-RfProp $Sys 'PCIeDevices')); WellKnown = "$($Paths.System)/PCIeDevices" }
+    )
+    $failed = [System.Collections.Generic.List[object]]::new()
+    foreach ($src in $sources) {
+        $links = [System.Collections.Generic.List[string]]::new()
+        $tried = [System.Collections.Generic.HashSet[string]]::new()
+        foreach ($c in @($src.Collections) + @($src.WellKnown)) {
+            if (-not $c -or -not $tried.Add($c)) { continue }
+            $r = Invoke-AzlRedfishRequest -Context $Context -Path $c
+            if ($r.Ok) { foreach ($l in @(Get-RfLinkList (Get-RfProp $r.Body 'Members'))) { if (-not $links.Contains($l)) { $links.Add($l) } } }
+            else { $failed.Add($r) }
+            if ($links.Count -gt 0) { break }
+        }
+        if ($links.Count -eq 0) { foreach ($l in @($src.Direct)) { if ($l -and -not $links.Contains($l)) { $links.Add($l) } } }
+        if ($links.Count -gt 0) { return [pscustomobject]@{ Variant = $src.Variant; Links = $links.ToArray() } }
     }
+    foreach ($f in $failed) { Register-AzlRedfishFailure -Context $Context -Result $f }
+    return [pscustomobject]@{ Variant = $null; Links = @() }
+}
+
+function Get-AzlRfPcie {
+    param($Context, $Paths, $Sys, $Chassis)
+    $found = Get-AzlRfPcieDevice -Context $Context -Paths $Paths -Sys $Sys -Chassis $Chassis
+    # Functions listed on the system (PCIeFunctions) can be matched to a device by Links.PCIeDevice.
+    $systemFunctions = $null
     $devices = @()
-    foreach ($l in $links) {
+    foreach ($l in $found.Links) {
         $d = Read-AzlRedfishResource -Context $Context -Path $l
         if ($null -eq $d) { continue }
         $fnLinks = @(Get-RfLinkList (Get-RfProp (Get-RfProp $d 'Links') 'PCIeFunctions'))
@@ -859,6 +896,13 @@ function Get-AzlRfPcie {
         $functions = @()
         if ($fnLinks.Count -gt 0) { $functions = @(foreach ($f in $fnLinks) { Read-AzlRedfishResource -Context $Context -Path $f }) | Where-Object { $_ } }
         elseif ($fnCollection) { $functions = @(Get-AzlRedfishMember -Context $Context -Path $fnCollection) }
+        else {
+            if ($null -eq $systemFunctions) {
+                $sfLink = Get-RfLink $Sys 'PCIeFunctions'
+                $systemFunctions = if ($sfLink) { @(Get-AzlRedfishMember -Context $Context -Path $sfLink -Probe) } else { @() }
+            }
+            $functions = @($systemFunctions | Where-Object { (Get-RfLink (Get-RfProp $_ 'Links') 'PCIeDevice') -eq $l })
+        }
         $iface = Get-RfProp $d 'PCIeInterface'
         $fn = @(foreach ($f in $functions) {
                 [ordered]@{ id = (Get-RfText $f 'Id'); name = (Get-RfText $f 'Name'); deviceId = (Get-RfText $f 'DeviceId'); vendorId = (Get-RfText $f 'VendorId'); subsystemId = (Get-RfText $f 'SubsystemId')
@@ -875,29 +919,53 @@ function Get-AzlRfPcie {
             $isGpu = (@($d.functions | Where-Object { $_.deviceClass -eq 'DisplayController' -or $_.classCode -match '^0x03' }).Count -gt 0) -or ("$($d.name) $($d.description) $($d.model)" -match '(?i)\bGPU\b|\bNVIDIA\b|Instinct|Accelerator')
             if ($isGpu) { [ordered]@{ id = $d.id; name = $d.name; model = $(if ($d.model) { $d.model } else { $d.description }); manufacturer = $d.manufacturer; slot = $d.slot; memoryGiB = $null; vendorId = (@($d.functions | ForEach-Object { $_.vendorId }) | Where-Object { $_ } | Select-Object -First 1); firmwareVersion = $d.firmwareVersion } }
         })
-    return [ordered]@{ devices = $devices; gpus = $gpus }
+    return [pscustomobject]@{ devices = $devices; gpus = $gpus; Variant = $found.Variant }
+}
+function Test-RfGenericLabel {
+    # True when a text is empty, a bare adapter id or another label that names no hardware model. The vendor adapter adds its own.
+    param([string]$Text, $AdapterDef)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $true }
+    if ($Text.Trim() -match '^[A-Za-z]+\.[A-Za-z]+\.\d+(-\d+)*$') { return $true }
+    $vendorTest = Get-RfProp $AdapterDef 'IsGenericModel'
+    if ($vendorTest) { return [bool](& $vendorTest $Text) }
+    return $false
 }
 
 function Get-AzlRfNicModel {
-    # The adapter model: the adapter's own Model, then an adapter hint (a vendor source), then the linked PCIe device.
-    param($Context, $Adapter, $Controller, $Functions, $AdapterDef)
-    $model = Get-RfText $Adapter 'Model'
-    if ($model) { return [pscustomobject]@{ Model = $model; Source = 'adapter' } }
+    # The adapter model, first source that gives a real model wins: the adapter's own Model, a vendor hint (Dell NIC product name),
+    # the controller entries, the linked PCIe device (Model, then Description), the adapter Name. A generic label ('Network Adapter
+    # View', 'NIC in Slot 3', a bare id) is never a model: it is listed in Rejected and the model stays empty if nothing else names the card.
+    param($Context, $Adapter, $Controllers, $Functions, $AdapterDef)
+    $rejected = [System.Collections.Generic.List[string]]::new()
+    $try = {
+        param([string]$text, [string]$source)
+        $t = if ($text) { $text.Trim() } else { '' }
+        if (-not (Test-RfGenericLabel -Text $t -AdapterDef $AdapterDef)) { return [pscustomobject]@{ Model = $t; Source = $source; Rejected = @($rejected) } }
+        if ($t -and -not $rejected.Contains($t)) { $rejected.Add($t) }
+        return $null
+    }
+    $hit = & $try (Get-RfText $Adapter 'Model') 'adapter'
+    if ($hit) { return $hit }
     $hint = Get-RfProp (Get-RfProp $AdapterDef 'Hooks') 'NicModelHint'
     if ($hint) {
         $h = & $hint $Context $Adapter $Functions
-        if ($h) { return [pscustomobject]@{ Model = [string]$h.Model; Source = [string]$h.Source } }
+        if ($h) { $hit = & $try ([string]$h.Model) ([string]$h.Source); if ($hit) { return $hit } }
     }
-    foreach ($l in @(Get-RfLinkList (Get-RfProp (Get-RfProp $Controller 'Links') 'PCIeDevices'))) {
-        $d = Read-AzlRedfishResource -Context $Context -Path $l
-        $m = Get-RfText $d 'Model'
-        if ($m) { return [pscustomobject]@{ Model = $m; Source = 'pcie-device-model' } }
-        $desc = Get-RfText $d 'Description'
-        if ($desc -and $desc -ne (Get-RfText $d 'Name')) { return [pscustomobject]@{ Model = $desc; Source = 'pcie-device-description' } }
+    foreach ($c in @($Controllers)) {
+        foreach ($n in 'Model', 'Description') { $hit = & $try (Get-RfText $c $n) 'controller'; if ($hit) { return $hit } }
     }
-    return [pscustomobject]@{ Model = $null; Source = 'none' }
+    foreach ($c in @($Controllers)) {
+        foreach ($l in @(Get-RfLinkList (Get-RfProp (Get-RfProp $c 'Links') 'PCIeDevices'))) {
+            $d = Read-AzlRedfishResource -Context $Context -Path $l
+            $hit = & $try (Get-RfText $d 'Model') 'pcie-device-model'
+            if ($hit) { return $hit }
+            if ((Get-RfText $d 'Description') -ne (Get-RfText $d 'Name')) { $hit = & $try (Get-RfText $d 'Description') 'pcie-device-description'; if ($hit) { return $hit } }
+        }
+    }
+    $hit = & $try (Get-RfText $Adapter 'Name') 'adapter-name'
+    if ($hit) { return $hit }
+    return [pscustomobject]@{ Model = $null; Source = 'none'; Rejected = @($rejected) }
 }
-
 function Get-AzlRfNetwork {
     param($Context, $Report, $Sys, $Chassis, $AdapterDef, [string]$Detail)
     $adaptersPath = Get-RfLink $Sys 'NetworkAdapters'
@@ -930,7 +998,7 @@ function Get-AzlRfNetwork {
             $portsFromFunctions = $true
             $variants.Add('functions-only') | Out-Null
         }
-        $modelInfo = Get-AzlRfNicModel -Context $Context -Adapter $adapter -Controller $controller -Functions $functions -AdapterDef $AdapterDef
+        $modelInfo = Get-AzlRfNicModel -Context $Context -Adapter $adapter -Controllers @(Get-RfProp $adapter 'Controllers' @()) -Functions $functions -AdapterDef $AdapterDef
         $labeler = Get-RfProp $AdapterDef 'PortLabel'
         $portList = [System.Collections.Generic.List[object]]::new()
         $ordinal = 0
@@ -974,7 +1042,7 @@ function Get-AzlRfNetwork {
                 })
         }
         $adapters.Add([ordered]@{
-                id = $adapterId; name = (Get-RfText $adapter 'Name'); manufacturer = (Get-RfText $adapter 'Manufacturer'); model = $modelInfo.Model; modelSource = $modelInfo.Source
+                id = $adapterId; name = (Get-RfText $adapter 'Name'); manufacturer = (Get-RfText $adapter 'Manufacturer'); model = $modelInfo.Model; modelSource = $modelInfo.Source; modelRejected = @($modelInfo.Rejected)
                 partNumber = (Get-RfText $adapter 'PartNumber'); serialNumber = (Get-RfText $adapter 'SerialNumber'); firmwarePackage = (Get-RfText $controller 'FirmwarePackageVersion')
                 location = (Get-RfText (Get-RfProp (Get-RfProp $controller 'Location') 'PartLocation') 'ServiceLabel')
                 ports = $portList.ToArray()
@@ -1336,10 +1404,10 @@ function Invoke-AzlRedfishDiscovery {
             $report.memory = Get-AzlRfMemory -Context $ctx -Sys $sys -Summary $report.system.memoryTotalGiB
             Stop-AzlRedfishArea -Context $ctx -Count @($report.memory.modules).Count
             Start-AzlRedfishArea -Context $ctx -Name pcie
-            $pcie = Get-AzlRfPcie -Context $ctx -Sys $sys -Chassis $chassis
+            $pcie = Get-AzlRfPcie -Context $ctx -Paths $paths -Sys $sys -Chassis $chassis
             $report.pcie = $pcie.devices
             $report.gpus = $pcie.gpus
-            Stop-AzlRedfishArea -Context $ctx -Count @($pcie.devices).Count -Variant 'PCIeDevices'
+            if ($pcie.Variant) { Stop-AzlRedfishArea -Context $ctx -Count @($pcie.devices).Count -Variant $pcie.Variant } else { Stop-AzlRedfishArea -Context $ctx -Count 0 -Reason 'Neither the Chassis nor the Systems path lists PCIe devices.' }
         }
         else {
             $report.processors = @()
@@ -1394,6 +1462,12 @@ function Invoke-AzlRedfishDiscovery {
             foreach ($a in 'firmware', 'bios', 'sensors', 'events') { Skip-AzlRedfishArea -Context $ctx -Name $a -Reason "Summary detail: $a is read with -Detail Full." }
         }
 
+        foreach ($a in @($report.network.adapters)) {
+            if (-not $a.model) {
+                $seen = if (@($a.modelRejected).Count -gt 0) { " Generic labels rejected: $((@($a.modelRejected) | ForEach-Object { "'$_'" }) -join ', ')." } else { '' }
+                Add-AzlRedfishNote -Context $ctx -Area network -Text "$($a.id): no real model found; the model is left empty rather than a generic label.$seen"
+            }
+        }
         $report.capabilities = Get-AzlRfCapabilityReport -Context $ctx -Adapter $adapter -Detail $Detail
         $report.readErrors = @($ctx.ReadErrors)
         $report.warnings = @($ctx.Warnings)
@@ -1501,6 +1575,6 @@ Export-ModuleMember -Function @(
     'Remove-AzlRedfishSecret', 'Hide-AzlRedfishSecretText', 'Limit-AzlRedfishRaw'
     'Get-AzlBmcKeyVaultSecret', 'Resolve-AzlBmcCredential'
     'New-AzlRedfishContext', 'Invoke-AzlRedfishRequest', 'Read-AzlRedfishResource', 'Get-AzlRedfishMember', 'Register-AzlRedfishFailure', 'Open-AzlRedfishSession', 'Close-AzlRedfishSession'
-    'Start-AzlRedfishArea', 'Stop-AzlRedfishArea', 'Skip-AzlRedfishArea', 'Add-AzlRedfishOemPath'
+    'Start-AzlRedfishArea', 'Stop-AzlRedfishArea', 'Skip-AzlRedfishArea', 'Add-AzlRedfishOemPath', 'Add-AzlRedfishNote'
     'Resolve-AzlRedfishVendor', 'Get-AzlRedfishAdapter', 'Invoke-AzlRedfishDiscovery', 'Invoke-AzlRedfishBatch', 'ConvertTo-AzlDiscoveryLegacyView'
 )

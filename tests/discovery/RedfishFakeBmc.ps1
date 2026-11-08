@@ -10,7 +10,7 @@ function Use-FakeBmc {
     # Loads a fixture tree into $global:AzlTestBmc (Pester mocks run in module scope and read it through the global).
     param([string]$Vendor = 'dell', [string]$Fixture = 'idrac9-ax760-synthetic')
     $file = [System.IO.Path]::Combine($script:FixtureRoot, $Vendor, $Fixture, 'tree.json')
-    $tree = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json -AsHashtable -Depth 50
+    $tree = Get-Content -LiteralPath $file -Raw | ConvertFrom-Json -AsHashtable -Depth 50 -DateKind String
     $bodies = @{}
     foreach ($k in $tree.Keys) { if ($k.StartsWith('/')) { $bodies[$k] = ($tree[$k] | ConvertTo-Json -Depth 50 -Compress) } }
     $global:AzlTestBmc = @{ Tree = $bodies; Status = @{}; Throw = @{}; ThrowCount = @{}; Calls = [System.Collections.Generic.List[object]]::new(); Meta = $tree['_fixture'] }
@@ -27,7 +27,7 @@ function Set-FakeResource {
 function Get-FakeResource {
     # A resource as a mutable hashtable (to change one property and Set-FakeResource it back).
     param([string]$Path)
-    return ($global:AzlTestBmc.Tree[$Path] | ConvertFrom-Json -AsHashtable -Depth 50)
+    return ($global:AzlTestBmc.Tree[$Path] | ConvertFrom-Json -AsHashtable -Depth 50 -DateKind String)
 }
 
 function Remove-FakeResource { param([string]$Path) $global:AzlTestBmc.Tree.Remove($Path) | Out-Null }

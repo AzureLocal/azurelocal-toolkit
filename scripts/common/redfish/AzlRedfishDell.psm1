@@ -68,6 +68,32 @@ function Get-AzlDellPortLabel {
     return [pscustomobject]@{ Name = $fallback; Slot = $AdapterId; PortNumber = "$number" }
 }
 
+function Test-AzlDellGenericLabel {
+    <#
+    .SYNOPSIS
+        True when a text is a generic Dell label that names no hardware model.
+    .DESCRIPTION
+        Dell fills Name and Description fields with view labels: 'Network Adapter View' (seen in the lab scan as the NetworkAdapter
+        Name of the embedded LOM), 'Network Adapter', 'NIC in Slot 3', 'Embedded NIC 1', 'Integrated NIC 1', a bare FQDN such as
+        NIC.Embedded.1, and 'Network Adapter - NIC.Embedded.1'. None of these is a model, so none is ever reported as one.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([AllowNull()][AllowEmptyString()][string]$Text)
+    if ([string]::IsNullOrWhiteSpace($Text)) { return $true }
+    $t = $Text.Trim()
+    $patterns = @(
+        '^Network Adapter( View)?$'
+        '^Network (Adapter|Port|Device Function)( View)?\s*-\s*NIC\..*$'
+        '^NIC in Slot\b.*$'
+        '^(Embedded|Integrated) NIC \d+( Port \d+)?$'
+        '^NIC\.[A-Za-z]+\.\d+(-\d+)*$'
+        '^NIC Slot \d+( Port \d+)?$'
+    )
+    foreach ($pattern in $patterns) { if ($t -match "(?i)$pattern") { return $true } }
+    return $false
+}
+
 function Get-DellOemBlock {
     param($Resource)
     $dell = Get-RfProp (Get-RfProp $Resource 'Oem') 'Dell'
@@ -94,8 +120,8 @@ function Get-AzlRedfishDellAdapter {
         param($Context, $Adapter, $Functions)
         foreach ($f in @($Functions)) {
             $name = Get-RfText (Get-RfProp (Get-DellOemBlock $f) 'DellNIC') 'ProductName'
-            if ($name) {
-                $clean = ($name -replace '\s+-\s+([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\s*$', '').Trim()
+            $clean = if ($name) { ($name -replace '\s+-\s+([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\s*$', '').Trim() } else { $null }
+            if ($clean -and -not (Test-AzlDellGenericLabel -Text $clean)) {
                 Add-AzlRedfishOemPath -Context $Context -Area network -Path "$([string](Get-RfProp $f '@odata.id' ''))#Oem.Dell.DellNIC.ProductName" -Basis inferred -Source 'Dell DellNIC class (iDRAC REST API documentation); not seen in the lab scan'
                 return [pscustomobject]@{ Model = $clean; Source = 'dell-nic-oem' }
             }
@@ -165,11 +191,26 @@ function Get-AzlRedfishDellAdapter {
         param($Context, $Report, $Paths, $Detail)
         $any = $false
         foreach ($f in @($Report.firmware)) {
-            $state = if ("$($f.id)" -like 'Installed-*') { 'installed' } elseif ("$($f.id)" -like 'Previous-*') { 'previous' } else { $null }
+            $state = if ("$($f.id)" -like 'Installed-*') { 'installed' } elseif ("$($f.id)" -like 'Current-*') { 'current' } elseif ("$($f.id)" -like 'Previous-*') { 'previous' } else { $null }
             $f['entryState'] = $state
             if ($state) { $any = $true }
         }
-        if ($any) { Add-AzlRedfishOemPath -Context $Context -Area firmware -Path '/redfish/v1/UpdateService/FirmwareInventory/{Installed|Previous}-*' -Basis inferred -Source 'Dell FirmwareInventory ID prefixes Installed- and Previous-; not seen in the lab scan' }
+        if ($any) { Add-AzlRedfishOemPath -Context $Context -Area firmware -Path '/redfish/v1/UpdateService/FirmwareInventory/{Installed|Current|Previous}-*' -Basis lab-observed -Source 'Evidence scan of three lab AX-760 nodes: entries are named Installed-, Current- and Previous-<n>-<version>__<FQDD>' }
+        # A card whose network resources name no model (the embedded LOM) is named by the firmware inventory:
+        # 'Broadcom NetXtreme Gigabit Ethernet (BCM5720) - <MAC>' on entries whose id ends in the function FQDD (NIC.Embedded.1-1-1).
+        foreach ($a in @($Report.network.adapters | Where-Object { -not $_.model })) {
+            foreach ($fn in @($a.functions)) {
+                $entry = @($Report.firmware | Where-Object { $_.id -like "*__$($fn.id)" -and $_.component -and -not (Test-AzlDellGenericLabel -Text $_.component) } | Sort-Object { $_.entryState -ne 'installed' }) | Select-Object -First 1
+                if (-not $entry) { continue }
+                $name = ($entry.component -replace '\s+-\s+([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\s*$', '').Trim()
+                if ($name -and -not (Test-AzlDellGenericLabel -Text $name)) {
+                    $a.model = $name
+                    $a.modelSource = 'firmware-inventory'
+                    Add-AzlRedfishOemPath -Context $Context -Area network -Path "/redfish/v1/UpdateService/FirmwareInventory/$($entry.id)#Name" -Basis lab-observed -Source 'Evidence scan of three lab AX-760 nodes: the firmware inventory names the embedded card (Broadcom NetXtreme Gigabit Ethernet (BCM5720) - <MAC>)'
+                    break
+                }
+            }
+        }
     }
 
     # Settings: virtualization switches from the BIOS attributes (Dell BIOS attribute registry: ProcVirtualization, SriovGlobalEnable;
@@ -191,8 +232,9 @@ function Get-AzlRedfishDellAdapter {
         Name          = 'Dell iDRAC'
         FallbackPaths = @{ System = '/redfish/v1/Systems/System.Embedded.1'; Chassis = '/redfish/v1/Chassis/System.Embedded.1'; Manager = '/redfish/v1/Managers/iDRAC.Embedded.1' }
         PortLabel     = $labeler
+        IsGenericModel = { param($t) Test-AzlDellGenericLabel -Text $t }
         Hooks         = $hooks
     }
 }
 
-Export-ModuleMember -Function Get-AzlDellPortLabel, Get-AzlRedfishDellAdapter
+Export-ModuleMember -Function Get-AzlDellPortLabel, Test-AzlDellGenericLabel, Get-AzlRedfishDellAdapter

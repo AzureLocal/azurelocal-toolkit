@@ -418,7 +418,7 @@
   "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1": {
     "@odata.id": "/redfish/v1/Systems/System.Embedded.1/NetworkAdapters/NIC.Embedded.1",
     "Id": "NIC.Embedded.1",
-    "Name": "Network Adapter - NIC.Embedded.1",
+    "Name": "Network Adapter View",
     "Manufacturer": "Broadcom Inc. and subsidiaries",
     "Model": "",
     "Description": "",
@@ -1784,7 +1784,7 @@
   "/redfish/v1/UpdateService/FirmwareInventory": {
     "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory",
     "Name": "Software Inventory Collection",
-    "Members@odata.count": 10,
+    "Members@odata.count": 12,
     "Members": [
       {
         "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-2.0.0__BIOS.Setup.1-1"
@@ -1799,7 +1799,13 @@
         "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-22.44.10.36__NIC.Slot.3-1-1"
       },
       {
-        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-23.31.1__NIC.Embedded.1-1-1"
+        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-110420-23.31.1__NIC.Embedded.1-1-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-110420-23.31.1__NIC.Embedded.2-1-1"
+      },
+      {
+        "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Current-159-2.0.0__BIOS.Setup.1-1"
       },
       {
         "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-2.1.13.2037__BOSS.SL.12-1"
@@ -1874,10 +1880,10 @@
     "SoftwareId": "22.44.10.36__NIC.Slot.3-1-1",
     "RelatedItem": []
   },
-  "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-23.31.1__NIC.Embedded.1-1-1": {
-    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-23.31.1__NIC.Embedded.1-1-1",
-    "Id": "Installed-0-23.31.1__NIC.Embedded.1-1-1",
-    "Name": "Broadcom Gigabit Ethernet BCM5720 - 00:00:5E:00:53:10",
+  "/redfish/v1/UpdateService/FirmwareInventory/Installed-110420-23.31.1__NIC.Embedded.1-1-1": {
+    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-110420-23.31.1__NIC.Embedded.1-1-1",
+    "Id": "Installed-110420-23.31.1__NIC.Embedded.1-1-1",
+    "Name": "Broadcom NetXtreme Gigabit Ethernet (BCM5720) - 00:00:5E:00:53:10",
     "Version": "23.31.1",
     "Updateable": true,
     "Status": {
@@ -1886,6 +1892,34 @@
     },
     "ReleaseDate": "2026-01-01T00:00:00Z",
     "SoftwareId": "23.31.1__NIC.Embedded.1-1-1",
+    "RelatedItem": []
+  },
+  "/redfish/v1/UpdateService/FirmwareInventory/Installed-110420-23.31.1__NIC.Embedded.2-1-1": {
+    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Installed-110420-23.31.1__NIC.Embedded.2-1-1",
+    "Id": "Installed-110420-23.31.1__NIC.Embedded.2-1-1",
+    "Name": "Broadcom NetXtreme Gigabit Ethernet (BCM5720) - 00:00:5E:00:53:11",
+    "Version": "23.31.1",
+    "Updateable": true,
+    "Status": {
+      "Health": "OK",
+      "State": "Enabled"
+    },
+    "ReleaseDate": "2026-01-01T00:00:00Z",
+    "SoftwareId": "23.31.1__NIC.Embedded.2-1-1",
+    "RelatedItem": []
+  },
+  "/redfish/v1/UpdateService/FirmwareInventory/Current-159-2.0.0__BIOS.Setup.1-1": {
+    "@odata.id": "/redfish/v1/UpdateService/FirmwareInventory/Current-159-2.0.0__BIOS.Setup.1-1",
+    "Id": "Current-159-2.0.0__BIOS.Setup.1-1",
+    "Name": "BIOS",
+    "Version": "2.0.0",
+    "Updateable": true,
+    "Status": {
+      "Health": "OK",
+      "State": "Enabled"
+    },
+    "ReleaseDate": "2026-01-01T00:00:00Z",
+    "SoftwareId": "2.0.0__BIOS.Setup.1-1",
     "RelatedItem": []
   },
   "/redfish/v1/UpdateService/FirmwareInventory/Installed-0-2.1.13.2037__BOSS.SL.12-1": {
