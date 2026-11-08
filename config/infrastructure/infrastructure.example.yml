@@ -29,6 +29,9 @@
 # Every one has the default shown, which is what ZTP did before the key existed.
 # Schema 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes; 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes; no storage account).
 # Schema 5.4.3 adds os_configuration.clear_storage: whether the OS configuration run wipes leftover local disks.
+# Schema 5.6.0 adds scenario.environment_class and os_configuration.remoting: the remote management security profile (WinRM, RDP and
+# ICMP scope on the nodes, HTTP or HTTPS, TrustedHosts on the machine running the automation, the one-time Arc bootstrap), and a purpose
+# marker on networking.logical_networks[] and cluster_networks[].
 #
 # Rules:
 #   - Keys are snake_case. Sections reject unknown keys; use extensions.
@@ -39,7 +42,7 @@
 # =============================================================================
 
 _metadata:
-  schema_version: "5.4.3"
+  schema_version: "5.6.0"
   file_version: "1.0.0"
   last_updated: "2026-11-06"
   generated_by: ""
@@ -57,6 +60,9 @@ scenario:
   outbound_path: direct # direct | proxy | arc_gateway | proxy_arc_gateway | private_path
   os_install: simplified # iso | simplified
   deploy_method: arm # portal | arm
+  # Schema 5.6.0. lab | test | dev | production | dmz. Picks the remote management security profile. Missing means production.
+  # lab and test are relaxed with the wildcard (TrustedHosts '*', sources Any, HTTP 5985 allowed) and the run prints a warning; never use them in production.
+  environment_class: production
 
 site:
   code: "IIC"
@@ -259,6 +265,7 @@ networking:
     - { name: "workloads", id: 2204, subnet: "203.0.113.0/24" }
   logical_networks:
     - name: "lnet-workloads"
+      purpose: compute # management | oob | automation | compute | storage | other (5.6.0); management and oob make the subnet a remote management source in dev and production
       vlan_id: 2204
       address_prefix: "203.0.113.0/24"
       gateway: "203.0.113.1"
@@ -499,5 +506,17 @@ os_configuration:
   # true: Apply mode also wipes the leftover storage pools, virtual disks and data on the machines' local non-boot,
   # non-system disks (SAN, USB, boot and system disks are never touched). Plan mode lists the disks and wipes nothing.
   clear_storage: false
+  # Schema 5.6.0. The remote management security profile (docs/os-configuration-and-arm-deployment.md, config/remoting-profiles.json).
+  # Everything here is optional; the class above decides what is not set.
+  remoting:
+    transport: winrm # winrm | winrm_https | arc (how the run reaches the nodes)
+    bootstrap_transport: none # none | arc (one-time Arc Run Command that opens WinRM; production and dmz also need the pipeline approval)
+    # The runner and jump server addresses as the nodes see them (after NAT), in addition to the management and out-of-band networks.
+    allowed_source_cidrs: ["198.51.100.10/32"]
+    trusted_hosts: auto # auto | exact | wildcard (wildcard: lab and test only)
+    use_https: auto # auto | true | false (production and dmz need HTTPS)
+    # allow_any_source: false # true is honoured in lab and test only (and implied there unless you set false)
+    # isolation_confirmed: false # a statement for lab and test only; not allowed in dev, production or dmz
+    # certificate: "keyvault://kv-iic-mgmt-01/node-remoting-cert" # a 40-hex thumbprint, or a Key Vault secret holding a base64 PFX; empty: a self-signed pre-join certificate per node
 
 extensions: {}

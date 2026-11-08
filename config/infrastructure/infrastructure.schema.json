@@ -18,7 +18,7 @@
       ],
       "properties": {
         "schema_version": {
-          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san). 5.3 also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage.",
+          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san). 5.3 also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.6.0 adds scenario.environment_class (lab, test, dev, production or dmz; missing means production) and os_configuration.remoting (the remote management security profile: transport, bootstrap_transport, allowed_source_cidrs, allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate), and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (networking.vlans[].purpose already existed).",
           "type": "string",
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
@@ -118,6 +118,17 @@
             "portal",
             "arm"
           ]
+        },
+        "environment_class": {
+          "description": "What kind of environment this is. It picks the remote management security profile of the OS configuration run (WinRM, RDP and ICMP scope on the nodes, HTTP or HTTPS, the TrustedHosts policy of the machine running the automation, the one-time Arc bootstrap): see docs/os-configuration-and-arm-deployment.md and config/remoting-profiles.json. lab and test are relaxed with the wildcard (TrustedHosts '*', sources Any, HTTP 5985 allowed) and a warning says so; dev, production and dmz are strict. Optional. Missing means production (fail closed); another value is rejected. (since 5.6)",
+          "enum": [
+            "lab",
+            "test",
+            "dev",
+            "production",
+            "dmz"
+          ],
+          "default": "production"
         }
       }
     },
@@ -850,6 +861,17 @@
               },
               "subnet": {
                 "$ref": "#/$defs/cidr"
+              },
+              "purpose": {
+                "description": "What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote management security profile adds its subnet to the allowed sources of dev and production (a candidate, not a trust: prefer listing the controller addresses in os_configuration.remoting.allowed_source_cidrs). automation, compute, storage and other have no effect on remote management.",
+                "enum": [
+                  "management",
+                  "oob",
+                  "automation",
+                  "compute",
+                  "storage",
+                  "other"
+                ]
               }
             }
           }
@@ -877,6 +899,7 @@
                 "$ref": "#/$defs/cidr"
               },
               "purpose": {
+                "description": "Free text. The values management, oob, automation, compute, storage and other (any case) are the purpose marker: management and oob make the subnet a candidate source for the remote management security profile of dev and production. Any other text has no effect.",
                 "type": "string"
               }
             }
@@ -2096,6 +2119,68 @@
           "description": "Wipe the leftover local storage (storage pools, virtual disks and the data on non-boot, non-system local disks) of every machine in the OS configuration run's Apply mode, so a re-used machine starts clean. Boot, system, SAN (Fibre Channel, iSCSI) and USB disks are never touched. The Plan mode lists the disks per machine and wipes nothing; in a pipeline that list is what the approval gate shows. Default false: leftover storage is reported as blocking, and nothing is wiped. (since 5.4.3)",
           "type": "boolean",
           "default": false
+        },
+        "remoting": {
+          "description": "How the OS configuration reaches the nodes and how their remote management (WinRM, RDP, ICMP) is secured. The environment class (scenario.environment_class) picks the profile; these keys refine it. The baseline holds in every class and no key changes it: AllowUnencrypted false, Basic and CredSSP off, no SkipCACheck or SkipCNCheck, TLS 1.2 or higher. (since 5.6)",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "transport": {
+              "description": "winrm (HTTP, 5985), winrm_https (5986, a certificate on the node) or arc (Azure Arc Run Command: the exception for sites with no route to the nodes; not recommended for network changes). The command line's -Transport WinRM or ArcRunCommand overrides it.",
+              "enum": [
+                "winrm",
+                "winrm_https",
+                "arc"
+              ],
+              "default": "winrm"
+            },
+            "bootstrap_transport": {
+              "description": "none: a node that does not answer on 5985/5986 fails with the diagnosis. arc: one Arc Run Command per node, only to open WinRM (and RDP, ICMP, as the profile says) for the allowed sources and create the listener, because a freshly provisioned node's firewall allows its own subnet only; everything after that goes over WinRM. production and dmz also need the pipeline approval (-ApprovedBootstrap); the Arc agent needs outbound 443 only.",
+              "enum": [
+                "none",
+                "arc"
+              ],
+              "default": "none"
+            },
+            "allowed_source_cidrs": {
+              "description": "The runner and jump server addresses, as the node sees them (after NAT), allowed to use WinRM, RDP and ICMP on the nodes, in addition to the management and out-of-band networks. IPv4 or IPv6 CIDR; /0 to /8 is refused, dev and production refuse anything wider than /24 (/64 for IPv6), dmz takes /32 or /128 only. The dmz class does not add the management network.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "allow_any_source": {
+              "description": "true: the nodes' firewall accepts WinRM, RDP and ICMP from any source (and TrustedHosts is '*' on the machine running the automation). Honoured only in the classes lab and test, where it is implied unless you set false; it is an error in dev, production and dmz.",
+              "type": "boolean"
+            },
+            "trusted_hosts": {
+              "description": "The TrustedHosts policy on the machine running the automation. auto: the class decides. exact: only the nodes' addresses. wildcard: '*', lab and test only. The previous value is restored after the run.",
+              "enum": [
+                "auto",
+                "exact",
+                "wildcard"
+              ],
+              "default": "auto"
+            },
+            "use_https": {
+              "description": "auto: the class decides (HTTP in lab and test; HTTPS in dev, production and dmz). true: WinRM over HTTPS (5986). false: HTTP only, which production and dmz refuse and dev warns about.",
+              "enum": [
+                "auto",
+                true,
+                false
+              ],
+              "default": "auto"
+            },
+            "isolation_confirmed": {
+              "description": "true: you confirm the network of the nodes has no route to production. Only a statement in lab and test (it changes the warning text, not the behaviour); it is not allowed in dev, production or dmz, where Any is never accepted.",
+              "type": "boolean"
+            },
+            "certificate": {
+              "description": "The server certificate for the HTTPS listener: the 40-hex thumbprint of a certificate already in the node's LocalMachine\\My store, or keyvault://<vault>/<secret> of a secret that holds the certificate as a base64 PFX without a password (a Key Vault certificate's secret). Empty: each node gets a self-signed Server Authentication certificate with its DNS names and management IP as subject alternative names, as the pre-join bootstrap only (not allowed in dmz).",
+              "type": "string"
+            }
+          }
         }
       }
     },
@@ -3675,6 +3760,17 @@
       "properties": {
         "name": {
           "type": "string"
+        },
+        "purpose": {
+          "description": "What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote management security profile adds its subnet to the allowed sources of dev and production (a candidate, not a trust: prefer listing the controller addresses in os_configuration.remoting.allowed_source_cidrs). automation, compute, storage and other have no effect on remote management.",
+          "enum": [
+            "management",
+            "oob",
+            "automation",
+            "compute",
+            "storage",
+            "other"
+          ]
         },
         "vlan_id": {
           "type": "integer",

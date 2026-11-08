@@ -60,6 +60,7 @@
         @{ Pattern = '^_metadata\.schema_version$'; Text = 'Set by the template (5.3.0). Change it only with a migration.' }
         @{ Pattern = '^_metadata\.scope$'; Text = 'You: ztp for a file used by azurelocal-ztp alone, full for everything.' }
         @{ Pattern = '^_metadata\.'; Text = 'You: bookkeeping for the file.' }
+        @{ Pattern = '^scenario\.environment_class$'; Text = 'You: what kind of environment this is (lab, test, dev, production or dmz). It picks the remote management security profile of the OS configuration run; leave it out and the run treats the environment as production.' }
         @{ Pattern = '^scenario\.'; Text = 'Your design decisions. The README lists what each choice makes required.' }
         @{ Pattern = '^site\.'; Text = 'Your site record: the customer, the location and its time zone (Windows name, for example Central Standard Time).' }
         @{ Pattern = '^environment\.'; Text = 'Your naming for the instance.' }
@@ -106,6 +107,9 @@
         @{ Pattern = '^provisioning\.simplified\.media_share'; Text = 'The management host: the share and the address the BMCs reach it on.' }
         @{ Pattern = '^provisioning\.simplified\.(admin|maintenance_password)'; Text = 'A Key Vault secret you create (see Secrets).' }
         @{ Pattern = '^os_configuration\.clear_storage$'; Text = 'You: true when the machines are re-used and must start with no leftover storage. The OS configuration run lists the disks it would wipe before it wipes them.' }
+        @{ Pattern = '^os_configuration\.remoting\.(allowed_source_cidrs)$'; Text = 'Your jump servers and runners: the addresses the nodes see them as (after NAT). Prefer single addresses (/32) over networks.' }
+        @{ Pattern = '^os_configuration\.remoting\.certificate$'; Text = 'Your certificate authority: the thumbprint of a certificate in the node''s store, or a Key Vault secret holding the PFX. Leave it empty for the per-node self-signed pre-join certificate.' }
+        @{ Pattern = '^os_configuration\.remoting\.'; Text = 'You: how the OS configuration reaches the nodes and how their remote management is secured. The environment class decides what you leave out (docs/os-configuration-and-arm-deployment.md, Remote management security profiles).' }
         @{ Pattern = '^provisioning\.'; Text = 'The OS release you pin, from the release notes of Azure Local.' }
         @{ Pattern = '^security\.'; Text = 'Your security baseline; Microsoft''s recommended defaults apply when omitted.' }
         @{ Pattern = '^operations\.'; Text = 'Your operations design.' }
