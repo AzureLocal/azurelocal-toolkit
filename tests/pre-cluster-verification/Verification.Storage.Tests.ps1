@@ -140,7 +140,7 @@ Describe 'ST-008 Learn hybrid rule: do not zone Fibre Channel before the deploym
     It 'Warning (not blocking) when LUNs are visible in a hybrid design' {
         $f = New-VerLab -Architecture hybrid -WithSan -Claimed
         $r = Invoke-VerRun 'ST-008' $f.World $f.Infra
-        $r[0].Status | Should -Be 'Warning'; $r[0].Message | Should -Match 'do not zone'
+        $r[0].Status | Should -Be 'Warning'; $r[0].Message | Should -Match 'not zoning|do not zone'
         (Get-VerDefinition -Module $script:Mod -Id 'ST-008').Blocking | Should -BeFalse
     }
     It 'Warning in an S2D design as well' { $f = New-VerLab; (Invoke-VerRun 'ST-008' $f.World $f.Infra)[0].Status | Should -Be 'Warning' }
@@ -216,5 +216,22 @@ Describe 'ST-006 aligns with the OS configuration SAN logic: MPIO''s own device 
         (Invoke-VerRun 'ST-006' $f.World $f.Infra | Where-Object Node -EQ 'n01').Status | Should -Be 'Passed'
         $g = New-VerLab -Claimed
         (Invoke-VerRun 'ST-006' $g.World $g.Infra | Where-Object Node -EQ 'n01').Status | Should -Be 'Passed'
+    }
+}
+Describe 'ST-008 says what is true now (lab: LUNs visible and claimed by MPIO once each)' {
+    It 'does not say Test-Cluster fails when MPIO shows each LUN once' {
+        $f = New-VerLab -Claimed
+        $r = Invoke-VerRun 'ST-008' $f.World $f.Infra | Where-Object Node -EQ 'n01'
+        $r.Status | Should -Be 'Warning'
+        $r.Message | Should -Match 'MPIO claims each LUN once'
+        $r.Message | Should -Match 'does not apply now'
+        $r.Message | Should -Not -Match 'make Test-Cluster fail'
+    }
+    It 'still says Test-Cluster fails when a LUN is visible more than once (paths not claimed)' {
+        $f = New-VerLab
+        $r = Invoke-VerRun 'ST-008' $f.World $f.Infra | Where-Object Node -EQ 'n01'
+        $r.Status | Should -Be 'Warning'
+        $r.Message | Should -Match 'visible more than once or not claimed'
+        $r.Remedy | Should -Match 'mpclaim -n -i -d'
     }
 }

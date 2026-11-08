@@ -228,7 +228,15 @@ function Get-AzlVerificationCheckDefinition {
                 Invoke-AzlVerPerNode -Context $Context -Section 'GetMpio' -Body {
                     param($Name, $D, $N)
                     $fcDisks = @(Get-AzlVerSanDisk (Get-AzlProp $D 'disks' @()) | Where-Object { [string]$_.bus -match 'Fibre' })
-                    if ($fcDisks.Count) { New-AzlVerResult Warning "$Name sees $($fcDisks.Count) Fibre Channel disk(s) before the deployment. Learn (hybrid): do not zone the Fibre Channel HBA WWNs to the array until after the deployment; visible LUNs are claimed by the cluster validation and make Test-Cluster fail." 'Remove the zoning of the node HBA WWPNs (or unmask the LUNs on the array) until the deployment has finished; add the external storage afterwards (Learn: Connect an external storage array to Azure Local).' -Node $Name -Evidence "fcDisks=$($fcDisks.Count)" }
+                    if ($fcDisks.Count) {
+                        # Say what is true now: how many LUNs are visible, and whether MPIO already shows each of them once.
+                        $luns = @(Get-AzlVerSanGroup (Get-AzlProp $D 'disks' @())).Count
+                        $claims = @(ConvertTo-AzlVerList (Get-AzlProp $D 'mpio.claims' @())).Count
+                        $onceEach = ($luns -gt 0 -and $fcDisks.Count -eq $luns -and $claims -ge $luns)
+                        $state = if ($onceEach) { "$Name sees $($fcDisks.Count) Fibre Channel disk(s) for $luns LUN(s) before the deployment; MPIO claims each LUN once (mpclaim -s -d lists $claims MPIO disk(s)), so no LUN appears twice and the Test-Cluster failure 'Two disks ... cannot be distinguished' does not apply now. Learn (hybrid) still advises not zoning the Fibre Channel HBA WWNs to the array until after the deployment, because visible LUNs can be picked up by the cluster validation." }
+                        else { "$Name sees $($fcDisks.Count) Fibre Channel disk(s) for $luns LUN(s) before the deployment and MPIO lists $claims MPIO disk(s): a LUN is visible more than once or not claimed, which makes Test-Cluster fail with 'Two disks ... cannot be distinguished' (see ST-004, ST-006 and ST-007). Learn (hybrid): do not zone the Fibre Channel HBA WWNs to the array until after the deployment." }
+                        New-AzlVerResult Warning $state $(if ($onceEach) { 'Nothing to do if you accept the advice as it is; otherwise remove the zoning of the node HBA WWPNs (or unmask the LUNs on the array) until the deployment has finished, then add the external storage (Learn: Connect an external storage array to Azure Local).' } else { 'Claim the array with MPIO (ST-006: mpclaim -n -i -d "<VendorId padded to 8><ProductId padded to 16>", then restart) so each LUN shows once, or remove the zoning of the node HBA WWPNs until the deployment has finished.' }) -Node $Name -Evidence "fcDisks=$($fcDisks.Count) luns=$luns mpioDisks=$claims"
+                    }
                     else { New-AzlVerResult Passed "$Name sees no Fibre Channel LUN before the deployment." -Node $Name }
                 }
             }))
