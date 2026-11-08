@@ -37,18 +37,18 @@ function Set-NetFirewallRule { $global:AzlLog.Add(('Set ' + (@($args) -join ' ')
 function Remove-NetFirewallRule { $global:AzlLog.Add(('Remove ' + (@($args) -join ' '))) }
 function New-NetFirewallRule { $global:AzlLog.Add('New') ; $global:AzlNew = $args }
 '@
-    function New-FakeRule([string]$Name, [int]$Filter, [string]$Direction = 'Inbound', [string]$Action = 'Allow') { [pscustomobject]@{ Name = $Name; Filter = $Filter; Direction = $Direction; Action = $Action } }
-    function New-FakeFilter([int]$Id, [string[]]$Port) { [pscustomobject]@{ Id = $Id; LocalPort = $Port } }
-    function Initialize-Fakes {
+    function Get-FakeRule([string]$Name, [int]$Filter, [string]$Direction = 'Inbound', [string]$Action = 'Allow') { [pscustomobject]@{ Name = $Name; Filter = $Filter; Direction = $Direction; Action = $Action } }
+    function Get-FakeFilter([int]$Id, [string[]]$Port) { [pscustomobject]@{ Id = $Id; LocalPort = $Port } }
+    function Get-FakeFirewallData {
         $global:AzlLog = [System.Collections.Generic.List[string]]::new()
         $global:AzlNew = $null
         $global:AzlFilters = @(
-            (New-FakeFilter 1 @('5985')), (New-FakeFilter 2 @('5985', '5986')), (New-FakeFilter 3 @('5986')), (New-FakeFilter 4 @('5985', '3389')),
-            (New-FakeFilter 5 @('5985')), (New-FakeFilter 6 @('5985')), (New-FakeFilter 7 @('80')), (New-FakeFilter 8 @('5985-5986'))
+            (Get-FakeFilter 1 @('5985')), (Get-FakeFilter 2 @('5985', '5986')), (Get-FakeFilter 3 @('5986')), (Get-FakeFilter 4 @('5985', '3389')),
+            (Get-FakeFilter 5 @('5985')), (Get-FakeFilter 6 @('5985')), (Get-FakeFilter 7 @('80')), (Get-FakeFilter 8 @('5985-5986'))
         )
         $global:AzlRules = @(
-            (New-FakeRule 'WINRM-HTTP-In-TCP' 1), (New-FakeRule 'BOTH-PORTS' 2), (New-FakeRule 'WINRM-HTTPS-In-TCP' 3), (New-FakeRule 'WITH-RDP' 4),
-            (New-FakeRule 'OUTBOUND-5985' 5 'Outbound'), (New-FakeRule 'AzlOsConfig-WinRM-HTTP-In' 6), (New-FakeRule 'WEB' 7), (New-FakeRule 'RANGE' 8)
+            (Get-FakeRule 'WINRM-HTTP-In-TCP' 1), (Get-FakeRule 'BOTH-PORTS' 2), (Get-FakeRule 'WINRM-HTTPS-In-TCP' 3), (Get-FakeRule 'WITH-RDP' 4),
+            (Get-FakeRule 'OUTBOUND-5985' 5 'Outbound'), (Get-FakeRule 'AzlOsConfig-WinRM-HTTP-In' 6), (Get-FakeRule 'WEB' 7), (Get-FakeRule 'RANGE' 8)
         )
     }
 }
@@ -59,7 +59,7 @@ AfterAll {
 
 Describe 'F7: only the rules that are exactly WinRM are touched' {
     BeforeAll { $script:RuleFn = Get-NodeFunctionText $script:Change @('Get-WinRmRuleName', 'Disable-DiscoveredWinRm') }
-    BeforeEach { Initialize-Fakes }
+    BeforeEach { Get-FakeFirewallData }
 
     It 'finds the rules whose LocalPort set is exactly {5985} or {5986}, inbound allow, not ours' {
         $names = & ([scriptblock]::Create($script:FirewallFakes + "`n" + $script:RuleFn + "`nGet-WinRmRuleName"))
@@ -87,7 +87,7 @@ Describe 'F4: until the node holds the management IP, the listener is on * and t
         }
         function Get-LocalAddressArg { $a = @($global:AzlNew); $i = [array]::IndexOf($a, '-LocalAddress:'); $a[$i + 1] }
     }
-    BeforeEach { Initialize-Fakes; $global:AzlRules = @(); $global:AzlFilters = @() }
+    BeforeEach { Get-FakeFirewallData; $global:AzlRules = @(); $global:AzlFilters = @() }
 
     It 'the node does not hold the management IP yet: listener *, LocalAddress Any (it does not bind to the address in use)' {
         $r = Invoke-Bind 'managementIp' '192.0.2.11' '192.0.2.50' @('192.0.2.50')
@@ -141,11 +141,11 @@ function Remove-AddedCertificate { $global:AzlLog.Add(('RemoveCert ' + (@($args)
         }
     }
     BeforeEach {
-        Initialize-Fakes
+        Get-FakeFirewallData
         $global:AzlListeners = @()
         # now: the built-in rule Enable-PSRemoting created after the snapshot, and one that was already there
-        $global:AzlFilters = @((New-FakeFilter 1 @('5985')), (New-FakeFilter 3 @('5986')))
-        $global:AzlRules = @((New-FakeRule 'WINRM-HTTP-In-TCP' 1), (New-FakeRule 'WINRM-HTTPS-In-TCP' 3))
+        $global:AzlFilters = @((Get-FakeFilter 1 @('5985')), (Get-FakeFilter 3 @('5986')))
+        $global:AzlRules = @((Get-FakeRule 'WINRM-HTTP-In-TCP' 1), (Get-FakeRule 'WINRM-HTTPS-In-TCP' 3))
     }
     AfterAll { Remove-Variable -Name AzlListeners -Scope Global -ErrorAction SilentlyContinue }
 

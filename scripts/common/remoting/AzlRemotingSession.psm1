@@ -164,8 +164,10 @@ function Get-AzlTrustedHostsStatePath([object]$Store) {
     return ''
 }
 
-function Remove-AzlTrustedHostsState([string]$Path) {
-    if ($Path -and (Test-Path -LiteralPath $Path -PathType Leaf)) { Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue }
+function Remove-AzlTrustedHostsState {
+    [CmdletBinding(SupportsShouldProcess)]
+    param([string]$Path)
+    if ($Path -and (Test-Path -LiteralPath $Path -PathType Leaf) -and $PSCmdlet.ShouldProcess($Path, 'Remove the TrustedHosts state file')) { Remove-Item -LiteralPath $Path -Force -ErrorAction SilentlyContinue }
 }
 
 function Restore-AzlStaleTrustedHost {
