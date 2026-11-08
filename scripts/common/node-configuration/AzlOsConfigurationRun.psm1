@@ -879,6 +879,14 @@ function Invoke-AzlNodeRun {
     }
     if ($Record.handoffFile) { $parameters.HandoffFile = $Record.handoffFile }
     if ($Context.PSObject.Properties['GuardSettings'] -and $Context.GuardSettings.Count) { $parameters.Settings = $Context.GuardSettings }
+    # The script checks the node's identity again before its first change (the override it gets is also checked); the run setting that switches the read off goes with it.
+    $addressSetting = Get-AzlProp $Context 'AddressResolution' @{}
+    if ($addressSetting -is [System.Collections.IDictionary] -and $addressSetting.Contains('verifyIdentity') -and -not [bool]$addressSetting['verifyIdentity']) {
+        $withAddress = @{}
+        if ($parameters.ContainsKey('Settings')) { foreach ($k in $parameters.Settings.Keys) { $withAddress[$k] = $parameters.Settings[$k] } }
+        $withAddress['addressResolution'] = @{ verifyIdentity = $false }
+        $parameters.Settings = $withAddress
+    }
     if ($Context.PSObject.Properties['EventLogPath'] -and $Context.EventLogPath) { $parameters.EventLogPath = $Context.EventLogPath }
     if ($Context.ClearStorage) { $parameters.ClearStorage = $true }
     # The one-shot confirmation to wipe a node that belongs to a deployed cluster: only the switch of this run, never a file.

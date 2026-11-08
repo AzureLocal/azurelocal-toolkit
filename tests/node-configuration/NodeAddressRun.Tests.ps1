@@ -365,4 +365,19 @@ Describe 'Set-AzureLocalNodeConfiguration.ps1 (standalone) uses the same resolut
         $handoffParameter = $ast.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'HandoffFile' }
         @($handoffParameter.Attributes | Where-Object { $_.TypeName.Name -eq 'Parameter' -and ($_.NamedArguments | Where-Object ArgumentName -eq 'Mandatory') }).Count | Should -Be 0
     }
+    It 'proves the identity of every reachable node (the override too) before the first transport is built, prints the sources that disagreed, and stops with exit 2' {
+        $script = [IO.Path]::Combine($repo, 'scripts', 'deploy', '04-cluster-deployment', 'phase-03-os-configuration', 'Set-AzureLocalNodeConfiguration.ps1')
+        $text = Get-Content -LiteralPath $script -Raw
+        $select = $text.IndexOf('Select-AzlVerifiedNodeAddress -Resolution')
+        $transport = $text.IndexOf('$nodeTransports[$s.Name] = New-AzlWinRmTransport -Address @{ $s.Name = $addressByNode[$s.Name] }')
+        $select | Should -BeGreaterThan 0
+        $transport | Should -BeGreaterThan $select
+        $text | Should -Match 'Get-AzlNodeExpectedIdentity -Infrastructure \$infra -Node \$nodeObject'
+        $text | Should -Match 'Read-AzlNodeIdentity -Transport \(New-AzlWinRmTransport'
+        $text | Should -Match 'if \(\$identityProblems\.Count\) \{[\s\S]*?exit 2'
+        $text | Should -Match 'Address sources: '
+        $text | Should -Match 'verifyIdentity'
+        # The credential is never part of the port probe: the reader is the only code that builds a transport for a candidate.
+        $text | Should -Not -Match 'Test-AzlAddressPort.*Credential'
+    }
 }
