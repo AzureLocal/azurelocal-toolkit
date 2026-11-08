@@ -54,13 +54,37 @@ function Test-Path {
     if ($LiteralPath) { return Microsoft.PowerShell.management\Test-Path -LiteralPath $LiteralPath }
     return Microsoft.PowerShell.management\Test-Path -Path $Path
 }
-function Test-DjTcp { [CmdletBinding()] param([string]$Address, [int]$Port, [int]$Milliseconds) Add-Call "tcp $Address $Port"; return [bool]$Scenario.dcReachable }
+function Test-DjTcp { [CmdletBinding()] param([string]$Address, [int]$Port, [int]$Milliseconds) Add-Call "tcp $Address $Port"; if (@($Scenario.tcpClosed) -contains $Address) { return $false }; return [bool]$Scenario.dcReachable }
+function Get-NetRoute { [CmdletBinding()] param([string]$DestinationPrefix) Add-Call "Get-NetRoute $DestinationPrefix"; return @([pscustomobject]@{ InterfaceIndex = 7; RouteMetric = 0 }) }
+function Get-DnsClientServerAddress { [CmdletBinding()] param([int]$InterfaceIndex, [string]$AddressFamily) Add-Call "Get-DnsClientServerAddress $InterfaceIndex"; return @([pscustomobject]@{ InterfaceIndex = 7; ServerAddresses = @($Scenario.dnsServers) }) }
+function Clear-DnsClientCache { [CmdletBinding()] param() Add-Call 'Clear-DnsClientCache' }
 function Resolve-DnsName {
     [CmdletBinding()]
-    param([string]$Name, [string]$Type, [switch]$DnsOnly)
-    Add-Call "Resolve-DnsName $Type $Name"
-    if ($Type -eq 'A') { if (-not $Scenario.dnsOk) { throw 'DNS name does not exist' }; return @([pscustomobject]@{ IPAddress = '192.0.2.4' }) }
-    if ($Type -eq 'SRV') { if (-not $Scenario.srvOk) { throw 'no SRV' }; return @([pscustomobject]@{ NameTarget = 'dc1.improbability.cloud'; Type = 'SRV' }) }
+    param([string]$Name, [string]$Type, [switch]$DnsOnly, [string]$Server, [switch]$TcpOnly)
+    $transport = if ($TcpOnly) { 'tcp' } else { 'udp' }
+    Add-Call "Resolve-DnsName $Type $Name server=$Server transport=$transport"
+    if ($Type -eq 'A') {
+        foreach ($p in $Scenario.dcNames.PSObject.Properties) { if ($p.Value -eq $Name) { return @([pscustomobject]@{ IPAddress = $p.Name }) } }
+        if (-not $Scenario.dnsOk) { throw 'DNS name does not exist' }
+        return @([pscustomobject]@{ IPAddress = '192.0.2.4' })
+    }
+    if ($Type -eq 'PTR') {
+        $octets = ($Name -replace '\.in-addr\.arpa$', '').Split('.'); [array]::Reverse($octets)
+        $hit = $Scenario.dcNames.PSObject.Properties[($octets -join '.')]
+        if ($hit) { return @([pscustomobject]@{ NameHost = ($hit.Value + '.'); Type = 'PTR' }) }
+        throw 'DNS name does not exist'
+    }
+    if ($Type -eq 'SRV') {
+        if (-not $Scenario.srvOk) { throw 'no SRV' }
+        if (@($Scenario.srvDeadServers) -contains $Server) { throw ('Server ' + $Server + ' does not answer [DNS_ERROR_RCODE_SERVER_FAILURE,Microsoft.DnsClient.Commands.ResolveDnsName]') }
+        if (-not $TcpOnly -and $Scenario.srvUdpFails) { throw ([string]$Scenario.srvUdpError) }
+        # an answer with no SRV record: only the additional A records (a truncated UDP answer)
+        if (-not $TcpOnly -and $Scenario.srvUdpEmpty) { return @([pscustomobject]@{ IPAddress = '192.168.211.40'; Type = 'A' }) }
+        $answer = @([pscustomobject]@{ NameTarget = 'mgmt-ral-dc-01.haas.mgmt'; Type = 'SRV' })
+        # the additional records of a real answer: A records, which have no NameTarget (strict mode throws on a plain .NameTarget)
+        if ($Scenario.srvAdditional) { $answer += [pscustomobject]@{ IPAddress = '192.168.211.40'; Type = 'A' } }
+        return $answer
+    }
 }
 function w32tm.exe { Add-Call "w32tm $args"; 'Tracking dc1.improbability.cloud'; 'The current time is 11/7/2026 3:00:00 PM.'; ('15:00:00, ' + $Scenario.skewText) }
 function Test-ComputerSecureChannel { [CmdletBinding()] param() Add-Call 'Test-ComputerSecureChannel'; return [bool]$Scenario.secureChannel }
@@ -74,9 +98,9 @@ function Add-LocalGroupMember {
 }
 function Add-Computer {
     [CmdletBinding()]
-    param([string]$DomainName, [string]$OUPath, [pscredential]$Credential, [switch]$Force, [switch]$Restart)
+    param([string]$DomainName, [string]$OUPath, [pscredential]$Credential, [switch]$Force, [switch]$Restart, [string]$Server)
     $matches = ($Credential.GetNetworkCredential().Password -eq $Scenario.expectedPassword)
-    Add-Call "Add-Computer DomainName=$DomainName OUPath=$OUPath User=$($Credential.UserName) PasswordMatches=$matches Restart=$($Restart.IsPresent) Force=$($Force.IsPresent)"
+    Add-Call "Add-Computer DomainName=$DomainName OUPath=$OUPath User=$($Credential.UserName) PasswordMatches=$matches Restart=$($Restart.IsPresent) Force=$($Force.IsPresent) Server=$Server"
     if ($Scenario.addComputerCode) {
         $inner = New-Object System.ComponentModel.Win32Exception([int]$Scenario.addComputerCode)
         throw (New-Object System.InvalidOperationException($Scenario.addComputerMessage, $inner))
@@ -140,6 +164,7 @@ foreach ($required in 'Add-Computer', 'shutdown.exe', 'icacls.exe', 'gpupdate.ex
             addComputerCode = 0; addComputerMessage = ''; failMember = ''; moveFails = $false; ouMissing = $false
             authFails = $false; authFailsMessage = 'Logon failure: unknown user name or bad password.'; authFailsHResult = -2147023570
             registerFails = $false; setContentFails = $false; shutdownExit = 0; dnAfterGpupdate = ''; icaclsExit = 0; memberExists = ''
+            dnsServers = @('192.168.211.30', '192.168.211.31'); tcpClosed = @(); dcNames = @{}; srvDeadServers = @(); srvUdpFails = $false; srvUdpError = ''; srvUdpEmpty = $false; srvAdditional = $false
         }
         foreach ($k in $Scenario.Keys) { $sc[$k] = $Scenario[$k] }
         ($sc | ConvertTo-Json -Depth 8) | Set-Content -LiteralPath (Join-Path $dir 'scenario.json') -Encoding UTF8
@@ -276,6 +301,97 @@ Describe 'Probe: the membership, read only' {
     It 'the Read script embeds the same section (runs the Read script with its other sections mocked away is not needed: the function is the same text)' {
         (Get-AzlNodePayload -Name Read) | Should -Match 'function Get-DjRead'
         (Get-AzlNodePayload -Name DomainJoinProbe) | Should -Match 'function Get-DjRead'
+    }
+}
+
+Describe 'Probe: the domain controller SRV lookup says why it failed and does not depend on one transport' {
+    BeforeAll {
+        $script:Haas = @{ domain = 'haas.mgmt'; dcs = @('192.168.211.30', '192.168.211.31') }
+        $script:HaasNames = @{ '192.168.211.30' = 'mgmt-ral-dc-01.haas.mgmt'; '192.168.211.31' = 'mgmt-ral-dc-02.haas.mgmt' }
+    }
+    It 'asks each DNS server of the management adapter explicitly with -DnsOnly, after flushing the client cache' {
+        $r = Invoke-DjNode -Payload DomainJoinProbe -Params $script:Haas
+        $r.Exit | Should -Be 0 -Because $r.Console
+        $d = $r.Answer.domainJoin
+        $d.srvOk | Should -BeTrue
+        $d.srvServer | Should -Be '192.168.211.30'
+        $d.srvTransport | Should -Be 'udp'
+        @($d.srvServers) | Should -Be @('192.168.211.30', '192.168.211.31')
+        $d.srvReason | Should -BeNullOrEmpty
+        $d.srvElapsedMs | Should -BeGreaterOrEqual 0
+        $r.Calls | Should -Contain 'Clear-DnsClientCache'
+        @($r.Calls | Where-Object { $_ -like 'Resolve-DnsName SRV _ldap._tcp.dc._msdcs.haas.mgmt server=192.168.211.30 transport=udp' }).Count | Should -Be 1
+        ([array]::IndexOf($r.Calls, 'Clear-DnsClientCache')) | Should -BeLessThan ([array]::IndexOf($r.Calls, 'Resolve-DnsName SRV _ldap._tcp.dc._msdcs.haas.mgmt server=192.168.211.30 transport=udp'))
+    }
+    It 'an answer with additional A records (no NameTarget) is still an SRV answer, under strict mode' {
+        $d = (Invoke-DjNode -Payload DomainJoinProbe -Params $script:Haas -Scenario @{ srvAdditional = $true }).Answer.domainJoin
+        $d.srvOk | Should -BeTrue
+        @($d.srvTargets) | Should -Be @('mgmt-ral-dc-01.haas.mgmt')
+    }
+    It 'SRV fails over UDP and works over TCP: the probe passes and records the transport, the server and why UDP failed' {
+        $r = Invoke-DjNode -Payload DomainJoinProbe -Params $script:Haas -Scenario @{ srvUdpFails = $true; srvUdpError = 'This operation returned because the timeout period expired' }
+        $d = $r.Answer.domainJoin
+        $d.srvOk | Should -BeTrue
+        $d.srvTransport | Should -Be 'tcp'
+        $d.srvServer | Should -Be '192.168.211.30'
+        $d.srvReason | Should -Match '192\.168\.211\.30 UDP \d+ ms: This operation returned because the timeout period expired'
+        $d.srvAttempts.Count | Should -Be 2
+        $r.Calls | Should -Contain 'Resolve-DnsName SRV _ldap._tcp.dc._msdcs.haas.mgmt server=192.168.211.30 transport=tcp'
+        $d.dcChecks | Should -BeNullOrEmpty -Because 'the explicit controllers are only checked when SRV discovery failed'
+    }
+    It 'an empty (truncated) UDP answer is retried over TCP' {
+        $d = (Invoke-DjNode -Payload DomainJoinProbe -Params $script:Haas -Scenario @{ srvUdpEmpty = $true }).Answer.domainJoin
+        $d.srvOk | Should -BeTrue
+        $d.srvTransport | Should -Be 'tcp'
+        $d.srvReason | Should -Match 'no SRV record \(empty or truncated\)'
+    }
+    It 'a dead first DNS server falls over to the second one' {
+        $d = (Invoke-DjNode -Payload DomainJoinProbe -Params $script:Haas -Scenario @{ srvDeadServers = @('192.168.211.30') }).Answer.domainJoin
+        $d.srvOk | Should -BeTrue
+        $d.srvServer | Should -Be '192.168.211.31'
+        $d.srvReason | Should -Match '192\.168\.211\.30 UDP'
+        $d.srvReason | Should -Match '192\.168\.211\.30 TCP'
+    }
+    It 'when every try fails: both servers, both transports, two rounds, and the reason carries the exception text and its error id' {
+        $r = Invoke-DjNode -Payload DomainJoinProbe -Params $script:Haas -Scenario @{ srvDeadServers = @('192.168.211.30', '192.168.211.31'); dcReachable = $false }
+        $d = $r.Answer.domainJoin
+        $d.srvOk | Should -BeFalse
+        $d.srvAttempts.Count | Should -Be 8
+        $d.srvReason | Should -Match 'Server 192\.168\.211\.30 does not answer \[DNS_ERROR_RCODE_SERVER_FAILURE'
+        $d.srvReason | Should -Match '192\.168\.211\.31 TCP'
+        $d.srvTransport | Should -BeNullOrEmpty
+    }
+    It 'SRV fails but every controller of the file answers on TCP 389 and has a name that resolves: the probe offers the first name for the join' {
+        $d = (Invoke-DjNode -Payload DomainJoinProbe -Params $script:Haas -Scenario @{ srvDeadServers = @('192.168.211.30', '192.168.211.31'); dcNames = $script:HaasNames }).Answer.domainJoin
+        $d.srvOk | Should -BeFalse
+        $d.dcAllOk | Should -BeTrue
+        $d.dcServer | Should -Be 'mgmt-ral-dc-01.haas.mgmt'
+        @($d.dcChecks).Count | Should -Be 2
+        $d.dcChecks[0].tcp389 | Should -BeTrue
+        $d.dcChecks[1].name | Should -Be 'mgmt-ral-dc-02.haas.mgmt'
+    }
+    It 'a controller that does not answer on TCP 389, or has no name, makes dcAllOk false and says why' {
+        $d = (Invoke-DjNode -Payload DomainJoinProbe -Params $script:Haas -Scenario @{ srvDeadServers = @('192.168.211.30', '192.168.211.31'); dcNames = @{ '192.168.211.30' = 'mgmt-ral-dc-01.haas.mgmt' }; tcpClosed = @('192.168.211.30') }).Answer.domainJoin
+        $d.dcAllOk | Should -BeFalse
+        $d.dcChecks[0].tcp389 | Should -BeFalse
+        $d.dcChecks[0].error | Should -Match 'TCP 389'
+        $d.dcChecks[1].error | Should -Match 'name lookup for 192\.168\.211\.31 failed: DNS name does not exist'
+    }
+}
+
+Describe 'Apply: join names a domain controller when the plan says so' {
+    It 'passes -Server to Add-Computer only when the plan set server' {
+        $with = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam @{ server = 'mgmt-ral-dc-01.haas.mgmt' }) -Secrets $script:Secret
+        $with.Answer.status | Should -Be 'joined'
+        $with.Answer.server | Should -Be 'mgmt-ral-dc-01.haas.mgmt'
+        @($with.Calls | Where-Object { $_ -like 'Add-Computer*' })[0] | Should -Match 'Server=mgmt-ral-dc-01\.haas\.mgmt$'
+        $without = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam) -Secrets $script:Secret
+        @($without.Calls | Where-Object { $_ -like 'Add-Computer*' })[0] | Should -Match 'Server=$'
+    }
+    It 'still joins once, with the same protections: the host name check and the other domain check come before the server is used' {
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam @{ server = 'mgmt-ral-dc-01.haas.mgmt'; expectedHost = 'other' }) -Secrets $script:Secret
+        $r.Answer.status | Should -Be 'failed'
+        @($r.Calls | Where-Object { $_ -like 'Add-Computer*' }).Count | Should -Be 0
     }
 }
 

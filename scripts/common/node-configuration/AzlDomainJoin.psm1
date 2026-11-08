@@ -158,6 +158,26 @@ function Get-DjOuOfDn([string]$Dn) {
     return ($parts[1..($parts.Count - 1)] -join ',')
 }
 
+function Get-DjSrvText([object]$DomainState) {
+    # Why the node's SRV lookup failed, as the node recorded it (the servers asked, UDP or TCP, the time, the exception text).
+    $reason = [string](Get-AzlProp $DomainState 'srvReason' '')
+    $servers = @(Get-AzlProp $DomainState 'srvServers' @() | ForEach-Object { [string]$_ })
+    $asked = if ($servers.Count) { "DNS servers asked: $($servers -join ', ')" } else { 'the node did not report which DNS server it asked' }
+    if (-not $reason) { return "$asked; no reason was reported" }
+    return "$asked; $reason"
+}
+
+function Get-DjDcText([object]$DomainState) {
+    # What the node found out about each domain controller address of the file.
+    $parts = foreach ($c in @(Get-AzlProp $DomainState 'dcChecks' @())) {
+        $tcp = if ([bool](Get-AzlProp $c 'tcp389' $false)) { 'TCP 389 open' } else { 'TCP 389 closed' }
+        $name = [string](Get-AzlProp $c 'name' '')
+        $err = [string](Get-AzlProp $c 'error' '')
+        "$(Get-AzlProp $c 'address' ''): $tcp, $(if ($name) { "name $name" } else { 'no name' })$(if ($err) { " ($err)" })"
+    }
+    return (@($parts) -join '; ')
+}
+
 function Get-DjMainItem {
     # The membership itself: one item, or two (with the secure channel) when the node is a member.
     param([object]$Spec, [object]$State, [object[]]$Prior)
@@ -217,12 +237,24 @@ function Get-DjMainItem {
     }
 
     $reasons = [System.Collections.Generic.List[string]]::new()
+    $joinServer = ''
+    $srvWarning = ''
     if (-not [bool](Get-AzlProp $ds 'dnsOk' $false)) {
         $why = [string](Get-AzlProp $ds 'dnsError' '')
         $reasons.Add("DNS cannot resolve $($dj.Domain) from the node$(if ($why) { " ($why)" }). The management port's DNS servers must be the domain controllers (identity.active_directory.domain_controllers, rule AZL-052); the Dns step sets them.")
     }
     elseif (-not [bool](Get-AzlProp $ds 'srvOk' $false)) {
-        $reasons.Add("DNS answers for $($dj.Domain) but has no domain controller SRV record (_ldap._tcp.dc._msdcs.$($dj.Domain)). The DNS servers are not the domain's.")
+        $srvName = "_ldap._tcp.dc._msdcs.$($dj.Domain)"
+        $dcServer = [string](Get-AzlProp $ds 'dcServer' '')
+        if ([bool](Get-AzlProp $ds 'dcAllOk' $false) -and $dcServer) {
+            # SRV discovery failed, but every domain controller of the file answers on TCP 389 and has a name in the node's DNS: the join names one, so it does not depend on SRV.
+            $joinServer = $dcServer
+            $srvWarning = "WARNING: domain controller discovery by SRV ($srvName) failed ($(Get-DjSrvText $ds)). Every domain controller of the file answers on TCP 389 and resolves by name from the node ($(Get-DjDcText $ds)), so the join names $dcServer (Add-Computer -Server) and does not depend on SRV discovery."
+        }
+        else {
+            $dcText = Get-DjDcText $ds
+            $reasons.Add("The domain controller SRV lookup ($srvName) failed: $(Get-DjSrvText $ds). The explicit domain controllers of the file do not work either: $(if ($dcText) { $dcText } else { 'none was checked (identity.active_directory.domain_controllers is empty or the node did not report them)' }). The DNS servers are not the domain's, or something between the node and them drops the answer or TCP 389.")
+        }
     }
     if (-not [bool](Get-AzlProp $ds 'dcReachable' $false)) {
         $reasons.Add('No domain controller answers on TCP 389 from the node. Check the route and the firewall between the management network and the domain controllers.')
@@ -238,8 +270,10 @@ function Get-DjMainItem {
         return , (New-DjPlanItem $n 'domain membership' $current $want Blocked ($reasons -join ' '))
     }
     $note = if ($null -eq $skew) { 'The time difference to the domain controller was not measured.' } else { '' }
-    $apply = @{ id = 'DomainJoin/join'; kind = 'domain-join'; domain = $dj.Domain; netbios = $dj.Netbios; ou = $dj.OuPath; expectedHost = [string]$Spec.Hostname; dcs = @($dj.DomainControllers) }
-    return , (New-DjPlanItem $n 'domain membership' $current $want Change "Add-Computer into the OU with $($dj.CredentialSource), then a guarded restart and a check. $note".Trim() $apply)
+    $apply = @{ id = 'DomainJoin/join'; kind = 'domain-join'; domain = $dj.Domain; netbios = $dj.Netbios; ou = $dj.OuPath; expectedHost = [string]$Spec.Hostname; dcs = @($dj.DomainControllers); server = $joinServer }
+    $join = New-DjPlanItem $n 'domain membership' $current $want Change "Add-Computer into the OU with $($dj.CredentialSource)$(if ($joinServer) { ", against $joinServer (-Server)" }), then a guarded restart and a check. $note".Trim() $apply
+    if ($srvWarning) { return @((New-DjPlanItem $n 'domain controller discovery' 'SRV lookup failed' 'SRV lookup answers, or explicit domain controllers' Info $srvWarning), $join) }
+    return , $join
 }
 
 function Get-DjOuItem {
@@ -313,8 +347,12 @@ function Get-AzlDomainJoinPlanItem {
                                                    a Change (kind domain-move) only with join_options.allow_ou_move true.
         Joined, restart after the join still due   Change (kind domain-restart)
         Joined to a different domain               Blocked. It is never unjoined, whatever the file says.
+        SRV lookup failed, but every domain_controllers address of the file answers on TCP 389 and resolves by name from the node
+                                                   Change with a warning item (Info): the join passes -Server <dc fqdn> to Add-Computer
+                                                   and does not depend on SRV discovery. The warning carries the reason the node recorded.
         Computer name differs from the file        Blocked, or Skipped when the Hostname step runs in this pass (it goes first)
-        DNS cannot resolve the domain, no domain controller SRV record or none reachable, clock over 5 minutes apart,
+        DNS cannot resolve the domain, no domain controller SRV record and the controllers of the file do not work either, none reachable,
+        clock over 5 minutes apart,
         no join credential                         Blocked, with every reason
         An earlier step (Network, Dns, Time, UnusedAdapters, Hostname) has a Change   Skipped: it waits for it
         The OU (read with the join credential)     does not exist: Blocked. Inheritance not blocked: Blocked in dev, production and dmz, a
@@ -413,6 +451,7 @@ function Get-AzlDomainJoinSummary {
         credential   = $(if ($applicable) { $dj.CredentialSource } else { '' })
         localAdminMembers = $(if ($applicable) { @($dj.LocalAdminMembers) } else { @() })
         localAdminsPresent = $(if ($joined -and $null -ne (Get-AzlProp $ds 'localAdmins')) { @($dj.LocalAdminMembers | Where-Object { $w = $_; -not @(@($ds.localAdmins) | Where-Object { $_ -ieq $w }).Count }).Count -eq 0 } else { $null })
+        srvDiscovery = $(if ($applicable -and $ds) { [ordered]@{ ok = [bool](Get-AzlProp $ds 'srvOk' $false); server = [string](Get-AzlProp $ds 'srvServer' ''); transport = [string](Get-AzlProp $ds 'srvTransport' ''); elapsedMs = [int](Get-AzlProp $ds 'srvElapsedMs' 0); reason = [string](Get-AzlProp $ds 'srvReason' ''); joinServer = [string](Get-AzlProp $ds 'dcServer' '') } } else { $null })
         error        = $(if ($failure.Count) { [string]$failure[0].Detail } else { '' })
     }
 }
@@ -671,7 +710,7 @@ function Invoke-AzlDomainJoinStep {    <#
     if ($kind -eq 'domain-restart') { $needRestart = $true }
     elseif ($kind -eq 'domain-join') {
         & $emit 'DomainJoinApplying' "Joining $($dj.Domain), OU $($dj.OuPath), as $($dj.Username)" 'Info' '' @{ domain = $dj.Domain; ou = $dj.OuPath }
-        $parameters = @{ mode = 'join'; domain = $dj.Domain; netbios = $dj.Netbios; ou = $dj.OuPath; expectedHost = [string]$Spec.Hostname; changeId = $changeId; resumeScript = (Get-AzlNodePayload -Name DomainJoinResume) }
+        $parameters = @{ mode = 'join'; domain = $dj.Domain; netbios = $dj.Netbios; ou = $dj.OuPath; expectedHost = [string]$Spec.Hostname; changeId = $changeId; resumeScript = (Get-AzlNodePayload -Name DomainJoinResume); server = [string](Get-AzlProp $Item.Apply 'server' '') }
         $secrets = & $newSecrets
         try { $result = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name DomainJoinApply) -Parameters $parameters -Secrets $secrets -TimeoutSeconds 1800 -Tries 1 }
         catch {

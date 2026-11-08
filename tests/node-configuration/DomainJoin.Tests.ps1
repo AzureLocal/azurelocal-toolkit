@@ -222,6 +222,75 @@ Describe 'Comparison: the plan and compare matrix' {
         $i.Action | Should -Be 'Blocked'
         $i.Note | Should -Match 'SRV'
     }
+    It 'SRV discovery failed but every controller of the file answers on TCP 389 and resolves by name: the join is a Change with -Server, and a Warning item says why SRV failed' {
+        $srvReason = '192.168.211.30 UDP 4012 ms: This operation returned because the timeout period expired [ERROR_TIMEOUT,Microsoft.DnsClient.Commands.ResolveDnsName]; 192.168.211.30 TCP 15 ms: Server failure'
+        $state = Get-DjState @{
+            srvOk = $false; srvTargets = @(); srvReason = $srvReason; srvServers = @('192.168.211.30', '192.168.211.31'); dcAllOk = $true; dcServer = 'mgmt-ral-dc-01.haas.mgmt'
+            dcChecks = @([pscustomobject]@{ address = '192.168.211.30'; tcp389 = $true; name = 'mgmt-ral-dc-01.haas.mgmt'; resolves = $true; ok = $true; error = '' }, [pscustomobject]@{ address = '192.168.211.31'; tcp389 = $true; name = 'mgmt-ral-dc-02.haas.mgmt'; resolves = $true; ok = $true; error = '' })
+        }
+        $items = Get-DjItem (Get-DjSpec) $state @('DomainJoin')
+        $join = $items | Where-Object Item -eq 'domain membership'
+        $join.Action | Should -Be 'Change'
+        $join.Apply.kind | Should -Be 'domain-join'
+        $join.Apply.server | Should -Be 'mgmt-ral-dc-01.haas.mgmt'
+        $join.Note | Should -Match '-Server'
+        $warn = $items | Where-Object Item -eq 'domain controller discovery'
+        $warn.Action | Should -Be 'Info'
+        $warn.Note | Should -Match '^WARNING'
+        $warn.Note | Should -Match 'SRV'
+        $warn.Note | Should -Match 'timeout period expired'
+        $warn.Note | Should -Match 'DNS servers asked: 192\.168\.211\.30, 192\.168\.211\.31'
+        $warn.Note | Should -Match 'mgmt-ral-dc-01\.haas\.mgmt'
+        @($items | Where-Object Action -eq 'Blocked') | Should -BeNullOrEmpty
+    }
+    It 'a join where SRV worked has no -Server and no discovery warning' {
+        $items = Get-DjItem (Get-DjSpec) (Get-DjState) @('DomainJoin')
+        ($items | Where-Object Item -eq 'domain membership').Apply.server | Should -BeNullOrEmpty
+        @($items | Where-Object Item -eq 'domain controller discovery') | Should -BeNullOrEmpty
+    }
+    It 'neither SRV nor the explicit controllers work: Blocked, and the note carries the real reason from the node and what each controller did' {
+        $state = Get-DjState @{
+            srvOk = $false; srvTargets = @(); srvReason = '192.168.211.30 UDP 4012 ms: This operation returned because the timeout period expired'; srvServers = @('192.168.211.30'); dcAllOk = $false; dcServer = ''
+            dcChecks = @([pscustomobject]@{ address = '192.168.211.30'; tcp389 = $false; name = ''; resolves = $false; ok = $false; error = 'TCP 389 does not answer' })
+        }
+        $items = Get-DjItem (Get-DjSpec) $state @('DomainJoin')
+        $join = $items | Where-Object Item -eq 'domain membership'
+        $join.Action | Should -Be 'Blocked'
+        $join.Note | Should -Match 'timeout period expired'
+        $join.Note | Should -Match '192\.168\.211\.30: TCP 389 closed'
+        $join.Note | Should -Match 'TCP 389 does not answer'
+        @($items | Where-Object Item -eq 'domain controller discovery') | Should -BeNullOrEmpty
+    }
+    It 'one controller of the file works and another does not: still Blocked (every address must work for the fall-back)' {
+        $state = Get-DjState @{
+            srvOk = $false; srvTargets = @(); srvReason = 'x'; dcAllOk = $false; dcServer = 'mgmt-ral-dc-01.haas.mgmt'
+            dcChecks = @([pscustomobject]@{ address = '192.168.211.30'; tcp389 = $true; name = 'mgmt-ral-dc-01.haas.mgmt'; resolves = $true; ok = $true; error = '' }, [pscustomobject]@{ address = '192.168.211.31'; tcp389 = $true; name = ''; resolves = $false; ok = $false; error = 'no PTR record' })
+        }
+        (Get-DjItem (Get-DjSpec) $state @('DomainJoin') | Where-Object Item -eq 'domain membership').Action | Should -Be 'Blocked'
+    }
+    It 'the fall-back never relaxes the other protections: no credential, the OU, and another domain still block' {
+        $fallback = @{
+            srvOk = $false; srvTargets = @(); srvReason = 'x'; dcAllOk = $true; dcServer = 'mgmt-ral-dc-01.haas.mgmt'
+            dcChecks = @([pscustomobject]@{ address = '192.168.211.30'; tcp389 = $true; name = 'mgmt-ral-dc-01.haas.mgmt'; resolves = $true; ok = $true; error = '' })
+        }
+        $noAccount = Get-DjSpec { param($d) $d.identity.active_directory.lcm_user.password = '' }
+        (Get-DjItem $noAccount (Get-DjState $fallback) @('DomainJoin') | Where-Object Item -eq 'domain membership').Action | Should -Be 'Blocked'
+        $badOu = Add-DjOu (Get-DjState $fallback) @{ checked = $false; exists = $false; error = 'There is no such object on the server.' }
+        $ouItems = Get-DjItem (Get-DjSpec) $badOu @('DomainJoin')
+        ($ouItems | Where-Object Item -eq 'domain membership').Action | Should -Be 'Blocked'
+        ($ouItems | Where-Object Item -eq 'domain membership').Note | Should -Match 'Not done'
+        $other = Get-DjState ($fallback + @{ partOfDomain = $true; domain = 'other.example' })
+        (Get-DjItem (Get-DjSpec) $other @('DomainJoin') | Where-Object Item -eq 'domain membership').Action | Should -Be 'Blocked'
+    }
+    It 'the report summary carries the SRV result and the controller the join names' {
+        $state = Get-DjState @{ srvOk = $false; srvReason = 'why'; srvTransport = ''; dcAllOk = $true; dcServer = 'mgmt-ral-dc-01.haas.mgmt' }
+        $s = Get-AzlDomainJoinSummary -Spec (Get-DjSpec) -State $state
+        $s.srvDiscovery.ok | Should -BeFalse
+        $s.srvDiscovery.reason | Should -Be 'why'
+        $s.srvDiscovery.joinServer | Should -Be 'mgmt-ral-dc-01.haas.mgmt'
+        $ok = Get-AzlDomainJoinSummary -Spec (Get-DjSpec) -State (Get-DjState @{ srvServer = '192.168.211.30'; srvTransport = 'tcp'; srvElapsedMs = 12 })
+        $ok.srvDiscovery.transport | Should -Be 'tcp'
+    }
     It 'no domain controller reachable: Blocked' {
         $i = Get-DjItem (Get-DjSpec) (Get-DjState @{ dcReachable = $false; dcUsed = '' }) @('DomainJoin') | Where-Object Item -eq 'domain membership'
         $i.Action | Should -Be 'Blocked'
@@ -508,6 +577,16 @@ Describe 'The step: join, restart, reconnect, verify' {
         $join.Parameters.resumeScript | Should -Match 'AzureLocal-OSConfig-DomainJoinResume'
         $t.Log[1].Parameters.changeId | Should -Be $join.Parameters.changeId
         @(Get-DjFeed $script:Feed | ForEach-Object state) | Should -Be @('DomainJoinApplying', 'NodeRestarting', 'NodeReconnected', 'DomainJoined')
+    }
+    It 'a join planned with -Server hands the domain controller to the node, and a join without it passes an empty server' {
+        $state = Get-DjState @{ srvOk = $false; srvReason = 'x'; dcAllOk = $true; dcServer = 'mgmt-ral-dc-01.haas.mgmt' }
+        $item = Get-DjItem $script:Spec $state @('DomainJoin') | Where-Object { $_.Apply -and $_.Apply.kind -eq 'domain-join' }
+        $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'joined'; reboot = $true; detail = 'x' }; Restart = @{ restartScheduled = $true }; 'Apply:finalize' = @{ status = 'finalized' } }
+        $null = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State $state -Item $item -SecretResolver $script:Resolver -WaitForRestart $script:Wait
+        $t.Log[0].Parameters.server | Should -Be 'mgmt-ral-dc-01.haas.mgmt'
+        $t2 = Get-DjTransport @{ 'Apply:join' = @{ status = 'joined'; reboot = $true; detail = 'x' }; Restart = @{ restartScheduled = $true }; 'Apply:finalize' = @{ status = 'finalized' } }
+        $null = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t2 -State (Get-DjState) -Item $script:JoinItem -SecretResolver $script:Resolver -WaitForRestart $script:Wait
+        $t2.Log[0].Parameters.server | Should -BeNullOrEmpty
     }
     It 'with the override account, the node gets the override user' {
         $spec = Get-DjSpec { param($d) $d.identity.active_directory.domain_join_account = [ordered]@{ username = 'svc-azl-join'; password = 'keyvault://kv-iic-mgmt-01/join-password' } }

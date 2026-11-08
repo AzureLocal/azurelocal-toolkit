@@ -58,6 +58,98 @@ if (-not (Test-Path 'function:Test-DjTcp')) {
         finally { $client.Close() }
     }
 }
+function Get-DjDnsServers {
+    # The DNS servers of the management adapter: the adapter that holds the default route; when that is not known, every IPv4 DNS server the node has.
+    $servers = @()
+    try {
+        $route = @(Get-NetRoute -DestinationPrefix '0.0.0.0/0' -ErrorAction Stop | Sort-Object -Property RouteMetric | Select-Object -First 1)
+        if ($route.Count) { $servers = @(Get-DnsClientServerAddress -InterfaceIndex $route[0].InterfaceIndex -AddressFamily IPv4 -ErrorAction Stop | ForEach-Object { $_.ServerAddresses } | Where-Object { $_ }) }
+    }
+    catch { $servers = @() }
+    if (-not $servers.Count) {
+        try { $servers = @(Get-DnsClientServerAddress -AddressFamily IPv4 -ErrorAction Stop | ForEach-Object { $_.ServerAddresses } | Where-Object { $_ -and $_ -notlike '127.*' -and $_ -notlike '169.254.*' }) } catch { $servers = @() }
+    }
+    return @($servers | ForEach-Object { [string]$_ } | Select-Object -Unique)
+}
+function Invoke-DjSrvAttempt([string]$Name, [string]$Server, [bool]$Tcp) {
+    # One SRV query to one DNS server over one transport. Never throws: the attempt records why it failed (the exception message and its error id).
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
+    $a = [ordered]@{ server = $Server; transport = $(if ($Tcp) { 'tcp' } else { 'udp' }); ok = $false; targets = @(); ms = 0; error = '' }
+    try {
+        $query = @{ Name = $Name; Type = 'SRV'; DnsOnly = $true; ErrorAction = 'Stop' }
+        if ($Server) { $query.Server = $Server }
+        if ($Tcp) { $query.TcpOnly = $true }
+        # The answer can carry A records of the controllers as additional records: those have no NameTarget (and strict mode makes a plain $_.NameTarget throw on them).
+        $a.targets = @(Resolve-DnsName @query | ForEach-Object { [string](Get-P $_ 'NameTarget' '') } | Where-Object { $_ })
+        $a.ok = ($a.targets.Count -gt 0)
+        if (-not $a.ok) { $a.error = 'the answer holds no SRV record (empty or truncated)' }
+    }
+    catch {
+        $a.error = [string]$_.Exception.Message
+        $id = [string]$_.FullyQualifiedErrorId
+        if ($id) { $a.error = $a.error + ' [' + $id + ']' }
+    }
+    $clock.Stop()
+    $a.ms = [int]$clock.ElapsedMilliseconds
+    return [pscustomobject]$a
+}
+function Get-DjSrvProbe([string]$Domain) {
+    # The domain controller SRV lookup, asked of each DNS server of the management adapter explicitly (UDP first, then TCP when the UDP answer is empty, truncated or times out:
+    # a large answer with additional records can pass 512 bytes and a firewall may drop the fragments), once more in a second round, after the client cache was flushed.
+    $name = '_ldap._tcp.dc._msdcs.' + $Domain
+    try { Clear-DnsClientCache -ErrorAction Stop } catch { $null = $_ }
+    $servers = @(Get-DjDnsServers)
+    if (-not $servers.Count) { $servers = @('') }
+    $attempts = New-Object System.Collections.ArrayList
+    $winner = $null
+    $clock = [System.Diagnostics.Stopwatch]::StartNew()
+    foreach ($round in 1, 2) {
+        foreach ($server in $servers) {
+            foreach ($tcp in $false, $true) {
+                if ($round -eq 2 -and $clock.Elapsed.TotalSeconds -gt 40) { continue }
+                $a = Invoke-DjSrvAttempt $name $server $tcp
+                [void]$attempts.Add($a)
+                if ($a.ok) { $winner = $a; break }
+            }
+            if ($winner) { break }
+        }
+        if ($winner) { break }
+    }
+    $failed = @($attempts | Where-Object { -not $_.ok } | ForEach-Object { $who = $_.server; if (-not $who) { $who = 'the system DNS client' }; ($who + ' ' + ([string]$_.transport).ToUpper() + ' ' + $_.ms + ' ms: ' + $_.error) })
+    $o = [ordered]@{ ok = [bool]$winner; targets = @(); server = ''; transport = ''; elapsedMs = [int]$clock.ElapsedMilliseconds; reason = ($failed -join '; '); servers = @($servers | Where-Object { $_ }); attempts = @($attempts.ToArray() | ForEach-Object { [pscustomobject]@{ server = $_.server; transport = $_.transport; ok = $_.ok; ms = $_.ms; error = $_.error } }) }
+    if ($winner) { $o.targets = @($winner.targets); $o.server = $winner.server; $o.transport = $winner.transport; $o.elapsedMs = [int]$winner.ms }
+    return [pscustomobject]$o
+}
+function Get-DjDcChecks($Dcs) {
+    # Each domain controller address of the file: open on TCP 389, a name from the node's DNS (reverse lookup of the address) that resolves back to the address.
+    $list = New-Object System.Collections.ArrayList
+    foreach ($entry in $Dcs) {
+        $dc = [string]$entry
+        if (-not $dc) { continue }
+        $c = [ordered]@{ address = $dc; tcp389 = $false; name = ''; resolves = $false; ok = $false; error = '' }
+        $c.tcp389 = [bool](Test-DjTcp $dc 389 2500)
+        try {
+            $isIp = ($dc -match '^\d{1,3}(\.\d{1,3}){3}$')
+            if ($isIp) {
+                $octets = $dc.Split('.')
+                [array]::Reverse($octets)
+                $ptr = @(Resolve-DnsName -Name (($octets -join '.') + '.in-addr.arpa') -Type PTR -DnsOnly -ErrorAction Stop | ForEach-Object { [string](Get-P $_ 'NameHost' '') } | Where-Object { $_ })
+                if ($ptr.Count) { $c.name = $ptr[0].TrimEnd('.') } else { $c.error = 'no PTR record for the address' }
+            }
+            else { $c.name = $dc }
+            if ($c.name) {
+                $found = @(Resolve-DnsName -Name $c.name -Type A -DnsOnly -ErrorAction Stop | ForEach-Object { [string](Get-P $_ 'IPAddress' '') } | Where-Object { $_ })
+                if ($isIp) { $c.resolves = ($found -contains $dc) } else { $c.resolves = ($found.Count -gt 0) }
+                if (-not $c.resolves) { $c.error = $c.name + ' resolves to ' + $(if ($found.Count) { $found -join ', ' } else { 'nothing' }) }
+            }
+        }
+        catch { $c.error = 'the name lookup for ' + $dc + ' failed: ' + [string]$_.Exception.Message }
+        $c.ok = ($c.tcp389 -and $c.resolves)
+        if (-not $c.tcp389 -and -not $c.error) { $c.error = 'TCP 389 does not answer' }
+        [void]$list.Add([pscustomobject]$c)
+    }
+    return @($list.ToArray())
+}
 function Get-DjComputerDn {
     # The computer's distinguished name as Group Policy stored it ('' until the first policy refresh after the join).
     try { return [string](Get-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy\State\Machine' -Name 'Distinguished-Name' -ErrorAction Stop).'Distinguished-Name' } catch { return '' }
@@ -81,6 +173,15 @@ function Get-DjRead($dj) {
     $r.dnsError = ''
     $r.srvOk = $false
     $r.srvTargets = @()
+    $r.srvServer = ''
+    $r.srvTransport = ''
+    $r.srvElapsedMs = 0
+    $r.srvReason = ''
+    $r.srvServers = @()
+    $r.srvAttempts = @()
+    $r.dcChecks = @()
+    $r.dcAllOk = $false
+    $r.dcServer = ''
     $r.dcReachable = $false
     $r.dcUsed = ''
     $r.skewSeconds = $null
@@ -95,12 +196,23 @@ function Get-DjRead($dj) {
             $r.dnsOk = ($a.Count -gt 0)
         }
         catch { $r.dnsError = [string]$_.Exception.Message }
-        try {
-            $t = @(Resolve-DnsName -Name ('_ldap._tcp.dc._msdcs.' + $domain) -Type SRV -DnsOnly -ErrorAction Stop | Where-Object { $_.NameTarget } | ForEach-Object { [string]$_.NameTarget })
-            $r.srvTargets = $t
-            $r.srvOk = ($t.Count -gt 0)
+        $srv = Get-DjSrvProbe $domain
+        $r.srvOk = [bool]$srv.ok
+        $r.srvTargets = @($srv.targets)
+        $r.srvServer = [string]$srv.server
+        $r.srvTransport = [string]$srv.transport
+        $r.srvElapsedMs = [int]$srv.elapsedMs
+        $r.srvReason = [string]$srv.reason
+        $r.srvServers = @($srv.servers)
+        $r.srvAttempts = @($srv.attempts)
+        # Without SRV discovery the join can still name a controller of the file: each address must answer on TCP 389 and have a name in the node's DNS.
+        if (-not $r.srvOk -and $dcs.Count) {
+            $checks = @(Get-DjDcChecks $dcs)
+            $r.dcChecks = $checks
+            $r.dcAllOk = (@($checks | Where-Object { -not $_.ok }).Count -eq 0)
+            $good = @($checks | Where-Object { $_.ok } | Select-Object -First 1)
+            if ($good.Count) { $r.dcServer = [string]$good[0].name }
         }
-        catch { $r.srvOk = $false }
         $candidates = @($dcs) + @($r.srvTargets) + @($r.dnsAddresses)
         foreach ($c in $candidates) {
             if (-not $c) { continue }
@@ -170,9 +282,11 @@ $netbios = [string](Get-P $P 'netbios' '')
 $ouPath = [string](Get-P $P 'ou' '')
 $changeId = [string](Get-P $P 'changeId' '')
 $expectedHost = [string](Get-P $P 'expectedHost' '')
+# A domain controller to name in the join (the plan sets it when SRV discovery failed but the controllers of the file work); empty = Add-Computer discovers one.
+$joinServer = [string](Get-P $P 'server' '')
 $jdDir = [string](Get-P $P 'stateDir' $stateDir)
 $taskName = 'AzureLocal-OSConfig-DomainJoinResume'
-$answer = [ordered]@{ v = 1; host = $env:COMPUTERNAME; finished = ''; mode = $mode; status = ''; reboot = $false; code = ''; label = ''; meaning = ''; errorText = ''; nextAction = ''; stillWorkgroup = $null; detail = ''; added = @(); dn = '' }
+$answer = [ordered]@{ v = 1; host = $env:COMPUTERNAME; finished = ''; mode = $mode; server = ''; status = ''; reboot = $false; code = ''; label = ''; meaning = ''; errorText = ''; nextAction = ''; stillWorkgroup = $null; detail = ''; added = @(); dn = '' }
 
 function ConvertTo-DjError($ex) {
     $text = [string]$ex.Message
@@ -278,7 +392,9 @@ try {
             Write-DjMarker ([ordered]@{ state = 'Joining'; changeId = $changeId; domain = $domain; ou = $ouPath; host = $cs.Name; bootBefore = $bootNow; startedUtc = (Get-Date).ToUniversalTime().ToString('o'); error = '' })
             $joined = $false
             try {
-                Add-Computer -DomainName $domain -OUPath $ouPath -Credential $credential -Force -Restart:$false -ErrorAction Stop | Out-Null
+                $joinArgs = @{ DomainName = $domain; OUPath = $ouPath; Credential = $credential; Force = $true; Restart = $false; ErrorAction = 'Stop' }
+                if ($joinServer) { $joinArgs.Server = $joinServer; $answer.server = $joinServer }
+                Add-Computer @joinArgs | Out-Null
                 $joined = $true
             }
             catch {
