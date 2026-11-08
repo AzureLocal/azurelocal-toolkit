@@ -117,6 +117,14 @@ Describe 'Node spec' {
         $spec.Management.Gateway | Should -Be '192.0.2.1'
         @($spec.Ports | Where-Object IsManagement).Count | Should -Be 1
     }
+    It 'carries the AD domain only when the design uses Active Directory' {
+        $infra = Get-Infra
+        $infra.scenario.identity = 'active_directory'
+        $infra['identity'] = @{ active_directory = @{ domain_fqdn = 'corp.example.test' } }
+        (Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0]).DomainFqdn | Should -Be 'corp.example.test'
+        $infra.scenario.identity = 'local_identity'
+        (Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0]).DomainFqdn | Should -Be ''
+    }
     It 'reads the Arc resource ID and the verification from the ZTP handoff' {
         $infra = Get-Infra
         $handoff = Read-AzlHandoff -Path $script:HandoffFile
@@ -180,6 +188,21 @@ Describe 'Comparison: only the differences are changes' {
         $changes[0].Apply.kind | Should -Be 'nic-static'
         $changes[0].Apply.ip | Should -Be '192.0.2.11'
         $changes[0].Apply.gateway | Should -Be '192.0.2.1'
+    }
+    It 'marks the management item move=true when the management address sits on another port than the one chosen by MAC' {
+        $mgmtNic = $script:State.nics | Where-Object { $_.mac -eq $script:Spec.Management.Mac }
+        $other = $script:State.nics | Where-Object { $_.mac -ne $script:Spec.Management.Mac } | Select-Object -First 1
+        $mgmtNic.ips = @(); $mgmtNic.gw = @(); $mgmtNic.dhcp = 'Enabled'
+        $other.ips = @("$($script:Spec.Management.Ip)/$($script:Spec.Management.Prefix)/Manual"); $other.gw = @($script:Spec.Management.Gateway)
+        $item = @(Compare-AzlNodeState -Spec $script:Spec -State $script:State | Where-Object { $_.Apply -and $_.Apply.kind -eq 'nic-static' })[0]
+        $item.Apply.management | Should -BeTrue
+        $item.Apply.mac | Should -Be $script:Spec.Management.Mac
+        $item.Apply.move | Should -BeTrue
+    }
+    It 'does not set move when the address is not on another port' {
+        ($script:State.nics | Where-Object { $_.mac -eq $script:Spec.Management.Mac }).ips = @('192.0.2.99/24/Dhcp')
+        $item = @(Compare-AzlNodeState -Spec $script:Spec -State $script:State | Where-Object { $_.Apply -and $_.Apply.kind -eq 'nic-static' })[0]
+        $item.Apply.ContainsKey('move') | Should -BeFalse
     }
     It 'sets DNS in order, only when it differs' {
         ($script:State.nics | Where-Object { $_.mac -eq $script:Spec.Management.Mac }).dns = @('192.0.2.5', '192.0.2.4')

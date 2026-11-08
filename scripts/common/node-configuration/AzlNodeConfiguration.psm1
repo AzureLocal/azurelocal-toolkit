@@ -511,7 +511,7 @@ function Compare-AzlNodeState {
                     $ok = $addressOk -and $gwOk -and $nic.dhcp -eq 'Disabled'
                     $current = "$(@($routable) -join ',') gw $(@($nic.gw) -join ',') dhcp $($nic.dhcp)"
                     $note = if ($ok) { '' } elseif ($Spec.Handoff.Present -and $Spec.Handoff.ManagementAddressVerified -eq $false) { "ZTP didn't verify it: $($Spec.Handoff.Reason)" } else { "$($mgmt.ModeLabel): set by MAC (Microsoft's OS install resets every port to DHCP)." }
-                    & $add (New-AzlPlanItem $n 'Network' "management $label" $current "static $want gw $($mgmt.Gateway)" $(if ($ok) { 'Ok' } else { 'Change' }) $note $(if (-not $ok) { @{ id = "Network/$($nic.mac)"; kind = 'nic-static'; management = $true; mac = $nic.mac; ip = $mgmt.Ip; prefix = $mgmt.Prefix; gateway = $mgmt.Gateway; dns = @($mgmt.Dns) } }))
+                    & $add (New-AzlPlanItem $n 'Network' "management $label" $current "static $want gw $($mgmt.Gateway)" $(if ($ok) { 'Ok' } else { 'Change' }) $note $(if (-not $ok) { $mi = @{ id = "Network/$($nic.mac)"; kind = 'nic-static'; management = $true; mac = $nic.mac; ip = $mgmt.Ip; prefix = $mgmt.Prefix; gateway = $mgmt.Gateway; dns = @($mgmt.Dns) }; if (@($nics | Where-Object { $_.mac -ne $nic.mac -and @($_.ips | Where-Object { $_ -like "$($mgmt.Ip)/*" }).Count }).Count) { $mi.move = $true }; $mi }))
                 }
                 else {
                     # Never changed: dhcp_reservation (Mode A) keeps DHCP and is verified; dhcp and preconfigured are left alone.
