@@ -3,6 +3,9 @@
 # Contract tests for infrastructure.yml schema 5: every example is clean, and each rule catches what it should.
 # Run: Invoke-Pester ./tests/infrastructure
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Fake transport and mock script blocks keep the signature of the real ones.')]
+param()
+
 BeforeAll {
     $repo = Resolve-Path (Join-Path $PSScriptRoot '..\..')
     Import-Module (Join-Path $repo 'scripts\common\infrastructure\AzlInfrastructure.psm1') -Force

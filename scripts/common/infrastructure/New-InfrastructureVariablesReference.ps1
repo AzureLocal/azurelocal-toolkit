@@ -194,7 +194,7 @@ function Get-ConditionText($If) {
     }
     return ($parts -join ' and ')
 }
-function Add-ConditionPaths($Then, [string]$Prefix, [string]$Text, [bool]$InZtp) {
+function Add-ConditionPath($Then, [string]$Prefix, [string]$Text, [bool]$InZtp) {
     if ($Then -isnot [System.Collections.IDictionary]) { return }
     foreach ($r in @(Get-Val $Then 'required')) {
         $p = "$Prefix$r"
@@ -205,14 +205,14 @@ function Add-ConditionPaths($Then, [string]$Prefix, [string]$Text, [bool]$InZtp)
         foreach ($k in $props.Keys) {
             $child = $props[$k]
             if ($child -isnot [System.Collections.IDictionary]) { continue }
-            if ($child['type'] -eq 'array' -and $child.Contains('items')) { Add-ConditionPaths $child['items'] "$Prefix$k[]." $Text $InZtp }
-            else { Add-ConditionPaths $child "$Prefix$k." $Text $InZtp }
+            if ($child['type'] -eq 'array' -and $child.Contains('items')) { Add-ConditionPath $child['items'] "$Prefix$k[]." $Text $InZtp }
+            else { Add-ConditionPath $child "$Prefix$k." $Text $InZtp }
         }
     }
 }
 $scopeBranch = $schema['allOf'][0]
-foreach ($item in @($scopeBranch['else']['allOf'])) { Add-ConditionPaths $item['then'] '' (Get-ConditionText $item['if']) $false }
-foreach ($item in @($schema['allOf'] | Select-Object -Skip 1)) { Add-ConditionPaths $item['then'] '' (Get-ConditionText $item['if']) $true }
+foreach ($item in @($scopeBranch['else']['allOf'])) { Add-ConditionPath $item['then'] '' (Get-ConditionText $item['if']) $false }
+foreach ($item in @($schema['allOf'] | Select-Object -Skip 1)) { Add-ConditionPath $item['then'] '' (Get-ConditionText $item['if']) $true }
 
 # Required keys the scope adds to a section: from the schema's scope branches.
 $fullExtra = @{}; $ztpExtra = @{}

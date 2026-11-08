@@ -123,6 +123,8 @@ function New-AzlArcRunCommandTransport {
     .EXAMPLE
         New-AzlArcRunCommandTransport -ArcResourceId @{ 'node-01' = $arcId }
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds an in-memory transport object; changes no system state.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Every transport script block takes the same (Self, Node, ...) signature; a block that has no use for one of them still declares it.')]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][hashtable]$ArcResourceId,
@@ -236,6 +238,8 @@ function New-AzlWinRmTransport {
         New-AzlWinRmTransport -Address @{ 'node-01' = '192.0.2.11' } -Credential (Get-Credential)
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseUsingScopeModifierInNewRunspaces', '', Justification = 'The inner script block declares its own param() and receives values through -ArgumentList.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds an in-memory transport object; changes no system state.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Every transport script block takes the same (Self, Node, ...) signature; a block that has no use for one of them still declares it.')]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][hashtable]$Address,
