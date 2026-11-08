@@ -105,7 +105,7 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.7"
+  version: "5.0.8"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.1"
   last_updated: "2026-11-08"
@@ -114,6 +114,10 @@ _metadata:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-08"
+      version: "5.0.8"
+      change: "The thresholds of the pre-cluster verification node checks (deployment.verification_min_memory_gib, verification_min_boot_disk_gb, verification_min_data_disk_gb, verification_min_link_gbps, verification_max_clock_skew_seconds) and the Environment Checker choice of the gate (switches -InstallEnvironmentChecker and -KeepEnvironmentChecker, run settings installEnvironmentChecker and keepEnvironmentChecker)"
+      reason: "The node checks read their minimums from the run settings (Learn: 32 GB memory, 200 GB boot drive, 500 GB data drives, 10 Gbps for storage; Kerberos allows 300 seconds of clock skew) and the defaults are now registered. Learn says to uninstall the Environment Checker from the nodes before the deployment, while the readiness checks need it on the nodes: the gate never installs it unless asked, and removes it again at the end of the run"
     - date: "2026-11-08"
       version: "5.0.7"
       change: "identity.active_directory.use_gmsa (bool, default false) and identity.active_directory.dns_secure_dynamic_updates (bool, optional): the two settings the pre-cluster verification identity checks (AzlVerification.Identity.psm1) read"
@@ -14791,6 +14795,46 @@ deployment:
       minimum: 1
       maximum: 168
       used_by: [deployment]
+    verification_min_memory_gib:
+      description: "Minimum memory per node in GiB for the pre-cluster verification (Learn: system requirements, at least 32 GB). Default 32. (since 5.6)"
+      type: integer
+      required: false
+      default: 32
+      minimum: 1
+      maximum: 4096
+      used_by: [deployment]
+    verification_min_boot_disk_gb:
+      description: "Minimum boot drive size in GB for the pre-cluster verification (Learn: at least 200 GB). Default 200. (since 5.6)"
+      type: integer
+      required: false
+      default: 200
+      minimum: 1
+      maximum: 100000
+      used_by: [deployment]
+    verification_min_data_disk_gb:
+      description: "Minimum size in GB of the data drives of a Storage Spaces Direct node for the pre-cluster verification (Learn: at least two drives of 500 GB). Default 500. (since 5.6)"
+      type: integer
+      required: false
+      default: 500
+      minimum: 1
+      maximum: 1000000
+      used_by: [deployment]
+    verification_min_link_gbps:
+      description: "Minimum link speed in Gbps of the storage adapters for the pre-cluster verification (Learn: at least 10 Gbps for RDMA or iSCSI storage traffic). Default 10. (since 5.6)"
+      type: integer
+      required: false
+      default: 10
+      minimum: 1
+      maximum: 1000
+      used_by: [deployment]
+    verification_max_clock_skew_seconds:
+      description: "Largest clock difference in seconds between a node and this host that the pre-cluster verification accepts (Kerberos allows 300). Default 300. (since 5.6)"
+      type: integer
+      required: false
+      default: 300
+      minimum: 1
+      maximum: 86400
+      used_by: [deployment]
     pre_cluster_verification_report_directory:
       description: "Where the pre-cluster verification gate writes report.json, summary.md and precluster-verification-events.jsonl, and where the ARM run looks for the latest result. Default: arm-report\\verification\\live in the environment data folder (the folder that holds provisioning.simplified.evidence_path, else media_path, else the folder of the infrastructure file). (since 5.6)"
       type: string
@@ -18306,6 +18350,8 @@ tools:
                 Settings: {"name":"Settings","type":"object","declared_type":"hashtable","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1","description":"Invoke-AzureLocalPreClusterVerification.ps1. Run settings (see Get-AzlArmRunSetting): preClusterVerificationMaxAgeHours, preClusterVerificationReportDirectory, acknowledgeKnownIssues, solutionVersion, sbeCatalogPath; and remoting (transport, useSsl, authentication) for the node connections."}
                 ConfigPath: {"name":"ConfigPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1","description":"Invoke-AzureLocalPreClusterVerification.ps1. The same settings as a JSON file."}
                 AcknowledgeKnownIssues: {"name":"AcknowledgeKnownIssues","type":"string","declared_type":"string[]","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1","description":"Invoke-AzureLocalPreClusterVerification.ps1. Known issue ids (config/known-issues/arm-deployment.json) to proceed past, for example arc-device-id-name: the check then reports a Warning instead of a Failed."}
+                InstallEnvironmentChecker: {"name":"InstallEnvironmentChecker","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1","description":"Invoke-AzureLocalPreClusterVerification.ps1. Opt in (Mode Verify): install the Environment Checker module on the nodes for this run, because the readiness checks (RD-*) run it there, and remove it again at the end (a finally block) unless -KeepEnvironmentChecker is given. Without it nothing is installed on a node and the readiness checks are Skipped where the module is missing (Learn: uninstall it from the nodes before the deployment). Needs the nodes to reach the PowerShell Gallery."}
+                KeepEnvironmentChecker: {"name":"KeepEnvironmentChecker","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1","description":"Invoke-AzureLocalPreClusterVerification.ps1. With -InstallEnvironmentChecker: do not remove the module from the nodes at the end of the run. Learn says to remove it before the deployment, so the report then says it is still installed."}
                 PassThru: {"name":"PassThru","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1","description":"Invoke-AzureLocalPreClusterVerification.ps1. Also return the result object (verdict, counts, paths, checks)."}
         event_fields:
           type: object
@@ -18380,6 +18426,13 @@ tools:
                 skipPreClusterVerification: {"name":"skipPreClusterVerification","type":"boolean","declared_type":"bool","default":"false","enum":["true","false"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1","description":"Get-AzlArmRunSetting. Bypass the precondition PreClusterVerification (Mode Validate, Deploy or ValidateAndDeploy): the ARM run goes ahead without a passing, current, same-file result of the pre-cluster verification gate. Warned loudly, recorded in report.json (preClusterVerification.status Bypassed), the summary and the event feed. The only bypass: there is no file key and skip_preconditions does not apply to it. Sets run setting skipPreClusterVerification. No infrastructure.yml key, on purpose."}
                 preClusterVerificationMaxAgeHours: {"name":"preClusterVerificationMaxAgeHours","type":"integer","declared_type":"int","default":"4","enum":["int >= 1 (schema range 1..168)"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1","description":"Get-AzlArmRunSetting. How long a passing result of the pre-cluster verification gate stays valid for the ARM run. Master-file key: deployment.pre_cluster_verification_max_age_hours (same value, snake_case)."}
                 preClusterVerificationReportDirectory: {"name":"preClusterVerificationReportDirectory","type":"string","declared_type":"string","enum":["a folder; default arm-report\\verification\\live in the environment data folder (the folder that holds provisioning.simplified.evidence_path, else media_path, else the folder of the infrastructure file)"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1","description":"Get-AzlArmRunSetting. Where the ARM run looks for the latest result of the gate. Master-file key: deployment.pre_cluster_verification_report_directory (same value, snake_case)."}
+                installEnvironmentChecker: {"name":"installEnvironmentChecker","type":"boolean","declared_type":"bool","default":"false","enum":["true","false"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1","description":"Get-AzlArmRunSetting. Install the Environment Checker on the nodes for the pre-cluster verification run and remove it at the end. Set by -InstallEnvironmentChecker. No infrastructure.yml key."}
+                keepEnvironmentChecker: {"name":"keepEnvironmentChecker","type":"boolean","declared_type":"bool","default":"false","enum":["true","false"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1","description":"Get-AzlArmRunSetting. Keep the Environment Checker on the nodes at the end of the pre-cluster verification run. Set by -KeepEnvironmentChecker. No infrastructure.yml key."}
+                verificationMinDataDiskGB: {"name":"verificationMinDataDiskGB","type":"integer","declared_type":"int","default":"500","enum":["int >= 1"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1","description":"Get-AzlArmRunSetting. Threshold of the pre-cluster verification node checks. Master-file key: deployment.verification_min_data_disk_gb (same value, snake_case)."}
+                verificationMinBootDiskGB: {"name":"verificationMinBootDiskGB","type":"integer","declared_type":"int","default":"200","enum":["int >= 1"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1","description":"Get-AzlArmRunSetting. Threshold of the pre-cluster verification node checks. Master-file key: deployment.verification_min_boot_disk_gb (same value, snake_case)."}
+                verificationMaxClockSkewSeconds: {"name":"verificationMaxClockSkewSeconds","type":"integer","declared_type":"int","default":"300","enum":["int >= 1"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1","description":"Get-AzlArmRunSetting. Threshold of the pre-cluster verification node checks. Master-file key: deployment.verification_max_clock_skew_seconds (same value, snake_case)."}
+                verificationMinLinkGbps: {"name":"verificationMinLinkGbps","type":"integer","declared_type":"int","default":"10","enum":["int >= 1"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1","description":"Get-AzlArmRunSetting. Threshold of the pre-cluster verification node checks. Master-file key: deployment.verification_min_link_gbps (same value, snake_case)."}
+                verificationMinMemoryGiB: {"name":"verificationMinMemoryGiB","type":"integer","declared_type":"int","default":"32","enum":["int >= 1"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1","description":"Get-AzlArmRunSetting. Threshold of the pre-cluster verification node checks. Master-file key: deployment.verification_min_memory_gib (same value, snake_case)."}
                 requireValidatedParameterHash: {"name":"requireValidatedParameterHash","type":"boolean","declared_type":"bool","default":"false","enum":["true","false"],"required":"N","read_at":"tk-integrate2/scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:173","description":"Get-AzlArmRunSetting. Precondition ValidatedBeforeDeploy fails (instead of warns) when this tool did not validate these parameters. No infrastructure.yml key."}
                 osReportMaxAgeHours: {"name":"osReportMaxAgeHours","type":"integer","declared_type":"int","default":"48","enum":["int >= 1"],"required":"N","read_at":"tk-integrate2/scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:174","description":"Get-AzlArmRunSetting. Age in hours after which an OS configuration report is called old. No infrastructure.yml key."}
                 staleSkewMinutes: {"name":"staleSkewMinutes","type":"integer","declared_type":"int","default":"5","enum":["int >= 1"],"required":"N","read_at":"tk-integrate2/scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:174","description":"Get-AzlArmRunSetting. Clock skew tolerated when deciding whether a step snapshot belongs to this submit. No infrastructure.yml key."}

@@ -167,6 +167,21 @@ deployment:
   # How long a passing result of the pre-cluster verification gate (Invoke-AzureLocalPreClusterVerification.ps1 -Mode Verify) stays valid for t...
   # default: 4; used by: deployment
   pre_cluster_verification_max_age_hours: 4
+  # Minimum memory per node in GiB for the pre-cluster verification (Learn: system requirements, at least 32 GB).
+  # default: 32; used by: deployment
+  verification_min_memory_gib: 32
+  # Minimum boot drive size in GB for the pre-cluster verification (Learn: at least 200 GB).
+  # default: 200; used by: deployment
+  verification_min_boot_disk_gb: 200
+  # Minimum size in GB of the data drives of a Storage Spaces Direct node for the pre-cluster verification (Learn: at least two drives of 500 G...
+  # default: 500; used by: deployment
+  verification_min_data_disk_gb: 500
+  # Minimum link speed in Gbps of the storage adapters for the pre-cluster verification (Learn: at least 10 Gbps for RDMA or iSCSI storage traf...
+  # default: 10; used by: deployment
+  verification_min_link_gbps: 10
+  # Largest clock difference in seconds between a node and this host that the pre-cluster verification accepts (Kerberos allows 300).
+  # default: 300; used by: deployment
+  verification_max_clock_skew_seconds: 300
   # Where the pre-cluster verification gate writes report.json, summary.md and precluster-verification-events.jsonl, and where the ARM run look...
   # used by: deployment
   pre_cluster_verification_report_directory: "D:\\Data\\azl-ztp\\site\\arm-report\\verification\\live"
