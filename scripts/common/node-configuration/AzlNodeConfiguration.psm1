@@ -245,6 +245,7 @@ function Get-AzlNodeSpec {
         ArcMachineName = $arcName
         ArcResourceId  = [string](Get-AzlProp $handoffNode 'arcMachineResourceId' '')
         Hostname       = $name
+        DomainFqdn     = $(if ([string](Get-AzlProp $Infrastructure 'scenario.identity' '') -eq 'active_directory') { [string](Get-AzlProp $Infrastructure 'identity.active_directory.domain_fqdn' '') } else { '' })
         Management     = [pscustomobject]@{ Mac = ConvertTo-MacKey $mgmt.MacAddress; Name = $mgmt.Name; Ip = $mgmt.IpAddress; Prefix = $mgmt.PrefixLength; Gateway = $mgmt.Gateway; Dns = @($mgmt.DnsServers); Vlan = $mgmt.VlanId; Mode = $mgmt.IpAssignment; ModeLabel = $modeLabel }
         Ports          = @($ports)
         Ntp            = @(ConvertTo-List (Get-AzlProp $Infrastructure 'networking.ntp_servers') | ForEach-Object { [string]$_ })

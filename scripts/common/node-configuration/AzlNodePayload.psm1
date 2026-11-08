@@ -319,23 +319,43 @@ function Invoke-Action($a) {
         }
         'nic-static' {
             $nic = Get-NicByMac ([string]$a.mac)
-            if (-not $nic) { throw ('No port with MAC ' + $a.mac) }
+            if (-not $nic) { throw ('AdapterMissing: no port with MAC ' + $a.mac + ' (the adapter is BIOS-disabled or not present)') }
             $gateway = [string](Get-P $a 'gateway' '')
             $wantIp = [string]$a.ip
+            $wantDns = @(Get-P $a 'dns' @() | ForEach-Object { [string]$_ })
+            # A Disabled port is enabled. The management port must also have a link (up to 30 seconds) before its address is set: a port that is not cabled is
+            # reported as NoCarrier, separately from a missing adapter. skipLinkCheck is for a standby port.
+            if ([string]$nic.Status -eq 'Disabled') { Enable-NetAdapter -Name $nic.Name -Confirm:$false }
+            if ([bool](Get-P $a 'management' $false) -and -not [bool](Get-P $a 'skipLinkCheck' $false)) {
+                $up = $false
+                for ($k = 0; $k -lt 15 -and -not $up; $k++) {
+                    $nic = Get-NicByMac ([string]$a.mac)
+                    if ($nic -and [string]$nic.Status -eq 'Up') { $up = $true } else { Start-Sleep -Seconds 2 }
+                }
+                if (-not $up) { throw ('NoCarrier: ' + $a.mac + ' has no link after 30 seconds (not cabled, or the switch port is down); skipLinkCheck is for a standby port') }
+            }
+            # Already configured only when everything matches: address, prefix, origin Manual, DHCP off, the default route in the PERSISTENT store, the name servers.
             $have = Get-NetIPAddress -InterfaceIndex $nic.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -eq $wantIp -and $_.PrefixOrigin -eq 'Manual' -and $_.PrefixLength -eq [int]$a.prefix }
+            $ipif = Get-NetIPInterface -InterfaceIndex $nic.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue
+            $dhcpOff = [bool]($ipif -and [string]$ipif.Dhcp -eq 'Disabled')
             $route = $null
-            if ($gateway) { $route = Get-NetRoute -InterfaceIndex $nic.ifIndex -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Where-Object { $_.NextHop -eq $gateway } }
-            if ($have -and ($route -or -not $gateway)) { return ($nic.Name + ': already ' + $wantIp) }
-            if ($have -and $gateway) {
-                New-NetRoute -InterfaceIndex $nic.ifIndex -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -NextHop $gateway | Out-Null
-                return ($nic.Name + ': gateway ' + $gateway + ' added')
+            if ($gateway) { $route = Get-NetRoute -InterfaceIndex $nic.ifIndex -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -PolicyStore PersistentStore -ErrorAction SilentlyContinue | Where-Object { $_.NextHop -eq $gateway } }
+            $dnsNow = @(Get-DnsClientServerAddress -InterfaceIndex $nic.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object { $_.ServerAddresses })
+            $dnsOk = (@($wantDns | Where-Object { $dnsNow -notcontains $_ }).Count -eq 0)
+            $routeOk = ($route -or -not $gateway)
+            if ($have -and $dhcpOff -and $routeOk -and $dnsOk) { return ($nic.Name + ': already ' + $wantIp) }
+            if ($have -and $dhcpOff -and $routeOk) {
+                Set-DnsClientServerAddress -InterfaceIndex $nic.ifIndex -ServerAddresses $wantDns
+                return ($nic.Name + ': DNS ' + ($wantDns -join ',') + ' set')
             }
             try {
+                # DHCP off first (New-NetIPAddress on a DHCP-enabled port can fail), then the address and the default route in one call.
                 Set-NetIPInterface -InterfaceIndex $nic.ifIndex -AddressFamily IPv4 -Dhcp Disabled
                 Get-NetIPAddress -InterfaceIndex $nic.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Remove-NetIPAddress -Confirm:$false -ErrorAction SilentlyContinue
                 Get-NetRoute -InterfaceIndex $nic.ifIndex -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
                 if ($gateway) { New-NetIPAddress -InterfaceIndex $nic.ifIndex -IPAddress $wantIp -PrefixLength ([int]$a.prefix) -DefaultGateway $gateway | Out-Null }
                 else { New-NetIPAddress -InterfaceIndex $nic.ifIndex -IPAddress $wantIp -PrefixLength ([int]$a.prefix) | Out-Null }
+                if ($wantDns.Count) { Set-DnsClientServerAddress -InterfaceIndex $nic.ifIndex -ServerAddresses $wantDns }
             }
             catch {
                 Set-NetIPInterface -InterfaceIndex $nic.ifIndex -AddressFamily IPv4 -Dhcp Enabled

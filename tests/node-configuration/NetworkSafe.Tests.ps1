@@ -82,6 +82,16 @@ Describe 'Staging' {
         $stage.Parameters.config.confirmMinutes | Should -Be 10
     }
 
+    It 'probes DNS with the AD domain when the design has one, else with the Azure management name' {
+        foreach ($case in @(@{ Domain = 'corp.example.test'; Want = 'corp.example.test' }, @{ Domain = ''; Want = 'management.azure.com' })) {
+            $clock = New-FakeClock
+            $t = New-GuardTransport 'WinRM' { param($Kind, $P, $Address, $Now) if ($Kind -eq 'Stage') { @{ staged = $true; cookie = 'ck'; machineSid = 'S-1' } } else { New-NodeStatus 'Committed' } } $clock
+            $spec = New-Spec
+            $spec | Add-Member -NotePropertyName DomainFqdn -NotePropertyValue $case.Domain
+            $null = Invoke-AzlGuardedChange -Transport $t -Node n1 -Group Management -Item @(New-MgmtItem) -Spec $spec -State (New-State) -Clock $clock -PortProbe { $true }
+            @(@($t.Log | Where-Object Kind -eq 'Stage')[0].Parameters.config.probeHosts) | Should -Be @($case.Want)
+        }
+    }
     It 'a change that is already in progress on the node is not staged again' {
         $clock = New-FakeClock
         $t = New-GuardTransport 'WinRM' { param($Kind, $P, $A, $N) @{ staged = $false; busyWith = 'zzz999yyy888' } } $clock

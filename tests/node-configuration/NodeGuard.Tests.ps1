@@ -38,7 +38,7 @@ BeforeAll {
                 [pscustomobject]@{ mac = 'aabbccddee01'; name = 'Port0'; gw = @('10.0.0.1'); metric = 25; ips = @([pscustomobject]@{ ip = '10.0.0.50'; prefix = 24; origin = 'Dhcp' }) }
                 [pscustomobject]@{ mac = 'aabbccddee02'; name = 'Port1'; gw = @(); metric = 9999; ips = @() })
             Ok = @{ address = { $true }; gateway = { $true }; dns = { $true }; arc = { $true }; winrm = { $true }; ports = { $true } }
-            ApplyThrows = @(); RestoreThrows = @(); Hash = 'HASH1'
+            ApplyThrows = @(); RestoreThrows = @(); Hash = 'HASH1'; SnapshotThrows = $false
         }
         $w.BootTime = $w.Time.AddHours(-1)
         foreach ($k in $Over.Keys) { $w[$k] = $Over[$k] }
@@ -78,8 +78,8 @@ BeforeAll {
         $ops.UnregisterWatchdog = { param($id) $w.Calls.Add("Unregister $id") }.GetNewClosure()
         $ops.GetNics = { $w.Nics }.GetNewClosure()
         $ops.ProbeAddress = { param($ip, $mac) $w.Calls.Add("Probe $ip"); $w.Probe }.GetNewClosure()
-        $ops.IsDuplicate = { param($mac, $ip) $w.Dup }.GetNewClosure()
-        $ops.SnapshotItem = { param($i) @{ id = [string]$i.id; snap = $true } }.GetNewClosure()
+        $ops.IsDuplicate = { param($mac, $ip) if ([string]$w.Dup -eq 'throw') { throw 'boom in duplicate detection' }; $w.Dup }.GetNewClosure()
+        $ops.SnapshotItem = { param($i) if ($w.SnapshotThrows) { throw 'cannot snapshot' }; @{ id = [string]$i.id; snap = $true } }.GetNewClosure()
         $ops.ApplyItem = { param($i) if ($w.ApplyThrows -contains [string]$i.id) { throw "cannot apply $($i.id)" }; $w.Applied.Add([string]$i.id); $w.Calls.Add("Apply $($i.id)") }.GetNewClosure()
         $ops.RestoreItem = { param($i, $snap) if ($w.RestoreThrows -contains [string]$i.id) { throw "cannot restore $($i.id)" }; $w.Restored.Add([string]$i.id); $w.Calls.Add("Restore $($i.id)"); $false }.GetNewClosure()
         foreach ($name in 'address', 'gateway', 'dns', 'arc', 'winrm', 'ports') {
@@ -632,5 +632,117 @@ Describe 'Staged script and payloads' {
         $stage | Should -Match 'New-ScheduledTaskTrigger -AtStartup'
         $stage | Should -Match 'RepetitionInterval \(New-TimeSpan -Minutes 1\)'
         (Get-AzlGuardEngine) | Should -Match 'Unregister-ScheduledTask'
+    }
+}
+
+Describe 'Guarded change engine: an unhandled error never leaves the change Staged without a log' {
+    It 'writes a first log line before the state is read, so an early failure leaves a trace' {
+        $w = New-World
+        Set-World $w @(& $script:MgmtItem)
+        $null = $w.Files.Remove($script:StatePath)
+        Invoke-World $w | Should -Be 'NoState'
+        $lines = @(($w.Files['C:\fake\abc123def456.log'] -split "`n") | Where-Object { $_ })
+        $lines[0] | Should -Match ' start '
+    }
+
+    It 'logs UNHANDLED first, rolls back from Applying, and throws again so the script exits non-zero' {
+        $w = New-World @{ Dup = 'throw' }
+        Set-World $w @(& $script:MgmtItem)
+        { Invoke-World $w } | Should -Throw '*boom in duplicate detection*'
+        $log = [string]$w.Files['C:\fake\abc123def456.log']
+        $log | Should -Match 'UNHANDLED'
+        $log.IndexOf('UNHANDLED') | Should -BeLessThan $log.IndexOf('restored Network')
+        (Get-FinalState $w).state | Should -Be 'RolledBack'
+        $w.Restored | Should -Contain 'Network/aabbccddee01'
+        $w.Calls | Should -Contain "Unregister $script:Id"
+        $w.Calls | Should -Contain 'ReleaseMutex'
+    }
+
+    It 'before anything is applied the change ends Failed with the message (nothing to restore)' {
+        $w = New-World @{ SnapshotThrows = $true }
+        Set-World $w @(& $script:MgmtItem)
+        { Invoke-World $w } | Should -Throw '*cannot snapshot*'
+        $s = Get-FinalState $w
+        $s.state | Should -Be 'Failed'
+        $s.reason | Should -Match 'cannot snapshot'
+        ([string]$w.Files['C:\fake\abc123def456.log']) | Should -Match 'UNHANDLED'
+        $w.Restored.Count | Should -Be 0
+    }
+}
+
+Describe 'Guarded change engine: which port carries the node to Azure' {
+    BeforeEach {
+        function New-TiedPortSet {
+            # Six DHCP ports on one subnet, tied metrics: the ports being cleaned are listed first and have the lower ifIndex.
+            $list = @()
+            foreach ($k in 2..6) { $list += [pscustomobject]@{ mac = "aabbccddee0$k"; name = "Port$k"; ifIndex = (20 - $k); gw = @('10.0.0.1'); metric = 25; ips = @([pscustomobject]@{ ip = "10.0.0.5$k"; prefix = 24; origin = 'Dhcp' }) } }
+            $list += [pscustomobject]@{ mac = 'aabbccddee01'; name = 'Port1'; ifIndex = 30; gw = @('10.0.0.1'); metric = 25; ips = @([pscustomobject]@{ ip = '10.0.0.50'; prefix = 24; origin = 'Dhcp' }) }
+            return $list
+        }
+    }
+
+    It 'DHCP-off on the five other ports is allowed when the management port holds a gateway too (tied metrics)' {
+        $w = New-World
+        $w.Nics = New-TiedPortSet
+        $items = foreach ($k in 2..6) { [pscustomobject]@{ id = "Network/aabbccddee0$k"; kind = 'nic-clean'; mac = "aabbccddee0$k" } }
+        Set-World $w @($items)
+        Invoke-World $w | Should -Be 'Committed'
+        $w.Applied.Count | Should -Be 5
+    }
+
+    It 'without a gateway on the management port the carrier is the best-metric port, ties broken by ifIndex, not by the order read' {
+        $w = New-World
+        $w.Nics = @(
+            [pscustomobject]@{ mac = 'aabbccddee01'; name = 'Port0'; ifIndex = 5; gw = @(); metric = 9999; ips = @() }
+            [pscustomobject]@{ mac = 'aabbccddee03'; name = 'PortHigh'; ifIndex = 12; gw = @('10.0.0.1'); metric = 25; ips = @() }
+            [pscustomobject]@{ mac = 'aabbccddee02'; name = 'PortLow'; ifIndex = 11; gw = @('10.0.0.1'); metric = 25; ips = @() })
+        Set-World $w @([pscustomobject]@{ id = 'UnusedAdapters/aabbccddee02'; kind = 'nic-disable'; mac = 'aabbccddee02' })
+        Invoke-World $w | Should -Be 'Refused'
+        (Get-FinalState $w).reason | Should -Match 'PortLow'
+    }
+}
+
+Describe 'Guarded change engine: moving the management address from port A to port B' {
+    BeforeEach {
+        function New-MoveWorld {
+            $w = New-World
+            $w.Nics = @(
+                [pscustomobject]@{ mac = 'aabbccddee01'; name = 'PortA'; ifIndex = 10; gw = @('10.0.0.1'); metric = 25; ips = @([pscustomobject]@{ ip = '10.0.0.50'; prefix = 24; origin = 'Manual' }) }
+                [pscustomobject]@{ mac = 'aabbccddee02'; name = 'PortB'; ifIndex = 11; gw = @(); metric = 9999; ips = @() })
+            return $w
+        }
+        $script:MoveItem = { New-Item2 'Network/aabbccddee02' 'nic-static' @{ mac = 'aabbccddee02'; management = $true; move = $true; ip = '10.0.0.50'; prefix = 24; gateway = '10.0.0.1'; dns = @('10.0.0.2') } }
+        $script:MoveExpect = [pscustomobject]@{ mac = 'aabbccddee02'; ip = '10.0.0.50'; requireGateway = $true; winrm = $true; currentIp = '10.0.0.50' }
+    }
+
+    It 'allows the plan: the management port (B) has no gateway yet, the plan gives it one, and A is cleaned' {
+        $w = New-MoveWorld
+        Set-World $w @((& $script:MoveItem), (New-Item2 'Network/aabbccddee01' 'nic-clean')) '' @{ expect = $script:MoveExpect }
+        Invoke-World $w | Should -Be 'Committed'
+        $w.Applied | Should -Contain 'Network/aabbccddee02'
+        $w.Applied | Should -Contain 'Network/aabbccddee01'
+    }
+
+    It 'does not probe the address it is moving (it answers on port A itself)' {
+        $w = New-MoveWorld
+        $w.Probe = $true
+        Set-World $w @(& $script:MoveItem) '' @{ expect = $script:MoveExpect }
+        Invoke-World $w | Should -Be 'Committed'
+        $w.Calls | Should -Not -Contain 'Probe 10.0.0.50'
+    }
+
+    It 'still refuses cleaning another port when nothing gives the management port a gateway' {
+        $w = New-MoveWorld
+        $item = New-Item2 'Network/aabbccddee02' 'nic-static' @{ mac = 'aabbccddee02'; management = $true; move = $true; ip = '10.0.0.50'; prefix = 24 }
+        Set-World $w @($item, (New-Item2 'Network/aabbccddee01' 'nic-clean')) '' @{ expect = $script:MoveExpect }
+        Invoke-World $w | Should -Be 'Refused'
+    }
+
+    It 'a management MAC with no port is its own verdict: AdapterMissing (BIOS-disabled or not present)' {
+        $w = New-World
+        $w.Nics = @([pscustomobject]@{ mac = 'aabbccddee01'; name = 'PortA'; ifIndex = 10; gw = @('10.0.0.1'); metric = 25; ips = @() })
+        Set-World $w @(New-Item2 'Network/aabbccddee02' 'nic-static' @{ mac = 'aabbccddee02'; management = $true; ip = '10.0.0.60'; prefix = 24; gateway = '10.0.0.1' }) '' @{ expect = [pscustomobject]@{ mac = 'aabbccddee02'; ip = '10.0.0.60'; requireGateway = $true; winrm = $true } }
+        Invoke-World $w | Should -Be 'Refused'
+        (Get-FinalState $w).reason | Should -Match 'AdapterMissing'
     }
 }
