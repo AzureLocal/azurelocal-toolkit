@@ -332,7 +332,20 @@ $domain = [string](Get-P $P 'domain' '')
 $dcList = @(Get-P $P 'dcs' @())
 $dcHost = $domain
 if ($dcList.Count) { $dcHost = [string]$dcList[0] }
-$r = [ordered]@{ checked = $false; exists = $false; gpOptions = $null; blockInheritance = $false; enforcedLinks = @(); error = '' }
+$r = [ordered]@{ checked = $false; exists = $false; authFailed = $false; gpOptions = $null; blockInheritance = $false; enforcedLinks = @(); error = '' }
+# A rejected credential (wrong password, locked, disabled, expired: HRESULT 0x8007052E and its relatives, LDAP error 49) is not "the OU is missing":
+# it is reported as authFailed so that the host stops using the credential. Nothing else is bound after the first rejection.
+function Test-DjAuthFailure($ex) {
+    $e = $ex
+    while ($e) {
+        $u = [BitConverter]::ToUInt32([BitConverter]::GetBytes([int]$e.HResult), 0)
+        if (($u -shr 16) -eq 0x8007 -and (($u -band 0xFFFF) -in 1326, 1327, 1328, 1329, 1330, 1331, 1793, 1909)) { return $true }
+        $ext = $e.PSObject.Properties['ExtendedError']
+        if ($ext -and ([int]$ext.Value -in 1326, 1327, 1328, 1329, 1330, 1331, 1793, 1909)) { return $true }
+        $e = $e.InnerException
+    }
+    return ([string]$ex.Message -match '(?i)logon failure|user name or password is incorrect|account currently disabled|account has been disabled|locked out|invalid credentials|password has expired|account has expired')
+}
 try {
     $user = [string](Get-P $S 'joinUser' '')
     $pw = [string](Get-P $S 'joinPassword' '')
@@ -341,8 +354,11 @@ try {
     $parts = @($ouPath -split '(?<!\\),' | ForEach-Object { $_.Trim() })
     $entry = New-Object System.DirectoryServices.DirectoryEntry(('LDAP://' + $dcHost + '/' + $ouPath), $user, $pw)
     try { $entry.RefreshCache(@('gPOptions', 'distinguishedName')); $r.exists = $true }
-    catch { $r.exists = $false; $r.error = [string]$_.Exception.Message }
-    if ($r.exists) {
+    catch {
+        $r.error = [string]$_.Exception.Message
+        if (Test-DjAuthFailure $_.Exception) { $r.authFailed = $true; $r.exists = $true } else { $r.exists = $false }
+    }
+    if ($r.exists -and -not $r.authFailed) {
         $r.checked = $true
         $opt = 0
         if ($entry.Properties['gPOptions'].Count) { $opt = [int]$entry.Properties['gPOptions'][0] }

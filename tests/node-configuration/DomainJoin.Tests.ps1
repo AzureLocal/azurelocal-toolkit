@@ -323,6 +323,18 @@ Describe 'Comparison: the plan and compare matrix' {
             $items = Get-DjItem (Get-DjSpec) (Add-DjOu (Get-DjState) @{ checked = $false; error = 'no domain controller is reachable from the node yet' }) @('DomainJoin')
             ($items | Where-Object Item -eq 'organizational unit').Action | Should -Be 'Info'
         }
+        It 'the OU check was rejected by the domain controller (authFailed): Blocked, and the join is Blocked with it' {
+            $items = Get-DjItem (Get-DjSpec) (Add-DjOu (Get-DjState) @{ checked = $false; authFailed = $true; error = 'Logon failure: unknown user name or bad password.' }) @('DomainJoin')
+            $ou = $items | Where-Object Item -eq 'organizational unit'
+            $ou.Action | Should -Be 'Blocked'
+            $ou.Note | Should -Match 'Logon failure'
+            $ou.Note | Should -Match 'not (sent|used|tried) again'
+            ($items | Where-Object Item -eq 'domain membership').Action | Should -Be 'Blocked'
+        }
+        It 'a bad password is not mistaken for a missing OU, whatever the error text says' {
+            $items = Get-DjItem (Get-DjSpec) (Add-DjOu (Get-DjState) @{ checked = $false; exists = $false; authFailed = $true; error = 'no such object' }) @('DomainJoin')
+            ($items | Where-Object Item -eq 'organizational unit').Note | Should -Not -Match 'does not exist'
+        }
         It 'a blocked OU blocks the move too' {
             $spec = Get-DjSpec { param($d) $d.identity.active_directory.join_options = [ordered]@{ allow_ou_move = $true } }
             $state = Add-DjOu (Get-JoinedState @{ dn = 'CN=iic-n01,OU=Elsewhere,DC=improbability,DC=cloud' }) @{ gpOptions = 0; blockInheritance = $false }
@@ -542,6 +554,23 @@ Describe 'The step: join, restart, reconnect, verify' {
         $r.Changes[-1].Status | Should -Be 'pending'
         $r.Changes[-1].Detail | Should -Match 'restart'
     }
+    It 'a tripped latch (an earlier node had the credential rejected): Failed before the password is read or anything is sent' {
+        $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'joined'; reboot = $true; detail = 'must not run' } }
+        $latch = @{ Tripped = $true; Reason = 'iic-n01: Logon failure' }
+        $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State (Get-DjState) -Item $script:JoinItem -SecretResolver { throw 'must not read the secret' } -Latch $latch -EventContext $script:Ctx
+        $r.Failed | Should -BeTrue
+        $r.Error | Should -Match 'iic-n01'
+        @($t.Log).Count | Should -Be 0
+    }
+    It 'a join the domain rejects with <Code> trips the latch; another error does not' -ForEach @(
+        @{ Code = '1326'; Trips = $true }, @{ Code = '1331'; Trips = $true }, @{ Code = '1909'; Trips = $true }, @{ Code = '1355'; Trips = $false }, @{ Code = '5'; Trips = $false }
+    ) {
+        $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'failed'; code = $Code; label = 'x'; errorText = 'rejected'; nextAction = 'fix it'; stillWorkgroup = $true } }
+        $latch = @{ Tripped = $false; Reason = '' }
+        $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State (Get-DjState) -Item $script:JoinItem -SecretResolver $script:Resolver -Latch $latch -EventContext $script:Ctx
+        $r.Failed | Should -BeTrue
+        $latch.Tripped | Should -Be $Trips
+    }
     It 'the node refuses to restart without its marker: Failed, nothing waits' {
         $t = Get-DjTransport @{ 'Apply:join' = @{ status = 'joined'; reboot = $true; detail = 'x' }; Restart = @{ restartScheduled = $false; reason = 'No durable restart marker' } }
         $r = Invoke-AzlDomainJoinStep -Spec $script:Spec -Transport $t -State (Get-DjState) -Item $script:JoinItem -SecretResolver $script:Resolver -WaitForRestart { throw 'must not wait' }
@@ -658,13 +687,63 @@ Describe 'Invoke-AzlNodeConfiguration with the DomainJoin step' {
         $script:After = Add-DjOu (Get-JoinedState @{ boot = '2026-11-07T10:09:00Z' })
         $script:After.boot = '2026-11-07T10:09:00Z'
     }
-    It 'Plan mode: reads once, writes DomainJoinPlanned, changes nothing, never sends the join' {
+    It 'Plan mode: reads once, writes DomainJoinPlanned, changes nothing, never sends the join, and never sends the credential (OU not verified)' {
         $t = Get-DjTransport @{ OuCheck = @{ ou = [pscustomobject]@{ checked = $true; exists = $true; gpOptions = 1; blockInheritance = $true; enforcedLinks = @(); error = '' } } } @($script:Before)
-        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Step 'DomainJoin' -SecretResolver $script:Resolver -EventContext @{ Path = $script:Feed; Method = 'Iso'; Phase = 'Plan' }
-        @($t.Log | ForEach-Object Kind) | Should -Be @('Read', 'OuCheck')
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Step 'DomainJoin' -SecretResolver { throw 'a plan must not read the join secret' } -EventContext @{ Path = $script:Feed; Method = 'Iso'; Phase = 'Plan' }
+        @($t.Log | ForEach-Object Kind) | Should -Be @('Read')
         ($r.Plan | Where-Object Item -eq 'domain membership').Action | Should -Be 'Change'
+        $ou = $r.Plan | Where-Object Item -eq 'organizational unit'
+        $ou.Action | Should -Be 'Info'
+        $ou.Current | Should -Be 'not verified'
+        $ou.Note | Should -Match 'OU not verified'
         $r.Executed | Should -BeFalse
         @(Get-DjFeed $script:Feed | ForEach-Object state) | Should -Be @('DomainJoinPlanned')
+    }
+    It 'Execute: a join credential the domain controller rejects at the OU check is sent once, the join is Blocked and nothing is sent to join' {
+        $rejected = @{ OuCheck = @{ ou = [pscustomobject]@{ checked = $false; exists = $true; authFailed = $true; gpOptions = $null; blockInheritance = $false; enforcedLinks = @(); error = 'Logon failure: unknown user name or bad password.' } }; 'Apply:join' = @{ status = 'joined'; reboot = $false; detail = 'must not run' } }
+        $t = Get-DjTransport $rejected @($script:Before, $script:Before, $script:Before)
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -Step 'DomainJoin' -SecretResolver $script:Resolver -EventContext $script:Ctx
+        @($t.Log | Where-Object Kind -eq 'OuCheck').Count | Should -Be 1
+        @($t.Log | Where-Object Kind -like 'Apply:*') | Should -BeNullOrEmpty
+        $r.Converged | Should -BeFalse
+        @($r.Blocked | Where-Object Item -eq 'organizational unit').Count | Should -Be 1
+        @($r.Blocked | Where-Object Item -eq 'domain membership').Count | Should -Be 1
+    }
+    It 'a run-wide latch: after the first rejected credential no later node gets an OU check or a join, and a second pass asks again for nothing' {
+        $rejected = @{ OuCheck = @{ ou = [pscustomobject]@{ checked = $false; exists = $true; authFailed = $true; gpOptions = $null; blockInheritance = $false; enforcedLinks = @(); error = 'Logon failure: unknown user name or bad password.' } }; 'Apply:join' = @{ status = 'joined'; reboot = $false; detail = 'must not run' } }
+        $latch = @{ Tripped = $false; Reason = '' }
+        $logs = foreach ($i in 0..1) {
+            $spec = Get-DjSpec -Node $i
+            $read = Get-DjState @{ host = $spec.Name }
+            $t = Get-DjTransport $rejected @($read, $read, $read)
+            $null = Invoke-AzlNodeConfiguration -Spec $spec -Transport $t -Execute -Step 'DomainJoin' -SecretResolver $script:Resolver -DomainJoinLatch $latch
+            , @($t.Log | ForEach-Object Kind)
+        }
+        $latch.Tripped | Should -BeTrue
+        @($logs | ForEach-Object { $_ | Where-Object { $_ -eq 'OuCheck' } }).Count | Should -Be 1 -Because 'two nodes, one bad password, one attempt'
+        @($logs | ForEach-Object { $_ | Where-Object { $_ -like 'Apply:*' } }) | Should -BeNullOrEmpty
+        for ($i = 1; $i -lt $logs.Count; $i++) { $logs[$i] | Should -Be @('Read') }
+    }
+    It 'a join that fails with a bad credential (1326) trips the latch, so the next node is not sent the same password' {
+        $ou = @{ OuCheck = @{ ou = [pscustomobject]@{ checked = $true; exists = $true; gpOptions = 1; blockInheritance = $true; enforcedLinks = @(); error = '' } } }
+        $failed = @{ status = 'failed'; code = '1326'; label = 'bad credential'; errorText = 'The user name or password is incorrect.'; nextAction = 'Check the secret.'; stillWorkgroup = $true }
+        $latch = @{ Tripped = $false; Reason = '' }
+        $spec1 = Get-DjSpec -Node 0; $spec2 = Get-DjSpec -Node 1
+        $r1state = Get-DjState @{ host = $spec1.Name }; $r2state = Get-DjState @{ host = $spec2.Name }
+        $t1 = Get-DjTransport ($ou + @{ 'Apply:join' = $failed }) @($r1state, $r1state)
+        $t2 = Get-DjTransport ($ou + @{ 'Apply:join' = $failed }) @($r2state, $r2state)
+        $null = Invoke-AzlNodeConfiguration -Spec $spec1 -Transport $t1 -Execute -Step 'DomainJoin' -SecretResolver $script:Resolver -DomainJoinLatch $latch
+        $r2 = Invoke-AzlNodeConfiguration -Spec $spec2 -Transport $t2 -Execute -Step 'DomainJoin' -SecretResolver $script:Resolver -DomainJoinLatch $latch
+        @($t1.Log | Where-Object Kind -eq 'Apply:join').Count | Should -Be 1
+        $latch.Tripped | Should -BeTrue
+        @($t2.Log | ForEach-Object Kind) | Should -Be @('Read')
+        $r2.Converged | Should -BeFalse
+    }
+    It 'without a latch from the caller a run still keeps its own: the credential is not asked again in a later pass' {
+        $rejected = @{ OuCheck = @{ ou = [pscustomobject]@{ checked = $false; exists = $true; authFailed = $true; error = 'Logon failure' } } }
+        $t = Get-DjTransport $rejected @($script:Before, $script:Before, $script:Before)
+        $null = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -Step 'DomainJoin' -SecretResolver $script:Resolver
+        @($t.Log | Where-Object Kind -eq 'OuCheck').Count | Should -Be 1
     }
     It 'Execute: joins first, restarts, re-reads, converges; the OU is read with the credential before the join' {
         $ou = @{ OuCheck = @{ ou = [pscustomobject]@{ checked = $true; exists = $true; gpOptions = 1; blockInheritance = $true; enforcedLinks = @(); error = '' } } }

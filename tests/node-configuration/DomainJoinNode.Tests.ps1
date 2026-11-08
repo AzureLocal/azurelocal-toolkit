@@ -97,7 +97,11 @@ function New-Object {
         }
         Add-Member -InputObject $entry -MemberType NoteProperty -Name Properties -Value $bag
         Add-Member -InputObject $entry -MemberType ScriptMethod -Name MoveTo -Value { param($target) Add-Call ('MoveTo ' + $target.Path); if ($Scenario.moveFails) { throw 'Access is denied.' } }
-        Add-Member -InputObject $entry -MemberType ScriptMethod -Name RefreshCache -Value { param($names) if ($Scenario.ouMissing -and $this.Path -like ('*/' + $Scenario.ouPath)) { throw 'There is no such object on the server.' } }
+        Add-Member -InputObject $entry -MemberType ScriptMethod -Name RefreshCache -Value {
+            param($names)
+            if ($Scenario.authFails) { throw (New-Object System.Runtime.InteropServices.COMException($Scenario.authFailsMessage, [int]$Scenario.authFailsHResult)) }
+            if ($Scenario.ouMissing -and $this.Path -like ('*/' + $Scenario.ouPath)) { throw 'There is no such object on the server.' }
+        }
         return $entry
     }
     if ($null -ne $ArgumentList) { return Microsoft.PowerShell.Utility\New-Object -TypeName $TypeName -ArgumentList $ArgumentList }
@@ -120,6 +124,8 @@ foreach ($required in 'Add-Computer', 'shutdown.exe', 'Register-ScheduledTask', 
             dnsOk = $true; srvOk = $true; dcReachable = $true; skewText = '+00.0004120s'; secureChannel = $true; localAdmins = @('azl-admin', 'Administrator')
             expectedPassword = $script:Password; ouPath = 'OU=iic-clus01,OU=AzureLocal,DC=improbability,DC=cloud'; ldap = @{}
             addComputerCode = 0; addComputerMessage = ''; failMember = ''; moveFails = $false; ouMissing = $false
+            authFails = $false; authFailsMessage = 'Logon failure: unknown user name or bad password.'; authFailsHResult = -2147023570
+            registerFails = $false; setContentFails = $false; shutdownExit = 0; dnAfterGpupdate = ''; icaclsExit = 0; memberExists = ''
         }
         foreach ($k in $Scenario.Keys) { $sc[$k] = $Scenario[$k] }
         ($sc | ConvertTo-Json -Depth 8) | Set-Content -LiteralPath (Join-Path $dir 'scenario.json') -Encoding UTF8
@@ -490,6 +496,24 @@ Describe 'OuCheck: the dedicated OU over LDAP with the credential' {
         $r.Answer.ou.exists | Should -BeFalse
         $r.Answer.ou.checked | Should -BeFalse
         $r.Answer.ou.error | Should -Match 'no such object'
+    }
+    It 'a rejected credential (<Name>) is authFailed, not "the OU is missing", and nothing else is bound after it' -ForEach @(
+        @{ Name = 'HRESULT 0x8007052E'; HResult = -2147023570; Message = 'Logon failure: unknown user name or bad password.' }
+        @{ Name = 'account disabled 0x80070533'; HResult = -2147023565; Message = 'Logon failure: account currently disabled.' }
+        @{ Name = 'locked out 0x80070775'; HResult = -2147022987; Message = 'The referenced account is currently locked out and may not be logged on to.' }
+        @{ Name = 'text only'; HResult = -2147467259; Message = 'The user name or password is incorrect.' }
+    ) {
+        $ldap = @{ $script:OuPath = @{ gPOptions = 1 }; 'OU=AzureLocal,DC=improbability,DC=cloud' = @{ gPLink = '[LDAP://cn={AAAA},cn=policies,cn=system,DC=improbability,DC=cloud;2]' } }
+        $r = Invoke-DjNode -Payload DomainJoinOuCheck -Params $script:OuParams -Secrets $script:Secret -Scenario @{ ldap = $ldap; authFails = $true; authFailsHResult = $HResult; authFailsMessage = $Message }
+        $r.Exit | Should -Be 0 -Because $r.Console
+        $r.Answer.ou.authFailed | Should -BeTrue
+        $r.Answer.ou.checked | Should -BeFalse
+        $r.Answer.ou.error | Should -Not -BeNullOrEmpty
+        @($r.Calls | Where-Object { $_ -like 'DirectoryEntry*' }).Count | Should -Be 1 -Because 'one bind with a wrong password is all the account may take'
+    }
+    It 'a missing OU and a good bind are not authFailed' {
+        (Invoke-DjNode -Payload DomainJoinOuCheck -Params $script:OuParams -Secrets $script:Secret -Scenario @{ ouMissing = $true }).Answer.ou.authFailed | Should -BeFalse
+        (Invoke-DjNode -Payload DomainJoinOuCheck -Params $script:OuParams -Secrets $script:Secret -Scenario @{ ldap = @{ $script:OuPath = @{ gPOptions = 1 } } }).Answer.ou.authFailed | Should -BeFalse
     }
     It 'it only reads: no Add-Computer, no MoveTo, no restart' {
         $r = Invoke-DjNode -Payload DomainJoinOuCheck -Params $script:OuParams -Secrets $script:Secret -Scenario @{ ldap = @{ $script:OuPath = @{ gPOptions = 1 } } }

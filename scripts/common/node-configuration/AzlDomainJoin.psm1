@@ -225,13 +225,19 @@ function Get-DjOuItem {
     $ou = Get-AzlProp (Get-AzlProp $State 'domainJoin') 'ou'
     if (-not $ou) { return @() }
     $items = [System.Collections.Generic.List[object]]::new()
+    if ([bool](Get-AzlProp $ou 'authFailed' $false)) {
+        # The domain controller rejected the join credential (wrong password, locked, disabled, expired). Never "the OU is missing", and never tried again.
+        $why = [string](Get-AzlProp $ou 'error' '')
+        $items.Add((New-DjPlanItem $n 'organizational unit' 'join credential rejected' "$($dj.OuPath), inheritance blocked" Blocked "The domain controller rejected the join credential ($($dj.CredentialSource) $($dj.Username)): $why The credential is not sent again in this run, to any node (repeated bad passwords lock the account). Check the Key Vault secret and the account (locked, disabled, expired) in Active Directory, then run again."))
+        return $items.ToArray()
+    }
     if (-not [bool](Get-AzlProp $ou 'checked' $false)) {
         $reason = [string](Get-AzlProp $ou 'error' '')
         if ([bool](Get-AzlProp $ou 'exists' $true) -eq $false -and $reason -match 'no such object|0x80072030|does not exist') {
             $items.Add((New-DjPlanItem $n 'organizational unit' 'not found' $dj.OuPath Blocked "The OU $($dj.OuPath) does not exist in the domain. Create it with New-HciAdObjectsPreCreation (it also blocks Group Policy inheritance and gives the LCM user its rights), or correct identity.active_directory.ou_path."))
         }
         else {
-            $items.Add((New-DjPlanItem $n 'organizational unit' 'not checked' "$($dj.OuPath), inheritance blocked" Info "The OU and its Group Policy inheritance were not checked: $(if ($reason) { $reason } else { 'the join credential could not be used yet' })."))
+            $items.Add((New-DjPlanItem $n 'organizational unit' 'not verified' "$($dj.OuPath), inheritance blocked" Info "OU not verified: the OU and its Group Policy inheritance were not checked ($(if ($reason) { $reason } else { 'the join credential could not be used yet' }))."))
         }
         return $items.ToArray()
     }
@@ -481,21 +487,39 @@ function Send-AzlDomainJoinPlanEvent {
 # The apply
 # ---------------------------------------------------------------------------------------------------------------------
 
+function Lock-DjCredential {
+    # The run-wide latch: after the domain controller rejected the join credential once, nothing in the run sends it again (to any node).
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Sets a flag in the hashtable of the run.')]
+    param([hashtable]$Latch, [string]$Node, [string]$Reason)
+    if ($Latch -and -not [bool]$Latch['Tripped']) { $Latch['Tripped'] = $true; $Latch['Reason'] = "${Node}: $Reason".Trim() }
+}
+function Test-DjCredentialLocked([hashtable]$Latch) { return [bool]($Latch -and $Latch.ContainsKey('Tripped') -and $Latch['Tripped']) }
+function Get-DjLatchText([hashtable]$Latch) { return "The join credential was rejected earlier in this run ($([string]$Latch['Reason'])), so it is not sent again." }
+
 function Add-AzlDomainJoinOuCheck {
     <#
     .SYNOPSIS
         Reads the dedicated OU over LDAP from the node with the join credential (it exists, gPOptions says inheritance is blocked, the
         enforced GPO links above it) and attaches the answer to the state as domainJoin.ou. Returns the state. Never throws: when the
         credential or the domain controller is not usable yet, the answer says why and the plan shows Info.
+    .DESCRIPTION
+        The credential is sent only with -Execute: a plan never sends it ("OU not verified"). A credential the domain controller rejects is
+        reported as authFailed (the plan shows Blocked) and trips -Latch, the run-wide latch: while it is tripped no node gets an OU check or a join.
+    .PARAMETER Execute
+        Without it nothing is sent to the node and the OU is reported as not verified.
+    .PARAMETER Latch
+        A hashtable (Tripped, Reason) shared by the nodes of one run.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification = 'The secret was just read from Key Vault; it is made a SecureString at once and only ever lives in memory.')]
     [CmdletBinding()]
-    param([Parameter(Mandatory)][object]$Spec, [Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][object]$State, [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref })
+    param([Parameter(Mandatory)][object]$Spec, [Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][object]$State, [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref }, [switch]$Execute, [hashtable]$Latch)
     $dj = $Spec.DomainJoin
     $ds = Get-AzlProp $State 'domainJoin'
     if (-not $dj -or -not $dj.Applicable -or -not $ds) { return $State }
-    $ou = [pscustomobject]@{ checked = $false; exists = $true; gpOptions = $null; blockInheritance = $false; enforcedLinks = @(); error = '' }
-    if (-not [bool](Get-AzlProp $ds 'dcReachable' $false)) { $ou.error = 'no domain controller is reachable from the node yet' }
+    $ou = [pscustomobject]@{ checked = $false; exists = $true; authFailed = $false; gpOptions = $null; blockInheritance = $false; enforcedLinks = @(); error = '' }
+    if (-not $Execute) { $ou.error = 'a plan never sends the join credential to a node; the OU is read with -Execute' }
+    elseif (Test-DjCredentialLocked $Latch) { $ou.authFailed = $true; $ou.error = Get-DjLatchText $Latch }
+    elseif (-not [bool](Get-AzlProp $ds 'dcReachable' $false)) { $ou.error = 'no domain controller is reachable from the node yet' }
     elseif (-not $dj.HasAccount) { $ou.error = 'there is no join credential' }
     else {
         $secrets = $null
@@ -506,6 +530,8 @@ function Add-AzlDomainJoinOuCheck {
             $secrets = @{ joinUser = [string]$dj.Username; joinPassword = [System.Net.NetworkCredential]::new('', $secure).Password }
             $r = Invoke-AzlNodeScript -Transport $Transport -Node ([string]$Spec.Name) -Script (Get-AzlNodePayload -Name DomainJoinOuCheck) -Parameters @{ domain = $dj.Domain; netbios = $dj.Netbios; ou = $dj.OuPath; dcs = @($dj.DomainControllers) } -Secrets $secrets -TimeoutSeconds 300 -Tries 1
             $ou = $r.ou
+            if (-not (Get-AzlProp $ou 'authFailed')) { Add-Member -InputObject $ou -NotePropertyName authFailed -NotePropertyValue $false -Force }
+            if ([bool](Get-AzlProp $ou 'authFailed' $false)) { Lock-DjCredential -Latch $Latch -Node ([string]$Spec.Name) -Reason ([string](Get-AzlProp $ou 'error' 'the domain controller rejected the credential')) }
         }
         catch { $ou.error = "can't read the OU: $($_.Exception.Message)" }
         finally { if ($secrets) { $secrets.Clear() } }
@@ -548,7 +574,8 @@ function Invoke-AzlDomainJoinStep {    <#
         [switch]$NoRestart,
         [scriptblock]$WaitForRestart,
         [object]$WaitContext,
-        [hashtable]$EventContext
+        [hashtable]$EventContext,
+        [hashtable]$Latch
     )
     $node = [string]$Spec.Name
     $dj = $Spec.DomainJoin
@@ -564,6 +591,8 @@ function Invoke-AzlDomainJoinStep {    <#
         $out.Failed = $true; $out.Error = $text; $out.NextAction = $next
         $changes.Add([pscustomobject]@{ Id = $id; Status = 'failed'; Detail = "$text$(if ($next) { " Next: $next" })" })
         & $emit 'DomainJoinFailed' $text 'Error' $next @{ code = $code; domain = $dj.Domain; ou = $dj.OuPath }
+        # A rejected credential (bad password 1326, disabled 1331, locked out 1909) stops every later use of it in the run, on every node.
+        if ([string]$code -in '1326', '1331', '1909') { Lock-DjCredential -Latch $Latch -Node $node -Reason $text }
     }
 
     if ($kind -eq 'domain-admins') {
@@ -586,6 +615,12 @@ function Invoke-AzlDomainJoinStep {    <#
 
     # The join account. Held as a SecureString; the plain text exists only in the hashtable handed to the transport.
     $secure = $null
+    if (($kind -in 'domain-join', 'domain-move') -and (Test-DjCredentialLocked $Latch)) {
+        # A wrong password must not be sent twice: after the first rejection no node in the run gets the credential.
+        & $fail (Get-DjLatchText $Latch) 'Fix the secret or the account (locked, disabled, expired), then run again.' ''
+        $out.Changes = $changes.ToArray()
+        return [pscustomobject]$out
+    }
     if ($kind -in 'domain-join', 'domain-move') {
         try {
             $plain = [string](& $SecretResolver $dj.PasswordRef)
