@@ -38,7 +38,7 @@ Import-Module (Join-Path $PSScriptRoot 'AzlRemotingSession.psm1')
 Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'azure-local' 'AzlAzure.psm1'))
 
 $script:RunCommandApiVersion = '2026-09-01'
-$script:ResultFile = 'C:\Windows\Temp\azl-bootstrap-winrm.txt'
+$script:ResultFolder = 'C:\Windows\Temp'
 $script:RunCommandPrefix = 'azl-osconfig-'
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -55,7 +55,14 @@ function New-AzlRemotingBootstrapScript {
         The WinRM source scope: 'Any' or CIDRs.
     .PARAMETER ResultPath
         A file the script writes its one-line result to (the smb route reads it over C$). Empty: no file, the result is only written
-        to the output (the Arc route reads the output).
+        to the output (the Arc route reads the output). The default is a new file name per call (a GUID): a fixed name could be planted
+        or left over from an earlier run.
+    .PARAMETER Http
+        The profile's bootstrapWindowHttp. True: Enable-PSRemoting if there is no listener, the 5985 rules scoped like the 5986 ones.
+        False (dmz): the 5985 rules are switched off and the HTTP listener is removed; WinRM answers on HTTPS only, so a certificate
+        thumbprint is needed.
+    .PARAMETER Nonce
+        Hex text the script puts in its result line; the reader accepts only a result that carries it.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -64,7 +71,9 @@ function New-AzlRemotingBootstrapScript {
         [bool]$Rdp = $false, [string[]]$RdpRemoteAddress = @(),
         [bool]$Icmp = $false, [string[]]$IcmpRemoteAddress = @(),
         [string]$Thumbprint = '',
-        [string]$ResultPath = $script:ResultFile
+        [string]$ResultPath = ($script:ResultFolder + '\azl-bootstrap-' + [guid]::NewGuid().ToString('N') + '.txt'),
+        [bool]$Http = $true,
+        [string]$Nonce = ''
     )
     $address = '^(Any|LocalSubnet|[0-9A-Fa-f:.]+(/[0-9]{1,3})?)$'
     $quote = {
@@ -75,19 +84,27 @@ function New-AzlRemotingBootstrapScript {
     }
     if ($Thumbprint -and $Thumbprint -notmatch '^[0-9A-Fa-f]{40}$') { throw 'The certificate thumbprint is not 40 hex digits.' }
     if ($ResultPath -and $ResultPath -notmatch '^[A-Za-z]:\\[A-Za-z0-9_.\\ -]+$') { throw 'The result path is not a plain Windows path.' }
+    if ($Nonce -and $Nonce -notmatch '^[0-9A-Fa-f]{8,64}$') { throw 'The nonce is not 8 to 64 hex digits.' }
+    if (-not $Http -and -not $Thumbprint) { throw 'The profile never opens HTTP, so the bootstrap can open WinRM only over HTTPS and needs the thumbprint of a certificate that is already on the node.' }
     $lines = [System.Collections.Generic.List[string]]::new()
-    $lines.Add('$ErrorActionPreference="Stop";$o=@{ok=$false}')
+    $lines.Add('$ErrorActionPreference="Stop";$o=@{ok=$false' + $(if ($Nonce) { ';nonce="' + $Nonce.ToLowerInvariant() + '"' } else { '' }) + '}')
     $lines.Add('try{')
     $lines.Add('Set-Service WinRM -StartupType Automatic;if((Get-Service WinRM).Status -ne "Running"){Start-Service WinRM}')
-    $lines.Add('if(-not @(Get-ChildItem WSMan:\localhost\Listener -EA 0).Count){Enable-PSRemoting -Force -SkipNetworkProfileCheck|Out-Null}')
+    if ($Http) { $lines.Add('if(-not @(Get-ChildItem WSMan:\localhost\Listener -EA 0).Count){Enable-PSRemoting -Force -SkipNetworkProfileCheck|Out-Null}') }
+    else { $lines.Add('if(-not @(Get-PSSessionConfiguration -Name Microsoft.PowerShell -EA 0).Count){Enable-PSRemoting -Force -SkipNetworkProfileCheck|Out-Null}') }
     $lines.Add('$ra=' + (& $quote $RemoteAddress 'WinRM source'))
-    $lines.Add('$n=@(Get-NetFirewallPortFilter -Protocol TCP|?{@($_.LocalPort) -contains "5985" -or @($_.LocalPort) -contains "5986"}|%{Get-NetFirewallRule -AssociatedNetFirewallPortFilter $_}|?{$_.Direction -eq "Inbound" -and $_.Action -eq "Allow"}|%{$_.Name}|Select-Object -Unique)')
-    $lines.Add('foreach($r in $n){Set-NetFirewallRule -Name $r -Enabled True -Profile Any -RemoteAddress $ra}')
+    # The rules whose LocalPort set is exactly 5985 (h) or exactly 5986 (s); a rule that allows other ports as well is not touched.
+    $lines.Add('$q={param($p)@(Get-NetFirewallPortFilter -Protocol TCP|?{@($_.LocalPort).Count -eq 1 -and "$($_.LocalPort)" -eq $p}|%{Get-NetFirewallRule -AssociatedNetFirewallPortFilter $_}|?{$_.Direction -eq "Inbound" -and $_.Action -eq "Allow" -and $_.Name -notlike "AzlOsConfig-*"}|%{$_.Name}|Select-Object -Unique)}')
+    $lines.Add('$h=@(& $q "5985");$s=@(& $q "5986");$n=@($h)+@($s)')
+    if ($Http) { $lines.Add('foreach($r in $n){Set-NetFirewallRule -Name $r -Enabled True -Profile Any -RemoteAddress $ra}') }
+    else { $lines.Add('foreach($r in $h){Set-NetFirewallRule -Name $r -Enabled False};foreach($r in $s){Set-NetFirewallRule -Name $r -Enabled True -Profile Any -RemoteAddress $ra};$n=$s') }
     if ($Thumbprint) {
         $lines.Add('$t="' + $Thumbprint.ToUpperInvariant() + '";$c=Get-Item "Cert:\LocalMachine\My\$t";$h=($c.Subject -replace "^CN=","" -split ",")[0]')
         $lines.Add('if(-not @(Get-ChildItem WSMan:\localhost\Listener|?{$_.Keys -contains "Transport=HTTPS"}).Count){New-WSManInstance winrm/config/Listener -SelectorSet @{Address="*";Transport="HTTPS"} -ValueSet @{Hostname=$h;CertificateThumbprint=$t}|Out-Null}')
         $lines.Add('if(-not (Get-NetFirewallRule -Name AzlOsConfig-WinRM-HTTPS-In -EA 0)){New-NetFirewallRule -Name AzlOsConfig-WinRM-HTTPS-In -DisplayName "Azure Local OS configuration: WinRM HTTPS" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 5986 -Profile Any|Out-Null}')
         $lines.Add('Set-NetFirewallRule -Name AzlOsConfig-WinRM-HTTPS-In -Enabled True -Profile Any -RemoteAddress $ra')
+        # No HTTP window in this class: the HTTP listener goes once the HTTPS one is there (WinRM never has no listener).
+        if (-not $Http) { $lines.Add('Get-ChildItem WSMan:\localhost\Listener|?{$_.Keys -contains "Transport=HTTP"}|%{Remove-Item $_.PSPath -Recurse -Force}') }
     }
     if ($Rdp) {
         $lines.Add('Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server" fDenyTSConnections 0;Set-ItemProperty "HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp" UserAuthentication 1')
@@ -140,11 +157,16 @@ function Read-AzlBootstrapResult {
     .SYNOPSIS
         The AZLBOOT line of the script's answer (the result file or the Arc output) as an object; $null when there is none.
     #>
-    # The AZLBOOT line of the script's answer (from the result file or the Arc output) as an object; $null when there is none.
-    param([AllowNull()][string]$Text)
+    # The AZLBOOT line of the script's answer (from the result file or the Arc output) as an object; $null when there is none. With -Nonce only a
+    # line that carries that nonce counts (a file that was there before the run, or that somebody planted, does not).
+    param([AllowNull()][string]$Text, [string]$Nonce = '')
     $line = @(([string]$Text -split "`r?`n") | Where-Object { $_.Trim().StartsWith('AZLBOOT:') }) | Select-Object -Last 1
     if (-not $line) { return $null }
-    try { return ($line.Trim().Substring(8) | ConvertFrom-Json) } catch { return $null }
+    try { $result = ($line.Trim().Substring(8) | ConvertFrom-Json) } catch { return $null }
+    if ($Nonce) {
+        if (-not $result.PSObject.Properties['nonce'] -or [string]$result.nonce -ne $Nonce.ToLowerInvariant()) { return $null }
+    }
+    return $result
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -170,6 +192,8 @@ function Invoke-AzlSmbBootstrap {
         [Parameter(Mandatory)][string]$Address,
         [Parameter(Mandatory)][string]$Script,
         [Parameter(Mandatory)][pscredential]$Credential,
+        [string]$ResultName = ('azl-bootstrap-' + [guid]::NewGuid().ToString('N') + '.txt'),
+        [string]$Nonce = '',
         [int]$WaitSeconds = 60,
         [scriptblock]$Sc = { param($Arguments) $o = & sc.exe @Arguments 2>&1; [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = ($o -join ' ') } },
         [scriptblock]$NetUse = { param($Arguments) $o = & net.exe @Arguments 2>&1; [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = ($o -join ' ') } },
@@ -190,7 +214,8 @@ function Invoke-AzlSmbBootstrap {
     $steps.Add('TCP 445 answers')
     $share = "\\$Address\IPC`$"
     $service = 'azl-bootstrap-' + [guid]::NewGuid().ToString('N').Substring(0, 8)
-    $resultPath = "\\$Address\C`$\Windows\Temp\azl-bootstrap-winrm.txt"
+    if ($ResultName -notmatch '^azl-bootstrap-[0-9A-Fa-f]{8,64}\.txt$') { return (& $fail "The result file name '$ResultName' is not one this tool makes (azl-bootstrap-<hex>.txt).") }
+    $resultPath = "\\$Address\C`$\Windows\Temp\$ResultName"
     $connected = $false
     $created = $false
     $text = $null
@@ -199,6 +224,8 @@ function Invoke-AzlSmbBootstrap {
         if ($use.ExitCode -ne 0) { return (& $fail "net use $share as $user failed (exit $($use.ExitCode)): $($use.Output)") }
         $connected = $true
         $steps.Add("authenticated to $share as $user")
+        # A result file that is already there (left over, or planted) must not be taken for this run's answer: it goes first.
+        if (& $TestFile $resultPath) { & $DeleteFile $resultPath; $steps.Add('a result file that was already there was deleted before the start') }
         $binPath = Get-AzlBootstrapCommandLine -Script $Script
         $create = & $Sc @("\\$Address", 'create', $service, 'binPath=', $binPath, 'start=', 'demand', 'obj=', 'LocalSystem')
         if ($create.ExitCode -ne 0) { return (& $fail "sc create failed (exit $($create.ExitCode)): $($create.Output)") }
@@ -222,10 +249,11 @@ function Invoke-AzlSmbBootstrap {
     }
     finally {
         if ($created) { try { $null = & $Sc @("\\$Address", 'delete', $service) } catch { Write-Verbose "sc delete: $(Format-AzlRedacted $_.Exception.Message @($password))" } }
+        if ($connected) { try { if (& $TestFile $resultPath) { & $DeleteFile $resultPath } } catch { Write-Verbose "result file not deleted: $($_.Exception.Message)" } }
         if ($connected) { try { $null = & $NetUse @('use', $share, '/delete') } catch { Write-Verbose "net use /delete: $($_.Exception.Message)" } }
     }
-    $result = Read-AzlBootstrapResult -Text $text
-    if (-not $result) { return (& $fail "No result from the node within $WaitSeconds s (the script did not write $($script:ResultFile)).") }
+    $result = Read-AzlBootstrapResult -Text $text -Nonce $Nonce
+    if (-not $result) { return (& $fail "No result from the node within $WaitSeconds s (the script did not write $ResultName with this run's nonce).") }
     if (-not $result.ok) { return (& $fail "The script on the node failed: $(Format-AzlRedacted ([string]$result.err) @($password))") }
     [pscustomobject]@{ Route = 'smb'; Ok = $true; Reason = ''; Result = $result; Steps = $steps }
 }
@@ -280,6 +308,7 @@ function Invoke-AzlArcBootstrap {
         [Parameter(Mandatory)][string]$Node,
         [Parameter(Mandatory)][string]$ArcResourceId,
         [Parameter(Mandatory)][string]$Script,
+        [string]$Nonce = '',
         [int]$WaitSeconds = 180,
         [int]$PollSeconds = 10,
         [scriptblock]$Arm = { param($Method, $Path, $ApiVersion, $Body) Invoke-AzlArm -Method $Method -Path $Path -ApiVersion $ApiVersion -Body $Body -AllowNotFound },
@@ -317,7 +346,7 @@ function Invoke-AzlArcBootstrap {
             return (& $fail "The run command did not finish within $WaitSeconds s (state '$state'); the Arc run command handler on the node may be wedged. The route is given up and the run command is deleted." $true)
         }
         $output = [string](Get-AzlProp $run 'properties.instanceView.output' '')
-        $result = Read-AzlBootstrapResult -Text $output
+        $result = Read-AzlBootstrapResult -Text $output -Nonce $Nonce
         if ($state -ne 'Succeeded' -and -not $result) { return (& $fail "The run command ended in state '$state': $([string](Get-AzlProp $run 'properties.instanceView.error' ''))" $false) }
         if (-not $result) { return (& $fail 'The run command finished but wrote no result line.' $false) }
         if (-not $result.ok) { return (& $fail "The script on the node failed: $([string]$result.err)" $false) }
@@ -373,8 +402,16 @@ function Invoke-AzlWinRmBootstrap {
         return [pscustomobject]@{ Node = $Node; Ok = $false; Route = ''; Attempts = @(); Reason = $verdict.Reason; Result = $null }
     }
     $fw = $RemotingProfile.Firewall
-    $armScript = New-AzlRemotingBootstrapScript -RemoteAddress @($fw.RemoteAddress) -Rdp ([bool]$fw.RdpEnabled) -RdpRemoteAddress @($fw.RdpRemoteAddress) -Icmp ([bool]$fw.IcmpEnabled) -IcmpRemoteAddress @($fw.IcmpRemoteAddress) -Thumbprint $Thumbprint -ResultPath ''
-    $smbScript = New-AzlRemotingBootstrapScript -RemoteAddress @($fw.RemoteAddress) -Rdp ([bool]$fw.RdpEnabled) -RdpRemoteAddress @($fw.RdpRemoteAddress) -Icmp ([bool]$fw.IcmpEnabled) -IcmpRemoteAddress @($fw.IcmpRemoteAddress) -Thumbprint $Thumbprint
+    if (-not [bool]$RemotingProfile.Transport.BootstrapWindowHttp -and -not $Thumbprint) {
+        return [pscustomobject]@{ Node = $Node; Ok = $false; Route = ''; Attempts = @(); Reason = "The class $($RemotingProfile.Class) never opens HTTP, so the bootstrap can open WinRM only over HTTPS for a certificate that is already on the node. Set os_configuration.remoting.certificate to its thumbprint, or open WinRM from the console or the BMC."; Result = $null }
+    }
+    # One run id per call: it names the smb result file and is the nonce in the result line of both routes. The profile decides every flag (sources,
+    # RDP, ICMP, HTTP); nothing here is wider than the profile.
+    $runId = [guid]::NewGuid().ToString('N')
+    $resultName = "azl-bootstrap-$runId.txt"
+    $common = @{ RemoteAddress = @($fw.RemoteAddress); Rdp = [bool]$fw.RdpEnabled; RdpRemoteAddress = @($fw.RdpRemoteAddress); Icmp = [bool]$fw.IcmpEnabled; IcmpRemoteAddress = @($fw.IcmpRemoteAddress); Thumbprint = $Thumbprint; Http = [bool]$RemotingProfile.Transport.BootstrapWindowHttp; Nonce = $runId }
+    $armScript = New-AzlRemotingBootstrapScript @common -ResultPath ''
+    $smbScript = New-AzlRemotingBootstrapScript @common -ResultPath "$($script:ResultFolder)\$resultName"
     $secret = @()
     if ($Credential) { $secret = @($Credential.GetNetworkCredential().Password) }
     $attempts = [System.Collections.Generic.List[object]]::new()
@@ -386,12 +423,12 @@ function Invoke-AzlWinRmBootstrap {
                 'smb' {
                     if (-not $Credential) { $outcome = [pscustomobject]@{ Route = 'smb'; Ok = $false; Reason = 'The smb route needs the local administrator credential and none is available.'; Result = $null } }
                     elseif ($SmbCommand) { $outcome = & $SmbCommand $Node $Address $smbScript $Credential }
-                    else { $outcome = Invoke-AzlSmbBootstrap -Node $Node -Address $Address -Script $smbScript -Credential $Credential -WaitSeconds $SmbWaitSeconds }
+                    else { $outcome = Invoke-AzlSmbBootstrap -Node $Node -Address $Address -Script $smbScript -Credential $Credential -ResultName $resultName -Nonce $runId -WaitSeconds $SmbWaitSeconds }
                 }
                 'arc' {
                     if (-not $ArcResourceId) { $outcome = [pscustomobject]@{ Route = 'arc'; Ok = $false; Reason = "The arc route needs the Arc machine of $Node and none was found."; Result = $null } }
                     elseif ($ArcCommand) { $outcome = & $ArcCommand $Node $ArcResourceId $armScript }
-                    else { $outcome = Invoke-AzlArcBootstrap -Node $Node -ArcResourceId $ArcResourceId -Script $armScript -WaitSeconds $ArcWaitSeconds }
+                    else { $outcome = Invoke-AzlArcBootstrap -Node $Node -ArcResourceId $ArcResourceId -Script $armScript -Nonce $runId -WaitSeconds $ArcWaitSeconds }
                 }
             }
         }
