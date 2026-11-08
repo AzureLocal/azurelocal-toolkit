@@ -18,7 +18,7 @@
       ],
       "properties": {
         "schema_version": {
-          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san). 5.3 also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting (transport, bootstrap_transport, allowed_source_cidrs).",
+          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san). 5.3 also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.6 adds the deployment block: the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run.",
           "type": "string",
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
@@ -423,6 +423,95 @@
               ]
             }
           }
+        }
+      }
+    },
+    "deployment": {
+      "description": "How the toolkit's ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks for approval and recovers. Optional; every key has a default; a -Settings value on the command line wins over this block. (since 5.6)",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "validate_timeout_minutes": {
+          "description": "How long the run waits for a Validate before it stops waiting (state ValidationTimedOut; Azure keeps working and the next run attaches to it). Microsoft: validation takes about 10 to 30 minutes. Default 90. (since 5.6)",
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 1440,
+          "default": 90
+        },
+        "deploy_timeout_minutes": {
+          "description": "How long the run waits for a Deploy before it stops waiting (state DeploymentTimedOut). Microsoft: 2.5 to 3 hours; several steps take 40 to 50 minutes or more. Default 360. (since 5.6)",
+          "type": "integer",
+          "minimum": 30,
+          "maximum": 1440,
+          "default": 360
+        },
+        "poll_seconds": {
+          "description": "Seconds between the first reads of the validation or deployment status. The delay grows by half each read up to poll_max_seconds. Default 15. (since 5.6)",
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 300,
+          "default": 15
+        },
+        "poll_max_seconds": {
+          "description": "The longest delay between two reads. Default 120. (since 5.6)",
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 600,
+          "default": 120
+        },
+        "approval": {
+          "description": "Mode ValidateAndDeploy: what happens between a good Validate and the Deploy. stop (default): the run ends in state AwaitingApproval and a later run with Mode Deploy continues. prompt: asks on the console, and stops without a console. none: continues at once (a lab). Pipelines run Validate and Deploy as two jobs with the platform's approval between them and do not use this. (since 5.6)",
+          "enum": [
+            "stop",
+            "prompt",
+            "none"
+          ],
+          "default": "stop"
+        },
+        "resume": {
+          "description": "Allow the run to resubmit a failed Deploy (and attach to a running one). Without it a failed Deploy is refused. Microsoft's portal has Resume deployment for a failed instance; for the ARM route this resubmits the same parameters in Deploy mode. Default false. (since 5.6)",
+          "type": "boolean",
+          "default": false
+        },
+        "require_os_configuration_report": {
+          "description": "Fail the precondition OsConfigurationConverged when no OS configuration report is given, instead of skipping it with a warning. Default false. (since 5.6)",
+          "type": "boolean",
+          "default": false
+        },
+        "skip_preconditions": {
+          "description": "Preconditions to skip on purpose. They appear in the report as Skipped, never hidden. (since 5.6)",
+          "type": "array",
+          "items": {
+            "enum": [
+            "AzureContext",
+            "ResourceGroup",
+            "ResourceProviders",
+            "Permissions",
+            "NamesAvailable",
+            "KeyVaultSecrets",
+            "ArcMachinesConnected",
+            "ArcMachineNaming",
+            "OsConfigurationConverged",
+            "OsBuildConsistent",
+            "SbeConsistent",
+            "DnsAndTime",
+            "ActiveDirectoryPrepared",
+            "LocalIdentityPrerequisites",
+            "NoLeftoverFailedDeployment",
+            "ValidatedBeforeDeploy"
+            ]
+          }
+        },
+        "acknowledge_known_issues": {
+          "description": "Ids from config/known-issues/arm-deployment.json that you accept, so a precondition or a resume that a known issue would block goes ahead (for example arc-device-id-name). Leave empty normally. (since 5.6)",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "deployment_settings_api_version": {
+          "description": "Patch the deploymentSettings api-version in Microsoft's template (for example 2026-10-01) when the template's own preview version is retired. Default: the template's. (since 5.6)",
+          "type": "string"
         }
       }
     },

@@ -23,10 +23,10 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-Import-Module (Join-Path $PSScriptRoot '..\infrastructure\AzlInfrastructure.psm1')
-Import-Module (Join-Path $PSScriptRoot '..\azure-local\AzlAzure.psm1')
+Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'infrastructure', 'AzlInfrastructure.psm1'))
+Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'azure-local', 'AzlAzure.psm1'))
 
-$script:CatalogPath = Join-Path $PSScriptRoot '..\..\..\config\azure\arm-templates\template-parameters.json'
+$script:CatalogPath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'config', 'azure', 'arm-templates', 'template-parameters.json')
 $script:DeploymentsApiVersion = '2024-03-01'
 $script:HciApiVersion = '2026-10-01'
 $script:SecretParameters = @('localAdminPassword', 'AzureStackLCMAdminPassword')
@@ -573,15 +573,25 @@ function Get-AzlDeploymentState {
     $path = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.AzureStackHCI/clusters/$ClusterName/deploymentSettings/default"
     $r = Invoke-AzlArm -Method GET -Path $path -ApiVersion $script:HciApiVersion -AllowNotFound
     if (-not $r) { return $null }
+    # FullStepIndex is the number the portal shows ("0.41"): the step's own fullStepIndex, else its position path.
     $flatten = {
-        param($steps, $depth)
+        param($steps, $depth, $prefix)
+        $position = 0
         foreach ($s in @($steps)) {
             if (-not $s) { continue }
+            $path = if ($prefix) { "$prefix.$position" } else { [string]$position }
+            $position++
+            $errors = foreach ($e in @(Get-AzlProp $s 'exception' @())) {
+                $text = if ($e -is [string]) { $e } elseif (Get-AzlProp $e 'message') { [string](Get-AzlProp $e 'message') } else { [string]$e }
+                if ($text) { $text }
+            }
             [pscustomobject]@{
                 Depth = $depth; Name = [string](Get-AzlProp $s 'name' ''); Status = [string](Get-AzlProp $s 'status' ''); Description = [string](Get-AzlProp $s 'description' '')
-                Errors = @(@(Get-AzlProp $s 'exception' @()) | ForEach-Object { [string]$_ } | Where-Object { $_ })
+                FullStepIndex = [string](Get-AzlProp $s 'fullStepIndex' $path)
+                StartTime = [string](Get-AzlProp $s 'startTimeUtc' ''); EndTime = [string](Get-AzlProp $s 'endTimeUtc' '')
+                Errors = @($errors)
             }
-            & $flatten (Get-AzlProp $s 'steps' @()) ($depth + 1)
+            & $flatten (Get-AzlProp $s 'steps' @()) ($depth + 1) $path
         }
     }
     $validation = Get-AzlProp $r 'properties.reportedProperties.validationStatus'
@@ -618,6 +628,9 @@ function Invoke-AzlArmDeployment {
         [string]$DeploymentSettingsApiVersion,
         [int]$TimeoutMinutes,
         [int]$PollSeconds = 30,
+        # The ARM deployment's name. Default: azl-<mode>-<time stamp>. AzlArmDeploymentRun passes azl-<mode>-<parameter hash>,
+        # so the same parameters are the same deployment and a re-run can attach to it.
+        [string]$DeploymentName,
         [switch]$NoWait,
         [switch]$AllowRevalidate,
         [switch]$SkipValidationCheck,
@@ -649,7 +662,7 @@ function Invoke-AzlArmDeployment {
         foreach ($r in $list) { if ([string]$r['type'] -ieq 'microsoft.azurestackhci/clusters/deploymentSettings') { $r['apiVersion'] = $DeploymentSettingsApiVersion; $patched++ } }
         if (-not $patched) { Write-Warning 'No deploymentSettings resource found to patch the api-version on.' }
     }
-    $name = 'azl-{0}-{1:yyyyMMddHHmmss}' -f $Mode.ToLowerInvariant(), (Get-Date)
+    $name = if ($DeploymentName) { $DeploymentName } else { 'azl-{0}-{1:yyyyMMddHHmmss}' -f $Mode.ToLowerInvariant(), (Get-Date) }
     $path = "/subscriptions/$SubscriptionId/resourcegroups/$ResourceGroup/providers/Microsoft.Resources/deployments/$name"
     $null = Invoke-AzlArm -Method PUT -Path $path -ApiVersion $script:DeploymentsApiVersion -Body @{ properties = @{ mode = 'Incremental'; template = $templateBody; parameters = $parameters } }
     if ($NoWait) { return [pscustomobject]@{ Mode = $Mode; DeploymentName = $name; ProvisioningState = 'Submitted'; ValidationStatus = ''; ValidationSteps = @(); FailedSteps = @(); Error = '' } }

@@ -45,6 +45,7 @@
     ArmDeployment = @(
         '^storage\.san(\.|$)'
         '^nodes\[\]\.san(\.|$)'
+        '^deployment(\.|$)'
     )
 
     # Keys Trailwright does not write: host-local paths and files only the operator sets on the management host.
@@ -114,6 +115,7 @@
         @{ Pattern = '^provisioning\.'; Text = 'The OS release you pin, from the release notes of Azure Local.' }
         @{ Pattern = '^security\.'; Text = 'Your security baseline; Microsoft''s recommended defaults apply when omitted.' }
         @{ Pattern = '^operations\.'; Text = 'Your operations design.' }
+        @{ Pattern = '^deployment\.'; Text = 'Your run policy for Invoke-AzureLocalArmDeployment.ps1: how long to wait, whether to ask before the Deploy, whether a failed Deploy may be resumed. The defaults suit most runs.' }
         @{ Pattern = '^network_devices'; Text = 'Your network inventory.' }
         @{ Pattern = '^(landing_zone|devops)'; Text = 'Your Azure foundation design (parts 1 and 2 of the implementation steps).' }
         @{ Pattern = '^disconnected'; Text = 'Your disconnected-operations design.' }

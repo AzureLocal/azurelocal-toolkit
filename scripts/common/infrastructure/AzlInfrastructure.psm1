@@ -810,6 +810,7 @@ function Get-SemanticFinding {
     Get-ZtpActionFinding -Infra $Infra -Nodes $nodes
     Get-SbeDeliveryFinding -Infra $Infra -Nodes $nodes -OwnerOf $ownerOf
     Get-OsConfigurationFinding -Infra $Infra
+    Get-DeploymentOptionFinding -Infra $Infra
 
     # Arc machine names: unique, and arc_machine_name rather than the deprecated arc_resource_name.
     for ($i = 0; $i -lt $nodeCount; $i++) {
@@ -1316,6 +1317,40 @@ function Get-SbeDeliveryFinding {
     }
 }
 
+# AZL-040: the ARM Validate and Deploy options (schema 5.6, the deployment block): polling, time limits, approval, and the names
+# the skip and acknowledge lists use.
+function Get-DeploymentOptionFinding {
+    param([System.Collections.IDictionary]$Infra)
+    $d = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'deployment'
+    if ($d -isnot [System.Collections.IDictionary]) { return }
+    $poll = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'deployment.poll_seconds'
+    $max = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'deployment.poll_max_seconds'
+    if ($null -ne $poll -and $null -ne $max -and [int]$max -lt [int]$poll) {
+        New-Finding 'AZL-040' error 'deployment.poll_max_seconds' "poll_max_seconds ($max) is less than poll_seconds ($poll); the longest delay can't be shorter than the first."
+    }
+    $validate = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'deployment.validate_timeout_minutes'
+    if ($null -ne $validate -and [int]$validate -lt 30) {
+        New-Finding 'AZL-040' warning 'deployment.validate_timeout_minutes' "A Validate takes about 10 to 30 minutes (Microsoft); $validate minutes may stop the wait while Azure is still working. The next run attaches to it, so nothing is lost, but the run reports a time-out."
+    }
+    $deploy = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'deployment.deploy_timeout_minutes'
+    if ($null -ne $deploy -and [int]$deploy -lt 240) {
+        New-Finding 'AZL-040' warning 'deployment.deploy_timeout_minutes' "A Deploy takes 2.5 to 3 hours (Microsoft) and some steps 40 to 50 minutes or more; $deploy minutes will usually stop the wait early. Azure keeps working and the next run attaches to it."
+    }
+    if ((Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'deployment.approval') -eq 'none') {
+        New-Finding 'AZL-040' warning 'deployment.approval' 'approval none starts the Deploy right after a good Validate, with nobody reading it. Use it in a lab only; pipelines should keep an approval between the two.'
+    }
+    $known = $null
+    foreach ($id in @(Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'deployment.acknowledge_known_issues')) {
+        if (-not $id) { continue }
+        if ($null -eq $known) {
+            $file = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'config', 'known-issues', 'arm-deployment.json')
+            $known = if (Test-Path -LiteralPath $file -PathType Leaf) { @((Get-Content -LiteralPath $file -Raw | ConvertFrom-Json -AsHashtable -Depth 20)['issues'] | ForEach-Object { $_['id'] }) } else { @() }
+        }
+        if ($known.Count -and $id -ne '*' -and $id -notin $known) {
+            New-Finding 'AZL-040' warning 'deployment.acknowledge_known_issues' "'$id' is not an id in config/known-issues/arm-deployment.json ($($known -join ', ')), so it acknowledges nothing."
+        }
+    }
+}
 # AZL-025: the site's management address range (simplified provisioning, static management addresses).
 function Get-SiteRangeFinding {
     param([System.Collections.IDictionary]$Infra, [object[]]$Nodes, [hashtable]$OwnerOf, [string]$Subnet, [bool]$Simplified)

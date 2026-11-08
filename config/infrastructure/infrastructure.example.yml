@@ -501,3 +501,16 @@ os_configuration:
   clear_storage: false
 
 extensions: {}
+
+# Schema 5.6 (optional): how the ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks and recovers.
+# Every key has the default shown. Uncomment the section and set _metadata.schema_version to 5.6.0 to change one.
+# deployment:
+#   validate_timeout_minutes: 90
+#   deploy_timeout_minutes: 360
+#   poll_seconds: 15
+#   poll_max_seconds: 120
+#   approval: stop                # stop | prompt | none (ValidateAndDeploy; pipelines use an environment approval instead)
+#   resume: false                 # true: a failed Deploy is resubmitted
+#   require_os_configuration_report: false
+#   skip_preconditions: []
+#   acknowledge_known_issues: []  # for example [arc-device-id-name]

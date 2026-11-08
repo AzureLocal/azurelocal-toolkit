@@ -1,0 +1,270 @@
+# Azure Local ARM Validate and Deploy, GitHub Actions.
+#
+# Copy to .github/workflows/arm-deployment.yml. It runs the command an operator runs by hand:
+#   pwsh -File scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1 ...
+# and nothing else; the logic (preconditions, Validate, polling, known issues, resume) is in the script, not here.
+# Design: docs/design/arm-validate-deploy.md. Guide: docs/arm-deployment-guide.md.
+#
+# Jobs
+#   preconditions   Read-only. Generates the ARM parameters and runs every precondition (the OS configuration converged, Arc
+#                   machines Connected and named after the hosts, Key Vault secrets present, resource providers, permissions,
+#                   names, DNS, Active Directory, no leftover failed deployment). Always runs.
+#   validate        Mode Validate. Runs for mode Validate and ValidateAndDeploy. A Validate that already passed with the same
+#                   parameters is not submitted again; one that is running is attached to.
+#   deploy          Mode Deploy (2.5 to 3 hours). Runs for mode ValidateAndDeploy and Deploy, and only after a reviewer of the
+#                   GitHub environment `azure-local-deploy` approved it. The reviewer reads the validate job's summary. The job
+#                   checks every precondition and that THESE parameters validated, so an approval cannot start a Deploy of
+#                   parameters that were never validated. `resume` resubmits a failed Deploy.
+#
+# Settings (Settings > Secrets and variables > Actions; names only, no value is in this file)
+#   variables  AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID   an app registration (or user-assigned managed identity)
+#              with a federated credential for this repository and for the environment azure-local-deploy. No client secret.
+#   secrets    none. The local administrator and LCM passwords are read from the Key Vaults named by the keyvault:// references
+#              in the master file; the identity needs Get on those secrets and the rights listed in the design (section 12).
+# Environment `azure-local-deploy`: add required reviewers (Settings > Environments). That is the approval gate.
+# Runner: a self-hosted Linux runner with pwsh 7, labelled azure-local. It needs only HTTPS to Azure. The Active Directory
+# check needs a domain-joined runner with the ActiveDirectory module; on another runner that check is Skipped, not failed.
+#
+# Where the files come from: the master file is a path in this repository (infrastructure_file). The OS configuration report is
+# the artifact `os-configuration-report` of the OS configuration workflow (os_configuration_run_id) or a repository path
+# (os_configuration_report). The ZTP handoff is optional (handoff_file).
+name: Azure Local ARM deployment
+
+on:
+  workflow_dispatch:
+    inputs:
+      infrastructure_file:
+        description: 'Path of the master infrastructure.yml in the repository'
+        required: true
+        default: 'config/infrastructure.yml'
+      os_configuration_run_id:
+        description: 'Run ID of the OS configuration workflow whose artifact os-configuration-report holds the report (leave empty to use os_configuration_report)'
+        required: false
+        default: ''
+      os_configuration_report:
+        description: 'Repository path of an OS configuration report directory or report.json (used when no run ID is given; may stay empty)'
+        required: false
+        default: ''
+      handoff_file:
+        description: 'Repository path of the ZTP handoff file (optional)'
+        required: false
+        default: ''
+      mode:
+        description: 'Plan: preconditions only. Validate: plus Validate. ValidateAndDeploy: plus Deploy after approval. Deploy: Deploy only, after approval, needs a Validate that succeeded.'
+        type: choice
+        options:
+          - Plan
+          - Validate
+          - ValidateAndDeploy
+          - Deploy
+        default: Plan
+      resume:
+        description: 'Deploy: resubmit a failed deployment (after you read the failing step and the known issue)'
+        type: boolean
+        default: false
+      acknowledge_known_issues:
+        description: 'Comma-separated known issue ids to proceed past (for example arc-device-id-name). Leave empty normally.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+  id-token: write
+  actions: read
+
+# One ARM deployment at a time per repository.
+concurrency:
+  group: azure-local-arm-deployment
+  cancel-in-progress: false
+
+env:
+  ARM_SCRIPT: scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1
+  INFRASTRUCTURE_FILE: ${{ inputs.infrastructure_file }}
+  HANDOFF_FILE: ${{ inputs.handoff_file }}
+  OS_REPORT: ${{ inputs.os_configuration_report }}
+  ACKNOWLEDGE: ${{ inputs.acknowledge_known_issues }}
+
+jobs:
+  preconditions:
+    name: Preconditions (read only)
+    runs-on: [self-hosted, linux, azure-local]
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the OS configuration report
+        if: ${{ inputs.os_configuration_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: os-configuration-report
+          path: ${{ runner.temp }}/os-configuration-report
+          run-id: ${{ inputs.os_configuration_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Point OS_REPORT at the downloaded artifact
+        if: ${{ inputs.os_configuration_run_id != '' }}
+        shell: bash
+        run: echo "OS_REPORT=${RUNNER_TEMP}/os-configuration-report" >> "$GITHUB_ENV"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      - name: Install the PowerShell modules
+        shell: pwsh
+        run: |
+          foreach ($m in 'powershell-yaml', 'Az.Accounts', 'Az.KeyVault') {
+            if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery }
+          }
+
+      - name: Preconditions
+        shell: bash
+        run: |
+          args=(-InfrastructureFile "$INFRASTRUCTURE_FILE" -Mode Plan -ReportDirectory "$RUNNER_TEMP/arm-plan")
+          [ -n "$OS_REPORT" ] && args+=(-OsConfigurationReport "$OS_REPORT")
+          [ -n "$HANDOFF_FILE" ] && args+=(-HandoffFile "$HANDOFF_FILE")
+          pwsh -NoProfile -File "$ARM_SCRIPT" "${args[@]}"
+
+      - name: Job summary
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/arm-plan/summary.md" ]; then cat "$RUNNER_TEMP/arm-plan/summary.md" >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Publish the plan report and the event feed
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm-deployment-plan
+          path: ${{ runner.temp }}/arm-plan
+          if-no-files-found: warn
+
+  validate:
+    name: Validate
+    needs: preconditions
+    if: ${{ inputs.mode == 'Validate' || inputs.mode == 'ValidateAndDeploy' }}
+    runs-on: [self-hosted, linux, azure-local]
+    timeout-minutes: 150
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the OS configuration report
+        if: ${{ inputs.os_configuration_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: os-configuration-report
+          path: ${{ runner.temp }}/os-configuration-report
+          run-id: ${{ inputs.os_configuration_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Point OS_REPORT at the downloaded artifact
+        if: ${{ inputs.os_configuration_run_id != '' }}
+        shell: bash
+        run: echo "OS_REPORT=${RUNNER_TEMP}/os-configuration-report" >> "$GITHUB_ENV"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      - name: Install the PowerShell modules
+        shell: pwsh
+        run: |
+          foreach ($m in 'powershell-yaml', 'Az.Accounts', 'Az.KeyVault') {
+            if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery }
+          }
+
+      - name: Validate
+        shell: bash
+        run: |
+          args=(-InfrastructureFile "$INFRASTRUCTURE_FILE" -Mode Validate -ReportDirectory "$RUNNER_TEMP/arm-validate")
+          [ -n "$OS_REPORT" ] && args+=(-OsConfigurationReport "$OS_REPORT")
+          [ -n "$HANDOFF_FILE" ] && args+=(-HandoffFile "$HANDOFF_FILE")
+          pwsh -NoProfile -File "$ARM_SCRIPT" "${args[@]}"
+
+      - name: Job summary (the reviewer reads this before approving the Deploy)
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/arm-validate/summary.md" ]; then cat "$RUNNER_TEMP/arm-validate/summary.md" >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Publish the validate report and the event feed
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm-deployment-validate
+          path: ${{ runner.temp }}/arm-validate
+          if-no-files-found: warn
+
+  deploy:
+    name: Deploy (needs approval)
+    needs: [preconditions, validate]
+    # validate is skipped for mode Deploy; always() lets the job run then, but only when nothing before it failed.
+    if: ${{ always() && !cancelled() && needs.preconditions.result == 'success' && (needs.validate.result == 'success' || needs.validate.result == 'skipped') && (inputs.mode == 'ValidateAndDeploy' || inputs.mode == 'Deploy') }}
+    runs-on: [self-hosted, linux, azure-local]
+    # Required reviewers on this environment are the approval gate.
+    environment: azure-local-deploy
+    # 2.5 to 3 hours of deployment, the wait limit is 6 hours.
+    timeout-minutes: 420
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Fetch the OS configuration report
+        if: ${{ inputs.os_configuration_run_id != '' }}
+        uses: actions/download-artifact@v4
+        with:
+          name: os-configuration-report
+          path: ${{ runner.temp }}/os-configuration-report
+          run-id: ${{ inputs.os_configuration_run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Point OS_REPORT at the downloaded artifact
+        if: ${{ inputs.os_configuration_run_id != '' }}
+        shell: bash
+        run: echo "OS_REPORT=${RUNNER_TEMP}/os-configuration-report" >> "$GITHUB_ENV"
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      - name: Install the PowerShell modules
+        shell: pwsh
+        run: |
+          foreach ($m in 'powershell-yaml', 'Az.Accounts', 'Az.KeyVault') {
+            if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery }
+          }
+
+      - name: Deploy
+        shell: bash
+        run: |
+          args=(-InfrastructureFile "$INFRASTRUCTURE_FILE" -Mode Deploy -ReportDirectory "$RUNNER_TEMP/arm-deploy")
+          [ -n "$OS_REPORT" ] && args+=(-OsConfigurationReport "$OS_REPORT")
+          [ -n "$HANDOFF_FILE" ] && args+=(-HandoffFile "$HANDOFF_FILE")
+          [ "${{ inputs.resume }}" = "true" ] && args+=(-Resume)
+          [ -n "$ACKNOWLEDGE" ] && args+=(-AcknowledgeKnownIssues "$ACKNOWLEDGE")
+          pwsh -NoProfile -File "$ARM_SCRIPT" "${args[@]}"
+
+      - name: Job summary (result)
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          if [ -f "$RUNNER_TEMP/arm-deploy/summary.md" ]; then cat "$RUNNER_TEMP/arm-deploy/summary.md" >> "$GITHUB_STEP_SUMMARY"; fi
+
+      - name: Publish the deploy report and the event feed
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm-deployment-deploy
+          path: ${{ runner.temp }}/arm-deploy
+          if-no-files-found: warn

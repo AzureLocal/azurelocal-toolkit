@@ -36,11 +36,20 @@ validate → plan → deploy-foundation → configure-onprem → deploy-cluster 
 - **Requirements**: Terraform extension from marketplace, service connection configured
 
 ## OS configuration (Phase 03)
- entry point, `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1`, runs standalone or unchanged in a pipeline: a read-only plan job (report and wipe list as artifacts), then an apply job behind an approval gate.
+
+The one-run entry point, `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1`, runs standalone or unchanged in a pipeline: a read-only plan job (report and wipe list as artifacts), then an apply job behind an approval gate.
 
 - GitHub Actions: `github/os-configuration.yml` (environment `azure-local-os-configuration` with required reviewers; OIDC).
 - GitLab CI: `gitlab/os-configuration.gitlab-ci.yml` (manual apply job, `resource_group`; managed identity or OIDC id_token).
- the master file and the handoff files come from, the permissions of the pipeline identity and the exit codes are in [OS configuration and ARM deployment](../docs/os-configuration-and-arm-deployment.md#run-it-in-one-go).
+
+Where the master file and the handoff files come from, the permissions of the pipeline identity and the exit codes are in [OS configuration and ARM deployment](../docs/os-configuration-and-arm-deployment.md#run-it-in-one-go).
+
+## ARM Validate and Deploy (schema 5, one script)
+The Terraform and Ansible pipelines above do not call the schema 5 deployment script. These do, with an approval between Validate and
+Deploy, OIDC sign-in and no client secret. Guide: [docs/arm-deployment-guide.md](../docs/arm-deployment-guide.md).
+- **GitHub Actions**: `github-actions/arm-deployment.yml` (environment `azure-local-deploy`)
+- **GitLab CI**: `gitlab/stages/arm-deployment.yml` (declares its own stages; include it from a pipeline of its own)
+- **Azure DevOps**: `azure-devops/arm-deployment.yml` (environment `azure-local-deploy` with an Approvals check)
 
 ## Prerequisites
 
