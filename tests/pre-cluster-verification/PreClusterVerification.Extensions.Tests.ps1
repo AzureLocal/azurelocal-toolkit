@@ -29,7 +29,7 @@ function Get-AzlVerificationCheckDefinition {
     @(
         @{ Id = 'FAKE-001'; Category = 'azure'; Title = 'A fake check that passes'; Source = 'https://learn.microsoft.com/fake?view=azloc-2610'; Blocking = $true
            Applies = { param($Context) $true }
-           Run = { param($Context) @{ Status = 'Passed'; Node = '*'; Message = "fact: $(& $Context.Adapters.GetFakeFact) cluster: $($Context.Infrastructure.cluster.name)"; Remedy = ''; Evidence = 'seen by the fake' } } }
+           Run = { param($Context) @{ Status = 'Passed'; Node = '*'; Message = "fact: $(& $Context.Adapters.GetFakeFact) account: $((& $Context.Adapters.GetContext).Account) cluster: $($Context.Infrastructure.cluster.name)"; Remedy = ''; Evidence = 'seen by the fake' } } }
         @{ Id = 'FAKE-002'; Category = 'nodes'; Title = 'A fake check that fails per node'; Source = 'https://learn.microsoft.com/fake?view=azloc-2610'; Blocking = $true
            Applies = { param($Context) $true }
            Run = { param($Context) foreach ($n in $Context.Nodes) { @{ Status = 'Failed'; Node = [string]$n['name']; Message = 'broken'; Remedy = 'fix it'; Evidence = @('a', 'b') } } } }
@@ -53,15 +53,19 @@ Describe 'Loading verification modules' {
         $e.Modules[0].Checks | Should -Be 6
         $e.AdapterDefaults.Keys | Should -Contain 'GetFakeFact'
     }
-    It 'has an empty or missing folder load nothing' {
-        (Import-AzlPclExtension -Folder (Join-Path $TestDrive 'nope')).Definitions.Count | Should -Be 0
+    It 'loads nothing from an empty folder, and a missing folder becomes one failing check (not a silent gap)' {
+        $empty = Join-Path $TestDrive 'empty-ext'; $null = New-Item -ItemType Directory $empty
+        (Import-AzlPclExtension -Folder $empty).Definitions.Count | Should -Be 0
+        $missing = Import-AzlPclExtension -Folder (Join-Path $TestDrive 'nope')
+        $missing.Definitions.Count | Should -Be 1
+        $missing.Definitions[0].Id | Should -Be 'EXT-Folder'
     }
-    It 'turns a module that does not load, and one without definitions, into failing checks' {
+    It 'turns a module that does not load into a failing check, and reads one without definitions or adapters as a library' {
         $dir = New-FakeModuleFolder @{ 'AzlVerification.Broken.psm1' = 'throw "syntax of doom"'; 'AzlVerification.Empty.psm1' = 'function Foo { }; Export-ModuleMember -Function Foo' }
         $e = Import-AzlPclExtension -Folder $dir
-        $e.Definitions.Count | Should -Be 2
+        $e.Definitions.Count | Should -Be 1
         ($e.Modules | Where-Object { $_.Name -eq 'AzlVerification.Broken' }).Error | Should -Match 'syntax of doom'
-        ($e.Modules | Where-Object { $_.Name -eq 'AzlVerification.Empty' }).Error | Should -Match 'does not export Get-AzlVerificationCheckDefinition'
+        ($e.Modules | Where-Object { $_.Name -eq 'AzlVerification.Empty' }).Library | Should -BeTrue
         $r = Invoke-PclRun -ExtensionFolder $dir -Category readiness
         $c = Get-PclCheck $r 'EXT-Broken'
         $c.Status | Should -Be 'Failed'; $c.Blocking | Should -BeTrue
@@ -89,8 +93,8 @@ Describe 'Running the checks of a module' {
         $c.Message | Should -Match 'cluster: iic-clus01'
         $c.Message | Should -Match 'Evidence: seen by the fake'
     }
-    It 'never lets a module''s default replace a member the engine already has (the fake GetContext throws; AZR-001 still passes)' {
-        (Get-PclCheck $script:Run 'AZR-001').Status | Should -Be 'Passed'
+    It 'never lets a module''s default replace a member the engine or the caller already has (the module''s GetContext throws; the test''s answers)' {
+        (Get-PclCheck $script:Run 'FAKE-001').Message | Should -Match 'account: tester@example.invalid'
     }
     It 'lets a test override an adapter member the module brings' {
         $r = Invoke-PclRun -ExtensionFolder $script:Dir -Override @{ GetFakeFact = { 'from the test' } }
@@ -106,7 +110,7 @@ Describe 'Running the checks of a module' {
     It 'isolates a check that throws: Failed with the exception text, the run goes on' {
         $c = Get-PclCheck $script:Run 'FAKE-003'
         $c.Status | Should -Be 'Failed'; $c.Message | Should -Match 'the fake exploded'
-        (Get-PclCheck $script:Run 'NET-001' 'iic-n01').Status | Should -Be 'Passed'
+        (Get-PclCheck $script:Run 'FAKE-001').Status | Should -Be 'Passed'
     }
     It 'reports NotApplicable for Applies that returns false or a reason, and Failed for an unknown status' {
         (Get-PclCheck $script:Run 'FAKE-004').Status | Should -Be 'NotApplicable'
@@ -122,13 +126,13 @@ Describe 'Running the checks of a module' {
         $report.categories.nodes.Failed | Should -BeGreaterThan 1
     }
     It 'lets a module check replace a built-in check of the same Id' {
-        $mod = 'function Get-AzlVerificationCheckDefinition { @(@{ Id = ''AZR-003''; Category = ''azure''; Title = ''Replaced''; Source = ''x''; Applies = { param($Context) $true }; Run = { param($Context) @{ Status = ''Warning''; Message = ''the harvested version'' } } }) }; Export-ModuleMember -Function Get-AzlVerificationCheckDefinition'
+        $mod = 'function Get-AzlVerificationCheckDefinition { @(@{ Id = ''ARM-001''; Category = ''azure''; Title = ''Replaced''; Source = ''x''; Applies = { param($Context) $true }; Run = { param($Context) @{ Status = ''Warning''; Message = ''the harvested version'' } } }) }; Export-ModuleMember -Function Get-AzlVerificationCheckDefinition'
         $dir = New-FakeModuleFolder @{ 'AzlVerification.Replace.psm1' = $mod }
         $r = Invoke-PclRun -ExtensionFolder $dir -Category azure
-        $c = Get-PclCheck $r 'AZR-003'
+        $c = Get-PclCheck $r 'ARM-001'
         $c.Message | Should -Be 'the harvested version'
         $c.Title | Should -Be 'Replaced'
-        @(Get-PclCheck $r 'AZR-003').Count | Should -Be 1
+        @(Get-PclCheck $r 'ARM-001').Count | Should -Be 1
     }
     It 'lists the module checks in Mode Plan and accepts their ids in -AcceptSkipped' {
         $p = Invoke-PclRun -ExtensionFolder $script:Dir -Mode Plan

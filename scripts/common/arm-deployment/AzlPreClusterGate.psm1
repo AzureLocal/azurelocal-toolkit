@@ -110,16 +110,37 @@ function Read-AzlPclGateResult {
     try { return (Get-Content -LiteralPath $path -Raw | ConvertFrom-Json -Depth 30) } catch { return $null }
 }
 
+function ConvertTo-AzlPclUtc {
+    <#
+    .SYNOPSIS
+        A date of the report as a UTC DateTime, whatever ConvertFrom-Json made of it. PowerShell 7.0 to 7.4 turn an ISO string with Z into a local
+        DateTime, 7.5 and later into a UTC one; a string is read as UTC when it has no offset. $null when it is not a date.
+    #>
+    [CmdletBinding()]
+    param($Value)
+    if ($Value -is [datetime]) { return $(if ($Value.Kind -eq [DateTimeKind]::Unspecified) { [datetime]::SpecifyKind($Value, [DateTimeKind]::Utc) } else { $Value.ToUniversalTime() }) }
+    if ($Value -is [DateTimeOffset]) { return $Value.UtcDateTime }
+    $parsed = [DateTimeOffset]::MinValue
+    if ([DateTimeOffset]::TryParse([string]$Value, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AssumeUniversal, [ref]$parsed)) { return $parsed.UtcDateTime }
+    return $null
+}
+
 function Test-AzlPclGateResult {
     <#
     .SYNOPSIS
         Whether the latest gate result allows an ARM Validate or Deploy of -InfrastructureFile.
     .DESCRIPTION
         It does only when report.json exists and is readable, is a Verify result of all six categories (not partial), has the verdict
-        Pass, has the SHA-256 of the file as it is now, and has not expired. Every other case is Passed false with the reason and the
-        exact command to run.
+        Pass, has the SHA-256 of the file as it is now, has not expired, and its own checks agree with the verdict: some checks, all six
+        categories, no Failed check, nothing blocking, no Skipped check that was not accepted. summary.md must be there too. The ARM run
+        enforces its own maximum age (-MaxAgeHours) on top of the expiry the report carries, and a report dated in the future or with an expiry
+        more than 168 hours after it was made is refused. Every other case is Passed false with the reason and the exact command to run.
+    .PARAMETER ExpectedFileHash
+        The SHA-256 of the bytes the caller parsed (computed before it read the file). The report and the file now must both have it.
+    .PARAMETER MaxAgeHours
+        The caller's own maximum age of a result (deployment.pre_cluster_verification_max_age_hours); 0 uses only the report's expiry.
     .OUTPUTS
-        Passed, Reason, Command, Directory, Verdict, FileHash, ExpiresUtc, RunId, Report.
+        Passed, Reason, Command, Directory, Verdict, FileHash, ExpiresUtc, RunId, AcceptedSkipped, Report.
     #>
     [CmdletBinding()]
     param(
@@ -127,15 +148,20 @@ function Test-AzlPclGateResult {
         [Parameter(Mandatory)][string]$Directory,
         [datetime]$Now = [datetime]::UtcNow,
         [string]$HandoffFile,
-        [string]$OsConfigurationReport
+        [string]$OsConfigurationReport,
+        [string]$ExpectedFileHash,
+        [int]$MaxAgeHours = 0
     )
     $command = Get-AzlPclCommand -InfrastructureFile $InfrastructureFile -ReportDirectory $Directory -HandoffFile $HandoffFile -OsConfigurationReport $OsConfigurationReport
+    $get = { param($Object, [string]$Name) if ($null -ne $Object -and $Object.PSObject.Properties[$Name]) { $Object.PSObject.Properties[$Name].Value } else { $null } }
     $make = {
         param([bool]$Passed, [string]$Reason, $Report)
+        $accepted = if ($Report) { @(@(& $get $Report 'acceptedSkipped') | Where-Object { $_ } | ForEach-Object { [string]$_ }) } else { @() }
         [pscustomobject]@{
             Passed = $Passed; Reason = $Reason; Command = $command; Directory = $Directory
-            Verdict = $(if ($Report) { [string]$Report.verdict } else { '' }); FileHash = $(if ($Report) { [string]$Report.fileHash } else { '' })
-            ExpiresUtc = $(if ($Report) { [string]$Report.expiresUtc } else { '' }); RunId = $(if ($Report) { [string]$Report.runId } else { '' }); Report = $Report
+            Verdict = $(if ($Report) { [string](& $get $Report 'verdict') } else { '' }); FileHash = $(if ($Report) { [string](& $get $Report 'fileHash') } else { '' })
+            ExpiresUtc = $(if ($Report) { [string](& $get $Report 'expiresUtc') } else { '' }); RunId = $(if ($Report) { [string](& $get $Report 'runId') } else { '' })
+            AcceptedSkipped = $accepted; Report = $Report
         }
     }
     if (-not $InfrastructureFile -or -not (Test-Path -LiteralPath $InfrastructureFile -PathType Leaf)) {
@@ -144,23 +170,54 @@ function Test-AzlPclGateResult {
     $report = Read-AzlPclGateResult -Directory $Directory
     if (-not $report) { return (& $make $false "There is no result of the pre-cluster verification in $Directory (no readable $script:ReportFile)." $null) }
     $props = $report.PSObject.Properties.Name
-    foreach ($needed in 'schema', 'mode', 'verdict', 'fileHash', 'expiresUtc', 'partial') {
+    foreach ($needed in 'schema', 'mode', 'verdict', 'fileHash', 'expiresUtc', 'partial', 'completedUtc', 'runId', 'checks', 'categories') {
         if ($needed -notin $props) { return (& $make $false "The result in $Directory has no '$needed' field; it is not a result of this gate." $report) }
     }
-    if ([int]$report.schema -ne $script:SchemaVersion) { return (& $make $false "The result in $Directory has schema $($report.schema); this toolkit reads schema $script:SchemaVersion." $report) }
+    $schema = 0
+    if (-not [int]::TryParse([string]$report.schema, [ref]$schema) -or $schema -ne $script:SchemaVersion) { return (& $make $false "The result in $Directory has schema $($report.schema); this toolkit reads schema $script:SchemaVersion." $report) }
     if ([string]$report.mode -ne 'Verify') { return (& $make $false "The latest result in $Directory is from mode '$($report.mode)'; only a Verify run counts." $report) }
-    if ([bool]$report.partial) { return (& $make $false "The latest result in $Directory covers only some categories (-Category was used). A partial run never counts." $report) }
-    if ([string]$report.verdict -ne 'Pass') { return (& $make $false "The latest pre-cluster verification (run $($report.runId)) has the verdict $($report.verdict), not Pass; $(@($report.checks | Where-Object { $_.blocking }).Count) check(s) block." $report) }
+    if ($null -eq $report.partial -or $report.partial -isnot [bool]) { return (& $make $false "The result in $Directory has no true or false 'partial' field." $report) }
+    if ($report.partial) { return (& $make $false "The latest result in $Directory covers only some categories (-Category was used). A partial run never counts." $report) }
+    $checks = @($report.checks | Where-Object { $null -ne $_ })
+    # A check of a hand-made or damaged report may lack any field: read them all safely.
+    $blocking = @($checks | Where-Object { (& $get $_ 'blocking') -eq $true -or [string](& $get $_ 'status') -eq 'Failed' })
+    $ids = { param($List) ((@($List | ForEach-Object { $n = [string](& $get $_ 'node'); "$(& $get $_ 'checkId')$(if ($n -and $n -ne '*') { '@' + $n })" } | Select-Object -Unique | Select-Object -First 12)) -join ', ') + $(if (@($List).Count -gt 12) { ', ...' } else { '' }) }
+    if ([string]$report.verdict -ne 'Pass') { return (& $make $false "The latest pre-cluster verification (run $($report.runId)) has the verdict $($report.verdict), not Pass; $($blocking.Count) check(s) block: $(& $ids $blocking)." $report) }
+    # The verdict is not taken on trust: the checks inside the report must agree with it.
+    if (-not $checks.Count) { return (& $make $false "The result in $Directory says Pass but lists no check." $report) }
+    if ($blocking.Count) { return (& $make $false "The result in $Directory says Pass but lists Failed or blocking check(s): $(& $ids $blocking)." $report) }
+    $loose = @($checks | Where-Object { [string](& $get $_ 'status') -eq 'Skipped' -and (& $get $_ 'accepted') -ne $true })
+    if ($loose.Count) { return (& $make $false "The result in $Directory says Pass but lists Skipped check(s) that were not accepted with -AcceptSkipped: $(& $ids $loose)." $report) }
+    $unknown = @($checks | Where-Object { [string](& $get $_ 'status') -notin 'Passed', 'Warning', 'NotApplicable', 'Fixed', 'Skipped' })
+    if ($unknown.Count) { return (& $make $false "The result in $Directory lists check(s) with an unknown status: $(& $ids $unknown)." $report) }
+    $present = if ($report.categories) { @($report.categories.PSObject.Properties.Name) } else { @() }
+    $missing = @($script:Categories | Where-Object { $_ -notin $present })
+    if ($missing.Count) { return (& $make $false "The result in $Directory has no result for the categories $($missing -join ', '); a full run covers all six." $report) }
+    if (-not (Test-Path -LiteralPath (Join-Path $Directory $script:SummaryFile) -PathType Leaf)) { return (& $make $false "The result in $Directory has no $script:SummaryFile next to it; a run that did not write all its outputs does not count." $report) }
     $hash = Get-AzlPclFileHash -Path $InfrastructureFile
+    $short = { param($h) ([string]$h).Substring(0, [Math]::Min(12, ([string]$h).Length)) }
     if ([string]$report.fileHash -ne $hash) {
-        return (& $make $false "The infrastructure file changed since the verification (run $($report.runId) saw SHA-256 $(([string]$report.fileHash).Substring(0, [Math]::Min(12, ([string]$report.fileHash).Length)))..., the file now has $($hash.Substring(0, 12))...)." $report)
+        return (& $make $false "The infrastructure file changed since the verification (run $($report.runId) saw SHA-256 $(& $short $report.fileHash)..., the file now has $(& $short $hash)...)." $report)
     }
-    $expires = [datetime]::MinValue
-    if (-not [datetime]::TryParse([string]$report.expiresUtc, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal -bor [System.Globalization.DateTimeStyles]::AssumeUniversal, [ref]$expires)) {
-        return (& $make $false "The result in $Directory has an expiresUtc that is not a date ($($report.expiresUtc))." $report)
+    if ($ExpectedFileHash -and $ExpectedFileHash -ne $hash) {
+        return (& $make $false "The infrastructure file changed while it was being read (it had SHA-256 $(& $short $ExpectedFileHash)... when it was parsed, it has $(& $short $hash)... now)." $report)
     }
-    if ($Now.ToUniversalTime() -ge $expires) { return (& $make $false "The latest pre-cluster verification (run $($report.runId)) expired at $($expires.ToString('o')); results count for a limited time (deployment.pre_cluster_verification_max_age_hours)." $report) }
-    return (& $make $true "The pre-cluster verification (run $($report.runId)) passed for this file and is valid until $($expires.ToString('o'))." $report)
+    $nowUtc = ConvertTo-AzlPclUtc $Now
+    $expires = ConvertTo-AzlPclUtc $report.expiresUtc
+    $completed = ConvertTo-AzlPclUtc $report.completedUtc
+    if ($null -eq $expires) { return (& $make $false "The result in $Directory has an expiresUtc that is not a date ($($report.expiresUtc))." $report) }
+    if ($null -eq $completed) { return (& $make $false "The result in $Directory has a completedUtc that is not a date ($($report.completedUtc))." $report) }
+    if ($completed -gt $nowUtc.AddMinutes(5)) { return (& $make $false "The result in $Directory was completed at $($completed.ToString('o')), which is in the future." $report) }
+    if (($expires - $completed) -gt [TimeSpan]::FromHours(168).Add([TimeSpan]::FromMinutes(1))) { return (& $make $false "The result in $Directory expires more than 168 hours after it was made." $report) }
+    $effective = $expires
+    if ($MaxAgeHours -gt 0 -and $completed.AddHours($MaxAgeHours) -lt $effective) { $effective = $completed.AddHours($MaxAgeHours) }
+    if ($nowUtc -ge $effective) {
+        $why = if ($effective -lt $expires) { "the ARM run allows a result to be $MaxAgeHours hour(s) old (deployment.pre_cluster_verification_max_age_hours)" } else { 'results count for a limited time (deployment.pre_cluster_verification_max_age_hours)' }
+        return (& $make $false "The latest pre-cluster verification (run $($report.runId)) expired at $($effective.ToString('o')); $why." $report)
+    }
+    $accepted = @(@(& $get $report 'acceptedSkipped') | Where-Object { $_ })
+    $note = if ($accepted.Count) { " $($accepted.Count) check(s) stayed Skipped and were accepted by the operator with -AcceptSkipped: $($accepted -join ', ')." } else { '' }
+    return (& $make $true "The pre-cluster verification (run $($report.runId)) passed for this file and is valid until $($effective.ToString('o')).$note" $report)
 }
 
-Export-ModuleMember -Function Get-AzlPclContract, Get-AzlPclFileHash, Resolve-AzlPclReportDirectory, Get-AzlPclCommand, Read-AzlPclGateResult, Test-AzlPclGateResult
+Export-ModuleMember -Function ConvertTo-AzlPclUtc, Get-AzlPclContract, Get-AzlPclFileHash, Resolve-AzlPclReportDirectory, Get-AzlPclCommand, Read-AzlPclGateResult, Test-AzlPclGateResult

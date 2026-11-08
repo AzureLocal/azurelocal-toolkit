@@ -149,7 +149,10 @@ function Invoke-TestRun {
     )
     # These tests are about the ARM run, not about the pre-cluster verification gate (tests/arm-deployment/ArmDeploymentRun.PreClusterVerification.Tests.ps1):
     # the precondition PreClusterVerification is bypassed unless a test says otherwise.
-    if (-not $Settings.ContainsKey('skipPreClusterVerification')) { $Settings = $Settings.Clone(); $Settings['skipPreClusterVerification'] = $true }
+    # The bypass is only the switch (a skip key in -Settings is refused); a test that sets the key here means the switch.
+    $Settings = $Settings.Clone()
+    $skipGate = $true
+    if ($Settings.ContainsKey('skipPreClusterVerification')) { $skipGate = [bool]$Settings['skipPreClusterVerification']; $Settings.Remove('skipPreClusterVerification') }
     if (-not $Infra) { $Infra = Get-TestInfra }
     if (-not $Dir) { $Dir = Join-Path $TestDrive ('run-' + [guid]::NewGuid().ToString('N').Substring(0, 6)) }
     if (-not $PSBoundParameters.ContainsKey('OsReport')) { $OsReport = Get-TestOsReport -Infra $Infra }
@@ -157,6 +160,7 @@ function Invoke-TestRun {
     if ($InfraFile) { $arguments.InfrastructureFile = $InfraFile }
     if ($OsReport) { $arguments.OsConfigurationReport = $OsReport }
     if ($Handoff) { $arguments.HandoffFile = $Handoff }
+    if ($skipGate) { $arguments.SkipPreClusterVerification = $true }
     if ($Resume) { $arguments.Resume = $true }
     if ($AutoApprove) { $arguments.AutoApprove = $true }
     if ($DryRun) { $arguments.WhatIf = $true }

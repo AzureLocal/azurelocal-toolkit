@@ -1611,11 +1611,11 @@ function Test-AzlArmPreClusterVerification {
     if ($s.skipPreClusterVerification) {
         $text = 'BYPASSED: the pre-cluster verification was skipped on purpose (-SkipPreClusterVerification). Nothing checked the prerequisites of Microsoft Learn before this run, so Azure may fail for something the gate would have caught.'
         Write-Warning $text
-        $Run.Report.preClusterVerification = [ordered]@{ status = 'Bypassed'; bypassed = $true; directory = $directory; reason = 'The operator passed -SkipPreClusterVerification.'; command = $command; runId = ''; verdict = ''; fileHash = ''; expiresUtc = '' }
+        $Run.Report.preClusterVerification = [ordered]@{ status = 'Bypassed'; bypassed = $true; directory = $directory; reason = 'The operator passed the explicit switch -SkipPreClusterVerification (a setting in a file or in -Settings cannot do this).'; command = $command; runId = ''; verdict = ''; fileHash = ''; expiresUtc = '' }
         return New-AzlArmCheckResult PreClusterVerification Warning $text "Run the gate to get a real result: $command"
     }
-    $t = Test-AzlPclGateResult -InfrastructureFile $InfrastructureFile -Directory $directory -Now (& $Run.Adapter.Now) -HandoffFile $HandoffFile -OsConfigurationReport $OsConfigurationReport
-    $Run.Report.preClusterVerification = [ordered]@{ status = $(if ($t.Passed) { 'Passed' } else { 'Failed' }); bypassed = $false; directory = $directory; reason = $t.Reason; command = $t.Command; runId = $t.RunId; verdict = $t.Verdict; fileHash = $t.FileHash; expiresUtc = $t.ExpiresUtc }
+    $t = Test-AzlPclGateResult -InfrastructureFile $InfrastructureFile -Directory $directory -Now (& $Run.Adapter.Now) -HandoffFile $HandoffFile -OsConfigurationReport $OsConfigurationReport -ExpectedFileHash ([string]$Run.FileHash) -MaxAgeHours ([int]$s.preClusterVerificationMaxAgeHours)
+    $Run.Report.preClusterVerification = [ordered]@{ status = $(if ($t.Passed) { 'Passed' } else { 'Failed' }); bypassed = $false; directory = $directory; reason = $t.Reason; command = $t.Command; runId = $t.RunId; verdict = $t.Verdict; fileHash = $t.FileHash; expiresUtc = $t.ExpiresUtc; acceptedSkipped = @($t.AcceptedSkipped) }
     if ($t.Passed) { return New-AzlArmCheckResult PreClusterVerification Passed $t.Reason }
     $result = if ($Run.Mode -eq 'Plan') { 'Warning' } else { 'Failed' }
     New-AzlArmCheckResult PreClusterVerification $result "The pre-cluster verification does not allow this run: $($t.Reason)" "Run the pre-cluster verification first: $($t.Command)"
@@ -2072,6 +2072,7 @@ function Format-AzlArmSummary {
         $l.Add("- **Status:** $($g.status)$(if ($g.bypassed) { ' (BYPASSED with -SkipPreClusterVerification: nothing checked the Learn prerequisites before this run)' })")
         $l.Add("- $($g.reason)")
         if ($g.runId) { $l.Add("- Gate run $($g.runId), verdict $($g.verdict), valid until $($g.expiresUtc), file hash $($g.fileHash)") }
+        if ($g.Contains('acceptedSkipped') -and @($g.acceptedSkipped).Count) { $l.Add("- **Accepted Skipped checks (-AcceptSkipped):** $(@($g.acceptedSkipped) -join ', '). These prerequisites were NOT verified; the operator accepted that.") }
         if ($g.status -ne 'Passed') { $l.Add("- Run: ``$($g.command)``") }
         $l.Add('')
     }
@@ -2157,11 +2158,13 @@ function Invoke-AzlArmDeploymentRun {
     $run = [ordered]@{
         RunId = $report.runId; Mode = $Mode; Cluster = ''; SchemaVersion = ''; EventPath = ''; Adapter = $Adapter; Settings = $null; State = (New-AzlArmRunState)
         Report = $report; Message = ''; NextAction = ''; Subscription = ''; ResourceGroup = ''; Build = ''; KnownIssues = @(); ParameterSet = $null; Template = $null
-        ValidateName = ''; DeployName = ''; WhatIf = [bool]$WhatIf; ReportPath = ''
+        ValidateName = ''; DeployName = ''; WhatIf = [bool]$WhatIf; ReportPath = ''; FileHash = ''
     }
     $exit = 0; $refused = $false; $preFailed = $false; $reportDir = ''
     try {
         # ---- 1 Prepare
+        # The hash of the file is taken before it is parsed; the gate result must be for these bytes (a file that changes in between is refused).
+        if ($InfrastructureFile -and (Test-Path -LiteralPath $InfrastructureFile -PathType Leaf)) { $run.FileHash = Get-AzlPclFileHash -Path $InfrastructureFile }
         $infra = if ($Infrastructure) { $Infrastructure } elseif ($InfrastructureFile) {
             if (-not (Test-Path -LiteralPath $InfrastructureFile -PathType Leaf)) { Stop-AzlArmInput "Infrastructure file not found: $InfrastructureFile" }
             try { Import-AzlInfrastructure -Path $InfrastructureFile } catch { Stop-AzlArmInput "The master file is not valid: $($_.Exception.Message)" }
@@ -2173,7 +2176,12 @@ function Invoke-AzlArmDeploymentRun {
         $run.Subscription = [string](Get-AzlProp $infra 'azure.subscription_id' ''); $run.ResourceGroup = [string](Get-AzlProp $infra 'azure.resource_group' '')
         if (-not $run.Subscription -or -not $run.ResourceGroup) { Stop-AzlArmInput 'azure.subscription_id and azure.resource_group must be set in infrastructure.yml.' }
         $settingsOverride = [ordered]@{}
-        if ($Settings) { foreach ($k in $Settings.Keys) { $settingsOverride[$k] = $Settings[$k] } }
+        if ($Settings) {
+            foreach ($k in $Settings.Keys) {
+                if (([string]$k -replace '_', '') -ieq 'skipPreClusterVerification') { Stop-AzlArmInput 'skipPreClusterVerification is not accepted in -Settings (a table can come from a file or a wrapper). The only way past the pre-cluster verification is the explicit switch -SkipPreClusterVerification.' }
+                $settingsOverride[$k] = $Settings[$k]
+            }
+        }
         if ($Resume) { $settingsOverride['resume'] = $true }
         if ($AllowRevalidate) { $settingsOverride['allowRevalidate'] = $true }
         if ($RegisterResourceProviders) { $settingsOverride['registerResourceProviders'] = $true }
@@ -2244,7 +2252,7 @@ function Invoke-AzlArmDeploymentRun {
         $pre.Add($gate)
         Send-AzlArmEvent -Run $run -State PreconditionChecked -Step PreClusterVerification -Evidence $gate.Evidence -Level $(switch ($gate.Result) { 'Failed' { 'Error' } 'Warning' { 'Warning' } default { 'Info' } }) -NextAction $gate.NextAction -Data @{ name = 'PreClusterVerification'; result = $gate.Result }
         foreach ($r in (Invoke-AzlArmPrecondition -Run $run -Context $context -Phase $firstPhase -Offline:$offline)) { $pre.Add($r) }
-        $report.preconditions = @($pre | ForEach-Object { [ordered]@{ name = $_.Name; node = $_.Node; result = $_.Result; evidence = (Limit-AzlArmText $_.Evidence 600); nextAction = (Limit-AzlArmText $_.NextAction 400) } })
+        $report.preconditions = @($pre | ForEach-Object { [ordered]@{ name = $_.Name; node = $_.Node; result = $_.Result; evidence = (Limit-AzlArmText $_.Evidence 600); nextAction = (Limit-AzlArmText $_.NextAction $(if ($_.Name -eq 'PreClusterVerification') { 4000 } else { 400 })) } })
         $failedChecks = @($pre | Where-Object { $_.Result -eq 'Failed' })
         $preFailed = $failedChecks.Count -gt 0
         if ($preFailed) {
@@ -2289,7 +2297,7 @@ function Invoke-AzlArmDeploymentRun {
                     $second = @(Test-AzlArmPreClusterVerification -Run $run -InfrastructureFile $InfrastructureFile -Infrastructure $infra -HandoffFile $HandoffFile -OsConfigurationReport $(if ($OsConfigurationReport -is [string]) { $OsConfigurationReport } else { '' }))
                     $second += @(Invoke-AzlArmPrecondition -Run $run -Context $context -Phase Deploy)
                     foreach ($r in $second) { $pre.Add($r) }
-                    $report.preconditions = @($pre | ForEach-Object { [ordered]@{ name = $_.Name; node = $_.Node; result = $_.Result; evidence = (Limit-AzlArmText $_.Evidence 600); nextAction = (Limit-AzlArmText $_.NextAction 400) } })
+                    $report.preconditions = @($pre | ForEach-Object { [ordered]@{ name = $_.Name; node = $_.Node; result = $_.Result; evidence = (Limit-AzlArmText $_.Evidence 600); nextAction = (Limit-AzlArmText $_.NextAction $(if ($_.Name -eq 'PreClusterVerification') { 4000 } else { 400 })) } })
                     $failed2 = @($second | Where-Object { $_.Result -eq 'Failed' })
                     if ($failed2.Count) { $preFailed = $true; $ok = $false; $run.Message = "$($failed2.Count) precondition(s) failed before the Deploy: " + ((@($failed2.Name | Select-Object -Unique)) -join ', ') + '.'; $run.NextAction = $failed2[0].NextAction }
                 }

@@ -154,11 +154,12 @@ function Get-AzlPclCatalog {
     <#
     .SYNOPSIS
         The check catalog: Id, Category, Title, Source (Learn or azurelocal.cloud page), Reads (what the check talks to), Blocking
-        (whether a Failed or an unaccepted Skipped result blocks the verdict) and Fixable (-Fix can repair it).
+        (whether a Failed or an unaccepted Skipped result blocks the verdict) and Fixable (-Fix can repair it). The built-in checks plus the modules.
     #>
     [CmdletBinding()]
-    param([string[]]$Category, [string]$ExtensionFolder)
-    $definitions = if ($PSBoundParameters.ContainsKey('ExtensionFolder')) { Get-AzlPclDefinitionSet (Import-AzlPclExtension -Folder $ExtensionFolder) } else { @($script:Catalog) }
+    param([string[]]$Category, [string]$ExtensionFolder = (Get-AzlPclExtensionFolder))
+    # The effective catalog: the built-in checks and the checks of the verification modules of the folder.
+    $definitions = Get-AzlPclDefinitionSet (Import-AzlPclExtension -Folder $ExtensionFolder)
     @($definitions | Where-Object { -not $Category -or $_.Category -in $Category } | ForEach-Object {
             [pscustomobject]@{ Id = $_.Id; Category = $_.Category; Title = $_.Title; Source = $_.Source; Reads = $_.Reads; Blocking = $_.Blocking; Fixable = $_.Fixable }
         })
@@ -312,6 +313,24 @@ function ConvertTo-AzlPclDefinition {
     }
 }
 
+function Write-AzlPclFileAtomic {
+    # Writes the text to a temporary file next to -Path and moves it over -Path, so a reader sees the old file or the whole new one.
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][AllowEmptyString()][string]$Text)
+    $temporary = "$Path.tmp"
+    try {
+        [IO.File]::WriteAllText($temporary, $Text, [Text.UTF8Encoding]::new($false))
+        Move-Item -LiteralPath $temporary -Destination $Path -Force
+    }
+    finally { if (Test-Path -LiteralPath $temporary) { Remove-Item -LiteralPath $temporary -Force -ErrorAction SilentlyContinue } }
+}
+
+function New-AzlPclExtFailure {
+    # The check that stands in for a verification module that is missing or does not load: it fails, blocking, with the reason.
+    param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Why)
+    [pscustomobject]@{ Id = "EXT-$($Name -replace '^AzlVerification\.', '')"; Category = 'readiness'; Title = "The verification module $Name loads"; Source = "scripts/common/arm-deployment/verification/$Name.psm1"; Reads = 'the verification module file'
+        Blocking = $true; Fixable = $false; Module = $Name; Applies = { $true }; Run = { param($Ctx, $Def) throw $Def.Why }; Why = $Why }
+}
+
 function Import-AzlPclExtension {
     <#
     .SYNOPSIS
@@ -322,9 +341,21 @@ function Import-AzlPclExtension {
         Definitions, AdapterDefaults, Modules (Name, Checks, Error).
     #>
     [CmdletBinding()]
-    param([string]$Folder = (Get-AzlPclExtensionFolder))
+    param([string]$Folder = (Get-AzlPclExtensionFolder), [string[]]$Expected = @())
     $defs = [System.Collections.Generic.List[object]]::new(); $adapters = [ordered]@{}; $modules = [System.Collections.Generic.List[object]]::new()
+    if (-not $Folder -or -not (Test-Path -LiteralPath $Folder -PathType Container)) {
+        $why = "The folder of the verification modules does not exist ($Folder), so none of their checks can run."
+        $modules.Add([pscustomobject]@{ Name = 'AzlVerification'; Checks = 0; Error = $why; Library = $false })
+        $defs.Add((New-AzlPclExtFailure -Name 'AzlVerification.Folder' -Why $why))
+    }
     if ($Folder -and (Test-Path -LiteralPath $Folder -PathType Container)) {
+        foreach ($want in $Expected) {
+            if (-not (Test-Path -LiteralPath (Join-Path $Folder "$want.psm1") -PathType Leaf)) {
+                $why = "The verification module $want.psm1 is missing from $Folder, so its checks cannot run."
+                $modules.Add([pscustomobject]@{ Name = $want; Checks = 0; Error = $why; Library = $false })
+                $defs.Add((New-AzlPclExtFailure -Name $want -Why $why))
+            }
+        }
         foreach ($file in @(Get-ChildItem -LiteralPath $Folder -Filter 'AzlVerification.*.psm1' -File | Sort-Object Name)) {
             $name = $file.BaseName
             try {
@@ -342,8 +373,7 @@ function Import-AzlPclExtension {
             catch {
                 $why = "The verification module $name could not be loaded: $($_.Exception.Message)"
                 $modules.Add([pscustomobject]@{ Name = $name; Checks = 0; Error = $_.Exception.Message; Library = $false })
-                $defs.Add([pscustomobject]@{ Id = "EXT-$($name -replace '^AzlVerification\.', '')"; Category = 'readiness'; Title = "The verification module $name loads"; Source = "scripts/common/arm-deployment/verification/$name.psm1"; Reads = "verification module $name"
-                        Blocking = $true; Fixable = $false; Module = $name; Applies = { $true }; Run = { param($Ctx, $Def) throw $Def.Why }; Why = $why })
+                $defs.Add((New-AzlPclExtFailure -Name $name -Why $why))
             }
         }
     }
@@ -355,7 +385,19 @@ function Get-AzlPclDefinitionSet {
     param($Extension)
     $byId = [ordered]@{}
     foreach ($d in $script:Catalog) { $byId[$d.Id] = $d }
-    if ($Extension) { foreach ($d in $Extension.Definitions) { $byId[$d.Id] = $d } }
+    $fromModule = @{}
+    if ($Extension) {
+        foreach ($d in $Extension.Definitions) {
+            if ($fromModule.ContainsKey($d.Id) -and $fromModule[$d.Id] -ne $d.Module) {
+                # Two modules with one id: the second never silently wins. It becomes a failing check of its own.
+                $dup = New-AzlPclExtFailure -Name "$($d.Module).Duplicate-$($d.Id)" -Why "The verification module $($d.Module) defines the check id $($d.Id), which the module $($fromModule[$d.Id]) already defines."
+                $byId[$dup.Id] = $dup
+                continue
+            }
+            $fromModule[$d.Id] = $d.Module
+            $byId[$d.Id] = $d
+        }
+    }
     # The one check -Fix can repair: the module's resource provider check (the module itself never changes Azure).
     if ($byId.Contains('AZ-004')) { $byId['AZ-004'].Fixable = $true }
     return @($byId.Values)
@@ -668,6 +710,22 @@ function New-AzlPclRemoteRequest {
     }
 }
 
+function Invoke-AzlPclRemoteShim {
+    <#
+    .SYNOPSIS
+        The engine's Adapters.Remote.Invoke, both forms: (node name, script block [, argument list]) returns what the script block output and throws when the
+        call fails; (request object) returns Ok, Address, Result, Error, AuthFailed. It runs in this module, so it reads the context of the run from the module.
+    #>
+    param($First, $Second, $Third)
+    if ($First -is [string]) {
+        $request = New-AzlPclRemoteRequest -Ctx $script:ShimContext -Node $First -ScriptBlock $Second -ArgumentList @($Third)
+        $answer = Invoke-AzlPclRemote -Request $request
+        if (-not $answer.Ok) { throw "The call to $First failed: $($answer.Error)" }
+        return $answer.Result
+    }
+    return (Invoke-AzlPclRemote -Request $First)
+}
+
 function Set-AzlPclEnvironmentChecker {
     <#
     .SYNOPSIS
@@ -850,24 +908,30 @@ function Invoke-AzlPreClusterVerification {
         [System.Collections.IDictionary]$Settings,
         [string]$ConfigPath,
         [string[]]$AcknowledgeKnownIssues,
-        [System.Collections.IDictionary]$Adapter = (New-AzlPclAdapter),
+        [System.Collections.IDictionary]$Adapter,
         [string]$ExtensionFolder = (Get-AzlPclExtensionFolder),
         [switch]$InstallEnvironmentChecker,
         [switch]$KeepEnvironmentChecker
     )
     $script:Secrets.Clear()
+    # No -Adapter: the engine builds everything. A table the caller gives holds only what the caller wants to replace (a test's fakes).
+    if ($null -eq $Adapter) { $Adapter = [ordered]@{} }
     # Who supplied what decides who wins: a member the caller gave (a test's fake) beats the engine's, which beats a module's default.
     $callerHasRemote = ($Adapter.Contains('Remote') -and $Adapter['Remote'] -is [System.Collections.IDictionary] -and $Adapter['Remote'].Contains('Invoke'))
     $callerHasTestEndpoint = ($Adapter.Contains('Azure') -and $Adapter['Azure'] -is [System.Collections.IDictionary] -and $Adapter['Azure'].Contains('TestEndpoint'))
     Merge-AzlPclAdapter -Into $Adapter -From (New-AzlPclAdapter)
     # The verification modules: their checks join the catalog, and the read only adapter members they bring (groups Azure, Ad, Dns, Remote, KeyVault, Clock ...) fill the gaps.
-    $extension = Import-AzlPclExtension -Folder $ExtensionFolder
+    # The default folder must hold every module of the repository; a missing one is a failing check. A folder given by a test holds what the test says.
+    $expectedModules = if ($ExtensionFolder -eq (Get-AzlPclExtensionFolder)) { @('AzlVerification.Azure', 'AzlVerification.Identity', 'AzlVerification.Network', 'AzlVerification.Nodes', 'AzlVerification.Storage', 'AzlVerification.NodeCommon') } else { @() }
+    $extension = Import-AzlPclExtension -Folder $ExtensionFolder -Expected $expectedModules
     Merge-AzlPclAdapter -Into $Adapter -From $extension.AdapterDefaults
     $definitions = @(Get-AzlPclDefinitionSet $extension)
     $contract = Get-AzlPclContract
     $out = [ordered]@{ ExitCode = 0; Verdict = ''; Mode = $Mode; Message = ''; NextAction = ''; ReportDirectory = ''; ReportPath = ''; SummaryPath = ''; EventPath = ''; Counts = $null; Checks = @(); RunId = ''; FileHash = ''; ExpiresUtc = ''; Plan = @() }
     try {
         # ---- inputs
+        # The hash of the bytes is taken before they are parsed, and compared again after the checks: a result belongs to one version of the file.
+        $fileHash = if ($InfrastructureFile -and (Test-Path -LiteralPath $InfrastructureFile -PathType Leaf)) { Get-AzlPclFileHash -Path $InfrastructureFile } else { '' }
         $infra = if ($Infrastructure) { $Infrastructure } elseif ($InfrastructureFile) {
             if (-not (Test-Path -LiteralPath $InfrastructureFile -PathType Leaf)) { Stop-AzlPclInput "Infrastructure file not found: $InfrastructureFile" }
             try { Import-AzlInfrastructure -Path $InfrastructureFile } catch { Stop-AzlPclInput "The master file is not valid: $($_.Exception.Message)" }
@@ -905,24 +969,14 @@ function Invoke-AzlPreClusterVerification {
 
         # ---- Verify
         if (-not $InfrastructureFile -or -not (Test-Path -LiteralPath $InfrastructureFile -PathType Leaf)) { Stop-AzlPclInput 'Mode Verify needs -InfrastructureFile: the result is tied to the SHA-256 of that file.' }
-        $fileHash = Get-AzlPclFileHash -Path $InfrastructureFile
         $handoff = if ($HandoffFile) { if (-not (Test-Path -LiteralPath $HandoffFile)) { Stop-AzlPclInput "Handoff file not found: $HandoffFile" }; Read-AzlHandoff -Path $HandoffFile } else { $null }
         $osReport = if ($OsConfigurationReport -is [string] -and $OsConfigurationReport) { Read-AzlArmOsReport -Path $OsConfigurationReport } elseif ($OsConfigurationReport -and $OsConfigurationReport -isnot [string]) { $OsConfigurationReport } else { $null }
         $ctx = New-AzlPclContext -Infrastructure $infra -InfrastructureFile $InfrastructureFile -Handoff $handoff -OsReport $osReport -Adapter $Adapter -Settings $run -Remoting $remoting -Fix ([bool]$Fix) -Mode Verify
         # Remote.Invoke serves both forms the modules use: (node, scriptblock [, arguments]) returning what the script block output, and the request object
         # returning Ok, Address, Result, Error, AuthFailed. A caller's own Remote.Invoke (a test's fake) is left alone.
         if (-not $callerHasRemote) {
-            $remoteFn = ${function:Invoke-AzlPclRemote}; $requestFn = ${function:New-AzlPclRemoteRequest}; $contextRef = $ctx
-            $Adapter['Remote']['Invoke'] = {
-                param($First, $Second, $Third)
-                if ($First -is [string]) {
-                    $request = & $requestFn $contextRef $First $Second @($Third)
-                    $answer = & $remoteFn $request
-                    if (-not $answer.Ok) { throw "The call to $First failed: $($answer.Error)" }
-                    return $answer.Result
-                }
-                & $remoteFn $First
-            }.GetNewClosure()
+            $script:ShimContext = $ctx
+            $Adapter['Remote']['Invoke'] = ${function:Invoke-AzlPclRemoteShim}
         }
         # The nodes are probed from the node itself over the engine's WinRM call (Adapters.Remote.Invoke), so a workgroup node reached by IP is not Skipped.
         if (-not $callerHasTestEndpoint -and $Adapter['Remote'] -is [System.Collections.IDictionary] -and $Adapter['Remote'].Contains('Invoke')) {
@@ -933,6 +987,7 @@ function Invoke-AzlPreClusterVerification {
         $reportPath = Join-Path $reportDir $contract.ReportFile
         $summaryPath = Join-Path $reportDir $contract.SummaryFile
         $eventPath = Join-Path $reportDir $contract.EventFile
+        $out.ReportPath = $reportPath; $out.SummaryPath = $summaryPath; $out.EventPath = $eventPath
         # No result counts while a run is in progress: the previous report moves aside first.
         if (Test-Path -LiteralPath $reportPath) { Move-Item -LiteralPath $reportPath -Destination (Join-Path $reportDir 'report.previous.json') -Force }
         if (Test-Path -LiteralPath $eventPath) { Remove-Item -LiteralPath $eventPath -Force }
@@ -940,6 +995,8 @@ function Invoke-AzlPreClusterVerification {
         $runState = [pscustomobject]@{ RunId = $runId; EventPath = $eventPath; Seq = 0; Adapter = $Adapter }
         $started = (& $Adapter.Now).ToUniversalTime()
         $null = Write-AzlPclEvent -Run $runState -Type RunStarted -Extra @{ message = "Pre-cluster verification of $cluster started: $($selected.Count) checks, $($ctx.Nodes.Count) node(s), categories $(if ($categories) { $categories -join ', ' } else { 'all' }), -Fix $([bool]$Fix)." }
+        $runCompleted = $false
+        try {
         # The Environment Checker: only with -InstallEnvironmentChecker is it put on the nodes, and (Learn: remove it before the deployment) taken off again at the end.
         $envChecker = [ordered]@{ requested = [bool]$run.installEnvironmentChecker; kept = [bool]$run.keepEnvironmentChecker; installedOn = @(); removedFrom = @(); errors = @(); note = 'The gate did not touch the Environment Checker on the nodes.' }
         try {
@@ -979,15 +1036,28 @@ function Invoke-AzlPreClusterVerification {
             $inCat = @($results | Where-Object { $_.Category -eq $cat })
             if ($inCat.Count) { $row = [ordered]@{ results = $inCat.Count; blocking = @($inCat | Where-Object { $_.Blocking }).Count }; foreach ($s in $script:Statuses) { $row[$s] = @($inCat | Where-Object { $_.Status -eq $s }).Count }; $report.categories[$cat] = $row }
         }
-        (Hide-AzlPclSecret ($report | ConvertTo-Json -Depth 8)) | Set-Content -LiteralPath $reportPath -Encoding utf8NoBOM
-        (Hide-AzlPclSecret (Format-AzlPclSummary -Report ([pscustomobject]$report))) | Set-Content -LiteralPath $summaryPath -Encoding utf8NoBOM
-        $null = Write-AzlPclEvent -Run $runState -Type RunCompleted -Extra @{ message = "Verdict ${verdict}: $($blocking.Count) blocking result(s) of $($results.Count)."; verdict = $verdict; counts = $counts; fileHash = $fileHash; expiresUtc = $expires.ToString('o', [cultureinfo]::InvariantCulture) }
+        # The file the checks ran against must still be the file that was parsed.
+        if ((Get-AzlPclFileHash -Path $InfrastructureFile) -ne $fileHash) { throw 'The infrastructure file changed while the checks ran, so the result would describe a file that no longer exists. Run the verification again.' }
+        # summary.md first, report.json last, each through a temporary file: a Pass report exists only when every output was written.
+        Write-AzlPclFileAtomic -Path $summaryPath -Text (Hide-AzlPclSecret (Format-AzlPclSummary -Report ([pscustomobject]$report)))
+        Write-AzlPclFileAtomic -Path $reportPath -Text (Hide-AzlPclSecret ($report | ConvertTo-Json -Depth 8))
+        $eventOk = Write-AzlPclEvent -Run $runState -Type RunCompleted -Extra @{ message = "Verdict ${verdict}: $($blocking.Count) blocking result(s) of $($results.Count)."; verdict = $verdict; counts = $counts; fileHash = $fileHash; expiresUtc = $expires.ToString('o', [cultureinfo]::InvariantCulture) }
+        if (-not $eventOk) { throw 'The RunCompleted event could not be written to the feed.' }
+        $runCompleted = $true
+        }
+        catch {
+            # A run that fails after it started still ends its feed, and leaves no report that could unlock the ARM run.
+            $failure = Hide-AzlPclSecret $_.Exception.Message
+            if (Test-Path -LiteralPath $reportPath) { Remove-Item -LiteralPath $reportPath -Force -ErrorAction SilentlyContinue }
+            if (-not $runCompleted) { $null = Write-AzlPclEvent -Run $runState -Type RunCompleted -Extra @{ message = "The run failed: $failure"; verdict = 'Error'; counts = @{}; fileHash = $fileHash; expiresUtc = '' } }
+            throw
+        }
 
         $out.Verdict = $verdict; $out.Counts = $counts; $out.Checks = $results; $out.RunId = $runId; $out.FileHash = $fileHash; $out.ExpiresUtc = $report.expiresUtc
         $out.ReportPath = $reportPath; $out.SummaryPath = $summaryPath; $out.EventPath = $eventPath
         $armScript = Join-Path (Split-Path -Parent $contract.GateScript) 'Invoke-AzureLocalArmDeployment.ps1'
         if ($verdict -eq 'Pass') {
-            $out.ExitCode = 0
+            $out.ExitCode = $(if ($partial) { 3 } else { 0 })
             $out.Message = "Verdict Pass: $($results.Count) results ($((($counts.GetEnumerator() | Where-Object { $_.Value } | ForEach-Object { "$($_.Key) $($_.Value)" }) -join ', '))). Valid until $($report.expiresUtc)$(if ($partial) { '; a PARTIAL run, the ARM run will not accept it' })."
             $out.NextAction = "Run the ARM Validate: & '$armScript' -InfrastructureFile '$InfrastructureFile' -Mode Validate"
         }

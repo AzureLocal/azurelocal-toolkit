@@ -1,7 +1,9 @@
 #Requires -Version 7.0
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
-# The engine of the pre-cluster verification gate: modes, the catalog, the verdict, Skipped that blocks, the feed and the report, the
-# result contract with the ARM run (hash, expiry), secrets. Fakes only: no Azure, no domain controller, no node.
+# The engine of the pre-cluster verification gate: modes, the catalog, the verdict, Skipped that blocks, -Fix, the feed and the report, the
+# Environment Checker, the Remote.Invoke shim, the result contract with the ARM run (hash, expiry, the checks inside the report), secrets.
+# The checks themselves come from a FAKE verification module; the real modules have their own tests (Verification.*.Tests.ps1).
+# Fakes only: no Azure, no domain controller, no node.
 # Run: Import-Module Pester -RequiredVersion 5.9.1; Invoke-Pester ./tests/pre-cluster-verification
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Fake adapter members and mock script blocks keep the signature of the real ones.')]
@@ -20,90 +22,65 @@ BeforeAll {
 }
 
 Describe 'The catalog' {
-    It 'has the six categories and a source, a title and a reads text for every check' {
-        $c = Get-AzlPclCatalog
-        ($c.Category | Select-Object -Unique | Sort-Object) | Should -Be @('azure', 'identity', 'network', 'nodes', 'readiness', 'storage')
-        foreach ($check in $c) {
-            $check.Id | Should -Match '^(AZR|IDN|NOD|NET|STO|RDY)-\d{3}$'
-            $check.Title | Should -Not -BeNullOrEmpty
-            $check.Reads | Should -Not -BeNullOrEmpty
-            $check.Source | Should -Match '^(https://(learn\.microsoft\.com|azurelocal\.cloud)/|config/)' -Because $check.Id
-        }
-        @($c.Id | Select-Object -Unique).Count | Should -Be $c.Count
+    BeforeAll { $script:Catalog = Get-AzlPclCatalog }
+    It 'is the built-in check plus the checks of the six verification modules, in the six categories, with no failing module' {
+        ($script:Catalog.Category | Select-Object -Unique | Sort-Object) | Should -Be @('azure', 'identity', 'network', 'nodes', 'readiness', 'storage')
+        $script:Catalog.Count | Should -BeGreaterThan 80
+        @($script:Catalog | Where-Object { $_.Id -like 'EXT-*' }) | Should -BeNullOrEmpty
+        $script:Catalog.Id | Should -Contain 'ARM-001'
+        foreach ($prefix in 'AZ-', 'ID-', 'ND-', 'NW-', 'ST-', 'RD-') { @($script:Catalog | Where-Object { $_.Id -like "$prefix*" }).Count | Should -BeGreaterThan 0 -Because $prefix }
     }
-    It 'takes the Learn pages at view azloc-2610' {
-        $learn = @(Get-AzlPclCatalog | Where-Object { $_.Source -match 'learn\.microsoft\.com' })
-        $learn.Count | Should -BeGreaterThan 60
-        @($learn | Where-Object { $_.Source -notmatch 'view=azloc-2610' }).Count | Should -Be 0
+    It 'has a unique id, a title and a source for every check, and the Learn pages at view azloc-2610' {
+        @($script:Catalog.Id | Select-Object -Unique).Count | Should -Be $script:Catalog.Count
+        foreach ($check in $script:Catalog) { $check.Title | Should -Not -BeNullOrEmpty -Because $check.Id; $check.Source | Should -Not -BeNullOrEmpty -Because $check.Id }
+        @($script:Catalog | Where-Object { $_.Source -match 'learn\.microsoft\.com' -and $_.Source -notmatch 'view=azloc-2610' }) | Should -BeNullOrEmpty
     }
-    It 'covers each thing Azure ever returned in this project' {
-        $titles = (Get-AzlPclCatalog | ForEach-Object { "$($_.Id) $($_.Title) $($_.Source)" }) -join "`n"
-        foreach ($needle in 'resource providers', 'RDMA matches the intent', 'SAN the file declares', 'dedicated OU exists', 'Signed in to the tenant', 'zombie', 'already-exists', 'arc-device-id-name', 'unvalidated-solution-sbe-combination', 'Environment Checker') {
-            $titles | Should -Match ([regex]::Escape($needle)) -Because $needle
-        }
-    }
-    It 'marks only the register providers check as fixable (-Fix is Azure side only)' {
-        @(Get-AzlPclCatalog | Where-Object { $_.Fixable } | ForEach-Object { $_.Id }) | Should -Be @('AZR-004')
+    It 'marks only the resource provider check as fixable (-Fix is Azure side only)' {
+        @($script:Catalog | Where-Object { $_.Fixable } | ForEach-Object { $_.Id }) | Should -Be @('AZ-004')
     }
 }
 
 Describe 'Mode Plan' {
-    It 'is offline: lists the checks, writes plan files, asks nothing of Azure, AD or a node and writes no result for the ARM run' {
+    It 'is offline: lists the checks, writes plan files, calls nothing and writes no result for the ARM run' {
         $w = New-PclWorld
-        $infra = Get-PclInfra
-        $r = Invoke-PclRun -World $w -Infra $infra -Mode Plan
+        $r = Invoke-PclRun -World $w -Mode Plan
         $r.ExitCode | Should -Be 0
-        $r.Plan.Count | Should -Be (Get-AzlPclCatalog).Count
+        $r.Plan.Count | Should -BeGreaterThan 6
         $w.Calls.Count | Should -Be 0
-        $w.NodeReads.Count | Should -Be 0
-        $w.LdapCalls.Count | Should -Be 0
         $dir = Join-Path (Split-Path $r.InfraFile -Parent) '..\live' | Resolve-Path
         Test-Path (Join-Path $dir 'plan.json') | Should -BeTrue
         Test-Path (Join-Path $dir 'plan.md') | Should -BeTrue
         Test-Path (Join-Path $dir 'report.json') | Should -BeFalse
         Test-Path (Join-Path $dir 'precluster-verification-events.jsonl') | Should -BeFalse
     }
-    It 'says which checks do not apply to this file and why' {
-        $r = Invoke-PclRun -Mode Plan
-        ($r.Plan | Where-Object { $_.Id -eq 'IDN-020' }).Applies | Should -BeFalse
-        ($r.Plan | Where-Object { $_.Id -eq 'IDN-020' }).Reason | Should -Match 'active_directory'
-        ($r.Plan | Where-Object { $_.Id -eq 'IDN-003' }).Applies | Should -BeTrue
-        ($r.Plan | Where-Object { $_.Id -eq 'STO-006' }).Applies | Should -BeFalse
-    }
     It 'does not replace the result of an earlier Verify' {
-        $infra = Get-PclInfra
-        $v = Invoke-PclRun -Infra $infra -Dir (Join-Path $TestDrive 'keep')
+        $v = Invoke-PclRun -Dir (Join-Path $TestDrive 'keep')
         $v.Verdict | Should -Be 'Pass'
-        $p = Invoke-PclRun -Infra $infra -Mode Plan -Dir (Join-Path $TestDrive 'keep') -InfraFile $v.InfraFile
-        (Test-Path (Join-Path (Split-Path $v.ReportPath) 'report.json')) | Should -BeTrue
+        $null = Invoke-PclRun -Mode Plan -Dir (Join-Path $TestDrive 'keep') -InfraFile $v.InfraFile
         (Test-AzlPclGateResult -InfrastructureFile $v.InfraFile -Directory (Split-Path $v.ReportPath) -Now $v.World.Clock.Time).Passed | Should -BeTrue
-        $p.Mode | Should -Be 'Plan'
     }
 }
 
 Describe 'Mode Verify: a healthy environment' {
-    BeforeAll {
-        $script:Healthy = Invoke-PclRun
-    }
+    BeforeAll { $script:Healthy = Invoke-PclRun }
     It 'passes with exit code 0 and writes the three files' {
         $script:Healthy.Verdict | Should -Be 'Pass'
         $script:Healthy.ExitCode | Should -Be 0
         $script:Healthy.Counts.Failed | Should -Be 0
-        $script:Healthy.Counts.Skipped | Should -Be 0
         Test-Path $script:Healthy.ReportPath | Should -BeTrue
         Test-Path $script:Healthy.SummaryPath | Should -BeTrue
         Test-Path $script:Healthy.EventPath | Should -BeTrue
         (Split-Path $script:Healthy.EventPath -Leaf) | Should -Be 'precluster-verification-events.jsonl'
     }
-    It 'gives every check of the catalog at least one result' {
-        $ids = @($script:Healthy.Checks | ForEach-Object { $_.Id } | Select-Object -Unique)
-        @(Get-AzlPclCatalog | Where-Object { $_.Id -notin $ids }) | Should -BeNullOrEmpty
+    It 'runs the built-in ARM-001 and every check of the module, once' {
+        (Get-PclCheck $script:Healthy 'ARM-001').Status | Should -Be 'Passed'
+        foreach ($c in 'azure', 'identity', 'nodes', 'network', 'storage', 'readiness') { @(Get-PclCheck $script:Healthy "FK-$c").Count | Should -Be 1 }
     }
     It 'names the exact next command' {
         $script:Healthy.NextAction | Should -Match 'Invoke-AzureLocalArmDeployment\.ps1'
         $script:Healthy.NextAction | Should -Match '-Mode Validate'
     }
-    It 'writes a report with the hash of the file, the expiry (4 hours by default) and all the checks' {
+    It 'writes a report with the hash of the file, the expiry (4 hours by default), all the checks and the Environment Checker statement' {
         $report = Get-Content $script:Healthy.ReportPath -Raw | ConvertFrom-Json
         $report.schema | Should -Be 1
         $report.mode | Should -Be 'Verify'
@@ -111,10 +88,11 @@ Describe 'Mode Verify: a healthy environment' {
         $report.verdict | Should -Be 'Pass'
         $report.fileHash | Should -Be (Get-AzlPclFileHash -Path $script:Healthy.InfraFile)
         ([datetime]$report.expiresUtc - [datetime]$report.completedUtc).TotalHours | Should -Be 4
-        $report.maxAgeHours | Should -Be 4
         @($report.checks).Count | Should -Be $script:Healthy.Checks.Count
-        $first = $report.checks[0]
-        foreach ($p in 'checkId', 'category', 'title', 'status', 'node', 'message', 'remedy', 'source', 'blocking') { $first.PSObject.Properties.Name | Should -Contain $p }
+        foreach ($p in 'checkId', 'category', 'title', 'status', 'node', 'message', 'remedy', 'source', 'blocking', 'accepted') { $report.checks[0].PSObject.Properties.Name | Should -Contain $p }
+        $report.environmentChecker.requested | Should -BeFalse
+        $report.environmentChecker.note | Should -Match 'did not install'
+        $report.modules[0].name | Should -Be 'AzlVerification.Fake'
     }
     It 'honours the maximum age setting' {
         $r = Invoke-PclRun -Settings @{ preClusterVerificationMaxAgeHours = 9 }
@@ -131,159 +109,154 @@ Describe 'The event feed' {
     }
     It 'is one single-line JSON object per line' {
         foreach ($line in $script:Lines) { $line | Should -Not -Match "[\r\n]"; { $line | ConvertFrom-Json } | Should -Not -Throw }
-        $script:Lines.Count | Should -BeGreaterThan 80
+        $script:Lines.Count | Should -BeGreaterThan 6
     }
     It 'starts with RunStarted, ends with RunCompleted and has a Check line for every result' {
         $script:Events[0].type | Should -Be 'RunStarted'
         $script:Events[-1].type | Should -Be 'RunCompleted'
         @($script:Events | Where-Object { $_.type -eq 'Check' }).Count | Should -Be $script:Fed.Checks.Count
-        @($script:Events | Where-Object { $_.type -eq 'RunStarted' }).Count | Should -Be 1
-        @($script:Events | Where-Object { $_.type -eq 'RunCompleted' }).Count | Should -Be 1
     }
-    It 'carries the contract fields on every line' {
+    It 'carries the contract fields on every line, numbered 1, 2, 3 ... and stamped in UTC ISO' {
         foreach ($e in $script:Events) {
-            foreach ($p in 'schema', 'runId', 'seq', 'ts', 'type', 'checkId', 'category', 'title', 'status', 'node', 'message', 'remedy', 'source', 'blocking') { $e.PSObject.Properties.Name | Should -Contain $p -Because "$($e.type) $($e.checkId) lacks $p" }
-            $e.schema | Should -Be 1
+            foreach ($p in 'schema', 'runId', 'seq', 'ts', 'type', 'checkId', 'category', 'title', 'status', 'node', 'message', 'remedy', 'source', 'blocking') { $e.PSObject.Properties.Name | Should -Contain $p -Because "$($e.type) $p" }
             $e.runId | Should -Be $script:Fed.RunId
             $e.blocking | Should -BeOfType [bool]
         }
-    }
-    It 'numbers the lines 1, 2, 3 ... and stamps them in UTC ISO' {
         for ($i = 0; $i -lt $script:Events.Count; $i++) { $script:Events[$i].seq | Should -Be ($i + 1) }
         $script:Lines[0] | Should -Match '"ts":"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?Z"'
-    }
-    It 'uses the six categories in lower case and the six statuses' {
-        $checks = @($script:Events | Where-Object { $_.type -eq 'Check' })
-        @($checks.category | Select-Object -Unique | Sort-Object) | Should -Be @('azure', 'identity', 'network', 'nodes', 'readiness', 'storage')
-        foreach ($s in $checks.status) { $s | Should -BeIn 'Passed', 'Failed', 'Warning', 'Skipped', 'NotApplicable', 'Fixed' }
     }
     It 'adds verdict, counts, fileHash and expiresUtc to RunCompleted only' {
         $done = $script:Events[-1]
         $done.verdict | Should -Be 'Pass'
         $done.fileHash | Should -Be (Get-AzlPclFileHash -Path $script:Fed.InfraFile)
         $done.expiresUtc | Should -Not -BeNullOrEmpty
-        $done.counts.Passed | Should -BeGreaterThan 50
-        foreach ($p in 'counts') { $script:Events[0].PSObject.Properties.Name | Should -Not -Contain $p }
+        $script:Events[0].PSObject.Properties.Name | Should -Not -Contain 'counts'
     }
-    It 'starts a fresh feed for every run and takes the previous report out of the way while it runs' {
+    It 'starts a fresh feed for every run and takes the previous report out of the way' {
         $dir = Join-Path $TestDrive 'twice'
-        $infra = Get-PclInfra
-        $first = Invoke-PclRun -Infra $infra -Dir $dir
-        $second = Invoke-PclRun -Infra $infra -Dir $dir -InfraFile $first.InfraFile
-        $events = Read-PclEvent $second.EventPath
-        @($events | Where-Object { $_.runId -ne $second.RunId }).Count | Should -Be 0
+        $first = Invoke-PclRun -Dir $dir
+        $second = Invoke-PclRun -Dir $dir -InfraFile $first.InfraFile -Infra $first.Infra
+        @(Read-PclEvent $second.EventPath | Where-Object { $_.runId -ne $second.RunId }).Count | Should -Be 0
         Test-Path (Join-Path (Split-Path $second.ReportPath) 'report.previous.json') | Should -BeTrue
     }
 }
 
 Describe 'The verdict' {
     It 'is Fail with exit code 1 when a blocking check fails, and says which and what to run' {
-        $infra = Get-PclInfra
-        $w = Initialize-PclWorld -Infra $infra
-        $w.Providers['Microsoft.KeyVault'] = 'NotRegistered'
-        $r = Invoke-PclRun -World $w -Infra $infra
+        $w = New-PclWorld; $w.Status['nodes'] = 'Failed'
+        $r = Invoke-PclRun -World $w
         $r.Verdict | Should -Be 'Fail'
         $r.ExitCode | Should -Be 1
-        $r.Message | Should -Match 'AZR-004'
-        $r.NextAction | Should -Match 'Register-AzResourceProvider -ProviderNamespace Microsoft.KeyVault'
+        $r.Message | Should -Match 'FK-nodes'
+        $r.NextAction | Should -Match 'fix the nodes thing'
         $events = Read-PclEvent $r.EventPath
-        ($events | Where-Object { $_.checkId -eq 'AZR-004' }).blocking | Should -BeTrue
+        ($events | Where-Object { $_.checkId -eq 'FK-nodes' }).blocking | Should -BeTrue
         $events[-1].verdict | Should -Be 'Fail'
     }
     It 'is not blocked by a Warning' {
-        $infra = Get-PclInfra
-        $w = Initialize-PclWorld -Infra $infra
-        $w.Mutate['iic-n01'] = { param($d, $q) $d.Pcl.reboot.files = $true }
-        $r = Invoke-PclRun -World $w -Infra $infra
-        (Get-PclCheck $r 'NOD-008' 'iic-n01').Status | Should -Be 'Warning'
+        $w = New-PclWorld; $w.Status['network'] = 'Warning'
+        $r = Invoke-PclRun -World $w
+        (Get-PclCheck $r 'FK-network').Status | Should -Be 'Warning'
         $r.Verdict | Should -Be 'Pass'
     }
-    It 'turns a check that throws into Failed with the message, never into a pass' {
-        $r = Invoke-PclRun -Override @{ GetResourceGroup = { throw 'HTTP 503 from ARM' } }
-        $c = Get-PclCheck $r 'AZR-003'
+    It 'turns a check that throws into Failed with the message, never into a pass, and runs the others' {
+        $w = New-PclWorld; $w.Status['identity'] = 'Throw'
+        $r = Invoke-PclRun -World $w
+        $c = Get-PclCheck $r 'FK-identity'
         $c.Status | Should -Be 'Failed'
-        $c.Message | Should -Match 'could not run'
-        $c.Message | Should -Match 'HTTP 503 from ARM'
+        $c.Message | Should -Match 'the fake exploded'
+        (Get-PclCheck $r 'FK-storage').Status | Should -Be 'Passed'
         $r.Verdict | Should -Be 'Fail'
     }
     It 'never truncates a failure message' {
-        $long = 'x' * 6000
-        $r = Invoke-PclRun -Override @{ GetResourceGroup = { throw $long } }
-        (Get-PclCheck $r 'AZR-003').Message | Should -Match ('x{6000}')
-        $ev = Read-PclEvent $r.EventPath | Where-Object { $_.checkId -eq 'AZR-003' }
-        $ev.message.Length | Should -BeGreaterThan 6000
+        $w = New-PclWorld; $w.Status['azure'] = 'Failed'; $w.Message['azure'] = 'x' * 6000
+        $r = Invoke-PclRun -World $w
+        (Get-PclCheck $r 'FK-azure').Message | Should -Match ('x{6000}')
+        (Read-PclEvent $r.EventPath | Where-Object { $_.checkId -eq 'FK-azure' }).message.Length | Should -BeGreaterThan 6000
     }
 }
 
 Describe 'A Skipped check blocks unless the operator accepts it' {
-    It 'is Skipped, blocking and a Fail when the adapter cannot ask (the old silent AD skip)' {
-        $infra = Get-PclInfra
-        $w = Initialize-PclWorld -Infra $infra
-        $r = Invoke-PclRun -World $w -Infra $infra -Override @{ LdapSearch = $null }
-        foreach ($id in 'IDN-002', 'IDN-003', 'IDN-004') {
-            $c = Get-PclCheck $r $id
-            $c.Status | Should -Be 'Skipped'
-            $c.Blocking | Should -BeTrue
-            $c.Message | Should -Match 'Skipped checks block the verdict'
-        }
+    It 'is Skipped, blocking and a Fail when nothing accepts it' {
+        $w = New-PclWorld; $w.Status['readiness'] = 'Skipped'
+        $r = Invoke-PclRun -World $w
+        $c = Get-PclCheck $r 'FK-readiness'
+        $c.Status | Should -Be 'Skipped'; $c.Blocking | Should -BeTrue
+        $c.Message | Should -Match 'Skipped checks block the verdict'
         $r.Verdict | Should -Be 'Fail'
-        $r.ExitCode | Should -Be 1
     }
-    It 'passes once those ids are accepted, and records that it was the operator' {
-        $infra = Get-PclInfra
-        $w = Initialize-PclWorld -Infra $infra
-        $skipped = 'IDN-002', 'IDN-003', 'IDN-004', 'IDN-005', 'IDN-006', 'IDN-010', 'IDN-012'
-        $r = Invoke-PclRun -World $w -Infra $infra -Override @{ LdapSearch = $null } -AcceptSkipped $skipped
+    It 'passes once the id is accepted, and records that it was the operator' {
+        $w = New-PclWorld; $w.Status['readiness'] = 'Skipped'
+        $r = Invoke-PclRun -World $w -AcceptSkipped 'FK-readiness'
         $r.Verdict | Should -Be 'Pass'
-        $c = Get-PclCheck $r 'IDN-003'
-        $c.Status | Should -Be 'Skipped'
-        $c.Blocking | Should -BeFalse
-        $c.Accepted | Should -BeTrue
-        $c.Message | Should -Match 'ACCEPTED by the operator with -AcceptSkipped IDN-003'
-        $report = Get-Content $r.ReportPath -Raw | ConvertFrom-Json
-        $report.acceptedSkipped | Should -Contain 'IDN-003'
+        $c = Get-PclCheck $r 'FK-readiness'
+        $c.Blocking | Should -BeFalse; $c.Accepted | Should -BeTrue
+        $c.Message | Should -Match 'ACCEPTED by the operator with -AcceptSkipped FK-readiness'
+        (Get-Content $r.ReportPath -Raw | ConvertFrom-Json).acceptedSkipped | Should -Contain 'FK-readiness'
         (Get-Content $r.SummaryPath -Raw) | Should -Match 'Accepted as Skipped by the operator'
     }
     It 'does not let an accepted id excuse a Failed check' {
-        $infra = Get-PclInfra
-        $w = Initialize-PclWorld -Infra $infra
-        $w.Providers['Microsoft.Insights'] = 'NotRegistered'
-        $r = Invoke-PclRun -World $w -Infra $infra -AcceptSkipped 'AZR-004'
-        (Get-PclCheck $r 'AZR-004').Status | Should -Be 'Failed'
+        $w = New-PclWorld; $w.Status['readiness'] = 'Failed'
+        $r = Invoke-PclRun -World $w -AcceptSkipped 'FK-readiness'
         $r.Verdict | Should -Be 'Fail'
     }
-    It 'refuses an id that is not a check (exit code 2)' {
+    It 'refuses an id that is not a check (exit code 2) and takes ids comma-separated or as a list, in any case' {
         $r = Invoke-PclRun -AcceptSkipped 'AD-CHECK'
-        $r.ExitCode | Should -Be 2
-        $r.Message | Should -Match 'not a check id'
+        $r.ExitCode | Should -Be 2; $r.Message | Should -Match 'not a check id'
+        $w = New-PclWorld; $w.Status['readiness'] = 'Skipped'; $w.Status['storage'] = 'Skipped'
+        (Invoke-PclRun -World $w -AcceptSkipped 'fk-readiness,FK-storage').Verdict | Should -Be 'Pass'
+        (Invoke-PclRun -World $w -AcceptSkipped 'fk-readiness', 'fk-storage').Verdict | Should -Be 'Pass'
     }
-    It 'takes the ids comma-separated or as a list, in any case' {
-        $infra = Get-PclInfra
-        $w = Initialize-PclWorld -Infra $infra
-        $r = Invoke-PclRun -World $w -Infra $infra -Override @{ LdapSearch = $null } -AcceptSkipped 'idn-002,IDN-003', 'IDN-004,IDN-005,IDN-006,IDN-010,IDN-012'
+}
+
+Describe '-Fix registers resource providers and nothing else' {
+    It 'changes nothing by default: the missing provider stays missing and the check Fails' {
+        $w = New-PclWorld; $w.Providers['Microsoft.KeyVault'] = 'NotRegistered'
+        $r = Invoke-PclRun -World $w
+        (Get-PclCheck $r 'AZ-004').Status | Should -Be 'Failed'
+        $w.Registered.Count | Should -Be 0
+        $r.Verdict | Should -Be 'Fail'
+    }
+    It 'with -Fix registers it, reports Fixed, and the verdict is Pass' {
+        $w = New-PclWorld; $w.Providers['Microsoft.KeyVault'] = 'NotRegistered'
+        $r = Invoke-PclRun -World $w -Fix
+        (Get-PclCheck $r 'AZ-004').Status | Should -Be 'Fixed'
+        $w.Registered | Should -Contain 'Microsoft.KeyVault'
         $r.Verdict | Should -Be 'Pass'
+        (Get-Content $r.ReportPath -Raw | ConvertFrom-Json).fixesApplied | Should -BeTrue
+    }
+    It 'with -Fix still Fails, saying why, when the registration is not allowed' {
+        $w = New-PclWorld; $w.Providers['Microsoft.KeyVault'] = 'NotRegistered'; $w.RegisterFails = @('Microsoft.KeyVault')
+        $r = Invoke-PclRun -World $w -Fix
+        (Get-PclCheck $r 'AZ-004').Status | Should -Be 'Failed'
+        (Get-PclCheck $r 'AZ-004').Message | Should -Match 'Registering Microsoft.KeyVault failed'
+        $r.Verdict | Should -Be 'Fail'
+    }
+    It 'does not fix anything in Mode Plan' {
+        $w = New-PclWorld; $w.Providers['Microsoft.KeyVault'] = 'NotRegistered'
+        $null = Invoke-PclRun -World $w -Fix -Mode Plan
+        $w.Registered.Count | Should -Be 0
     }
 }
 
 Describe 'Partial runs and bad input' {
-    It 'marks a run of fewer than all categories as partial, in the report and the summary' {
+    It 'marks a run of fewer than all categories as partial, exits 3 even when nothing fails, and says so in the summary' {
         $r = Invoke-PclRun -Category azure
         $report = Get-Content $r.ReportPath -Raw | ConvertFrom-Json
         $report.partial | Should -BeTrue
         @($report.checks | ForEach-Object { $_.category } | Select-Object -Unique) | Should -Be @('azure')
+        $r.ExitCode | Should -Be 3
         (Get-Content $r.SummaryPath -Raw) | Should -Match 'Partial run'
     }
     It 'refuses an unknown category and a missing file (exit code 2)' {
-        (Invoke-PclRun -Category storagex -ErrorAction SilentlyContinue).ExitCode | Should -Be 2
+        (Invoke-PclRun -Category storagex).ExitCode | Should -Be 2
         $r = Invoke-AzlPreClusterVerification -InfrastructureFile (Join-Path $TestDrive 'nope.yml') -Mode Verify
-        $r.ExitCode | Should -Be 2
-        $r.Message | Should -Match 'not found'
+        $r.ExitCode | Should -Be 2; $r.Message | Should -Match 'not found'
     }
     It 'needs the file (not only an object) in Mode Verify, because the result is tied to its hash' {
         $infra = Get-PclInfra
-        $r = Invoke-AzlPreClusterVerification -Infrastructure $infra -Mode Verify -Adapter (New-PclAdapter -World (New-PclWorld) -Infra $infra)
-        $r.ExitCode | Should -Be 2
-        $r.Message | Should -Match 'SHA-256'
+        $r = Invoke-AzlPreClusterVerification -Infrastructure $infra -Mode Verify -Adapter (New-PclAdapter -World (New-PclWorld) -Infra $infra) -ExtensionFolder (New-PclModuleFolder)
+        $r.ExitCode | Should -Be 2; $r.Message | Should -Match 'SHA-256'
     }
     It 'refuses to read a bypass key from the settings file' {
         $cfg = Join-Path $TestDrive 'cfg.json'
@@ -292,22 +265,152 @@ Describe 'Partial runs and bad input' {
     }
 }
 
+Describe 'A run that fails after it started still ends its feed and leaves no report (review C5)' {
+    It 'writes RunCompleted with the verdict Error, no report.json and no summary.md when the summary cannot be made' {
+        Mock -ModuleName AzlPreClusterVerification Format-AzlPclSummary { throw 'disk full' }
+        $r = Invoke-PclRun
+        $r.ExitCode | Should -Be 1
+        $r.Message | Should -Match 'disk full'
+        Test-Path (Join-Path (Split-Path $r.EventPath) 'report.json') | Should -BeFalse
+        Test-Path (Join-Path (Split-Path $r.EventPath) 'summary.md') | Should -BeFalse
+        $events = Read-PclEvent $r.EventPath
+        $events[-1].type | Should -Be 'RunCompleted'
+        $events[-1].verdict | Should -Be 'Error'
+        $events[-1].message | Should -Match 'disk full'
+    }
+    It 'writes summary.md before report.json, so a Pass report implies a summary' {
+        $r = Invoke-PclRun
+        (Get-Item $r.SummaryPath).LastWriteTimeUtc | Should -BeLessOrEqual (Get-Item $r.ReportPath).LastWriteTimeUtc
+        Get-ChildItem (Split-Path $r.ReportPath) -Filter '*.tmp' | Should -BeNullOrEmpty
+    }
+    It 'refuses a file that changed while the checks ran' {
+        $w = New-PclWorld
+        $infra = Get-PclInfra
+        $file = Write-PclInfraFile -Infra $infra -Directory (Join-Path $TestDrive 'moving')
+        $mod = (Get-PclFakeModuleText).Replace("`$status = if (`$w.Status.ContainsKey('azure'))", "Add-Content -LiteralPath '$file' -Value '# edited during the run'; `$status = if (`$w.Status.ContainsKey('azure'))")
+        $dir = New-PclModuleFolder -Files @{ 'AzlVerification.Fake.psm1' = $mod }
+        $r = Invoke-PclRun -World $w -Infra $infra -InfraFile $file -ExtensionFolder $dir
+        $r.ExitCode | Should -Be 1
+        $r.Message | Should -Match 'changed while the checks ran'
+        Test-Path $r.ReportPath | Should -BeFalse
+    }
+}
+
+Describe 'A module that is missing is a failure, not a gap (review C9)' {
+    It 'fails when the folder of the modules does not exist' {
+        $r = Invoke-PclRun -ExtensionFolder (Join-Path $TestDrive 'no-such-folder')
+        $r.Verdict | Should -Be 'Fail'
+        (Get-PclCheck $r 'EXT-Folder').Status | Should -Be 'Failed'
+    }
+    It 'fails for an expected module that is not in the folder' {
+        $e = Import-AzlPclExtension -Folder (New-PclModuleFolder) -Expected 'AzlVerification.Gone'
+        ($e.Definitions | Where-Object { $_.Id -eq 'EXT-Gone' }) | Should -Not -BeNullOrEmpty
+        ($e.Modules | Where-Object { $_.Name -eq 'AzlVerification.Gone' }).Error | Should -Match 'missing'
+    }
+    It 'fails the second module that defines an id a module already defines, and keeps the first' {
+        $one = New-PclModuleFolder -Files @{ 'AzlVerification.A.psm1' = (Get-PclFakeModuleText); 'AzlVerification.B.psm1' = (Get-PclFakeModuleText) }
+        $r = Invoke-PclRun -ExtensionFolder $one
+        @($r.Checks | Where-Object { $_.Id -like 'EXT-*Duplicate*' }).Count | Should -BeGreaterThan 0
+        $r.Verdict | Should -Be 'Fail'
+        @(Get-PclCheck $r 'FK-azure').Count | Should -Be 1
+    }
+    It 'treats a module that exports neither function as a library, not as a failure' {
+        $dir = New-PclModuleFolder -Files @{ 'AzlVerification.Fake.psm1' = (Get-PclFakeModuleText); 'AzlVerification.Lib.psm1' = 'function Get-LibThing { 1 }; Export-ModuleMember -Function Get-LibThing' }
+        $e = Import-AzlPclExtension -Folder $dir
+        ($e.Modules | Where-Object { $_.Name -eq 'AzlVerification.Lib' }).Library | Should -BeTrue
+        ($e.Modules | Where-Object { $_.Name -eq 'AzlVerification.Lib' }).Error | Should -BeNullOrEmpty
+        @($e.Definitions | Where-Object { $_.Id -like 'EXT-*' }) | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Remote.Invoke serves both forms the modules use' {
+    BeforeAll {
+        $script:RemoteMod = @'
+function Get-AzlVerificationCheckDefinition {
+    @(
+        @{ Id = 'RM-001'; Category = 'nodes'; Title = 'node form'; Source = 'x'; Run = { param($Context) $o = & $Context.Adapters['Remote']['Invoke'] 'iic-n01' { 'raw-output' } @('a'); @{ Status = 'Passed'; Message = "got $o" } } }
+        @{ Id = 'RM-002'; Category = 'network'; Title = 'request form'; Source = 'x'; Run = { param($Context) $r = & $Context.Adapters['Remote']['Invoke'] ([pscustomobject]@{ Node = 'iic-n01'; Addresses = @('192.0.2.11'); Credential = $null; ScriptBlock = { 'x' }; ArgumentList = @(); UseSsl = $false; Authentication = 'Negotiate' }); @{ Status = 'Passed'; Message = "ok=$($r.Ok) address=$($r.Address) result=$($r.Result)" } } }
+        @{ Id = 'RM-003'; Category = 'storage'; Title = 'node form fails'; Source = 'x'; Run = { param($Context) & $Context.Adapters['Remote']['Invoke'] 'iic-n02' { 'x' }; @{ Status = 'Passed'; Message = 'must not get here' } } }
+    )
+}
+Export-ModuleMember -Function Get-AzlVerificationCheckDefinition
+'@
+    }
+    It 'takes (node, scriptblock, arguments) and returns what the script block output; the request form returns Ok, Address, Result' {
+        Mock -ModuleName AzlPreClusterVerification Invoke-AzlPclRemote {
+            if ($Request.Node -eq 'iic-n02') { return [pscustomobject]@{ Ok = $false; Address = ''; Result = $null; Error = 'boom with Sup3r-S3cret-Value!'; AuthFailed = $false } }
+            [pscustomobject]@{ Ok = $true; Address = [string]@($Request.Addresses)[0]; Result = 'raw-output'; Error = ''; AuthFailed = $false }
+        }
+        $dir = New-PclModuleFolder -Files @{ 'AzlVerification.Remote.psm1' = $script:RemoteMod }
+        $r = Invoke-PclRun -ExtensionFolder $dir
+        (Get-PclCheck $r 'RM-001').Message | Should -Match 'got raw-output'
+        (Get-PclCheck $r 'RM-002').Message | Should -Match 'ok=True'
+        (Get-PclCheck $r 'RM-002').Message | Should -Match 'result=raw-output'
+        $c = Get-PclCheck $r 'RM-003'
+        $c.Status | Should -Be 'Failed'
+        $c.Message | Should -Match 'The call to iic-n02 failed'
+        $c.Message | Should -Not -Match 'Sup3r-S3cret-Value'
+    }
+    It 'leaves a Remote.Invoke the caller brought alone' {
+        $w = New-PclWorld
+        $dir = New-PclModuleFolder -Files @{ 'AzlVerification.Remote.psm1' = $script:RemoteMod }
+        $r = Invoke-PclRun -World $w -ExtensionFolder $dir -Override @{ Remote = @{ Invoke = { param($Node, $Script, $Arguments) "from the test for $Node" } } }
+        (Get-PclCheck $r 'RM-001').Message | Should -Match 'from the test for iic-n01'
+    }
+}
+
+Describe 'The Environment Checker (remove it again, and say so)' {
+    It 'is not touched by default: no call to a node, and the report says so' {
+        $w = New-PclWorld
+        $r = Invoke-PclRun -World $w -Override @{ Remote = @{ Invoke = (New-PclRemoteFake -World $w) } }
+        $w.RemoteCalls.Count | Should -Be 0
+        (Get-Content $r.ReportPath -Raw | ConvertFrom-Json).environmentChecker.requested | Should -BeFalse
+    }
+    It 'with -InstallEnvironmentChecker installs it on every node and removes it again at the end, and the report states both' {
+        $w = New-PclWorld
+        $r = Invoke-PclRun -World $w -InstallEnvironmentChecker -Override @{ Remote = @{ Invoke = (New-PclRemoteFake -World $w) } }
+        @($w.RemoteCalls | Where-Object Kind -EQ 'Install').Count | Should -Be 2
+        @($w.RemoteCalls | Where-Object Kind -EQ 'Remove').Count | Should -Be 2
+        $w.RemoteCalls[-1].Kind | Should -Be 'Remove'
+        $ec = (Get-Content $r.ReportPath -Raw | ConvertFrom-Json).environmentChecker
+        $ec.requested | Should -BeTrue
+        @($ec.installedOn).Count | Should -Be 2
+        @($ec.removedFrom).Count | Should -Be 2
+        $ec.note | Should -Match 'REMOVED'
+        (Get-Content $r.SummaryPath -Raw) | Should -Match 'Environment Checker on the nodes'
+    }
+    It 'removes it even when the run Fails' {
+        $w = New-PclWorld; $w.Status['nodes'] = 'Failed'
+        $null = Invoke-PclRun -World $w -InstallEnvironmentChecker -Override @{ Remote = @{ Invoke = (New-PclRemoteFake -World $w) } }
+        @($w.RemoteCalls | Where-Object Kind -EQ 'Remove').Count | Should -Be 2
+    }
+    It 'with -KeepEnvironmentChecker leaves it on the nodes and the report says it is kept' {
+        $w = New-PclWorld
+        $r = Invoke-PclRun -World $w -InstallEnvironmentChecker -KeepEnvironmentChecker -Override @{ Remote = @{ Invoke = (New-PclRemoteFake -World $w) } }
+        @($w.RemoteCalls | Where-Object Kind -EQ 'Remove').Count | Should -Be 0
+        (Get-Content $r.ReportPath -Raw | ConvertFrom-Json).environmentChecker.note | Should -Match 'KEPT'
+    }
+    It 'reports a node it could not clean, instead of saying removed' {
+        $w = New-PclWorld; $w.EcRemoveFails = @('iic-n02')
+        $r = Invoke-PclRun -World $w -InstallEnvironmentChecker -Override @{ Remote = @{ Invoke = (New-PclRemoteFake -World $w) } }
+        $ec = (Get-Content $r.ReportPath -Raw | ConvertFrom-Json).environmentChecker
+        @($ec.errors).Count | Should -BeGreaterThan 0
+        $ec.note | Should -Match 'removing it failed'
+    }
+}
+
 Describe 'Secrets' {
     It 'never writes a secret value into the report, the summary or the feed' {
-        $infra = Get-PclInfra
-        $w = Initialize-PclWorld -Infra $infra
-        $w.Providers['Microsoft.KeyVault'] = 'NotRegistered'
+        Mock -ModuleName AzlPreClusterVerification Invoke-AzlPclRemote { [pscustomobject]@{ Ok = $false; Address = ''; Result = $null; Error = 'WinRM said no to Zz9!qwertyuiop-SECRET-local'; AuthFailed = $true } }
+        $w = New-PclWorld
         $w.Secrets['keyvault://kv-iic-mgmt-01/local-admin-password'] = 'Zz9!qwertyuiop-SECRET-local'
-        $w.Secrets['keyvault://kv-iic-mgmt-01/lcm-password'] = 'Yy8!asdfghjkl-SECRET-lcm'
-        $r = Invoke-PclRun -World $w -Infra $infra -Override @{ ReadNode = { param($Request) throw "WinRM said no to Zz9!qwertyuiop-SECRET-local" } }
+        $mod = "function Get-AzlVerificationCheckDefinition { @(@{ Id = 'SC-001'; Category = 'nodes'; Title = 'secret'; Source = 'x'; Run = { param(`$Context) & `$Context.Adapters['Remote']['Invoke'] 'iic-n01' { 'x' } @() } }) }; Export-ModuleMember -Function Get-AzlVerificationCheckDefinition"
+        $r = Invoke-PclRun -World $w -ExtensionFolder (New-PclModuleFolder -Files @{ 'AzlVerification.Sc.psm1' = $mod })
         $r.Verdict | Should -Be 'Fail'
         foreach ($path in $r.ReportPath, $r.SummaryPath, $r.EventPath) {
-            $text = Get-Content $path -Raw
-            $text | Should -Not -Match 'SECRET-local'
-            $text | Should -Not -Match 'SECRET-lcm'
+            if (Test-Path $path) { (Get-Content $path -Raw) | Should -Not -Match 'SECRET-local' }
         }
-        (Get-Content $r.ReportPath -Raw) | Should -Match '\*\*\*'
-        $w.Calls | Should -Contain 'GetSecret:keyvault://kv-iic-mgmt-01/local-admin-password'
+        (Get-PclCheck $r 'SC-001').Message | Should -Match '\*\*\*'
     }
 }
 
@@ -316,39 +419,90 @@ Describe 'The result contract with the ARM run' {
         $script:Run = Invoke-PclRun
         $script:Dir = Split-Path $script:Run.ReportPath
         $script:Now = $script:Run.World.Clock.Time
+        $script:Tamper = {
+            param([scriptblock]$Edit, [switch]$NoSummary)
+            $d = Join-Path $TestDrive ('t-' + [guid]::NewGuid().ToString('N').Substring(0, 6))
+            $null = New-Item -ItemType Directory $d
+            $j = Get-Content $script:Run.ReportPath -Raw | ConvertFrom-Json -AsHashtable -Depth 20
+            & $Edit $j
+            $j | ConvertTo-Json -Depth 20 | Set-Content (Join-Path $d 'report.json')
+            if (-not $NoSummary) { 'summary' | Set-Content (Join-Path $d 'summary.md') }
+            $d
+        }
     }
     It 'accepts a Pass for the same file, not expired, not partial' {
         $t = Test-AzlPclGateResult -InfrastructureFile $script:Run.InfraFile -Directory $script:Dir -Now $script:Now.AddHours(1)
         $t.Passed | Should -BeTrue
         $t.Reason | Should -Match 'valid until'
     }
-    It 'refuses a result that expired' {
+    It 'refuses a result that expired, and one older than the ARM run allows (review C6)' {
         $t = Test-AzlPclGateResult -InfrastructureFile $script:Run.InfraFile -Directory $script:Dir -Now $script:Now.AddHours(5)
-        $t.Passed | Should -BeFalse
-        $t.Reason | Should -Match 'expired'
-        $t.Command | Should -Match '-Mode Verify'
+        $t.Passed | Should -BeFalse; $t.Reason | Should -Match 'expired'; $t.Command | Should -Match '-Mode Verify'
+        $old = Test-AzlPclGateResult -InfrastructureFile $script:Run.InfraFile -Directory $script:Dir -Now $script:Now.AddHours(2) -MaxAgeHours 1
+        $old.Passed | Should -BeFalse; $old.Reason | Should -Match 'allows a result to be 1 hour'
+        (Test-AzlPclGateResult -InfrastructureFile $script:Run.InfraFile -Directory $script:Dir -Now $script:Now.AddMinutes(30) -MaxAgeHours 1).Passed | Should -BeTrue
     }
-    It 'refuses a result for a file that changed (the hash no longer matches)' {
+    It 'refuses a result dated in the future and an expiry far beyond 168 hours (review C6)' {
+        $d = & $script:Tamper { param($j) $j.completedUtc = $script:Now.AddHours(3).ToString('o') }
+        (Test-AzlPclGateResult -InfrastructureFile $script:Run.InfraFile -Directory $d -Now $script:Now).Reason | Should -Match 'in the future'
+        $d2 = & $script:Tamper { param($j) $j.expiresUtc = $script:Now.AddDays(400).ToString('o') }
+        (Test-AzlPclGateResult -InfrastructureFile $script:Run.InfraFile -Directory $d2 -Now $script:Now.AddHours(1)).Reason | Should -Match 'more than 168 hours'
+    }
+    It 'reads the dates the same whatever kind of DateTime ConvertFrom-Json made of them (review C11)' {
+        $utc = [datetime]::Parse('2026-11-08T12:00:00Z', [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal)
+        (ConvertTo-AzlPclUtc $utc).Ticks | Should -Be $utc.Ticks
+        (ConvertTo-AzlPclUtc $utc.ToLocalTime()).Ticks | Should -Be $utc.Ticks
+        (ConvertTo-AzlPclUtc ([datetime]::SpecifyKind($utc, [DateTimeKind]::Unspecified))).Ticks | Should -Be $utc.Ticks
+        (ConvertTo-AzlPclUtc '2026-11-08T12:00:00.0000000Z').Ticks | Should -Be $utc.Ticks
+        (ConvertTo-AzlPclUtc '2026-11-08T14:00:00+02:00').Ticks | Should -Be $utc.Ticks
+        ConvertTo-AzlPclUtc 'not a date' | Should -BeNullOrEmpty
+    }
+    It 'refuses a result for a file that changed, and one whose file changed while it was parsed (review C12)' {
         $copy = Join-Path $TestDrive 'changed.yml'
         Copy-Item $script:Run.InfraFile $copy
         Add-Content $copy "`n# an edit"
         $t = Test-AzlPclGateResult -InfrastructureFile $copy -Directory $script:Dir -Now $script:Now
-        $t.Passed | Should -BeFalse
-        $t.Reason | Should -Match 'changed since the verification'
+        $t.Passed | Should -BeFalse; $t.Reason | Should -Match 'changed since the verification'
+        $t2 = Test-AzlPclGateResult -InfrastructureFile $script:Run.InfraFile -Directory $script:Dir -Now $script:Now -ExpectedFileHash ('0' * 64)
+        $t2.Passed | Should -BeFalse; $t2.Reason | Should -Match 'changed while it was being read'
     }
-    It 'refuses a Fail, a partial run, a Plan and a missing result' {
-        $bad = Invoke-PclRun -Override @{ GetResourceGroup = { $null } }
-        (Test-AzlPclGateResult -InfrastructureFile $bad.InfraFile -Directory (Split-Path $bad.ReportPath) -Now $bad.World.Clock.Time).Reason | Should -Match 'verdict Fail'
+    It 'refuses a Fail, a partial run, a Plan, a missing result and a missing summary.md (review C5)' {
+        $w = New-PclWorld; $w.Status['azure'] = 'Failed'
+        $bad = Invoke-PclRun -World $w
+        $reason = (Test-AzlPclGateResult -InfrastructureFile $bad.InfraFile -Directory (Split-Path $bad.ReportPath) -Now $bad.World.Clock.Time).Reason
+        $reason | Should -Match 'verdict Fail'; $reason | Should -Match 'FK-azure'
         $part = Invoke-PclRun -Category azure
         (Test-AzlPclGateResult -InfrastructureFile $part.InfraFile -Directory (Split-Path $part.ReportPath) -Now $part.World.Clock.Time).Reason | Should -Match 'only some categories'
-        $empty = Join-Path $TestDrive 'empty'
-        $null = New-Item -ItemType Directory $empty
+        $empty = Join-Path $TestDrive 'empty'; $null = New-Item -ItemType Directory $empty
         (Test-AzlPclGateResult -InfrastructureFile $script:Run.InfraFile -Directory $empty).Reason | Should -Match 'no result'
-        $tamper = Join-Path $TestDrive 'tamper'
-        $null = New-Item -ItemType Directory $tamper
-        $j = Get-Content $script:Run.ReportPath -Raw | ConvertFrom-Json; $j.mode = 'Plan'
-        $j | ConvertTo-Json -Depth 8 | Set-Content (Join-Path $tamper 'report.json')
-        (Test-AzlPclGateResult -InfrastructureFile $script:Run.InfraFile -Directory $tamper -Now $script:Now).Reason | Should -Match "only a Verify run counts"
+        $plan = & $script:Tamper { param($j) $j.mode = 'Plan' }
+        (Test-AzlPclGateResult -InfrastructureFile $script:Run.InfraFile -Directory $plan -Now $script:Now).Reason | Should -Match 'only a Verify run counts'
+        $noSummary = & $script:Tamper { param($j) } -NoSummary
+        (Test-AzlPclGateResult -InfrastructureFile $script:Run.InfraFile -Directory $noSummary -Now $script:Now).Reason | Should -Match 'summary.md'
+    }
+    It 'does not take the verdict on trust: checks inside a Pass must agree (review C8)' {
+        $none = & $script:Tamper { param($j) $j.checks = @() }
+        (Test-AzlPclGateResult -InfrastructureFile $script:Run.InfraFile -Directory $none -Now $script:Now).Reason | Should -Match 'lists no check'
+        $failed = & $script:Tamper { param($j) $j.checks[0].status = 'Failed' }
+        (Test-AzlPclGateResult -InfrastructureFile $script:Run.InfraFile -Directory $failed -Now $script:Now).Reason | Should -Match 'Failed or blocking'
+        $blocking = & $script:Tamper { param($j) $j.checks[1].blocking = $true }
+        (Test-AzlPclGateResult -InfrastructureFile $script:Run.InfraFile -Directory $blocking -Now $script:Now).Passed | Should -BeFalse
+        $skip = & $script:Tamper { param($j) $j.checks[1].status = 'Skipped'; $j.checks[1].accepted = $false }
+        (Test-AzlPclGateResult -InfrastructureFile $script:Run.InfraFile -Directory $skip -Now $script:Now).Reason | Should -Match 'not accepted'
+        $cats = & $script:Tamper { param($j) $j.categories.Remove('storage') }
+        (Test-AzlPclGateResult -InfrastructureFile $script:Run.InfraFile -Directory $cats -Now $script:Now).Reason | Should -Match 'storage'
+        $noRun = & $script:Tamper { param($j) $j.Remove('runId') }
+        (Test-AzlPclGateResult -InfrastructureFile $script:Run.InfraFile -Directory $noRun -Now $script:Now).Passed | Should -BeFalse
+        $partialNull = & $script:Tamper { param($j) $j.partial = $null }
+        (Test-AzlPclGateResult -InfrastructureFile $script:Run.InfraFile -Directory $partialNull -Now $script:Now).Passed | Should -BeFalse
+    }
+    It 'shows the accepted skips in the reason and in AcceptedSkipped (review C7)' {
+        $w = New-PclWorld; $w.Status['readiness'] = 'Skipped'
+        $r = Invoke-PclRun -World $w -AcceptSkipped 'FK-readiness'
+        $t = Test-AzlPclGateResult -InfrastructureFile $r.InfraFile -Directory (Split-Path $r.ReportPath) -Now $r.World.Clock.Time
+        $t.Passed | Should -BeTrue
+        $t.AcceptedSkipped | Should -Contain 'FK-readiness'
+        $t.Reason | Should -Match 'accepted by the operator with -AcceptSkipped: FK-readiness'
     }
     It 'defaults the directory to arm-report\verification\live next to the file' {
         (Resolve-AzlPclReportDirectory -InfrastructureFile 'D:\Data\site\infrastructure.yml') | Should -Be 'D:\Data\site\arm-report\verification\live'

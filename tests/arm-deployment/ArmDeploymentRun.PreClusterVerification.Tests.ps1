@@ -29,9 +29,12 @@ BeforeAll {
     function Write-GateResult {
         <# A result of the gate as the gate writes it (report.json of the contract), valid at the time of the fake clock (2026-11-07T12:00:00Z). #>
         param($Env, [hashtable]$Override = @{})
-        $r = [ordered]@{ schema = 1; runId = 'run0123456789'; mode = 'Verify'; partial = $false; verdict = 'Pass'; cluster = 'iic-clus01'; fileHash = (Get-AzlPclFileHash -Path $Env.File); expiresUtc = '2026-11-07T16:00:00.0000000Z'; checks = @() }
+        $categories = [ordered]@{}; foreach ($c in 'azure', 'identity', 'nodes', 'network', 'storage', 'readiness') { $categories[$c] = [ordered]@{ results = 1; blocking = 0; Passed = 1 } }
+        $r = [ordered]@{ schema = 1; runId = 'run0123456789'; mode = 'Verify'; partial = $false; verdict = 'Pass'; cluster = 'iic-clus01'; fileHash = (Get-AzlPclFileHash -Path $Env.File); completedUtc = '2026-11-07T12:00:00.0000000Z'; expiresUtc = '2026-11-07T16:00:00.0000000Z'
+            acceptedSkipped = @(); categories = $categories; checks = @([ordered]@{ checkId = 'FK-1'; category = 'azure'; status = 'Passed'; node = '*'; blocking = $false; accepted = $false }) }
         foreach ($k in $Override.Keys) { $r[$k] = $Override[$k] }
         $r | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath (Join-Path $Env.Live 'report.json')
+        'summary' | Set-Content -LiteralPath (Join-Path $Env.Live 'summary.md')
     }
     function Invoke-GatedRun($Env, [string]$Mode = 'Validate', [hashtable]$Settings = @{}) {
         $s = $Settings.Clone()
@@ -98,7 +101,7 @@ Describe 'A result of the gate' {
     }
     It 'refuses a Fail verdict, a partial run and a result that is not a Verify' {
         $e = New-GateEnvironment
-        Write-GateResult $e @{ verdict = 'Fail'; checks = @(@{ blocking = $true }) }
+        Write-GateResult $e @{ verdict = 'Fail'; checks = @(@{ checkId = 'FK-1'; status = 'Failed'; blocking = $true }) }
         (Get-Gate (Invoke-GatedRun $e)).evidence | Should -Match 'verdict Fail'
         Write-GateResult $e @{ partial = $true }
         (Get-Gate (Invoke-GatedRun $e)).evidence | Should -Match 'only some categories'
@@ -146,5 +149,55 @@ Describe '-SkipPreClusterVerification' {
         (Get-Command Invoke-AzlArmDeploymentRun).Parameters.Keys | Should -Contain 'SkipPreClusterVerification'
         $script = [IO.Path]::Combine($repo, 'scripts', 'deploy', '04-cluster-deployment', 'phase-05-cluster-deployment', 'Invoke-AzureLocalArmDeployment.ps1')
         (Get-Content $script -Raw) | Should -Match '\[switch\]\$SkipPreClusterVerification'
+    }
+}
+
+Describe 'The bypass is only the switch (review C4)' {
+    It 'refuses skipPreClusterVerification in -Settings, whatever the spelling, with exit code 2 and no run' {
+        foreach ($key in 'skipPreClusterVerification', 'skip_pre_cluster_verification') {
+            $e = New-GateEnvironment
+            $w = Get-FakeWorld
+            $r = Invoke-AzlArmDeploymentRun -Infrastructure $e.Infra -InfrastructureFile $e.File -Mode Validate -ReportDirectory (Join-Path $TestDrive ('c4-' + [guid]::NewGuid().ToString('N').Substring(0, 6))) `
+                -Settings @{ $key = $true } -Adapter (Get-FakeAdapter -World $w) -TemplateFile $script:TemplateFile -OsConfigurationReport (Get-TestOsReport -Infra $e.Infra)
+            $r.ExitCode | Should -Be 2 -Because $key
+            $r.Message | Should -Match 'explicit switch -SkipPreClusterVerification'
+            $w.SubmitCalls.Count | Should -Be 0
+        }
+    }
+    It 'records the true reason when the switch is used' {
+        $e = New-GateEnvironment
+        $r = Invoke-GatedRun $e -Settings @{ skipPreClusterVerification = $true }
+        $r.Report.preClusterVerification.reason | Should -Match 'explicit switch -SkipPreClusterVerification'
+    }
+}
+
+Describe 'The ARM run enforces its own limits on the result (review C6, C7, C13)' {
+    It 'refuses a result older than the ARM run allows even though the report says it is still valid' {
+        $e = New-GateEnvironment
+        Write-GateResult $e @{ completedUtc = '2026-11-07T09:30:00.0000000Z'; expiresUtc = '2026-11-07T16:00:00.0000000Z' }
+        (Get-Gate (Invoke-GatedRun $e -Settings @{ preClusterVerificationMaxAgeHours = 2 })).evidence | Should -Match 'allows a result to be 2 hour'
+        (Get-Gate (Invoke-GatedRun $e -Settings @{ preClusterVerificationMaxAgeHours = 4 })).result | Should -Be 'Passed'
+    }
+    It 'shows the accepted skips in the evidence and in the report' {
+        $e = New-GateEnvironment
+        Write-GateResult $e @{ acceptedSkipped = @('RD-001'); checks = @([ordered]@{ checkId = 'RD-001'; status = 'Skipped'; node = '*'; blocking = $false; accepted = $true }) }
+        $r = Invoke-GatedRun $e
+        (Get-Gate $r).evidence | Should -Match 'accepted by the operator with -AcceptSkipped: RD-001'
+        @($r.Report.preClusterVerification.acceptedSkipped) | Should -Contain 'RD-001'
+        (Get-Content $r.SummaryPath -Raw) | Should -Match 'Accepted Skipped checks'
+    }
+    It 'refuses a Pass whose checks say otherwise, or whose summary.md is missing (review C5, C8)' {
+        $e = New-GateEnvironment
+        Write-GateResult $e @{ checks = @([ordered]@{ checkId = 'AZ-004'; status = 'Failed'; node = '*'; blocking = $true; accepted = $false }) }
+        (Get-Gate (Invoke-GatedRun $e)).evidence | Should -Match 'AZ-004'
+        Write-GateResult $e
+        Remove-Item (Join-Path $e.Live 'summary.md')
+        (Get-Gate (Invoke-GatedRun $e)).evidence | Should -Match 'summary.md'
+    }
+    It 'does not cut the command of the next action' {
+        $e = New-GateEnvironment
+        $r = Invoke-GatedRun $e -Settings @{ preClusterVerificationReportDirectory = (Join-Path $e.Live 'none') }
+        (Get-Gate $r).nextAction | Should -Not -Match '\.\.\.$'
+        (Get-Gate $r).nextAction.Length | Should -BeGreaterThan 100
     }
 }

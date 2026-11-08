@@ -30,7 +30,7 @@
     Output (in -ReportDirectory; default arm-report\verification\live in the folder of the infrastructure file): report.json, summary.md,
     precluster-verification-events.jsonl (one JSON object per line: RunStarted, Check ..., RunCompleted).
 
-    Exit codes: 0 Plan done, or Verify with the verdict Pass; 1 Verify with the verdict Fail; 2 bad input.
+    Exit codes: 0 Plan done, or Verify of all categories with the verdict Pass; 1 Verify with the verdict Fail, or a run that failed after it started; 2 bad input; 3 a PARTIAL run (-Category) with no blocking result (it never passes the ARM precondition).
 
 .PARAMETER InfrastructureFile
     The master infrastructure.yml (schema 5).
