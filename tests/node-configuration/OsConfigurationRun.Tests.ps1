@@ -64,9 +64,12 @@ BeforeAll {
             if (-not $done) { $wipe = @([pscustomobject]@{ number = 3; id = "SN-$name"; serial = "SN-$name"; uniqueId = "UID-$name"; sizeGb = 1000; model = 'ACME NVMe 1T'; bus = 'NVMe'; partitionStyle = 'GPT'; reason = 'partition style GPT' }) }
         }
         $hostName = if ($global:AzlHostname.ContainsKey($name)) { $global:AzlHostname[$name] } else { $name }
+        # A guarded change that ended Unknown in the apply; and, in the verification, what the node says about the changes it was asked about.
+        $guard = @(if ($phase -eq 'Apply' -and $global:AzlGuardUnknown -contains $name) { [pscustomobject]@{ group = 'Management'; state = 'Unknown'; changeId = "chg-$name"; reason = 'the node did not answer'; nextAction = 'Wait.' } })
+        $pendingGuard = @(if ($Parameters.ContainsKey('ReconcileChangeId')) { foreach ($id in $Parameters.ReconcileChangeId) { [pscustomobject]@{ changeId = $id; group = 'Management'; state = $global:AzlPendingState; reason = "the node says $($global:AzlPendingState)" } } })
         $entry = [pscustomobject]@{
             name = $name; hostname = $hostName; osVersion = '10.0.26100.1'; converged = $done; restarted = $false; ports = @(); sanDisks = @([pscustomobject]@{ uid = 'UID1' })
-            changes = @(if ($phase -eq 'Apply') { [pscustomobject]@{ Pass = 1; Id = 'Dns'; Status = 'changed'; Detail = 'set' } }); plan = $plan; wipe = $wipe
+            changes = @(if ($phase -eq 'Apply') { [pscustomobject]@{ Pass = 1; Id = 'Dns'; Status = 'changed'; Detail = 'set' } }); plan = $plan; wipe = $wipe; guard = $guard; pendingGuard = $pendingGuard
         }
         [pscustomobject]@{ ExitCode = 0; Error = ''; Unknown = $false; Report = [pscustomobject]@{ nodes = @($entry) } }
     }
@@ -77,6 +80,8 @@ BeforeAll {
         $global:AzlFail = @()
         $global:AzlConverged = @()
         $global:AzlHostname = @{}
+        $global:AzlGuardUnknown = @()
+        $global:AzlPendingState = 'InProgress'
         $global:AzlPortAnswers = $true
         $global:AzlOpened = @()
         $global:AzlArcStatus = 'Connected'
@@ -346,6 +351,48 @@ Describe 'The run: failures' {
     }
 }
 
+Describe 'A guarded change that ended Unknown is not a converged node' {
+    It 'the verification pass reads the pending change; while the node says InProgress the node is not converged and the exit code is 1' {
+        $global:AzlGuardUnknown = @('iic-n01')
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply
+        $verify = @($global:AzlCalls | Where-Object { $_.Node -eq 'iic-n01' -and $_.Phase -eq 'Plan' })[-1]
+        @($verify.Params.ReconcileChangeId) | Should -Be @('chg-iic-n01')
+        $n1 = $r.Records | Where-Object { $_.name -eq 'iic-n01' }
+        $n1.converged | Should -BeFalse
+        @($n1.pendingGuard).Count | Should -Be 1
+        $n1.pendingGuard[0].changeId | Should -Be 'chg-iic-n01'
+        ($r.Records | Where-Object { $_.name -eq 'iic-n02' }).converged | Should -BeTrue
+        $r.ExitCode | Should -Be 1
+        $report = Get-Content -LiteralPath (Join-Path $r.Out 'report.json') -Raw | ConvertFrom-Json
+        @($report.nodes[0].pendingGuard).Count | Should -Be 1
+    }
+    It 'once the node says Committed the change is reconciled and the node converges' {
+        $global:AzlGuardUnknown = @('iic-n01')
+        $global:AzlPendingState = 'Committed'
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply
+        ($r.Records | Where-Object { $_.name -eq 'iic-n01' }).converged | Should -BeTrue
+        @(($r.Records | Where-Object { $_.name -eq 'iic-n01' }).pendingGuard).Count | Should -Be 0
+        $r.ExitCode | Should -Be 0
+    }
+    It 'a change the node rolled back is an error of the node, not a pending one' {
+        $global:AzlGuardUnknown = @('iic-n01')
+        $global:AzlPendingState = 'RolledBack'
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply
+        $n1 = $r.Records | Where-Object { $_.name -eq 'iic-n01' }
+        $n1.converged | Should -BeFalse
+        ($n1.errors -join ' ') | Should -Match 'RolledBack'
+        $r.ExitCode | Should -Be 1
+    }
+    It 'a node with no unfinished guard is not asked about any' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply
+        foreach ($c in $global:AzlCalls) { $c.Params.ContainsKey('ReconcileChangeId') | Should -BeFalse }
+    }
+}
+
 Describe 'Exit codes' {
     BeforeAll {
         function Get-TestRec($Status = 'planned', $Errors = @(), $Converged = $true, $Blocked = 0, $Pending = 0) { [pscustomobject]@{ status = $Status; errors = $Errors; converged = $Converged; blocked = $Blocked; pendingChanges = $Pending } }
@@ -355,6 +402,11 @@ Describe 'Exit codes' {
     It '1 when a node failed or was skipped' {
         Get-AzlOsConfigurationExitCode -Record @((Get-TestRec -Status failed -Converged $false)) -Mode Plan | Should -Be 1
         Get-AzlOsConfigurationExitCode -Record @((Get-TestRec -Status skipped -Converged $false)) -Mode Plan | Should -Be 1
+    }
+    It '1 when a guarded change of a node is still unreconciled, whatever else says converged' {
+        $r = Get-TestRec
+        $r | Add-Member -NotePropertyName pendingGuard -NotePropertyValue @([pscustomobject]@{ changeId = 'x'; state = 'Unknown' })
+        Get-AzlOsConfigurationExitCode -Record @($r) -Mode Apply | Should -Be 1
     }
     It '1 when a node is blocked, in Plan too' { Get-AzlOsConfigurationExitCode -Record @((Get-TestRec -Blocked 1 -Converged $false)) -Mode Plan | Should -Be 1 }
     It 'Plan: pending changes are expected (0), unless -FailOnPendingChanges' {
@@ -984,6 +1036,39 @@ Describe 'Transport: PowerShell remoting by default, Arc only when asked' {
     }
     AfterEach { Remove-Variable -Name AzlBootstrap -Scope Global -ErrorAction SilentlyContinue }
 
+    It 'the master file''s remoting.transport arc is the effective transport: WinRM is not probed, and the event names where it came from' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.os_configuration = [ordered]@{ remoting = [ordered]@{ transport = 'arc' } } }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
+        Should -Invoke -ModuleName AzlOsConfigurationRun Test-AzlWinRmPort -Times 0 -Exactly
+        foreach ($rec in $r.Records) { $rec.evidence.WinRmAnswers | Should -BeNullOrEmpty; $rec.transport | Should -Be 'ArcRunCommand' }
+        $e = @(Get-Content -LiteralPath (Join-Path $r.Out 'os-configuration-events.jsonl') | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object state -eq 'TransportResolved')[0]
+        $e.evidence | Should -Match 'master file \(os_configuration\.remoting\.transport\)'
+        $e.evidence | Should -Not -Match 'chosen from the method'
+        $e.source | Should -Be 'masterFile'
+        $e.forced | Should -BeFalse
+    }
+    It 'the -Transport parameter is labelled as the parameter, and the run settings as the run settings' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Transport = 'ArcRunCommand' }
+        $e = @(Get-Content -LiteralPath (Join-Path $r.Out 'os-configuration-events.jsonl') | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object state -eq 'TransportResolved')[0]
+        $e.evidence | Should -Match '-Transport parameter'
+        $e.source | Should -Be 'parameter'
+        $e.forced | Should -BeTrue
+        Clear-Fake
+        $r2 = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Settings = @{ remoting = @{ transport = 'arc' } } }
+        $e2 = @(Get-Content -LiteralPath (Join-Path $r2.Out 'os-configuration-events.jsonl') | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object state -eq 'TransportResolved')[0]
+        $e2.evidence | Should -Match 'run settings \(remoting\.transport\)'
+        $e2.source | Should -Be 'settings'
+    }
+    It 'the approval of the bootstrap reaches the node script' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ ApprovedBootstrap = $true }
+        foreach ($c in $global:AzlCalls) { $c.Params.ApprovedBootstrap | Should -BeTrue }
+        Clear-Fake
+        $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
+        foreach ($c in $global:AzlCalls) { $c.Params.ContainsKey('ApprovedBootstrap') | Should -BeFalse }
+    }
+
     It 'a node that does not answer on the remoting port fails the run before anything is changed, with the diagnosis, and Arc is not tried' {
         Mock -ModuleName AzlOsConfigurationRun Invoke-AzlRemotingPreCheck {
             foreach ($c in $Candidate) { [pscustomobject]@{ Node = $c.Name; Reachable = $false; Address = @($c.Addresses)[0]; Port = 5985; Result = 'TimedOut'; Credential = 'vault'; Diagnosis = $global:AzlDiag; Tried = @($c.Addresses) } }
@@ -1237,6 +1322,43 @@ Describe 'Remote management profile in the run' {
             $r = Invoke-Run -Infra $infra -Mode Apply -Extra @{ Settings = @{ approvedBootstrap = $true } }
             Should -Invoke -ModuleName AzlOsConfigurationRun Invoke-AzlWinRmBootstrap -Times 0 -Exactly
             $r.ExitCode | Should -Be 2
+        }
+        It 'reading the evidence changes nothing: the bootstrap runs in the Apply, after every node is resolved and planned' {
+            $global:AzlOrder = [System.Collections.Generic.List[string]]::new()
+            Mock -ModuleName AzlOsConfigurationRun Invoke-AzlWinRmBootstrap {
+                $global:AzlOrder.Add("bootstrap:$Node"); $global:AzlOpened += $Address
+                [pscustomobject]@{ Node = $Node; Ok = $true; Route = 'smb'; Attempts = @(); Reason = ''; Result = $null }
+            }
+            Mock -ModuleName AzlOsConfigurationRun Invoke-AzlSetNodeConfiguration { $global:AzlOrder.Add("script:$($Parameters.Node[0]):$(if ($Parameters.ContainsKey('Execute')) { 'Apply' } else { 'Plan' })"); New-FakeSetResult $Parameters }
+            $infra = Set-Class 'lab' { param($d) $d.scenario.os_install = 'iso'; Add-Remoting $d @{ bootstrap_transport = 'smb' } }
+            $r = Invoke-Run -Infra $infra -Mode Apply
+            $r.ExitCode | Should -Not -Be 2
+            $order = @($global:AzlOrder)
+            $order | Should -Contain 'bootstrap:iic-n01'
+            # nothing is bootstrapped before the last node has been planned (here: both nodes are closed, so the plan is the placeholder and the first script call is the Plan after the bootstrap)
+            $first = $order.IndexOf('bootstrap:iic-n01')
+            $first | Should -Be 0 -Because 'the only calls before it would be a Plan of a node that is open'
+            @($order | Where-Object { $_ -like 'script:*:Plan' }).Count | Should -BeGreaterThan 0
+            Remove-Variable -Name AzlOrder -Scope Global -ErrorAction SilentlyContinue
+        }
+        It 'a run that exits 2 on bad input bootstraps nothing at all' {
+            $infra = Set-Class 'lab' { param($d) $d.scenario.os_install = 'simplified'; Add-Remoting $d @{ bootstrap_transport = 'smb' } }
+            $global:AzlPortAnswers = $false
+            $r = Invoke-Run -Infra $infra -Mode Apply -Extra @{ HandoffPath = (Get-TestHandoffDirectory -Duplicate) }
+            $r.ExitCode | Should -Be 2
+            Should -Invoke -ModuleName AzlOsConfigurationRun Invoke-AzlWinRmBootstrap -Times 0 -Exactly
+        }
+        It 'when the run stops after a bootstrap, the message says which nodes were bootstrapped' {
+            # Test-AzlSanConsistency runs once after the plan and once after the verification: it stops the run only the second time, after the bootstrap.
+            $global:AzlSanCalls = 0
+            Mock -ModuleName AzlOsConfigurationRun Test-AzlSanConsistency { $global:AzlSanCalls++; if ($global:AzlSanCalls -ge 2) { $e = [System.ArgumentException]::new('a late input problem'); $e.Data['AzlInput'] = $true; throw $e } }
+            $infra = Set-Class 'lab' { param($d) $d.scenario.os_install = 'iso'; Add-Remoting $d @{ bootstrap_transport = 'smb' } }
+            $r = Invoke-Run -Infra $infra -Mode Apply
+            $r.ExitCode | Should -Be 2
+            $r.Message | Should -Match 'a late input problem'
+            $r.Message | Should -Match 'bootstrap had already opened WinRM'
+            $r.Message | Should -Match 'iic-n01'
+            $r.Message | Should -Match 'iic-n02'
         }
         It 'the password never appears in the report, the events, the summary or the printed output' {
             $infra = Set-Class 'lab' { param($d) $d.scenario.os_install = 'iso'; Add-Remoting $d @{ bootstrap_transport = 'auto' } }

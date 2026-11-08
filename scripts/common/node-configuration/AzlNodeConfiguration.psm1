@@ -921,8 +921,35 @@ function Invoke-AzlNodeConfiguration {
     $djDone = @{}; $djFailure = $null; $djMoved = $false; $limit = $MaxPasses; $ouChecked = $false; $ouCheck = $null
     # The storage wipe is tried once per run, like the join: whatever the node shows afterwards, it is never wiped a second time in this run.
     $storageDone = $false
+    # The result of the node so far (the final one, or the partial one that rides on an error). Converged needs no pending change, nothing blocked, no error, and every
+    # guarded change committed: an unfinished guard (Unknown) is never converged.
+    $buildResult = {
+        param([string]$Err, [bool]$Indeterminate)
+        $blocked = @($plan | Where-Object Action -eq 'Blocked')
+        $pending = @($plan | Where-Object { $_.Action -eq 'Change' })
+        $unfinished = @($guardOutcomes | Where-Object { $_.State -ne 'Committed' })
+        [pscustomobject]@{
+            Node      = $node
+            Transport = $Transport.Kind
+            Plan      = $plan
+            Changes   = $changes.ToArray()
+            Blocked   = $blocked
+            Restarted = $restarted
+            Converged = ($pending.Count -eq 0 -and $blocked.Count -eq 0 -and -not $Err -and $unfinished.Count -eq 0)
+            State     = $state
+            Passes    = $passes.ToArray()
+            Executed  = [bool]$Execute
+            Guard     = $guardOutcomes.ToArray()
+            Events    = @($guardEvent.Sink)
+            Address   = $(try { if (Test-AzlTransportMember -Transport $Transport -Name 'GetAddress') { [string](& $Transport.GetAddress $Transport $node) } else { '' } } catch { '' })
+            DomainJoin = $(try { Get-AzlDomainJoinSummary -Spec $Spec -State $state -Change $changes.ToArray() } catch { $null }) # DOMAINJOIN HOOK
+            Error     = $Err
+            Indeterminate = $Indeterminate
+        }
+    }
     $compareArgs = @{ Spec = $Spec; Step = $Step; ClearStorage = $ClearStorage; ConfirmWipeDeployedCluster = $ConfirmWipeDeployedCluster }
     if ($PSBoundParameters.ContainsKey('ApprovedWipeId')) { $compareArgs.ApprovedWipeId = @($ApprovedWipeId) }
+    try {
     for ($pass = 1; $pass -le $limit + 1; $pass++) {
         $state = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Read) -Parameters $readParameters -Secrets $secrets -TimeoutSeconds 900
         # HOOK remoting-profiles: the step reads its own state (rules, listeners, certificates) and compares it with the profile.
@@ -1046,24 +1073,14 @@ function Invoke-AzlNodeConfiguration {
             }
         }
     }
-    $blocked = @($plan | Where-Object Action -eq 'Blocked')
-    $pending = @($plan | Where-Object { $_.Action -eq 'Change' })
-    [pscustomobject]@{
-        Node      = $node
-        Transport = $Transport.Kind
-        Plan      = $plan
-        Changes   = $changes.ToArray()
-        Blocked   = $blocked
-        Restarted = $restarted
-        Converged = ($pending.Count -eq 0 -and $blocked.Count -eq 0)
-        State     = $state
-        Passes    = $passes.ToArray()
-        Executed  = [bool]$Execute
-        Guard     = $guardOutcomes.ToArray()
-        Events    = @($guardEvent.Sink)
-        Address   = $(if (Test-AzlTransportMember -Transport $Transport -Name 'GetAddress') { [string](& $Transport.GetAddress $Transport $node) } else { '' })
-        DomainJoin = (Get-AzlDomainJoinSummary -Spec $Spec -State $state -Change $changes.ToArray()) # DOMAINJOIN HOOK
     }
+    catch {
+        # A call that ends the run (a timeout, a transport error) must not lose what was already done: the result so far travels with the error, and the caller writes the report from it.
+        $indeterminate = ($_.Exception.Data['AzlState'] -eq 'Indeterminate')
+        $_.Exception.Data['AzlPartial'] = (& $buildResult $_.Exception.Message $indeterminate)
+        throw
+    }
+    return (& $buildResult '' $false)
 }
 
 Export-ModuleMember -Function Get-AzlOemConfig, Get-AzlSbeBundle, Get-AzlSbePullUrl, Send-AzlSbePackage, Get-AzlSanVendor, Get-AzlNodeSpec, Get-AzlNodeReadParameter, Compare-AzlNodeState, Get-AzlNodeWipeItem, Format-AzlWipeDisk, Format-AzlPlan, Invoke-AzlNodeConfiguration

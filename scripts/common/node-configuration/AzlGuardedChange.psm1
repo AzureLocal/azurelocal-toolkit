@@ -374,7 +374,9 @@ function Invoke-AzlGuardedChange {
 
     # ---- 2. close the session and wait
     if (Test-AzlTransportMember -Transport $Transport -Name 'CloseSession') { & $Transport.CloseSession $Transport $Node }
-    $reconnectDeadline = $stagedAt.AddMinutes([double]$cfgSetting.reconnectWaitMinutes + $confirmMinutes * 0)
+    # A hard deadline on the HOST's clock: the wait never outlasts reconnectWaitMinutes, whatever the node's clock says (a frozen or wrong node clock, a slow read).
+    $reconnectDeadline = $stagedAt.AddMinutes([double]$cfgSetting.reconnectWaitMinutes)
+    $lastNow = $stagedAt
     $token = if ($cookie) { Get-AzlGuardToken -ChangeId $changeId -ScriptHash $scriptHash -Cookie $cookie } else { '' }
     Send-AzlGuardEvent -Context $EventContext -Node $Node -State 'NodeReconnecting' -Transport $Transport.Kind -Evidence "Waiting for $Node to answer again$(if ($isWinRm) { " on $newAddress (then $oldAddress) over WinRM port $port" } else { ' (Arc machine Connected with a newer last status change)' })." -Data (& $data @{})
     $reconnected = $false
@@ -387,6 +389,9 @@ function Invoke-AzlGuardedChange {
     $lastQuietRead = $stagedAt
     while ($true) {
         $now = & $Clock.Now
+        # The node's clock between two reads moves by the time that really passed on the host, not by what a sleep was asked for.
+        if ($nodeNow -and $now -gt $lastNow) { $nodeNow = $nodeNow.Add($now - $lastNow) }
+        $lastNow = $now
         $address = ''
         $readNow = $false
         if ($isWinRm) {
@@ -424,6 +429,7 @@ function Invoke-AzlGuardedChange {
                     $nodeNow = ([datetime]::Parse([string]$status.nowUtc, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)).ToUniversalTime()
                     $deadlineText = [string](Get-AzlProp $status.state 'deadlineUtc' '')
                     if ($deadlineText) { $nodeDeadline = ([datetime]::Parse($deadlineText, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)).ToUniversalTime() }
+                    $lastNow = & $Clock.Now
                 }
                 if ($resolved.Phase -ne $lastPhase) {
                     $lastPhase = $resolved.Phase
@@ -436,10 +442,9 @@ function Invoke-AzlGuardedChange {
         }
         # The node's published deadline has passed and the last read was not Committed: the node has reverted (or failed); read once more is done above.
         if ($nodeDeadline -and $nodeNow -and $nodeNow -gt $nodeDeadline.AddSeconds(60) -and $resolved -and -not $resolved.Final) { break }
-        if ($now -ge $reconnectDeadline -and -not ($resolved -and $nodeDeadline -and $nodeNow -lt $nodeDeadline.AddSeconds(60))) { break }
+        # The hard stop. The clock is read again here: a read can take minutes, and the stale $now from the top of the pass must not hide that.
+        if ((& $Clock.Now) -ge $reconnectDeadline) { break }
         & $Clock.Sleep 15
-        # Reading the clock once per pass keeps the nodeNow comparison honest between reads.
-        if ($nodeNow) { $nodeNow = $nodeNow.AddSeconds(15) }
     }
 
     # ---- 3. the outcome
@@ -474,4 +479,25 @@ function Invoke-AzlGuardedChange {
     }
 }
 
-Export-ModuleMember -Function Get-AzlGuardSetting, New-AzlGuardClock, New-AzlGuardEventContext, Send-AzlGuardEvent, Remove-AzlStaleRunCommand, Split-AzlGuardedAction, Test-AzlGuardNetworkPrecondition, Resolve-AzlGuardStatus, Get-AzlGuardToken, New-AzlChangeId, Invoke-AzlGuardedChange
+function Get-AzlPendingGuardState {
+    <#
+    .SYNOPSIS
+        Reads, once and without changing anything, what the node says about guarded changes whose outcome an earlier call could not read (state Unknown). No
+        confirmation token and no cookie are sent, so a change still awaiting its confirmation is only looked at, never confirmed.
+    .OUTPUTS
+        One object per change id: ChangeId, State (Committed, RolledBack, Refused, Failed, InProgress, NotFound or Unknown when the node could not be read), Final, Reason.
+        Only Committed counts as reconciled.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][string]$Node, [Parameter(Mandatory)][string[]]$ChangeId, [Parameter(Mandatory)][object]$Spec)
+    foreach ($id in $ChangeId) {
+        try {
+            $status = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlGuardStatusPayload) -Parameters @{ changeId = $id; mac = [string]$Spec.Management.Mac } -TimeoutSeconds 180 -Tries 1
+            $resolved = Resolve-AzlGuardStatus -Status $status
+            [pscustomobject]@{ ChangeId = $id; State = $resolved.State; Final = [bool]$resolved.Final; Reason = $resolved.Reason }
+        }
+        catch { [pscustomobject]@{ ChangeId = $id; State = 'Unknown'; Final = $false; Reason = "the node could not be read: $($_.Exception.Message)" } }
+    }
+}
+
+Export-ModuleMember -Function Get-AzlPendingGuardState, Get-AzlGuardSetting, New-AzlGuardClock, New-AzlGuardEventContext, Send-AzlGuardEvent, Remove-AzlStaleRunCommand, Split-AzlGuardedAction, Test-AzlGuardNetworkPrecondition, Resolve-AzlGuardStatus, Get-AzlGuardToken, New-AzlChangeId, Invoke-AzlGuardedChange

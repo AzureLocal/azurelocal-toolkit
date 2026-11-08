@@ -209,7 +209,7 @@ Describe "The node verdicts" {
         ($clock.State.Now - [datetime]::SpecifyKind([datetime]'2026-11-07T10:00:00', [DateTimeKind]::Utc)).TotalMinutes | Should -BeGreaterOrEqual 2
     }
 
-    It 'keeps waiting past the reconnect window while the node''s own deadline has not passed' {
+    It 'does not wait past reconnectWaitMinutes on the host clock, even while the node''s own deadline has not passed' {
         $clock = New-FakeClock
         $script:Calls = 0
         $t = New-GuardTransport 'WinRM' {
@@ -219,7 +219,59 @@ Describe "The node verdicts" {
             if ($script:Calls -lt 12) { New-NodeStatus 'Verifying' } else { New-NodeStatus 'Committed' }
         } $clock
         $o = Invoke-AzlGuardedChange -Transport $t -Node n1 -Group Management -Item @(New-MgmtItem) -Spec (New-Spec) -State (New-State) -Clock $clock -PortProbe { $true } -Setting @{ reconnectWaitMinutes = 1 }
-        $o.State | Should -Be 'Committed'
+        $o.State | Should -Be 'Unknown'
+        $o.NextAction | Should -Match 'PendingReconciliation'
+        ($clock.State.Now - [datetime]::SpecifyKind([datetime]'2026-11-07T10:00:00', [DateTimeKind]::Utc)).TotalSeconds | Should -BeLessOrEqual 75
+    }
+
+    Context 'the wait is bounded by the host clock' {
+        BeforeEach {
+            $script:Start = [datetime]::SpecifyKind([datetime]'2026-11-07T10:00:00', [DateTimeKind]::Utc)
+            # A clock that fails the test instead of looping for ever when the wait does not end.
+            $script:Sleeps = 0
+            $script:BoundClock = New-FakeClock
+            $inner = $script:BoundClock.Sleep
+            $script:BoundClock.Sleep = { param($Seconds) $script:Sleeps++; if ($script:Sleeps -gt 400) { throw 'The wait did not end: it is not bounded by the host clock.' }; & $inner $Seconds }.GetNewClosure()
+        }
+        It 'a node whose clock is frozen cannot keep the wait going: it ends at reconnectWaitMinutes' {
+            $clock = $script:BoundClock
+            $t = New-GuardTransport 'WinRM' {
+                param($Kind, $P, $A, $N)
+                if ($Kind -eq 'Stage') { return @{ staged = $true; cookie = 'ck'; machineSid = 'S-1' } }
+                New-NodeStatus 'Verifying' # nowUtc is always 10:01:00 and the node's deadline 10:30:00
+            } $clock
+            $o = Invoke-AzlGuardedChange -Transport $t -Node n1 -Group Management -Item @(New-MgmtItem) -Spec (New-Spec) -State (New-State) -Clock $clock -PortProbe { $true } -Setting @{ reconnectWaitMinutes = 2 }
+            $o.State | Should -Be 'Unknown'
+            ($clock.State.Now - $script:Start).TotalMinutes | Should -BeGreaterOrEqual 2
+            ($clock.State.Now - $script:Start).TotalMinutes | Should -BeLessThan 2.5
+        }
+        It 'a read that takes minutes counts: the wait ends after the read that crossed the deadline' {
+            $clock = $script:BoundClock
+            $t = New-GuardTransport 'WinRM' {
+                param($Kind, $P, $A, $N)
+                if ($Kind -eq 'Stage') { return @{ staged = $true; cookie = 'ck'; machineSid = 'S-1' } }
+                $clock.State.Now = $clock.State.Now.AddMinutes(5) # the call hangs for five minutes
+                New-NodeStatus 'Verifying'
+            } $clock
+            $o = Invoke-AzlGuardedChange -Transport $t -Node n1 -Group Management -Item @(New-MgmtItem) -Spec (New-Spec) -State (New-State) -Clock $clock -PortProbe { $true } -Setting @{ reconnectWaitMinutes = 3 }
+            $o.State | Should -Be 'Unknown'
+            @($t.Log | Where-Object Kind -eq 'Status').Count | Should -Be 1
+        }
+        It 'the node''s clock moves by the time that really passed on the host, so a deadline the node has passed is noticed' {
+            $clock = $script:BoundClock
+            $script:Reads = 0
+            $t = New-GuardTransport 'WinRM' {
+                param($Kind, $P, $A, $N)
+                if ($Kind -eq 'Stage') { return @{ staged = $true; cookie = 'ck'; machineSid = 'S-1' } }
+                $script:Reads++
+                $clock.State.Now = $clock.State.Now.AddSeconds(100) # every call is slow
+                if ($script:Reads -gt 1) { throw 'the node does not answer any more' }
+                New-NodeStatus 'Verifying' @{ deadlineUtc = '2026-11-07T10:02:00Z' }
+            } $clock
+            $o = Invoke-AzlGuardedChange -Transport $t -Node n1 -Group Management -Item @(New-MgmtItem) -Spec (New-Spec) -State (New-State) -Clock $clock -PortProbe { $true } -Setting @{ reconnectWaitMinutes = 15 }
+            $o.State | Should -Be 'Unknown'
+            ($clock.State.Now - $script:Start).TotalMinutes | Should -BeLessThan 8 -Because 'the node''s own deadline passed long before the 15 minutes were up'
+        }
     }
 }
 

@@ -116,3 +116,23 @@ Describe 'The WinRM transport runs the payload as a file in the session' {
         Remove-Variable -Name AzlSentBlock, AzlSentArgs -Scope Global -ErrorAction SilentlyContinue
     }
 }
+
+Describe 'A WinRM call that is abandoned after its timeout is indeterminate, not a plain failure' {
+    It 'the transport reports State TimedOut and Invoke-AzlNodeScript throws an error marked Indeterminate (the script may have run)' {
+        Mock -ModuleName AzlNodeTransport Get-AzlWinRmSession { 'session' }
+        Mock -ModuleName AzlNodeTransport Invoke-Command -RemoveParameterType Session { [pscustomobject]@{ Id = 1 } }
+        Mock -ModuleName AzlNodeTransport Wait-Job -RemoveParameterType Job { $null }
+        Mock -ModuleName AzlNodeTransport Stop-Job -RemoveParameterType Job {}
+        Mock -ModuleName AzlNodeTransport Remove-Job -RemoveParameterType Job {}
+        Mock -ModuleName AzlNodeTransport Remove-PSSession -RemoveParameterType Session {}
+        $t = New-AzlWinRmTransport -Address @{ n1 = '192.0.2.11' } -Credential ([pscredential]::new('u', (ConvertTo-SecureString 'x' -AsPlainText -Force)))
+        $run = & $t.Invoke $t 'n1' 'PAYLOAD-TEXT' @{} @{} 30
+        $run.Failed | Should -BeTrue
+        $run.State | Should -Be 'TimedOut'
+        $caught = $null
+        try { Invoke-AzlNodeScript -Transport $t -Node n1 -Script 'x' -Tries 1 -TimeoutSeconds 30 } catch { $caught = $_ }
+        $caught.Exception.Data['AzlState'] | Should -Be 'Indeterminate'
+        $caught.Exception.Message | Should -Match 'INDETERMINATE'
+        $caught.Exception.Message | Should -Match 'abandoned'
+    }
+}

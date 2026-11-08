@@ -76,9 +76,19 @@ function Get-AzlRemotingSetting {
     $ssl = $UseSsl.IsPresent -or $transportName -eq 'winrm_https' -or ($remote.ContainsKey('useSsl') -and $remote.useSsl -eq $true)
     $auth = if ($Authentication) { $Authentication } elseif ($remote.ContainsKey('authentication')) { [string]$remote.authentication } else { 'Negotiate' }
     if ($auth -notin 'Default', 'Negotiate', 'Kerberos', 'Basic', 'CredSSP') { throw "remoting.authentication must be Default, Negotiate, Kerberos, Basic or CredSSP, not '$auth'." }
+    # Where the effective transport came from, so a report and an event can say it: the command line, the run settings, the master file, or the default.
+    $fromFileTransport = [string](& $fromFile 'transport' '')
+    $source = if ($Transport -ne 'Auto') { 'parameter' } elseif ($remote.ContainsKey('transport')) { 'settings' } elseif ($fromFileTransport) { 'masterFile' } else { 'default' }
+    $sourceLabel = switch ($source) {
+        'parameter' { '-Transport parameter' }
+        'settings' { 'run settings (remoting.transport)' }
+        'masterFile' { 'master file (os_configuration.remoting.transport)' }
+        default { 'default (WinRM)' }
+    }
     [pscustomobject]@{
         Transport = $transportName; Kind = $(if ($transportName -eq 'arc') { 'ArcRunCommand' } else { 'WinRM' }); UseSsl = [bool]$ssl; Authentication = $auth; Port = $(if ($ssl) { 5986 } else { 5985 })
         BootstrapTransport = $bootstrap; AllowedSourceCidrs = @($cidrs | ForEach-Object { [string]$_ })
+        TransportSource = $source; TransportSourceLabel = $sourceLabel
     }
 }
 
