@@ -292,7 +292,8 @@ function New-AzlWinRmTransport {
                     Stop-Job -Job $job -ErrorAction SilentlyContinue
                     Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
                     if ($Self.State.Sessions.ContainsKey($Node)) { Remove-PSSession -Session $Self.State.Sessions[$Node] -ErrorAction SilentlyContinue; $Self.State.Sessions.Remove($Node) }
-                    throw "The call to $Node did not finish within $cap seconds and was abandoned."
+                    # What the script did on the node is not known: it may not have started, may still be running, or may have finished. The caller treats this as indeterminate.
+                    return [pscustomobject]@{ Output = ''; Error = "The call to $Node did not finish within $cap seconds and was abandoned."; Failed = $true; State = 'TimedOut' }
                 }
                 try { $output = Receive-Job -Job $job -ErrorAction Stop } finally { Remove-Job -Job $job -Force -ErrorAction SilentlyContinue }
                 [pscustomobject]@{ Output = ($output -join [Environment]::NewLine); Error = ''; Failed = $false; State = 'Succeeded' }
@@ -383,6 +384,11 @@ function Invoke-AzlNodeScript {
         if ($unknown) {
             $exception = [System.InvalidOperationException]::new("The script on $Node through $($Transport.Kind) ended in state Unknown after $attempt tries: Azure lost the run (the node's agent lost its connection?). Read the node again to see what happened.")
             $exception.Data['AzlState'] = 'Unknown'
+            throw $exception
+        }
+        if ($run.Failed -and [string]$run.State -eq 'TimedOut') {
+            $exception = [System.InvalidOperationException]::new("The call to $Node through $($Transport.Kind) timed out and was abandoned, so the outcome is INDETERMINATE: the script may not have run, may still be running, or may have finished. $($run.Error) Read the node again to see what happened; do not assume it failed.")
+            $exception.Data['AzlState'] = 'Indeterminate'
             throw $exception
         }
         if ($run.Failed) {

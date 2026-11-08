@@ -8,6 +8,9 @@
     azurelocal-ztp event file has, so one reader follows both:
 
         timestamp   UTC, ISO-8601 round-trip format ('o': 2026-11-07T19:01:59.5360000Z)
+        runId       the id of the run that wrote the line (UTC start time and six hex digits). A feed path that is reused keeps the lines of every run; the run id tells
+                    them apart, so an old RunCompleted is never taken for the current run's. The writer takes it from -RunId, else from AZL_OSCONFIG_RUN_ID.
+        seq         1, 2, 3 ... within one run id in one feed file: a reader sees a line that is missing, and the order the lines were written in
         node        the node's name, or '*' for an event about the whole run
         stage       always 'OsConfiguration'
         step        the step the event is about (RemoteManagement, Network, ...), '' for node and run events
@@ -24,8 +27,13 @@
     converged, total (RunCompleted), action (StepPlanned: Ok|Change|Blocked|Info), item, current, desired (StepPlanned, StepFailed),
     try, tries, waitSeconds (NodeRetry), wipe (WipeListPublished: array of { node, disks }), wipeCount.
 
-    The contract is section 6 of pmo/azure-local/os-configuration-design.md. Run events (node '*'): RunStarted, PlanCompleted,
-    WipeListPublished, RunCompleted. Node events: NodeStarted, MethodResolved, TransportResolved, NodeRetry, NodeRestarting, NodeConverged,
+    Free text (evidence, nextAction and every text value in the extra fields) goes through a redaction pass before it is written: passwords, tokens, bearer headers,
+    SAS signatures, account keys, private keys and node result lines become ***.
+
+    The contract is section 6 of pmo/azure-local/os-configuration-design.md. The one registry of states is Get-AzlOsConfigurationEventState (Test-AzlOsConfigurationEventState
+    asks it); every state any module sends is in it. Run events (node '*'): RunStarted, PlanCompleted,
+    WipeListPublished, WipeListApproved, WipeListRejected (the Apply was bound to the approved wipe list, or refused for it), RunCompleted.
+    Transport (step Transport): StaleRunCommandDeleted. Node events: NodeStarted, MethodResolved, TransportResolved, NodeRetry, NodeRestarting, NodeConverged,
     NodeFailed, NodeBlocked, NodeReconnecting, NodeReconnected, NodeWaiting (a heartbeat every 60 seconds while the host waits for a node; waiting, phase and elapsedSeconds say what for). Step events: StepPlanned, StepApplying, StepApplied, StepFailed, StepSkipped,
     StepVerified. Domain join (step DomainJoin, Active Directory designs): DomainJoinPlanned, DomainJoinApplying, DomainJoined,
     DomainAdminsConfigured (the LCM user or the listed principals were added to the node's local Administrators), DomainJoinFailed (evidence: the AD error). Guarded change events (step Network): NetworkChangeStaged, NetworkChangeVerifying, NetworkChangeAwaitingConfirm,
@@ -41,21 +49,36 @@ $ErrorActionPreference = 'Stop'
 $script:StepOrder = @('RemoteManagement', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe', 'Drivers', 'ArcRegistration')
 $script:EventMaxText = 2000
 $script:EventState = [ordered]@{
-    Run     = @('RunStarted', 'PlanCompleted', 'WipeListPublished', 'RunCompleted')
+    Run     = @('RunStarted', 'PlanCompleted', 'WipeListPublished', 'WipeListApproved', 'WipeListRejected', 'RunCompleted')
     Node    = @('NodeStarted', 'MethodResolved', 'TransportResolved', 'NodeRetry', 'NodeRestarting', 'NodeConverged', 'NodeFailed', 'NodeBlocked', 'NodeReconnecting', 'NodeReconnected', 'NodeWaiting')
     Step    = @('StepPlanned', 'StepSkipped', 'StepApplying', 'StepApplied', 'StepFailed', 'StepVerified')
     DomainJoin = @('DomainJoinPlanned', 'DomainJoinApplying', 'DomainJoined', 'DomainAdminsConfigured', 'DomainJoinFailed')
     Guarded = @('NetworkChangeStaged', 'NetworkChangeVerifying', 'NetworkChangeAwaitingConfirm', 'NetworkChangeCommitted', 'NetworkChangeRepaired', 'NetworkChangeRolledBack', 'NetworkChangeRefused')
+    Transport = @('StaleRunCommandDeleted')
 }
+# The next sequence number per feed file and run id, for a feed that can't be read back.
+$script:EventSeq = @{}
 
 function Get-AzlOsConfigurationEventState {
     <#
     .SYNOPSIS
-        The event states of the feed by level: Run, Node, Step, DomainJoin and Guarded (the guarded network change).
+        The one registry of event states, by group: Run, Node, Step, DomainJoin, Guarded (the guarded network change) and Transport.
     #>
     [CmdletBinding()]
     param()
     return $script:EventState
+}
+
+function Test-AzlOsConfigurationEventState {
+    <#
+    .SYNOPSIS
+        Whether a state is in the registry. A state that is not stays out of the feed (the guard keeps it in the report only).
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory)][string]$State)
+    foreach ($group in $script:EventState.Keys) { if ($State -in $script:EventState[$group]) { return $true } }
+    return $false
 }
 
 function Get-AzlOsConfigurationStepOrder {
@@ -76,11 +99,79 @@ function Get-AzlOsEventTimestamp {
     return $Now.ToUniversalTime().ToString('o', [cultureinfo]::InvariantCulture)
 }
 
+function Protect-AzlOsEventText {
+    <#
+    .SYNOPSIS
+        The redaction pass over free text: what looks like a secret becomes ***. Passwords and keys after = or :, bearer headers, JWTs, SAS signatures, private keys, a node
+        result line (AZLRESULT:) and any long base64 run. Ordinary evidence is returned as it was.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([AllowNull()][string]$Text)
+    if ([string]::IsNullOrEmpty($Text)) { return '' }
+    $t = $Text
+    $t = [regex]::Replace($t, '(?is)-----BEGIN [A-Z ]*PRIVATE KEY-----.*?(-----END [A-Z ]*PRIVATE KEY-----|$)', '***private key***')
+    $t = [regex]::Replace($t, '(?i)\b(password|passwd|pwd|secret|client[-_]?secret|api[-_]?key|access[-_]?key|account[-_]?key|shared[-_]?access[-_]?key|token|credential)\b(\s*[=:]\s*)("[^"]*"|''[^'']*''|[^\s;,&"'']+)', '$1$2***')
+    $t = [regex]::Replace($t, '(?i)\bBearer\s+[A-Za-z0-9._~+/=-]{8,}', 'Bearer ***')
+    $t = [regex]::Replace($t, '\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]*', '***jwt***')
+    $t = [regex]::Replace($t, '(?i)([?&;]\s*(?:sig|signature|sas|sv|st|se)=)[^&\s;]+', '$1***')
+    $t = [regex]::Replace($t, 'AZLRESULT:[A-Za-z0-9+/=]{16,}', 'AZLRESULT:***')
+    $t = [regex]::Replace($t, '[A-Za-z0-9+/]{120,}={0,2}', '***base64***')
+    return $t
+}
+
 function Limit-AzlOsEventText([string]$Text, [int]$Max = $script:EventMaxText) {
     if ($null -eq $Text) { return '' }
-    $one = ($Text -replace '\s*[\r\n]+\s*', ' ').Trim()
+    $one = (Protect-AzlOsEventText -Text ($Text -replace '\s*[\r\n]+\s*', ' ')).Trim()
     if ($one.Length -gt $Max) { return $one.Substring(0, $Max - 3) + '...' }
     return $one
+}
+
+function Protect-AzlOsEventValue {
+    # An extra field of an event with its text redacted and limited: strings, and the strings in lists, dictionaries and objects (to a depth of six).
+    param([AllowNull()][object]$Value, [int]$Depth = 0)
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [string]) { return (Limit-AzlOsEventText $Value) }
+    if ($Value -is [ValueType] -or $Depth -ge 6) { return $Value }
+    if ($Value -is [System.Collections.IDictionary]) {
+        $copy = [ordered]@{}
+        foreach ($k in $Value.Keys) { $copy[[string]$k] = Protect-AzlOsEventValue -Value $Value[$k] -Depth ($Depth + 1) }
+        return $copy
+    }
+    if ($Value -is [System.Collections.IEnumerable]) { return , @(foreach ($v in $Value) { Protect-AzlOsEventValue -Value $v -Depth ($Depth + 1) }) }
+    $copy = [ordered]@{}
+    foreach ($p in $Value.PSObject.Properties) { if ($p.MemberType -in 'NoteProperty', 'Property') { $copy[$p.Name] = Protect-AzlOsEventValue -Value $p.Value -Depth ($Depth + 1) } }
+    return $copy
+}
+
+function Get-AzlOsEventNextSeq {
+    # The sequence number of the next line of a run in a feed file: one more than the last line of this run, read from the end of the file (so the writers of different
+    # modules, and a feed that other runs appended to, all agree), else 1.
+    param([string]$Path, [string]$RunId)
+    $key = "$Path|$RunId"
+    $fromMemory = if ($script:EventSeq.ContainsKey($key)) { [int]$script:EventSeq[$key] + 1 } else { 1 }
+    $fromFile = 1
+    try {
+        if (Test-Path -LiteralPath $Path -PathType Leaf) {
+            $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete)
+            try {
+                $take = [int][Math]::Min($stream.Length, 262144)
+                if ($take -gt 0) {
+                    $null = $stream.Seek(-$take, [System.IO.SeekOrigin]::End)
+                    $buffer = [byte[]]::new($take)
+                    $read = $stream.Read($buffer, 0, $take)
+                    $last = @([System.Text.Encoding]::UTF8.GetString($buffer, 0, $read) -split "`n" | Where-Object { $_.Trim() }) | Select-Object -Last 1
+                    if ($last) {
+                        $o = $last | ConvertFrom-Json
+                        if ($o.PSObject.Properties['runId'] -and [string]$o.runId -eq $RunId -and $o.PSObject.Properties['seq']) { $fromFile = [int]$o.seq + 1 }
+                    }
+                }
+            }
+            finally { $stream.Dispose() }
+        }
+    }
+    catch { Write-Verbose "Sequence not read from ${Path}: $($_.Exception.Message)" }
+    return [Math]::Max($fromMemory, $fromFile)
 }
 
 function Write-AzlOsConfigurationEvent {
@@ -108,12 +199,17 @@ function Write-AzlOsConfigurationEvent {
         [string]$PayloadVersion = '',
         [string]$SchemaVersion = '',
         [System.Collections.IDictionary]$Data,
-        [datetime]$Now = [datetime]::UtcNow
+        [datetime]$Now = [datetime]::UtcNow,
+        # The run this line belongs to. Default: AZL_OSCONFIG_RUN_ID, which the run sets, so every module of one run writes the same id.
+        [string]$RunId = [string]$env:AZL_OSCONFIG_RUN_ID
     )
     if (-not $Path) { return $false }
     try {
+        $seq = Get-AzlOsEventNextSeq -Path $Path -RunId $RunId
         $entry = [ordered]@{
             timestamp  = Get-AzlOsEventTimestamp -Now $Now
+            runId      = $RunId
+            seq        = $seq
             node       = $Node
             stage      = 'OsConfiguration'
             step       = $Step
@@ -129,8 +225,7 @@ function Write-AzlOsConfigurationEvent {
         if ($Data) {
             foreach ($key in $Data.Keys) {
                 if ($entry.Contains([string]$key)) { continue }
-                $value = $Data[$key]
-                if ($value -is [string]) { $entry[[string]$key] = Limit-AzlOsEventText $value } else { $entry[[string]$key] = $value }
+                $entry[[string]$key] = Protect-AzlOsEventValue -Value $Data[$key]
             }
         }
         $line = (ConvertTo-Json -InputObject $entry -Compress -Depth 6) + "`n"
@@ -140,6 +235,7 @@ function Write-AzlOsConfigurationEvent {
         $stream = [System.IO.File]::Open($Path, [System.IO.FileMode]::Append, [System.IO.FileAccess]::Write, [System.IO.FileShare]::ReadWrite -bor [System.IO.FileShare]::Delete)
         try { $stream.Write($bytes, 0, $bytes.Length); $stream.Flush() }
         finally { $stream.Dispose() }
+        $script:EventSeq["$Path|$RunId"] = $seq
         return $true
     }
     catch {
@@ -215,4 +311,4 @@ function ConvertFrom-AzlOsRetryWarning {
     }
 }
 
-Export-ModuleMember -Function Get-AzlOsConfigurationEventState, Get-AzlOsConfigurationStepOrder, Get-AzlOsEventTimestamp, Write-AzlOsConfigurationEvent, Get-AzlOsStepPlan, ConvertFrom-AzlOsRetryWarning
+Export-ModuleMember -Function Get-AzlOsConfigurationEventState, Test-AzlOsConfigurationEventState, Protect-AzlOsEventText, Protect-AzlOsEventValue, Get-AzlOsConfigurationStepOrder, Get-AzlOsEventTimestamp, Write-AzlOsConfigurationEvent, Get-AzlOsStepPlan, ConvertFrom-AzlOsRetryWarning

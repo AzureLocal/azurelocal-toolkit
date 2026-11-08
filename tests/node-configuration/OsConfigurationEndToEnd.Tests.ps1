@@ -12,6 +12,7 @@
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification = 'The fake Azure is a global function (the scripts re-import their modules with -Force) and reports back through a global.')]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Pester scopes.')]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test doubles.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification = 'A test credential for a fake; it is never used.')]
 param()
 
 BeforeAll {
@@ -208,5 +209,59 @@ Describe 'Invoke-AzureLocalOsConfiguration.ps1, Plan, end to end (fake Azure onl
     It 'wrote the report next to the events' {
         Test-Path (Join-Path $script:Out 'report.json') | Should -BeTrue
         Test-Path (Join-Path $script:Out 'plan-report.json') | Should -BeTrue
+    }
+}
+
+Describe 'Set-AzureLocalNodeConfiguration.ps1: a call that fails leaves a report, never none' {
+    It 'an apply call that fails ends the node with its error in the report, the report is written, and the exit code is 1' {
+        $infraFile = Get-E2eInfra
+        $infra = Import-AzlInfrastructure -Path $infraFile -SkipValidation
+        $states = @{}
+        foreach ($n in @($infra.nodes)) { $states[[string]$n['name']] = New-ConfiguredState (Get-AzlNodeSpec -Infrastructure $infra -Node $n) }
+        $states['iic-n02'].san.feature = 'Disabled' # an inline change: the fake Azure refuses to run an apply, so the call fails
+        $global:AzlE2e = @{ States = $states; Runs = @{}; UnknownLeft = @{}; Calls = [System.Collections.Generic.List[string]]::new() }
+        $report = Join-Path $TestDrive 'failed-call.json'
+        $setScript = [IO.Path]::Combine($script:Repo, 'scripts', 'deploy', '04-cluster-deployment', 'phase-03-os-configuration', 'Set-AzureLocalNodeConfiguration.ps1')
+        $null = & $setScript -InfrastructureFile $infraFile -Node 'iic-n02' -Transport ArcRunCommand -Step Mpio -Execute -SkipValidation -ReportPath $report -RetryTries 1 6>&1 3>&1 2>&1
+        $LASTEXITCODE | Should -Be 1
+        Test-Path -LiteralPath $report | Should -BeTrue
+        $doc = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
+        $doc.nodes[0].name | Should -Be 'iic-n02'
+        $doc.nodes[0].error | Should -Match 'fake Azure'
+        $doc.nodes[0].converged | Should -BeFalse
+    }
+}
+
+Describe 'Set-AzureLocalNodeConfiguration.ps1 run by hand: the one-time Arc bootstrap needs the class and the approval' {
+    BeforeAll {
+        $script:SetScript = [IO.Path]::Combine($script:Repo, 'scripts', 'deploy', '04-cluster-deployment', 'phase-03-os-configuration', 'Set-AzureLocalNodeConfiguration.ps1')
+        $script:InfraFile = Get-E2eInfra
+        $infra = Import-AzlInfrastructure -Path $script:InfraFile -SkipValidation
+        $script:States = @{}
+        foreach ($n in @($infra.nodes)) { $script:States[[string]$n['name']] = New-ConfiguredState (Get-AzlNodeSpec -Infrastructure $infra -Node $n) }
+        $script:Credential = [pscredential]::new('admin', (ConvertTo-SecureString 'not-a-real-password' -AsPlainText -Force))
+        # Runs the script for node 2 (WinRM, nothing listens on the documentation address, bootstrap through Arc once). Returns the Azure calls it made.
+        function Invoke-BootstrapRun([hashtable]$Extra = @{}) {
+            $global:AzlE2e = @{ States = $script:States; Runs = @{}; UnknownLeft = @{}; Calls = [System.Collections.Generic.List[string]]::new() }
+            $report = Join-Path $TestDrive "set-$([guid]::NewGuid().ToString('N').Substring(0, 6)).json"
+            $settings = @{ remoting = @{ bootstrapTransport = 'arc'; allowedSourceCidrs = @('198.51.100.0/24') } }
+            try { $null = & $script:SetScript -InfrastructureFile $script:InfraFile -Node 'iic-n02' -Credential $script:Credential -NodeAddress @{ 'iic-n02' = '192.0.2.12' } -Settings $settings -Execute -SkipValidation -ReportPath $report -RetryTries 1 @Extra 6>&1 3>&1 2>&1 } catch { Write-Verbose "the script stopped: $($_.Exception.Message)" } # the fake nodes answer no bootstrap result; the calls are what is judged
+            [pscustomobject]@{ Calls = @($global:AzlE2e.Calls); Exit = $LASTEXITCODE; Report = $report }
+        }
+    }
+    It 'production, not approved: no run command is created on the node, and the script says why' {
+        $run = Invoke-BootstrapRun
+        @($run.Calls | Where-Object { $_ -like 'PUT *runCommands*' }) | Should -BeNullOrEmpty
+        $run.Exit | Should -Be 1
+    }
+    It 'production, with -ApprovedBootstrap: the bootstrap runs through Arc, once' {
+        $run = Invoke-BootstrapRun @{ ApprovedBootstrap = $true }
+        @($run.Calls | Where-Object { $_ -like 'PUT *runCommands*' }).Count | Should -BeGreaterThan 0
+    }
+    It 'the script has the -ApprovedBootstrap parameter and checks Test-AzlBootstrapPermitted before it calls Invoke-AzlWinRmBootstrap (the one profile-driven bootstrap)' {
+        (Get-Command $script:SetScript).Parameters.ContainsKey('ApprovedBootstrap') | Should -BeTrue
+        $text = Get-Content -LiteralPath $script:SetScript -Raw
+        $text.IndexOf('Test-AzlBootstrapPermitted') | Should -BeGreaterThan 0
+        $text.IndexOf('Test-AzlBootstrapPermitted') | Should -BeLessThan $text.IndexOf('= Invoke-AzlWinRmBootstrap')
     }
 }

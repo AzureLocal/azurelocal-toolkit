@@ -67,7 +67,7 @@ The full cross-tool matrix is in the toolkit's [access-and-connectivity page](ac
 | `-Method` | `Auto` (default) works the method out per node; force `Ztp` or `Iso` for all nodes. |
 | `-Credential`, `-NodeAddress` | The local administrator for WinRM (default: `identity.local_admin`, password from the Key Vault, never printed) and the address to reach a node on when the installer's address is not in the file. On a node reached over Arc (only `-Transport ArcRunCommand`) the credential is used to copy the SBE package when `hardware.sbe.delivery` is `winrm_copy`. |
 | `-ClearStorage` | Forces the storage wipe on (see below). |
-| `-ConfigPath`, `-Settings` | Optional run settings (JSON file, then a hashtable that wins): `retryTries`, `retryDelaySeconds`, `maxPasses`, `noRestart`, `failOnPendingChanges`, `nodeAddress`, `networkRollbackMinutes`, `networkStableSeconds`, `reconnectWaitMinutes`, `staleRunCommandMinutes`, `addressProbe`, `remoting`. The guarded-change keys are in [Changing the management address safely](#changing-the-management-address-safely); `remoting` is in [Choosing the transport](#choosing-the-transport). |
+| `-ConfigPath`, `-Settings` | Optional run settings (JSON file, then a hashtable that wins): `retryTries`, `retryDelaySeconds`, `maxPasses`, `noRestart`, `failOnPendingChanges`, `nodeAddress`, `networkRollbackMinutes`, `networkStableSeconds`, `reconnectWaitMinutes`, `staleRunCommandMinutes`, `addressProbe`, `remoting`, `addressResolution`. The guarded-change keys are in [Changing the management address safely](#changing-the-management-address-safely); `remoting` is in [Choosing the transport](#choosing-the-transport). |
 | `-EventLogPath` | The event feed (JSON Lines), default `os-configuration-events.jsonl` in the report directory. |
 | `-FailOnPendingChanges` | Plan mode: exit 1 when any change is pending (drift detection). |
 
@@ -108,6 +108,21 @@ The result is in the report, per node (`method.declared`, `method.resolved`, `me
 
 Arc registration on the ISO path runs `Invoke-AzStackHciArcInitialization` on the node with the ARM token of the run's own Azure sign-in (passed as a secret; never written), into `azure.resource_group`, with the Arc gateway from `networking.outbound.arc_gateway` when the outbound path uses one. It then waits for the Arc machine to be Connected. The older Phase 04 registration scripts take a different, interactive configuration, so they are not used here. WinRM from a Linux runner needs the PSWSMan module for Negotiate authentication. Arc registration is done over WinRM too.
 
+
+### How the node's current address is found
+
+You do not need to know the address a node holds now. The temporary DHCP address of a node installed from the ISO is not in the master file (the file holds the address it is to get), and a ZTP node may still hold its DHCP address too. For each node reached over WinRM the run looks in this order, first match wins, and names the source in the plan line, in the `TransportResolved` event (`addressSource`, `addressTried`) and in `report.json` (`addressSource`, `evidence.address`):
+
+1. **override**: `-NodeAddress` or the `nodeAddress` run setting. Final: if it does not answer, no other address is tried, so credentials never go to an address you did not give.
+2. **ztp-handoff**: the node's adapters in its `*.ztp-handoff.json` (`networkAdapters[]`, each with `ipAddress` and `macAddress`), matched by the management MAC from `infrastructure.yml`. ZTP nodes only; a manual install has no handoff, and that is normal.
+3. **arc**: the network profile the Arc agent reports for the node's Arc machine (same MAC), when the node is registered and you are signed in to Azure.
+4. **infrastructure-file**: `nodes[].management.ip_address` (and `maintenance_address`). A manual install done with the planned static IP is found here.
+5. **mac-lookup**: from the orchestrator, only when 2 to 4 gave no answer. It reads the neighbor table (`Get-NetNeighbor`, else `arp -a`) for the management MAC on `networking.management.subnet`. If the table has no entry yet, a ping sweep of that subnet fills it (ARP is answered even when the node blocks ping). It works only on a machine that is on that subnet, because only then does it share the layer-2 segment with the node; on any other machine the message says so and the step is skipped. A subnet wider than /22 is refused unless `addressResolution.allowWideSubnet` is true in the run settings. Nothing outside that subnet is ever pinged. On Linux and macOS without `Get-NetNeighbor` the run uses `arp -a`, and skips the step when neither exists.
+6. **none**: exit code 2. The message asks for the address and lists what each source gave, for example `Cannot find the current management address of iic-n02 (management MAC 00:00:5E:00:53:20). ... Give the address the node answers on now: -NodeAddress @{ 'iic-n02' = '<ip>' }`.
+
+Every candidate is probed with a TCP connect on 5985, then 5986, and the one that answers is preferred over one that does not. If several answer, the first source in the order above is used and a warning names the others and says why. Resolution only connects to ports: no credential is sent, nothing is changed, IPv4 only. When a discovered address is not in the file and TrustedHosts is managed with exact entries (class `dev`), it is added for the run and restored with the rest.
+
+Run settings (`-Settings` or the settings file), all optional: `addressResolution = @{ sweep = $true; allowWideSubnet = $false; pingTimeoutMilliseconds = 500 }`.
 
 ### Choosing the transport
 
@@ -303,6 +318,7 @@ Run events (node `*`):
 | `RunStarted` | the inputs are valid and the run begins. `evidence` names the nodes | `nodes` (array of names; a viewer clears exactly these nodes), `mode`, `cluster`, `schemaVersion` (the master file's `_metadata.schema_version`), `wrapperVersion` |
 | `PlanCompleted` | every node was planned (read only) | `changes`, `blocked`, `mode` |
 | `WipeListPublished` | the wipe list was written (`Warning` when disks will be wiped) | `wipeCount`, `clearStorage`, `wipe` (array of `{ node, disks }`) |
+| `WipeListApproved`, `WipeListRejected` | Apply was bound to the approved wipe list (`-ApprovedWipeList`): it matched, or a disk was not on it and the run stopped with exit code 2 before anything changed | `wipeCount`, `hash`, `approvedHash` |
 | `RunCompleted` | last event; also written when the run stops on bad input or an error | `exitCode`, `converged`, `total`, `mode` |
 
 Node events:
@@ -311,7 +327,7 @@ Node events:
 | --- | --- | --- |
 | `NodeStarted` | the run starts on the node. A viewer starts a new attempt for the node here | |
 | `MethodResolved` | the method is decided (`evidence` names the declared `scenario.os_install`, the evidence found and any warning; `Warning` when the declaration and the evidence disagree). Written once more after the first read of the node, to add the OS it reported | `declared`, `declaredMethod` (`Ztp` or `Iso`), `source`, `mismatch`, `steps`, `handoff`, `arc`, `winrm`, `warnings`, `hostname`, `osVersion`, `build`, `osCaption` (ISO path), `schemaVersion`, `wrapperVersion`, `sbePublisher`, `sbeFamily`, `sbeVersion`, `sbePackage`, `sbeDelivery` |
-| `TransportResolved` | how the node is reached (`transport` on the line); `address` and `forced` | `address`, `forced` |
+| `TransportResolved` | how the node is reached (`transport` on the line); `address` and `forced`; for WinRM the source of the address (see [How the node's current address is found](#how-the-nodes-current-address-is-found)) | `address`, `forced`, `addressSource`, `addressTried` |
 | `NodeRetry` | an Arc Run Command ended in state `Unknown` and is tried again | `try`, `tries`, `waitSeconds`, `phase` |
 | `NodeRestarting` | the node was asked to restart (written when the apply call reports it) | |
 | `NodeReconnecting`, `NodeReconnected` | the node restarted or its address changed and the run waited for it, then reached it again. For a restart inside an apply call they are written when the call reports it, before the `StepApplied` events of that call | |
@@ -333,6 +349,8 @@ Step events (`step` is one of `RemoteManagement`, `Network`, `Dns`, `Time`, `Hos
 Domain join (step `DomainJoin`, Active Directory designs): `DomainJoinPlanned`, `DomainJoinApplying`, `DomainJoined`, `DomainAdminsConfigured` (the LCM user, or the listed principals, were added to the node's local Administrators) and `DomainJoinFailed` (`evidence` is the AD error). A viewer such as azurelocal-sonar switches the account it reads a node's logs with from the local account to the domain account only after both `DomainJoined` and `DomainAdminsConfigured`: before the second, a domain account is not an administrator of the node.
 
 Guarded network change (step `Network`): `NetworkChangeStaged`, `NetworkChangeVerifying`, `NetworkChangeAwaitingConfirm` (`confirmMinutes`, `confirmBy`), `NetworkChangeCommitted`, `NetworkChangeRepaired` (`rung`), `NetworkChangeRolledBack` (`reason`: the node's own reason) and `NetworkChangeRefused`. They carry the optional fields `changeId`, `rung`, `reason`, `confirmMinutes` and `confirmBy` (the UTC time the confirmation window ends). The contract is section 6 of the OS configuration design in the platform repository (`pmo/azure-local/os-configuration-design.md`).
+
+Every line carries `runId` (the id of the run; a feed path that is reused keeps the lines of every run, and the id tells them apart) and `seq` (1, 2, 3 ... per run id in the file). Free text is redacted before it is written (passwords, tokens, bearer headers, SAS signatures, keys, node result lines become `***`). The one registry of states is `Get-AzlOsConfigurationEventState`; besides the tables above it holds `StaleRunCommandDeleted` (step `Transport`). Apply with a non-empty wipe list needs `-ApprovedWipeList` (the `wipe-list.json` of the Plan run, with node and disk serials and a SHA-256), and a node that belongs to a deployed cluster is wiped only with the one-shot `-ConfirmWipeDeployedCluster`.
 
 Order for one node in Apply mode: `NodeStarted`, `MethodResolved`, `StepPlanned`/`StepSkipped` for every step, `StepApplying`, `StepApplied` (or `StepFailed`), `StepVerified`, then `NodeConverged`, `NodeFailed` or `NodeBlocked`. A node whose plan shows nothing to change goes straight to `NodeConverged`. Run `Get-Content os-configuration-events.jsonl -Wait` to watch a run.
 

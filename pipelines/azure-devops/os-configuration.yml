@@ -90,6 +90,10 @@ parameters:
     displayName: 'Wipe leftover local storage (Apply needs a second approval after the wipe list is shown)'
     type: boolean
     default: false
+  - name: confirm_wipe_deployed_cluster
+    displayName: 'Let the storage wipe touch a node of a deployed cluster (one run; only with clear_storage)'
+    type: boolean
+    default: false
   - name: agent_pool
     displayName: 'Self-hosted agent pool (PowerShell 7, route to the nodes)'
     type: string
@@ -178,7 +182,7 @@ stages:
               $src = $env:OSC_REPORT_DIRECTORY
               $dst = $env:OSC_ARTIFACT_DIRECTORY
               New-Item -ItemType Directory -Path $dst -Force | Out-Null
-              foreach ($name in 'report.json', 'plan-report.json', 'summary.md', 'wipe-list.txt', 'os-configuration-events.jsonl') {
+              foreach ($name in 'report.json', 'plan-report.json', 'summary.md', 'wipe-list.txt', 'wipe-list.json', 'os-configuration-events.jsonl') {
                 $file = Join-Path $src $name
                 if (Test-Path -LiteralPath $file -PathType Leaf) { Copy-Item -LiteralPath $file -Destination $dst }
                 else { Write-Output "##vso[task.logissue type=warning]$name was not written by this run." }
@@ -252,6 +256,10 @@ stages:
               steps:
                 - checkout: self
 
+                # The Plan stage's artifact: its wipe-list.json is the approval of the storage wipe, bound to what the reviewer saw.
+                - download: current
+                  artifact: os-configuration-plan
+
                 - ${{ if and(ne(parameters.handoff_pipeline_id, 'none'), ne(parameters.handoff_run_id, 'none')) }}:
                     - task: DownloadPipelineArtifact@2
                       displayName: 'Fetch the ZTP handoff artifact'
@@ -297,6 +305,10 @@ stages:
                       }
                       if ($env:OSC_CLEAR_STORAGE -eq 'true') { $p.ClearStorage = $true }
                       if ($env:OSC_APPROVED_BOOTSTRAP -eq 'true') { $p.ApprovedBootstrap = $true }
+                      # The approval of the wipe is the Plan's own wipe-list.json (an Apply whose own wipe list is not empty is refused without it, and refuses a disk that is not on it).
+                      $wipeList = Join-Path $env:OSC_PLAN_DIRECTORY 'wipe-list.json'
+                      if ($env:OSC_CLEAR_STORAGE -eq 'true' -and (Test-Path -LiteralPath $wipeList -PathType Leaf)) { $p.ApprovedWipeList = $wipeList }
+                      if ($env:OSC_CONFIRM_WIPE_DEPLOYED_CLUSTER -eq 'true') { $p.ConfirmWipeDeployedCluster = $true }
                       & $env:OSCONFIG_SCRIPT @p
                       if ($LASTEXITCODE -ne 0) { throw "Invoke-AzureLocalOsConfiguration.ps1 exited with code $LASTEXITCODE." }
                   env:
@@ -307,6 +319,8 @@ stages:
                     OSC_TRANSPORT: ${{ parameters.transport }}
                     OSC_CLEAR_STORAGE: ${{ parameters.clear_storage }}
                     OSC_APPROVED_BOOTSTRAP: ${{ parameters.approved_bootstrap }}
+                    OSC_CONFIRM_WIPE_DEPLOYED_CLUSTER: ${{ parameters.confirm_wipe_deployed_cluster }}
+                    OSC_PLAN_DIRECTORY: $(Pipeline.Workspace)/os-configuration-plan
                     OSC_REPORT_DIRECTORY: $(Agent.TempDirectory)/osconfig-apply
 
                 - pwsh: |

@@ -140,12 +140,27 @@ Describe 'Azure DevOps OS configuration pipeline: approval gates' {
     }
 }
 
+Describe 'Azure DevOps OS configuration pipeline: the approval of the storage wipe' {
+    It 'the Apply stage downloads the Plan artifact and passes its wipe-list.json as -ApprovedWipeList; -ConfirmWipeDeployedCluster is its own parameter' {
+        $apply = $script:Ado['stages'] | Where-Object { $_['stage'] -eq 'Apply' }
+        @(Get-StageStep $apply | Where-Object { $_['download'] -eq 'current' -and $_['artifact'] -eq 'os-configuration-plan' }).Count | Should -Be 1
+        $inline = (Get-AzureStep 'Apply')['inputs']['Inline']
+        $inline | Should -Match 'wipe-list\.json'
+        $inline | Should -Match '\$p\.ApprovedWipeList = \$wipeList'
+        $inline | Should -Match '\$p\.ConfirmWipeDeployedCluster = \$true'
+        (Get-AzureStep 'Plan')['inputs']['Inline'] | Should -Not -Match 'ApprovedWipeList|ConfirmWipeDeployedCluster'
+        $p = @{}; foreach ($x in $script:Ado['parameters']) { $p[$x['name']] = $x }
+        $p['confirm_wipe_deployed_cluster']['type'] | Should -Be 'boolean'
+        $p['confirm_wipe_deployed_cluster']['default'] | Should -BeFalse
+    }
+}
+
 Describe 'Azure DevOps OS configuration pipeline: the entry point and PowerShell 7' {
     It 'the entry point has every parameter the pipeline passes (<Stage>)' -ForEach @(@{ Stage = 'Plan' }, @{ Stage = 'Apply' }) {
         $used = @(Get-UsedEntryParameter (Get-AzureStep $Stage)['inputs']['Inline'])
         foreach ($n in 'InfrastructureFile', 'Mode', 'Transport', 'ReportDirectory', 'EventLogPath', 'HandoffPath', 'Node', 'Step', 'ClearStorage') { $used | Should -Contain $n }
         foreach ($u in $used) { $script:EntryParameters | Should -Contain $u }
-        if ($Stage -eq 'Apply') { $used | Should -Contain 'ApprovedBootstrap' }
+        if ($Stage -eq 'Apply') { foreach ($n in 'ApprovedBootstrap', 'ApprovedWipeList', 'ConfirmWipeDeployedCluster') { $used | Should -Contain $n } }
     }
     It 'calls the script through the OSCONFIG_SCRIPT variable and fails the task on a non-zero exit code (<Stage>)' -ForEach @(@{ Stage = 'Plan' }, @{ Stage = 'Apply' }) {
         $inline = (Get-AzureStep $Stage)['inputs']['Inline']

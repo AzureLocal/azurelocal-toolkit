@@ -1,0 +1,3 @@
+_gateway (192.0.2.1) at 00:00:5e:00:53:01 [ether] on eth0
+? (192.0.2.120) at 00:00:5e:00:53:20 [ether] on eth0
+? (192.0.2.130) at <incomplete> on eth0

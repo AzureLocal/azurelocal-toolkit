@@ -6,6 +6,7 @@
 # disk even when the action names it, and the Read script reports the evidence the wipe list needs (serial, size, model, bus, partition style).
 # Run: Import-Module Pester -RequiredVersion 5.9.1; Invoke-Pester ./tests/node-configuration/StorageClear.Tests.ps1
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Pester scopes.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test helpers build in-memory fakes.')]
 param()
 
 BeforeDiscovery {
@@ -99,8 +100,8 @@ function Clear-Disk { [CmdletBinding()] param($Number, [switch]$RemoveData, [swi
         $calls = if (Test-Path -LiteralPath $callsFile) { @(Get-Content -LiteralPath $callsFile -Raw | ConvertFrom-Json) } else { @() }
         [pscustomobject]@{ Result = $result; Calls = $calls; Text = $text }
     }
-    function Invoke-Clear([hashtable]$Scenario, [string[]]$Serial, [bool]$Confirm = $false) {
-        $action = [ordered]@{ id = 'ClearStorage/local'; kind = 'storage-clear'; serials = @($Serial); confirmDeployedCluster = $Confirm }
+    function Invoke-Clear([hashtable]$Scenario, [string[]]$Serial, [bool]$ConfirmCluster = $false) {
+        $action = [ordered]@{ id = 'ClearStorage/local'; kind = 'storage-clear'; serials = @($Serial); confirmDeployedCluster = $ConfirmCluster }
         Invoke-NodePayload -Name Apply -Scenario $Scenario -Parameters @{ actions = @($action) }
     }
     function Get-Destructive($Run) { @($Run.Calls | Where-Object { $_ -match '^(Clear-Disk|Remove-|Reset-PhysicalDisk|Set-Disk|Set-StoragePool)' }) }
