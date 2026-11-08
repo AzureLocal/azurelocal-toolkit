@@ -28,6 +28,8 @@ BeforeDiscovery {
             'scripts/common/remoting/AzlRemotingSession.psm1'
             'scripts/common/remoting/AzlRemoteManagement.psm1'
             'scripts/common/remoting/AzlRemotingBootstrap.psm1'
+            'scripts/common/cicd-infra/AzlCicdInfra.psm1'
+            'scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1'
         )) {
         $path = $repoRoot
         foreach ($segment in $relative.Split('/')) { $path = Join-Path $path $segment }

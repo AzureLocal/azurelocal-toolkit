@@ -32,9 +32,9 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$SchemaPath = (Join-Path $PSScriptRoot '..\..\..\config\infrastructure\infrastructure.schema.json'),
-    [string]$MetadataPath = (Join-Path $PSScriptRoot '..\..\..\config\infrastructure\variables-reference.metadata.psd1'),
-    [string]$OutputPath = (Join-Path $PSScriptRoot '..\..\..\config\infrastructure\VARIABLES.md'),
+    [string]$SchemaPath = (Join-Path $PSScriptRoot '../../../config/infrastructure/infrastructure.schema.json'),
+    [string]$MetadataPath = (Join-Path $PSScriptRoot '../../../config/infrastructure/variables-reference.metadata.psd1'),
+    [string]$OutputPath = (Join-Path $PSScriptRoot '../../../config/infrastructure/VARIABLES.md'),
     [switch]$Check
 )
 Set-StrictMode -Version Latest
