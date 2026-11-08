@@ -231,7 +231,10 @@ function New-AzlWinRmTransport {
                 # The payload runs as a FILE on the node, never as a scriptblock: a script file has a script scope of its own, and a scriptblock created from text does
                 # not, so a payload written for a file would come back empty. The file is created inside the session (UTF-8 with a byte-order mark, readable by SYSTEM and
                 # Administrators only), run with the call operator in the same session (no child process, so no secret is on a command line) and removed in finally.
-                $output = Invoke-Command -Session $session -ScriptBlock {
+                # A hard cap: the call runs as a job and is abandoned after $TimeoutSeconds (plus a short grace), so one stalled WinRM call (a network change under
+                # an open session does it) can never hang the whole run. The session is dropped so the next call opens a new one.
+                $cap = [Math]::Max(30, $(if ($TimeoutSeconds -gt 0) { $TimeoutSeconds } else { 900 })) + 30
+                $job = Invoke-Command -Session $session -AsJob -ScriptBlock {
                     param($Text, $ParamsB64, $SecretsB64)
                     $folder = 'C:\ProgramData\AzureLocal\osconfig'
                     $null = New-Item -ItemType Directory -Force -Path $folder
@@ -244,6 +247,13 @@ function New-AzlWinRmTransport {
                     }
                     finally { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue }
                 } -ArgumentList $Script, $p, $q
+                if (-not (Wait-Job -Job $job -Timeout $cap)) {
+                    Stop-Job -Job $job -ErrorAction SilentlyContinue
+                    Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
+                    if ($Self.State.Sessions.ContainsKey($Node)) { Remove-PSSession -Session $Self.State.Sessions[$Node] -ErrorAction SilentlyContinue; $Self.State.Sessions.Remove($Node) }
+                    throw "The call to $Node did not finish within $cap seconds and was abandoned."
+                }
+                try { $output = Receive-Job -Job $job -ErrorAction Stop } finally { Remove-Job -Job $job -Force -ErrorAction SilentlyContinue }
                 [pscustomobject]@{ Output = ($output -join [Environment]::NewLine); Error = ''; Failed = $false; State = 'Succeeded' }
             }
             catch { [pscustomobject]@{ Output = ''; Error = $_.Exception.Message; Failed = $true; State = 'Failed' } }
