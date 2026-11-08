@@ -1,6 +1,6 @@
 #Requires -Version 7.0
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
-# Tests for the SBE package delivery over WinRM (hardware.sbe.delivery winrm_copy): 8 MiB chunks, one capped call per chunk written at an offset of a .part file, resume from the
+# Tests for the SBE package delivery over WinRM (hardware.sbe.delivery winrm_copy): 4 MiB chunks, one capped call per chunk written at an offset of a .part file, resume from the
 # last verified chunk boundary, small files first, the SHA-256 of the whole file on the node, then the rename; progress every 5 percent; the real error in the report. The node-side
 # operations (Length, PrefixHash, Write, Finish) RUN here for real, locally, against folders in TestDrive (they are Windows PowerShell 5.1 syntax, which pwsh runs too); nothing
 # touches a node, the network or Azure.
@@ -56,10 +56,31 @@ Describe 'Send-AzlFileChunked' {
         Test-Path "$($script:final).part" | Should -BeFalse -Because 'the .part file takes its name only after the hash is right'
         $r.Sent | Should -Be 3500
     }
-    It 'the default chunk is 8 MiB (17 MiB: 8, 8 and 1 MiB)' {
-        $hash = New-TestFile $script:local (17MB)
+    It 'the default chunk is 4 MiB (9 MiB: 4, 4 and 1 MiB)' {
+        $hash = New-TestFile $script:local (9MB)
         $null = Send-AzlFileChunked -Call $script:RealCall -CallContext $script:ctx -LocalPath $script:local -RemotePath $script:final -Sha256 $hash -Node n1 -RetrySeconds 0
-        @($script:ctx.Log | Where-Object Op -eq 'Write' | ForEach-Object Count) | Should -Be @(8MB, 8MB, 1MB)
+        @($script:ctx.Log | Where-Object Op -eq 'Write' | ForEach-Object Count) | Should -Be @(4MB, 4MB, 1MB)
+    }
+    It 'the encoded and serialized size of a chunk stays under the 8 MiB mark (raw size times 1.37), well under the 10 MiB WinRM object limit' {
+        (Get-AzlSbeChunkSize) * 1.37 | Should -BeLessOrEqual (8MB) -Because 'base64 and CLIXML make a byte[] about 1.37 times its size; 8 MiB raw arrived as 10.5 MB and failed'
+        (Get-AzlSbeChunkSize) | Should -Be 4194304
+        # measure the real thing: the CLIXML of a full chunk
+        $xml = [System.Management.Automation.PSSerializer]::Serialize(@{ Part = 'p'; Offset = [long]0; Bytes = [byte[]]::new((Get-AzlSbeChunkSize)) })
+        $xml.Length | Should -BeLessThan (8MB)
+    }
+    It 'the default chunk size of Send-AzlFileChunked is the checked constant' {
+        (Get-Command Send-AzlFileChunked).Parameters['ChunkBytes'].ParameterType | Should -Be ([int])
+        $hash = New-TestFile $script:local (Get-AzlSbeChunkSize)
+        $null = Send-AzlFileChunked -Call $script:RealCall -CallContext $script:ctx -LocalPath $script:local -RemotePath $script:final -Sha256 $hash -Node n1 -RetrySeconds 0
+        @($script:ctx.Log | Where-Object Op -eq 'Write').Count | Should -Be 1
+    }
+    It 'resume alignment follows the chunk size: a .part file of 6 MiB is resumed from the 4 MiB boundary (default chunk)' {
+        $hash = New-TestFile $script:local (9MB)
+        $bytes = [IO.File]::ReadAllBytes($script:local)
+        [IO.File]::WriteAllBytes("$($script:final).part", $bytes[0..(6MB - 1)])
+        $null = Send-AzlFileChunked -Call $script:RealCall -CallContext $script:ctx -LocalPath $script:local -RemotePath $script:final -Sha256 $hash -Node n1 -RetrySeconds 0
+        @($script:ctx.Log | Where-Object Op -eq 'Write')[0].Offset | Should -Be 4MB
+        (Get-FileHash -LiteralPath $script:final -Algorithm SHA256).Hash | Should -Be $hash
     }
     It 'reports progress every 5 percent, increasing, ending at 100' {
         $hash = New-TestFile $script:local 100000
@@ -130,6 +151,21 @@ Describe 'Send-AzlFileChunked' {
         $thrown.Exception.Message | Should -Match 'did not finish within 75 seconds and was abandoned'
         @($script:ctx.Log | Where-Object { $_.Op -eq 'Write' -and $_.Offset -eq 2000 }).Count | Should -Be 3 -Because 'one try and two more'
         Test-Path $script:final | Should -BeFalse
+    }
+    It 'the failure message lists the chunk size and the MaxEnvelopeSizekb of the node when it can be read, and says so when it cannot' {
+        $null = New-TestFile $script:local 3000
+        $script:ctx.FailWrite = { param($Offset, $Calls) $true }
+        $thrown = $null
+        try { $null = Send-AzlFileChunked -Call { param($Context, $Op, $Arguments, $TimeoutSeconds) if ($Op -eq 'Envelope') { return '500' }; & $script:RealCall $Context $Op $Arguments $TimeoutSeconds } -CallContext $script:ctx -LocalPath $script:local -RemotePath $script:final -Sha256 '' -Node n1 -ChunkBytes 1000 -RetrySeconds 0 -MaxFailures 0 } catch { $thrown = $_ }
+        $thrown.Exception.Message | Should -Match 'chunks of 1000 bytes'
+        $thrown.Exception.Message | Should -Match 'MaxEnvelopeSizekb is 500'
+        $thrown = $null
+        try { $null = Send-AzlFileChunked -Call { param($Context, $Op, $Arguments, $TimeoutSeconds) if ($Op -eq 'Envelope') { throw 'no session' }; & $script:RealCall $Context $Op $Arguments $TimeoutSeconds } -CallContext $script:ctx -LocalPath $script:local -RemotePath $script:final -Sha256 '' -Node n1 -ChunkBytes 1000 -RetrySeconds 0 -MaxFailures 0 } catch { $thrown = $_ }
+        $thrown.Exception.Message | Should -Match 'MaxEnvelopeSizekb could not be read'
+        $thrown.Exception.Message | Should -Match 'did not finish within 75 seconds'
+    }
+    It 'the Envelope operation runs on the node block (a number or empty, never a throw)' {
+        { & (Get-AzlWinRmFileOpBlock -Op Envelope) @{} } | Should -Not -Throw
     }
     It 'an empty file is a single finish (no chunk to write)' {
         $hash = New-TestFile $script:local 0

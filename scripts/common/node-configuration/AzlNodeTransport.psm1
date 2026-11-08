@@ -18,7 +18,7 @@
                    script goes through ARM. Needs the Arc machine's resource ID (handoff, or found by name). Secrets go
                    in protectedParameters. It can't carry a file: Stage throws. The SBE package reaches a node by
                    hardware.sbe.delivery (node_pull: the node downloads it; winrm_copy: a WinRM transport copies it).
-    WinRM          New-PSSession to the node. For a host that can reach the management subnet. A file is copied in chunks of 8 MiB
+    WinRM          New-PSSession to the node. For a host that can reach the management subnet. A file is copied in chunks of 4 MiB
                    (one capped call per chunk, written at an offset of a .part file, resumed from the last verified chunk boundary
                    after a cut), the SHA-256 of the whole file is checked on the node, and the .part file is renamed.
 
@@ -36,7 +36,9 @@ $script:CallGraceSeconds = 15
 $script:SessionOpenTimeoutMs = 30000
 $script:SessionCancelTimeoutMs = 5000
 $script:AbandonedJobs = [System.Collections.Generic.List[object]]::new()
-
+# The raw size of one SBE chunk. A byte[] argument crosses WinRM as base64 inside CLIXML (about 1.37 times its size), and one message may not exceed the 10 MiB deserialized-object
+# limit nor the node's MaxEnvelopeSizekb: 8 MiB raw arrived as 10.5 MB and the first chunk failed. 4 MiB raw is about 5.6 MB encoded.
+$script:SbeChunkBytes = 4194304
 Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'azure-local' 'AzlAzure.psm1'))
 
 function ConvertTo-AzlNodeResult {
@@ -421,7 +423,7 @@ function New-AzlWinRmTransport {
         }
         Stage  = {
             param($Self, $Node, [string]$LocalPath, [string]$RemotePath, [string]$Sha256)
-            # Chunked, capped, resumable (Send-AzlFileChunked): 8 MiB per call, 60 s per call, written at an offset of the .part file; an existing .part file is resumed from its last
+            # Chunked, capped, resumable (Send-AzlFileChunked): 4 MiB per call, 60 s per call, written at an offset of the .part file; an existing .part file is resumed from its last
             # verified chunk boundary; the SHA-256 of the whole file is checked on the node before the rename. The blocks are not closures (they stay bound to this module).
             $call = { param($Context, $Op, $Arguments, $TimeoutSeconds) Invoke-AzlWinRmFileOp -Transport $Context.Self -Node $Context.Node -Op $Op -Argument $Arguments -TimeoutSeconds $TimeoutSeconds }
             $report = {
@@ -434,6 +436,17 @@ function New-AzlWinRmTransport {
             [pscustomobject]@{ Name = [IO.Path]::GetFileName($LocalPath); Url = $null }
         }
     }
+}
+
+function Get-AzlSbeChunkSize {
+    <#
+    .SYNOPSIS
+        The raw size of one chunk of the SBE copy over WinRM (4 MiB): small enough that its base64 and CLIXML form stays well under the 10 MiB message limit.
+    #>
+    [CmdletBinding()]
+    [OutputType([int])]
+    param()
+    return [int]$script:SbeChunkBytes
 }
 
 function Get-AzlFilePrefixHash {
@@ -471,11 +484,17 @@ function Get-AzlWinRmFileOpBlock {
         PrefixHash  { Part, Count }                       SHA-256 of the first Count bytes of the .part file ('' when it is shorter)
         Write       { Part, Offset, Bytes }               writes the bytes at the offset (FileStream, OpenOrCreate, Seek), cuts the file at offset + count, answers its length
         Finish      { Part, Final, Want, Length }         checks the length and the SHA-256 of the whole .part file; a wrong hash removes it; then renames it. 'ok' or the problem
+        Envelope    { }                                   the node's WinRM MaxEnvelopeSizekb (WSMan:\localhost\MaxEnvelopeSizekb) as text; '' when it cannot be read
     #>
     [CmdletBinding()]
     [OutputType([scriptblock])]
-    param([Parameter(Mandatory)][ValidateSet('Length', 'PrefixHash', 'Write', 'Finish')][string]$Op)
+    param([Parameter(Mandatory)][ValidateSet('Length', 'PrefixHash', 'Write', 'Finish', 'Envelope')][string]$Op)
     switch ($Op) {
+        'Envelope' {
+            return {
+                try { return [string](Get-Item -LiteralPath 'WSMan:\localhost\MaxEnvelopeSizekb' -ErrorAction Stop).Value } catch { return '' }
+            }
+        }
         'Length' {
             return {
                 param($A)
@@ -543,7 +562,7 @@ function Invoke-AzlWinRmFileOp {
         when it does not finish within the timeout plus the 15 second grace. Throws when the call fails or is abandoned.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][string]$Node, [Parameter(Mandatory)][ValidateSet('Length', 'PrefixHash', 'Write', 'Finish')][string]$Op, [Parameter(Mandatory)][hashtable]$Argument, [Parameter(Mandatory)][int]$TimeoutSeconds)
+    param([Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][string]$Node, [Parameter(Mandatory)][ValidateSet('Length', 'PrefixHash', 'Write', 'Finish', 'Envelope')][string]$Op, [Parameter(Mandatory)][hashtable]$Argument, [Parameter(Mandatory)][int]$TimeoutSeconds)
     $session = Get-AzlWinRmSession -State $Transport.State -Node $Node -Transport $Transport
     $cap = Get-AzlNodeCallCap -TimeoutSeconds $TimeoutSeconds
     $job = Invoke-Command -Session $session -AsJob -ScriptBlock (Get-AzlWinRmFileOpBlock -Op $Op) -ArgumentList @(, $Argument)
@@ -578,12 +597,13 @@ function Send-AzlFileChunked {
         [string]$Sha256 = '',
         [string]$Node = '',
         [scriptblock]$Report,
-        [int]$ChunkBytes = 8MB,
+        [int]$ChunkBytes = 0,
         [int]$ChunkTimeoutSeconds = 60,
         [int]$VerifyTimeoutSeconds = 300,
         [int]$MaxFailures = 3,
         [int]$RetrySeconds = 5
     )
+    if ($ChunkBytes -le 0) { $ChunkBytes = Get-AzlSbeChunkSize }
     $name = [IO.Path]::GetFileName($LocalPath)
     $total = (Get-Item -LiteralPath $LocalPath).Length
     $part = "$RemotePath.part"
@@ -629,7 +649,13 @@ function Send-AzlFileChunked {
         catch {
             $failures++
             $cause = $_.Exception.Message
-            if ($failures -gt $MaxFailures) { throw "The copy of $name to $Node stopped at $offset of $total bytes after $failures failed calls in a row (chunks of $ChunkBytes bytes, $ChunkTimeoutSeconds s each): $cause" }
+            if ($failures -gt $MaxFailures) {
+                # One WinRM message has a size limit, the usual cause of a failure on the first chunk, so the message names the chunk size and, when it can be read, the node's MaxEnvelopeSizekb.
+                $envelope = ''
+                try { $envelope = ([string](& $Call $CallContext 'Envelope' @{} 15)).Trim() } catch { $envelope = '' }
+                $envelopeText = if ($envelope) { "the node's MaxEnvelopeSizekb is $envelope" } else { "the node's MaxEnvelopeSizekb could not be read" }
+                throw "The copy of $name to $Node stopped at $offset of $total bytes after $failures failed calls in a row (chunks of $ChunkBytes bytes, about $([Math]::Round($ChunkBytes * 1.37 / 1MB, 1)) MiB encoded; $envelopeText; $ChunkTimeoutSeconds s each): $cause"
+            }
             Write-Verbose "Copy of $name to ${Node}: $cause; trying again from the verified boundary ($failures of $MaxFailures)."
             if ($RetrySeconds -gt 0) { Start-Sleep -Seconds $RetrySeconds }
         }
@@ -878,4 +904,4 @@ function Test-AzlNodeConnectivity {
     }
 }
 
-Export-ModuleMember -Function Set-AzlTransportHeartbeat, Send-AzlTransportHeartbeat, Send-AzlTransportEvent, Get-AzlNodeCallCap, New-AzlWinRmSessionOption, Wait-AzlNodeJob, ConvertTo-AzlNodeResult, New-AzlArcRunCommandTransport, New-AzlWinRmTransport, Invoke-AzlNodeScript, Send-AzlNodeFile, Send-AzlFileChunked, Get-AzlWinRmFileOpBlock, Set-AzlNodeRetryPolicy, Test-AzlTransportMember, Test-AzlTcpPort, Get-AzlRemotingDiagnosis, Test-AzlNodeConnectivity
+Export-ModuleMember -Function Get-AzlSbeChunkSize, Set-AzlTransportHeartbeat, Send-AzlTransportHeartbeat, Send-AzlTransportEvent, Get-AzlNodeCallCap, New-AzlWinRmSessionOption, Wait-AzlNodeJob, ConvertTo-AzlNodeResult, New-AzlArcRunCommandTransport, New-AzlWinRmTransport, Invoke-AzlNodeScript, Send-AzlNodeFile, Send-AzlFileChunked, Get-AzlWinRmFileOpBlock, Set-AzlNodeRetryPolicy, Test-AzlTransportMember, Test-AzlTcpPort, Get-AzlRemotingDiagnosis, Test-AzlNodeConnectivity

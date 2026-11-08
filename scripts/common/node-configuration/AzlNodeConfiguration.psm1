@@ -782,7 +782,7 @@ function Send-AzlSbePackage {
     .DESCRIPTION
         node_pull   one Apply call; the node downloads each file from the address in the action and checks its SHA-256.
         winrm_copy  Chunked copy over a WinRM session (the transport, or -SbeTransport when the nodes are otherwise reached over
-                    Arc): 8 MiB per call (60 s each), written at an offset of a .part file, resumed from the last verified chunk
+                    Arc): 4 MiB per call (60 s each), written at an offset of a .part file, resumed from the last verified chunk
                     boundary, the small files first, a progress event every 5 percent; the SHA-256 of the whole file is checked
                     on the node before the .part file takes its name (Send-AzlFileChunked).
     .OUTPUTS
