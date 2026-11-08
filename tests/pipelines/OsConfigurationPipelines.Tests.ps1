@@ -45,6 +45,23 @@ Describe 'The entry point the pipelines call' {
     }
 }
 
+Describe 'The apply is bound to the wipe list the Plan stage published' {
+    It 'the entry point takes -ApprovedWipeList' { $script:EntryParameters | Should -Contain 'ApprovedWipeList' }
+    It 'GitHub: the apply job downloads the plan artifact and passes its wipe-list.json' {
+        $steps = $script:GitHub['jobs']['apply']['steps']
+        $download = @($steps | Where-Object { $_['uses'] -like 'actions/download-artifact*' -and $_['with']['name'] -eq 'os-configuration-plan' })
+        $download.Count | Should -Be 1
+        $run = ($steps | ForEach-Object { $_['run'] }) -join "`n"
+        $run | Should -Match '-Mode Apply[^\r\n]*-ApprovedWipeList "\$RUNNER_TEMP/osconfig-plan/wipe-list\.json"'
+        $download[0]['with']['path'] | Should -Be '${{ runner.temp }}/osconfig-plan'
+    }
+    It 'GitLab: the apply job passes the wipe-list.json of the plan job (the artifact comes with needs)' {
+        $apply = $script:GitLab['os-configuration-apply']
+        @($apply['script']) -join "`n" | Should -Match '-Mode Apply[^\r\n]*-ApprovedWipeList "\$REPORT_DIRECTORY/plan/wipe-list\.json"'
+        @($apply['needs']) | Should -Contain 'os-configuration-plan'
+    }
+}
+
 Describe 'GitHub Actions workflow' {
     It 'parses and is a dispatch workflow with the infrastructure file and the mode as inputs' {
         $script:GitHub | Should -Not -BeNullOrEmpty

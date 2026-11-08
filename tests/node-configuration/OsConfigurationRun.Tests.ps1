@@ -528,9 +528,9 @@ Describe 'Storage wipe (os_configuration.clear_storage)' {
     }
     It 'in Apply mode the wipe list is printed before anything is applied, and is the list from the plan' {
         $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.os_configuration = [ordered]@{ clear_storage = $true } }
-        $lines = [System.Collections.Generic.List[string]]::new()
+        $approved = Join-Path (Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)).Out 'wipe-list.json'
         $out = Join-Path $TestDrive 'applyout'
-        $info = Invoke-AzlOsConfiguration -InfrastructureFile $infra -HandoffPath (Get-TestHandoffDirectory) -Mode Apply -ReportDirectory $out -SkipValidation 6>&1 3>$null
+        $info = Invoke-AzlOsConfiguration -InfrastructureFile $infra -HandoffPath (Get-TestHandoffDirectory) -Mode Apply -ReportDirectory $out -SkipValidation -ApprovedWipeList $approved 6>&1 3>$null
         $text = @($info | ForEach-Object { [string]$_ })
         $wipeAt = ($text | Select-String -Pattern 'WILL BE WIPED NOW').LineNumber | Select-Object -First 1
         $applyAt = ($text | Select-String -Pattern '== Apply').LineNumber | Select-Object -First 1
@@ -585,6 +585,97 @@ Describe 'Storage wipe (os_configuration.clear_storage)' {
         $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.os_configuration = [ordered]@{ clear_storage = $true } }
         $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
         @($r.WipeList | ForEach-Object Node) | Should -Be @('iic-n02')
+    }
+}
+
+Describe 'Storage wipe: the apply is bound to the approved wipe list' {
+    BeforeAll {
+        function Get-WipeInfra { Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.os_configuration = [ordered]@{ clear_storage = $true } } }
+        # A Plan run; returns the folder that holds wipe-list.json and plan-report.json.
+        function Get-PlanOut { $r = Invoke-Run -Infra (Get-WipeInfra) -Handoff (Get-TestHandoffDirectory); Clear-Fake; $r.Out }
+    }
+    It 'a Plan run writes wipe-list.json: node and disk ids, the run id and a hash' {
+        $out = Get-PlanOut
+        $doc = Get-Content -LiteralPath (Join-Path $out 'wipe-list.json') -Raw | ConvertFrom-Json
+        $doc.hash | Should -Match '^[0-9a-f]{64}$'
+        $doc.runId | Should -Match '^\d{8}T\d{6}Z-[0-9a-f]{6}$'
+        @($doc.entries).Count | Should -Be 2
+        $doc.entries[0].items[0].serial | Should -Be 'SN-iic-n01'
+    }
+    It 'Apply with disks to wipe and no approved list: exit 2, nothing applied, the message names the parameter' {
+        $r = Invoke-Run -Infra (Get-WipeInfra) -Handoff (Get-TestHandoffDirectory) -Mode Apply
+        $r.ExitCode | Should -Be 2
+        $r.Message | Should -Match 'ApprovedWipeList'
+        @($global:AzlCalls | Where-Object Phase -eq 'Apply') | Should -BeNullOrEmpty
+    }
+    It 'Apply with the wipe-list.json of the Plan run goes ahead, and each node is told which disks it may wipe' {
+        $list = Join-Path (Get-PlanOut) 'wipe-list.json'
+        $r = Invoke-Run -Infra (Get-WipeInfra) -Handoff (Get-TestHandoffDirectory) -Mode Apply -Extra @{ ApprovedWipeList = $list }
+        $r.ExitCode | Should -Be 0
+        $apply = @($global:AzlCalls | Where-Object Phase -eq 'Apply')
+        $apply.Count | Should -Be 2
+        @($apply[0].Params.ApprovedWipeId['iic-n01']) | Should -Be @('SN-iic-n01')
+        @($apply[1].Params.ApprovedWipeId['iic-n02']) | Should -Be @('SN-iic-n02')
+    }
+    It 'the plan-report.json of the Plan run is accepted too' {
+        $list = Join-Path (Get-PlanOut) 'plan-report.json'
+        (Invoke-Run -Infra (Get-WipeInfra) -Handoff (Get-TestHandoffDirectory) -Mode Apply -Extra @{ ApprovedWipeList = $list }).ExitCode | Should -Be 0
+    }
+    It 'a disk that is not on the approved list stops the run before anything is applied (exit 2), naming the disk' {
+        $list = Join-Path (Get-PlanOut) 'wipe-list.json'
+        $doc = Get-Content -LiteralPath $list -Raw | ConvertFrom-Json -Depth 20
+        $doc.entries = @($doc.entries | Where-Object node -eq 'iic-n01')
+        $doc.hash = (Get-AzlWipeHash -Key (Get-AzlWipeKey -WipeList $doc.entries))
+        $doc | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $list
+        $r = Invoke-Run -Infra (Get-WipeInfra) -Handoff (Get-TestHandoffDirectory) -Mode Apply -Extra @{ ApprovedWipeList = $list }
+        $r.ExitCode | Should -Be 2
+        $r.Message | Should -Match 'SN-iic-n02'
+        $r.Message | Should -Match "doesn't match the approved list"
+        @($global:AzlCalls | Where-Object Phase -eq 'Apply') | Should -BeNullOrEmpty
+    }
+    It 'a wipe-list.json whose entries were edited without the hash is refused' {
+        $list = Join-Path (Get-PlanOut) 'wipe-list.json'
+        $doc = Get-Content -LiteralPath $list -Raw | ConvertFrom-Json -Depth 20
+        $doc.entries[0].items[0].id = 'SN-edited'
+        $doc | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $list
+        $r = Invoke-Run -Infra (Get-WipeInfra) -Handoff (Get-TestHandoffDirectory) -Mode Apply -Extra @{ ApprovedWipeList = $list }
+        $r.ExitCode | Should -Be 2
+        $r.Message | Should -Match 'was altered'
+        @($global:AzlCalls | Where-Object Phase -eq 'Apply') | Should -BeNullOrEmpty
+    }
+    It 'a missing approved list file is bad input' {
+        $r = Invoke-Run -Infra (Get-WipeInfra) -Handoff (Get-TestHandoffDirectory) -Mode Apply -Extra @{ ApprovedWipeList = (Join-Path $TestDrive 'nope.json') }
+        $r.ExitCode | Should -Be 2
+        $r.Message | Should -Match "doesn't exist"
+    }
+    It 'Apply with nothing to wipe needs no approved list' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        (Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply).ExitCode | Should -Be 0
+    }
+    It 'the entry script takes -ApprovedWipeList' {
+        (Get-Command $script:EntryScript).Parameters.ContainsKey('ApprovedWipeList') | Should -BeTrue
+    }
+}
+
+Describe 'A report from an earlier call or run is never read as this call''s answer' {
+    It 'every run reports into its own folder named by the run id, so two runs in one report directory never share a node report' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $out = Join-Path $TestDrive 'shared-out'
+        $store = [pscustomobject]@{ Supported = $true; Get = { '' }; Set = { param($Value) $null = $Value } }
+        $null = Invoke-AzlOsConfiguration -InfrastructureFile $infra -HandoffPath (Get-TestHandoffDirectory) -ReportDirectory $out -SkipValidation -TrustedHostsStore $store 6>$null 3>$null
+        $first = $global:AzlCalls[0].Params.ReportPath
+        $null = Invoke-AzlOsConfiguration -InfrastructureFile $infra -HandoffPath (Get-TestHandoffDirectory) -ReportDirectory $out -SkipValidation -TrustedHostsStore $store 6>$null 3>$null
+        $second = $global:AzlCalls[-1].Params.ReportPath
+        (Split-Path $first -Parent) | Should -Not -Be (Split-Path $second -Parent)
+        (Split-Path (Split-Path $first -Parent) -Leaf) | Should -Match '^\d{8}T\d{6}Z-[0-9a-f]{6}$'
+        (Split-Path (Split-Path (Split-Path $first -Parent) -Parent) -Leaf) | Should -Be 'node-reports'
+    }
+    It 'a node whose call left no report fails the run (exit 1), however the call exited' {
+        Mock -ModuleName AzlOsConfigurationRun Invoke-AzlSetNodeConfiguration { [pscustomobject]@{ ExitCode = 1; Error = 'the script exited with code 0 and left no readable report'; Unknown = $false; Report = $null } }
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply
+        $r.ExitCode | Should -Be 1
+        @($r.Records | Where-Object converged) | Should -BeNullOrEmpty
     }
 }
 

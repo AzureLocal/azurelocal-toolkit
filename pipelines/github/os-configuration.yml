@@ -164,6 +164,13 @@ jobs:
             if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery }
           }
 
+      # The wipe list the reviewer approved is the one the Plan job published. Apply is bound to it: it stops (exit 2) before changing anything when its own list holds a disk that is not in it.
+      - name: Fetch the approved wipe list (the Plan job's artifact)
+        uses: actions/download-artifact@v4
+        with:
+          name: os-configuration-plan
+          path: ${{ runner.temp }}/osconfig-plan
+
       - name: Apply
         shell: bash
         env:
@@ -171,7 +178,7 @@ jobs:
         run: |
           # -ApprovedBootstrap is the pipeline approval of the one-time bootstrap: the reviewer of this job gave it by running it with the input set.
           approval=''; if [ "$APPROVED_BOOTSTRAP" = 'true' ]; then approval='-ApprovedBootstrap'; fi
-          pwsh -NoProfile -File "$OSCONFIG_SCRIPT" -InfrastructureFile "$INFRASTRUCTURE_FILE" -HandoffPath "$HANDOFF_PATH" -Mode Apply -ReportDirectory "$RUNNER_TEMP/osconfig-apply" $approval
+          pwsh -NoProfile -File "$OSCONFIG_SCRIPT" -InfrastructureFile "$INFRASTRUCTURE_FILE" -HandoffPath "$HANDOFF_PATH" -Mode Apply -ReportDirectory "$RUNNER_TEMP/osconfig-apply" -ApprovedWipeList "$RUNNER_TEMP/osconfig-plan/wipe-list.json" $approval
 
       - name: Job summary (result)
         if: ${{ always() }}
