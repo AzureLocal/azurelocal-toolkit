@@ -447,7 +447,8 @@ function Test-AzlArmRequiredKey {
 function Format-AzlArmParameterSource {
     <#
     .SYNOPSIS
-        Markdown table: each ARM parameter in the set, the infrastructure.yml keys it came from, and whether it is a secret.
+        Markdown table: each ARM parameter in the set, the infrastructure.yml keys it came from, and whether it is a secret. The SBE
+        parameters that are not in the set (no SBE configured) are listed with the value 'no SBE configured'.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -460,6 +461,14 @@ function Format-AzlArmParameterSource {
         $v = $ParameterSet.Parameters[$name]
         $kind = if ($v -is [System.Collections.IDictionary] -and $v.Contains('KeyVault')) { 'secret (Key Vault reference)' } else { 'value' }
         $lines += "| $name | $keys | $other | $kind |"
+    }
+    # The Solution Builder Extension is opt-in: its parameters are left out of the set when none is configured. Say so, per parameter.
+    foreach ($name in 'sbeVersion', 'sbeFamily', 'sbePublisher', 'sbeManifestSource', 'sbeManifestCreationDate', 'partnerProperties', 'partnerCredentiallist') {
+        if ($ParameterSet.Parameters.Contains($name)) { continue }
+        $e = if ($Source.Contains($name)) { $Source[$name] } else { @{} }
+        $keys = if ($e.Contains('keys') -and @($e['keys']).Count) { (@($e['keys']) | ForEach-Object { "``$_``" }) -join ', ' } else { '' }
+        $other = if ($e.Contains('source')) { [string]$e['source'] } else { '' }
+        $lines += "| $name | $keys | $other | no SBE configured |"
     }
     return ($lines -join [Environment]::NewLine)
 }
