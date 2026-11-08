@@ -1,7 +1,14 @@
 # Phase 03: OS configuration
 
-**Schema 5 path (current):** `Set-AzureLocalNodeConfiguration.ps1`. One idempotent script reads each node, changes only what
-differs from `infrastructure.yml`, and reports; it replaces running tasks 01 to 13 one by one. Without `-Execute` it is a plan.
+**Schema 5 path (current):** two scripts, one flow.
+
+- `Invoke-AzureLocalOsConfiguration.ps1` is the entry point: the whole instance in ONE run (`-Mode Plan`, then `-Mode Apply`). It merges the ZTP handoffs,
+  works out per node whether it was provisioned by ZTP (Arc Run Command) or installed from an ISO (WinRM, plus the computer name and Arc registration),
+  plans for all nodes, applies node by node, verifies with a Plan pass, and writes `report.json`, `summary.md`, `plan-report.json` and `wipe-list.txt`.
+  `os_configuration.clear_storage: true` (schema 5.4.3) lets Apply wipe leftover local storage; the Plan prints which disks. The same command runs in
+  GitHub Actions and GitLab CI (`pipelines/github/os-configuration.yml`, `pipelines/gitlab/os-configuration.gitlab-ci.yml`).
+- `Set-AzureLocalNodeConfiguration.ps1` is what it calls once per node, and what you run for a single node. One idempotent script reads each node, changes
+  only what differs from `infrastructure.yml`, and reports; it replaces running tasks 01 to 13 one by one. Without `-Execute` it is a plan.
 Prerequisites, roles and the keys it reads: [docs/os-configuration-and-arm-deployment.md](../../../../docs/os-configuration-and-arm-deployment.md).
 
 ```powershell
@@ -9,6 +16,10 @@ Prerequisites, roles and the keys it reads: [docs/os-configuration-and-arm-deplo
 ./Set-AzureLocalNodeConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json
 # Make the changes
 ./Set-AzureLocalNodeConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json -Execute
+
+# The whole instance in one run: plan, then apply
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -HandoffPath ./ztp-state -Mode Plan -ReportDirectory ./out
+./Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -HandoffPath ./ztp-state -Mode Apply -ReportDirectory ./out
 ```
 
 The SBE package is delivered last, by `hardware.sbe.delivery` in `infrastructure.yml`: `skip` (default: reported as "not delivered", nothing else

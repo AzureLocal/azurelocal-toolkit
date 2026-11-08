@@ -2,10 +2,10 @@
 
 This page covers the two steps that run after azurelocal-ztp (or an ISO install) has handed off provisioned machines:
 
-1. **OS configuration** (Phase 03): `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Set-AzureLocalNodeConfiguration.ps1`
+1. **OS configuration** (Phase 03): `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` runs it for the whole instance in one go (plan, apply, verify, one report); it calls `Set-AzureLocalNodeConfiguration.ps1` in the same folder once per node, which you can also run on its own
 2. **ARM Validate, then Deploy** (Phase 05): `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalClusterDeployment.ps1`, with `New-AzureLocalArmParameters.ps1` for the parameter file alone.
 
-Both read the one environment file, `infrastructure.yml` (schema 5). This page doesn't repeat what each key means: see the [schema-wide variables reference](infrastructure-variables.md) and `config/infrastructure/README.md`. What it adds is what must be true before you run, and which of it the code checks.
+Both read the one environment file, `infrastructure.yml` (schema 5). This page doesn't repeat what each key means: see the [schema-wide variables reference](../config/infrastructure/VARIABLES.md) and `config/infrastructure/README.md`. What it adds is what must be true before you run, and which of it the code checks.
 
 In the tables, **Checked** says what happens if the item is missing:
 
@@ -25,11 +25,19 @@ In the tables, **Checked** says what happens if the item is missing:
 
 The OS configuration plan reads each node through Azure Arc Run Command, which creates and deletes one transient `runCommands` resource per read; nothing on the node changes. `-SpecOnly` reads no node and no Azure resource: it prints what each node should look like. The ARM plan (no `-Execute`) reads files only, unless you add `-Preflight`.
 
-Order: ZTP hand-off, OS configuration with `-Execute` (it writes a JSON report), then ARM Validate, review, then ARM Deploy.
+Order: ZTP hand-off (or an ISO install), OS configuration (`Invoke-AzureLocalOsConfiguration.ps1 -Mode Plan`, review the plan and the wipe list, then `-Mode Apply`; it writes a JSON report), then ARM Validate, review, then ARM Deploy.
 
 ![Azure Local OS configuration: from the ZTP handoff through the management address modes and each step to ARM Validate and Deploy](./diagrams/os-configuration-flow.png)
 
-The diagram source is [`diagrams/os-configuration-flow.drawio`](diagrams/os-configuration-flow.drawio). It follows one run: the ZTP handoff (schema 2) and `infrastructure.yml` are read and validated; each node's management address mode (A DHCP with reservation, B static with DHCP on management, C static without management DHCP) decides what the Network step does; then the steps run in the order the script runs them, with a tag on each that says whether it skips when already correct, only reads, or only runs on request; the SBE package is delivered last by the route `hardware.sbe.delivery` names; the node is read again until it matches, and the report feeds ARM Validate and then ARM Deploy (Phase 05).
+The diagram source is [`diagrams/os-configuration-flow.drawio`](diagrams/os-configuration-flow.drawio). It follows one run: the ZTP handoff (schema 2) and `infrastructure.yml` are read and validated; each node's management address mode (A DHCP with reservation, B static with DHCP on management, C static without management DHCP) decides what the Network step does; then the steps run in the order the script runs them, with a tag on each that says whether it skips when already correct, only reads, or only runs on request; the SBE package is delivered last by the route `hardware.sbe.delivery` names; the node is read again until it matches, and the report feeds ARM Validate and then ARM Deploy (Phase 05). The diagram draws the node script, `Set-AzureLocalNodeConfiguration.ps1`; the one-run command described next wraps it.
+
+**The whole flow, in one place.**
+
+1. `Invoke-AzureLocalOsConfiguration.ps1` reads `infrastructure.yml` and every ZTP handoff, and works out each node's **method** (ZTP or ISO) from the file and from what answers: see [Which method?](#which-method).
+2. **Plan** for all nodes, read only. The plan lists every item per node (the diagram's steps, in that order, the Sbe step last), and, when `os_configuration.clear_storage` is on, the disks that would be wiped ([Storage wipe](#storage-wipe-os_configurationclear_storage)). A person approves this output.
+3. **Apply**, node by node. Each node's steps run in the order in the diagram. The SBE package is delivered last, by the route `hardware.sbe.delivery` names ([How the package reaches the nodes](#how-the-package-reaches-the-nodes)); a package that can't be delivered never stops the other steps.
+4. **Verify** with a Plan pass; a node is converged only when nothing is left to change.
+5. **Report** (`report.json`, `summary.md`) and exit code. `report.json` feeds ARM Validate, then ARM Deploy.
 The full cross-tool matrix is in the toolkit's [access-and-connectivity page](access-and-connectivity.md).
 
 ## Run it in one go
@@ -55,7 +63,7 @@ The full cross-tool matrix is in the toolkit's [access-and-connectivity page](ac
 | `-ReportDirectory` | Where `plan-report.json`, `report.json`, `summary.md`, `wipe-list.txt` and `node-reports/` go. |
 | `-ContinueOnNodeFailure` | Default `$true`: a node that fails does not stop the others. `-ContinueOnNodeFailure:$false` stops at the first failure and marks the rest skipped. |
 | `-Transport`, `-Method` | `Auto` (default) works both out per node; force `ArcRunCommand`/`WinRM` or `Ztp`/`Iso` for all nodes. |
-| `-Credential`, `-NodeAddress` | ISO path only: the local administrator for WinRM (default: `identity.local_admin`, password from the Key Vault) and the address to reach a node on when the installer's address is not in the file. |
+| `-Credential`, `-NodeAddress` | The local administrator for WinRM (default: `identity.local_admin`, password from the Key Vault) and the address to reach a node on when the installer's address is not in the file. Used for ISO-installed nodes, and, on a ZTP node reached over Arc, only to copy the SBE package when `hardware.sbe.delivery` is `winrm_copy`. |
 | `-ClearStorage` | Forces the storage wipe on (see below). |
 | `-ConfigPath`, `-Settings` | Optional run settings (JSON file, then a hashtable that wins): `retryTries`, `retryDelaySeconds`, `maxPasses`, `noRestart`, `failOnPendingChanges`, `nodeAddress`. |
 | `-FailOnPendingChanges` | Plan mode: exit 1 when any change is pending (drift detection). |
@@ -63,8 +71,8 @@ The full cross-tool matrix is in the toolkit's [access-and-connectivity page](ac
 ### What the run does, in order
 
 1. **Validate the inputs.** The master file, the handoff map, the method and transport of every node, the Azure sign-in, and for ISO nodes the route, the credentials and the OS build. A failure here stops the run with exit code 2 before anything is changed.
-2. **Plan for all nodes** (read only). Writes `plan-report.json`.
-3. **Apply** (`-Mode Apply`), node by node.
+2. **Plan for all nodes** (read only). Writes `plan-report.json` and `wipe-list.txt`.
+3. **Apply** (`-Mode Apply`), node by node, each node's steps in the order of the diagram with the SBE package last. A node whose plan says the package is NOT DELIVERED (`hardware.sbe.delivery` is `skip`) is not failed; its record carries a warning.
 4. **Verify**: a Plan pass on every node that was changed. A node is *converged* only when this pass finds nothing left to change. The status of the commands that did the work does not decide it. A node with nothing to change in the plan is converged by the plan itself and is not read again.
 5. **Report**: `report.json` (per node: method and evidence, steps, plan, changes, errors, converged, restarted), `summary.md` and a table on the console.
 
@@ -91,7 +99,7 @@ The result is in the report, per node (`method.declared`, `method.resolved`, `me
 | --- | --- | --- |
 | Reached with | Azure Arc Run Command (ARM only; no network path to the nodes) | WinRM with the local administrator from the master file, from a host that reaches the node's management address (or Arc Run Command when the machine is already a Connected Arc machine) |
 | Verified, not redone | OS build, Arc machine connected, the computer name ZTP gave, the handoff's `ready` | |
-| Done | management static address by MAC, DHCP off on the other ports, DNS, NTP, unused ports, local admin, RDP/ICMP, drivers and SBE, MPIO and SAN verification, storage wipe when on | all of those, plus the computer name (restart), and Azure Arc registration |
+| Done | management static address by MAC, DHCP off on the other ports, DNS, NTP, unused ports, local admin, RDP/ICMP, OEM drivers, MPIO and SAN verification, storage wipe when on, and last the SBE package (by `hardware.sbe.delivery`) | all of those, plus the computer name (restart), and Azure Arc registration |
 | Up front | | route to TCP 5985, credentials, OS caption and build 25398 or later; each failure names the node and says what to fix |
 
 Arc registration on the ISO path runs `Invoke-AzStackHciArcInitialization` on the node with the ARM token of the run's own Azure sign-in (passed as a secret; never written), into `azure.resource_group`, with the Arc gateway from `networking.outbound.arc_gateway` when the outbound path uses one. It then waits for the Arc machine to be Connected. The older Phase 04 registration scripts take a different, interactive configuration, so they are not used here. WinRM from a Linux runner needs the PSWSMan module for Negotiate authentication.
@@ -137,7 +145,7 @@ The plan changes nothing, so it can run unattended. Its output is what a person 
 | GitHub Actions | `pipelines/github/os-configuration.yml` (copy to `.github/workflows/`) | Environment `azure-local-os-configuration` with required reviewers on the `apply` job |
 | GitLab CI | `pipelines/gitlab/os-configuration.gitlab-ci.yml` | `when: manual` on the apply job; `resource_group` allows one run at a time |
 
-Both run `pwsh -File .../Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ... -HandoffPath ... -Mode Plan|Apply -ReportDirectory ...` and nothing else; the logic is the script's. The runner is a self-hosted Linux runner with PowerShell 7 and the `powershell-yaml`, `Az.Accounts` and `Az.KeyVault` modules. ZTP-provisioned nodes need only Azure from the runner; ISO-installed nodes need a runner that reaches their management addresses.
+Both run `pwsh -File .../Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ... -HandoffPath ... -Mode Plan|Apply -ReportDirectory ...` and nothing else; the logic is the script's. The runner is a self-hosted Linux runner with PowerShell 7 and the `powershell-yaml`, `Az.Accounts` and `Az.KeyVault` modules. ZTP-provisioned nodes need only Azure from the runner (with `hardware.sbe.delivery: node_pull` or `skip`); ISO-installed nodes, and the `winrm_copy` route of the SBE package, need a runner that reaches the nodes' management addresses on TCP 5985.
 
 **Where the files come from.** The master `infrastructure.yml` is a path in the repository (`infrastructure_file` / `INFRASTRUCTURE_FILE`). The handoff files, `<node>.ztp-handoff.json` (one per ZTP run: nodes 1 and 2 may share a file, node 3 has its own), are either committed to the repository path `handoff_path` / `HANDOFF_PATH`, or published by the ZTP run as an artifact named `ztp-handoff`; the GitHub workflow takes the ZTP run's ID (`handoff_run_id`) and downloads it, and in GitLab the job lists the ZTP job in `needs`/`dependencies`. Point `-HandoffPath` at the folder: every handoff in it is merged. A handoff file holds the subscription ID and resource IDs of your environment, so keep it in a private repository or artifact.
 
@@ -148,7 +156,7 @@ Both run `pwsh -File .../Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFil
 | Arc Run Command on the nodes (plan and apply) | Azure Connected Machine Resource Administrator (`Microsoft.HybridCompute/machines/runCommands/*`, `machines/read`) | The resource group of the Azure Local instance |
 | The local administrator's password | Key Vault Secrets User (secret `get`) | The vault in `identity.local_admin.password` |
 | Arc registration of ISO nodes | Azure Connected Machine Onboarding, and the rights the Arc initialization needs in `azure.resource_group` | The resource group |
-| SBE source, when the package is read from Azure | Reader (and Storage Blob Data Reader on the storage account) | The SBE source |
+| SBE package, `node_pull` | none for the pipeline identity: the nodes read `hardware.sbe.node_pull_url` themselves, so the location needs no Azure role (there is no storage account in this design) | |
 
 No secret is stored in a pipeline file. IDs are variable names (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`).
 
@@ -164,7 +172,7 @@ No secret is stored in a pipeline file. IDs are variable names (`AZURE_CLIENT_ID
 | Pester 5.9.1 | 5.9.1 | running the tests only. Import it explicitly (`Import-Module Pester -RequiredVersion 5.9.1`): Pester 6 runs zero tests here | You |
 | PSScriptAnalyzer | 1.25 | linting only | You |
 
-Network from the operator host: HTTPS to `management.azure.com`, `login.microsoftonline.com`, `*.vault.azure.net`, and (ARM execute only) `raw.githubusercontent.com` for Microsoft's quickstart template; `aka.ms` for the OEM's SBE manifest (skip with `-OfflineManifest`). **No path to the nodes' management subnet is needed**: the Arc transport reaches the nodes through Azure. `-Transport WinRM` is for a host that does have one.
+Network from the operator host: HTTPS to `management.azure.com`, `login.microsoftonline.com`, `*.vault.azure.net`, and (ARM execute only) `raw.githubusercontent.com` for Microsoft's quickstart template; `aka.ms` for the OEM's SBE manifest (skip with `-OfflineManifest`). **No path to the nodes' management subnet is needed** for the Arc transport, which reaches the nodes through Azure, with `hardware.sbe.delivery` `node_pull` or `skip`. `-Transport WinRM` (ISO-installed nodes) and the `winrm_copy` route of the SBE package are for a host that does have one.
 
 The Azure CLI is not used.
 
@@ -269,8 +277,7 @@ Azure Arc Run Command carries a script and its parameters, not a file, and the o
 | `winrm_copy` | The script opens a WinRM session to each node's management address and copies the three files to `C:\SBE` (to a `.part` file, SHA-256 checked on the node, then renamed). The other steps stay on Arc | The script must run on a host that reaches the nodes' management subnet on TCP 5985: the operator host if it can, otherwise a runner or jump host. Pass `-Credential` (the nodes' local administrator) | Code (the SHA-256), You (the path). A failed connection is reported once per node and does not stop the other steps |
 | `node_pull` | The node downloads each file itself, in the same Run Command that carries the other node actions, from `hardware.sbe.node_pull_url` (`https://host/sbe/dell`, or a UNC folder `\\files\sbe\dell`), checks free space, downloads to a `.part` file, checks the SHA-256 and renames it | A read-only location the **nodes** can reach, serving the three files by name, with no credential in the address. The operator host needs no path to it | Code (the SHA-256, the address form: rule AZL-030), You (the server and the path) |
 
-The Sbe step runs **last**. Delivering a 900 MB package is the step most likely to fail (it needs a route to the node that the other steps do not), and it must not stop the others. The drivers install from the package, so they run in the pass after the package has landed; with `skip` and no package on the node they are skipped. A route that is configured and fails leaves the node not converged (exit code 1, "NOT READY") with the reason in the report; a route that is `skip` does not. The report (`-ReportPath`) records `sbeDelivery` and `sbeNotDelivered`.
-
+The Sbe step runs **last**. Delivering a 900 MB package is the step most likely to fail (it needs a route to the node that the other steps do not), and it must not stop the others. The drivers install from the package, so they run in the pass after the package has landed; with `skip` and no package on the node they are skipped. A route that is configured and fails leaves the node not converged (exit code 1, "NOT READY") with the reason in the report; a route that is `skip` does not. The report (`-ReportPath`) records `sbeDelivery` and `sbeNotDelivered`. In the one-run command the same route applies: a ZTP node is reached over Arc, and for `winrm_copy` the run gives the node script the local administrator (`identity.local_admin`, or `-Credential`) for the copy only; the node record of a `skip` run carries a warning that the package is NOT DELIVERED.
 
 ## SAN (Fibre Channel or iSCSI)
 
@@ -371,6 +378,8 @@ Required: **yes** (the script stops or the step can't run without it), **if** (w
 | `hardware.vendor` | yes | `Dell` | the OEM | OS (`config/oem/<vendor>.json`) |
 | `hardware.sbe.bundle_path` | no (no SBE step) | `D:\sbe\dell` | the OEM's download, outside any repository | OS, ARM (values) |
 | `hardware.sbe.delivery` | no (`skip`) | `node_pull` | `winrm_copy`, `node_pull` or `skip`: how the package reaches the nodes (schema 5.4.2) | OS |
+| `scenario.os_install` | yes | `simplified` | `iso` or `simplified`: the declared install method; the one-run command checks it against what answers (see Which method?) | OS (one-run) |
+| `os_configuration.clear_storage` | no (`false`) | `true` | `true` lets the one-run command wipe leftover local storage in Apply mode (schema 5.4.3); SAN, USB, boot and system disks are never touched | OS (one-run) |
 | `hardware.sbe.node_pull_url` | with `node_pull` | `https://sbe.iic.example/sbe/dell` | a read-only location the nodes can reach; no credential in it | OS |
 | `hardware.sbe.version`, `.family`, `.publisher`, `.manifest_source`, `.manifest_creation_date` | no (read from the folder) | `5.0.1` | the SBE's discovery XML | ARM `sbe*` |
 | `networking.management.subnet` | yes | `192.0.2.0/24` | your IP plan | OS (prefix), ARM (`subnetMask`) |
