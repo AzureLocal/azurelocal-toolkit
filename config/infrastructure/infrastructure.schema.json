@@ -18,7 +18,7 @@
       ],
       "properties": {
         "schema_version": {
-          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san). 5.3 also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage.",
+          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san). 5.3 also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting (transport, bootstrap_transport, allowed_source_cidrs).",
           "type": "string",
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
@@ -2096,6 +2096,59 @@
           "description": "Wipe the leftover local storage (storage pools, virtual disks and the data on non-boot, non-system local disks) of every machine in the OS configuration run's Apply mode, so a re-used machine starts clean. Boot, system, SAN (Fibre Channel, iSCSI) and USB disks are never touched. The Plan mode lists the disks per machine and wipes nothing; in a pipeline that list is what the approval gate shows. Default false: leftover storage is reported as blocking, and nothing is wiped. (since 5.4.3)",
           "type": "boolean",
           "default": false
+        },
+        "network": {
+          "description": "How a guarded network change is confirmed (since 5.4.4): the management address, gateway, DNS, VLAN, the remote-management firewall rules, DHCP off on the other ports and disabled adapters are staged on the node, which applies and checks them and reverts by itself unless the orchestrator confirms through a new session on the new address.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "confirm_minutes": {
+              "description": "The window for the orchestrator's confirmation. With no confirmation inside it the node restores its snapshot. The run setting networkRollbackMinutes overrides it. (since 5.4.4)",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 120,
+              "default": 10
+            },
+            "stable_seconds": {
+              "description": "How long the node's own checks must stay green before it waits for the confirmation. The run setting networkStableSeconds overrides it. (since 5.4.4)",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 600,
+              "default": 60
+            }
+          }
+        },
+        "remoting": {
+          "description": "How the OS configuration reaches the nodes (since 5.4.4). PowerShell remoting (WinRM) is the default; Arc Run Command is an option, never a silent fallback.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "transport": {
+              "description": "winrm (HTTP, 5985), winrm_https (5986, a certificate on the node) or arc (Azure Arc Run Command: the exception for sites with no route to the nodes; not recommended for network changes). The command line's -Transport WinRM or ArcRunCommand overrides it. (since 5.4.4)",
+              "enum": [
+                "winrm",
+                "winrm_https",
+                "arc"
+              ],
+              "default": "winrm"
+            },
+            "bootstrap_transport": {
+              "description": "none: a node that does not answer on 5985/5986 fails with the diagnosis. arc: one Arc Run Command per node, only to open WinRM-In (and RDP, ICMP) for allowed_source_cidrs, because a freshly provisioned node's firewall allows its own subnet only; everything after that goes over WinRM. (since 5.4.4)",
+              "enum": [
+                "none",
+                "arc"
+              ],
+              "default": "none"
+            },
+            "allowed_source_cidrs": {
+              "description": "The runner and jump server networks the bootstrap opens WinRM, RDP and ICMP for. The management network (networking.management.subnet) is always included. (since 5.4.4)",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$"
+              }
+            }
+          }
         }
       }
     },

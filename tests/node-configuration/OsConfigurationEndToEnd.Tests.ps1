@@ -1,6 +1,6 @@
 #Requires -Version 7.0
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
-# End to end: Invoke-AzureLocalOsConfiguration.ps1 runs in Plan mode with the REAL wrapper, the REAL Set-AzureLocalNodeConfiguration.ps1 and the
+# End to end: Invoke-AzureLocalOsConfiguration.ps1 runs in Plan mode with -Transport ArcRunCommand (the explicit exception; the default is WinRM) and with the REAL wrapper, the REAL Set-AzureLocalNodeConfiguration.ps1 and the
 # REAL Arc Run Command transport. Only Azure is replaced: a fake Invoke-AzRestMethod (a global function, so the modules the scripts import with
 # -Force still find it) plays the Arc machines and their run commands, and answers each Read with the state of a node that already matches the
 # master file. Nothing here reaches the network, Azure or a node.
@@ -136,7 +136,7 @@ Describe 'Invoke-AzureLocalOsConfiguration.ps1, Plan, end to end (fake Azure onl
         $mgmt.dns = @('198.51.100.53')
         $global:AzlE2e = @{ States = $states; Runs = @{}; UnknownLeft = @{ 'iic-n01' = 1 }; Calls = [System.Collections.Generic.List[string]]::new() }
         $out = Join-Path $TestDrive 'report'
-        $script:Output = & $script:EntryScript -InfrastructureFile $infraFile -HandoffPath $handoffDir -Mode Plan -ReportDirectory $out -SkipValidation 6>&1 3>&1
+        $script:Output = & $script:EntryScript -InfrastructureFile $infraFile -HandoffPath $handoffDir -Mode Plan -Transport ArcRunCommand -ReportDirectory $out -SkipValidation 6>&1 3>&1
         $script:ExitCode = $LASTEXITCODE
         $script:Out = $out
         $script:Events = @(Get-Content -LiteralPath (Join-Path $out 'os-configuration-events.jsonl') -Encoding utf8 | Where-Object { $_ } | ForEach-Object { $_ | ConvertFrom-Json })

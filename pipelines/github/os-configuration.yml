@@ -15,8 +15,11 @@
 #   secrets    none needed. Nothing secret is stored here: the nodes' local administrator password is read from the Key Vault
 #              named by identity.local_admin.password in the master file.
 # Environment `azure-local-os-configuration`: add required reviewers (Settings > Environments). That is the approval gate.
-# Runner: a self-hosted Linux runner with pwsh 7, labelled azure-local. WinRM (ISO-installed nodes) needs a runner that reaches the
-# nodes' management subnet; ZTP-provisioned nodes need only Azure (Arc Run Command).
+# Runner: PowerShell remoting (WinRM) is the transport, so the runner needs a ROUTE to the nodes' management network: a self-hosted Windows runner on it
+# (labelled ztp), or a Linux runner labelled azure-local with pwsh 7 and the PSWSMan module (Negotiate/Kerberos), or WinRM over HTTPS (5986, a certificate on
+# the nodes; set remoting.useSsl in the settings file). A node whose firewall still limits WinRM to its own subnet needs remoting.bootstrapTransport = arc
+# once (Azure sign-in with Azure Connected Machine Resource Administrator), or WinRM-In opened for the runner's CIDR. A runner with no route can pass
+# -Transport ArcRunCommand, which is not recommended for network changes. The pre-check fails fast with one table of unreachable nodes.
 #
 # Where the files come from: the master file is a path in this repository (input infrastructure_file). The handoff files
 # (<node>.ztp-handoff.json) are either a repository path (input handoff_path) or the artifact `ztp-handoff` of the ZTP run

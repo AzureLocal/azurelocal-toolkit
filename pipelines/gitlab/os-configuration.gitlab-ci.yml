@@ -18,7 +18,10 @@
 #   HANDOFF_PATH            a handoff file or a directory of *.ztp-handoff.json: a repository path, or the artifact of the ZTP pipeline
 #                           (add `needs: [{ pipeline: ..., job: ..., artifacts: true }]` or a `dependencies` entry below)
 # No secret is stored here. The nodes' local administrator password is read from the Key Vault named by identity.local_admin.password.
-# Runner: a Linux runner tagged azure-local with pwsh 7 (and, for ISO-installed nodes, a route to the nodes' management subnet).
+# Runner: PowerShell remoting (WinRM) is the transport, so the runner needs a ROUTE to the nodes' management network: a Windows runner on it, or a Linux runner
+# tagged azure-local with pwsh 7 and the PSWSMan module (Negotiate/Kerberos), or WinRM over HTTPS (5986, a certificate on the nodes; remoting.useSsl). A node whose
+# firewall still limits WinRM to its own subnet needs remoting.bootstrapTransport = arc once, or WinRM-In opened for the runner's CIDR. A runner with no route can
+# pass -Transport ArcRunCommand, which is not recommended for network changes.
 
 stages:
   - plan

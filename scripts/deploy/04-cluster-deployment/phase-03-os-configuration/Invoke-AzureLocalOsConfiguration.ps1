@@ -10,8 +10,9 @@
 
       1. Validate the inputs. Every *.ztp-handoff.json found under -HandoffPath is merged into one node -> handoff map (a node in two
          files is an error). The method per node is worked out from the master file and from what is there: a machine that ZTP
-         provisioned (Arc Run Command, only the steps ZTP left undone) or one installed from an ISO (WinRM with the local
-         administrator from the vault, the computer name, the OS check, Arc registration). A cluster can mix both.
+         provisioned (only the steps ZTP left undone) or one installed from an ISO (the computer name, the OS check, Arc registration too).
+         Both are reached over PowerShell remoting (WinRM) with the local administrator from the vault; Arc Run Command only when -Transport
+         ArcRunCommand is passed. A cluster can mix both methods.
       2. Plan for ALL nodes. Read only. Writes plan-report.json and wipe-list.txt.
       3. -Mode Apply: apply node by node. A failed node does not stop the others (-ContinueOnNodeFailure, default true).
       4. Verify: a Plan pass proves each changed node has nothing left to change.
@@ -21,15 +22,17 @@
     and only in Apply mode. The Plan mode prints which disks on which node would be wiped; in a pipeline that list is what the
     approval gate shows. Boot, system, SAN (Fibre Channel, iSCSI) and USB disks are never touched.
 
-    A node script whose Arc Run Command ends in state Unknown (the node's agent lost its connection, for example while its network
-    changed) is tried again with a growing pause (3 tries); then the node is read again and convergence is decided by what is
+    A change that can cut a node off (its management address, VLAN, remote-management firewall rules, time, the computer name, DHCP off on other
+    ports) is a guarded change: applied on the node, checked there, committed only after this host confirms it through a new session, and rolled
+    back by the node otherwise. With -Transport ArcRunCommand, a node script whose Arc Run Command ends in state Unknown (the node's agent lost its
+    connection, for example while its network changed) is tried again with a growing pause (3 tries); then the node is read again and convergence is decided by what is
     found, not by the command's status.
 
     Exit codes: 0 every node converged (Plan: nothing failed or blocked); 1 a node failed, is blocked or did not converge;
     2 bad input or nothing reachable.
 
 .PARAMETER InfrastructureFile
-    The master infrastructure.yml (schema 5.4.3 for clear_storage).
+    The master infrastructure.yml (schema 5).
 .PARAMETER HandoffPath
     A handoff file, several files, or a directory. Every *.ztp-handoff.json in a directory is used. Optional: a cluster installed from
     ISO has none.
@@ -45,23 +48,25 @@
     earlier run keeps its history. Run events (node '*'): RunStarted, PlanCompleted, WipeListPublished, RunCompleted. Node events:
     NodeStarted, MethodResolved, TransportResolved, NodeRetry, NodeRestarting, NodeConverged, NodeFailed, NodeBlocked, NodeReconnecting, NodeReconnected. Step events: StepPlanned, StepApplying,
     StepApplied, StepFailed, StepSkipped, StepVerified. Each line has timestamp, node, stage ('OsConfiguration'), step, state, evidence, level
-    (Info|Warning|Error), nextAction, method (Ztp|Iso), transport (ArcRunCommand|WinRM), payloadVersion and schemaVersion. The guarded network change adds\n    the NetworkChange* states. Contract: pmo/azure-local/os-configuration-design.md section 6. Writing it never fails the run.
+    (Info|Warning|Error), nextAction, method (Ztp|Iso), transport (ArcRunCommand|WinRM), payloadVersion and schemaVersion. The guarded network change adds
+    the NetworkChange* states (the guarded change of the management address and the other changes that can cut a node off). Contract: pmo/azure-local/os-configuration-design.md section 6. Writing it never fails the run.
 .PARAMETER ReportDirectory
     Where plan-report.json, report.json, summary.md, wipe-list.txt and node-reports/ go. Default: a folder in the temp directory.
 .PARAMETER ConfigPath
-    Optional JSON file of run settings: retryTries, retryDelaySeconds, maxPasses, noRestart, failOnPendingChanges, nodeAddress.
+    Optional JSON file of run settings: retryTries, retryDelaySeconds, maxPasses (default 6), noRestart, failOnPendingChanges, nodeAddress,
+    networkRollbackMinutes, networkStableSeconds, reconnectWaitMinutes, staleRunCommandMinutes, addressProbe, remoting.
 .PARAMETER Settings
     The same keys as a hashtable; wins over -ConfigPath.
 .PARAMETER ContinueOnNodeFailure
     Keep going with the other nodes when one fails (default $true). Pass -ContinueOnNodeFailure:$false to stop at the first failure.
 .PARAMETER Transport
-    Auto (default; per node, from its method), ArcRunCommand or WinRM for every node.
+    Auto (default) is PowerShell remoting (WinRM) for every node, or what remoting.transport says. ArcRunCommand only when you pass it: the exception for sites with no route to the nodes, not recommended for network changes. Arc is never a silent fallback.
 .PARAMETER Method
     Auto (default; worked out per node), Ztp or Iso for every node.
 .PARAMETER Credential
     The nodes' local administrator for WinRM. Default: identity.local_admin from the master file, its password read from the Key Vault.
 .PARAMETER NodeAddress
-    Node name -> the address to open the WinRM session to, for an ISO-installed node that still holds the installer's address.
+    Node name -> the address to open the WinRM session to first, for a node that still holds the installer's address.
 .PARAMETER ClearStorage
     Force the storage wipe on, as os_configuration.clear_storage: true does.
 .PARAMETER FailOnPendingChanges

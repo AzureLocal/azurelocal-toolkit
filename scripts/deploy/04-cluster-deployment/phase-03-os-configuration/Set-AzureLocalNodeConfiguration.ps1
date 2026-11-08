@@ -27,10 +27,15 @@
     changes only the items marked Change, reads again, and repeats until the node matches (at most -MaxPasses). Re-running
     it on a configured node changes nothing and runs no change script on the node.
 
-    Transport. The operator host usually has no path to the nodes' management subnet, so the default is Azure Arc Run
-    Command (Microsoft.HybridCompute/machines/{name}/runCommands): the script goes through ARM to the Connected Machine
-    agent. Plan mode creates and deletes a transient run command resource per read. -Transport WinRM runs the same scripts over
-    a PSSession from a host that can reach the nodes.
+    Transport. PowerShell remoting (WinRM) is the default and the only automatic choice: run it from a jump server on the management network, or from
+    a CI runner that has a route to it. Every node is probed first (all nodes at the same time) and one table says which is unreachable and why. There is no
+    silent fallback to Arc. -Transport ArcRunCommand (Microsoft.HybridCompute/machines/{name}/runCommands) stays available when asked for, as the exception for
+    sites with no route; it is not recommended for network changes. With -Settings @{ remoting = @{ bootstrapTransport = 'arc' } } Arc is used ONCE per node, only
+    to open the node firewall for WinRM (and RDP, ICMP) for the source CIDRs; everything else then goes over WinRM.
+
+    A change that can cut the node off (management address, gateway, DNS, VLAN, remote-management firewall rules, time, DHCP-off on other ports, disabled adapters, the
+    computer name) is a GUARDED change: staged on the node, applied there, checked there, committed only after this host confirms it through a new session, and
+    rolled back by the node when it is not. See docs/os-configuration-and-arm-deployment.md, 'Changing the management address safely'.
 
 .PARAMETER InfrastructureFile
     The master infrastructure.yml (schema 5).
@@ -40,15 +45,24 @@
 .PARAMETER Node
     Node names to configure. Default: every node in the file.
 .PARAMETER Transport
-    Auto (default; Arc Run Command, WinRM when -Credential is given and no Arc machine is found), ArcRunCommand or WinRM.
+    Auto (default: WinRM, or what -Settings remoting.transport / os_configuration.remoting.transport say), WinRM, or ArcRunCommand (only when you pass it).
 .PARAMETER Credential
-    The nodes' local administrator: for -Transport WinRM, and for copying the SBE package over WinRM (hardware.sbe.delivery
-    winrm_copy) when the other steps go over Arc. Run from a host that reaches the nodes' management subnet on TCP 5985.
+    The nodes' local administrator: for -Transport WinRM, and for copying the SBE package over WinRM (hardware.sbe.delivery winrm_copy) when the other steps go over Arc.
+    Without it identity.local_admin from the master file is used, with its password read from the Key Vault (never printed). Run from a host that reaches the nodes'
+    management subnet on TCP 5985 (5986 with -UseSsl).
+.PARAMETER UseSsl
+    WinRM over HTTPS (5986). A node needs a listener with a certificate.
+.PARAMETER Authentication
+    Default, Negotiate (default), Kerberos, Basic or CredSSP. From a Linux runner Negotiate and Kerberos need PSWSMan. A workgroup node needs TrustedHosts or HTTPS.
+.PARAMETER Settings
+    networkRollbackMinutes (10), networkStableSeconds (60), reconnectWaitMinutes (15), staleRunCommandMinutes (15), addressProbe (true), remoting = @{ transport; bootstrapTransport; allowedSourceCidrs; useSsl; authentication }.
+.PARAMETER EventLogPath
+    Append the OS configuration events (the guarded-change and transport events, and the events of the one-run command) here (JSON Lines).
 .PARAMETER Step
     Limit the run to these steps. Default: all.
 .PARAMETER NodeAddress
-    Node name -> the address to open a WinRM session to (the WinRM transport, and the winrm_copy of the SBE package; default: the management address in the file). A node installed
-    from an ISO may still hold the address the installer gave it.
+    Node name -> the address to open the session to first (default: the management address in the file, then the maintenance address, then the address the Arc agent reports).
+    A node installed from an ISO may still hold the address the installer gave it. The winrm_copy of the SBE package uses it too.
 .PARAMETER RetryTries
     How many times a node script is tried when its Arc run command ends in state Unknown (default 3, with a growing pause).
 .PARAMETER ClearStorage
@@ -67,6 +81,7 @@
 .EXAMPLE
     ./Set-AzureLocalNodeConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json -Execute
 #>
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification = 'The password was just read from the Key Vault and only lives in memory; WinRM needs a PSCredential.')]
 [CmdletBinding()]
 param(
     [Parameter(Mandatory)][string]$InfrastructureFile,
@@ -74,6 +89,10 @@ param(
     [string[]]$Node,
     [ValidateSet('Auto', 'ArcRunCommand', 'WinRM')][string]$Transport = 'Auto',
     [pscredential]$Credential,
+    [switch]$UseSsl,
+    [ValidateSet('Default', 'Negotiate', 'Kerberos', 'Basic', 'CredSSP')][string]$Authentication,
+    [hashtable]$Settings,
+    [string]$EventLogPath,
     [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')][string[]]$Step,
     [switch]$ClearStorage,
     [hashtable]$NodeAddress,
@@ -83,7 +102,7 @@ param(
     [switch]$SkipValidation,
     [switch]$OfflineManifest,
     [switch]$SpecOnly,
-    [int]$MaxPasses = 3,
+    [int]$MaxPasses = 6,
     [string]$ReportPath,
     [switch]$Execute
 )
@@ -95,6 +114,8 @@ Import-Module (Join-Path (Join-Path $common 'infrastructure') 'AzlInfrastructure
 Import-Module (Join-Path (Join-Path $common 'azure-local') 'AzlAzure.psm1') -Force
 Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlNodeConfiguration.psm1') -Force
 Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlNodeTransport.psm1') -Force
+Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlGuardedChange.psm1') -Force
+Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlRemoting.psm1') -Force
 
 function Write-Line([string]$Text) { Write-Information -MessageData $Text -InformationAction Continue }
 
@@ -129,45 +150,105 @@ if ($SpecOnly) {
     return
 }
 
-# ---- the transport
-if (-not (Get-Command Invoke-AzRestMethod -ErrorAction SilentlyContinue) -and $Transport -ne 'WinRM') { throw 'Az.Accounts is needed for Azure Arc Run Command. Install-Module Az.Accounts, then Connect-AzAccount.' }
+# ---- the transport: PowerShell remoting (WinRM) unless Arc Run Command was asked for. There is no silent fallback to Arc.
+$remoting = Get-AzlRemotingSetting -Infrastructure $infra -Setting $Settings -Transport $Transport -UseSsl:$UseSsl -Authentication $Authentication
+$eventContext = New-AzlGuardEventContext -Path $EventLogPath -SchemaVersion ([string](Get-AzlProp $infra '_metadata.schema_version' ''))
 $subscription = [string](Get-AzlProp $infra 'azure.subscription_id')
 $resourceGroup = [string](Get-AzlProp $infra 'azure.resource_group')
+$azureSignedIn = [bool]((Get-Command Get-AzContext -ErrorAction SilentlyContinue) -and (Get-AzContext -ErrorAction SilentlyContinue))
+$needArc = $remoting.Kind -eq 'ArcRunCommand' -or $remoting.BootstrapTransport -eq 'arc'
 $arcIds = @{}
-if ($Transport -ne 'WinRM') {
-    if (-not (Get-AzContext)) { throw 'Not signed in to Azure. Run Connect-AzAccount (the account needs Azure Connected Machine Resource Administrator on the Arc machines).' }
+$arcMachines = @{}
+if ($needArc -and -not (Get-Command Invoke-AzRestMethod -ErrorAction SilentlyContinue)) { throw 'Az.Accounts is needed for Azure Arc Run Command (the explicit -Transport ArcRunCommand, or remoting.bootstrapTransport arc). Install-Module Az.Accounts, then Connect-AzAccount.' }
+if ($needArc -and -not $azureSignedIn) { throw 'Not signed in to Azure. Run Connect-AzAccount (the account needs Azure Connected Machine Resource Administrator on the Arc machines).' }
+if ($azureSignedIn) {
     foreach ($s in $specs) {
-        $found = Find-AzlArcMachine -ArcMachineName $s.ArcMachineName -HostName $s.Name -SubscriptionId $subscription -ResourceGroup $resourceGroup -ResourceId $s.ArcResourceId
-        if ($found) { $arcIds[$s.Name] = $found.ResourceId; Write-Line "$($s.Name): Arc machine $($found.Name) ($($found.Status))."; if ($found.Status -and $found.Status -ne 'Connected') { Write-Warning "$($s.Name): its Arc machine reports '$($found.Status)'." } }
-        else { Write-Warning "$($s.Name): no Arc machine named $($s.ArcMachineName), or reporting host name $($s.Name), in $resourceGroup." }
+        try { $found = Find-AzlArcMachine -ArcMachineName $s.ArcMachineName -HostName $s.Name -SubscriptionId $subscription -ResourceGroup $resourceGroup -ResourceId $s.ArcResourceId }
+        catch { $found = $null; if ($needArc) { throw } }
+        if ($found) { $arcIds[$s.Name] = $found.ResourceId; $arcMachines[$s.Name] = $found; if ($needArc) { Write-Line "$($s.Name): Arc machine $($found.Name) ($($found.Status))." } }
+        elseif ($needArc) { Write-Warning "$($s.Name): no Arc machine named $($s.ArcMachineName), or reporting host name $($s.Name), in $resourceGroup." }
     }
 }
-$useArc = $Transport -eq 'ArcRunCommand' -or ($Transport -eq 'Auto' -and $arcIds.Count -eq $specs.Count)
-if ($useArc) {
+
+$nodeTransports = @{}
+$bootstrapRecords = @{}
+if ($remoting.Kind -eq 'ArcRunCommand') {
     if ($arcIds.Count -ne $specs.Count) { throw 'Not every node has an Arc machine, so the Arc Run Command transport can''t reach all of them.' }
-    $nodeTransport = New-AzlArcRunCommandTransport -ArcResourceId $arcIds
+    $arcTransport = New-AzlArcRunCommandTransport -ArcResourceId $arcIds
+    foreach ($s in $specs) {
+        $nodeTransports[$s.Name] = $arcTransport
+        Send-AzlGuardEvent -Context $eventContext -Node $s.Name -State 'TransportResolved' -Step '' -Transport 'ArcRunCommand' -Evidence "Arc Run Command was asked for explicitly (-Transport ArcRunCommand). It is the exception for sites with no route to the nodes and is not recommended for network changes." -Level Warning
+    }
 }
 else {
-    if (-not $Credential) { throw 'The WinRM transport needs -Credential (the nodes'' local administrator).' }
-    $addresses = @{}
-    foreach ($s in $specs) { $addresses[$s.Name] = if ($NodeAddress -and $NodeAddress.ContainsKey($s.Name)) { [string]$NodeAddress[$s.Name] } else { $s.Management.Ip } }
-    $nodeTransport = New-AzlWinRmTransport -Address $addresses -Credential $Credential
+    $credentialSource = 'parameter'
+    if (-not $Credential) {
+        $admin = Get-AzlProp $infra 'identity.local_admin'
+        $user = [string](Get-AzlProp $admin 'username' ''); $reference = [string](Get-AzlProp $admin 'password' '')
+        if ($user -and $reference) {
+            try { $secure = ConvertTo-SecureString -String (Get-AzlSecret -Reference $reference) -AsPlainText -Force; $Credential = [pscredential]::new($user, $secure); $credentialSource = "vault ($reference)" }
+            catch { Write-Warning "Can't read the local administrator's password ($reference): $($_.Exception.Message)" }
+        }
+    }
+    $addressByNode = @{}
+    $candidates = foreach ($s in $specs) {
+        $nodeObject = @($infra.nodes | Where-Object { $_.name -eq $s.Name })[0]
+        $override = if ($NodeAddress -and $NodeAddress.ContainsKey($s.Name)) { [string]$NodeAddress[$s.Name] } else { '' }
+        $list = @(Get-AzlNodeRemotingAddress -Node $nodeObject -Override $override -ManagementMac $s.Management.Mac -ArcMachine $arcMachines[$s.Name])
+        [pscustomobject]@{ Name = $s.Name; Addresses = $list }
+    }
+    $arcAvailable = @($arcMachines.Keys | Where-Object { $arcMachines[$_].Status -eq 'Connected' })
+    $findings = @(Get-AzlRemotingFinding -Node $candidates -Port $remoting.Port -HasCredential ([bool]$Credential) -Origin $credentialSource -ArcAvailable $arcAvailable)
+    # The bootstrap: Arc once per node, only to open remote management for the source CIDRs; then the node is probed again and everything else goes over WinRM.
+    $closed = @($findings | Where-Object { -not $_.Reachable -and $_.Result -ne 'NoCredential' -and $_.Result -ne 'NoAddress' })
+    if ($closed.Count -and $remoting.BootstrapTransport -eq 'arc') {
+        $cidrs = @(Get-AzlRemotingAllowedCidr -Infrastructure $infra -RunnerCidr $remoting.AllowedSourceCidrs)
+        if (-not $cidrs.Count) { throw 'remoting.bootstrapTransport is arc but no source CIDR is known: the file has no networking.management.subnet and remoting.allowedSourceCidrs is empty.' }
+        $arcBootstrap = New-AzlArcRunCommandTransport -ArcResourceId $arcIds
+        foreach ($f in $closed) {
+            if (-not $arcIds.ContainsKey($f.Node)) { Write-Warning "$($f.Node): bootstrap needs its Arc machine and none was found; skipped."; continue }
+            if ($arcMachines[$f.Node].Status -ne 'Connected') { Write-Warning "$($f.Node): its Arc machine is $($arcMachines[$f.Node].Status), not Connected; the bootstrap can't run."; continue }
+            if (-not $Execute) { Write-Line "$($f.Node): not reachable over remoting; the bootstrap would open WinRM for $($cidrs -join ', ') through Arc once (plan only: not done)."; continue }
+            Write-Line "$($f.Node): not reachable over remoting ($($f.Result)); using Arc Run Command ONCE to open remote management for $($cidrs -join ', ')."
+            $steps = @($steps)
+            $bootstrapRecords[$f.Node] = Invoke-AzlRemotingBootstrap -ArcTransport $arcBootstrap -Node $f.Node -Cidr $cidrs -Rdp:('RemoteManagement' -in $steps) -Icmp:('RemoteManagement' -in $steps) -Https:$remoting.UseSsl
+            Send-AzlGuardEvent -Context $eventContext -Node $f.Node -State 'TransportResolved' -Step 'RemoteManagement' -Transport 'ArcRunCommand' -Evidence "Bootstrap through Arc Run Command, once: opened $($bootstrapRecords[$f.Node].Opened -join ', ') for $($cidrs -join ', '). Everything after this goes over WinRM." -Level Warning -Data @{ bootstrap = $true; cidrs = $cidrs }
+        }
+        if ($Execute -and $bootstrapRecords.Count) {
+            Start-Sleep -Seconds 5
+            $findings = @(Get-AzlRemotingFinding -Node $candidates -Port $remoting.Port -HasCredential ([bool]$Credential) -Origin $credentialSource -ArcAvailable $arcAvailable)
+        }
+    }
+    Write-Line (Format-AzlRemotingFinding -Finding $findings)
+    if (@($findings | Where-Object { -not $_.Reachable }).Count -and -not ($remoting.BootstrapTransport -eq 'arc' -and -not $Execute -and @($findings | Where-Object { -not $_.Reachable -and $_.Node -in $arcAvailable }).Count -eq @($findings | Where-Object { -not $_.Reachable }).Count)) {
+        Write-Line "NOT READY: $(@($findings | Where-Object { -not $_.Reachable }).Count) node(s) can't be reached over PowerShell remoting. Nothing was changed."
+        exit 1
+    }
+    foreach ($f in $findings) { $addressByNode[$f.Node] = $(if ($f.Reachable) { $f.Address } else { @($candidates | Where-Object Name -eq $f.Node)[0].Addresses[0] }) }
+    foreach ($s in $specs) {
+        $nodeTransports[$s.Name] = New-AzlWinRmTransport -Address @{ $s.Name = $addressByNode[$s.Name] } -Credential $Credential -UseSsl:$remoting.UseSsl -Authentication $remoting.Authentication
+        $why = "PowerShell remoting is the default transport; $($addressByNode[$s.Name]):$($remoting.Port) answers$(if ($bootstrapRecords.ContainsKey($s.Name)) { ' after the one-time Arc bootstrap' }), credential from $credentialSource."
+        Send-AzlGuardEvent -Context $eventContext -Node $s.Name -State 'TransportResolved' -Step '' -Transport 'WinRM' -Evidence $why -Data @{ address = $addressByNode[$s.Name]; port = $remoting.Port; authentication = $remoting.Authentication; ssl = $remoting.UseSsl }
+    }
 }
-# The SBE package can't ride Arc Run Command. With hardware.sbe.delivery winrm_copy and the nodes reached over Arc, the copy gets
-# its own WinRM transport (sessions open only when a file has to be copied). Without -Credential the Sbe step reports why.
+# The SBE package can't ride Arc Run Command. With hardware.sbe.delivery winrm_copy and the nodes reached over Arc (only when -Transport ArcRunCommand was asked for),
+# the copy gets its own WinRM transport (sessions open only when a file has to be copied). Without -Credential the Sbe step reports why.
 $sbeDelivery = [string](Get-AzlProp $infra 'hardware.sbe.delivery' 'skip')
 $sbeTransport = $null
-if ($bundle -and $sbeDelivery -eq 'winrm_copy' -and $nodeTransport.Kind -ne 'WinRM' -and $Credential) {
+if ($bundle -and $sbeDelivery -eq 'winrm_copy' -and $remoting.Kind -ne 'WinRM' -and $Credential) {
     $sbeAddresses = @{}
     foreach ($s in $specs) { $sbeAddresses[$s.Name] = if ($NodeAddress -and $NodeAddress.ContainsKey($s.Name)) { [string]$NodeAddress[$s.Name] } else { $s.Management.Ip } }
-    $sbeTransport = New-AzlWinRmTransport -Address $sbeAddresses -Credential $Credential
+    $sbeTransport = New-AzlWinRmTransport -Address $sbeAddresses -Credential $Credential -UseSsl:$remoting.UseSsl -Authentication $remoting.Authentication
 }
-Write-Line "Transport: $($nodeTransport.Kind). $(if ($Execute) { 'EXECUTE: changes will be made.' } else { 'Plan only: nothing on the nodes changes. Add -Execute.' })"
+Write-Line "Transport: $($remoting.Kind)$(if ($remoting.Kind -eq 'WinRM') { " (authentication $($remoting.Authentication), $(if ($remoting.UseSsl) { 'HTTPS 5986' } else { 'HTTP 5985' }))" }). $(if ($Execute) { 'EXECUTE: changes will be made.' } else { 'Plan only: nothing on the nodes changes. Add -Execute.' })"
 
 # ---- the nodes
+$guardSetting = @{}
+if ($Settings) { foreach ($k in 'networkRollbackMinutes', 'networkStableSeconds', 'reconnectWaitMinutes', 'staleRunCommandMinutes', 'addressProbe') { if ($Settings.ContainsKey($k)) { $guardSetting[$k] = $Settings[$k] } } }
+$null = Get-AzlGuardSetting -Setting $guardSetting
 $results = foreach ($s in $specs) {
     Write-Line "== $($s.Name)"
-    Invoke-AzlNodeConfiguration -Spec $s -Transport $nodeTransport -Execute:$Execute -Step $steps -ClearStorage:$ClearStorage -NoRestart:$NoRestart -MaxPasses $MaxPasses -SbeTransport $sbeTransport
+    Invoke-AzlNodeConfiguration -Spec $s -Transport $nodeTransports[$s.Name] -Execute:$Execute -Step $steps -ClearStorage:$ClearStorage -NoRestart:$NoRestart -MaxPasses $MaxPasses -GuardSetting $guardSetting -EventContext $eventContext -SbeTransport $sbeTransport
 }
 foreach ($r in $results) {
     Write-Line (Format-AzlPlan -Plan @($r.Plan | Where-Object { $_.Action -ne 'Ok' -or -not $Execute }))
@@ -195,9 +276,10 @@ $report = [ordered]@{
     schemaVersion = 1
     generatedUtc  = [datetime]::UtcNow.ToString('o')
     executed      = [bool]$Execute
-    transport     = $nodeTransport.Kind
+    transport     = $remoting.Kind
     sbeDelivery   = $sbeDelivery
     sbeNotDelivered = @($sbeMissing | ForEach-Object { $_.Node })
+    remoting      = [ordered]@{ transport = $remoting.Transport; authentication = $remoting.Authentication; ssl = $remoting.UseSsl; port = $remoting.Port; bootstrapTransport = $remoting.BootstrapTransport }
     sanProblems   = $sanProblems
     nodes         = @($results | ForEach-Object {
             [ordered]@{
@@ -205,6 +287,12 @@ $report = [ordered]@{
                 hostname  = [string](Get-AzlProp $_.State 'host' '')
                 osVersion = [string](Get-AzlProp $_.State 'os' '')
                 converged = $_.Converged
+                transport = $nodeTransports[$_.Node].Kind
+                address   = $_.Address
+                stepTransports = [ordered]@{ all = $nodeTransports[$_.Node].Kind; bootstrap = $(if ($bootstrapRecords.ContainsKey($_.Node)) { 'ArcRunCommand' } else { '' }) }
+                bootstrap = $(if ($bootstrapRecords.ContainsKey($_.Node)) { [ordered]@{ used = $true; transport = 'ArcRunCommand'; opened = @($bootstrapRecords[$_.Node].Opened); scope = @($bootstrapRecords[$_.Node].Scope) } } else { [ordered]@{ used = $false } })
+                guard     = @($_.Guard | ForEach-Object { [ordered]@{ group = $_.Group; state = $_.State; changeId = $_.ChangeId; reason = $_.Reason; nextAction = $_.NextAction; oldAddress = $_.OldAddress; newAddress = $_.NewAddress; verdict = $_.Verdict; repairs = @($_.Repairs | ForEach-Object { $_.rung }) } })
+                events    = @($_.Events)
                 restarted = $_.Restarted
                 ports     = @(Get-AzlProp $_.State 'nics' @() | ForEach-Object { [ordered]@{ osName = $_.n; mac = $_.mac; status = $_.st } })
                 sanDisks  = @(Get-AzlProp $_.State 'san.disks' @())

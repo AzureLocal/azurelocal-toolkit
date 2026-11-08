@@ -65,27 +65,34 @@ BeforeAll {
     }
 
     # A transport that serves canned states and records what it was asked to run.
-    function New-FakeTransport([object[]]$States, [scriptblock]$OnApply) {
+    function New-FakeTransport([object[]]$States, [scriptblock]$OnApply, [scriptblock]$OnGuard) {
         $log = [System.Collections.Generic.List[object]]::new()
         $queue = [System.Collections.Generic.Queue[object]]::new()
         foreach ($s in $States) { $queue.Enqueue($s) }
         $last = [ref]$States[-1]
         $encode = ${function:ConvertTo-ResultLine}
-        $transport = [pscustomobject]@{ Kind = 'Fake'; Invoke = $null; Stage = $null; Log = $log }
+        if (-not $OnGuard) { $OnGuard = { param($Kind, $P) if ($Kind -eq 'Stage') { @{ v = 1; staged = $true; changeId = $P.changeId; cookie = 'cookie1'; machineSid = 'S-1-5-21-1' } } else { @{ v = 1; found = $true; identityOk = $true; nowUtc = '2026-11-07T10:00:00Z'; state = @{ state = 'Committed'; reason = 'All checks passed.'; repairs = @() } } } } }
+        $transport = [pscustomobject]@{ Kind = 'WinRM'; Invoke = $null; Stage = $null; Log = $log; GetAddress = { '192.0.2.11' }; GetPort = { 5985 }; SetAddress = {}; CloseSession = {} }
         $transport.Invoke = {
             param($Self, $Node, [string]$Script, [hashtable]$Parameters, [hashtable]$Secrets, [int]$TimeoutSeconds)
-            if ($Script -match 'function Invoke-Action') { $kind = 'Apply' } elseif ($Script -match 'shutdown\.exe') { $kind = 'Restart' } elseif ($Script -match 'last-apply') { $kind = 'Collect' } else { $kind = 'Read' }
+            if ($Script -match 'AZL-GUARD-STAGE') { $kind = 'GuardStage' } elseif ($Script -match 'AZL-GUARD-STATUS') { $kind = 'GuardStatus' } elseif ($Script -match 'function Invoke-Action') { $kind = 'Apply' } elseif ($Script -match 'shutdown\.exe') { $kind = 'Restart' } elseif ($Script -match 'last-apply') { $kind = 'Collect' } else { $kind = 'Read' }
             $log.Add([pscustomobject]@{ Kind = $kind; Parameters = $Parameters; Secrets = $Secrets })
             switch ($kind) {
                 'Read' { if ($queue.Count -gt 0) { $last.Value = $queue.Dequeue() }; [pscustomobject]@{ Output = (& $encode $last.Value); Failed = $false; Error = ''; State = 'Succeeded' } }
                 'Apply' { $r = & $OnApply $Parameters; [pscustomobject]@{ Output = (& $encode $r); Failed = $false; Error = ''; State = 'Succeeded' } }
                 'Restart' { [pscustomobject]@{ Output = (& $encode ([pscustomobject]@{ restartScheduled = $true })); Failed = $false; Error = ''; State = 'Succeeded' } }
+                'GuardStage' { $r = & $OnGuard 'Stage' $Parameters; [pscustomobject]@{ Output = (& $encode $r); Failed = $false; Error = ''; State = 'Succeeded' } }
+                'GuardStatus' { $r = & $OnGuard 'Status' $Parameters; [pscustomobject]@{ Output = (& $encode $r); Failed = $false; Error = ''; State = 'Succeeded' } }
             }
         }.GetNewClosure()
         $transport.Stage = { param($Self, $Node, $LocalPath, $RemotePath, $Sha256) [pscustomobject]@{ Name = (Split-Path $LocalPath -Leaf); Url = $null } }
         return $transport
     }
     $script:Resolver = { param($Ref) 'P@ssw0rd-from-vault' }
+    # A clock that never waits, and a port probe that always answers.
+    $script:Now = [datetime]::SpecifyKind([datetime]'2026-11-07T10:00:00', [DateTimeKind]::Utc)
+    $script:FakeClock = [pscustomobject]@{ Now = { $script:Now }; Sleep = { param($Seconds) $script:Now = $script:Now.AddSeconds($Seconds) } }
+    $script:PortUp = { param($Address, $Port) $true }
     # Safety net: no test may reach Azure.
     Mock -ModuleName AzlAzure Invoke-AzRestMethod { throw 'A test tried to call Azure.' }
 }
@@ -472,14 +479,20 @@ Describe 'Invoke-AzlNodeConfiguration' {
         $bad = New-ConfiguredState $script:Spec
         $bad.time.peers = 'time.windows.com,0x8'
         ($bad.nics | Where-Object { $_.mac -eq '00005e005312' }).dhcp = 'Enabled'
+        $mid = New-ConfiguredState $script:Spec
+        ($mid.nics | Where-Object { $_.mac -eq '00005e005312' }).dhcp = 'Enabled'
         $good = New-ConfiguredState $script:Spec
-        $t = New-FakeTransport @($bad, $good) { param($p) [pscustomobject]@{ reboot = $false; results = @($p.actions | ForEach-Object { [pscustomobject]@{ id = $_.id; status = 'changed'; detail = 'ok' } }) } }
-        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver
-        $apply = @($t.Log | Where-Object Kind -eq 'Apply')
-        $apply.Count | Should -Be 1
-        @($apply[0].Parameters.actions | ForEach-Object { $_.kind } | Sort-Object) | Should -Be @('nic-clean', 'ntp')
+        $t = New-FakeTransport @($bad, $mid, $good) { throw 'No inline Apply is expected: time and DHCP-off are guarded changes' }
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
+        @($t.Log | Where-Object Kind -eq 'Apply') | Should -BeNullOrEmpty
+        $stages = @($t.Log | Where-Object Kind -eq 'GuardStage')
+        $stages.Count | Should -Be 2
+        @($stages[0].Parameters.config.items | ForEach-Object { $_.kind }) | Should -Be @('ntp')
+        @($stages[1].Parameters.config.items | ForEach-Object { $_.kind }) | Should -Be @('nic-clean')
+        $stages[0].Parameters.config.group | Should -Be 'Services'
+        $stages[1].Parameters.config.group | Should -Be 'Network'
         $r.Converged | Should -BeTrue
-        @($r.Changes).Count | Should -Be 2
+        @($r.Guard | Where-Object State -eq 'Committed').Count | Should -Be 2
     }
     It 'passes the administrator password as a secret, never as a parameter' {
         $bad = New-ConfiguredState $script:Spec
@@ -491,26 +504,26 @@ Describe 'Invoke-AzlNodeConfiguration' {
         ($apply.Parameters | ConvertTo-Json -Depth 6) | Should -Not -Match 'P@ssw0rd'
     }
     It 'restarts once when an action asks and waits for a new boot time' {
-        $bad = New-ConfiguredState $script:Spec; $bad.host = 'WIN-X'
+        $bad = New-ConfiguredState $script:Spec; $bad.san.feature = 'Disabled'
         $after = New-ConfiguredState $script:Spec -Boot '2026-11-07T02:00:00Z'
         Mock -ModuleName AzlNodeConfiguration Start-Sleep {}
-        $t = New-FakeTransport @($bad, $after, $after) { param($p) [pscustomobject]@{ reboot = $true; results = @([pscustomobject]@{ id = 'Hostname/name'; status = 'changed'; detail = 'renamed' }) } }
-        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver
+        $t = New-FakeTransport @($bad, $after, $after) { param($p) [pscustomobject]@{ reboot = $true; results = @([pscustomobject]@{ id = 'Mpio/feature'; status = 'changed'; detail = 'enabled' }) } }
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
         $r.Restarted | Should -BeTrue
         @($t.Log | Where-Object Kind -eq 'Restart').Count | Should -Be 1
         $r.Converged | Should -BeTrue
     }
     It 'does not restart with -NoRestart' {
-        $bad = New-ConfiguredState $script:Spec; $bad.host = 'WIN-X'
-        $t = New-FakeTransport @($bad, $bad) { param($p) [pscustomobject]@{ reboot = $true; results = @([pscustomobject]@{ id = 'Hostname/name'; status = 'changed'; detail = 'renamed' }) } }
-        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -NoRestart -MaxPasses 1 -SecretResolver $script:Resolver
+        $bad = New-ConfiguredState $script:Spec; $bad.san.feature = 'Disabled'
+        $t = New-FakeTransport @($bad, $bad) { param($p) [pscustomobject]@{ reboot = $true; results = @([pscustomobject]@{ id = 'Mpio/feature'; status = 'changed'; detail = 'enabled' }) } }
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -NoRestart -MaxPasses 1 -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
         @($t.Log | Where-Object Kind -eq 'Restart') | Should -BeNullOrEmpty
         $r.Restarted | Should -BeFalse
     }
     It 'stops and reports a failed action' {
-        $bad = New-ConfiguredState $script:Spec; $bad.host = 'WIN-X'
-        $t = New-FakeTransport @($bad) { param($p) [pscustomobject]@{ reboot = $false; results = @([pscustomobject]@{ id = 'Hostname/name'; status = 'failed'; detail = 'denied' }) } }
-        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver
+        $bad = New-ConfiguredState $script:Spec; $bad.san.feature = 'Disabled'
+        $t = New-FakeTransport @($bad) { param($p) [pscustomobject]@{ reboot = $false; results = @([pscustomobject]@{ id = 'Mpio/feature'; status = 'failed'; detail = 'denied' }) } }
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
         $r.Converged | Should -BeFalse
         ($r.Changes | Where-Object Status -eq 'failed').Detail | Should -Be 'denied'
         @($t.Log | Where-Object Kind -eq 'Apply').Count | Should -Be 1
@@ -538,47 +551,47 @@ Describe 'Invoke-AzlNodeConfiguration' {
         }
         It 'delivers the package after every other step, in a call of its own' {
             $spec = Get-SbeSpec node_pull 'https://sbe.example.invalid/sbe'
-            $bad = New-ConfiguredState $spec; $bad.sbe = @(); $bad.host = 'WIN-X'
+            $bad = New-ConfiguredState $spec; $bad.sbe = @(); $bad.admin = [pscustomobject]@{ ex = $true; en = $true; adm = $true; pw = $false }
             $good = New-ConfiguredState $spec; $good.sbe = $script:BothPresent
             $t = New-FakeTransport @($bad, $good) $script:OkApply
             $null = Invoke-AzlNodeConfiguration -Spec $spec -Transport $t -Execute -SecretResolver $script:Resolver
             $apply = @($t.Log | Where-Object Kind -eq 'Apply')
             $apply.Count | Should -Be 2
-            @($apply[0].Parameters.actions | ForEach-Object kind) | Should -Contain 'hostname'
+            @($apply[0].Parameters.actions | ForEach-Object kind) | Should -Contain 'admin'
             @($apply[0].Parameters.actions | ForEach-Object kind) | Should -Not -Contain 'sbe-file'
             @($apply[1].Parameters.actions | ForEach-Object kind | Select-Object -Unique) | Should -Be 'sbe-file'
         }
         It 'skip changes nothing about the package, does not fail the node and keeps the other steps' {
             $spec = Get-SbeSpec skip
-            $bad = New-ConfiguredState $spec; $bad.sbe = @(); $bad.host = 'WIN-X'
+            $bad = New-ConfiguredState $spec; $bad.sbe = @(); $bad.admin = [pscustomobject]@{ ex = $true; en = $true; adm = $true; pw = $false }
             $good = New-ConfiguredState $spec; $good.sbe = @()
             $t = New-FakeTransport @($bad, $good) $script:OkApply
             $r = Invoke-AzlNodeConfiguration -Spec $spec -Transport $t -Execute -SecretResolver $script:Resolver
             $apply = @($t.Log | Where-Object Kind -eq 'Apply')
             $apply.Count | Should -Be 1
-            @($apply[0].Parameters.actions | ForEach-Object kind) | Should -Be 'hostname'
+            @($apply[0].Parameters.actions | ForEach-Object kind) | Should -Be 'admin'
             $r.Converged | Should -BeTrue
             @($r.Plan | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -eq 'Info' }).Count | Should -Be 2
         }
         It 'a failed pull is reported, tried once, and does not undo the other steps' {
             $spec = Get-SbeSpec node_pull 'https://sbe.example.invalid/sbe'
-            $bad = New-ConfiguredState $spec; $bad.sbe = @(); $bad.host = 'WIN-X'
+            $bad = New-ConfiguredState $spec; $bad.sbe = @(); $bad.admin = [pscustomobject]@{ ex = $true; en = $true; adm = $true; pw = $false }
             $still = New-ConfiguredState $spec; $still.sbe = @()
             $t = New-FakeTransport @($bad, $still) { param($p) [pscustomobject]@{ reboot = $false; results = @($p.actions | ForEach-Object { $isSbe = $_.kind -eq 'sbe-file'; [pscustomobject]@{ id = $_.id; status = $(if ($isSbe) { 'failed' } else { 'changed' }); detail = $(if ($isSbe) { 'The remote name could not be resolved' } else { 'ok' }) } }) } }
             $r = Invoke-AzlNodeConfiguration -Spec $spec -Transport $t -Execute -SecretResolver $script:Resolver
             @($t.Log | Where-Object Kind -eq 'Apply').Count | Should -Be 2
             ($r.Changes | Where-Object { $_.Id -like 'Sbe/*' }).Status | Select-Object -Unique | Should -Be 'failed'
-            ($r.Changes | Where-Object Id -eq 'Hostname/name').Status | Should -Be 'changed'
+            ($r.Changes | Where-Object Id -eq 'LocalAdmin/user').Status | Should -Be 'changed'
             $r.Converged | Should -BeFalse
         }
         It 'winrm_copy over Arc without a WinRM path says so and does not stop the other steps' {
             $spec = Get-SbeSpec winrm_copy
-            $bad = New-ConfiguredState $spec; $bad.sbe = @(); $bad.host = 'WIN-X'
+            $bad = New-ConfiguredState $spec; $bad.sbe = @(); $bad.admin = [pscustomobject]@{ ex = $true; en = $true; adm = $true; pw = $false }
             $still = New-ConfiguredState $spec; $still.sbe = @()
             $t = New-FakeTransport @($bad, $still) $script:OkApply
             $t.Kind = 'ArcRunCommand'
             $r = Invoke-AzlNodeConfiguration -Spec $spec -Transport $t -Execute -SecretResolver $script:Resolver
-            ($r.Changes | Where-Object Id -eq 'Hostname/name').Status | Should -Be 'changed'
+            ($r.Changes | Where-Object Id -eq 'LocalAdmin/user').Status | Should -Be 'changed'
             $sbe = @($r.Changes | Where-Object { $_.Id -like 'Sbe/*' })
             $sbe.Count | Should -Be 2
             $sbe[0].Status | Should -Be 'failed'
@@ -612,6 +625,62 @@ Describe 'Invoke-AzlNodeConfiguration' {
             $attempts.Count | Should -Be 1
             @($r.Changes | Where-Object Status -eq 'failed').Count | Should -Be 2
         }
+    }
+    It 'the computer name is a guarded change of its own, with a restart the node finishes; -NoRestart leaves the restart out' {
+        $bad = New-ConfiguredState $script:Spec; $bad.host = 'WIN-X'
+        $good = New-ConfiguredState $script:Spec
+        $t = New-FakeTransport @($bad, $good) { throw 'no inline Apply' }
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
+        $stage = @($t.Log | Where-Object Kind -eq 'GuardStage')[0]
+        $stage.Parameters.config.group | Should -Be 'Hostname'
+        $stage.Parameters.config.restartAfter | Should -BeTrue
+        $r.Restarted | Should -BeTrue
+        $t2 = New-FakeTransport @($bad, $good) { throw 'no inline Apply' }
+        $r2 = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t2 -Execute -NoRestart -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
+        @($t2.Log | Where-Object Kind -eq 'GuardStage')[0].Parameters.config.restartAfter | Should -BeFalse
+        $r2.Restarted | Should -BeFalse
+    }
+}
+
+Describe 'The merged flow: guarded changes first, the SBE package last, a plan reads only' {
+    BeforeEach {
+        $script:OkApply = { param($p) [pscustomobject]@{ reboot = $false; results = @($p.actions | ForEach-Object { [pscustomobject]@{ id = $_.id; status = 'changed'; detail = 'ok' } }) } }
+        $script:BothPresent = @([pscustomobject]@{ n = 'SBE_Dell_X_1.0.zip'; len = 100; ok = $true }, [pscustomobject]@{ n = 'SBE_Dell_X_1.0.xml'; len = 10; ok = $true })
+    }
+    It 'the computer name (a guarded change) comes before the SBE package, which is delivered in an Apply call of its own' {
+        $spec = Get-SbeSpec node_pull 'https://sbe.example.invalid/sbe'
+        $bad = New-ConfiguredState $spec; $bad.sbe = @(); $bad.host = 'WIN-X'
+        $half = New-ConfiguredState $spec; $half.sbe = @()
+        $good = New-ConfiguredState $spec; $good.sbe = $script:BothPresent
+        $t = New-FakeTransport @($bad, $half, $good) $script:OkApply
+        $r = Invoke-AzlNodeConfiguration -Spec $spec -Transport $t -Execute -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
+        $kinds = @($t.Log | Where-Object { $_.Kind -in 'GuardStage', 'Apply' } | ForEach-Object Kind)
+        $kinds[0] | Should -Be 'GuardStage'
+        $kinds[-1] | Should -Be 'Apply'
+        @($t.Log | Where-Object Kind -eq 'Apply').Count | Should -Be 1
+        @((@($t.Log | Where-Object Kind -eq 'Apply')[0]).Parameters.actions | ForEach-Object kind | Select-Object -Unique) | Should -Be 'sbe-file'
+        $r.Converged | Should -BeTrue
+    }
+    It 'a plan reads only: no run command is listed or deleted, nothing is applied' {
+        $calls = [System.Collections.Generic.List[string]]::new()
+        $bad = New-ConfiguredState $script:Spec; $bad.host = 'WIN-X'
+        $t = New-FakeTransport @($bad) { throw 'no Apply in a plan' }
+        $t.Kind = 'ArcRunCommand'
+        $t | Add-Member -NotePropertyName ListRunCommands -NotePropertyValue ({ param($Self, $Node) $calls.Add('list'); @() }.GetNewClosure())
+        $t | Add-Member -NotePropertyName DeleteRunCommand -NotePropertyValue ({ param($Self, $Node, $Name) $calls.Add("delete $Name") }.GetNewClosure())
+        $null = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -SecretResolver $script:Resolver
+        $calls.Count | Should -Be 0
+        @($t.Log | Where-Object { $_.Kind -ne 'Read' }).Count | Should -Be 0
+    }
+    It 'an Apply lists the leftover run commands of earlier runs once, before the node is touched' {
+        $calls = [System.Collections.Generic.List[string]]::new()
+        $good = New-ConfiguredState $script:Spec
+        $t = New-FakeTransport @($good) { throw 'nothing to apply' }
+        $t.Kind = 'ArcRunCommand'
+        $t | Add-Member -NotePropertyName ListRunCommands -NotePropertyValue ({ param($Self, $Node) $calls.Add('list'); @() }.GetNewClosure())
+        $t | Add-Member -NotePropertyName DeleteRunCommand -NotePropertyValue ({ param($Self, $Node, $Name) $calls.Add("delete $Name") }.GetNewClosure())
+        $null = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
+        @($calls) | Should -Be @('list')
     }
 }
 
@@ -753,7 +822,7 @@ Describe 'Run commands that end in state Unknown' {
     }
     It 'after an Apply that ends in Unknown, reads the node again and decides convergence by re-planning' {
         $bad = New-ConfiguredState $script:Spec
-        $bad.time.peers = 'time.windows.com,0x8'
+        $bad.admin = [pscustomobject]@{ ex = $true; en = $true; adm = $true; pw = $false }
         $good = New-ConfiguredState $script:Spec
         $t = New-FakeTransport @($bad, $good) { throw 'not reached' }
         $inner = $t.Invoke
@@ -770,7 +839,7 @@ Describe 'Run commands that end in state Unknown' {
     }
     It 'after an Apply that ends in Unknown and a node that still differs, is not converged' {
         $bad = New-ConfiguredState $script:Spec
-        $bad.time.peers = 'time.windows.com,0x8'
+        $bad.admin = [pscustomobject]@{ ex = $true; en = $true; adm = $true; pw = $false }
         $t = New-FakeTransport @($bad, $bad, $bad, $bad, $bad) { throw 'not reached' }
         $inner = $t.Invoke
         $counter = $script:Counter; $t.Invoke = {
@@ -794,7 +863,7 @@ Describe 'SBE delivered last, together with the Unknown handling of the node scr
     AfterAll { Set-AzlNodeRetryPolicy -Tries 3 -DelaySeconds 15, 45, 120 }
 
     It 'an Apply of the other steps that ends in Unknown does not block the package: the next pass reads the node and delivers it' {
-        $s1 = New-ConfiguredState $script:Spec; $s1.host = 'WIN-X'; $s1.sbe = @()
+        $s1 = New-ConfiguredState $script:Spec; $s1.admin = [pscustomobject]@{ ex = $true; en = $true; adm = $true; pw = $false }; $s1.sbe = @()
         $s2 = New-ConfiguredState $script:Spec; $s2.sbe = @()
         $s3 = New-ConfiguredState $script:Spec; $s3.sbe = $script:Present
         $t = New-FakeTransport @($s1, $s2, $s3) $script:Ok
@@ -810,10 +879,10 @@ Describe 'SBE delivered last, together with the Unknown handling of the node scr
         $r.Converged | Should -BeTrue
     }
     It 'a restart that ends in Unknown is not a failure and the package is delivered after the node is back' {
-        $s1 = New-ConfiguredState $script:Spec; $s1.host = 'WIN-X'; $s1.sbe = @()
+        $s1 = New-ConfiguredState $script:Spec; $s1.admin = [pscustomobject]@{ ex = $true; en = $true; adm = $true; pw = $false }; $s1.sbe = @()
         $s2 = New-ConfiguredState $script:Spec -Boot '2026-11-07T02:00:00Z'; $s2.sbe = @()
         $s3 = New-ConfiguredState $script:Spec -Boot '2026-11-07T02:00:00Z'; $s3.sbe = $script:Present
-        $t = New-FakeTransport @($s1, $s2, $s3) { param($p) [pscustomobject]@{ reboot = (@($p.actions | ForEach-Object kind) -contains 'hostname'); results = @($p.actions | ForEach-Object { [pscustomobject]@{ id = $_.id; status = 'changed'; detail = 'ok' } }) } }
+        $t = New-FakeTransport @($s1, $s2, $s3) { param($p) [pscustomobject]@{ reboot = (@($p.actions | ForEach-Object kind) -contains 'admin'); results = @($p.actions | ForEach-Object { [pscustomobject]@{ id = $_.id; status = 'changed'; detail = 'ok' } }) } }
         $inner = $t.Invoke
         $t.Invoke = {
             param($Self, $Node, [string]$Script, [hashtable]$Parameters, [hashtable]$Secrets, [int]$TimeoutSeconds)

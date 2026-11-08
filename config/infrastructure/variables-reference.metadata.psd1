@@ -105,6 +105,11 @@
         @{ Pattern = '^provisioning\.simplified\.(media_path|evidence_path)$'; Text = 'A folder you create on the management host (see Folders).' }
         @{ Pattern = '^provisioning\.simplified\.media_share'; Text = 'The management host: the share and the address the BMCs reach it on.' }
         @{ Pattern = '^provisioning\.simplified\.(admin|maintenance_password)'; Text = 'A Key Vault secret you create (see Secrets).' }
+        @{ Pattern = '^os_configuration\.network\.confirm_minutes$'; Text = 'You: leave 10 unless a switch or a firewall takes longer than that to pass traffic on the new address. The node reverts by itself when the orchestrator does not confirm in time.' }
+        @{ Pattern = '^os_configuration\.network\.stable_seconds$'; Text = 'You: leave 60. Longer waits for a slow spanning tree.' }
+        @{ Pattern = '^os_configuration\.remoting\.transport$'; Text = 'You: winrm from a jump server or a runner with a route to the management network. arc only for a site with no route.' }
+        @{ Pattern = '^os_configuration\.remoting\.bootstrap_transport$'; Text = 'You: arc when the nodes are fresh from ZTP and your runner is on another subnet than the nodes (their firewall allows their own subnet only). Used once per node.' }
+        @{ Pattern = '^os_configuration\.remoting\.allowed_source_cidrs$'; Text = 'You: the CIDRs of the jump server or runner. The management network is always added.' }
         @{ Pattern = '^os_configuration\.clear_storage$'; Text = 'You: true when the machines are re-used and must start with no leftover storage. The OS configuration run lists the disks it would wipe before it wipes them.' }
         @{ Pattern = '^provisioning\.'; Text = 'The OS release you pin, from the release notes of Azure Local.' }
         @{ Pattern = '^security\.'; Text = 'Your security baseline; Microsoft''s recommended defaults apply when omitted.' }

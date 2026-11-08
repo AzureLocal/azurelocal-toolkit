@@ -97,6 +97,9 @@ BeforeEach {
     Mock -ModuleName AzlOsConfigurationRun Invoke-AzlSetNodeConfiguration { New-FakeSetResult $Parameters }
     Mock -ModuleName AzlOsConfigurationRun Test-AzlAzureSignedIn { $true }
     Mock -ModuleName AzlOsConfigurationRun Test-AzlWinRmPort { [bool]$global:AzlPortAnswers }
+    Mock -ModuleName AzlOsConfigurationRun Invoke-AzlRemotingPreCheck {
+        foreach ($c in $Candidate) { [pscustomobject]@{ Node = $c.Name; Reachable = [bool]$global:AzlPortAnswers; Address = @($c.Addresses)[0]; Port = 5985; Result = $(if ($global:AzlPortAnswers) { 'Open' } else { 'TimedOut' }); Credential = 'vault'; Diagnosis = 'no answer'; Tried = @($c.Addresses) } }
+    }
     Mock -ModuleName AzlOsConfigurationRun Get-AzlSecret { 'P@ssw0rd-from-the-vault-not-printed' }
     Mock -ModuleName AzlOsConfigurationRun Find-AzlArcMachine {
         if ($HostName -in $global:AzlArcNone) { return $null }
@@ -160,11 +163,11 @@ Describe 'Which method?' {
             [pscustomobject]$base
         }
     }
-    It 'declared simplified with a ready handoff: the ZTP path over Arc, no warning' {
+    It 'declared simplified with a ready handoff: the ZTP path over WinRM, no warning' {
         $r = Resolve-AzlNodeMethod -Node n1 -Declared simplified -Evidence (Get-TestEvidence @{ HandoffPresent = $true; HandoffReady = $true; ArcFound = $true; ArcStatus = 'Connected' })
         $r.Method | Should -Be 'Ztp'
         $r.Source | Should -Be 'declared'
-        $r.Transport | Should -Be 'ArcRunCommand'
+        $r.Transport | Should -Be 'WinRM'
         $r.Warnings | Should -BeNullOrEmpty
         $r.Errors | Should -BeNullOrEmpty
     }
@@ -177,10 +180,10 @@ Describe 'Which method?' {
         $r.Transport | Should -Be 'WinRM'
         $r.Warnings | Should -BeNullOrEmpty
     }
-    It 'declared iso and already a Connected Arc machine: the ISO path, reached over Arc' {
+    It 'declared iso and already a Connected Arc machine: the ISO path, still reached over WinRM (Arc is never chosen automatically)' {
         $r = Resolve-AzlNodeMethod -Node n1 -Declared iso -Evidence (Get-TestEvidence @{ ArcFound = $true; ArcStatus = 'Connected' })
         $r.Method | Should -Be 'Iso'
-        $r.Transport | Should -Be 'ArcRunCommand'
+        $r.Transport | Should -Be 'WinRM'
     }
     It 'declared iso but a ready handoff exists: the evidence wins, with a warning naming both' {
         $r = Resolve-AzlNodeMethod -Node n1 -Declared iso -Evidence (Get-TestEvidence @{ HandoffPresent = $true; HandoffReady = $true })
@@ -274,7 +277,7 @@ Describe 'The run: order of operations' {
         $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
         foreach ($c in $global:AzlCalls) {
             $c.Params.Step | Should -Not -Contain 'Hostname'
-            $c.Params.Transport | Should -Be 'ArcRunCommand'
+            $c.Params.Transport | Should -Be 'WinRM'
             $c.Params.HandoffFile | Should -BeLike '*.ztp-handoff.json'
         }
     }
@@ -388,10 +391,10 @@ Describe 'Bad input stops the run before anything is planned' {
         $r.Message | Should -Match 'nothing reachable'
         $global:AzlCalls.Count | Should -Be 0
     }
-    It 'an Arc node without an Azure sign-in: exit 2' {
+    It 'an Arc node (explicit -Transport ArcRunCommand) without an Azure sign-in: exit 2' {
         Mock -ModuleName AzlOsConfigurationRun Test-AzlAzureSignedIn { $false }
         $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
-        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Transport = 'ArcRunCommand' }
         $r.ExitCode | Should -Be 2
         $r.Message | Should -Match 'sign-in'
     }
@@ -453,7 +456,7 @@ Describe 'Mixed cluster and the ISO path' {
         $r = Invoke-Run -Infra $infra
         foreach ($rec in $r.Records) {
             $rec.method | Should -Be 'Iso'
-            $rec.transport | Should -Be 'ArcRunCommand'
+            $rec.transport | Should -Be 'WinRM'
             ($rec.plan | Where-Object Step -eq 'ArcRegistration').Action | Should -Be 'Ok'
         }
     }
@@ -593,9 +596,9 @@ Describe 'Integration with the SBE delivery routes and the node script' {
         $entry = Get-Command $script:EntryScript
         @($entry.Parameters.Step.Attributes | Where-Object { $_ -is [System.Management.Automation.ValidateSetAttribute] } | ForEach-Object { $_.ValidValues } | Sort-Object) | Should -Be @(($moduleOrder + 'ArcRegistration') | Sort-Object)
     }
-    It 'winrm_copy on a ZTP node reached over Arc: the run hands the script the local administrator for the copy, the other steps stay on Arc' {
+    It 'winrm_copy on a ZTP node reached over Arc (explicit -Transport ArcRunCommand): the run hands the script the local administrator for the copy, the other steps stay on Arc' {
         $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.hardware.sbe.delivery = 'winrm_copy' }
-        $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
+        $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Transport = 'ArcRunCommand' }
         $call = $global:AzlCalls[0]
         $call.Params.Transport | Should -Be 'ArcRunCommand'
         $call.Params.Credential | Should -Not -BeNullOrEmpty
@@ -615,11 +618,30 @@ Describe 'Integration with the SBE delivery routes and the node script' {
         $warnings.Warnings.Count | Should -Be 1
         $warnings.Warnings[0] | Should -Match 'NOT DELIVERED'
     }
-    It '<_> on a ZTP node needs no credential' -ForEach 'skip', 'node_pull' {
+    It '<_> on a ZTP node reached over Arc (explicit) needs no credential' -ForEach 'skip', 'node_pull' {
         $route = $_
         $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.hardware.sbe.delivery = $route; $d.hardware.sbe.node_pull_url = 'https://files.example.invalid/sbe' }
-        $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
+        $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Transport = 'ArcRunCommand' }
         $global:AzlCalls[0].Params.ContainsKey('Credential') | Should -BeFalse
+    }
+    It 'the default transport is WinRM on a ZTP node as well, never a silent Arc fallback (Resolve-AzlNodeMethod, the run, the script call)' {
+        $r = Resolve-AzlNodeMethod -Node 'n1' -Declared 'simplified' -Evidence ([pscustomobject]@{ HandoffPresent = $true; HandoffReady = $true; HandoffNote = ''; HandoffContradiction = ''; ArcFound = $true; ArcStatus = 'Connected'; ArcError = ''; WinRmAnswers = $false; WinRmNote = '' })
+        $r.Method | Should -Be 'Ztp'
+        $r.Transport | Should -Be 'WinRM'
+        $global:AzlPortAnswers = $true
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.hardware.sbe.delivery = 'winrm_copy' }
+        $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
+        $call = $global:AzlCalls[0]
+        $call.Params.Transport | Should -Be 'WinRM'
+        $call.Params.Credential | Should -Not -BeNullOrEmpty
+        'Sbe' | Should -BeIn $call.Params.Step
+    }
+    It 'a ZTP node whose remoting port does not answer fails before anything is changed; Arc is not tried instead' {
+        $global:AzlPortAnswers = $false
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply
+        $r.ExitCode | Should -Be 2
+        @($global:AzlCalls).Count | Should -Be 0
     }
 }
 
@@ -630,7 +652,7 @@ Describe 'Event feed (os-configuration-events.jsonl)' {
     }
     It 'Plan, two ZTP nodes: RunStarted with the nodes array first, per node NodeStarted then MethodResolved, the plan, PlanCompleted, WipeListPublished, RunCompleted last' {
         $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
-        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Transport = 'ArcRunCommand' }
         $file = Join-Path $r.Out 'os-configuration-events.jsonl'
         Test-Path -LiteralPath $file | Should -BeTrue
         $raw = Get-Content -LiteralPath $file -Encoding utf8
@@ -663,7 +685,7 @@ Describe 'Event feed (os-configuration-events.jsonl)' {
     }
     It 'MethodResolved carries the method, the declaration, the evidence and the versions; a ZTP node verifies Hostname and Arc registration instead of changing them' {
         $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
-        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Transport = 'ArcRunCommand' }
         $e = Read-RunEvent (Join-Path $r.Out 'os-configuration-events.jsonl')
         $m = @($e | Where-Object { $_.node -eq 'iic-n01' -and $_.state -eq 'MethodResolved' })
         $m.Count | Should -Be 2 -Because 'once when the method is decided, once after the first read adds the OS'
@@ -675,7 +697,7 @@ Describe 'Event feed (os-configuration-events.jsonl)' {
         $m[0].handoff | Should -Be 'ready'
         $m[0].arc | Should -Be 'Connected'
         $m[0].sbePublisher | Should -Be 'Dell'
-        $m[0].sbeDelivery | Should -Match 'SAS'
+        $m[0].sbeDelivery | Should -Be 'skip' -Because 'the fixture names no hardware.sbe.delivery, so the package is not delivered'
         $m[0].PSObject.Properties.Name | Should -Not -Contain 'osVersion'
         $m[1].osVersion | Should -Be '10.0.26100.1'
         $m[1].build | Should -Be 26100
@@ -695,7 +717,7 @@ Describe 'Event feed (os-configuration-events.jsonl)' {
     }
     It 'a mixed cluster: the ISO node says Iso over WinRM, warns that the declaration disagrees, plans a real Arc registration' {
         $global:AzlArcNone = @('iic-n02')
-        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.nodes[1].maintenance_address = '192.0.2.112' }
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.nodes[1].maintenance_address = '192.0.2.112'; $d.hardware.sbe.delivery = 'winrm_copy' }
         $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory -Nodes @('iic-n01'))
         $e = Read-RunEvent (Join-Path $r.Out 'os-configuration-events.jsonl')
         $m1 = @($e | Where-Object { $_.node -eq 'iic-n01' -and $_.state -eq 'MethodResolved' })[0]
@@ -710,7 +732,7 @@ Describe 'Event feed (os-configuration-events.jsonl)' {
         @($m2.warnings).Count | Should -Be 1
         $m2.osCaption | Should -Be 'Microsoft Azure Stack HCI'
         $m2.build | Should -Be 26100
-        $m2.sbeDelivery | Should -Match 'WinRM'
+        $m2.sbeDelivery | Should -Be 'winrm_copy'
         $arc2 = $e | Where-Object { $_.node -eq 'iic-n02' -and $_.step -eq 'ArcRegistration' }
         $arc2.action | Should -Be 'Change'
         $arc2.PSObject.Properties.Name | Should -Not -Contain 'verifyOnly'
@@ -800,7 +822,7 @@ Describe 'Event feed (os-configuration-events.jsonl)' {
             New-FakeSetResult $Parameters
         }
         $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
-        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Node = @('iic-n01') }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Node = @('iic-n01'); Transport = 'ArcRunCommand' }
         $e = Read-RunEvent (Join-Path $r.Out 'os-configuration-events.jsonl')
         $retry = @($e | Where-Object { $_.state -eq 'NodeRetry' })
         $retry.Count | Should -Be 1
@@ -809,6 +831,124 @@ Describe 'Event feed (os-configuration-events.jsonl)' {
         $retry[0].tries | Should -Be 3
         $retry[0].level | Should -Be 'Warning'
         $retry[0].transport | Should -Be 'ArcRunCommand'
+    }
+}
+
+Describe 'Transport: PowerShell remoting by default, Arc only when asked' {
+    BeforeEach {
+        $global:AzlBootstrap = [System.Collections.Generic.List[object]]::new()
+        Mock -ModuleName AzlOsConfigurationRun Invoke-AzlRemotingBootstrap {
+            $global:AzlBootstrap.Add([pscustomobject]@{ Node = $Node; Cidr = @($Cidr); Rdp = $Rdp.IsPresent })
+            [pscustomobject]@{ Node = $Node; Opened = @('WINRM-HTTP-In-TCP'); Scope = @('LocalSubnet') + @($Cidr); Listeners = 1; Transport = 'ArcRunCommand' }
+        }
+        Mock -ModuleName AzlOsConfigurationRun New-AzlArcRunCommandTransport { [pscustomobject]@{ Kind = 'ArcRunCommand' } }
+        Mock -ModuleName AzlOsConfigurationRun Start-Sleep {}
+    }
+    AfterEach { Remove-Variable -Name AzlBootstrap -Scope Global -ErrorAction SilentlyContinue }
+
+    It 'a node that does not answer on the remoting port fails the run before anything is changed, with the diagnosis, and Arc is not tried' {
+        Mock -ModuleName AzlOsConfigurationRun Invoke-AzlRemotingPreCheck {
+            foreach ($c in $Candidate) { [pscustomobject]@{ Node = $c.Name; Reachable = $false; Address = @($c.Addresses)[0]; Port = 5985; Result = 'TimedOut'; Credential = 'vault'; Diagnosis = $global:AzlDiag; Tried = @($c.Addresses) } }
+        }
+        Import-Module ([IO.Path]::Combine($script:Repo, 'scripts', 'common', 'node-configuration', 'AzlNodeTransport.psm1')) -Force
+        $global:AzlDiag = Get-AzlRemotingDiagnosis -Reason TimedOut -Address 192.0.2.11 -Port 5985 -Detail 'no answer' -ArcAvailable $true
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply
+        $r.ExitCode | Should -Be 2
+        $r.Message | Should -Match "can't reach 2 node"
+        $r.Message | Should -Match 'TimedOut'
+        $r.Message | Should -Match 'limited to the local subnet'
+        $r.Message | Should -Match "bootstrapTransport = 'arc'"
+        $global:AzlCalls.Count | Should -Be 0
+        $global:AzlBootstrap.Count | Should -Be 0
+        Should -Invoke -ModuleName AzlOsConfigurationRun New-AzlArcRunCommandTransport -Times 0
+    }
+
+    It 'bootstrapTransport arc, plan: nothing is opened, the plan says what Arc will do once' {
+        Mock -ModuleName AzlOsConfigurationRun Invoke-AzlRemotingPreCheck {
+            foreach ($c in $Candidate) { [pscustomobject]@{ Node = $c.Name; Reachable = $false; Address = @($c.Addresses)[0]; Port = 5985; Result = 'TimedOut'; Credential = 'vault'; Diagnosis = 'closed'; Tried = @($c.Addresses) } }
+        }
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Settings = @{ remoting = @{ bootstrapTransport = 'arc'; allowedSourceCidrs = @('198.51.100.0/24') } } }
+        $r.ExitCode | Should -Be 0
+        $global:AzlBootstrap.Count | Should -Be 0
+        $global:AzlCalls.Count | Should -Be 0
+        foreach ($rec in $r.Records) {
+            $item = @($rec.plan | Where-Object Item -eq 'remote management bootstrap')
+            $item.Count | Should -Be 1
+            $item[0].Desired | Should -Match '198\.51\.100\.0/24'
+            $item[0].Desired | Should -Match '192\.0\.2\.0/24'
+        }
+    }
+
+    It 'bootstrapTransport arc, apply: Arc opens the firewall once per node, then everything else goes over WinRM' {
+        Mock -ModuleName AzlOsConfigurationRun Invoke-AzlRemotingPreCheck {
+            foreach ($c in $Candidate) { [pscustomobject]@{ Node = $c.Name; Reachable = $false; Address = @($c.Addresses)[0]; Port = 5985; Result = 'TimedOut'; Credential = 'vault'; Diagnosis = 'closed'; Tried = @($c.Addresses) } }
+        }
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply -Extra @{ Settings = @{ remoting = @{ bootstrapTransport = 'arc'; allowedSourceCidrs = @('198.51.100.0/24') } } }
+        $global:AzlBootstrap.Count | Should -Be 2
+        @($global:AzlBootstrap.Node | Sort-Object) | Should -Be @('iic-n01', 'iic-n02')
+        foreach ($b in $global:AzlBootstrap) { $b.Cidr | Should -Contain '198.51.100.0/24'; $b.Cidr | Should -Contain '192.0.2.0/24' }
+        # the bootstrap happens before the node is read or changed, and every call of the script after it uses WinRM
+        $global:AzlCalls.Count | Should -BeGreaterThan 0
+        foreach ($c in $global:AzlCalls) { $c.Params.Transport | Should -Be 'WinRM' }
+        foreach ($rec in $r.Records) {
+            $rec.bootstrap.used | Should -BeTrue
+            $rec.bootstrap.transport | Should -Be 'ArcRunCommand'
+            ($rec.changes | Where-Object id -eq 'RemoteManagement/bootstrap').status | Should -Be 'changed'
+        }
+        $report = Get-Content -LiteralPath $r.ReportPath -Raw | ConvertFrom-Json -Depth 20
+        $report.nodes[0].stepTransports.all | Should -Be 'WinRM'
+        $report.nodes[0].stepTransports.bootstrap | Should -Be 'ArcRunCommand'
+        $report.nodes[0].bootstrap.used | Should -BeTrue
+    }
+
+    It 'a node whose Arc machine is not Connected is not bootstrapped: the run fails with the diagnosis' {
+        $global:AzlArcStatus = 'Disconnected'
+        Mock -ModuleName AzlOsConfigurationRun Invoke-AzlRemotingPreCheck {
+            foreach ($c in $Candidate) { [pscustomobject]@{ Node = $c.Name; Reachable = $false; Address = @($c.Addresses)[0]; Port = 5985; Result = 'TimedOut'; Credential = 'vault'; Diagnosis = 'closed'; Tried = @($c.Addresses) } }
+        }
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply -Extra @{ Settings = @{ remoting = @{ bootstrapTransport = 'arc' } } }
+        $r.ExitCode | Should -Be 2
+        $global:AzlBootstrap.Count | Should -Be 0
+    }
+
+    It 'explicit -Transport ArcRunCommand runs everything over Arc, with no remoting pre-check' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply -Extra @{ Transport = 'ArcRunCommand' }
+        $global:AzlCalls.Count | Should -BeGreaterThan 0
+        foreach ($c in $global:AzlCalls) { $c.Params.Transport | Should -Be 'ArcRunCommand' }
+        Should -Invoke -ModuleName AzlOsConfigurationRun Invoke-AzlRemotingPreCheck -Times 0
+        $global:AzlBootstrap.Count | Should -Be 0
+        foreach ($rec in $r.Records) { $rec.transport | Should -Be 'ArcRunCommand' }
+    }
+
+    It 'the settings reach the script: confirmation window, stable period, reconnect wait, stale age, probe, remoting' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Settings = @{ networkRollbackMinutes = 20; networkStableSeconds = 30; reconnectWaitMinutes = 25; staleRunCommandMinutes = 45; addressProbe = $false } }
+        $s = $global:AzlCalls[0].Params.Settings
+        $s.networkRollbackMinutes | Should -Be 20
+        $s.networkStableSeconds | Should -Be 30
+        $s.reconnectWaitMinutes | Should -Be 25
+        $s.staleRunCommandMinutes | Should -Be 45
+        $s.addressProbe | Should -BeFalse
+        $global:AzlCalls[0].Params.EventLogPath | Should -BeLike '*os-configuration-events.jsonl'
+    }
+
+    It 'invalid new settings are bad input (exit 2)' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        (Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Settings = @{ networkRollbackMinutes = 0 } }).ExitCode | Should -Be 2
+        (Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Settings = @{ remoting = @{ bootstrapTransport = 'maybe' } } }).ExitCode | Should -Be 2
+    }
+
+    It 'the master file keys os_configuration.network.* and os_configuration.remoting.* are read' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.os_configuration = [ordered]@{ network = [ordered]@{ confirm_minutes = 12; stable_seconds = 5 }; remoting = [ordered]@{ transport = 'winrm_https'; allowed_source_cidrs = @('198.51.100.0/24') } } }
+        $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
+        $global:AzlCalls[0].Params.Settings.networkRollbackMinutes | Should -Be 12
+        $global:AzlCalls[0].Params.Settings.networkStableSeconds | Should -Be 5
+        $global:AzlCalls[0].Params.UseSsl | Should -BeTrue
     }
 }
 }

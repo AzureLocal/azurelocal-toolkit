@@ -23,7 +23,7 @@ In the tables, **Checked** says what happens if the item is missing:
 | ARM Validate | `Invoke-AzureLocalClusterDeployment.ps1 -InfrastructureFile ./infrastructure.yml -HandoffFile ./ztp-handoff.json -NodeReportPath <report>` | submit `deploymentMode Validate` to the resource group, wait, report the validation steps. |
 | ARM Deploy | the same with `-Mode Deploy` | submit the real deployment. A separate, explicit run; needs a successful Validate. |
 
-The OS configuration plan reads each node through Azure Arc Run Command, which creates and deletes one transient `runCommands` resource per read; nothing on the node changes. `-SpecOnly` reads no node and no Azure resource: it prints what each node should look like. The ARM plan (no `-Execute`) reads files only, unless you add `-Preflight`.
+The OS configuration plan reads each node through PowerShell remoting (WinRM) from a host that reaches the node's management address; nothing on the node changes. Azure Arc Run Command is the option you ask for with `-Transport ArcRunCommand` (see [Choosing the transport](#choosing-the-transport)). `-SpecOnly` reads no node and no Azure resource: it prints what each node should look like. The ARM plan (no `-Execute`) reads files only, unless you add `-Preflight`.
 
 Order: ZTP hand-off (or an ISO install), OS configuration (`Invoke-AzureLocalOsConfiguration.ps1 -Mode Plan`, review the plan and the wipe list, then `-Mode Apply`; it writes a JSON report), then ARM Validate, review, then ARM Deploy.
 
@@ -62,18 +62,20 @@ The full cross-tool matrix is in the toolkit's [access-and-connectivity page](ac
 | `-Mode` | `Plan` (default) or `Apply`. |
 | `-ReportDirectory` | Where `plan-report.json`, `report.json`, `summary.md`, `wipe-list.txt` and `node-reports/` go. |
 | `-ContinueOnNodeFailure` | Default `$true`: a node that fails does not stop the others. `-ContinueOnNodeFailure:$false` stops at the first failure and marks the rest skipped. |
-| `-Transport`, `-Method` | `Auto` (default) works both out per node; force `ArcRunCommand`/`WinRM` or `Ztp`/`Iso` for all nodes. |
-| `-Credential`, `-NodeAddress` | The local administrator for WinRM (default: `identity.local_admin`, password from the Key Vault) and the address to reach a node on when the installer's address is not in the file. Used for ISO-installed nodes, and, on a ZTP node reached over Arc, only to copy the SBE package when `hardware.sbe.delivery` is `winrm_copy`. |
+| `-Transport` | `Auto` (default) is PowerShell remoting (WinRM), or what `remoting.transport` says; `WinRM` and `ArcRunCommand` force it. Arc is never chosen automatically. |
+| `-Method` | `Auto` (default) works the method out per node; force `Ztp` or `Iso` for all nodes. |
+| `-Credential`, `-NodeAddress` | The local administrator for WinRM (default: `identity.local_admin`, password from the Key Vault, never printed) and the address to reach a node on when the installer's address is not in the file. On a node reached over Arc (only `-Transport ArcRunCommand`) the credential is used to copy the SBE package when `hardware.sbe.delivery` is `winrm_copy`. |
 | `-ClearStorage` | Forces the storage wipe on (see below). |
-| `-EventLogPath` | The event feed (JSON Lines) a viewer follows. Default: `os-configuration-events.jsonl` in `-ReportDirectory`. See [the event feed](#the-event-feed-what-the-run-tells-a-viewer). |
-| `-ConfigPath`, `-Settings` | Optional run settings (JSON file, then a hashtable that wins): `retryTries`, `retryDelaySeconds`, `maxPasses`, `noRestart`, `failOnPendingChanges`, `nodeAddress`. |
+| `-ConfigPath`, `-Settings` | Optional run settings (JSON file, then a hashtable that wins): `retryTries`, `retryDelaySeconds`, `maxPasses`, `noRestart`, `failOnPendingChanges`, `nodeAddress`, `networkRollbackMinutes`, `networkStableSeconds`, `reconnectWaitMinutes`, `staleRunCommandMinutes`, `addressProbe`, `remoting`. The guarded-change keys are in [Changing the management address safely](#changing-the-management-address-safely); `remoting` is in [Choosing the transport](#choosing-the-transport). |
+| `-EventLogPath` | The event feed (JSON Lines), default `os-configuration-events.jsonl` in the report directory. |
 | `-FailOnPendingChanges` | Plan mode: exit 1 when any change is pending (drift detection). |
 
 ### What the run does, in order
 
-1. **Validate the inputs.** The master file, the handoff map, the method and transport of every node, the Azure sign-in, and for ISO nodes the route, the credentials and the OS build. A failure here stops the run with exit code 2 before anything is changed.
+1. **Validate the inputs.** The master file, the handoff map, the method of every node, the **remoting pre-check** (every node probed at the same time on every candidate address, one table of what is unreachable and why), the credentials and the OS build of every node reached over WinRM. A failure here stops the run with exit code 2 before anything is changed.
 2. **Plan for all nodes** (read only). Writes `plan-report.json` and `wipe-list.txt`.
-3. **Apply** (`-Mode Apply`), node by node, each node's steps in the order of the diagram with the SBE package last. A node whose plan says the package is NOT DELIVERED (`hardware.sbe.delivery` is `skip`) is not failed; its record carries a warning.
+3. **Apply** (`-Mode Apply`), node by node.
+   Each node's steps run in the order of the diagram, `RemoteManagement` first and the SBE package last (by `hardware.sbe.delivery`). A change that can cut the node off is a guarded change. A node whose plan says the package is NOT DELIVERED (`hardware.sbe.delivery` is `skip`) is not failed; its record carries a warning.
 4. **Verify**: a Plan pass on every node that was changed. A node is *converged* only when this pass finds nothing left to change. The status of the commands that did the work does not decide it. A node with nothing to change in the plan is converged by the plan itself and is not read again.
 5. **Report**: `report.json` (per node: method and evidence, steps, plan, changes, errors, converged, restarted), `summary.md` and a table on the console.
 
@@ -82,7 +84,7 @@ The full cross-tool matrix is in the toolkit's [access-and-connectivity page](ac
 OS configuration always starts after the OS is installed, however it was installed. Each node is resolved on its own, so a cluster can mix both.
 
 - **Declared**: `scenario.os_install` (`iso` or `simplified`) in the master file.
-- **Evidence**: (a) a ZTP handoff for the node that says `ready`, (b) an Arc machine for the node that is `Connected` (found by the handoff's resource ID, else by host name in `azure.resource_group`), (c) the node answers on WinRM (TCP 5985) at `nodes[].management.ip_address` or `maintenance_address` (`-NodeAddress` overrides). (c) is tried only when (a) and (b) are missing.
+- **Evidence**: (a) a ZTP handoff for the node that says `ready`, (b) an Arc machine for the node that is `Connected` (found by the handoff's resource ID, else by host name in `azure.resource_group`), (c) the node answers on WinRM (TCP 5985, or 5986 with HTTPS) at `nodes[].management.ip_address`, `maintenance_address` or the address the Arc agent reports (`-NodeAddress` overrides).
 
 | Declared | Evidence | Path | |
 | --- | --- | --- | --- |
@@ -98,12 +100,97 @@ The result is in the report, per node (`method.declared`, `method.resolved`, `me
 
 | | ZTP path | ISO path |
 | --- | --- | --- |
-| Reached with | Azure Arc Run Command (ARM only; no network path to the nodes) | WinRM with the local administrator from the master file, from a host that reaches the node's management address (or Arc Run Command when the machine is already a Connected Arc machine) |
+| Reached with | PowerShell remoting (WinRM) with the local administrator from the master file, from a host that reaches the node's management address | the same |
 | Verified, not redone | OS build, Arc machine connected, the computer name ZTP gave, the handoff's `ready` | |
 | Done | management static address by MAC, DHCP off on the other ports, DNS, NTP, unused ports, local admin, RDP/ICMP, OEM drivers, MPIO and SAN verification, storage wipe when on, and last the SBE package (by `hardware.sbe.delivery`) | all of those, plus the computer name (restart), and Azure Arc registration |
-| Up front | | route to TCP 5985, credentials, OS caption and build 25398 or later; each failure names the node and says what to fix |
+| Up front | route to TCP 5985/5986, credentials, OS caption and build 25398 or later | the same; each failure names the node and says what to fix |
 
-Arc registration on the ISO path runs `Invoke-AzStackHciArcInitialization` on the node with the ARM token of the run's own Azure sign-in (passed as a secret; never written), into `azure.resource_group`, with the Arc gateway from `networking.outbound.arc_gateway` when the outbound path uses one. It then waits for the Arc machine to be Connected. The older Phase 04 registration scripts take a different, interactive configuration, so they are not used here. WinRM from a Linux runner needs the PSWSMan module for Negotiate authentication.
+Arc registration on the ISO path runs `Invoke-AzStackHciArcInitialization` on the node with the ARM token of the run's own Azure sign-in (passed as a secret; never written), into `azure.resource_group`, with the Arc gateway from `networking.outbound.arc_gateway` when the outbound path uses one. It then waits for the Arc machine to be Connected. The older Phase 04 registration scripts take a different, interactive configuration, so they are not used here. WinRM from a Linux runner needs the PSWSMan module for Negotiate authentication. Arc registration is done over WinRM too.
+
+
+### Choosing the transport
+
+The node-side logic is PowerShell and is the same everywhere. WinRM and Arc Run Command are only ways to deliver it. **PowerShell remoting (WinRM) is the default and the only transport that is ever chosen automatically.** Arc Run Command is an option you ask for; it is never a silent fallback.
+
+| Where the run starts | Use | Notes |
+| --- | --- | --- |
+| A jump server on the management network, run by hand | WinRM (default) | Windows PowerShell 7 on the jump server. Kerberos or Negotiate. |
+| A CI/CD runner (GitHub, GitLab, Azure DevOps) with a route to the management network | WinRM (default) | A Windows runner, or a Linux runner with PowerShell 7 and the PSWSMan module for Negotiate/Kerberos, or WinRM over HTTPS (`-UseSsl`, 5986, a certificate on the node). |
+| A runner that only reaches Azure (no route to the nodes) | `-Transport ArcRunCommand` | The exception. Everything, including the guarded network change, goes through Azure Arc Run Command. Not recommended for network changes: the Arc agent loses its route while the address changes, so the run depends on the node's own rollback and on the Arc machine reconnecting. |
+| A ZTP node whose firewall is still closed to your subnet | WinRM with `-Settings @{ remoting = @{ bootstrapTransport = 'arc' } }` | Arc is used once per node, only to open WinRM-In (and RDP, ICMP when in the plan) for the source CIDRs. Everything after that goes over WinRM. |
+
+**Why a closed firewall happens.** A freshly provisioned node's Windows Firewall rules for remote management (WinRM-In, Remote Desktop, ICMP echo) allow the local subnet only. A jump server or runner on another subnet reaches TCP 445 but not 5985, 5986, 3389 or ICMP, until the RemoteManagement step opens them. That is a chicken-and-egg problem; the bootstrap resolves it once.
+
+| Setting | Values | Default | Meaning |
+| --- | --- | --- | --- |
+| `remoting.transport` (master file `os_configuration.remoting.transport`) | `winrm`, `winrm_https`, `arc` | `winrm` | `-Transport Auto` follows this. `WinRM` and `ArcRunCommand` on the command line win. |
+| `remoting.bootstrapTransport` (`os_configuration.remoting.bootstrap_transport`) | `none`, `arc` | `none` | `none`: a node that does not answer on 5985/5986 fails with the diagnosis. `arc`: one Arc Run Command per node to open the firewall. |
+| `remoting.allowedSourceCidrs` (`os_configuration.remoting.allowed_source_cidrs`) | list of IPv4 CIDRs | the management network | The runner and jump server CIDRs. The management network (`networking.management.subnet`) is always included, and so is `LocalSubnet`. |
+| `remoting.useSsl`, `-UseSsl` | true/false | false | WinRM over HTTPS (5986). |
+| `remoting.authentication`, `-Authentication` | `Default`, `Negotiate`, `Kerberos`, `Basic`, `CredSSP` | `Negotiate` | A workgroup node needs `TrustedHosts` on the runner (HTTP) or HTTPS. A domain-joined node can use Kerberos. |
+
+The credential is `-Credential`, or `identity.local_admin` with its password read from the Key Vault (never printed). **The pre-check.** Before anything changes, every node is probed on every candidate address (`nodes[].management.ip_address`, `maintenance_address`, the address the Arc agent reports for the management MAC) at the same time, and one table says which node is unreachable and why (port closed, timeout, no route, no credential). A node with no answer fails with exit code 2 and the next action, for example "the node firewall probably limits WinRM to its own subnet; run once with `-Settings @{ remoting = @{ bootstrapTransport = 'arc' } }` or open WinRM-In for your CIDR by another means". Arc is not tried.
+
+The report records the transport per node and per step (`stepTransports`) and whether the bootstrap was used (`bootstrap`); the event feed has a `TransportResolved` event per node and one for the bootstrap.
+
+### Changing the management address safely
+
+Changing the management address, the gateway, DNS or VLAN, the remote-management firewall rules, the time source, turning DHCP off on the other ports, disabling unused adapters, or renaming the computer can cut off the very connection the change is made over. So none of these runs inline. Each is a **guarded change**: the session only stages it, and the node applies it, checks it and rolls it back by itself.
+
+**What happens**
+
+1. **Stage.** One short script puts the change on the node (a script in its own folder under `C:\ProgramData\AzureLocal\osconfig`, readable by SYSTEM and Administrators only, its SHA-256 in the state file as the manifest) and starts it detached. It returns at once with a node cookie and the machine SID. The session is closed.
+2. **The node works alone.** A controller process takes a machine-wide mutex (`Global\AzureLocalOsConfig`), takes a snapshot of the ports (and writes a panic document first), then applies the change. The **new** address and route are added first; the old address stays until the change is confirmed. Windows duplicate address detection must report `Preferred` (a `Duplicate` means refuse and revert; the address is never applied again). A scheduled task (at startup and every minute, no time limit) is the backstop that starts the same script again after a crash or a reboot.
+3. **Local checks.** The node checks, in this order, and they must stay green for `networkStableSeconds`: the management port has the expected address, prefix, VLAN and a default gateway; the gateway resolves to a MAC and a configured TCP probe answers through that port; a name resolves; WinRM is listening (if it was); the cleaned ports have no address or route. Only checks that passed before the change are required afterwards. The Arc agent is evidence, not a condition; ICMP is not either.
+4. **Repair.** If a check fails: one more look, then the Arc agent services (if Arc was in use), then the snapshot of the failing item only, then the adapter that was disabled, then the whole snapshot. Nothing is re-applied and no NIC is restarted as a repair: after a failed probe the next step is a restore.
+5. **Confirmation.** This host closes its session, waits, and reaches the node again on the **new** address (then the old one), through a **new** session. In `AwaitingConfirm` it writes a token (SHA-256 of change id, script hash and node cookie). Only then does the node commit and remove the old address. With no confirmation inside `networkRollbackMinutes` the node restores the snapshot on its own. Over Arc this host polls the Arc machine until it is Connected with a newer last status change, then reads the state through a second short run command.
+6. **Order.** The management address first (confirmed `Committed`), the VLAN as its own change, then the other steps, then the services group, then the computer name (its own change, with a restart that the watchdog finishes), and DHCP off on the other ports and disabled adapters last, only while the management port has a default gateway (and, over Arc, the Arc machine is Connected); otherwise they are Blocked with the reason. Nothing continues on a node until the previous change is `Committed`. If the address is already right, nothing is staged.
+
+**States** (the node's state file `net-<id>.state.json`, read by a short second command)
+
+| State | Meaning |
+| --- | --- |
+| Staged | Script, manifest hash and desired state are on the node. |
+| Snapshotted | The pre-change state and the panic document are saved. |
+| Applying | The changes are being made. |
+| Verifying | The local checks must stay green for `networkStableSeconds`. |
+| Repairing | A check failed; the repair ladder runs. |
+| AwaitingConfirm | Local checks passed; waiting for this host's confirmation token. |
+| Committed | Both proofs; the old address is gone; the watchdog is removed. |
+| RolledBack | The snapshot (or the failing item) was restored. `verdict`: `RolledBackVerified`. A confirmation that arrived too late is recorded as `RolledBackLateConfirm`. |
+| Refused | Nothing was changed: another host answers on the address, the plan would disable the management port or the port holding the default gateway, the management port is an LBFO team member or a vSwitch uplink, the VLAN driver capability is unknown, or the script hash differs. |
+| Failed | The restore could not be verified (`RollbackUnverified`). The watchdog stays armed and keeps trying; the node needs console or BMC access. |
+
+A read that cannot reach the node is **PendingReconciliation**, never a failed change: the node's own deadline decides, and a re-run reads the change first (a Committed change id is a no-op).
+
+**What to do**
+
+| Result | Do |
+| --- | --- |
+| RolledBack | The node is as it was. Read `<id>.log` on the node (the report has the reasons and the rungs used). Fix the cause (address in use, wrong gateway, VLAN, a firewall between this host and the new address) and run again. A rolled back change is not retried automatically. |
+| Refused | Nothing changed. Fix what the reason names. |
+| Failed | Go to the console. The panic document `net-<id>.panic.json` and the log say what was tried. |
+| PendingReconciliation | Check the route to the node and run again. |
+
+**Management address modes.** A (`dhcp_reservation`): never changed, only verified. B (static with DHCP at provisioning) and C (static, no management DHCP): the guarded change; a node that already holds the wanted address through DHCP is converted in place. `dhcp` without a reservation and `preconfigured`: left alone.
+
+**Settings** (`-Settings`, or the JSON `-ConfigPath`)
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `networkRollbackMinutes` (master file `os_configuration.network.confirm_minutes`) | 10 | The window for this host's confirmation. Without it the node reverts. |
+| `networkStableSeconds` (`os_configuration.network.stable_seconds`) | 60 | How long the local checks must stay green. |
+| `reconnectWaitMinutes` | 15 | How long this host waits for the node to answer again. |
+| `staleRunCommandMinutes` | 15 | Before an Apply over Arc (a plan deletes nothing), run commands named `azl-osconfig-*` older than this and not Succeeded or Running are deleted (recorded as a `StaleRunCommandDeleted` event in the node report; not written to the feed, whose states are the contract's). Nothing else is touched. |
+| `addressProbe` | true | Refuse an address another host answers on (ping, neighbour cache) before assigning it. |
+
+**Events.** The feed (Sonar shows them) has `NetworkChangeStaged`, `NetworkChangeVerifying`, `NetworkChangeAwaitingConfirm`, `NetworkChangeCommitted`, `NetworkChangeRepaired` (with the rung), `NetworkChangeRolledBack`, `NetworkChangeRefused`, `NodeReconnecting`, `NodeReconnected`, `NodeBlocked`, each with the old and new address in the evidence.
+
+**The guarantee, and its limits.** The design bounds the time a node stays cut off: if this host cannot confirm within the window, the node reverts itself, and a crash or reboot of the node does not stop that. It does not promise that no node is ever lost. It assumes: the node's Task Scheduler and PowerShell 5.1 work; the snapshot is routable (a node that only had a DHCP lease and no DHCP server on the network cannot be restored to it, so the restore is a static copy of the old addresses); the disk is writable; the change is not a hardware or driver failure. **Hazardous network changes need an independent recovery path** (BMC, iDRAC, iLO or a console) available when you run them.
+
+**What is verified and what is not.** Verified by tests with fakes, on any host with no node: the engine's states, checks, repair rungs, refusals, panic restore, fencing and watchdog resume; the orchestrator's staging, waiting, confirming, reconnect polling and outcome reading; the pre-check, the bootstrap order and the transport rules. **Not verified, because it needs a real Windows Server node:** the real Windows cmdlets (address, route, VLAN, firewall, adapter, scheduled task, mutex), duplicate address detection timing, `azcmagent show` output, the scheduled task surviving the end of a WinRM session or an Arc run command, the accepted local endpoint of the confirmation session, and LBFO/vSwitch detection. **Run the first live apply on one node**, with BMC access, before the rest.
+
+**Deferred.** Write-ahead journal with a sequence number (the state is atomic, checksummed, copied and fenced by a generation number); union of the old and new WinRM firewall scope during the window (the bootstrap and the RemoteManagement step set the scope); checking the local endpoint the confirmation session arrived on; per-operation time limits for every native command.
 
 ### Storage wipe: `os_configuration.clear_storage`
 
@@ -133,7 +220,7 @@ With it off, leftover storage is reported as blocking (exit 1) and nothing is wi
 
 ### A run command that ends in state Unknown
 
-Arc Run Command can end in state `Unknown` when the node's agent briefly loses its connection (for example while its network changes). The script on the node is safe to run again, so the run is retried with a growing pause (default 3 tries, 15 s, 45 s, then 120 s; `retryTries`, `retryDelaySeconds`). After the last try the node is **read again** and the next step is decided from what the read shows. If an Apply ended in `Unknown`, the report lists a change with status `unknown`, and the node is converged if the read (and the verification pass) shows it matches. A restart that ends in `Unknown` is not a failure: the run waits for a new boot time.
+Only with `-Transport ArcRunCommand`. Arc Run Command can end in state `Unknown` when the node's agent briefly loses its connection (for example while its network changes). The script on the node is safe to run again, so the run is retried with a growing pause (default 3 tries, 15 s, 45 s, then 120 s; `retryTries`, `retryDelaySeconds`). After the last try the node is **read again** and the next step is decided from what the read shows. If an Apply ended in `Unknown`, the report lists a change with status `unknown`, and the node is converged if the read (and the verification pass) shows it matches. A restart that ends in `Unknown` is not a failure: the run waits for a new boot time.
 
 ### The event feed: what the run tells a viewer
 
@@ -209,7 +296,7 @@ The plan changes nothing, so it can run unattended. Its output is what a person 
 | GitHub Actions | `pipelines/github/os-configuration.yml` (copy to `.github/workflows/`) | Environment `azure-local-os-configuration` with required reviewers on the `apply` job |
 | GitLab CI | `pipelines/gitlab/os-configuration.gitlab-ci.yml` | `when: manual` on the apply job; `resource_group` allows one run at a time |
 
-Both run `pwsh -File .../Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ... -HandoffPath ... -Mode Plan|Apply -ReportDirectory ...` and nothing else; the logic is the script's. The runner is a self-hosted Linux runner with PowerShell 7 and the `powershell-yaml`, `Az.Accounts` and `Az.KeyVault` modules. ZTP-provisioned nodes need only Azure from the runner (with `hardware.sbe.delivery: node_pull` or `skip`); ISO-installed nodes, and the `winrm_copy` route of the SBE package, need a runner that reaches the nodes' management addresses on TCP 5985.
+Both run `pwsh -File .../Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ... -HandoffPath ... -Mode Plan|Apply -ReportDirectory ...` and nothing else; the logic is the script's. The runner needs PowerShell 7, the `powershell-yaml`, `Az.Accounts` and `Az.KeyVault` modules, and **a route to the nodes' management network** (PowerShell remoting): a Windows runner (a self-hosted runner on the management network, labelled `ztp`), or a Linux runner with the PSWSMan module for Negotiate/Kerberos, or WinRM over HTTPS (5986) with a certificate on the nodes (set `remoting.useSsl`). The `winrm_copy` route of the SBE package needs a runner that reaches the nodes' management addresses on TCP 5985 as well. A runner with no route can use `-Transport ArcRunCommand`, which is not recommended for network changes. A node whose firewall still limits WinRM to its own subnet needs `remoting.bootstrapTransport = arc` once, or WinRM-In opened for the runner's CIDR.
 
 **Where the files come from.** The master `infrastructure.yml` is a path in the repository (`infrastructure_file` / `INFRASTRUCTURE_FILE`). The handoff files, `<node>.ztp-handoff.json` (one per ZTP run: nodes 1 and 2 may share a file, node 3 has its own), are either committed to the repository path `handoff_path` / `HANDOFF_PATH`, or published by the ZTP run as an artifact named `ztp-handoff`; the GitHub workflow takes the ZTP run's ID (`handoff_run_id`) and downloads it, and in GitLab the job lists the ZTP job in `needs`/`dependencies`. Point `-HandoffPath` at the folder: every handoff in it is merged. A handoff file holds the subscription ID and resource IDs of your environment, so keep it in a private repository or artifact.
 
@@ -217,7 +304,7 @@ Both run `pwsh -File .../Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFil
 
 | Needed for | Role or permission | Scope |
 | --- | --- | --- |
-| Arc Run Command on the nodes (plan and apply) | Azure Connected Machine Resource Administrator (`Microsoft.HybridCompute/machines/runCommands/*`, `machines/read`) | The resource group of the Azure Local instance |
+| Arc Run Command on the nodes (only `-Transport ArcRunCommand` and the one-time bootstrap) | Azure Connected Machine Resource Administrator (`Microsoft.HybridCompute/machines/runCommands/*`, `machines/read`) | The resource group of the Azure Local instance |
 | The local administrator's password | Key Vault Secrets User (secret `get`) | The vault in `identity.local_admin.password` |
 | Arc registration of ISO nodes | Azure Connected Machine Onboarding, and the rights the Arc initialization needs in `azure.resource_group` | The resource group |
 | SBE package, `node_pull` | none for the pipeline identity: the nodes read `hardware.sbe.node_pull_url` themselves, so the location needs no Azure role (there is no storage account in this design) | |
@@ -333,12 +420,12 @@ Dell says the SBE can't install drivers or firmware during the deployment, which
 
 ### How the package reaches the nodes
 
-Azure Arc Run Command carries a script and its parameters, not a file, and the operator host usually has no path to the nodes' management subnet (WinRM 5985 is not reachable from it). So the 916 MB package does not go through Azure and there is no staging storage account. `hardware.sbe.delivery` chooses the route:
+Azure Arc Run Command (only with an explicit `-Transport ArcRunCommand`) carries a script and its parameters, not a file, so the 916 MB package never goes through Azure and there is no staging storage account. `hardware.sbe.delivery` chooses the route:
 
 | `hardware.sbe.delivery` | What happens | What you provide | Checked |
 | --- | --- | --- | --- |
 | `skip` (default, also when the key is absent) | Nothing is delivered. The plan and the run say **NOT DELIVERED** for each node, the OEM drivers are skipped ("decided after the SBE is on the node"), and every other step runs normally. Exit code and `Converged` are not affected | The package on the node by other means (for example ZTP put it there), or choose a route | Code |
-| `winrm_copy` | The script opens a WinRM session to each node's management address and copies the three files to `C:\SBE` (to a `.part` file, SHA-256 checked on the node, then renamed). The other steps stay on Arc | The script must run on a host that reaches the nodes' management subnet on TCP 5985: the operator host if it can, otherwise a runner or jump host. Pass `-Credential` (the nodes' local administrator) | Code (the SHA-256), You (the path). A failed connection is reported once per node and does not stop the other steps |
+| `winrm_copy` | The script opens a WinRM session to each node's management address and copies the three files to `C:\SBE` (to a `.part` file, SHA-256 checked on the node, then renamed). With the default WinRM transport the other steps use the same session; with an explicit `-Transport ArcRunCommand` they stay on Arc | The script must run on a host that reaches the nodes' management subnet on TCP 5985: the operator host if it can, otherwise a runner or jump host. Pass `-Credential` (the nodes' local administrator) | Code (the SHA-256), You (the path). A failed connection is reported once per node and does not stop the other steps |
 | `node_pull` | The node downloads each file itself, in the same Run Command that carries the other node actions, from `hardware.sbe.node_pull_url` (`https://host/sbe/dell`, or a UNC folder `\\files\sbe\dell`), checks free space, downloads to a `.part` file, checks the SHA-256 and renames it | A read-only location the **nodes** can reach, serving the three files by name, with no credential in the address. The operator host needs no path to it | Code (the SHA-256, the address form: rule AZL-030), You (the server and the path) |
 
 The Sbe step runs **last**. Delivering a 900 MB package is the step most likely to fail (it needs a route to the node that the other steps do not), and it must not stop the others. The drivers install from the package, so they run in the pass after the package has landed; with `skip` and no package on the node they are skipped. A route that is configured and fails leaves the node not converged (exit code 1, "NOT READY") with the reason in the report; a route that is `skip` does not. The report (`-ReportPath`) records `sbeDelivery` and `sbeNotDelivered`. In the one-run command the same route applies: a ZTP node is reached over Arc, and for `winrm_copy` the run gives the node script the local administrator (`identity.local_admin`, or `-Credential`) for the copy only; the node record of a `skip` run carries a warning that the package is NOT DELIVERED.
