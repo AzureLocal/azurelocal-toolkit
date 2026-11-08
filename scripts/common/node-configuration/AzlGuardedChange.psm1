@@ -179,7 +179,7 @@ function Split-AzlGuardedAction {
     .SYNOPSIS
         Splits the planned changes into the order they run: Management (the address, gateway, DNS: a guarded change by itself), Vlan (its own
         guarded change), Inline (everything that cannot cut the node off), Services (WinRM, RDP, ICMP, time source, DNS: one guarded change),
-        Hostname (a guarded change of its own, with a restart), Network (DHCP off on the other ports, disabling unused adapters), Sbe (the SBE package files: delivered last, by hardware.sbe.delivery, not by the guarded change).
+        Hostname (a guarded change of its own, with a restart), Network (DHCP off on the other ports, disabling unused adapters, renaming the adapters whose port has os_name_override), Sbe (the SBE package files: delivered last, by hardware.sbe.delivery, not by the guarded change).
     .PARAMETER Todo
         Plan items with an Apply hashtable (id, kind, ...).
     #>
@@ -194,7 +194,7 @@ function Split-AzlGuardedAction {
             'nic-vlan' { 'Vlan' }
             { $_ -in 'winrm', 'rdp', 'icmp', 'ntp', 'nic-dns' } { 'Services' }
             'hostname' { 'Hostname' }
-            { $_ -in 'nic-clean', 'nic-disable' } { 'Network' }
+            { $_ -in 'nic-clean', 'nic-disable', 'nic-rename' } { 'Network' }
             'sbe-file' { 'Sbe' }
             default { 'Inline' }
         }

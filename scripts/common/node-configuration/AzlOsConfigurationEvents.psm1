@@ -45,8 +45,8 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# The 13 steps of the OS configuration (DomainJoin does something only in Active Directory designs), in the order a reader shows them, and the Arc registration an ISO-installed machine also gets.
-$script:StepOrder = @('RemoteManagement', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe', 'Drivers', 'ArcRegistration')
+# The 14 steps of the OS configuration (DomainJoin does something only in Active Directory designs), in the order a reader shows them, and the Arc registration an ISO-installed machine also gets.
+$script:StepOrder = @('RemoteManagement', 'NicNames', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe', 'Drivers', 'ArcRegistration')
 $script:EventMaxText = 2000
 $script:EventState = [ordered]@{
     Run     = @('RunStarted', 'PlanCompleted', 'WipeListPublished', 'WipeListApproved', 'WipeListRejected', 'RunCompleted')
@@ -84,7 +84,7 @@ function Test-AzlOsConfigurationEventState {
 function Get-AzlOsConfigurationStepOrder {
     <#
     .SYNOPSIS
-        The steps in display order: the 13 steps, then ArcRegistration (ISO path only).
+        The steps in display order: the 14 steps, then ArcRegistration (ISO path only).
     #>
     [CmdletBinding()]
     [OutputType([string[]])]

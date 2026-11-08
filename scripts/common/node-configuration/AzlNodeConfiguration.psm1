@@ -35,11 +35,21 @@ $script:ConfigRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($here, '..', '..'
 # route to the node that the other steps do not), and it must not stop the others. Drivers install from the package, so they
 # run in the pass after it has landed (or at once when the node already holds it). DomainJoin follows Network, Dns, Time, Hostname and
 # UnusedAdapters and comes before LocalAdmin (design 4.10): the join needs the controllers reachable by name and the final computer name.
-$script:AllSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
+# NicNames (opt-in: it renames only the adapters whose port has os_name_override) comes after Drivers, which can re-create an adapter, and before Network.
+$script:AllSteps = @('RemoteManagement', 'Drivers', 'NicNames', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
 
 function ConvertTo-MacKey([AllowNull()][object]$Mac) {
     if ($null -eq $Mac) { return '' }
     return (([string]$Mac) -replace '[-:\.\s]', '').ToLowerInvariant()
+}
+
+function Test-AzlVirtualNic {
+    # True for a device that is not a physical network port: virtual, USB, Remote NDIS (the BMC's USB NIC), Wi-Fi, Bluetooth, teaming. The node says whether it has a hardware
+    # interface; the description is the second witness. No vendor or brand is named here.
+    param([Parameter(Mandatory)][object]$Nic)
+    $hw = Get-AzlProp $Nic 'hwif' $true
+    if ($hw -is [bool] -and -not $hw) { return $true }
+    return ([string](Get-AzlProp $Nic 'desc' '') -match '(?i)remote ndis|rndis|\busb\b|virtual|vethernet|multiplexor|wi-?fi|bluetooth')
 }
 
 function ConvertTo-WwpnKey([AllowNull()][object]$Wwpn) {
@@ -296,6 +306,10 @@ function Get-AzlNodeSpec {
             PrefixLength = $(if ($p.Contains('prefix_length')) { [int]$p['prefix_length'] } elseif ($isMgmt) { $mgmt.PrefixLength } else { $null })
             Gateway      = $(if ($isMgmt) { $mgmt.Gateway } else { $null })
             IsManagement = $isMgmt
+            # Opt-in rename (NicNames): the name the user wants the OS adapter to have. Empty means the adapter keeps whatever name the OS gave it.
+            OsNameOverride = $(if ($p.Contains('os_name_override') -and "$($p['os_name_override'])" -ne '') { [string]$p['os_name_override'] } else { '' })
+            # What the file says about where the adapter is (informational; the adapter is found by MAC).
+            PciLocation  = $(if ($p.Contains('pci_location') -and $p['pci_location'] -is [System.Collections.IDictionary]) { [pscustomobject]@{ Bus = $p['pci_location']['bus']; Device = $p['pci_location']['device']; Function = $p['pci_location']['function'] } } else { $null })
         }
     }
 
@@ -586,6 +600,45 @@ function Compare-AzlNodeState {
                 $folder = ($match.entry -replace '[\\/]', '_') -replace '[^A-Za-z0-9_.-]', ''
                 & $add (New-AzlPlanItem $n 'Drivers' $nic.n $nic.drv $match.ver Change "$($match.inf). Restart required: pnputil 3010 after the install; the run restarts the node once, at the end of the apply." @{ id = "Drivers/$($match.inf)"; kind = 'driver'; zip = $Spec.Sbe.ZipName; entry = $match.entry; inf = $match.inf; ver = $match.ver; folder = "$($Spec.Sbe.Name)_$folder" })
             }
+        }
+    }
+
+    # ---- adapter names. OPT-IN: only a port with os_name_override is renamed, and the adapter is found by its MAC, never by its current name. A node whose file sets no
+    # override gets no item here at all (the step is "not applicable"): the adapters keep the names the OS gave them, and the deployment uses those names (found by MAC).
+    # What is never renamed: an adapter the file does not list, a port without an override, a virtual / USB / Remote NDIS device, two adapters that report one MAC, and
+    # an adapter whose wanted name another adapter (that this run does not rename) already has. The management adapter is renamed last, as a guarded change.
+    if ('NicNames' -in $Step) {
+        $wantRename = @($Spec.Ports | Where-Object { $_.OsNameOverride })
+        $sameName = @($wantRename | Group-Object { $_.OsNameOverride.ToLowerInvariant() } | Where-Object Count -gt 1 | ForEach-Object { $_.Name })
+        $renamePlan = [System.Collections.Generic.List[object]]::new()
+        foreach ($p in $wantRename) {
+            $want = $p.OsNameOverride
+            $label = "$($p.Name) ($($p.Mac))"
+            $found = @($nics | Where-Object { $_.mac -eq $p.Mac })
+            if ($want.ToLowerInvariant() -in $sameName) { $renamePlan.Add(@{ Mgmt = $p.IsManagement; Item = (New-AzlPlanItem $n 'NicNames' $label '' $want Blocked "More than one port of this node has the os_name_override '$want'. An adapter name is unique on a machine: fix nodes[].network_adapters[].os_name_override.") }); continue }
+            if ($found.Count -eq 0) { $renamePlan.Add(@{ Mgmt = $p.IsManagement; Item = (New-AzlPlanItem $n 'NicNames' $label 'not found' $want Info "No adapter on the node has MAC $($p.Mac); the adapter is found by MAC, so nothing is renamed.") }); continue }
+            if ($found.Count -gt 1) { $renamePlan.Add(@{ Mgmt = $p.IsManagement; Item = (New-AzlPlanItem $n 'NicNames' $label ((@($found) | ForEach-Object { $_.n }) -join ', ') $want Blocked "$($found.Count) adapters report MAC $($p.Mac) ($((@($found) | ForEach-Object { $_.n }) -join ', ')); an adapter is found by its MAC, so none is renamed. Fix the MAC in the file or the duplicate on the node.") }); continue }
+            $nic = $found[0]
+            if (Test-AzlVirtualNic -Nic $nic) { $renamePlan.Add(@{ Mgmt = $p.IsManagement; Item = (New-AzlPlanItem $n 'NicNames' $label $nic.n $want Blocked "'$($nic.n)' ($($nic.desc)) is a virtual, USB or Remote NDIS device, not a physical port; it is never renamed. Check the MAC in the file.") }); continue }
+            if ($nic.n -ceq $want) { $renamePlan.Add(@{ Mgmt = $p.IsManagement; Item = (New-AzlPlanItem $n 'NicNames' $label $nic.n $want Ok) }); continue }
+            if ($nic.n -ieq $want) { $renamePlan.Add(@{ Mgmt = $p.IsManagement; Item = (New-AzlPlanItem $n 'NicNames' $label $nic.n $want Ok 'Differs only in letter case; Windows treats adapter names without regard to case, so it is left as it is.') }); continue }
+            $holder = @($nics | Where-Object { $_.n -ieq $want -and $_.mac -ne $p.Mac }) | Select-Object -First 1
+            $holderMoves = $false
+            if ($holder) { $holderPort = @($wantRename | Where-Object { $_.Mac -eq $holder.mac }) | Select-Object -First 1; $holderMoves = [bool]($holderPort -and $holderPort.OsNameOverride -ine $holder.n) }
+            if ($holder -and -not $holderMoves) {
+                $renamePlan.Add(@{ Mgmt = $p.IsManagement; Item = (New-AzlPlanItem $n 'NicNames' $label $nic.n $want Blocked "The name '$want' is already used by the adapter with MAC $($holder.mac), which this run does not rename. Choose another os_name_override, or rename that adapter (give its port an os_name_override).") }); continue
+            }
+            $note = if ($holder) { "The name '$want' is held by the adapter with MAC $($holder.mac), which is renamed in the same change; this one goes through a temporary name." } elseif ($p.IsManagement) { 'The management adapter: renamed last, in a guarded change (the address stays on the adapter).' } else { '' }
+            $renamePlan.Add(@{ Mgmt = $p.IsManagement; Item = (New-AzlPlanItem $n 'NicNames' $label $nic.n $want Change $note @{ id = "NicNames/$($nic.mac)"; kind = 'nic-rename'; mac = $nic.mac; name = $want; from = $nic.n; managementAdapter = [bool]$p.IsManagement }) })
+        }
+        foreach ($r in @($renamePlan | Sort-Object -Stable { [bool]$_.Mgmt })) { & $add $r.Item }
+        # The file's PCI location, when it has one, is compared with the node's own hardware information: only a difference is reported, and nothing is changed by it.
+        foreach ($p in @($Spec.Ports | Where-Object { $_.PciLocation })) {
+            $nic = @($nics | Where-Object { $_.mac -eq $p.Mac }) | Select-Object -First 1
+            $loc = if ($nic) { Get-AzlProp $nic 'loc' $null } else { $null }
+            if (-not $loc -or $null -eq (Get-AzlProp $loc 'bus' $null)) { continue }
+            $same = ("$($p.PciLocation.Bus)" -eq "$($loc.bus)") -and ("$($p.PciLocation.Device)" -eq "$($loc.device)") -and ("$($p.PciLocation.Function)" -eq "$($loc.function)")
+            if (-not $same) { & $add (New-AzlPlanItem $n 'NicNames' "$($p.Name) PCI location" "bus $($loc.bus) device $($loc.device) function $($loc.function)" "bus $($p.PciLocation.Bus) device $($p.PciLocation.Device) function $($p.PciLocation.Function)" Info "The adapter with MAC $($p.Mac) sits at a different PCI location than the file says (an adapter moved to another slot, or the file is out of date). It is still found by MAC; nothing is changed.") }
         }
     }
 

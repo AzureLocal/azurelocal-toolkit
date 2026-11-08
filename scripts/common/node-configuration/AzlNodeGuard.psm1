@@ -216,6 +216,13 @@ function Get-GuardRefusal($cfg, $nics) {
             if ($mac -eq $mgmt) { return 'The plan would disable the management port (MAC ' + $mac + '). Refused: the node would have no management path.' }
             if ($holder.Count -and $holder[0].mac -eq $mac) { return 'The plan would disable ' + $holder[0].name + ', the port that holds the default gateway the node (and its Arc agent) reaches Azure through. Refused.' }
         }
+        if ($kind -eq 'nic-rename') {
+            # A rename keeps the adapter's address, gateway and DNS (they belong to the interface, not to its name), but it is still a change to the adapter the node is
+            # reached through when it is the management adapter, so it needs the management port to be there, and the new name to be a name Windows accepts.
+            $newName = [string](Get-GuardProp $i 'name' '')
+            if ($newName -notmatch '^[A-Za-z0-9][A-Za-z0-9 _.()-]{0,63}$') { return 'The new adapter name ''' + $newName + ''' for port ' + $mac + ' is not a usable adapter name. Refused.' }
+            if ($mgmtNic.Count -eq 0) { return 'No port has the management MAC ' + $mgmt + ', so the rename of ' + $mac + ' is refused.' }
+        }
         if ($kind -in 'nic-disable', 'nic-clean' -and $mac -ne $mgmt) {
             if ($mgmtNic.Count -eq 0) { return 'No port has the management MAC ' + $mgmt + ', so the change to ' + $mac + ' is refused.' }
             if (-not $mgmtHasGw) { return 'The management port has no default gateway, so changing port ' + $mac + ' is refused until it has one.' }
@@ -351,7 +358,7 @@ function Invoke-GuardRepair($cfg, $st, $failed) {
     $names = @($failed | ForEach-Object { $_.name })
     $settle = [int](Get-GuardProp $cfg 'repairSeconds' 45)
     $items = @(Get-GuardItemList $cfg)
-    $map = @{ address = @('nic-static', 'nic-clean', 'nic-vlan'); gateway = @('nic-static', 'nic-clean', 'nic-dns', 'nic-vlan'); dns = @('nic-dns', 'nic-static'); winrm = @('winrm', 'icmp', 'rdp'); ports = @('nic-clean'); stability = @('nic-static', 'nic-clean', 'nic-dns', 'winrm') }
+    $map = @{ address = @('nic-static', 'nic-clean', 'nic-vlan'); gateway = @('nic-static', 'nic-clean', 'nic-dns', 'nic-vlan'); dns = @('nic-dns', 'nic-static'); winrm = @('winrm', 'icmp', 'rdp'); ports = @('nic-clean', 'nic-rename'); stability = @('nic-static', 'nic-clean', 'nic-dns', 'winrm') }
     $candidateKinds = @()
     foreach ($n in $names) { if ($map.ContainsKey($n)) { $candidateKinds += $map[$n] } }
     $candidateKinds = @($candidateKinds | Select-Object -Unique)
@@ -573,6 +580,24 @@ function Get-GuardAdapter([string]$mac) {
     if ($hit.Count) { return $hit[0] }
     return ($all | Where-Object { (Get-GuardMacKey $_.MacAddress) -eq $k } | Select-Object -First 1)
 }
+# The physical adapter (not the one with this MAC) that already has this name, or nothing. Windows adapter names are unique without regard to case.
+function Get-GuardNameHolder([string]$name, [string]$mac) {
+    $k = Get-GuardMacKey $mac
+    return @(Get-NetAdapter -Physical -ErrorAction Stop | Where-Object { ([string]$_.Name) -ieq $name -and (Get-GuardMacKey ([string]$_.MacAddress)) -ne $k } | Select-Object -First 1)
+}
+# Gives the adapter with this MAC the name. Idempotent. A physical adapter that has the name is moved out of the way first, to a temporary name made from its MAC (the plan only
+# asks for this when that adapter is renamed in the same change; a change that fails is restored, and the snapshot gives the held name back).
+function Set-GuardAdapterName([string]$mac, [string]$name) {
+    $a = Get-GuardAdapter $mac
+    if (-not $a) { throw ('No port with MAC ' + $mac) }
+    if (([string]$a.Name) -ieq $name) { return }
+    $holder = @(Get-GuardNameHolder $name $mac)
+    if ($holder.Count) {
+        $temp = 'AzlTmp-' + (Get-GuardMacKey ([string]$holder[0].MacAddress))
+        Rename-NetAdapter -Name ([string]$holder[0].Name) -NewName $temp -Confirm:$false -ErrorAction Stop
+    }
+    Rename-NetAdapter -Name ([string]$a.Name) -NewName $name -Confirm:$false -ErrorAction Stop
+}
 function Invoke-GuardNative([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds = 60) {
     $out = & $Exe @Arguments 2>&1
     if ($LASTEXITCODE -ne 0) { throw ($Exe + ' ' + ($Arguments -join ' ') + ' exited with ' + $LASTEXITCODE + ': ' + ($out -join ' ')) }
@@ -793,6 +818,14 @@ function New-GuardRealOps {
                 return $info
             }
             'nic-disable' { $a = Get-GuardAdapter ([string]$i.mac); if (-not $a) { throw ('No port with MAC ' + $i.mac) }; return (New-Object psobject -Property @{ mac = (Get-GuardMacKey $a.MacAddress); name = [string]$a.Name; status = [string]$a.Status }) }
+            'nic-rename' {
+                # The adapter's name now, and the name of the physical adapter that holds the wanted name (it is moved to a temporary name while the rename runs and given back by a restore).
+                $a = Get-GuardAdapter ([string]$i.mac); if (-not $a) { throw ('No port with MAC ' + $i.mac) }
+                $holder = @(Get-GuardNameHolder ([string]$i.name) ([string]$i.mac))
+                $hm = ''; $hn = ''
+                if ($holder.Count) { $hm = (Get-GuardMacKey ([string]$holder[0].MacAddress)); $hn = [string]$holder[0].Name }
+                return (New-Object psobject -Property @{ mac = (Get-GuardMacKey ([string]$a.MacAddress)); name = [string]$a.Name; holderMac = $hm; holderName = $hn })
+            }
             'winrm' { $s = Get-Service WinRM; return (New-Object psobject -Property @{ status = [string]$s.Status; start = [string]$s.StartType; listeners = @(Get-ChildItem WSMan:\localhost\Listener -ErrorAction SilentlyContinue).Count }) }
             'rdp' { return (New-Object psobject -Property @{ deny = [int](Get-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server').fDenyTSConnections; rules = @(Get-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue | Where-Object { [string]$_.Enabled -eq 'True' } | ForEach-Object { [string]$_.Name }) }) }
             'icmp' { return (New-Object psobject -Property @{ rules = @(Get-NetFirewallRule -Name 'FPS-ICMP4-ERQ-In', 'FPS-ICMP6-ERQ-In' -ErrorAction SilentlyContinue | Where-Object { [string]$_.Enabled -eq 'True' } | ForEach-Object { [string]$_.Name }) }) }
@@ -844,6 +877,7 @@ function New-GuardRealOps {
                 Clear-GuardNic $a
             }
             'nic-disable' { $a = Get-GuardAdapter ([string]$i.mac); if (-not $a) { throw ('No port with MAC ' + $i.mac) }; Disable-NetAdapter -Name $a.Name -Confirm:$false -ErrorAction Stop }
+            'nic-rename' { Set-GuardAdapterName ([string]$i.mac) ([string]$i.name) }
             'winrm' {
                 Set-Service -Name WinRM -StartupType Automatic -ErrorAction Stop
                 if ((Get-Service WinRM).Status -ne 'Running') { Start-Service WinRM -ErrorAction Stop }
@@ -883,6 +917,12 @@ function New-GuardRealOps {
             'nic-dns' { Restore-GuardNic $snap $true; return $false }
             'nic-vlan' { $a = Get-GuardAdapter ([string]$snap.mac); if ($a) { Set-NetAdapterAdvancedProperty -Name $a.Name -RegistryKeyword 'VlanID' -RegistryValue ([int]$snap.vlan) -ErrorAction Stop; Restart-NetAdapter -Name $a.Name -Confirm:$false -ErrorAction Stop; Start-Sleep -Seconds 15 }; return $false }
             'nic-disable' { $a = Get-GuardAdapter ([string]$snap.mac); if ($a -and [string]$snap.status -ne 'Disabled') { Enable-NetAdapter -Name $a.Name -Confirm:$false -ErrorAction Stop }; return $false }
+            'nic-rename' {
+                # The adapter gets its old name back, then the adapter that was moved out of the way gets its own back.
+                Set-GuardAdapterName ([string]$snap.mac) ([string]$snap.name)
+                if ([string](Get-GuardProp $snap 'holderMac' '')) { Set-GuardAdapterName ([string]$snap.holderMac) ([string]$snap.holderName) }
+                return $false
+            }
             'winrm' { Set-Service -Name WinRM -StartupType ([string]$snap.start) -ErrorAction Stop; if ([string]$snap.status -ne 'Running') { Stop-Service WinRM -Force -ErrorAction SilentlyContinue }; return $false }
             'rdp' {
                 Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value ([int]$snap.deny) -ErrorAction Stop
@@ -994,15 +1034,20 @@ function New-GuardRealOps {
     $ops.CheckPorts = {
         param($cfg)
         $clean = @($cfg.items | Where-Object { [string]$_.kind -eq 'nic-clean' })
-        if (-not $clean.Count) { return @{ ok = $true; skipped = $true; detail = 'no port was cleaned' } }
+        $renamed = @($cfg.items | Where-Object { [string]$_.kind -eq 'nic-rename' })
+        if (-not $clean.Count -and -not $renamed.Count) { return @{ ok = $true; skipped = $true; detail = 'no port was cleaned or renamed' } }
         $bad = @()
+        foreach ($i in $renamed) {
+            $a = Get-GuardAdapter ([string]$i.mac)
+            if (-not $a -or ([string]$a.Name) -cne ([string]$i.name)) { $bad += ([string]$i.mac + ' is not named ' + [string]$i.name) }
+        }
         foreach ($i in $clean) {
             $a = Get-GuardAdapter ([string]$i.mac)
             if (-not $a) { continue }
             $n = Get-GuardNicInfo $a
             if (@($n.ips | Where-Object { $_.ip -notlike '169.254.*' }).Count -or @($n.gw).Count) { $bad += $n.name }
         }
-        return @{ ok = ($bad.Count -eq 0); detail = $(if ($bad.Count) { ('still have an address or a default route: ' + ($bad -join ', ')) } else { 'the cleaned ports have no address and no default route' }) }
+        return @{ ok = ($bad.Count -eq 0); detail = $(if ($bad.Count) { ('port check failed (an address or default route left on a cleaned port, or a port not renamed): ' + ($bad -join ', ')) } else { 'the cleaned ports have no address and no default route, the renamed ports have their new names' }) }
     }
     $ops.RestartArcAgent = { foreach ($n in 'himds', 'GCArcService', 'ExtensionService') { if (Get-Service $n -ErrorAction SilentlyContinue) { Restart-Service -Name $n -Force -ErrorAction SilentlyContinue } } }
     $ops.EnableAdapter = { param($mac) $a = Get-GuardAdapter $mac; if ($a) { Enable-NetAdapter -Name $a.Name -Confirm:$false -ErrorAction Stop } }

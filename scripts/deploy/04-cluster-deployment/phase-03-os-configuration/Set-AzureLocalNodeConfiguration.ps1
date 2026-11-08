@@ -130,7 +130,7 @@ param(
     [ValidateSet('Default', 'Negotiate', 'Kerberos', 'Basic', 'CredSSP')][string]$Authentication,
     [hashtable]$Settings,
     [string]$EventLogPath,
-    [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')][string[]]$Step,
+    [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'NicNames', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')][string[]]$Step,
     [switch]$ClearStorage,
     [switch]$ConfirmWipeDeployedCluster,
     [hashtable]$ApprovedWipeId,
@@ -179,7 +179,7 @@ if ($ApprovedBootstrap) { $profileOverride.approved_bootstrap = $true; $profileO
 $remotingProfile = Resolve-AzlRemotingProfile -Infrastructure $infra -Override $profileOverride
 foreach ($line in @(Format-AzlRemotingProfile -RemotingProfile $remotingProfile)) { Write-Line $line }
 Assert-AzlRemotingProfile -RemotingProfile $remotingProfile
-$allSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
+$allSteps = @('RemoteManagement', 'Drivers', 'NicNames', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
 $steps = if ($Step) { $Step } else { $allSteps }
 
 $nodes = @($infra.nodes | Where-Object { -not $Node -or $_.name -in $Node })

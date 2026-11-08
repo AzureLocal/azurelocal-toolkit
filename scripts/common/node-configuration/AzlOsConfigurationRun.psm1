@@ -58,10 +58,10 @@ Import-Module (Join-Path $PSScriptRoot 'AzlNodeAddress.psm1')
 
 $script:SetScript = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', 'deploy', '04-cluster-deployment', 'phase-03-os-configuration', 'Set-AzureLocalNodeConfiguration.ps1'))
 # The order the steps run in (the same as AzlNodeConfiguration): Sbe is last, so a package that can't be delivered never stops the others.
-$script:NodeSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe') # DOMAINJOIN HOOK: DomainJoin after Hostname/UnusedAdapters, before LocalAdmin
+$script:NodeSteps = @('RemoteManagement', 'Drivers', 'NicNames', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe') # DOMAINJOIN HOOK: DomainJoin after Hostname/UnusedAdapters, before LocalAdmin
 $script:AllSteps = $script:NodeSteps + 'ArcRegistration'
 # What ZTP already guaranteed (the computer name, Arc registration) is verified, not redone.
-$script:ZtpSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe') # DOMAINJOIN HOOK
+$script:ZtpSteps = @('RemoteManagement', 'Drivers', 'NicNames', 'Network', 'Dns', 'Time', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe') # DOMAINJOIN HOOK
 $script:IsoSteps = $script:AllSteps
 # Shown by a viewer next to the master file's schema_version; raise it when the run's behaviour or the event feed changes.
 $script:WrapperVersion = '1.0.0'
@@ -230,6 +230,7 @@ function Send-AzlStepPlanEvent {
                 $reason = switch ($step) {
                     'Sbe' { if (-not (Get-AzlSbeDeliveryRoute -Value (Get-AzlProp $Context.Infra 'hardware.sbe.delivery'))) { 'no SBE side-loading requested (the SBE is opt-in: hardware.sbe.delivery is not winrm_copy or node_pull).' } else { 'the script found nothing to check for this step on this node.' } }
                     'Drivers' { if (-not (Get-AzlSbeDeliveryRoute -Value (Get-AzlProp $Context.Infra 'hardware.sbe.delivery'))) { 'no SBE configured, so there are no OEM drivers to install from it.' } else { 'the script found nothing to check for this step on this node.' } }
+                    'NicNames' { 'no port in the file has os_name_override, so no adapter is renamed (renaming is opt-in: the adapters keep the names the OS gave them and the deployment uses those names, found by MAC).' }
                     'ClearStorage' { if (-not $Context.ClearStorage) { 'os_configuration.clear_storage is off, so no storage is wiped.' } else { 'the script found nothing to check for this step on this node.' } }
                     default { 'the script found nothing to check for this step on this node (for example no SAN is configured).' }
                 }
@@ -1839,7 +1840,7 @@ function Invoke-AzlOsConfiguration {
         [string[]]$HandoffPath,
         [string[]]$Node,
         [ValidateSet('Plan', 'Apply')][string]$Mode = 'Plan',
-        [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'ArcRegistration')][string[]]$Step,
+        [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'NicNames', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'ArcRegistration')][string[]]$Step,
         [string]$ReportDirectory,
         [string]$ConfigPath,
         [hashtable]$Settings,

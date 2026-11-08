@@ -93,7 +93,7 @@ param(
     [string[]]$HandoffPath,
     [string[]]$Node,
     [ValidateSet('Plan', 'Apply')][string]$Mode = 'Plan',
-    [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'ArcRegistration')][string[]]$Step,
+    [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'NicNames', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'ArcRegistration')][string[]]$Step,
     [string]$ReportDirectory,
     [string]$ConfigPath,
     [hashtable]$Settings,

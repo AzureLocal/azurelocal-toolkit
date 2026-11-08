@@ -147,8 +147,22 @@ Invoke-Section 'nics' {
             }
             $dhcpState = ''
             if ($ipif) { $dhcpState = [string]$ipif.Dhcp }
+            # Whether the adapter is real hardware, and where it sits on the PCI bus: the NicNames step refuses a virtual device, and reports a PCI location that differs from the file.
+            $hwif = $true
+            if ($a.PSObject.Properties['HardwareInterface']) { $hwif = [bool]$a.HardwareInterface }
+            $loc = $null
+            try {
+                $hw = Get-NetAdapterHardwareInfo -Name $a.Name -ErrorAction Stop
+                if ($hw) {
+                    $b = $null; $dv = $null; $fn = $null
+                    if ($hw.PSObject.Properties['Bus']) { $b = $hw.Bus } elseif ($hw.PSObject.Properties['BusNumber']) { $b = $hw.BusNumber }
+                    if ($hw.PSObject.Properties['Device']) { $dv = $hw.Device } elseif ($hw.PSObject.Properties['DeviceNumber']) { $dv = $hw.DeviceNumber }
+                    if ($hw.PSObject.Properties['Function']) { $fn = $hw.Function } elseif ($hw.PSObject.Properties['FunctionNumber']) { $fn = $hw.FunctionNumber }
+                    if ($null -ne $b -and $null -ne $dv -and $null -ne $fn) { $loc = New-Object psobject -Property @{ bus = [int]$b; device = [int]$dv; function = [int]$fn } }
+                }
+            } catch { $loc = $null }
             [pscustomobject]@{ n = $a.Name; mac = (Get-MacKey $a.MacAddress); st = [string]$a.Status; pci = $pci; drv = [string]$a.DriverVersionString
-                desc = [string]$a.InterfaceDescription; dhcp = $dhcpState; ips = $ips; gw = $gw; dns = $dns; vlan = $vlan }
+                desc = [string]$a.InterfaceDescription; dhcp = $dhcpState; ips = $ips; gw = $gw; dns = $dns; vlan = $vlan; hwif = $hwif; loc = $loc }
         })
 }
 

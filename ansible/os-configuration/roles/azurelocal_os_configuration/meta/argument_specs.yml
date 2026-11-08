@@ -34,7 +34,7 @@ argument_specs:
         type: list
         elements: str
         default: []
-        choices: [RemoteManagement, Sbe, Drivers, Network, Dns, Time, Hostname, UnusedAdapters, DomainJoin, LocalAdmin, Mpio, SanVerify, ClearStorage, ArcRegistration]
+        choices: [RemoteManagement, Sbe, Drivers, NicNames, Network, Dns, Time, Hostname, UnusedAdapters, DomainJoin, LocalAdmin, Mpio, SanVerify, ClearStorage, ArcRegistration]
         description: Wrapper -Step.
       azurelocal_os_configuration_continue_on_node_failure:
         type: bool

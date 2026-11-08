@@ -206,8 +206,8 @@ Describe 'Free text in the feed is redacted' {
 }
 
 Describe 'Get-AzlOsConfigurationStepOrder' {
-    It 'is the 13 steps in display order, then the Arc registration' {
-        (Get-AzlOsConfigurationStepOrder) -join ',' | Should -Be 'RemoteManagement,Network,Dns,Time,Hostname,UnusedAdapters,DomainJoin,LocalAdmin,Mpio,SanVerify,ClearStorage,Sbe,Drivers,ArcRegistration'
+    It 'is the 14 steps in display order, then the Arc registration' {
+        (Get-AzlOsConfigurationStepOrder) -join ',' | Should -Be 'RemoteManagement,NicNames,Network,Dns,Time,Hostname,UnusedAdapters,DomainJoin,LocalAdmin,Mpio,SanVerify,ClearStorage,Sbe,Drivers,ArcRegistration'
     }
 }
 

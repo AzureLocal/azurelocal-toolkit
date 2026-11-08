@@ -495,7 +495,7 @@ Describe 'Comparison: the plan and compare matrix' {
 
 Describe 'Step order in both methods' {
     BeforeAll {
-        $script:Order = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
+        $script:Order = @('RemoteManagement', 'Drivers', 'NicNames', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
     }
     It 'the toolkit step list puts DomainJoin after Network, Dns, Time and Hostname and before LocalAdmin, Mpio, SanVerify, ClearStorage and Sbe' {
         $all = InModuleScope AzlNodeConfiguration { $script:AllSteps }
