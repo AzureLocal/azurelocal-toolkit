@@ -1,7 +1,9 @@
 # iDRAC management and hardware discovery
 
 Dell iDRAC tools that use the Redfish API. Hardware discovery is the **first stage of the flow**: it runs before
-azurelocal-ztp and before the OS configuration, and its output fills `infrastructure.yml`.
+azurelocal-ztp and before the OS configuration, and its output fills `infrastructure.yml`. Discovery itself is the Redfish core
+plus the Dell adapter in `../redfish/` (see [docs/hardware-discovery.md](../../../docs/hardware-discovery.md)); this folder keeps the Dell
+management tools and the proposal text.
 
 ```text
 iDRAC addresses (Phase 01 Task 01) -> Discovery (Phase 01 Task 02) -> infrastructure.yml -> ZTP -> OS configuration -> Validate and Deploy
@@ -13,13 +15,15 @@ iDRAC addresses (Phase 01 Task 01) -> Discovery (Phase 01 Task 02) -> infrastruc
 | MAC of every network port, with a suggested name and slot | `nodes[].network_adapters[].mac_address` | ZTP finds the maintenance environment by the management MAC; the OS configuration finds every port by MAC |
 | Which port is the management port | the port with role `management` (a suggestion you confirm) | ZTP Device stage, OS configuration |
 | BOSS card, its drives and whether its virtual disk exists | discovery JSON and summary | Phase 02 Task 01 (create the BOSS virtual disk) |
-| BIOS and iDRAC attributes, firmware | discovery JSON | Phase 01 Tasks 04 and 05 |
+| BIOS and iDRAC attributes, firmware, PCIe devices and GPUs, memory, sensors, event summary | discovery JSON (one file per node, schemaVersion 2.0, with a capability report of what could not be read and why) | Phase 01 Tasks 04 and 05 |
 
 ## Files
 
 | File | Purpose |
 |---|---|
-| `AzlDellRedfish.psm1` | Redfish calls, credential resolution, `Get-AzlDellNodeDiscovery`, management-port selection, proposal text, VNC |
+| `AzlDellRedfish.psm1` | Management-port selection, the `infrastructure.yml` proposal text, the iDRAC VNC setting (re-exports the credential helpers of the core) |
+| `../redfish/AzlRedfishCore.psm1` | Read-only Redfish client and standard collectors, vendor detection, capability report, `Invoke-AzlRedfishDiscovery` |
+| `../redfish/AzlRedfishDell.psm1` | The Dell adapter: port names from the Port resource, service tag, BOSS boot device, iDRAC attributes, firmware states |
 | `Enable-IdracVnc.ps1` | Enable or disable the iDRAC VNC server (the only tool here that writes to an iDRAC; `-WhatIf` supported) |
 | `../discovery/Get-DellServerInventory-FromiDRAC.ps1` | Full inventory of any iDRAC list into `idrac-inventory.json` |
 | `../infrastructure/AzlInfrastructureEdit.psm1` | Comment-preserving edits of `infrastructure.yml` |
@@ -65,7 +69,9 @@ The VNC password is a `SecureString` (`-VncPassword`) or a Key Vault reference (
 
 ## Requirements
 
-PowerShell 7, the `powershell-yaml` module, TCP 443 to the iDRACs, iDRAC 9 with Redfish. Tests: `Invoke-Pester ./tests/discovery` (a fake iDRAC; nothing is contacted).
+PowerShell 7, the `powershell-yaml` module, TCP 443 to the iDRACs, iDRAC 9 with Redfish. Tests: `Invoke-Pester ./tests/discovery` (a fake BMC answering from synthetic fixtures; nothing is contacted).
+
+This version reads Dell iDRAC only. A BMC of another vendor is reported as `Unsupported vendor in this version` for that node.
 
 ## Reference
 
