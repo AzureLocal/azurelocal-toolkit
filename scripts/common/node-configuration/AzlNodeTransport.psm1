@@ -228,9 +228,21 @@ function New-AzlWinRmTransport {
             $p = ConvertTo-AzlB64Json $Parameters
             $q = ConvertTo-AzlB64Json $Secrets
             try {
+                # The payload runs as a FILE on the node, never as a scriptblock: a script file has a script scope of its own, and a scriptblock created from text does
+                # not, so a payload written for a file would come back empty. The file is created inside the session (UTF-8 with a byte-order mark, readable by SYSTEM and
+                # Administrators only), run with the call operator in the same session (no child process, so no secret is on a command line) and removed in finally.
                 $output = Invoke-Command -Session $session -ScriptBlock {
                     param($Text, $ParamsB64, $SecretsB64)
-                    & ([scriptblock]::Create($Text)) -ParamsB64 $ParamsB64 -SecretsB64 $SecretsB64
+                    $folder = 'C:\ProgramData\AzureLocal\osconfig'
+                    $null = New-Item -ItemType Directory -Force -Path $folder
+                    try { & icacls.exe $folder /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null } catch { $null = $_ }
+                    $file = Join-Path $folder ('run-' + [guid]::NewGuid().ToString('N') + '.ps1')
+                    [IO.File]::WriteAllText($file, $Text, (New-Object Text.UTF8Encoding($true)))
+                    try {
+                        Set-ExecutionPolicy Bypass -Scope Process -Force
+                        & $file -ParamsB64 $ParamsB64 -SecretsB64 $SecretsB64
+                    }
+                    finally { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue }
                 } -ArgumentList $Script, $p, $q
                 [pscustomobject]@{ Output = ($output -join [Environment]::NewLine); Error = ''; Failed = $false; State = 'Succeeded' }
             }
@@ -289,7 +301,15 @@ function Invoke-AzlNodeScript {
         $attempt++
         $run = & $Transport.Invoke $Transport $Node $Script $Parameters $Secrets $TimeoutSeconds
         $result = ConvertTo-AzlNodeResult -Text $run.Output
-        if ($result) { return $result }
+        if ($result) {
+            # A Read answers with the sections nics, remote and time. All empty is not a node with nothing: the read gave nothing back.
+            $names = @($result.PSObject.Properties.Name)
+            if ('nics' -in $names -and 'remote' -in $names -and 'time' -in $names -and @($result.nics).Count -eq 0 -and $null -eq $result.remote -and $null -eq $result.time) {
+                $why = if ($result.PSObject.Properties['err'] -and $result.err) { ($result.err.PSObject.Properties | ForEach-Object { "$($_.Name): $($_.Value)" }) -join '; ' } else { 'no reason was recorded' }
+                throw "The node read returned no data on ${Node} through $($Transport.Kind) (no adapters, no remote management state, no time state; $why). Not planning against nothing. Check that the payload ran as a script file and that the session is elevated."
+            }
+            return $result
+        }
         $unknown = $run.Failed -and ([string]$run.State -eq 'Unknown')
         if ($unknown -and $attempt -lt $maxTries) {
             $delays = @($script:RetryPolicy.DelaySeconds)

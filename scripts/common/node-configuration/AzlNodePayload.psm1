@@ -53,9 +53,9 @@ $stateDir = 'C:\ProgramData\AzureLocal\osconfig'
 '@
 
 $script:ReadBody = @'
-$script:err = @{}
+$Az = @{ err = @{}; nics = @(); remote = $null; time = $null; sbe = @(); drv = @(); adm = $null; stor = $null; san = $null; reboot = $false }
 function Invoke-Section([string]$name, [scriptblock]$sb) {
-    try { & $sb } catch { $script:err[$name] = $_.Exception.Message }
+    try { & $sb } catch { $Az.err[$name] = $_.Exception.Message }
 }
 function Test-LinkLocal([string]$ip) { return $ip -like '169.254.*' }
 
@@ -64,9 +64,8 @@ $ubr = ''
 try { $ubr = [string](Get-ItemProperty 'HKLM:\SOFTWARE\Microsoft\Windows NT\CurrentVersion').UBR } catch { $ubr = '' }
 
 # ---- ports, found by MAC
-$nics = @()
 Invoke-Section 'nics' {
-    $script:nics = @(foreach ($a in @(Get-NetAdapter -Physical)) {
+    $Az.nics = @(foreach ($a in @(Get-NetAdapter -Physical)) {
             $idx = $a.ifIndex
             $ips = @(Get-NetIPAddress -InterfaceIndex $idx -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object { '{0}/{1}/{2}' -f $_.IPAddress, $_.PrefixLength, $_.PrefixOrigin })
             $gw = @(Get-NetRoute -InterfaceIndex $idx -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | ForEach-Object { [string]$_.NextHop })
@@ -87,7 +86,6 @@ Invoke-Section 'nics' {
 }
 
 # ---- remote management and ping
-$remote = $null
 Invoke-Section 'remote' {
     $svc = Get-Service WinRM
     $listeners = @(Get-ChildItem WSMan:\localhost\Listener -ErrorAction SilentlyContinue).Count
@@ -95,22 +93,20 @@ Invoke-Section 'remote' {
     $rdpRules = @(Get-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue | Where-Object { [string]$_.Enabled -eq 'True' }).Count
     $icmp4 = @(Get-NetFirewallRule -Name 'FPS-ICMP4-ERQ-In' -ErrorAction SilentlyContinue | Where-Object { [string]$_.Enabled -eq 'True' }).Count
     $icmp6 = @(Get-NetFirewallRule -Name 'FPS-ICMP6-ERQ-In' -ErrorAction SilentlyContinue | Where-Object { [string]$_.Enabled -eq 'True' }).Count
-    $script:remote = [pscustomobject]@{ winrm = [string]$svc.Status; winrmStart = [string]$svc.StartType; listeners = $listeners; rdpDeny = [int]$deny; rdpRules = $rdpRules; icmp4 = $icmp4; icmp6 = $icmp6 }
+    $Az.remote = [pscustomobject]@{ winrm = [string]$svc.Status; winrmStart = [string]$svc.StartType; listeners = $listeners; rdpDeny = [int]$deny; rdpRules = $rdpRules; icmp4 = $icmp4; icmp6 = $icmp6 }
 }
 
 # ---- time
-$time = $null
 Invoke-Section 'time' {
     $w = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters'
     $src = (& w32tm.exe /query /source 2>$null | Select-Object -First 1)
-    $script:time = [pscustomobject]@{ type = [string](Get-P $w 'Type' ''); peers = [string](Get-P $w 'NtpServer' ''); src = [string]$src }
+    $Az.time = [pscustomobject]@{ type = [string](Get-P $w 'Type' ''); peers = [string](Get-P $w 'NtpServer' ''); src = [string]$src }
 }
 
 # ---- the OEM's SBE package in C:\SBE
 $sbeDir = [string](Get-P $P 'sbeDir' 'C:\SBE')
-$sbe = @()
 Invoke-Section 'sbe' {
-    $script:sbe = @(foreach ($f in @(Get-P $P 'sbeFiles' @())) {
+    $Az.sbe = @(foreach ($f in @(Get-P $P 'sbeFiles' @())) {
             $path = Join-Path $sbeDir $f.name
             $len = 0
             $ok = $false
@@ -123,12 +119,11 @@ Invoke-Section 'sbe' {
 }
 
 # ---- network drivers the SBE carries, for the ports that exist here
-$drv = @()
 Invoke-Section 'drivers' {
     $zipName = [string](Get-P $P 'sbeZip' '')
-    $zipOk = $zipName -and @($script:sbe | Where-Object { $_.n -eq $zipName -and $_.ok }).Count -gt 0
+    $zipOk = $zipName -and @($Az.sbe | Where-Object { $_.n -eq $zipName -and $_.ok }).Count -gt 0
     if (-not $zipOk) { return }
-    $wanted = @($script:nics | ForEach-Object { $_.pci } | Where-Object { $_ } | Select-Object -Unique)
+    $wanted = @($Az.nics | ForEach-Object { $_.pci } | Where-Object { $_ } | Select-Object -Unique)
     $roots = @(Get-P $P 'driverPaths' @() | ForEach-Object { ([string]$_).Trim('/') })
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [IO.Compression.ZipFile]::OpenRead((Join-Path $sbeDir $zipName))
@@ -147,13 +142,12 @@ Invoke-Section 'drivers' {
             $ver = [regex]::Match($text, '(?im)^\s*DriverVer\s*=\s*[^,]+,\s*([\d.]+)').Groups[1].Value
             $found += [pscustomobject]@{ inf = (Split-Path $full -Leaf); ver = $ver; entry = $full; ids = $ids }
         }
-        $script:drv = $found
+        $Az.drv = $found
     }
     finally { $zip.Dispose() }
 }
 
 # ---- the deployment's local administrator
-$adm = $null
 Invoke-Section 'admin' {
     $user = [string](Get-P $P 'adminUser' '')
     if (-not $user) { return }
@@ -174,22 +168,20 @@ Invoke-Section 'admin' {
             catch { $pwOk = $null }
         }
     }
-    $script:adm = [pscustomobject]@{ ex = [bool]$u; en = $(if ($u) { [bool]$u.Enabled } else { $false }); adm = $inAdmins; pw = $pwOk }
+    $Az.adm = [pscustomobject]@{ ex = [bool]$u; en = $(if ($u) { [bool]$u.Enabled } else { $false }); adm = $inAdmins; pw = $pwOk }
 }
 
 # ---- storage left over from an earlier deployment (counts and a short list; nothing is changed)
-$stor = $null
 Invoke-Section 'storage' {
     $pools = @(Get-StoragePool -ErrorAction SilentlyContinue | Where-Object { -not $_.IsPrimordial }).Count
     $vdisks = @(Get-VirtualDisk -ErrorAction SilentlyContinue).Count
     $skipBus = @('Fibre Channel', 'iSCSI', 'USB', 'File Backed Virtual', 'Spaces', 'Virtual', 'Unknown')
     $dirty = @(Get-Disk -ErrorAction SilentlyContinue | Where-Object { -not $_.IsBoot -and -not $_.IsSystem -and ($skipBus -notcontains [string]$_.BusType) -and ([string]$_.PartitionStyle -ne 'RAW' -or [string]$_.OperationalStatus -ne 'Online') } |
             ForEach-Object { '{0}:{1}:{2}' -f $_.Number, $_.BusType, $_.PartitionStyle })
-    $script:stor = [pscustomobject]@{ pools = $pools; vdisks = $vdisks; dirty = $dirty }
+    $Az.stor = [pscustomobject]@{ pools = $pools; vdisks = $vdisks; dirty = $dirty }
 }
 
 # ---- SAN: MPIO, MSDSM, FC ports, iSCSI initiator, the LUNs this node sees
-$san = $null
 if (Get-P $P 'san' $false) {
     Invoke-Section 'san' {
         $feature = ''
@@ -226,16 +218,21 @@ if (Get-P $P 'san' $false) {
             if ($svc) { $iscsiSvc = ('{0}/{1}' -f $svc.Status, $svc.StartType) }
             if (Get-Command Get-MSDSMAutomaticClaimSettings -ErrorAction SilentlyContinue) { $iscsiClaim = [string](Get-MSDSMAutomaticClaimSettings).iSCSI }
         }
-        $script:san = [pscustomobject]@{ feature = $feature; hw = $hw; lb = $lb; set = $set; fc = $ports; iqn = $iqn; disks = $disks; iscsiSvc = $iscsiSvc; iscsiClaim = $iscsiClaim }
+        $Az.san = [pscustomobject]@{ feature = $feature; hw = $hw; lb = $lb; set = $set; fc = $ports; iqn = $iqn; disks = $disks; iscsiSvc = $iscsiSvc; iscsiClaim = $iscsiClaim }
     }
 }
 
 $rebootPending = [bool]((Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Component Based Servicing\RebootPending') -or
     (Test-Path 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\WindowsUpdate\Auto Update\RebootRequired'))
 
+# A section that came back with nothing says why, so a read that returns no data is never mistaken for a node that has none.
+if (@($Az.nics).Count -eq 0 -and -not $Az.err.ContainsKey('nics')) { $Az.err['nics'] = 'Get-NetAdapter -Physical returned no adapter (not elevated, or the NetAdapter module is not available)' }
+if ($null -eq $Az.remote -and -not $Az.err.ContainsKey('remote')) { $Az.err['remote'] = 'the remote management section returned no data' }
+if ($null -eq $Az.time -and -not $Az.err.ContainsKey('time')) { $Az.err['time'] = 'the time section returned no data' }
+if ($null -eq $Az.adm -and [string](Get-P $P 'adminUser' '') -and -not $Az.err.ContainsKey('admin')) { $Az.err['admin'] = 'the local administrator section returned no data' }
 Write-Result ([pscustomobject]@{
         v = 1; host = $env:COMPUTERNAME; boot = $os.LastBootUpTime.ToUniversalTime().ToString('o'); os = ('{0}.{1}' -f $os.Version, $ubr); reboot = $rebootPending
-        nics = $nics; remote = $remote; time = $time; sbe = $sbe; drv = $drv; admin = $adm; stor = $stor; san = $san; err = $script:err
+        nics = $Az.nics; remote = $Az.remote; time = $Az.time; sbe = $Az.sbe; drv = $Az.drv; admin = $Az.adm; stor = $Az.stor; san = $Az.san; err = $Az.err
     })
 '@
 
@@ -243,7 +240,7 @@ $script:ApplyBody = @'
 $sbeDir = [string](Get-P $P 'sbeDir' 'C:\SBE')
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $results = New-Object System.Collections.ArrayList
-$script:reboot = $false
+$Az = @{ reboot = $false }
 function Add-Result([string]$id, [string]$status, [string]$detail) { [void]$results.Add([pscustomobject]@{ id = $id; status = $status; detail = $detail }) }
 function Get-NicByMac([string]$mac) {
     return (Get-NetAdapter -Physical | Where-Object { (Get-MacKey $_.MacAddress) -eq (Get-MacKey $mac) } | Select-Object -First 1)
@@ -309,7 +306,7 @@ function Invoke-Action($a) {
             $out = & pnputil.exe /add-driver $infPath /install 2>&1
             $code = $LASTEXITCODE
             if ($code -notin 0, 259, 3010) { throw ('pnputil ' + $a.inf + ' exit ' + $code + ': ' + ($out -join ' ')) }
-            if ($code -eq 3010) { $script:reboot = $true }
+            if ($code -eq 3010) { $Az.reboot = $true }
             return ('driver ' + $a.inf + ' ' + $a.ver + ' installed (pnputil ' + $code + ')')
         }
         'nic-clean' {
@@ -368,7 +365,7 @@ function Invoke-Action($a) {
         }
         'hostname' {
             Rename-Computer -NewName ([string]$a.name) -Force
-            $script:reboot = $true
+            $Az.reboot = $true
             return ('renamed to ' + $a.name + ' (restart needed)')
         }
         'admin' {
@@ -393,13 +390,13 @@ function Invoke-Action($a) {
         }
         'mpio-feature' {
             $r = Enable-WindowsOptionalFeature -Online -FeatureName MultipathIO -NoRestart
-            if ($r.RestartNeeded) { $script:reboot = $true }
+            if ($r.RestartNeeded) { $Az.reboot = $true }
             return 'MultipathIO enabled'
         }
         'msdsm-hw' {
             if ([string](Get-P $a 'mpclaim' '')) { & mpclaim.exe -n -i -d ([string]$a.mpclaim) | Out-Null }
             else { New-MSDSMSupportedHW -VendorId ([string]$a.vendor) -ProductId ([string]$a.product) | Out-Null }
-            $script:reboot = $true
+            $Az.reboot = $true
             return ('MSDSM hardware ' + $a.vendor + ' ' + $a.product + ' registered (restart so MPIO claims the LUNs)')
         }
         'msdsm-lb' {
@@ -449,7 +446,7 @@ foreach ($a in @(Get-P $P 'actions' @())) {
     catch { Add-Result $id 'failed' $_.Exception.Message }
 }
 
-$answer = [pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; finished = (Get-Date).ToUniversalTime().ToString('o'); reboot = $script:reboot; results = @($results) }
+$answer = [pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; finished = (Get-Date).ToUniversalTime().ToString('o'); reboot = $Az.reboot; results = @($results) }
 New-Item -ItemType Directory -Force -Path $stateDir | Out-Null
 ConvertTo-Json -InputObject $answer -Depth 6 -Compress | Set-Content -LiteralPath (Join-Path $stateDir 'last-apply.json') -Encoding UTF8
 Write-Result $answer
