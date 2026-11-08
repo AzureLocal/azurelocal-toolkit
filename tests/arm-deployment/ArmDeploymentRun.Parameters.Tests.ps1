@@ -149,4 +149,16 @@ Describe 'The parameter-source map' {
         $md | Should -Match '\| adouPath \| `identity\.active_directory\.ou_path`'
         $md | Should -Match '\| localAdminPassword \| `identity\.local_admin\.password` .* secret'
     }
-}
+    It 'lists the SBE parameters as "no SBE configured" when none is configured, and as values when one is' {
+        $infra = Get-TestInfra
+        $infra.hardware.Remove('sbe')
+        $none = Format-AzlArmParameterSource -ParameterSet (New-AzlArmParameterSet -Infrastructure $infra -Mode Validate -AllowUnresolvedSanLun)
+        foreach ($n in 'sbeVersion', 'sbeFamily', 'sbePublisher', 'sbeManifestSource', 'sbeManifestCreationDate', 'partnerProperties', 'partnerCredentiallist') {
+            $none | Should -Match ("\| $n \| .* \| no SBE configured \|")
+        }
+        $none | Should -Match '\| sbeVersion \| `hardware\.sbe\.version` \| sbe \| no SBE configured \|'
+        $infra.hardware.sbe = [ordered]@{ publisher = 'Dell'; family = '16G-45n0c-Intel'; version = '5.0.2609.1611' }
+        $with = Format-AzlArmParameterSource -ParameterSet (New-AzlArmParameterSet -Infrastructure $infra -Mode Validate -AllowUnresolvedSanLun)
+        $with | Should -Not -Match 'no SBE configured'
+        $with | Should -Match '\| sbeVersion \| `hardware\.sbe\.version` \| sbe \| value \|'
+    }}

@@ -216,10 +216,25 @@ Describe 'OS configuration, build and SBE' {
         (Get-Pre $r OsBuildConsistent).result | Should -Be 'Failed'
         (Get-Pre $r OsBuildConsistent).evidence | Should -Match 'iic-n02=10.0.25398.1'
     }
-    It 'no SBE values is a Warning that says what to fill' {
+    It 'no SBE configured is Passed with the note that the deployment has no Solution Builder Extension (the SBE is opt-in)' {
         $r = Invoke-TestRun -World (Get-FakeWorld) -Mode Plan
+        $p = Get-Pre $r SbeConsistent
+        $p.result | Should -Be 'Passed'
+        $p.evidence | Should -Match 'deploying without a Solution Builder Extension'
+    }
+    It 'no hardware.sbe block at all is the same: Passed, never Warning' {
+        $infra = Get-TestInfra
+        $infra.hardware.Remove('sbe')
+        $r = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Plan
+        (Get-Pre $r SbeConsistent).result | Should -Be 'Passed'
+        (Get-Pre $r SbeConsistent).evidence | Should -Match 'deploying without a Solution Builder Extension'
+    }
+    It 'an SBE version without a family is a Warning that names hardware.sbe.family' {
+        $infra = Get-TestInfra
+        $infra.hardware.sbe = [ordered]@{ publisher = 'Dell'; version = '4.1.2506.9' }
+        $r = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Plan
         (Get-Pre $r SbeConsistent).result | Should -Be 'Warning'
-        (Get-Pre $r SbeConsistent).nextAction | Should -Match 'hardware.sbe'
+        (Get-Pre $r SbeConsistent).nextAction | Should -Match 'hardware.sbe.family'
     }
     It 'SBE values in the file pass' {
         $infra = Get-TestInfra

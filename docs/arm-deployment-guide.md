@@ -84,8 +84,8 @@ Each check is `Passed`, `Failed` (stops the run, exit 1), `Warning`, or `Skipped
 | `ArcMachineNaming` | The Arc machine is named after the host. A device-ID name (`<id>-1`) fails the Deploy at step 0.41 on build 2690 | See the known issue below |
 | `OsConfigurationConverged` | The OS configuration report says every node converged, for this cluster | Run the OS configuration with `-Mode Apply` |
 | `OsBuildConsistent` | Every node runs the same OS build | Install the same build everywhere |
-| `SbeConsistent` | SBE values are known | Fill `hardware.sbe` |
-| `SbeValidatedWithSolution` | The SBE (`hardware.sbe.family`, `version`) is validated with the solution version the nodes run, read from the SBE discovery catalog (`SBE_Discovery_*.xml` in `hardware.sbe.bundle_path`, or the run setting `sbeCatalogPath`; nothing is downloaded). The solution version is the run setting `solutionVersion`, else the ZTP handoff, else derived from the OS build (only builds that map unambiguously). Azure refuses a mismatch only after about 13 minutes of Validate (`ErrorUnvalidatedSolutionAndSbeCombination`, known issue `unvalidated-solution-sbe-combination`). Failed names the validated SBE versions; Warning when the solution version is unknown; Skipped without a catalog | Download the validated SBE from the OEM, set `hardware.sbe.version` and `bundle_path`, run the OS configuration |
+| `SbeConsistent` | The SBE is opt-in. No `hardware.sbe.version`: Passed, "deploying without a Solution Builder Extension". With a version: the family must be set too (Warning if not) | Set `hardware.sbe.family`, or remove the version to deploy without an SBE |
+| `SbeValidatedWithSolution` | Passed, "deploying without a Solution Builder Extension", when no SBE is configured. Otherwise: the SBE (`hardware.sbe.family`, `version`) is validated with the solution version the nodes run, read from the SBE discovery catalog (`SBE_Discovery_*.xml` in `hardware.sbe.bundle_path`, or the run setting `sbeCatalogPath`; nothing is downloaded). The solution version is the run setting `solutionVersion`, else the ZTP handoff, else derived from the OS build (only builds that map unambiguously). Azure refuses a mismatch only after about 13 minutes of Validate (`ErrorUnvalidatedSolutionAndSbeCombination`, known issue `unvalidated-solution-sbe-combination`). Failed names the validated SBE versions; Warning when the solution version is unknown; Skipped without a catalog | Download the validated SBE from the OEM, set `hardware.sbe.version` and `bundle_path`, run the OS configuration |
 | `DnsAndTime` | DNS servers set and valid, NTP set, no pending Dns/Time change in the OS report | Fix `networking.management.dns_servers`, `ntp_servers` |
 | `ActiveDirectoryPrepared` | OU not at the top of the domain; LCM user name 20 characters or fewer; the OU and user exist | Run Microsoft's AD preparation tool |
 | `LocalIdentityPrerequisites` | `identity.local_identity.dns_zone` set | Set it |
@@ -93,6 +93,12 @@ Each check is `Passed`, `Failed` (stops the run, exit 1), `Warning`, or `Skipped
 | `ValidatedBeforeDeploy` | (Deploy) Validation succeeded for these parameters | Run Validate |
 
 Skip a check on purpose with `deployment.skip_preconditions`; it still appears in the report as Skipped.
+
+<!-- sbe-optional-arm:begin -->
+### The Solution Builder Extension is opt-in
+
+A deployment without an SBE is a normal deployment. When `hardware.sbe` is absent, or has no `version`, the run passes none of the seven SBE parameters of Microsoft's template (`sbeVersion`, `sbeFamily`, `sbePublisher`, `sbeManifestSource`, `sbeManifestCreationDate`, `partnerProperties`, `partnerCredentiallist`); the template defaults them to empty strings and empty lists. `SbeConsistent` and `SbeValidatedWithSolution` are Passed with the note `deploying without a Solution Builder Extension`, and `parameter-sources.md` lists the seven parameters as `no SBE configured`. An SBE is passed, exactly as before, only when `hardware.sbe.version` is set. If Azure still names an SBE problem in a run without an SBE (the nodes carry an SBE package in `C:\SBE`), the known issue `sbe-referenced-but-not-configured` says so and offers both ways out.
+<!-- sbe-optional-arm:end -->
 
 ## What it builds from the master file
 

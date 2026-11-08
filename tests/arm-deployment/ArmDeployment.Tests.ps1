@@ -373,3 +373,67 @@ Describe 'Invoke-AzlArmDeployment' {
         $r.Error | Should -Be 'boom'
     }
 }
+
+Describe 'The Solution Builder Extension is opt-in (New-AzlArmParameterSet)' {
+    BeforeAll {
+        # Names of the create-cluster template's SBE parameters (Microsoft Learn, ARM template parameters reference).
+        $script:SbeNames = 'sbeVersion', 'sbeFamily', 'sbePublisher', 'sbeManifestSource', 'sbeManifestCreationDate', 'partnerProperties', 'partnerCredentiallist'
+        $script:CompleteSbe = Join-Path $repo 'tests\fixtures\sbe\hardware.sbe.complete.yml'
+        function Get-InfraWithoutSbe {
+            $i = Get-Infra
+            $i.hardware.Remove('sbe')   # the owner's lab file has no hardware.sbe block at all
+            $i
+        }
+        function Get-InfraWithCompleteSbe {
+            $i = Get-Infra
+            $i.hardware = (ConvertFrom-Yaml -Ordered (Get-Content -LiteralPath $script:CompleteSbe -Raw)).hardware
+            $i
+        }
+    }
+    It 'passes NO SBE parameter when hardware.sbe is absent, so the template defaults apply' {
+        $set = New-AzlArmParameterSet -Infrastructure (Get-InfraWithoutSbe) -AllowUnresolvedSanLun -Catalog $script:Catalog
+        foreach ($n in $script:SbeNames) { $set.Parameters.Contains($n) | Should -BeFalse -Because "$n must not be passed without an SBE" }
+    }
+    It 'passes NO SBE parameter when hardware.sbe has no version and no family (the fixture block has only a bundle path)' {
+        $set = New-AzlArmParameterSet -Infrastructure (Get-Infra) -AllowUnresolvedSanLun -Catalog $script:Catalog
+        foreach ($n in $script:SbeNames) { $set.Parameters.Contains($n) | Should -BeFalse -Because "$n must not be passed without an SBE" }
+    }
+    It 'passes NO SBE parameter when the bundle gives only a publisher and the file has no version' {
+        $set = New-AzlArmParameterSet -Infrastructure (Get-InfraWithoutSbe) -AllowUnresolvedSanLun -Catalog $script:Catalog -SbeDeployment ([ordered]@{ sbePublisher = 'Dell'; sbeFamily = '16G' })
+        foreach ($n in $script:SbeNames) { $set.Parameters.Contains($n) | Should -BeFalse }
+        ($set.Warnings -join ' ') | Should -Match 'sbeFamily'
+    }
+    It 'does not warn about a missing SBE: no SBE is a normal configuration' {
+        $set = New-AzlArmParameterSet -Infrastructure (Get-InfraWithoutSbe) -AllowUnresolvedSanLun -Catalog $script:Catalog
+        ($set.Warnings -join ' ') | Should -Not -Match 'No SBE values'
+    }
+    It 'the SBE-less set is clean against the template and its parameter file carries no SBE value' {
+        $set = New-AzlArmParameterSet -Infrastructure (Get-InfraWithoutSbe) -AllowUnresolvedSanLun -Catalog $script:Catalog
+        @(Test-AzlArmParameterSet -ParameterSet $set -TemplateParameters $script:Catalog.templates[$set.Template.Name].parameters) | Should -Not -Match 'sbe|partner'
+        $file = ConvertTo-AzlArmParameterFile -ParameterSet $set | ConvertFrom-Json -AsHashtable
+        foreach ($n in $script:SbeNames) { $file.parameters.ContainsKey($n) | Should -BeFalse }
+    }
+    It 'with a complete hardware.sbe passes the five SBE values and the two empty partner lists, as before' {
+        $set = New-AzlArmParameterSet -Infrastructure (Get-InfraWithCompleteSbe) -AllowUnresolvedSanLun -Catalog $script:Catalog
+        $set.Parameters.sbeVersion | Should -Be '5.0.2609.1611'
+        $set.Parameters.sbeFamily | Should -Be '16G-45n0c-Intel'
+        $set.Parameters.sbePublisher | Should -Be 'Dell'
+        $set.Parameters.sbeManifestSource | Should -Be 'https://example.invalid/SBE_Discovery_Dell.xml'
+        $set.Parameters.sbeManifestCreationDate | Should -Be '2026-10-21T20:27:08Z'
+        $set.Parameters.Contains('partnerProperties') | Should -BeTrue
+        @($set.Parameters.partnerProperties).Count | Should -Be 0
+        @($set.Parameters.partnerCredentiallist).Count | Should -Be 0
+        @(Test-AzlArmParameterSet -ParameterSet $set -TemplateParameters $script:Catalog.templates[$set.Template.Name].parameters) | Should -BeNullOrEmpty
+    }
+    It 'with the SBE only in the bundle (version and family there) passes it' {
+        $bundle = [ordered]@{ sbeVersion = '5.0.2609.1611'; sbeFamily = '16G-45n0c-Intel'; sbePublisher = 'Dell'; sbeManifestSource = 'https://example.invalid/m'; sbeManifestCreationDate = '2026-10-21' }
+        $set = New-AzlArmParameterSet -Infrastructure (Get-InfraWithoutSbe) -AllowUnresolvedSanLun -Catalog $script:Catalog -SbeDeployment $bundle
+        $set.Parameters.sbeVersion | Should -Be '5.0.2609.1611'
+        $set.Parameters.sbeFamily | Should -Be '16G-45n0c-Intel'
+    }
+    It 'the SBE-less set has fewer parameters than the SBE set' {
+        $a = New-AzlArmParameterSet -Infrastructure (Get-InfraWithoutSbe) -AllowUnresolvedSanLun -Catalog $script:Catalog
+        $b = New-AzlArmParameterSet -Infrastructure (Get-InfraWithCompleteSbe) -AllowUnresolvedSanLun -Catalog $script:Catalog
+        $a.Parameters.Keys.Count | Should -BeLessThan $b.Parameters.Keys.Count
+    }
+}

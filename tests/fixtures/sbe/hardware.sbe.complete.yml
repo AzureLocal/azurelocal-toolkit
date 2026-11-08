@@ -1,0 +1,12 @@
+# The hardware block of infrastructure.yml with a complete Solution Builder Extension, for the tests that prove the ARM parameters
+# carry the SBE exactly when one is configured. Values are those of the Dell AX 16G package of the 2026-10-21 catalog; the manifest
+# source is a non-routable example URL. Nothing here is a credential.
+hardware:
+  vendor: "Dell"
+  model: "AX-760"
+  sbe:
+    publisher: "Dell"
+    family: "16G-45n0c-Intel"
+    version: "5.0.2609.1611"
+    manifest_source: "https://example.invalid/SBE_Discovery_Dell.xml"
+    manifest_creation_date: "2026-10-21T20:27:08Z"

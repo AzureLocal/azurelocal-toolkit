@@ -245,11 +245,6 @@ Describe 'Precondition SbeValidatedWithSolution' {
         (Get-Pre $r SbeValidatedWithSolution).result | Should -Be 'Warning'
         (Get-Pre $r SbeValidatedWithSolution).evidence | Should -Match 'could not be read'
     }
-    It 'is SKIPPED when no SBE is configured (SbeConsistent already warns)' {
-        $r = Invoke-TestRun -World (Get-FakeWorld) -Mode Plan -Settings @{ sbeCatalogPath = $script:Catalog; solutionVersion = '12.2610.1004.50' }
-        (Get-Pre $r SbeConsistent).result | Should -Be 'Warning'
-        (Get-Pre $r SbeValidatedWithSolution).result | Should -Be 'Skipped'
-    }
     It 'can be skipped on purpose and then shows as Skipped' {
         $r = Invoke-TestRun -World (Get-FakeWorld) -Infra (Get-SbeInfra) -Mode Plan -Settings @{ sbeCatalogPath = $script:Catalog; solutionVersion = '12.2610.1004.50'; skipPreconditions = @('SbeValidatedWithSolution') }
         (Get-Pre $r SbeValidatedWithSolution).result | Should -Be 'Skipped'
@@ -277,6 +272,37 @@ Describe 'Run settings solutionVersion and sbeCatalogPath' {
     }
 }
 
+Describe 'Without a Solution Builder Extension (opt-in)' {
+    It 'SbeValidatedWithSolution is Passed with the note, not Skipped or Warning, when hardware.sbe has no version' {
+        $r = Invoke-TestRun -World (Get-FakeWorld) -Mode Plan -Settings @{ sbeCatalogPath = $script:Catalog; solutionVersion = '12.2610.1004.50' }
+        $p = Get-Pre $r SbeValidatedWithSolution
+        $p.result | Should -Be 'Passed'
+        $p.evidence | Should -Match 'deploying without a Solution Builder Extension'
+    }
+    It 'is Passed with the note when there is no hardware.sbe block at all, even with no catalog and no solution version' {
+        $infra = Get-TestInfra
+        $infra.hardware.Remove('sbe')
+        $r = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Plan
+        $p = Get-Pre $r SbeValidatedWithSolution
+        $p.result | Should -Be 'Passed'
+        $p.evidence | Should -Match 'deploying without a Solution Builder Extension'
+        $p.nextAction | Should -BeNullOrEmpty
+    }
+    It 'neither SBE precondition blocks Validate or Deploy, and the plan has no failed or warning SBE entry' {
+        $infra = Get-TestInfra
+        $infra.hardware.Remove('sbe')
+        $r = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Plan
+        @($r.Preconditions | Where-Object { $_.name -like 'Sbe*' -and $_.result -ne 'Passed' }) | Should -BeNullOrEmpty
+    }
+    It 'the ARM parameter file of the run carries no SBE parameter' {
+        $infra = Get-TestInfra
+        $infra.hardware.Remove('sbe')
+        $r = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Plan
+        $file = Get-ChildItem -LiteralPath $r.ReportDirectory -Filter '*.parameters.json' -Recurse | Select-Object -First 1
+        $file | Should -Not -BeNullOrEmpty
+        (Get-Content -LiteralPath $file.FullName -Raw) | Should -Not -Match '"sbe|partner'
+    }
+}
 Describe 'Known issue unvalidated-solution-sbe-combination' {
     BeforeAll {
         # The error text of the real failure (validate-3, step 0.60 InvokeEnvironmentChecker, 2026-11-08)
@@ -306,5 +332,58 @@ Describe 'Known issue unvalidated-solution-sbe-combination' {
     }
     It 'does not steal other SBE failures' {
         Find-AzlArmKnownIssue -Phase Validate -ErrorText 'The SBE package hash does not match' | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'Known issue sbe-referenced-but-not-configured' {
+    BeforeAll {
+        # The same Azure error as validate-3, but the toolkit passed no SBE parameter (hardware.sbe is empty).
+        $script:SbeError = "Type 'InvokeEnvironmentChecker' of Role 'DeploymentService' raised an exception: Fail to initialize cloud deployment: SBE package and manifest validation failed with code 'ErrorUnvalidatedSolutionAndSbeCombination'. Error Details: The SBE package SBE_Dell_16G-45n0c-Intel_5.0.2606.1616 has not been validated with Solution version 12.2610.1004.50."
+        $script:ArmDone = [pscustomobject]@{ ProvisioningState = 'Succeeded'; Error = ''; Timestamp = '' }
+        function Get-SbeFailedWorld {
+            $failed = Get-TestState -Validation 'Failed' -ValidationSteps @(
+                Get-TestStep '0.60' 'InvokeEnvironmentChecker' 'Error' 0 @($script:SbeError) '2026-11-07T12:12:00Z')
+            $w = Get-FakeWorld
+            $w.After['validate'] = @($failed); $w.ArmAfter['validate'] = @($script:ArmDone)
+            $w
+        }
+    }
+    It 'is in the data file: after-fix, a pattern (not seen in a run), for Validate and Deploy, conditioned on no SBE' {
+        $i = Get-AzlArmKnownIssue | Where-Object { $_['id'] -eq 'sbe-referenced-but-not-configured' }
+        $i | Should -Not -BeNullOrEmpty
+        $i['retry'] | Should -Be 'after-fix'
+        $i['confidence'] | Should -Be 'pattern'
+        @($i['phase']) | Should -Contain 'Validate'
+        @($i['phase']) | Should -Contain 'Deploy'
+        $i['when']['sbeConfigured'] | Should -BeFalse
+        @($i['remediation']).Count | Should -BeGreaterThan 1
+    }
+    It 'matches an SBE failure only when the context says no SBE is configured, and then wins over the generic SBE entry' {
+        (Find-AzlArmKnownIssue -Phase Validate -StepId '0.60' -StepName 'InvokeEnvironmentChecker' -ErrorText $script:SbeError -Context @{ sbeConfigured = $false }).Id | Should -Be 'sbe-referenced-but-not-configured'
+        (Find-AzlArmKnownIssue -Phase Validate -StepId '0.60' -StepName 'InvokeEnvironmentChecker' -ErrorText $script:SbeError -Context @{ sbeConfigured = $true }).Id | Should -Be 'unvalidated-solution-sbe-combination'
+        (Find-AzlArmKnownIssue -Phase Validate -StepId '0.60' -StepName 'InvokeEnvironmentChecker' -ErrorText $script:SbeError).Id | Should -Be 'unvalidated-solution-sbe-combination'
+    }
+    It 'also names any other SBE problem Azure reports while none is configured, and nothing else' {
+        (Find-AzlArmKnownIssue -Phase Deploy -ErrorText 'The SBE package hash does not match' -Context @{ sbeConfigured = $false }).Id | Should -Be 'sbe-referenced-but-not-configured'
+        (Find-AzlArmKnownIssue -Phase Deploy -ErrorText 'Solution Builder Extension update failed' -Context @{ sbeConfigured = $false }).Id | Should -Be 'sbe-referenced-but-not-configured'
+        Find-AzlArmKnownIssue -Phase Validate -StepId '0.7' -StepName 'X' -ErrorText 'Something new' -Context @{ sbeConfigured = $false } | Should -BeNullOrEmpty
+        Find-AzlArmKnownIssue -Phase Validate -ErrorText 'The SBE package hash does not match' -Context @{ sbeConfigured = $true } | Should -BeNullOrEmpty
+    }
+    It 'the hint says the SBE came from the nodes and offers both ways out' {
+        $k = Find-AzlArmKnownIssue -Phase Validate -ErrorText $script:SbeError -Context @{ sbeConfigured = $false }
+        $text = ($k.Remediation -join ' ') + ' ' + $k.Cause
+        $text | Should -Match 'C:\\SBE'
+        $text | Should -Match 'hardware\.sbe\.version'
+        $text | Should -Match 'no SBE'
+    }
+    It 'a run without SBE whose Validate fails on an SBE error reports the hint; a run with an SBE keeps the generic entry' {
+        $infra = Get-TestInfra
+        $infra.hardware.Remove('sbe')
+        $r = Invoke-TestRun -World (Get-SbeFailedWorld) -Infra $infra -Mode Validate
+        $r.ExitCode | Should -Be 1
+        $r.KnownIssue.Id | Should -Be 'sbe-referenced-but-not-configured'
+        $r.NextAction | Should -Match 'hardware\.sbe'
+        $r2 = Invoke-TestRun -World (Get-SbeFailedWorld) -Infra (Get-SbeInfra) -Mode Validate
+        $r2.KnownIssue.Id | Should -Be 'unvalidated-solution-sbe-combination'
     }
 }

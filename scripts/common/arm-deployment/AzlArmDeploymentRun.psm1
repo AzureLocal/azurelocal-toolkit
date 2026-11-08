@@ -350,6 +350,14 @@ function Get-AzlArmKnownIssue {
     return @($json['issues'])
 }
 
+function Get-AzlArmIssueContext {
+    # The facts of a run that known issues can depend on: sbeConfigured is true when the parameter set carries an SBE version.
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param([Parameter(Mandatory)][object]$Run)
+    $p = if ($Run.ParameterSet) { $Run.ParameterSet.Parameters } else { $null }
+    @{ sbeConfigured = [bool]($p -and $p.Contains('sbeVersion') -and $p['sbeVersion']) }
+}
 function Find-AzlArmKnownIssue {
     <#
     .SYNOPSIS
@@ -359,11 +367,15 @@ function Find-AzlArmKnownIssue {
         Validate or Deploy: only entries for that phase are considered.
     .PARAMETER Build
         The solution build (the handoff's vsrVersion). An entry with affectedBuilds gets BuildNote when the build is not one of them.
+    .PARAMETER Context
+        Facts about the run, for entries with a 'when' member (for example @{ sbeConfigured = $false }). An entry with 'when' matches only
+        when every member of it equals the context's value; each counts as a match member. Without a context those entries never match.
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][ValidateSet('Validate', 'Deploy')][string]$Phase,
         [string]$StepId = '', [string]$StepName = '', [string]$ErrorText = '', [string]$Build = '',
+        [System.Collections.IDictionary]$Context = @{},
         [object[]]$Issues = (Get-AzlArmKnownIssue)
     )
     $best = $null; $bestCount = 0
@@ -376,6 +388,12 @@ function Find-AzlArmKnownIssue {
             if ($m.Contains($c[0])) {
                 $given++
                 if (-not $c[1] -or -not [regex]::IsMatch([string]$c[1], [string]$m[$c[0]], [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) { $ok = $false; break }
+            }
+        }
+        if ($ok -and $issue.Contains('when')) {
+            foreach ($key in $issue['when'].Keys) {
+                if (-not $Context.Contains($key) -or [string]$Context[$key] -ne [string]$issue['when'][$key]) { $ok = $false; break }
+                $given++
             }
         }
         if ($ok -and $given -gt $bestCount) { $best = $issue; $bestCount = $given }
@@ -447,7 +465,8 @@ function Test-AzlArmRequiredKey {
 function Format-AzlArmParameterSource {
     <#
     .SYNOPSIS
-        Markdown table: each ARM parameter in the set, the infrastructure.yml keys it came from, and whether it is a secret.
+        Markdown table: each ARM parameter in the set, the infrastructure.yml keys it came from, and whether it is a secret. The SBE
+        parameters that are not in the set (no SBE configured) are listed with the value 'no SBE configured'.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -460,6 +479,14 @@ function Format-AzlArmParameterSource {
         $v = $ParameterSet.Parameters[$name]
         $kind = if ($v -is [System.Collections.IDictionary] -and $v.Contains('KeyVault')) { 'secret (Key Vault reference)' } else { 'value' }
         $lines += "| $name | $keys | $other | $kind |"
+    }
+    # The Solution Builder Extension is opt-in: its parameters are left out of the set when none is configured. Say so, per parameter.
+    foreach ($name in 'sbeVersion', 'sbeFamily', 'sbePublisher', 'sbeManifestSource', 'sbeManifestCreationDate', 'partnerProperties', 'partnerCredentiallist') {
+        if ($ParameterSet.Parameters.Contains($name)) { continue }
+        $e = if ($Source.Contains($name)) { $Source[$name] } else { @{} }
+        $keys = if ($e.Contains('keys') -and @($e['keys']).Count) { (@($e['keys']) | ForEach-Object { "``$_``" }) -join ', ' } else { '' }
+        $other = if ($e.Contains('source')) { [string]$e['source'] } else { '' }
+        $lines += "| $name | $keys | $other | no SBE configured |"
     }
     return ($lines -join [Environment]::NewLine)
 }
@@ -998,21 +1025,27 @@ $script:Checks['OsBuildConsistent'] = {
     New-AzlArmCheckResult OsBuildConsistent Passed "Every node runs OS build $($known[0])$(if ($Ctx.Build) { "; the handoff's solution build is $($Ctx.Build)" })."
 }
 
+# The Solution Builder Extension is opt-in. These two checks run only against an SBE somebody configured; with none, the parameter
+# set carries no SBE parameter (New-AzlArmParameterSet) and both are Passed with this note.
+$script:NoSbeNote = 'No SBE configured (hardware.sbe has no version): deploying without a Solution Builder Extension. No SBE parameter is passed to the template.'
+
 $script:Checks['SbeConsistent'] = {
     param($Ctx)
     if (-not $Ctx.Set.Parameters.Contains('sbeVersion') -or -not $Ctx.Set.Parameters['sbeVersion']) {
-        return New-AzlArmCheckResult SbeConsistent Warning 'No SBE values: hardware.sbe is empty and no SBE folder was read. The deployment uses the SBE the OS install discovered, if any.' 'Fill hardware.sbe (version, family, publisher, manifest source and date) or set hardware.sbe.bundle_path.'
+        return New-AzlArmCheckResult SbeConsistent Passed $script:NoSbeNote
+    }
+    if (-not $Ctx.Set.Parameters['sbeFamily']) {
+        return New-AzlArmCheckResult SbeConsistent Warning "SBE version $($Ctx.Set.Parameters['sbeVersion']) is set without a family." 'Set hardware.sbe.family (the family of the SBE package, for example 16G-45n0c-Intel), or remove hardware.sbe.version to deploy without an SBE.'
     }
     New-AzlArmCheckResult SbeConsistent Passed "SBE $($Ctx.Set.Parameters['sbeFamily']) $($Ctx.Set.Parameters['sbeVersion']) is set."
 }
-
 $script:Checks['SbeValidatedWithSolution'] = {
     param($Ctx)
     $check = 'SbeValidatedWithSolution'
     $parameters = $Ctx.Set.Parameters
     $version = if ($parameters.Contains('sbeVersion')) { [string]$parameters['sbeVersion'] } else { '' }
     $family = if ($parameters.Contains('sbeFamily')) { [string]$parameters['sbeFamily'] } else { '' }
-    if (-not $version) { return New-AzlArmCheckResult $check Skipped 'No SBE is configured (see SbeConsistent), so there is nothing to compare with the solution version.' }
+    if (-not $version) { return New-AzlArmCheckResult $check Passed $script:NoSbeNote }
     $source = Resolve-AzlArmSbeCatalogFile $Ctx
     if (-not $source.File) { return New-AzlArmCheckResult $check Skipped $source.Reason }
     try { $catalog = @(Read-AzlArmSbeCatalog -Path $source.File) }
@@ -1401,7 +1434,7 @@ function Invoke-AzlArmPhase {
     if ($Phase -eq 'Deploy' -and $action.Kind -eq 'Resubmit') {
         $failedBefore = Get-AzlArmFailedStep -Steps $state.DeploymentSteps | Select-Object -First 1
         if ($failedBefore) {
-            $issue = Find-AzlArmKnownIssue -Phase Deploy -StepId $failedBefore.FullStepIndex -StepName $failedBefore.Name -ErrorText ($failedBefore.Errors -join ' ') -Build $Run.Build -Issues $Run.KnownIssues
+            $issue = Find-AzlArmKnownIssue -Phase Deploy -StepId $failedBefore.FullStepIndex -StepName $failedBefore.Name -ErrorText ($failedBefore.Errors -join ' ') -Build $Run.Build -Context (Get-AzlArmIssueContext -Run $Run) -Issues $Run.KnownIssues
             if ($issue -and $issue.Retry -eq 'none' -and $issue.Id -notin $set.acknowledgeKnownIssues -and '*' -notin $set.acknowledgeKnownIssues) {
                 $Run.Report.knownIssue = $issue
                 $section.status = 'Refused'
@@ -1494,7 +1527,7 @@ function Invoke-AzlArmPhase {
     $errorText = Hide-AzlArmSecret ((@($failed | ForEach-Object { $_.Errors }) + $outcome.ArmError + $outcome.Reason) -join ' ')
     $issue = $null
     if ($outcome.Outcome -ne 'TimedOut' -or $primary) {
-        $issue = Find-AzlArmKnownIssue -Phase $Phase -StepId $(if ($primary) { $primary.FullStepIndex } else { '' }) -StepName $(if ($primary) { $primary.Name } else { '' }) -ErrorText $errorText -Build $Run.Build -Issues $Run.KnownIssues
+        $issue = Find-AzlArmKnownIssue -Phase $Phase -StepId $(if ($primary) { $primary.FullStepIndex } else { '' }) -StepName $(if ($primary) { $primary.Name } else { '' }) -ErrorText $errorText -Build $Run.Build -Context (Get-AzlArmIssueContext -Run $Run) -Issues $Run.KnownIssues
     }
     $section.failedSteps = @($failed | ForEach-Object { [ordered]@{ step = $_.FullStepIndex; name = $_.Name; status = $_.Status; errors = @($_.Errors | ForEach-Object { Limit-AzlArmText $_ 800 }) } })
     $section.error = Limit-AzlArmText $errorText 1500
