@@ -6,6 +6,7 @@
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification = 'Pester runs a module mock in the module scope; a global is how the mock reports back to the test.')]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Pester scopes.')]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test helpers.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'The fake transport keeps the signature of the real one.')]
 param()
 
 BeforeAll {
@@ -51,6 +52,8 @@ BeforeAll {
         $global:AzlAnswering = @()
         $global:AzlArcNone = @()
         $global:AzlArcInterfaces = @{}
+        $global:AzlIdentity = @{}
+        $global:AzlIdentityRead = [System.Collections.Generic.List[string]]::new()
         $global:AzlNeighbors = @()
         $global:AzlTrustedHostsInitial = ''
         $global:AzlTrustedHostsDuring = $null
@@ -86,6 +89,13 @@ Describe 'OS configuration run: the node address is resolved, not passed by hand
             }
         }
         Mock -ModuleName AzlOsConfigurationRun Get-AzlSecret { 'P@ssw0rd-from-the-vault-not-printed' }
+        # The identity read (the first authenticated connection): the machine at an address is the node itself unless the test says it is another machine.
+        Mock -ModuleName AzlOsConfigurationRun Get-AzlRunNodeIdentity {
+            $global:AzlIdentityRead.Add($Address)
+            if ($global:AzlIdentity.ContainsKey($Address)) { $entry = $global:AzlIdentity[$Address]; if ($entry -is [string]) { throw $entry }; return [pscustomobject]@{ ComputerName = $entry.Name; Mac = @($entry.Mac) } }
+            $mac = @{ 'iic-n01' = '00:00:5E:00:53:10'; 'iic-n02' = '00:00:5E:00:53:20' }[$Name]
+            [pscustomobject]@{ ComputerName = $Name.ToUpperInvariant(); Mac = @($mac, '00:00:5E:00:53:99') }
+        }
         Mock -ModuleName AzlOsConfigurationRun Find-AzlArcMachine {
             if ($HostName -in $global:AzlArcNone) { return $null }
             $nics = if ($global:AzlArcInterfaces.ContainsKey($HostName)) { $global:AzlArcInterfaces[$HostName] } else { @() }
@@ -99,7 +109,7 @@ Describe 'OS configuration run: the node address is resolved, not passed by hand
         Mock -ModuleName AzlNodeAddress Get-AzlNeighborEntry { [pscustomobject]@{ Available = $true; Source = 'Get-NetNeighbor'; Entries = @($global:AzlNeighbors | ForEach-Object { [pscustomobject]@{ IPAddress = $_.Ip; Mac = $_.Mac; State = 'Reachable'; Source = 'Get-NetNeighbor' } }) } }
         Mock -ModuleName AzlNodeAddress Invoke-AzlSubnetSweep { 253 }
     }
-    AfterAll { foreach ($v in 'AzlCalls', 'AzlAnswering', 'AzlArcNone', 'AzlArcInterfaces', 'AzlNeighbors', 'AzlTrustedHosts', 'AzlTrustedHostsInitial', 'AzlTrustedHostsDuring', 'AzlProbed') { Remove-Variable -Name $v -Scope Global -ErrorAction SilentlyContinue } }
+    AfterAll { foreach ($v in 'AzlIdentity', 'AzlIdentityRead', 'AzlCalls', 'AzlAnswering', 'AzlArcNone', 'AzlArcInterfaces', 'AzlNeighbors', 'AzlTrustedHosts', 'AzlTrustedHostsInitial', 'AzlTrustedHostsDuring', 'AzlProbed') { Remove-Variable -Name $v -Scope Global -ErrorAction SilentlyContinue } }
 
     It 'ZTP node: the handoff adapter with the management MAC gives the DHCP address; a ZTP node without adapter detail falls back to the file' {
         $global:AzlAnswering = @('192.0.2.11', '192.0.2.120')
@@ -184,15 +194,83 @@ Describe 'OS configuration run: the node address is resolved, not passed by hand
         $r.Message | Should -Match '5\. MAC lookup'
         $global:AzlCalls.Count | Should -Be 0
     }
-    It 'several candidates answer: the first source in order is used and a warning says which and why' {
+    It 'several candidates answer: the most trusted source is used (the file over a handoff-only address) and a warning says which and why' {
         $global:AzlAnswering = @('192.0.2.11', '192.0.2.12', '192.0.2.120')
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Node = @('iic-n02') }
+        $r.ExitCode | Should -Be 0
+        $r.Records[0].address | Should -Be '192.0.2.12'
+        $r.Records[0].addressSource | Should -Be 'infrastructure-file'
+        ($r.Warnings -join "`n") | Should -Match 'Several addresses answer for iic-n02'
+        ($r.Warnings -join "`n") | Should -Match 'order of trust'
+    }
+    It 'the lab case: the handoff address is stale and answers as another node; Arc (Connected) and the file say .12: the run uses .12, never sends the credential to the stale address, and says who disagreed' {
+        $global:AzlArcInterfaces = @{ 'iic-n02' = @([pscustomobject]@{ name = 'Port0'; macAddress = '00:00:5E:00:53:20'; ipAddresses = @('192.0.2.12') }) }
+        $global:AzlAnswering = @('192.0.2.12', '192.0.2.120')
+        $global:AzlIdentity = @{ '192.0.2.120' = @{ Name = 'IIC-N03'; Mac = @('00:00:5E:00:53:30') } }
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Node = @('iic-n02') }
+        $r.ExitCode | Should -Be 0
+        $r.Records[0].address | Should -Be '192.0.2.12'
+        $r.Records[0].addressSource | Should -Be 'arc'
+        @($global:AzlIdentityRead | Select-Object -Unique) | Should -Be @('192.0.2.12')
+        ($global:AzlCalls | Select-Object -First 1).Params.NodeAddress['iic-n02'] | Should -Be '192.0.2.12'
+        ($r.Warnings -join "`n") | Should -Match 'sources disagree'
+        $events = Read-RunEvent (Join-Path $r.Out 'os-configuration-events.jsonl')
+        $t = $events | Where-Object { $_.node -eq 'iic-n02' -and $_.state -eq 'TransportResolved' } | Select-Object -Last 1
+        $t.evidence | Should -Match 'ZTP handoff says 192\.0\.2\.120; Arc machine says 192\.0\.2\.12 \(Connected\); infrastructure file says 192\.0\.2\.12 \(they disagree\)'
+        $t.addressSourcesAgree | Should -BeFalse
+        $address = (Get-Report $r).nodes[0].evidence.address
+        $address.sourcesAgree | Should -BeFalse
+        $address.agreement | Should -Match 'ZTP handoff says 192\.0\.2\.120'
+        $address.identityChecked | Should -BeTrue
+    }
+    It 'the first address that answers is another machine: it is dropped (warning, event, report) and the next candidate that proves to be the node is used' {
+        $global:AzlAnswering = @('192.0.2.12', '192.0.2.120')
+        $global:AzlIdentity = @{ '192.0.2.12' = @{ Name = 'IIC-N03'; Mac = @('00:00:5E:00:53:30') } }
         $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
         $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Node = @('iic-n02') }
         $r.ExitCode | Should -Be 0
         $r.Records[0].address | Should -Be '192.0.2.120'
         $r.Records[0].addressSource | Should -Be 'ztp-handoff'
-        ($r.Warnings -join "`n") | Should -Match 'Several addresses answer for iic-n02'
-        ($r.Warnings -join "`n") | Should -Match 'comes first'
+        ($r.Warnings -join "`n") | Should -Match 'address 192\.0\.2\.12 answered but is IIC-N03/00:00:5E:00:53:30, not iic-n02 \(management MAC 00:00:5E:00:53:20\)'
+        $events = Read-RunEvent (Join-Path $r.Out 'os-configuration-events.jsonl')
+        $drop = $events | Where-Object { $_.node -eq 'iic-n02' -and $_.state -eq 'TransportResolved' -and $_.level -eq 'Warning' } | Select-Object -First 1
+        $drop.evidence | Should -Match 'answered but is IIC-N03'
+        @((Get-Report $r).nodes[0].evidence.address.dropped).Count | Should -Be 1
+    }
+    It 'only the handoff address answers and it is another machine: exit 2, the message names what answered where, nothing is changed' {
+        $global:AzlArcNone = @('iic-n01', 'iic-n02')
+        $global:AzlAnswering = @('192.0.2.120')
+        $global:AzlIdentity = @{ '192.0.2.120' = @{ Name = 'IIC-N03'; Mac = @('00:00:5E:00:53:30', '00:00:5E:00:53:31') } }
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Node = @('iic-n02') }
+        $r.ExitCode | Should -Be 2
+        $r.Message | Should -Match 'No address proved to be iic-n02'
+        $r.Message | Should -Match 'address 192\.0\.2\.120 answered but is IIC-N03/00:00:5E:00:53:30,00:00:5E:00:53:31, not iic-n02'
+        $r.Message | Should -Match 'found by ztp-handoff'
+        $r.Message | Should -Match '-NodeAddress'
+        $global:AzlCalls.Count | Should -Be 0
+    }
+    It 'an override that points at another machine stops the run (exit 2) with a clear message instead of changing it' {
+        $global:AzlAnswering = @('192.0.2.200', '192.0.2.12')
+        $global:AzlIdentity = @{ '192.0.2.200' = @{ Name = 'IIC-N01'; Mac = @('00:00:5E:00:53:10') } }
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'iso' }
+        $r = Invoke-Run -Infra $infra -Extra @{ Node = @('iic-n02'); NodeAddress = @{ 'iic-n02' = '192.0.2.200' } }
+        $r.ExitCode | Should -Be 2
+        $r.Message | Should -Match 'The address you gave for iic-n02 does not belong to it'
+        $r.Message | Should -Match 'answered but is IIC-N01/00:00:5E:00:53:10, not iic-n02'
+        @($global:AzlIdentityRead | Select-Object -Unique) | Should -Be @('192.0.2.200')
+        $global:AzlCalls.Count | Should -Be 0
+    }
+    It 'addressResolution.verifyIdentity false switches the identity read off (and the report says it was not checked)' {
+        $global:AzlAnswering = @('192.0.2.12')
+        $global:AzlIdentity = @{ '192.0.2.12' = @{ Name = 'IIC-N03'; Mac = @('00:00:5E:00:53:30') } }
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'iso' }
+        $r = Invoke-Run -Infra $infra -Extra @{ Node = @('iic-n02'); Settings = @{ addressResolution = @{ verifyIdentity = $false } } }
+        $r.ExitCode | Should -Be 0
+        $global:AzlIdentityRead.Count | Should -Be 0
+        (Get-Report $r).nodes[0].evidence.address.identityChecked | Should -BeFalse
     }
     It 'override wins: -NodeAddress is used and no other source is probed' {
         $global:AzlAnswering = @('192.0.2.200', '192.0.2.120', '192.0.2.12')
@@ -241,6 +319,35 @@ Describe 'OS configuration run: the node address is resolved, not passed by hand
         $global:AzlTrustedHostsDuring | Should -Match '192\.0\.2\.121'
         $global:AzlTrustedHostsDuring | Should -Match 'prior\.example\.invalid'
         $global:AzlTrustedHosts | Should -Be 'prior.example.invalid'
+    }
+}
+
+Describe 'The identity read of the run (the first authenticated connection to an address)' {
+    AfterAll { foreach ($v in 'AzlOrder', 'AzlFakeTransport', 'AzlRunContext') { Remove-Variable -Name $v -Scope Global -ErrorAction SilentlyContinue } }
+    It 'puts a found address into TrustedHosts first, reads the computer name and MACs through the transport, and closes the session' {
+        $global:AzlOrder = [System.Collections.Generic.List[string]]::new()
+        $bytes = [Text.Encoding]::UTF8.GetBytes((([pscustomobject]@{ v = 1; host = 'IIC-N02'; macs = @('00:00:5E:00:53:20') }) | ConvertTo-Json -Compress))
+        $ms = [IO.MemoryStream]::new(); $gz = [IO.Compression.GZipStream]::new($ms, [IO.Compression.CompressionMode]::Compress); $gz.Write($bytes, 0, $bytes.Length); $gz.Close()
+        $line = 'AZLRESULT:' + [Convert]::ToBase64String($ms.ToArray())
+        $global:AzlFakeTransport = [pscustomobject]@{
+            Kind         = 'WinRM'
+            Invoke       = { param($Self, $Node, $Script, $Parameters, $Secrets, $TimeoutSeconds) $global:AzlOrder.Add('session'); [pscustomobject]@{ Output = $line; Failed = $false; Error = ''; State = 'Succeeded' } }.GetNewClosure()
+            CloseSession = { param($Self, $Node) $global:AzlOrder.Add("closed:$Node") }
+        }
+        Mock -ModuleName AzlOsConfigurationRun New-AzlWinRmTransport { $global:AzlOrder.Add("transport:$($Address['iic-n02'])"); $global:AzlFakeTransport }
+        Mock -ModuleName AzlOsConfigurationRun Set-AzlTrustedHostsPolicy { $global:AzlOrder.Add("trusted:$(@($Address) -join ',')"); [pscustomobject]@{ Changed = $true; Previous = 'changed' } }
+        $secure = [System.Security.SecureString]::new(); $secure.AppendChar([char]'x')
+        $global:AzlRunContext = [pscustomobject]@{
+            CredentialInfo = [pscustomobject]@{ Credential = [pscredential]::new('azl-admin', $secure) }
+            TrustedHosts = [pscustomobject]@{ Previous = 'prior.example.invalid'; Changed = $true }
+            TrustedHostsState = @{ Profile = [pscustomobject]@{}; Store = [pscustomobject]@{}; Addresses = @('192.0.2.11') }
+        }
+        $id = InModuleScope AzlOsConfigurationRun { Get-AzlRunNodeIdentity -Context $global:AzlRunContext -Name 'iic-n02' -Address '192.0.2.120' -UseSsl $false }
+        $id.ComputerName | Should -Be 'IIC-N02'
+        $id.Mac | Should -Be @('00005e005320')
+        @($global:AzlOrder) | Should -Be @('trusted:192.0.2.11,192.0.2.120', 'transport:192.0.2.120', 'session', 'closed:iic-n02')
+        $global:AzlRunContext.TrustedHosts.Previous | Should -Be 'prior.example.invalid'
+        $global:AzlRunContext.TrustedHostsState.Addresses | Should -Contain '192.0.2.120'
     }
 }
 

@@ -628,10 +628,13 @@ function Select-AzlVerifiedNodeAddress {
     .PARAMETER Expected
         Get-AzlNodeExpectedIdentity of the node.
     .PARAMETER IdentityReader
-        { param([string]$Address, [bool]$UseSsl) } returning ComputerName and Mac, or throwing. The caller owns the credential. $null: no check (no
-        credential): the result says Checked is false.
+        { param([string]$Address, [bool]$UseSsl, $State) } returning ComputerName and Mac, or throwing. The caller owns the credential. $null: no check
+        (no credential): the first address with an endpoint is returned and the result says Checked is false.
     .PARAMETER EndpointResolver
-        { param([string]$Address) } returning Answers and UseSsl (the environment class decides HTTP or HTTPS). Default: the port the probe found.
+        { param([string]$Address, $State) } returning Answers and UseSsl (the environment class decides HTTP or HTTPS). Default: the port the probe found.
+    .PARAMETER ReaderState
+        Handed to IdentityReader and EndpointResolver as their last argument (a script block runs in the session state it was written in, so the
+        caller's local variables are not visible to it).
     .OUTPUTS
         Verified, Checked, Address, Source, UseSsl, Port, Dropped (Address, Source, Reason, Text), Log (one line per candidate), Message (why none
         proved the identity; '' when one did).
@@ -641,22 +644,23 @@ function Select-AzlVerifiedNodeAddress {
         [Parameter(Mandatory)][object]$Resolution,
         [Parameter(Mandatory)][object]$Expected,
         [AllowNull()][scriptblock]$IdentityReader,
-        [AllowNull()][scriptblock]$EndpointResolver
+        [AllowNull()][scriptblock]$EndpointResolver,
+        [AllowNull()][object]$ReaderState
     )
     $name = [string]$Expected.Name
     $log = [System.Collections.Generic.List[string]]::new()
     $dropped = [System.Collections.Generic.List[object]]::new()
     $unread = [System.Collections.Generic.List[string]]::new()
     $answering = @($Resolution.Candidates | Where-Object { $_.Answers })
-    if (-not $IdentityReader) {
-        $first = $answering | Select-Object -First 1
-        return [pscustomobject]@{ Verified = [bool]$first; Checked = $false; Address = $(if ($first) { $first.Address } else { '' }); Source = $(if ($first) { $first.Source } else { '' }); UseSsl = $(if ($first) { $first.Port -eq 5986 } else { $false }); Port = $(if ($first) { $first.Port } else { 0 }); Dropped = @(); Log = @('Identity not checked: no credential to read the node with.'); Message = '' }
-    }
     foreach ($c in $answering) {
-        $endpoint = if ($EndpointResolver) { & $EndpointResolver $c.Address } else { [pscustomobject]@{ Answers = $true; UseSsl = ($c.Port -eq 5986); Port = $c.Port } }
+        $endpoint = if ($EndpointResolver) { & $EndpointResolver $c.Address $ReaderState } else { [pscustomobject]@{ Answers = $true; UseSsl = ($c.Port -eq 5986); Port = $c.Port } }
         if (-not $endpoint.Answers) { $log.Add("address $($c.Address) ($($c.Source)) was not tried: no WinRM endpoint the profile allows answers there."); continue }
         $useSsl = [bool]$endpoint.UseSsl
-        try { $found = & $IdentityReader $c.Address $useSsl }
+        if (-not $IdentityReader) {
+            $log.Add("address $($c.Address) ($($c.Source)) was not identity-checked: no credential to read the node with.")
+            return [pscustomobject]@{ Verified = $true; Checked = $false; Address = $c.Address; Source = $c.Source; UseSsl = $useSsl; Port = [int](Get-AzlProp $endpoint 'Port' $c.Port); Dropped = @(); Log = $log.ToArray(); Message = '' }
+        }
+        try { $found = & $IdentityReader $c.Address $useSsl $ReaderState }
         catch {
             $unread.Add("$($c.Address) ($($c.Source)): $($_.Exception.Message)")
             $log.Add("address $($c.Address) ($($c.Source)) answered but its identity could not be read: $($_.Exception.Message)")
@@ -674,7 +678,7 @@ function Select-AzlVerifiedNodeAddress {
     $lines = @($dropped | ForEach-Object { "$($_.Text) ($($_.Reason)), found by $($_.Source)" }) + @($unread | ForEach-Object { "could not read the identity at $_" })
     $silent = @($Resolution.Candidates | Where-Object { -not $_.Answers } | ForEach-Object { "$($_.Address) ($($_.Source))" })
     $viaOverride = @($Resolution.Candidates | Where-Object { $_.Source -eq 'override' }).Count -gt 0
-    $message = if (-not $answering.Count) { '' }
+    $message = if (($dropped.Count + $unread.Count) -eq 0) { '' }
     elseif ($viaOverride) { "The address you gave for $name does not belong to it: $($lines -join '; '). It was not used and nothing was changed. Give the address of $name with -NodeAddress, or remove it so the run resolves one." }
     else { "No address proved to be $name, so nothing was changed: $($lines -join '; ').$(if ($silent.Count) { " Not answering: $($silent -join ', ')." }) Give the address $name answers on now with -NodeAddress @{ '$name' = '<ip>' } (or nodeAddress in the run settings)." }
     [pscustomobject]@{ Verified = $false; Checked = $true; Address = ''; Source = ''; UseSsl = $false; Port = 0; Dropped = $dropped.ToArray(); Log = $log.ToArray(); Message = $message }
