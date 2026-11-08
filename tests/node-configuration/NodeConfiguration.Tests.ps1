@@ -97,6 +97,14 @@ Describe 'Node spec' {
         $spec.Management.Gateway | Should -Be '192.0.2.1'
         @($spec.Ports | Where-Object IsManagement).Count | Should -Be 1
     }
+    It 'carries the AD domain only when the design uses Active Directory' {
+        $infra = Get-Infra
+        $infra.scenario.identity = 'active_directory'
+        $infra['identity'] = @{ active_directory = @{ domain_fqdn = 'corp.example.test' } }
+        (Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0]).DomainFqdn | Should -Be 'corp.example.test'
+        $infra.scenario.identity = 'local_identity'
+        (Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0]).DomainFqdn | Should -Be ''
+    }
     It 'reads the Arc resource ID and the verification from the ZTP handoff' {
         $infra = Get-Infra
         $handoff = Read-AzlHandoff -Path $script:HandoffFile
@@ -442,7 +450,8 @@ Describe 'Invoke-AzlNodeConfiguration' {
         $stages[1].Parameters.config.group | Should -Be 'Network'
         $r.Converged | Should -BeTrue
         @($r.Guard | Where-Object State -eq 'Committed').Count | Should -Be 2
-    }    It 'passes the administrator password as a secret, never as a parameter' {
+    }
+    It 'passes the administrator password as a secret, never as a parameter' {
         $bad = New-ConfiguredState $script:Spec
         $bad.admin = [pscustomobject]@{ ex = $true; en = $true; adm = $true; pw = $false }
         $t = New-FakeTransport @($bad, (New-ConfiguredState $script:Spec)) { param($p) [pscustomobject]@{ reboot = $false; results = @() } }
@@ -489,7 +498,8 @@ Describe 'Invoke-AzlNodeConfiguration' {
         $r2 = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t2 -Execute -NoRestart -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
         @($t2.Log | Where-Object Kind -eq 'GuardStage')[0].Parameters.config.restartAfter | Should -BeFalse
         $r2.Restarted | Should -BeFalse
-    }    It 'sends a missing SBE file through the transport and a SAS address as a secret' {
+    }
+    It 'sends a missing SBE file through the transport and a SAS address as a secret' {
         $infra = Get-Infra
         $bundle = [pscustomobject]@{ Name = 'SBE_Dell_X_1.0'; ZipName = 'SBE_Dell_X_1.0.zip'; HashSource = 'x'; Deployment = [ordered]@{}
             Files = @([pscustomobject]@{ Name = 'SBE_Dell_X_1.0.zip'; Path = 'D:\sbe\SBE_Dell_X_1.0.zip'; Size = 100; Sha256 = 'AA' }) }
