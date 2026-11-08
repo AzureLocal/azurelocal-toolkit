@@ -605,15 +605,19 @@ function Get-AzlDeploymentState {
             if (-not $s) { continue }
             $path = if ($prefix) { "$prefix.$position" } else { [string]$position }
             $position++
-            $errors = foreach ($e in @(Get-AzlProp $s 'exception' @())) {
-                $text = if ($e -is [string]) { $e } elseif (Get-AzlProp $e 'message') { [string](Get-AzlProp $e 'message') } else { [string]$e }
+            # Errors: the full text of every exception, never cut. ErrorJson: an exception that is an object is also kept whole as JSON,
+            # because its other members (EnvironmentValidator Results with Description, Remediation, AdditionalData.Detail) carry the reason.
+            $exceptions = @(Get-AzlProp $s 'exception' @())
+            $errors = foreach ($e in $exceptions) {
+                $text = if ($e -is [string]) { $e } elseif (Get-AzlProp $e 'message') { [string](Get-AzlProp $e 'message') } else { ConvertTo-Json -InputObject $e -Depth 20 -Compress }
                 if ($text) { $text }
             }
+            $errorJson = foreach ($e in $exceptions) { if ($e -and $e -isnot [string]) { ConvertTo-Json -InputObject $e -Depth 20 -Compress } }
             [pscustomobject]@{
                 Depth = $depth; Name = [string](Get-AzlProp $s 'name' ''); Status = [string](Get-AzlProp $s 'status' ''); Description = [string](Get-AzlProp $s 'description' '')
                 FullStepIndex = [string](Get-AzlProp $s 'fullStepIndex' $path)
                 StartTime = [string](Get-AzlProp $s 'startTimeUtc' ''); EndTime = [string](Get-AzlProp $s 'endTimeUtc' '')
-                Errors = @($errors)
+                Errors = @($errors); ErrorJson = @($errorJson)
             }
             & $flatten (Get-AzlProp $s 'steps' @()) ($depth + 1) $path
         }
