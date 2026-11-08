@@ -225,6 +225,12 @@ deployment:
   # The OEM's SBE discovery catalog (SBE_Discovery_Dell.xml) the precondition SbeValidatedWithSolution reads: the file, or a folder that holds...
   # used by: deployment
   sbe_catalog_path: "D:\\sbe\\dell\\SBE_Discovery_Dell.xml"
+  # How long a passing result of the pre-cluster verification gate (Invoke-AzureLocalPreClusterVerification.ps1 -Mode Verify) stays valid for t...
+  # default: 4; used by: deployment
+  pre_cluster_verification_max_age_hours: 4
+  # Where the pre-cluster verification gate writes report.json, summary.md and precluster-verification-events.jsonl, and where the ARM run look...
+  # used by: deployment
+  pre_cluster_verification_report_directory: "D:\\Data\\azl-ztp\\site\\arm-report\\verification\\live"
   # Opt in to registering the mandatory Azure Local resource providers (Microsoft Learn: Assign required permissions for Azure Local deployment...
   # default: false; used by: deployment
   register_resource_providers: false
@@ -729,6 +735,9 @@ identity:
   local_admin:
     # required; used by: ztp, os_configuration, deployment, monitoring
     username: "azl-admin"
+    # Optional.
+    # used by: deployment
+    username_secret: "keyvault://kv-iic-mgmt-01/local-admin-username"
     # At least 14 characters with lowercase, uppercase, a digit and a special character.
     # required; used by: ztp, os_configuration, deployment
     password: "keyvault://kv-iic-mgmt-01/local-admin-password"

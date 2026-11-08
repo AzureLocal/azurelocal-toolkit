@@ -340,6 +340,17 @@
           "description": "The OEM's SBE discovery catalog (SBE_Discovery_Dell.xml) the precondition SbeValidatedWithSolution reads: the file, or a folder that holds SBE_Discovery_*.xml. Default: the SBE_Discovery_*.xml in hardware.sbe.bundle_path. Nothing is downloaded.",
           "type": "string"
         },
+        "pre_cluster_verification_max_age_hours": {
+          "description": "How long a passing result of the pre-cluster verification gate (Invoke-AzureLocalPreClusterVerification.ps1 -Mode Verify) stays valid for the ARM Validate and Deploy, in hours. After that the ARM run fails the precondition PreClusterVerification and names the command to run again. Default 4. (since 5.6)",
+          "type": "integer",
+          "default": 4,
+          "minimum": 1,
+          "maximum": 168
+        },
+        "pre_cluster_verification_report_directory": {
+          "description": "Where the pre-cluster verification gate writes report.json, summary.md and precluster-verification-events.jsonl, and where the ARM run looks for the latest result. Default: arm-report\\verification\\live in the environment data folder (the folder that holds provisioning.simplified.evidence_path, else media_path, else the folder of the infrastructure file). (since 5.6)",
+          "type": "string"
+        },
         "register_resource_providers": {
           "description": "Opt in to registering the mandatory Azure Local resource providers (Microsoft Learn: Assign required permissions for Azure Local deployment) that are not registered in the subscription, and waiting until they are Registered, when the precondition ResourceProviders runs in Mode Validate or Deploy. Default false: the run never changes Azure by itself and a mandatory provider that is not registered fails the precondition, with the Register-AzResourceProvider command for each. Needs Owner or Contributor on the subscription. Never done in Plan or with WhatIf. Set by the -RegisterResourceProviders switch. (since 5.6)",
           "type": "boolean",
@@ -777,6 +788,10 @@
             "username": {
               "type": "string",
               "minLength": 1
+            },
+            "username_secret": {
+              "$ref": "#/$defs/kv_ref",
+              "description": "Optional. The Key Vault secret that holds this user name, as a keyvault://<vault>/<secret> reference, for the tools that read the user name from the vault (azurelocal-ztp's Add-KeyVaultCredentials.ps1 stores it as local-admin-username next to the password). The pre-cluster verification (IDN-016) reads it and fails when it differs from username. Default: the secret local-admin-username in the vault of the password reference; a default secret that does not exist is a warning, a secret named here that does not exist is a failure. (since 5.6)"
             },
             "password": {
               "$ref": "#/$defs/kv_ref",
