@@ -1,13 +1,3 @@
 Canonical Unknown Summary
-Total unknown paths: 1198
-Top unknown roots:
-- compute: 628
-- networking: 309
-- security: 72
-- operations: 63
-- azure_platform: 55
-- identity: 50
-- storage_accounts: 13
-- cluster_shared_volumes: 5
-- tags: 2
-- site: 1
+Total unknown paths: 0
+Checked: variables.example.yml against master-registry.yaml 4.1.0 (2026-11-08), strict.
