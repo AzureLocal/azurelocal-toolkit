@@ -822,3 +822,29 @@ nodes:
     ipv4_address: "10.0.0.12"
     bmc_address: "10.245.64.12"
     serial_number: "ABC1235"
+
+# -----------------------------------------------------------------------------
+# infrastructure.yml sections (registry 4.1.0)
+# The choices and run settings below are registry variables too: the same names
+# in infrastructure.yml and here. Full example: ../infrastructure/infrastructure.example.yml
+# -----------------------------------------------------------------------------
+scenario:
+  identity: active_directory # active_directory | local_identity
+  storage_architecture: s2d # s2d | san | hybrid
+  storage_connectivity: switched # switched | switchless
+  topology: standard # standard | rack_aware
+  connectivity: connected # connected | disconnected
+  cloud: public # public | government
+  outbound_path: direct # direct | proxy | arc_gateway | proxy_arc_gateway | private_path
+  os_install: simplified # iso | simplified
+  deploy_method: arm # portal | arm
+  environment_class: production # lab | test | dev | production | dmz
+
+os_configuration:
+  clear_storage: false
+  remoting:
+    transport: winrm # winrm | winrm_https | arc
+    bootstrap_transport: none # none | arc | smb | auto
+    allowed_source_cidrs: ["198.51.100.10/32"]
+    trusted_hosts: auto # auto | exact | wildcard
+    use_https: auto # auto | true | false

@@ -1,5 +1,7 @@
 # infrastructure.yml: the one environment file
 
+> **Registry first.** The master of every variable is [`config/variables/schema/master-registry.yaml`](../variables/schema/master-registry.yaml). A key is added there before it is added to this schema, and its path, type, enum and default must match; a test (`tests/variables`) fails when this schema has a key the registry lacks. See [config/variables/README.md](../variables/README.md).
+
 `infrastructure.yml` describes one Azure Local instance: the design choices, the machines, the networks, identity, the Azure targets, how the OS gets onto the machines, and the cluster deployment. Every Azure Local tool reads the same file:
 
 | Tool | Reads | Writes |
