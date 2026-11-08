@@ -615,7 +615,8 @@ Describe 'AZ-023 the Arc endpoints, probed from each node' {
         @($log['Targets'] | ForEach-Object Host) | Should -Contain 'brazilsouth.dp.kubernetesconfiguration.azure.com'
         @($log['Targets'] | ForEach-Object Host | Where-Object { $_ -like '*.his.arc.azure.com' }) | Should -Be @('gbl.his.arc.azure.com')
         $r[0].Message | Should -Match 'short code of brazilsouth is not in the consolidated lists'
-    }    It 'is Skipped per node, with the reason, when the probe cannot run on the node' {
+    }
+    It 'is Skipped per node, with the reason, when the probe cannot run on the node' {
         $r = Invoke-AzCheck 'AZ-023' (New-AzContext -Override @{ TestEndpoint = { throw 'WinRM cannot connect' } })
         $r.Count | Should -Be 2
         foreach ($x in $r) { $x.Status | Should -Be 'Skipped'; $x.Message | Should -Match 'WinRM cannot connect' }
@@ -627,5 +628,52 @@ Describe 'AZ-023 the Arc endpoints, probed from each node' {
     It 'is not applicable behind a proxy or an Arc gateway (the path is not direct)' {
         $i = Get-TestInfra; $i.scenario.outbound_path = 'proxy'
         (Invoke-AzCheck 'AZ-023' (New-AzContext -Infra $i))[0].Status | Should -Be 'NotApplicable'
+    }
+}
+
+Describe 'GetCallerRoles and GetPrincipalRoles list through REST, never mixing Get-AzRoleAssignment parameter sets (lab: "Parameter set cannot be resolved")' {
+    BeforeAll {
+        $script:Scope = '/subscriptions/00000000-0000-0000-0000-000000000001/resourceGroups/rg-lab'
+        $script:Adapter = (Get-AzlVerificationAdapterDefault).Azure
+    }
+    It 'asks ARM for assignedTo(objectId) on the scope, follows nextLink, names the roles and never calls Get-AzRoleAssignment' {
+        Mock -ModuleName AzlVerification.Azure Get-AzContext { [pscustomobject]@{ Account = [pscustomobject]@{ Id = 'tester@example.invalid'; Type = 'User' } } }
+        Mock -ModuleName AzlVerification.Azure Get-AzADUser { [pscustomobject]@{ Id = '11111111-1111-1111-1111-111111111111' } }
+        Mock -ModuleName AzlVerification.Azure Get-AzRoleAssignment { throw 'Get-AzRoleAssignment must not be called' }
+        Mock -ModuleName AzlVerification.Azure Invoke-AzRestMethod {
+            if ($Uri -like '*page2*') { return [pscustomobject]@{ StatusCode = 200; Content = (@{ value = @(@{ properties = @{ roleDefinitionId = '/subscriptions/x/providers/Microsoft.Authorization/roleDefinitions/uaa'; scope = '/subscriptions/00000000-0000-0000-0000-000000000001' } }) } | ConvertTo-Json -Depth 6) } }
+            if ($Path -like '*roleAssignments*') {
+                $Path | Should -Match "assignedTo\('11111111-1111-1111-1111-111111111111'\)"
+                return [pscustomobject]@{ StatusCode = 200; Content = (@{ value = @(@{ properties = @{ roleDefinitionId = '/subscriptions/x/providers/Microsoft.Authorization/roleDefinitions/contrib'; scope = '/providers/Microsoft.Management/managementGroups/mg1' } }); nextLink = 'https://management.azure.com/page2' } | ConvertTo-Json -Depth 6) }
+            }
+            $name = if ($Path -like '*contrib*') { 'Contributor' } else { 'User Access Administrator' }
+            [pscustomobject]@{ StatusCode = 200; Content = (@{ properties = @{ roleName = $name } } | ConvertTo-Json) }
+        }
+        $r = @(& $script:Adapter.GetCallerRoles $script:Scope)
+        ($r | ForEach-Object Role | Sort-Object) | Should -Be @('Contributor', 'User Access Administrator')
+        ($r | Where-Object Role -EQ 'Contributor').Scope | Should -Be '/providers/Microsoft.Management/managementGroups/mg1'
+    }
+    It 'GetPrincipalRoles takes the object id it is given and lists by it' {
+        Mock -ModuleName AzlVerification.Azure Invoke-AzRestMethod {
+            if ($Path -like '*roleAssignments*') { return [pscustomobject]@{ StatusCode = 200; Content = (@{ value = @(@{ properties = @{ roleDefinitionId = '/x/roleDefinitions/r1'; scope = '/subscriptions/s' } }) } | ConvertTo-Json -Depth 6) } }
+            [pscustomobject]@{ StatusCode = 200; Content = (@{ properties = @{ roleName = 'Reader' } } | ConvertTo-Json) }
+        }
+        (@(& $script:Adapter.GetPrincipalRoles '22222222-2222-2222-2222-222222222222' $script:Scope))[0].Role | Should -Be 'Reader'
+        Should -Invoke -ModuleName AzlVerification.Azure Invoke-AzRestMethod -ParameterFilter { $Path -like "*assignedTo('22222222-2222-2222-2222-222222222222')*" }
+    }
+    It 'throws with the HTTP status (so the check is Skipped with the reason) when ARM refuses' {
+        Mock -ModuleName AzlVerification.Azure Invoke-AzRestMethod { [pscustomobject]@{ StatusCode = 403; Content = 'AuthorizationFailed' } }
+        { & $script:Adapter.GetPrincipalRoles '22222222-2222-2222-2222-222222222222' $script:Scope } | Should -Throw '*HTTP 403*'
+    }
+    It 'uses the signed-in user from Graph when the user principal name does not resolve (guest accounts)' {
+        Mock -ModuleName AzlVerification.Azure Get-AzContext { [pscustomobject]@{ Account = [pscustomobject]@{ Id = 'guest_example.invalid#EXT#@tenant.onmicrosoft.com'; Type = 'User' } } }
+        Mock -ModuleName AzlVerification.Azure Get-AzADUser { $null }
+        Mock -ModuleName AzlVerification.Azure Invoke-AzRestMethod {
+            if ($Uri -like '*graph.microsoft.com*') { return [pscustomobject]@{ StatusCode = 200; Content = '{"id":"33333333-3333-3333-3333-333333333333"}' } }
+            if ($Path -like '*roleAssignments*') { return [pscustomobject]@{ StatusCode = 200; Content = '{"value":[]}' } }
+            [pscustomobject]@{ StatusCode = 200; Content = '{}' }
+        }
+        $null = @(& $script:Adapter.GetCallerRoles $script:Scope)
+        Should -Invoke -ModuleName AzlVerification.Azure Invoke-AzRestMethod -ParameterFilter { $Path -like "*assignedTo('33333333-3333-3333-3333-333333333333')*" }
     }
 }

@@ -625,6 +625,62 @@ function Get-AzlVerifyArcEndpoint {
             ForEach-Object { [pscustomobject]@{ Name = $_.Note; Host = $_.Host; Port = $_.Port; Tier = $_.Tier; Group = $_.Group } })
 }
 
+function Get-AzlVerifyCallerObjectId {
+    <#
+    .SYNOPSIS
+        The Microsoft Entra object id of the signed-in Az context: the user (by user principal name, else the signed-in user from Graph) or the service principal
+        (by application id). Never mixes parameter sets: one lookup, one id.
+    #>
+    [CmdletBinding()]
+    param()
+    $c = Get-AzContext
+    if (-not $c -or -not $c.Account) { throw 'There is no Az context (Connect-AzAccount).' }
+    $id = [string]$c.Account.Id
+    if ([string]$c.Account.Type -eq 'User') {
+        $user = $null
+        try { $user = Get-AzADUser -UserPrincipalName $id -ErrorAction Stop } catch { $user = $null }
+        if ($user -and $user.Id) { return [string]$user.Id }
+        $me = Invoke-AzRestMethod -Method GET -Uri 'https://graph.microsoft.com/v1.0/me?$select=id'
+        if ($me.StatusCode -lt 400) { $o = [string](($me.Content | ConvertFrom-Json).id); if ($o) { return $o } }
+        throw "The object id of the signed-in user $id could not be read (Get-AzADUser and Graph /me both failed)."
+    }
+    $sp = Get-AzADServicePrincipal -ApplicationId $id -ErrorAction Stop
+    if (-not $sp -or -not $sp.Id) { throw "The service principal with application id $id was not found." }
+    return [string]$sp.Id
+}
+
+function Get-AzlVerifyRoleByPrincipal {
+    <#
+    .SYNOPSIS
+        The role assignments of one user or service principal that apply at -Scope: Azure Resource Manager lists them with $filter=assignedTo('{objectId}') on the scope,
+        which is transitive over groups and includes what is inherited from the subscription and management groups. Rows of Role (the role name) and Scope.
+        REST on purpose: Get-AzRoleAssignment cannot combine -Scope with -ExpandPrincipalGroups ("Parameter set cannot be resolved").
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][string]$ObjectId, [Parameter(Mandatory)][string]$Scope)
+    $names = @{}
+    $rows = [System.Collections.Generic.List[object]]::new()
+    $path = "$($Scope.TrimEnd('/'))/providers/Microsoft.Authorization/roleAssignments?api-version=2022-04-01&`$filter=assignedTo('$ObjectId')"
+    $uri = ''
+    for ($page = 0; $page -lt 50; $page++) {
+        $r = if ($uri) { Invoke-AzRestMethod -Method GET -Uri $uri } else { Invoke-AzRestMethod -Method GET -Path $path }
+        if ($r.StatusCode -ge 400) { throw "Listing role assignments at $Scope failed with HTTP $($r.StatusCode): $([string]$r.Content)" }
+        $j = $r.Content | ConvertFrom-Json
+        foreach ($a in @($j.value)) { $rows.Add($a) }
+        $next = if ($j.PSObject.Properties['nextLink']) { [string]$j.nextLink } else { '' }
+        if (-not $next) { break }
+        $uri = $next
+    }
+    foreach ($a in $rows) {
+        $defId = [string]$a.properties.roleDefinitionId
+        if (-not $names.ContainsKey($defId)) {
+            $d = Invoke-AzRestMethod -Method GET -Path "$defId`?api-version=2022-04-01"
+            $names[$defId] = if ($d.StatusCode -lt 400) { [string](($d.Content | ConvertFrom-Json).properties.roleName) } else { '' }
+        }
+        if ($names[$defId]) { [pscustomobject]@{ Role = $names[$defId]; Scope = [string]$a.properties.scope } }
+    }
+}
+
 function Test-AzlVerifyArcEndpoint {
     # AZ-023. Harvested from the toolkit's Test-ArcConnectivity: the Arc endpoints, probed FROM each node.
     param($Context)
@@ -749,15 +805,12 @@ function Get-AzlVerificationAdapterDefault {
     }
     $azure['GetCallerRoles'] = {
         param($Scope)
-        # The roles the signed-in principal holds at the scope and above, including those it holds through a group.
-        $c = Get-AzContext
-        if ([string]$c.Account.Type -eq 'User') { $found = Get-AzRoleAssignment -Scope $Scope -SignInName ([string]$c.Account.Id) -ExpandPrincipalGroups }
-        else { $sp = Get-AzADServicePrincipal -ApplicationId ([string]$c.Account.Id); $found = Get-AzRoleAssignment -Scope $Scope -ObjectId $sp.Id -ExpandPrincipalGroups }
-        @($found | ForEach-Object { [pscustomobject]@{ Role = [string]$_.RoleDefinitionName; Scope = [string]$_.Scope } })
+        # The roles the signed-in principal holds at the scope and above, including those it holds through a group and those inherited from a management group.
+        Get-AzlVerifyRoleByPrincipal -ObjectId (Get-AzlVerifyCallerObjectId) -Scope $Scope
     }
     $azure['GetPrincipalRoles'] = {
         param($ObjectId, $Scope)
-        @(Get-AzRoleAssignment -Scope $Scope -ObjectId $ObjectId | ForEach-Object { [pscustomobject]@{ Role = [string]$_.RoleDefinitionName; Scope = [string]$_.Scope } })
+        Get-AzlVerifyRoleByPrincipal -ObjectId $ObjectId -Scope $Scope
     }
     $azure['ListRoleAssignments'] = {
         param($Scope)
