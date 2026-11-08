@@ -574,13 +574,13 @@ Describe 'The step in the node configuration loop' {
         $order[0] | Should -Be 'RemoteManagement'
         [array]::IndexOf($order, 'RemoteManagement') | Should -BeLessThan ([array]::IndexOf($order, 'Network'))
     }
-    It 'Plan reads (twice) and changes nothing' {
+    It 'Plan reads (twice, then the read-only status of the last guarded change) and changes nothing' {
         $infra = Get-FixtureInfra 'production'
         $p = Resolve-AzlRemotingProfile -Infrastructure $infra
         $spec = Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0] -RemotingProfile $p
         $t = Get-StepNode $spec.Remoting
         $r = Invoke-AzlNodeConfiguration -Spec $spec -Transport $t -Step RemoteManagement
-        @($t.Log) | Should -Be @('read', 'remoting:read')
+        @($t.Log) | Should -Be @('read', 'remoting:read', 'read') -Because 'the last read is the status of the last guarded change, which every Plan and Apply ends with'
         @($r.Plan | Where-Object { $_.Action -eq 'Change' }).Count | Should -BeGreaterThan 1
         $r.Converged | Should -BeFalse
     }
