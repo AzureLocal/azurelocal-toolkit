@@ -118,6 +118,17 @@
             "portal",
             "arm"
           ]
+        },
+        "environment_class": {
+          "description": "What kind of environment this is. It picks the remote management security profile of the OS configuration run (WinRM, RDP and ICMP scope on the nodes, HTTP or HTTPS, the TrustedHosts policy of the machine running the automation, the one-time Arc bootstrap): see docs/os-configuration-and-arm-deployment.md and config/remoting-profiles.json. lab and test are relaxed with the wildcard (TrustedHosts '*', sources Any, HTTP 5985 allowed) and a warning says so; dev, production and dmz are strict. Optional. Missing means production (fail closed); another value is rejected. (since 5.6)",
+          "enum": [
+            "lab",
+            "test",
+            "dev",
+            "production",
+            "dmz"
+          ],
+          "default": "production"
         }
       }
     },
@@ -939,6 +950,17 @@
               },
               "subnet": {
                 "$ref": "#/$defs/cidr"
+              },
+              "purpose": {
+                "description": "What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote management security profile adds its subnet to the allowed sources of dev and production (a candidate, not a trust: prefer listing the controller addresses in os_configuration.remoting.allowed_source_cidrs). automation, compute, storage and other have no effect on remote management.",
+                "enum": [
+                  "management",
+                  "oob",
+                  "automation",
+                  "compute",
+                  "storage",
+                  "other"
+                ]
               }
             }
           }
@@ -966,6 +988,7 @@
                 "$ref": "#/$defs/cidr"
               },
               "purpose": {
+                "description": "Free text. The values management, oob, automation, compute, storage and other (any case) are the purpose marker: management and oob make the subnet a candidate source for the remote management security profile of dev and production. Any other text has no effect.",
                 "type": "string"
               }
             }
@@ -2254,12 +2277,12 @@
           }
         },
         "remoting": {
-          "description": "How the OS configuration reaches the nodes (since 5.4.4). PowerShell remoting (WinRM) is the default; Arc Run Command is an option, never a silent fallback.",
+          "description": "How the OS configuration reaches the nodes and how their remote management (WinRM, RDP, ICMP) is secured. The environment class (scenario.environment_class) picks the profile; these keys refine it. The baseline holds in every class and no key changes it: AllowUnencrypted false, Basic and CredSSP off, no SkipCACheck or SkipCNCheck, TLS 1.2 or higher. (since 5.6)",
           "type": "object",
           "additionalProperties": false,
           "properties": {
             "transport": {
-              "description": "winrm (HTTP, 5985), winrm_https (5986, a certificate on the node) or arc (Azure Arc Run Command: the exception for sites with no route to the nodes; not recommended for network changes). The command line's -Transport WinRM or ArcRunCommand overrides it. (since 5.4.4)",
+              "description": "winrm (HTTP, 5985), winrm_https (5986, a certificate on the node) or arc (Azure Arc Run Command: the exception for sites with no route to the nodes; not recommended for network changes). The command line's -Transport WinRM or ArcRunCommand overrides it.",
               "enum": [
                 "winrm",
                 "winrm_https",
@@ -2268,20 +2291,52 @@
               "default": "winrm"
             },
             "bootstrap_transport": {
-              "description": "none: a node that does not answer on 5985/5986 fails with the diagnosis. arc: one Arc Run Command per node, only to open WinRM-In (and RDP, ICMP) for allowed_source_cidrs, because a freshly provisioned node's firewall allows its own subnet only; everything after that goes over WinRM. (since 5.4.4)",
+              "description": "How a node whose WinRM firewall rule blocks this host is opened once, without touching the node by hand. none: such a node fails with the diagnosis. arc: Azure Arc Run Command (outbound 443 only; the wait is capped, default 3 minutes, then the route fails cleanly). smb: TCP 445 from a Windows orchestrator to the node, the local Administrator, one small service run once with sc.exe; Windows orchestrator only. auto: the allowed routes in the order smb, arc. Each runs one small script that starts WinRM, creates the listener if none exists and sets the WinRM rules' scope, then everything else runs over WinRM. production and dmz also need the pipeline approval (-ApprovedBootstrap). The environment class decides whether a bootstrap is allowed at all.",
               "enum": [
                 "none",
-                "arc"
+                "arc",
+                "smb",
+                "auto"
               ],
               "default": "none"
             },
             "allowed_source_cidrs": {
-              "description": "The runner and jump server networks the bootstrap opens WinRM, RDP and ICMP for. The management network (networking.management.subnet) is always included. (since 5.4.4)",
+              "description": "The runner and jump server addresses, as the node sees them (after NAT), allowed to use WinRM, RDP and ICMP on the nodes, in addition to the management and out-of-band networks. IPv4 or IPv6 CIDR; /0 to /8 is refused, dev and production refuse anything wider than /24 (/64 for IPv6), dmz takes /32 or /128 only. The dmz class does not add the management network.",
               "type": "array",
               "items": {
                 "type": "string",
-                "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/([0-9]|[12][0-9]|3[0-2])$"
+                "minLength": 1
               }
+            },
+            "allow_any_source": {
+              "description": "true: the nodes' firewall accepts WinRM, RDP and ICMP from any source (and TrustedHosts is '*' on the machine running the automation). Honoured only in the classes lab and test, where it is implied unless you set false; it is an error in dev, production and dmz.",
+              "type": "boolean"
+            },
+            "trusted_hosts": {
+              "description": "The TrustedHosts policy on the machine running the automation. auto: the class decides. exact: only the nodes' addresses. wildcard: '*', lab and test only. The previous value is restored after the run.",
+              "enum": [
+                "auto",
+                "exact",
+                "wildcard"
+              ],
+              "default": "auto"
+            },
+            "use_https": {
+              "description": "auto: the class decides (HTTP in lab and test; HTTPS in dev, production and dmz). true: WinRM over HTTPS (5986). false: HTTP only, which production and dmz refuse and dev warns about.",
+              "enum": [
+                "auto",
+                true,
+                false
+              ],
+              "default": "auto"
+            },
+            "isolation_confirmed": {
+              "description": "true: you confirm the network of the nodes has no route to production. Only a statement in lab and test (it changes the warning text, not the behaviour); it is not allowed in dev, production or dmz, where Any is never accepted.",
+              "type": "boolean"
+            },
+            "certificate": {
+              "description": "The server certificate for the HTTPS listener: the 40-hex thumbprint of a certificate already in the node's LocalMachine\\My store, or keyvault://<vault>/<secret> of a secret that holds the certificate as a base64 PFX without a password (a Key Vault certificate's secret). Empty: each node gets a self-signed Server Authentication certificate with its DNS names and management IP as subject alternative names, as the pre-join bootstrap only (not allowed in dmz).",
+              "type": "string"
             }
           }
         }
@@ -4252,6 +4307,17 @@
       "properties": {
         "name": {
           "type": "string"
+        },
+        "purpose": {
+          "description": "What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote management security profile adds its subnet to the allowed sources of dev and production (a candidate, not a trust: prefer listing the controller addresses in os_configuration.remoting.allowed_source_cidrs). automation, compute, storage and other have no effect on remote management.",
+          "enum": [
+            "management",
+            "oob",
+            "automation",
+            "compute",
+            "storage",
+            "other"
+          ]
         },
         "vlan_id": {
           "type": "integer",

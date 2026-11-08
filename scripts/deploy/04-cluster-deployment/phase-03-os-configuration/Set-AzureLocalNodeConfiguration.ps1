@@ -54,7 +54,7 @@
     Without it identity.local_admin from the master file is used, with its password read from the Key Vault (never printed). Run from a host that reaches the nodes'
     management subnet on TCP 5985 (5986 with -UseSsl).
 .PARAMETER UseSsl
-    WinRM over HTTPS (5986). A node needs a listener with a certificate.
+    WinRM over HTTPS (TCP 5986) with a full certificate check; a node needs a listener with a certificate. The remote management profile (scenario.environment_class) decides which endpoint the OS configuration run uses and passes this switch.
 .PARAMETER Authentication
     Default, Negotiate (default), Kerberos, Basic or CredSSP. From a Linux runner Negotiate and Kerberos need PSWSMan. A workgroup node needs TrustedHosts or HTTPS.
 .PARAMETER Settings
@@ -125,12 +125,17 @@ Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlNodeConfig
 Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlNodeTransport.psm1') -Force
 Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlGuardedChange.psm1') -Force
 Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlRemoting.psm1') -Force
+Import-Module (Join-Path (Join-Path $common 'remoting') 'AzlRemotingProfile.psm1') -Force
 
 function Write-Line([string]$Text) { Write-Information -MessageData $Text -InformationAction Continue }
 
 Set-AzlNodeRetryPolicy -Tries $RetryTries -DelaySeconds $RetryDelaySeconds
 $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation:$SkipValidation
 $handoff = if ($HandoffFile) { Read-AzlHandoff -Path $HandoffFile } else { $null }
+# The remote management profile of the class (missing class = production). Printed first; TrustedHosts on this machine is managed by Invoke-AzureLocalOsConfiguration.ps1, not here.
+$remotingProfile = Resolve-AzlRemotingProfile -Infrastructure $infra -Override (ConvertTo-AzlRemotingProfileOverride -Setting $Settings)
+foreach ($line in @(Format-AzlRemotingProfile -RemotingProfile $remotingProfile)) { Write-Line $line }
+Assert-AzlRemotingProfile -RemotingProfile $remotingProfile
 $allSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
 $steps = if ($Step) { $Step } else { $allSteps }
 
@@ -147,7 +152,7 @@ if ($bundlePath -and -not $SpecOnly -and ('Sbe' -in $steps -or 'Drivers' -in $st
 }
 elseif (-not $bundlePath) { Write-Line 'hardware.sbe.bundle_path is not set: the SBE and the OEM drivers are skipped.' }
 
-$specs = foreach ($n in $nodes) { Get-AzlNodeSpec -Infrastructure $infra -Node $n -Handoff $handoff -SbeBundle $bundle }
+$specs = foreach ($n in $nodes) { Get-AzlNodeSpec -Infrastructure $infra -Node $n -Handoff $handoff -SbeBundle $bundle -RemotingProfile $remotingProfile }
 
 if ($SpecOnly) {
     foreach ($s in $specs) {
@@ -161,6 +166,8 @@ if ($SpecOnly) {
 
 # ---- the transport: PowerShell remoting (WinRM) unless Arc Run Command was asked for. There is no silent fallback to Arc.
 $remoting = Get-AzlRemotingSetting -Infrastructure $infra -Setting $Settings -Transport $Transport -UseSsl:$UseSsl -Authentication $Authentication
+# The environment class decides HTTP or HTTPS (production, dev and dmz use HTTPS). An explicit -UseSsl does too.
+if ($remotingProfile.Transport.Scheme -eq 'https' -and -not $remoting.UseSsl) { $remoting.UseSsl = $true; $remoting.Port = 5986 }
 $eventContext = New-AzlGuardEventContext -Path $EventLogPath -SchemaVersion ([string](Get-AzlProp $infra '_metadata.schema_version' '')) -Method $EventMethod -Phase $EventPhase
 $subscription = [string](Get-AzlProp $infra 'azure.subscription_id')
 $resourceGroup = [string](Get-AzlProp $infra 'azure.resource_group')
@@ -207,7 +214,7 @@ else {
         [pscustomobject]@{ Name = $s.Name; Addresses = $list }
     }
     $arcAvailable = @($arcMachines.Keys | Where-Object { $arcMachines[$_].Status -eq 'Connected' })
-    $findings = @(Get-AzlRemotingFinding -Node $candidates -Port $remoting.Port -HasCredential ([bool]$Credential) -Origin $credentialSource -ArcAvailable $arcAvailable)
+    $findings = @(Get-AzlRemotingPreCheckFinding -Node $candidates -Port $remoting.Port -HasCredential ([bool]$Credential) -Origin $credentialSource -ArcAvailable $arcAvailable)
     # The bootstrap: Arc once per node, only to open remote management for the source CIDRs; then the node is probed again and everything else goes over WinRM.
     $closed = @($findings | Where-Object { -not $_.Reachable -and $_.Result -ne 'NoCredential' -and $_.Result -ne 'NoAddress' })
     if ($closed.Count -and $remoting.BootstrapTransport -eq 'arc') {
@@ -225,10 +232,10 @@ else {
         }
         if ($Execute -and $bootstrapRecords.Count) {
             Start-Sleep -Seconds 5
-            $findings = @(Get-AzlRemotingFinding -Node $candidates -Port $remoting.Port -HasCredential ([bool]$Credential) -Origin $credentialSource -ArcAvailable $arcAvailable)
+            $findings = @(Get-AzlRemotingPreCheckFinding -Node $candidates -Port $remoting.Port -HasCredential ([bool]$Credential) -Origin $credentialSource -ArcAvailable $arcAvailable)
         }
     }
-    Write-Line (Format-AzlRemotingFinding -Finding $findings)
+    Write-Line (Format-AzlRemotingPreCheckFinding -Finding $findings)
     if (@($findings | Where-Object { -not $_.Reachable }).Count -and -not ($remoting.BootstrapTransport -eq 'arc' -and -not $Execute -and @($findings | Where-Object { -not $_.Reachable -and $_.Node -in $arcAvailable }).Count -eq @($findings | Where-Object { -not $_.Reachable }).Count)) {
         Write-Line "NOT READY: $(@($findings | Where-Object { -not $_.Reachable }).Count) node(s) can't be reached over PowerShell remoting. Nothing was changed."
         exit 1

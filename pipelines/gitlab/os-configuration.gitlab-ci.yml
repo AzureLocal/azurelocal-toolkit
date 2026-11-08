@@ -36,6 +36,9 @@ variables:
   AZURE_TENANT_ID: '<tenant-id>'
   AZURE_SUBSCRIPTION_ID: '<subscription-id>'
   REPORT_DIRECTORY: os-configuration-report
+  # Set to 'true' when you play the apply job to approve the one-time WinRM bootstrap (bootstrap_transport arc, smb or auto) for this run.
+  # Production and dmz do not bootstrap without it. An smb bootstrap needs a Windows runner.
+  APPROVED_BOOTSTRAP: 'false'
 
 .os-configuration:
   tags: [azure-local, linux]
@@ -87,7 +90,8 @@ os-configuration-apply:
   environment:
     name: azure-local-os-configuration
   script:
-    - pwsh -NoProfile -File "$OSCONFIG_SCRIPT" -InfrastructureFile "$INFRASTRUCTURE_FILE" -HandoffPath "$HANDOFF_PATH" -Mode Apply -ReportDirectory "$REPORT_DIRECTORY/apply"
+    - approval=''; if [ "$APPROVED_BOOTSTRAP" = 'true' ]; then approval='-ApprovedBootstrap'; fi
+    - pwsh -NoProfile -File "$OSCONFIG_SCRIPT" -InfrastructureFile "$INFRASTRUCTURE_FILE" -HandoffPath "$HANDOFF_PATH" -Mode Apply -ReportDirectory "$REPORT_DIRECTORY/apply" $approval
   after_script:
     - 'if [ -f "$REPORT_DIRECTORY/apply/summary.md" ]; then cat "$REPORT_DIRECTORY/apply/summary.md"; fi'
   artifacts:

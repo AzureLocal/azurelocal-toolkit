@@ -5,13 +5,13 @@
     Arc bootstrap that opens a closed node firewall.
 
 .DESCRIPTION
-    Get-AzlRemotingSetting       transport (winrm | winrm_https | arc), UseSsl, Authentication, Port, BootstrapTransport (none | arc), AllowedSourceCidrs.
+    Get-AzlRemotingSetting       transport (winrm | winrm_https | arc), UseSsl, Authentication, Port, BootstrapTransport (none | arc | smb | auto; this module's Arc bootstrap acts on 'arc' only, smb and auto are the profile's routes in scripts/common/remoting), AllowedSourceCidrs.
                                  Order of precedence: the run's -Settings (remoting = @{ ... }), the master file (os_configuration.remoting.*), the defaults.
     Get-AzlNodeRemotingAddress   The addresses to try for a node, in order: an override, nodes[].management.ip_address, maintenance_address, the addresses the Arc
                                  agent reports for the management MAC (the address the node holds now).
     Get-AzlRemotingAllowedCidr   The management network of the file plus the runner and jump server CIDRs that were given.
-    Get-AzlRemotingFinding       The pre-check, as rows: which node answers on which address, or why not (port closed, timeout, no route, no credential).
-    Format-AzlRemotingFinding    The one table.
+    Get-AzlRemotingPreCheckFinding       The pre-check, as rows: which node answers on which address, or why not (port closed, timeout, no route, no credential).
+    Format-AzlRemotingPreCheckFinding    The one table.
     Invoke-AzlRemotingBootstrap  Arc Run Command, ONCE per node and only for this: WinRM listener, WinRM-In (and RDP and ICMP when they are in the plan) for the
                                  source CIDRs. Everything after that goes over WinRM. Arc is never used for any other step in this mode.
 
@@ -25,6 +25,26 @@ Import-Module (Join-Path $PSScriptRoot 'AzlNodePayload.psm1')
 Import-Module (Join-Path $PSScriptRoot 'AzlNodeTransport.psm1')
 
 $script:RemotingKeys = @('transport', 'bootstrapTransport', 'allowedSourceCidrs', 'useSsl', 'authentication')
+
+function ConvertTo-AzlRemotingProfileOverride {
+    <#
+    .SYNOPSIS
+        The run settings' remoting entry (bootstrapTransport, allowedSourceCidrs, useSsl, transport) as the override hashtable of Resolve-AzlRemotingProfile
+        (bootstrap_transport, allowed_source_cidrs, use_https, transport), so one setting reaches both the transport rules and the security profile.
+    #>
+    [CmdletBinding()]
+    [OutputType([hashtable])]
+    param([hashtable]$Setting)
+    $override = @{}
+    if ($Setting -and $Setting.ContainsKey('remoting') -and $Setting.remoting -is [System.Collections.IDictionary]) {
+        $r = $Setting.remoting
+        if ($r.Contains('bootstrapTransport')) { $override.bootstrap_transport = [string]$r.bootstrapTransport }
+        if ($r.Contains('allowedSourceCidrs')) { $override.allowed_source_cidrs = @($r.allowedSourceCidrs) }
+        if ($r.Contains('useSsl') -and $r.useSsl -eq $true) { $override.use_https = $true }
+        if ($r.Contains('transport')) { $override.transport = [string]$r.transport }
+    }
+    return $override
+}
 
 function Get-AzlRemotingSetting {
     <#
@@ -50,9 +70,9 @@ function Get-AzlRemotingSetting {
     $transportName = if ($Transport -eq 'WinRM') { 'winrm' } elseif ($Transport -eq 'ArcRunCommand') { 'arc' } elseif ($remote.ContainsKey('transport')) { [string]$remote.transport } else { [string](& $fromFile 'transport' 'winrm') }
     if ($transportName -notin 'winrm', 'winrm_https', 'arc') { throw "remoting.transport must be winrm, winrm_https or arc, not '$transportName'." }
     $bootstrap = if ($remote.ContainsKey('bootstrapTransport')) { [string]$remote.bootstrapTransport } else { [string](& $fromFile 'bootstrap_transport' 'none') }
-    if ($bootstrap -notin 'none', 'arc') { throw "remoting.bootstrapTransport must be none or arc, not '$bootstrap'." }
+    if ($bootstrap -notin 'none', 'arc', 'smb', 'auto') { throw "remoting.bootstrapTransport must be none, arc, smb or auto, not '$bootstrap'." }
     $cidrs = if ($remote.ContainsKey('allowedSourceCidrs')) { @($remote.allowedSourceCidrs) } else { @(Get-AzlProp $file 'allowed_source_cidrs' @()) }
-    foreach ($c in $cidrs) { if ("$c" -notmatch '^\d{1,3}(\.\d{1,3}){3}/\d{1,2}$') { throw "remoting.allowedSourceCidrs must be IPv4 CIDRs like 192.0.2.0/24, not '$c'." } }
+    foreach ($c in $cidrs) { if ("$c" -notmatch '^[0-9a-fA-F:.]+/\d{1,3}$') { throw "remoting.allowedSourceCidrs must be CIDRs like 192.0.2.0/24 (the profile rules AZL-062 judge the width), not '$c'." } }
     $ssl = $UseSsl.IsPresent -or $transportName -eq 'winrm_https' -or ($remote.ContainsKey('useSsl') -and $remote.useSsl -eq $true)
     $auth = if ($Authentication) { $Authentication } elseif ($remote.ContainsKey('authentication')) { [string]$remote.authentication } else { 'Negotiate' }
     if ($auth -notin 'Default', 'Negotiate', 'Kerberos', 'Basic', 'CredSSP') { throw "remoting.authentication must be Default, Negotiate, Kerberos, Basic or CredSSP, not '$auth'." }
@@ -101,7 +121,7 @@ function Get-AzlNodeRemotingAddress {
     return @($list | Select-Object -Unique)
 }
 
-function Get-AzlRemotingFinding {
+function Get-AzlRemotingPreCheckFinding {
     <#
     .SYNOPSIS
         The pre-check: every node probed at the same time on its candidate addresses. One row per node with Reachable, the address that answers, the
@@ -126,7 +146,7 @@ function Get-AzlRemotingFinding {
     }
 }
 
-function Format-AzlRemotingFinding {
+function Format-AzlRemotingPreCheckFinding {
     <#
     .SYNOPSIS
         The pre-check as one table, with the diagnosis of each unreachable node under it.
@@ -154,4 +174,4 @@ function Invoke-AzlRemotingBootstrap {
     [pscustomobject]@{ Node = $Node; Opened = @($result.opened); Scope = @($result.scope); Listeners = [int]$result.listeners; Transport = $ArcTransport.Kind }
 }
 
-Export-ModuleMember -Function Get-AzlRemotingSetting, Get-AzlRemotingAllowedCidr, Get-AzlNodeRemotingAddress, Get-AzlRemotingFinding, Format-AzlRemotingFinding, Invoke-AzlRemotingBootstrap
+Export-ModuleMember -Function ConvertTo-AzlRemotingProfileOverride, Get-AzlRemotingSetting, Get-AzlRemotingAllowedCidr, Get-AzlNodeRemotingAddress, Get-AzlRemotingPreCheckFinding, Format-AzlRemotingPreCheckFinding, Invoke-AzlRemotingBootstrap

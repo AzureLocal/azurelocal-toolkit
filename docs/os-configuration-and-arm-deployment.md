@@ -364,6 +364,104 @@ Both run `pwsh -File .../Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFil
 
 No secret is stored in a pipeline file. IDs are variable names (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`).
 
+## Remote management security profiles
+
+The OS configuration run reaches nodes with WinRM and opens (or keeps) RDP and ICMP on them. How wide it opens them, over which transport, and what the machine running the automation trusts, is decided by one setting in the master file: `scenario.environment_class`. The rows live in [`config/remoting-profiles.json`](../config/remoting-profiles.json), which an operator can read; `Resolve-AzlRemotingProfile` (`scripts/common/remoting/AzlRemotingProfile.psm1`) turns the master file and that table into the **effective profile**, which the run prints before it changes anything and writes into `report.json` (`remoting`) and the event feed (`remoting-events.jsonl`).
+
+### Pick the class
+
+| Class | Use it for | Posture |
+| --- | --- | --- |
+| `lab` | An isolated lab with no route to production | **Relaxed with the wildcard** |
+| `test` | A test environment, same rules as `lab` | **Relaxed with the wildcard** |
+| `dev` | Development environments reachable from a management network | Strict |
+| `production` | Production, and **the class when none is set** | Strict |
+| `dmz` | Nodes in a perimeter network | Strictest |
+
+A missing `scenario.environment_class` means `production` (fail closed). A value that is not one of the five stops the run with exit code 2 and a message that names the allowed values (the validator reports it as AZL-060 before the run).
+
+### What each class does
+
+| Setting | lab, test | dev | production | dmz |
+| --- | --- | --- | --- | --- |
+| Node firewall sources for WinRM | **Any** (`allow_any_source` is implied; set it to `false` to restrict) | management and out-of-band networks, `allowed_source_cidrs`, the node addresses; nothing wider than /24 (/64) | the same | `allowed_source_cidrs` and the node addresses only; every source /32 or /128 |
+| Client TrustedHosts (machine running the automation) | **`*`**, restored after the run | the nodes' addresses, restored | none; exact entries only when the bootstrap opens an HTTP window; restored | none |
+| WinRM | HTTP 5985 (HTTPS when `use_https: true`) | HTTPS 5986; HTTP only in the bootstrap window | HTTPS 5986 from the first session; HTTP only in the bootstrap window, then removed | HTTPS 5986 only |
+| Server certificate | per-node self-signed or supplied | the same | self-signed only before the domain join, or supplied | supplied (thumbprint or Key Vault PFX) |
+| Authentication | Negotiate / NTLM | NTLM until the join, then Kerberos | Kerberos by FQDN after the join | Kerberos or certificate |
+| RDP (NLA always) | on, from Any | on, from the management and out-of-band networks | the same | off |
+| ICMP echo | on, from Any | on, from those networks and the nodes | the same | on, from the nodes only |
+| SMB 445 between the nodes | nodes only | nodes only | nodes only | nodes only |
+| One-time bootstrap | allowed | allowed, logged | needs `bootstrap_transport` and `-ApprovedBootstrap` | needs both, approved on every run |
+| `isolation_confirmed` | a statement only | not allowed | not allowed | not allowed |
+
+**The baseline holds in every class and nothing changes it** (the profile table is checked for it and refused if it is weakened): `AllowUnencrypted` false, Basic and CredSSP off, `CbtHardeningLevel` Strict, no HTTP.sys compatibility listener, no `SkipCACheck` or `SkipCNCheck`, TLS 1.2 or higher, firewall rules with an explicit remote address (and the node's own address as local address) on **Domain, Private and Public**, RDP with NLA, ICMP echo only, listeners bound to the management IP in `dev`, `production` and `dmz` (never `*`), secrets from Key Vault. An override that names one of them (`allow_unencrypted`, `basic`, `credssp`, `skip_ca_check`, `skip_cn_check`, ...) is an error.
+
+**Between the nodes**, whatever the class: Azure Local needs ICMP, SMB (445) and WS-Man (5985) open between all nodes. The node addresses from the master file are part of the WinRM scope, the ICMP scope and a rule of their own for SMB (`AzlOsConfig-Node-SMB-In`), in every class, and they stay in place after the join.
+
+### What is relaxed in `lab` and `test`, and why it must not be used in production
+
+The owner's rule for these two classes is: **the profile is relaxed with the wildcard.** The machine running the automation gets `TrustedHosts` `*`, the nodes' firewall accepts WinRM, RDP and ICMP from **any** source, and HTTP 5985 is allowed. The run prints a warning that says so (AZL-068, and the `RemotingProfileResolved` event at level Warning). The baseline still holds: no unencrypted traffic, no Basic or CredSSP, no certificate check skipped.
+
+Why not in production: `TrustedHosts` is only a client-side list of names that are not authenticated. With `*` any host answering on a node's address is trusted, and it is machine-wide, so every other remoting session on that runner loses its server check too. A firewall scope of Any lets every network that can route to the node try to log in to it. Both are acceptable on a lab VLAN with no route to production and wrong anywhere else. `dev`, `production` and `dmz` refuse the wildcard (AZL-061); `isolation_confirmed` cannot unlock it (AZL-066). The run restores the previous TrustedHosts value when it ends, also when it fails, and never copies a wildcard it did not set. Two runs at the same time on one runner share the setting: keep them apart (`resource_group` in GitLab, `concurrency` in GitHub).
+
+### The keys
+
+| Key | Meaning |
+| --- | --- |
+| `scenario.environment_class` | `lab`, `test`, `dev`, `production` (default), `dmz` |
+| `os_configuration.remoting.transport` | `winrm`, `winrm_https` or `arc`: how the run reaches the nodes |
+| `os_configuration.remoting.bootstrap_transport` | `none`, `arc`, `smb` or `auto` (smb, then arc): the one-time bootstrap |
+| `os_configuration.remoting.allowed_source_cidrs` | Runner and jump server addresses as the nodes see them (after NAT). Not /0 to /8 |
+| `os_configuration.remoting.allow_any_source` | Honoured in `lab` and `test` only |
+| `os_configuration.remoting.trusted_hosts` | `auto`, `exact` or `wildcard` (`lab` and `test` only) |
+| `os_configuration.remoting.use_https` | `auto`, `true` or `false` (`false` is an error in `production` and `dmz`, a warning in `dev`) |
+| `os_configuration.remoting.isolation_confirmed` | A statement for `lab` and `test`; an error elsewhere |
+| `os_configuration.remoting.certificate` | A 40-hex thumbprint in the node's `LocalMachine\My`, or `keyvault://<vault>/<secret>` of a base64 PFX; empty: a per-node self-signed certificate |
+| `networking.logical_networks[].purpose`, `cluster_networks[].purpose`, `vlans[].purpose` | `management` and `oob` make that network's subnet a candidate source in `dev` and `production` (a candidate, not a trust: prefer listing the controller addresses) |
+
+### What the RemoteManagement step does on each node
+
+The step runs first, before Network. Plan reads the effective state and compares (Ok, Change, Blocked); Apply is one guarded change.
+
+1. **Enable WinRM and open the firewall in the same step.** `Enable-PSRemoting -Force -SkipNetworkProfileCheck`, then, **every time**, the rules that let WinRM in are found **by what they allow** (inbound TCP 5985 or 5986, not by a hard-coded name: names differ by Windows version) and set to enabled, `Profile Any` (Domain, Private and Public) and the `RemoteAddress` of the effective profile (Any in `lab` and `test`). Own rules (`AzlOsConfig-WinRM-HTTP-In`, `...-HTTPS-In`, RDP, ICMP, node SMB) carry the same scope with the node's management IP as local address. Nothing needs to be done to a node's firewall by hand.
+2. The WinRM service baseline (above), listeners per profile (HTTP 5985 and/or HTTPS 5986, bound to the management IP when the class says so), the certificate, RDP with NLA, ICMP echo.
+3. **Guarded:** the node snapshots everything it will touch before the first change. *Stage* only adds (a scope becomes the union of old and new, the HTTPS listener is added beside the HTTP one, the `*` listener stays) and proves locally that the listeners answer; a failure restores the snapshot at once. The orchestrator then *confirms* (the node still answers on the path in use; the HTTPS path works with a full certificate check) and *commits* (the exact scope; the HTTP listener, its rules and the `*` listener go **only after the HTTPS path is verified from this host**). Not verified: the HTTP listener stays, the item stays a Change, and the report says what to do. Any failure or a lost path *reverts*. The change object (`Stage`, `Confirm`, `Commit`, `Revert`) can be wrapped by the guarded change protocol with `Invoke-AzlRemotingApply -Guard`.
+4. **Network category and the domain join.** The rules are on all three profiles, so the category change a join causes (Public or Private to DomainAuthenticated) does not close them. The run re-checks the effective scope on every pass, and after a `DomainJoin` step: Group Policy must not have widened or narrowed it.
+
+> Microsoft's documentation (PowerShell *about_Remote_Requirements*): on Windows Server, `Enable-PSRemoting` creates firewall rules for Private and Domain networks that allow **unrestricted** remote access, and for the **Public** network a rule that allows remote access only from the **same local subnet** (enabled by default on server versions, and `Enable-PSRemoting` reapplies it). The documented way to lift the limit is `Set-NetFirewallRule -Name "WINRM-HTTP-In-TCP-PUBLIC" -RemoteAddress Any`; the rule names can differ by Windows version, so discover them with `Get-NetFirewallRule`. A workgroup Azure Local node sits on the Public profile until it is domain joined; after the join the profile is Domain and the rule is unrestricted. Azure Local also requires ICMP, SMB 445 and WS-Man 5985 to be open between all nodes.
+
+### First contact: the bootstrap
+
+A node that Microsoft's OS install provisioned has WinRM on but the Public rule limited to the local subnet, so an orchestrator on another subnet cannot reach it, and nobody should have to touch the node. `os_configuration.remoting.bootstrap_transport` picks how it is opened once:
+
+| Route | How | Needs | Notes |
+| --- | --- | --- | --- |
+| `smb` | `net use \\node\IPC$` as the local Administrator (RID 500; the password comes from Key Vault by the same helper as `identity.local_admin`), `sc.exe \\node create` a service that runs **one small script** as LocalSystem, `sc.exe start` (**error 1053 is expected**: the command is not a real service, the script still runs), wait for the one-line result file, `sc.exe delete`, read `C:\Windows\Temp\azl-bootstrap-winrm.txt` over `C$` and **delete it**, `net use /delete` | TCP 445 from the orchestrator; a **Windows orchestrator** (sc.exe is Windows only; the pre-check says so on Linux) | The password is passed to `net use` and appears in no event, report or log; it is visible to local administrators in the orchestrator's process list for the moment `net use` runs |
+| `arc` | Azure Arc Run Command, once per node, the same script | The Arc machine connected; outbound 443 only | The wait is **capped (default 3 minutes, `bootstrapArcWaitSeconds`)**; then the route fails cleanly, this tool's stale `azl-osconfig-*` commands (older than 15 minutes) are deleted, nothing else, and the next allowed route is tried. A wedged run command handler left runs in `Creating` for 10+ minutes on some nodes |
+| `auto` | `smb`, then `arc` | what each needs | |
+| `none` | nothing | | The node fails with the diagnosis: *the node firewall probably limits WinRM to its own subnet*, plus the options this class gives |
+
+The script is Windows PowerShell 5.1, about 2 KB, and does only this: start WinRM and set it to Automatic, `Enable-PSRemoting` if there is no listener, set Enabled / `Profile Any` / `RemoteAddress` on the WinRM rules found by port, optionally RDP and ICMP per profile, an HTTPS listener only for a certificate already on the node, and write one result line. Everything else (baseline, certificate, the real listeners, the rest of the steps) then runs over WinRM. **Arc needs outbound 443 only; opening the node's firewall through it is a bootstrap choice, not a security feature.**
+
+Order in the pre-check: probe 5985/5986 from the profile; if closed and the class and the operator allow a bootstrap, Apply mode runs it (Plan mode says what it would do); probe again. Events: `RemotingBootstrapStarted` (route), `RemotingBootstrapSucceeded` or `RemotingBootstrapFailed` (route, reason).
+
+In **production** and **dmz** the bootstrap needs `bootstrap_transport` (arc, smb or auto) **and** the pipeline approval `-ApprovedBootstrap` of `Invoke-AzureLocalOsConfiguration.ps1` (dmz: on every run; an approval kept in a settings file does not count there). In `dmz` HTTP is never opened, so the bootstrap works only with `certificate` set to the thumbprint of a certificate already on the node. After a bootstrap, the classes that allow it open an HTTP window (HTTPS first, then HTTP 5985) so the run can create the HTTPS listener; then HTTP is removed once HTTPS is verified.
+
+### The pre-join certificate trust procedure
+
+A node that is not yet in the domain has no enterprise certificate. The step then creates a **self-signed Server Authentication certificate per node, with the node's DNS names and management IP as subject alternative names only**, non-exportable, valid 365 days, and records its thumbprint in the report and the `RemotingListenerChange` event. To use it with a full name and chain check (never `SkipCACheck` or `SkipCNCheck`):
+
+1. Take the **thumbprint through an authenticated channel**: the Arc run command output, the console or the BMC. Do not take it from the session you are about to trust.
+2. `Save-AzlNodeCertificate` writes `<node>.cer` from the answer and recomputes the thumbprint from the bytes.
+3. `Import-AzlNodeCertificateTrust -Path <node>.cer -ExpectedThumbprint <thumbprint>` puts it in `Cert:\CurrentUser\Root` (or `LocalMachine`) only if the thumbprints are equal. A self-signed certificate in the Root store is trusted for any name, so this is a temporary measure.
+4. Run again: the HTTPS path is verified, the HTTP listener and 5985 rules are removed, and the session switches to HTTPS.
+5. After the domain join, switch to Kerberos by FQDN, install the enterprise certificate (`certificate:` thumbprint or Key Vault PFX), and `Remove-AzlNodeCertificateTrust -Thumbprint <thumbprint>`.
+
+### Block for the azurelocal.cloud Automation guide
+
+> **Remote management security profile.** Set `scenario.environment_class` in `infrastructure.yml` to `lab`, `test`, `dev`, `production` (the default when it is missing) or `dmz`. The OS configuration run reads the class, prints the effective profile, and enables WinRM **and** opens the nodes' firewall for it: you never edit a node's firewall by hand. `lab` and `test` are relaxed on purpose (TrustedHosts `*`, sources Any, HTTP 5985) and warn; use them only on an isolated network. `dev`, `production` and `dmz` open WinRM only to the management and out-of-band networks, the addresses in `os_configuration.remoting.allowed_source_cidrs` and the nodes themselves, over HTTPS. If a node's WinRM rule keeps the orchestrator out, set `os_configuration.remoting.bootstrap_transport` to `smb`, `arc` or `auto`; in `production` and `dmz` the pipeline also passes `-ApprovedBootstrap`. Details, the full table and the certificate trust procedure: *OS configuration and ARM deployment* in the toolkit.
+
 ## Operator host
 
 | Tool | Version tested | Needed for | Checked |

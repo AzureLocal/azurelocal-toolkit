@@ -26,6 +26,8 @@ Import-Module (Join-Path $here 'AzlNodePayload.psm1')
 Import-Module (Join-Path $here 'AzlNodeTransport.psm1')
 Import-Module (Join-Path $here 'AzlGuardedChange.psm1')
 Import-Module (Join-Path $here 'AzlDomainJoin.psm1') # DOMAINJOIN HOOK
+# HOOK remoting-profiles: the RemoteManagement step is driven by the effective remote management profile (scripts/common/remoting).
+Import-Module (Join-Path (Join-Path $here '..') (Join-Path 'remoting' 'AzlRemoteManagement.psm1'))
 
 $script:ConfigRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($here, '..', '..', '..', 'config'))
 # The order the steps run in. Sbe is last on purpose: delivering a 900 MB package is the step most likely to fail (it needs a
@@ -201,7 +203,10 @@ function Get-AzlNodeSpec {
         [Parameter(Mandatory)][System.Collections.IDictionary]$Node,
         [object]$Handoff,
         [object]$SbeBundle,
-        [string]$ConfigRoot = $script:ConfigRoot
+        [string]$ConfigRoot = $script:ConfigRoot,
+        # HOOK remoting-profiles: the effective profile (Resolve-AzlRemotingProfile). Without it the RemoteManagement step is the plain one.
+        [object]$RemotingProfile,
+        [string]$CurrentAddress = ''
     )
     $name = [string]$Node['name']
     $arcName = Get-AzlArcMachineName -Node $Node
@@ -277,6 +282,8 @@ function Get-AzlNodeSpec {
             InstalledBuild            = $(if ($Handoff) { $Handoff.VsrVersion } else { '' })
         }
         ExpectedBuild  = [string](Get-AzlProp $Infrastructure 'provisioning.os_version' '')
+        # HOOK remoting-profiles
+        Remoting       = $(if ($RemotingProfile) { New-AzlRemotingNodeSpec -RemotingProfile $RemotingProfile -Name $name -ManagementIp ([string]$mgmt.IpAddress) -DnsNames @($name, $($domain = [string](Get-AzlProp $Infrastructure 'identity.active_directory.domain_fqdn' ''); if ($domain) { "$name.$domain" })) -CurrentAddress $CurrentAddress } else { $null })
     }
 }
 
@@ -349,8 +356,12 @@ function Compare-AzlNodeState {
 
     # ---- remote management, ping
     if ('RemoteManagement' -in $Step) {
+        # HOOK remoting-profiles: with a profile and its state, the profile-driven comparison replaces the plain one.
+        $profileSpec = Get-AzlProp $Spec 'Remoting'
+        $profileState = Get-AzlProp $State 'remoting'
         $r = Get-AzlProp $State 'remote'
-        if (-not $r) { & $add (New-AzlPlanItem $n 'RemoteManagement' 'state' 'unreadable' 'readable' Info (Get-AzlProp $State 'err.remote' '')) }
+        if ($profileSpec -and $profileState) { foreach ($i in @(Compare-AzlRemotingState -Spec $profileSpec -State $profileState)) { & $add $i } }
+        elseif (-not $r) { & $add (New-AzlPlanItem $n 'RemoteManagement' 'state' 'unreadable' 'readable' Info (Get-AzlProp $State 'err.remote' '')) }
         else {
             $ok = $r.winrm -eq 'Running' -and $r.winrmStart -eq 'Automatic' -and $r.listeners -gt 0
             & $add (New-AzlPlanItem $n 'RemoteManagement' 'WinRM' "$($r.winrm)/$($r.winrmStart), $($r.listeners) listener(s)" 'Running/Automatic with a listener' $(if ($ok) { 'Ok' } else { 'Change' }) '' $(if (-not $ok) { @{ id = 'RemoteManagement/WinRM'; kind = 'winrm' } }))
@@ -831,6 +842,9 @@ function Invoke-AzlNodeConfiguration {
     $djDone = @{}; $djFailure = $null; $djMoved = $false; $limit = $MaxPasses; $ouChecked = $false; $ouCheck = $null
     for ($pass = 1; $pass -le $limit + 1; $pass++) {
         $state = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Read) -Parameters $readParameters -Secrets $secrets -TimeoutSeconds 900
+        # HOOK remoting-profiles: the step reads its own state (rules, listeners, certificates) and compares it with the profile.
+        $remoting = Get-AzlProp $Spec 'Remoting'
+        if ($remoting -and 'RemoteManagement' -in $Step) { $state | Add-Member -NotePropertyName remoting -NotePropertyValue (Read-AzlRemotingState -Spec $remoting -Transport $Transport) -Force }
         # DOMAINJOIN HOOK: the dedicated OU (exists, Group Policy inheritance blocked, enforced links) is read from the node with the join credential; asked again until it could be read.
         if ('DomainJoin' -in $Step -and $Spec.DomainJoin.Applicable -and (Get-AzlProp $state 'domainJoin')) {
             if (-not $ouChecked) { $null = Add-AzlDomainJoinOuCheck -Spec $Spec -Transport $Transport -State $state -SecretResolver $SecretResolver; $ouCheck = Get-AzlProp $state 'domainJoin.ou'; $ouChecked = [bool](Get-AzlProp $ouCheck 'checked' $false) }
@@ -844,8 +858,17 @@ function Invoke-AzlNodeConfiguration {
         # A package file the toolkit already delivered once and that is still wrong is not delivered again: the failure stays
         # in the report (the Sbe step is not done) and the other steps carry on.
         $todo = @($todo | Where-Object { $_.Apply.kind -ne 'sbe-file' -or -not $sbeTried.ContainsKey([string]$_.Apply.name) })
-        $passes.Add([pscustomobject]@{ Pass = $pass; Changes = $todo.Count })
-        if (-not $Execute -or $todo.Count -eq 0 -or $pass -gt $limit) { break }
+        # HOOK remoting-profiles: the RemoteManagement changes are one guarded change, applied before everything else.
+        $remotingTodo = @($todo | Where-Object { $_.Apply.kind -eq 'remoting' })
+        $todo = @($todo | Where-Object { $_.Apply.kind -ne 'remoting' })
+        $passes.Add([pscustomobject]@{ Pass = $pass; Changes = $todo.Count + $remotingTodo.Count })
+        if (-not $Execute -or ($todo.Count + $remotingTodo.Count) -eq 0 -or $pass -gt $limit) { break }
+        if ($remotingTodo.Count) {
+            $applied = Invoke-AzlRemotingApply -Spec $remoting -Transport $Transport -Item $remotingTodo -State (Get-AzlProp $state 'remoting') -Secrets (Get-AzlRemotingSecret -Spec $remoting -SecretResolver $SecretResolver)
+            foreach ($c in $applied.Changes) { $changes.Add([pscustomobject]@{ Node = $node; Pass = $pass; Id = $c.Id; Status = $c.Status; Detail = $c.Detail }) }
+            if ($applied.Status -ne 'committed') { break }
+            if ($applied.TransportChanged) { continue }
+        }
 
         # DOMAINJOIN HOOK (feat/os-config-domain-join): the domain join runs before the other steps' changes (design 4.10) and has its own restart,
         # reconnect and verification (AzlDomainJoin.psm1). The pass then starts again with a fresh Read.

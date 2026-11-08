@@ -477,17 +477,17 @@ Describe 'Settings and the pre-check' {
     }
     It 'the pre-check names a closed port, a timeout and a missing credential, and never suggests Arc as a fallback' {
         $probe = { param($Address, $Port) if ($Address -eq '192.0.2.11') { [pscustomobject]@{ Open = $false; Reason = 'TimedOut'; Detail = 'no answer' } } elseif ($Address -eq '192.0.2.12') { [pscustomobject]@{ Open = $false; Reason = 'Closed'; Detail = 'refused' } } else { [pscustomobject]@{ Open = $true; Reason = 'Open'; Detail = 'ok' } } }
-        $f = @(Get-AzlRemotingFinding -Node @([pscustomobject]@{ Name = 'a'; Addresses = @('192.0.2.11') }, [pscustomobject]@{ Name = 'b'; Addresses = @('192.0.2.12') }, [pscustomobject]@{ Name = 'c'; Addresses = @('192.0.2.13') }) -HasCredential $false -Probe $probe)
+        $f = @(Get-AzlRemotingPreCheckFinding -Node @([pscustomobject]@{ Name = 'a'; Addresses = @('192.0.2.11') }, [pscustomobject]@{ Name = 'b'; Addresses = @('192.0.2.12') }, [pscustomobject]@{ Name = 'c'; Addresses = @('192.0.2.13') }) -HasCredential $false -Probe $probe)
         ($f | Where-Object Node -eq 'a').Result | Should -Be 'TimedOut'
         ($f | Where-Object Node -eq 'a').Diagnosis | Should -Match 'limited to the local subnet|local subnet'
         ($f | Where-Object Node -eq 'b').Result | Should -Be 'Closed'
         ($f | Where-Object Node -eq 'c').Result | Should -Be 'NoCredential'
         ($f | Where-Object Node -eq 'c').Diagnosis | Should -Match 'credential'
         ($f | Where-Object Node -eq 'a').Diagnosis | Should -Match "bootstrapTransport = 'arc'"
-        (Format-AzlRemotingFinding -Finding $f) | Should -Match 'TimedOut'
+        (Format-AzlRemotingPreCheckFinding -Finding $f) | Should -Match 'TimedOut'
     }
     It 'a node with no candidate address is reported with what to put in the file' {
-        $f = @(Get-AzlRemotingFinding -Node @([pscustomobject]@{ Name = 'a'; Addresses = @() }) -Probe { [pscustomobject]@{ Open = $true; Reason = 'Open'; Detail = '' } })
+        $f = @(Get-AzlRemotingPreCheckFinding -Node @([pscustomobject]@{ Name = 'a'; Addresses = @() }) -Probe { [pscustomobject]@{ Open = $true; Reason = 'Open'; Detail = '' } })
         $f[0].Reachable | Should -BeFalse
         $f[0].Diagnosis | Should -Match 'nodes\[\].management.ip_address|the file'
     }
@@ -512,21 +512,21 @@ Describe 'Master file keys (schema 5.4.4)' {
     BeforeAll {
         Import-Module powershell-yaml
         Import-Module (Join-Path (Join-Path (Join-Path $repo 'scripts') 'common') (Join-Path 'infrastructure' 'AzlInfrastructure.psm1')) -Force
-        function Get-SchemaFinding([scriptblock]$Change) {
+        function Get-SchemaFinding([scriptblock]$Change, [string]$Id = 'SCHEMA') {
             $doc = ConvertFrom-Yaml (Get-Content -LiteralPath (Join-Path (Join-Path $repo 'tests') (Join-Path 'fixtures' 'infrastructure.fc-san.yml')) -Raw) -Ordered
             & $Change $doc
             $file = Join-Path $TestDrive "s-$([guid]::NewGuid().ToString('N').Substring(0, 6)).yml"
             Set-Content -LiteralPath $file -Value (ConvertTo-Yaml $doc)
-            @(Test-AzlInfrastructure -Path $file | Where-Object { $_.Id -eq 'SCHEMA' })
+            @(Test-AzlInfrastructure -Path $file | Where-Object { $_.Id -eq $Id })
         }
     }
     It 'accepts the new keys' {
         Get-SchemaFinding { param($d) $d.os_configuration = [ordered]@{ network = [ordered]@{ confirm_minutes = 15; stable_seconds = 30 }; remoting = [ordered]@{ transport = 'winrm_https'; bootstrap_transport = 'arc'; allowed_source_cidrs = @('198.51.100.0/24') } } } | Should -BeNullOrEmpty
     }
-    It 'rejects a transport that is not winrm, winrm_https or arc, a bootstrap that is not none or arc, a CIDR that is not one, and a zero confirmation window' {
+    It 'rejects a transport that is not winrm, winrm_https or arc, a bootstrap that is not none, arc, smb or auto, a CIDR that is not one (rule AZL-062 of the security profile), and a zero confirmation window' {
         (Get-SchemaFinding { param($d) $d.os_configuration = [ordered]@{ remoting = [ordered]@{ transport = 'ssh' } } }).Count | Should -BeGreaterThan 0
         (Get-SchemaFinding { param($d) $d.os_configuration = [ordered]@{ remoting = [ordered]@{ bootstrap_transport = 'always' } } }).Count | Should -BeGreaterThan 0
-        (Get-SchemaFinding { param($d) $d.os_configuration = [ordered]@{ remoting = [ordered]@{ allowed_source_cidrs = @('runner') } } }).Count | Should -BeGreaterThan 0
+        (Get-SchemaFinding { param($d) $d.os_configuration = [ordered]@{ remoting = [ordered]@{ allowed_source_cidrs = @('runner') } } } 'AZL-062').Count | Should -BeGreaterThan 0
         (Get-SchemaFinding { param($d) $d.os_configuration = [ordered]@{ network = [ordered]@{ confirm_minutes = 0 } } }).Count | Should -BeGreaterThan 0
     }
 }

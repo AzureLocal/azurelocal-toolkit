@@ -49,6 +49,7 @@ BeforeAll {
         $name = $Parameters.Node[0]
         $phase = if ($Parameters.ContainsKey('Execute')) { 'Apply' } else { 'Plan' }
         $global:AzlCalls.Add([pscustomobject]@{ Node = $name; Phase = $phase; Params = $Parameters })
+        $global:AzlTrustedHostsDuring = $global:AzlTrustedHosts
         $failed = $global:AzlFail -contains $name
         if ($phase -eq 'Apply') {
             if ($failed) { return [pscustomobject]@{ ExitCode = 1; Error = 'boom'; Unknown = $false; Report = $null } }
@@ -75,15 +76,21 @@ BeforeAll {
         $global:AzlConverged = @()
         $global:AzlHostname = @{}
         $global:AzlPortAnswers = $true
+        $global:AzlOpened = @()
         $global:AzlArcStatus = 'Connected'
         $global:AzlArcNone = @()
         $global:AzlRegistered = [System.Collections.Generic.List[string]]::new()
+        $global:AzlTrustedHostsInitial = ''
+        $global:AzlTrustedHostsDuring = $null
     }
 
     function Invoke-Run {
         param([string]$Infra, [string[]]$Handoff, [string]$Mode = 'Plan', [hashtable]$Extra = @{})
         $out = Join-Path $TestDrive "out-$([guid]::NewGuid().ToString('N').Substring(0, 6))"
-        $arguments = @{ InfrastructureFile = $Infra; Mode = $Mode; ReportDirectory = $out; SkipValidation = $true } + $Extra
+        # A fake TrustedHosts store: a test never changes the setting of the machine it runs on.
+        $global:AzlTrustedHosts = $global:AzlTrustedHostsInitial
+        $store = [pscustomobject]@{ Supported = $true; Get = { $global:AzlTrustedHosts }; Set = { param($Value) $global:AzlTrustedHosts = $Value } }
+        $arguments = @{ InfrastructureFile = $Infra; Mode = $Mode; ReportDirectory = $out; SkipValidation = $true; TrustedHostsStore = $store } + $Extra
         if ($Handoff) { $arguments.HandoffPath = $Handoff }
         $result = Invoke-AzlOsConfiguration @arguments 6>$null 3>$null
         $result | Add-Member -NotePropertyName Out -NotePropertyValue $out -Force
@@ -96,9 +103,9 @@ BeforeEach {
     Clear-Fake
     Mock -ModuleName AzlOsConfigurationRun Invoke-AzlSetNodeConfiguration { New-FakeSetResult $Parameters }
     Mock -ModuleName AzlOsConfigurationRun Test-AzlAzureSignedIn { $true }
-    Mock -ModuleName AzlOsConfigurationRun Test-AzlWinRmPort { [bool]$global:AzlPortAnswers }
+    Mock -ModuleName AzlOsConfigurationRun Test-AzlWinRmPort { [bool]$global:AzlPortAnswers -or ($global:AzlOpened -contains $Address) }
     Mock -ModuleName AzlOsConfigurationRun Invoke-AzlRemotingPreCheck {
-        foreach ($c in $Candidate) { [pscustomobject]@{ Node = $c.Name; Reachable = [bool]$global:AzlPortAnswers; Address = @($c.Addresses)[0]; Port = 5985; Result = $(if ($global:AzlPortAnswers) { 'Open' } else { 'TimedOut' }); Credential = 'vault'; Diagnosis = 'no answer'; Tried = @($c.Addresses) } }
+        foreach ($c in $Candidate) { [pscustomobject]@{ Node = $c.Name; Reachable = ([bool]$global:AzlPortAnswers -or (@($c.Addresses) | Where-Object { $_ -in $global:AzlOpened })); Address = @($c.Addresses)[0]; Port = 5985; Result = $(if ($global:AzlPortAnswers -or (@($c.Addresses) | Where-Object { $_ -in $global:AzlOpened })) { 'Open' } else { 'TimedOut' }); Credential = 'vault'; Diagnosis = 'no answer'; Tried = @($c.Addresses) } }
     }
     Mock -ModuleName AzlOsConfigurationRun Get-AzlSecret { 'P@ssw0rd-from-the-vault-not-printed' }
     Mock -ModuleName AzlOsConfigurationRun Find-AzlArcMachine {
@@ -477,7 +484,7 @@ Describe 'Mixed cluster and the ISO path' {
     }
     It 'no route to the node is reported with the address' {
         $global:AzlPortAnswers = $true
-        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'iso' }
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'iso'; $d.scenario.environment_class = 'lab' }
         $global:AzlArcNone = @('iic-n01', 'iic-n02')
         $calls = 0
         Mock -ModuleName AzlOsConfigurationRun Test-AzlWinRmPort { $global:AzlPortCalls++; $global:AzlPortCalls -le 2 }
@@ -869,8 +876,8 @@ Describe 'Transport: PowerShell remoting by default, Arc only when asked' {
             foreach ($c in $Candidate) { [pscustomobject]@{ Node = $c.Name; Reachable = $false; Address = @($c.Addresses)[0]; Port = 5985; Result = 'TimedOut'; Credential = 'vault'; Diagnosis = 'closed'; Tried = @($c.Addresses) } }
         }
         $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
-        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ Settings = @{ remoting = @{ bootstrapTransport = 'arc'; allowedSourceCidrs = @('198.51.100.0/24') } } }
-        $r.ExitCode | Should -Be 0
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ ApprovedBootstrap = $true; Settings = @{ remoting = @{ bootstrapTransport = 'arc'; allowedSourceCidrs = @('198.51.100.0/24') } } }
+        $r.ExitCode | Should -Be 0 -Because $r.Message
         $global:AzlBootstrap.Count | Should -Be 0
         $global:AzlCalls.Count | Should -Be 0
         foreach ($rec in $r.Records) {
@@ -886,7 +893,7 @@ Describe 'Transport: PowerShell remoting by default, Arc only when asked' {
             foreach ($c in $Candidate) { [pscustomobject]@{ Node = $c.Name; Reachable = $false; Address = @($c.Addresses)[0]; Port = 5985; Result = 'TimedOut'; Credential = 'vault'; Diagnosis = 'closed'; Tried = @($c.Addresses) } }
         }
         $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
-        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply -Extra @{ Settings = @{ remoting = @{ bootstrapTransport = 'arc'; allowedSourceCidrs = @('198.51.100.0/24') } } }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply -Extra @{ ApprovedBootstrap = $true; Settings = @{ remoting = @{ bootstrapTransport = 'arc'; allowedSourceCidrs = @('198.51.100.0/24') } } }
         $global:AzlBootstrap.Count | Should -Be 2
         @($global:AzlBootstrap.Node | Sort-Object) | Should -Be @('iic-n01', 'iic-n02')
         foreach ($b in $global:AzlBootstrap) { $b.Cidr | Should -Contain '198.51.100.0/24'; $b.Cidr | Should -Contain '192.0.2.0/24' }
@@ -910,7 +917,7 @@ Describe 'Transport: PowerShell remoting by default, Arc only when asked' {
             foreach ($c in $Candidate) { [pscustomobject]@{ Node = $c.Name; Reachable = $false; Address = @($c.Addresses)[0]; Port = 5985; Result = 'TimedOut'; Credential = 'vault'; Diagnosis = 'closed'; Tried = @($c.Addresses) } }
         }
         $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
-        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply -Extra @{ Settings = @{ remoting = @{ bootstrapTransport = 'arc' } } }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Mode Apply -Extra @{ ApprovedBootstrap = $true; Settings = @{ remoting = @{ bootstrapTransport = 'arc' } } }
         $r.ExitCode | Should -Be 2
         $global:AzlBootstrap.Count | Should -Be 0
     }
@@ -949,6 +956,165 @@ Describe 'Transport: PowerShell remoting by default, Arc only when asked' {
         $global:AzlCalls[0].Params.Settings.networkRollbackMinutes | Should -Be 12
         $global:AzlCalls[0].Params.Settings.networkStableSeconds | Should -Be 5
         $global:AzlCalls[0].Params.UseSsl | Should -BeTrue
+    }
+}
+
+Describe 'Remote management profile in the run' {
+    BeforeAll {
+        $script:VaultPassword = 'P@ssw0rd-from-the-vault-not-printed'
+        function Set-Class([string]$Class, [scriptblock]$More) {
+            $c = $Class; $m = $More
+            Get-TestInfra { param($d) if ($c) { $d.scenario.environment_class = $c }; if ($m) { & $m $d } }
+        }
+        function Add-Remoting([object]$Doc, [hashtable]$Values) {
+            if (-not $Doc.Contains('os_configuration')) { $Doc['os_configuration'] = [ordered]@{} }
+            if (-not $Doc['os_configuration'].Contains('remoting')) { $Doc['os_configuration']['remoting'] = [ordered]@{} }
+            foreach ($k in $Values.Keys) { $Doc['os_configuration']['remoting'][$k] = $Values[$k] }
+        }
+        function Get-Report([object]$Run) { Get-Content -LiteralPath (Join-Path $Run.Out 'report.json') -Raw | ConvertFrom-Json -Depth 20 }
+    }
+
+    It 'lab: TrustedHosts is * while the nodes are handled, and the previous value is back afterwards and in the report' {
+        $global:AzlTrustedHostsInitial = 'prior.example.invalid'
+        $r = Invoke-Run -Infra (Set-Class 'lab') -Handoff (Get-TestHandoffDirectory)
+        $r.ExitCode | Should -Be 0
+        $global:AzlTrustedHostsDuring | Should -Be '*'
+        $global:AzlTrustedHosts | Should -Be 'prior.example.invalid'
+        $policy = (Get-Report $r).remoting.trustedHostsPolicy
+        $policy.mode | Should -Be 'wildcard'
+        $policy.previous | Should -Be 'prior.example.invalid'
+        $policy.applied | Should -Be '*'
+        $policy.restored | Should -BeTrue
+    }
+    It 'lab: the report holds the class, the posture, the firewall scope Any and the relaxed warning' {
+        $r = Invoke-Run -Infra (Set-Class 'lab') -Handoff (Get-TestHandoffDirectory)
+        $remoting = (Get-Report $r).remoting
+        $remoting.class | Should -Be 'lab'
+        $remoting.posture | Should -Be 'relaxed-wildcard'
+        @($remoting.firewall.remoteAddress) | Should -Be @('Any')
+        ($remoting.warnings -join ' ') | Should -Match 'Relaxed remote management posture'
+        $remoting.baseline.allowUnencrypted | Should -BeFalse
+        @($remoting.events.state) | Should -Contain 'RemotingProfileResolved'
+        @($remoting.events.state) | Should -Contain 'TrustedHostsChanged'
+        @($remoting.events.state) | Should -Contain 'TrustedHostsRestored'
+        $feed = @(Get-Content -LiteralPath (Join-Path $r.Out 'remoting-events.jsonl') | ForEach-Object { $_ | ConvertFrom-Json })
+        ($feed | Where-Object state -eq 'RemotingProfileResolved').class | Should -Be 'lab'
+    }
+    It 'prints the effective profile and its warnings before anything changes' {
+        $infra = Set-Class 'lab'
+        $out = Join-Path $TestDrive 'printed'
+        $lines = @(Invoke-AzlOsConfiguration -InfrastructureFile $infra -Mode Plan -ReportDirectory $out -SkipValidation -HandoffPath (Get-TestHandoffDirectory) -TrustedHostsStore ([pscustomobject]@{ Supported = $true; Get = { '' }; Set = { param($Value) $null = $Value } }) 6>&1 3>$null | Where-Object { $_ -is [System.Management.Automation.InformationRecord] } | ForEach-Object { [string]$_.MessageData })
+        $text = $lines -join "`n"
+        $text | Should -Match 'Remote management profile: class lab'
+        $text | Should -Match 'WARNING: Relaxed remote management posture'
+        $text.IndexOf('Remote management profile') | Should -BeLessThan $text.IndexOf('== Plan')
+    }
+    It 'production: TrustedHosts is not touched, and the report says production' {
+        $global:AzlTrustedHostsInitial = 'prior.example.invalid'
+        $r = Invoke-Run -Infra (Set-Class 'production') -Handoff (Get-TestHandoffDirectory)
+        $global:AzlTrustedHostsDuring | Should -Be 'prior.example.invalid'
+        $global:AzlTrustedHosts | Should -Be 'prior.example.invalid'
+        $remoting = (Get-Report $r).remoting
+        $remoting.class | Should -Be 'production'
+        @($remoting.firewall.remoteAddress) | Should -Not -Contain 'Any'
+        $remoting.trustedHostsPolicy.changed | Should -BeFalse
+    }
+    It 'a missing class is production' {
+        $r = Invoke-Run -Infra (Set-Class '') -Handoff (Get-TestHandoffDirectory)
+        (Get-Report $r).remoting.class | Should -Be 'production'
+        (Get-Report $r).remoting.classSource | Should -Match 'missing'
+    }
+    It 'dev: only the nodes'' addresses are added to TrustedHosts, and removed again' {
+        $global:AzlTrustedHostsInitial = 'prior.example.invalid'
+        $null = Invoke-Run -Infra (Set-Class 'dev') -Handoff (Get-TestHandoffDirectory)
+        $global:AzlTrustedHostsDuring | Should -Be 'prior.example.invalid,192.0.2.11,192.0.2.12'
+        $global:AzlTrustedHosts | Should -Be 'prior.example.invalid'
+    }
+    It 'an unknown class is exit code 2, names the allowed values, and changes nothing' {
+        $global:AzlTrustedHostsInitial = 'prior.example.invalid'
+        $r = Invoke-Run -Infra (Set-Class 'staging') -Handoff (Get-TestHandoffDirectory)
+        $r.ExitCode | Should -Be 2
+        $r.Message | Should -Match 'lab, test, dev, production, dmz'
+        $global:AzlCalls.Count | Should -Be 0
+        $global:AzlTrustedHosts | Should -Be 'prior.example.invalid'
+    }
+    It 'TrustedHosts is put back when the run fails half way' {
+        Mock -ModuleName AzlOsConfigurationRun Test-AzlSanConsistency { throw 'something broke' }
+        $global:AzlTrustedHostsInitial = 'prior.example.invalid'
+        $r = Invoke-Run -Infra (Set-Class 'lab') -Handoff (Get-TestHandoffDirectory)
+        $r.ExitCode | Should -Be 1
+        $global:AzlTrustedHostsDuring | Should -Be '*'
+        $global:AzlTrustedHosts | Should -Be 'prior.example.invalid'
+    }
+    It 'WinRM unreachable: the message says the node firewall probably limits WinRM to its own subnet, and names the bootstrap options' {
+        $global:AzlPortAnswers = $false
+        $global:AzlArcNone = @('iic-n01', 'iic-n02')
+        $r = Invoke-Run -Infra (Set-Class 'lab' { param($d) $d.scenario.os_install = 'iso' })
+        $r.ExitCode | Should -Be 2
+        $r.Message | Should -Match 'the node firewall probably limits WinRM to its own subnet'
+        $r.Message | Should -Match 'bootstrap_transport'
+        $r.Message | Should -Match 'console or the BMC'
+    }
+    It 'the entry script takes -ApprovedBootstrap' {
+        (Get-Command $script:EntryScript).Parameters.ContainsKey('ApprovedBootstrap') | Should -BeTrue
+    }
+
+    Context 'the one-time bootstrap in the pre-check' {
+        BeforeEach {
+            $global:AzlPortAnswers = $false
+            $global:AzlArcNone = @('iic-n01', 'iic-n02')
+            Mock -ModuleName AzlOsConfigurationRun Invoke-AzlWinRmBootstrap {
+                $global:AzlOpened += $Address
+                [pscustomobject]@{ Node = $Node; Ok = $true; Route = 'smb'; Attempts = @([pscustomobject]@{ Route = 'smb'; Ok = $true; Reason = '' }); Reason = ''; Result = $null }
+            }
+        }
+        It 'lab, smb: WinRM closed, Apply runs the bootstrap once per node as Administrator, and the run goes on' {
+            $infra = Set-Class 'lab' { param($d) $d.scenario.os_install = 'iso'; Add-Remoting $d @{ bootstrap_transport = 'smb' } }
+            $r = Invoke-Run -Infra $infra -Mode Apply
+            $r.ExitCode | Should -Not -Be 2
+            Should -Invoke -ModuleName AzlOsConfigurationRun Invoke-AzlWinRmBootstrap -Times 2 -Exactly -ParameterFilter { $Credential.UserName -eq 'Administrator' -and -not $ApprovedBootstrap }
+            $bootstraps = (Get-Report $r).remoting.bootstraps
+            @($bootstraps).Count | Should -Be 2
+            $bootstraps[0].route | Should -Be 'smb'
+        }
+        It 'Plan mode never bootstraps; it says what Apply would do' {
+            $infra = Set-Class 'lab' { param($d) $d.scenario.os_install = 'iso'; Add-Remoting $d @{ bootstrap_transport = 'smb' } }
+            $r = Invoke-Run -Infra $infra -Mode Plan
+            Should -Invoke -ModuleName AzlOsConfigurationRun Invoke-AzlWinRmBootstrap -Times 0 -Exactly
+            $r.ExitCode | Should -Be 2
+            $r.Message | Should -Match 'Plan mode changes nothing'
+        }
+        It 'bootstrap_transport none: nothing is bootstrapped' {
+            $infra = Set-Class 'lab' { param($d) $d.scenario.os_install = 'iso' }
+            $null = Invoke-Run -Infra $infra -Mode Apply
+            Should -Invoke -ModuleName AzlOsConfigurationRun Invoke-AzlWinRmBootstrap -Times 0 -Exactly
+        }
+        It 'production: smb chosen but not approved does not run, and the message asks for -ApprovedBootstrap' {
+            $infra = Set-Class 'production' { param($d) $d.scenario.os_install = 'iso'; Add-Remoting $d @{ bootstrap_transport = 'smb' } }
+            $r = Invoke-Run -Infra $infra -Mode Apply
+            Should -Invoke -ModuleName AzlOsConfigurationRun Invoke-AzlWinRmBootstrap -Times 0 -Exactly
+            $r.ExitCode | Should -Be 2
+            $r.Message | Should -Match 'ApprovedBootstrap'
+        }
+        It 'production: with -ApprovedBootstrap it runs' {
+            $infra = Set-Class 'production' { param($d) $d.scenario.os_install = 'iso'; Add-Remoting $d @{ bootstrap_transport = 'smb' } }
+            $null = Invoke-Run -Infra $infra -Mode Apply -Extra @{ ApprovedBootstrap = $true }
+            Should -Invoke -ModuleName AzlOsConfigurationRun Invoke-AzlWinRmBootstrap -Times 2 -Exactly -ParameterFilter { $ApprovedBootstrap }
+        }
+        It 'dmz: an approval in the run settings file does not count' {
+            $infra = Set-Class 'dmz' { param($d) $d.scenario.os_install = 'iso'; Add-Remoting $d @{ bootstrap_transport = 'smb'; certificate = ('AB' * 20); allowed_source_cidrs = @('198.51.100.10/32') } }
+            $r = Invoke-Run -Infra $infra -Mode Apply -Extra @{ Settings = @{ approvedBootstrap = $true } }
+            Should -Invoke -ModuleName AzlOsConfigurationRun Invoke-AzlWinRmBootstrap -Times 0 -Exactly
+            $r.ExitCode | Should -Be 2
+        }
+        It 'the password never appears in the report, the events, the summary or the printed output' {
+            $infra = Set-Class 'lab' { param($d) $d.scenario.os_install = 'iso'; Add-Remoting $d @{ bootstrap_transport = 'auto' } }
+            $out = Join-Path $TestDrive 'secret-check'
+            $printed = (Invoke-AzlOsConfiguration -InfrastructureFile $infra -Mode Apply -ReportDirectory $out -SkipValidation -TrustedHostsStore ([pscustomobject]@{ Supported = $true; Get = { '' }; Set = { param($Value) $null = $Value } }) 6>&1 3>&1 | Out-String)
+            $files = Get-ChildItem -LiteralPath $out -Recurse -File | ForEach-Object { Get-Content -LiteralPath $_.FullName -Raw }
+            ($files -join "`n") + $printed | Should -Not -Match ([regex]::Escape($script:VaultPassword))
+            ($files -join "`n") | Should -Match 'bootstraps'
+        }
     }
 }
 }

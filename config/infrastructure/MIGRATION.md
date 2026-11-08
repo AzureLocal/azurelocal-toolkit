@@ -216,7 +216,20 @@ Schema 5.4.3 only adds one optional section; a 5.4.0 file is valid as it is. Not
 5.4.4 adds optional keys only (existing 5.4.3 files stay valid): `os_configuration.network.confirm_minutes` (default 10) and `stable_seconds` (60), the commit-confirmed window of a guarded network change; `os_configuration.remoting.transport` (`winrm` | `winrm_https` | `arc`, default `winrm`), `bootstrap_transport` (`none` | `arc`) and `allowed_source_cidrs`. See [Changing the management address safely](../../docs/os-configuration-and-arm-deployment.md#changing-the-management-address-safely).
 
 **Steps for a 5.4 file:** set `_metadata.schema_version` to `5.4.3`; add `os_configuration: { clear_storage: true }` only for machines that are re-used. Plan mode prints the wipe list; Apply never wipes a SAN LUN, a USB disk, or a boot or system disk.
-## From Trailwright's export
+
+## To 5.6.0: the remote management security profile
+
+Schema 5.6.0 only adds optional keys; a 5.4.3 file is valid as it is. (5.4.4 and 5.5.0 are used on other branches of the OS configuration work; 5.6.0 is the next free minor.) **One behaviour changes for a file that sets nothing:** a missing `scenario.environment_class` means `production`, so the OS configuration run applies the strict profile (HTTPS, sources only from the management and out-of-band networks and `allowed_source_cidrs`, no TrustedHosts wildcard). A lab that relied on open access must say so with `environment_class: lab`.
+
+| New key | What it does |
+| --- | --- |
+| `scenario.environment_class` | `lab`, `test`, `dev`, `production` (default) or `dmz`. Picks the profile in `config/remoting-profiles.json`. |
+| `os_configuration.remoting.transport`, `bootstrap_transport` | How the run reaches the nodes (`winrm`, `winrm_https`, `arc`) and whether the one-time Arc bootstrap may open WinRM (`none`, `arc`). |
+| `os_configuration.remoting.allowed_source_cidrs` | Runner and jump server addresses, as the nodes see them. Added to the management and out-of-band networks. |
+| `os_configuration.remoting.allow_any_source`, `trusted_hosts`, `use_https`, `isolation_confirmed`, `certificate` | Refine the class. `allow_any_source` and a wildcard `trusted_hosts` are honoured in `lab` and `test` only. |
+| `networking.logical_networks[].purpose`, `networking.cluster_networks[].purpose` | `management`, `oob`, `automation`, `compute`, `storage` or `other`. `networking.vlans[].purpose` was already free text; its values `management` and `oob` (any case) now count too. |
+
+New rules AZL-060 to AZL-068 (see README). **Steps for a 5.4.3 file:** set `_metadata.schema_version` to `5.6.0`; add `scenario.environment_class` (`lab` for an isolated lab, `production` otherwise); for `dev`, `production` and `dmz` list your jump servers in `os_configuration.remoting.allowed_source_cidrs`; for production and dmz, plan the HTTPS certificate (`os_configuration.remoting.certificate`, or the self-signed pre-join certificate and its trust procedure in `docs/os-configuration-and-arm-deployment.md`).## From Trailwright's export
 
 | Before | Schema 5 |
 | --- | --- |

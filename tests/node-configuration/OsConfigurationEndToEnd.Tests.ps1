@@ -97,13 +97,15 @@ BeforeAll {
                     if ($lost) { $global:AzlE2e.UnknownLeft[$node]-- }
                     $script = [string](($Payload | ConvertFrom-Json -Depth 20).properties.source.script)
                     if ($script -match 'function Invoke-Action|shutdown\.exe') { throw 'The end-to-end Plan test must not run an apply or a restart on a node.' }
-                    $global:AzlE2e.Runs[$run] = @{ Node = $node; Unknown = $lost }
+                    $global:AzlE2e.Runs[$run] = @{ Node = $node; Unknown = $lost; RemotingRead = ($script -match 'Get-ListenerState') }
                     return (& $reply @{ name = $run } 200)
                 }
                 'GET' {
                     $info = $global:AzlE2e.Runs[$run]
                     if ($info.Unknown) { return (& $reply @{ properties = @{ provisioningState = 'Succeeded'; instanceView = @{ executionState = 'Unknown' } } }) }
-                    return (& $reply @{ properties = @{ provisioningState = 'Succeeded'; instanceView = @{ executionState = 'Succeeded'; exitCode = 0; output = (ConvertTo-ResultLine $global:AzlE2e.States[$info.Node]); error = '' } } })
+                    # The RemoteManagement step reads its own state with a script of its own: an empty one that knows the node's addresses (so the plan has changes, nothing is blocked).
+                    $body = if ($info.RemotingRead) { [pscustomobject]@{ v = 1; host = $info.Node; addresses = @($global:AzlE2e.States[$info.Node].nics | ForEach-Object { $_.ips } | ForEach-Object { ($_ -split '/')[0] }) } } else { $global:AzlE2e.States[$info.Node] }
+                    return (& $reply @{ properties = @{ provisioningState = 'Succeeded'; instanceView = @{ executionState = 'Succeeded'; exitCode = 0; output = (ConvertTo-ResultLine $body); error = '' } } })
                 }
                 'DELETE' { return (& $reply @{} 200) }
             }
@@ -199,7 +201,8 @@ Describe 'Invoke-AzureLocalOsConfiguration.ps1, Plan, end to end (fake Azure onl
         $names | Should -Contain 'PlanCompleted'
         $names | Should -Contain 'WipeListPublished'
         $names.IndexOf('PlanCompleted') | Should -BeLessThan $names.IndexOf('RunCompleted')
-        (@($script:Events | Where-Object { $_.node -eq 'iic-n01' -and $_.state -eq 'NodeConverged' })).Count | Should -Be 1
+        # The fake nodes hold none of the RemoteManagement profile (rules, listeners), so neither node is converged in a plan: n01 has only those changes, n02 also its DNS server.
+        (@($script:Events | Where-Object { $_.node -eq 'iic-n01' -and $_.state -eq 'NodeConverged' })).Count | Should -Be 0
         (@($script:Events | Where-Object { $_.node -eq 'iic-n02' -and $_.state -eq 'NodeConverged' })).Count | Should -Be 0
     }
     It 'wrote the report next to the events' {

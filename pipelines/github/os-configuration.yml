@@ -41,6 +41,10 @@ on:
         description: 'Optional: run ID of the ZTP workflow whose artifact ztp-handoff holds the handoff files (replaces handoff_path)'
         required: false
         default: ''
+      approved_bootstrap:
+        description: 'Approve the one-time WinRM bootstrap (os_configuration.remoting.bootstrap_transport arc, smb or auto) for this run. Production and dmz do not bootstrap without it; an smb bootstrap needs a Windows runner'
+        type: boolean
+        default: false
       mode:
         description: 'Plan only, or Plan then Apply after approval'
         type: choice
@@ -162,8 +166,12 @@ jobs:
 
       - name: Apply
         shell: bash
+        env:
+          APPROVED_BOOTSTRAP: ${{ inputs.approved_bootstrap }}
         run: |
-          pwsh -NoProfile -File "$OSCONFIG_SCRIPT" -InfrastructureFile "$INFRASTRUCTURE_FILE" -HandoffPath "$HANDOFF_PATH" -Mode Apply -ReportDirectory "$RUNNER_TEMP/osconfig-apply"
+          # -ApprovedBootstrap is the pipeline approval of the one-time bootstrap: the reviewer of this job gave it by running it with the input set.
+          approval=''; if [ "$APPROVED_BOOTSTRAP" = 'true' ]; then approval='-ApprovedBootstrap'; fi
+          pwsh -NoProfile -File "$OSCONFIG_SCRIPT" -InfrastructureFile "$INFRASTRUCTURE_FILE" -HandoffPath "$HANDOFF_PATH" -Mode Apply -ReportDirectory "$RUNNER_TEMP/osconfig-apply" $approval
 
       - name: Job summary (result)
         if: ${{ always() }}
