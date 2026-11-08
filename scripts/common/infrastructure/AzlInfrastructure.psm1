@@ -35,6 +35,9 @@ $ErrorActionPreference = 'Stop'
 $script:DefaultSchemaPath = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'config', 'infrastructure', 'infrastructure.schema.json'))
 $script:SupportedMajor = 5
 
+# HOOK remoting-profiles (schema 5.6): rules AZL-060 to AZL-068 live with the profile resolver, so the validator and the run agree.
+Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'remoting' 'AzlRemotingProfile.psm1'))
+
 $script:Learn = @{
     Decision8   = 'https://learn.microsoft.com/azure/azure-local/plan/cloud-deployment-network-considerations#decision-8-determine-management-ips-and-infrastructure-network'
     Decision4   = 'https://learn.microsoft.com/azure/azure-local/plan/cloud-deployment-network-considerations#decision-4-determine-cluster-size'
@@ -810,6 +813,8 @@ function Get-SemanticFinding {
     Get-ZtpActionFinding -Infra $Infra -Nodes $nodes
     Get-SbeDeliveryFinding -Infra $Infra -Nodes $nodes -OwnerOf $ownerOf
     Get-OsConfigurationFinding -Infra $Infra
+    # HOOK remoting-profiles (schema 5.6): AZL-060 to AZL-068, the environment class and os_configuration.remoting.
+    Get-AzlRemotingFinding -Infrastructure $Infra
 
     # Arc machine names: unique, and arc_machine_name rather than the deprecated arc_resource_name.
     for ($i = 0; $i -lt $nodeCount; $i++) {

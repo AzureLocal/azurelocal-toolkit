@@ -216,7 +216,15 @@ The mapping from slot label to attribute is data in ZTP, `config/oem/<vendor>.js
 | AZL-029 | What ZTP derives (5.4, simplified provisioning): an HBA slot is a PCIe slot label (`Slot 2`) while isolation is on, and no network port shares it; `isolate_san_adapters: true` with no HBA listed is a warning; `ntp.configuration: Manual` needs a server; the voucher budget is not longer than the Bootstrap budget |
 | AZL-030 | The SBE package's delivery (5.4.2): `hardware.sbe.delivery` is `winrm_copy`, `node_pull` or `skip`; `winrm_copy` and `node_pull` need `hardware.sbe.bundle_path`; `node_pull` needs `node_pull_url`, an `https://` (or `http://`, a warning) address or a UNC folder with no user name, password, token or query string; an address with another route is a warning (not used); `winrm_copy` warns for a node with no management `ip_address` |
 | AZL-031 | The OS configuration run (5.4.3): `os_configuration.clear_storage: true` on a SAN design warns that only local disks are wiped (the key itself must be a boolean, which the schema checks). |
-| (scope) | `_metadata.scope: ztp` requires only ZTP's keys (see [Which template](#which-template)); `full` requires everything |
+| AZL-060 | The environment class (5.6): `scenario.environment_class` is `lab`, `test`, `dev`, `production` or `dmz`; anything else is an error that names the allowed values (a missing class means `production`) |
+| AZL-061 | Any and the wildcard (5.6): `os_configuration.remoting.allow_any_source: true` and `trusted_hosts: wildcard` only in `lab` and `test`; `trusted_hosts: exact` is not allowed in `dmz` |
+| AZL-062 | Allowed sources (5.6): every `os_configuration.remoting.allowed_source_cidrs` entry is a well-formed IPv4 or IPv6 CIDR, not /0 to /8, and not wider than the class takes (/24 or /64 in `dev` and `production`); a management or out-of-band network wider than that is a warning and is left out of the node firewall scope |
+| AZL-063 | At least one source (5.6): `production` and `dmz` need a management network or a listed source that is allowed in the class (an error); `dev` warns |
+| AZL-064 | The `dmz` class (5.6): every source is a single address, /32 or /128 |
+| AZL-065 | HTTPS (5.6): `use_https: false` (or `transport: winrm` with it) is an error in `production` and `dmz`, a warning in `dev` |
+| AZL-066 | The isolation statement (5.6): `isolation_confirmed: true` is not allowed in `dev`, `production` or `dmz`, where Any is never accepted |
+| AZL-067 | The server certificate (5.6): `certificate` is a 40-hex thumbprint or a `keyvault://` reference; `dmz` needs one; a certificate with HTTPS off is a warning |
+| AZL-068 | The relaxed classes (5.6): `lab` and `test` open WinRM, RDP and ICMP to any source and set TrustedHosts to `*` (a warning that says so; the baseline denylist still holds) || (scope) | `_metadata.scope: ztp` requires only ZTP's keys (see [Which template](#which-template)); `full` requires everything |
 Design guidance (which pattern to pick, sizing, best practices) stays in Trailwright, which cites Microsoft Learn for every rule. The toolkit's rules are the ones that stop a deployment.
 
 ## Use it from a script
