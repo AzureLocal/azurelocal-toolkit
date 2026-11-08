@@ -62,6 +62,7 @@ $script:AddressModes = @('static', 'dhcp_reservation', 'dhcp', 'preconfigured')
 # ---------------------------------------------------------------------------------------------------------------------
 
 function New-Finding {
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds an in-memory finding object; changes no system state.')]
     param([string]$Id, [ValidateSet('error', 'warning', 'info')][string]$Severity, [string]$Path, [string]$Message, [string]$LearnUrl = '')
     [pscustomobject]@{ Id = $Id; Severity = $Severity; Path = $Path; Message = $Message; LearnUrl = $LearnUrl }
 }

@@ -241,6 +241,7 @@ function New-AzlArmParameterSet {
     .EXAMPLE
         New-AzlArmParameterSet -Infrastructure $infra -Handoff $handoff -Mode Validate
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds an in-memory parameter set; changes no system state.')]
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure,
@@ -293,7 +294,8 @@ function New-AzlArmParameterSet {
     }
 
     $resolveLog = $warnings
-    $resolve = { param($fileName) Resolve-AzlAdapterName -Infrastructure $Infrastructure -FileName $fileName -AdapterMap $AdapterMap -Warnings $resolveLog }
+    $resolveMap = $AdapterMap   # read inside the script block below, which the analyzer does not follow
+    $resolve = { param($fileName) Resolve-AzlAdapterName -Infrastructure $Infrastructure -FileName $fileName -AdapterMap $resolveMap -Warnings $resolveLog }
     $intents = @(ConvertTo-List (& $g 'networking.intents' @()) | ForEach-Object { ConvertTo-AzlArmIntent -Intent $_ -Resolve $resolve })
     if (-not $intents) { throw 'networking.intents is empty.' }
 

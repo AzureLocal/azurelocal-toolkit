@@ -49,7 +49,7 @@ function Initialize-AzlCicdLog {
     [CmdletBinding()]
     param([Parameter(Mandatory)][string]$TaskName, [string]$LogPath = '')
     if (-not $LogPath) {
-        $LogPath = Join-Path (Join-Path (Join-Path $PSScriptRoot '..\..\..') 'logs') (Join-Path $TaskName ((Get-Date).ToString('yyyyMMdd-HHmmss') + '.log'))
+        $LogPath = Join-Path (Join-Path (Join-Path $PSScriptRoot '../../..') 'logs') (Join-Path $TaskName ((Get-Date).ToString('yyyyMMdd-HHmmss') + '.log'))
     }
     $parent = Split-Path -Path $LogPath -Parent
     if ($parent -and -not (Test-Path -LiteralPath $parent)) { New-Item -ItemType Directory -Path $parent -Force | Out-Null }
@@ -285,10 +285,10 @@ function Get-AzlCicdSetting {
     #>
     [CmdletBinding()]
     param([string]$InfrastructureFile = '', [string]$Platform = '')
-    $modulePath = Join-Path $PSScriptRoot '..\infrastructure\AzlInfrastructure.psm1'
+    $modulePath = Join-Path $PSScriptRoot '../infrastructure/AzlInfrastructure.psm1'
     Import-Module $modulePath -Force
     if (-not $InfrastructureFile) {
-        $InfrastructureFile = @($env:AZL_INFRASTRUCTURE_FILE, '.\infrastructure.yml', '.\config\infrastructure.yml') |
+        $InfrastructureFile = @($env:AZL_INFRASTRUCTURE_FILE, './infrastructure.yml', './config/infrastructure.yml') |
             Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -First 1
         if (-not $InfrastructureFile) { throw 'No infrastructure file given. Pass -InfrastructureFile, or set AZL_INFRASTRUCTURE_FILE.' }
     }
@@ -306,7 +306,7 @@ function Resolve-AzlCicdInput {
     param([string]$InfrastructureFile = '', [string]$Platform = '', [System.Collections.IDictionary]$Configuration)
     $file = $InfrastructureFile
     if (-not $file) {
-        $file = @($env:AZL_INFRASTRUCTURE_FILE, '.\infrastructure.yml', '.\config\infrastructure.yml') |
+        $file = @($env:AZL_INFRASTRUCTURE_FILE, './infrastructure.yml', './config/infrastructure.yml') |
             Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -First 1
     }
     if ($file) {
@@ -1252,7 +1252,7 @@ function Invoke-AzlCicdRunnerDeployment {
     )
     $task = '06-deploy-runners'
     $results = [System.Collections.Generic.List[object]]::new()
-    if (-not $TerraformDirectory) { $TerraformDirectory = Join-Path $PSScriptRoot '..\..\..\src\terraform\environments\cicd-infra' }
+    if (-not $TerraformDirectory) { $TerraformDirectory = Join-Path $PSScriptRoot '../../../src/terraform/environments/cicd-infra' }
     $TerraformDirectory = (Resolve-Path -LiteralPath $TerraformDirectory).Path
     if (-not $WorkingDirectory) { $WorkingDirectory = Join-Path ([IO.Path]::GetTempPath()) 'azl-cicd-infra' }
     if (-not (Test-Path -LiteralPath $WorkingDirectory)) { New-Item -ItemType Directory -Path $WorkingDirectory -Force | Out-Null }

@@ -68,7 +68,7 @@
 
     # Where to get the value. The first matching pattern wins.
     Sources       = @(
-        @{ Pattern = '^_metadata\.schema_version$'; Text = 'Set by the template (5.3.0). Change it only with a migration.' }
+        @{ Pattern = '^_metadata\.schema_version$'; Text = 'Set by the template (5.6.0). Change it only with a migration.' }
         @{ Pattern = '^_metadata\.scope$'; Text = 'You: ztp for a file used by azurelocal-ztp alone, full for everything.' }
         @{ Pattern = '^_metadata\.'; Text = 'You: bookkeeping for the file.' }
         @{ Pattern = '^scenario\.environment_class$'; Text = 'You: what kind of environment this is (lab, test, dev, production or dmz). It picks the remote management security profile of the OS configuration run; leave it out and the run treats the environment as production.' }

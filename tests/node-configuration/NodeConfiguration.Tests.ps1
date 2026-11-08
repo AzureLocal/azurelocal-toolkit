@@ -3,6 +3,10 @@
 # Tests for OS configuration (idempotent, read first, change only what differs). No node and no Azure is touched.
 # Run: Import-Module Pester -RequiredVersion 5.9.1; Invoke-Pester ./tests/node-configuration
 
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Fake transport and mock script blocks keep the signature of the real ones.')]
+[Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Test helpers build in-memory fixtures; they change no system state.')]
+param()
+
 BeforeAll {
     $repo = Resolve-Path (Join-Path $PSScriptRoot '..\..')
     Import-Module (Join-Path $repo 'scripts\common\infrastructure\AzlInfrastructure.psm1') -Force
