@@ -471,10 +471,6 @@ Describe 'Settings and the pre-check' {
         { Get-AzlRemotingSetting -Setting @{ remoting = @{ allowedSourceCidrs = @('not-a-cidr') } } } | Should -Throw '*CIDR*'
         { Get-AzlRemotingSetting -Setting @{ remoting = @{ colour = 'red' } } } | Should -Throw '*Unknown remoting setting*'
     }
-    It 'the allowed CIDRs always include the management network' {
-        $infra = @{ networking = @{ management = @{ subnet = '192.0.2.0/24' } } }
-        Get-AzlRemotingAllowedCidr -Infrastructure $infra -RunnerCidr @('198.51.100.0/24') | Should -Be @('192.0.2.0/24', '198.51.100.0/24')
-    }
     It 'the pre-check names a closed port, a timeout and a missing credential, and never suggests Arc as a fallback' {
         $probe = { param($Address, $Port) if ($Address -eq '192.0.2.11') { [pscustomobject]@{ Open = $false; Reason = 'TimedOut'; Detail = 'no answer' } } elseif ($Address -eq '192.0.2.12') { [pscustomobject]@{ Open = $false; Reason = 'Closed'; Detail = 'refused' } } else { [pscustomobject]@{ Open = $true; Reason = 'Open'; Detail = 'ok' } } }
         $f = @(Get-AzlRemotingPreCheckFinding -Node @([pscustomobject]@{ Name = 'a'; Addresses = @('192.0.2.11') }, [pscustomobject]@{ Name = 'b'; Addresses = @('192.0.2.12') }, [pscustomobject]@{ Name = 'c'; Addresses = @('192.0.2.13') }) -HasCredential $false -Probe $probe)

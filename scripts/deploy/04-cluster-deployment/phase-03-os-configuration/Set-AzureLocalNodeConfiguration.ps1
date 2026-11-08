@@ -33,8 +33,9 @@
     Transport. PowerShell remoting (WinRM) is the default and the only automatic choice: run it from a jump server on the management network, or from
     a CI runner that has a route to it. Every node is probed first (all nodes at the same time) and one table says which is unreachable and why. There is no
     silent fallback to Arc. -Transport ArcRunCommand (Microsoft.HybridCompute/machines/{name}/runCommands) stays available when asked for, as the exception for
-    sites with no route; it is not recommended for network changes. With -Settings @{ remoting = @{ bootstrapTransport = 'arc' } } Arc is used ONCE per node, only
-    to open the node firewall for WinRM (and RDP, ICMP) for the source CIDRs; everything else then goes over WinRM.
+    sites with no route; it is not recommended for network changes. With -Settings @{ remoting = @{ bootstrapTransport = 'arc' } } (or smb, or auto) the one-time
+    bootstrap of the remote management profile runs ONCE per node, only to open the node firewall for WinRM (and RDP, ICMP, as the class says) for the sources
+    of the profile; production and dmz need -ApprovedBootstrap. Everything else then goes over WinRM.
 
     A change that can cut the node off (management address, gateway, DNS, VLAN, remote-management firewall rules, time, DHCP-off on other ports, disabled adapters, the
     computer name) is a GUARDED change: staged on the node, applied there, checked there, committed only after this host confirms it through a new session, and
@@ -113,6 +114,8 @@ param(
     [switch]$SpecOnly,
     [int]$MaxPasses = 6,
     [string]$ReportPath,
+    # The pipeline approval of the one-time bootstrap (production and dmz need it; a settings file can't give it).
+    [switch]$ApprovedBootstrap,
     [switch]$Execute
 )
 Set-StrictMode -Version Latest
@@ -126,6 +129,7 @@ Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlNodeTransp
 Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlGuardedChange.psm1') -Force
 Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlRemoting.psm1') -Force
 Import-Module (Join-Path (Join-Path $common 'remoting') 'AzlRemotingProfile.psm1') -Force
+Import-Module (Join-Path (Join-Path $common 'remoting') 'AzlRemotingBootstrap.psm1') -Force
 
 function Write-Line([string]$Text) { Write-Information -MessageData $Text -InformationAction Continue }
 
@@ -133,7 +137,9 @@ Set-AzlNodeRetryPolicy -Tries $RetryTries -DelaySeconds $RetryDelaySeconds
 $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation:$SkipValidation
 $handoff = if ($HandoffFile) { Read-AzlHandoff -Path $HandoffFile } else { $null }
 # The remote management profile of the class (missing class = production). Printed first; TrustedHosts on this machine is managed by Invoke-AzureLocalOsConfiguration.ps1, not here.
-$remotingProfile = Resolve-AzlRemotingProfile -Infrastructure $infra -Override (ConvertTo-AzlRemotingProfileOverride -Setting $Settings)
+$profileOverride = ConvertTo-AzlRemotingProfileOverride -Setting $Settings
+if ($ApprovedBootstrap) { $profileOverride.approved_bootstrap = $true; $profileOverride.approved_bootstrap_source = 'parameter' }
+$remotingProfile = Resolve-AzlRemotingProfile -Infrastructure $infra -Override $profileOverride
 foreach ($line in @(Format-AzlRemotingProfile -RemotingProfile $remotingProfile)) { Write-Line $line }
 Assert-AzlRemotingProfile -RemotingProfile $remotingProfile
 $allSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
@@ -172,7 +178,7 @@ $eventContext = New-AzlGuardEventContext -Path $EventLogPath -SchemaVersion ([st
 $subscription = [string](Get-AzlProp $infra 'azure.subscription_id')
 $resourceGroup = [string](Get-AzlProp $infra 'azure.resource_group')
 $azureSignedIn = [bool]((Get-Command Get-AzContext -ErrorAction SilentlyContinue) -and (Get-AzContext -ErrorAction SilentlyContinue))
-$needArc = $remoting.Kind -eq 'ArcRunCommand' -or $remoting.BootstrapTransport -eq 'arc'
+$needArc = $remoting.Kind -eq 'ArcRunCommand' -or 'arc' -in @($remotingProfile.Bootstrap.Routes)
 $arcIds = @{}
 $arcMachines = @{}
 if ($needArc -and -not (Get-Command Invoke-AzRestMethod -ErrorAction SilentlyContinue)) { throw 'Az.Accounts is needed for Azure Arc Run Command (the explicit -Transport ArcRunCommand, or remoting.bootstrapTransport arc). Install-Module Az.Accounts, then Connect-AzAccount.' }
@@ -215,20 +221,25 @@ else {
     }
     $arcAvailable = @($arcMachines.Keys | Where-Object { $arcMachines[$_].Status -eq 'Connected' })
     $findings = @(Get-AzlRemotingPreCheckFinding -Node $candidates -Port $remoting.Port -HasCredential ([bool]$Credential) -Origin $credentialSource -ArcAvailable $arcAvailable)
-    # The bootstrap: Arc once per node, only to open remote management for the source CIDRs; then the node is probed again and everything else goes over WinRM.
+    # The bootstrap is the profile's (Invoke-AzlWinRmBootstrap, routes smb and arc, once per node): the class gate and the approval, the sources, RDP, ICMP and the
+    # HTTP window all come from the profile. Then the node is probed again and everything else goes over WinRM.
     $closed = @($findings | Where-Object { -not $_.Reachable -and $_.Result -ne 'NoCredential' -and $_.Result -ne 'NoAddress' })
-    if ($closed.Count -and $remoting.BootstrapTransport -eq 'arc') {
-        $cidrs = @(Get-AzlRemotingAllowedCidr -Infrastructure $infra -RunnerCidr $remoting.AllowedSourceCidrs)
-        if (-not $cidrs.Count) { throw 'remoting.bootstrapTransport is arc but no source CIDR is known: the file has no networking.management.subnet and remoting.allowedSourceCidrs is empty.' }
-        $arcBootstrap = New-AzlArcRunCommandTransport -ArcResourceId $arcIds
+    $bootstrapVerdict = Test-AzlBootstrapPermitted -Bootstrap $remotingProfile.Bootstrap -Class $remotingProfile.Class -ApprovedBootstrap:$ApprovedBootstrap
+    if ($closed.Count -and $remotingProfile.Bootstrap.Chosen -and -not $bootstrapVerdict.Permitted) { Write-Line "Bootstrap not run: $($bootstrapVerdict.Reason)" }
+    if ($closed.Count -and $bootstrapVerdict.Permitted) {
+        $sources = @($remotingProfile.Firewall.RemoteAddress)
+        $adminCredential = $(if ($Credential) { [pscredential]::new('Administrator', $Credential.Password) } else { $null })
+        $bootThumbprint = $(if ($remotingProfile.Certificate.Mode -eq 'thumbprint') { $remotingProfile.Certificate.Thumbprint } else { '' })
         foreach ($f in $closed) {
-            if (-not $arcIds.ContainsKey($f.Node)) { Write-Warning "$($f.Node): bootstrap needs its Arc machine and none was found; skipped."; continue }
-            if ($arcMachines[$f.Node].Status -ne 'Connected') { Write-Warning "$($f.Node): its Arc machine is $($arcMachines[$f.Node].Status), not Connected; the bootstrap can't run."; continue }
-            if (-not $Execute) { Write-Line "$($f.Node): not reachable over remoting; the bootstrap would open WinRM for $($cidrs -join ', ') through Arc once (plan only: not done)."; continue }
-            Write-Line "$($f.Node): not reachable over remoting ($($f.Result)); using Arc Run Command ONCE to open remote management for $($cidrs -join ', ')."
-            $steps = @($steps)
-            $bootstrapRecords[$f.Node] = Invoke-AzlRemotingBootstrap -ArcTransport $arcBootstrap -Node $f.Node -Cidr $cidrs -Rdp:('RemoteManagement' -in $steps) -Icmp:('RemoteManagement' -in $steps) -Https:$remoting.UseSsl
-            Send-AzlGuardEvent -Context $eventContext -Node $f.Node -State 'TransportResolved' -Step 'RemoteManagement' -Transport 'ArcRunCommand' -Evidence "Bootstrap through Arc Run Command, once: opened $($bootstrapRecords[$f.Node].Opened -join ', ') for $($cidrs -join ', '). Everything after this goes over WinRM." -Level Warning -Data @{ bootstrap = $true; cidrs = $cidrs }
+            $arcId = $(if ($arcIds.ContainsKey($f.Node)) { [string]$arcIds[$f.Node] } else { '' })
+            if ($arcId -and $arcMachines[$f.Node].Status -ne 'Connected') { Write-Warning "$($f.Node): its Arc machine is $($arcMachines[$f.Node].Status), not Connected; the arc route can't run."; $arcId = '' }
+            if (-not $Execute) { Write-Line "$($f.Node): not reachable over remoting; the bootstrap ($(@($remotingProfile.Bootstrap.Routes) -join ', ')) would open WinRM for $($sources -join ', ') once (plan only: not done)."; continue }
+            Write-Line "$($f.Node): not reachable over remoting ($($f.Result)); the bootstrap ($(@($remotingProfile.Bootstrap.Routes) -join ', ')) opens WinRM ONCE for $($sources -join ', ')."
+            $address = @($candidates | Where-Object Name -eq $f.Node)[0].Addresses[0]
+            $done = Invoke-AzlWinRmBootstrap -RemotingProfile $remotingProfile -Node $f.Node -Address $address -ArcResourceId $arcId -Credential $adminCredential -ApprovedBootstrap:$ApprovedBootstrap -Thumbprint $bootThumbprint
+            if (-not $done.Ok) { Write-Warning "$($f.Node): the bootstrap failed: $($done.Reason)"; continue }
+            $bootstrapRecords[$f.Node] = [pscustomobject]@{ Opened = @('WinRM'); Scope = $sources; Route = $done.Route }
+            Send-AzlGuardEvent -Context $eventContext -Node $f.Node -State 'TransportResolved' -Step 'RemoteManagement' -Transport $done.Route -Evidence "Bootstrap through the $($done.Route) route, once, for the sources of the profile ($($sources -join ', ')). Everything after this goes over WinRM." -Level Warning -Data @{ bootstrap = $true; cidrs = $sources; route = $done.Route }
         }
         if ($Execute -and $bootstrapRecords.Count) {
             Start-Sleep -Seconds 5
@@ -236,14 +247,14 @@ else {
         }
     }
     Write-Line (Format-AzlRemotingPreCheckFinding -Finding $findings)
-    if (@($findings | Where-Object { -not $_.Reachable }).Count -and -not ($remoting.BootstrapTransport -eq 'arc' -and -not $Execute -and @($findings | Where-Object { -not $_.Reachable -and $_.Node -in $arcAvailable }).Count -eq @($findings | Where-Object { -not $_.Reachable }).Count)) {
+    if (@($findings | Where-Object { -not $_.Reachable }).Count -and -not ($bootstrapVerdict.Permitted -and -not $Execute -and @($findings | Where-Object { -not $_.Reachable -and ($_.Node -in $arcAvailable -or 'smb' -in @($remotingProfile.Bootstrap.Routes)) }).Count -eq @($findings | Where-Object { -not $_.Reachable }).Count)) {
         Write-Line "NOT READY: $(@($findings | Where-Object { -not $_.Reachable }).Count) node(s) can't be reached over PowerShell remoting. Nothing was changed."
         exit 1
     }
     foreach ($f in $findings) { $addressByNode[$f.Node] = $(if ($f.Reachable) { $f.Address } else { @($candidates | Where-Object Name -eq $f.Node)[0].Addresses[0] }) }
     foreach ($s in $specs) {
         $nodeTransports[$s.Name] = New-AzlWinRmTransport -Address @{ $s.Name = $addressByNode[$s.Name] } -Credential $Credential -UseSsl:$remoting.UseSsl -Authentication $remoting.Authentication
-        $why = "PowerShell remoting is the default transport; $($addressByNode[$s.Name]):$($remoting.Port) answers$(if ($bootstrapRecords.ContainsKey($s.Name)) { ' after the one-time Arc bootstrap' }), credential from $credentialSource."
+        $why = "PowerShell remoting is the default transport; $($addressByNode[$s.Name]):$($remoting.Port) answers$(if ($bootstrapRecords.ContainsKey($s.Name)) { ' after the one-time bootstrap' }), credential from $credentialSource."
         Send-AzlGuardEvent -Context $eventContext -Node $s.Name -State 'TransportResolved' -Step '' -Transport 'WinRM' -Evidence $why -Data @{ address = $addressByNode[$s.Name]; port = $remoting.Port; authentication = $remoting.Authentication; ssl = $remoting.UseSsl }
     }
 }
@@ -305,8 +316,8 @@ $report = [ordered]@{
                 converged = $_.Converged
                 transport = $nodeTransports[$_.Node].Kind
                 address   = $_.Address
-                stepTransports = [ordered]@{ all = $nodeTransports[$_.Node].Kind; bootstrap = $(if ($bootstrapRecords.ContainsKey($_.Node)) { 'ArcRunCommand' } else { '' }) }
-                bootstrap = $(if ($bootstrapRecords.ContainsKey($_.Node)) { [ordered]@{ used = $true; transport = 'ArcRunCommand'; opened = @($bootstrapRecords[$_.Node].Opened); scope = @($bootstrapRecords[$_.Node].Scope) } } else { [ordered]@{ used = $false } })
+                stepTransports = [ordered]@{ all = $nodeTransports[$_.Node].Kind; bootstrap = $(if ($bootstrapRecords.ContainsKey($_.Node)) { [string]$bootstrapRecords[$_.Node].Route } else { '' }) }
+                bootstrap = $(if ($bootstrapRecords.ContainsKey($_.Node)) { [ordered]@{ used = $true; transport = [string]$bootstrapRecords[$_.Node].Route; opened = @($bootstrapRecords[$_.Node].Opened); scope = @($bootstrapRecords[$_.Node].Scope) } } else { [ordered]@{ used = $false } })
                 guard     = @($_.Guard | ForEach-Object { [ordered]@{ group = $_.Group; state = $_.State; changeId = $_.ChangeId; reason = $_.Reason; nextAction = $_.NextAction; oldAddress = $_.OldAddress; newAddress = $_.NewAddress; verdict = $_.Verdict; repairs = @($_.Repairs | ForEach-Object { $_.rung }) } })
                 events    = @($_.Events)
                 restarted = $_.Restarted

@@ -999,7 +999,7 @@ function Test-AzlZtpVerification {
 function Invoke-AzlPlanPhase {
     param([object]$Context, [System.Collections.IDictionary]$Record, [System.Collections.IDictionary]$Node, [string]$Phase = 'Plan')
     if ($Record.bootstrap.Contains('pending') -and $Record.bootstrap.pending) {
-        $Record.plan = @([pscustomobject]@{ Node = $Record.name; Step = 'RemoteManagement'; Item = 'remote management bootstrap'; Current = 'WinRM is closed to this host (the node firewall limits it to its own subnet)'; Desired = "WinRM open for $(@($Record.bootstrap.cidrs) -join ', ')"; Action = 'Change'; Note = 'Arc Run Command, once, only for this step. The rest of the plan can be read after it.' })
+        $Record.plan = @([pscustomobject]@{ Node = $Record.name; Step = 'RemoteManagement'; Item = 'remote management bootstrap'; Current = 'WinRM is closed to this host (the node firewall limits it to its own subnet)'; Desired = "WinRM open for $(@($Record.bootstrap.cidrs) -join ', ')"; Action = 'Change'; Note = "The one-time bootstrap ($(@($Record.bootstrap.routes) -join ', ')), once, only for this step, with the sources of the profile. The rest of the plan can be read after it." })
         Merge-AzlRecordCount -Record $Record
         $Record.status = 'planned'
         return
@@ -1035,7 +1035,7 @@ function Invoke-AzlApplyPhase {
     if ($Record.bootstrap.Contains('pending') -and $Record.bootstrap.pending) {
         try {
             Invoke-AzlRunBootstrap -Context $Context -Record $Record
-            $Record.changes += [ordered]@{ pass = 0; id = 'RemoteManagement/bootstrap'; status = 'changed'; detail = "opened $(@($Record.bootstrap.opened) -join ', ') for $(@($Record.bootstrap.cidrs) -join ', ') through Arc Run Command (once)" }
+            $Record.changes += [ordered]@{ pass = 0; id = 'RemoteManagement/bootstrap'; status = 'changed'; detail = "opened WinRM for $(@($Record.bootstrap.cidrs) -join ', ') through the $($Record.bootstrap.route) bootstrap (once)" }
             Invoke-AzlPlanPhase -Context $Context -Record $Record -Node $Node -Phase 'Plan'
         }
         catch { $Record.errors += "Bootstrap of $($Record.name) failed: $($_.Exception.Message)"; $Record.status = 'failed'; return }
@@ -1106,16 +1106,22 @@ function Invoke-AzlRunBootstrap {
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][System.Collections.IDictionary]$Record)
+    # The profile-driven bootstrap (Invoke-AzlNodeBootstrap -> Invoke-AzlWinRmBootstrap): the class gate and the approval, the scope, RDP, ICMP and the HTTP window
+    # of the profile, routes smb and arc. There is no other bootstrap.
     $cidrs = @($Record.bootstrap.cidrs)
-    $arc = New-AzlArcRunCommandTransport -ArcResourceId @{ $Record.name = [string]$Record.evidence.ArcResourceId }
-    $withExtras = 'RemoteManagement' -in $Record.steps
-    $done = Invoke-AzlRemotingBootstrap -ArcTransport $arc -Node $Record.name -Cidr $cidrs -Rdp:$withExtras -Icmp:$withExtras -Https:([bool]$Context.TransportSetting.UseSsl)
-    $Record.bootstrap = [ordered]@{ used = $true; pending = $false; transport = 'ArcRunCommand'; opened = @($done.Opened); scope = @($done.Scope); cidrs = $cidrs }
-    Send-AzlGuardEvent -Context $Context.EventContext -Node $Record.name -State 'TransportResolved' -Step 'RemoteManagement' -Transport 'ArcRunCommand' -Level Warning -Evidence "Bootstrap through Arc Run Command, once: opened $(@($done.Opened) -join ', ') for $($cidrs -join ', '). Everything after this goes over WinRM." -Data @{ bootstrap = $true; cidrs = $cidrs }
+    $attempt = Invoke-AzlNodeBootstrap -Context $Context -Node $Record.name -Address @($Record.evidence.Addresses) -ArcResourceId ([string]$Record.evidence.ArcResourceId)
+    if (-not $attempt.Done) { throw "The bootstrap of $($Record.name) did not open WinRM: $($attempt.Note)" }
+    $outcome = @($Context.Bootstraps | Where-Object { $_.node -eq $Record.name } | Select-Object -Last 1)[0]
+    $route = [string]$outcome.route
+    $Record.bootstrap = [ordered]@{ used = $true; pending = $false; transport = $route; route = $route; opened = @('WinRM'); scope = $cidrs; cidrs = $cidrs }
+    Send-AzlGuardEvent -Context $Context.EventContext -Node $Record.name -State 'TransportResolved' -Step 'RemoteManagement' -Transport $route -Level Warning -Evidence "Bootstrap through the $route route, once, for the sources of the profile ($($cidrs -join ', ')). Everything after this goes over WinRM." -Data @{ bootstrap = $true; cidrs = $cidrs; route = $route }
     Start-Sleep -Seconds 3
     $reached = $false
-    foreach ($address in @($Record.evidence.Addresses)) { if (Test-AzlWinRmPort -Address $address -Port $Context.TransportSetting.Port) { $Record.address = $address; $reached = $true; break } }
-    if (-not $reached) { throw "$($Record.name) still doesn't answer on $($Context.TransportSetting.Port) after the bootstrap opened remote management for $($cidrs -join ', '). The runner's address may not be in those CIDRs, or a network firewall between this host and the node blocks TCP $($Context.Remoting.Port). Tried: $(@($Record.evidence.Addresses) -join ', ')." }
+    foreach ($address in @($Record.evidence.Addresses)) {
+        $endpoint = Resolve-AzlNodeEndpoint -Context $Context -Address $address
+        if ($endpoint.Answers) { $Record.address = $address; $Record.useSsl = [bool]$endpoint.UseSsl; $reached = $true; break }
+    }
+    if (-not $reached) { throw "$($Record.name) still doesn't answer on WinRM after the bootstrap opened it for $($cidrs -join ', '). This host's address may not be in those sources, or a network firewall between this host and the node blocks the port. Tried: $(@($Record.evidence.Addresses) -join ', ')." }
 }
 function Get-AzlWipeList {
     <#
@@ -1204,7 +1210,7 @@ function ConvertTo-AzlNodeReport {
             winrm   = [ordered]@{ answers = $Record.evidence.WinRmAnswers; address = $Record.evidence.WinRmAddress; note = $Record.evidence.WinRmNote }
         }
         address        = $Record.address
-        stepTransports = [ordered]@{ all = $Record.transport; bootstrap = $(if ($Record.bootstrap.used) { 'ArcRunCommand' } else { '' }) }
+        stepTransports = [ordered]@{ all = $Record.transport; bootstrap = $(if ($Record.bootstrap.used) { [string]$Record.bootstrap.transport } else { '' }) }
         bootstrap      = $Record.bootstrap
         guard          = @($Record.guard)
         events         = @($Record.events)
@@ -1456,9 +1462,14 @@ function Invoke-AzlOsConfiguration {
                 if ($f.Reachable) { $r.address = $f.Address; continue }
                 # The one-time Arc bootstrap is allowed only where the environment class allows a bootstrap and, in production and dmz, the pipeline approved it.
                 $bootstrapPermitted = $context.Remoting -and (Test-AzlBootstrapPermitted -Bootstrap $context.Remoting.Bootstrap -Class $context.Remoting.Class -ApprovedBootstrap:$context.ApprovedBootstrap).Permitted
-                if ($context.TransportSetting.BootstrapTransport -eq 'arc' -and $bootstrapPermitted -and $f.Node -in $arcAvailable -and $f.Result -notin 'NoCredential', 'NoAddress') {
-                    $cidrs = @(Get-AzlRemotingAllowedCidr -Infrastructure $infra -RunnerCidr $context.TransportSetting.AllowedSourceCidrs)
-                    if ($cidrs.Count) { $r.bootstrap = [ordered]@{ used = $false; pending = $true; cidrs = $cidrs }; continue }
+                # The bootstrap is the profile's (Invoke-AzlWinRmBootstrap, routes smb and arc): the scope, RDP, ICMP and HTTP window come from the profile.
+                # A node whose bootstrap already ran and failed in this run is not tried again.
+                $bootRoutes = $(if ($context.Remoting) { @($context.Remoting.Bootstrap.Routes) } else { @() })
+                $routeUsable = ('arc' -in $bootRoutes -and $f.Node -in $arcAvailable) -or ('smb' -in $bootRoutes)
+                $triedAlready = @($context.Bootstraps | Where-Object { $_.node -eq $f.Node }).Count -gt 0
+                if ($bootstrapPermitted -and $routeUsable -and -not $triedAlready -and $f.Result -notin 'NoCredential', 'NoAddress') {
+                    $r.bootstrap = [ordered]@{ used = $false; pending = $true; cidrs = @($context.Remoting.Firewall.RemoteAddress); routes = $bootRoutes }
+                    continue
                 }
                 $unreachable.Add($f)
             }

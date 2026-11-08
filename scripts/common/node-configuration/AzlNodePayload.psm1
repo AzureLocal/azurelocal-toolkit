@@ -507,38 +507,6 @@ $null = Invoke-AzStackHciArcInitialization @arguments
 Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; registered = $true })
 '@
 
-# The bootstrap: a freshly provisioned node's Windows Firewall allows WinRM, RDP and ICMP from the local subnet only. This opens them for the source CIDRs the
-# caller names, and makes sure WinRM listens. It changes no address, no gateway and no DNS.
-$script:OpenRemotingBody = @'
-$cidrs = @(Get-P $P 'cidrs' @())
-if ($cidrs.Count -eq 0) { throw 'No source CIDRs were given.' }
-$scope = @('LocalSubnet') + $cidrs
-$opened = New-Object System.Collections.ArrayList
-Set-Service -Name WinRM -StartupType Automatic
-if ((Get-Service WinRM).Status -ne 'Running') { Start-Service WinRM }
-if (@(Get-ChildItem WSMan:\localhost\Listener -ErrorAction SilentlyContinue).Count -eq 0) { Enable-PSRemoting -Force -SkipNetworkProfileCheck | Out-Null; [void]$opened.Add('WinRM listener') }
-foreach ($n in 'WINRM-HTTP-In-TCP', 'WINRM-HTTP-In-TCP-PUBLIC') {
-    $rule = Get-NetFirewallRule -Name $n -ErrorAction SilentlyContinue
-    if ($rule) { Set-NetFirewallRule -Name $n -Enabled True -RemoteAddress $scope; [void]$opened.Add($n) }
-}
-if (Get-P $P 'https' $false) {
-    if (-not (Get-NetFirewallRule -Name 'AZL-WINRM-HTTPS-In' -ErrorAction SilentlyContinue)) { New-NetFirewallRule -Name 'AZL-WINRM-HTTPS-In' -DisplayName 'Azure Local OS configuration: WinRM over HTTPS' -Direction Inbound -Protocol TCP -LocalPort 5986 -Action Allow -Profile Any -RemoteAddress $scope | Out-Null }
-    else { Set-NetFirewallRule -Name 'AZL-WINRM-HTTPS-In' -Enabled True -RemoteAddress $scope }
-    [void]$opened.Add('AZL-WINRM-HTTPS-In')
-}
-if (Get-P $P 'rdp' $false) {
-    Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0
-    Get-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue | Set-NetFirewallRule -Enabled True -RemoteAddress $scope
-    [void]$opened.Add('Remote Desktop')
-}
-if (Get-P $P 'icmp' $false) {
-    foreach ($n in 'FPS-ICMP4-ERQ-In', 'FPS-ICMP6-ERQ-In') {
-        if (Get-NetFirewallRule -Name $n -ErrorAction SilentlyContinue) { Set-NetFirewallRule -Name $n -Enabled True -RemoteAddress $scope; [void]$opened.Add($n) }
-    }
-}
-Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; opened = @($opened); scope = $scope; listeners = @(Get-ChildItem WSMan:\localhost\Listener -ErrorAction SilentlyContinue).Count })
-'@
-
 function Get-AzlNodePayload {
     <#
     .SYNOPSIS
@@ -548,7 +516,7 @@ function Get-AzlNodePayload {
     #>
     [CmdletBinding()]
     [OutputType([string])]
-    param([Parameter(Mandatory)][ValidateSet('Read', 'Apply', 'Collect', 'Restart', 'Preflight', 'ArcRegistration', 'OpenRemoting', 'DomainJoinProbe', 'DomainJoinApply', 'DomainJoinOuCheck', 'DomainJoinRestart', 'DomainJoinResume')][string]$Name)
+    param([Parameter(Mandatory)][ValidateSet('Read', 'Apply', 'Collect', 'Restart', 'Preflight', 'ArcRegistration', 'DomainJoinProbe', 'DomainJoinApply', 'DomainJoinOuCheck', 'DomainJoinRestart', 'DomainJoinResume')][string]$Name)
     $body = switch ($Name) {
         'Read' { $script:ReadBody.Replace('#AZL-HOOK:DomainJoinRead', (Get-AzlDomainJoinReadSection)) } # DOMAINJOIN HOOK
         'Apply' { $script:ApplyBody }
@@ -556,7 +524,6 @@ function Get-AzlNodePayload {
         'Restart' { $script:RestartBody }
         'Preflight' { $script:PreflightBody }
         'ArcRegistration' { $script:ArcRegistrationBody }
-        'OpenRemoting' { $script:OpenRemotingBody }
         'DomainJoinProbe' { Get-AzlDomainJoinPayloadBody -Name Probe } # DOMAINJOIN HOOK: the four DomainJoin scripts
         'DomainJoinApply' { Get-AzlDomainJoinPayloadBody -Name Apply }
         'DomainJoinOuCheck' { Get-AzlDomainJoinPayloadBody -Name OuCheck }
