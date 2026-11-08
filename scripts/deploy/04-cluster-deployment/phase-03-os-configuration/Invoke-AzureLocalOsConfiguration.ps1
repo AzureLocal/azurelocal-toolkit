@@ -69,6 +69,10 @@
     Node name -> the address to open the WinRM session to first, for a node that still holds the installer's address.
 .PARAMETER ClearStorage
     Force the storage wipe on, as os_configuration.clear_storage: true does.
+.PARAMETER ConfirmWipeDeployedCluster
+    One-shot, per run, never read from a file or from os_configuration.clear_storage: lets the storage wipe touch a node that belongs to a deployed cluster
+    (HKLM:\Cluster exists, the Cluster service is installed, or a pool or cluster shared volume belongs to a cluster). Without it such a node is Blocked in the plan
+    with the reason, and the node-side clear refuses it too. Only meaningful together with the storage wipe.
 .PARAMETER ApprovedBootstrap
     The pipeline approval of the one-time bootstrap (os_configuration.remoting.bootstrap_transport arc, smb or auto). Classes lab, test and dev need
     none; production and dmz do not bootstrap without it (dmz: on every run).
@@ -95,6 +99,7 @@ param(
     [pscredential]$Credential,
     [hashtable]$NodeAddress,
     [switch]$ClearStorage,
+    [switch]$ConfirmWipeDeployedCluster,
     [switch]$FailOnPendingChanges,
     [switch]$SkipValidation,
     [string]$EventLogPath,

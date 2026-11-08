@@ -58,13 +58,15 @@ BeforeAll {
         $done = $global:AzlApplied.Contains($name) -or $global:AzlConverged -contains $name
         $plan = @()
         $plan += [pscustomobject]@{ step = 'Dns'; item = 'DNS servers'; current = 'x'; desired = 'y'; action = $(if ($done) { 'Ok' } else { 'Change' }); note = '' }
+        $wipe = @()
         if ($Parameters.ContainsKey('ClearStorage') -and 'ClearStorage' -in $Parameters.Step) {
-            $plan += [pscustomobject]@{ step = 'ClearStorage'; item = 'local storage'; current = "1 pool(s), 2 virtual disk(s), disks: 3 (1000 GB) $name"; desired = 'clean'; action = $(if ($done) { 'Ok' } else { 'Change' }); note = 'DESTROYS the data on these local disks.' }
+            $plan += [pscustomobject]@{ step = 'ClearStorage'; item = 'local storage'; current = "1 pool(s), 2 virtual disk(s), disks: #3 NVMe 1000 GB serial SN-$name model 'ACME NVMe 1T' GPT"; desired = 'clean'; action = $(if ($done) { 'Ok' } else { 'Change' }); note = 'DESTROYS the data on these local disks.' }
+            if (-not $done) { $wipe = @([pscustomobject]@{ number = 3; id = "SN-$name"; serial = "SN-$name"; uniqueId = "UID-$name"; sizeGb = 1000; model = 'ACME NVMe 1T'; bus = 'NVMe'; partitionStyle = 'GPT'; reason = 'partition style GPT' }) }
         }
         $hostName = if ($global:AzlHostname.ContainsKey($name)) { $global:AzlHostname[$name] } else { $name }
         $entry = [pscustomobject]@{
             name = $name; hostname = $hostName; osVersion = '10.0.26100.1'; converged = $done; restarted = $false; ports = @(); sanDisks = @([pscustomobject]@{ uid = 'UID1' })
-            changes = @(if ($phase -eq 'Apply') { [pscustomobject]@{ Pass = 1; Id = 'Dns'; Status = 'changed'; Detail = 'set' } }); plan = $plan
+            changes = @(if ($phase -eq 'Apply') { [pscustomobject]@{ Pass = 1; Id = 'Dns'; Status = 'changed'; Detail = 'set' } }); plan = $plan; wipe = $wipe
         }
         [pscustomobject]@{ ExitCode = 0; Error = ''; Unknown = $false; Report = [pscustomobject]@{ nodes = @($entry) } }
     }
@@ -514,8 +516,9 @@ Describe 'Storage wipe (os_configuration.clear_storage)' {
         foreach ($c in $global:AzlCalls) { $c.Params.ClearStorage | Should -BeTrue }
         $text = Get-Content -LiteralPath (Join-Path $r.Out 'wipe-list.txt') -Raw
         $text | Should -Match 'WOULD BE WIPED'
-        $text | Should -Match 'iic-n01: .*3 \(1000 GB\) iic-n01'
-        $text | Should -Match 'iic-n02: .*3 \(1000 GB\) iic-n02'
+        $text | Should -Match 'iic-n01: 1 disk\(s\)'
+        $text | Should -Match "#3 NVMe 1000 GB serial SN-iic-n01 model 'ACME NVMe 1T' GPT"
+        $text | Should -Match "#3 NVMe 1000 GB serial SN-iic-n02 model 'ACME NVMe 1T' GPT"
         $text | Should -Match 'os_configuration.clear_storage in the master file'
         @($r.WipeList).Count | Should -Be 2
         $report = Get-Content -LiteralPath (Join-Path $r.Out 'report.json') -Raw | ConvertFrom-Json
@@ -539,6 +542,43 @@ Describe 'Storage wipe (os_configuration.clear_storage)' {
         $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ ClearStorage = $true }
         $global:AzlCalls[0].Params.ClearStorage | Should -BeTrue
         (Get-Content -LiteralPath (Join-Path $r.Out 'wipe-list.txt') -Raw) | Should -Match '-ClearStorage switch'
+    }
+    It 'names every disk by serial, size, model, bus and partition style in the wipe list file, the report and the event' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.os_configuration = [ordered]@{ clear_storage = $true } }
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
+        $text = Get-Content -LiteralPath (Join-Path $r.Out 'wipe-list.txt') -Raw
+        foreach ($word in 'SN-iic-n01', '1000 GB', 'ACME NVMe 1T', 'NVMe', 'GPT') { $text | Should -Match ([regex]::Escape($word)) }
+        $disk = @((Get-Content -LiteralPath (Join-Path $r.Out 'report.json') -Raw | ConvertFrom-Json).wipeList)[0].items[0]
+        $disk.serial | Should -Be 'SN-iic-n01'
+        $disk.sizeGb | Should -Be 1000
+        $disk.model | Should -Be 'ACME NVMe 1T'
+        $disk.bus | Should -Be 'NVMe'
+        $disk.partitionStyle | Should -Be 'GPT'
+        $event = @(Get-Content -LiteralPath (Join-Path $r.Out 'os-configuration-events.jsonl') | ForEach-Object { $_ | ConvertFrom-Json } | Where-Object state -eq 'WipeListPublished')[0]
+        $event.wipe[0].items[0].serial | Should -Be 'SN-iic-n01'
+        $event.wipe[0].items[0].partitionStyle | Should -Be 'GPT'
+    }
+    It '-ConfirmWipeDeployedCluster reaches the script only together with the storage wipe' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified' }
+        $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ ConfirmWipeDeployedCluster = $true }
+        foreach ($c in $global:AzlCalls) { $c.Params.ContainsKey('ConfirmWipeDeployedCluster') | Should -BeFalse }
+        Clear-Fake
+        $r = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory) -Extra @{ ClearStorage = $true; ConfirmWipeDeployedCluster = $true }
+        foreach ($c in $global:AzlCalls) { $c.Params.ConfirmWipeDeployedCluster | Should -BeTrue }
+        (Get-Content -LiteralPath (Join-Path $r.Out 'report.json') -Raw | ConvertFrom-Json).clearStorage.confirmWipeDeployedCluster | Should -BeTrue
+    }
+    It 'the confirmation is never read from the master file or the run settings' {
+        $infra = Get-TestInfra { param($d) $d.scenario.os_install = 'simplified'; $d.os_configuration = [ordered]@{ clear_storage = $true; confirm_wipe_deployed_cluster = $true } }
+        $null = Invoke-Run -Infra $infra -Handoff (Get-TestHandoffDirectory)
+        foreach ($c in $global:AzlCalls) { $c.Params.ContainsKey('ConfirmWipeDeployedCluster') | Should -BeFalse }
+        { Get-AzlRunSetting -Settings @{ confirmWipeDeployedCluster = $true } } | Should -Throw '*Unknown run setting*'
+        $file = Join-Path $TestDrive 'confirm.json'
+        '{ "confirmWipeDeployedCluster": true }' | Set-Content -LiteralPath $file
+        { Get-AzlRunSetting -ConfigPath $file } | Should -Throw '*Unknown run setting*'
+    }
+    It 'the entry script takes -ConfirmWipeDeployedCluster, and so does the node script' {
+        (Get-Command $script:EntryScript).Parameters.ContainsKey('ConfirmWipeDeployedCluster') | Should -BeTrue
+        (Get-Command (Join-Path (Split-Path $script:EntryScript -Parent) 'Set-AzureLocalNodeConfiguration.ps1')).Parameters.ContainsKey('ConfirmWipeDeployedCluster') | Should -BeTrue
     }
     It 'a node with nothing to wipe is not on the list' {
         $global:AzlConverged = @('iic-n01')

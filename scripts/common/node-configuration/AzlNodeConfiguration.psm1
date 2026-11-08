@@ -326,6 +326,57 @@ function Test-VersionLess([string]$Have, [string]$Want) {
     return $Have -ne $Want
 }
 
+function ConvertTo-AzlWipeDisk {
+    # One entry of the Read's stor.dirty as the wipe list shows it. A node that answers with the old 'number:bus:style' text has no serial, so its entry has no id
+    # and can't be wiped.
+    param([AllowNull()][object]$Entry)
+    if ($Entry -is [string]) {
+        $p = @($Entry -split ':', 3)
+        return [pscustomobject]@{ number = $(if ($p[0] -match '^\d+$') { [int]$p[0] } else { $null }); id = ''; serial = ''; uniqueId = ''; sizeBytes = [int64]0; sizeGb = 0; model = ''; bus = $(if ($p.Count -gt 1) { $p[1] } else { '' }); partitionStyle = $(if ($p.Count -gt 2) { $p[2] } else { '' }); reason = 'reported without a serial number' }
+    }
+    $size = [int64](Get-AzlProp $Entry 'size' 0)
+    $number = Get-AzlProp $Entry 'n'
+    [pscustomobject]@{
+        number         = $(if ($null -ne $number) { [int]$number } else { $null })
+        id             = [string](Get-AzlProp $Entry 'id' '')
+        serial         = [string](Get-AzlProp $Entry 'sn' '')
+        uniqueId       = [string](Get-AzlProp $Entry 'uid' '')
+        sizeBytes      = $size
+        sizeGb         = [math]::Round($size / 1GB, 1)
+        model          = [string](Get-AzlProp $Entry 'model' '')
+        bus            = [string](Get-AzlProp $Entry 'bus' '')
+        partitionStyle = [string](Get-AzlProp $Entry 'ps' '')
+        reason         = [string](Get-AzlProp $Entry 'why' '')
+    }
+}
+
+function Format-AzlWipeDisk {
+    # One disk of the wipe list on one line: number, bus, size, serial, model and partition style.
+    param([Parameter(Mandatory)][object]$Disk)
+    $number = Get-AzlProp $Disk 'number'
+    $size = [double](Get-AzlProp $Disk 'sizeGb' 0)
+    $id = [string](Get-AzlProp $Disk 'id' '')
+    $model = [string](Get-AzlProp $Disk 'model' '')
+    $parts = @($(if ($null -ne $number) { "#$number" } else { 'pool disk' }), [string](Get-AzlProp $Disk 'bus' ''), $(if ($size -gt 0) { "$size GB" } else { '' }), $(if ($id) { "serial $id" } else { 'no serial' }), $(if ($model) { "model '$model'" } else { '' }), [string](Get-AzlProp $Disk 'partitionStyle' ''))
+    return (@($parts | Where-Object { $_ }) -join ' ')
+}
+
+function Get-AzlNodeWipeItem {
+    <#
+    .SYNOPSIS
+        The disks a plan would wipe on one node, with the evidence the wipe list and the event show: number, serial, id (the name the approval uses), unique id,
+        size, model, bus, partition style and why the disk is on the list. Empty when the plan has no ClearStorage change.
+    .PARAMETER Plan
+        The plan of Compare-AzlNodeState.
+    .PARAMETER State
+        The node's last Read (its stor.dirty).
+    #>
+    [CmdletBinding()]
+    param([AllowEmptyCollection()][object[]]$Plan = @(), [Parameter(Mandatory)][AllowNull()][object]$State)
+    if (-not @($Plan | Where-Object { $_.Step -eq 'ClearStorage' -and $_.Action -eq 'Change' }).Count) { return @() }
+    @(Get-AzlProp $State 'stor.dirty' @() | Where-Object { $_ } | ForEach-Object { ConvertTo-AzlWipeDisk -Entry $_ })
+}
+
 function Compare-AzlNodeState {
     <#
     .SYNOPSIS
@@ -342,7 +393,11 @@ function Compare-AzlNodeState {
         [Parameter(Mandatory)][object]$Spec,
         [Parameter(Mandatory)][object]$State,
         [string[]]$Step = $script:AllSteps,
-        [switch]$ClearStorage
+        [switch]$ClearStorage,
+        # A node that belongs to a cluster is wiped only when this run says so (never from a file).
+        [switch]$ConfirmWipeDeployedCluster,
+        # The disks (serial, else unique id) the caller approved for this node. When given, a leftover disk that is not in it blocks the wipe. Not given: no approval is being checked.
+        [AllowEmptyCollection()][string[]]$ApprovedWipeId
     )
     $n = $Spec.Name
     # JSON turns an empty array into null; drop the nulls so an empty list counts as empty.
@@ -643,11 +698,31 @@ function Compare-AzlNodeState {
     if ('ClearStorage' -in $Step) {
         $s = Get-AzlProp $State 'stor'
         if ($s) {
-            $dirtyDisks = @($s.dirty | Where-Object { $_ })
+            $dirtyDisks = @(Get-AzlProp $s 'dirty' @() | Where-Object { $_ } | ForEach-Object { ConvertTo-AzlWipeDisk -Entry $_ })
             $dirty = [int]$s.pools -gt 0 -or [int]$s.vdisks -gt 0 -or $dirtyDisks.Count -gt 0
-            $current = if ($dirty) { "$($s.pools) pool(s), $($s.vdisks) virtual disk(s), disks: $($dirtyDisks -join ' ')" } else { 'clean' }
+            $current = if ($dirty) { "$($s.pools) pool(s), $($s.vdisks) virtual disk(s), disks: $(@($dirtyDisks | ForEach-Object { Format-AzlWipeDisk -Disk $_ }) -join '; ')" } else { 'clean' }
             if (-not $dirty) { & $add (New-AzlPlanItem $n 'ClearStorage' 'local storage' $current 'clean' Ok) }
-            elseif ($ClearStorage) { & $add (New-AzlPlanItem $n 'ClearStorage' 'local storage' $current 'clean' Change 'DESTROYS the data on these local disks. SAN LUNs, USB and boot disks are never touched.' @{ id = 'ClearStorage/local'; kind = 'storage-clear' }) }
+            elseif ($ClearStorage) {
+                # Three things must hold before a wipe is a Change: the node says whether it belongs to a cluster (and, if it does, this run was told to wipe it anyway),
+                # every disk can be named, and, when the caller approved a list, every disk is on it. Otherwise it is Blocked, with the reason.
+                $cluster = Get-AzlProp $s 'cluster'
+                $deployed = [bool](Get-AzlProp $cluster 'deployed' $false)
+                $why = (@(Get-AzlProp $cluster 'why' @()) | ForEach-Object { [string]$_ }) -join '; '
+                $ids = @($dirtyDisks | Where-Object { $_.id } | ForEach-Object { $_.id })
+                $nameless = @($dirtyDisks | Where-Object { -not $_.id })
+                $unapproved = @(if ($PSBoundParameters.ContainsKey('ApprovedWipeId')) { $ids | Where-Object { $_ -notin @($ApprovedWipeId) } })
+                $reason = ''
+                if ($null -eq $cluster) { $reason = 'The node did not report whether it belongs to a cluster, so nothing is wiped. Read the node again with the current toolkit.' }
+                elseif ($deployed -and -not $ConfirmWipeDeployedCluster) { $reason = "REFUSED: this node belongs to a deployed cluster ($why). Nothing is wiped. To wipe it anyway, run with -ConfirmWipeDeployedCluster: a one-shot flag of that run, never read from a file or from os_configuration.clear_storage." }
+                elseif ($nameless.Count) { $reason = "$($nameless.Count) leftover disk(s) report neither a serial number nor a unique id, so they can't be named in the wipe list and are not wiped." }
+                elseif ($unapproved.Count) { $reason = "Not on the approved wipe list: $($unapproved -join ', '). Nothing is wiped; plan again and approve the new list." }
+                if ($reason) { & $add (New-AzlPlanItem $n 'ClearStorage' 'local storage' $current 'clean' Blocked $reason) }
+                else {
+                    $note = 'DESTROYS the data on these local disks. SAN LUNs, USB and boot disks are never touched.'
+                    if ($deployed) { $note = "DEPLOYED CLUSTER ($why): wiped because -ConfirmWipeDeployedCluster was given for this run. $note" }
+                    & $add (New-AzlPlanItem $n 'ClearStorage' 'local storage' $current 'clean' Change $note @{ id = 'ClearStorage/local'; kind = 'storage-clear'; serials = @($ids); confirmDeployedCluster = ($deployed -and $ConfirmWipeDeployedCluster.IsPresent) })
+                }
+            }
             else { & $add (New-AzlPlanItem $n 'ClearStorage' 'local storage' $current 'clean' $(if ($Spec.Architecture -eq 'san') { 'Info' } else { 'Blocked' }) 'Left over from an earlier deployment; Validate rejects disks that are not clean. Run with -ClearStorage to wipe them (destroys data).') }
         }
     }
@@ -798,6 +873,10 @@ function Invoke-AzlNodeConfiguration {
         [switch]$Execute,
         [string[]]$Step = $script:AllSteps,
         [switch]$ClearStorage,
+        # One-shot, per run, never from a file: wipe leftover storage on a node that belongs to a deployed cluster.
+        [switch]$ConfirmWipeDeployedCluster,
+        # The disks (serial, else unique id) approved for this node. When given, a leftover disk that is not in it blocks the wipe.
+        [AllowEmptyCollection()][string[]]$ApprovedWipeId,
         [switch]$NoRestart,
         [int]$MaxPasses = 6,
         [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref },
@@ -840,6 +919,10 @@ function Invoke-AzlNodeConfiguration {
     $plan = @()
     # DOMAINJOIN HOOK: the join is tried once per run (a wrong password must not be sent twice); its pass does not count against -MaxPasses.
     $djDone = @{}; $djFailure = $null; $djMoved = $false; $limit = $MaxPasses; $ouChecked = $false; $ouCheck = $null
+    # The storage wipe is tried once per run, like the join: whatever the node shows afterwards, it is never wiped a second time in this run.
+    $storageDone = $false
+    $compareArgs = @{ Spec = $Spec; Step = $Step; ClearStorage = $ClearStorage; ConfirmWipeDeployedCluster = $ConfirmWipeDeployedCluster }
+    if ($PSBoundParameters.ContainsKey('ApprovedWipeId')) { $compareArgs.ApprovedWipeId = @($ApprovedWipeId) }
     for ($pass = 1; $pass -le $limit + 1; $pass++) {
         $state = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Read) -Parameters $readParameters -Secrets $secrets -TimeoutSeconds 900
         # HOOK remoting-profiles: the step reads its own state (rules, listeners, certificates) and compares it with the profile.
@@ -850,11 +933,12 @@ function Invoke-AzlNodeConfiguration {
             if (-not $ouChecked) { $null = Add-AzlDomainJoinOuCheck -Spec $Spec -Transport $Transport -State $state -SecretResolver $SecretResolver; $ouCheck = Get-AzlProp $state 'domainJoin.ou'; $ouChecked = [bool](Get-AzlProp $ouCheck 'checked' $false) }
             elseif ($ouCheck) { Add-Member -InputObject $state.domainJoin -NotePropertyName ou -NotePropertyValue $ouCheck -Force }
         }
-        $plan = @(Compare-AzlNodeState -Spec $Spec -State $state -Step $Step -ClearStorage:$ClearStorage)
+        $plan = @(Compare-AzlNodeState @compareArgs -State $state)
         if ($pass -eq 1 -and 'DomainJoin' -in $Step) { Send-AzlDomainJoinPlanEvent -EventContext $djEvent -Node $node -Plan $plan -Transport $Transport.Kind } # DOMAINJOIN HOOK
         if ($djDone.Count) { $plan = @(Merge-AzlDomainJoinOutcome -Plan $plan -Failure $djFailure -Moved:$djMoved) } # DOMAINJOIN HOOK
         $todo = @($plan | Where-Object { $_.Action -eq 'Change' -and $_.Apply })
         $todo = @($todo | Where-Object { $_.Apply.kind -notlike 'domain-*' -or -not $djDone.ContainsKey([string]$_.Apply.kind) }) # DOMAINJOIN HOOK: each kind once per run
+        $todo = @($todo | Where-Object { $_.Apply.kind -ne 'storage-clear' -or -not $storageDone }) # the wipe: once per run
         # A package file the toolkit already delivered once and that is still wrong is not delivered again: the failure stays
         # in the report (the Sbe step is not done) and the other steps carry on.
         $todo = @($todo | Where-Object { $_.Apply.kind -ne 'sbe-file' -or -not $sbeTried.ContainsKey([string]$_.Apply.name) })
@@ -906,6 +990,8 @@ function Invoke-AzlNodeConfiguration {
         $actions = @(@($parts.Inline) | ForEach-Object { $_.Apply.Clone() })
         $failed = @()
         if ($actions.Count) {
+            # Marked before the call: a call that fails, times out or ends in Unknown has still possibly wiped, so it is not sent again.
+            if (@($actions | Where-Object { $_.kind -eq 'storage-clear' }).Count) { $storageDone = $true }
             try { $result = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Apply) -Parameters @{ actions = $actions; sbeDir = $(if ($Spec.Sbe) { $Spec.Sbe.Dir } else { 'C:\SBE' }) } -Secrets $secrets -TimeoutSeconds 3600 }
             catch {
                 # The run ended in state Unknown after every retry: we don't know what happened. Read the node again and decide from that.
@@ -915,7 +1001,7 @@ function Invoke-AzlNodeConfiguration {
             }
             foreach ($r in @($result.results)) { $changes.Add([pscustomobject]@{ Node = $node; Pass = $pass; Id = $r.id; Status = $r.status; Detail = $r.detail }) }
             $failed = @($result.results | Where-Object { $_.status -eq 'failed' })
-            if ($failed) { $plan = @(Compare-AzlNodeState -Spec $Spec -State $state -Step $Step -ClearStorage:$ClearStorage); break }
+            if ($failed) { $plan = @(Compare-AzlNodeState @compareArgs -State $state); break }
             if ($result.reboot -and -not $NoRestart) {
                 # The node goes away on purpose: a restart that ends in state Unknown is not a failure, the wait below checks the boot time.
                 try { $null = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Restart) -TimeoutSeconds 300 -Tries 1 }
@@ -980,4 +1066,4 @@ function Invoke-AzlNodeConfiguration {
     }
 }
 
-Export-ModuleMember -Function Get-AzlOemConfig, Get-AzlSbeBundle, Get-AzlSbePullUrl, Send-AzlSbePackage, Get-AzlSanVendor, Get-AzlNodeSpec, Get-AzlNodeReadParameter, Compare-AzlNodeState, Format-AzlPlan, Invoke-AzlNodeConfiguration
+Export-ModuleMember -Function Get-AzlOemConfig, Get-AzlSbeBundle, Get-AzlSbePullUrl, Send-AzlSbePackage, Get-AzlSanVendor, Get-AzlNodeSpec, Get-AzlNodeReadParameter, Compare-AzlNodeState, Get-AzlNodeWipeItem, Format-AzlWipeDisk, Format-AzlPlan, Invoke-AzlNodeConfiguration

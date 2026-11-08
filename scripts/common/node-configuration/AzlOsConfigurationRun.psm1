@@ -785,6 +785,8 @@ function Invoke-AzlNodeRun {
     if ($Context.PSObject.Properties['GuardSettings'] -and $Context.GuardSettings.Count) { $parameters.Settings = $Context.GuardSettings }
     if ($Context.PSObject.Properties['EventLogPath'] -and $Context.EventLogPath) { $parameters.EventLogPath = $Context.EventLogPath }
     if ($Context.ClearStorage) { $parameters.ClearStorage = $true }
+    # The one-shot confirmation to wipe a node that belongs to a deployed cluster: only the switch of this run, never a file.
+    if ($Context.ClearStorage -and (Get-AzlProp $Context 'ConfirmWipeDeployedCluster' $false)) { $parameters.ConfirmWipeDeployedCluster = $true }
     if ($Context.NoRestart) { $parameters.NoRestart = $true }
     if ($Context.SkipValidation) { $parameters.SkipValidation = $true }
     if ($Phase -eq 'Apply') { $parameters.Execute = $true }
@@ -957,7 +959,8 @@ function Merge-AzlRunResult {
     $Record.plan = @(@($Run.Entry.plan) | ForEach-Object { ConvertTo-AzlPlanItem -Item $_ -Node $Record.name })
     $Record.ports = @($Run.Entry.ports)
     $Record.sanDisks = @($Run.Entry.sanDisks)
-    $Record.hostname = [string](Get-AzlProp $Run.Entry 'hostname' '')
+    $Record.wipeItems = @(Get-AzlProp $Run.Entry 'wipe' @() | Where-Object { $_ })
+    $Record.hostname =[string](Get-AzlProp $Run.Entry 'hostname' '')
     $Record.osVersion = [string](Get-AzlProp $Run.Entry 'osVersion' '')
     Merge-AzlDomainJoinResult -Record $Record -Entry $Run.Entry # DOMAINJOIN HOOK
     # hardware.sbe.delivery skip: the node is not failed, but the package is not on it and the OEM drivers wait, so say it once.
@@ -978,7 +981,7 @@ function Merge-AzlRecordCount {
     $Record.pendingChanges = @($Record.plan | Where-Object { $_.Action -eq 'Change' }).Count
     $Record.blocked = @($Record.plan | Where-Object { $_.Action -eq 'Blocked' }).Count
     $Record.wipe = @($Record.plan | Where-Object { $_.Step -eq 'ClearStorage' -and $_.Action -eq 'Change' } | ForEach-Object {
-            [ordered]@{ node = $Record.name; disks = $_.Current; note = $_.Note }
+            [ordered]@{ node = $Record.name; disks = $_.Current; note = $_.Note; items = @($Record.wipeItems) }
         })
 }
 
@@ -1124,7 +1127,19 @@ function Get-AzlWipeList {
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][object[]]$Record)
-    @($Record | Where-Object { @($_.wipe).Count } | ForEach-Object { foreach ($w in $_.wipe) { [pscustomobject]@{ Node = $w.node; Disks = $w.disks; Note = $w.note } } })
+    @($Record | Where-Object { @($_.wipe).Count } | ForEach-Object { foreach ($w in $_.wipe) { [pscustomobject]@{ Node = $w.node; Disks = $w.disks; Note = $w.note; Items = @($w.items) } } })
+}
+
+function ConvertTo-AzlWipeEntry {
+    # The wipe list as the report and the event carry it: node, the text of the plan, and one entry per disk with serial, size, model, bus and partition style.
+    param([Parameter(Mandatory)][object]$Wipe)
+    [ordered]@{
+        node  = $Wipe.Node
+        disks = $Wipe.Disks
+        items = @(@($Wipe.Items) | Where-Object { $_ } | ForEach-Object {
+                [ordered]@{ number = (Get-AzlProp $_ 'number'); serial = [string](Get-AzlProp $_ 'serial' ''); id = [string](Get-AzlProp $_ 'id' ''); uniqueId = [string](Get-AzlProp $_ 'uniqueId' ''); sizeGb = (Get-AzlProp $_ 'sizeGb' 0); model = [string](Get-AzlProp $_ 'model' ''); bus = [string](Get-AzlProp $_ 'bus' ''); partitionStyle = [string](Get-AzlProp $_ 'partitionStyle' ''); reason = [string](Get-AzlProp $_ 'reason' '') }
+            })
+    }
 }
 
 function Format-AzlWipeList {
@@ -1135,7 +1150,15 @@ function Format-AzlWipeList {
     $verb = if ($Mode -eq 'Apply') { 'WILL BE WIPED NOW' } else { 'WOULD BE WIPED if you apply' }
     $lines.Add("STORAGE WIPE ($Source). Local disks that $verb. Boot, system, SAN (FC, iSCSI) and USB disks are never touched.")
     if (@($WipeList).Count -eq 0) { $lines.Add('  Nothing to wipe: no leftover local storage was found on any node.') }
-    foreach ($w in $WipeList) { $lines.Add("  $($w.Node): $($w.Disks)") }
+    foreach ($w in $WipeList) {
+        $items = @(Get-AzlProp $w 'Items' @() | Where-Object { $_ })
+        if ($items.Count) {
+            # One line per disk, named by serial, size, model, bus and partition style, so the reviewer can match it with the hardware.
+            $lines.Add("  $($w.Node): $($items.Count) disk(s); $(([string]$w.Disks -replace ', disks: .*$', ''))")
+            foreach ($d in $items) { $lines.Add("      $(Format-AzlWipeDisk -Disk $d)") }
+        }
+        else { $lines.Add("  $($w.Node): $($w.Disks)") }
+    }
     return ($lines -join [Environment]::NewLine)
 }
 
@@ -1242,14 +1265,14 @@ function Write-AzlOsConfigurationReport {
         mode           = $Context.Mode
         cluster        = $Context.ClusterName
         infrastructure = $Context.InfrastructureFile
-        clearStorage   = [ordered]@{ enabled = [bool]$Context.ClearStorage; source = $Context.ClearStorageSource }
+        clearStorage   = [ordered]@{ enabled = [bool]$Context.ClearStorage; source = $Context.ClearStorageSource; confirmWipeDeployedCluster = [bool](Get-AzlProp $Context 'ConfirmWipeDeployedCluster' $false) }
         handoffFiles   = @($Context.HandoffFiles)
         exitCode       = $ExitCode
         message        = $Message
         clusterProblems = @($ClusterProblem)
         # HOOK remoting-profiles: the effective profile, the TrustedHosts policy and its restore, the bootstraps, the profile's events
         remoting       = $(if ($Context.PSObject.Properties['Remoting'] -and $Context.Remoting) { Get-AzlRemotingReportBlock -Context $Context } else { $null })
-        wipeList       = @(Get-AzlWipeList -Record $Record | ForEach-Object { [ordered]@{ node = $_.Node; disks = $_.Disks } })
+        wipeList       = @(Get-AzlWipeList -Record $Record | ForEach-Object { ConvertTo-AzlWipeEntry -Wipe $_ })
         nodes          = @($Record | ForEach-Object { ConvertTo-AzlNodeReport -Record $_ })
     }
     $path = Join-Path $Context.ReportDirectory $FileName
@@ -1271,7 +1294,7 @@ function Get-AzlNodeRecord {
         transport = $Resolution.Transport; address = $(if ($Resolution.Transport -eq 'WinRM') { $evidence.WinRmAddress } else { '' }); useSsl = [bool]($evidence.PSObject.Properties['UseSsl'] -and $evidence.UseSsl)
         handoffFile = $evidence.HandoffFile; evidence = $evidence
         steps = $steps; setSteps = @($steps | Where-Object { $_ -in $script:NodeSteps })
-        status = 'pending'; plan = @(); changes = @(); errors = @(); warnings = @(); verification = @(); wipe = @()
+        status = 'pending'; plan = @(); changes = @(); errors = @(); warnings = @(); verification = @(); wipe = @(); wipeItems = @()
         ports = @(); sanDisks = @(); hostname = ''; osVersion = ''; guard = @(); events = @(); bootstrap = [ordered]@{ used = $false }
         pendingChanges = 0; blocked = 0; converged = $false; restarted = $false; phases = [ordered]@{}; outcomeSent = $false
         osCaption = ''; osBuild = 0; lastGuard = $null
@@ -1312,6 +1335,8 @@ function Invoke-AzlOsConfiguration {
         [pscredential]$Credential,
         [hashtable]$NodeAddress,
         [switch]$ClearStorage,
+        # One-shot, per run, never read from a file: wipe leftover storage on a node that belongs to a deployed cluster (HKLM:\Cluster, ClusSvc, a clustered pool or CSV).
+        [switch]$ConfirmWipeDeployedCluster,
         [switch]$FailOnPendingChanges,
         [switch]$SkipValidation,
         [string]$EventLogPath,
@@ -1352,7 +1377,7 @@ function Invoke-AzlOsConfiguration {
 
         $context = [pscustomobject]@{
             Infra = $infra; InfrastructureFile = $InfrastructureFile; Mode = $Mode; Handoff = $merged; HandoffFiles = $(if ($merged) { $merged.Files } else { @() })
-            ClearStorage = $clear; ClearStorageSource = $clearSource; ReportDirectory = $reportDir; NodeReportDirectory = $nodeReportDir
+            ClearStorage = $clear; ClearStorageSource = $clearSource; ConfirmWipeDeployedCluster = $ConfirmWipeDeployedCluster.IsPresent; ReportDirectory = $reportDir; NodeReportDirectory = $nodeReportDir
             ClusterName = [string](Get-AzlProp $infra 'cluster.name' 'cluster'); AzureSignedIn = (Test-AzlAzureSignedIn)
             NodeAddress = $addressOverride; Method = $Method; CredentialInfo = $null
             RetryTries = $tries; RetryDelaySeconds = $delays; MaxPasses = $(if ($run.ContainsKey('maxPasses')) { [int]$run.maxPasses } else { 6 })
@@ -1512,7 +1537,7 @@ function Invoke-AzlOsConfiguration {
         Send-AzlRunEvent -Context $context -State WipeListPublished -Record $null -Level $(if ($wipe.Count) { 'Warning' } else { 'Info' }) `
             -Evidence $(if (-not $clear) { 'Storage wipe is off (os_configuration.clear_storage is false): nothing will be wiped.' } elseif ($wipe.Count -eq 0) { 'Storage wipe is on and no leftover local storage was found: nothing to wipe.' } else { "$($wipe.Count) node(s) have local disks that $(if ($Mode -eq 'Apply') { 'WILL BE WIPED NOW' } else { 'WOULD BE WIPED if you apply' }): $((@($wipe | ForEach-Object { "$($_.Node): $($_.Disks)" })) -join ' | ')" }) `
             -NextAction $(if ($wipe.Count -and $Mode -eq 'Plan') { 'Check the disks listed in wipe-list.txt before you apply.' } else { '' }) `
-            -Data @{ wipeCount = $wipe.Count; clearStorage = [bool]$clear; wipe = @($wipe | ForEach-Object { [ordered]@{ node = $_.Node; disks = $_.Disks } }) }
+            -Data @{ wipeCount = $wipe.Count; clearStorage = [bool]$clear; wipe = @($wipe | ForEach-Object { ConvertTo-AzlWipeEntry -Wipe $_ }) }
         Write-AzlLine ''
         foreach ($r in $records) {
             $show = @($r.plan | Where-Object { $_.Action -ne 'Ok' })
