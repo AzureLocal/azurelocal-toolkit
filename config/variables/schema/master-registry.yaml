@@ -111,9 +111,9 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.11"
+  version: "5.0.12"
   schema_version: "5.0.0"
-  infrastructure_schema_version: "5.6.1"
+  infrastructure_schema_version: "5.6.2"
   last_updated: "2026-11-08"
   total_variables: "2300+"
   maintainers:
@@ -121,7 +121,11 @@ _metadata:
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
     - date: "2026-11-08"
-      version: "5.0.11"
+      version: "5.0.12"
+      change: "nodes[].network_adapters[]: the adapter is identified by hardware facts, not by an OS name. mac_address is now required (the identity). New optional keys port_index, pci_location {bus, device, function}, vendor (written by hardware discovery from the BMC; informational and verification aids) and os_name_override (opt-in: the name the OS configuration step NicNames gives the adapter found by MAC; absent means no rename and the deployment sends the name the OS already uses). name stays the key of the file that networking.intents[].adapters and the storage and cluster networks reference; its description and theirs now say so. New OS configuration step NicNames (plan, approval, apply, verify; opt-in by os_name_override)."
+      reason: "The owner order: nothing assumed or hard-coded about adapter names. OS names (Port1, Slot 3 Port 1, NIC1, Embedded NIC 1) change between installs and between ZTP and ISO installs, for any NIC brand. The file now says which physical adapter is which (MAC, slot, port, PCI location, vendor, model, speed, RDMA) and which adapters each intent uses; the names sent to Azure come from the node (read by MAC) or from the user's explicit override. The keys that already existed (name, mac_address, slot, model, speed_gbps, rdma, roles, ip_assignment, switch_port; intents[].adapters; storage.networks[].adapter) are reused; only the four missing facts are added."
+    - date: "2026-11-08"
+      version: "5.0.12"
       change: "nodes[].network_adapters[].allowed_vlans (optional list of VLAN ids, 1 to 4094): the VLANs the switch port of an adapter allows, used by the VLAN plan checks of the pre-cluster verification (compute VLANs against the compute adapters) and by the switch port checklist in its report. The report.json of the pre-cluster verification also documents categories, modules, environmentChecker and switchPortChecklist."
       reason: "The VLAN plan was never verified: the file lists the VLANs (networking.vlans[]) and the ports (nodes[].network_adapters[].vlan_id, vlan_mode, switch_port), but not which VLANs a compute trunk port allows, so the gate could not say whether the compute VLANs reach the compute adapters. The gate cannot read the switch; the file is the authority and the checklist says what to verify on the switch."
     - date: "2026-11-08"
@@ -7229,7 +7233,7 @@ networking:
             items:
               {"enum":["management","compute","storage"]}
           adapters:
-            description: "Adapter names in the OS, the same on every machine. With nodes[].network_adapters (5.2) each name must be a port in every node's list. The first adapter matters: the management virtual adapter takes the MAC of the first adapter of the management intent, so that adapter owns the management address."
+            description: "Adapters of the intent, by the key nodes[].network_adapters[].name (the port's name in this file, the same on every machine; the file finds the physical adapter by its MAC, so the OS may call it anything). With nodes[].network_adapters (5.2) each name must be a port in every node's list. The name the deployment sends to Azure (ARM intentList adapter) is what the OS calls that adapter on the nodes, found by MAC, or nodes[].network_adapters[].os_name_override when the file sets one. The first adapter matters: the management virtual adapter takes the MAC of the first adapter of the management intent, so that adapter owns the management address."
             type: array
             required: true
             minItems: 1
@@ -7362,7 +7366,7 @@ networking:
                 example: "StorageNetwork1"
                 used_by: [os_configuration, deployment]
               adapter:
-                description: "Adapter name in the OS."
+                description: "The adapter of this storage network, by the key nodes[].network_adapters[].name (the same on every machine). The name the deployment sends to Azure (storageNetworkList networkAdapterName) is what the OS calls that adapter, found by MAC, or its os_name_override."
                 type: string
                 required: true
                 example: "Port3"
@@ -14930,17 +14934,17 @@ nodes:
           schema_extra: {"allOf":[{"if":{"type":"object","required":["ip_assignment"],"properties":{"ip_assignment":{"enum":["static"]}}},"then":{"type":"object","required":["ip_address"],"properties":{"ip_address":true}}},{"if":{"type":"object","required":["ip_assignment"],"properties":{"ip_assignment":{"const":"dhcp_reservation"}}},"then":{"type":"object","required":["mac_address"],"properties":{"mac_address":true}}},{"if":{"type":"object","required":["roles"],"properties":{"roles":{"contains":{"const":"unused"}}}},"then":{"type":"object","properties":{"roles":{"maxItems":1}}}}]}
           properties:
             name:
-              description: "The adapter's name in the installed OS, or the slot label the OS uses, for example 'Embedded NIC 1' or 'Slot 3 Port 1'. networking.intents[].adapters and networking.storage.networks[].adapter name ports by it, so give a port the same name on every machine. Unique on the machine."
+              description: "The port's name in this file: the key that networking.intents[].adapters, networking.storage.networks[].adapter and networking.cluster_networks[].adapter use. The same on every machine, unique on the machine. It labels a physical adapter that is found on the node by mac_address, so it does not have to be the name the OS gave the adapter (OS names differ between installs and between ZTP and ISO installs, for example Port0, SLOT 3 Port 1 or NIC1). Discovery writes it from the slot and the port, for example 'Slot 3 Port 1'. The name the deployment sends to Azure is what the OS calls the adapter (read by MAC) or os_name_override when set. A file that already uses the OS name here keeps working."
               type: string
               required: true
               minLength: 1
               example: "Embedded NIC 1"
               used_by: [ztp, os_configuration, discovery]
             mac_address:
-              description: "The port's MAC. Tools find the port by it (simplified provisioning keys the management address to it; node preparation finds the adapter by it). Needed for a DHCP reservation, and for every management port with simplified provisioning."
+              description: "The port's identity. Tools find the physical adapter on a node by this MAC (case and separators are ignored), never by a name: node preparation, the ARM parameters and the pre-cluster verification all resolve the OS adapter name from it. Hardware discovery writes it. Required. Also needed for a DHCP reservation and, with simplified provisioning, for the management port."
               type: string
               format: mac
-              required: false
+              required: true
               pattern: "^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$"
               example: "00:00:5E:00:53:11"
               used_by: [ztp, os_configuration, discovery]
@@ -14950,6 +14954,56 @@ nodes:
               required: false
               example: "Embedded"
               used_by: [ztp, os_configuration, discovery]
+            port_index:
+              description: "The number of the port on its adapter, counted from 1, as the BMC reports it (Redfish PhysicalPortNumber, else the order of the port on the card). With slot and pci_location it says which physical connector the port is. Written by hardware discovery; a record of the hardware, nothing is configured from it."
+              type: integer
+              required: false
+              minimum: 1
+              example: 1
+              used_by: [os_configuration, discovery]
+            pci_location:
+              description: "Where the adapter sits on the PCI bus, as hardware discovery reports it (bus, device, function as decimal numbers). A verification aid, informational: OS configuration compares it with the node's own hardware information (Get-NetAdapterHardwareInfo) and reports a difference; the port is still found by mac_address."
+              type: object
+              required: false
+              used_by: [os_configuration, discovery]
+              additionalProperties: false
+              properties:
+                bus:
+                  description: "PCI bus number (decimal)."
+                  type: integer
+                  required: false
+                  minimum: 0
+                  maximum: 255
+                  used_by: [os_configuration, discovery]
+                device:
+                  description: "PCI device number (decimal)."
+                  type: integer
+                  required: false
+                  minimum: 0
+                  maximum: 31
+                  used_by: [os_configuration, discovery]
+                function:
+                  description: "PCI function number (decimal)."
+                  type: integer
+                  required: false
+                  minimum: 0
+                  maximum: 7
+                  used_by: [os_configuration, discovery]
+            vendor:
+              description: "The adapter manufacturer as hardware discovery reports it, for example the Manufacturer of the Redfish NetworkAdapter. Informational: no tool behaves differently for a brand; every make is handled through the same keys (mac_address, slot, port_index, model, speed_gbps, rdma)."
+              type: string
+              required: false
+              example: "Example NIC Vendor"
+              used_by: [os_configuration, discovery]
+            os_name_override:
+              description: "Optional, off by default. The name you want this adapter to have in the OS, for example 'Mgmt1', 'Compute1' or 'Storage1'. Without it nothing is renamed: the OS configuration step NicNames leaves every adapter name alone and the deployment sends the name the OS already uses (found by mac_address). With it, NicNames renames the adapter found by mac_address to this name (a guarded change, idempotent, the management adapter last) and the deployment sends this name. Give the same value for the same port (name) on every machine: Network ATC needs one adapter name per intent adapter on every node. 1 to 64 characters: letters, digits, space, underscore, dot, hyphen and parentheses."
+              type: string
+              required: false
+              minLength: 1
+              maxLength: 64
+              pattern: "^[A-Za-z0-9][A-Za-z0-9 _.()-]{0,63}$"
+              example: "Storage1"
+              used_by: [os_configuration, deployment]
             model:
               description: "Card model, for example 'NVIDIA ConnectX-6 Dx'. Ports in one intent must be the same make, model and speed."
               type: string
@@ -17276,7 +17330,7 @@ _schema_defs:
           - compute
           - storage
       adapters:
-        description: "Adapter names in the OS, the same on every machine. With nodes[].network_adapters (5.2) each name must be a port in every node's list. The first adapter matters: the management virtual adapter takes the MAC of the first adapter of the management intent, so that adapter owns the management address."
+        description: "Adapters of the intent, by the key nodes[].network_adapters[].name (the port's name in this file, the same on every machine; the file finds the physical adapter by its MAC, so the OS may call it anything). With nodes[].network_adapters (5.2) each name must be a port in every node's list. The name the deployment sends to Azure (ARM intentList adapter) is what the OS calls that adapter on the nodes, found by MAC, or nodes[].network_adapters[].os_name_override when the file sets one. The first adapter matters: the management virtual adapter takes the MAC of the first adapter of the management intent, so that adapter owns the management address."
         type: array
         minItems: 1
         uniqueItems: true
@@ -17550,19 +17604,53 @@ _schema_defs:
     additionalProperties: false
     required:
     - name
+    - mac_address
     - roles
     - ip_assignment
     properties:
       name:
-        description: The adapter's name in the installed OS, or the slot label the OS uses, for example 'Embedded NIC 1' or 'Slot 3 Port 1'. networking.intents[].adapters and networking.storage.networks[].adapter name ports by it, so give a port the same name on every machine. Unique on the machine.
+        description: "The port's name in this file: the key that networking.intents[].adapters, networking.storage.networks[].adapter and networking.cluster_networks[].adapter use. The same on every machine, unique on the machine. It labels a physical adapter that is found on the node by mac_address, so it does not have to be the name the OS gave the adapter (OS names differ between installs and between ZTP and ISO installs, for example Port0, SLOT 3 Port 1 or NIC1). Discovery writes it from the slot and the port, for example 'Slot 3 Port 1'. The name the deployment sends to Azure is what the OS calls the adapter (read by MAC) or os_name_override when set. A file that already uses the OS name here keeps working."
         type: string
         minLength: 1
       mac_address:
-        description: The port's MAC. Tools find the port by it (simplified provisioning keys the management address to it; node preparation finds the adapter by it). Needed for a DHCP reservation, and for every management port with simplified provisioning.
+        description: "The port's identity. Tools find the physical adapter on a node by this MAC (case and separators are ignored), never by a name: node preparation, the ARM parameters and the pre-cluster verification all resolve the OS adapter name from it. Hardware discovery writes it. Required. Also needed for a DHCP reservation and, with simplified provisioning, for the management port."
         $ref: '#/$defs/mac'
       slot:
         description: 'Where the port is, for example Embedded (a LOM), Slot 3 or OCP 1. From 5.4 azurelocal-ztp reads it: a management or provisioning port in slot Embedded makes it enable the embedded NICs in the BIOS (provisioning.simplified.enable_embedded_nics), and a slot that also holds a SAN adapter (nodes[].san.hbas[].slot) is never turned off.'
         type: string
+      port_index:
+        description: "The number of the port on its adapter, counted from 1, as the BMC reports it (Redfish PhysicalPortNumber, else the order of the port on the card). With slot and pci_location it says which physical connector the port is. Written by hardware discovery; a record of the hardware, nothing is configured from it."
+        type: integer
+        minimum: 1
+      pci_location:
+        description: "Where the adapter sits on the PCI bus, as hardware discovery reports it (bus, device, function as decimal numbers). A verification aid, informational: OS configuration compares it with the node's own hardware information (Get-NetAdapterHardwareInfo) and reports a difference; the port is still found by mac_address."
+        type: object
+        additionalProperties: false
+        properties:
+          bus:
+            description: "PCI bus number (decimal)."
+            type: integer
+            minimum: 0
+            maximum: 255
+          device:
+            description: "PCI device number (decimal)."
+            type: integer
+            minimum: 0
+            maximum: 31
+          function:
+            description: "PCI function number (decimal)."
+            type: integer
+            minimum: 0
+            maximum: 7
+      vendor:
+        description: "The adapter manufacturer as hardware discovery reports it, for example the Manufacturer of the Redfish NetworkAdapter. Informational: no tool behaves differently for a brand; every make is handled through the same keys (mac_address, slot, port_index, model, speed_gbps, rdma)."
+        type: string
+      os_name_override:
+        description: "Optional, off by default. The name you want this adapter to have in the OS, for example 'Mgmt1', 'Compute1' or 'Storage1'. Without it nothing is renamed: the OS configuration step NicNames leaves every adapter name alone and the deployment sends the name the OS already uses (found by mac_address). With it, NicNames renames the adapter found by mac_address to this name (a guarded change, idempotent, the management adapter last) and the deployment sends this name. Give the same value for the same port (name) on every machine: Network ATC needs one adapter name per intent adapter on every node. 1 to 64 characters: letters, digits, space, underscore, dot, hyphen and parentheses."
+        type: string
+        minLength: 1
+        maxLength: 64
+        pattern: "^[A-Za-z0-9][A-Za-z0-9 _.()-]{0,63}$"
       model:
         description: Card model, for example 'NVIDIA ConnectX-6 Dx'. Ports in one intent must be the same make, model and speed.
         type: string

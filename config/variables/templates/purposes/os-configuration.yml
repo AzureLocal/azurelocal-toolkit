@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that 'os_configuration' reads (a strict subset of the master file). Schema 5.6.1.
+# Template for the part of infrastructure.yml that 'os_configuration' reads (a strict subset of the master file). Schema 5.6.2.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -82,15 +82,36 @@ nodes:
     # Every physical network port of the machine (schema 5.2): name, MAC, roles and how each gets its host address.
     # used by: ztp, os_configuration
     network_adapters:
-      # The adapter's name in the installed OS, or the slot label the OS uses, for example 'Embedded NIC 1' or 'Slot 3 Port 1'. networking.intents[...
+      # The port's name in this file: the key that networking.intents[].adapters, networking.storage.networks[].adapter and networking.cluster_netw...
       # required; used by: ztp, os_configuration, discovery
       - name: "Embedded NIC 1"
-        # The port's MAC.
-        # used by: ztp, os_configuration, discovery
+        # The port's identity.
+        # required; used by: ztp, os_configuration, discovery
         mac_address: "00:00:5E:00:53:11"
         # Where the port is, for example Embedded (a LOM), Slot 3 or OCP 1.
         # used by: ztp, os_configuration, discovery
         slot: "Embedded"
+        # The number of the port on its adapter, counted from 1, as the BMC reports it (Redfish PhysicalPortNumber, else the order of the port on the...
+        # used by: os_configuration, discovery
+        port_index: 1
+        # Where the adapter sits on the PCI bus, as hardware discovery reports it (bus, device, function as decimal numbers).
+        # used by: os_configuration, discovery
+        pci_location:
+          # PCI bus number (decimal).
+          # used by: os_configuration, discovery
+          bus: 0
+          # PCI device number (decimal).
+          # used by: os_configuration, discovery
+          device: 0
+          # PCI function number (decimal).
+          # used by: os_configuration, discovery
+          function: 0
+        # The adapter manufacturer as hardware discovery reports it, for example the Manufacturer of the Redfish NetworkAdapter.
+        # used by: os_configuration, discovery
+        vendor: "Example NIC Vendor"
+        # Optional, off by default.
+        # used by: os_configuration, deployment
+        os_name_override: "Storage1"
         # Card model, for example 'NVIDIA ConnectX-6 Dx'.
         # used by: ztp, os_configuration, discovery
         model: "Example 25GbE NIC"
@@ -301,7 +322,7 @@ networking:
       # Traffic types the intent carries: management, compute and storage (ARM trafficType).
       # required; used by: os_configuration, deployment
       traffic: ["management"]
-      # Adapter names in the OS, the same on every machine.
+      # Adapters of the intent, by the key nodes[].network_adapters[].name (the port's name in this file, the same on every machine; the file finds...
       # required; used by: os_configuration, deployment
       adapters: ["Port1", "Port2"]
       # Network ATC overrides.
@@ -360,7 +381,7 @@ networking:
       # For example StorageNetwork1.
       # required; used by: os_configuration, deployment
       - name: "StorageNetwork1"
-        # Adapter name in the OS.
+        # The adapter of this storage network, by the key nodes[].network_adapters[].name (the same on every machine).
         # required; used by: os_configuration, deployment
         adapter: "Port3"
         # Network ATC defaults are 711 and 712.

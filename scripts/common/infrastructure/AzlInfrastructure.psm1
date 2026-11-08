@@ -886,10 +886,41 @@ function Get-AdapterFinding {
         foreach ($group in ($ports[$i] | Group-Object { ([string]$_['name']).ToLowerInvariant() } | Where-Object Count -gt 1)) {
             New-Finding 'AZL-019' error "nodes[$i].network_adapters" "Node '$($Nodes[$i]['name'])' has $($group.Count) ports named '$($group.Group[0]['name'])'. Port names are unique on a machine."
         }
-        foreach ($p in $ports[$i]) { if ($p['mac_address']) { $allMacs.Add([pscustomobject]@{ Mac = ConvertTo-AzlMac $p['mac_address']; Path = $p['_path'] }) } }
+        # Compared as 12 hex digits: the same MAC written with ':' or '-' or in another case is still one MAC.
+        foreach ($p in $ports[$i]) { if ($p['mac_address']) { $allMacs.Add([pscustomobject]@{ Mac = ConvertTo-AzlMac ((([string]$p['mac_address']) -replace '[^0-9A-Fa-f]', '') -replace '(..)(?!$)', '$1:'); Path = $p['_path'] }) } }
     }
     foreach ($group in ($allMacs | Group-Object Mac | Where-Object Count -gt 1)) {
         New-Finding 'AZL-019' error 'nodes' "MAC $($group.Name) is used by $($group.Count) ports ($(@($group.Group.Path) -join ', ')). Each MAC names one port."
+    }
+    # The MAC is the identity of a port: tools find the physical adapter by it and never by a name. os_name_override (the opt-in rename) is checked here too.
+    $overrideByName = @{}
+    foreach ($i in $listed) {
+        foreach ($p in $ports[$i]) {
+            $hasOverride = $p.Contains('os_name_override') -and "$($p['os_name_override'])" -ne ''
+            if ($hasOverride) {
+                $o = [string]$p['os_name_override']
+                if ($o -notmatch '^[A-Za-z0-9][A-Za-z0-9 _.()-]{0,63}$' -or $o -ne $o.Trim()) {
+                    New-Finding 'AZL-019' error "$($p['_path']).os_name_override" "Port '$($p['name'])' of node '$($Nodes[$i]['name'])': os_name_override '$o' is not a usable adapter name (1 to 64 characters: letters, digits, space, underscore, dot, hyphen, parentheses; no leading or trailing space)."
+                }
+            }
+            $key = ([string]$p['name']).ToLowerInvariant()
+            if (-not $overrideByName.ContainsKey($key)) { $overrideByName[$key] = [System.Collections.Generic.List[object]]::new() }
+            $overrideByName[$key].Add([pscustomobject]@{ Node = [string]$Nodes[$i]['name']; Override = $(if ($hasOverride) { [string]$p['os_name_override'] } else { $null }) })
+        }
+        foreach ($group in ($ports[$i] | Where-Object { $_.Contains('os_name_override') -and "$($_['os_name_override'])" -ne '' } | Group-Object { ([string]$_['os_name_override']).ToLowerInvariant() } | Where-Object Count -gt 1)) {
+            New-Finding 'AZL-019' error "nodes[$i].network_adapters" "Node '$($Nodes[$i]['name'])' gives $($group.Count) ports the os_name_override '$($group.Group[0]['os_name_override'])'. An adapter name is unique on a machine."
+        }
+    }
+    # Network ATC needs one adapter name per intent adapter on every node: the same port (name) has the same override on every node, or none anywhere.
+    foreach ($key in @($overrideByName.Keys | Sort-Object)) {
+        $rows = @($overrideByName[$key])
+        $set = @($rows | Where-Object { $_.Override })
+        if ($set.Count -eq 0) { continue }
+        $values = @($set | ForEach-Object { $_.Override } | Select-Object -Unique)
+        if ($set.Count -ne $rows.Count -or $values.Count -gt 1) {
+            $what = if ($values.Count -gt 1) { "different on different nodes ($($values -join ', '))" } else { "set on $($set.Count) of $($rows.Count) nodes" }
+            New-Finding 'AZL-021' error 'nodes[].network_adapters' "Port '$key': os_name_override is $what. Network ATC needs the same adapter name on every node: give the port the same os_name_override on every node, or remove it everywhere (then the deployment uses the names the nodes already have, found by MAC)." $script:Learn.AtcPrereq
+        }
     }
 
     # AZL-024: with simplified provisioning, every node names the port its maintenance environment reaches Azure through.
