@@ -860,36 +860,120 @@ function Get-AzlArcRegistrationItem {
     [pscustomobject]@{ Node = $Record.name; Step = 'ArcRegistration'; Item = 'Azure Arc registration'; Current = $current; Desired = "Connected in $resourceGroup"; Action = $action; Note = $note }
 }
 
+function Resolve-AzlArcRegistrationFailure {
+    <#
+    .SYNOPSIS
+        What an Arc registration failure means and what the run does about it. Pure.
+    .DESCRIPTION
+        The failures seen on real nodes (the proven repo), each with its own handling:
+          AZCM0044  the Arc resource already exists (a stale one from an earlier try): delete it when it is not Connected, then register again.
+          AZCM0042 or HTTP 401  the token was refused or expired: take a new one from the sign-in and register again.
+          0x8009030e  the logon session does not exist (the credential did not carry into the remote session): open a new session and register again.
+          I/O operation aborted  the node restarted while the bootstrap ran: do NOT register again; wait for the node and for the Arc machine.
+        Anything else is not retried.
+    .OUTPUTS
+        Kind (ResourceExists, AuthFailed, LogonSession, IoAborted, Unknown), Retry (register again), Wait (wait for the node instead), Advice.
+    #>
+    [CmdletBinding()]
+    param([AllowNull()][AllowEmptyString()][string]$Message)
+    $m = [string]$Message
+    $result = { param($kind, $retry, $wait, $advice) [pscustomobject]@{ Kind = $kind; Retry = $retry; Wait = $wait; Advice = $advice } }
+    if ($m -match 'AZCM0044|already exists|resource already exist') {
+        return (& $result 'ResourceExists' $true $false 'AZCM0044: an Arc resource with this name already exists. A stale one (not Connected) is deleted and the registration runs again; a Connected one is left alone.')
+    }
+    if ($m -match 'AZCM0042|\b401\b|Unauthorized') {
+        return (& $result 'AuthFailed' $true $false 'AZCM0042 or 401: the Azure token was refused or expired. A new token is taken from the sign-in and the registration runs again; if it is refused again, sign in with an account that has Azure Connected Machine Onboarding on the resource group.')
+    }
+    if ($m -match '0x8009030e|logon session does not exist') {
+        return (& $result 'LogonSession' $true $false '0x8009030e: the logon session does not exist in the remote session. A new WinRM session is opened and the registration runs again; use the local administrator (Negotiate), not CredSSP or a delegated credential.')
+    }
+    if ($m -match 'I/O operation (has been )?aborted|IO operation (has been )?aborted') {
+        return (& $result 'IoAborted' $false $true 'I/O operation aborted: the node is restarting in the middle of the bootstrap. The registration is NOT run again; the run waits for the node to answer and for its Arc machine to be Connected.')
+    }
+    return (& $result 'Unknown' $false $false '')
+}
+
+function Remove-AzlStaleArcMachine {
+    <#
+    .SYNOPSIS
+        Deletes one Arc machine resource (the stale leftover of AZCM0044). Refuses a machine that is Connected. Returns $true when it was deleted.
+    #>
+    [CmdletBinding(SupportsShouldProcess)]
+    param([Parameter(Mandatory)][string]$ResourceId, [string]$Status = '')
+    if ($Status -eq 'Connected') { return $false }
+    if (-not $PSCmdlet.ShouldProcess($ResourceId, 'Delete the stale Azure Arc machine resource')) { return $false }
+    $null = Invoke-AzlArm -Method DELETE -Path $ResourceId -ApiVersion '2024-07-10' -AllowNotFound
+    return $true
+}
+
 function Invoke-AzlArcRegistration {
     <#
     .SYNOPSIS
         Registers an ISO-installed machine with Azure Arc: Invoke-AzStackHciArcInitialization on the node, over WinRM, with the ARM
         token of this run's Azure sign-in (passed as a secret, never written down). Then waits for the Arc machine to be Connected.
+    .DESCRIPTION
+        Up to three tries. A failure is classified (Resolve-AzlArcRegistrationFailure): AZCM0044 deletes the stale, not Connected Arc resource and tries again,
+        AZCM0042 or 401 takes a new token, 0x8009030e opens a new session, and "I/O operation aborted" (the node restarts mid-bootstrap) is never registered
+        again: the run waits for the node to answer and for the Arc machine instead. Every retry is written as a warning and a NodeRetry event.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][System.Collections.IDictionary]$Record, [Parameter(Mandatory)][System.Collections.IDictionary]$Node, [int]$WaitMinutes = 20)
+    param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][System.Collections.IDictionary]$Record, [Parameter(Mandatory)][System.Collections.IDictionary]$Node, [int]$WaitMinutes = 20, [int]$MaxTries = 3)
     $infra = $Context.Infra
     $subscription = [string](Get-AzlProp $infra 'azure.subscription_id' '')
     $resourceGroup = [string](Get-AzlProp $infra 'azure.resource_group' '')
-    $token = Get-AzlArmToken
     $gateway = ''
     if ((Get-AzlProp $infra 'scenario.outbound_path' '') -in 'arc_gateway', 'proxy_arc_gateway') {
         $gw = Get-AzlProp $infra 'networking.outbound.arc_gateway'
         $gwGroup = [string](Get-AzlProp $gw 'resource_group' $resourceGroup)
         if (Get-AzlProp $gw 'name') { $gateway = "/subscriptions/$subscription/resourceGroups/$gwGroup/providers/Microsoft.HybridCompute/gateways/$(Get-AzlProp $gw 'name')" }
     }
-    $parameters = @{
-        subscriptionId = $subscription; resourceGroup = $resourceGroup; tenantId = [string](Get-AzlProp $infra 'azure.tenant_id' '')
-        region = [string](Get-AzlProp $infra 'azure.location' ''); accountId = $token.AccountId
-        cloud = $(if ((Get-AzlProp $infra 'scenario.cloud' 'public') -eq 'government') { 'AzureUSGovernment' } else { 'AzureCloud' })
-        arcGatewayId = $gateway
-    }
+    $arcName = Get-AzlArcMachineName -Node $Node
+    $token = Get-AzlArmToken
     $transport = New-AzlWinRmTransport -Address @{ $Record.name = $Record.address } -Credential $Context.CredentialInfo.Credential
-    $null = Invoke-AzlNodeScript -Transport $transport -Node $Record.name -Script (Get-AzlNodePayload -Name ArcRegistration) -Parameters $parameters -Secrets @{ armToken = $token.Token } -TimeoutSeconds 7200 -Tries 1
+    $waitForNode = $false
+    for ($try = 1; $try -le $MaxTries; $try++) {
+        $parameters = @{
+            subscriptionId = $subscription; resourceGroup = $resourceGroup; tenantId = [string](Get-AzlProp $infra 'azure.tenant_id' '')
+            region = [string](Get-AzlProp $infra 'azure.location' ''); accountId = $token.AccountId
+            cloud = $(if ((Get-AzlProp $infra 'scenario.cloud' 'public') -eq 'government') { 'AzureUSGovernment' } else { 'AzureCloud' })
+            arcGatewayId = $gateway
+        }
+        try {
+            $null = Invoke-AzlNodeScript -Transport $transport -Node $Record.name -Script (Get-AzlNodePayload -Name ArcRegistration) -Parameters $parameters -Secrets @{ armToken = $token.Token } -TimeoutSeconds 7200 -Tries 1
+            break
+        }
+        catch {
+            $failure = Resolve-AzlArcRegistrationFailure -Message $_.Exception.Message
+            if ($failure.Kind -eq 'Unknown') { throw }
+            Write-Warning "$($Record.name): Arc registration try $try of ${MaxTries}: $($failure.Advice) ($($_.Exception.Message))"
+            Send-AzlRunEvent -Context $Context -Record $Record -State NodeRetry -Step ArcRegistration -Level Warning -Evidence "Arc registration try $try of ${MaxTries}: $($failure.Kind). $($failure.Advice)" -Data @{ try = $try; tries = $MaxTries; kind = $failure.Kind }
+            if ($failure.Wait) { $waitForNode = $true; break }
+            if ($try -ge $MaxTries) { throw }
+            switch ($failure.Kind) {
+                'ResourceExists' {
+                    $existing = Find-AzlArcMachine -ArcMachineName $arcName -SubscriptionId $subscription -ResourceGroup $resourceGroup -HostName $Record.name
+                    if (-not $existing) { throw }
+                    if ($existing.Status -eq 'Connected') { return $existing }
+                    if (-not (Remove-AzlStaleArcMachine -ResourceId ([string]$existing.ResourceId) -Status ([string]$existing.Status) -Confirm:$false)) { throw }
+                    Start-Sleep -Seconds 15
+                }
+                'AuthFailed' { $token = Get-AzlArmToken }
+                'LogonSession' { $transport = New-AzlWinRmTransport -Address @{ $Record.name = $Record.address } -Credential $Context.CredentialInfo.Credential }
+            }
+        }
+    }
+    if ($waitForNode) {
+        # The node is restarting: wait for it to answer again (the registration is not run a second time), then for the Arc machine.
+        $back = (Get-Date).AddMinutes(10)
+        while ((Get-Date) -lt $back) {
+            if (Test-AzlWinRmPort -Address $Record.address) { break }
+            Start-Sleep -Seconds 20
+        }
+    }
     $deadline = (Get-Date).AddMinutes($WaitMinutes)
     do {
         $arc = $null
-        try { $arc = Find-AzlArcMachine -ArcMachineName (Get-AzlArcMachineName -Node $Node) -SubscriptionId $subscription -ResourceGroup $resourceGroup -HostName $Record.name } catch { Write-Verbose "Arc lookup: $($_.Exception.Message)" }
+        try { $arc = Find-AzlArcMachine -ArcMachineName $arcName -SubscriptionId $subscription -ResourceGroup $resourceGroup -HostName $Record.name } catch { Write-Verbose "Arc lookup: $($_.Exception.Message)" }
         if ($arc -and $arc.Status -eq 'Connected') { return $arc }
         Start-Sleep -Seconds 30
     } while ((Get-Date) -lt $deadline)
@@ -1780,4 +1864,4 @@ function Invoke-AzlOsConfiguration {
     }
 }
 
-Export-ModuleMember -Function Get-AzlWipeKey, Get-AzlWipeHash, New-AzlWipeListDocument, Read-AzlApprovedWipeList, Test-AzlWipeApproval, Get-AzlHandoffFile, Merge-AzlHandoff, Find-AzlMergedHandoff, Resolve-AzlNodeMethod, Get-AzlNodeStepList, Get-AzlNodeEvidence, Get-AzlRunSetting, Get-AzlWipeList, Format-AzlWipeList, Get-AzlOsConfigurationExitCode, Format-AzlOsConfigurationSummary, Test-AzlIsoPrecondition, Invoke-AzlOsConfiguration
+Export-ModuleMember -Function Resolve-AzlArcRegistrationFailure, Remove-AzlStaleArcMachine, Get-AzlWipeKey, Get-AzlWipeHash, New-AzlWipeListDocument, Read-AzlApprovedWipeList, Test-AzlWipeApproval, Get-AzlHandoffFile, Merge-AzlHandoff, Find-AzlMergedHandoff, Resolve-AzlNodeMethod, Get-AzlNodeStepList, Get-AzlNodeEvidence, Get-AzlRunSetting, Get-AzlWipeList, Format-AzlWipeList, Get-AzlOsConfigurationExitCode, Format-AzlOsConfigurationSummary, Test-AzlIsoPrecondition, Invoke-AzlOsConfiguration

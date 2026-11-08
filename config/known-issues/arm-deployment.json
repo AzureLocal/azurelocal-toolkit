@@ -176,6 +176,91 @@
       "confidence": "documented",
       "link": "https://learn.microsoft.com/azure/azure-local/manage/troubleshoot-deployment",
       "evidence": "Microsoft Learn, Troubleshoot Azure portal deployment validation issues."
+    },
+    {
+      "id": "arc-registration-resource-exists",
+      "title": "Arc registration fails with AZCM0044: the Arc resource already exists",
+      "phase": [
+        "Validate",
+        "Deploy"
+      ],
+      "match": {
+        "error": "AZCM0044|resource already exist"
+      },
+      "affectedBuilds": [],
+      "cause": "A machine was registered under this name before (an earlier try, a rebuilt node) and its Arc resource is still in the resource group, so Invoke-AzStackHciArcInitialization stops with AZCM0044.",
+      "remediation": [
+        "The OS configuration run deletes the stale Arc resource when it is NOT Connected and registers again (up to three tries). A Connected Arc machine is never deleted: it is the registration, and the run goes on.",
+        "If you register by hand: delete the stale machine resource of the node in the Azure portal or with az connectedmachine delete, then run the registration again.",
+        "Do not delete an Arc machine that is Connected unless you mean to re-register that node."
+      ],
+      "retry": "after-fix",
+      "confidence": "observed",
+      "link": "https://learn.microsoft.com/azure/azure-local/deploy/deployment-arc-register-server-permissions",
+      "evidence": "azl-toolkit lessons (proven repo): tplabs re-registration after a node rebuild."
+    },
+    {
+      "id": "arc-registration-unauthorized",
+      "title": "Arc registration is refused: AZCM0042 or HTTP 401",
+      "phase": [
+        "Validate",
+        "Deploy"
+      ],
+      "match": {
+        "error": "AZCM0042|\\b401\\b|Unauthorized"
+      },
+      "affectedBuilds": [],
+      "cause": "The Azure token handed to the node was refused or had expired (a long registration, a token minted for another tenant or cloud, or an account without Azure Connected Machine Onboarding on the resource group).",
+      "remediation": [
+        "The OS configuration run takes a new token from its sign-in and registers again (up to three tries).",
+        "If it is refused again: sign in to the right tenant and cloud (Connect-AzAccount) with an account that has Azure Connected Machine Onboarding and Reader on the resource group, then run again."
+      ],
+      "retry": "resubmit-once",
+      "confidence": "observed",
+      "link": "https://learn.microsoft.com/azure/azure-local/deploy/deployment-arc-register-server-permissions",
+      "evidence": "azl-toolkit lessons (proven repo): token expiry during a long bootstrap."
+    },
+    {
+      "id": "arc-registration-logon-session",
+      "title": "Arc registration fails with 0x8009030e: the logon session does not exist",
+      "phase": [
+        "Validate",
+        "Deploy"
+      ],
+      "match": {
+        "error": "0x8009030e|logon session does not exist"
+      },
+      "affectedBuilds": [],
+      "cause": "The credential did not carry into the remote session (a second hop, CredSSP or a delegated credential, or a session kept open across a restart).",
+      "remediation": [
+        "The OS configuration run opens a new WinRM session with the local administrator (Negotiate) and registers again.",
+        "Use the local administrator of the node, not a delegated or CredSSP credential, and do not reuse a session across a restart."
+      ],
+      "retry": "resubmit-once",
+      "confidence": "observed",
+      "link": "https://learn.microsoft.com/azure/azure-local/deploy/deployment-arc-register-server-permissions",
+      "evidence": "azl-toolkit lessons (proven repo)."
+    },
+    {
+      "id": "arc-registration-io-aborted",
+      "title": "Arc registration ends with \"I/O operation has been aborted\" while the node restarts",
+      "phase": [
+        "Validate",
+        "Deploy"
+      ],
+      "match": {
+        "error": "I/O operation (has been )?aborted"
+      },
+      "affectedBuilds": [],
+      "cause": "The node restarts in the middle of the Arc bootstrap (the agent install asks for it), so the remote call is cut. The registration itself usually carries on or finishes after the restart.",
+      "remediation": [
+        "The OS configuration run does NOT register again: it waits for the node to answer and for its Arc machine to be Connected.",
+        "Registering again while the node restarts is what creates the stale resource of AZCM0044. Wait, then read the Arc machine status."
+      ],
+      "retry": "none",
+      "confidence": "observed",
+      "link": "https://learn.microsoft.com/azure/azure-local/deploy/deployment-arc-register-server-permissions",
+      "evidence": "azl-toolkit lessons (proven repo): a node reboot during the bootstrap."
     }
   ]
 }
