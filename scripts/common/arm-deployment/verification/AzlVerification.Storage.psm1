@@ -86,6 +86,7 @@ function Get-AzlVerificationCheckDefinition {
     .SYNOPSIS
         The check definitions of the STORAGE category (ST-001 to ST-011).
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'The per node script blocks take the one signature (Name, Data, NodeInfo) whether a check needs all three or not.')]
     [CmdletBinding()]
     param()
     $defs = [System.Collections.Generic.List[object]]::new()

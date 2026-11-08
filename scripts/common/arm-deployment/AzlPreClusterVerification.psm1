@@ -275,6 +275,7 @@ function ConvertTo-AzlPclDefinition {
         A check definition of a verification module ({Id, Category, Title, Source, Blocking, Applies, Run}, as a hashtable or an object) as a
         catalog entry. A definition that is not usable becomes a check that fails with the reason, so a broken module is never silent.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'The parameters are read inside the wrapper script blocks the definition carries.')]
     param([Parameter(Mandatory)]$Definition, [Parameter(Mandatory)][string]$Module)
     $get = {
         param($Name, $Default)
@@ -326,6 +327,8 @@ function Write-AzlPclFileAtomic {
 
 function New-AzlPclExtFailure {
     # The check that stands in for a verification module that is missing or does not load: it fails, blocking, with the reason.
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Ctx and Def keep the signature of every check Run block; Def is read through the stored text.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds an in-memory definition; changes no system state.')]
     param([Parameter(Mandatory)][string]$Name, [Parameter(Mandatory)][string]$Why)
     [pscustomobject]@{ Id = "EXT-$($Name -replace '^AzlVerification\.', '')"; Category = 'readiness'; Title = "The verification module $Name loads"; Source = "scripts/common/arm-deployment/verification/$Name.psm1"; Reads = 'the verification module file'
         Blocking = $true; Fixable = $false; Module = $Name; Applies = { $true }; Run = { param($Ctx, $Def) throw $Def.Why }; Why = $Why }
@@ -405,6 +408,7 @@ function Get-AzlPclDefinitionSet {
 
 function ConvertTo-AzlPclResultObject {
     # A result of a check as the engine reads it: an object or a table with Status, Node, Message, Remedy, Evidence (or Details).
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Result is read inside the accessor script block.')]
     param($Result)
     $get = {
         param($Name)
@@ -684,6 +688,7 @@ function New-AzlPclRemoteRequest {
         (read once, kept in memory, scrubbed from every output), the remoting settings of the run.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification = 'The secret was just read from Key Vault; it is made a SecureString at once and only ever lives in memory.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds an in-memory request; changes no system state.')]
     param([Parameter(Mandatory)]$Ctx, [Parameter(Mandatory)][string]$Node, [Parameter(Mandatory)][scriptblock]$ScriptBlock, [object[]]$ArgumentList = @())
     $local = Get-AzlProp $Ctx.Infra 'identity.local_admin'
     $user = [string](Get-AzlProp $local 'username' ''); $ref = [string](Get-AzlProp $local 'password' '')
@@ -733,6 +738,7 @@ function Set-AzlPclEnvironmentChecker {
         -InstallEnvironmentChecker; the gate never installs it otherwise. Learn says to remove it from the nodes before the deployment, so the
         run removes what it installed in a finally block (unless -KeepEnvironmentChecker). Returns the nodes it acted on and the errors.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Only called for the explicit -InstallEnvironmentChecker switch, which is the operator confirmation; it is removed again at the end.')]
     param([Parameter(Mandatory)]$Ctx, [Parameter(Mandatory)][ValidateSet('Install', 'Remove')][string]$Action)
     $install = {
         $ErrorActionPreference = 'Stop'
@@ -772,6 +778,8 @@ function New-AzlPclEndpointProbe {
         Adapters.Azure.TestEndpoint(Address, Target[], Credential) on top of Adapters.Remote.Invoke: TCP probes from the node at Address.
         Rows of Host, Port, Ok, Error.
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'The parameters are read inside the returned script block.')]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds a script block; changes no system state.')]
     param([Parameter(Mandatory)]$Adapter, $Remoting)
     $probe = {
         param($List)
@@ -789,7 +797,7 @@ function New-AzlPclEndpointProbe {
     $ssl = [bool]$(if ($Remoting) { $Remoting.UseSsl } else { $false })
     $authentication = [string]$(if ($Remoting) { $Remoting.Authentication } else { 'Negotiate' })
     {
-        param($Address, $Target, $Credential)
+        param($Address, $Target, [pscredential]$Credential)
         $request = [pscustomobject]@{ Node = [string]$Address; Addresses = @([string]$Address); Credential = $Credential; ScriptBlock = $probe; ArgumentList = @(, @($Target)); UseSsl = $ssl; Authentication = $authentication }
         $answer = & $Adapter['Remote']['Invoke'] $request
         if (-not $answer.Ok) { throw "the probe from $Address did not run: $($answer.Error)" }

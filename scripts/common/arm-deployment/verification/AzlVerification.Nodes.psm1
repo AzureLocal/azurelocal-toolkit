@@ -41,6 +41,7 @@ function Get-AzlVerificationCheckDefinition {
     .SYNOPSIS
         The check definitions of the NODES and READINESS categories (ND-001 to ND-012, RD-001 to RD-007).
     #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'The per node script blocks take the one signature (Name, Data, NodeInfo) whether a check needs all three or not.')]
     [CmdletBinding()]
     param()
     $defs = [System.Collections.Generic.List[object]]::new()
@@ -314,6 +315,7 @@ function Get-AzlVerificationCheckDefinition {
 function Invoke-AzlVerValidatorCheck {
     # The body of RD-002 to RD-007: ask Readiness.Run for the validator and turn its answer into results.
     [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'The parameters are read inside nested script blocks.')]
     param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)][string]$Name)
     Invoke-AzlVerCheckBody -Body {
         $m = Get-AzlVerAdapterMember -Context $Context -Group 'Readiness' -Name 'Run'
@@ -394,6 +396,7 @@ function Invoke-AzlVerReadinessDefault {
         integration need credentials this tool does not hold on a node and say so. Nothing is installed and nothing is changed.
     #>
     [CmdletBinding()]
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'The parameters are read inside nested script blocks.')]
     param([Parameter(Mandatory)][string]$Validator, [Parameter(Mandatory)]$Context)
     # The credential and the address map the engine gave to Get-AzlVerificationAdapterDefault travel in the adapter itself.
     $cred = Get-AzlProp (Get-AzlVerContextValue $Context 'Adapters') 'Readiness.Credential' $null
