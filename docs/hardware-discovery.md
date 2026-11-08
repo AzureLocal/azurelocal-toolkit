@@ -72,6 +72,8 @@ Both the older 1.0 files and the 2.0 files are read.
 
 ### Port names and the card model
 
+Every port also carries the facts the file keeps for it, the same keys for any vendor: `portIndex` (the number of the port on its card, from 1), `pciLocation` (bus, device, function, when the BMC reports it; the Dell adapter reads it from `Oem.Dell.DellNIC` and marks that path `inferred`), `rdma` (only when a vendor adapter reports it), the adapter `manufacturer` and `model`, and the link speed now and the highest the port supports. The proposal file writes them as `nodes[].network_adapters[]` keys (`mac_address`, `slot`, `port_index`, `pci_location`, `vendor`, `model`, `speed_gbps`, `rdma`). The adapter is identified by its MAC; `name` is the key intents refer to, derived from the slot and the port, never an OS name.
+
 Port names come from the **Port resource**, not from the adapter ID. The LOM lists both of its ports under the adapter
 `NIC.Embedded.1`, as `NIC.Embedded.1-1` and `NIC.Embedded.2-1`; they are `Embedded NIC 1` and `Embedded NIC 2` (it used to be `Embedded NIC 1 (2)`).
 

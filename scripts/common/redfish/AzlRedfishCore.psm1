@@ -1037,8 +1037,18 @@ function Get-AzlRfNetwork {
             if ($null -eq $maxSpeed) { $caps = @(Get-RfProp $port 'SupportedLinkCapabilities' @() | ForEach-Object { Get-RfProp $_ 'LinkSpeedMbps' } | Where-Object { $null -ne $_ }); if ($caps.Count -gt 0) { $maxSpeed = ($caps | Measure-Object -Maximum).Maximum } }
             $lldp = Get-RfProp $portEth 'LLDPReceive'
             if (-not $mac) { $warnings.Add("NetworkAdapters: port $portId of $adapterId has no MAC in Redfish.") }
+            # The hardware facts the file keeps per port (nodes[].network_adapters[]): the number of the port on the card, the PCI location and the RDMA capability.
+            # The standard Redfish resources carry the port number. The PCI location and the RDMA capability are vendor data, so a vendor adapter gives them through the
+            # optional hooks NicPciLocation and NicRdma (nothing here is specific to a brand; a hook that finds nothing leaves the value empty).
+            $portNumberText = if ($label.PortNumber) { "$($label.PortNumber)" } elseif ($physical) { "$physical" } else { "$ordinal" }
+            $portIndex = if ($portNumberText -match '^\d+$') { [int]$portNumberText } else { $ordinal }
+            $pciHook = Get-RfProp (Get-RfProp $AdapterDef 'Hooks') 'NicPciLocation'
+            $pciLocation = if ($pciHook) { & $pciHook $Context $function } else { $null }
+            $rdmaHook = Get-RfProp (Get-RfProp $AdapterDef 'Hooks') 'NicRdma'
+            $rdmaValue = if ($rdmaHook) { & $rdmaHook $Context $function $adapter } else { $null }
             $portList.Add([ordered]@{
-                    id = $portId; name = $label.Name; slot = $label.Slot; portNumber = $(if ($label.PortNumber) { $label.PortNumber } else { $physical }); adapterId = $adapterId
+                    id = $portId; name = $label.Name; slot = $label.Slot; portNumber = $(if ($label.PortNumber) { $label.PortNumber } else { $physical }); portIndex = $portIndex; adapterId = $adapterId
+                    pciLocation = $pciLocation; rdma = $rdmaValue
                     mac = $mac; macSource = $macSource; permanentMac = $permanent; linkStatus = $link; linkUp = $(if ($link) { $link -in @('Up', 'LinkUp') } else { $null })
                     speedMbps = $speed; maxSpeedMbps = $maxSpeed; mtu = (Get-RfProp $eth 'MTUSize'); flowControl = (Get-RfText $port 'FlowControlStatus')
                     lldp = $(if ($lldp) { Remove-AzlRedfishSecret -InputObject $lldp } else { $null }); functionId = (Get-RfText $function 'Id'); deviceEnabled = (Get-RfProp $function 'DeviceEnabled')
@@ -1536,7 +1546,8 @@ function ConvertTo-AzlDiscoveryLegacyView {
                     Name = [string](Get-RfProp $p 'name' ''); Slot = [string](Get-RfProp $p 'slot' ''); MacAddress = [string](Get-RfProp $p 'mac'); MacSource = [string](Get-RfProp $p 'macSource' '')
                     AdapterId = [string](Get-RfProp $a 'id' ''); PortId = [string](Get-RfProp $p 'id' ''); AdapterModel = [string](Get-RfProp $a 'model' ''); AdapterManufacturer = [string](Get-RfProp $a 'manufacturer' '')
                     FirmwarePackage = [string](Get-RfProp $a 'firmwarePackage' ''); LinkStatus = [string](Get-RfProp $p 'linkStatus' ''); LinkUp = [bool](Get-RfProp $p 'linkUp' $false)
-                    LinkSpeedMbps = (Get-RfProp $p 'speedMbps'); PhysicalPortNumber = (Get-RfProp $p 'portNumber')
+                    LinkSpeedMbps = (Get-RfProp $p 'speedMbps'); MaxSpeedMbps = (Get-RfProp $p 'maxSpeedMbps'); PhysicalPortNumber = (Get-RfProp $p 'portNumber')
+                    PortIndex = (Get-RfProp $p 'portIndex'); PciLocation = (Get-RfProp $p 'pciLocation'); Rdma = [string](Get-RfProp $p 'rdma' '')
                 }
             }
         })

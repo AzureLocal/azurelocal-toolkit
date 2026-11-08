@@ -212,10 +212,9 @@ if ($iDRAC) {
                     cpu_threads     = $NodeData.CPU.Threads
                     memory_gb       = $NodeData.MemoryGB
                     collection_time = $NodeData.LastDiscovered
-                    port1_mac       = $NodeData.NetworkPorts.Port1
-                    port2_mac       = $NodeData.NetworkPorts.Port2
-                    port3_mac       = $NodeData.NetworkPorts.Port3
-                    port4_mac       = $NodeData.NetworkPorts.Port4
+                    # Every discovered port, whatever its name and however many there are (no fixed Port1 to Port4): the port's name as discovery wrote it and its MAC.
+                    # A port is identified by its MAC; the name is only a label.
+                    network_ports   = @(if ($NodeData.PSObject.Properties['NetworkPorts'] -and $NodeData.NetworkPorts) { $NodeData.NetworkPorts.PSObject.Properties | ForEach-Object { [ordered]@{ name = $_.Name; mac_address = [string]$_.Value } } })
                 }
                 
                 Write-Host "    ✓ $ServiceTag - $($NodeData.Model)" -ForegroundColor Green

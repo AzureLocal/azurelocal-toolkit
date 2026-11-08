@@ -122,10 +122,29 @@ function ConvertTo-AzlDiscoveryProposal {
         $lines.Add('    network_adapters:')
         foreach ($p in @($d.NetworkPorts)) {
             $isMgmt = $choice.Port -and $choice.Port.MacAddress -eq $p.MacAddress
-            $lines.Add("      - name: $(ConvertTo-YamlString $p.Name)")
-            $lines.Add("        slot: $(ConvertTo-YamlString $p.Slot)")
+            # The name is the key of the file (intents and storage networks refer to it): derived from the slot and the port, never from an OS name. The physical adapter is
+            # found on a node by its MAC, so the OS may call it anything. Every hardware fact discovery reports is written; a fact the BMC did not report is left out.
+            $lines.Add("      - name: $(ConvertTo-YamlString $p.Name) # key of this port in the file; the OS adapter name is found by MAC")
             $lines.Add("        mac_address: $(ConvertTo-YamlString $p.MacAddress)$(if ($p.LinkUp) { ' # link up' } else { '' })")
+            $lines.Add("        slot: $(ConvertTo-YamlString $p.Slot)")
+            $portIndex = Get-RfProp $p 'PortIndex'
+            if ($null -ne $portIndex -and "$portIndex" -match '^\d+$') { $lines.Add("        port_index: $portIndex") }
+            $pci = Get-RfProp $p 'PciLocation'
+            if ($pci -and $null -ne (Get-RfProp $pci 'bus') -and $null -ne (Get-RfProp $pci 'device') -and $null -ne (Get-RfProp $pci 'function')) {
+                $lines.Add("        pci_location: { bus: $((Get-RfProp $pci 'bus')), device: $((Get-RfProp $pci 'device')), function: $((Get-RfProp $pci 'function')) }")
+            }
+            $vendor = [string](Get-RfProp $p 'AdapterManufacturer' '')
+            if ($vendor) { $lines.Add("        vendor: $(ConvertTo-YamlString $vendor)") }
             if ($p.AdapterModel) { $lines.Add("        model: $(ConvertTo-YamlString $p.AdapterModel)") }
+            $linkMbps = Get-RfProp $p 'LinkSpeedMbps'
+            $maxMbps = Get-RfProp $p 'MaxSpeedMbps'
+            $speedMbps = if ($p.LinkUp -and $linkMbps) { $linkMbps } elseif ($maxMbps) { $maxMbps } else { $linkMbps }
+            if ($speedMbps -and [double]$speedMbps -gt 0) {
+                $speedSource = if ($p.LinkUp -and $linkMbps) { 'link speed now' } elseif ($maxMbps) { 'highest speed the port supports (no link now)' } else { 'last link speed reported' }
+                $lines.Add("        speed_gbps: $(([double]$speedMbps / 1000).ToString('0.###', [System.Globalization.CultureInfo]::InvariantCulture)) # $speedSource, as the BMC reports it")
+            }
+            $rdma = [string](Get-RfProp $p 'Rdma' '')
+            if ($rdma -in 'none', 'iwarp', 'roce', 'roce_v2') { $lines.Add("        rdma: $rdma") }
             if ($isMgmt) {
                 $lines.Add("        roles: [management] # $($choice.Reason)$(if (-not $choice.Confirmed) { '; confirm' })")
                 $lines.Add('        ip_assignment: dhcp_reservation # or static: set it from your management address mode')

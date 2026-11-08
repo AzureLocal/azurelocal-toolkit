@@ -129,6 +129,24 @@ function Get-AzlRedfishDellAdapter {
         return $null
     }
 
+    # The PCI location of a port's function (bus, device, function as decimal numbers). Source: the function's Oem.Dell.DellNIC block, when it carries
+    # BusNumber, DeviceNumber and FunctionNumber (Dell DellNIC class; INFERRED: not seen in the lab scan). A firmware that does not carry them gives
+    # nothing, and the file keeps no pci_location for the port: the port is still found by its MAC.
+    $hooks.NicPciLocation = {
+        param($Context, $Function)
+        if (-not $Function) { return $null }
+        $nic = Get-RfProp (Get-DellOemBlock $Function) 'DellNIC'
+        $values = @{}
+        foreach ($k in 'BusNumber', 'DeviceNumber', 'FunctionNumber') {
+            $v = Get-RfProp $nic $k
+            $n = 0
+            if ($null -eq $v -or -not [int]::TryParse("$v", [ref]$n) -or $n -lt 0) { return $null }
+            $values[$k] = $n
+        }
+        Add-AzlRedfishOemPath -Context $Context -Area network -Path "$([string](Get-RfProp $Function '@odata.id' ''))#Oem.Dell.DellNIC.BusNumber/DeviceNumber/FunctionNumber" -Basis inferred -Source 'Dell DellNIC class (iDRAC REST API documentation); not seen in the lab scan'
+        return [ordered]@{ bus = $values['BusNumber']; device = $values['DeviceNumber']; function = $values['FunctionNumber'] }
+    }
+
     # Identity: the service tag is the Redfish System SKU (lab-observed). DellSystem carries the express service code (documented).
     $hooks.OemSystem = {
         param($Context, $Report, $Paths)
