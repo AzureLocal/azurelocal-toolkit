@@ -8,6 +8,13 @@
   },
   "active_aliases": [
     {
+      "alias_path": "identity.active_directory.security_groups_by_role",
+      "canonical_target": "identity.active_directory.security_groups",
+      "created": "2026-11-08",
+      "expires_on": "2027-05-07",
+      "reason": "Registry 4.1.0: the 4.0 object-by-role form of security_groups was renamed; infrastructure.yml owns security_groups as a list of groups (read by the domain join). Remove when no variables.yml uses the 4.0 form."
+    },
+    {
       "alias_path": "identity.active_directory.domain.fqdn",
       "canonical_target": "ad_domain_fqdn",
       "created": "2026-04-02",
