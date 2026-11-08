@@ -125,13 +125,16 @@
             "minLength": 1
           },
           "bmc": {
+            "description": "The baseboard management controller (BMC) of the machine: address, type and login. ZTP drives the machine through it over Redfish (virtual media, boot override, BIOS settings, power); hardware discovery reads the machine through it.",
             "type": "object",
             "additionalProperties": false,
             "properties": {
               "ip_address": {
-                "$ref": "#/$defs/ipv4"
+                "$ref": "#/$defs/ipv4",
+                "description": "IPv4 address of the BMC (iDRAC, iLO, XCC). It must answer HTTPS (TCP 443) from the host that runs ZTP or discovery."
               },
               "type": {
+                "description": "Kind of BMC: idrac (Dell), ilo (HPE), xcc (Lenovo) or other. Only Dell iDRAC is proven end to end in this phase; BMC kinds other than idrac are planned.",
                 "enum": [
                   "idrac",
                   "ilo",
@@ -140,6 +143,7 @@
                 ]
               },
               "username": {
+                "description": "BMC account name. The plain name, or a keyvault:// reference.",
                 "type": "string",
                 "minLength": 1
               },

@@ -45,13 +45,16 @@ scenario:
 
 # The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
 azure:
+  # Microsoft Entra tenant ID (GUID) of the subscription.
   # required; used by: ztp, os_configuration, deployment, cicd_infra
   tenant_id: "00000000-0000-0000-0000-000000000000"
   # Azure region, for example eastus.
   # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
   location: "eastus"
+  # Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_i...
   # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
   subscription_id: "00000000-0000-0000-0000-000000000000"
+  # Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses).
   # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
   resource_group: "rg-iic-azl-01"
   # Object ID of the Azure Local resource provider's service principal (application 1412d89f-b8a8-4111-b4fd-e82905cbd85d) in the tenant.
@@ -67,10 +70,13 @@ azure:
 # Every Key Vault that a keyvault:// reference in this file names, with where it is.
 # used by: ztp, cicd_infra
 key_vaults:
+  # Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens.
   # required; used by: ztp, deployment, cicd_infra
   - name: "kv-iic-mgmt-01"
+    # Subscription (GUID) that holds the vault.
     # required; used by: ztp, deployment, cicd_infra
     subscription_id: "00000000-0000-0000-0000-000000000000"
+    # Resource group that holds the vault.
     # required; used by: ztp, deployment, cicd_infra
     resource_group: "rg-iic-mgmt-01"
 
@@ -85,6 +91,7 @@ cluster:
   # ARM deploymentMode: validate runs the checks only; deploy deploys.
   # one of: validate | deploy; used by: deployment
   deployment_mode: "validate"
+  # The quorum witness of the cluster.
   # required
   witness:
     # cloud (an Azure Storage account), file_share (disconnected operations), or none.
@@ -96,20 +103,25 @@ cluster:
   # The Key Vault the deployment uses for the instance's secrets (one per instance).
   # required; used by: deployment
   key_vault:
+    # Name of the Key Vault the deployment creates for the cluster (ARM keyVaultName): 3 to 24 characters, letters, digits and hyphens, starting...
     # required; used by: deployment
     name: "kv-iic-azl-01"
     # ARM createNewKeyVault.
     # used by: deployment
     create_new: true
+    # Days a deleted secret or vault stays recoverable, 7 to 90.
     # used by: deployment
     soft_delete_retention_days: 30
   # Key Vault audit logs.
   # used by: deployment
   diagnostics:
+    # Name of the storage account that receives the cluster diagnostic logs: 3 to 24 lowercase letters and digits.
     # used by: deployment
     storage_account: "stiicazl01diag"
+    # Days the diagnostic logs are kept.
     # used by: deployment
     logs_retention_days: 30
+    # SKU of the diagnostic storage account, for example Standard_LRS.
     # used by: deployment
     storage_account_type: "Standard_LRS"
 
@@ -204,8 +216,10 @@ nodes:
           # (since 5.4) 
           # used by: ztp, deployment
           bios_enabled_value: "example"
+          # Model of the host bus adapter, as the machine reports it.
           # used by: ztp, deployment
           model: "Example 32G FC HBA"
+          # The ports of the host bus adapter.
           # used by: deployment
           ports:
             # A Fibre Channel World Wide Port Name: 16 hexadecimal digits, as 8 colon-separated pairs (50:00:09:72:08:12:34:56) or without colons.
@@ -235,8 +249,10 @@ hardware:
     # Required when hardware.sbe is present and bundle_path is not.
     # used by: os_configuration, deployment
     version: ""
+    # Where the SBE manifest comes from (a URL or a file path).
     # used by: deployment
     manifest_source: ""
+    # Creation date of the SBE manifest, as the manifest states it.
     # used by: deployment
     manifest_creation_date: ""
     # Required when hardware.sbe is present, unless publisher, family and version name an SBE you placed in C:\SBE yourself (and needed for any d...
@@ -266,8 +282,10 @@ networking:
     # At least six contiguous addresses in the management subnet, outside the machines' addresses.
     # used by: os_configuration, deployment
     infrastructure_pool:
+      # First address of the pool the Azure Local infrastructure services use (ARM startingIPAddress): inside the management subnet, outside every...
       # required; used by: os_configuration, deployment
       start: "192.0.2.20"
+      # Last address of the infrastructure pool (ARM endingIPAddress).
       # required; used by: os_configuration, deployment
       end: "192.0.2.29"
   # Time sources, as host names or addresses.
@@ -276,8 +294,10 @@ networking:
   # Network ATC intents.
   # used by: os_configuration, deployment
   intents:
+    # Name of the Network ATC intent, for example management_compute or storage.
     # required; used by: os_configuration, deployment
     - name: "management"
+      # Traffic types the intent carries: management, compute and storage (ARM trafficType).
       # required; used by: os_configuration, deployment
       traffic: ["management"]
       # Adapter names in the OS, the same on every machine.
@@ -286,26 +306,37 @@ networking:
       # Network ATC overrides.
       # used by: os_configuration
       overrides:
+        # Data Center Bridging (DCB) quality of service overrides for the storage traffic (ARM qosPolicyOverrides).
         # used by: os_configuration
         qos:
+          # 802.1p priority value of the cluster heartbeat traffic, 0 to 7 (ARM priorityValue8021Action_Cluster).
           # used by: os_configuration, deployment
           cluster_priority: 0
+          # 802.1p priority value of the SMB Direct (RDMA storage) traffic, 0 to 7 (ARM priorityValue8021Action_SMB).
           # used by: os_configuration, deployment
           smb_priority: 0
+          # Share of the link reserved for SMB Direct storage traffic, 1 to 100 percent (ARM bandwidthPercentage_SMB).
           # used by: os_configuration, deployment
           smb_bandwidth_percent: 1
+        # Physical adapter property overrides (ARM adapterPropertyOverrides: jumboPacket, networkDirect, networkDirectTechnology).
         # used by: os_configuration
         adapter:
+          # Value of the adapter's JumboPacket property in bytes: 1514 (standard frame), 4088 or 9014 (jumbo).
           # one of: 1514 | 4088 | 9014; used by: os_configuration, deployment
           jumbo_packet: 1514
+          # RDMA (Network Direct) on the adapters of this intent. true is sent to ARM as networkDirect 'Enabled', false as 'Disabled'.
           # used by: os_configuration, deployment
           network_direct: false
+          # RDMA technology of the adapters: iwarp, roce_v2 (RoCEv2) or roce (RoCE, version 1).
           # one of: iwarp | roce | roce_v2; used by: os_configuration, deployment
           network_direct_technology: "iwarp"
+        # Virtual switch overrides of the intent's switch-embedded team (ARM virtualSwitchConfigurationOverrides).
         # used by: os_configuration
         virtual_switch:
+          # SR-IOV on the intent's virtual switch (ARM enableIov).
           # used by: os_configuration, deployment
           enable_iov: false
+          # Load balancing of the switch-embedded team: dynamic or hyper_v_port (ARM loadBalancingAlgorithm 'Dynamic' or 'HyperVPort').
           # one of: dynamic | hyper_v_port; used by: os_configuration, deployment
           load_balancing_algorithm: "dynamic"
   # Storage networks (Storage Spaces Direct).

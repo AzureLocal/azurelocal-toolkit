@@ -73,10 +73,12 @@
           "description": "Azure region, for example eastus. Simplified provisioning works only in eastus in the preview."
         },
         "subscription_id": {
-          "$ref": "#/$defs/guid"
+          "$ref": "#/$defs/guid",
+          "description": "Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_id names another one. Read it with (Get-AzContext).Subscription.Id."
         },
         "resource_group": {
-          "$ref": "#/$defs/resource_group"
+          "$ref": "#/$defs/resource_group",
+          "description": "Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses). The Azure Local resource provider needs the Azure Connected Machine Resource Manager role on it; the ZTP template assigns that role."
         }
       }
     },

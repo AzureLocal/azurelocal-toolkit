@@ -55,17 +55,20 @@
       "additionalProperties": false,
       "properties": {
         "tenant_id": {
-          "$ref": "#/$defs/guid"
+          "$ref": "#/$defs/guid",
+          "description": "Microsoft Entra tenant ID (GUID) of the subscription. Read it with (Get-AzContext).Tenant.Id or from the Microsoft Entra ID overview page in the Azure portal."
         },
         "location": {
           "$ref": "#/$defs/azure_region",
           "description": "Azure region, for example eastus. Simplified provisioning works only in eastus in the preview."
         },
         "subscription_id": {
-          "$ref": "#/$defs/guid"
+          "$ref": "#/$defs/guid",
+          "description": "Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_id names another one. Read it with (Get-AzContext).Subscription.Id."
         },
         "resource_group": {
-          "$ref": "#/$defs/resource_group"
+          "$ref": "#/$defs/resource_group",
+          "description": "Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses). The Azure Local resource provider needs the Azure Connected Machine Resource Manager role on it; the ZTP template assigns that role."
         },
         "automation_identity": {
           "description": "The identity that runs automation with no one signed in (pipelines, ZTP, the ARM deployment).",
@@ -73,6 +76,7 @@
           "additionalProperties": false,
           "properties": {
             "type": {
+              "description": "The kind of identity that runs the automation: a managed identity (preferred, no secret to keep) or a service principal.",
               "enum": [
                 "managed_identity",
                 "service_principal"
@@ -83,13 +87,16 @@
               "type": "string"
             },
             "client_id": {
-              "$ref": "#/$defs/guid"
+              "$ref": "#/$defs/guid",
+              "description": "Client (application) ID of the identity (GUID). Not a secret."
             },
             "subscription_id": {
-              "$ref": "#/$defs/guid"
+              "$ref": "#/$defs/guid",
+              "description": "Subscription (GUID) that holds the identity."
             },
             "resource_group": {
-              "$ref": "#/$defs/resource_group"
+              "$ref": "#/$defs/resource_group",
+              "description": "Resource group that holds the identity."
             }
           }
         }
@@ -103,13 +110,16 @@
         "additionalProperties": false,
         "properties": {
           "name": {
-            "$ref": "#/$defs/key_vault_name"
+            "$ref": "#/$defs/key_vault_name",
+            "description": "Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens."
           },
           "subscription_id": {
-            "$ref": "#/$defs/guid"
+            "$ref": "#/$defs/guid",
+            "description": "Subscription (GUID) that holds the vault."
           },
           "resource_group": {
-            "$ref": "#/$defs/resource_group"
+            "$ref": "#/$defs/resource_group",
+            "description": "Resource group that holds the vault."
           },
           "purpose": {
             "description": "What the vault holds, for example management, deployment or backup.",

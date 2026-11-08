@@ -55,12 +55,16 @@ nodes:
     # Serial number (Dell service tag).
     # when scenario.os_install is simplified; used by: ztp, discovery
     serial_number: "SERIAL01"
+    # The baseboard management controller (BMC) of the machine: address, type and login.
     # when scenario.os_install is simplified
     bmc:
+      # IPv4 address of the BMC (iDRAC, iLO, XCC).
       # when scenario.os_install is simplified; used by: ztp, discovery
       ip_address: "198.51.100.11"
+      # Kind of BMC: idrac (Dell), ilo (HPE), xcc (Lenovo) or other.
       # one of: idrac | ilo | xcc | other; used by: ztp, discovery
       type: "idrac"
+      # BMC account name.
       # used by: ztp, discovery
       username: "example"
       # A Key Vault secret reference: keyvault://<vault>/<secret>.

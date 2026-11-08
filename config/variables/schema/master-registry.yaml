@@ -105,7 +105,7 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.4"
+  version: "5.0.5"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.1"
   last_updated: "2026-11-08"
@@ -114,6 +114,10 @@ _metadata:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-08"
+      version: "5.0.5"
+      change: "Docs and consistency pass: networking.intents[].overrides and about 70 undescribed infrastructure.yml variables now have descriptions with the Learn 2610 values (adapter overrides: jumbo packet 1514, 4088 or 9014; RDMA technology iWARP, RoCEv2 or RoCE; network direct sent to ARM as Enabled or Disabled); the legacy jumbo_packet_size, jumbo_frames_mtu, network_direct_* and azl_storage_rdma_* variables take only the values Learn lists and are deprecated in favour of networking.intents[].overrides.adapter.*; the sonar parameter names lose their leading hyphen so Test-ToolParameterRegistration passes for sonar; stale uncommitted markers removed; the env vars of the Azure DevOps and GitLab OS configuration pipelines are registered"
+      reason: "Registry first: every value, default and description in the generated schema, templates and VARIABLES.md must match Microsoft Learn 2610 and the code that reads it"
     - date: "2026-11-08"
       version: "5.0.4"
       change: "tools.sonar: config key verificationEventsPath, the Verification events feed (precluster-verification-events.jsonl, schema 1: RunStarted, Check, RunCompleted) and the Verification monitor value of -Monitor and the monitor key."
@@ -5726,28 +5730,33 @@ networking:
           # Adapter Property Overrides (Microsoft ARM parameter: adapterPropertyOverrides)
           jumbo_packet_size:
             type: integer
-            description: "Jumbo packet (MTU) size (ARM parameter: adapterPropertyOverrides.jumboPacket)"
+            description: "Jumbo packet size of the adapter's JumboPacket property (ARM parameter: adapterPropertyOverrides.jumboPacket, sent as a string). Allowed values 1514, 4088 and 9014 only; any other number is not a value the property takes. 9014 belongs to the storage intent (RDMA); an intent without storage traffic keeps the default 1514. Legacy 4.x name, read by no tool: infrastructure.yml uses networking.intents[].overrides.adapter.jumbo_packet."
             required: false
-            minimum: 1500
-            maximum: 9014
-            default: 9014
+            allowedValues: [1514, 4088, 9014]
             example: 9014
+            deprecated: true
+            replaced_by: "networking.intents[].overrides.adapter.jumbo_packet"
       
           network_direct_enabled:
             type: boolean
-            description: "Enable RDMA/NetworkDirect (ARM parameter: adapterPropertyOverrides.networkDirect)"
+            description: "Enable RDMA/NetworkDirect (ARM parameter: adapterPropertyOverrides.networkDirect, sent as 'Enabled' or 'Disabled'). On for the storage intent, off for an intent without storage traffic. Legacy 4.x name, read by no tool: infrastructure.yml uses networking.intents[].overrides.adapter.network_direct."
             required: false
             default: true
+            deprecated: true
+            replaced_by: "networking.intents[].overrides.adapter.network_direct"
       
           network_direct_technology:
             type: string
-            description: "RDMA technology (ARM parameter: adapterPropertyOverrides.networkDirectTechnology)"
+            description: "RDMA technology (ARM parameter: adapterPropertyOverrides.networkDirectTechnology). Learn lists the expected values iWARP, RoCEv2 and RoCE. Legacy 4.x name, read by no tool: infrastructure.yml uses networking.intents[].overrides.adapter.network_direct_technology (iwarp, roce, roce_v2)."
             required: false
             allowedValues:
               - iWARP
               - RoCEv2
+              - RoCE
             default: "RoCEv2"
             example: "RoCEv2"
+            deprecated: true
+            replaced_by: "networking.intents[].overrides.adapter.network_direct_technology"
   
       # Example configurations (for reference - not part of the schema)
       # Three complexity levels: minimal, standard, complete
@@ -6529,12 +6538,13 @@ networking:
         category: "networking"
         subcategory: "adapters"
         type: integer
-        description: "Jumbo frames MTU value for storage and RDMA traffic"
+        description: "Jumbo packet value of the storage adapters, the JumboPacket property: 1514, 4088 or 9014 bytes. Learn recommends a switch MTU of 9216 bytes for RDMA storage traffic. Legacy 4.x name, read by no tool: infrastructure.yml uses networking.intents[].overrides.adapter.jumbo_packet."
         required: false
-        minimum: 1500
-        maximum: 9014
+        allowedValues: [1514, 4088, 9014]
         default: 9014
         example: 9014
+        deprecated: true
+        replaced_by: "networking.intents[].overrides.adapter.jumbo_packet"
   # ═══════════════════════════════════════
   # HYBRID NETWORKING
   # ═══════════════════════════════════════
@@ -7031,12 +7041,14 @@ networking:
           additionalProperties: false
           properties:
             start:
+              description: "First address of the range the site hands out when networking.management.static_method is site (the site network setting Manual). Default: the lowest machine address."
               type: string
               format: ipv4
               required: true
               pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
               used_by: [ztp, os_configuration]
             end:
+              description: "Last address of the range the site hands out when networking.management.static_method is site. Default: the highest machine address."
               type: string
               format: ipv4
               required: true
@@ -7066,6 +7078,7 @@ networking:
           additionalProperties: false
           properties:
             start:
+              description: "First address of the DHCP pool of the provisioning network. The ZTP Device stage scans the range on TCP 20001 for machines that have no maintenance_address. Default: the start of the management subnet."
               type: string
               format: ipv4
               required: true
@@ -7073,6 +7086,7 @@ networking:
               example: "192.0.2.100"
               used_by: [ztp, os_configuration]
             end:
+              description: "Last address of the DHCP pool of the provisioning network (at most 4096 addresses from the start)."
               type: string
               format: ipv4
               required: true
@@ -7087,6 +7101,7 @@ networking:
           additionalProperties: false
           properties:
             start:
+              description: "First address of the pool the Azure Local infrastructure services use (ARM startingIPAddress): inside the management subnet, outside every machine address and the gateway."
               type: string
               format: ipv4
               required: true
@@ -7094,6 +7109,7 @@ networking:
               example: "192.0.2.20"
               used_by: [os_configuration, deployment]
             end:
+              description: "Last address of the infrastructure pool (ARM endingIPAddress). The pool holds at least 6 contiguous addresses."
               type: string
               format: ipv4
               required: true
@@ -7107,6 +7123,7 @@ networking:
       additionalProperties: false
       properties:
         subnet:
+          description: "Subnet of the out-of-band (BMC) network in CIDR form."
           used_by: [os_configuration]
           type: string
           format: cidr
@@ -7114,12 +7131,14 @@ networking:
           pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])$"
           example: "198.51.100.0/24"
         gateway:
+          description: "Default gateway of the out-of-band network."
           type: string
           format: ipv4
           required: false
           pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
           example: "198.51.100.1"
         vlan_id:
+          description: "VLAN ID of the out-of-band network; 0 for an untagged port."
           type: integer
           required: false
           minimum: 0
@@ -7144,12 +7163,14 @@ networking:
         additionalProperties: false
         properties:
           name:
+            description: "Name of the Network ATC intent, for example management_compute or storage. The same on every machine."
             type: string
             required: true
             minLength: 1
             example: "management"
             used_by: [os_configuration, deployment]
           traffic:
+            description: "Traffic types the intent carries: management, compute and storage (ARM trafficType). Management and storage can each be in one intent only; compute can be in any number."
             type: array
             required: true
             minItems: 1
@@ -7169,65 +7190,77 @@ networking:
             items:
               {"type":"string","minLength":1}
           overrides:
-            description: "Network ATC overrides. Leave out to keep Network ATC's defaults, which Microsoft recommends."
+            description: "Network ATC overrides. Leave out to keep Network ATC's defaults, which Microsoft recommends (Learn: 'We recommend that you use the default values'). The deployment sends the adapter overrides on every intent (ARM overrideAdapterProperty true) so Azure's network validation sees the value that is meant: storage intents get RDMA on and a 9014 packet, an intent without storage traffic gets RDMA off and the default 1514 packet. A value given here wins over that default."
             type: object
             required: false
             used_by: [os_configuration]
             additionalProperties: false
             properties:
               qos:
+                description: "Data Center Bridging (DCB) quality of service overrides for the storage traffic (ARM qosPolicyOverrides). Leave out to keep Network ATC's validated defaults: cluster priority 7, SMB priority 3, SMB bandwidth 50 percent."
                 type: object
                 required: false
                 used_by: [os_configuration]
                 additionalProperties: false
                 properties:
                   cluster_priority:
+                    description: "802.1p priority value of the cluster heartbeat traffic, 0 to 7 (ARM priorityValue8021Action_Cluster). Network ATC default 7. The physical switches must carry the same value."
                     type: integer
                     required: false
                     minimum: 0
                     maximum: 7
                     used_by: [os_configuration, deployment]
                   smb_priority:
+                    description: "802.1p priority value of the SMB Direct (RDMA storage) traffic, 0 to 7 (ARM priorityValue8021Action_SMB). Network ATC default 3. The physical switches must carry the same value."
                     type: integer
                     required: false
                     minimum: 0
                     maximum: 7
                     used_by: [os_configuration, deployment]
                   smb_bandwidth_percent:
+                    description: "Share of the link reserved for SMB Direct storage traffic, 1 to 100 percent (ARM bandwidthPercentage_SMB). Network ATC default 50."
                     type: integer
                     required: false
                     minimum: 1
                     maximum: 100
                     used_by: [os_configuration, deployment]
               adapter:
+                description: "Physical adapter property overrides (ARM adapterPropertyOverrides: jumboPacket, networkDirect, networkDirectTechnology). Microsoft: change these only on OEM guidance and validate them with the OEM."
                 type: object
                 required: false
                 used_by: [os_configuration]
                 additionalProperties: false
                 properties:
                   jumbo_packet:
+                    description: "Value of the adapter's JumboPacket property in bytes: 1514 (standard frame), 4088 or 9014 (jumbo). The ARM parameter takes it as a string. Leave out for the default this tool sets: 9014 on an intent that carries storage traffic, 1514 on any other. Learn recommends a maximum transmission unit of 9216 bytes on the physical switches for RDMA storage traffic and the same MTU end to end on hosts and switches; for an external SAN storage fabric use the MTU your storage vendor specifies."
+                    type: integer
                     required: false
                     enum: [1514, 4088, 9014]
                     used_by: [os_configuration, deployment]
                   network_direct:
+                    description: "RDMA (Network Direct) on the adapters of this intent. true is sent to ARM as networkDirect 'Enabled', false as 'Disabled'. Leave out for the default this tool sets: on for an intent that carries storage traffic, off for any other. Set false to disable RDMA, for example when you test in virtual machines."
                     type: boolean
                     required: false
                     used_by: [os_configuration, deployment]
                   network_direct_technology:
+                    description: "RDMA technology of the adapters: iwarp, roce_v2 (RoCEv2) or roce (RoCE, version 1). Sent to ARM as networkDirectTechnology 'iWARP', 'RoCEv2' or 'RoCE'; Learn's network considerations name RoCEv2 and iWARP, the ARM model also accepts RoCE. Used only when network_direct is on; leave out for RoCEv2. Set the technology your adapter vendor and switches are configured for."
                     required: false
                     enum: ["iwarp", "roce", "roce_v2"]
                     used_by: [os_configuration, deployment]
               virtual_switch:
+                description: "Virtual switch overrides of the intent's switch-embedded team (ARM virtualSwitchConfigurationOverrides). Leave out for Network ATC's defaults."
                 type: object
                 required: false
                 used_by: [os_configuration]
                 additionalProperties: false
                 properties:
                   enable_iov:
+                    description: "SR-IOV on the intent's virtual switch (ARM enableIov). Cannot be changed after the switch exists."
                     type: boolean
                     required: false
                     used_by: [os_configuration, deployment]
                   load_balancing_algorithm:
+                    description: "Load balancing of the switch-embedded team: dynamic or hyper_v_port (ARM loadBalancingAlgorithm 'Dynamic' or 'HyperVPort')."
                     required: false
                     enum: ["dynamic", "hyper_v_port"]
                     used_by: [os_configuration, deployment]
@@ -7378,6 +7411,7 @@ networking:
         additionalProperties: false
         properties:
           name:
+            description: "Name of the Azure Local logical network resource."
             type: string
             required: true
             example: "lnet-workloads"
@@ -7388,12 +7422,14 @@ networking:
             enum: ["management", "oob", "automation", "compute", "storage", "other"]
             example: "compute"
           vlan_id:
+            description: "VLAN ID of the logical network; 0 for untagged."
             type: integer
             required: false
             minimum: 0
             maximum: 4094
             example: 2204
           address_prefix:
+            description: "Address prefix of the logical network in CIDR form."
             used_by: [os_configuration]
             type: string
             format: cidr
@@ -7401,6 +7437,7 @@ networking:
             pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])$"
             example: "203.0.113.0/24"
           gateway:
+            description: "Default gateway of the logical network."
             type: string
             format: ipv4
             required: false
@@ -7418,12 +7455,14 @@ networking:
             additionalProperties: false
             properties:
               start:
+                description: "First address of the pool that virtual machines on this logical network draw from."
                 type: string
                 format: ipv4
                 required: true
                 pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
                 example: "203.0.113.100"
               end:
+                description: "Last address of that pool."
                 type: string
                 format: ipv4
                 required: true
@@ -7437,16 +7476,19 @@ networking:
       additionalProperties: false
       properties:
         proxy:
+          description: "Proxy server for the machines' outbound traffic, for scenario.outbound_path proxy or proxy_arc_gateway. The PowerShell tools of this repository do not send it yet."
           type: object
           required: false
           applies_when: "scenario.outbound_path is proxy or proxy_arc_gateway"
           additionalProperties: false
           properties:
             url:
+              description: "URL of the proxy server, for example http://proxy.example.test:3128."
               type: string
               required: true
               pattern: "^https?://"
             bypass:
+              description: "Addresses and names that go direct, not through the proxy."
               type: array
               required: false
               items:
@@ -7459,10 +7501,12 @@ networking:
           additionalProperties: false
           properties:
             name:
+              description: "Name of the Azure Arc gateway resource (Azure public cloud only; not supported with simplified machine provisioning in the preview)."
               used_by: [os_configuration]
               type: string
               required: true
             resource_group:
+              description: "Resource group of the Azure Arc gateway resource."
               used_by: [os_configuration]
               type: string
               format: resource_group
@@ -8291,12 +8335,15 @@ compute:
 
       azl_storage_rdma_technology:
         type: string
-        description: "RDMA technology for storage"
+        description: "RDMA technology for storage: RoCEv2, iWARP or RoCE (Learn: expected values 'iWARP', 'RoCEv2', 'RoCE'). Legacy 4.x name, read by no tool: infrastructure.yml uses networking.intents[].overrides.adapter.network_direct_technology."
         required: false
         allowedValues:
         - RoCEv2
         - iWARP
+        - RoCE
         default: "RoCEv2"
+        deprecated: true
+        replaced_by: "networking.intents[].overrides.adapter.network_direct_technology"
 
       # CLUSTER IP & DEPLOYMENT SETTINGS
       # ---------------------------------------------------------------------------
@@ -14381,6 +14428,7 @@ azure:
   additionalProperties: false
   properties:
     tenant_id:
+      description: "Microsoft Entra tenant ID (GUID) of the subscription. Read it with (Get-AzContext).Tenant.Id or from the Microsoft Entra ID overview page in the Azure portal."
       type: string
       format: guid
       required: true
@@ -14396,6 +14444,7 @@ azure:
       example: "eastus"
       used_by: [ztp, os_configuration, deployment, cicd_infra, monitoring]
     subscription_id:
+      description: "Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_id names another one. Read it with (Get-AzContext).Subscription.Id."
       type: string
       format: guid
       required: true
@@ -14403,6 +14452,7 @@ azure:
       example: "00000000-0000-0000-0000-000000000000"
       used_by: [ztp, os_configuration, deployment, cicd_infra, monitoring]
     resource_group:
+      description: "Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses). The Azure Local resource provider needs the Azure Connected Machine Resource Manager role on it; the ZTP template assigns that role."
       type: string
       format: resource_group
       required: true
@@ -14431,6 +14481,7 @@ azure:
       additionalProperties: false
       properties:
         type:
+          description: "The kind of identity that runs the automation: a managed identity (preferred, no secret to keep) or a service principal."
           required: true
           enum: ["managed_identity", "service_principal"]
           example: "managed_identity"
@@ -14442,12 +14493,14 @@ azure:
           example: "id-iic-cicd-01"
           used_by: [cicd_infra]
         client_id:
+          description: "Client (application) ID of the identity (GUID). Not a secret."
           type: string
           format: guid
           required: false
           pattern: "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
           used_by: [cicd_infra]
         subscription_id:
+          description: "Subscription (GUID) that holds the identity."
           type: string
           format: guid
           required: false
@@ -14455,6 +14508,7 @@ azure:
           example: "00000000-0000-0000-0000-000000000000"
           used_by: [cicd_infra]
         resource_group:
+          description: "Resource group that holds the identity."
           type: string
           format: resource_group
           required: false
@@ -14472,6 +14526,7 @@ key_vaults:
     additionalProperties: false
     properties:
       name:
+        description: "Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens."
         type: string
         format: key_vault_name
         required: true
@@ -14479,6 +14534,7 @@ key_vaults:
         example: "kv-iic-mgmt-01"
         used_by: [ztp, deployment, cicd_infra]
       subscription_id:
+        description: "Subscription (GUID) that holds the vault."
         type: string
         format: guid
         required: true
@@ -14486,6 +14542,7 @@ key_vaults:
         example: "00000000-0000-0000-0000-000000000000"
         used_by: [ztp, deployment, cicd_infra]
       resource_group:
+        description: "Resource group that holds the vault."
         type: string
         format: resource_group
         required: true
@@ -14527,6 +14584,7 @@ cluster:
       example: "validate"
       used_by: [deployment]
     witness:
+      description: "The quorum witness of the cluster. A two-machine cluster and a rack aware cluster need one (rule AZL-008). See cluster.witness.type."
       type: object
       required: true
       additionalProperties: false
@@ -14558,6 +14616,7 @@ cluster:
       additionalProperties: false
       properties:
         name:
+          description: "Name of the Key Vault the deployment creates for the cluster (ARM keyVaultName): 3 to 24 characters, letters, digits and hyphens, starting with a letter."
           used_by: [deployment]
           type: string
           format: key_vault_name
@@ -14571,6 +14630,7 @@ cluster:
           example: true
           used_by: [deployment]
         soft_delete_retention_days:
+          description: "Days a deleted secret or vault stays recoverable, 7 to 90."
           used_by: [deployment]
           type: integer
           required: false
@@ -14585,6 +14645,7 @@ cluster:
       additionalProperties: false
       properties:
         storage_account:
+          description: "Name of the storage account that receives the cluster diagnostic logs: 3 to 24 lowercase letters and digits."
           used_by: [deployment]
           type: string
           format: storage_account_name
@@ -14592,12 +14653,14 @@ cluster:
           pattern: "^[a-z0-9]{3,24}$"
           example: "stiicazl01diag"
         logs_retention_days:
+          description: "Days the diagnostic logs are kept."
           used_by: [deployment]
           type: integer
           required: false
           minimum: 0
           example: 30
         storage_account_type:
+          description: "SKU of the diagnostic storage account, for example Standard_LRS."
           used_by: [deployment]
           type: string
           required: false
@@ -14791,11 +14854,13 @@ nodes:
               example: "Example 25GbE NIC"
               used_by: [ztp, os_configuration, discovery]
             speed_gbps:
+              description: "Link speed of the port in Gbit/s, as the BMC reports it."
               type: number
               required: false
               minimum: 0
               used_by: [os_configuration]
             rdma:
+              description: "RDMA technology the port supports: none, iwarp, roce (RoCE) or roce_v2 (RoCEv2). A record of the hardware; what is sent to Azure is networking.intents[].overrides.adapter.network_direct_technology."
               required: false
               enum: ["none", "iwarp", "roce", "roce_v2"]
               used_by: [os_configuration]
@@ -14876,10 +14941,12 @@ nodes:
                   required: false
                   used_by: [os_configuration]
                 description:
+                  description: "Free text about the switch port, for example the cable label."
                   type: string
                   required: false
                   used_by: [os_configuration]
             notes:
+              description: "Free text about the port."
               type: string
               required: false
               used_by: [os_configuration]
@@ -14892,6 +14959,7 @@ nodes:
         used_by: [ztp, discovery]
         applies_when: "scenario.os_install is simplified"
       bmc:
+        description: "The baseboard management controller (BMC) of the machine: address, type and login. ZTP drives the machine through it over Redfish (virtual media, boot override, BIOS settings, power); hardware discovery reads the machine through it."
         type: object
         required: false
         applies_when: "scenario.os_install is simplified"
@@ -14899,6 +14967,7 @@ nodes:
         schema_extra: {"dependentRequired":{"username":["password"],"password":["username"]}}
         properties:
           ip_address:
+            description: "IPv4 address of the BMC (iDRAC, iLO, XCC). It must answer HTTPS (TCP 443) from the host that runs ZTP or discovery."
             type: string
             format: ipv4
             required: false
@@ -14907,11 +14976,13 @@ nodes:
             used_by: [ztp, discovery]
             applies_when: "scenario.os_install is simplified"
           type:
+            description: "Kind of BMC: idrac (Dell), ilo (HPE), xcc (Lenovo) or other. Only Dell iDRAC is proven end to end in this phase; BMC kinds other than idrac are planned."
             used_by: [ztp, discovery]
             required: false
             enum: ["idrac", "ilo", "xcc", "other"]
             example: "idrac"
           username:
+            description: "BMC account name. The plain name, or a keyvault:// reference."
             used_by: [ztp, discovery]
             type: string
             required: false
@@ -14925,10 +14996,12 @@ nodes:
             required: false
             pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
       rack:
+        description: "Rack identifier, for the as-built record."
         type: string
         required: false
         example: "R01"
       rack_position:
+        description: "Position in the rack, for example U12, for the as-built record."
         type: string
         required: false
         example: "24"
@@ -15046,11 +15119,13 @@ nodes:
                   minLength: 1
                   used_by: [ztp, deployment]
                 model:
+                  description: "Model of the host bus adapter, as the machine reports it."
                   type: string
                   required: false
                   example: "Example 32G FC HBA"
                   used_by: [ztp, deployment]
                 ports:
+                  description: "The ports of the host bus adapter."
                   type: array
                   required: false
                   minItems: 1
@@ -15113,18 +15188,22 @@ hardware:
       minimum: 1
       example: 1024
     gpu:
+      description: "GPUs fitted in every machine. Leave out when there are none."
       type: object
       required: false
       additionalProperties: false
       properties:
         enabled:
+          description: "true when the machines carry GPUs."
           type: boolean
           required: false
           example: false
         model:
+          description: "GPU model, as the machine reports it."
           type: string
           required: false
         count_per_node:
+          description: "Number of GPUs in each machine."
           type: integer
           required: false
           minimum: 0
@@ -15214,10 +15293,12 @@ hardware:
           type: string
           required: false
         manifest_source:
+          description: "Where the SBE manifest comes from (a URL or a file path). Only read when an SBE is asked for; the SBE is opt-in and never delivered by default."
           used_by: [deployment]
           type: string
           required: false
         manifest_creation_date:
+          description: "Creation date of the SBE manifest, as the manifest states it. Only read when an SBE is asked for."
           used_by: [deployment]
           type: string
           required: false
@@ -15259,15 +15340,18 @@ hardware:
         additionalProperties: false
         properties:
           label:
+            description: "Where the card sits, as the chassis labels it, for example Slot 6 or Embedded."
             type: string
             required: false
             example: "Onboard"
             used_by: [os_configuration]
           make:
+            description: "Manufacturer of the card."
             type: string
             required: false
             used_by: [os_configuration]
           model:
+            description: "Model of the card, as the machine reports it."
             type: string
             required: false
             used_by: [os_configuration]
@@ -15286,12 +15370,14 @@ hardware:
                   example: "Port1"
                   used_by: [os_configuration]
                 speed_gbps:
+                  description: "Port speed in Gbit/s."
                   type: number
                   required: false
                   minimum: 0
                   example: 25
                   used_by: [os_configuration]
                 rdma:
+                  description: "RDMA technology the port supports: none, iwarp, roce (RoCE) or roce_v2 (RoCEv2)."
                   required: false
                   enum: ["none", "iwarp", "roce", "roce_v2"]
                   example: "none"
@@ -15310,39 +15396,47 @@ hardware:
       additionalProperties: false
       properties:
         capacity:
+          description: "The capacity drives in each machine (Storage Spaces Direct)."
           type: object
           format: drive_group
           required: false
           additionalProperties: false
           properties:
             media:
+              description: "Media type of the capacity drives: nvme, ssd or hdd."
               required: false
               enum: ["nvme", "ssd", "hdd"]
               example: "nvme"
             count:
+              description: "Number of capacity drives in each machine."
               type: integer
               required: false
               minimum: 0
               example: 8
             size_tb:
+              description: "Size of one capacity drive in TB."
               type: number
               required: false
               minimum: 0
               example: 3.84
         cache:
+          description: "The cache drives in each machine (Storage Spaces Direct). Leave out when there is no cache tier."
           type: object
           format: drive_group
           required: false
           additionalProperties: false
           properties:
             media:
+              description: "Media type of the cache drives: nvme, ssd or hdd."
               required: false
               enum: ["nvme", "ssd", "hdd"]
             count:
+              description: "Number of cache drives in each machine."
               type: integer
               required: false
               minimum: 0
             size_tb:
+              description: "Size of one cache drive in TB."
               type: number
               required: false
               minimum: 0
@@ -15621,6 +15715,7 @@ provisioning:
           required: false
           enum: ["microsoft", "oem"]
         image_version:
+          description: "Build of the Azure Local OS image the ISO holds. No tool reads it yet; OS configuration reads the OS build from the machine."
           type: string
           required: false
     simplified:
@@ -15667,6 +15762,7 @@ provisioning:
           additionalProperties: false
           properties:
             username:
+              description: "Name of the local administrator the OS install creates on each machine (Learn: step 3, provision machines from Azure)."
               type: string
               required: true
               minLength: 1
@@ -15699,6 +15795,7 @@ provisioning:
           schema_extra: {"anyOf":[{"type":"object","required":["host"],"properties":{"host":true}},{"type":"object","required":["host_adapter"],"properties":{"host_adapter":true}}]}
           properties:
             name:
+              description: "Name of the SMB share ZTP creates over the folder of the virtual USB images: letters, digits and hyphens."
               type: string
               required: true
               pattern: "^[A-Za-z0-9-]+$"
@@ -18281,6 +18378,34 @@ tools:
                 OSCONFIG_SCRIPT: {"name":"OSCONFIG_SCRIPT","type":"string","declared_type":"string","default":"scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1","required":"N","read_at":"tk-integrate2/pipelines/github/os-configuration.yml:67","description":"[pipelines/github/os-configuration.yml] Workflow env"}
                 INFRASTRUCTURE_FILE: {"name":"INFRASTRUCTURE_FILE","type":"string","declared_type":"string","default":"${{ inputs.infrastructure_file }}","required":"N","read_at":"tk-integrate2/pipelines/github/os-configuration.yml:32","description":"[pipelines/github/os-configuration.yml] Workflow env"}
                 HANDOFF_PATH: {"name":"HANDOFF_PATH","type":"string","declared_type":"string","default":"${{ inputs.handoff_path }}","required":"N","read_at":"tk-integrate2/pipelines/github/os-configuration.yml:36","description":"[pipelines/github/os-configuration.yml] Workflow env"}
+            pipelines_azure_devops_os_configuration_yml:
+              type: object
+              area: "pipelines/azure-devops/os-configuration.yml"
+              properties:
+                OSC_INFRASTRUCTURE_FILE: {"name":"OSC_INFRASTRUCTURE_FILE","type":"string","declared_type":"string","default":"${{ parameters.infrastructure_file }}","required":"N","read_at":"pipelines/azure-devops/os-configuration.yml","description":"[pipelines/azure-devops/os-configuration.yml] Step env: path of the master infrastructure.yml, passed as -InfrastructureFile"}
+                OSC_HANDOFF_PATH: {"name":"OSC_HANDOFF_PATH","type":"string","declared_type":"string","default":"the ztp-handoff artifact folder, else parameters.handoff_path","required":"N","read_at":"pipelines/azure-devops/os-configuration.yml","description":"[pipelines/azure-devops/os-configuration.yml] Step env: handoff file or folder of *.ztp-handoff.json; none means an ISO-installed cluster with no handoff (-HandoffPath is then left out)"}
+                OSC_NODES: {"name":"OSC_NODES","type":"string","declared_type":"string","default":"${{ parameters.nodes }}","required":"N","read_at":"pipelines/azure-devops/os-configuration.yml","description":"[pipelines/azure-devops/os-configuration.yml] Step env: comma separated node names for -Node; all means every node"}
+                OSC_STEPS: {"name":"OSC_STEPS","type":"string","declared_type":"string","default":"${{ parameters.steps }}","required":"N","read_at":"pipelines/azure-devops/os-configuration.yml","description":"[pipelines/azure-devops/os-configuration.yml] Step env: comma separated steps for -Step; all means the steps of each node's method"}
+                OSC_TRANSPORT: {"name":"OSC_TRANSPORT","type":"string","declared_type":"string","default":"${{ parameters.transport }}","required":"N","read_at":"pipelines/azure-devops/os-configuration.yml","description":"[pipelines/azure-devops/os-configuration.yml] Step env: WinRM or ArcRunCommand, passed as -Transport"}
+                OSC_CLEAR_STORAGE: {"name":"OSC_CLEAR_STORAGE","type":"string","declared_type":"string","default":"${{ parameters.clear_storage }}","required":"N","read_at":"pipelines/azure-devops/os-configuration.yml","description":"[pipelines/azure-devops/os-configuration.yml] Step env: true passes -ClearStorage (the storage wipe); Apply then needs the wipe-list approval"}
+                OSC_APPROVED_BOOTSTRAP: {"name":"OSC_APPROVED_BOOTSTRAP","type":"string","declared_type":"string","default":"${{ parameters.approved_bootstrap }}","required":"N","read_at":"pipelines/azure-devops/os-configuration.yml","description":"[pipelines/azure-devops/os-configuration.yml] Step env: true passes -ApprovedBootstrap (one-time WinRM bootstrap over Arc, SMB or auto)"}
+                OSC_CONFIRM_WIPE_DEPLOYED_CLUSTER: {"name":"OSC_CONFIRM_WIPE_DEPLOYED_CLUSTER","type":"string","declared_type":"string","default":"${{ parameters.confirm_wipe_deployed_cluster }}","required":"N","read_at":"pipelines/azure-devops/os-configuration.yml","description":"[pipelines/azure-devops/os-configuration.yml] Step env: true passes -ConfirmWipeDeployedCluster (allow the wipe on a node that is already in a cluster)"}
+                OSC_PLAN_DIRECTORY: {"name":"OSC_PLAN_DIRECTORY","type":"string","declared_type":"string","default":"$(Pipeline.Workspace)/os-configuration-plan","required":"N","read_at":"pipelines/azure-devops/os-configuration.yml","description":"[pipelines/azure-devops/os-configuration.yml] Step env: where the Apply job finds the Plan job's wipe-list.txt and wipe-list.json"}
+                OSC_REPORT_DIRECTORY: {"name":"OSC_REPORT_DIRECTORY","type":"string","declared_type":"string","default":"$(Agent.TempDirectory)/osconfig-plan (Plan), osconfig-apply (Apply)","required":"N","read_at":"pipelines/azure-devops/os-configuration.yml","description":"[pipelines/azure-devops/os-configuration.yml] Step env: -ReportDirectory of the run, also the folder of os-configuration-events.jsonl"}
+                OSC_ARTIFACT_DIRECTORY: {"name":"OSC_ARTIFACT_DIRECTORY","type":"string","declared_type":"string","default":"$(Build.ArtifactStagingDirectory)/os-configuration-plan or os-configuration-report","required":"N","read_at":"pipelines/azure-devops/os-configuration.yml","description":"[pipelines/azure-devops/os-configuration.yml] Step env: folder the report is copied to for the published artifact"}
+            pipelines_gitlab_os_configuration_gitlab_ci_yml:
+              type: object
+              area: "pipelines/gitlab/os-configuration.gitlab-ci.yml"
+              properties:
+                OSCONFIG_SCRIPT: {"name":"OSCONFIG_SCRIPT","type":"string","declared_type":"string","default":"scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1","required":"N","read_at":"pipelines/gitlab/os-configuration.gitlab-ci.yml","description":"[pipelines/gitlab/os-configuration.gitlab-ci.yml] Variable: the wrapper script the jobs run"}
+                INFRASTRUCTURE_FILE: {"name":"INFRASTRUCTURE_FILE","type":"string","declared_type":"string","default":"config/infrastructure.yml","required":"N","read_at":"pipelines/gitlab/os-configuration.gitlab-ci.yml","description":"[pipelines/gitlab/os-configuration.gitlab-ci.yml] Variable: path of the master infrastructure.yml"}
+                HANDOFF_PATH: {"name":"HANDOFF_PATH","type":"string","declared_type":"string","default":"ztp-state","required":"N","read_at":"pipelines/gitlab/os-configuration.gitlab-ci.yml","description":"[pipelines/gitlab/os-configuration.gitlab-ci.yml] Variable: handoff file or folder of *.ztp-handoff.json"}
+                AZURE_AUTH: {"name":"AZURE_AUTH","type":"string","declared_type":"string","default":"managed-identity","required":"N","read_at":"pipelines/gitlab/os-configuration.gitlab-ci.yml","description":"[pipelines/gitlab/os-configuration.gitlab-ci.yml] Variable: managed-identity (the runner VM's identity) or oidc (a federated app registration)"}
+                AZURE_CLIENT_ID: {"name":"AZURE_CLIENT_ID","type":"string","declared_type":"string","default":"<client-id-of-the-managed-identity-or-app-registration>","required":"N","read_at":"pipelines/gitlab/os-configuration.gitlab-ci.yml","description":"[pipelines/gitlab/os-configuration.gitlab-ci.yml] Variable: client ID of the identity (not a secret)"}
+                AZURE_TENANT_ID: {"name":"AZURE_TENANT_ID","type":"string","declared_type":"string","default":"<tenant-id>","required":"N","read_at":"pipelines/gitlab/os-configuration.gitlab-ci.yml","description":"[pipelines/gitlab/os-configuration.gitlab-ci.yml] Variable: Microsoft Entra tenant ID"}
+                AZURE_SUBSCRIPTION_ID: {"name":"AZURE_SUBSCRIPTION_ID","type":"string","declared_type":"string","default":"<subscription-id>","required":"N","read_at":"pipelines/gitlab/os-configuration.gitlab-ci.yml","description":"[pipelines/gitlab/os-configuration.gitlab-ci.yml] Variable: subscription ID for az account set"}
+                REPORT_DIRECTORY: {"name":"REPORT_DIRECTORY","type":"string","declared_type":"string","default":"os-configuration-report","required":"N","read_at":"pipelines/gitlab/os-configuration.gitlab-ci.yml","description":"[pipelines/gitlab/os-configuration.gitlab-ci.yml] Variable: -ReportDirectory base; plan/ and apply/ are created below it"}
+                APPROVED_BOOTSTRAP: {"name":"APPROVED_BOOTSTRAP","type":"string","declared_type":"string","default":"false","required":"N","read_at":"pipelines/gitlab/os-configuration.gitlab-ci.yml","description":"[pipelines/gitlab/os-configuration.gitlab-ci.yml] Variable: true passes -ApprovedBootstrap"}
             pipelines_gitlab_stages_deploy_cicd_infra_yml:
               type: object
               area: "pipelines/gitlab/stages/deploy-cicd-infra.yml"
@@ -19351,12 +19476,12 @@ tools:
                 nodes_arcMachineName: {"name":"nodes[].arcMachineName","type":"string","declared_type":"string","default":"resolved (node name; arcMachineNameSet=false)","enum":["resource name without / \\ ? #"],"required":"no","read_at":"Config.ps1; AzurePoller.ps1 (all)","description":"Arc machine to follow. Master file: nodes[].arc_machine_name."}
                 nodes_seed: {"name":"nodes[].seed","type":"boolean","declared_type":"bool","default":"first node (with a warning)","enum":["true; false (at most one true)"],"required":"no","read_at":"Config.ps1 (all)","description":"The node whose logs are tailed."}
                 ztpEvents_path: {"name":"ztpEvents.path","type":"string","declared_type":"string","default":"none","enum":["non-empty text; relative to the config file"],"required":"no","read_at":"Config.ps1; ZtpEvents.ps1 Invoke-AzlSonarZtpEventLoop (all)","description":"ZTP event file (ztp-events.jsonl). Master file: provisioning.simplified.evidence_path + ztp-events.jsonl (simplified route only)."}
-                osConfigEventsPath: {"name":"osConfigEventsPath","type":"string","declared_type":"string","default":"none","enum":["non-empty text; relative to the config file; events worktree also accepts a folder of per-run files or a pattern like os-configuration-events*.jsonl"],"required":"no","read_at":"Config.ps1; OsConfigEvents.ps1 (all; folder/pattern wording in events, uncommitted)","description":"OS configuration event file from Invoke-AzureLocalOsConfiguration.ps1. Master file: evidence_path + os-configuration-events.jsonl."}
+                osConfigEventsPath: {"name":"osConfigEventsPath","type":"string","declared_type":"string","default":"none","enum":["non-empty text; relative to the config file; events worktree also accepts a folder of per-run files or a pattern like os-configuration-events*.jsonl"],"required":"no","read_at":"Config.ps1; OsConfigEvents.ps1 (all)","description":"OS configuration event file from Invoke-AzureLocalOsConfiguration.ps1. Master file: evidence_path + os-configuration-events.jsonl."}
                 armEventsPath: {"name":"armEventsPath","type":"string","declared_type":"string","default":"<temp>/azl-arm-<cluster.name>/arm-deployment-events.jsonl with the master file, else none","enum":["non-empty text; relative to the config file"],"required":"no","read_at":"Config.ps1; ArmEvents.ps1 Invoke-AzlSonarArmEventLoop; Infrastructure.ps1 (armmon)","description":"ARM Validate and Deploy event file from Invoke-AzureLocalArmDeployment.ps1 (-ReportDirectory moves it)."}
                 verificationEventsPath: {"name":"verificationEventsPath","type":"string","declared_type":"string","default":"<environment data>/arm-report/verification/live/precluster-verification-events.jsonl with the master file (environment data = provisioning.simplified.evidence_path, else <temp>/azl-arm-<cluster.name>), else none","enum":["non-empty text; relative to the config file; a folder is accepted (the file name is added)"],"required":"no","read_at":"Config.ps1; VerificationEvents.ps1 Invoke-AzlSonarVerificationEventLoop; Infrastructure.ps1 (verification)","description":"Event file of the pre-cluster verification gate (precluster-verification-events.jsonl, written next to report.json and summary.md in the gate report directory)."}
-                discoveryPath: {"name":"discoveryPath","type":"string","declared_type":"string","default":"none","enum":["non-empty text; a folder or one file; relative to the config file"],"required":"no","read_at":"Config.ps1; Discovery.ps1 (events, uncommitted)","description":"Folder written by the toolkit Invoke-HardwareDiscovery.ps1 -OutputPath (<ServiceTag>.json and discovery-summary.json). Master file: evidence_path + discovery."}
-                monitor: {"name":"monitor","type":"string","declared_type":"string","default":"Auto","enum":["Auto; Discovery; Provisioning; OsConfiguration; Verification; Validate; Deployment; Update; AddNode; Repair (case and dashes ignored)"],"required":"no","read_at":"Config.ps1; Monitor.ps1 Get-AzlSonarMonitorName/Get-AzlSonarMonitorPlan (events, uncommitted)","description":"Stage to watch alone; -Monitor overrides. Documented in sonar-events docs/config.md and run.md only."}
-                track: {"name":"track","type":"string","declared_type":"string","default":"auto","enum":["auto; deployment; update; add-node; repair (events also accepts health and maps it to auto with a warning)"],"required":"no","read_at":"Config.ps1; AzurePoller.ps1 (all; health in events, uncommitted)","description":"Which operation is followed after the deployment."}
+                discoveryPath: {"name":"discoveryPath","type":"string","declared_type":"string","default":"none","enum":["non-empty text; a folder or one file; relative to the config file"],"required":"no","read_at":"Config.ps1; Discovery.ps1","description":"Folder written by the toolkit Invoke-HardwareDiscovery.ps1 -OutputPath (<ServiceTag>.json and discovery-summary.json). Master file: evidence_path + discovery."}
+                monitor: {"name":"monitor","type":"string","declared_type":"string","default":"Auto","enum":["Auto; Discovery; Provisioning; OsConfiguration; Verification; Validate; Deployment; Update; AddNode; Repair (case and dashes ignored)"],"required":"no","read_at":"Config.ps1; Monitor.ps1 Get-AzlSonarMonitorName/Get-AzlSonarMonitorPlan","description":"Stage to watch alone; -Monitor overrides. Documented in sonar-events docs/config.md and run.md only."}
+                track: {"name":"track","type":"string","declared_type":"string","default":"auto","enum":["auto; deployment; update; add-node; repair (events also accepts health and maps it to auto with a warning)"],"required":"no","read_at":"Config.ps1; AzurePoller.ps1 (all)","description":"Which operation is followed after the deployment."}
                 updateTrack: {"name":"updateTrack","type":"string","declared_type":"string","default":"auto","enum":["auto; off"],"required":"no","read_at":"Config.ps1; AzurePoller.ps1 (all)","description":"off never reads the update resources."}
                 clusterPattern: {"name":"clusterPattern","type":"string","declared_type":"string","default":"Standard","enum":["Standard; RackAware"],"required":"no","read_at":"Config.ps1; DeploymentProfile.ps1 (all)","description":"Note in the Log access window about the deployment shape."}
                 architecture: {"name":"architecture","type":"string","declared_type":"string","default":"hyperconverged","enum":["hyperconverged; disaggregated"],"required":"no","read_at":"Config.ps1; DeploymentProfile.ps1 (all)","description":"Note for a SAN (disaggregated) deployment."}
@@ -19454,17 +19579,17 @@ tools:
               type: object
               area: "Discovery files"
               properties:
-                NodeName: {"name":"NodeName","type":"string","declared_type":"string","required":"yes","read_at":"Discovery.ps1 ConvertFrom-AzlSonarDiscoveryNodeFile / ConvertFrom-AzlSonarDiscoverySummary (events, uncommitted)","description":"Node name in <ServiceTag>.json and discovery-summary.json; matched to config nodes[].name. Registry has this concept as compute.cluster_nodes.items.properties.node_hostname (line 8689), not under this name/path."}
-                Identity_ServiceTag: {"name":"Identity.ServiceTag","type":"string","declared_type":"string","required":"no","read_at":"Discovery.ps1 (events, uncommitted)","description":"Dell service tag (summary: ServiceTag). Registry has this concept as compute.cluster_nodes.items.properties.node_service_tag (line 8714), not under this name/path."}
-                Identity_SerialNumber: {"name":"Identity.SerialNumber","type":"string","declared_type":"string","required":"no","read_at":"Discovery.ps1 (events, uncommitted)","description":"Serial number. Registry has this concept as compute.cluster_nodes.items.properties.node_serial_number (line 8708), not under this name/path."}
-                Identity_Model: {"name":"Identity.Model","type":"string","declared_type":"string","required":"no","read_at":"Discovery.ps1 (events, uncommitted)","description":"Server model (summary: Model). Registry has this concept as compute.cluster_nodes.items.properties.node_model (line 8702), not under this name/path."}
-                Identity_BiosVersion: {"name":"Identity.BiosVersion","type":"string","declared_type":"string","required":"no","read_at":"Discovery.ps1 (events, uncommitted)","description":"BIOS version. Registry has this concept as compute.cluster_nodes.items.properties.node_bios_version (line 8720), not under this name/path."}
-                Bmc_MacAddress: {"name":"Bmc.MacAddress","type":"string (mac)","declared_type":"string (MAC)","required":"no","read_at":"Discovery.ps1 ConvertTo-AzlSonarDiscoveryMac (events, uncommitted)","description":"BMC MAC (summary: BmcMac). Registry has this concept as compute.cluster_nodes.items.properties.node_mac_bmc (line 8758), not under this name/path."}
-                CollectedAt: {"name":"CollectedAt","type":"string","declared_type":"string","required":"no","read_at":"Discovery.ps1 (events, uncommitted)","description":"When the toolkit collected the node."}
-                NetworkPorts_Name_Slot_MacAddress_LinkUp_LinkSpeedMbps_AdapterModel: {"name":"NetworkPorts[].Name / Slot / MacAddress / LinkUp / LinkSpeedMbps / AdapterModel","type":"string; string; mac; bool; int; string","declared_type":"string; string; MAC; bool; int; string","default":"false (LinkUp)","required":"no","read_at":"Discovery.ps1 (events, uncommitted)","description":"Ports and MACs (summary: Ports[].Name / Mac / LinkUp)."}
-                Boss_Present_DriveCount_HasVirtualDisk_NeedsVirtualDisk: {"name":"Boss.Present / DriveCount / HasVirtualDisk / NeedsVirtualDisk","type":"bool; int; bool; bool","declared_type":"bool; int; bool; bool","default":"false; 0; false; false","required":"no","read_at":"Discovery.ps1 (events, uncommitted)","description":"BOSS card facts."}
-                Warnings: {"name":"Warnings","type":"array","declared_type":"list of strings (node file) or int (summary)","required":"no","read_at":"Discovery.ps1 (events, uncommitted)","description":"Discovery warnings."}
-                ManagementPort_ManagementMac_ManagementPortConfirmed_ManagementPortReason: {"name":"ManagementPort / ManagementMac / ManagementPortConfirmed / ManagementPortReason","type":"string; mac; bool; string","declared_type":"string; MAC; bool; string","default":"false (confirmed)","required":"no (summary file only)","read_at":"Discovery.ps1 ConvertFrom-AzlSonarDiscoverySummary (events, uncommitted)","description":"Suggested management port chosen by the toolkit."}
+                NodeName: {"name":"NodeName","type":"string","declared_type":"string","required":"yes","read_at":"Discovery.ps1 ConvertFrom-AzlSonarDiscoveryNodeFile / ConvertFrom-AzlSonarDiscoverySummary","description":"Node name in <ServiceTag>.json and discovery-summary.json; matched to config nodes[].name. Registry has this concept as compute.cluster_nodes.items.properties.node_hostname (line 8689), not under this name/path."}
+                Identity_ServiceTag: {"name":"Identity.ServiceTag","type":"string","declared_type":"string","required":"no","read_at":"Discovery.ps1","description":"Dell service tag (summary: ServiceTag). Registry has this concept as compute.cluster_nodes.items.properties.node_service_tag (line 8714), not under this name/path."}
+                Identity_SerialNumber: {"name":"Identity.SerialNumber","type":"string","declared_type":"string","required":"no","read_at":"Discovery.ps1","description":"Serial number. Registry has this concept as compute.cluster_nodes.items.properties.node_serial_number (line 8708), not under this name/path."}
+                Identity_Model: {"name":"Identity.Model","type":"string","declared_type":"string","required":"no","read_at":"Discovery.ps1","description":"Server model (summary: Model). Registry has this concept as compute.cluster_nodes.items.properties.node_model (line 8702), not under this name/path."}
+                Identity_BiosVersion: {"name":"Identity.BiosVersion","type":"string","declared_type":"string","required":"no","read_at":"Discovery.ps1","description":"BIOS version. Registry has this concept as compute.cluster_nodes.items.properties.node_bios_version (line 8720), not under this name/path."}
+                Bmc_MacAddress: {"name":"Bmc.MacAddress","type":"string (mac)","declared_type":"string (MAC)","required":"no","read_at":"Discovery.ps1 ConvertTo-AzlSonarDiscoveryMac","description":"BMC MAC (summary: BmcMac). Registry has this concept as compute.cluster_nodes.items.properties.node_mac_bmc (line 8758), not under this name/path."}
+                CollectedAt: {"name":"CollectedAt","type":"string","declared_type":"string","required":"no","read_at":"Discovery.ps1","description":"When the toolkit collected the node."}
+                NetworkPorts_Name_Slot_MacAddress_LinkUp_LinkSpeedMbps_AdapterModel: {"name":"NetworkPorts[].Name / Slot / MacAddress / LinkUp / LinkSpeedMbps / AdapterModel","type":"string; string; mac; bool; int; string","declared_type":"string; string; MAC; bool; int; string","default":"false (LinkUp)","required":"no","read_at":"Discovery.ps1","description":"Ports and MACs (summary: Ports[].Name / Mac / LinkUp)."}
+                Boss_Present_DriveCount_HasVirtualDisk_NeedsVirtualDisk: {"name":"Boss.Present / DriveCount / HasVirtualDisk / NeedsVirtualDisk","type":"bool; int; bool; bool","declared_type":"bool; int; bool; bool","default":"false; 0; false; false","required":"no","read_at":"Discovery.ps1","description":"BOSS card facts."}
+                Warnings: {"name":"Warnings","type":"array","declared_type":"list of strings (node file) or int (summary)","required":"no","read_at":"Discovery.ps1","description":"Discovery warnings."}
+                ManagementPort_ManagementMac_ManagementPortConfirmed_ManagementPortReason: {"name":"ManagementPort / ManagementMac / ManagementPortConfirmed / ManagementPortReason","type":"string; mac; bool; string","declared_type":"string; MAC; bool; string","default":"false (confirmed)","required":"no (summary file only)","read_at":"Discovery.ps1 ConvertFrom-AzlSonarDiscoverySummary","description":"Suggested management port chosen by the toolkit."}
             Verification_events:
               type: object
               area: "Verification events"
@@ -19608,42 +19733,42 @@ tools:
               type: object
               area: "scripts/Export-SonarBundle.ps1"
               properties:
-                Recording: {"name":"-Recording","type":"string","declared_type":"string","required":"yes (position 0)","read_at":"scripts/Export-SonarBundle.ps1 (all)","description":"Recording to turn into a timeline JSON and an HTML report."}
-                OutDirectory: {"name":"-OutDirectory","type":"string","declared_type":"string","required":"yes (position 1)","read_at":"scripts/Export-SonarBundle.ps1 (all)","description":"Where the bundle is written."}
-                Name: {"name":"-Name","type":"string","declared_type":"string","required":"no","read_at":"scripts/Export-SonarBundle.ps1 (all)","description":"Bundle name."}
-                MaxLogLines: {"name":"-MaxLogLines","type":"integer","declared_type":"int","default":"300","enum":["0 to 100000 (ValidateRange)"],"required":"no","read_at":"scripts/Export-SonarBundle.ps1 (all)","description":"Most warning and error log lines kept in the report."}
+                Recording: {"name":"Recording","type":"string","declared_type":"string","required":"yes (position 0)","read_at":"scripts/Export-SonarBundle.ps1 (all)","description":"Recording to turn into a timeline JSON and an HTML report."}
+                OutDirectory: {"name":"OutDirectory","type":"string","declared_type":"string","required":"yes (position 1)","read_at":"scripts/Export-SonarBundle.ps1 (all)","description":"Where the bundle is written."}
+                Name: {"name":"Name","type":"string","declared_type":"string","required":"no","read_at":"scripts/Export-SonarBundle.ps1 (all)","description":"Bundle name."}
+                MaxLogLines: {"name":"MaxLogLines","type":"integer","declared_type":"int","default":"300","enum":["0 to 100000 (ValidateRange)"],"required":"no","read_at":"scripts/Export-SonarBundle.ps1 (all)","description":"Most warning and error log lines kept in the report."}
             scripts_Protect_Recording_ps1:
               type: object
               area: "scripts/Protect-Recording.ps1"
               properties:
-                Path: {"name":"-Path","type":"string","declared_type":"string","required":"yes (position 0)","read_at":"scripts/Protect-Recording.ps1 (all)","description":"Recording to protect or verify."}
-                Destination: {"name":"-Destination","type":"string","declared_type":"string","required":"yes (Protect set)","read_at":"scripts/Protect-Recording.ps1 (all)","description":"Publishable copy to write."}
-                ExtraTerm: {"name":"-ExtraTerm","type":"string","declared_type":"string[]","default":"@()","required":"no","read_at":"scripts/Protect-Recording.ps1 (all)","description":"Extra strings that must never appear."}
-                MaxLogTextLength: {"name":"-MaxLogTextLength","type":"integer","declared_type":"int","default":"2000","enum":["0 to 10000000 (ValidateRange)"],"required":"no (Protect set)","read_at":"scripts/Protect-Recording.ps1 (all)","description":"Longest log text kept."}
-                MaxInfoLinesPerEvent: {"name":"-MaxInfoLinesPerEvent","type":"integer","declared_type":"int","default":"0","enum":["0 to 100000 (ValidateRange)"],"required":"no (Protect set)","read_at":"scripts/Protect-Recording.ps1 (all)","description":"Info lines kept per event (0 = no limit)."}
-                MaxIdleSeconds: {"name":"-MaxIdleSeconds","type":"double","declared_type":"double","default":"0","enum":["0 to 86400 (ValidateRange)"],"required":"no (Protect set)","read_at":"scripts/Protect-Recording.ps1 (all)","description":"Longest idle gap kept (0 = no limit)."}
-                MaxBytes: {"name":"-MaxBytes","type":"integer","declared_type":"long","default":"0","required":"no (Protect set)","read_at":"scripts/Protect-Recording.ps1 (all)","description":"Size cap of the output (0 = no limit)."}
-                VerifyOnly: {"name":"-VerifyOnly","type":"boolean","declared_type":"switch","default":"false","required":"yes (Verify set)","read_at":"scripts/Protect-Recording.ps1 (all)","description":"Only check a recording for leftover identifiers."}
-                Force: {"name":"-Force","type":"boolean","declared_type":"switch","default":"false","required":"no (Protect set)","read_at":"scripts/Protect-Recording.ps1 (all)","description":"Replace an existing destination."}
+                Path: {"name":"Path","type":"string","declared_type":"string","required":"yes (position 0)","read_at":"scripts/Protect-Recording.ps1 (all)","description":"Recording to protect or verify."}
+                Destination: {"name":"Destination","type":"string","declared_type":"string","required":"yes (Protect set)","read_at":"scripts/Protect-Recording.ps1 (all)","description":"Publishable copy to write."}
+                ExtraTerm: {"name":"ExtraTerm","type":"string","declared_type":"string[]","default":"@()","required":"no","read_at":"scripts/Protect-Recording.ps1 (all)","description":"Extra strings that must never appear."}
+                MaxLogTextLength: {"name":"MaxLogTextLength","type":"integer","declared_type":"int","default":"2000","enum":["0 to 10000000 (ValidateRange)"],"required":"no (Protect set)","read_at":"scripts/Protect-Recording.ps1 (all)","description":"Longest log text kept."}
+                MaxInfoLinesPerEvent: {"name":"MaxInfoLinesPerEvent","type":"integer","declared_type":"int","default":"0","enum":["0 to 100000 (ValidateRange)"],"required":"no (Protect set)","read_at":"scripts/Protect-Recording.ps1 (all)","description":"Info lines kept per event (0 = no limit)."}
+                MaxIdleSeconds: {"name":"MaxIdleSeconds","type":"double","declared_type":"double","default":"0","enum":["0 to 86400 (ValidateRange)"],"required":"no (Protect set)","read_at":"scripts/Protect-Recording.ps1 (all)","description":"Longest idle gap kept (0 = no limit)."}
+                MaxBytes: {"name":"MaxBytes","type":"integer","declared_type":"long","default":"0","required":"no (Protect set)","read_at":"scripts/Protect-Recording.ps1 (all)","description":"Size cap of the output (0 = no limit)."}
+                VerifyOnly: {"name":"VerifyOnly","type":"boolean","declared_type":"switch","default":"false","required":"yes (Verify set)","read_at":"scripts/Protect-Recording.ps1 (all)","description":"Only check a recording for leftover identifiers."}
+                Force: {"name":"Force","type":"boolean","declared_type":"switch","default":"false","required":"no (Protect set)","read_at":"scripts/Protect-Recording.ps1 (all)","description":"Replace an existing destination."}
             Start_AzlSonar_ps1:
               type: object
               area: "Start-AzlSonar.ps1"
               properties:
-                InfrastructureFile: {"name":"-InfrastructureFile","type":"string","declared_type":"string","required":"no (Live set; this or -ConfigPath, else guided setup)","read_at":"Start-AzlSonar.ps1 param block -> Start-AzlSonarServer (all)","description":"Path to the master infrastructure.yml (schema 5). Config is built in memory; file mtime checked every 60 s (a node set change logs a restart notice)."}
-                ConfigPath: {"name":"-ConfigPath","type":"string","declared_type":"string","required":"no (Live set; not with -InfrastructureFile)","read_at":"Start-AzlSonar.ps1 param block -> Read-AzlSonarConfig (all)","description":"Path to the cluster Sonar config file (JSON, comments allowed). With neither parameter Find-AzlSonarDefaultConfig looks for ./sonar.config.json then ./config/sonar.config.json."}
-                PollSeconds: {"name":"-PollSeconds","type":"integer","declared_type":"int","enum":["5 to 3600 (ValidateRange)"],"required":"no","read_at":"Start-AzlSonar.ps1; Read-AzlSonarConfig -PollSeconds (all)","description":"Seconds between Azure polls. Overrides config pollSeconds (and logs.pollSeconds when that is set). Effective default 20."}
-                Replay: {"name":"-Replay","type":"string","declared_type":"string","required":"yes (Replay set)","read_at":"Start-AzlSonar.ps1 -> New-AzlSonarReplayServer (all)","description":"Recording to play (.jsonl or .jsonl.gz). No Azure sign-in, no node access."}
-                Port: {"name":"-Port","type":"integer","declared_type":"int","default":"8642","enum":["1 to 65535 (ValidateRange)"],"required":"no","read_at":"Start-AzlSonar.ps1; Start-AzlSonarServer (all)","description":"Local port; the server binds http://localhost:<Port>/ only. There is no port key in the config file."}
-                NoBrowser: {"name":"-NoBrowser","type":"boolean","declared_type":"switch","default":"false","required":"no","read_at":"Start-AzlSonar.ps1 (all)","description":"Do not open the browser."}
-                NoAccessToken: {"name":"-NoAccessToken","type":"boolean","declared_type":"switch","default":"false","required":"no","read_at":"Start-AzlSonar.ps1 (all)","description":"Turns the per-start access token off (same as config accessToken false). Single-user machines only."}
-                Credential: {"name":"-Credential","type":"pscredential","declared_type":"pscredential","required":"no (Live set)","read_at":"Start-AzlSonar.ps1; Resolve-AzlSonarCredential (all)","description":"Account that reads the logs on the seed node. Always wins over credential.source."}
-                Record: {"name":"-Record","type":"string","declared_type":"string","required":"no (Live set)","read_at":"Start-AzlSonar.ps1; Start-AzlSonarServer (all)","description":"Append the run to this recording (JSON Lines). Overrides config recordPath."}
-                Publishable: {"name":"-Publishable","type":"boolean","declared_type":"switch","default":"false","required":"no (Live set; needs -Record or recordPath and a new file)","read_at":"Start-AzlSonar.ps1 (all)","description":"With -Record: replace every identifier with stable pseudonyms; the finished file is verified and a failed check renames it .NOT-PUBLISHABLE."}
-                ExtraTerm: {"name":"-ExtraTerm","type":"string","declared_type":"string[]","required":"no (Live set; with -Publishable)","read_at":"Start-AzlSonar.ps1 (all)","description":"Extra strings that must never appear in a publishable recording."}
-                Speed: {"name":"-Speed","type":"double","declared_type":"double","default":"60","enum":["0.1 to 3600 (ValidateRange)"],"required":"no (Replay set)","read_at":"Start-AzlSonar.ps1 (all)","description":"Replay: recorded seconds per real second (1, 30, 60, 240 are on the page)."}
-                StartAt: {"name":"-StartAt","type":"string","declared_type":"string","required":"no (Replay set)","read_at":"Start-AzlSonar.ps1 (all)","description":"Replay start: an offset (1:42:10, 90m, 1h30m), a UTC time inside the recording, or a phase (arc-registration, validation, deployment)."}
-                Autoplay: {"name":"-Autoplay","type":"boolean","declared_type":"switch","default":"false","required":"no (Replay set)","read_at":"Start-AzlSonar.ps1 (all)","description":"Replay: start playing at once instead of paused."}
-                Monitor: {"name":"-Monitor","type":"string","declared_type":"string","default":"Auto (config monitor, else Auto)","enum":["Auto; Discovery; Provisioning; OsConfiguration; Verification; Validate; Deployment; Update; AddNode; Repair (ValidateSet)"],"required":"no (Live set)","read_at":"Start-AzlSonar.ps1 param block -> Start-AzlSonarServer -Monitor (events, uncommitted)","description":"Which stage to watch alone; overrides config monitor. Discovery needs no Azure sign-in."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"no (Live set; this or -ConfigPath, else guided setup)","read_at":"Start-AzlSonar.ps1 param block -> Start-AzlSonarServer (all)","description":"Path to the master infrastructure.yml (schema 5). Config is built in memory; file mtime checked every 60 s (a node set change logs a restart notice)."}
+                ConfigPath: {"name":"ConfigPath","type":"string","declared_type":"string","required":"no (Live set; not with -InfrastructureFile)","read_at":"Start-AzlSonar.ps1 param block -> Read-AzlSonarConfig (all)","description":"Path to the cluster Sonar config file (JSON, comments allowed). With neither parameter Find-AzlSonarDefaultConfig looks for ./sonar.config.json then ./config/sonar.config.json."}
+                PollSeconds: {"name":"PollSeconds","type":"integer","declared_type":"int","enum":["5 to 3600 (ValidateRange)"],"required":"no","read_at":"Start-AzlSonar.ps1; Read-AzlSonarConfig -PollSeconds (all)","description":"Seconds between Azure polls. Overrides config pollSeconds (and logs.pollSeconds when that is set). Effective default 20."}
+                Replay: {"name":"Replay","type":"string","declared_type":"string","required":"yes (Replay set)","read_at":"Start-AzlSonar.ps1 -> New-AzlSonarReplayServer (all)","description":"Recording to play (.jsonl or .jsonl.gz). No Azure sign-in, no node access."}
+                Port: {"name":"Port","type":"integer","declared_type":"int","default":"8642","enum":["1 to 65535 (ValidateRange)"],"required":"no","read_at":"Start-AzlSonar.ps1; Start-AzlSonarServer (all)","description":"Local port; the server binds http://localhost:<Port>/ only. There is no port key in the config file."}
+                NoBrowser: {"name":"NoBrowser","type":"boolean","declared_type":"switch","default":"false","required":"no","read_at":"Start-AzlSonar.ps1 (all)","description":"Do not open the browser."}
+                NoAccessToken: {"name":"NoAccessToken","type":"boolean","declared_type":"switch","default":"false","required":"no","read_at":"Start-AzlSonar.ps1 (all)","description":"Turns the per-start access token off (same as config accessToken false). Single-user machines only."}
+                Credential: {"name":"Credential","type":"pscredential","declared_type":"pscredential","required":"no (Live set)","read_at":"Start-AzlSonar.ps1; Resolve-AzlSonarCredential (all)","description":"Account that reads the logs on the seed node. Always wins over credential.source."}
+                Record: {"name":"Record","type":"string","declared_type":"string","required":"no (Live set)","read_at":"Start-AzlSonar.ps1; Start-AzlSonarServer (all)","description":"Append the run to this recording (JSON Lines). Overrides config recordPath."}
+                Publishable: {"name":"Publishable","type":"boolean","declared_type":"switch","default":"false","required":"no (Live set; needs -Record or recordPath and a new file)","read_at":"Start-AzlSonar.ps1 (all)","description":"With -Record: replace every identifier with stable pseudonyms; the finished file is verified and a failed check renames it .NOT-PUBLISHABLE."}
+                ExtraTerm: {"name":"ExtraTerm","type":"string","declared_type":"string[]","required":"no (Live set; with -Publishable)","read_at":"Start-AzlSonar.ps1 (all)","description":"Extra strings that must never appear in a publishable recording."}
+                Speed: {"name":"Speed","type":"double","declared_type":"double","default":"60","enum":["0.1 to 3600 (ValidateRange)"],"required":"no (Replay set)","read_at":"Start-AzlSonar.ps1 (all)","description":"Replay: recorded seconds per real second (1, 30, 60, 240 are on the page)."}
+                StartAt: {"name":"StartAt","type":"string","declared_type":"string","required":"no (Replay set)","read_at":"Start-AzlSonar.ps1 (all)","description":"Replay start: an offset (1:42:10, 90m, 1h30m), a UTC time inside the recording, or a phase (arc-registration, validation, deployment)."}
+                Autoplay: {"name":"Autoplay","type":"boolean","declared_type":"switch","default":"false","required":"no (Replay set)","read_at":"Start-AzlSonar.ps1 (all)","description":"Replay: start playing at once instead of paused."}
+                Monitor: {"name":"Monitor","type":"string","declared_type":"string","default":"Auto (config monitor, else Auto)","enum":["Auto; Discovery; Provisioning; OsConfiguration; Verification; Validate; Deployment; Update; AddNode; Repair (ValidateSet)"],"required":"no (Live set)","read_at":"Start-AzlSonar.ps1 param block -> Start-AzlSonarServer -Monitor","description":"Which stage to watch alone; overrides config monitor. Discovery needs no Azure sign-in."}
         secret_names:
           type: object
           properties:
@@ -19673,7 +19798,7 @@ tools:
                 provisioning_route_routeSource_phase_status_readyForValidate_ztpComplete_nextStep_nodes: {"name":"provisioning.{route, routeSource, phase, status, readyForValidate, ztpComplete, nextStep, nodes}","type":"object","declared_type":"object","required":"always","read_at":"AzurePoller.ps1 (all)","description":"Provisioning section; route is simplified, oem-image or null."}
                 nodes_name_arcMachineName_arcMachineResourceId_arcSource_seed_arcStatus_lastStatusChange_agentVersion_registeredAt: {"name":"nodes[].{name, arcMachineName, arcMachineResourceId, arcSource, seed, arcStatus, lastStatusChange, agentVersion, registeredAt}","type":"object","declared_type":"object","default":"arcStatus Unknown","required":"always","read_at":"AzurePoller.ps1 (all)","description":"Machine cards."}
                 osConfiguration_arm_extensions_validation_deployment_edgeMachines_update_track_lag_environmentChecker_current_warnings_pollError_message_at: {"name":"osConfiguration / arm / extensions / validation / deployment / edgeMachines / update / track / lag / environmentChecker / current / warnings / pollError{message, at}","type":"object","declared_type":"object","required":"always","read_at":"AzurePoller.ps1; OsConfigEvents.ps1 Get-AzlSonarOsConfigurationState; ArmEvents.ps1 Get-AzlSonarArmState (arm in armmon); VerificationEvents.ps1 Get-AzlSonarVerificationState (verification) (all)","description":"Sections the page and the recorder consume; verification.{configured, hasData, status (notstarted|running|pass|fail|expired), verdict, run, counts, checks, categories, blockers, warnings} in verification; arm.{configured, hasData, status, state, activePhase, awaitingApproval, run, validation, deployment, hints, warnings, guide} in armmon."}
-                monitor_monitorPhases: {"name":"monitor / monitorPhases","type":"string; string","declared_type":"string; string[]","default":"Auto","required":"always","read_at":"Config.ps1 ConvertTo-AzlSonarPublicConfig; Monitor.ps1 (events, uncommitted)","description":"Served in /api/config so the page shows only the chosen stage."}
+                monitor_monitorPhases: {"name":"monitor / monitorPhases","type":"string; string","declared_type":"string; string[]","default":"Auto","required":"always","read_at":"Config.ps1 ConvertTo-AzlSonarPublicConfig; Monitor.ps1","description":"Served in /api/config so the page shows only the chosen stage."}
                 api_config_clusterName_cluster_resourceGroup_identityModel_provisioningRoute_nodes_name_seed_logs_paths_pollSeconds_profile_clusterPattern_architecture_internalDns_notes_startedAt_serverId_recording_file_webVersion: {"name":"/api/config: clusterName, cluster, resourceGroup, identityModel, provisioningRoute, nodes[{name, seed}], logs.paths, pollSeconds, profile{clusterPattern, architecture, internalDns, notes}, startedAt, serverId, recording.file, webVersion","type":"object","declared_type":"object","required":"always","read_at":"Config.ps1 ConvertTo-AzlSonarPublicConfig; Server.ps1 (all)","description":"Public config: no secrets, no secret names, no addresses."}
     ztp:
       type: object

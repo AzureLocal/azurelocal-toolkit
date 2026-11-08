@@ -105,17 +105,20 @@
       "additionalProperties": false,
       "properties": {
         "tenant_id": {
-          "$ref": "#/$defs/guid"
+          "$ref": "#/$defs/guid",
+          "description": "Microsoft Entra tenant ID (GUID) of the subscription. Read it with (Get-AzContext).Tenant.Id or from the Microsoft Entra ID overview page in the Azure portal."
         },
         "location": {
           "$ref": "#/$defs/azure_region",
           "description": "Azure region, for example eastus. Simplified provisioning works only in eastus in the preview."
         },
         "subscription_id": {
-          "$ref": "#/$defs/guid"
+          "$ref": "#/$defs/guid",
+          "description": "Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_id names another one. Read it with (Get-AzContext).Subscription.Id."
         },
         "resource_group": {
-          "$ref": "#/$defs/resource_group"
+          "$ref": "#/$defs/resource_group",
+          "description": "Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses). The Azure Local resource provider needs the Azure Connected Machine Resource Manager role on it; the ZTP template assigns that role."
         }
       }
     },
@@ -166,7 +169,124 @@
             "type": "array",
             "minItems": 1,
             "items": {
-              "$ref": "#/$defs/network_adapter"
+              "$ref": "#/$defs/network_adapter",
+              "properties": {
+                "name": {
+                  "description": "The adapter's name in the installed OS, or the slot label the OS uses, for example 'Embedded NIC 1' or 'Slot 3 Port 1'. networking.intents[].adapters and networking.storage.networks[].adapter name ports by it, so give a port the same name on every machine. Unique on the machine.",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "mac_address": {
+                  "$ref": "#/$defs/mac",
+                  "description": "The port's MAC. Tools find the port by it (simplified provisioning keys the management address to it; node preparation finds the adapter by it). Needed for a DHCP reservation, and for every management port with simplified provisioning."
+                },
+                "slot": {
+                  "description": "Where the port is, for example Embedded (a LOM), Slot 3 or OCP 1. From 5.4 azurelocal-ztp reads it: a management or provisioning port in slot Embedded makes it enable the embedded NICs in the BIOS (provisioning.simplified.enable_embedded_nics), and a slot that also holds a SAN adapter (nodes[].san.hbas[].slot) is never turned off.",
+                  "type": "string"
+                },
+                "model": {
+                  "description": "Card model, for example 'NVIDIA ConnectX-6 Dx'. Ports in one intent must be the same make, model and speed.",
+                  "type": "string"
+                },
+                "speed_gbps": {
+                  "description": "Link speed of the port in Gbit/s, as the BMC reports it.",
+                  "type": "number",
+                  "minimum": 0
+                },
+                "rdma": {
+                  "description": "RDMA technology the port supports: none, iwarp, roce (RoCE) or roce_v2 (RoCEv2). A record of the hardware; what is sent to Azure is networking.intents[].overrides.adapter.network_direct_technology.",
+                  "enum": [
+                    "none",
+                    "iwarp",
+                    "roce",
+                    "roce_v2"
+                  ]
+                },
+                "roles": {
+                  "description": "What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified provisioning reaches Azure through this port, before the machine is claimed; how it gets its address there is networking.management.provisioning_network), iscsi:a or iscsi:b (schema 5.3: a port that carries iSCSI traffic to the SAN's fabric A or B; give it a static address, prefix_length and VLAN, no gateway), or unused. A converged port lists several, for example [management, compute]. unused stands alone.",
+                  "type": "array",
+                  "minItems": 1,
+                  "uniqueItems": true,
+                  "items": {
+                    "enum": [
+                      "management",
+                      "compute",
+                      "storage",
+                      "provisioning",
+                      "iscsi:a",
+                      "iscsi:b",
+                      "unused"
+                    ]
+                  }
+                },
+                "ip_assignment": {
+                  "description": "How the installed OS gets this port's host address before deployment. For the management port this is the management address mode (config/variables/docs/infrastructure-file.md): dhcp_reservation is Mode A (Reserved, recommended); static is Mode B (Static with DHCP) or Mode C (Static without management DHCP). static: ip_address is set on the port (with simplified provisioning azurelocal-ztp's Device stage sets it by MAC before the OS install, the install resets every port to DHCP, and OS configuration sets it again by MAC; otherwise the operator or the toolkit). dhcp_reservation: the port keeps DHCP and the DHCP server reserves ip_address for mac_address. dhcp: the port keeps DHCP with no reservation, so its address can change (a warning). preconfigured: the port is already configured; tools leave it alone. none: no host address before deployment (Network ATC or the storage networks give it one, or it isn't used); node preparation turns DHCP off on it. Exactly one management port per machine owns the management address: the one with role management and an ip_assignment other than none.",
+                  "enum": [
+                    "static",
+                    "dhcp_reservation",
+                    "dhcp",
+                    "preconfigured",
+                    "none"
+                  ]
+                },
+                "ip_address": {
+                  "$ref": "#/$defs/ipv4",
+                  "description": "The host address. For the management port this is ARM physicalNodesSettings[].ipv4Address. Required with static. With dhcp_reservation give the reserved address: without it the tools can only check that the port has a DHCP address (a warning), and the deployment still needs it unless use_dhcp is true (a file with scope ztp doesn't deploy)."
+                },
+                "prefix_length": {
+                  "description": "Prefix length of ip_address. Default for the management port: from networking.management.subnet, which it must match.",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 32
+                },
+                "gateway": {
+                  "$ref": "#/$defs/ipv4",
+                  "description": "Default gateway on this port. Default for the management port: networking.management.gateway. Leave it out on every other port: validation fails when more than one physical adapter has a default gateway."
+                },
+                "dns_servers": {
+                  "description": "Default for the management port: networking.management.dns_servers, which it must match.",
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/ipv4"
+                  }
+                },
+                "vlan_id": {
+                  "description": "The VLAN of this port's traffic. With vlan_mode tagged the host tags it; with vlan_mode access the switch port is an access port in this VLAN and the host sends untagged frames (it records the switch side). Without vlan_mode, 0 or absent means untagged and anything else is tagged by the host.",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 4094
+                },
+                "vlan_mode": {
+                  "description": "access: the switch port is an access (untagged) port; the host doesn't tag, so simplified provisioning sends VLAN 0. tagged: the switch port is a trunk and the host tags vlan_id.",
+                  "enum": [
+                    "access",
+                    "tagged"
+                  ]
+                },
+                "switch_port": {
+                  "description": "Where the port is cabled.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "switch": {
+                      "description": "The switch, for example a network_devices[].hostname.",
+                      "type": "string"
+                    },
+                    "port": {
+                      "description": "The switch port, for example Ethernet1/11.",
+                      "type": "string"
+                    },
+                    "description": {
+                      "description": "Free text about the switch port, for example the cable label.",
+                      "type": "string"
+                    }
+                  }
+                },
+                "notes": {
+                  "description": "Free text about the port.",
+                  "type": "string"
+                }
+              }
             }
           },
           "storage_ips": {
@@ -211,6 +331,7 @@
                   "additionalProperties": false,
                   "properties": {
                     "ports": {
+                      "description": "The ports of the host bus adapter.",
                       "type": "array",
                       "minItems": 1,
                       "items": {
@@ -291,12 +412,15 @@
             "additionalProperties": false,
             "properties": {
               "label": {
+                "description": "Where the card sits, as the chassis labels it, for example Slot 6 or Embedded.",
                 "type": "string"
               },
               "make": {
+                "description": "Manufacturer of the card.",
                 "type": "string"
               },
               "model": {
+                "description": "Model of the card, as the machine reports it.",
                 "type": "string"
               },
               "ports": {
@@ -310,10 +434,12 @@
                       "type": "string"
                     },
                     "speed_gbps": {
+                      "description": "Port speed in Gbit/s.",
                       "type": "number",
                       "minimum": 0
                     },
                     "rdma": {
+                      "description": "RDMA technology the port supports: none, iwarp, roce (RoCE) or roce_v2 (RoCEv2).",
                       "enum": [
                         "none",
                         "iwarp",
@@ -387,10 +513,12 @@
               "additionalProperties": false,
               "properties": {
                 "start": {
-                  "$ref": "#/$defs/ipv4"
+                  "$ref": "#/$defs/ipv4",
+                  "description": "First address of the range the site hands out when networking.management.static_method is site (the site network setting Manual). Default: the lowest machine address."
                 },
                 "end": {
-                  "$ref": "#/$defs/ipv4"
+                  "$ref": "#/$defs/ipv4",
+                  "description": "Last address of the range the site hands out when networking.management.static_method is site. Default: the highest machine address."
                 }
               }
             },
@@ -416,10 +544,12 @@
               "additionalProperties": false,
               "properties": {
                 "start": {
-                  "$ref": "#/$defs/ipv4"
+                  "$ref": "#/$defs/ipv4",
+                  "description": "First address of the DHCP pool of the provisioning network. The ZTP Device stage scans the range on TCP 20001 for machines that have no maintenance_address. Default: the start of the management subnet."
                 },
                 "end": {
-                  "$ref": "#/$defs/ipv4"
+                  "$ref": "#/$defs/ipv4",
+                  "description": "Last address of the DHCP pool of the provisioning network (at most 4096 addresses from the start)."
                 }
               }
             },
@@ -429,10 +559,12 @@
               "additionalProperties": false,
               "properties": {
                 "start": {
-                  "$ref": "#/$defs/ipv4"
+                  "$ref": "#/$defs/ipv4",
+                  "description": "First address of the pool the Azure Local infrastructure services use (ARM startingIPAddress): inside the management subnet, outside every machine address and the gateway."
                 },
                 "end": {
-                  "$ref": "#/$defs/ipv4"
+                  "$ref": "#/$defs/ipv4",
+                  "description": "Last address of the infrastructure pool (ARM endingIPAddress). The pool holds at least 6 contiguous addresses."
                 }
               }
             }
@@ -444,7 +576,8 @@
           "additionalProperties": false,
           "properties": {
             "subnet": {
-              "$ref": "#/$defs/cidr"
+              "$ref": "#/$defs/cidr",
+              "description": "Subnet of the out-of-band (BMC) network in CIDR form."
             }
           }
         },
@@ -461,7 +594,115 @@
           "type": "array",
           "minItems": 1,
           "items": {
-            "$ref": "#/$defs/intent"
+            "$ref": "#/$defs/intent",
+            "properties": {
+              "name": {
+                "description": "Name of the Network ATC intent, for example management_compute or storage. The same on every machine.",
+                "type": "string",
+                "minLength": 1
+              },
+              "traffic": {
+                "description": "Traffic types the intent carries: management, compute and storage (ARM trafficType). Management and storage can each be in one intent only; compute can be in any number.",
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "management",
+                    "compute",
+                    "storage"
+                  ]
+                }
+              },
+              "adapters": {
+                "description": "Adapter names in the OS, the same on every machine. With nodes[].network_adapters (5.2) each name must be a port in every node's list. The first adapter matters: the management virtual adapter takes the MAC of the first adapter of the management intent, so that adapter owns the management address.",
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "overrides": {
+                "description": "Network ATC overrides. Leave out to keep Network ATC's defaults, which Microsoft recommends (Learn: 'We recommend that you use the default values'). The deployment sends the adapter overrides on every intent (ARM overrideAdapterProperty true) so Azure's network validation sees the value that is meant: storage intents get RDMA on and a 9014 packet, an intent without storage traffic gets RDMA off and the default 1514 packet. A value given here wins over that default.",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "qos": {
+                    "description": "Data Center Bridging (DCB) quality of service overrides for the storage traffic (ARM qosPolicyOverrides). Leave out to keep Network ATC's validated defaults: cluster priority 7, SMB priority 3, SMB bandwidth 50 percent.",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "cluster_priority": {
+                        "description": "802.1p priority value of the cluster heartbeat traffic, 0 to 7 (ARM priorityValue8021Action_Cluster). Network ATC default 7. The physical switches must carry the same value.",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 7
+                      },
+                      "smb_priority": {
+                        "description": "802.1p priority value of the SMB Direct (RDMA storage) traffic, 0 to 7 (ARM priorityValue8021Action_SMB). Network ATC default 3. The physical switches must carry the same value.",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 7
+                      },
+                      "smb_bandwidth_percent": {
+                        "description": "Share of the link reserved for SMB Direct storage traffic, 1 to 100 percent (ARM bandwidthPercentage_SMB). Network ATC default 50.",
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                      }
+                    }
+                  },
+                  "adapter": {
+                    "description": "Physical adapter property overrides (ARM adapterPropertyOverrides: jumboPacket, networkDirect, networkDirectTechnology). Microsoft: change these only on OEM guidance and validate them with the OEM.",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "jumbo_packet": {
+                        "description": "Value of the adapter's JumboPacket property in bytes: 1514 (standard frame), 4088 or 9014 (jumbo). The ARM parameter takes it as a string. Leave out for the default this tool sets: 9014 on an intent that carries storage traffic, 1514 on any other. Learn recommends a maximum transmission unit of 9216 bytes on the physical switches for RDMA storage traffic and the same MTU end to end on hosts and switches; for an external SAN storage fabric use the MTU your storage vendor specifies.",
+                        "type": "integer",
+                        "enum": [
+                          1514,
+                          4088,
+                          9014
+                        ]
+                      },
+                      "network_direct": {
+                        "description": "RDMA (Network Direct) on the adapters of this intent. true is sent to ARM as networkDirect 'Enabled', false as 'Disabled'. Leave out for the default this tool sets: on for an intent that carries storage traffic, off for any other. Set false to disable RDMA, for example when you test in virtual machines.",
+                        "type": "boolean"
+                      },
+                      "network_direct_technology": {
+                        "description": "RDMA technology of the adapters: iwarp, roce_v2 (RoCEv2) or roce (RoCE, version 1). Sent to ARM as networkDirectTechnology 'iWARP', 'RoCEv2' or 'RoCE'; Learn's network considerations name RoCEv2 and iWARP, the ARM model also accepts RoCE. Used only when network_direct is on; leave out for RoCEv2. Set the technology your adapter vendor and switches are configured for.",
+                        "enum": [
+                          "iwarp",
+                          "roce",
+                          "roce_v2"
+                        ]
+                      }
+                    }
+                  },
+                  "virtual_switch": {
+                    "description": "Virtual switch overrides of the intent's switch-embedded team (ARM virtualSwitchConfigurationOverrides). Leave out for Network ATC's defaults.",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "enable_iov": {
+                        "description": "SR-IOV on the intent's virtual switch (ARM enableIov). Cannot be changed after the switch exists.",
+                        "type": "boolean"
+                      },
+                      "load_balancing_algorithm": {
+                        "description": "Load balancing of the switch-embedded team: dynamic or hyper_v_port (ARM loadBalancingAlgorithm 'Dynamic' or 'HyperVPort').",
+                        "enum": [
+                          "dynamic",
+                          "hyper_v_port"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "storage": {
@@ -600,7 +841,8 @@
                 ]
               },
               "address_prefix": {
-                "$ref": "#/$defs/cidr"
+                "$ref": "#/$defs/cidr",
+                "description": "Address prefix of the logical network in CIDR form."
               }
             }
           }
@@ -616,10 +858,12 @@
               "additionalProperties": false,
               "properties": {
                 "name": {
+                  "description": "Name of the Azure Arc gateway resource (Azure public cloud only; not supported with simplified machine provisioning in the preview).",
                   "type": "string"
                 },
                 "resource_group": {
-                  "$ref": "#/$defs/resource_group"
+                  "$ref": "#/$defs/resource_group",
+                  "description": "Resource group of the Azure Arc gateway resource."
                 }
               }
             }

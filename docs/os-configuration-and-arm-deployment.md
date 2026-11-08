@@ -28,7 +28,7 @@ In the tables, **Checked** says what happens if the item is missing:
 
 The OS configuration plan reads each node through PowerShell remoting (WinRM) from a host that reaches the node's management address; nothing on the node changes. Azure Arc Run Command is the option you ask for with `-Transport ArcRunCommand` (see [Choosing the transport](#choosing-the-transport)). `-SpecOnly` reads no node and no Azure resource: it prints what each node should look like. The ARM plan (no `-Execute`) reads files only, unless you add `-Preflight`.
 
-Order: ZTP hand-off (or an ISO install), OS configuration (`Invoke-AzureLocalOsConfiguration.ps1 -Mode Plan`, review the plan and the wipe list, then `-Mode Apply`; it writes a JSON report), then ARM Validate, review, then ARM Deploy.
+Order: ZTP hand-off (or an ISO install), OS configuration (`Invoke-AzureLocalOsConfiguration.ps1 -Mode Plan`, review the plan and the wipe list, then `-Mode Apply`; it writes a JSON report), the pre-cluster verification gate (a read-only check that every machine is ready for a cluster; <!-- TODO(gate): link its page when the branch feat/pre-cluster-verification-gate is in main -->documented when it lands), then ARM Validate, review, then ARM Deploy, then day 2.
 
 ![Azure Local OS configuration: from the ZTP handoff through the management address modes and each step to ARM Validate and Deploy](./diagrams/os-configuration-flow.png)
 

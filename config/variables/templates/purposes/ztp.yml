@@ -44,13 +44,16 @@ tags:
 
 # The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
 azure:
+  # Microsoft Entra tenant ID (GUID) of the subscription.
   # required; used by: ztp, os_configuration, deployment, cicd_infra
   tenant_id: "00000000-0000-0000-0000-000000000000"
   # Azure region, for example eastus.
   # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
   location: "eastus"
+  # Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_i...
   # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
   subscription_id: "00000000-0000-0000-0000-000000000000"
+  # Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses).
   # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
   resource_group: "rg-iic-azl-01"
   # Object ID of the Azure Local resource provider's service principal (application 1412d89f-b8a8-4111-b4fd-e82905cbd85d) in the tenant.
@@ -60,10 +63,13 @@ azure:
 # Every Key Vault that a keyvault:// reference in this file names, with where it is.
 # used by: ztp, cicd_infra
 key_vaults:
+  # Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens.
   # required; used by: ztp, deployment, cicd_infra
   - name: "kv-iic-mgmt-01"
+    # Subscription (GUID) that holds the vault.
     # required; used by: ztp, deployment, cicd_infra
     subscription_id: "00000000-0000-0000-0000-000000000000"
+    # Resource group that holds the vault.
     # required; used by: ztp, deployment, cicd_infra
     resource_group: "rg-iic-mgmt-01"
     # What the vault holds, for example management, deployment or backup.
@@ -121,17 +127,22 @@ nodes:
     # Serial number (Dell service tag).
     # when scenario.os_install is simplified; used by: ztp, discovery
     serial_number: "SERIAL01"
+    # The baseboard management controller (BMC) of the machine: address, type and login.
     # when scenario.os_install is simplified
     bmc:
+      # IPv4 address of the BMC (iDRAC, iLO, XCC).
       # when scenario.os_install is simplified; used by: ztp, discovery
       ip_address: "198.51.100.11"
+      # Kind of BMC: idrac (Dell), ilo (HPE), xcc (Lenovo) or other.
       # one of: idrac | ilo | xcc | other; used by: ztp, discovery
       type: "idrac"
+      # BMC account name.
       # used by: ztp, discovery
       username: "example"
       # A Key Vault secret reference: keyvault://<vault>/<secret>.
       # used by: ztp, discovery
       password: "keyvault://kv-example-01/password"
+    # Position in the rack, for example U12, for the as-built record.
     # used by: ztp
     rack_position: "24"
     # Name of the machine's Arc resource (Microsoft.HybridCompute/machines).
@@ -172,6 +183,7 @@ nodes:
           # (since 5.4) 
           # used by: ztp, deployment
           bios_enabled_value: "example"
+          # Model of the host bus adapter, as the machine reports it.
           # used by: ztp, deployment
           model: "Example 32G FC HBA"
 
@@ -239,8 +251,10 @@ networking:
     # Simplified provisioning: the address range of the site's network setting (Microsoft.Edge/configurations/networkConfigurations ipv4.addressR...
     # used by: ztp, os_configuration
     site_ip_range:
+      # First address of the range the site hands out when networking.management.static_method is site (the site network setting Manual).
       # required; used by: ztp, os_configuration
       start: "192.0.2.10"
+      # Last address of the range the site hands out when networking.management.static_method is site.
       # required; used by: ztp, os_configuration
       end: "192.0.2.10"
     # Simplified provisioning: how the maintenance environment gets the address it reaches Azure with, on the ports with role provisioning, befor...
@@ -252,8 +266,10 @@ networking:
     # (since 5.3) 
     # used by: ztp, os_configuration
     provisioning_dhcp_range:
+      # First address of the DHCP pool of the provisioning network.
       # required; used by: ztp, os_configuration
       start: "192.0.2.100"
+      # Last address of the DHCP pool of the provisioning network (at most 4096 addresses from the start).
       # required; used by: ztp, os_configuration
       end: "192.0.2.199"
   # Time sources, as host names or addresses.
@@ -295,6 +311,7 @@ provisioning:
     # The local administrator that the provisioned OS gets.
     # required; used by: ztp
     admin:
+      # Name of the local administrator the OS install creates on each machine (Learn: step 3, provision machines from Azure).
       # required; used by: ztp
       username: "administrator"
       # At least 12 characters with lowercase, uppercase, a digit and a special character.
@@ -306,6 +323,7 @@ provisioning:
     # The SMB share the BMCs mount the images from.
     # required; used by: ztp
     media_share:
+      # Name of the SMB share ZTP creates over the folder of the virtual USB images: letters, digits and hyphens.
       # required; used by: ztp
       name: "ztp-virtual-usb"
       # The management host's address as the BMCs reach it.

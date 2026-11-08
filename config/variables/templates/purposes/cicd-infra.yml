@@ -26,37 +26,47 @@ tags:
 
 # The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
 azure:
+  # Microsoft Entra tenant ID (GUID) of the subscription.
   # required; used by: ztp, os_configuration, deployment, cicd_infra
   tenant_id: "00000000-0000-0000-0000-000000000000"
   # Azure region, for example eastus.
   # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
   location: "eastus"
+  # Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_i...
   # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
   subscription_id: "00000000-0000-0000-0000-000000000000"
+  # Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses).
   # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
   resource_group: "rg-iic-azl-01"
   # The identity that runs automation with no one signed in (pipelines, ZTP, the ARM deployment).
   # used by: deployment, cicd_infra
   automation_identity:
+    # The kind of identity that runs the automation: a managed identity (preferred, no secret to keep) or a service principal.
     # required; one of: managed_identity | service_principal; used by: cicd_infra
     type: "managed_identity"
     # Managed identity resource name, or the service principal's display name.
     # required; used by: cicd_infra
     name: "id-iic-cicd-01"
+    # Client (application) ID of the identity (GUID).
     # used by: cicd_infra
     client_id: "00000000-0000-0000-0000-000000000000"
+    # Subscription (GUID) that holds the identity.
     # used by: cicd_infra
     subscription_id: "00000000-0000-0000-0000-000000000000"
+    # Resource group that holds the identity.
     # used by: cicd_infra
     resource_group: "rg-iic-devops-01"
 
 # Every Key Vault that a keyvault:// reference in this file names, with where it is.
 # used by: ztp, cicd_infra
 key_vaults:
+  # Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens.
   # required; used by: ztp, deployment, cicd_infra
   - name: "kv-iic-mgmt-01"
+    # Subscription (GUID) that holds the vault.
     # required; used by: ztp, deployment, cicd_infra
     subscription_id: "00000000-0000-0000-0000-000000000000"
+    # Resource group that holds the vault.
     # required; used by: ztp, deployment, cicd_infra
     resource_group: "rg-iic-mgmt-01"
     # What the vault holds, for example management, deployment or backup.

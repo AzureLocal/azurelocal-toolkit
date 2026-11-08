@@ -42,13 +42,16 @@ scenario:
 
 # The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
 azure:
+  # Microsoft Entra tenant ID (GUID) of the subscription.
   # required; used by: ztp, os_configuration, deployment, cicd_infra
   tenant_id: "00000000-0000-0000-0000-000000000000"
   # Azure region, for example eastus.
   # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
   location: "eastus"
+  # Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_i...
   # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
   subscription_id: "00000000-0000-0000-0000-000000000000"
+  # Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses).
   # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
   resource_group: "rg-iic-azl-01"
 
@@ -91,8 +94,10 @@ nodes:
         # Card model, for example 'NVIDIA ConnectX-6 Dx'.
         # used by: ztp, os_configuration, discovery
         model: "Example 25GbE NIC"
+        # Link speed of the port in Gbit/s, as the BMC reports it.
         # used by: os_configuration
         speed_gbps: 0
+        # RDMA technology the port supports: none, iwarp, roce (RoCE) or roce_v2 (RoCEv2).
         # one of: none | iwarp | roce | roce_v2; used by: os_configuration
         rdma: "none"
         # What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified...
@@ -128,8 +133,10 @@ nodes:
           # The switch port, for example Ethernet1/11.
           # used by: os_configuration
           port: ""
+          # Free text about the switch port, for example the cable label.
           # used by: os_configuration
           description: ""
+        # Free text about the port.
         # used by: os_configuration
         notes: ""
     # Storage address on each storage network, in networking.storage.networks order, when networking.storage.auto_ip is false.
@@ -158,6 +165,7 @@ nodes:
       # The host bus adapters in this machine that reach the SAN: Fibre Channel HBAs, and from 5.4 iSCSI offload adapters. azurelocal-ztp reads the...
       # used by: ztp, deployment
       hbas:
+        # The ports of the host bus adapter.
         # used by: deployment
         - ports:
             # A Fibre Channel World Wide Port Name: 16 hexadecimal digits, as 8 colon-separated pairs (50:00:09:72:08:12:34:56) or without colons.
@@ -196,10 +204,13 @@ hardware:
   # The physical network cards in every machine, and what each port is for.
   # used by: os_configuration
   network_cards:
+    # Where the card sits, as the chassis labels it, for example Slot 6 or Embedded.
     # used by: os_configuration
     - label: "Onboard"
+      # Manufacturer of the card.
       # used by: os_configuration
       make: ""
+      # Model of the card, as the machine reports it.
       # used by: os_configuration
       model: ""
       # used by: os_configuration
@@ -207,8 +218,10 @@ hardware:
         # Adapter name in the OS, as the intents use it.
         # required; used by: os_configuration
         - name: "Port1"
+          # Port speed in Gbit/s.
           # used by: os_configuration
           speed_gbps: 25
+          # RDMA technology the port supports: none, iwarp, roce (RoCE) or roce_v2 (RoCEv2).
           # one of: none | iwarp | roce | roce_v2; used by: os_configuration
           rdma: "none"
           # unused, intent:<intent name>, cluster:a, cluster:b, iscsi:a or iscsi:b.
@@ -241,8 +254,10 @@ networking:
     # Simplified provisioning: the address range of the site's network setting (Microsoft.Edge/configurations/networkConfigurations ipv4.addressR...
     # used by: ztp, os_configuration
     site_ip_range:
+      # First address of the range the site hands out when networking.management.static_method is site (the site network setting Manual).
       # required; used by: ztp, os_configuration
       start: "192.0.2.10"
+      # Last address of the range the site hands out when networking.management.static_method is site.
       # required; used by: ztp, os_configuration
       end: "192.0.2.10"
     # Simplified provisioning: how the maintenance environment gets the address it reaches Azure with, on the ports with role provisioning, befor...
@@ -254,19 +269,24 @@ networking:
     # (since 5.3) 
     # used by: ztp, os_configuration
     provisioning_dhcp_range:
+      # First address of the DHCP pool of the provisioning network.
       # required; used by: ztp, os_configuration
       start: "192.0.2.100"
+      # Last address of the DHCP pool of the provisioning network (at most 4096 addresses from the start).
       # required; used by: ztp, os_configuration
       end: "192.0.2.199"
     # At least six contiguous addresses in the management subnet, outside the machines' addresses.
     # used by: os_configuration, deployment
     infrastructure_pool:
+      # First address of the pool the Azure Local infrastructure services use (ARM startingIPAddress): inside the management subnet, outside every...
       # required; used by: os_configuration, deployment
       start: "192.0.2.20"
+      # Last address of the infrastructure pool (ARM endingIPAddress).
       # required; used by: os_configuration, deployment
       end: "192.0.2.29"
   # The out-of-band network of the BMCs.
   oob:
+    # Subnet of the out-of-band (BMC) network in CIDR form.
     # used by: os_configuration
     subnet: "198.51.100.0/24"
   # Time sources, as host names or addresses.
@@ -275,8 +295,10 @@ networking:
   # Network ATC intents.
   # used by: os_configuration, deployment
   intents:
+    # Name of the Network ATC intent, for example management_compute or storage.
     # required; used by: os_configuration, deployment
     - name: "management"
+      # Traffic types the intent carries: management, compute and storage (ARM trafficType).
       # required; used by: os_configuration, deployment
       traffic: ["management"]
       # Adapter names in the OS, the same on every machine.
@@ -285,26 +307,37 @@ networking:
       # Network ATC overrides.
       # used by: os_configuration
       overrides:
+        # Data Center Bridging (DCB) quality of service overrides for the storage traffic (ARM qosPolicyOverrides).
         # used by: os_configuration
         qos:
+          # 802.1p priority value of the cluster heartbeat traffic, 0 to 7 (ARM priorityValue8021Action_Cluster).
           # used by: os_configuration, deployment
           cluster_priority: 0
+          # 802.1p priority value of the SMB Direct (RDMA storage) traffic, 0 to 7 (ARM priorityValue8021Action_SMB).
           # used by: os_configuration, deployment
           smb_priority: 0
+          # Share of the link reserved for SMB Direct storage traffic, 1 to 100 percent (ARM bandwidthPercentage_SMB).
           # used by: os_configuration, deployment
           smb_bandwidth_percent: 1
+        # Physical adapter property overrides (ARM adapterPropertyOverrides: jumboPacket, networkDirect, networkDirectTechnology).
         # used by: os_configuration
         adapter:
+          # Value of the adapter's JumboPacket property in bytes: 1514 (standard frame), 4088 or 9014 (jumbo).
           # one of: 1514 | 4088 | 9014; used by: os_configuration, deployment
           jumbo_packet: 1514
+          # RDMA (Network Direct) on the adapters of this intent. true is sent to ARM as networkDirect 'Enabled', false as 'Disabled'.
           # used by: os_configuration, deployment
           network_direct: false
+          # RDMA technology of the adapters: iwarp, roce_v2 (RoCEv2) or roce (RoCE, version 1).
           # one of: iwarp | roce | roce_v2; used by: os_configuration, deployment
           network_direct_technology: "iwarp"
+        # Virtual switch overrides of the intent's switch-embedded team (ARM virtualSwitchConfigurationOverrides).
         # used by: os_configuration
         virtual_switch:
+          # SR-IOV on the intent's virtual switch (ARM enableIov).
           # used by: os_configuration, deployment
           enable_iov: false
+          # Load balancing of the switch-embedded team: dynamic or hyper_v_port (ARM loadBalancingAlgorithm 'Dynamic' or 'HyperVPort').
           # one of: dynamic | hyper_v_port; used by: os_configuration, deployment
           load_balancing_algorithm: "dynamic"
   # Storage networks (Storage Spaces Direct).
@@ -367,6 +400,7 @@ networking:
     # What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote mana...
     # one of: management | oob | automation | compute | storage | other; used by: os_configuration
     - purpose: "compute"
+      # Address prefix of the logical network in CIDR form.
       # used by: os_configuration
       address_prefix: "203.0.113.0/24"
   # Details of scenario.outbound_path.
@@ -375,8 +409,10 @@ networking:
     # The Arc gateway resource, in the same subscription as the machines.
     # when scenario.outbound_path is arc_gateway or proxy_arc_gateway
     arc_gateway:
+      # Name of the Azure Arc gateway resource (Azure public cloud only; not supported with simplified machine provisioning in the preview).
       # required; used by: os_configuration
       name: ""
+      # Resource group of the Azure Arc gateway resource.
       # used by: os_configuration
       resource_group: ""
 

@@ -86,13 +86,16 @@ tags:
 
 # The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
 azure:
+  # Microsoft Entra tenant ID (GUID) of the subscription.
   # required; used by: ztp, os_configuration, deployment, cicd_infra
   tenant_id: "00000000-0000-0000-0000-000000000000"
   # Azure region, for example eastus.
   # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
   location: "eastus"
+  # Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_i...
   # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
   subscription_id: "00000000-0000-0000-0000-000000000000"
+  # Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses).
   # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
   resource_group: "rg-iic-azl-01"
   # Object ID of the Azure Local resource provider's service principal (application 1412d89f-b8a8-4111-b4fd-e82905cbd85d) in the tenant.
@@ -104,25 +107,32 @@ azure:
   # The identity that runs automation with no one signed in (pipelines, ZTP, the ARM deployment).
   # used by: deployment, cicd_infra
   automation_identity:
+    # The kind of identity that runs the automation: a managed identity (preferred, no secret to keep) or a service principal.
     # required; one of: managed_identity | service_principal; used by: cicd_infra
     type: "managed_identity"
     # Managed identity resource name, or the service principal's display name.
     # required; used by: cicd_infra
     name: "id-iic-cicd-01"
+    # Client (application) ID of the identity (GUID).
     # used by: cicd_infra
     client_id: "00000000-0000-0000-0000-000000000000"
+    # Subscription (GUID) that holds the identity.
     # used by: cicd_infra
     subscription_id: "00000000-0000-0000-0000-000000000000"
+    # Resource group that holds the identity.
     # used by: cicd_infra
     resource_group: "rg-iic-devops-01"
 
 # Every Key Vault that a keyvault:// reference in this file names, with where it is.
 # used by: ztp, cicd_infra
 key_vaults:
+  # Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens.
   # required; used by: ztp, deployment, cicd_infra
   - name: "kv-iic-mgmt-01"
+    # Subscription (GUID) that holds the vault.
     # required; used by: ztp, deployment, cicd_infra
     subscription_id: "00000000-0000-0000-0000-000000000000"
+    # Resource group that holds the vault.
     # required; used by: ztp, deployment, cicd_infra
     resource_group: "rg-iic-mgmt-01"
     # What the vault holds, for example management, deployment or backup.
@@ -140,6 +150,7 @@ cluster:
   # ARM deploymentMode: validate runs the checks only; deploy deploys.
   # one of: validate | deploy; used by: deployment
   deployment_mode: "validate"
+  # The quorum witness of the cluster.
   # required
   witness:
     # cloud (an Azure Storage account), file_share (disconnected operations), or none.
@@ -153,20 +164,25 @@ cluster:
   # The Key Vault the deployment uses for the instance's secrets (one per instance).
   # required; used by: deployment
   key_vault:
+    # Name of the Key Vault the deployment creates for the cluster (ARM keyVaultName): 3 to 24 characters, letters, digits and hyphens, starting...
     # required; used by: deployment
     name: "kv-iic-azl-01"
     # ARM createNewKeyVault.
     # used by: deployment
     create_new: true
+    # Days a deleted secret or vault stays recoverable, 7 to 90.
     # used by: deployment
     soft_delete_retention_days: 30
   # Key Vault audit logs.
   # used by: deployment
   diagnostics:
+    # Name of the storage account that receives the cluster diagnostic logs: 3 to 24 lowercase letters and digits.
     # used by: deployment
     storage_account: "stiicazl01diag"
+    # Days the diagnostic logs are kept.
     # used by: deployment
     logs_retention_days: 30
+    # SKU of the diagnostic storage account, for example Standard_LRS.
     # used by: deployment
     storage_account_type: "Standard_LRS"
 
@@ -246,8 +262,10 @@ nodes:
         # Card model, for example 'NVIDIA ConnectX-6 Dx'.
         # used by: ztp, os_configuration, discovery
         model: "Example 25GbE NIC"
+        # Link speed of the port in Gbit/s, as the BMC reports it.
         # used by: os_configuration
         speed_gbps: 0
+        # RDMA technology the port supports: none, iwarp, roce (RoCE) or roce_v2 (RoCEv2).
         # one of: none | iwarp | roce | roce_v2; used by: os_configuration
         rdma: "none"
         # What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified...
@@ -283,25 +301,33 @@ nodes:
           # The switch port, for example Ethernet1/11.
           # used by: os_configuration
           port: ""
+          # Free text about the switch port, for example the cable label.
           # used by: os_configuration
           description: ""
+        # Free text about the port.
         # used by: os_configuration
         notes: ""
     # Serial number (Dell service tag).
     # when scenario.os_install is simplified; used by: ztp, discovery
     serial_number: "SERIAL01"
+    # The baseboard management controller (BMC) of the machine: address, type and login.
     # when scenario.os_install is simplified
     bmc:
+      # IPv4 address of the BMC (iDRAC, iLO, XCC).
       # when scenario.os_install is simplified; used by: ztp, discovery
       ip_address: "198.51.100.11"
+      # Kind of BMC: idrac (Dell), ilo (HPE), xcc (Lenovo) or other.
       # one of: idrac | ilo | xcc | other; used by: ztp, discovery
       type: "idrac"
+      # BMC account name.
       # used by: ztp, discovery
       username: "example"
       # A Key Vault secret reference: keyvault://<vault>/<secret>.
       # used by: ztp, discovery
       password: "keyvault://kv-example-01/password"
+    # Rack identifier, for the as-built record.
     rack: "R01"
+    # Position in the rack, for example U12, for the as-built record.
     # used by: ztp
     rack_position: "24"
     # Rack-aware: the local availability zone.
@@ -348,8 +374,10 @@ nodes:
           # (since 5.4) 
           # used by: ztp, deployment
           bios_enabled_value: "example"
+          # Model of the host bus adapter, as the machine reports it.
           # used by: ztp, deployment
           model: "Example 32G FC HBA"
+          # The ports of the host bus adapter.
           # used by: deployment
           ports:
             # A Fibre Channel World Wide Port Name: 16 hexadecimal digits, as 8 colon-separated pairs (50:00:09:72:08:12:34:56) or without colons.
@@ -374,9 +402,13 @@ hardware:
   cpu_cores: 64
   # Memory per machine, GiB.
   memory_gib: 1024
+  # GPUs fitted in every machine.
   gpu:
+    # true when the machines carry GPUs.
     enabled: false
+    # GPU model, as the machine reports it.
     model: ""
+    # Number of GPUs in each machine.
     count_per_node: 0
   # BMC (iDRAC, iLO, XCC) login used for every machine unless a node sets its own.
   # used by: ztp
@@ -413,8 +445,10 @@ hardware:
     # Required when hardware.sbe is present and bundle_path is not.
     # used by: os_configuration, deployment
     version: ""
+    # Where the SBE manifest comes from (a URL or a file path).
     # used by: deployment
     manifest_source: ""
+    # Creation date of the SBE manifest, as the manifest states it.
     # used by: deployment
     manifest_creation_date: ""
     # Required when hardware.sbe is present, unless publisher, family and version name an SBE you placed in C:\SBE yourself (and needed for any d...
@@ -432,10 +466,13 @@ hardware:
   # The physical network cards in every machine, and what each port is for.
   # used by: os_configuration
   network_cards:
+    # Where the card sits, as the chassis labels it, for example Slot 6 or Embedded.
     # used by: os_configuration
     - label: "Onboard"
+      # Manufacturer of the card.
       # used by: os_configuration
       make: ""
+      # Model of the card, as the machine reports it.
       # used by: os_configuration
       model: ""
       # used by: os_configuration
@@ -443,8 +480,10 @@ hardware:
         # Adapter name in the OS, as the intents use it.
         # required; used by: os_configuration
         - name: "Port1"
+          # Port speed in Gbit/s.
           # used by: os_configuration
           speed_gbps: 25
+          # RDMA technology the port supports: none, iwarp, roce (RoCE) or roce_v2 (RoCEv2).
           # one of: none | iwarp | roce | roce_v2; used by: os_configuration
           rdma: "none"
           # unused, intent:<intent name>, cluster:a, cluster:b, iscsi:a or iscsi:b.
@@ -452,15 +491,23 @@ hardware:
           role: "intent:management"
   # Drives per machine.
   drives:
+    # The capacity drives in each machine (Storage Spaces Direct).
     capacity:
+      # Media type of the capacity drives: nvme, ssd or hdd.
       # one of: nvme | ssd | hdd
       media: "nvme"
+      # Number of capacity drives in each machine.
       count: 8
+      # Size of one capacity drive in TB.
       size_tb: 3.84
+    # The cache drives in each machine (Storage Spaces Direct).
     cache:
+      # Media type of the cache drives: nvme, ssd or hdd.
       # one of: nvme | ssd | hdd
       media: "nvme"
+      # Number of cache drives in each machine.
       count: 0
+      # Size of one cache drive in TB.
       size_tb: 0
 
 # The on-premises networks.
@@ -489,8 +536,10 @@ networking:
     # Simplified provisioning: the address range of the site's network setting (Microsoft.Edge/configurations/networkConfigurations ipv4.addressR...
     # used by: ztp, os_configuration
     site_ip_range:
+      # First address of the range the site hands out when networking.management.static_method is site (the site network setting Manual).
       # required; used by: ztp, os_configuration
       start: "192.0.2.10"
+      # Last address of the range the site hands out when networking.management.static_method is site.
       # required; used by: ztp, os_configuration
       end: "192.0.2.10"
     # Simplified provisioning: how the maintenance environment gets the address it reaches Azure with, on the ports with role provisioning, befor...
@@ -502,22 +551,29 @@ networking:
     # (since 5.3) 
     # used by: ztp, os_configuration
     provisioning_dhcp_range:
+      # First address of the DHCP pool of the provisioning network.
       # required; used by: ztp, os_configuration
       start: "192.0.2.100"
+      # Last address of the DHCP pool of the provisioning network (at most 4096 addresses from the start).
       # required; used by: ztp, os_configuration
       end: "192.0.2.199"
     # At least six contiguous addresses in the management subnet, outside the machines' addresses.
     # used by: os_configuration, deployment
     infrastructure_pool:
+      # First address of the pool the Azure Local infrastructure services use (ARM startingIPAddress): inside the management subnet, outside every...
       # required; used by: os_configuration, deployment
       start: "192.0.2.20"
+      # Last address of the infrastructure pool (ARM endingIPAddress).
       # required; used by: os_configuration, deployment
       end: "192.0.2.29"
   # The out-of-band network of the BMCs.
   oob:
+    # Subnet of the out-of-band (BMC) network in CIDR form.
     # used by: os_configuration
     subnet: "198.51.100.0/24"
+    # Default gateway of the out-of-band network.
     gateway: "198.51.100.1"
+    # VLAN ID of the out-of-band network; 0 for an untagged port.
     vlan_id: 0
   # Time sources, as host names or addresses.
   # used by: ztp, os_configuration, deployment
@@ -525,8 +581,10 @@ networking:
   # Network ATC intents.
   # used by: os_configuration, deployment
   intents:
+    # Name of the Network ATC intent, for example management_compute or storage.
     # required; used by: os_configuration, deployment
     - name: "management"
+      # Traffic types the intent carries: management, compute and storage (ARM trafficType).
       # required; used by: os_configuration, deployment
       traffic: ["management"]
       # Adapter names in the OS, the same on every machine.
@@ -535,26 +593,37 @@ networking:
       # Network ATC overrides.
       # used by: os_configuration
       overrides:
+        # Data Center Bridging (DCB) quality of service overrides for the storage traffic (ARM qosPolicyOverrides).
         # used by: os_configuration
         qos:
+          # 802.1p priority value of the cluster heartbeat traffic, 0 to 7 (ARM priorityValue8021Action_Cluster).
           # used by: os_configuration, deployment
           cluster_priority: 0
+          # 802.1p priority value of the SMB Direct (RDMA storage) traffic, 0 to 7 (ARM priorityValue8021Action_SMB).
           # used by: os_configuration, deployment
           smb_priority: 0
+          # Share of the link reserved for SMB Direct storage traffic, 1 to 100 percent (ARM bandwidthPercentage_SMB).
           # used by: os_configuration, deployment
           smb_bandwidth_percent: 1
+        # Physical adapter property overrides (ARM adapterPropertyOverrides: jumboPacket, networkDirect, networkDirectTechnology).
         # used by: os_configuration
         adapter:
+          # Value of the adapter's JumboPacket property in bytes: 1514 (standard frame), 4088 or 9014 (jumbo).
           # one of: 1514 | 4088 | 9014; used by: os_configuration, deployment
           jumbo_packet: 1514
+          # RDMA (Network Direct) on the adapters of this intent. true is sent to ARM as networkDirect 'Enabled', false as 'Disabled'.
           # used by: os_configuration, deployment
           network_direct: false
+          # RDMA technology of the adapters: iwarp, roce_v2 (RoCEv2) or roce (RoCE, version 1).
           # one of: iwarp | roce | roce_v2; used by: os_configuration, deployment
           network_direct_technology: "iwarp"
+        # Virtual switch overrides of the intent's switch-embedded team (ARM virtualSwitchConfigurationOverrides).
         # used by: os_configuration
         virtual_switch:
+          # SR-IOV on the intent's virtual switch (ARM enableIov).
           # used by: os_configuration, deployment
           enable_iov: false
+          # Load balancing of the switch-embedded team: dynamic or hyper_v_port (ARM loadBalancingAlgorithm 'Dynamic' or 'HyperVPort').
           # one of: dynamic | hyper_v_port; used by: os_configuration, deployment
           load_balancing_algorithm: "dynamic"
   # Storage networks (Storage Spaces Direct).
@@ -614,34 +683,45 @@ networking:
       purpose: ""
   # Arc VM logical networks created after deployment.
   logical_networks:
+    # Name of the Azure Local logical network resource.
     # required
     - name: "lnet-workloads"
       # What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote mana...
       # one of: management | oob | automation | compute | storage | other; used by: os_configuration
       purpose: "compute"
+      # VLAN ID of the logical network; 0 for untagged.
       vlan_id: 2204
+      # Address prefix of the logical network in CIDR form.
       # used by: os_configuration
       address_prefix: "203.0.113.0/24"
+      # Default gateway of the logical network.
       gateway: "203.0.113.1"
       dns_servers: ["192.0.2.4", "192.0.2.5"]
       ip_pool:
+        # First address of the pool that virtual machines on this logical network draw from.
         # required
         start: "203.0.113.100"
+        # Last address of that pool.
         # required
         end: "203.0.113.200"
   # Details of scenario.outbound_path.
   # when scenario.outbound_path is proxy or proxy_arc_gateway
   outbound:
+    # Proxy server for the machines' outbound traffic, for scenario.outbound_path proxy or proxy_arc_gateway.
     # when scenario.outbound_path is proxy or proxy_arc_gateway
     proxy:
+      # URL of the proxy server, for example http://proxy.example.test:3128.
       # required
       url: ""
+      # Addresses and names that go direct, not through the proxy.
       bypass: []
     # The Arc gateway resource, in the same subscription as the machines.
     # when scenario.outbound_path is arc_gateway or proxy_arc_gateway
     arc_gateway:
+      # Name of the Azure Arc gateway resource (Azure public cloud only; not supported with simplified machine provisioning in the preview).
       # required; used by: os_configuration
       name: ""
+      # Resource group of the Azure Arc gateway resource.
       # used by: os_configuration
       resource_group: ""
     # when scenario.outbound_path is private_path
@@ -879,6 +959,7 @@ provisioning:
     # microsoft (the Azure portal download) or oem (the OEM's image).
     # one of: microsoft | oem
     image_source: "microsoft"
+    # Build of the Azure Local OS image the ISO holds.
     image_version: ""
   # Simplified machine provisioning from Azure, as azurelocal-ztp runs it. https://learn.microsoft.com/azure/azure-local/deploy/simplified-mach...
   # when scenario.os_install is simplified; used by: ztp
@@ -898,6 +979,7 @@ provisioning:
     # The local administrator that the provisioned OS gets.
     # required; used by: ztp
     admin:
+      # Name of the local administrator the OS install creates on each machine (Learn: step 3, provision machines from Azure).
       # required; used by: ztp
       username: "administrator"
       # At least 12 characters with lowercase, uppercase, a digit and a special character.
@@ -909,6 +991,7 @@ provisioning:
     # The SMB share the BMCs mount the images from.
     # required; used by: ztp
     media_share:
+      # Name of the SMB share ZTP creates over the folder of the virtual USB images: letters, digits and hyphens.
       # required; used by: ztp
       name: "ztp-virtual-usb"
       # The management host's address as the BMCs reach it.

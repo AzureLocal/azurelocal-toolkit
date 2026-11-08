@@ -16,6 +16,47 @@ This repository is the operational toolkit for building and running Azure Local 
 
 This README is the primary entry point for understanding the repository.
 
+## The Azure Local route
+
+```text
+Hardware discovery -> ZTP -> OS configuration -> PRE-CLUSTER VERIFICATION GATE -> ARM Validate -> ARM Deploy -> day 2
+```
+
+| # | Step | Tool | Page |
+|--:|------|------|------|
+| 1 | Hardware discovery (optional; Dell iDRAC only in this phase) | `Invoke-HardwareDiscovery.ps1` | [idrac-management README](scripts/common/idrac-management/README.md) |
+| 2 | ZTP: install the OS from Azure and register the machines with Azure Arc | [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | its README |
+| 3 | OS configuration | `Invoke-AzureLocalOsConfiguration.ps1` | [docs/os-configuration-and-arm-deployment.md](docs/os-configuration-and-arm-deployment.md) |
+| 4 | Pre-cluster verification gate: a read-only check that every machine is ready for a cluster | the toolkit, watched by the Sonar Verification monitor | [see the gate note](#the-pre-cluster-verification-gate) |
+| 5 | ARM Validate | `Invoke-AzureLocalArmDeployment.ps1 -Mode Validate` | [docs/arm-deployment-guide.md](docs/arm-deployment-guide.md) |
+| 6 | ARM Deploy | the same script, `-Mode Deploy` | same |
+| 7 | Day 2: logical networks, monitoring, backup, updates, handover | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment`, `scripts/lifecycle` | the Azure Local docs |
+
+[Sonar](https://github.com/AzureLocal/azurelocal-sonar) watches steps 2 to 6 read only.
+
+### The pre-cluster verification gate
+
+<!-- TODO(gate): the gate is being built on the branch feat/pre-cluster-verification-gate. When it is in main, replace this paragraph with its script name, what it checks and its exit codes, and link the Sonar Verification monitor. -->
+
+The gate sits between OS configuration and ARM Validate and changes nothing. Until its page is published, the input to ARM Validate is the OS configuration report (`-OsConfigurationReport <report directory>`): a node whose report says it is not converged is not ready for a cluster.
+
+### The Solution Builder Extension (SBE) is optional
+
+The toolkit side-loads an SBE only when a person asks for it, by setting `hardware.sbe.delivery` to `winrm_copy` or `node_pull`. There is no default: with no `hardware.sbe` block, or `delivery` unset or `skip`, the OS configuration Sbe and Drivers steps are skipped, the ARM deployment passes no SBE value and the machines keep the OEM drivers already installed. See [the SBE section](docs/os-configuration-and-arm-deployment.md#sbe-the-oems-solution-builder-extension).
+## Prerequisites
+
+Everything below is checked in more detail, with who checks what, in [docs/os-configuration-and-arm-deployment.md](docs/os-configuration-and-arm-deployment.md) (Operator host, Azure roles, Key Vault secrets) and [docs/access-and-connectivity.md](docs/access-and-connectivity.md) (roles by scope, network paths).
+
+| Need | Detail |
+|------|--------|
+| PowerShell | PowerShell 7.0 or later (7.4 or later recommended; tested on 7.6). Scripts carry `#Requires -Version 7.0`. Windows PowerShell 5.1 is not supported on the operator host. |
+| Modules (operator host) | `powershell-yaml` (0.4.12 tested) to read `infrastructure.yml`; `Az.Accounts` (5.5 tested; `Connect-AzAccount` first); `Az.KeyVault` (6.6) for `keyvault://` secrets; `Az.Resources` (10.2) only to look up the Azure Local resource provider's object ID. Individual scripts add `Az.Network`, `Az.Compute`, `Az.Security`, `Az.OperationalInsights`, `Az.RecoveryServices` or `Az.Subscription` (the `#Requires -Modules` line of the script says which). The Azure CLI is not used by the OS configuration and ARM scripts. |
+| Test and lint tools | Pester **5.9.1** (import it explicitly: `Import-Module Pester -RequiredVersion 5.9.1`; Pester 6 runs zero tests here) and PSScriptAnalyzer 1.25. Only to run `tests/` and the analyzer. |
+| Active Directory tooling | The `ActiveDirectory`, `DnsServer` and `DhcpServer` modules (RSAT) only for the on-premises readiness scripts that name them. The OS configuration domain join does not need them on the operator host. |
+| Operating system | Operator host: Windows with PowerShell 7 (a jump server on the management network), or a Linux runner for the pipeline form (WinRM from Linux needs the PSWSMan module). Nodes: the Azure Local OS, build 25398 or later. |
+| Azure | Registered resource providers (Phase 02; `Microsoft.Insights` is needed or the diagnostics account validation fails); roles on the resource group: Azure Connected Machine Resource Administrator and Reader (OS configuration over Arc), Azure Stack HCI Administrator, Reader, Storage Account Contributor and the Key Vault roles (ARM Validate and Deploy), Key Vault Secrets User on each vault named. |
+| Credentials | Never in a file. Every secret is a `keyvault://<vault>/<secret>` reference in `infrastructure.yml`; the scripts read it with the signed-in Az context. |
+| Network and ports | Operator host to Azure over HTTPS (`management.azure.com`, `login.microsoftonline.com`, `*.vault.azure.net`; `raw.githubusercontent.com` on an ARM execute; `aka.ms` for an SBE manifest). To the nodes: WinRM TCP 5985 or 5986 (default), or none with `-Transport ArcRunCommand`. To each BMC: TCP 443 (Redfish, discovery). The full matrix is in [docs/access-and-connectivity.md](docs/access-and-connectivity.md). |
 ## Supported Automation Paths
 
 The toolkit currently supports three main automation patterns:

@@ -105,17 +105,20 @@
       "additionalProperties": false,
       "properties": {
         "tenant_id": {
-          "$ref": "#/$defs/guid"
+          "$ref": "#/$defs/guid",
+          "description": "Microsoft Entra tenant ID (GUID) of the subscription. Read it with (Get-AzContext).Tenant.Id or from the Microsoft Entra ID overview page in the Azure portal."
         },
         "location": {
           "$ref": "#/$defs/azure_region",
           "description": "Azure region, for example eastus. Simplified provisioning works only in eastus in the preview."
         },
         "subscription_id": {
-          "$ref": "#/$defs/guid"
+          "$ref": "#/$defs/guid",
+          "description": "Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_id names another one. Read it with (Get-AzContext).Subscription.Id."
         },
         "resource_group": {
-          "$ref": "#/$defs/resource_group"
+          "$ref": "#/$defs/resource_group",
+          "description": "Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses). The Azure Local resource provider needs the Azure Connected Machine Resource Manager role on it; the ZTP template assigns that role."
         },
         "hci_resource_provider_object_id": {
           "$ref": "#/$defs/guid",
@@ -140,13 +143,16 @@
         "additionalProperties": false,
         "properties": {
           "name": {
-            "$ref": "#/$defs/key_vault_name"
+            "$ref": "#/$defs/key_vault_name",
+            "description": "Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens."
           },
           "subscription_id": {
-            "$ref": "#/$defs/guid"
+            "$ref": "#/$defs/guid",
+            "description": "Subscription (GUID) that holds the vault."
           },
           "resource_group": {
-            "$ref": "#/$defs/resource_group"
+            "$ref": "#/$defs/resource_group",
+            "description": "Resource group that holds the vault."
           }
         }
       }
@@ -173,6 +179,7 @@
           ]
         },
         "witness": {
+          "description": "The quorum witness of the cluster. A two-machine cluster and a rack aware cluster need one (rule AZL-008). See cluster.witness.type.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
@@ -196,13 +203,15 @@
           "additionalProperties": false,
           "properties": {
             "name": {
-              "$ref": "#/$defs/key_vault_name"
+              "$ref": "#/$defs/key_vault_name",
+              "description": "Name of the Key Vault the deployment creates for the cluster (ARM keyVaultName): 3 to 24 characters, letters, digits and hyphens, starting with a letter."
             },
             "create_new": {
               "description": "ARM createNewKeyVault.",
               "type": "boolean"
             },
             "soft_delete_retention_days": {
+              "description": "Days a deleted secret or vault stays recoverable, 7 to 90.",
               "type": "integer",
               "minimum": 7,
               "maximum": 90
@@ -215,13 +224,16 @@
           "additionalProperties": false,
           "properties": {
             "storage_account": {
-              "$ref": "#/$defs/storage_account_name"
+              "$ref": "#/$defs/storage_account_name",
+              "description": "Name of the storage account that receives the cluster diagnostic logs: 3 to 24 lowercase letters and digits."
             },
             "logs_retention_days": {
+              "description": "Days the diagnostic logs are kept.",
               "type": "integer",
               "minimum": 0
             },
             "storage_account_type": {
+              "description": "SKU of the diagnostic storage account, for example Standard_LRS.",
               "type": "string",
               "examples": [
                 "Standard_LRS"
@@ -390,7 +402,75 @@
           },
           "san": {
             "$ref": "#/$defs/node_san",
-            "description": "Schema 5.3. This machine's SAN connections: its Fibre Channel HBAs and their WWPNs (storage.san.type fibre_channel), or its iSCSI initiator IQN (storage.san.type iscsi; the iSCSI ports' addresses are on network_adapters with role iscsi:a and iscsi:b). Needed on every machine when storage.san.type is set."
+            "description": "Schema 5.3. This machine's SAN connections: its Fibre Channel HBAs and their WWPNs (storage.san.type fibre_channel), or its iSCSI initiator IQN (storage.san.type iscsi; the iSCSI ports' addresses are on network_adapters with role iscsi:a and iscsi:b). Needed on every machine when storage.san.type is set.",
+            "properties": {
+              "hbas": {
+                "description": "The host bus adapters in this machine that reach the SAN: Fibre Channel HBAs, and from 5.4 iSCSI offload adapters. azurelocal-ztp reads their slots (schema 5.4): while the OS installs it turns those PCIe slots off in the BIOS, so the maintenance environment can't install onto a SAN LUN, and turns them on again afterwards (provisioning.simplified.isolate_san_adapters).",
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "slot": {
+                      "description": "Where the HBA is, as a PCIe slot label: Slot 2, Slot2 or slot-2 (the number is what counts). azurelocal-ztp turns the BIOS attribute of that slot off for the OS install and puts it back afterwards; the attribute name per vendor is in its config/oem/<vendor>.json. For another label (for example OCP 1), or a vendor azurelocal-ztp has no mapping for, give bios_attribute.",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "type": {
+                      "description": "Schema 5.4. fibre_channel (default; with storage.san.type fibre_channel the ports with their WWPNs are needed for zoning, rule AZL-028) or iscsi_offload (an adapter that presents SAN LUNs to the BIOS; it needs no ports here, its addresses are on network_adapters with role iscsi:a or iscsi:b).",
+                      "default": "fibre_channel",
+                      "enum": [
+                        "fibre_channel",
+                        "iscsi_offload"
+                      ]
+                    },
+                    "bios_attribute": {
+                      "description": "Schema 5.4. The vendor's BIOS attribute name for this adapter's slot, as the BMC's Redfish Bios resource names it. With no vendor mapping in azurelocal-ztp this is the only way to isolate the adapter during the install; with a mapping it overrides the attribute derived from slot. An explicit bios_during_provisioning key for the same attribute still wins.",
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9_.\\[\\]-]{1,128}$"
+                    },
+                    "bios_disabled_value": {
+                      "description": "Schema 5.4. The value of bios_attribute that turns the slot off for the OS install. Default: the vendor mapping's disabled value, else Disabled.",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "bios_enabled_value": {
+                      "description": "Schema 5.4. The value that turns the slot back on when azurelocal-ztp finds it already at bios_disabled_value in the Restore stage (for example a crashed earlier run left it off). Otherwise Restore puts back the value it found before the install. Default: the vendor mapping's enabled value, else Enabled.",
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "model": {
+                      "description": "Model of the host bus adapter, as the machine reports it.",
+                      "type": "string"
+                    },
+                    "ports": {
+                      "description": "The ports of the host bus adapter.",
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "wwpn": {
+                            "$ref": "#/$defs/wwpn"
+                          },
+                          "fabric": {
+                            "description": "A name in storage.san.fibre_channel.fabrics.",
+                            "type": "string",
+                            "minLength": 1
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              },
+              "initiator_iqn": {
+                "$ref": "#/$defs/iscsi_name",
+                "description": "The machine's iSCSI initiator name. Unique in the file."
+              }
+            }
           }
         }
       }
@@ -423,9 +503,11 @@
               "type": "string"
             },
             "manifest_source": {
+              "description": "Where the SBE manifest comes from (a URL or a file path). Only read when an SBE is asked for; the SBE is opt-in and never delivered by default.",
               "type": "string"
             },
             "manifest_creation_date": {
+              "description": "Creation date of the SBE manifest, as the manifest states it. Only read when an SBE is asked for.",
               "type": "string"
             },
             "bundle_path": {
@@ -483,10 +565,12 @@
               "additionalProperties": false,
               "properties": {
                 "start": {
-                  "$ref": "#/$defs/ipv4"
+                  "$ref": "#/$defs/ipv4",
+                  "description": "First address of the pool the Azure Local infrastructure services use (ARM startingIPAddress): inside the management subnet, outside every machine address and the gateway."
                 },
                 "end": {
-                  "$ref": "#/$defs/ipv4"
+                  "$ref": "#/$defs/ipv4",
+                  "description": "Last address of the infrastructure pool (ARM endingIPAddress). The pool holds at least 6 contiguous addresses."
                 }
               }
             }
@@ -505,7 +589,115 @@
           "type": "array",
           "minItems": 1,
           "items": {
-            "$ref": "#/$defs/intent"
+            "$ref": "#/$defs/intent",
+            "properties": {
+              "name": {
+                "description": "Name of the Network ATC intent, for example management_compute or storage. The same on every machine.",
+                "type": "string",
+                "minLength": 1
+              },
+              "traffic": {
+                "description": "Traffic types the intent carries: management, compute and storage (ARM trafficType). Management and storage can each be in one intent only; compute can be in any number.",
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "management",
+                    "compute",
+                    "storage"
+                  ]
+                }
+              },
+              "adapters": {
+                "description": "Adapter names in the OS, the same on every machine. With nodes[].network_adapters (5.2) each name must be a port in every node's list. The first adapter matters: the management virtual adapter takes the MAC of the first adapter of the management intent, so that adapter owns the management address.",
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "overrides": {
+                "description": "Network ATC overrides. Leave out to keep Network ATC's defaults, which Microsoft recommends (Learn: 'We recommend that you use the default values'). The deployment sends the adapter overrides on every intent (ARM overrideAdapterProperty true) so Azure's network validation sees the value that is meant: storage intents get RDMA on and a 9014 packet, an intent without storage traffic gets RDMA off and the default 1514 packet. A value given here wins over that default.",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "qos": {
+                    "description": "Data Center Bridging (DCB) quality of service overrides for the storage traffic (ARM qosPolicyOverrides). Leave out to keep Network ATC's validated defaults: cluster priority 7, SMB priority 3, SMB bandwidth 50 percent.",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "cluster_priority": {
+                        "description": "802.1p priority value of the cluster heartbeat traffic, 0 to 7 (ARM priorityValue8021Action_Cluster). Network ATC default 7. The physical switches must carry the same value.",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 7
+                      },
+                      "smb_priority": {
+                        "description": "802.1p priority value of the SMB Direct (RDMA storage) traffic, 0 to 7 (ARM priorityValue8021Action_SMB). Network ATC default 3. The physical switches must carry the same value.",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 7
+                      },
+                      "smb_bandwidth_percent": {
+                        "description": "Share of the link reserved for SMB Direct storage traffic, 1 to 100 percent (ARM bandwidthPercentage_SMB). Network ATC default 50.",
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                      }
+                    }
+                  },
+                  "adapter": {
+                    "description": "Physical adapter property overrides (ARM adapterPropertyOverrides: jumboPacket, networkDirect, networkDirectTechnology). Microsoft: change these only on OEM guidance and validate them with the OEM.",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "jumbo_packet": {
+                        "description": "Value of the adapter's JumboPacket property in bytes: 1514 (standard frame), 4088 or 9014 (jumbo). The ARM parameter takes it as a string. Leave out for the default this tool sets: 9014 on an intent that carries storage traffic, 1514 on any other. Learn recommends a maximum transmission unit of 9216 bytes on the physical switches for RDMA storage traffic and the same MTU end to end on hosts and switches; for an external SAN storage fabric use the MTU your storage vendor specifies.",
+                        "type": "integer",
+                        "enum": [
+                          1514,
+                          4088,
+                          9014
+                        ]
+                      },
+                      "network_direct": {
+                        "description": "RDMA (Network Direct) on the adapters of this intent. true is sent to ARM as networkDirect 'Enabled', false as 'Disabled'. Leave out for the default this tool sets: on for an intent that carries storage traffic, off for any other. Set false to disable RDMA, for example when you test in virtual machines.",
+                        "type": "boolean"
+                      },
+                      "network_direct_technology": {
+                        "description": "RDMA technology of the adapters: iwarp, roce_v2 (RoCEv2) or roce (RoCE, version 1). Sent to ARM as networkDirectTechnology 'iWARP', 'RoCEv2' or 'RoCE'; Learn's network considerations name RoCEv2 and iWARP, the ARM model also accepts RoCE. Used only when network_direct is on; leave out for RoCEv2. Set the technology your adapter vendor and switches are configured for.",
+                        "enum": [
+                          "iwarp",
+                          "roce",
+                          "roce_v2"
+                        ]
+                      }
+                    }
+                  },
+                  "virtual_switch": {
+                    "description": "Virtual switch overrides of the intent's switch-embedded team (ARM virtualSwitchConfigurationOverrides). Leave out for Network ATC's defaults.",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "enable_iov": {
+                        "description": "SR-IOV on the intent's virtual switch (ARM enableIov). Cannot be changed after the switch exists.",
+                        "type": "boolean"
+                      },
+                      "load_balancing_algorithm": {
+                        "description": "Load balancing of the switch-embedded team: dynamic or hyper_v_port (ARM loadBalancingAlgorithm 'Dynamic' or 'HyperVPort').",
+                        "enum": [
+                          "dynamic",
+                          "hyper_v_port"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
           }
         },
         "storage": {
