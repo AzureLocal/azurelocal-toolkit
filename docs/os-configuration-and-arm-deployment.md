@@ -69,7 +69,7 @@ The full cross-tool matrix is in the toolkit's [access-and-connectivity page](ac
 | `-Method` | `Auto` (default) works the method out per node; force `Ztp` or `Iso` for all nodes. |
 | `-Credential`, `-NodeAddress` | The local administrator for WinRM (default: `identity.local_admin`, password from the Key Vault, never printed) and the address to reach a node on when the installer's address is not in the file. On a node reached over Arc (only `-Transport ArcRunCommand`) the credential is used to copy the SBE package when `hardware.sbe.delivery` is `winrm_copy`. |
 | `-ClearStorage` | Forces the storage wipe on (see below). |
-| `-ConfigPath`, `-Settings` | Optional run settings (JSON file, then a hashtable that wins): `retryTries`, `retryDelaySeconds`, `maxPasses`, `noRestart`, `failOnPendingChanges`, `nodeAddress`, `networkRollbackMinutes`, `networkStableSeconds`, `reconnectWaitMinutes`, `staleRunCommandMinutes`, `addressProbe`, `remoting`, `addressResolution`. The guarded-change keys are in [Changing the management address safely](#changing-the-management-address-safely); `remoting` is in [Choosing the transport](#choosing-the-transport). |
+| `-ConfigPath`, `-Settings` | Optional run settings (JSON file, then a hashtable that wins): `retryTries`, `retryDelaySeconds`, `maxPasses`, `noRestart`, `failOnPendingChanges`, `nodeAddress`, `networkRollbackMinutes`, `networkStableSeconds`, `reconnectWaitMinutes`, `staleRunCommandMinutes`, `addressProbe`, `restartWaitMinutes`, `remoting`, `addressResolution`. The guarded-change keys are in [Changing the management address safely](#changing-the-management-address-safely); `remoting` is in [Choosing the transport](#choosing-the-transport). |
 | `-EventLogPath` | The event feed (JSON Lines), default `os-configuration-events.jsonl` in the report directory. |
 | `-FailOnPendingChanges` | Plan mode: exit 1 when any change is pending (drift detection). |
 
@@ -199,6 +199,7 @@ A read that cannot reach the node is **PendingReconciliation**, never a failed c
 | `networkRollbackMinutes` (master file `os_configuration.network.confirm_minutes`) | 10 | The window for this host's confirmation. Without it the node reverts. |
 | `networkStableSeconds` (`os_configuration.network.stable_seconds`) | 60 | How long the local checks must stay green. |
 | `reconnectWaitMinutes` | 15 | How long this host waits for the node to answer again. |
+| `restartWaitMinutes` | 15 | After the run asked a node to restart (a driver install that returned pnputil 3010, a join, a rename), how long the final verify waits for the node: TCP 5985 first, then a session, with a `NodeWaiting` event ('waiting for restart') every 60 s. Past it the node fails with 'did not come back within N minutes' and the verify is not run against a node that is down. A session refused while the node starts up is waited out; it is never reported as a refused credential. |
 | `staleRunCommandMinutes` | 15 | Before an Apply over Arc (a plan deletes nothing), run commands named `azl-osconfig-*` older than this and not Succeeded or Running are deleted (recorded as a `StaleRunCommandDeleted` event in the node report; not written to the feed, whose states are the contract's). Nothing else is touched. |
 | `addressProbe` | true | Refuse an address another host answers on (ping, neighbour cache) before assigning it. |
 

@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The verification after a node restart: the identity check tells a refused credential (Access is denied, 0x80070005, HTTP 401) from a node that did not answer (timeout, connection reset or closed, restarting) and retries the latter; the run waits for a node it restarted (port, then session, run setting `restartWaitMinutes`, default 15) before the final verify, with a `NodeWaiting` heartbeat and an honest 'did not come back within N minutes'; a driver install that returns pnputil 3010 is recorded as restart required and the node is restarted once, at the end of the apply.
+
 ### Changed
 
 - The node-configuration scripts and modules build local paths per segment (`Join-Path`, `[IO.Path]::Combine`), so they run under `pwsh` on a Linux runner as well as Windows; `tests/node-configuration/CrossPlatform.Tests.ps1` scans them for backslash path literals. Paths on the nodes (`C:\SBE`) stay Windows paths.
