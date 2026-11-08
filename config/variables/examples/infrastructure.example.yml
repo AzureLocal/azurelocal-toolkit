@@ -4,12 +4,12 @@
 # Every Azure Local tool reads this file: azurelocal-toolkit, azurelocal-ztp,
 # Trailwright (writes it), Beacon, Sonar and Ranger.
 #
-# Schema:    infrastructure.schema.json (next to this file), schema_version 5.x
-# Variables: VARIABLES.md (next to this file): every key, whether it is required, its default,
+# Schema:    config/variables/schema/infrastructure.schema.json (generated from the master registry), schema_version 5.x
+# Variables: config/variables/docs/VARIABLES.md: every key, whether it is required, its default,
 #            an example, where to get the value, which tool reads it, the keyvault:// secrets
 #            the file expects, and the folders it names
 # Validate:  ./tools/Test-AzlInfrastructure.ps1 -Path ./infrastructure.yml
-# Reference: README.md (next to this file), every key and which tool reads it
+# Reference: config/variables/docs/infrastructure-file.md, every key and which tool reads it
 #
 # This example: Active Directory, Storage Spaces Direct on switched storage,
 # two machines, connected with direct outbound, the OS from simplified machine

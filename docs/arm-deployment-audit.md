@@ -23,7 +23,7 @@ reads code, tests and documents.
 | Parameters only | `.../New-AzureLocalArmParameters.ps1` | Writes the ARM parameter file from `infrastructure.yml` (no Azure call) | Module is tested | Always safe |
 | Module | `scripts/common/arm-deployment/AzlArmDeployment.psm1` | `Select-AzlArmTemplate`, `New-AzlArmParameterSet`, `Test-AzlArmParameterSet`, `ConvertTo-AzlArmParameterFile`, `Get-AzlDeploymentState`, `Invoke-AzlArmDeployment` | `tests/arm-deployment/ArmDeployment.Tests.ps1` (40 test blocks) | The parameter generation is solid: 7 quickstart templates in the catalog, 6 selectable; adapter names by MAC; SAN LUN translation; secrets stay `keyvault://` references |
 | Template catalog | `config/azure/arm-templates/template-parameters.json` | Each template's parameters, types, allowed values, and `deploymentSettings` api-version | Used by the tests | Source: Microsoft's quickstart repository, retrieved by hand |
-| Master schema | `config/infrastructure/infrastructure.schema.json`, validator in `AzlInfrastructure.psm1` | The one input file | `tests/infrastructure` | No `deployment` options (timeouts, approval, resume) |
+| Master schema | `config/variables/schema/infrastructure.schema.json`, validator in `AzlInfrastructure.psm1` | The one input file | `tests/infrastructure` | No `deployment` options (timeouts, approval, resume) |
 | OS configuration | `phase-03-os-configuration/Set-AzureLocalNodeConfiguration.ps1` | Per-node OS configuration; its JSON report carries port names by MAC and SAN disks by LUN | `tests/node-configuration` | The report is the input of the parameter generator (`-NodeReportPath`) |
 
 ### 1.2 Built-in guards in `Invoke-AzlArmDeployment`

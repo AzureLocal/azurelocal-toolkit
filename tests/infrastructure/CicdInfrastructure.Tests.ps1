@@ -7,7 +7,7 @@ BeforeAll {
     $repo = Resolve-Path (Join-Path $PSScriptRoot '..\..')
     Import-Module (Join-Path $repo 'scripts\common\infrastructure\AzlInfrastructure.psm1') -Force
     Import-Module powershell-yaml
-    $script:ExamplePath = Join-Path $repo 'config\infrastructure\infrastructure.example.yml'
+    $script:ExamplePath = Join-Path $repo 'config\variables\examples\infrastructure.example.yml'
 
     function Get-CicdFinding([scriptblock]$Change) {
         $doc = ConvertFrom-Yaml (Get-Content -LiteralPath $script:ExamplePath -Raw) -Ordered

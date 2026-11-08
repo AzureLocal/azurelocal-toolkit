@@ -1,4 +1,5 @@
 {
+  "$comment": "STUB. GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit: change the registry and run the generator. The schema now lives at config/variables/schema/infrastructure.schema.json; this copy exists for tools that read the old path (azurelocal-ztp, azurelocal-sonar, Trailwright).",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://azurelocal.cloud/schemas/infrastructure/5/infrastructure.schema.json",
   "title": "Azure Local infrastructure.yml",
@@ -13,9 +14,6 @@
       "description": "About this file.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "schema_version"
-      ],
       "properties": {
         "schema_version": {
           "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. The current version is 5.6.0.",
@@ -24,19 +22,19 @@
         },
         "scope": {
           "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity beyond local_admin) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key).",
+          "default": "full",
           "enum": [
             "full",
             "ztp"
-          ],
-          "default": "full"
+          ]
         },
         "file_version": {
           "description": "Your own version of this file.",
           "type": "string"
         },
         "last_updated": {
-          "description": "Date of the last change, YYYY-MM-DD.",
-          "$ref": "#/$defs/date"
+          "$ref": "#/$defs/date",
+          "description": "Date of the last change, YYYY-MM-DD."
         },
         "generated_by": {
           "description": "The tool that wrote the file, for example azurelocal-trailwright 1.1.0. Empty when written by hand.",
@@ -45,7 +43,10 @@
         "notes": {
           "type": "string"
         }
-      }
+      },
+      "required": [
+        "schema_version"
+      ]
     },
     "scenario": {
       "description": "The design choices. Every other section is read in the light of these: a choice makes its section required, and tools pick their path from here. All of them are required, so nothing is assumed.",
@@ -121,14 +122,14 @@
         },
         "environment_class": {
           "description": "What kind of environment this is. It picks the remote management security profile of the OS configuration run (WinRM, RDP and ICMP scope on the nodes, HTTP or HTTPS, the TrustedHosts policy of the machine running the automation, the one-time Arc bootstrap): see docs/os-configuration-and-arm-deployment.md and config/remoting-profiles.json. lab and test are relaxed with the wildcard (TrustedHosts '*', sources Any, HTTP 5985 allowed) and a warning says so; dev, production and dmz are strict. Optional. Missing means production (fail closed); another value is rejected. (since 5.6)",
+          "default": "production",
           "enum": [
             "lab",
             "test",
             "dev",
             "production",
             "dmz"
-          ],
-          "default": "production"
+          ]
         }
       }
     },
@@ -141,15 +142,17 @@
         "name"
       ],
       "properties": {
+        "customer": {
+          "type": "string"
+        },
+        "time_zone": {
+          "description": "Windows time zone ID of the site, for example UTC or Eastern Standard Time. Simplified provisioning sets it on the site.",
+          "type": "string"
+        },
         "code": {
           "description": "Short site code, 2 to 8 uppercase letters or digits.",
           "type": "string",
           "pattern": "^[A-Z0-9]{2,8}$"
-        },
-        "name": {
-          "description": "Display name of the site. Also the display name of the Microsoft.Edge site in simplified provisioning.",
-          "type": "string",
-          "minLength": 1
         },
         "location": {
           "description": "Physical location, for example a city.",
@@ -158,14 +161,12 @@
         "datacenter": {
           "type": "string"
         },
-        "customer": {
-          "type": "string"
+        "name": {
+          "description": "Display name of the site. Also the display name of the Microsoft.Edge site in simplified provisioning.",
+          "type": "string",
+          "minLength": 1
         },
         "owner": {
-          "type": "string"
-        },
-        "time_zone": {
-          "description": "Windows time zone ID of the site, for example UTC or Eastern Standard Time. Simplified provisioning sets it on the site.",
           "type": "string"
         }
       }
@@ -214,19 +215,13 @@
       "description": "The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless provisioning.simplified says otherwise) the site and edge machines.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "tenant_id",
-        "location",
-        "subscription_id",
-        "resource_group"
-      ],
       "properties": {
         "tenant_id": {
           "$ref": "#/$defs/guid"
         },
         "location": {
-          "description": "Azure region, for example eastus. Simplified provisioning works only in eastus in the preview.",
-          "$ref": "#/$defs/azure_region"
+          "$ref": "#/$defs/azure_region",
+          "description": "Azure region, for example eastus. Simplified provisioning works only in eastus in the preview."
         },
         "subscription_id": {
           "$ref": "#/$defs/guid"
@@ -235,8 +230,8 @@
           "$ref": "#/$defs/resource_group"
         },
         "hci_resource_provider_object_id": {
-          "description": "Object ID of the Azure Local resource provider's service principal (application 1412d89f-b8a8-4111-b4fd-e82905cbd85d) in the tenant. Optional: tools look it up when they can read the directory.",
-          "$ref": "#/$defs/guid"
+          "$ref": "#/$defs/guid",
+          "description": "Object ID of the Azure Local resource provider's service principal (application 1412d89f-b8a8-4111-b4fd-e82905cbd85d) in the tenant. Optional: tools look it up when they can read the directory."
         },
         "custom_location": {
           "description": "Name of the custom location the deployment creates.",
@@ -246,10 +241,6 @@
           "description": "The identity that runs automation with no one signed in (pipelines, ZTP, the ARM deployment).",
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "type",
-            "name"
-          ],
           "properties": {
             "type": {
               "enum": [
@@ -270,9 +261,19 @@
             "resource_group": {
               "$ref": "#/$defs/resource_group"
             }
-          }
+          },
+          "required": [
+            "type",
+            "name"
+          ]
         }
-      }
+      },
+      "required": [
+        "tenant_id",
+        "location",
+        "subscription_id",
+        "resource_group"
+      ]
     },
     "key_vaults": {
       "description": "Every Key Vault that a keyvault:// reference in this file names, with where it is. Tools resolve references against this list, and grant roles on the vault from it.",
@@ -280,11 +281,6 @@
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": [
-          "name",
-          "subscription_id",
-          "resource_group"
-        ],
         "properties": {
           "name": {
             "$ref": "#/$defs/key_vault_name"
@@ -299,22 +295,22 @@
             "description": "What the vault holds, for example management, deployment or backup.",
             "type": "string"
           }
-        }
+        },
+        "required": [
+          "name",
+          "subscription_id",
+          "resource_group"
+        ]
       }
     },
     "cluster": {
       "description": "The Azure Local instance (the cluster deployment).",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "name",
-        "witness",
-        "key_vault"
-      ],
       "properties": {
         "name": {
-          "description": "Cluster name: a NetBIOS name of up to 15 characters. ARM parameter clusterName.",
-          "$ref": "#/$defs/netbios_name"
+          "$ref": "#/$defs/netbios_name",
+          "description": "Cluster name: a NetBIOS name of up to 15 characters. ARM parameter clusterName."
         },
         "naming_prefix": {
           "description": "Prefix of the Azure resources the deployment creates. ARM parameter namingPrefix.",
@@ -331,27 +327,6 @@
         "witness": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "type"
-          ],
-          "properties": {
-            "type": {
-              "description": "cloud (an Azure Storage account), file_share (disconnected operations), or none. Two machines need a witness. https://learn.microsoft.com/azure/azure-local/concepts/cluster-witness",
-              "enum": [
-                "cloud",
-                "file_share",
-                "none"
-              ]
-            },
-            "storage_account": {
-              "description": "Cloud witness storage account. ARM clusterWitnessStorageAccountName.",
-              "$ref": "#/$defs/storage_account_name"
-            },
-            "path": {
-              "description": "File share witness UNC path.",
-              "type": "string"
-            }
-          },
           "allOf": [
             {
               "if": {
@@ -391,15 +366,33 @@
                 }
               }
             }
+          ],
+          "properties": {
+            "type": {
+              "description": "cloud (an Azure Storage account), file_share (disconnected operations), or none. Two machines need a witness. https://learn.microsoft.com/azure/azure-local/concepts/cluster-witness",
+              "enum": [
+                "cloud",
+                "file_share",
+                "none"
+              ]
+            },
+            "storage_account": {
+              "$ref": "#/$defs/storage_account_name",
+              "description": "Cloud witness storage account. ARM clusterWitnessStorageAccountName."
+            },
+            "path": {
+              "description": "File share witness UNC path.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "type"
           ]
         },
         "key_vault": {
           "description": "The Key Vault the deployment uses for the instance's secrets (one per instance). ARM keyVaultName.",
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "name"
-          ],
           "properties": {
             "name": {
               "$ref": "#/$defs/key_vault_name"
@@ -413,7 +406,10 @@
               "minimum": 7,
               "maximum": 90
             }
-          }
+          },
+          "required": [
+            "name"
+          ]
         },
         "diagnostics": {
           "description": "Key Vault audit logs. ARM diagnosticStorageAccountName, logsRetentionInDays and storageAccountType.",
@@ -435,7 +431,12 @@
             }
           }
         }
-      }
+      },
+      "required": [
+        "name",
+        "witness",
+        "key_vault"
+      ]
     },
     "deployment": {
       "description": "How the toolkit's ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks for approval and recovers. Optional; every key has a default; a -Settings value on the command line wins over this block. (since 5.6)",
@@ -445,39 +446,39 @@
         "validate_timeout_minutes": {
           "description": "How long the run waits for a Validate before it stops waiting (state ValidationTimedOut; Azure keeps working and the next run attaches to it). Microsoft: validation takes about 10 to 30 minutes. Default 90. (since 5.6)",
           "type": "integer",
+          "default": 90,
           "minimum": 5,
-          "maximum": 1440,
-          "default": 90
+          "maximum": 1440
         },
         "deploy_timeout_minutes": {
           "description": "How long the run waits for a Deploy before it stops waiting (state DeploymentTimedOut). Microsoft: 2.5 to 3 hours; several steps take 40 to 50 minutes or more. Default 360. (since 5.6)",
           "type": "integer",
+          "default": 360,
           "minimum": 30,
-          "maximum": 1440,
-          "default": 360
+          "maximum": 1440
         },
         "poll_seconds": {
           "description": "Seconds between the first reads of the validation or deployment status. The delay grows by half each read up to poll_max_seconds. Default 15. (since 5.6)",
           "type": "integer",
+          "default": 15,
           "minimum": 5,
-          "maximum": 300,
-          "default": 15
+          "maximum": 300
         },
         "poll_max_seconds": {
           "description": "The longest delay between two reads. Default 120. (since 5.6)",
           "type": "integer",
+          "default": 120,
           "minimum": 5,
-          "maximum": 600,
-          "default": 120
+          "maximum": 600
         },
         "approval": {
           "description": "Mode ValidateAndDeploy: what happens between a good Validate and the Deploy. stop (default): the run ends in state AwaitingApproval and a later run with Mode Deploy continues. prompt: asks on the console, and stops without a console. none: continues at once (a lab). Pipelines run Validate and Deploy as two jobs with the platform's approval between them and do not use this. (since 5.6)",
+          "default": "stop",
           "enum": [
             "stop",
             "prompt",
             "none"
-          ],
-          "default": "stop"
+          ]
         },
         "resume": {
           "description": "Allow the run to resubmit a failed Deploy (and attach to a running one). Without it a failed Deploy is refused. Microsoft's portal has Resume deployment for a failed instance; for the ARM route this resubmits the same parameters in Deploy mode. Default false. (since 5.6)",
@@ -494,22 +495,22 @@
           "type": "array",
           "items": {
             "enum": [
-            "AzureContext",
-            "ResourceGroup",
-            "ResourceProviders",
-            "Permissions",
-            "NamesAvailable",
-            "KeyVaultSecrets",
-            "ArcMachinesConnected",
-            "ArcMachineNaming",
-            "OsConfigurationConverged",
-            "OsBuildConsistent",
-            "SbeConsistent",
-            "DnsAndTime",
-            "ActiveDirectoryPrepared",
-            "LocalIdentityPrerequisites",
-            "NoLeftoverFailedDeployment",
-            "ValidatedBeforeDeploy"
+              "AzureContext",
+              "ResourceGroup",
+              "ResourceProviders",
+              "Permissions",
+              "NamesAvailable",
+              "KeyVaultSecrets",
+              "ArcMachinesConnected",
+              "ArcMachineNaming",
+              "OsConfigurationConverged",
+              "OsBuildConsistent",
+              "SbeConsistent",
+              "DnsAndTime",
+              "ActiveDirectoryPrepared",
+              "LocalIdentityPrerequisites",
+              "NoLeftoverFailedDeployment",
+              "ValidatedBeforeDeploy"
             ]
           }
         },
@@ -539,10 +540,6 @@
       "description": "What every machine is. The layout is the same on every machine.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "vendor",
-        "model"
-      ],
       "properties": {
         "vendor": {
           "description": "OEM, for example Dell, HPE, Lenovo or DataON. ZTP picks config/oem/<vendor>.json from it.",
@@ -581,16 +578,16 @@
           }
         },
         "bmc": {
-          "description": "BMC (iDRAC, iLO, XCC) login used for every machine unless a node sets its own.",
-          "$ref": "#/$defs/bmc_credentials"
+          "$ref": "#/$defs/bmc_credentials",
+          "description": "BMC (iDRAC, iLO, XCC) login used for every machine unless a node sets its own."
         },
         "bios": {
-          "description": "BIOS attributes for every machine, as they are when the machine is finished (schema 5.2; from 5.3 this is the FINAL state): a node's bios is merged over it. azurelocal-ztp applies them at its Boot stage, and in its Restore stage sets back to these values any key that bios_during_provisioning changed for the OS install. See $defs/bios_settings.",
-          "$ref": "#/$defs/bios_settings"
+          "$ref": "#/$defs/bios_settings",
+          "description": "BIOS attributes for every machine, as they are when the machine is finished (schema 5.2; from 5.3 this is the FINAL state): a node's bios is merged over it. azurelocal-ztp applies them at its Boot stage, and in its Restore stage sets back to these values any key that bios_during_provisioning changed for the OS install. See $defs/bios_settings."
         },
         "bios_during_provisioning": {
-          "description": "Schema 5.3. BIOS attributes that hold for the OS install only: TEMPORARY values. A node's bios_during_provisioning is merged over this one, and during-provisioning values win over bios. azurelocal-ztp applies them at its Boot stage. In its Restore stage, after the OS install and before Handoff, it sets each key back to its bios value (or, when bios doesn't name the key, to the original value it saved), restarts the node and waits for Arc to reconnect. From 5.4 azurelocal-ztp derives the SAN-adapter case itself from nodes[].san.hbas[].slot (provisioning.simplified.isolate_san_adapters); the raw keys remain as explicit overrides and win. Example: bios { Slot2: Enabled } with bios_during_provisioning { Slot2: Disabled } turns off a Fibre Channel HBA in slot 2 while the maintenance environment installs the OS (it would otherwise install onto the SAN LUN), and turns it on again afterwards. On Dell, a slot can also be BootDriverDisabled: visible to the OS but never a boot device. A key here should also be in bios, so the final state is explicit. See $defs/bios_settings.",
-          "$ref": "#/$defs/bios_settings"
+          "$ref": "#/$defs/bios_settings",
+          "description": "Schema 5.3. BIOS attributes that hold for the OS install only: TEMPORARY values. A node's bios_during_provisioning is merged over this one, and during-provisioning values win over bios. azurelocal-ztp applies them at its Boot stage. In its Restore stage, after the OS install and before Handoff, it sets each key back to its bios value (or, when bios doesn't name the key, to the original value it saved), restarts the node and waits for Arc to reconnect. From 5.4 azurelocal-ztp derives the SAN-adapter case itself from nodes[].san.hbas[].slot (provisioning.simplified.isolate_san_adapters); the raw keys remain as explicit overrides and win. Example: bios { Slot2: Enabled } with bios_during_provisioning { Slot2: Disabled } turns off a Fibre Channel HBA in slot 2 while the maintenance environment installs the OS (it would otherwise install onto the SAN LUN), and turns it on again afterwards. On Dell, a slot can also be BootDriverDisabled: visible to the OS but never a boot device. A key here should also be in bios, so the final state is explicit. See $defs/bios_settings."
         },
         "sbe": {
           "description": "Solution Builder Extension. The version is the one validated with provisioning.os_version. ARM sbeVersion, sbeFamily, sbePublisher, sbeManifestSource and sbeManifestCreationDate.",
@@ -657,9 +654,6 @@
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": [
-                    "name"
-                  ],
                   "properties": {
                     "name": {
                       "description": "Adapter name in the OS, as the intents use it.",
@@ -682,7 +676,10 @@
                       "type": "string",
                       "pattern": "^(unused|intent:.+|cluster:[ab]|iscsi:[ab])$"
                     }
-                  }
+                  },
+                  "required": [
+                    "name"
+                  ]
                 }
               }
             }
@@ -701,7 +698,11 @@
             }
           }
         }
-      }
+      },
+      "required": [
+        "vendor",
+        "model"
+      ]
     },
     "networking": {
       "description": "The on-premises networks.",
@@ -715,19 +716,14 @@
           "description": "The management network and the infrastructure IP pool. DNS servers can't be changed after deployment.",
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "subnet",
-            "gateway",
-            "dns_servers"
-          ],
           "properties": {
             "subnet": {
-              "description": "CIDR. ARM subnetMask is derived from it.",
-              "$ref": "#/$defs/cidr"
+              "$ref": "#/$defs/cidr",
+              "description": "CIDR. ARM subnetMask is derived from it."
             },
             "gateway": {
-              "description": "The one default gateway. ARM defaultGateway.",
-              "$ref": "#/$defs/ipv4"
+              "$ref": "#/$defs/ipv4",
+              "description": "The one default gateway. ARM defaultGateway."
             },
             "vlan_id": {
               "description": "0 means untagged. Can't be changed after deployment. The VLAN the host tags on the management port: simplified provisioning sets it on that port (edge machine networkAdapters[].vlanId). With nodes[].network_adapters the management port's host VLAN (0 when its vlan_mode is access) must match it.",
@@ -746,13 +742,13 @@
             "ip_assignment": {
               "description": "Deprecated in 5.2: set each port's ip_assignment in nodes[].network_adapters. Read when a node has no network_adapters, and must agree with them when both are given (static = static, dhcp = dhcp_reservation or dhcp, preconfigured = preconfigured). How each machine's management address (nodes[].management.ip_address) is set before deployment, on the management port (nodes[].management.mac_address). static (default): the address, the subnet mask, the gateway, the DNS servers and vlan_id are set on that port. Simplified provisioning sets them at the OS install (edge machine siteDetails.deviceConfiguration.network.networkAdapters[], ipAssignmentType Manual, keyed by the MAC); for an ISO install the operator or the toolkit sets them. dhcp: the port stays on DHCP, so reserve each ip_address in DHCP for its MAC. preconfigured: the port is already configured, and the tools don't change it. Not the same as use_dhcp, which is the deployment's ARM useDhcp.",
               "type": "string",
+              "deprecated": true,
+              "default": "static",
               "enum": [
                 "static",
                 "dhcp",
                 "preconfigured"
-              ],
-              "default": "static",
-              "deprecated": true
+              ]
             },
             "use_dhcp": {
               "description": "ARM useDhcp: the deployment takes the host and cluster addresses from DHCP instead of static addresses and the infrastructure_pool. Default false. A deployment setting, not how each machine's management port gets its address before deployment: that is ip_assignment.",
@@ -762,10 +758,6 @@
               "description": "Simplified provisioning: the address range of the site's network setting (Microsoft.Edge/configurations/networkConfigurations ipv4.addressRange) when the management addresses are static. Default: the lowest to the highest static management address. Inside the management subnet, and holding every static management address.",
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "start",
-                "end"
-              ],
               "properties": {
                 "start": {
                   "$ref": "#/$defs/ipv4"
@@ -773,32 +765,32 @@
                 "end": {
                   "$ref": "#/$defs/ipv4"
                 }
-              }
+              },
+              "required": [
+                "start",
+                "end"
+              ]
             },
             "provisioning_network": {
               "description": "Simplified provisioning: how the maintenance environment gets the address it reaches Azure with, on the ports with role provisioning, before the machine is claimed. dhcp (default): a DHCP server answers on that port's network. When the management port is one of those ports, the management network has DHCP (Mode B for a static management port); when it isn't, it is Mode C (Static without management DHCP). static: no DHCP there. A static management port then needs another port with role provisioning and ip_assignment dhcp or dhcp_reservation, or validation stops (AZL-024): Learn documents only the Configurator app for a static maintenance address, and whether the bootable image can carry a preset address is an open research item, so tools don't set it.",
+              "default": "dhcp",
               "enum": [
                 "dhcp",
                 "static"
-              ],
-              "default": "dhcp"
+              ]
             },
             "static_method": {
               "description": "Schema 5.3. Simplified provisioning, and only when the management ip_assignment is static: who sets each machine's static management address. device (default): azurelocal-ztp's Device stage sets it on the management port, found by its MAC, through the maintenance environment's Configurator service before the machine is claimed. The Arc site's network setting is then Automatic and the claim carries no Manual adapter. site: the older path. The site's network setting is Manual with an address range (site_ip_range) and Microsoft's OS install assigns the address. Microsoft ignores the MAC there and uses the first ready port, which was observed live on Dell AX-760, so use it only when the first ready port is the management port.",
+              "default": "device",
               "enum": [
                 "device",
                 "site"
-              ],
-              "default": "device"
+              ]
             },
             "provisioning_dhcp_range": {
               "description": "Schema 5.3. Simplified provisioning: the DHCP range on the provisioning network (the one the maintenance environment gets its address on). The Device stage scans it (TCP 20001) to find each machine's maintenance environment by MAC when nodes[].maintenance_address isn't set. Inside the management subnet, start at or below end.",
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "start",
-                "end"
-              ],
               "properties": {
                 "start": {
                   "$ref": "#/$defs/ipv4"
@@ -806,16 +798,16 @@
                 "end": {
                   "$ref": "#/$defs/ipv4"
                 }
-              }
+              },
+              "required": [
+                "start",
+                "end"
+              ]
             },
             "infrastructure_pool": {
               "description": "At least six contiguous addresses in the management subnet, outside the machines' addresses. ARM startingIPAddress and endingIPAddress.",
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "start",
-                "end"
-              ],
               "properties": {
                 "start": {
                   "$ref": "#/$defs/ipv4"
@@ -823,9 +815,18 @@
                 "end": {
                   "$ref": "#/$defs/ipv4"
                 }
-              }
+              },
+              "required": [
+                "start",
+                "end"
+              ]
             }
-          }
+          },
+          "required": [
+            "subnet",
+            "gateway",
+            "dns_servers"
+          ]
         },
         "oob": {
           "description": "The out-of-band network of the BMCs.",
@@ -895,11 +896,6 @@
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "name",
-                  "adapter",
-                  "vlan_id"
-                ],
                 "properties": {
                   "name": {
                     "description": "For example StorageNetwork1.",
@@ -916,10 +912,15 @@
                     "maximum": 4094
                   },
                   "subnet": {
-                    "description": "Needed when auto_ip is false.",
-                    "$ref": "#/$defs/cidr"
+                    "$ref": "#/$defs/cidr",
+                    "description": "Needed when auto_ip is false."
                   }
-                }
+                },
+                "required": [
+                  "name",
+                  "adapter",
+                  "vlan_id"
+                ]
               }
             }
           }
@@ -930,12 +931,6 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "name",
-              "adapter",
-              "vlan_id",
-              "subnet"
-            ],
             "properties": {
               "name": {
                 "type": "string"
@@ -962,7 +957,13 @@
                   "other"
                 ]
               }
-            }
+            },
+            "required": [
+              "name",
+              "adapter",
+              "vlan_id",
+              "subnet"
+            ]
           }
         },
         "vlans": {
@@ -971,10 +972,6 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "name",
-              "id"
-            ],
             "properties": {
               "name": {
                 "type": "string"
@@ -991,7 +988,11 @@
                 "description": "Free text. The values management, oob, automation, compute, storage and other (any case) are the purpose marker: management and oob make the subnet a candidate source for the remote management security profile of dev and production. Any other text has no effect.",
                 "type": "string"
               }
-            }
+            },
+            "required": [
+              "name",
+              "id"
+            ]
           }
         },
         "logical_networks": {
@@ -1009,9 +1010,6 @@
             "proxy": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "url"
-              ],
               "properties": {
                 "url": {
                   "type": "string",
@@ -1023,15 +1021,15 @@
                     "type": "string"
                   }
                 }
-              }
+              },
+              "required": [
+                "url"
+              ]
             },
             "arc_gateway": {
               "description": "The Arc gateway resource, in the same subscription as the machines.",
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "name"
-              ],
               "properties": {
                 "name": {
                   "type": "string"
@@ -1039,7 +1037,10 @@
                 "resource_group": {
                   "$ref": "#/$defs/resource_group"
                 }
-              }
+              },
+              "required": [
+                "name"
+              ]
             },
             "private_path": {
               "type": "object",
@@ -1095,10 +1096,6 @@
           "description": "The deployment's local administrator on every machine. Not the built-in Administrator: the deployment renames it. ARM localAdminUserName and localAdminPassword.",
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "username",
-            "password"
-          ],
           "properties": {
             "username": {
               "type": "string",
@@ -1109,8 +1106,81 @@
               }
             },
             "password": {
-              "description": "At least 14 characters with lowercase, uppercase, a digit and a special character.",
-              "$ref": "#/$defs/kv_ref"
+              "$ref": "#/$defs/kv_ref",
+              "description": "At least 14 characters with lowercase, uppercase, a digit and a special character."
+            }
+          },
+          "required": [
+            "username",
+            "password"
+          ]
+        },
+        "local_identity": {
+          "description": "Local identity with Key Vault. The instance's secrets go to cluster.key_vault.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "dns_server_config": {
+              "description": "ARM dnsServerConfig: use_dns_server (UseDnsServer) or use_forwarder (UseForwarder).",
+              "enum": [
+                "use_dns_server",
+                "use_forwarder"
+              ]
+            },
+            "dns_zone": {
+              "type": "string"
+            },
+            "dns_forwarders": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ipv4"
+              }
+            }
+          },
+          "required": [
+            "dns_server_config"
+          ]
+        },
+        "entra": {
+          "description": "Entra ID groups, role assignments and PIM.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "groups": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "purpose": {
+                    "type": "string"
+                  },
+                  "roles": {
+                    "description": "Azure role names assigned to the group.",
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "scope": {
+                    "description": "Scope of the role assignments.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name"
+                ]
+              }
+            },
+            "break_glass_accounts": {
+              "description": "User principal names of emergency access accounts, excluded from Conditional Access.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
             }
           }
         },
@@ -1140,32 +1210,28 @@
               "description": "The LCM deployment user, created in the OU by the AD preparation module. ARM AzureStackLCMAdminUsername and AzureStackLCMAdminPassword.",
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "username",
-                "password"
-              ],
               "properties": {
                 "username": {
                   "description": "Name only, no domain. Up to 20 characters.",
                   "type": "string",
+                  "pattern": "^[^@\\\\]+$",
                   "minLength": 1,
-                  "maxLength": 20,
-                  "pattern": "^[^@\\\\]+$"
+                  "maxLength": 20
                 },
                 "password": {
-                  "description": "At least 14 characters with lowercase, uppercase, a digit and a special character.",
-                  "$ref": "#/$defs/kv_ref"
+                  "$ref": "#/$defs/kv_ref",
+                  "description": "At least 14 characters with lowercase, uppercase, a digit and a special character."
                 }
-              }
+              },
+              "required": [
+                "username",
+                "password"
+              ]
             },
             "domain_join_account": {
               "description": "Optional override. The OS configuration run joins each machine to the domain (Add-Computer) before the cluster validation and deployment with the LCM user (lcm_user), which Microsoft's Active Directory preparation gives the right to create and delete computer objects in the dedicated OU and which is the account used for domain-join actions. Set this only when your site joins machines with another account; it needs the same rights on ou_path. (since 5.5)",
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "username",
-                "password"
-              ],
               "properties": {
                 "username": {
                   "description": "The join account: a name (svc-azl-join, qualified with netbios_name), NETBIOS\\name or name@domain. (since 5.5)",
@@ -1173,10 +1239,14 @@
                   "minLength": 1
                 },
                 "password": {
-                  "description": "A Key Vault secret reference. The toolkit reads it on the machine that runs the OS configuration, passes it to the node as a secret and never writes it to disk, a log, the event feed or the report. (since 5.5)",
-                  "$ref": "#/$defs/kv_ref"
+                  "$ref": "#/$defs/kv_ref",
+                  "description": "A Key Vault secret reference. The toolkit reads it on the machine that runs the OS configuration, passes it to the node as a secret and never writes it to disk, a log, the event feed or the report. (since 5.5)"
                 }
-              }
+              },
+              "required": [
+                "username",
+                "password"
+              ]
             },
             "local_admin_members": {
               "description": "Domain principals the OS configuration adds to the local Administrators group of every machine after the join and the restart, so a domain account can be used for remoting and log access (a domain account is not a local administrator by default; the deployment adds the LCM user itself later). Names without the domain; users and groups. Default: the security_groups entries whose purpose says they administer the instance, and the LCM user. (since 5.5)",
@@ -1194,8 +1264,8 @@
                 "rename_after_join": {
                   "description": "Fixed to false: the machine gets its final name before it joins (the Hostname step runs first) and is never renamed after. (since 5.5)",
                   "type": "boolean",
-                  "const": false,
-                  "default": false
+                  "default": false,
+                  "const": false
                 },
                 "allow_ou_move": {
                   "description": "true: before the deployment, a machine already joined to this domain but sitting in another OU is moved into ou_path. false (default): it is reported as blocked and left where it is. Microsoft does not support moving the computer objects to another OU after the deployment, so a machine that is already part of a cluster is never moved, whatever this says. (since 5.5)",
@@ -1217,9 +1287,6 @@
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "name"
-                ],
                 "properties": {
                   "name": {
                     "type": "string"
@@ -1241,7 +1308,10 @@
                       "minLength": 1
                     }
                   }
-                }
+                },
+                "required": [
+                  "name"
+                ]
               }
             },
             "service_accounts": {
@@ -1250,9 +1320,6 @@
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "name"
-                ],
                 "properties": {
                   "name": {
                     "type": "string"
@@ -1263,76 +1330,10 @@
                   "password": {
                     "$ref": "#/$defs/kv_ref"
                   }
-                }
-              }
-            }
-          }
-        },
-        "local_identity": {
-          "description": "Local identity with Key Vault. The instance's secrets go to cluster.key_vault.",
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "dns_server_config"
-          ],
-          "properties": {
-            "dns_server_config": {
-              "description": "ARM dnsServerConfig: use_dns_server (UseDnsServer) or use_forwarder (UseForwarder).",
-              "enum": [
-                "use_dns_server",
-                "use_forwarder"
-              ]
-            },
-            "dns_zone": {
-              "type": "string"
-            },
-            "dns_forwarders": {
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/ipv4"
-              }
-            }
-          }
-        },
-        "entra": {
-          "description": "Entra ID groups, role assignments and PIM.",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "groups": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
+                },
                 "required": [
                   "name"
-                ],
-                "properties": {
-                  "name": {
-                    "type": "string"
-                  },
-                  "purpose": {
-                    "type": "string"
-                  },
-                  "roles": {
-                    "description": "Azure role names assigned to the group.",
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  },
-                  "scope": {
-                    "type": "string",
-                    "description": "Scope of the role assignments."
-                  }
-                }
-              }
-            },
-            "break_glass_accounts": {
-              "description": "User principal names of emergency access accounts, excluded from Conditional Access.",
-              "type": "array",
-              "items": {
-                "type": "string"
+                ]
               }
             }
           }
@@ -1357,10 +1358,6 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "name",
-              "size_gib"
-            ],
             "properties": {
               "name": {
                 "type": "string"
@@ -1378,220 +1375,17 @@
                   "nested_two_way"
                 ]
               }
-            }
+            },
+            "required": [
+              "name",
+              "size_gib"
+            ]
           }
         },
         "san": {
           "description": "The external SAN of a disaggregated (san) or hybrid deployment. From 5.3 it also records the array, the Fibre Channel fabrics and target WWPNs or the iSCSI targets, which the SAN deployment and zoning work read; each machine's own HBAs or initiator are nodes[].san.",
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "type"
-          ],
-          "properties": {
-            "type": {
-              "description": "fibre_channel needs storage.san.fibre_channel; iscsi needs storage.san.iscsi.",
-              "enum": [
-                "fibre_channel",
-                "iscsi"
-              ]
-            },
-            "array": {
-              "description": "Schema 5.3. The storage array that presents the LUNs.",
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "name",
-                "vendor",
-                "model"
-              ],
-              "properties": {
-                "name": {
-                  "description": "The array's name, for example its hostname in the array manager.",
-                  "type": "string",
-                  "minLength": 1
-                },
-                "vendor": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "model": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "management_address": {
-                  "description": "The array's management address, when the SAN deployment drives it.",
-                  "$ref": "#/$defs/ipv4"
-                }
-              }
-            },
-            "fibre_channel": {
-              "description": "Schema 5.3. Required when type is fibre_channel: the fabrics and the array's target ports. Each machine's HBA ports are nodes[].san.hbas.",
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "fabrics": {
-                  "description": "The Fibre Channel fabrics, for example A and B. Every WWPN names one by fabric.",
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                      "name"
-                    ],
-                    "properties": {
-                      "name": {
-                        "description": "For example A or B. Unique.",
-                        "type": "string",
-                        "minLength": 1
-                      },
-                      "switch": {
-                        "description": "The fabric's switch, for example a network_devices[].hostname.",
-                        "type": "string"
-                      },
-                      "zone_set": {
-                        "description": "The active zone set on this fabric.",
-                        "type": "string"
-                      }
-                    }
-                  }
-                },
-                "target_wwpns": {
-                  "description": "The array's target ports (WWPNs) and the fabric each is cabled to. Zoning lets each machine's HBA ports see them.",
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                      "wwpn",
-                      "fabric"
-                    ],
-                    "properties": {
-                      "wwpn": {
-                        "$ref": "#/$defs/wwpn"
-                      },
-                      "fabric": {
-                        "description": "A name in fabrics.",
-                        "type": "string",
-                        "minLength": 1
-                      }
-                    }
-                  }
-                }
-              }
-            },
-            "iscsi": {
-              "description": "Schema 5.3. Required when type is iscsi: the array's targets and CHAP. Each machine's initiator IQN is nodes[].san.initiator_iqn; the addresses of its iSCSI ports are on nodes[].network_adapters with role iscsi:a and iscsi:b.",
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "targets": {
-                  "description": "The array's iSCSI targets.",
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": [
-                      "iqn",
-                      "portals"
-                    ],
-                    "properties": {
-                      "iqn": {
-                        "$ref": "#/$defs/iscsi_name"
-                      },
-                      "portals": {
-                        "description": "The target portals: an IPv4 address, optionally with a port (default 3260), for example 198.51.100.10 or 198.51.100.10:3260.",
-                        "type": "array",
-                        "minItems": 1,
-                        "uniqueItems": true,
-                        "items": {
-                          "$ref": "#/$defs/iscsi_portal"
-                        }
-                      },
-                      "fabric": {
-                        "description": "The storage network this target serves, matching the iSCSI port role: A for iscsi:a, B for iscsi:b.",
-                        "type": "string",
-                        "minLength": 1
-                      }
-                    }
-                  }
-                },
-                "chap": {
-                  "description": "CHAP authentication of the sessions. The secret is a Key Vault reference.",
-                  "type": "object",
-                  "additionalProperties": false,
-                  "required": [
-                    "enabled"
-                  ],
-                  "properties": {
-                    "enabled": {
-                      "type": "boolean"
-                    },
-                    "username": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "secret": {
-                      "$ref": "#/$defs/kv_ref"
-                    }
-                  },
-                  "if": {
-                    "type": "object",
-                    "required": [
-                      "enabled"
-                    ],
-                    "properties": {
-                      "enabled": {
-                        "const": true
-                      }
-                    }
-                  },
-                  "then": {
-                    "type": "object",
-                    "required": [
-                      "username",
-                      "secret"
-                    ],
-                    "properties": {
-                      "username": true,
-                      "secret": true
-                    }
-                  }
-                }
-              }
-            },
-            "infra_volume_lun_id": {
-              "description": "LUN of the infrastructure volume (250 GB minimum). ARM infraVolLunId.",
-              "type": "string"
-            },
-            "performance_history_lun_id": {
-              "description": "LUN of the performance history volume (20 GB minimum). ARM infraPerfLunId.",
-              "type": "string"
-            },
-            "luns": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "required": [
-                  "name",
-                  "size_gib"
-                ],
-                "properties": {
-                  "name": {
-                    "type": "string"
-                  },
-                  "size_gib": {
-                    "type": "number",
-                    "exclusiveMinimum": 0
-                  },
-                  "lun_id": {
-                    "type": "string"
-                  }
-                }
-              }
-            }
-          },
           "allOf": [
             {
               "if": {
@@ -1637,6 +1431,213 @@
                 }
               }
             }
+          ],
+          "properties": {
+            "type": {
+              "description": "fibre_channel needs storage.san.fibre_channel; iscsi needs storage.san.iscsi.",
+              "enum": [
+                "fibre_channel",
+                "iscsi"
+              ]
+            },
+            "array": {
+              "description": "Schema 5.3. The storage array that presents the LUNs.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "The array's name, for example its hostname in the array manager.",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "vendor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "management_address": {
+                  "$ref": "#/$defs/ipv4",
+                  "description": "The array's management address, when the SAN deployment drives it."
+                }
+              },
+              "required": [
+                "name",
+                "vendor",
+                "model"
+              ]
+            },
+            "fibre_channel": {
+              "description": "Schema 5.3. Required when type is fibre_channel: the fabrics and the array's target ports. Each machine's HBA ports are nodes[].san.hbas.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "fabrics": {
+                  "description": "The Fibre Channel fabrics, for example A and B. Every WWPN names one by fabric.",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "name": {
+                        "description": "For example A or B. Unique.",
+                        "type": "string",
+                        "minLength": 1
+                      },
+                      "switch": {
+                        "description": "The fabric's switch, for example a network_devices[].hostname.",
+                        "type": "string"
+                      },
+                      "zone_set": {
+                        "description": "The active zone set on this fabric.",
+                        "type": "string"
+                      }
+                    },
+                    "required": [
+                      "name"
+                    ]
+                  }
+                },
+                "target_wwpns": {
+                  "description": "The array's target ports (WWPNs) and the fabric each is cabled to. Zoning lets each machine's HBA ports see them.",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "wwpn": {
+                        "$ref": "#/$defs/wwpn"
+                      },
+                      "fabric": {
+                        "description": "A name in fabrics.",
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "wwpn",
+                      "fabric"
+                    ]
+                  }
+                }
+              }
+            },
+            "iscsi": {
+              "description": "Schema 5.3. Required when type is iscsi: the array's targets and CHAP. Each machine's initiator IQN is nodes[].san.initiator_iqn; the addresses of its iSCSI ports are on nodes[].network_adapters with role iscsi:a and iscsi:b.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "targets": {
+                  "description": "The array's iSCSI targets.",
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "iqn": {
+                        "$ref": "#/$defs/iscsi_name"
+                      },
+                      "portals": {
+                        "description": "The target portals: an IPv4 address, optionally with a port (default 3260), for example 198.51.100.10 or 198.51.100.10:3260.",
+                        "type": "array",
+                        "minItems": 1,
+                        "uniqueItems": true,
+                        "items": {
+                          "$ref": "#/$defs/iscsi_portal"
+                        }
+                      },
+                      "fabric": {
+                        "description": "The storage network this target serves, matching the iSCSI port role: A for iscsi:a, B for iscsi:b.",
+                        "type": "string",
+                        "minLength": 1
+                      }
+                    },
+                    "required": [
+                      "iqn",
+                      "portals"
+                    ]
+                  }
+                },
+                "chap": {
+                  "description": "CHAP authentication of the sessions. The secret is a Key Vault reference.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "if": {
+                    "type": "object",
+                    "required": [
+                      "enabled"
+                    ],
+                    "properties": {
+                      "enabled": {
+                        "const": true
+                      }
+                    }
+                  },
+                  "then": {
+                    "type": "object",
+                    "required": [
+                      "username",
+                      "secret"
+                    ],
+                    "properties": {
+                      "username": true,
+                      "secret": true
+                    }
+                  },
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "username": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "secret": {
+                      "$ref": "#/$defs/kv_ref"
+                    }
+                  },
+                  "required": [
+                    "enabled"
+                  ]
+                }
+              }
+            },
+            "infra_volume_lun_id": {
+              "description": "LUN of the infrastructure volume (250 GB minimum). ARM infraVolLunId.",
+              "type": "string"
+            },
+            "performance_history_lun_id": {
+              "description": "LUN of the performance history volume (20 GB minimum). ARM infraPerfLunId.",
+              "type": "string"
+            },
+            "luns": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "size_gib": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "lun_id": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "size_gib"
+                ]
+              }
+            }
+          },
+          "required": [
+            "type"
           ]
         }
       }
@@ -1698,9 +1699,6 @@
       "description": "SDN enabled by Azure Arc.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "enabled"
-      ],
       "properties": {
         "enabled": {
           "type": "boolean"
@@ -1717,7 +1715,10 @@
         "default_access_policy": {
           "type": "boolean"
         }
-      }
+      },
+      "required": [
+        "enabled"
+      ]
     },
     "operations": {
       "type": "object",
@@ -1729,42 +1730,9 @@
             "powershell"
           ]
         },
-        "monitoring": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "enabled"
-          ],
-          "properties": {
-            "enabled": {
-              "type": "boolean"
-            },
-            "log_analytics_workspace": {
-              "type": "string"
-            },
-            "workspace_resource_group": {
-              "$ref": "#/$defs/resource_group"
-            },
-            "data_collection_rule": {
-              "type": "string"
-            },
-            "data_collection_endpoint": {
-              "type": "string"
-            },
-            "health_alerts": {
-              "type": "boolean"
-            },
-            "alert_email": {
-              "type": "string"
-            }
-          }
-        },
         "backup": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "enabled"
-          ],
           "properties": {
             "enabled": {
               "type": "boolean"
@@ -1788,7 +1756,10 @@
             "policy": {
               "type": "string"
             }
-          }
+          },
+          "required": [
+            "enabled"
+          ]
         },
         "disaster_recovery": {
           "type": "object",
@@ -1814,12 +1785,12 @@
               "type": "string"
             },
             "network": {
-              "type": "string",
-              "description": "Network the VMs fail over to."
+              "description": "Network the VMs fail over to.",
+              "type": "string"
             },
             "test_network": {
-              "type": "string",
-              "description": "Isolated network for test failovers."
+              "description": "Isolated network for test failovers.",
+              "type": "string"
             },
             "storage_account": {
               "$ref": "#/$defs/storage_account_name"
@@ -1855,14 +1826,44 @@
           "additionalProperties": false,
           "properties": {
             "azure_hybrid_benefit": {
-              "type": "boolean",
-              "description": "Azure Hybrid Benefit for the host fee and Windows Server guests."
+              "description": "Azure Hybrid Benefit for the host fee and Windows Server guests.",
+              "type": "boolean"
             },
             "windows_server_subscription": {
               "type": "boolean"
             },
             "azure_verification_for_vms": {
               "type": "boolean"
+            }
+          }
+        },
+        "monitoring": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled"
+          ],
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "log_analytics_workspace": {
+              "type": "string"
+            },
+            "workspace_resource_group": {
+              "$ref": "#/$defs/resource_group"
+            },
+            "data_collection_rule": {
+              "type": "string"
+            },
+            "data_collection_endpoint": {
+              "type": "string"
+            },
+            "health_alerts": {
+              "type": "boolean"
+            },
+            "alert_email": {
+              "type": "string"
             }
           }
         }
@@ -1872,9 +1873,6 @@
       "description": "How the OS gets onto the machines (scenario.os_install), and the OS version.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "os_version"
-      ],
       "properties": {
         "os_version": {
           "description": "The solution version the machines run: latest, latest-preview, or a version such as 12.2610.1004.50. Pin a version. Simplified provisioning installs it, and the SBE must be validated with it.",
@@ -1902,12 +1900,6 @@
           "description": "Simplified machine provisioning from Azure, as azurelocal-ztp runs it. https://learn.microsoft.com/azure/azure-local/deploy/simplified-machine-provisioning",
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "site_name",
-            "maintenance_iso",
-            "admin",
-            "media_share"
-          ],
           "properties": {
             "site_name": {
               "description": "Resource name of the Microsoft.Edge site.",
@@ -1915,12 +1907,12 @@
               "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,62}$"
             },
             "subscription_id": {
-              "description": "Subscription of the site and edge machines, when it isn't azure.subscription_id.",
-              "$ref": "#/$defs/guid"
+              "$ref": "#/$defs/guid",
+              "description": "Subscription of the site and edge machines, when it isn't azure.subscription_id."
             },
             "resource_group": {
-              "description": "Resource group of the site and edge machines, when it isn't azure.resource_group.",
-              "$ref": "#/$defs/resource_group"
+              "$ref": "#/$defs/resource_group",
+              "description": "Resource group of the site and edge machines, when it isn't azure.resource_group."
             },
             "maintenance_iso": {
               "description": "The provisioning (maintenance environment) ISO: latest, a train such as 2610, a build such as 10.2610.0.3063, or a Microsoft download URL.",
@@ -1931,57 +1923,29 @@
               "description": "The local administrator that the provisioned OS gets. Prepare signs in as <node>\\<username>.",
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "username",
-                "password"
-              ],
               "properties": {
                 "username": {
                   "type": "string",
                   "minLength": 1
                 },
                 "password": {
-                  "description": "At least 12 characters with lowercase, uppercase, a digit and a special character. Create the secret before the run.",
-                  "$ref": "#/$defs/kv_ref"
+                  "$ref": "#/$defs/kv_ref",
+                  "description": "At least 12 characters with lowercase, uppercase, a digit and a special character. Create the secret before the run."
                 }
-              }
+              },
+              "required": [
+                "username",
+                "password"
+              ]
             },
             "maintenance_password": {
-              "description": "Schema 5.3. The password of the maintenance environment's local user (edgeuser), which azurelocal-ztp's Device stage signs in with to reach the Configurator service before the machine is claimed. A Key Vault reference. Default: the maintenance environment's out-of-box password that Microsoft Learn documents (Configurator App article). Set a secret when the images carry another one.",
-              "$ref": "#/$defs/kv_ref"
+              "$ref": "#/$defs/kv_ref",
+              "description": "Schema 5.3. The password of the maintenance environment's local user (edgeuser), which azurelocal-ztp's Device stage signs in with to reach the Configurator service before the machine is claimed. A Key Vault reference. Default: the maintenance environment's out-of-box password that Microsoft Learn documents (Configurator App article). Set a secret when the images carry another one."
             },
             "media_share": {
               "description": "The SMB share the BMCs mount the images from.",
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "name"
-              ],
-              "properties": {
-                "name": {
-                  "type": "string",
-                  "pattern": "^[A-Za-z0-9-]+$"
-                },
-                "host": {
-                  "description": "The management host's address as the BMCs reach it.",
-                  "$ref": "#/$defs/ipv4"
-                },
-                "host_adapter": {
-                  "description": "Instead of host: the local adapter whose IPv4 address the BMCs reach. Wins over host.",
-                  "type": "string"
-                },
-                "account_name": {
-                  "description": "Schema 5.4. The local account azurelocal-ztp creates on the management host to give the BMCs access to the share (it generates a password for it, and removes the account with the share). Default: svc-ztp-media.",
-                  "type": "string",
-                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,19}$",
-                  "default": "svc-ztp-media"
-                },
-                "keep": {
-                  "description": "Schema 5.4. Keep the share, its firewall rule and the account after the vouchers are collected (azurelocal-ztp removes them by default). Default false.",
-                  "type": "boolean",
-                  "default": false
-                }
-              },
               "anyOf": [
                 {
                   "type": "object",
@@ -2001,6 +1965,34 @@
                     "host_adapter": true
                   }
                 }
+              ],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9-]+$"
+                },
+                "host": {
+                  "$ref": "#/$defs/ipv4",
+                  "description": "The management host's address as the BMCs reach it."
+                },
+                "host_adapter": {
+                  "description": "Instead of host: the local adapter whose IPv4 address the BMCs reach. Wins over host.",
+                  "type": "string"
+                },
+                "account_name": {
+                  "description": "Schema 5.4. The local account azurelocal-ztp creates on the management host to give the BMCs access to the share (it generates a password for it, and removes the account with the share). Default: svc-ztp-media.",
+                  "type": "string",
+                  "default": "svc-ztp-media",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]{0,19}$"
+                },
+                "keep": {
+                  "description": "Schema 5.4. Keep the share, its firewall rule and the account after the vouchers are collected (azurelocal-ztp removes them by default). Default false.",
+                  "type": "boolean",
+                  "default": false
+                }
+              },
+              "required": [
+                "name"
               ]
             },
             "media_path": {
@@ -2030,8 +2022,8 @@
             "configuration_name": {
               "description": "Schema 5.4. Name of the Microsoft.Edge/configurations resource (the site configuration). Default: default.",
               "type": "string",
-              "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,62}$",
-              "default": "default"
+              "default": "default",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,62}$"
             },
             "managed_resource_group_name": {
               "description": "Schema 5.4. Name for the managed resource group of the site configuration, which holds the Arc machines. Default: empty, the service chooses the name.",
@@ -2060,11 +2052,11 @@
             },
             "network_kind": {
               "description": "Schema 5.4. Kind of the site's network setting: LAN or WLAN. Default LAN.",
+              "default": "LAN",
               "enum": [
                 "LAN",
                 "WLAN"
-              ],
-              "default": "LAN"
+              ]
             },
             "ntp": {
               "description": "Schema 5.4. The time setting of the site configuration, used while the machines are provisioned. Default: Automatic. (networking.ntp_servers is OS configuration; it is not copied here.)",
@@ -2073,11 +2065,11 @@
               "properties": {
                 "configuration": {
                   "description": "Automatic or Manual.",
+                  "default": "Automatic",
                   "enum": [
                     "Automatic",
                     "Manual"
-                  ],
-                  "default": "Automatic"
+                  ]
                 },
                 "server": {
                   "description": "The NTP server (address or name) when configuration is Manual.",
@@ -2093,12 +2085,12 @@
             },
             "site_mode": {
               "description": "Schema 5.4. Auto (create the site and configuration when missing), Create (they must not exist) or Reuse (they must exist). Default Auto.",
+              "default": "Auto",
               "enum": [
                 "Auto",
                 "Create",
                 "Reuse"
-              ],
-              "default": "Auto"
+              ]
             },
             "deployment_name": {
               "description": "Schema 5.4. Name of the ARM deployment. Default: ztp-<site_name>.",
@@ -2133,15 +2125,15 @@
                 "size_gb": {
                   "description": "Image size in GiB. The maintenance ISO needs about 1 GiB; 4 is the size that booted on Dell 16G servers. Default 4.",
                   "type": "integer",
+                  "default": 4,
                   "minimum": 2,
-                  "maximum": 128,
-                  "default": 4
+                  "maximum": 128
                 },
                 "name_prefix": {
                   "description": "File-name prefix of the images (<prefix><node>.img). Default ztp-usb-.",
                   "type": "string",
-                  "pattern": "^[A-Za-z0-9._-]{0,40}$",
-                  "default": "ztp-usb-"
+                  "default": "ztp-usb-",
+                  "pattern": "^[A-Za-z0-9._-]{0,40}$"
                 }
               }
             },
@@ -2153,15 +2145,15 @@
                 "port": {
                   "description": "TCP port of the service (https://<address>:<port>/BootstrapOobeService). Default 20001, the port Microsoft documents.",
                   "type": "integer",
+                  "default": 20001,
                   "minimum": 1,
-                  "maximum": 65535,
-                  "default": 20001
+                  "maximum": 65535
                 },
                 "username": {
                   "description": "The service's local user. Default edgeuser, as Microsoft documents. Its password is maintenance_password.",
                   "type": "string",
-                  "minLength": 1,
-                  "default": "edgeuser"
+                  "default": "edgeuser",
+                  "minLength": 1
                 }
               }
             },
@@ -2173,85 +2165,94 @@
                 "bootstrap_minutes": {
                   "description": "Bootstrap stage: overall budget until the maintenance environment is up and every node is ready for the portal. Default 120.",
                   "type": "integer",
+                  "default": 120,
                   "minimum": 1,
-                  "maximum": 1440,
-                  "default": 120
+                  "maximum": 1440
                 },
                 "bootstrap_voucher_minutes": {
                   "description": "Bootstrap stage: budget until a valid voucher appears. Default 90.",
                   "type": "integer",
+                  "default": 90,
                   "minimum": 1,
-                  "maximum": 1440,
-                  "default": 90
+                  "maximum": 1440
                 },
                 "bootstrap_stall_minutes": {
                   "description": "Bootstrap stage: how long the BMC may show no change before the stage reports a stall. Default 20.",
                   "type": "integer",
+                  "default": 20,
                   "minimum": 1,
-                  "maximum": 240,
-                  "default": 20
+                  "maximum": 240
                 },
                 "voucher_wait_minutes": {
                   "description": "Vouchers stage: how long to wait for each node's voucher in its image. Default 120.",
                   "type": "integer",
+                  "default": 120,
                   "minimum": 0,
-                  "maximum": 1440,
-                  "default": 120
+                  "maximum": 1440
                 },
                 "device_minutes": {
                   "description": "Device stage: how long the maintenance environment may take to report the static address (and to be found by the scan). Default 30.",
                   "type": "integer",
+                  "default": 30,
                   "minimum": 0,
-                  "maximum": 1440,
-                  "default": 30
+                  "maximum": 1440
                 },
                 "ready_minutes": {
                   "description": "Ready stage: polling budget until every machine is ready to cluster. Default 180.",
                   "type": "integer",
+                  "default": 180,
                   "minimum": 0,
-                  "maximum": 1440,
-                  "default": 180
+                  "maximum": 1440
                 },
                 "network_minutes": {
                   "description": "Network stage: how long each Azure configuration job may take. Default 60.",
                   "type": "integer",
+                  "default": 60,
                   "minimum": 0,
-                  "maximum": 1440,
-                  "default": 60
+                  "maximum": 1440
                 },
                 "restore_settle_minutes": {
                   "description": "Restore stage: how long to wait after the BIOS restart before checking that the Arc machines are Connected again. Default 5.",
                   "type": "integer",
+                  "default": 5,
                   "minimum": 0,
-                  "maximum": 120,
-                  "default": 5
+                  "maximum": 120
                 },
                 "bios_minutes": {
                   "description": "Boot and Restore stages: how long to wait for a node's BIOS to report the new values after the restart. Default 30.",
                   "type": "integer",
+                  "default": 30,
                   "minimum": 1,
-                  "maximum": 240,
-                  "default": 30
+                  "maximum": 240
                 },
                 "adapters_minutes": {
                   "description": "Schema 5.4.1. Network stage: how long to wait for an edge machine to report its network adapters. The stage polls every poll_interval_seconds (at least 5) until the management MAC is in the list, because the list can still be empty right after Ready. Default 10; 0 reads once and does not wait. When the budget is spent without the management MAC the machine is not verified in any mode (adapters never reported, a Warning that is never a success state) and the Handoff stage reads the adapters again.",
                   "type": "integer",
+                  "default": 10,
                   "minimum": 0,
-                  "maximum": 240,
-                  "default": 10
+                  "maximum": 240
                 },
                 "poll_interval_seconds": {
                   "description": "Ready and Network stages: seconds between polls. Default 60.",
                   "type": "integer",
+                  "default": 60,
                   "minimum": 0,
-                  "maximum": 3600,
-                  "default": 60
+                  "maximum": 3600
                 }
               }
             }
-          }
+          },
+          "required": [
+            "site_name",
+            "maintenance_iso",
+            "admin",
+            "media_share"
+          ]
         }
-      }
+      },
+      "required": [
+        "os_version"
+      ]
     },
     "os_configuration": {
       "description": "How the toolkit's OS configuration run (Invoke-AzureLocalOsConfiguration.ps1) treats the machines after the OS is installed, whichever way it was installed. Optional; every key has a default. (since 5.4.3)",
@@ -2271,16 +2272,16 @@
             "confirm_minutes": {
               "description": "The window for the orchestrator's confirmation. With no confirmation inside it the node restores its snapshot. The run setting networkRollbackMinutes overrides it. (since 5.4.4)",
               "type": "integer",
+              "default": 10,
               "minimum": 1,
-              "maximum": 120,
-              "default": 10
+              "maximum": 120
             },
             "stable_seconds": {
               "description": "How long the node's own checks must stay green before it waits for the confirmation. The run setting networkStableSeconds overrides it. (since 5.4.4)",
               "type": "integer",
+              "default": 60,
               "minimum": 0,
-              "maximum": 600,
-              "default": 60
+              "maximum": 600
             }
           }
         },
@@ -2291,22 +2292,22 @@
           "properties": {
             "transport": {
               "description": "winrm (HTTP, 5985), winrm_https (5986, a certificate on the node) or arc (Azure Arc Run Command: the exception for sites with no route to the nodes; not recommended for network changes). The command line's -Transport WinRM or ArcRunCommand overrides it.",
+              "default": "winrm",
               "enum": [
                 "winrm",
                 "winrm_https",
                 "arc"
-              ],
-              "default": "winrm"
+              ]
             },
             "bootstrap_transport": {
               "description": "How a node whose WinRM firewall rule blocks this host is opened once, without touching the node by hand. none: such a node fails with the diagnosis. arc: Azure Arc Run Command (outbound 443 only; the wait is capped, default 3 minutes, then the route fails cleanly). smb: TCP 445 from a Windows orchestrator to the node, the local Administrator, one small service run once with sc.exe; Windows orchestrator only. auto: the allowed routes in the order smb, arc. Each runs one small script that starts WinRM, creates the listener if none exists and sets the WinRM rules' scope, then everything else runs over WinRM. production and dmz also need the pipeline approval (-ApprovedBootstrap). The environment class decides whether a bootstrap is allowed at all.",
+              "default": "none",
               "enum": [
                 "none",
                 "arc",
                 "smb",
                 "auto"
-              ],
-              "default": "none"
+              ]
             },
             "allowed_source_cidrs": {
               "description": "The runner and jump server addresses, as the node sees them (after NAT), allowed to use WinRM, RDP and ICMP on the nodes, in addition to the management and out-of-band networks. IPv4 or IPv6 CIDR; /0 to /8 is refused, dev and production refuse anything wider than /24 (/64 for IPv6), dmz takes /32 or /128 only. The dmz class does not add the management network.",
@@ -2322,21 +2323,21 @@
             },
             "trusted_hosts": {
               "description": "The TrustedHosts policy on the machine running the automation. auto: the class decides. exact: only the nodes' addresses. wildcard: '*', lab and test only. The previous value is restored after the run.",
+              "default": "auto",
               "enum": [
                 "auto",
                 "exact",
                 "wildcard"
-              ],
-              "default": "auto"
+              ]
             },
             "use_https": {
               "description": "auto: the class decides (HTTP in lab and test; HTTPS in dev, production and dmz). true: WinRM over HTTPS (5986). false: HTTP only, which production and dmz refuse and dev warns about.",
+              "default": "auto",
               "enum": [
                 "auto",
                 true,
                 false
-              ],
-              "default": "auto"
+              ]
             },
             "isolation_confirmed": {
               "description": "true: you confirm the network of the nodes has no route to production. Only a statement in lab and test (it changes the warning text, not the behaviour); it is not allowed in dev, production or dmz, where Any is never accepted.",
@@ -2354,9 +2355,6 @@
       "description": "Disconnected operations: the control plane appliance, its endpoints, identity and certificates.",
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "role"
-      ],
       "properties": {
         "role": {
           "enum": [
@@ -2418,7 +2416,10 @@
         "internal_ca": {
           "type": "boolean"
         }
-      }
+      },
+      "required": [
+        "role"
+      ]
     },
     "network_devices": {
       "description": "Switches, firewalls, console servers and other devices in the design.",
@@ -2437,9 +2438,6 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "name"
-            ],
             "properties": {
               "name": {
                 "type": "string"
@@ -2448,10 +2446,13 @@
                 "type": "string"
               },
               "parent": {
-                "type": "string",
-                "description": "Parent management group name; empty for the tenant root."
+                "description": "Parent management group name; empty for the tenant root.",
+                "type": "string"
               }
-            }
+            },
+            "required": [
+              "name"
+            ]
           }
         },
         "subscriptions": {
@@ -2460,10 +2461,6 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "name",
-              "role"
-            ],
             "properties": {
               "name": {
                 "type": "string"
@@ -2486,7 +2483,11 @@
               "management_group": {
                 "type": "string"
               }
-            }
+            },
+            "required": [
+              "name",
+              "role"
+            ]
           }
         },
         "resource_groups": {
@@ -2494,16 +2495,13 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "name"
-            ],
             "properties": {
               "name": {
                 "$ref": "#/$defs/resource_group"
               },
               "subscription": {
-                "type": "string",
-                "description": "Name of a subscription in landing_zone.subscriptions."
+                "description": "Name of a subscription in landing_zone.subscriptions.",
+                "type": "string"
               },
               "location": {
                 "$ref": "#/$defs/azure_region"
@@ -2511,7 +2509,10 @@
               "purpose": {
                 "type": "string"
               }
-            }
+            },
+            "required": [
+              "name"
+            ]
           }
         },
         "resource_providers": {
@@ -2528,10 +2529,6 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "name",
-              "address_space"
-            ],
             "properties": {
               "name": {
                 "type": "string"
@@ -2569,10 +2566,6 @@
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": [
-                    "name",
-                    "prefix"
-                  ],
                   "properties": {
                     "name": {
                       "type": "string"
@@ -2586,7 +2579,11 @@
                     "route_table": {
                       "type": "string"
                     }
-                  }
+                  },
+                  "required": [
+                    "name",
+                    "prefix"
+                  ]
                 }
               },
               "peer_with": {
@@ -2596,7 +2593,11 @@
                   "type": "string"
                 }
               }
-            }
+            },
+            "required": [
+              "name",
+              "address_space"
+            ]
           }
         },
         "connectivity": {
@@ -2606,9 +2607,6 @@
             "vpn_gateway": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "name"
-              ],
               "properties": {
                 "name": {
                   "type": "string"
@@ -2632,10 +2630,6 @@
                   "items": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": [
-                      "connection_name",
-                      "shared_key"
-                    ],
                     "properties": {
                       "connection_name": {
                         "type": "string"
@@ -2663,15 +2657,16 @@
                       "shared_key": {
                         "$ref": "#/$defs/kv_ref"
                       }
-                    }
+                    },
+                    "required": [
+                      "connection_name",
+                      "shared_key"
+                    ]
                   }
                 },
                 "point_to_site": {
                   "type": "object",
                   "additionalProperties": false,
-                  "required": [
-                    "address_pool"
-                  ],
                   "properties": {
                     "address_pool": {
                       "$ref": "#/$defs/cidr"
@@ -2683,16 +2678,19 @@
                         "radius"
                       ]
                     }
-                  }
+                  },
+                  "required": [
+                    "address_pool"
+                  ]
                 }
-              }
+              },
+              "required": [
+                "name"
+              ]
             },
             "bastion": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "name"
-              ],
               "properties": {
                 "name": {
                   "type": "string"
@@ -2703,14 +2701,14 @@
                 "sku": {
                   "type": "string"
                 }
-              }
+              },
+              "required": [
+                "name"
+              ]
             },
             "firewall": {
               "type": "object",
               "additionalProperties": false,
-              "required": [
-                "name"
-              ],
               "properties": {
                 "name": {
                   "type": "string"
@@ -2724,7 +2722,10 @@
                 "private_ip": {
                   "$ref": "#/$defs/ipv4"
                 }
-              }
+              },
+              "required": [
+                "name"
+              ]
             }
           }
         },
@@ -2734,10 +2735,6 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "name",
-              "role"
-            ],
             "properties": {
               "name": {
                 "type": "string"
@@ -2790,15 +2787,16 @@
               "admin_password": {
                 "$ref": "#/$defs/kv_ref"
               }
-            }
+            },
+            "required": [
+              "name",
+              "role"
+            ]
           }
         },
         "log_analytics": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "name"
-          ],
           "properties": {
             "name": {
               "type": "string"
@@ -2811,16 +2809,16 @@
               "minimum": 30,
               "maximum": 730
             }
-          }
+          },
+          "required": [
+            "name"
+          ]
         },
         "storage_accounts": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "name"
-            ],
             "properties": {
               "name": {
                 "$ref": "#/$defs/storage_account_name"
@@ -2834,7 +2832,10 @@
               "purpose": {
                 "type": "string"
               }
-            }
+            },
+            "required": [
+              "name"
+            ]
           }
         }
       }
@@ -2858,23 +2859,23 @@
           "type": "string"
         },
         "organization": {
-          "type": "string",
-          "description": "Organization, group or project collection."
+          "description": "Organization, group or project collection.",
+          "type": "string"
         },
         "project": {
           "type": "string"
         },
         "api_token": {
-          "description": "Schema 5.5. Key Vault reference to a token with administrator rights on the organization or project. The setup scripts (tasks 02 to 05) use it when the platform CLI is not already signed in. Without it they read GH_TOKEN, GITLAB_TOKEN or AZURE_DEVOPS_EXT_PAT from the environment.",
-          "$ref": "#/$defs/kv_ref"
+          "$ref": "#/$defs/kv_ref",
+          "description": "Schema 5.5. Key Vault reference to a token with administrator rights on the organization or project. The setup scripts (tasks 02 to 05) use it when the platform CLI is not already signed in. Without it they read GH_TOKEN, GITLAB_TOKEN or AZURE_DEVOPS_EXT_PAT from the environment."
         },
         "subscription": {
           "description": "Schema 5.5. Name of the subscription in landing_zone.subscriptions that holds the runners (role devops). Default: the subscription with role devops.",
           "type": "string"
         },
         "resource_group": {
-          "description": "Schema 5.5. Resource group of the runners, their identity and their network.",
-          "$ref": "#/$defs/resource_group"
+          "$ref": "#/$defs/resource_group",
+          "description": "Schema 5.5. Resource group of the runners, their identity and their network."
         },
         "create_resource_group": {
           "description": "Schema 5.5. Create devops.resource_group. False when it exists.",
@@ -2896,11 +2897,11 @@
             },
             "visibility": {
               "description": "Repository visibility.",
+              "default": "private",
               "enum": [
                 "private",
                 "internal"
-              ],
-              "default": "private"
+              ]
             },
             "default_branch": {
               "description": "The protected default branch.",
@@ -2917,9 +2918,9 @@
             "required_approvals": {
               "description": "Approvals a pull request needs before it merges. 0 for a sandbox.",
               "type": "integer",
+              "default": 2,
               "minimum": 0,
-              "maximum": 10,
-              "default": 2
+              "maximum": 10
             },
             "reviewers": {
               "description": "The team or group whose members review: a GitHub team slug (org/team), a GitLab group path or an Azure DevOps group name.",
@@ -2941,11 +2942,11 @@
               "default": true
             },
             "required_status_checks": {
+              "description": "Pipeline checks that must pass before a merge.",
               "type": "array",
               "items": {
                 "type": "string"
-              },
-              "description": "Pipeline checks that must pass before a merge."
+              }
             }
           }
         },
@@ -2955,9 +2956,6 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "name"
-            ],
             "properties": {
               "name": {
                 "description": "Environment name, for example azr-prod-us, or ztp-reinstall for the approval in front of the ZTP Boot stage.",
@@ -2970,25 +2968,28 @@
                 "default": false
               },
               "approvers": {
+                "description": "GitHub user names or org/team slugs, GitLab user names or group paths, Azure DevOps e-mail addresses.",
                 "type": "array",
                 "items": {
                   "type": "string"
-                },
-                "description": "GitHub user names or org/team slugs, GitLab user names or group paths, Azure DevOps e-mail addresses."
+                }
               },
               "wait_minutes": {
                 "description": "Delay before a deployment starts (GitHub).",
                 "type": "integer",
+                "default": 0,
                 "minimum": 0,
-                "maximum": 43200,
-                "default": 0
+                "maximum": 43200
               },
               "deployment_branch": {
                 "description": "The only branch that may deploy to the environment.",
                 "type": "string",
                 "default": "main"
               }
-            }
+            },
+            "required": [
+              "name"
+            ]
           }
         },
         "authentication": {
@@ -2998,22 +2999,22 @@
           "properties": {
             "method": {
               "description": "oidc: a federated credential per repository and environment, no secret. client_secret: a secret, stored only in Key Vault (devops.authentication.client_secret) and in the platform as a masked variable.",
+              "default": "oidc",
               "enum": [
                 "oidc",
                 "client_secret"
-              ],
-              "default": "oidc"
+              ]
             },
             "client_secret": {
-              "description": "Key Vault reference where task 01 stores the generated client secret (method client_secret).",
-              "$ref": "#/$defs/kv_ref"
+              "$ref": "#/$defs/kv_ref",
+              "description": "Key Vault reference where task 01 stores the generated client secret (method client_secret)."
             },
             "roles": {
+              "description": "Roles the service principal gets on each subscription. Default: Contributor and User Access Administrator, as the automation docs say. Narrow them when you can.",
               "type": "array",
               "items": {
                 "type": "string"
-              },
-              "description": "Roles the service principal gets on each subscription. Default: Contributor and User Access Administrator, as the automation docs say. Narrow them when you can."
+              }
             },
             "grant_graph_role_management": {
               "description": "Also add the Microsoft Graph application permission RoleManagement.ReadWrite.Directory and grant admin consent. High privilege: leave false unless a pipeline assigns Entra roles.",
@@ -3033,10 +3034,6 @@
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-              "name",
-              "os_type"
-            ],
             "properties": {
               "name": {
                 "description": "Name prefix of the VM or VMs, for example vm-tplabs-runner-lnx.",
@@ -3051,61 +3048,57 @@
               },
               "purpose": {
                 "description": "general: ARM, Arc, Terraform, Ansible and OS configuration. ztp: the azurelocal-ztp Boot, Bootstrap and Vouchers stages (Windows only).",
+                "default": "general",
                 "enum": [
                   "general",
                   "ztp"
-                ],
-                "default": "general"
+                ]
               },
               "count": {
                 "description": "Number of VMs.",
                 "type": "integer",
+                "default": 1,
                 "minimum": 1,
-                "maximum": 20,
-                "default": 1
+                "maximum": 20
               },
               "compute_type": {
                 "description": "vm or vmss. Windows and ztp runners are VMs.",
+                "default": "vm",
                 "enum": [
                   "vm",
                   "vmss"
-                ],
-                "default": "vm"
+                ]
               },
               "size": {
                 "description": "VM size. Default Standard_D2s_v5 (Linux) and Standard_D4s_v5 (Windows ztp).",
                 "type": "string"
               },
               "labels": {
+                "description": "Labels added to the defaults (azure, the OS, terraform, ansible, ztp).",
                 "type": "array",
                 "items": {
                   "type": "string"
-                },
-                "description": "Labels added to the defaults (azure, the OS, terraform, ansible, ztp)."
+                }
               },
               "registration_secret": {
-                "description": "Key Vault reference to the secret the runner reads at boot: a PAT or App token (GitHub), the runner authentication token (GitLab), a PAT with Agent Pools read and manage (Azure DevOps). Only the reference is here.",
-                "$ref": "#/$defs/kv_ref"
+                "$ref": "#/$defs/kv_ref",
+                "description": "Key Vault reference to the secret the runner reads at boot: a PAT or App token (GitHub), the runner authentication token (GitLab), a PAT with Agent Pools read and manage (Azure DevOps). Only the reference is here."
               },
               "pool": {
                 "description": "The Azure Pipelines agent pool, or the GitHub runner group. A ztp runner gets its own.",
                 "type": "string"
               },
               "private_ips": {
+                "description": "Static private addresses, one per VM. Empty uses dynamic addresses.",
                 "type": "array",
                 "items": {
                   "$ref": "#/$defs/ipv4"
-                },
-                "description": "Static private addresses, one per VM. Empty uses dynamic addresses."
+                }
               },
               "subnet": {
                 "description": "The runner subnet inside runner_network.address_space.",
                 "type": "object",
                 "additionalProperties": false,
-                "required": [
-                  "name",
-                  "prefix"
-                ],
                 "properties": {
                   "name": {
                     "type": "string"
@@ -3113,16 +3106,24 @@
                   "prefix": {
                     "$ref": "#/$defs/cidr"
                   }
-                }
+                },
+                "required": [
+                  "name",
+                  "prefix"
+                ]
               },
               "data_disk_gb": {
                 "description": "Data disk for the ZTP media, images and vouchers. 512 or more for ztp.",
                 "type": "integer",
+                "default": 0,
                 "minimum": 0,
-                "maximum": 32767,
-                "default": 0
+                "maximum": 32767
               }
-            }
+            },
+            "required": [
+              "name",
+              "os_type"
+            ]
           }
         },
         "runner_network": {
@@ -3135,10 +3136,10 @@
             },
             "address_space": {
               "type": "array",
+              "minItems": 1,
               "items": {
                 "$ref": "#/$defs/cidr"
-              },
-              "minItems": 1
+              }
             },
             "dns_servers": {
               "type": "array",
@@ -3177,32 +3178,32 @@
               }
             },
             "reachable_cidrs": {
+              "description": "Lab networks the runners reach: management, storage, BMC.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/cidr"
-              },
-              "description": "Lab networks the runners reach: management, storage, BMC."
+              }
             },
             "reachable_tcp_ports": {
+              "description": "TCP ports allowed outbound to the lab networks. Default 22, 443, 445, 3389, 5985, 5986.",
               "type": "array",
               "items": {
                 "type": "string"
-              },
-              "description": "TCP ports allowed outbound to the lab networks. Default 22, 443, 445, 3389, 5985, 5986."
+              }
             },
             "bmc_cidrs": {
+              "description": "The BMC networks. The ztp runner accepts inbound TCP 445 from these only. Required for a ztp runner.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/cidr"
-              },
-              "description": "The BMC networks. The ztp runner accepts inbound TCP 445 from these only. Required for a ztp runner."
+              }
             },
             "admin_source_cidrs": {
+              "description": "Ranges that may reach SSH or RDP on the runners. Empty allows none.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/cidr"
-              },
-              "description": "Ranges that may reach SSH or RDP on the runners. Empty allows none."
+              }
             }
           }
         },
@@ -3212,11 +3213,11 @@
           "additionalProperties": false,
           "properties": {
             "resource_groups": {
+              "description": "Resource groups where the runners are Contributor. Default: azure.resource_group. Add the Azure Local managed resource group if it can take deployments.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/resource_group"
-              },
-              "description": "Resource groups where the runners are Contributor. Default: azure.resource_group. Add the Azure Local managed resource group if it can take deployments."
+              }
             },
             "rbac_administrator": {
               "description": "Role Based Access Control Administrator on those resource groups, which the Azure Local deployment and ZTP need.",
@@ -3224,11 +3225,11 @@
               "default": true
             },
             "rbac_delegable_role_ids": {
+              "description": "Limit the roles the runners may assign to these role definition GUIDs. Empty allows any role.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/guid"
-              },
-              "description": "Limit the roles the runners may assign to these role definition GUIDs. Empty allows any role."
+              }
             },
             "arc_run_command": {
               "description": "Azure Connected Machine Resource Administrator on those resource groups, so jobs can run Arc Run Command on the machines.",
@@ -3236,21 +3237,17 @@
               "default": true
             },
             "key_vaults": {
+              "description": "Vaults the runners read secrets from. Default: every vault in key_vaults.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/key_vault_name"
-              },
-              "description": "Vaults the runners read secrets from. Default: every vault in key_vaults."
+              }
             }
           }
         },
         "runner": {
           "type": "object",
           "additionalProperties": false,
-          "required": [
-            "name",
-            "type"
-          ],
           "properties": {
             "name": {
               "type": "string"
@@ -3290,15 +3287,19 @@
             "registration_token": {
               "$ref": "#/$defs/kv_ref"
             }
-          }
+          },
+          "required": [
+            "name",
+            "type"
+          ]
         },
         "state": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
             "subscription_id": {
-              "description": "Schema 5.5. Subscription of the state storage account.",
-              "$ref": "#/$defs/guid"
+              "$ref": "#/$defs/guid",
+              "description": "Schema 5.5. Subscription of the state storage account."
             },
             "key": {
               "description": "Schema 5.5. Blob name of the CI/CD runners state. Default cicd-infra.tfstate.",
@@ -3323,630 +3324,6 @@
       "type": "object"
     }
   },
-  "allOf": [
-    {
-      "description": "Schema 5.3, _metadata.scope. ztp: only what azurelocal-ztp reads is required. full (default): the whole instance, as in 5.0 to 5.2.",
-      "if": {
-        "type": "object",
-        "required": [
-          "_metadata"
-        ],
-        "properties": {
-          "_metadata": {
-            "type": "object",
-            "required": [
-              "scope"
-            ],
-            "properties": {
-              "scope": {
-                "const": "ztp"
-              }
-            }
-          }
-        }
-      },
-      "then": {
-        "type": "object",
-        "required": [
-          "scenario",
-          "site",
-          "azure",
-          "key_vaults",
-          "nodes",
-          "hardware",
-          "networking",
-          "identity",
-          "provisioning"
-        ],
-        "properties": {
-          "scenario": {
-            "type": "object",
-            "required": [
-              "os_install"
-            ],
-            "properties": {
-              "os_install": {
-                "const": "simplified"
-              }
-            }
-          },
-          "site": {
-            "type": "object",
-            "required": [
-              "time_zone"
-            ],
-            "properties": {
-              "time_zone": true
-            }
-          },
-          "key_vaults": {
-            "minItems": 1
-          },
-          "hardware": {
-            "type": "object",
-            "required": [
-              "bmc"
-            ],
-            "properties": {
-              "bmc": true
-            }
-          }
-        }
-      },
-      "else": {
-        "type": "object",
-        "required": [
-          "scenario",
-          "site",
-          "environment",
-          "azure",
-          "cluster",
-          "nodes",
-          "hardware",
-          "networking",
-          "identity"
-        ],
-        "properties": {
-          "scenario": {
-            "type": "object",
-            "required": [
-              "identity",
-              "storage_architecture",
-              "storage_connectivity",
-              "topology",
-              "connectivity",
-              "cloud",
-              "outbound_path",
-              "os_install",
-              "deploy_method"
-            ],
-            "properties": {
-              "identity": true,
-              "storage_architecture": true,
-              "storage_connectivity": true,
-              "topology": true,
-              "connectivity": true,
-              "cloud": true,
-              "outbound_path": true,
-              "os_install": true,
-              "deploy_method": true
-            }
-          },
-          "networking": {
-            "type": "object",
-            "required": [
-              "intents"
-            ],
-            "properties": {
-              "intents": true,
-              "management": {
-                "description": "The infrastructure pool is a cluster-deployment setting, so a file with scope ztp doesn't need it. It is required unless use_dhcp is true.",
-                "if": {
-                  "not": {
-                    "type": "object",
-                    "properties": {
-                      "use_dhcp": {
-                        "const": true
-                      }
-                    },
-                    "required": [
-                      "use_dhcp"
-                    ]
-                  }
-                },
-                "then": {
-                  "type": "object",
-                  "required": [
-                    "infrastructure_pool"
-                  ],
-                  "properties": {
-                    "infrastructure_pool": true
-                  }
-                }
-              }
-            }
-          }
-        },
-        "allOf": [
-          {
-            "if": {
-              "type": "object",
-              "properties": {
-                "scenario": {
-                  "type": "object",
-                  "properties": {
-                    "identity": {
-                      "const": "active_directory"
-                    }
-                  },
-                  "required": [
-                    "identity"
-                  ]
-                }
-              },
-              "required": [
-                "scenario"
-              ]
-            },
-            "then": {
-              "type": "object",
-              "properties": {
-                "identity": {
-                  "type": "object",
-                  "required": [
-                    "active_directory"
-                  ],
-                  "properties": {
-                    "active_directory": true
-                  }
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "type": "object",
-              "properties": {
-                "scenario": {
-                  "type": "object",
-                  "properties": {
-                    "identity": {
-                      "const": "local_identity"
-                    }
-                  },
-                  "required": [
-                    "identity"
-                  ]
-                }
-              },
-              "required": [
-                "scenario"
-              ]
-            },
-            "then": {
-              "type": "object",
-              "properties": {
-                "identity": {
-                  "type": "object",
-                  "required": [
-                    "local_identity"
-                  ],
-                  "properties": {
-                    "local_identity": true
-                  }
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "type": "object",
-              "properties": {
-                "scenario": {
-                  "type": "object",
-                  "properties": {
-                    "storage_architecture": {
-                      "enum": [
-                        "san",
-                        "hybrid"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "storage_architecture"
-                  ]
-                }
-              },
-              "required": [
-                "scenario"
-              ]
-            },
-            "then": {
-              "type": "object",
-              "required": [
-                "storage"
-              ],
-              "properties": {
-                "storage": {
-                  "type": "object",
-                  "required": [
-                    "san"
-                  ],
-                  "properties": {
-                    "san": true
-                  }
-                },
-                "networking": {
-                  "type": "object",
-                  "required": [
-                    "cluster_networks"
-                  ],
-                  "properties": {
-                    "cluster_networks": true
-                  }
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "type": "object",
-              "properties": {
-                "scenario": {
-                  "type": "object",
-                  "properties": {
-                    "storage_connectivity": {
-                      "const": "switchless"
-                    }
-                  },
-                  "required": [
-                    "storage_connectivity"
-                  ]
-                }
-              },
-              "required": [
-                "scenario"
-              ]
-            },
-            "then": {
-              "type": "object",
-              "properties": {
-                "networking": {
-                  "type": "object",
-                  "required": [
-                    "storage"
-                  ],
-                  "properties": {
-                    "storage": {
-                      "type": "object",
-                      "required": [
-                        "switchless_links"
-                      ],
-                      "properties": {
-                        "switchless_links": true
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "type": "object",
-              "properties": {
-                "scenario": {
-                  "type": "object",
-                  "properties": {
-                    "topology": {
-                      "const": "rack_aware"
-                    }
-                  },
-                  "required": [
-                    "topology"
-                  ]
-                }
-              },
-              "required": [
-                "scenario"
-              ]
-            },
-            "then": {
-              "type": "object",
-              "properties": {
-                "nodes": {
-                  "type": "array",
-                  "items": {
-                    "type": "object",
-                    "required": [
-                      "zone"
-                    ],
-                    "properties": {
-                      "zone": true
-                    }
-                  }
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "type": "object",
-              "properties": {
-                "scenario": {
-                  "type": "object",
-                  "properties": {
-                    "connectivity": {
-                      "const": "disconnected"
-                    }
-                  },
-                  "required": [
-                    "connectivity"
-                  ]
-                }
-              },
-              "required": [
-                "scenario"
-              ]
-            },
-            "then": {
-              "type": "object",
-              "required": [
-                "disconnected"
-              ],
-              "properties": {
-                "disconnected": true
-              }
-            }
-          },
-          {
-            "if": {
-              "type": "object",
-              "properties": {
-                "scenario": {
-                  "type": "object",
-                  "properties": {
-                    "outbound_path": {
-                      "enum": [
-                        "proxy",
-                        "proxy_arc_gateway"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "outbound_path"
-                  ]
-                }
-              },
-              "required": [
-                "scenario"
-              ]
-            },
-            "then": {
-              "type": "object",
-              "properties": {
-                "networking": {
-                  "type": "object",
-                  "required": [
-                    "outbound"
-                  ],
-                  "properties": {
-                    "outbound": {
-                      "type": "object",
-                      "required": [
-                        "proxy"
-                      ],
-                      "properties": {
-                        "proxy": true
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "type": "object",
-              "properties": {
-                "scenario": {
-                  "type": "object",
-                  "properties": {
-                    "outbound_path": {
-                      "enum": [
-                        "arc_gateway",
-                        "proxy_arc_gateway"
-                      ]
-                    }
-                  },
-                  "required": [
-                    "outbound_path"
-                  ]
-                }
-              },
-              "required": [
-                "scenario"
-              ]
-            },
-            "then": {
-              "type": "object",
-              "properties": {
-                "networking": {
-                  "type": "object",
-                  "required": [
-                    "outbound"
-                  ],
-                  "properties": {
-                    "outbound": {
-                      "type": "object",
-                      "required": [
-                        "arc_gateway"
-                      ],
-                      "properties": {
-                        "arc_gateway": true
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          },
-          {
-            "if": {
-              "type": "object",
-              "properties": {
-                "scenario": {
-                  "type": "object",
-                  "properties": {
-                    "outbound_path": {
-                      "const": "private_path"
-                    }
-                  },
-                  "required": [
-                    "outbound_path"
-                  ]
-                }
-              },
-              "required": [
-                "scenario"
-              ]
-            },
-            "then": {
-              "type": "object",
-              "properties": {
-                "networking": {
-                  "type": "object",
-                  "required": [
-                    "outbound"
-                  ],
-                  "properties": {
-                    "outbound": {
-                      "type": "object",
-                      "required": [
-                        "private_path"
-                      ],
-                      "properties": {
-                        "private_path": true
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        ]
-      }
-    },
-    {
-      "if": {
-        "type": "object",
-        "properties": {
-          "scenario": {
-            "type": "object",
-            "properties": {
-              "os_install": {
-                "const": "simplified"
-              }
-            },
-            "required": [
-              "os_install"
-            ]
-          }
-        },
-        "required": [
-          "scenario"
-        ]
-      },
-      "then": {
-        "type": "object",
-        "required": [
-          "provisioning"
-        ],
-        "properties": {
-          "provisioning": {
-            "type": "object",
-            "required": [
-              "simplified"
-            ],
-            "properties": {
-              "simplified": true
-            }
-          },
-          "nodes": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "required": [
-                "serial_number",
-                "bmc"
-              ],
-              "properties": {
-                "management": {
-                  "type": "object",
-                  "required": [
-                    "mac_address"
-                  ],
-                  "properties": {
-                    "mac_address": true
-                  }
-                },
-                "bmc": {
-                  "type": "object",
-                  "required": [
-                    "ip_address"
-                  ],
-                  "properties": {
-                    "ip_address": true
-                  }
-                },
-                "serial_number": true,
-                "network_adapters": {
-                  "type": "array",
-                  "items": {
-                    "if": {
-                      "type": "object",
-                      "required": [
-                        "roles"
-                      ],
-                      "properties": {
-                        "roles": {
-                          "contains": {
-                            "const": "management"
-                          }
-                        }
-                      }
-                    },
-                    "then": {
-                      "type": "object",
-                      "required": [
-                        "mac_address"
-                      ],
-                      "properties": {
-                        "mac_address": true
-                      }
-                    }
-                  },
-                  "contains": {
-                    "type": "object",
-                    "required": [
-                      "roles"
-                    ],
-                    "properties": {
-                      "roles": {
-                        "contains": {
-                          "const": "provisioning"
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-      }
-    }
-  ],
   "$defs": {
     "ipv4": {
       "type": "string",
@@ -4662,7 +4039,7 @@
           }
         },
         "ip_assignment": {
-          "description": "How the installed OS gets this port's host address before deployment. For the management port this is the management address mode (config/infrastructure/README.md): dhcp_reservation is Mode A (Reserved, recommended); static is Mode B (Static with DHCP) or Mode C (Static without management DHCP). static: ip_address is set on the port (with simplified provisioning azurelocal-ztp's Device stage sets it by MAC before the OS install, the install resets every port to DHCP, and OS configuration sets it again by MAC; otherwise the operator or the toolkit). dhcp_reservation: the port keeps DHCP and the DHCP server reserves ip_address for mac_address. dhcp: the port keeps DHCP with no reservation, so its address can change (a warning). preconfigured: the port is already configured; tools leave it alone. none: no host address before deployment (Network ATC or the storage networks give it one, or it isn't used); node preparation turns DHCP off on it. Exactly one management port per machine owns the management address: the one with role management and an ip_assignment other than none.",
+          "description": "How the installed OS gets this port's host address before deployment. For the management port this is the management address mode (config/variables/docs/infrastructure-file.md): dhcp_reservation is Mode A (Reserved, recommended); static is Mode B (Static with DHCP) or Mode C (Static without management DHCP). static: ip_address is set on the port (with simplified provisioning azurelocal-ztp's Device stage sets it by MAC before the OS install, the install resets every port to DHCP, and OS configuration sets it again by MAC; otherwise the operator or the toolkit). dhcp_reservation: the port keeps DHCP and the DHCP server reserves ip_address for mac_address. dhcp: the port keeps DHCP with no reservation, so its address can change (a warning). preconfigured: the port is already configured; tools leave it alone. none: no host address before deployment (Network ATC or the storage networks give it one, or it isn't used); node preparation turns DHCP off on it. Exactly one management port per machine owns the management address: the one with role management and an ip_assignment other than none.",
           "enum": [
             "static",
             "dhcp_reservation",
@@ -4799,5 +4176,629 @@
         }
       ]
     }
-  }
+  },
+  "allOf": [
+    {
+      "description": "Schema 5.3, _metadata.scope. ztp: only what azurelocal-ztp reads is required. full (default): the whole instance, as in 5.0 to 5.2.",
+      "if": {
+        "type": "object",
+        "required": [
+          "_metadata"
+        ],
+        "properties": {
+          "_metadata": {
+            "type": "object",
+            "required": [
+              "scope"
+            ],
+            "properties": {
+              "scope": {
+                "const": "ztp"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "type": "object",
+        "required": [
+          "scenario",
+          "site",
+          "azure",
+          "key_vaults",
+          "nodes",
+          "hardware",
+          "networking",
+          "identity",
+          "provisioning"
+        ],
+        "properties": {
+          "scenario": {
+            "type": "object",
+            "required": [
+              "os_install"
+            ],
+            "properties": {
+              "os_install": {
+                "const": "simplified"
+              }
+            }
+          },
+          "site": {
+            "type": "object",
+            "required": [
+              "time_zone"
+            ],
+            "properties": {
+              "time_zone": true
+            }
+          },
+          "key_vaults": {
+            "minItems": 1
+          },
+          "hardware": {
+            "type": "object",
+            "required": [
+              "bmc"
+            ],
+            "properties": {
+              "bmc": true
+            }
+          }
+        }
+      },
+      "else": {
+        "type": "object",
+        "required": [
+          "scenario",
+          "site",
+          "environment",
+          "azure",
+          "cluster",
+          "nodes",
+          "hardware",
+          "networking",
+          "identity"
+        ],
+        "properties": {
+          "scenario": {
+            "type": "object",
+            "required": [
+              "identity",
+              "storage_architecture",
+              "storage_connectivity",
+              "topology",
+              "connectivity",
+              "cloud",
+              "outbound_path",
+              "os_install",
+              "deploy_method"
+            ],
+            "properties": {
+              "identity": true,
+              "storage_architecture": true,
+              "storage_connectivity": true,
+              "topology": true,
+              "connectivity": true,
+              "cloud": true,
+              "outbound_path": true,
+              "os_install": true,
+              "deploy_method": true
+            }
+          },
+          "networking": {
+            "type": "object",
+            "required": [
+              "intents"
+            ],
+            "properties": {
+              "intents": true,
+              "management": {
+                "description": "The infrastructure pool is a cluster-deployment setting, so a file with scope ztp doesn't need it. It is required unless use_dhcp is true.",
+                "if": {
+                  "not": {
+                    "type": "object",
+                    "properties": {
+                      "use_dhcp": {
+                        "const": true
+                      }
+                    },
+                    "required": [
+                      "use_dhcp"
+                    ]
+                  }
+                },
+                "then": {
+                  "type": "object",
+                  "required": [
+                    "infrastructure_pool"
+                  ],
+                  "properties": {
+                    "infrastructure_pool": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "allOf": [
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "scenario": {
+                  "type": "object",
+                  "properties": {
+                    "identity": {
+                      "const": "active_directory"
+                    }
+                  },
+                  "required": [
+                    "identity"
+                  ]
+                }
+              },
+              "required": [
+                "scenario"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "identity": {
+                  "type": "object",
+                  "required": [
+                    "active_directory"
+                  ],
+                  "properties": {
+                    "active_directory": true
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "scenario": {
+                  "type": "object",
+                  "properties": {
+                    "identity": {
+                      "const": "local_identity"
+                    }
+                  },
+                  "required": [
+                    "identity"
+                  ]
+                }
+              },
+              "required": [
+                "scenario"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "identity": {
+                  "type": "object",
+                  "required": [
+                    "local_identity"
+                  ],
+                  "properties": {
+                    "local_identity": true
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "scenario": {
+                  "type": "object",
+                  "properties": {
+                    "storage_architecture": {
+                      "enum": [
+                        "san",
+                        "hybrid"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "storage_architecture"
+                  ]
+                }
+              },
+              "required": [
+                "scenario"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "required": [
+                "storage"
+              ],
+              "properties": {
+                "storage": {
+                  "type": "object",
+                  "required": [
+                    "san"
+                  ],
+                  "properties": {
+                    "san": true
+                  }
+                },
+                "networking": {
+                  "type": "object",
+                  "required": [
+                    "cluster_networks"
+                  ],
+                  "properties": {
+                    "cluster_networks": true
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "scenario": {
+                  "type": "object",
+                  "properties": {
+                    "storage_connectivity": {
+                      "const": "switchless"
+                    }
+                  },
+                  "required": [
+                    "storage_connectivity"
+                  ]
+                }
+              },
+              "required": [
+                "scenario"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "networking": {
+                  "type": "object",
+                  "required": [
+                    "storage"
+                  ],
+                  "properties": {
+                    "storage": {
+                      "type": "object",
+                      "required": [
+                        "switchless_links"
+                      ],
+                      "properties": {
+                        "switchless_links": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "scenario": {
+                  "type": "object",
+                  "properties": {
+                    "topology": {
+                      "const": "rack_aware"
+                    }
+                  },
+                  "required": [
+                    "topology"
+                  ]
+                }
+              },
+              "required": [
+                "scenario"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "nodes": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "required": [
+                      "zone"
+                    ],
+                    "properties": {
+                      "zone": true
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "scenario": {
+                  "type": "object",
+                  "properties": {
+                    "connectivity": {
+                      "const": "disconnected"
+                    }
+                  },
+                  "required": [
+                    "connectivity"
+                  ]
+                }
+              },
+              "required": [
+                "scenario"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "required": [
+                "disconnected"
+              ],
+              "properties": {
+                "disconnected": true
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "scenario": {
+                  "type": "object",
+                  "properties": {
+                    "outbound_path": {
+                      "enum": [
+                        "proxy",
+                        "proxy_arc_gateway"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "outbound_path"
+                  ]
+                }
+              },
+              "required": [
+                "scenario"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "networking": {
+                  "type": "object",
+                  "required": [
+                    "outbound"
+                  ],
+                  "properties": {
+                    "outbound": {
+                      "type": "object",
+                      "required": [
+                        "proxy"
+                      ],
+                      "properties": {
+                        "proxy": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "scenario": {
+                  "type": "object",
+                  "properties": {
+                    "outbound_path": {
+                      "enum": [
+                        "arc_gateway",
+                        "proxy_arc_gateway"
+                      ]
+                    }
+                  },
+                  "required": [
+                    "outbound_path"
+                  ]
+                }
+              },
+              "required": [
+                "scenario"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "networking": {
+                  "type": "object",
+                  "required": [
+                    "outbound"
+                  ],
+                  "properties": {
+                    "outbound": {
+                      "type": "object",
+                      "required": [
+                        "arc_gateway"
+                      ],
+                      "properties": {
+                        "arc_gateway": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          {
+            "if": {
+              "type": "object",
+              "properties": {
+                "scenario": {
+                  "type": "object",
+                  "properties": {
+                    "outbound_path": {
+                      "const": "private_path"
+                    }
+                  },
+                  "required": [
+                    "outbound_path"
+                  ]
+                }
+              },
+              "required": [
+                "scenario"
+              ]
+            },
+            "then": {
+              "type": "object",
+              "properties": {
+                "networking": {
+                  "type": "object",
+                  "required": [
+                    "outbound"
+                  ],
+                  "properties": {
+                    "outbound": {
+                      "type": "object",
+                      "required": [
+                        "private_path"
+                      ],
+                      "properties": {
+                        "private_path": true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "type": "object",
+        "properties": {
+          "scenario": {
+            "type": "object",
+            "properties": {
+              "os_install": {
+                "const": "simplified"
+              }
+            },
+            "required": [
+              "os_install"
+            ]
+          }
+        },
+        "required": [
+          "scenario"
+        ]
+      },
+      "then": {
+        "type": "object",
+        "required": [
+          "provisioning"
+        ],
+        "properties": {
+          "provisioning": {
+            "type": "object",
+            "required": [
+              "simplified"
+            ],
+            "properties": {
+              "simplified": true
+            }
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": [
+                "serial_number",
+                "bmc"
+              ],
+              "properties": {
+                "management": {
+                  "type": "object",
+                  "required": [
+                    "mac_address"
+                  ],
+                  "properties": {
+                    "mac_address": true
+                  }
+                },
+                "bmc": {
+                  "type": "object",
+                  "required": [
+                    "ip_address"
+                  ],
+                  "properties": {
+                    "ip_address": true
+                  }
+                },
+                "serial_number": true,
+                "network_adapters": {
+                  "type": "array",
+                  "items": {
+                    "if": {
+                      "type": "object",
+                      "required": [
+                        "roles"
+                      ],
+                      "properties": {
+                        "roles": {
+                          "contains": {
+                            "const": "management"
+                          }
+                        }
+                      }
+                    },
+                    "then": {
+                      "type": "object",
+                      "required": [
+                        "mac_address"
+                      ],
+                      "properties": {
+                        "mac_address": true
+                      }
+                    }
+                  },
+                  "contains": {
+                    "type": "object",
+                    "required": [
+                      "roles"
+                    ],
+                    "properties": {
+                      "roles": {
+                        "contains": {
+                          "const": "provisioning"
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }

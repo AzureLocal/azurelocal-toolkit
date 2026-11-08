@@ -295,7 +295,7 @@ Schema 5.4.4 adds optional keys only; every 5.4.3 file stays valid, and a file t
 | `os_configuration.remoting.bootstrap_transport` | `none` or `arc`: whether the one-time Arc bootstrap may open WinRM. (5.6 adds `smb` and `auto`.) |
 | `os_configuration.remoting.allowed_source_cidrs` | Runner and jump server addresses, as the nodes see them. |
 
-See [Changing the management address safely](../../docs/os-configuration-and-arm-deployment.md#changing-the-management-address-safely). **Steps:** nothing is required. To use the keys, set `_metadata.schema_version` to `5.4.4` or later.
+See [Changing the management address safely](../../../docs/os-configuration-and-arm-deployment.md#changing-the-management-address-safely). **Steps:** nothing is required. To use the keys, set `_metadata.schema_version` to `5.4.4` or later.
 
 ## To 5.5: the domain join
 
@@ -332,7 +332,7 @@ Schema 5.6 only adds optional keys: every 5.0 to 5.5 file stays valid. It adds t
 
 ### The deployment block
 
-Schema 5.6 adds one optional section, `deployment`, for the toolkit's ARM Validate and Deploy run (`Invoke-AzureLocalArmDeployment.ps1`; see [docs/arm-deployment-guide.md](../../docs/arm-deployment-guide.md)). A file without the section behaves as before, with the defaults shown below.
+Schema 5.6 adds one optional section, `deployment`, for the toolkit's ARM Validate and Deploy run (`Invoke-AzureLocalArmDeployment.ps1`; see [docs/arm-deployment-guide.md](../../../docs/arm-deployment-guide.md)). A file without the section behaves as before, with the defaults shown below.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
@@ -360,6 +360,20 @@ Schema 5.6 adds one optional section, `deployment`, for the toolkit's ARM Valida
 
 New rules AZL-060 to AZL-068 (see README). **Steps for a 5.5 file:** set `_metadata.schema_version` to `5.6.0`; add `scenario.environment_class` (`lab` for an isolated lab, `production` otherwise); for `dev`, `production` and `dmz` list your jump servers in `os_configuration.remoting.allowed_source_cidrs`; for production and dmz, plan the HTTPS certificate (`os_configuration.remoting.certificate`, or the self-signed pre-join certificate and its trust procedure in `docs/os-configuration-and-arm-deployment.md`). To use the `deployment` block, add the keys you want; AZL-040 checks them.
 
+## To registry 5.0.0: where the files went
+
+The registry became the source of the schema. Nothing in `infrastructure.yml` changes; the files moved. Tools that read the old paths keep working through two generated stubs.
+
+| Was | Now |
+| --- | --- |
+| `config/infrastructure/infrastructure.schema.json` | `config/variables/schema/infrastructure.schema.json` (generated). A stub copy stays at the old path. |
+| `config/infrastructure/infrastructure.example.yml`, `infrastructure.ztp.example.yml` | `config/variables/examples/`. A stub copy of each stays at the old path. |
+| `config/infrastructure/examples/*.yml` | `config/variables/examples/scenarios/` |
+| `config/infrastructure/README.md`, `MIGRATION.md`, `VARIABLES.md` | `config/variables/docs/` (pointer files stay) |
+| `config/infrastructure/variables-reference.metadata.psd1` | `config/variables/docs/variables-reference.metadata.psd1` |
+| (new) | `config/variables/schema/purposes/`, `config/variables/templates/` (generated) |
+
+`identity.active_directory.security_groups` is the list of groups (`name`, `purpose`, `members`, `local_groups`); the 4.0 object-by-role form is `security_groups_by_role` (deprecated, expires 2027-05-07).
 ## Version history
 
 One history, in order: 5.2 (the ports of each machine), 5.3 (BIOS phases, the static method, the SAN), 5.4 (every ZTP setting), 5.4.1 (adapter wait), 5.4.2 (SBE delivery), 5.4.3 (`clear_storage`), 5.4.4 (the guarded network change and the transport keys: `os_configuration.network`, `os_configuration.remoting.transport`, `bootstrap_transport`, `allowed_source_cidrs`), 5.5 (the domain join keys and the CI/CD `devops` keys), 5.6 (the `deployment` block and the remote management security profile). A file that uses any of them says `5.6.0`, the current version; each key's description in the schema says `since` which version added it. Rules: AZL-030 SBE delivery, AZL-031 `clear_storage`, AZL-040 `deployment`, AZL-050 to AZL-053 domain join, AZL-060 to AZL-068 security profile, AZL-070 `devops`.

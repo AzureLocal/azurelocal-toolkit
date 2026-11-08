@@ -1,6 +1,6 @@
 # infrastructure.yml variables reference
 
-Every key of [`infrastructure.yml`](README.md), schema 5.6, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](infrastructure.schema.json), the templates and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don't edit it: change those and run:
+Every key of [`infrastructure.yml`](infrastructure-file.md), schema 5.6, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](../schema/infrastructure.schema.json) (itself generated from the master registry [`master-registry.yaml`](../schema/master-registry.yaml)), the examples and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don't edit it: change the registry (and the metadata) and run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`, then:
 
 ```powershell
 ./scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1
@@ -19,7 +19,7 @@ A test fails when this page is out of date (`./scripts/common/infrastructure/New
 | Where to get the value | Where the real value comes from. |
 | Read by | **ZTP**: azurelocal-ztp (the list is what its `ConvertFrom-ZtpInfrastructureV5` reads, plus the 5.3 and 5.4 keys). **OS configuration**: the toolkit's OS configuration phase (by design, by section). **CI/CD infrastructure**: tasks 01 to 06 of automation / 01-cicd-infra (the `devops` section, plus the Azure identifiers they sign in with). **ARM deployment**: the key becomes a parameter of Microsoft's ARM deployment template (the schema description names the parameter), or is part of the SAN (`storage.san`, `nodes[].san`) that the ARM and SAN deployment reads. **Trailwright**: it can write the key from its design (host-local paths and files are set by the operator). |
 
-Two templates start a file: [`infrastructure.example.yml`](infrastructure.example.yml) (full scope: ZTP, OS configuration and the ARM deployment) and [`infrastructure.ztp.example.yml`](infrastructure.ztp.example.yml) (ztp scope: only what azurelocal-ztp reads). See [Which template](README.md#which-template).
+Two templates start a file: [`infrastructure.example.yml`](../examples/infrastructure.example.yml) (full scope: ZTP, OS configuration and the ARM deployment) and [`infrastructure.ztp.example.yml`](../examples/infrastructure.ztp.example.yml) (ztp scope: only what azurelocal-ztp reads). The generated [master file and purpose templates](../templates) list every variable, or only the ones a tool reads. See [Which template](infrastructure-file.md#which-template).
 
 ## Secrets: keyvault:// references
 
@@ -95,13 +95,13 @@ Where the machines are.
 | Path | What it is | Type | Required: full / ztp | Default | Example | Where to get the value | Read by |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `site` | Where the machines are. | object | yes / yes |  |  |  | ZTP, Trailwright |
+| `site.customer` |  | string | no / no |  | `Infinite Improbability Corp` | Your site record: the customer, the location and its time zone (Windows name, for example Central Standard Time). | Trailwright |
+| `site.time_zone` | Windows time zone ID of the site, for example UTC or Eastern Standard Time. | string | no / yes |  | `Central Standard Time` | Your site record: the customer, the location and its time zone (Windows name, for example Central Standard Time). | ZTP, Trailwright |
 | `site.code` | Short site code, 2 to 8 uppercase letters or digits. | string | yes / yes |  | `IIC` | Your site record: the customer, the location and its time zone (Windows name, for example Central Standard Time). | ZTP, Trailwright |
-| `site.name` | Display name of the site. | string | yes / yes |  | `IIC Dallas` | Your site record: the customer, the location and its time zone (Windows name, for example Central Standard Time). | ZTP, Trailwright |
 | `site.location` | Physical location, for example a city. | string | no / no |  | `Dallas, TX` | Your site record: the customer, the location and its time zone (Windows name, for example Central Standard Time). | Trailwright |
 | `site.datacenter` |  | string | no / no |  | `dal-01` | Your site record: the customer, the location and its time zone (Windows name, for example Central Standard Time). | Trailwright |
-| `site.customer` |  | string | no / no |  | `Infinite Improbability Corp` | Your site record: the customer, the location and its time zone (Windows name, for example Central Standard Time). | Trailwright |
+| `site.name` | Display name of the site. | string | yes / yes |  | `IIC Dallas` | Your site record: the customer, the location and its time zone (Windows name, for example Central Standard Time). | ZTP, Trailwright |
 | `site.owner` |  | string | no / no |  | `platform-team@improbability.cloud` | Your site record: the customer, the location and its time zone (Windows name, for example Central Standard Time). | Trailwright |
-| `site.time_zone` | Windows time zone ID of the site, for example UTC or Eastern Standard Time. | string | no / yes |  | `Central Standard Time` | Your site record: the customer, the location and its time zone (Windows name, for example Central Standard Time). | ZTP, Trailwright |
 
 ### environment
 
@@ -416,6 +416,17 @@ Accounts and the identity provider (scenario.identity).
 | `identity.local_admin` | The deployment's local administrator on every machine. | object | yes / yes |  |  | You choose the name; the password is a Key Vault secret you create (see Secrets). | ZTP, OS configuration, ARM deployment, Trailwright |
 | `identity.local_admin.username` |  | string | yes / yes |  | `azl-admin` | You choose the name; the password is a Key Vault secret you create (see Secrets). | ZTP, OS configuration, Trailwright |
 | `identity.local_admin.password` (secret) | At least 14 characters with lowercase, uppercase, a digit and a special character. | keyvault:// reference | yes / yes |  | `keyvault://kv-iic-mgmt-01/local-admin-password` | You choose the name; the password is a Key Vault secret you create (see Secrets). | ZTP, OS configuration, Trailwright |
+| `identity.local_identity` | Local identity with Key Vault. | object | when scenario.identity is local_identity / no |  |  | Your Active Directory and Microsoft Entra ID teams. | ARM deployment, Trailwright |
+| `identity.local_identity.dns_server_config` | ARM dnsServerConfig: use_dns_server (UseDnsServer) or use_forwarder (UseForwarder). | one of `use_dns_server`, `use_forwarder` | if section is set / if section is set |  | `use_dns_server` | Your Active Directory and Microsoft Entra ID teams. | ARM deployment, Trailwright |
+| `identity.local_identity.dns_zone` |  | string | no / no |  | `br01.improbability.cloud` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
+| `identity.local_identity.dns_forwarders` |  | list of IPv4 address | no / no |  |  | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
+| `identity.entra` | Entra ID groups, role assignments and PIM. | object | no / no |  |  | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
+| `identity.entra.groups` |  | list of objects | no / no |  |  | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
+| `identity.entra.groups[].name` |  | string | if section is set / if section is set |  | `grp-iic-azl-operators` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
+| `identity.entra.groups[].purpose` |  | string | no / no |  | `Operate the instance` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
+| `identity.entra.groups[].roles` | Azure role names assigned to the group. | list of string | no / no |  | `[Azure Stack HCI Administrator]` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
+| `identity.entra.groups[].scope` | Scope of the role assignments. | string | no / no |  | `/subscriptions/00000000-0000-0000-0000-000000000000/res...` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
+| `identity.entra.break_glass_accounts` | User principal names of emergency access accounts, excluded from Conditional Access. | list of string | no / no |  | `[breakglass01@improbability.cloud]` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
 | `identity.active_directory` |  | object | when scenario.identity is active_directory / no |  |  | Your Active Directory and Microsoft Entra ID teams. | OS configuration, ARM deployment, Trailwright |
 | `identity.active_directory.domain_fqdn` | ARM domainFqdn. | string | if section is set / if section is set |  | `improbability.cloud` | Your Active Directory and Microsoft Entra ID teams. | OS configuration, ARM deployment, Trailwright |
 | `identity.active_directory.netbios_name` | Up to 15 letters, digits and hyphens. | NetBIOS name | no / no |  | `IIC` | Your Active Directory and Microsoft Entra ID teams. | OS configuration, Trailwright |
@@ -440,17 +451,6 @@ Accounts and the identity provider (scenario.identity).
 | `identity.active_directory.service_accounts[].name` |  | string | if section is set / if section is set |  | `svc-iic-azl-backup` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
 | `identity.active_directory.service_accounts[].purpose` |  | string | no / no |  | `Backup agent` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
 | `identity.active_directory.service_accounts[].password` (secret) | Key Vault reference for the password of identity.active_directory.service_accounts[]. | keyvault:// reference | no / no |  | `keyvault://kv-iic-mgmt-01/svc-backup-password` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
-| `identity.local_identity` | Local identity with Key Vault. | object | when scenario.identity is local_identity / no |  |  | Your Active Directory and Microsoft Entra ID teams. | ARM deployment, Trailwright |
-| `identity.local_identity.dns_server_config` | ARM dnsServerConfig: use_dns_server (UseDnsServer) or use_forwarder (UseForwarder). | one of `use_dns_server`, `use_forwarder` | if section is set / if section is set |  | `use_dns_server` | Your Active Directory and Microsoft Entra ID teams. | ARM deployment, Trailwright |
-| `identity.local_identity.dns_zone` |  | string | no / no |  | `br01.improbability.cloud` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
-| `identity.local_identity.dns_forwarders` |  | list of IPv4 address | no / no |  |  | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
-| `identity.entra` | Entra ID groups, role assignments and PIM. | object | no / no |  |  | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
-| `identity.entra.groups` |  | list of objects | no / no |  |  | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
-| `identity.entra.groups[].name` |  | string | if section is set / if section is set |  | `grp-iic-azl-operators` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
-| `identity.entra.groups[].purpose` |  | string | no / no |  | `Operate the instance` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
-| `identity.entra.groups[].roles` | Azure role names assigned to the group. | list of string | no / no |  | `[Azure Stack HCI Administrator]` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
-| `identity.entra.groups[].scope` | Scope of the role assignments. | string | no / no |  | `/subscriptions/00000000-0000-0000-0000-000000000000/res...` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
-| `identity.entra.break_glass_accounts` | User principal names of emergency access accounts, excluded from Conditional Access. | list of string | no / no |  | `[breakglass01@improbability.cloud]` | Your Active Directory and Microsoft Entra ID teams. | Trailwright |
 
 ### storage
 
@@ -536,14 +536,6 @@ SDN enabled by Azure Arc.
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `operations` |  | object | no / no |  |  |  | Trailwright |
 | `operations.update_method` |  | one of `portal`, `powershell` | no / no |  | `portal` | Your operations design. | Trailwright |
-| `operations.monitoring` |  | object | no / no |  |  | Your operations design. | Trailwright |
-| `operations.monitoring.enabled` |  | boolean | if section is set / if section is set |  | `true` | Your operations design. | Trailwright |
-| `operations.monitoring.log_analytics_workspace` |  | string | no / no |  | `log-iic-azl-01` | Your operations design. | Trailwright |
-| `operations.monitoring.workspace_resource_group` |  | resource group name | no / no |  | `rg-iic-mgmt-01` | Your operations design. | Trailwright |
-| `operations.monitoring.data_collection_rule` |  | string | no / no |  |  | Your operations design. | Trailwright |
-| `operations.monitoring.data_collection_endpoint` |  | string | no / no |  |  | Your operations design. | Trailwright |
-| `operations.monitoring.health_alerts` |  | boolean | no / no |  | `true` | Your operations design. | Trailwright |
-| `operations.monitoring.alert_email` |  | string | no / no |  |  | Your operations design. | Trailwright |
 | `operations.backup` |  | object | no / no |  |  | Your operations design. | Trailwright |
 | `operations.backup.enabled` |  | boolean | if section is set / if section is set |  | `false` | Your operations design. | Trailwright |
 | `operations.backup.approach` |  | one of `host`, `guest`, `both` | no / no |  |  | Your operations design. | Trailwright |
@@ -569,6 +561,14 @@ SDN enabled by Azure Arc.
 | `operations.licensing.azure_hybrid_benefit` | Azure Hybrid Benefit for the host fee and Windows Server guests. | boolean | no / no |  | `true` | Your operations design. | Trailwright |
 | `operations.licensing.windows_server_subscription` |  | boolean | no / no |  | `false` | Your operations design. | Trailwright |
 | `operations.licensing.azure_verification_for_vms` |  | boolean | no / no |  |  | Your operations design. | Trailwright |
+| `operations.monitoring` |  | object | no / no |  |  | Your operations design. | Trailwright |
+| `operations.monitoring.enabled` |  | boolean | if section is set / if section is set |  | `true` | Your operations design. | Trailwright |
+| `operations.monitoring.log_analytics_workspace` |  | string | no / no |  | `log-iic-azl-01` | Your operations design. | Trailwright |
+| `operations.monitoring.workspace_resource_group` |  | resource group name | no / no |  | `rg-iic-mgmt-01` | Your operations design. | Trailwright |
+| `operations.monitoring.data_collection_rule` |  | string | no / no |  |  | Your operations design. | Trailwright |
+| `operations.monitoring.data_collection_endpoint` |  | string | no / no |  |  | Your operations design. | Trailwright |
+| `operations.monitoring.health_alerts` |  | boolean | no / no |  | `true` | Your operations design. | Trailwright |
+| `operations.monitoring.alert_email` |  | string | no / no |  |  | Your operations design. | Trailwright |
 
 ### provisioning
 

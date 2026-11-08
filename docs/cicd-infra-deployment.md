@@ -71,7 +71,7 @@ A GitHub registration token expires after one hour, so it is not a good value to
 
 ## Deploy by hand from a workstation
 
-You need PowerShell 7, the `powershell-yaml` module, the Azure CLI signed in (`az login`), Terraform, and, per platform, `gh` (GitHub). Start from [`config/infrastructure/infrastructure.example.yml`](../config/infrastructure/infrastructure.example.yml): fill in `azure`, `key_vaults`, `landing_zone` and the `devops` section (schema 5.5). Keep your real file outside the repository.
+You need PowerShell 7, the `powershell-yaml` module, the Azure CLI signed in (`az login`), Terraform, and, per platform, `gh` (GitHub). Start from [`config/variables/examples/infrastructure.example.yml`](../config/variables/examples/infrastructure.example.yml): fill in `azure`, `key_vaults`, `landing_zone` and the `devops` section (schema 5.5). Keep your real file outside the repository.
 
 ```powershell
 $env:AZL_INFRASTRUCTURE_FILE = 'D:\env\infrastructure.yml'

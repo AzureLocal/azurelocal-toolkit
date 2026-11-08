@@ -27,12 +27,12 @@
     Get-AzlSiteIpRange        The site's management address range for simplified provisioning: site_ip_range, else the
                               lowest to the highest static management address.
 
-    Needs the powershell-yaml module. The schema is infrastructure.schema.json in config/infrastructure.
+    Needs the powershell-yaml module. The schema is infrastructure.schema.json in config/variables/schema (generated from the master registry).
 #>
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$script:DefaultSchemaPath = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'config', 'infrastructure', 'infrastructure.schema.json'))
+$script:DefaultSchemaPath = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'config', 'variables', 'schema', 'infrastructure.schema.json'))
 $script:SupportedMajor = 5
 
 # HOOK remoting-profiles (schema 5.6): rules AZL-060 to AZL-068 live with the profile resolver, so the validator and the run agree.
@@ -294,7 +294,7 @@ function Test-AzlProvisioningDhcpPort {
 function Get-AzlManagementMode {
     <#
     .SYNOPSIS
-        A node's management address mode, by the names the docs use (config/infrastructure/README.md, "Management address
+        A node's management address mode, by the names the docs use (config/variables/docs/infrastructure-file.md, "Management address
         modes"): A Reserved, B Static with DHCP, C Static without management DHCP.
     .DESCRIPTION
         From the ip_assignment of the management port (the port with role management that owns the address, found by its
@@ -1586,7 +1586,7 @@ function Test-AzlInfrastructure {
     .PARAMETER Path
         The infrastructure file.
     .PARAMETER SchemaPath
-        The JSON schema. Defaults to config/infrastructure/infrastructure.schema.json in this toolkit.
+        The JSON schema. Defaults to config/variables/schema/infrastructure.schema.json in this toolkit.
     .OUTPUTS
         One object per finding: Id, Severity (error, warning, info), Path, Message, LearnUrl. Nothing when the file is clean.
     .EXAMPLE
@@ -1602,7 +1602,7 @@ function Test-AzlInfrastructure {
 
     $version = Get-AzlInfrastructureValue -Infrastructure $infra -Path '_metadata.schema_version'
     if ($version -isnot [string] -or $version -notmatch "^$script:SupportedMajor\.") {
-        New-Finding 'AZL-000' error '_metadata.schema_version' "schema_version is '$version'. This toolkit reads schema $script:SupportedMajor.x; see config/infrastructure/MIGRATION.md."
+        New-Finding 'AZL-000' error '_metadata.schema_version' "schema_version is '$version'. This toolkit reads schema $script:SupportedMajor.x; see config/variables/docs/MIGRATION.md."
         return
     }
 

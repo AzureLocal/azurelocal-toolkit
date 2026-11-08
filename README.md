@@ -58,10 +58,14 @@ The repository is designed to be configuration-driven.
 
 | Path | Purpose |
 |------|---------|
-| `config/variables/variables.example.yml` | Example deployment variable file |
-| `config/variables/schema/` | Schema and validation assets for the variable system |
-| `config/variables/scripts/` | Variable-management helper scripts |
+| `config/variables/` | **The master of every variable** ([README](config/variables/README.md)). `schema/master-registry.yaml` is edited by hand; the `infrastructure.yml` schema, the master and purpose templates and the variables reference are generated from it (`scripts/New-InfrastructureArtifacts.ps1`). Registry first: a new variable goes in the registry before anything uses it. |
+| `config/variables/schema/` | The registry, the variables schema, the generated `infrastructure.schema.json` and per-purpose schemas |
+| `config/variables/templates/` | Generated: `infrastructure.master.yml` (every variable), scenario templates, one template per tool (ztp, os-configuration, deployment, cicd-infra, monitoring, discovery) |
+| `config/variables/examples/` | Worked `infrastructure.yml` examples (a full file, a ZTP-only file, one per scenario) and `variables.example.yml` |
+| `config/variables/docs/` | How to fill in `infrastructure.yml`, the migration guide, the generated variables reference |
+| `config/variables/scripts/` | Validators, the registry reader and the artifact generator |
 | `config/variables/reports/` | Generated validation and drift reports |
+| `config/infrastructure/` | Generated stubs (schema, two example files) for tools that read those paths in place, and pointers to the new places |
 | `scripts/common/utilities/helpers/config-loader.ps1` | PowerShell loader and export helpers for configuration data |
 
 Where supported, automation should consume variables from the shared variable model rather than hardcoded values.
@@ -89,7 +93,7 @@ If you are new to this repository, start with these files:
 | `repo-management/README.md` | Planning and governance layout for this repo |
 | [docs/os-configuration-and-arm-deployment.md](docs/os-configuration-and-arm-deployment.md) | Prerequisites and run guide for node OS configuration (Arc Run Command or WinRM) and ARM Validate/Deploy from infrastructure.yml: roles, secrets, AD, SAN, SBE, the ZTP hand-off, and the keys each step reads |
 | [docs/access-and-connectivity.md](docs/access-and-connectivity.md) | Account access and network connectivity across ZTP, OS configuration, ARM Validate/Deploy, Sonar and a pipeline runner: roles by scope, network paths, why OS configuration uses Arc Run Command, and troubleshooting |
-| [docs/infrastructure-variables.md](docs/infrastructure-variables.md) | Schema-wide reference for every infrastructure.yml key (maintained with the schema) |
+| [config/variables/docs/VARIABLES.md](config/variables/docs/VARIABLES.md) | Reference for every infrastructure.yml key (generated from the master registry) |
 
 ## Standards and Governance
 

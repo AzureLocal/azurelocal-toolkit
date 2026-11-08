@@ -1,6 +1,6 @@
 # infrastructure.yml: the one environment file
 
-> **Registry first.** The master of every variable is [`config/variables/schema/master-registry.yaml`](../variables/schema/master-registry.yaml). A key is added there before it is added to this schema, and its path, type, enum and default must match; a test (`tests/variables`) fails when this schema has a key the registry lacks. See [config/variables/README.md](../variables/README.md).
+> **Registry first.** The master of every variable is [`config/variables/schema/master-registry.yaml`](../schema/master-registry.yaml). The schema, the master and purpose templates and the variables reference below are **generated** from it by `./config/variables/scripts/New-InfrastructureArtifacts.ps1`; change the registry, not them. A test regenerates them and fails when one is stale. See [config/variables/README.md](../README.md).
 
 `infrastructure.yml` describes one Azure Local instance: the design choices, the machines, the networks, identity, the Azure targets, how the OS gets onto the machines, and the cluster deployment. Every Azure Local tool reads the same file:
 
@@ -17,23 +17,29 @@ The ARM parameters for Microsoft's deployment templates come from this file. The
 
 ## Files
 
+All under `config/variables`. Generated files say so in their first lines; do not edit them.
+
 | File | What it is |
 | --- | --- |
-| [`infrastructure.schema.json`](infrastructure.schema.json) | The contract: JSON Schema draft 2020-12. Its `$id` is `https://azurelocal.cloud/schemas/infrastructure/5/infrastructure.schema.json`. |
-| [`infrastructure.example.yml`](infrastructure.example.yml) | A complete file with every section and placeholder values: Active Directory, Storage Spaces Direct, switched, simplified provisioning, ARM. Start here. |
-| [`examples/`](examples) | One file per scenario: local identity and switchless with Arc gateway, disaggregated Fibre Channel with a proxy (the full SAN details), disaggregated iSCSI (disaggregated-iscsi.yml), rack aware with ZTP, disconnected operations, a single machine on a DHCP reservation, management on the onboard LOMs with ZTP (`lom-management-ztp.yml`, every port listed), and no DHCP anywhere with switchless storage (`no-dhcp-switchless.yml`). |
-| [`infrastructure.ztp.example.yml`](infrastructure.ztp.example.yml) | The ZTP-only template, `_metadata.scope: ztp`: only what azurelocal-ztp reads, for someone who uses it on its own. See [Which template](#which-template). |
-| [`VARIABLES.md`](VARIABLES.md) | The variables reference: every key with its type, required (full and ztp scope), default, example, where to get the value and which tool reads it. Generated from the schema by `scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1` (with `variables-reference.metadata.psd1`); a test fails when it is out of date. |
+| [`schema/master-registry.yaml`](../schema/master-registry.yaml) | The master. Every variable, with type, default, allowed values, since version, and which purposes read it. |
+| [`schema/infrastructure.schema.json`](../schema/infrastructure.schema.json) | **Generated.** The contract: JSON Schema draft 2020-12. Its `$id` is `https://azurelocal.cloud/schemas/infrastructure/5/infrastructure.schema.json`. A stub copy stays at `config/infrastructure/infrastructure.schema.json` for tools that read that path. |
+| [`schema/purposes/`](../schema/purposes) | **Generated.** The part of the schema one tool reads (`ztp`, `os-configuration`, `deployment`, `cicd-infra`, `monitoring`, `discovery`). |
+| [`templates/infrastructure.master.yml`](../templates/infrastructure.master.yml) | **Generated.** Every variable, with comments and the allowed values. [`templates/scenarios/`](../templates/scenarios) has it for one scenario choice; [`templates/purposes/`](../templates/purposes) only the variables one tool reads. |
+| [`examples/infrastructure.example.yml`](../examples/infrastructure.example.yml) | A complete worked file with every section and placeholder values: Active Directory, Storage Spaces Direct, switched, simplified provisioning, ARM. Start here for realistic values. |
+| [`examples/scenarios/`](../examples/scenarios) | One file per scenario: local identity and switchless with Arc gateway, disaggregated Fibre Channel with a proxy (the full SAN details), disaggregated iSCSI (`disaggregated-iscsi.yml`), rack aware with ZTP, disconnected operations, a single machine on a DHCP reservation, management on the onboard LOMs with ZTP (`lom-management-ztp.yml`, every port listed), and no DHCP anywhere with switchless storage (`no-dhcp-switchless.yml`). |
+| [`examples/infrastructure.ztp.example.yml`](../examples/infrastructure.ztp.example.yml) | The ZTP-only worked file, `_metadata.scope: ztp`: only what azurelocal-ztp reads, for someone who uses it on its own. See [Which template](#which-template). |
+| [`VARIABLES.md`](VARIABLES.md) | **Generated.** The variables reference: every key with its type, required (full and ztp scope), default, example, where to get the value and which tool reads it. |
 | [`MIGRATION.md`](MIGRATION.md) | Where every key from the earlier files went: the environment file ZTP read, the toolkit's `variables.yml` (registry 4.0.0), and Trailwright's export. |
 
+To give a tool its input from your `infrastructure.yml`: `./config/variables/scripts/New-InfrastructureArtifacts.ps1 -Cut ztp -From ./infrastructure.yml`. The tool validates the cut file against `schema/purposes/ztp.schema.json`.
 ## Which template
 
 Two templates come from the same schema. Pick by what runs after the OS is installed.
 
 | Template | `_metadata.scope` | Use it when | What it holds |
 | --- | --- | --- | --- |
-| [`infrastructure.example.yml`](infrastructure.example.yml) | `full` (default) | You deploy the whole instance: ZTP, then OS configuration, then the cluster deployment (ARM or portal). | Everything: design choices, machines, networks, identity, storage, security, cluster, provisioning. |
-| [`infrastructure.ztp.example.yml`](infrastructure.ztp.example.yml) | `ztp` | You use azurelocal-ztp on its own to install the OS and register the machines, and run no automation after it. | Only what ZTP reads: `azure`, `site`, `key_vaults`, `nodes` (serial number, BMC address, management and provisioning ports with MACs, BIOS), `hardware` (vendor, model, BMC login, BIOS, SBE folder), `networking.management` and `ntp_servers`, `identity.local_admin`, `provisioning`, `tags`. |
+| [`infrastructure.example.yml`](../examples/infrastructure.example.yml) | `full` (default) | You deploy the whole instance: ZTP, then OS configuration, then the cluster deployment (ARM or portal). | Everything: design choices, machines, networks, identity, storage, security, cluster, provisioning. |
+| [`infrastructure.ztp.example.yml`](../examples/infrastructure.ztp.example.yml) | `ztp` | You use azurelocal-ztp on its own to install the OS and register the machines, and run no automation after it. | Only what ZTP reads: `azure`, `site`, `key_vaults`, `nodes` (serial number, BMC address, management and provisioning ports with MACs, BIOS), `hardware` (vendor, model, BMC login, BIOS, SBE folder), `networking.management` and `ntp_servers`, `identity.local_admin`, `provisioning`, `tags`. |
 
 With `scope: ztp` the validator requires only ZTP's keys and skips the cluster deployment's requirements: `cluster`, `environment`, `networking.intents`, `storage`, `identity` beyond `local_admin`, the infrastructure pool, and every scenario choice except `os_install` (which must be `simplified`). With `scope: full`, or no `scope`, everything is enforced as before. Rules that check what is there (addresses in the subnet, unique MACs and names, Key Vault references, the BIOS and SAN rules) run in both.
 
@@ -163,7 +169,7 @@ To find each machine's maintenance environment, the Device stage uses `nodes[].m
 | `nodes[].san.initiator_iqn` | The machine's iSCSI initiator name. |
 | `nodes[].network_adapters[]` with role `iscsi:a` or `iscsi:b` | The iSCSI ports and their addresses (`ip_assignment`, `ip_address`, `prefix_length`, VLAN). No gateway. |
 
-A WWPN is 16 hex digits, written as colon-separated pairs or without colons. Rule AZL-028: a SAN needs `storage.san` (schema); Fibre Channel needs the target WWPNs and every node's HBA WWPNs; every WWPN names a defined fabric; iSCSI needs targets and every node's initiator IQN, and its ports need an address; no WWPN or IQN appears twice. Complete files: [`examples/disaggregated-fibre-channel-proxy.yml`](examples/disaggregated-fibre-channel-proxy.yml) and [`examples/disaggregated-iscsi.yml`](examples/disaggregated-iscsi.yml).
+A WWPN is 16 hex digits, written as colon-separated pairs or without colons. Rule AZL-028: a SAN needs `storage.san` (schema); Fibre Channel needs the target WWPNs and every node's HBA WWPNs; every WWPN names a defined fabric; iSCSI needs targets and every node's initiator IQN, and its ports need an address; no WWPN or IQN appears twice. Complete files: [`examples/disaggregated-fibre-channel-proxy.yml`](../examples/scenarios/disaggregated-fibre-channel-proxy.yml) and [`examples/disaggregated-iscsi.yml`](../examples/scenarios/disaggregated-iscsi.yml).
 ## Hardware-aware BIOS actions and every ZTP setting (schema 5.4)
 
 Schema 5.4 only adds keys; every 5.0 to 5.3 file stays valid. It does two things for azurelocal-ztp:
@@ -268,12 +274,12 @@ const validate = new Ajv2020({ strict: true, allErrors: true }).compile(schema);
 
 ## The OS configuration switch (schema 5.4.3)
 
-`os_configuration.network` and `os_configuration.remoting` (since 5.4.4) set the confirmation window of a guarded network change and how the OS configuration reaches the nodes: PowerShell remoting by default, Arc Run Command as an option, and an optional one-time Arc bootstrap that opens a closed node firewall. See [Choosing the transport](../../docs/os-configuration-and-arm-deployment.md#choosing-the-transport).
+`os_configuration.network` and `os_configuration.remoting` (since 5.4.4) set the confirmation window of a guarded network change and how the OS configuration reaches the nodes: PowerShell remoting by default, Arc Run Command as an option, and an optional one-time Arc bootstrap that opens a closed node firewall. See [Choosing the transport](../../../docs/os-configuration-and-arm-deployment.md#choosing-the-transport).
 
-`os_configuration.clear_storage` (default `false`) tells `Invoke-AzureLocalOsConfiguration.ps1` to wipe the leftover storage of re-used machines: storage pools, virtual disks and the data on local disks that are not boot, system, SAN or USB. Plan mode lists the disks per machine and wipes nothing; Apply mode wipes only what the plan listed. See [OS configuration and ARM deployment](../../docs/os-configuration-and-arm-deployment.md#run-it-in-one-go).
+`os_configuration.clear_storage` (default `false`) tells `Invoke-AzureLocalOsConfiguration.ps1` to wipe the leftover storage of re-used machines: storage pools, virtual disks and the data on local disks that are not boot, system, SAN or USB. Plan mode lists the disks per machine and wipes nothing; Apply mode wipes only what the plan listed. See [OS configuration and ARM deployment](../../../docs/os-configuration-and-arm-deployment.md#run-it-in-one-go).
 ## The domain join (schema 5.5)
 
-With `scenario.identity: active_directory`, `Invoke-AzureLocalOsConfiguration.ps1` joins each machine to `identity.active_directory.domain_fqdn`, into `ou_path`, with the LCM user (`lcm_user`; `domain_join_account` overrides it) before the cluster validation and the deployment, then adds `local_admin_members` to the local Administrators group. `join_options.allow_ou_move` (default `false`) allows a move before the deployment only; `rename_after_join` is fixed to `false`. See [Joining the domain](../../docs/os-configuration-and-arm-deployment.md#joining-the-domain) for the order, the rights, the OU checks, what happens on a failure and what to do with a node in the wrong OU.
+With `scenario.identity: active_directory`, `Invoke-AzureLocalOsConfiguration.ps1` joins each machine to `identity.active_directory.domain_fqdn`, into `ou_path`, with the LCM user (`lcm_user`; `domain_join_account` overrides it) before the cluster validation and the deployment, then adds `local_admin_members` to the local Administrators group. `join_options.allow_ou_move` (default `false`) allows a move before the deployment only; `rename_after_join` is fixed to `false`. See [Joining the domain](../../../docs/os-configuration-and-arm-deployment.md#joining-the-domain) for the order, the rights, the OU checks, what happens on a failure and what to do with a node in the wrong OU.
 
 ## Versioning
 

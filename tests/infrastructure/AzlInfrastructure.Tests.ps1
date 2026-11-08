@@ -10,7 +10,7 @@ BeforeAll {
     $repo = Resolve-Path (Join-Path $PSScriptRoot '..\..')
     Import-Module (Join-Path $repo 'scripts\common\infrastructure\AzlInfrastructure.psm1') -Force
     Import-Module powershell-yaml
-    $script:ExamplePath = Join-Path $repo 'config\infrastructure\infrastructure.example.yml'
+    $script:ExamplePath = Join-Path $repo 'config\variables\examples\infrastructure.example.yml'
 
     # Loads the main example, applies a change, writes it to TestDrive and returns the findings.
     function Get-FindingFor([scriptblock]$Change, [string]$From = $script:ExamplePath) {
@@ -24,7 +24,7 @@ BeforeAll {
 
 Describe 'Examples' {
     It '<_> has no errors' -ForEach @(
-        Get-ChildItem (Join-Path $PSScriptRoot '..\..\config\infrastructure') -Recurse -Filter '*.yml' | ForEach-Object FullName
+        Get-ChildItem (Join-Path $PSScriptRoot '..\..\config\variables\examples') -Recurse -Filter '*.yml' | ForEach-Object FullName
     ) {
         @(Test-AzlInfrastructure -Path $_ | Where-Object Severity -eq 'error') | Should -BeNullOrEmpty
     }
@@ -149,7 +149,7 @@ Describe 'Semantic rules' {
         $f.Id | Should -Contain 'AZL-016'
     }
     It 'AZL-016 refuses Arc gateway in Azure Government' {
-        $f = Get-FindingFor -From (Join-Path $repo 'config\infrastructure\examples\local-identity-switchless-iso.yml') { param($d) $d.scenario.cloud = 'government' }
+        $f = Get-FindingFor -From (Join-Path $repo 'config\variables\examples\scenarios\local-identity-switchless-iso.yml') { param($d) $d.scenario.cloud = 'government' }
         $f.Id | Should -Contain 'AZL-016'
     }
     It 'AZL-015 needs a BMC login for simplified provisioning' {
@@ -188,7 +188,7 @@ Describe 'Semantic rules' {
         $f | Where-Object { $_.Id -eq 'AZL-018' -and $_.Severity -eq 'error' -and $_.Path -eq 'nodes[0].arc_resource_name' } | Should -Not -BeNullOrEmpty
     }
     It 'AZL-018 warns that an ISO install names the Arc machine after the host' {
-        $f = Get-FindingFor -From (Join-Path $repo 'config\infrastructure\examples\single-machine-iso.yml') { param($d) $d.nodes[0]['arc_machine_name'] = 'iic-edge-07-arc' }
+        $f = Get-FindingFor -From (Join-Path $repo 'config\variables\examples\scenarios\single-machine-iso.yml') { param($d) $d.nodes[0]['arc_machine_name'] = 'iic-edge-07-arc' }
         $f | Where-Object { $_.Id -eq 'AZL-018' -and $_.Severity -eq 'warning' -and $_.Path -eq 'nodes[0].arc_machine_name' } | Should -Not -BeNullOrEmpty
     }
 }
@@ -240,8 +240,8 @@ Describe 'Management address and Arc machine name' {
 
 Describe 'Schema 5.2: network adapters' {
     BeforeAll {
-        $script:Lom = Join-Path $repo 'config\infrastructure\examples\lom-management-ztp.yml'
-        $script:NoDhcp = Join-Path $repo 'config\infrastructure\examples\no-dhcp-switchless.yml'
+        $script:Lom = Join-Path $repo 'config\variables\examples\scenarios\lom-management-ztp.yml'
+        $script:NoDhcp = Join-Path $repo 'config\variables\examples\scenarios\no-dhcp-switchless.yml'
         # Findings for a change to the LOM-management example (two nodes, six ports each, simplified provisioning).
         function Get-LomFinding([scriptblock]$Change) { Get-FindingFor -From $script:Lom $Change }
         function Get-Port($Doc, [int]$Node, [string]$Name) { $Doc.nodes[$Node].network_adapters | Where-Object { $_.name -eq $Name } | Select-Object -First 1 }
@@ -266,7 +266,7 @@ Describe 'Schema 5.2: network adapters' {
             @($dhcp | Where-Object { $_.Id -eq 'AZL-020' -and $_.Message -match "can't be verified" }).Count | Should -Be 2 -Because 'use_dhcp needs no address, so only the warning stays'
         }
         It 'needs mac_address for a DHCP reservation' {
-            $f = Get-FindingFor -From (Join-Path $repo 'config\infrastructure\examples\single-machine-iso.yml') { param($d) $d.nodes[0].network_adapters[0].Remove('mac_address') }
+            $f = Get-FindingFor -From (Join-Path $repo 'config\variables\examples\scenarios\single-machine-iso.yml') { param($d) $d.nodes[0].network_adapters[0].Remove('mac_address') }
             $f | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq 'nodes[0].network_adapters[0]' -and $_.Message -match 'mac_address' } | Should -Not -BeNullOrEmpty
         }
         It 'needs a MAC on every management port with simplified provisioning, the team partner too' {
@@ -341,7 +341,7 @@ Describe 'Schema 5.2: network adapters' {
             $f = Get-LomFinding { param($d) $d.networking.intents[0].adapters = @('Embedded NIC 2', 'Embedded NIC 1') }
             @($f | Where-Object { $_.Id -eq 'AZL-020' -and $_.Message -match 'first adapter' } | ForEach-Object Severity | Select-Object -Unique) | Should -Be @('error')
             $f | Where-Object { $_.Id -eq 'AZL-020' -and $_.Message -match 'first adapter' } | ForEach-Object { $_.Message } | Select-Object -First 1 | Should -Match '0 gateways and 0 DNS'
-            $f = Get-FindingFor -From (Join-Path $repo 'config\infrastructure\examples\single-machine-iso.yml') { param($d) $d.networking.intents[0].adapters = @('NIC2', 'NIC1') }
+            $f = Get-FindingFor -From (Join-Path $repo 'config\variables\examples\scenarios\single-machine-iso.yml') { param($d) $d.networking.intents[0].adapters = @('NIC2', 'NIC1') }
             $f | Where-Object { $_.Id -eq 'AZL-020' -and $_.Severity -eq 'error' -and $_.Message -match 'DHCP reservation must be for that MAC' } | Should -Not -BeNullOrEmpty
         }
         It 'AZL-020 refuses a management port outside the management intent, and warns about plain DHCP' {
@@ -472,14 +472,14 @@ Describe 'Schema 5.2: network adapters' {
             $infra.nodes[0].network_adapters[0].ip_address = '192.0.2.15'
             $r = Get-AzlSiteIpRange -Infrastructure $infra
             "$($r.Start)-$($r.End) $($r.Source)" | Should -Be '192.0.2.12-192.0.2.15 derived'
-            Get-AzlSiteIpRange -Infrastructure (Import-AzlInfrastructure -Path (Join-Path $repo 'config\infrastructure\examples\single-machine-iso.yml') -SkipValidation) | Should -BeNullOrEmpty -Because 'a reserved address is not static'
+            Get-AzlSiteIpRange -Infrastructure (Import-AzlInfrastructure -Path (Join-Path $repo 'config\variables\examples\scenarios\single-machine-iso.yml') -SkipValidation) | Should -BeNullOrEmpty -Because 'a reserved address is not static'
         }
     }
 }
 
 Describe 'Schema 5.3: BIOS phases, static method, maintenance environment' {
     BeforeAll {
-        $script:Lom = Join-Path $repo 'config\infrastructure\examples\lom-management-ztp.yml'
+        $script:Lom = Join-Path $repo 'config\variables\examples\scenarios\lom-management-ztp.yml'
         function Get-LomFinding([scriptblock]$Change) { Get-FindingFor -From $script:Lom $Change }
     }
 
@@ -573,8 +573,8 @@ Describe 'Schema 5.3: BIOS phases, static method, maintenance environment' {
 
 Describe 'Schema 5.3: SAN' {
     BeforeAll {
-        $script:Fc = Join-Path $repo 'config\infrastructure\examples\disaggregated-fibre-channel-proxy.yml'
-        $script:Iscsi = Join-Path $repo 'config\infrastructure\examples\disaggregated-iscsi.yml'
+        $script:Fc = Join-Path $repo 'config\variables\examples\scenarios\disaggregated-fibre-channel-proxy.yml'
+        $script:Iscsi = Join-Path $repo 'config\variables\examples\scenarios\disaggregated-iscsi.yml'
         function Get-FcFinding([scriptblock]$Change) { Get-FindingFor -From $script:Fc $Change }
         function Get-IscsiFinding([scriptblock]$Change) { Get-FindingFor -From $script:Iscsi $Change }
     }
@@ -663,8 +663,8 @@ Describe 'Schema 5.3: SAN' {
 
 Describe 'Schema 5.3: file scope (full and ztp templates)' {
     BeforeAll {
-        $script:Full = Join-Path $repo 'config\infrastructure\infrastructure.example.yml'
-        $script:Ztp = Join-Path $repo 'config\infrastructure\infrastructure.ztp.example.yml'
+        $script:Full = Join-Path $repo 'config\variables\examples\infrastructure.example.yml'
+        $script:Ztp = Join-Path $repo 'config\variables\examples\infrastructure.ztp.example.yml'
         function Get-ZtpFinding([scriptblock]$Change) { Get-FindingFor -From $script:Ztp $Change }
     }
 
@@ -738,8 +738,8 @@ Describe 'Schema 5.3: file scope (full and ztp templates)' {
 
 Describe 'Variables reference (VARIABLES.md)' {
     BeforeAll {
-        $script:Config = Join-Path $repo 'config\infrastructure'
-        $script:Page = Join-Path $script:Config 'VARIABLES.md'
+        $script:Config = Join-Path $repo 'config\variables'
+        $script:Page = Join-Path $script:Config 'docs\VARIABLES.md'
         $script:Generator = Join-Path $repo 'scripts\common\infrastructure\New-InfrastructureVariablesReference.ps1'
         $script:PageText = (Get-Content -LiteralPath $script:Page -Raw).Replace("`r`n", "`n")
         $script:PagePaths = @([regex]::Matches($script:PageText, '(?m)^\| `([^`|]+)`') | ForEach-Object { $_.Groups[1].Value })
@@ -759,8 +759,8 @@ Describe 'Variables reference (VARIABLES.md)' {
         (Get-Content -LiteralPath $out -Raw).Replace("`r`n", "`n") | Should -BeExactly $script:PageText -Because 'run ./scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1 and commit the result'
     }
     It 'has a row for every key used in <_>' -ForEach @(
-        'infrastructure.example.yml', 'infrastructure.ztp.example.yml',
-        'examples\disaggregated-fibre-channel-proxy.yml', 'examples\disaggregated-iscsi.yml', 'examples\lom-management-ztp.yml', 'examples\no-dhcp-switchless.yml'
+        'examples\infrastructure.example.yml', 'examples\infrastructure.ztp.example.yml',
+        'examples\scenarios\disaggregated-fibre-channel-proxy.yml', 'examples\scenarios\disaggregated-iscsi.yml', 'examples\scenarios\lom-management-ztp.yml', 'examples\scenarios\no-dhcp-switchless.yml'
     ) {
         $doc = ConvertFrom-Yaml (Get-Content -LiteralPath (Join-Path $script:Config $_) -Raw) -Ordered
         $missing = @(Get-LeafPath $doc '' | Where-Object { $_ -notmatch '^extensions' } | Where-Object {
@@ -780,7 +780,7 @@ Describe 'Variables reference (VARIABLES.md)' {
         $script:PageText | Should -Match '(?m)^\| `nodes\[\].serial_number` .*\| when scenario.os_install is simplified / yes \|'
     }
     It 'groups the rows by section, in the schema''s order' {
-        $schema = Get-Content -LiteralPath (Join-Path $script:Config 'infrastructure.schema.json') -Raw | ConvertFrom-Json -AsHashtable
+        $schema = Get-Content -LiteralPath (Join-Path $script:Config 'schema\infrastructure.schema.json') -Raw | ConvertFrom-Json -AsHashtable
         $headings = @([regex]::Matches($script:PageText, '(?m)^### (\S+)$') | ForEach-Object { $_.Groups[1].Value })
         $headings | Should -Be @($schema.properties.Keys)
     }
@@ -797,9 +797,9 @@ Describe 'Variables reference (VARIABLES.md)' {
         $section | Should -Match 'GB'
     }
     It 'is linked from the README and from both templates' {
-        (Get-Content -LiteralPath (Join-Path $script:Config 'README.md') -Raw) | Should -Match '\]\(VARIABLES\.md\)'
-        (Get-Content -LiteralPath (Join-Path $script:Config 'infrastructure.example.yml') -Raw) | Should -Match 'Variables: VARIABLES\.md'
-        (Get-Content -LiteralPath (Join-Path $script:Config 'infrastructure.ztp.example.yml') -Raw) | Should -Match 'Variables: VARIABLES\.md'
+        (Get-Content -LiteralPath (Join-Path $script:Config 'docs\infrastructure-file.md') -Raw) | Should -Match '\]\(VARIABLES\.md\)'
+        (Get-Content -LiteralPath (Join-Path $script:Config 'examples\infrastructure.example.yml') -Raw) | Should -Match 'Variables: config/variables/docs/VARIABLES\.md'
+        (Get-Content -LiteralPath (Join-Path $script:Config 'examples\infrastructure.ztp.example.yml') -Raw) | Should -Match 'Variables: config/variables/docs/VARIABLES\.md'
     }
 }
 
@@ -826,8 +826,8 @@ Describe 'Import-AzlInfrastructure' {
 
 Describe 'Schema 5.4: ZTP settings and the BIOS actions derived from the inventory' {
     BeforeAll {
-        $script:Ztp54 = Join-Path $repo 'config\infrastructure\infrastructure.ztp.example.yml'
-        $script:Full54 = Join-Path $repo 'config\infrastructure\infrastructure.example.yml'
+        $script:Ztp54 = Join-Path $repo 'config\variables\examples\infrastructure.ztp.example.yml'
+        $script:Full54 = Join-Path $repo 'config\variables\examples\infrastructure.example.yml'
         function Get-Ztp54Finding([scriptblock]$Change) { Get-FindingFor -From $script:Ztp54 $Change }
     }
 
@@ -938,7 +938,7 @@ Describe 'Schema 5.4: ZTP settings and the BIOS actions derived from the invento
 
 Describe 'Schema 5.4: an adapter that names its own BIOS attribute, and port labels read loosely' {
     BeforeAll {
-        $script:Ztp55 = Join-Path $repo 'config\infrastructure\infrastructure.ztp.example.yml'
+        $script:Ztp55 = Join-Path $repo 'config\variables\examples\infrastructure.ztp.example.yml'
         function Get-Ztp55Finding([scriptblock]$Change) { Get-FindingFor -From $script:Ztp55 $Change }
     }
 
@@ -971,7 +971,7 @@ Describe 'Schema 5.4: an adapter that names its own BIOS attribute, and port lab
 
 Describe 'Schema 5.4.2: how the SBE package reaches the nodes (AZL-030)' {
     BeforeAll {
-        $script:Full542 = Join-Path $repo 'config\infrastructure\infrastructure.example.yml'
+        $script:Full542 = Join-Path $repo 'config\variables\examples\infrastructure.example.yml'
         function Get-Sbe542Finding([scriptblock]$Change) { Get-FindingFor -From $script:Full542 $Change }
     }
 
@@ -1014,11 +1014,11 @@ Describe 'Schema 5.4.2: how the SBE package reaches the nodes (AZL-030)' {
     }
 }
 Describe 'Schema 5.4.3: os_configuration.clear_storage' {
-    BeforeAll { $script:Full543 = Join-Path $repo 'config\infrastructure\infrastructure.example.yml' }
+    BeforeAll { $script:Full543 = Join-Path $repo 'config\variables\examples\infrastructure.example.yml' }
 
     It 'is in the example, false, and the schema defaults it to false' {
         (Import-AzlInfrastructure -Path $script:Full543).os_configuration.clear_storage | Should -BeFalse
-        $schema = Get-Content -LiteralPath (Join-Path $repo 'config\infrastructure\infrastructure.schema.json') -Raw | ConvertFrom-Json -AsHashtable
+        $schema = Get-Content -LiteralPath (Join-Path $repo 'config\variables\schema\infrastructure.schema.json') -Raw | ConvertFrom-Json -AsHashtable
         $schema.properties.os_configuration.properties.clear_storage.default | Should -BeFalse
         $schema.properties.os_configuration.properties.clear_storage.type | Should -Be 'boolean'
     }
@@ -1041,8 +1041,8 @@ Describe 'Schema 5.4.3: os_configuration.clear_storage' {
 
 Describe 'Schema 5.5: the domain join (AZL-050 to AZL-053)' {
     BeforeAll {
-        $script:Full550 = Join-Path $repo 'config\infrastructure\infrastructure.example.yml'
-        $script:Local550 = Join-Path $repo 'config\infrastructure\examples\local-identity-switchless-iso.yml'
+        $script:Full550 = Join-Path $repo 'config\variables\examples\infrastructure.example.yml'
+        $script:Local550 = Join-Path $repo 'config\variables\examples\scenarios\local-identity-switchless-iso.yml'
         function Get-Dj550Finding([scriptblock]$Change, [string]$Rule) { @(Get-FindingFor -From $script:Full550 $Change | Where-Object { -not $Rule -or $_.Id -eq $Rule }) }
     }
 
@@ -1055,7 +1055,7 @@ Describe 'Schema 5.5: the domain join (AZL-050 to AZL-053)' {
         @(Test-AzlInfrastructure -Path $script:Full550) | Should -BeNullOrEmpty
     }
     It 'the schema: domain_join_account is an optional override, allow_ou_move defaults to false, rename_after_join is fixed to false' {
-        $schema = Get-Content -LiteralPath (Join-Path $repo 'config\infrastructure\infrastructure.schema.json') -Raw | ConvertFrom-Json -AsHashtable
+        $schema = Get-Content -LiteralPath (Join-Path $repo 'config\variables\schema\infrastructure.schema.json') -Raw | ConvertFrom-Json -AsHashtable
         $ad = $schema.properties.identity.properties.active_directory
         $ad.required | Should -Not -Contain 'domain_join_account'
         $ad.properties.join_options.properties.allow_ou_move.default | Should -BeFalse
@@ -1084,7 +1084,7 @@ Describe 'Schema 5.5: the domain join (AZL-050 to AZL-053)' {
             $f[0].Message | Should -Match 'local administrator'
         }
         It 'does not apply to a ztp-scope file' {
-            $f = Get-FindingFor -From (Join-Path $repo 'config\infrastructure\infrastructure.ztp.example.yml') { param($d) $d.scenario = @{ identity = 'active_directory' } } | Where-Object Id -eq 'AZL-050'
+            $f = Get-FindingFor -From (Join-Path $repo 'config\variables\examples\infrastructure.ztp.example.yml') { param($d) $d.scenario = @{ identity = 'active_directory' } } | Where-Object Id -eq 'AZL-050'
             @($f) | Should -BeNullOrEmpty
         }
     }

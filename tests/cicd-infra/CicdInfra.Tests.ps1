@@ -13,7 +13,7 @@ BeforeAll {
     $script:Repo = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
     Import-Module (Join-Path $script:Repo 'scripts\common\cicd-infra\AzlCicdInfra.psm1') -Force
     Import-Module powershell-yaml
-    $script:Example = Join-Path $script:Repo 'config\infrastructure\infrastructure.example.yml'
+    $script:Example = Join-Path $script:Repo 'config\variables\examples\infrastructure.example.yml'
     $script:TaskRoot = Join-Path $script:Repo 'scripts\deploy\01-cicd-infra\phase-01-cicd-setup'
 
     function Get-Settings([string]$Platform = '', [scriptblock]$Change, [switch]$KeepApiToken) {

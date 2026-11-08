@@ -165,7 +165,7 @@ function ConvertTo-AzlCicdSetting {
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure, [string]$Platform = '')
 
     $devops = Get-AzlValue $Infrastructure 'devops'
-    if ($devops -isnot [System.Collections.IDictionary]) { throw 'The infrastructure file has no devops section. See config/infrastructure/infrastructure.example.yml.' }
+    if ($devops -isnot [System.Collections.IDictionary]) { throw 'The infrastructure file has no devops section. See config/variables/examples/infrastructure.example.yml.' }
     $platform = if ($Platform) { $Platform } else { [string](Get-AzlValue $devops 'platform') }
     if ($platform -notin @('github', 'gitlab', 'azure_devops')) { throw "devops.platform must be github, gitlab or azure_devops (got '$platform')." }
 

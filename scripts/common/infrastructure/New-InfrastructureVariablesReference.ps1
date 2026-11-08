@@ -1,25 +1,28 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-    Renders config/infrastructure/VARIABLES.md, the variables reference of infrastructure.yml, from the JSON schema.
+    Renders config/variables/docs/VARIABLES.md, the variables reference of infrastructure.yml, from the JSON schema.
 
 .DESCRIPTION
     One row per key, grouped by section: path, what it is, type, whether it is required in full and in ztp scope, the default,
     an example, where to get the value, and which tools read it. Types, required keys, defaults and descriptions come from
-    config/infrastructure/infrastructure.schema.json. Examples come from the templates and example files. Where to get a
-    value, and which tools read a key, come from config/infrastructure/variables-reference.metadata.psd1.
+    config/variables/schema/infrastructure.schema.json. Examples come from the templates and example files. Where to get a
+    value, and which tools read a key, come from config/variables/docs/variables-reference.metadata.psd1.
 
     The page is generated: edit the schema or the metadata, then run this script. With -Check nothing is written; the script
     exits 1 when the page on disk differs from what it would write (the Pester tests run this).
 
 .PARAMETER SchemaPath
-    The JSON schema. Default: config/infrastructure/infrastructure.schema.json.
+    The JSON schema. Default: config/variables/schema/infrastructure.schema.json.
 
 .PARAMETER MetadataPath
-    Facts the schema doesn't hold. Default: config/infrastructure/variables-reference.metadata.psd1.
+    Facts the schema doesn't hold. Default: config/variables/docs/variables-reference.metadata.psd1.
+
+.PARAMETER ExamplesPath
+    The folder with the two templates and scenarios/*.yml. Default: config/variables/examples.
 
 .PARAMETER OutputPath
-    The page to write. Default: config/infrastructure/VARIABLES.md.
+    The page to write. Default: config/variables/docs/VARIABLES.md.
 
 .PARAMETER Check
     Compare instead of write; exit 1 when the page is out of date.
@@ -32,16 +35,16 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$SchemaPath = (Join-Path $PSScriptRoot '../../../config/infrastructure/infrastructure.schema.json'),
-    [string]$MetadataPath = (Join-Path $PSScriptRoot '../../../config/infrastructure/variables-reference.metadata.psd1'),
-    [string]$OutputPath = (Join-Path $PSScriptRoot '../../../config/infrastructure/VARIABLES.md'),
+    [string]$SchemaPath = (Join-Path $PSScriptRoot '../../../config/variables/schema/infrastructure.schema.json'),
+    [string]$MetadataPath = (Join-Path $PSScriptRoot '../../../config/variables/docs/variables-reference.metadata.psd1'),
+    [string]$OutputPath = (Join-Path $PSScriptRoot '../../../config/variables/docs/VARIABLES.md'),
+    [string]$ExamplesPath = (Join-Path $PSScriptRoot '../../../config/variables/examples'),
     [switch]$Check
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 Import-Module powershell-yaml -ErrorAction Stop
-$configDir = Split-Path -Parent (Resolve-Path -LiteralPath $SchemaPath)
 $schema = Get-Content -LiteralPath $SchemaPath -Raw | ConvertFrom-Json -AsHashtable
 $meta = Import-PowerShellDataFile -LiteralPath $MetadataPath
 $defs = $schema['$defs']
@@ -149,15 +152,15 @@ function Format-Scalar($Value) {
 }
 
 $templates = [ordered]@{
-    full = Join-Path $configDir 'infrastructure.example.yml'
-    ztp  = Join-Path $configDir 'infrastructure.ztp.example.yml'
+    full = Join-Path $ExamplesPath 'infrastructure.example.yml'
+    ztp  = Join-Path $ExamplesPath 'infrastructure.ztp.example.yml'
 }
 foreach ($name in $templates.Keys) {
     if (Test-Path -LiteralPath $templates[$name]) {
         Add-ExampleValue (ConvertFrom-Yaml (Get-Content -LiteralPath $templates[$name] -Raw) -Ordered) '' $name
     }
 }
-foreach ($file in (Get-ChildItem -LiteralPath (Join-Path $configDir 'examples') -Filter '*.yml' | Sort-Object Name)) {
+foreach ($file in (Get-ChildItem -LiteralPath (Join-Path $ExamplesPath 'scenarios') -Filter '*.yml' | Sort-Object Name)) {
     $before = $secretRefs.Count
     Add-ExampleValue (ConvertFrom-Yaml (Get-Content -LiteralPath $file.FullName -Raw) -Ordered) '' $file.Name
     while ($secretRefs.Count -gt $before) { $secretRefs.RemoveAt($secretRefs.Count - 1) }   # the secret list is from the two templates only
@@ -333,7 +336,7 @@ $latest = if ($schema['properties']['_metadata']['properties']['schema_version']
 
 Out-Line '# infrastructure.yml variables reference'
 Out-Line
-Out-Line ('Every key of [`infrastructure.yml`](README.md), schema {0}, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](infrastructure.schema.json), the templates and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don''t edit it: change those and run:' -f $latest)
+Out-Line ('Every key of [`infrastructure.yml`](infrastructure-file.md), schema {0}, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](../schema/infrastructure.schema.json) (itself generated from the master registry [`master-registry.yaml`](../schema/master-registry.yaml)), the examples and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don''t edit it: change the registry (and the metadata) and run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`, then:' -f $latest)
 Out-Line
 Out-Line '```powershell'
 Out-Line './scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1'
@@ -352,7 +355,7 @@ Out-Line '| Example | The value in the templates and examples. Placeholders only
 Out-Line '| Where to get the value | Where the real value comes from. |'
 Out-Line '| Read by | **ZTP**: azurelocal-ztp (the list is what its `ConvertFrom-ZtpInfrastructureV5` reads, plus the 5.3 and 5.4 keys). **OS configuration**: the toolkit''s OS configuration phase (by design, by section). **CI/CD infrastructure**: tasks 01 to 06 of automation / 01-cicd-infra (the `devops` section, plus the Azure identifiers they sign in with). **ARM deployment**: the key becomes a parameter of Microsoft''s ARM deployment template (the schema description names the parameter), or is part of the SAN (`storage.san`, `nodes[].san`) that the ARM and SAN deployment reads. **Trailwright**: it can write the key from its design (host-local paths and files are set by the operator). |'
 Out-Line
-Out-Line 'Two templates start a file: [`infrastructure.example.yml`](infrastructure.example.yml) (full scope: ZTP, OS configuration and the ARM deployment) and [`infrastructure.ztp.example.yml`](infrastructure.ztp.example.yml) (ztp scope: only what azurelocal-ztp reads). See [Which template](README.md#which-template).'
+Out-Line 'Two templates start a file: [`infrastructure.example.yml`](../examples/infrastructure.example.yml) (full scope: ZTP, OS configuration and the ARM deployment) and [`infrastructure.ztp.example.yml`](../examples/infrastructure.ztp.example.yml) (ztp scope: only what azurelocal-ztp reads). The generated [master file and purpose templates](../templates) list every variable, or only the ones a tool reads. See [Which template](infrastructure-file.md#which-template).'
 Out-Line
 
 # Secrets
