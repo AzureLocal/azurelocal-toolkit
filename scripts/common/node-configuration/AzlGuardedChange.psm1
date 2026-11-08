@@ -489,10 +489,12 @@ function Invoke-AzlGuardedChange {
     if (-not $oldAddress -and $mgmtNic.Count) { $oldAddress = [string](@($mgmtNic[0].ips | Where-Object { $_ -notlike '169.254.*' } | ForEach-Object { ($_ -split '/')[0] })[0]) }
     $newAddress = if ($isManagement) { [string]$Spec.Management.Ip } else { $oldAddress }
     $items = @($Item | ForEach-Object { $copy = @{} + $_; if ($copy.kind -eq 'nic-static' -and $copy.ContainsKey('management')) { $copy.Remove('vlan') }; $copy })
+    # The DNS check on the node asks the management port's DNS servers for this name; the AD domain is what the internal servers answer for.
+    $probeHost = if ($Spec.PSObject.Properties['DomainFqdn'] -and [string]$Spec.DomainFqdn) { [string]$Spec.DomainFqdn } else { 'management.azure.com' }
     $remote = $State.PSObject.Properties['remote'] -and $State.remote -and [string]$State.remote.winrm -eq 'Running' -and [int]$State.remote.listeners -gt 0
     $config = [ordered]@{
         changeId = $changeId; group = $Group; confirmMinutes = $confirmMinutes + $(if ($restart) { 10 } else { 0 }); stableSeconds = [int]$cfgSetting.networkStableSeconds; startDelaySeconds = 20; checkSeconds = 300; repairSeconds = 45
-        probe = [bool]$cfgSetting.addressProbe; restartAfter = $restart; probeHosts = @('management.azure.com'); probeTargets = @(); vlanLinkDownSeconds = 120
+        probe = [bool]$cfgSetting.addressProbe; restartAfter = $restart; probeHosts = @($probeHost); probeTargets = @(); vlanLinkDownSeconds = 120
         expect = [ordered]@{ mac = [string]$Spec.Management.Mac; ip = $(if ($isManagement) { $newAddress } else { '' }); prefix = $(if ($isManagement) { [int]$Spec.Management.Prefix } else { 0 }); currentIp = $oldAddress; requireGateway = ($mgmtNic.Count -gt 0 -and @($mgmtNic[0].gw | Where-Object { $_ }).Count -gt 0); winrm = [bool]$remote; vlan = 0 }
         items = $items
     }

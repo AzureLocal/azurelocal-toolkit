@@ -179,12 +179,32 @@ function Set-GuardDeadline($st, [string]$UtcField, [string]$TickField, [double]$
 }
 
 # ---- refusals: a plan that would disable the management port or the port the node is reached through
+# The port with a default gateway and the best metric. A stable order: ties go to the management port, then the lower ifIndex, then the order read (Sort-Object is not stable in Windows PowerShell 5.1).
+function Get-GuardGatewayHolder($nics, [string]$mgmtMac) {
+    $rows = @()
+    $pos = 0
+    foreach ($n in @($nics)) {
+        if (@($n.gw).Count -gt 0) { $rows += New-Object psobject -Property @{ nic = $n; metric = [int]$n.metric; rank = $(if ([string]$n.mac -eq $mgmtMac) { 0 } else { 1 }); index = [int](Get-GuardProp $n 'ifIndex' 0); pos = $pos } }
+        $pos++
+    }
+    $best = @($rows | Sort-Object -Property metric, rank, index, pos | Select-Object -First 1)
+    if ($best.Count) { return $best[0].nic }
+    return @()
+}
 function Get-GuardRefusal($cfg, $nics) {
     $mgmt = [string](Get-GuardProp $cfg.expect 'mac' '')
     $mgmtNic = @($nics | Where-Object { $_.mac -eq $mgmt } | Select-Object -First 1)
     $mgmtGw = 0
     if ($mgmtNic.Count) { $mgmtGw = @($mgmtNic[0].gw).Count }
-    $carrier = @($nics | Where-Object { @($_.gw).Count -gt 0 } | Sort-Object { [int]$_.metric } | Select-Object -First 1)
+    # The port the node reaches Azure through. With the management port holding a gateway it is the carrier (several DHCP ports on one subnet
+    # tie on the metric, and the carrier must not be one of the ports being cleaned). Without one it is the best-metric port with a gateway.
+    $mgmtItem = @(Get-GuardItemList $cfg | Where-Object { Test-GuardManagementItem $_ } | Select-Object -First 1)
+    $planGw = ($mgmtItem.Count -gt 0 -and [bool][string](Get-GuardProp $mgmtItem[0] 'gateway' ''))
+    # The management port has, or after this change will have, a default gateway: during a move from port A to port B it has none yet and the plan gives it one.
+    $mgmtHasGw = ($mgmtGw -gt 0 -or $planGw)
+    $holder = @(Get-GuardGatewayHolder $nics $mgmt)
+    $carrier = $holder
+    if ($mgmtHasGw -and $mgmtNic.Count) { $carrier = $mgmtNic }
     $vlanItems = @(Get-GuardItemList $cfg | Where-Object { [string]$_.kind -eq 'nic-vlan' })
     if ($vlanItems.Count -gt 1 -or ($vlanItems.Count -eq 1 -and @(Get-GuardItemList $cfg).Count -gt 1)) { return 'A VLAN change is its own change: one VLAN mutation per change, nothing else with it. Refused.' }
     foreach ($i in (Get-GuardItemList $cfg)) {
@@ -192,15 +212,15 @@ function Get-GuardRefusal($cfg, $nics) {
         $mac = [string](Get-GuardProp $i 'mac' '')
         if ($kind -eq 'nic-disable') {
             if ($mac -eq $mgmt) { return 'The plan would disable the management port (MAC ' + $mac + '). Refused: the node would have no management path.' }
-            if ($carrier.Count -and $carrier[0].mac -eq $mac) { return 'The plan would disable ' + $carrier[0].name + ', the port that holds the default gateway the node (and its Arc agent) reaches Azure through. Refused.' }
+            if ($holder.Count -and $holder[0].mac -eq $mac) { return 'The plan would disable ' + $holder[0].name + ', the port that holds the default gateway the node (and its Arc agent) reaches Azure through. Refused.' }
         }
         if ($kind -in 'nic-disable', 'nic-clean' -and $mac -ne $mgmt) {
             if ($mgmtNic.Count -eq 0) { return 'No port has the management MAC ' + $mgmt + ', so the change to ' + $mac + ' is refused.' }
-            if ($mgmtGw -eq 0) { return 'The management port has no default gateway, so changing port ' + $mac + ' is refused until it has one.' }
+            if (-not $mgmtHasGw) { return 'The management port has no default gateway, so changing port ' + $mac + ' is refused until it has one.' }
             if ($kind -eq 'nic-clean' -and $carrier.Count -and $carrier[0].mac -eq $mac) { return 'Port ' + $mac + ' holds the default gateway the node reaches Azure through; DHCP-off there is refused.' }
         }
         if ($kind -eq 'nic-clean' -and $mac -eq $mgmt) { return 'The plan would remove the address and gateway of the management port. Refused.' }
-        if ($kind -eq 'nic-static' -and (Test-GuardManagementItem $i) -and $mgmtNic.Count -eq 0) { return 'No port has the management MAC ' + $mgmt + '.' }
+        if ($kind -eq 'nic-static' -and (Test-GuardManagementItem $i) -and $mgmtNic.Count -eq 0) { return 'No port has the management MAC ' + $mgmt + '. AdapterMissing: the adapter is BIOS-disabled or not present; nothing was changed.' }
         if ($kind -eq 'nic-vlan' -and -not (Invoke-GuardOp VlanCapable $mac)) { return 'The driver of port ' + $mac + ' does not report a VLAN ID setting (capability unknown). Refused: set the VLAN on the switch port or the host by another means.' }
     }
     return [string](Invoke-GuardOp CheckTopology $cfg)
@@ -275,6 +295,7 @@ function Restore-GuardItems($cfg, $st, [string[]]$Only) {
     $failures = @()
     $items = @(Get-GuardItemList $cfg)
     [array]::Reverse($items)
+    $items = @($items | Where-Object { [bool](Get-GuardProp $_ 'move' $false) }) + @($items | Where-Object { -not [bool](Get-GuardProp $_ 'move' $false) })
     foreach ($i in $items) {
         if ($Only -and $Only.Count -and ($Only -notcontains [string]$i.id)) { continue }
         $snap = Get-GuardProp (Get-GuardProp $st 'snapshots') ([string]$i.id)
@@ -433,7 +454,7 @@ function Start-GuardApply($cfg, $st) {
         if (-not (Test-GuardManagementItem $i)) { continue }
         Set-GuardProp $st 'newAddress' ([string]$i.ip)
         $already = ($mgmtNic.Count -gt 0) -and (@($mgmtNic[0].ips | Where-Object { $_.ip -eq [string]$i.ip }).Count -gt 0)
-        if ([bool](Get-GuardProp $cfg 'probe' $true) -and -not $already) {
+        if ([bool](Get-GuardProp $cfg 'probe' $true) -and -not $already -and -not [bool](Get-GuardProp $i 'move' $false)) {
             if (Invoke-GuardOp ProbeAddress ([string]$i.ip) $mac) { return (Complete-GuardFinal $cfg $st 'Refused' ('Another host answers on ' + $i.ip + ' (ping or a neighbour-cache entry for another MAC). Refused: assigning it would duplicate the address.')) }
         }
     }
@@ -473,6 +494,9 @@ function Invoke-GuardedChange {
     param([Parameter(Mandatory)][string]$ConfigPath, [string]$ScriptPath)
     $cfg = (Invoke-GuardOp ReadText $ConfigPath) | ConvertFrom-Json
     if (-not (Invoke-GuardOp AcquireMutex 'Global\AzureLocalOsConfig')) { return 'Busy' }
+    # The first line is written before anything else is read, so a failure at any later point leaves a trace.
+    Write-GuardLog $cfg ('start ' + $script:GuardInstance + ' ' + $ConfigPath)
+    $st = $null
     try {
         $st = Read-GuardState $cfg
         if ($null -eq $st) {
@@ -515,75 +539,141 @@ function Invoke-GuardedChange {
             default { return (Complete-GuardChange $cfg $st) }
         }
     }
+    catch {
+        # Nothing escapes with the state left as it was and no log: the error is logged FIRST, then the node is rolled back (or the change is
+        # marked Failed when nothing had been applied), and the error is thrown again so the script exits non-zero.
+        $unhandled = $_
+        Write-GuardLog $cfg ('UNHANDLED ' + $unhandled)
+        # A stale controller (the generation fence failed) must not restore over the one that owns the change.
+        if ($unhandled.Exception.Message -like '*another writer owns the change*') { throw $unhandled }
+        try {
+            if ($null -eq $st) { $st = Read-GuardState $cfg }
+            if ($null -ne $st) {
+                $message = 'An unhandled error stopped the change (' + $unhandled.Exception.Message + ')'
+                $current = [string](Get-GuardProp $st 'state' '')
+                if ($current -in 'Applying', 'Verifying', 'AwaitingConfirm', 'Repairing') { $null = Invoke-GuardFullRollback $cfg $st ($message + '; the snapshot was restored.') }
+                elseif ($current -eq 'Failed') { $null = Set-GuardFailed $cfg $st $message }
+                elseif ($current -notin 'Committed', 'RolledBack', 'Refused') { $null = Complete-GuardFinal $cfg $st 'Failed' $message }
+            }
+        }
+        catch { Write-GuardLog $cfg ('the recovery after the unhandled error failed: ' + $_) }
+        throw $unhandled
+    }
     finally { Invoke-GuardOp ReleaseMutex }
 }
 
+# Adapters are found by MAC (the permanent address first), never by ifIndex or alias.
+function Get-GuardMacKey([string]$m) { return (($m -replace '[-:\.]', '')).ToLowerInvariant() }
+function Get-GuardAdapter([string]$mac) {
+    $k = Get-GuardMacKey $mac
+    $all = @(Get-NetAdapter -Physical -ErrorAction Stop)
+    $hit = @($all | Where-Object { $_.PSObject.Properties['PermanentAddress'] -and $_.PermanentAddress -and (Get-GuardMacKey ([string]$_.PermanentAddress)) -eq $k } | Select-Object -First 1)
+    if ($hit.Count) { return $hit[0] }
+    return ($all | Where-Object { (Get-GuardMacKey $_.MacAddress) -eq $k } | Select-Object -First 1)
+}
+function Invoke-GuardNative([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds = 60) {
+    $out = & $Exe @Arguments 2>&1
+    if ($LASTEXITCODE -ne 0) { throw ($Exe + ' ' + ($Arguments -join ' ') + ' exited with ' + $LASTEXITCODE + ': ' + ($out -join ' ')) }
+    return $out
+}
+function Get-GuardNicInfo($a) {
+    $idx = $a.ifIndex
+    $ips = @(Get-NetIPAddress -InterfaceIndex $idx -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object { New-Object psobject -Property @{ ip = [string]$_.IPAddress; prefix = [int]$_.PrefixLength; origin = [string]$_.PrefixOrigin; state = [string]$_.AddressState } })
+    $routes = @(Get-NetRoute -InterfaceIndex $idx -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue)
+    $ipif = Get-NetIPInterface -InterfaceIndex $idx -AddressFamily IPv4 -ErrorAction SilentlyContinue
+    $dns = @(Get-DnsClientServerAddress -InterfaceIndex $idx -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object { $_.ServerAddresses })
+    $metric = 9999
+    if ($routes.Count -and $ipif) { $metric = [int]$routes[0].RouteMetric + [int]$ipif.InterfaceMetric }
+    $vlan = $null
+    $vp = Get-NetAdapterAdvancedProperty -Name $a.Name -RegistryKeyword 'VlanID' -ErrorAction SilentlyContinue
+    if ($vp) { $vlan = [int](@($vp.RegistryValue)[0]) }
+    $dhcp = ''
+    if ($ipif) { $dhcp = [string]$ipif.Dhcp }
+    return (New-Object psobject -Property @{ name = [string]$a.Name; mac = (Get-GuardMacKey $a.MacAddress); ifIndex = $idx; status = [string]$a.Status; ips = $ips; gw = @($routes | ForEach-Object { [string]$_.NextHop }); dns = $dns; dhcp = $dhcp; vlan = $vlan; metric = $metric })
+}
+function Clear-GuardNic($a) {
+    Get-NetRoute -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Remove-NetRoute -Confirm:$false -ErrorAction Stop
+    Get-NetIPAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254.*' } | Remove-NetIPAddress -Confirm:$false -ErrorAction Stop
+}
+# The restore is always a STATIC configuration built from the snapshot (a DHCP lease is never relied on to come back).
+function Restore-GuardNic($snap, [bool]$DnsOnly) {
+    $a = Get-GuardAdapter ([string]$snap.mac)
+    if (-not $a) { throw ('No port with MAC ' + $snap.mac) }
+    if ($DnsOnly) {
+        if (@($snap.dns).Count -eq 0) { Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ResetServerAddresses -ErrorAction Stop } else { Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ServerAddresses @($snap.dns) -ErrorAction Stop }
+        return
+    }
+    Set-NetIPInterface -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -Dhcp Disabled -ErrorAction Stop
+    Clear-GuardNic $a
+    $first = $true
+    foreach ($ip in @($snap.ips | Where-Object { $_.ip -notlike '169.254.*' })) {
+        if ($first -and @($snap.gw).Count) { New-NetIPAddress -InterfaceIndex $a.ifIndex -IPAddress $ip.ip -PrefixLength ([int]$ip.prefix) -DefaultGateway ([string]@($snap.gw)[0]) -ErrorAction Stop | Out-Null }
+        else { New-NetIPAddress -InterfaceIndex $a.ifIndex -IPAddress $ip.ip -PrefixLength ([int]$ip.prefix) -ErrorAction Stop | Out-Null }
+        $first = $false
+    }
+    if (@($snap.ips | Where-Object { $_.ip -notlike '169.254.*' }).Count -eq 0 -and [string]$snap.dhcp -eq 'Enabled') { Set-NetIPInterface -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -Dhcp Enabled -ErrorAction Stop }
+    if (@($snap.dns).Count) { Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ServerAddresses @($snap.dns) -ErrorAction Stop }
+}
+# The default route of an interface towards a gateway in one policy store. The DHCP client's route lives in the ActiveStore only; a static route made by
+# New-NetRoute is in both. A route that exists in the active store alone is gone after a restart and when the lease goes.
+function Get-GuardDefaultRoute($ifIndex, [string]$gateway, [string]$store) {
+    return @(Get-NetRoute -InterfaceIndex $ifIndex -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -PolicyStore $store -ErrorAction SilentlyContinue | Where-Object { $_.NextHop -eq $gateway })
+}
+function Set-GuardPersistentDefaultRoute($a, [string]$gateway) {
+    if (@(Get-GuardDefaultRoute $a.ifIndex $gateway 'PersistentStore').Count) { return }
+    # The DHCP route has the same next hop and would make New-NetRoute fail or leave no persistent route: it goes, the static one takes its place at once.
+    $dhcp = @(Get-GuardDefaultRoute $a.ifIndex $gateway 'ActiveStore')
+    if ($dhcp.Count) { $dhcp | Remove-NetRoute -Confirm:$false -ErrorAction Stop }
+    New-NetRoute -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -NextHop $gateway -ErrorAction Stop | Out-Null
+}
+# The new address is up when it is Preferred (duplicate address detection is done); Duplicate or no answer is an error that rolls the change back.
+function Wait-GuardAddress($a, [string]$ip, [int]$seconds = 30) {
+    for ($k = 0; $k -lt $seconds; $k++) {
+        $states = @(Get-NetIPAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -IPAddress $ip -ErrorAction SilentlyContinue | ForEach-Object { [string]$_.AddressState })
+        if ($states -contains 'Duplicate') { throw ('The address ' + $ip + ' is a duplicate on the network.') }
+        if ($states -contains 'Preferred') { return }
+        Start-Sleep -Seconds 1
+    }
+    throw ('The address ' + $ip + ' did not become Preferred within ' + $seconds + ' seconds.')
+}
+# The destination port of a management address: enable it when it is Disabled and wait up to 30 seconds for the link. Two separate verdicts:
+# AdapterMissing (BIOS-disabled or not present, no port with the MAC) and NoCarrier (the port is there but has no link: not cabled). skipLinkCheck is for standby ports.
+function Initialize-GuardDestination($a, [bool]$skipLink) {
+    if ([string]$a.Status -eq 'Disabled') { Enable-NetAdapter -Name $a.Name -Confirm:$false -ErrorAction Stop }
+    if ($skipLink) { return }
+    for ($k = 0; $k -lt 15; $k++) {
+        $cur = Get-GuardAdapter ([string]$a.MacAddress)
+        if ($cur -and [string]$cur.Status -eq 'Up') { return }
+        Start-Sleep -Seconds 2
+    }
+    throw ('NoCarrier: ' + $a.Name + ' has no link after 30 seconds (not cabled, or the switch port is down). Set skipLinkCheck for a standby port.')
+}
+# The other ports of this node that hold the address now (a move from port A to port B).
+function Get-GuardMoveSource($a, [string]$ip) {
+    $src = @()
+    foreach ($addr in @(Get-NetIPAddress -IPAddress $ip -AddressFamily IPv4 -ErrorAction SilentlyContinue)) {
+        if ([int]$addr.InterfaceIndex -eq [int]$a.ifIndex) { continue }
+        $other = @(Get-NetAdapter -Physical -ErrorAction SilentlyContinue | Where-Object { [int]$_.ifIndex -eq [int]$addr.InterfaceIndex } | Select-Object -First 1)
+        if ($other.Count) { $src += $other[0] }
+    }
+    return $src
+}
+function Test-GuardTcp([string]$hostName, [int]$port, [int]$ms = 5000, [string]$source = '') {
+    $c = $null
+    try {
+        if ($source) { $c = New-Object System.Net.Sockets.TcpClient((New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Parse($source), 0))) } else { $c = New-Object System.Net.Sockets.TcpClient }
+        $t = $c.ConnectAsync($hostName, $port)
+        return ($t.Wait($ms) -and $c.Connected)
+    }
+    catch { return $false }
+    finally { if ($c) { $c.Close() } }
+}
+
 function New-GuardRealOps {
-    # Adapters are found by MAC (the permanent address first), never by ifIndex or alias.
-    function Get-GuardMacKey([string]$m) { return (($m -replace '[-:\.]', '')).ToLowerInvariant() }
-    function Get-GuardAdapter([string]$mac) {
-        $k = Get-GuardMacKey $mac
-        $all = @(Get-NetAdapter -Physical -ErrorAction Stop)
-        $hit = @($all | Where-Object { $_.PSObject.Properties['PermanentAddress'] -and $_.PermanentAddress -and (Get-GuardMacKey ([string]$_.PermanentAddress)) -eq $k } | Select-Object -First 1)
-        if ($hit.Count) { return $hit[0] }
-        return ($all | Where-Object { (Get-GuardMacKey $_.MacAddress) -eq $k } | Select-Object -First 1)
-    }
-    function Invoke-GuardNative([string]$Exe, [string[]]$Arguments, [int]$TimeoutSeconds = 60) {
-        $out = & $Exe @Arguments 2>&1
-        if ($LASTEXITCODE -ne 0) { throw ($Exe + ' ' + ($Arguments -join ' ') + ' exited with ' + $LASTEXITCODE + ': ' + ($out -join ' ')) }
-        return $out
-    }
-    function Get-GuardNicInfo($a) {
-        $idx = $a.ifIndex
-        $ips = @(Get-NetIPAddress -InterfaceIndex $idx -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object { New-Object psobject -Property @{ ip = [string]$_.IPAddress; prefix = [int]$_.PrefixLength; origin = [string]$_.PrefixOrigin; state = [string]$_.AddressState } })
-        $routes = @(Get-NetRoute -InterfaceIndex $idx -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue)
-        $ipif = Get-NetIPInterface -InterfaceIndex $idx -AddressFamily IPv4 -ErrorAction SilentlyContinue
-        $dns = @(Get-DnsClientServerAddress -InterfaceIndex $idx -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object { $_.ServerAddresses })
-        $metric = 9999
-        if ($routes.Count -and $ipif) { $metric = [int]$routes[0].RouteMetric + [int]$ipif.InterfaceMetric }
-        $vlan = $null
-        $vp = Get-NetAdapterAdvancedProperty -Name $a.Name -RegistryKeyword 'VlanID' -ErrorAction SilentlyContinue
-        if ($vp) { $vlan = [int](@($vp.RegistryValue)[0]) }
-        $dhcp = ''
-        if ($ipif) { $dhcp = [string]$ipif.Dhcp }
-        return (New-Object psobject -Property @{ name = [string]$a.Name; mac = (Get-GuardMacKey $a.MacAddress); ifIndex = $idx; status = [string]$a.Status; ips = $ips; gw = @($routes | ForEach-Object { [string]$_.NextHop }); dns = $dns; dhcp = $dhcp; vlan = $vlan; metric = $metric })
-    }
-    function Clear-GuardNic($a) {
-        Get-NetRoute -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Remove-NetRoute -Confirm:$false -ErrorAction Stop
-        Get-NetIPAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -notlike '169.254.*' } | Remove-NetIPAddress -Confirm:$false -ErrorAction Stop
-    }
-    # The restore is always a STATIC configuration built from the snapshot (a DHCP lease is never relied on to come back).
-    function Restore-GuardNic($snap, [bool]$DnsOnly) {
-        $a = Get-GuardAdapter ([string]$snap.mac)
-        if (-not $a) { throw ('No port with MAC ' + $snap.mac) }
-        if ($DnsOnly) {
-            if (@($snap.dns).Count -eq 0) { Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ResetServerAddresses -ErrorAction Stop } else { Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ServerAddresses @($snap.dns) -ErrorAction Stop }
-            return
-        }
-        Set-NetIPInterface -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -Dhcp Disabled -ErrorAction Stop
-        Clear-GuardNic $a
-        $first = $true
-        foreach ($ip in @($snap.ips | Where-Object { $_.ip -notlike '169.254.*' })) {
-            if ($first -and @($snap.gw).Count) { New-NetIPAddress -InterfaceIndex $a.ifIndex -IPAddress $ip.ip -PrefixLength ([int]$ip.prefix) -DefaultGateway ([string]@($snap.gw)[0]) -ErrorAction Stop | Out-Null }
-            else { New-NetIPAddress -InterfaceIndex $a.ifIndex -IPAddress $ip.ip -PrefixLength ([int]$ip.prefix) -ErrorAction Stop | Out-Null }
-            $first = $false
-        }
-        if (@($snap.ips | Where-Object { $_.ip -notlike '169.254.*' }).Count -eq 0 -and [string]$snap.dhcp -eq 'Enabled') { Set-NetIPInterface -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -Dhcp Enabled -ErrorAction Stop }
-        if (@($snap.dns).Count) { Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ServerAddresses @($snap.dns) -ErrorAction Stop }
-    }
-    function Test-GuardTcp([string]$hostName, [int]$port, [int]$ms = 5000, [string]$source = '') {
-        $c = $null
-        try {
-            if ($source) { $c = New-Object System.Net.Sockets.TcpClient((New-Object System.Net.IPEndPoint([System.Net.IPAddress]::Parse($source), 0))) } else { $c = New-Object System.Net.Sockets.TcpClient }
-            $t = $c.ConnectAsync($hostName, $port)
-            return ($t.Wait($ms) -and $c.Connected)
-        }
-        catch { return $false }
-        finally { if ($c) { $c.Close() } }
-    }
     $ops = @{}
     $ops.Now = { return [datetime]::UtcNow }
-    $ops.Tick = { return [double][Environment]::TickCount64 }
+    # Windows PowerShell 5.1 (.NET Framework) has no [Environment]::TickCount64; the performance counter is monotonic since boot.
+    $ops.Tick = { return ([double][System.Diagnostics.Stopwatch]::GetTimestamp() * 1000 / [double][System.Diagnostics.Stopwatch]::Frequency) }
     $ops.Sleep = { param($s) Start-Sleep -Seconds $s }
     $ops.ReadText = { param($p) return (Get-Content -LiteralPath $p -Raw -ErrorAction Stop) }
     $ops.WriteText = {
@@ -623,9 +713,10 @@ function New-GuardRealOps {
         $a = Get-GuardAdapter ([string]$e.mac)
         if (-not $a) { return ('No port has the management MAC ' + $e.mac) }
         $cur = [string](Get-GuardProp $e 'currentIp' '')
+        $moving = (@($cfg.items | Where-Object { (Test-GuardManagementItem $_) -and [bool](Get-GuardProp $_ 'move' $false) }).Count -gt 0)
         if ($cur) {
             $owner = Get-NetIPAddress -IPAddress $cur -AddressFamily IPv4 -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($owner -and $owner.InterfaceIndex -ne $a.ifIndex) { return ('The address ' + $cur + ' belongs to another interface than the one with the management MAC ' + $e.mac + '. Refused: the MAC and the address do not match.') }
+            if ($owner -and $owner.InterfaceIndex -ne $a.ifIndex -and -not $moving) { return ('The address ' + $cur + ' belongs to another interface than the one with the management MAC ' + $e.mac + '. Refused: the MAC and the address do not match.') }
         }
         $team = $null
         if (Get-Command Get-NetLbfoTeamMember -ErrorAction SilentlyContinue) { $team = Get-NetLbfoTeamMember -Name $a.Name -ErrorAction SilentlyContinue }
@@ -692,7 +783,13 @@ function New-GuardRealOps {
     $ops.SnapshotItem = {
         param($i)
         switch ([string]$i.kind) {
-            { $_ -in 'nic-static', 'nic-dns', 'nic-clean', 'nic-vlan' } { $a = Get-GuardAdapter ([string]$i.mac); if (-not $a) { throw ('No port with MAC ' + $i.mac) }; return (Get-GuardNicInfo $a) }
+            { $_ -in 'nic-static', 'nic-dns', 'nic-clean', 'nic-vlan' } {
+                $a = Get-GuardAdapter ([string]$i.mac); if (-not $a) { throw ('AdapterMissing: no port with MAC ' + $i.mac + ' (BIOS-disabled or not present)') }
+                $info = Get-GuardNicInfo $a
+                # A move: the port that holds the address now is part of the snapshot, so a rollback gives the address back to it.
+                if ((Test-GuardManagementItem $i) -and [bool](Get-GuardProp $i 'move' $false)) { Set-GuardProp $info 'from' @(Get-GuardMoveSource $a ([string]$i.ip) | ForEach-Object { Get-GuardNicInfo $_ }) }
+                return $info
+            }
             'nic-disable' { $a = Get-GuardAdapter ([string]$i.mac); if (-not $a) { throw ('No port with MAC ' + $i.mac) }; return (New-Object psobject -Property @{ mac = (Get-GuardMacKey $a.MacAddress); name = [string]$a.Name; status = [string]$a.Status }) }
             'winrm' { $s = Get-Service WinRM; return (New-Object psobject -Property @{ status = [string]$s.Status; start = [string]$s.StartType; listeners = @(Get-ChildItem WSMan:\localhost\Listener -ErrorAction SilentlyContinue).Count }) }
             'rdp' { return (New-Object psobject -Property @{ deny = [int](Get-ItemProperty 'HKLM:\System\CurrentControlSet\Control\Terminal Server').fDenyTSConnections; rules = @(Get-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction SilentlyContinue | Where-Object { [string]$_.Enabled -eq 'True' } | ForEach-Object { [string]$_.Name }) }) }
@@ -707,15 +804,30 @@ function New-GuardRealOps {
         switch ([string]$i.kind) {
             'nic-static' {
                 # The new address and the new route are added FIRST; the old address stays until the orchestrator has confirmed (FinalizeItem removes it).
-                $a = Get-GuardAdapter ([string]$i.mac); if (-not $a) { throw ('No port with MAC ' + $i.mac) }
+                $a = Get-GuardAdapter ([string]$i.mac); if (-not $a) { throw ('AdapterMissing: no port with MAC ' + $i.mac + ' (BIOS-disabled or not present)') }
                 $gateway = [string](Get-GuardProp $i 'gateway' '')
+                if (Test-GuardManagementItem $i) { Initialize-GuardDestination $a ([bool](Get-GuardProp $i 'skipLinkCheck' $false)) }
                 Set-NetIPInterface -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -Dhcp Disabled -ErrorAction Stop
+                # A move: the address leaves the source port first (the same address cannot be on two ports); the snapshot has the source for the rollback.
+                $sources = @()
+                if ((Test-GuardManagementItem $i) -and [bool](Get-GuardProp $i 'move' $false)) {
+                    $sources = @(Get-GuardMoveSource $a ([string]$i.ip))
+                    foreach ($s in $sources) {
+                        Set-NetIPInterface -InterfaceIndex $s.ifIndex -AddressFamily IPv4 -Dhcp Disabled -ErrorAction Stop
+                        Clear-GuardNic $s
+                    }
+                }
                 $have = Get-NetIPAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -IPAddress ([string]$i.ip) -ErrorAction SilentlyContinue | Where-Object { $_.PrefixLength -eq [int]$i.prefix }
                 if (-not $have) { New-NetIPAddress -InterfaceIndex $a.ifIndex -IPAddress ([string]$i.ip) -PrefixLength ([int]$i.prefix) -ErrorAction Stop | Out-Null }
-                if ($gateway -and -not (Get-NetRoute -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Where-Object { $_.NextHop -eq $gateway })) {
-                    New-NetRoute -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -NextHop $gateway -ErrorAction Stop | Out-Null
+                # DHCP was disabled above, before the address was added. Once the new address is Preferred the default route is made PERSISTENT: the DHCP route
+                # has the same next hop, so "a route to the gateway exists" proves nothing; the persistent store is what is checked.
+                if ($gateway) {
+                    Wait-GuardAddress $a ([string]$i.ip) 30
+                    Set-GuardPersistentDefaultRoute $a $gateway
                 }
                 if (@(Get-GuardProp $i 'dns' @()).Count) { Set-DnsClientServerAddress -InterfaceIndex $a.ifIndex -ServerAddresses @($i.dns) -ErrorAction Stop }
+                # The source port must not keep the old name servers (stale resolution through the wrong port).
+                foreach ($s in $sources) { Set-DnsClientServerAddress -InterfaceIndex $s.ifIndex -ResetServerAddresses -ErrorAction SilentlyContinue }
             }
             'nic-vlan' {
                 $a = Get-GuardAdapter ([string]$i.mac); if (-not $a) { throw ('No port with MAC ' + $i.mac) }
@@ -755,11 +867,16 @@ function New-GuardRealOps {
         $gateway = [string](Get-GuardProp $i 'gateway' '')
         Get-NetIPAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | Where-Object { $_.IPAddress -ne [string]$i.ip -and $_.IPAddress -notlike '169.254.*' } | Remove-NetIPAddress -Confirm:$false -ErrorAction Stop
         if ($gateway) { Get-NetRoute -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -DestinationPrefix '0.0.0.0/0' -ErrorAction SilentlyContinue | Where-Object { $_.NextHop -ne $gateway } | Remove-NetRoute -Confirm:$false -ErrorAction Stop }
+        if ($gateway) { Set-GuardPersistentDefaultRoute $a $gateway }
     }
     $ops.RestoreItem = {
         param($i, $snap)
         switch ([string]$i.kind) {
-            'nic-static' { Restore-GuardNic $snap $false; return $false }
+            'nic-static' {
+                Restore-GuardNic $snap $false
+                foreach ($from in @(Get-GuardProp $snap 'from' @())) { Restore-GuardNic $from $false }
+                return $false
+            }
             'nic-clean' { Restore-GuardNic $snap $false; return $false }
             'nic-dns' { Restore-GuardNic $snap $true; return $false }
             'nic-vlan' { $a = Get-GuardAdapter ([string]$snap.mac); if ($a) { Set-NetAdapterAdvancedProperty -Name $a.Name -RegistryKeyword 'VlanID' -RegistryValue ([int]$snap.vlan) -ErrorAction Stop; Restart-NetAdapter -Name $a.Name -Confirm:$false -ErrorAction Stop; Start-Sleep -Seconds 15 }; return $false }
@@ -825,10 +942,30 @@ function New-GuardRealOps {
         return @{ ok = $true; detail = ($gw[0] + ' resolves to a MAC address (no TCP probe configured)') }
     }
     $ops.CheckDns = {
+        # The check is "a configured DNS server answers", not "the name exists": the new servers may be internal (AD) and not know the probe name,
+        # which they answer with NXDOMAIN (name does not exist, error 9003). Only a timeout or no server answering fails.
         param($cfg)
         $name = [string]@($cfg.probeHosts)[0]
-        try { $r = @(Resolve-DnsName -Name $name -Type A -DnsOnly -ErrorAction Stop); if ($r.Count) { return @{ ok = $true; detail = ($name + ' resolves') } } } catch { return @{ ok = $false; detail = ($name + ' does not resolve: ' + $_.Exception.Message) } }
-        return @{ ok = $false; detail = ($name + ' returned nothing') }
+        $a = Get-GuardAdapter ([string]$cfg.expect.mac)
+        $servers = @()
+        if ($a) { $servers = @(Get-DnsClientServerAddress -InterfaceIndex $a.ifIndex -AddressFamily IPv4 -ErrorAction SilentlyContinue | ForEach-Object { $_.ServerAddresses } | Where-Object { $_ }) }
+        if (-not $servers.Count) {
+            try { $r = @(Resolve-DnsName -Name $name -Type A -DnsOnly -ErrorAction Stop); if ($r.Count) { return @{ ok = $true; detail = ($name + ' resolves') } } } catch { return @{ ok = $false; detail = ($name + ' does not resolve: ' + $_.Exception.Message) } }
+            return @{ ok = $false; detail = ($name + ' returned nothing') }
+        }
+        $failures = @()
+        foreach ($s in $servers) {
+            try {
+                $r = @(Resolve-DnsName -Name $name -Server ([string]$s) -Type A -DnsOnly -ErrorAction Stop)
+                return @{ ok = $true; detail = ('DNS server ' + $s + ' answers (' + $name + ' resolves)') }
+            }
+            catch {
+                $m = [string]$_.Exception.Message
+                if ($m -match 'name does not exist' -or $m -match 'record does not exist' -or $m -match '\b(9003|9501)\b') { return @{ ok = $true; detail = ('DNS server ' + $s + ' answers (' + $name + ': name does not exist)') } }
+                $failures += ($s + ': ' + $m)
+            }
+        }
+        return @{ ok = $false; detail = ('no DNS server answers for ' + $name + ' (' + ($failures -join '; ') + ')') }
     }
     $ops.CheckArc = {
         # Evidence only; never a commit predicate.
