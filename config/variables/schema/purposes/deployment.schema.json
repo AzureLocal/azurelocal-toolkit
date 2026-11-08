@@ -426,6 +426,15 @@
                 "ip_address": {
                   "$ref": "#/$defs/ipv4",
                   "description": "The host address. For the management port this is ARM physicalNodesSettings[].ipv4Address. Required with static. With dhcp_reservation give the reserved address: without it the tools can only check that the port has a DHCP address (a warning), and the deployment still needs it unless use_dhcp is true (a file with scope ztp doesn't deploy)."
+                },
+                "allowed_vlans": {
+                  "description": "Optional. The VLAN ids the switch port of this adapter allows, when the port is a trunk that carries more than the VLAN of the port itself: the tenant (compute) VLANs of the compute adapters. The pre-cluster verification checks that every VLAN used by compute traffic in networking.vlans[] and networking.logical_networks[] is in this list on the compute adapters; without it a tagged compute port is reported Skipped (the file says nothing about what the port allows). This is switch-side metadata for the checklist of the gate; it does not configure the switch or the NIC.",
+                  "type": "array",
+                  "items": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 4094
+                  }
                 }
               }
             }
@@ -1821,6 +1830,16 @@
             "access",
             "tagged"
           ]
+        },
+        "allowed_vlans": {
+          "description": "Optional. The VLAN ids the switch port of this adapter allows, when the port is a trunk that carries more than the VLAN of the port itself: the tenant (compute) VLANs of the compute adapters. The pre-cluster verification checks that every VLAN used by compute traffic in networking.vlans[] and networking.logical_networks[] is in this list on the compute adapters; without it a tagged compute port is reported Skipped (the file says nothing about what the port allows). This is switch-side metadata for the checklist of the gate; it does not configure the switch or the NIC.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4094
+          }
         },
         "switch_port": {
           "description": "Where the port is cabled.",

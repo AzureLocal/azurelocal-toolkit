@@ -207,6 +207,9 @@ nodes:
       # The host address.
       # used by: ztp, os_configuration, deployment, monitoring
       - ip_address: "192.0.2.11"
+        # Optional.
+        # used by: deployment
+        allowed_vlans: []
     # Rack-aware: the local availability zone.
     # when scenario.topology is rack_aware; used by: deployment
     zone: ""

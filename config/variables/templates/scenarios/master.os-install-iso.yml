@@ -310,6 +310,9 @@ nodes:
         # access: the switch port is an access (untagged) port; the host doesn't tag, so simplified provisioning sends VLAN 0. tagged: the switch por...
         # one of: access | tagged; used by: ztp, os_configuration
         vlan_mode: "access"
+        # Optional.
+        # used by: deployment
+        allowed_vlans: []
         # Where the port is cabled.
         # used by: os_configuration
         switch_port:

@@ -111,7 +111,7 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.10"
+  version: "5.0.11"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.1"
   last_updated: "2026-11-08"
@@ -120,6 +120,10 @@ _metadata:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-08"
+      version: "5.0.11"
+      change: "nodes[].network_adapters[].allowed_vlans (optional list of VLAN ids, 1 to 4094): the VLANs the switch port of an adapter allows, used by the VLAN plan checks of the pre-cluster verification (compute VLANs against the compute adapters) and by the switch port checklist in its report."
+      reason: "The VLAN plan was never verified: the file lists the VLANs (networking.vlans[]) and the ports (nodes[].network_adapters[].vlan_id, vlan_mode, switch_port), but not which VLANs a compute trunk port allows, so the gate could not say whether the compute VLANs reach the compute adapters. The gate cannot read the switch; the file is the authority and the checklist says what to verify on the switch."
     - date: "2026-11-08"
       version: "5.0.10"
       change: "The pre-cluster verification gate takes -AllowRevalidate (run setting allowRevalidate, already registered): AZ-018 (a failed deployment state) is then a Warning that records the accepted license-sync risk instead of a Failed, and its remedy names -AllowRevalidate on Mode Validate."
@@ -15022,6 +15026,13 @@ nodes:
               enum: ["access", "tagged"]
               example: "access"
               used_by: [ztp, os_configuration]
+            allowed_vlans:
+              description: "Optional. The VLAN ids the switch port of this adapter allows, when the port is a trunk that carries more than the VLAN of the port itself: the tenant (compute) VLANs of the compute adapters. The pre-cluster verification checks that every VLAN used by compute traffic in networking.vlans[] and networking.logical_networks[] is in this list on the compute adapters; without it a tagged compute port is reported Skipped (the file says nothing about what the port allows). This is switch-side metadata for the checklist of the gate; it does not configure the switch or the NIC."
+              type: array
+              required: false
+              used_by: [deployment]
+              items:
+                {"type":"integer","minimum":1,"maximum":4094}
             switch_port:
               description: "Where the port is cabled."
               type: object
@@ -17612,6 +17623,14 @@ _schema_defs:
         enum:
         - access
         - tagged
+      allowed_vlans:
+        description: 'Optional. The VLAN ids the switch port of this adapter allows, when the port is a trunk that carries more than the VLAN of the port itself: the tenant (compute) VLANs of the compute adapters. The pre-cluster verification checks that every VLAN used by compute traffic in networking.vlans[] and networking.logical_networks[] is in this list on the compute adapters; without it a tagged compute port is reported Skipped (the file says nothing about what the port allows). This is switch-side metadata for the checklist of the gate; it does not configure the switch or the NIC.'
+        type: array
+        uniqueItems: true
+        items:
+          type: integer
+          minimum: 1
+          maximum: 4094
       switch_port:
         description: Where the port is cabled.
         type: object
