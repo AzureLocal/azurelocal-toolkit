@@ -28,7 +28,7 @@
     WipeListPublished, RunCompleted. Node events: NodeStarted, MethodResolved, TransportResolved, NodeRetry, NodeRestarting, NodeConverged,
     NodeFailed, NodeBlocked, NodeReconnecting, NodeReconnected. Step events: StepPlanned, StepApplying, StepApplied, StepFailed, StepSkipped,
     StepVerified. Domain join (step DomainJoin, Active Directory designs): DomainJoinPlanned, DomainJoinApplying, DomainJoined,
-    DomainJoinFailed (evidence: the AD error). Guarded change events (step Network): NetworkChangeStaged, NetworkChangeVerifying, NetworkChangeAwaitingConfirm,
+    DomainAdminsConfigured (the LCM user or the listed principals were added to the node's local Administrators), DomainJoinFailed (evidence: the AD error). Guarded change events (step Network): NetworkChangeStaged, NetworkChangeVerifying, NetworkChangeAwaitingConfirm,
     NetworkChangeCommitted, NetworkChangeRepaired, NetworkChangeRolledBack, NetworkChangeRefused; they may carry changeId, rung,
     reason, confirmMinutes and confirmBy (UTC time the confirmation window ends).
 
@@ -44,7 +44,7 @@ $script:EventState = [ordered]@{
     Run     = @('RunStarted', 'PlanCompleted', 'WipeListPublished', 'RunCompleted')
     Node    = @('NodeStarted', 'MethodResolved', 'TransportResolved', 'NodeRetry', 'NodeRestarting', 'NodeConverged', 'NodeFailed', 'NodeBlocked', 'NodeReconnecting', 'NodeReconnected')
     Step    = @('StepPlanned', 'StepSkipped', 'StepApplying', 'StepApplied', 'StepFailed', 'StepVerified')
-    DomainJoin = @('DomainJoinPlanned', 'DomainJoinApplying', 'DomainJoined', 'DomainJoinFailed')
+    DomainJoin = @('DomainJoinPlanned', 'DomainJoinApplying', 'DomainJoined', 'DomainAdminsConfigured', 'DomainJoinFailed')
     Guarded = @('NetworkChangeStaged', 'NetworkChangeVerifying', 'NetworkChangeAwaitingConfirm', 'NetworkChangeCommitted', 'NetworkChangeRepaired', 'NetworkChangeRolledBack', 'NetworkChangeRefused')
 }
 
