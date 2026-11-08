@@ -203,6 +203,12 @@ deployment:
   # Patch the deploymentSettings api-version in Microsoft's template (for example 2026-10-01) when the template's own preview version is retire...
   # used by: deployment
   deployment_settings_api_version: ""
+  # The solution version the nodes run (four numeric parts, for example 12.2610.1004.50).
+  # used by: deployment
+  solution_version: "12.2610.1004.50"
+  # The OEM's SBE discovery catalog (SBE_Discovery_Dell.xml) the precondition SbeValidatedWithSolution reads: the file, or a folder that holds...
+  # used by: deployment
+  sbe_catalog_path: "D:\\sbe\\dell\\SBE_Discovery_Dell.xml"
 
 # The machines, one entry each.
 # used by: deployment, monitoring

@@ -1,7 +1,7 @@
 # =============================================================================
 # Master Variable Registry - AzureLocal Cloud Team Cloud Management Platform
 # =============================================================================
-# Version: 5.0.0
+# Version: 5.0.1
 # Schema: variables.schema.json (v5.0.0)
 # Last Updated: 2026-11-08
 #
@@ -105,7 +105,7 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.0"
+  version: "5.0.1"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.1"
   last_updated: "2026-11-08"
@@ -114,6 +114,10 @@ _metadata:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-08"
+      version: "5.0.1"
+      change: "deployment.solution_version and deployment.sbe_catalog_path (run settings solutionVersion and sbeCatalogPath); precondition SbeValidatedWithSolution added to the skip_preconditions list"
+      reason: "Azure Validate failed late with ErrorUnvalidatedSolutionAndSbeCombination: the SBE was not validated with the solution version; the check now reads the SBE discovery catalog first"
     - date: "2026-11-08"
       version: "5.0.0"
       change: "The registry is the source of the infrastructure.yml schema: schema, master and purpose templates, scenario templates, stubs and the variables reference are generated from it; config/infrastructure moved under config/variables"
@@ -14651,7 +14655,7 @@ deployment:
       required: false
       used_by: [deployment]
       items:
-        {"enum":["AzureContext","ResourceGroup","ResourceProviders","Permissions","NamesAvailable","KeyVaultSecrets","ArcMachinesConnected","ArcMachineNaming","OsConfigurationConverged","OsBuildConsistent","SbeConsistent","DnsAndTime","ActiveDirectoryPrepared","LocalIdentityPrerequisites","NoLeftoverFailedDeployment","ValidatedBeforeDeploy"]}
+        {"enum":["AzureContext","ResourceGroup","ResourceProviders","Permissions","NamesAvailable","KeyVaultSecrets","ArcMachinesConnected","ArcMachineNaming","OsConfigurationConverged","OsBuildConsistent","SbeConsistent","SbeValidatedWithSolution","DnsAndTime","ActiveDirectoryPrepared","LocalIdentityPrerequisites","NoLeftoverFailedDeployment","ValidatedBeforeDeploy"]}
     acknowledge_known_issues:
       description: "Ids from config/known-issues/arm-deployment.json that you accept, so a precondition or a resume that a known issue would block goes ahead (for example arc-device-id-name). Leave empty normally. (since 5.6)"
       type: array
@@ -14663,6 +14667,19 @@ deployment:
       description: "Patch the deploymentSettings api-version in Microsoft's template (for example 2026-10-01) when the template's own preview version is retired. Default: the template's. (since 5.6)"
       type: string
       required: false
+      used_by: [deployment]
+    solution_version:
+      description: "The solution version the nodes run (four numeric parts, for example 12.2610.1004.50). The precondition SbeValidatedWithSolution compares it with the solution versions the OEM's SBE discovery catalog lists for the configured SBE. Leave empty to use the ZTP handoff's solution version, else the version derived from the nodes' OS build (reported as derived; only builds that map unambiguously)."
+      type: string
+      required: false
+      pattern: "^\\d+\\.\\d+\\.\\d+\\.\\d+$"
+      example: "12.2610.1004.50"
+      used_by: [deployment]
+    sbe_catalog_path:
+      description: "The OEM's SBE discovery catalog (SBE_Discovery_Dell.xml) the precondition SbeValidatedWithSolution reads: the file, or a folder that holds SBE_Discovery_*.xml. Default: the SBE_Discovery_*.xml in hardware.sbe.bundle_path. Nothing is downloaded."
+      type: string
+      required: false
+      example: "D:\\sbe\\dell\\SBE_Discovery_Dell.xml"
       used_by: [deployment]
 
 nodes:
@@ -18111,7 +18128,7 @@ tools:
                 approvalMode: {"name":"approvalMode","type":"string","declared_type":"string","default":"stop","enum":["stop","prompt","none"],"required":"N","read_at":"tk-integrate2/scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:172","description":"Get-AzlArmRunSetting. Between a good Validate and the Deploy (ValidateAndDeploy). The master file key is named approval; the wrapper parameter is -ApprovalMode. Master-file key: deployment.approval (same value, snake_case)."}
                 resume: {"name":"resume","type":"boolean","declared_type":"bool","default":"false","enum":["true","false"],"required":"N","read_at":"tk-integrate2/scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:172","description":"Get-AzlArmRunSetting. Allow the run to resubmit a failed Deploy and attach to a running one. Master-file key: deployment.resume (same value, snake_case)."}
                 requireOsConfigurationReport: {"name":"requireOsConfigurationReport","type":"boolean","declared_type":"bool","default":"false","enum":["true","false"],"required":"N","read_at":"tk-integrate2/scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:172","description":"Get-AzlArmRunSetting. Fail precondition OsConfigurationConverged when no OS configuration report is given. Master-file key: deployment.require_os_configuration_report (same value, snake_case)."}
-                skipPreconditions: {"name":"skipPreconditions","type":"string","declared_type":"string[]","default":"@()","enum":["AzureContext","ResourceGroup","ResourceProviders","Permissions","NamesAvailable","KeyVaultSecrets","ArcMachinesConnected","ArcMachineNaming","OsConfigurationConverged","OsBuildConsistent","SbeConsistent","DnsAndTime","ActiveDirectoryPrepared","LocalIdentityPrerequisites","NoLeftoverFailedDeployment","ValidatedBeforeDeploy"],"required":"N","read_at":"tk-integrate2/scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:172","description":"Get-AzlArmRunSetting. Preconditions skipped on purpose (reported as Skipped). Master-file key: deployment.skip_preconditions (same value, snake_case)."}
+                skipPreconditions: {"name":"skipPreconditions","type":"string","declared_type":"string[]","default":"@()","enum":["AzureContext","ResourceGroup","ResourceProviders","Permissions","NamesAvailable","KeyVaultSecrets","ArcMachinesConnected","ArcMachineNaming","OsConfigurationConverged","OsBuildConsistent","SbeConsistent","SbeValidatedWithSolution","DnsAndTime","ActiveDirectoryPrepared","LocalIdentityPrerequisites","NoLeftoverFailedDeployment","ValidatedBeforeDeploy"],"required":"N","read_at":"tk-integrate2/scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:172","description":"Get-AzlArmRunSetting. Preconditions skipped on purpose (reported as Skipped). Master-file key: deployment.skip_preconditions (same value, snake_case)."}
                 acknowledgeKnownIssues: {"name":"acknowledgeKnownIssues","type":"string","declared_type":"string[]","default":"@()","enum":["ids from config/known-issues/arm-deployment.json; * accepts all"],"required":"N","read_at":"tk-integrate2/scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:172","description":"Get-AzlArmRunSetting. Known issue ids accepted so a precondition or resume they would block goes ahead. Master-file key: deployment.acknowledge_known_issues (same value, snake_case)."}
                 deploymentSettingsApiVersion: {"name":"deploymentSettingsApiVersion","type":"string","declared_type":"string","enum":["any api-version, for example 2026-10-01"],"required":"N","read_at":"tk-integrate2/scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:173","description":"Get-AzlArmRunSetting. Patch the deploymentSettings api-version in Microsoft's template. Empty keeps the template's. Master-file key: deployment.deployment_settings_api_version (same value, snake_case)."}
                 revalidate: {"name":"revalidate","type":"boolean","declared_type":"bool","default":"false","enum":["true","false"],"required":"N","read_at":"tk-integrate2/scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:173","description":"Get-AzlArmRunSetting. Resolve-AzlArmValidateAction: submit Validate again although one already passed with the same parameters. No infrastructure.yml key."}
@@ -18119,6 +18136,8 @@ tools:
                 requireValidatedParameterHash: {"name":"requireValidatedParameterHash","type":"boolean","declared_type":"bool","default":"false","enum":["true","false"],"required":"N","read_at":"tk-integrate2/scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:173","description":"Get-AzlArmRunSetting. Precondition ValidatedBeforeDeploy fails (instead of warns) when this tool did not validate these parameters. No infrastructure.yml key."}
                 osReportMaxAgeHours: {"name":"osReportMaxAgeHours","type":"integer","declared_type":"int","default":"48","enum":["int >= 1"],"required":"N","read_at":"tk-integrate2/scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:174","description":"Get-AzlArmRunSetting. Age in hours after which an OS configuration report is called old. No infrastructure.yml key."}
                 staleSkewMinutes: {"name":"staleSkewMinutes","type":"integer","declared_type":"int","default":"5","enum":["int >= 1"],"required":"N","read_at":"tk-integrate2/scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:174","description":"Get-AzlArmRunSetting. Clock skew tolerated when deciding whether a step snapshot belongs to this submit. No infrastructure.yml key."}
+                solutionVersion: {"name":"solutionVersion","type":"string","declared_type":"string","enum":["four numeric parts, for example 12.2610.1004.50"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:174","description":"Get-AzlArmRunSetting. The solution version the nodes run, for the precondition SbeValidatedWithSolution. Empty: the ZTP handoff's solution version, else derived from the nodes' OS build. Master-file key: deployment.solution_version (same value, snake_case)."}
+                sbeCatalogPath: {"name":"sbeCatalogPath","type":"string","declared_type":"string","enum":["path to SBE_Discovery_*.xml, or a folder that holds it"],"required":"N","read_at":"scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:174","description":"Get-AzlArmRunSetting. The OEM's SBE discovery catalog the precondition SbeValidatedWithSolution reads. Empty: SBE_Discovery_*.xml in hardware.sbe.bundle_path. Nothing is downloaded. Master-file key: deployment.sbe_catalog_path (same value, snake_case)."}
                 knownIssuesFile: {"name":"knownIssuesFile","type":"string","declared_type":"string","enum":["path to a known-issues JSON file"],"required":"N","read_at":"tk-integrate2/scripts/common/arm-deployment/AzlArmDeploymentRun.psm1:174","description":"Get-AzlArmRunSetting. Use this file instead of config/known-issues/arm-deployment.json. No infrastructure.yml key."}
         secret_names:
           type: object
