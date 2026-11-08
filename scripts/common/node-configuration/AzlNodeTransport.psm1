@@ -18,8 +18,9 @@
                    script goes through ARM. Needs the Arc machine's resource ID (handoff, or found by name). Secrets go
                    in protectedParameters. It can't carry a file: Stage throws. The SBE package reaches a node by
                    hardware.sbe.delivery (node_pull: the node downloads it; winrm_copy: a WinRM transport copies it).
-    WinRM          New-PSSession to the node. For a host that can reach the management subnet. A file is copied with
-                   Copy-Item -ToSession to a .part file, its SHA-256 is checked on the node, and it is renamed.
+    WinRM          New-PSSession to the node. For a host that can reach the management subnet. A file is copied in chunks of 8 MiB
+                   (one capped call per chunk, written at an offset of a .part file, resumed from the last verified chunk boundary
+                   after a cut), the SHA-256 of the whole file is checked on the node, and the .part file is renamed.
 
     The run command resource is created, polled until the script finishes, read, and deleted. The runCommands api-version
     (2026-09-01) is the newest generally available one on Microsoft Learn.
@@ -34,6 +35,7 @@ $script:RetryPolicy = @{ Tries = 3; DelaySeconds = @(15, 45, 120) }
 $script:CallGraceSeconds = 15
 $script:SessionOpenTimeoutMs = 30000
 $script:SessionCancelTimeoutMs = 5000
+$script:AbandonedJobs = [System.Collections.Generic.List[object]]::new()
 
 Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'azure-local' 'AzlAzure.psm1'))
 
@@ -183,8 +185,6 @@ function Close-AzlAbandonedCall {
     [CmdletBinding()]
     param([AllowNull()][object]$Job, [AllowNull()][object]$Session)
     try {
-        # Clean-ups that have finished are removed from the job table so it does not grow.
-        Get-Job -Name 'azl-abandon' -ErrorAction SilentlyContinue | Where-Object { $_.State -ne 'Running' } | Remove-Job -Force -ErrorAction SilentlyContinue
         $null = Start-ThreadJob -Name 'azl-abandon' -ArgumentList $Job, $Session -ScriptBlock {
             param($StalledJob, $StalledSession)
             if ($StalledJob) {
@@ -195,6 +195,16 @@ function Close-AzlAbandonedCall {
         }
     }
     catch { Write-Verbose "The abandoned call could not be handed to a background clean-up: $($_.Exception.Message)" }
+    # Housekeeping, after the hand-over and never able to stop it: clean-ups that have finished are removed from the job table, and so are the abandoned jobs that have stopped by
+    # now (a job object can only be removed from the runspace that owns it, so the thread job stops it and the host removes it here, at the next abandon, when that waits on nothing).
+    try {
+        Get-Job -Name 'azl-abandon' -ErrorAction SilentlyContinue | Where-Object { $_.State -in 'Completed', 'Failed', 'Stopped' } | Remove-Job -Force -ErrorAction SilentlyContinue
+        foreach ($old in @($script:AbandonedJobs.ToArray())) {
+            if ($old.PSObject.Properties['State'] -and $old.State -in 'Completed', 'Failed', 'Stopped') { Remove-Job -Job $old -Force -ErrorAction SilentlyContinue; $null = $script:AbandonedJobs.Remove($old) }
+        }
+        if ($Job) { $script:AbandonedJobs.Add($Job) }
+    }
+    catch { Write-Verbose "Job table housekeeping skipped: $($_.Exception.Message)" }
 }
 
 function New-AzlArcRunCommandTransport {
@@ -411,23 +421,223 @@ function New-AzlWinRmTransport {
         }
         Stage  = {
             param($Self, $Node, [string]$LocalPath, [string]$RemotePath, [string]$Sha256)
-            $session = Get-AzlWinRmSession -State $Self.State -Node $Node
-            $part = "$RemotePath.part"
-            Invoke-Command -Session $session -ScriptBlock { param($Folder, $Part) New-Item -ItemType Directory -Force -Path $Folder | Out-Null; if (Test-Path -LiteralPath $Part) { Remove-Item -LiteralPath $Part -Force } } -ArgumentList $RemotePath.Substring(0, [Math]::Max(0, $RemotePath.LastIndexOf([char]92))), $part
-            Copy-Item -LiteralPath $LocalPath -Destination $part -ToSession $session -Force
-            # The copy lands in a .part file; it takes its name only after its SHA-256 is what the toolkit expects.
-            $verdict = Invoke-Command -Session $session -ScriptBlock {
-                param($Part, $Final, $Want)
-                $hash = (Get-FileHash -LiteralPath $Part -Algorithm SHA256).Hash
-                if ($Want -and $hash -ine $Want) { Remove-Item -LiteralPath $Part -Force; return "SHA-256 is $hash, expected $Want" }
-                if (Test-Path -LiteralPath $Final) { Remove-Item -LiteralPath $Final -Force }
-                Move-Item -LiteralPath $Part -Destination $Final
-                return 'ok'
-            } -ArgumentList $part, $RemotePath, $Sha256
-            if ($verdict -ne 'ok') { throw "$([IO.Path]::GetFileName($LocalPath)) copied to $Node but $verdict; the copy was removed." }
+            # Chunked, capped, resumable (Send-AzlFileChunked): 8 MiB per call, 60 s per call, written at an offset of the .part file; an existing .part file is resumed from its last
+            # verified chunk boundary; the SHA-256 of the whole file is checked on the node before the rename. The blocks are not closures (they stay bound to this module).
+            $call = { param($Context, $Op, $Arguments, $TimeoutSeconds) Invoke-AzlWinRmFileOp -Transport $Context.Self -Node $Context.Node -Op $Op -Argument $Arguments -TimeoutSeconds $TimeoutSeconds }
+            $report = {
+                param($Context, $Percent, $Sent, $Total, $Name)
+                $text = "$Name`: $Percent percent ($([Math]::Round($Sent / 1MB)) of $([Math]::Round($Total / 1MB)) MiB) copied to $($Context.Node)."
+                Send-AzlTransportEvent -Transport $Context.Self -Node $Context.Node -State 'SbeDeliveryProgress' -Step 'Transport' -Evidence $text -Data @{ file = $Name; percent = $Percent; sentBytes = [int64]$Sent; totalBytes = [int64]$Total }
+                Send-AzlTransportHeartbeat -Transport $Context.Self -Action Tick -Text "the SBE package copy to $($Context.Node)" -Phase "SBE delivery $Percent percent"
+            }
+            $null = Send-AzlFileChunked -Call $call -CallContext @{ Self = $Self; Node = $Node } -Report $report -LocalPath $LocalPath -RemotePath $RemotePath -Sha256 $Sha256 -Node $Node
             [pscustomobject]@{ Name = [IO.Path]::GetFileName($LocalPath); Url = $null }
         }
     }
+}
+
+function Get-AzlFilePrefixHash {
+    <#
+    .SYNOPSIS
+        SHA-256 (upper-case hex) of the first -Count bytes of a local file; empty when the file is shorter. For checking a half-copied .part file on a node against the file
+        it must be the beginning of.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][long]$Count)
+    $hash = [System.Security.Cryptography.IncrementalHash]::CreateHash([System.Security.Cryptography.HashAlgorithmName]::SHA256)
+    $stream = [IO.FileStream]::new($Path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+    try {
+        $buffer = [byte[]]::new(4MB)
+        $left = $Count
+        while ($left -gt 0) {
+            $n = $stream.Read($buffer, 0, [int][Math]::Min($buffer.Length, $left))
+            if ($n -le 0) { break }
+            $hash.AppendData($buffer, 0, $n)
+            $left -= $n
+        }
+        if ($left -gt 0) { return '' }
+        return [Convert]::ToHexString($hash.GetHashAndReset())
+    }
+    finally { $stream.Dispose(); $hash.Dispose() }
+}
+
+function Get-AzlWinRmFileOpBlock {
+    <#
+    .SYNOPSIS
+        The script block that runs ON the node for one operation of the chunked file copy. Windows PowerShell 5.1 syntax, one hashtable argument.
+    .DESCRIPTION
+        Length      { Folder, Part }                      creates the folder; the size of the .part file (0 when there is none)
+        PrefixHash  { Part, Count }                       SHA-256 of the first Count bytes of the .part file ('' when it is shorter)
+        Write       { Part, Offset, Bytes }               writes the bytes at the offset (FileStream, OpenOrCreate, Seek), cuts the file at offset + count, answers its length
+        Finish      { Part, Final, Want, Length }         checks the length and the SHA-256 of the whole .part file; a wrong hash removes it; then renames it. 'ok' or the problem
+    #>
+    [CmdletBinding()]
+    [OutputType([scriptblock])]
+    param([Parameter(Mandatory)][ValidateSet('Length', 'PrefixHash', 'Write', 'Finish')][string]$Op)
+    switch ($Op) {
+        'Length' {
+            return {
+                param($A)
+                $null = New-Item -ItemType Directory -Force -Path $A.Folder
+                if (Test-Path -LiteralPath $A.Part) { return [int64](Get-Item -LiteralPath $A.Part).Length }
+                return [int64]0
+            }
+        }
+        'PrefixHash' {
+            return {
+                param($A)
+                $sha = [System.Security.Cryptography.SHA256]::Create()
+                $stream = New-Object IO.FileStream($A.Part, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+                try {
+                    $buffer = New-Object byte[] 4194304
+                    $left = [int64]$A.Count
+                    while ($left -gt 0) {
+                        $n = $stream.Read($buffer, 0, [int][Math]::Min($buffer.Length, $left))
+                        if ($n -le 0) { break }
+                        $null = $sha.TransformBlock($buffer, 0, $n, $null, 0)
+                        $left -= $n
+                    }
+                    $null = $sha.TransformFinalBlock($buffer, 0, 0)
+                    if ($left -gt 0) { return '' }
+                    return ([BitConverter]::ToString($sha.Hash) -replace '-', '')
+                }
+                finally { $stream.Dispose(); $sha.Dispose() }
+            }
+        }
+        'Write' {
+            return {
+                param($A)
+                $stream = New-Object IO.FileStream($A.Part, [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::Write, [IO.FileShare]::None)
+                try {
+                    $bytes = [byte[]]$A.Bytes
+                    $null = $stream.Seek([int64]$A.Offset, [IO.SeekOrigin]::Begin)
+                    $stream.Write($bytes, 0, $bytes.Length)
+                    $stream.SetLength([int64]$A.Offset + $bytes.Length)
+                    $stream.Flush($true)
+                    return [int64]$stream.Length
+                }
+                finally { $stream.Dispose() }
+            }
+        }
+        'Finish' {
+            return {
+                param($A)
+                if (-not (Test-Path -LiteralPath $A.Part)) { return 'the .part file is missing' }
+                $have = (Get-Item -LiteralPath $A.Part).Length
+                if ($have -ne [int64]$A.Length) { return "the .part file holds $have bytes, expected $($A.Length)" }
+                $hash = (Get-FileHash -LiteralPath $A.Part -Algorithm SHA256).Hash
+                if ($A.Want -and $hash -ine $A.Want) { Remove-Item -LiteralPath $A.Part -Force; return "SHA-256 is $hash, expected $($A.Want)" }
+                if (Test-Path -LiteralPath $A.Final) { Remove-Item -LiteralPath $A.Final -Force }
+                Move-Item -LiteralPath $A.Part -Destination $A.Final
+                return 'ok'
+            }
+        }
+    }
+}
+
+function Invoke-AzlWinRmFileOp {
+    <#
+    .SYNOPSIS
+        One operation of the chunked file copy on a node, as a capped call: a job in the session, abandoned (and the session dropped, the clean-up in a background thread job)
+        when it does not finish within the timeout plus the 15 second grace. Throws when the call fails or is abandoned.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][string]$Node, [Parameter(Mandatory)][ValidateSet('Length', 'PrefixHash', 'Write', 'Finish')][string]$Op, [Parameter(Mandatory)][hashtable]$Argument, [Parameter(Mandatory)][int]$TimeoutSeconds)
+    $session = Get-AzlWinRmSession -State $Transport.State -Node $Node -Transport $Transport
+    $cap = Get-AzlNodeCallCap -TimeoutSeconds $TimeoutSeconds
+    $job = Invoke-Command -Session $session -AsJob -ScriptBlock (Get-AzlWinRmFileOpBlock -Op $Op) -ArgumentList @(, $Argument)
+    if (-not (Wait-AzlNodeJob -Job $job -CapSeconds $cap -Transport $Transport -Node $Node -What "the file $Op call to $Node")) {
+        $stalled = $null
+        if ($Transport.State.Sessions.ContainsKey($Node)) { $stalled = $Transport.State.Sessions[$Node]; $Transport.State.Sessions.Remove($Node) }
+        Close-AzlAbandonedCall -Job $job -Session $stalled
+        throw "The $Op call to $Node did not finish within $cap seconds and was abandoned."
+    }
+    try { $output = Receive-Job -Job $job -ErrorAction Stop } finally { Remove-Job -Job $job -Force -ErrorAction SilentlyContinue }
+    return @($output)[-1]
+}
+
+function Send-AzlFileChunked {
+    <#
+    .SYNOPSIS
+        Copies one file to a node in chunks: one capped call per chunk, written at its offset into a .part file; resumable; the SHA-256 of the whole file is checked on the node
+        before the .part file is renamed.
+    .DESCRIPTION
+        -Call is { param($Context, $Op, $Arguments, $TimeoutSeconds) } and runs one node operation (Length, PrefixHash, Write, Finish; Get-AzlWinRmFileOpBlock); a test passes a
+        fake node. -Report is { param($Context, $Percent, $Sent, $Total, $Name) }, called each time another 5 percent has been written.
+        Resume: the size of the existing .part file is cut back to a multiple of the chunk size, and that beginning is checked against the local file (SHA-256 of the same
+        number of bytes on both sides); when it does not match, the copy starts at 0. A chunk that fails (a call abandoned at its cap, an error) is tried again from the
+        verified boundary, up to -MaxFailures failures in a row; the error then names the file, the node, the offset and the cause.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][scriptblock]$Call,
+        [object]$CallContext,
+        [Parameter(Mandatory)][string]$LocalPath,
+        [Parameter(Mandatory)][string]$RemotePath,
+        [string]$Sha256 = '',
+        [string]$Node = '',
+        [scriptblock]$Report,
+        [int]$ChunkBytes = 8MB,
+        [int]$ChunkTimeoutSeconds = 60,
+        [int]$VerifyTimeoutSeconds = 300,
+        [int]$MaxFailures = 3,
+        [int]$RetrySeconds = 5
+    )
+    $name = [IO.Path]::GetFileName($LocalPath)
+    $total = (Get-Item -LiteralPath $LocalPath).Length
+    $part = "$RemotePath.part"
+    # The node's path is a Windows path whatever this host is: the folder ends at the last backslash (or slash).
+    $folder = $RemotePath.Substring(0, [Math]::Max(0, $RemotePath.LastIndexOfAny([char[]]@([char]92, [char]47))))
+    $resumeAt = {
+        $have = [long](& $Call $CallContext 'Length' @{ Folder = $folder; Part = $part } $ChunkTimeoutSeconds)
+        if ($have -le 0 -or $have -gt $total) { return [long]0 }
+        $boundary = [long]([Math]::Floor($have / $ChunkBytes) * $ChunkBytes)
+        if ($boundary -le 0) { return [long]0 }
+        $remote = [string](& $Call $CallContext 'PrefixHash' @{ Part = $part; Count = $boundary } $VerifyTimeoutSeconds)
+        if ($remote -and $remote -ieq (Get-AzlFilePrefixHash -Path $LocalPath -Count $boundary)) { return $boundary }
+        return [long]0
+    }
+    $offset = [long]0
+    $failures = 0
+    $nextMark = 5
+    $stream = $null
+    while ($true) {
+        try {
+            $offset = [long](& $resumeAt)
+            $stream = [IO.FileStream]::new($LocalPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+            $null = $stream.Seek($offset, [IO.SeekOrigin]::Begin)
+            # An empty file still needs its (empty) .part file for the final check and rename.
+            if ($total -eq 0) { $null = & $Call $CallContext 'Write' @{ Part = $part; Offset = [long]0; Bytes = [byte[]]::new(0) } $ChunkTimeoutSeconds }
+            while ($offset -lt $total) {
+                $count = [int][Math]::Min([long]$ChunkBytes, $total - $offset)
+                $bytes = [byte[]]::new($count)
+                $got = 0
+                while ($got -lt $count) { $n = $stream.Read($bytes, $got, $count - $got); if ($n -le 0) { throw "the local file $LocalPath ended at $($offset + $got) of $total bytes" }; $got += $n }
+                $length = [long](& $Call $CallContext 'Write' @{ Part = $part; Offset = $offset; Bytes = $bytes } $ChunkTimeoutSeconds)
+                if ($length -ne $offset + $count) { throw "the node holds $length bytes after the chunk at $offset, expected $($offset + $count)" }
+                $offset += $count
+                $failures = 0
+                $percent = [int][Math]::Floor($offset * 100 / $total)
+                if ($percent -ge $nextMark) {
+                    while ($nextMark -le $percent) { $nextMark += 5 }
+                    if ($Report) { & $Report $CallContext $percent $offset $total $name }
+                }
+            }
+            break
+        }
+        catch {
+            $failures++
+            $cause = $_.Exception.Message
+            if ($failures -gt $MaxFailures) { throw "The copy of $name to $Node stopped at $offset of $total bytes after $failures failed calls in a row (chunks of $ChunkBytes bytes, $ChunkTimeoutSeconds s each): $cause" }
+            Write-Verbose "Copy of $name to ${Node}: $cause; trying again from the verified boundary ($failures of $MaxFailures)."
+            if ($RetrySeconds -gt 0) { Start-Sleep -Seconds $RetrySeconds }
+        }
+        finally { if ($stream) { $stream.Dispose(); $stream = $null } }
+    }
+    $verdict = [string](& $Call $CallContext 'Finish' @{ Part = $part; Final = $RemotePath; Want = $Sha256; Length = [int64]$total } $VerifyTimeoutSeconds)
+    if ($verdict -ne 'ok') { throw "$name copied to $Node but $verdict$(if ($verdict -like 'SHA-256*') { '; the copy was removed' })." }
+    [pscustomobject]@{ Name = $name; Node = $Node; Sent = $total; Total = $total }
 }
 
 function Set-AzlNodeRetryPolicy {
@@ -668,4 +878,4 @@ function Test-AzlNodeConnectivity {
     }
 }
 
-Export-ModuleMember -Function Set-AzlTransportHeartbeat, Send-AzlTransportHeartbeat, Send-AzlTransportEvent, Get-AzlNodeCallCap, New-AzlWinRmSessionOption, Wait-AzlNodeJob, ConvertTo-AzlNodeResult, New-AzlArcRunCommandTransport, New-AzlWinRmTransport, Invoke-AzlNodeScript, Send-AzlNodeFile, Set-AzlNodeRetryPolicy, Test-AzlTransportMember, Test-AzlTcpPort, Get-AzlRemotingDiagnosis, Test-AzlNodeConnectivity
+Export-ModuleMember -Function Set-AzlTransportHeartbeat, Send-AzlTransportHeartbeat, Send-AzlTransportEvent, Get-AzlNodeCallCap, New-AzlWinRmSessionOption, Wait-AzlNodeJob, ConvertTo-AzlNodeResult, New-AzlArcRunCommandTransport, New-AzlWinRmTransport, Invoke-AzlNodeScript, Send-AzlNodeFile, Send-AzlFileChunked, Get-AzlWinRmFileOpBlock, Set-AzlNodeRetryPolicy, Test-AzlTransportMember, Test-AzlTcpPort, Get-AzlRemotingDiagnosis, Test-AzlNodeConnectivity

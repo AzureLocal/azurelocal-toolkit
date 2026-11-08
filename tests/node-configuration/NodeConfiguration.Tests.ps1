@@ -804,9 +804,12 @@ Describe 'Invoke-AzlNodeConfiguration' {
             $winrm.Stage = { param($Self, $Node, $LocalPath, $RemotePath, $Sha256) $null = $Self; $copies.Add([pscustomobject]@{ Node = $Node; Local = $LocalPath; Remote = $RemotePath; Sha = $Sha256 }); [pscustomobject]@{ Name = (Split-Path $LocalPath -Leaf); Url = $null } }.GetNewClosure()
             $r = Invoke-AzlNodeConfiguration -Spec $spec -Transport $arc -SbeTransport $winrm -Execute -SecretResolver $script:Resolver
             $copies.Count | Should -Be 2
-            $copies[0].Local | Should -Be 'D:\sbe\SBE_Dell_X_1.0.zip'
-            $copies[0].Remote | Should -Be 'C:\SBE\SBE_Dell_X_1.0.zip'
-            $copies[0].Sha | Should -Be 'AA'
+            # the small file first (the xml is 10 bytes, the zip 100 in this fixture), then the package
+            $copies[0].Local | Should -Be 'D:\sbe\SBE_Dell_X_1.0.xml'
+            $copies[0].Sha | Should -Be 'BB'
+            $copies[1].Local | Should -Be 'D:\sbe\SBE_Dell_X_1.0.zip'
+            $copies[1].Remote | Should -Be 'C:\SBE\SBE_Dell_X_1.0.zip'
+            $copies[1].Sha | Should -Be 'AA'
             @($arc.Log | Where-Object Kind -eq 'Apply') | Should -BeNullOrEmpty
             $r.Converged | Should -BeTrue
         }

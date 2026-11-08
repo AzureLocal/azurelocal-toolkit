@@ -781,8 +781,10 @@ function Send-AzlSbePackage {
         failure comes back as a result with Status 'failed', so the other steps of the run are not stopped by it.
     .DESCRIPTION
         node_pull   one Apply call; the node downloads each file from the address in the action and checks its SHA-256.
-        winrm_copy  Copy-Item over a WinRM session (the transport, or -SbeTransport when the nodes are otherwise reached over
-                    Arc), into a .part file whose SHA-256 is checked on the node before it takes its name.
+        winrm_copy  Chunked copy over a WinRM session (the transport, or -SbeTransport when the nodes are otherwise reached over
+                    Arc): 8 MiB per call (60 s each), written at an offset of a .part file, resumed from the last verified chunk
+                    boundary, the small files first, a progress event every 5 percent; the SHA-256 of the whole file is checked
+                    on the node before the .part file takes its name (Send-AzlFileChunked).
     .OUTPUTS
         One object per file: Name, Id, Status (changed or failed), Detail.
     #>
@@ -811,7 +813,8 @@ function Send-AzlSbePackage {
         catch { foreach ($a in $pull) { $out.Add((& $new $a 'failed' "node_pull failed: $($_.Exception.Message)")) } }
     }
 
-    $copy = @($Item | ForEach-Object { $_.Apply } | Where-Object { $_.route -eq 'winrm_copy' })
+    # The small files first (the xml before the 900 MB zip): a failure of the big one leaves the others delivered.
+    $copy = @($Item | ForEach-Object { $_.Apply } | Where-Object { $_.route -eq 'winrm_copy' } | Sort-Object { [long](Get-AzlProp $_ 'size' 0) })
     if ($copy.Count) {
         $via = if ($SbeTransport) { $SbeTransport } elseif ($Transport.Kind -eq 'WinRM') { $Transport } else { $null }
         $stop = $null
@@ -860,6 +863,33 @@ function Confirm-AzlUnknownGuardOutcome {
         })
     if ($remaining.Count) { return (& $no "still to do on the node: $((@($remaining | ForEach-Object { "$($_.Step) $($_.Item)" })) -join '; ')" $read) }
     [pscustomobject]@{ Observed = $true; Reason = ''; State = $read; Plan = $plan; Remaining = @() }
+}
+
+function Get-AzlSbeNotDeliveredReason {
+    <#
+    .SYNOPSIS
+        Why the SBE package is not (completely) on a node, in one sentence, from the node's result of Invoke-AzlNodeConfiguration. Pure.
+    .DESCRIPTION
+        An Sbe change entry means the delivery was tried: 'attempted and failed: <the real error>'. No entry means it never started, and the sentence says what stopped the run:
+        'not attempted: run stopped at guarded change <id> (<state>)', the error the run ended with, or that the run ended before the step (or the delivery is skip).
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][object]$Result, [string]$Delivery = '')
+    $sbeChanges = @(Get-AzlProp $Result 'Changes' @() | Where-Object { $_ -and [string]$_.Id -like 'Sbe/*' })
+    if ($sbeChanges.Count) {
+        $failed = @($sbeChanges | Where-Object { $_.Status -eq 'failed' })
+        if ($failed.Count) { return "attempted and failed: $((@($failed | ForEach-Object { [string]$_.Detail } | Where-Object { $_ } | Select-Object -Unique)) -join '; ')" }
+        return 'attempted: the files were delivered but the last Read of the node still does not show the package complete'
+    }
+    if ($Delivery -eq 'skip') { return 'not attempted: hardware.sbe.delivery is skip (nothing configured)' }
+    $stop = @(Get-AzlProp $Result 'Guard' @() | Where-Object { $_ -and $_.State -notin 'Committed', 'ObservedCommitted' }) | Select-Object -Last 1
+    if ($stop) { return "not attempted: run stopped at guarded change $($stop.ChangeId) ($($stop.State))" }
+    $err = [string](Get-AzlProp $Result 'Error' '')
+    if ($err) { return "not attempted: the run ended with an error: $err" }
+    $blocked = @(Get-AzlProp $Result 'Plan' @() | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -eq 'Blocked' } | Select-Object -First 1)
+    if ($blocked.Count) { return "not attempted: blocked: $($blocked[0].Note)" }
+    return 'not attempted: the run ended before the SBE step'
 }
 
 function Invoke-AzlGuardStep {
@@ -1161,4 +1191,4 @@ function Invoke-AzlNodeConfiguration {
     return (& $buildResult '' $false)
 }
 
-Export-ModuleMember -Function Get-AzlOemConfig, Get-AzlSbeBundle, Get-AzlSbePullUrl, Send-AzlSbePackage, Get-AzlSanVendor, Get-AzlNodeSpec, Get-AzlNodeReadParameter, Compare-AzlNodeState, Get-AzlNodeWipeItem, Format-AzlWipeDisk, Format-AzlPlan, Invoke-AzlNodeConfiguration
+Export-ModuleMember -Function Get-AzlOemConfig, Get-AzlSbeBundle, Get-AzlSbePullUrl, Send-AzlSbePackage, Get-AzlSbeNotDeliveredReason, Get-AzlSanVendor, Get-AzlNodeSpec, Get-AzlNodeReadParameter, Compare-AzlNodeState, Get-AzlNodeWipeItem, Format-AzlWipeDisk, Format-AzlPlan, Invoke-AzlNodeConfiguration

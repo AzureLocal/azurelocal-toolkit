@@ -366,6 +366,7 @@ function Write-NodeReport {
         transport     = $remoting.Kind
         sbeDelivery   = $sbeDelivery
         sbeNotDelivered = @($sbeMissing | ForEach-Object { $_.Node })
+        sbeNotDeliveredDetail = @($sbeMissing | ForEach-Object { [ordered]@{ node = $_.Node; reason = (Get-AzlSbeNotDeliveredReason -Result $_ -Delivery $sbeDelivery) } })
         remoting      = [ordered]@{ transport = $remoting.Transport; authentication = $remoting.Authentication; ssl = $remoting.UseSsl; port = $remoting.Port; bootstrapTransport = $remoting.BootstrapTransport }
         sanProblems   = @(Get-SanProblem)
         nodes         = @($results | ForEach-Object {
@@ -435,7 +436,8 @@ try {
     # ---- the SBE package: said plainly, because nothing else fails when it is missing
     $sbeMissing = @(Get-SbeMissing)
     if ($bundle -and $sbeMissing.Count) {
-        Write-Line "SBE package NOT delivered to: $(($sbeMissing | ForEach-Object { $_.Node }) -join ', ') (hardware.sbe.delivery = $sbeDelivery). The other steps are not affected; the OEM drivers wait for the package."
+        # Why, per node: "not attempted: run stopped at guarded change <id> (<state>)" when nothing was tried, the real error when it was tried and failed.
+        Write-Line "SBE package NOT delivered to: $(($sbeMissing | ForEach-Object { "$($_.Node) ($(Get-AzlSbeNotDeliveredReason -Result $_ -Delivery $sbeDelivery))" }) -join '; ') (hardware.sbe.delivery = $sbeDelivery). The other steps are not affected; the OEM drivers wait for the package."
     }
 
     # ---- every node must see the same SAN disks
