@@ -83,11 +83,11 @@ function New-AzlGuardEventContext {
     #>
     [CmdletBinding()]
     [OutputType([pscustomobject])]
-    param([string]$Path, [System.Collections.IList]$Sink, [string]$SchemaVersion = '', [string]$PayloadVersion = '1')
+    param([string]$Path, [System.Collections.IList]$Sink, [string]$SchemaVersion = '', [string]$PayloadVersion = '1', [string]$Method = '', [string]$Phase = '')
     # An empty list assigned from an expression would be unrolled to $null, so it is created by itself.
     $list = $Sink
     if ($null -eq $list) { $list = [System.Collections.Generic.List[object]]::new() }
-    [pscustomobject]@{ Path = $Path; Sink = $list; SchemaVersion = $SchemaVersion; PayloadVersion = $PayloadVersion }
+    [pscustomobject]@{ Path = $Path; Sink = $list; SchemaVersion = $SchemaVersion; PayloadVersion = $PayloadVersion; Method = $Method; Phase = $Phase }
 }
 
 function Send-AzlGuardEvent {
@@ -113,6 +113,7 @@ function Send-AzlGuardEvent {
         [string]$Method = ''
     )
     if (-not $Context) { return }
+    if (-not $Method -and $Context.PSObject.Properties['Method']) { $Method = [string]$Context.Method }
     $transportName = if ($Transport -in 'ArcRunCommand', 'WinRM') { $Transport } else { '' }
     $methodName = if ($Method -in 'Ztp', 'Iso') { $Method } else { '' }
     try {

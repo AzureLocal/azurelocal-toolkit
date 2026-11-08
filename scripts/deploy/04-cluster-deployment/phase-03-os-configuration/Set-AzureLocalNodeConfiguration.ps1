@@ -14,6 +14,9 @@
       Dns, Time         DNS servers on the management port; NTP peers
       Hostname          the computer name (needs a restart)
       UnusedAdapters    ports marked unused are disabled
+      DomainJoin        Active Directory designs only: joins the node to identity.active_directory.domain_fqdn, in ou_path, with
+                        domain_join_account (after Network, Dns, Time and Hostname; a guarded restart and a check follow). A node
+                        of a local identity design gets an explicit 'not applicable: local identity' item.
       LocalAdmin        identity.local_admin as a local administrator (never the built-in Administrator)
       Mpio              SAN only: MultipathIO, the array's MSDSM hardware ID, load balance policy, MPIO settings
       SanVerify         SAN only, read only: FC ports and WWPNs, the infrastructure and performance history LUNs
@@ -69,6 +72,10 @@
     Treat leftover local storage as a change (destroys data on local disks; never SAN LUNs). With -Execute.
 .PARAMETER NoRestart
     Don't restart a node that needs it (hostname, MPIO, a driver); the report says which need one.
+.PARAMETER EventMethod
+    Ztp or Iso: the method of the node, written on every event of the feed this run appends (-EventLogPath). Optional.
+.PARAMETER EventPhase
+    Plan, Apply or Verify: the pass of the one-run command this call belongs to. Optional.
 .PARAMETER SpecOnly
     Print what each node should look like and stop. Reads only the files (and the SBE folder); touches no node, no Azure resource and no Key Vault.
 .PARAMETER ReportPath
@@ -93,9 +100,11 @@ param(
     [ValidateSet('Default', 'Negotiate', 'Kerberos', 'Basic', 'CredSSP')][string]$Authentication,
     [hashtable]$Settings,
     [string]$EventLogPath,
-    [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')][string[]]$Step,
+    [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')][string[]]$Step,
     [switch]$ClearStorage,
     [hashtable]$NodeAddress,
+    [ValidateSet('', 'Ztp', 'Iso')][string]$EventMethod = '',
+    [ValidateSet('', 'Plan', 'Apply', 'Verify')][string]$EventPhase = '',
     [ValidateRange(1, 10)][int]$RetryTries = 3,
     [int[]]$RetryDelaySeconds = @(15, 45, 120),
     [switch]$NoRestart,
@@ -122,7 +131,7 @@ function Write-Line([string]$Text) { Write-Information -MessageData $Text -Infor
 Set-AzlNodeRetryPolicy -Tries $RetryTries -DelaySeconds $RetryDelaySeconds
 $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation:$SkipValidation
 $handoff = if ($HandoffFile) { Read-AzlHandoff -Path $HandoffFile } else { $null }
-$allSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
+$allSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
 $steps = if ($Step) { $Step } else { $allSteps }
 
 $nodes = @($infra.nodes | Where-Object { -not $Node -or $_.name -in $Node })
@@ -152,7 +161,7 @@ if ($SpecOnly) {
 
 # ---- the transport: PowerShell remoting (WinRM) unless Arc Run Command was asked for. There is no silent fallback to Arc.
 $remoting = Get-AzlRemotingSetting -Infrastructure $infra -Setting $Settings -Transport $Transport -UseSsl:$UseSsl -Authentication $Authentication
-$eventContext = New-AzlGuardEventContext -Path $EventLogPath -SchemaVersion ([string](Get-AzlProp $infra '_metadata.schema_version' ''))
+$eventContext = New-AzlGuardEventContext -Path $EventLogPath -SchemaVersion ([string](Get-AzlProp $infra '_metadata.schema_version' '')) -Method $EventMethod -Phase $EventPhase
 $subscription = [string](Get-AzlProp $infra 'azure.subscription_id')
 $resourceGroup = [string](Get-AzlProp $infra 'azure.resource_group')
 $azureSignedIn = [bool]((Get-Command Get-AzContext -ErrorAction SilentlyContinue) -and (Get-AzContext -ErrorAction SilentlyContinue))
@@ -294,6 +303,7 @@ $report = [ordered]@{
                 guard     = @($_.Guard | ForEach-Object { [ordered]@{ group = $_.Group; state = $_.State; changeId = $_.ChangeId; reason = $_.Reason; nextAction = $_.NextAction; oldAddress = $_.OldAddress; newAddress = $_.NewAddress; verdict = $_.Verdict; repairs = @($_.Repairs | ForEach-Object { $_.rung }) } })
                 events    = @($_.Events)
                 restarted = $_.Restarted
+                domainJoin = $_.DomainJoin # DOMAINJOIN HOOK
                 ports     = @(Get-AzlProp $_.State 'nics' @() | ForEach-Object { [ordered]@{ osName = $_.n; mac = $_.mac; status = $_.st } })
                 sanDisks  = @(Get-AzlProp $_.State 'san.disks' @())
                 fcPorts   = @(Get-AzlProp $_.State 'san.fc' @())

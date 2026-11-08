@@ -329,7 +329,7 @@ foreach ($r in $rows) {
 $sb = [System.Text.StringBuilder]::new()
 function Out-Line([string]$Text = '') { [void]$sb.Append($Text).Append("`n") }
 
-$latest = if ($schema['properties']['_metadata']['properties']['schema_version']['description'] -match '(?s).*\b(5\.\d+) adds') { $Matches[1] } else { '5.x' }
+$latest = if ($schema['properties']['_metadata']['properties']['schema_version']['description'] -match '(?s).*(?<![\d.])(5\.\d+(?:\.\d+)?) adds') { $Matches[1] } else { '5.x' }
 
 Out-Line '# infrastructure.yml variables reference'
 Out-Line

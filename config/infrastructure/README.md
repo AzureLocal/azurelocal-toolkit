@@ -219,6 +219,10 @@ The mapping from slot label to attribute is data in ZTP, `config/oem/<vendor>.js
 | AZL-031 | The OS configuration run (5.4.3): `os_configuration.clear_storage: true` on a SAN design warns that only local disks are wiped (the key itself must be a boolean, which the schema checks). |
 | AZL-040 | The `deployment` block (5.6, ARM Validate and Deploy): `poll_max_seconds` is not less than `poll_seconds`; a Validate limit under 30 minutes, a Deploy limit under 4 hours and `approval: none` are warnings; an `acknowledge_known_issues` id that is not in `config/known-issues/arm-deployment.json` is a warning |
 | AZL-070 | The CI/CD infrastructure (5.5, `devops`; this rule was AZL-030 on its branch, which the SBE delivery rule already held): runner names are unique; one ztp runner (Windows, one VM, with `bmc_cidrs` on `runner_network`) and one Linux general pool; a Windows runner is a VM; a runner needs its `registration_secret` and a subnet inside `runner_network` that overlaps no other; `hub_peering` needs its names; `devops.resource_group` and `runner_network` are needed when runners are; environment names are unique; `authentication.method: client_secret` needs `client_secret` |
+| AZL-050 | The domain join credential (5.5): with `scenario.identity: active_directory` the file has `lcm_user` with a Key Vault password (the default join account) or `domain_join_account`; the LCM user name is valid for Azure Local (1 to 20 letters, numbers, hyphens, underscores, not starting with a hyphen or number) and is not the local administrator's name. |
+| AZL-051 | `identity.active_directory.ou_path` is a valid distinguished name (`OU=` or `CN=` parts first, then the `DC=` parts), its `DC=` parts are the labels of `domain_fqdn`, and it has none of `& " ' < >` (Azure Local does not support them). |
+| AZL-052 | `identity.active_directory.domain_controllers`, when set, are the DNS servers of every node's management port (the same set): the machines find the domain, and so join it, through them. |
+| AZL-053 | Warning: `scenario.identity` is `local_identity` but `domain_join_account` or `local_admin_members` is set; no machine joins a domain. |
 | (scope) | `_metadata.scope: ztp` requires only ZTP's keys (see [Which template](#which-template)); `full` requires everything |
 Design guidance (which pattern to pick, sizing, best practices) stays in Trailwright, which cites Microsoft Learn for every rule. The toolkit's rules are the ones that stop a deployment.
 
@@ -256,6 +260,10 @@ const validate = new Ajv2020({ strict: true, allErrors: true }).compile(schema);
 `os_configuration.network` and `os_configuration.remoting` (since 5.4.4) set the confirmation window of a guarded network change and how the OS configuration reaches the nodes: PowerShell remoting by default, Arc Run Command as an option, and an optional one-time Arc bootstrap that opens a closed node firewall. See [Choosing the transport](../../docs/os-configuration-and-arm-deployment.md#choosing-the-transport).
 
 `os_configuration.clear_storage` (default `false`) tells `Invoke-AzureLocalOsConfiguration.ps1` to wipe the leftover storage of re-used machines: storage pools, virtual disks and the data on local disks that are not boot, system, SAN or USB. Plan mode lists the disks per machine and wipes nothing; Apply mode wipes only what the plan listed. See [OS configuration and ARM deployment](../../docs/os-configuration-and-arm-deployment.md#run-it-in-one-go).
+## The domain join (schema 5.5.0)
+
+With `scenario.identity: active_directory`, `Invoke-AzureLocalOsConfiguration.ps1` joins each machine to `identity.active_directory.domain_fqdn`, into `ou_path`, with the LCM user (`lcm_user`; `domain_join_account` overrides it) before the cluster validation and the deployment, then adds `local_admin_members` to the local Administrators group. `join_options.allow_ou_move` (default `false`) allows a move before the deployment only; `rename_after_join` is fixed to `false`. See [Joining the domain](../../docs/os-configuration-and-arm-deployment.md#joining-the-domain) for the order, the rights, the OU checks, what happens on a failure and what to do with a node in the wrong OU.
+
 ## Versioning
 
 `_metadata.schema_version` is the schema version the file follows.

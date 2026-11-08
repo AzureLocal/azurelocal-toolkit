@@ -76,7 +76,7 @@ The full cross-tool matrix is in the toolkit's [access-and-connectivity page](ac
 1. **Validate the inputs.** The master file, the handoff map, the method of every node, the **remoting pre-check** (every node probed at the same time on every candidate address, one table of what is unreachable and why), the credentials and the OS build of every node reached over WinRM. A failure here stops the run with exit code 2 before anything is changed.
 2. **Plan for all nodes** (read only). Writes `plan-report.json` and `wipe-list.txt`.
 3. **Apply** (`-Mode Apply`), node by node.
-   Each node's steps run in the order of the diagram, `RemoteManagement` first and the SBE package last (by `hardware.sbe.delivery`). A change that can cut the node off is a guarded change. A node whose plan says the package is NOT DELIVERED (`hardware.sbe.delivery` is `skip`) is not failed; its record carries a warning.
+   Each node's steps run in the order of the diagram, `RemoteManagement` first and the SBE package last (by `hardware.sbe.delivery`). With an Active Directory design the order is Network, Dns, Time, Hostname, UnusedAdapters, **DomainJoin** (see [Joining the domain](#joining-the-domain)), LocalAdmin, MPIO, then the rest. A change that can cut the node off is a guarded change. A node whose plan says the package is NOT DELIVERED (`hardware.sbe.delivery` is `skip`) is not failed; its record carries a warning.
 4. **Verify**: a Plan pass on every node that was changed. A node is *converged* only when this pass finds nothing left to change. The status of the commands that did the work does not decide it. A node with nothing to change in the plan is converged by the plan itself and is not read again.
 5. **Report**: `report.json` (per node: method and evidence, steps, plan, changes, errors, converged, restarted), `summary.md` and a table on the console.
 
@@ -210,6 +210,58 @@ STORAGE WIPE (os_configuration.clear_storage in the master file). Local disks th
 ```
 
 With it off, leftover storage is reported as blocking (exit 1) and nothing is wiped.
+
+### Joining the domain
+
+With `scenario.identity: active_directory` the OS configuration joins every node to the domain, into the OU from the file, **before** the ARM validation and the deployment (the `DomainJoin` step). With `local_identity` the step reports one item, `not applicable: local identity`, and does nothing.
+
+**What it does.** For each node, in the order of the run: Network, Dns, Time and Hostname first (the join needs the domain controllers reachable by name, clocks within 5 minutes and the final computer name), then `DomainJoin`, then LocalAdmin, MPIO and the rest. Both methods run it (ZTP nodes are named by ZTP; ISO nodes get their name from the Hostname step first). On an ISO node it runs **before** the Arc registration: registration does not need the join, and the join restarts the node, so the registration waits for it. The step:
+
+1. **Reads** (plan, nothing changed): `PartOfDomain` and `Domain`, the computer's distinguished name when joined (so its OU), DNS resolution of the domain and the domain controller SRV record, a TCP check of the controllers, the clock difference to a controller, `Test-ComputerSecureChannel` when joined, the computer name against the file, whether the node is already in a cluster, the local Administrators group, and (with the join credential, over LDAP from the node) the OU itself: that it exists, whether Group Policy inheritance is blocked (`gPOptions`), and which GPO links above it are Enforced.
+2. **Compares**: joined to the right domain and OU = Ok; not joined = Change; a different domain, a different computer name, DNS that cannot resolve the domain, no domain controller, a clock more than 5 minutes apart, an OU that does not exist or does not block inheritance (in `dev`, `production` and `dmz`) = **Blocked**, with every reason in the note. An earlier step that still has a change makes the join wait (Skipped); the next pass of the same run does it.
+3. **Joins**: `Add-Computer -DomainName <domain_fqdn> -OUPath <ou_path> -Credential <account> -Restart:$false` on the node, in Windows PowerShell 5.1. The credential is built on the node from a secure string made from the secret, which the run read from Key Vault. Then the **guarded restart**: a durable marker (`C:\ProgramData\AzureLocal\osconfig\domainjoin-state.json`, written to a temporary file, flushed to disk, renamed) says a restart is expected; a one-time startup task resumes and verifies after the restart even if the run has died; the node refuses to restart without the marker; the run reconnects over the same transport (the WinRM address from the file, or Arc) and verifies **PartOfDomain true, the right domain, `Test-ComputerSecureChannel`, the right OU**, then completes the marker.
+4. **Adds the local administrators**: the principals of `identity.active_directory.local_admin_members` (default: the `security_groups` entry whose `purpose` says it administers the instance, and the LCM user) are added to the node's local Administrators group, idempotently, after the join and the restart. A domain account is not a local administrator by default; the deployment adds the LCM user itself later. This is what lets Kerberos remoting and Sonar's log access use a domain account.
+
+**The account.** The default is the **LCM user** (`identity.active_directory.lcm_user`, password by `keyvault://` reference). Microsoft's Active Directory preparation gives it the right to create and delete computer objects in the dedicated OU, and it is the account used for domain-join actions such as repairing or adding a node. To use another account set `identity.active_directory.domain_join_account` (username and password reference); it needs the same rights on `ou_path`. What the account needs on the OU (Microsoft, [Custom Active Directory configuration](https://learn.microsoft.com/azure/azure-local/plan/configure-custom-settings-active-directory)):
+
+| On the OU and its descendants | Permission |
+| --- | --- |
+| Computer objects | List contents, read all properties, read permissions, **create** computer objects, **delete** computer objects |
+| `msFVE-RecoveryInformation` objects below it | Full control (the BitLocker recovery keys; set with PowerShell, the delegation wizard cannot) |
+| Resetting the password and writing `dNSHostName` and `servicePrincipalName` | Needed when a computer object already exists in the OU (pre-staged, or from an earlier join) |
+
+`New-HciAdObjectsPreCreation` sets this up for the LCM user. The LCM user also needs *Log on as a batch job* and interactive logon (the default domain policy must not deny them); that is checked by the deployment, not here.
+
+**The OU.** Azure Local requires a dedicated OU with Group Policy inheritance **blocked**; `New-HciAdObjectsPreCreation` creates it. The plan reads it:
+
+| Finding | `dev`, `production`, `dmz` | `lab`, `test` |
+| --- | --- | --- |
+| OU does not exist | Blocked | Blocked |
+| Inheritance not blocked | **Blocked** (nothing is joined) | warning, the join goes ahead |
+| GPO links marked **Enforced** above the OU | warning | warning |
+
+The class is `scenario.environment_class`; missing means `production`. Block Inheritance does not stop **Enforced** GPOs, so the plan names them and suggests what Microsoft suggests: a WMI filter on those GPOs that excludes the Azure Local machine accounts. (Microsoft's own at-scale advice links an Enforced GPO on the parent OU on purpose, for example to nest a domain group in the local administrators; then the warning is expected.) The characters `& " ' < >` are not allowed anywhere in `ou_path` (rule AZL-051).
+
+**If the join fails.** The node stays in its workgroup and the report carries the exact error text from `Add-Computer`, its code and what to do. The join is **not retried in the same run** (a wrong password must not be sent twice; it would lock the account). The usual errors:
+
+| Code | Meaning | What to do |
+| --- | --- | --- |
+| 1326 | the user name or password is wrong | check the account and the Key Vault secret; do not run again with the same values |
+| 1355 | the domain does not exist or no controller answers | the management DNS servers must be the domain controllers (`domain_controllers`, rule AZL-052); check the route |
+| 2224 | a computer object with that name already exists | delete it, or move it into `ou_path`; a pre-staged object **in** `ou_path` is fine if the account may reset its password |
+| 5 | access denied | delegate the rights above on `ou_path` |
+| 53, 1722 | network path not found, RPC server unavailable | routing and firewalls to the controllers (TCP 135, 389, 445 and the dynamic RPC range) |
+| clock skew | more than 5 minutes from the controller | fix the Time step first |
+| 1909, 1331 | account locked out or disabled | unlock or enable it |
+| other | not mapped | the exact text is reported; look the code up in Microsoft Learn |
+
+**Events** (the run's event feed, `os-configuration-events.jsonl`, step `DomainJoin`): `DomainJoinPlanned`, `DomainJoinApplying`, `NodeRestarting`, `NodeReconnected`, `DomainJoined`, `DomainAdminsConfigured`, `DomainJoinFailed` (with the AD error and the next action). `DomainJoined` is when Sonar switches the credential it uses for the node to the domain account. The password is in none of them, nor in the report.
+
+**A node in the wrong OU, and how to move one.** A node already in the domain but in another OU than `ou_path` is **Blocked**, never moved by default. Microsoft states that moving the computer objects to a different OU **after the deployment is not supported**, so a node that is already part of a cluster is blocked whatever the file says: correct `ou_path` to where the objects are, or follow Microsoft's repair or add-node procedure. **Before the deployment** you can set `identity.active_directory.join_options.allow_ou_move: true`; the next Apply moves the computer object into `ou_path` (ADSI, with the join account) and the plan then shows Ok. A node joined to a **different domain** is Blocked and is never unjoined by the toolkit: run `Remove-Computer` on it yourself if that is what you want. A rename after the join is refused (`join_options.rename_after_join` is fixed to `false`).
+
+**What was not tested.** The scripts and the comparison are tested with mocks only. Nothing here was run against a domain controller; run the first node as a canary.
+
+**Note for the azurelocal.cloud automation guide.** Where the guide describes the one-run OS configuration, add: *"With an Active Directory design the OS configuration also joins each node to the domain and the dedicated OU (step DomainJoin, after Network, DNS, Time and Hostname, before the ARM validation), using the LCM user from `infrastructure.yml` unless `domain_join_account` is set. The plan checks that the OU exists and blocks Group Policy inheritance, and warns about Enforced GPOs; a node in another OU is blocked (Microsoft does not support moving computer objects after deployment). The nodes' local Administrators group gets `local_admin_members`. Events: DomainJoinPlanned, DomainJoinApplying, DomainJoined, DomainJoinFailed, DomainAdminsConfigured, NodeRestarting, NodeReconnected."* The Implementation guide keeps the manual route (Prepare Active Directory, then the join in the deployment).
 
 ### Exit codes
 
@@ -387,11 +439,11 @@ The deployment's local administrator is not the built-in Administrator: the depl
 
 | Prepare | Detail | Checked |
 | --- | --- | --- |
-| A dedicated OU, not at the top of the domain | `identity.active_directory.ou_path`, for example `OU=iic-clus01,OU=AzureLocal,DC=improbability,DC=cloud` | You (the schema checks the form) |
+| A dedicated OU, not at the top of the domain, with Group Policy inheritance blocked | `identity.active_directory.ou_path`, for example `OU=iic-clus01,OU=AzureLocal,DC=improbability,DC=cloud`; none of `& " ' < >` in it | Code (the form, AZL-051; the plan reads that the OU exists and blocks inheritance), You (the OU) |
 | The LCM user, in that OU | `lcm_user.username`: the name only, no domain, **20 characters or fewer** | Code (length), You (the account) |
 | Microsoft's pre-creation tool | `Install-Module AsHciADArtifactsPreCreationTool`, then `New-HciAdObjectsPreCreation` with the LCM credential and the OU. It creates the OU's objects and the LCM user and sets the delegation. See [Prepare Active Directory](https://learn.microsoft.com/azure/azure-local/deploy/deployment-prep-active-directory) | You |
 | Names | cluster name up to 15 characters and not a node name; node names up to 15 characters; `naming_prefix` is the prefix of the objects the deployment creates | Code |
-| DNS resolves the domain from the nodes | the management DNS servers (`networking.management.dns_servers`) resolve AD, including the domain controllers' SRV records. **They can't change after deployment.** OS configuration sets them on the management port; it doesn't test that they resolve AD. | Code (sets), You (resolves) |
+| DNS resolves the domain from the nodes | the management DNS servers (`networking.management.dns_servers`) resolve AD, including the domain controllers' SRV records. **They can't change after deployment.** OS configuration sets them on the management port, and the DomainJoin step reads whether they resolve the domain and a controller SRV record (Blocked if not). | Code |
 | Time | `networking.ntp_servers` reachable from the nodes; Kerberos needs clocks within 5 minutes | Code (sets and reports the source), You (reachable) |
 
 **Local identity** is the alternative: no AD, secrets in the cluster Key Vault. Set `scenario.identity: local_identity` and `identity.local_identity` (`dns_server_config`: `use_dns_server` or `use_forwarder`, `dns_zone`, `dns_forwarders`). The generator then uses Microsoft's `create-adless-cluster-external-dns-public-preview` (Storage Spaces Direct) or `create-cluster-adless-san` (Fibre Channel). See [Local identity with Key Vault](https://learn.microsoft.com/azure/azure-local/deploy/deployment-local-identity-with-key-vault).
@@ -487,6 +539,7 @@ A port the file lists as `dhcp` or `dhcp_reservation` keeps DHCP; if it holds a 
 | Validate after a failed deployment | ARM | refused (Microsoft: it resets system properties and can break license sync) |
 | Deploy without a successful Validate | ARM | refused |
 | Same adapter name on every node | ARM | stops |
+| Domain join: joined to another domain, name differs, DNS/SRV/controller/clock, OU missing or not blocking inheritance | DomainJoin step (Plan) | Blocked |
 
 ## Values table: every `infrastructure.yml` key these scripts read
 
@@ -547,7 +600,13 @@ Required: **yes** (the script stops or the step can't run without it), **if** (w
 | `identity.local_admin.username` | yes | `azl-admin` | not `Administrator` | OS, ARM `localAdminUserName` |
 | `identity.local_admin.password` | yes | `keyvault://kv-iic-mgmt-01/local-admin-password` | create the secret first | OS, ARM |
 | `identity.active_directory.domain_fqdn`, `.ou_path` | if AD | `improbability.cloud`, `OU=...` | your directory | ARM `domainFqdn`, `adouPath` |
-| `identity.active_directory.lcm_user.username`, `.password` | if AD | `lcm-iic-clus01`, `keyvault://.../lcm-password` | the pre-creation tool | ARM |
+| `identity.active_directory.lcm_user.username`, `.password` | if AD | `lcm-iic-clus01`, `keyvault://.../lcm-password` | the pre-creation tool; also the account that joins the nodes | OS (DomainJoin), ARM |
+| `identity.active_directory.domain_join_account.username`, `.password` | no | `svc-azl-join`, `keyvault://.../domain-join-password` | override of the LCM user for the join; same rights on the OU | OS (DomainJoin) |
+| `identity.active_directory.join_options.allow_ou_move` | no (`false`) | `false` | `true` moves a node found in another OU into `ou_path`, before the deployment only | OS (DomainJoin) |
+| `identity.active_directory.join_options.rename_after_join` | no (fixed `false`) | `false` | never rename after the join | OS (DomainJoin) |
+| `identity.active_directory.local_admin_members` | no (instance administrators group, LCM user) | `[sg-iic-azl-01-admins]` | domain principals added to the nodes' local Administrators | OS (DomainJoin) |
+| `identity.active_directory.domain_controllers` | no | `[192.0.2.4, 192.0.2.5]` | must be the management port's DNS servers (AZL-052); the join tests them | OS (DomainJoin) |
+| `scenario.environment_class` | no (`production`) | `lab` | decides whether an OU without blocked inheritance blocks the join (`dev`, `production`, `dmz`) or only warns (`lab`, `test`) | OS (DomainJoin) |
 | `identity.local_identity.dns_server_config`, `.dns_zone`, `.dns_forwarders` | if local identity | `use_dns_server`, `improbability.cloud` | your DNS design | ARM `dnsServerConfig`, `dnsZones` |
 | `storage.configuration_mode` | no (`express`; `infra_only` for SAN) | `infra_only` | your design | ARM `configurationMode` |
 | `storage.san.type` | if SAN | `fibre_channel` | your SAN | OS, ARM (template) |

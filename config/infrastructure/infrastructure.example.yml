@@ -32,6 +32,7 @@
 # Schema 5.5 puts the CI/CD infrastructure in devops (tasks 01 to 06 of automation / 01-cicd-infra): the
 # project, its settings, the environments, the Azure sign-in, and the self-hosted runners (a Linux pool
 # and a Windows ztp runner) with their network and roles.
+# Schema 5.5.0 adds identity.active_directory.domain_join_account (optional override of the LCM user), join_options and local_admin_members: with scenario.identity active_directory the OS configuration run joins each machine to the domain and ou_path.
 #
 # Rules:
 #   - Keys are snake_case. Sections reject unknown keys; use extensions.
@@ -282,6 +283,14 @@ identity:
     lcm_user:
       username: "lcm-iic-azl-01" # up to 20 characters, no domain
       password: "keyvault://kv-iic-mgmt-01/lcm-password"
+    # Schema 5.5: the OS configuration joins each machine to the domain and ou_path with the LCM user above (Microsoft's AD preparation gives it the
+    # right to create and delete computer objects in the dedicated OU). To use another account, set domain_join_account (same rights on ou_path):
+    # domain_join_account: { username: "svc-azl-join", password: "keyvault://kv-iic-mgmt-01/domain-join-password" }
+    join_options: # optional
+      rename_after_join: false # fixed: the machine gets its final name first (Hostname step) and is never renamed after the join
+      allow_ou_move: false # true: BEFORE the deployment, move a machine that is in this domain but in another OU into ou_path. Never after (not supported).
+    # Added to the local Administrators group of every machine after the join. Default: the security group below that administers the instance, and the LCM user.
+    # local_admin_members: ["sg-iic-azl-01-admins", "lcm-iic-azl-01"]
     domain_controllers: ["192.0.2.4", "192.0.2.5"]
     security_groups:
       - { name: "sg-iic-azl-01-admins", purpose: "Administrators of the instance" }

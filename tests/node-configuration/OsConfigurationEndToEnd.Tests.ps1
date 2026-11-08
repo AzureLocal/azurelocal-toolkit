@@ -165,10 +165,10 @@ Describe 'Invoke-AzureLocalOsConfiguration.ps1, Plan, end to end (fake Azure onl
         $n2.arc | Should -Be 'Connected'
         $n1.schemaVersion | Should -Be '5.3.0'
     }
-    It 'has a step event for every one of the 13 steps on every node' {
+    It 'has a step event for every one of the 14 steps (13 and the Arc registration) on every node' {
         foreach ($n in 'iic-n01', 'iic-n02') {
             $steps = @($script:Events | Where-Object { $_.node -eq $n -and $_.state -in 'StepPlanned', 'StepSkipped' } | ForEach-Object { $_.step } | Select-Object -Unique)
-            $steps.Count | Should -Be 13 -Because "node $n : $($steps -join ',')"
+            $steps.Count | Should -Be 14 -Because "node $n : $($steps -join ',')"
         }
         $dns2 = $script:Events | Where-Object { $_.node -eq 'iic-n02' -and $_.step -eq 'Dns' }
         $dns2.state | Should -Be 'StepPlanned'

@@ -109,8 +109,8 @@ Describe 'The event contract (os-configuration-design.md section 6)' {
 }
 
 Describe 'Get-AzlOsConfigurationStepOrder' {
-    It 'is the 12 steps in display order, then the Arc registration' {
-        (Get-AzlOsConfigurationStepOrder) -join ',' | Should -Be 'RemoteManagement,Network,Dns,Time,Hostname,UnusedAdapters,LocalAdmin,Mpio,SanVerify,ClearStorage,Sbe,Drivers,ArcRegistration'
+    It 'is the 13 steps in display order, then the Arc registration' {
+        (Get-AzlOsConfigurationStepOrder) -join ',' | Should -Be 'RemoteManagement,Network,Dns,Time,Hostname,UnusedAdapters,DomainJoin,LocalAdmin,Mpio,SanVerify,ClearStorage,Sbe,Drivers,ArcRegistration'
     }
 }
 
