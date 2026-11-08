@@ -1,0 +1,202 @@
+---
+# One phase: Plan or Apply (azurelocal_os_configuration__phase). Included by main.yml.
+
+- name: Ask for approval before Apply
+  when:
+    - azurelocal_os_configuration__phase == 'Apply'
+    - "'Plan' in azurelocal_os_configuration__phases"
+    - not (azurelocal_os_configuration_approved | bool)
+  block:
+    - name: Show the plan and wait for the approval
+      ansible.builtin.pause:
+        prompt: |-
+
+          ===== APPROVAL NEEDED: the Plan phase finished. Review it, then answer. =====
+          {{ azurelocal_os_configuration_summary | default('(no summary)') }}
+
+          {{ azurelocal_os_configuration_wipe_list | default('') }}
+
+          Type yes to run Apply on the nodes above. Anything else stops the run
+        minutes: "{{ azurelocal_os_configuration_approval_timeout_minutes | int if azurelocal_os_configuration_approval_timeout_minutes | int > 0 else omit }}"
+      register: azurelocal_os_configuration__approval
+
+    - name: Stop unless the answer was yes
+      ansible.builtin.assert:
+        that:
+          - azurelocal_os_configuration__approval.user_input | default('') | trim | lower == 'yes'
+        fail_msg: Apply was not approved. Nothing was changed by this run.
+        quiet: true
+
+- name: Name the files of the phase
+  ansible.builtin.set_fact:
+    azurelocal_os_configuration__report_dir: "{{ azurelocal_os_configuration__run_dir }}/{{ azurelocal_os_configuration__phase | lower }}"
+    azurelocal_os_configuration__arguments_file: >-
+      {{ azurelocal_os_configuration__run_dir }}/arguments-{{ azurelocal_os_configuration__phase | lower }}.json
+
+# The wrapper's parameters. Mode and ReportDirectory are per phase, Credential never appears here (the launcher builds it from
+# the environment). Empty values are left out so the wrapper's own defaults apply.
+- name: Build the wrapper arguments
+  ansible.builtin.set_fact:
+    azurelocal_os_configuration__arguments: >-
+      {{ azurelocal_os_configuration__args_always
+      | combine(azurelocal_os_configuration__args_optional | dict2items
+        | rejectattr('value', 'in', [none, '', [], {}]) | list | items2dict)
+      | combine(azurelocal_os_configuration__args_switches | dict2items | selectattr('value') | list | items2dict) }}
+  vars:
+    azurelocal_os_configuration__args_always:
+      InfrastructureFile: "{{ azurelocal_os_configuration_infrastructure_file }}"
+      Mode: "{{ azurelocal_os_configuration__phase }}"
+      ReportDirectory: "{{ azurelocal_os_configuration__report_dir }}"
+      ContinueOnNodeFailure: "{{ azurelocal_os_configuration_continue_on_node_failure | bool }}"
+      Transport: "{{ azurelocal_os_configuration_transport }}"
+      Method: "{{ azurelocal_os_configuration_method }}"
+    azurelocal_os_configuration__args_optional:
+      HandoffPath: "{{ azurelocal_os_configuration_handoff_path }}"
+      Node: "{{ azurelocal_os_configuration_nodes }}"
+      Step: "{{ azurelocal_os_configuration_steps }}"
+      ConfigPath: "{{ azurelocal_os_configuration_config_path }}"
+      Settings: "{{ azurelocal_os_configuration_settings }}"
+      NodeAddress: "{{ azurelocal_os_configuration_node_address }}"
+    azurelocal_os_configuration__args_switches:
+      ClearStorage: "{{ azurelocal_os_configuration_clear_storage | bool }}"
+      FailOnPendingChanges: "{{ azurelocal_os_configuration_fail_on_pending_changes | bool and azurelocal_os_configuration__phase == 'Plan' }}"
+      SkipValidation: "{{ azurelocal_os_configuration_skip_validation | bool }}"
+
+# Not shown with no_log: nothing secret is in it, and the launcher reads it. Written even in check mode: Plan is read only.
+- name: Create the report folder of the phase
+  ansible.builtin.file:
+    path: "{{ azurelocal_os_configuration__report_dir }}"
+    state: directory
+    mode: "0700"
+  check_mode: false
+
+- name: Write the arguments file of the phase
+  ansible.builtin.copy:
+    content: "{{ azurelocal_os_configuration__arguments | to_nice_json }}"
+    dest: "{{ azurelocal_os_configuration__arguments_file }}"
+    mode: "0600"
+  check_mode: false
+
+# The only task that holds the node credential: it travels in the task environment, never in argv, a file or a log.
+# Plan is read only, so this task also runs in check mode; Apply never does (main.yml leaves it out in check mode).
+- name: Run Invoke-AzureLocalOsConfiguration.ps1
+  ansible.builtin.command:
+    argv:
+      - "{{ azurelocal_os_configuration_pwsh }}"
+      - -NoProfile
+      - -NonInteractive
+      - -File
+      - "{{ azurelocal_os_configuration__launcher }}"
+      - -ArgumentsFile
+      - "{{ azurelocal_os_configuration__arguments_file }}"
+      - -WrapperPath
+      - "{{ azurelocal_os_configuration__script }}"
+      - -AzureAuth
+      - "{{ azurelocal_os_configuration_azure_auth }}"
+  environment:
+    AZL_NODE_ADMIN_USER: "{{ azurelocal_os_configuration_node_admin_user }}"
+    AZL_NODE_ADMIN_PASSWORD: "{{ azurelocal_os_configuration_node_admin_password }}"
+  register: azurelocal_os_configuration__run
+  failed_when: false
+  changed_when: azurelocal_os_configuration__phase == 'Apply' and (azurelocal_os_configuration__run.rc | default(1)) == 0
+  check_mode: false
+  no_log: true
+
+- name: Look for the files the wrapper wrote
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ azurelocal_os_configuration__report_dir }}/report.json"
+    - "{{ azurelocal_os_configuration__report_dir }}/summary.md"
+    - "{{ azurelocal_os_configuration__report_dir }}/wipe-list.txt"
+    - "{{ azurelocal_os_configuration__arguments_file }}.error.txt"
+  register: azurelocal_os_configuration__files
+
+- name: Read report.json
+  ansible.builtin.slurp:
+    src: "{{ azurelocal_os_configuration__report_dir }}/report.json"
+  register: azurelocal_os_configuration__report_file
+  when: azurelocal_os_configuration__files.results[0].stat.exists
+
+- name: Read summary.md
+  ansible.builtin.slurp:
+    src: "{{ azurelocal_os_configuration__report_dir }}/summary.md"
+  register: azurelocal_os_configuration__summary_file
+  when: azurelocal_os_configuration__files.results[1].stat.exists
+
+- name: Read wipe-list.txt
+  ansible.builtin.slurp:
+    src: "{{ azurelocal_os_configuration__report_dir }}/wipe-list.txt"
+  register: azurelocal_os_configuration__wipe_file
+  when: azurelocal_os_configuration__files.results[2].stat.exists
+
+- name: Read the launcher message
+  ansible.builtin.slurp:
+    src: "{{ azurelocal_os_configuration__arguments_file }}.error.txt"
+  register: azurelocal_os_configuration__launcher_file
+  when: azurelocal_os_configuration__files.results[3].stat.exists
+
+# The facts. report.json is parsed as it is. Per phase: azurelocal_os_configuration_reports.plan / .apply.
+- name: Surface the report and the exit code as facts
+  ansible.builtin.set_fact:
+    azurelocal_os_configuration_exit_code: "{{ azurelocal_os_configuration__run.rc | default(1) | int }}"
+    azurelocal_os_configuration_exit_codes: >-
+      {{ azurelocal_os_configuration_exit_codes | default({})
+      | combine({azurelocal_os_configuration__phase | lower: azurelocal_os_configuration__run.rc | default(1) | int}) }}
+    azurelocal_os_configuration_report: >-
+      {{ (azurelocal_os_configuration__report_file.content | b64decode | from_json)
+      if azurelocal_os_configuration__report_file.content is defined else {} }}
+    azurelocal_os_configuration_reports: >-
+      {{ azurelocal_os_configuration_reports | default({})
+      | combine({azurelocal_os_configuration__phase | lower:
+        ((azurelocal_os_configuration__report_file.content | b64decode | from_json)
+        if azurelocal_os_configuration__report_file.content is defined else {})}) }}
+    azurelocal_os_configuration_summary: >-
+      {{ azurelocal_os_configuration__summary_file.content | b64decode
+      if azurelocal_os_configuration__summary_file.content is defined else '' }}
+    azurelocal_os_configuration_wipe_list: >-
+      {{ azurelocal_os_configuration__wipe_file.content | b64decode
+      if azurelocal_os_configuration__wipe_file.content is defined else '' }}
+    azurelocal_os_configuration_report_directory: "{{ azurelocal_os_configuration__report_dir }}"
+    azurelocal_os_configuration__launcher_message: >-
+      {{ azurelocal_os_configuration__launcher_file.content | b64decode | trim
+      if azurelocal_os_configuration__launcher_file.content is defined else '' }}
+
+- name: Derive the node lists from the report
+  ansible.builtin.set_fact:
+    azurelocal_os_configuration_nodes_converged: >-
+      {{ azurelocal_os_configuration_report.nodes | default([]) | selectattr('converged') | map(attribute='name') | list }}
+    azurelocal_os_configuration_nodes_not_converged: >-
+      {{ azurelocal_os_configuration_report.nodes | default([]) | rejectattr('converged') | map(attribute='name') | list }}
+    azurelocal_os_configuration_node_methods: >-
+      {{ dict(azurelocal_os_configuration_report.nodes | default([]) | map(attribute='name')
+      | zip(azurelocal_os_configuration_report.nodes | default([]) | map(attribute='method'))) }}
+
+# For AWX: set_stats carries these into the next job of a workflow.
+- name: Pass the result on to a workflow
+  ansible.builtin.set_stats:
+    data:
+      azurelocal_os_configuration_exit_codes: "{{ azurelocal_os_configuration_exit_codes }}"
+      azurelocal_os_configuration_report_directory: "{{ azurelocal_os_configuration_report_directory }}"
+      azurelocal_os_configuration_nodes_converged: "{{ azurelocal_os_configuration_nodes_converged }}"
+      azurelocal_os_configuration_nodes_not_converged: "{{ azurelocal_os_configuration_nodes_not_converged }}"
+
+- name: Show the summary and the wipe list
+  ansible.builtin.debug:
+    msg: "{{ (['== ' ~ azurelocal_os_configuration__phase ~ ' (exit code ' ~ azurelocal_os_configuration_exit_code ~ '), reports in ' ~ azurelocal_os_configuration_report_directory]
+      + azurelocal_os_configuration_summary.splitlines() + azurelocal_os_configuration_wipe_list.splitlines()) }}"
+
+- name: Fail with the wrapper's exit code
+  ansible.builtin.fail:
+    msg: >-
+      Invoke-AzureLocalOsConfiguration.ps1 ({{ azurelocal_os_configuration__phase }}) exited with
+      {{ azurelocal_os_configuration_exit_code }}:
+      {{ azurelocal_os_configuration_exit_meanings[azurelocal_os_configuration_exit_code | string]
+      | default('Not a documented exit code; the wrapper did not finish.') }}
+      {{ azurelocal_os_configuration__launcher_message }}
+      {{ azurelocal_os_configuration_report.message | default('') }}
+      {{ azurelocal_os_configuration_report.clusterProblems | default([]) | join(' ') }}
+      {{ azurelocal_os_configuration_report.nodes | default([]) | map(attribute='errors') | flatten | list | join(' ') }}
+      Not converged: {{ azurelocal_os_configuration_nodes_not_converged | join(', ') }}.
+      Reports: {{ azurelocal_os_configuration_report_directory }} on {{ inventory_hostname }}.
+  when: azurelocal_os_configuration_exit_code | int != 0

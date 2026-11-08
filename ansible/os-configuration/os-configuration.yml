@@ -1,0 +1,16 @@
+---
+# Azure Local OS configuration from Ansible / AWX. Runs Invoke-AzureLocalOsConfiguration.ps1 with pwsh on the runner:
+# Plan, a pause for approval, Apply. --check runs the Plan only.
+#
+#   ansible-playbook os-configuration.yml -i inventory/hosts.yml --check     # Plan only, nothing changes
+#   ansible-playbook os-configuration.yml -i inventory/hosts.yml             # Plan, approval, Apply
+#
+# The node credential, when the run needs one (ISO-installed nodes over WinRM), comes from ansible-vault
+# (--ask-vault-pass or --vault-password-file) or from the AZL_NODE_ADMIN_PASSWORD environment variable. See README.md.
+- name: Azure Local OS configuration
+  hosts: os_config_runner
+  gather_facts: false
+  any_errors_fatal: true
+  roles:
+    - role: azurelocal_os_configuration
+      tags: [azurelocal_os_configuration]

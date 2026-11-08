@@ -1,0 +1,32 @@
+---
+# Copy to inventory/hosts.yml and edit. One runner only: it must have PowerShell 7 (pwsh) with the powershell-yaml, Az.Accounts and
+# Az.KeyVault modules, an Azure sign-in, a checkout of this repository, and (for ISO-installed nodes, or hardware.sbe.delivery
+# winrm_copy) a route to the nodes' management addresses on TCP 5985. The nodes themselves are NOT Ansible hosts: the wrapper
+# reaches them (Azure Arc Run Command or WinRM), not Ansible.
+all:
+  children:
+    os_config_runner:
+      hosts:
+        os-config-runner:
+          ansible_connection: local
+      vars:
+        azurelocal_os_configuration_infrastructure_file: /srv/azurelocal/infrastructure.yml
+        azurelocal_os_configuration_handoff_path:
+          - /srv/azurelocal/ztp-state
+        # azurelocal_os_configuration_nodes: [node01, node02]
+        # azurelocal_os_configuration_clear_storage: false
+        # Only for an ISO-installed node that still holds the installer's address (documentation addresses shown):
+        # azurelocal_os_configuration_node_address:
+        #   node01: 192.0.2.11
+        #   node02: 192.0.2.12
+        #
+        # The node credential, for WinRM to ISO-installed nodes. Choose one:
+        #  a) ansible-vault: copy vault.yml.example to group_vars/os_config_runner/vault.yml, fill it, encrypt it with
+        #     ansible-vault encrypt, and uncomment these two lines (the user name is not a secret).
+        # azurelocal_os_configuration_node_admin_user: azl-admin
+        # azurelocal_os_configuration_node_admin_password: "{{ vault_azl_node_admin_password }}"
+        #  b) the environment of the ansible-playbook process (AWX: a custom credential type that injects these):
+        #     AZL_NODE_ADMIN_USER and AZL_NODE_ADMIN_PASSWORD. Nothing to set here.
+        #
+        # The runner is an Azure VM or Arc machine with a managed identity and no interactive sign-in:
+        # azurelocal_os_configuration_azure_auth: ManagedIdentity

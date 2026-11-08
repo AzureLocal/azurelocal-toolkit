@@ -1,0 +1,7 @@
+---
+# Copy to inventory/group_vars/os_config_runner/vault.yml, replace the value, then encrypt the file:
+#   ansible-vault encrypt inventory/group_vars/os_config_runner/vault.yml
+# Never commit the file unencrypted. The .gitignore of this folder keeps inventory/group_vars/ and inventory/hosts.yml out of Git.
+# Reference it from the inventory with
+#   azurelocal_os_configuration_node_admin_password: "{{ vault_azl_node_admin_password }}"
+vault_azl_node_admin_password: "<the nodes' local administrator password>"
