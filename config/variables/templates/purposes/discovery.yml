@@ -1,0 +1,86 @@
+# GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
+# Change the registry, then run the generator. A test regenerates this file and fails when it differs.
+# Template for the part of infrastructure.yml that 'discovery' reads (a strict subset of the master file). Schema 5.6.1.
+# Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
+
+# About this file.
+_metadata:
+  # The schema version this file follows.
+  # required; used by: ztp, os_configuration, deployment, monitoring
+  schema_version: "5.6.0"
+  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
+  # one of: full | ztp; default: "full"; used by: ztp
+  scope: "full"
+  # Your own version of this file.
+  file_version: "1.0.0"
+  # Date of the last change, YYYY-MM-DD.
+  last_updated: "2026-11-06"
+  # The tool that wrote the file, for example azurelocal-trailwright 1.1.0.
+  generated_by: ""
+  notes: ""
+
+# The machines, one entry each.
+# used by: deployment, monitoring
+nodes:
+  # Host name: up to 15 characters.
+  # required; used by: ztp, os_configuration, deployment, monitoring, discovery
+  - name: "iic-azl-n01"
+    # The machine's management port and address (schema 5.0 and 5.1).
+    # used by: ztp, os_configuration
+    management:
+      # MAC of the management port.
+      # when scenario.os_install is simplified; used by: ztp, os_configuration, discovery
+      mac_address: "00:00:5E:00:53:11"
+    # Every physical network port of the machine (schema 5.2): name, MAC, roles and how each gets its host address.
+    # used by: ztp, os_configuration
+    network_adapters:
+      # The adapter's name in the installed OS, or the slot label the OS uses, for example 'Embedded NIC 1' or 'Slot 3 Port 1'. networking.intents[...
+      # required; used by: ztp, os_configuration, discovery
+      - name: "Embedded NIC 1"
+        # The port's MAC.
+        # used by: ztp, os_configuration, discovery
+        mac_address: "00:00:5E:00:53:11"
+        # Where the port is, for example Embedded (a LOM), Slot 3 or OCP 1.
+        # used by: ztp, os_configuration, discovery
+        slot: "Embedded"
+        # Card model, for example 'NVIDIA ConnectX-6 Dx'.
+        # used by: ztp, os_configuration, discovery
+        model: "Example 25GbE NIC"
+        # What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified...
+        # required; used by: ztp, os_configuration, monitoring, discovery
+        roles: ["management"]
+        # How the installed OS gets this port's host address before deployment.
+        # required; one of: static | dhcp_reservation | dhcp | preconfigured | none; used by: ztp, os_configuration, monitoring, discovery
+        ip_assignment: "static"
+    # Serial number (Dell service tag).
+    # when scenario.os_install is simplified; used by: ztp, discovery
+    serial_number: "SERIAL01"
+    # when scenario.os_install is simplified
+    bmc:
+      # when scenario.os_install is simplified; used by: ztp, discovery
+      ip_address: "198.51.100.11"
+      # one of: idrac | ilo | xcc | other; used by: ztp, discovery
+      type: "idrac"
+      # used by: ztp, discovery
+      username: "example"
+      # A Key Vault secret reference: keyvault://<vault>/<secret>.
+      # used by: ztp, discovery
+      password: "keyvault://kv-example-01/password"
+
+# What every machine is.
+hardware:
+  # BMC (iDRAC, iLO, XCC) login used for every machine unless a node sets its own.
+  # used by: ztp
+  bmc:
+    # A reference to the secret holding the user name, or the user name itself.
+    # required; used by: ztp, discovery
+    username: "keyvault://kv-iic-mgmt-01/bmc-username"
+    # A Key Vault secret reference: keyvault://<vault>/<secret>.
+    # required; used by: ztp, discovery
+    password: "keyvault://kv-iic-mgmt-01/bmc-password"
+    # (since 5.4) azurelocal-ztp, Boot stage: also set the iDRAC Remote File Share attribute RFS.<n>.WriteProtected to Read Write before it inser...
+    # used by: ztp, discovery
+    rfs_write_attribute: true
+    # (since 5.4) 
+    # default: false; used by: ztp, discovery
+    verify_certificate: false

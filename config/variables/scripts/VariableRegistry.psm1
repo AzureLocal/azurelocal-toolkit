@@ -35,7 +35,7 @@ $script:NodeKeywords = @(
     'infrastructure_type', 'depends_on', 'solutions', 'tier', 'items', 'properties', 'additionalProperties', 'conflicts_with',
     'estimated_variables', 'shared_groups', 'variable_groups', 'alias_for', 'since', 'deprecated', 'replaced_by', 'used_by',
     'scenarios', 'const', 'infrastructure_types',
-    'schema_extra', 'applies_when', 'data_path', 'required_in', 'uniqueItems', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf'
+    'schema_extra', 'file_schema', 'applies_when', 'data_path', 'required_in', 'uniqueItems', 'exclusiveMinimum', 'exclusiveMaximum', 'multipleOf'
 )
 
 function ConvertTo-PlainScalar([string]$Value, [bool]$Quoted) {

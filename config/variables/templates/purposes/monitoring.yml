@@ -1,0 +1,117 @@
+# GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
+# Change the registry, then run the generator. A test regenerates this file and fails when it differs.
+# Template for the part of infrastructure.yml that 'monitoring' reads (a strict subset of the master file). Schema 5.6.1.
+# Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
+
+# About this file.
+_metadata:
+  # The schema version this file follows.
+  # required; used by: ztp, os_configuration, deployment, monitoring
+  schema_version: "5.6.0"
+  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
+  # one of: full | ztp; default: "full"; used by: ztp
+  scope: "full"
+  # Your own version of this file.
+  file_version: "1.0.0"
+  # Date of the last change, YYYY-MM-DD.
+  last_updated: "2026-11-06"
+  # The tool that wrote the file, for example azurelocal-trailwright 1.1.0.
+  generated_by: ""
+  notes: ""
+
+# The design choices.
+scenario:
+  # active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity...
+  # one of: active_directory | local_identity; used by: os_configuration, deployment, monitoring
+  identity: "active_directory"
+  # iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp...
+  # one of: iso | simplified; used by: ztp, os_configuration, monitoring
+  os_install: "simplified"
+
+# The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
+azure:
+  # Azure region, for example eastus.
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
+  location: "eastus"
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
+  subscription_id: "00000000-0000-0000-0000-000000000000"
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
+  resource_group: "rg-iic-azl-01"
+
+# The Azure Local instance (the cluster deployment).
+cluster:
+  # Cluster name: a NetBIOS name of up to 15 characters.
+  # required; used by: os_configuration, deployment, monitoring
+  name: "iic-azl-01"
+
+# The machines, one entry each.
+# used by: deployment, monitoring
+nodes:
+  # Host name: up to 15 characters.
+  # required; used by: ztp, os_configuration, deployment, monitoring, discovery
+  - name: "iic-azl-n01"
+    # The machine's management port and address (schema 5.0 and 5.1).
+    # used by: ztp, os_configuration
+    management:
+      # Management address.
+      # required; used by: ztp, os_configuration, deployment, monitoring
+      ip_address: "192.0.2.11"
+    # Every physical network port of the machine (schema 5.2): name, MAC, roles and how each gets its host address.
+    # used by: ztp, os_configuration
+    network_adapters:
+      # What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified...
+      # required; used by: ztp, os_configuration, monitoring, discovery
+      - roles: ["management"]
+        # How the installed OS gets this port's host address before deployment.
+        # required; one of: static | dhcp_reservation | dhcp | preconfigured | none; used by: ztp, os_configuration, monitoring, discovery
+        ip_assignment: "static"
+        # The host address.
+        # used by: ztp, os_configuration, deployment, monitoring
+        ip_address: "192.0.2.11"
+    # Name of the machine's Arc resource (Microsoft.HybridCompute/machines).
+    # used by: ztp, os_configuration, deployment, monitoring
+    arc_machine_name: "iic-azl-n01"
+
+# Accounts and the identity provider (scenario.identity).
+identity:
+  # The deployment's local administrator on every machine.
+  # required; used by: ztp, os_configuration, deployment
+  local_admin:
+    # required; used by: ztp, os_configuration, deployment, monitoring
+    username: "azl-admin"
+  # when scenario.identity is active_directory
+  active_directory:
+    # Up to 15 letters, digits and hyphens.
+    # used by: os_configuration, deployment, monitoring
+    netbios_name: "IIC"
+    # The LCM deployment user, created in the OU by the AD preparation module.
+    # required; used by: deployment, monitoring
+    lcm_user:
+      # Name only, no domain.
+      # required; used by: os_configuration, deployment, monitoring
+      username: "lcm-iic-azl-01"
+      # At least 14 characters with lowercase, uppercase, a digit and a special character.
+      # required; used by: os_configuration, deployment, monitoring
+      password: "keyvault://kv-iic-mgmt-01/lcm-password"
+    # Optional override.
+    # used by: os_configuration
+    domain_join_account:
+      # The join account: a name (svc-azl-join, qualified with netbios_name), NETBIOS\name or name@domain.
+      # required; used by: os_configuration, monitoring
+      username: "example"
+      # A Key Vault secret reference.
+      # required; used by: os_configuration, monitoring
+      password: "keyvault://kv-example-01/password"
+
+# How the OS gets onto the machines (scenario.os_install), and the OS version.
+# when scenario.os_install is simplified
+provisioning:
+  # Simplified machine provisioning from Azure, as azurelocal-ztp runs it. https://learn.microsoft.com/azure/azure-local/deploy/simplified-mach...
+  # when scenario.os_install is simplified; used by: ztp
+  simplified:
+    # Resource name of the Microsoft.Edge site.
+    # required; used by: ztp, monitoring
+    site_name: "iic-site-01"
+    # (since 5.2) 
+    # used by: ztp, monitoring
+    evidence_path: "D:\\Data\\azl-ztp\\iic-azl-01\\evidence"

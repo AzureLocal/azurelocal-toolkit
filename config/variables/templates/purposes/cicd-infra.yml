@@ -1,0 +1,354 @@
+# GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
+# Change the registry, then run the generator. A test regenerates this file and fails when it differs.
+# Template for the part of infrastructure.yml that 'cicd_infra' reads (a strict subset of the master file). Schema 5.6.1.
+# Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
+
+# About this file.
+_metadata:
+  # The schema version this file follows.
+  # required; used by: ztp, os_configuration, deployment, monitoring
+  schema_version: "5.6.0"
+  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
+  # one of: full | ztp; default: "full"; used by: ztp
+  scope: "full"
+  # Your own version of this file.
+  file_version: "1.0.0"
+  # Date of the last change, YYYY-MM-DD.
+  last_updated: "2026-11-06"
+  # The tool that wrote the file, for example azurelocal-trailwright 1.1.0.
+  generated_by: ""
+  notes: ""
+
+# Azure tags applied to the resources the tools create.
+# used by: ztp, cicd_infra
+tags:
+  example_name: "value"
+
+# The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
+azure:
+  # required; used by: ztp, os_configuration, deployment, cicd_infra
+  tenant_id: "00000000-0000-0000-0000-000000000000"
+  # Azure region, for example eastus.
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
+  location: "eastus"
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
+  subscription_id: "00000000-0000-0000-0000-000000000000"
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
+  resource_group: "rg-iic-azl-01"
+  # The identity that runs automation with no one signed in (pipelines, ZTP, the ARM deployment).
+  # used by: deployment, cicd_infra
+  automation_identity:
+    # required; one of: managed_identity | service_principal; used by: cicd_infra
+    type: "managed_identity"
+    # Managed identity resource name, or the service principal's display name.
+    # required; used by: cicd_infra
+    name: "id-iic-cicd-01"
+    # used by: cicd_infra
+    client_id: "00000000-0000-0000-0000-000000000000"
+    # used by: cicd_infra
+    subscription_id: "00000000-0000-0000-0000-000000000000"
+    # used by: cicd_infra
+    resource_group: "rg-iic-devops-01"
+
+# Every Key Vault that a keyvault:// reference in this file names, with where it is.
+# used by: ztp, cicd_infra
+key_vaults:
+  # required; used by: ztp, deployment, cicd_infra
+  - name: "kv-iic-mgmt-01"
+    # required; used by: ztp, deployment, cicd_infra
+    subscription_id: "00000000-0000-0000-0000-000000000000"
+    # required; used by: ztp, deployment, cicd_infra
+    resource_group: "rg-iic-mgmt-01"
+    # What the vault holds, for example management, deployment or backup.
+    # used by: ztp, cicd_infra
+    purpose: "management"
+
+# Part 2 of the implementation steps: the Azure foundation the instance depends on.
+landing_zone:
+  # Subscriptions by role. azure.subscription_id is the one the instance uses.
+  # used by: cicd_infra
+  subscriptions:
+    # required; used by: cicd_infra
+    - name: "sub-iic-connectivity"
+      # used by: cicd_infra
+      id: "00000000-0000-0000-0000-000000000000"
+      # What the subscription is for.
+      # required; one of: connectivity | identity | management | security | devops | workload | azure_local; used by: cicd_infra
+      role: "connectivity"
+      # used by: cicd_infra
+      management_group: "mg-iic-platform"
+  # used by: cicd_infra
+  resource_groups:
+    # required; used by: cicd_infra
+    - name: "rg-iic-conn-01"
+      # Name of a subscription in landing_zone.subscriptions.
+      # used by: cicd_infra
+      subscription: "sub-iic-connectivity"
+      # used by: cicd_infra
+      location: "eastus"
+      # used by: cicd_infra
+      purpose: "hub network"
+  # Azure virtual networks.
+  # used by: cicd_infra
+  networks:
+    # required; used by: cicd_infra
+    - name: "vnet-iic-hub-01"
+      # used by: cicd_infra
+      subscription: "sub-iic-connectivity"
+      # used by: cicd_infra
+      resource_group: "rg-iic-conn-01"
+      # used by: cicd_infra
+      location: "eastus"
+      # one of: hub | spoke; used by: cicd_infra
+      role: "hub"
+      # required; used by: cicd_infra
+      address_space: ["10.20.0.0/22"]
+      # used by: cicd_infra
+      dns_servers: ["192.0.2.4", "192.0.2.5"]
+      # used by: cicd_infra
+      subnets:
+        # required; used by: cicd_infra
+        - name: "GatewaySubnet"
+          # required; used by: cicd_infra
+          prefix: "10.20.0.0/27"
+          # used by: cicd_infra
+          network_security_group: ""
+          # used by: cicd_infra
+          route_table: ""
+      # Names of networks this one peers with.
+      # used by: cicd_infra
+      peer_with: ["vnet-iic-hub-01"]
+
+# Part 1 of the implementation steps: the pipeline platform, the project and its settings, the environments, the sign-in to Azure and the sel...
+devops:
+  # required; one of: github | gitlab | azure_devops; used by: cicd_infra
+  platform: "github"
+  # used by: cicd_infra
+  url: "https://github.com"
+  # Organization, group or project collection.
+  # used by: cicd_infra
+  organization: "improbability-cloud"
+  # used by: cicd_infra
+  project: "iic-azure-local"
+  # (since 5.5) 
+  # used by: cicd_infra
+  api_token: "keyvault://kv-iic-mgmt-01/devops-admin-token"
+  # (since 5.5) 
+  # used by: cicd_infra
+  subscription: "sub-iic-devops"
+  # (since 5.5) 
+  # used by: cicd_infra
+  resource_group: "rg-iic-runners-01"
+  # (since 5.5) 
+  # default: false; used by: cicd_infra
+  create_resource_group: false
+  # (since 5.5) 
+  # used by: cicd_infra
+  repository:
+    # Repository name.
+    # used by: cicd_infra
+    name: "iic-azurelocal"
+    # GitHub: owner/repo of a template repository.
+    # used by: cicd_infra
+    template: "AzureLocal/azurelocal-template"
+    # Repository visibility.
+    # one of: private | internal; default: "private"; used by: cicd_infra
+    visibility: "private"
+    # The protected default branch.
+    # default: "main"; used by: cicd_infra
+    default_branch: "main"
+  # (since 5.5) 
+  # used by: cicd_infra
+  settings:
+    # Approvals a pull request needs before it merges. 0 for a sandbox.
+    # default: 2; used by: cicd_infra
+    required_approvals: 2
+    # The team or group whose members review: a GitHub team slug (org/team), a GitLab group path or an Azure DevOps group name.
+    # used by: cicd_infra
+    reviewers: "improbability-cloud/platform-team"
+    # Allow squash merges only.
+    # default: true; used by: cicd_infra
+    squash_only: true
+    # Turn on secret scanning and push protection (GitHub), secret push rules (GitLab) or the secret file check (Azure DevOps).
+    # default: true; used by: cicd_infra
+    secret_scanning: true
+    # All conversations must be resolved before a merge.
+    # default: true; used by: cicd_infra
+    resolve_conversations: true
+    # Pipeline checks that must pass before a merge.
+    # used by: cicd_infra
+    required_status_checks: []
+  # (since 5.5) 
+  # used by: cicd_infra
+  environments:
+    # Environment name, for example azr-prod-us, or ztp-reinstall for the approval in front of the ZTP Boot stage.
+    # required; used by: cicd_infra
+    - name: "azr-prod-us"
+      # A named reviewer must approve each deployment.
+      # default: false; used by: cicd_infra
+      approval_required: true
+      # GitHub user names or org/team slugs, GitLab user names or group paths, Azure DevOps e-mail addresses.
+      # used by: cicd_infra
+      approvers: ["platform-lead"]
+      # Delay before a deployment starts (GitHub).
+      # default: 0; used by: cicd_infra
+      wait_minutes: 0
+      # The only branch that may deploy to the environment.
+      # default: "main"; used by: cicd_infra
+      deployment_branch: "main"
+  # (since 5.5) 
+  # used by: cicd_infra
+  authentication:
+    # oidc: a federated credential per repository and environment, no secret. client_secret: a secret, stored only in Key Vault (devops.authentic...
+    # one of: oidc | client_secret; default: "oidc"; used by: cicd_infra
+    method: "oidc"
+    # Key Vault reference where task 01 stores the generated client secret (method client_secret).
+    # used by: cicd_infra
+    client_secret: "keyvault://kv-example-01/client-secret"
+    # Roles the service principal gets on each subscription.
+    # used by: cicd_infra
+    roles: ["Contributor", "User Access Administrator"]
+    # Also add the Microsoft Graph application permission RoleManagement.ReadWrite.Directory and grant admin consent.
+    # default: false; used by: cicd_infra
+    grant_graph_role_management: false
+    # Register Microsoft.Compute and the EncryptionAtHost feature on each subscription.
+    # default: true; used by: cicd_infra
+    register_encryption_at_host: true
+  # (since 5.5) 
+  # used by: cicd_infra
+  runners:
+    # Name prefix of the VM or VMs, for example vm-tplabs-runner-lnx.
+    # required; used by: cicd_infra
+    - name: "vm-iic-runner-lnx"
+      # Operating system.
+      # required; one of: linux | windows; used by: cicd_infra
+      os_type: "linux"
+      # general: ARM, Arc, Terraform, Ansible and OS configuration. ztp: the azurelocal-ztp Boot, Bootstrap and Vouchers stages (Windows only).
+      # one of: general | ztp; default: "general"; used by: deployment, cicd_infra
+      purpose: "general"
+      # Number of VMs.
+      # default: 1; used by: cicd_infra
+      count: 1
+      # vm or vmss.
+      # one of: vm | vmss; default: "vm"; used by: cicd_infra
+      compute_type: "vm"
+      # VM size.
+      # used by: cicd_infra
+      size: "Standard_D2s_v5"
+      # Labels added to the defaults (azure, the OS, terraform, ansible, ztp).
+      # used by: cicd_infra
+      labels: []
+      # Key Vault reference to the secret the runner reads at boot: a PAT or App token (GitHub), the runner authentication token (GitLab), a PAT wi...
+      # used by: cicd_infra
+      registration_secret: "keyvault://kv-iic-mgmt-01/github-runner-token"
+      # The Azure Pipelines agent pool, or the GitHub runner group.
+      # used by: cicd_infra
+      pool: "azurelocal-ztp"
+      # Static private addresses, one per VM.
+      # used by: cicd_infra
+      private_ips: ["10.20.10.4"]
+      # The runner subnet inside runner_network.address_space.
+      # used by: cicd_infra
+      subnet:
+        # required; used by: cicd_infra
+        name: "snet-iic-runner-lnx-01"
+        # required; used by: cicd_infra
+        prefix: "10.20.10.0/26"
+      # Data disk for the ZTP media, images and vouchers. 512 or more for ztp.
+      # default: 0; used by: cicd_infra
+      data_disk_gb: 512
+  # (since 5.5) 
+  # used by: cicd_infra
+  runner_network:
+    # used by: cicd_infra
+    vnet_name: "vnet-iic-devops-01"
+    # used by: cicd_infra
+    address_space: ["10.20.10.0/24"]
+    # used by: cicd_infra
+    dns_servers: []
+    # Peering with the hub VNet.
+    # used by: cicd_infra
+    hub_peering:
+      # Peer the runner VNet with the hub.
+      # default: false; used by: cicd_infra
+      enabled: true
+      # Name of the hub in landing_zone.networks (its subscription and resource group give the VNet ID).
+      # used by: cicd_infra
+      hub_network: "vnet-iic-hub-01"
+      # Resource ID of the hub VNet.
+      # used by: cicd_infra
+      hub_vnet_id: ""
+      # Use the hub VPN or ExpressRoute gateway to reach the lab.
+      # default: true; used by: cicd_infra
+      use_remote_gateways: true
+      # Create the hub half of the peering.
+      # default: true; used by: cicd_infra
+      create_hub_side: true
+    # Lab networks the runners reach: management, storage, BMC.
+    # used by: cicd_infra
+    reachable_cidrs: ["192.0.2.0/24", "198.51.100.0/24"]
+    # TCP ports allowed outbound to the lab networks.
+    # used by: cicd_infra
+    reachable_tcp_ports: []
+    # The BMC networks.
+    # used by: cicd_infra
+    bmc_cidrs: ["198.51.100.0/24"]
+    # Ranges that may reach SSH or RDP on the runners.
+    # used by: cicd_infra
+    admin_source_cidrs: []
+  # (since 5.5) 
+  # used by: cicd_infra
+  runner_access:
+    # Resource groups where the runners are Contributor.
+    # used by: cicd_infra
+    resource_groups: ["rg-iic-azl-01"]
+    # Role Based Access Control Administrator on those resource groups, which the Azure Local deployment and ZTP need.
+    # default: true; used by: cicd_infra
+    rbac_administrator: true
+    # Limit the roles the runners may assign to these role definition GUIDs.
+    # used by: cicd_infra
+    rbac_delegable_role_ids: []
+    # Azure Connected Machine Resource Administrator on those resource groups, so jobs can run Arc Run Command on the machines.
+    # default: true; used by: cicd_infra
+    arc_run_command: true
+    # Vaults the runners read secrets from.
+    # used by: cicd_infra
+    key_vaults: ["kv-iic-mgmt-01"]
+  # used by: cicd_infra
+  runner:
+    # required; used by: cicd_infra
+    name: ""
+    # required; one of: vm | container_app | existing; used by: cicd_infra
+    type: "vm"
+    # used by: cicd_infra
+    subscription: ""
+    # used by: cicd_infra
+    resource_group: ""
+    # used by: cicd_infra
+    network: ""
+    # used by: cicd_infra
+    subnet: ""
+    # used by: cicd_infra
+    private_ip: "192.0.2.10"
+    # used by: cicd_infra
+    size: ""
+    # Runner tags or labels that jobs select.
+    # used by: cicd_infra
+    labels: []
+    # A Key Vault secret reference: keyvault://<vault>/<secret>.
+    # used by: cicd_infra
+    registration_token: "keyvault://kv-example-01/registration-token"
+  # used by: cicd_infra
+  state:
+    # (since 5.5) 
+    # used by: cicd_infra
+    subscription_id: "00000000-0000-0000-0000-000000000000"
+    # (since 5.5) 
+    # default: "cicd-infra.tfstate"; used by: cicd_infra
+    key: "cicd-infra.tfstate"
+    # used by: cicd_infra
+    storage_account: "stiictfstate01"
+    # used by: cicd_infra
+    container: "tfstate"
+    # used by: cicd_infra
+    resource_group: "rg-iic-mgmt-01"

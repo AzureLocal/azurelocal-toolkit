@@ -18,7 +18,7 @@
     The registry. Default: config/variables/schema/master-registry.yaml.
 
 .PARAMETER SchemaPath
-    The schema. Default: config/infrastructure/infrastructure.schema.json.
+    The generated schema. Default: config/variables/schema/infrastructure.schema.json.
 
 .PARAMETER OutputCsv
     The report. Default: config/variables/reports/infrastructure-vs-registry.csv.
@@ -32,7 +32,7 @@
 [CmdletBinding()]
 param(
     [string]$RegistryPath = (Join-Path $PSScriptRoot '../schema/master-registry.yaml'),
-    [string]$SchemaPath = (Join-Path $PSScriptRoot '../../infrastructure/infrastructure.schema.json'),
+    [string]$SchemaPath = (Join-Path $PSScriptRoot '../schema/infrastructure.schema.json'),
     [string]$OutputCsv = (Join-Path $PSScriptRoot '../reports/infrastructure-vs-registry.csv'),
     [switch]$FailOnGap
 )

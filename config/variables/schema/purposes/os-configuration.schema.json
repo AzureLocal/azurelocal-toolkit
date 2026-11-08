@@ -1,0 +1,1580 @@
+{
+  "$comment": "GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit: change the registry and run the generator.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://azurelocal.cloud/schemas/infrastructure/5/infrastructure.os-configuration.schema.json",
+  "title": "Azure Local infrastructure.yml (os_configuration)",
+  "description": "The part of infrastructure.yml that the purpose 'os_configuration' reads. Generated from master-registry.yaml; every key is also in the full schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "_metadata": {
+      "description": "About this file.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. The current version is 5.6.0.",
+          "type": "string",
+          "pattern": "^5\\.[0-9]+\\.[0-9]+$"
+        },
+        "scope": {
+          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity beyond local_admin) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key).",
+          "default": "full",
+          "enum": [
+            "full",
+            "ztp"
+          ]
+        },
+        "file_version": {
+          "description": "Your own version of this file.",
+          "type": "string"
+        },
+        "last_updated": {
+          "$ref": "#/$defs/date",
+          "description": "Date of the last change, YYYY-MM-DD."
+        },
+        "generated_by": {
+          "description": "The tool that wrote the file, for example azurelocal-trailwright 1.1.0. Empty when written by hand.",
+          "type": "string"
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    },
+    "scenario": {
+      "description": "The design choices. Every other section is read in the light of these: a choice makes its section required, and tools pick their path from here. All of them are required, so nothing is assumed.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "identity": {
+          "description": "active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity.local_identity). https://learn.microsoft.com/azure/azure-local/deploy/deployment-local-identity-with-key-vault",
+          "enum": [
+            "active_directory",
+            "local_identity"
+          ]
+        },
+        "storage_architecture": {
+          "description": "s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both.",
+          "enum": [
+            "s2d",
+            "san",
+            "hybrid"
+          ]
+        },
+        "cloud": {
+          "description": "Azure public cloud or Azure Government.",
+          "enum": [
+            "public",
+            "government"
+          ]
+        },
+        "outbound_path": {
+          "description": "How the machines reach Azure. Paths with a proxy need networking.outbound.proxy; paths with Arc gateway need networking.outbound.arc_gateway; private_path needs networking.outbound.private_path.",
+          "enum": [
+            "direct",
+            "proxy",
+            "arc_gateway",
+            "proxy_arc_gateway",
+            "private_path"
+          ]
+        },
+        "os_install": {
+          "description": "iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp automates (needs provisioning.simplified, and on every node a serial number, a BMC address and the management MAC: management.mac_address, or from 5.2 a mac_address on every network_adapters port with role management and at least one port with role provisioning).",
+          "enum": [
+            "iso",
+            "simplified"
+          ]
+        },
+        "environment_class": {
+          "description": "What kind of environment this is. It picks the remote management security profile of the OS configuration run (WinRM, RDP and ICMP scope on the nodes, HTTP or HTTPS, the TrustedHosts policy of the machine running the automation, the one-time Arc bootstrap): see docs/os-configuration-and-arm-deployment.md and config/remoting-profiles.json. lab and test are relaxed with the wildcard (TrustedHosts '*', sources Any, HTTP 5985 allowed) and a warning says so; dev, production and dmz are strict. Optional. Missing means production (fail closed); another value is rejected. (since 5.6)",
+          "default": "production",
+          "enum": [
+            "lab",
+            "test",
+            "dev",
+            "production",
+            "dmz"
+          ]
+        }
+      }
+    },
+    "azure": {
+      "description": "The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless provisioning.simplified says otherwise) the site and edge machines.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tenant_id": {
+          "$ref": "#/$defs/guid"
+        },
+        "location": {
+          "$ref": "#/$defs/azure_region",
+          "description": "Azure region, for example eastus. Simplified provisioning works only in eastus in the preview."
+        },
+        "subscription_id": {
+          "$ref": "#/$defs/guid"
+        },
+        "resource_group": {
+          "$ref": "#/$defs/resource_group"
+        }
+      }
+    },
+    "cluster": {
+      "description": "The Azure Local instance (the cluster deployment).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/netbios_name",
+          "description": "Cluster name: a NetBIOS name of up to 15 characters. ARM parameter clusterName."
+        }
+      }
+    },
+    "nodes": {
+      "description": "The machines, one entry each. ARM physicalNodesSettings and arcNodeResourceIds. Up to 16 with Storage Spaces Direct, up to 64 disaggregated (the validator checks which applies).",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/node",
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/netbios_name",
+            "description": "Host name: up to 15 characters. Also the edge machine name and, for an ISO install, the Arc machine name. With simplified provisioning the Arc machine name is arc_machine_name, which defaults to this."
+          },
+          "management": {
+            "description": "The machine's management port and address (schema 5.0 and 5.1). From 5.2, network_adapters describes it instead: the port with role management and an ip_assignment other than none. When both are given they must agree; prefer network_adapters.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "ip_address": {
+                "$ref": "#/$defs/ipv4",
+                "description": "Management address. ARM physicalNodesSettings[].ipv4Address. How it gets onto the management port before deployment is networking.management.ip_assignment: set on the port (static), reserved in DHCP for mac_address (dhcp), or already there (preconfigured). With network_adapters it is the management port's ip_address."
+              },
+              "mac_address": {
+                "$ref": "#/$defs/mac",
+                "description": "MAC of the management port. Provisioning finds and targets the port by it: simplified provisioning names the port by this MAC when it sets the static address (edge machine networkAdapters[].macAddress), and node preparation finds the adapter by it. With ip_assignment dhcp, reserve ip_address for this MAC. Required with simplified provisioning."
+              },
+              "adapter_name": {
+                "description": "Name of the management port in the installed OS, for example 'SLOT 3 Port 1'. Optional: mac_address identifies the port. Simplified provisioning also sends it with the port's settings; leave it out unless you know the name the OS gives the port.",
+                "type": "string"
+              }
+            }
+          },
+          "network_adapters": {
+            "description": "Every physical network port of the machine (schema 5.2): name, MAC, roles and how each gets its host address. Exactly one port owns the management address: role management and an ip_assignment other than none. Intents name ports by these names. List them on every node or on none.",
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "$ref": "#/$defs/network_adapter"
+            }
+          },
+          "storage_ips": {
+            "description": "Storage address on each storage network, in networking.storage.networks order, when networking.storage.auto_ip is false.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ipv4"
+            }
+          },
+          "arc_machine_name": {
+            "description": "Name of the machine's Arc resource (Microsoft.HybridCompute/machines). Default: name. Simplified provisioning sets it when it claims the machine (edge machine arcMachineResourceId); without it the service names the Arc machine ROE1-<id>, and an Arc machine can't be renamed. The deployment uses it in ARM arcNodeResourceIds. An ISO install registers the Arc machine under the host name, so leave it out there. 1-54 letters, digits, '-', '_' and '.', not ending in '.'.",
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]{0,53}[A-Za-z0-9_-]$"
+          },
+          "arc_resource_name": {
+            "description": "Deprecated: use arc_machine_name. Read as arc_machine_name when that isn't set.",
+            "type": "string",
+            "deprecated": true
+          },
+          "bios": {
+            "$ref": "#/$defs/bios_settings",
+            "description": "BIOS attributes for this machine in their FINAL state, merged over hardware.bios (a key here wins). See hardware.bios."
+          },
+          "bios_during_provisioning": {
+            "$ref": "#/$defs/bios_settings",
+            "description": "Schema 5.3. Temporary BIOS attributes for this machine's OS install only, merged over hardware.bios_during_provisioning (a key here wins); during-provisioning values win over bios. azurelocal-ztp sets each key back to its bios value in its Restore stage. See hardware.bios_during_provisioning."
+          },
+          "maintenance_address": {
+            "$ref": "#/$defs/ipv4",
+            "description": "Schema 5.3. Simplified provisioning: the address the machine's maintenance environment answers on (its Configurator service, TCP 20001), when it is known: a DHCP reservation, or an address set at the console. azurelocal-ztp's Device stage then talks to it directly. Without it, the Device stage finds the maintenance environment by MAC, scanning networking.management.provisioning_dhcp_range."
+          },
+          "san": {
+            "$ref": "#/$defs/node_san",
+            "description": "Schema 5.3. This machine's SAN connections: its Fibre Channel HBAs and their WWPNs (storage.san.type fibre_channel), or its iSCSI initiator IQN (storage.san.type iscsi; the iSCSI ports' addresses are on network_adapters with role iscsi:a and iscsi:b). Needed on every machine when storage.san.type is set.",
+            "properties": {
+              "hbas": {
+                "description": "The host bus adapters in this machine that reach the SAN: Fibre Channel HBAs, and from 5.4 iSCSI offload adapters. azurelocal-ztp reads their slots (schema 5.4): while the OS installs it turns those PCIe slots off in the BIOS, so the maintenance environment can't install onto a SAN LUN, and turns them on again afterwards (provisioning.simplified.isolate_san_adapters).",
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "ports": {
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "properties": {
+                          "wwpn": {
+                            "$ref": "#/$defs/wwpn"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "hardware": {
+      "description": "What every machine is. The layout is the same on every machine.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vendor": {
+          "description": "OEM, for example Dell, HPE, Lenovo or DataON. ZTP picks config/oem/<vendor>.json from it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "description": "Model, for example AX-760. Used to select the SBE.",
+          "type": "string",
+          "minLength": 1
+        },
+        "sbe": {
+          "description": "Solution Builder Extension. The version is the one validated with provisioning.os_version. ARM sbeVersion, sbeFamily, sbePublisher, sbeManifestSource and sbeManifestCreationDate.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "publisher": {
+              "type": "string"
+            },
+            "family": {
+              "type": "string"
+            },
+            "version": {
+              "type": "string"
+            },
+            "bundle_path": {
+              "description": "Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml. Used to prepare machines before Validate.",
+              "type": "string"
+            },
+            "delivery": {
+              "description": "Schema 5.4.2. How the SBE package reaches the nodes. It lands in each node's C:\\SBE during OS configuration. winrm_copy: the toolkit copies the files over WinRM (a PSSession, TCP 5985) from the host it runs on, so that host must reach the nodes' management subnet (the operator host if it can, or a runner that can); needs the nodes' local administrator as -Credential. node_pull: each node downloads the files itself from node_pull_url, a read-only HTTPS or SMB location that you serve from a host the nodes can reach; the toolkit checks the SHA-256 on the node after the download. skip (default, also when the key is absent): the toolkit does not deliver the package, the Sbe step reports it as not delivered, and no other step is affected. There is no Azure storage account route: Azure Arc Run Command cannot carry a file.",
+              "type": "string",
+              "default": "skip",
+              "enum": [
+                "winrm_copy",
+                "node_pull",
+                "skip"
+              ]
+            },
+            "node_pull_url": {
+              "description": "Schema 5.4.2. The folder the nodes pull the SBE files from (delivery node_pull). It is an address the NODES can reach, not necessarily the operator host: https://host/sbe/dell (the three files are fetched by name from it) or a UNC folder \\\\server\\share\\sbe (the node reads it as itself, so the share must allow it). Read-only, and it carries no credential: no user name, password, token or query string in the address (rule AZL-030).",
+              "type": "string"
+            }
+          }
+        },
+        "network_cards": {
+          "description": "The physical network cards in every machine, and what each port is for. A summary of the hardware; from 5.2 each node's ports, with MACs and addresses, are nodes[].network_adapters.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "make": {
+                "type": "string"
+              },
+              "model": {
+                "type": "string"
+              },
+              "ports": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "description": "Adapter name in the OS, as the intents use it.",
+                      "type": "string"
+                    },
+                    "speed_gbps": {
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "rdma": {
+                      "enum": [
+                        "none",
+                        "iwarp",
+                        "roce",
+                        "roce_v2"
+                      ]
+                    },
+                    "role": {
+                      "description": "unused, intent:<intent name>, cluster:a, cluster:b, iscsi:a or iscsi:b.",
+                      "type": "string",
+                      "pattern": "^(unused|intent:.+|cluster:[ab]|iscsi:[ab])$"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "networking": {
+      "description": "The on-premises networks.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "management": {
+          "description": "The management network and the infrastructure IP pool. DNS servers can't be changed after deployment.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "subnet": {
+              "$ref": "#/$defs/cidr",
+              "description": "CIDR. ARM subnetMask is derived from it."
+            },
+            "gateway": {
+              "$ref": "#/$defs/ipv4",
+              "description": "The one default gateway. ARM defaultGateway."
+            },
+            "vlan_id": {
+              "description": "0 means untagged. Can't be changed after deployment. The VLAN the host tags on the management port: simplified provisioning sets it on that port (edge machine networkAdapters[].vlanId). With nodes[].network_adapters the management port's host VLAN (0 when its vlan_mode is access) must match it.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4094
+            },
+            "dns_servers": {
+              "description": "ARM dnsServers.",
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/ipv4"
+              }
+            },
+            "ip_assignment": {
+              "description": "Deprecated in 5.2: set each port's ip_assignment in nodes[].network_adapters. Read when a node has no network_adapters, and must agree with them when both are given (static = static, dhcp = dhcp_reservation or dhcp, preconfigured = preconfigured). How each machine's management address (nodes[].management.ip_address) is set before deployment, on the management port (nodes[].management.mac_address). static (default): the address, the subnet mask, the gateway, the DNS servers and vlan_id are set on that port. Simplified provisioning sets them at the OS install (edge machine siteDetails.deviceConfiguration.network.networkAdapters[], ipAssignmentType Manual, keyed by the MAC); for an ISO install the operator or the toolkit sets them. dhcp: the port stays on DHCP, so reserve each ip_address in DHCP for its MAC. preconfigured: the port is already configured, and the tools don't change it. Not the same as use_dhcp, which is the deployment's ARM useDhcp.",
+              "type": "string",
+              "deprecated": true,
+              "default": "static",
+              "enum": [
+                "static",
+                "dhcp",
+                "preconfigured"
+              ]
+            },
+            "use_dhcp": {
+              "description": "ARM useDhcp: the deployment takes the host and cluster addresses from DHCP instead of static addresses and the infrastructure_pool. Default false. A deployment setting, not how each machine's management port gets its address before deployment: that is ip_assignment.",
+              "type": "boolean"
+            },
+            "site_ip_range": {
+              "description": "Simplified provisioning: the address range of the site's network setting (Microsoft.Edge/configurations/networkConfigurations ipv4.addressRange) when the management addresses are static. Default: the lowest to the highest static management address. Inside the management subnet, and holding every static management address.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "start": {
+                  "$ref": "#/$defs/ipv4"
+                },
+                "end": {
+                  "$ref": "#/$defs/ipv4"
+                }
+              }
+            },
+            "provisioning_network": {
+              "description": "Simplified provisioning: how the maintenance environment gets the address it reaches Azure with, on the ports with role provisioning, before the machine is claimed. dhcp (default): a DHCP server answers on that port's network. When the management port is one of those ports, the management network has DHCP (Mode B for a static management port); when it isn't, it is Mode C (Static without management DHCP). static: no DHCP there. A static management port then needs another port with role provisioning and ip_assignment dhcp or dhcp_reservation, or validation stops (AZL-024): Learn documents only the Configurator app for a static maintenance address, and whether the bootable image can carry a preset address is an open research item, so tools don't set it.",
+              "default": "dhcp",
+              "enum": [
+                "dhcp",
+                "static"
+              ]
+            },
+            "static_method": {
+              "description": "Schema 5.3. Simplified provisioning, and only when the management ip_assignment is static: who sets each machine's static management address. device (default): azurelocal-ztp's Device stage sets it on the management port, found by its MAC, through the maintenance environment's Configurator service before the machine is claimed. The Arc site's network setting is then Automatic and the claim carries no Manual adapter. site: the older path. The site's network setting is Manual with an address range (site_ip_range) and Microsoft's OS install assigns the address. Microsoft ignores the MAC there and uses the first ready port, which was observed live on Dell AX-760, so use it only when the first ready port is the management port.",
+              "default": "device",
+              "enum": [
+                "device",
+                "site"
+              ]
+            },
+            "provisioning_dhcp_range": {
+              "description": "Schema 5.3. Simplified provisioning: the DHCP range on the provisioning network (the one the maintenance environment gets its address on). The Device stage scans it (TCP 20001) to find each machine's maintenance environment by MAC when nodes[].maintenance_address isn't set. Inside the management subnet, start at or below end.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "start": {
+                  "$ref": "#/$defs/ipv4"
+                },
+                "end": {
+                  "$ref": "#/$defs/ipv4"
+                }
+              }
+            },
+            "infrastructure_pool": {
+              "description": "At least six contiguous addresses in the management subnet, outside the machines' addresses. ARM startingIPAddress and endingIPAddress.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "start": {
+                  "$ref": "#/$defs/ipv4"
+                },
+                "end": {
+                  "$ref": "#/$defs/ipv4"
+                }
+              }
+            }
+          }
+        },
+        "oob": {
+          "description": "The out-of-band network of the BMCs.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "subnet": {
+              "$ref": "#/$defs/cidr"
+            }
+          }
+        },
+        "ntp_servers": {
+          "description": "Time sources, as host names or addresses.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "intents": {
+          "description": "Network ATC intents. ARM intentList. https://learn.microsoft.com/azure/azure-local/concepts/host-network-requirements",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/intent"
+          }
+        },
+        "storage": {
+          "description": "Storage networks (Storage Spaces Direct). ARM storageNetworkList, enableStorageAutoIp and storageConnectivitySwitchless.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "auto_ip": {
+              "description": "Network ATC assigns the storage addresses. When false, each node lists its storage_ips. Default true.",
+              "type": "boolean"
+            },
+            "switchless_links": {
+              "description": "Switchless only: one or two links between each pair of machines.",
+              "enum": [
+                "single",
+                "dual"
+              ]
+            },
+            "tor_switches": {
+              "description": "Top-of-rack switches.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2
+            },
+            "layout": {
+              "description": "dedicated: storage on its own ports. converged: storage shares ports with other traffic.",
+              "enum": [
+                "dedicated",
+                "converged"
+              ]
+            },
+            "networks": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "description": "For example StorageNetwork1.",
+                    "type": "string"
+                  },
+                  "adapter": {
+                    "description": "Adapter name in the OS.",
+                    "type": "string"
+                  },
+                  "vlan_id": {
+                    "description": "Network ATC defaults are 711 and 712.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 4094
+                  },
+                  "subnet": {
+                    "$ref": "#/$defs/cidr",
+                    "description": "Needed when auto_ip is false."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "cluster_networks": {
+          "description": "Disaggregated (SAN) only: the cluster networks on standalone ports, fabric A and B. ARM sanNetworkList.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "adapter": {
+                "type": "string"
+              },
+              "vlan_id": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4094
+              },
+              "subnet": {
+                "$ref": "#/$defs/cidr"
+              },
+              "purpose": {
+                "description": "What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote management security profile adds its subnet to the allowed sources of dev and production (a candidate, not a trust: prefer listing the controller addresses in os_configuration.remoting.allowed_source_cidrs). automation, compute, storage and other have no effect on remote management.",
+                "enum": [
+                  "management",
+                  "oob",
+                  "automation",
+                  "compute",
+                  "storage",
+                  "other"
+                ]
+              }
+            }
+          }
+        },
+        "vlans": {
+          "description": "Every VLAN in the design, by name.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "id": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4094
+              },
+              "subnet": {
+                "$ref": "#/$defs/cidr"
+              },
+              "purpose": {
+                "description": "Free text. The values management, oob, automation, compute, storage and other (any case) are the purpose marker: management and oob make the subnet a candidate source for the remote management security profile of dev and production. Any other text has no effect.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        "logical_networks": {
+          "description": "Arc VM logical networks created after deployment.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/logical_network",
+            "properties": {
+              "purpose": {
+                "description": "What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote management security profile adds its subnet to the allowed sources of dev and production (a candidate, not a trust: prefer listing the controller addresses in os_configuration.remoting.allowed_source_cidrs). automation, compute, storage and other have no effect on remote management.",
+                "enum": [
+                  "management",
+                  "oob",
+                  "automation",
+                  "compute",
+                  "storage",
+                  "other"
+                ]
+              },
+              "address_prefix": {
+                "$ref": "#/$defs/cidr"
+              }
+            }
+          }
+        },
+        "outbound": {
+          "description": "Details of scenario.outbound_path.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "arc_gateway": {
+              "description": "The Arc gateway resource, in the same subscription as the machines.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "resource_group": {
+                  "$ref": "#/$defs/resource_group"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "identity": {
+      "description": "Accounts and the identity provider (scenario.identity).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "local_admin": {
+          "description": "The deployment's local administrator on every machine. Not the built-in Administrator: the deployment renames it. ARM localAdminUserName and localAdminPassword.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "username": {
+              "type": "string",
+              "minLength": 1
+            },
+            "password": {
+              "$ref": "#/$defs/kv_ref",
+              "description": "At least 14 characters with lowercase, uppercase, a digit and a special character."
+            }
+          }
+        },
+        "active_directory": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "domain_fqdn": {
+              "description": "ARM domainFqdn.",
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$"
+            },
+            "netbios_name": {
+              "$ref": "#/$defs/netbios_name"
+            },
+            "ou_path": {
+              "description": "Distinguished name of the dedicated OU. ARM adouPath. https://learn.microsoft.com/azure/azure-local/deploy/deployment-prep-active-directory",
+              "type": "string",
+              "pattern": "^[Oo][Uu]=.+,[Dd][Cc]=.+$"
+            },
+            "lcm_user": {
+              "description": "The LCM deployment user, created in the OU by the AD preparation module. ARM AzureStackLCMAdminUsername and AzureStackLCMAdminPassword.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "username": {
+                  "description": "Name only, no domain. Up to 20 characters.",
+                  "type": "string",
+                  "pattern": "^[^@\\\\]+$",
+                  "minLength": 1,
+                  "maxLength": 20
+                },
+                "password": {
+                  "$ref": "#/$defs/kv_ref",
+                  "description": "At least 14 characters with lowercase, uppercase, a digit and a special character."
+                }
+              }
+            },
+            "domain_join_account": {
+              "description": "Optional override. The OS configuration run joins each machine to the domain (Add-Computer) before the cluster validation and deployment with the LCM user (lcm_user), which Microsoft's Active Directory preparation gives the right to create and delete computer objects in the dedicated OU and which is the account used for domain-join actions. Set this only when your site joins machines with another account; it needs the same rights on ou_path. (since 5.5)",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "username": {
+                  "description": "The join account: a name (svc-azl-join, qualified with netbios_name), NETBIOS\\name or name@domain. (since 5.5)",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "password": {
+                  "$ref": "#/$defs/kv_ref",
+                  "description": "A Key Vault secret reference. The toolkit reads it on the machine that runs the OS configuration, passes it to the node as a secret and never writes it to disk, a log, the event feed or the report. (since 5.5)"
+                }
+              }
+            },
+            "local_admin_members": {
+              "description": "Domain principals the OS configuration adds to the local Administrators group of every machine after the join and the restart, so a domain account can be used for remoting and log access (a domain account is not a local administrator by default; the deployment adds the LCM user itself later). Names without the domain; users and groups. Default: the security_groups entries whose purpose says they administer the instance, and the LCM user. (since 5.5)",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "join_options": {
+              "description": "How the OS configuration run joins the machines to the domain. Optional. (since 5.5)",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "rename_after_join": {
+                  "description": "Fixed to false: the machine gets its final name before it joins (the Hostname step runs first) and is never renamed after. (since 5.5)",
+                  "type": "boolean",
+                  "default": false,
+                  "const": false
+                },
+                "allow_ou_move": {
+                  "description": "true: before the deployment, a machine already joined to this domain but sitting in another OU is moved into ou_path. false (default): it is reported as blocked and left where it is. Microsoft does not support moving the computer objects to another OU after the deployment, so a machine that is already part of a cluster is never moved, whatever this says. (since 5.5)",
+                  "type": "boolean",
+                  "default": false
+                }
+              }
+            },
+            "domain_controllers": {
+              "description": "Addresses of domain controllers, for pre-checks and for the domain join. They must be the DNS servers of the management port (rule AZL-052): the machines find the domain through them.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ipv4"
+              }
+            },
+            "security_groups": {
+              "description": "Groups created in the OU for administration of the instance.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "purpose": {
+                    "type": "string"
+                  },
+                  "local_groups": {
+                    "description": "Schema 5.6.1. The local groups of every machine this AD group is added to after the deployment (for example Administrators, Remote Management Users). Empty or missing: the group is not added to any local group (WAC groups are applied on the WAC server only). Read by the post-deployment task that applies the security groups and by the Ansible AD preparation role.",
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "storage": {
+      "description": "Volumes and the SAN.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "san": {
+          "description": "The external SAN of a disaggregated (san) or hybrid deployment. From 5.3 it also records the array, the Fibre Channel fabrics and target WWPNs or the iSCSI targets, which the SAN deployment and zoning work read; each machine's own HBAs or initiator are nodes[].san.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "description": "fibre_channel needs storage.san.fibre_channel; iscsi needs storage.san.iscsi.",
+              "enum": [
+                "fibre_channel",
+                "iscsi"
+              ]
+            },
+            "array": {
+              "description": "Schema 5.3. The storage array that presents the LUNs.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "vendor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "model": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            },
+            "infra_volume_lun_id": {
+              "description": "LUN of the infrastructure volume (250 GB minimum). ARM infraVolLunId.",
+              "type": "string"
+            },
+            "performance_history_lun_id": {
+              "description": "LUN of the performance history volume (20 GB minimum). ARM infraPerfLunId.",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "provisioning": {
+      "description": "How the OS gets onto the machines (scenario.os_install), and the OS version.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "os_version": {
+          "description": "The solution version the machines run: latest, latest-preview, or a version such as 12.2610.1004.50. Pin a version. Simplified provisioning installs it, and the SBE must be validated with it.",
+          "type": "string",
+          "pattern": "^(latest|latest-preview|12\\.[0-9]{4}\\.[0-9]+\\.[0-9]+)$"
+        }
+      }
+    },
+    "os_configuration": {
+      "description": "How the toolkit's OS configuration run (Invoke-AzureLocalOsConfiguration.ps1) treats the machines after the OS is installed, whichever way it was installed. Optional; every key has a default. (since 5.4.3)",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "clear_storage": {
+          "description": "Wipe the leftover local storage (storage pools, virtual disks and the data on non-boot, non-system local disks) of every machine in the OS configuration run's Apply mode, so a re-used machine starts clean. Boot, system, SAN (Fibre Channel, iSCSI) and USB disks are never touched. The Plan mode lists the disks per machine and wipes nothing; in a pipeline that list is what the approval gate shows. Default false: leftover storage is reported as blocking, and nothing is wiped. (since 5.4.3)",
+          "type": "boolean",
+          "default": false
+        },
+        "network": {
+          "description": "How a guarded network change is confirmed (since 5.4.4): the management address, gateway, DNS, VLAN, the remote-management firewall rules, DHCP off on the other ports and disabled adapters are staged on the node, which applies and checks them and reverts by itself unless the orchestrator confirms through a new session on the new address.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "confirm_minutes": {
+              "description": "The window for the orchestrator's confirmation. With no confirmation inside it the node restores its snapshot. The run setting networkRollbackMinutes overrides it. (since 5.4.4)",
+              "type": "integer",
+              "default": 10,
+              "minimum": 1,
+              "maximum": 120
+            },
+            "stable_seconds": {
+              "description": "How long the node's own checks must stay green before it waits for the confirmation. The run setting networkStableSeconds overrides it. (since 5.4.4)",
+              "type": "integer",
+              "default": 60,
+              "minimum": 0,
+              "maximum": 600
+            }
+          }
+        },
+        "remoting": {
+          "description": "How the OS configuration reaches the nodes and how their remote management (WinRM, RDP, ICMP) is secured. The environment class (scenario.environment_class) picks the profile; these keys refine it. The baseline holds in every class and no key changes it: AllowUnencrypted false, Basic and CredSSP off, no SkipCACheck or SkipCNCheck, TLS 1.2 or higher. transport, bootstrap_transport and allowed_source_cidrs are since 5.4.4; the other keys are since 5.6.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "transport": {
+              "description": "winrm (HTTP, 5985), winrm_https (5986, a certificate on the node) or arc (Azure Arc Run Command: the exception for sites with no route to the nodes; not recommended for network changes). The command line's -Transport WinRM or ArcRunCommand overrides it.",
+              "default": "winrm",
+              "enum": [
+                "winrm",
+                "winrm_https",
+                "arc"
+              ]
+            },
+            "bootstrap_transport": {
+              "description": "How a node whose WinRM firewall rule blocks this host is opened once, without touching the node by hand. none: such a node fails with the diagnosis. arc: Azure Arc Run Command (outbound 443 only; the wait is capped, default 3 minutes, then the route fails cleanly). smb: TCP 445 from a Windows orchestrator to the node, the local Administrator, one small service run once with sc.exe; Windows orchestrator only. auto: the allowed routes in the order smb, arc. Each runs one small script that starts WinRM, creates the listener if none exists and sets the WinRM rules' scope, then everything else runs over WinRM. production and dmz also need the pipeline approval (-ApprovedBootstrap). The environment class decides whether a bootstrap is allowed at all.",
+              "default": "none",
+              "enum": [
+                "none",
+                "arc",
+                "smb",
+                "auto"
+              ]
+            },
+            "allowed_source_cidrs": {
+              "description": "The runner and jump server addresses, as the node sees them (after NAT), allowed to use WinRM, RDP and ICMP on the nodes, in addition to the management and out-of-band networks. IPv4 or IPv6 CIDR; /0 to /8 is refused, dev and production refuse anything wider than /24 (/64 for IPv6), dmz takes /32 or /128 only. The dmz class does not add the management network.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "allow_any_source": {
+              "description": "true: the nodes' firewall accepts WinRM, RDP and ICMP from any source (and TrustedHosts is '*' on the machine running the automation). Honoured only in the classes lab and test, where it is implied unless you set false; it is an error in dev, production and dmz.",
+              "type": "boolean"
+            },
+            "trusted_hosts": {
+              "description": "The TrustedHosts policy on the machine running the automation. auto: the class decides. exact: only the nodes' addresses. wildcard: '*', lab and test only. The previous value is restored after the run.",
+              "default": "auto",
+              "enum": [
+                "auto",
+                "exact",
+                "wildcard"
+              ]
+            },
+            "use_https": {
+              "description": "auto: the class decides (HTTP in lab and test; HTTPS in dev, production and dmz). true: WinRM over HTTPS (5986). false: HTTP only, which production and dmz refuse and dev warns about.",
+              "default": "auto",
+              "enum": [
+                "auto",
+                true,
+                false
+              ]
+            },
+            "isolation_confirmed": {
+              "description": "true: you confirm the network of the nodes has no route to production. Only a statement in lab and test (it changes the warning text, not the behaviour); it is not allowed in dev, production or dmz, where Any is never accepted.",
+              "type": "boolean"
+            },
+            "certificate": {
+              "description": "The server certificate for the HTTPS listener: the 40-hex thumbprint of a certificate already in the node's LocalMachine\\My store, or keyvault://<vault>/<secret> of a secret that holds the certificate as a base64 PFX without a password (a Key Vault certificate's secret). Empty: each node gets a self-signed Server Authentication certificate with its DNS names and management IP as subject alternative names, as the pre-join bootstrap only (not allowed in dmz).",
+              "type": "string"
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "ipv4": {
+      "type": "string",
+      "pattern": "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
+    },
+    "cidr": {
+      "type": "string",
+      "pattern": "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])$"
+    },
+    "mac": {
+      "description": "AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF.",
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$"
+    },
+    "guid": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "azure_region": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]{2,30}$"
+    },
+    "resource_group": {
+      "type": "string",
+      "pattern": "^[-\\w\\._\\(\\)]{1,90}$"
+    },
+    "key_vault_name": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]$"
+    },
+    "storage_account_name": {
+      "type": "string",
+      "pattern": "^[a-z0-9]{3,24}$"
+    },
+    "netbios_name": {
+      "description": "Up to 15 letters, digits and hyphens.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,14}$"
+    },
+    "kv_ref": {
+      "description": "A Key Vault secret reference: keyvault://<vault>/<secret>. The vault must be listed in key_vaults.",
+      "type": "string",
+      "pattern": "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+    },
+    "bmc_credentials": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "username": {
+          "description": "A reference to the secret holding the user name, or the user name itself.",
+          "type": "string",
+          "minLength": 1
+        },
+        "password": {
+          "$ref": "#/$defs/kv_ref"
+        },
+        "rfs_write_attribute": {
+          "description": "Schema 5.4. azurelocal-ztp, Boot stage: also set the iDRAC Remote File Share attribute RFS.<n>.WriteProtected to Read Write before it inserts the virtual media. iDRAC 7.30 rejects WriteProtected=false in InsertMedia, and the maintenance environment cannot write its voucher to a read-only drive. Default: true for Dell (azurelocal-ztp config/oem/dell.json, bmc.rfsWriteAttribute), false for the other vendors, whose BMCs have no such attribute. Set it when your BMC differs from its vendor's usual behaviour.",
+          "type": "boolean"
+        },
+        "verify_certificate": {
+          "description": "Schema 5.4. Check the BMCs' TLS certificates. Default false: BMCs ship a self-signed certificate, so azurelocal-ztp accepts it. Set true once the BMCs carry a certificate that the management host trusts.",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "node": {
+      "description": "One machine. Describe its management port either with management (schema 5.0) or, from 5.2, with network_adapters, which lists every port and derives management from the port that owns the management address.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Host name: up to 15 characters. Also the edge machine name and, for an ISO install, the Arc machine name. With simplified provisioning the Arc machine name is arc_machine_name, which defaults to this.",
+          "$ref": "#/$defs/netbios_name"
+        },
+        "management": {
+          "description": "The machine's management port and address (schema 5.0 and 5.1). From 5.2, network_adapters describes it instead: the port with role management and an ip_assignment other than none. When both are given they must agree; prefer network_adapters.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ip_address": {
+              "description": "Management address. ARM physicalNodesSettings[].ipv4Address. How it gets onto the management port before deployment is networking.management.ip_assignment: set on the port (static), reserved in DHCP for mac_address (dhcp), or already there (preconfigured). With network_adapters it is the management port's ip_address.",
+              "$ref": "#/$defs/ipv4"
+            },
+            "mac_address": {
+              "description": "MAC of the management port. Provisioning finds and targets the port by it: simplified provisioning names the port by this MAC when it sets the static address (edge machine networkAdapters[].macAddress), and node preparation finds the adapter by it. With ip_assignment dhcp, reserve ip_address for this MAC. Required with simplified provisioning.",
+              "$ref": "#/$defs/mac"
+            },
+            "adapter_name": {
+              "description": "Name of the management port in the installed OS, for example 'SLOT 3 Port 1'. Optional: mac_address identifies the port. Simplified provisioning also sends it with the port's settings; leave it out unless you know the name the OS gives the port.",
+              "type": "string"
+            }
+          }
+        },
+        "network_adapters": {
+          "description": "Every physical network port of the machine (schema 5.2): name, MAC, roles and how each gets its host address. Exactly one port owns the management address: role management and an ip_assignment other than none. Intents name ports by these names. List them on every node or on none.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/network_adapter"
+          }
+        },
+        "serial_number": {
+          "description": "Serial number (Dell service tag). Maps each simplified-provisioning voucher to its machine.",
+          "type": "string",
+          "minLength": 1
+        },
+        "bmc": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ip_address": {
+              "$ref": "#/$defs/ipv4"
+            },
+            "type": {
+              "enum": [
+                "idrac",
+                "ilo",
+                "xcc",
+                "other"
+              ]
+            },
+            "username": {
+              "type": "string",
+              "minLength": 1
+            },
+            "password": {
+              "$ref": "#/$defs/kv_ref"
+            }
+          }
+        },
+        "rack": {
+          "type": "string"
+        },
+        "rack_position": {
+          "type": "string"
+        },
+        "zone": {
+          "description": "Rack-aware: the local availability zone. ARM localAvailabilityZones.",
+          "type": "string"
+        },
+        "storage_ips": {
+          "description": "Storage address on each storage network, in networking.storage.networks order, when networking.storage.auto_ip is false.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ipv4"
+          }
+        },
+        "arc_machine_name": {
+          "description": "Name of the machine's Arc resource (Microsoft.HybridCompute/machines). Default: name. Simplified provisioning sets it when it claims the machine (edge machine arcMachineResourceId); without it the service names the Arc machine ROE1-<id>, and an Arc machine can't be renamed. The deployment uses it in ARM arcNodeResourceIds. An ISO install registers the Arc machine under the host name, so leave it out there. 1-54 letters, digits, '-', '_' and '.', not ending in '.'.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{0,53}[A-Za-z0-9_-]$"
+        },
+        "arc_resource_name": {
+          "description": "Deprecated: use arc_machine_name. Read as arc_machine_name when that isn't set.",
+          "type": "string",
+          "deprecated": true
+        },
+        "bios": {
+          "description": "BIOS attributes for this machine in their FINAL state, merged over hardware.bios (a key here wins). See hardware.bios.",
+          "$ref": "#/$defs/bios_settings"
+        },
+        "bios_during_provisioning": {
+          "description": "Schema 5.3. Temporary BIOS attributes for this machine's OS install only, merged over hardware.bios_during_provisioning (a key here wins); during-provisioning values win over bios. azurelocal-ztp sets each key back to its bios value in its Restore stage. See hardware.bios_during_provisioning.",
+          "$ref": "#/$defs/bios_settings"
+        },
+        "maintenance_address": {
+          "description": "Schema 5.3. Simplified provisioning: the address the machine's maintenance environment answers on (its Configurator service, TCP 20001), when it is known: a DHCP reservation, or an address set at the console. azurelocal-ztp's Device stage then talks to it directly. Without it, the Device stage finds the maintenance environment by MAC, scanning networking.management.provisioning_dhcp_range.",
+          "$ref": "#/$defs/ipv4"
+        },
+        "san": {
+          "description": "Schema 5.3. This machine's SAN connections: its Fibre Channel HBAs and their WWPNs (storage.san.type fibre_channel), or its iSCSI initiator IQN (storage.san.type iscsi; the iSCSI ports' addresses are on network_adapters with role iscsi:a and iscsi:b). Needed on every machine when storage.san.type is set.",
+          "$ref": "#/$defs/node_san"
+        }
+      }
+    },
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "traffic": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "management",
+              "compute",
+              "storage"
+            ]
+          }
+        },
+        "adapters": {
+          "description": "Adapter names in the OS, the same on every machine. With nodes[].network_adapters (5.2) each name must be a port in every node's list. The first adapter matters: the management virtual adapter takes the MAC of the first adapter of the management intent, so that adapter owns the management address.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "overrides": {
+          "description": "Network ATC overrides. Leave out to keep Network ATC's defaults, which Microsoft recommends.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "qos": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cluster_priority": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 7
+                },
+                "smb_priority": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 7
+                },
+                "smb_bandwidth_percent": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100
+                }
+              }
+            },
+            "adapter": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "jumbo_packet": {
+                  "enum": [
+                    1514,
+                    4088,
+                    9014
+                  ]
+                },
+                "network_direct": {
+                  "type": "boolean"
+                },
+                "network_direct_technology": {
+                  "enum": [
+                    "iwarp",
+                    "roce",
+                    "roce_v2"
+                  ]
+                }
+              }
+            },
+            "virtual_switch": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enable_iov": {
+                  "type": "boolean"
+                },
+                "load_balancing_algorithm": {
+                  "enum": [
+                    "dynamic",
+                    "hyper_v_port"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "logical_network": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "purpose": {
+          "description": "What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote management security profile adds its subnet to the allowed sources of dev and production (a candidate, not a trust: prefer listing the controller addresses in os_configuration.remoting.allowed_source_cidrs). automation, compute, storage and other have no effect on remote management.",
+          "enum": [
+            "management",
+            "oob",
+            "automation",
+            "compute",
+            "storage",
+            "other"
+          ]
+        },
+        "vlan_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4094
+        },
+        "address_prefix": {
+          "$ref": "#/$defs/cidr"
+        },
+        "gateway": {
+          "$ref": "#/$defs/ipv4"
+        },
+        "dns_servers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ipv4"
+          }
+        },
+        "ip_pool": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "start": {
+              "$ref": "#/$defs/ipv4"
+            },
+            "end": {
+              "$ref": "#/$defs/ipv4"
+            }
+          }
+        }
+      }
+    },
+    "drive_group": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "media": {
+          "enum": [
+            "nvme",
+            "ssd",
+            "hdd"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "size_tb": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "appliance_endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ip_address": {
+          "$ref": "#/$defs/ipv4"
+        },
+        "gateway": {
+          "$ref": "#/$defs/ipv4"
+        },
+        "prefix_length": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 30
+        }
+      }
+    },
+    "network_device": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": [
+            "switch",
+            "firewall",
+            "router",
+            "console_server",
+            "load_balancer",
+            "wireless_controller"
+          ]
+        },
+        "role": {
+          "enum": [
+            "primary",
+            "secondary",
+            "standalone"
+          ]
+        },
+        "vendor": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "serial_number": {
+          "type": "string"
+        },
+        "firmware_version": {
+          "type": "string"
+        },
+        "management": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ip_address": {
+              "description": "An IPv4 address, or dhcp."
+            },
+            "vlan_id": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4094
+            },
+            "protocol": {
+              "enum": [
+                "ssh",
+                "https",
+                "telnet",
+                "snmp"
+              ]
+            }
+          }
+        },
+        "credentials": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "username": {
+              "type": "string",
+              "minLength": 1
+            },
+            "password": {
+              "$ref": "#/$defs/kv_ref"
+            }
+          }
+        },
+        "ha": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "mode": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "bios_settings": {
+      "description": "BIOS attributes: vendor attribute name -> value, as the BMC's Redfish Bios resource names them (Attributes of /redfish/v1/Systems/<id>/Bios). Values are strings, even for numbers; tools convert them to the type the BMC reports. azurelocal-ztp applies them in its Boot stage, before the maintenance boot: it reads the current values, PATCHes only those that differ to the Bios Settings resource with @Redfish.SettingsApplyTime OnReset, powers the machine on or restarts it, and waits until the BIOS reports every value. Used twice: as bios (the machine's FINAL state) and as bios_during_provisioning (TEMPORARY values for the OS install, which the Restore stage sets back to the bios values). Dell examples: Slot2: Disabled (turn off the card in PCIe slot 2, for example a Fibre Channel HBA whose SAN LUN the maintenance environment would otherwise install onto; as a temporary value, with Slot2: Enabled in bios); Slot2: BootDriverDisabled (the card stays visible to the OS but never boots); EmbNic1Nic2: Enabled (the embedded LOM ports, when they show as DisabledOs and the OS can't see them).",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_.\\[\\]-]{1,128}$"
+      },
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "wwpn": {
+      "description": "A Fibre Channel World Wide Port Name: 16 hexadecimal digits, as 8 colon-separated pairs (50:00:09:72:08:12:34:56) or without colons.",
+      "type": "string",
+      "pattern": "^([0-9A-Fa-f]{2}:){7}[0-9A-Fa-f]{2}$|^[0-9A-Fa-f]{16}$"
+    },
+    "iscsi_name": {
+      "description": "An iSCSI qualified name (iqn.yyyy-mm.reversed.domain[:identifier]), or an eui. or naa. name.",
+      "type": "string",
+      "pattern": "^(iqn\\.[0-9]{4}-[0-9]{2}\\.[A-Za-z0-9.-]+(:\\S+)?|eui\\.[0-9A-Fa-f]{16}|naa\\.[0-9A-Fa-f]{16,32})$"
+    },
+    "iscsi_portal": {
+      "description": "An iSCSI target portal: an IPv4 address, optionally with :port (default 3260).",
+      "type": "string",
+      "pattern": "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(:([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+    },
+    "node_san": {
+      "description": "One machine's SAN connections (schema 5.3). Fibre Channel: hbas, each with its slot and ports, and every port's WWPN and fabric. iSCSI: initiator_iqn.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hbas": {
+          "description": "The host bus adapters in this machine that reach the SAN: Fibre Channel HBAs, and from 5.4 iSCSI offload adapters. azurelocal-ztp reads their slots (schema 5.4): while the OS installs it turns those PCIe slots off in the BIOS, so the maintenance environment can't install onto a SAN LUN, and turns them on again afterwards (provisioning.simplified.isolate_san_adapters).",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "slot": {
+                "description": "Where the HBA is, as a PCIe slot label: Slot 2, Slot2 or slot-2 (the number is what counts). azurelocal-ztp turns the BIOS attribute of that slot off for the OS install and puts it back afterwards; the attribute name per vendor is in its config/oem/<vendor>.json. For another label (for example OCP 1), or a vendor azurelocal-ztp has no mapping for, give bios_attribute.",
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "description": "Schema 5.4. fibre_channel (default; with storage.san.type fibre_channel the ports with their WWPNs are needed for zoning, rule AZL-028) or iscsi_offload (an adapter that presents SAN LUNs to the BIOS; it needs no ports here, its addresses are on network_adapters with role iscsi:a or iscsi:b).",
+                "enum": [
+                  "fibre_channel",
+                  "iscsi_offload"
+                ],
+                "default": "fibre_channel"
+              },
+              "bios_attribute": {
+                "description": "Schema 5.4. The vendor's BIOS attribute name for this adapter's slot, as the BMC's Redfish Bios resource names it. With no vendor mapping in azurelocal-ztp this is the only way to isolate the adapter during the install; with a mapping it overrides the attribute derived from slot. An explicit bios_during_provisioning key for the same attribute still wins.",
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.\\[\\]-]{1,128}$"
+              },
+              "bios_disabled_value": {
+                "description": "Schema 5.4. The value of bios_attribute that turns the slot off for the OS install. Default: the vendor mapping's disabled value, else Disabled.",
+                "type": "string",
+                "minLength": 1
+              },
+              "bios_enabled_value": {
+                "description": "Schema 5.4. The value that turns the slot back on when azurelocal-ztp finds it already at bios_disabled_value in the Restore stage (for example a crashed earlier run left it off). Otherwise Restore puts back the value it found before the install. Default: the vendor mapping's enabled value, else Enabled.",
+                "type": "string",
+                "minLength": 1
+              },
+              "model": {
+                "type": "string"
+              },
+              "ports": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "wwpn": {
+                      "$ref": "#/$defs/wwpn"
+                    },
+                    "fabric": {
+                      "description": "A name in storage.san.fibre_channel.fabrics.",
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "initiator_iqn": {
+          "description": "The machine's iSCSI initiator name. Unique in the file.",
+          "$ref": "#/$defs/iscsi_name"
+        }
+      }
+    },
+    "network_adapter": {
+      "description": "One physical network port of the machine (schema 5.2). List every port, used or not, so each tool reads the same NICs. A port can carry several roles (a converged design).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "The adapter's name in the installed OS, or the slot label the OS uses, for example 'Embedded NIC 1' or 'Slot 3 Port 1'. networking.intents[].adapters and networking.storage.networks[].adapter name ports by it, so give a port the same name on every machine. Unique on the machine.",
+          "type": "string",
+          "minLength": 1
+        },
+        "mac_address": {
+          "description": "The port's MAC. Tools find the port by it (simplified provisioning keys the management address to it; node preparation finds the adapter by it). Needed for a DHCP reservation, and for every management port with simplified provisioning.",
+          "$ref": "#/$defs/mac"
+        },
+        "slot": {
+          "description": "Where the port is, for example Embedded (a LOM), Slot 3 or OCP 1. From 5.4 azurelocal-ztp reads it: a management or provisioning port in slot Embedded makes it enable the embedded NICs in the BIOS (provisioning.simplified.enable_embedded_nics), and a slot that also holds a SAN adapter (nodes[].san.hbas[].slot) is never turned off.",
+          "type": "string"
+        },
+        "model": {
+          "description": "Card model, for example 'NVIDIA ConnectX-6 Dx'. Ports in one intent must be the same make, model and speed.",
+          "type": "string"
+        },
+        "speed_gbps": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rdma": {
+          "enum": [
+            "none",
+            "iwarp",
+            "roce",
+            "roce_v2"
+          ]
+        },
+        "roles": {
+          "description": "What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified provisioning reaches Azure through this port, before the machine is claimed; how it gets its address there is networking.management.provisioning_network), iscsi:a or iscsi:b (schema 5.3: a port that carries iSCSI traffic to the SAN's fabric A or B; give it a static address, prefix_length and VLAN, no gateway), or unused. A converged port lists several, for example [management, compute]. unused stands alone.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "management",
+              "compute",
+              "storage",
+              "provisioning",
+              "iscsi:a",
+              "iscsi:b",
+              "unused"
+            ]
+          }
+        },
+        "ip_assignment": {
+          "description": "How the installed OS gets this port's host address before deployment. For the management port this is the management address mode (config/variables/docs/infrastructure-file.md): dhcp_reservation is Mode A (Reserved, recommended); static is Mode B (Static with DHCP) or Mode C (Static without management DHCP). static: ip_address is set on the port (with simplified provisioning azurelocal-ztp's Device stage sets it by MAC before the OS install, the install resets every port to DHCP, and OS configuration sets it again by MAC; otherwise the operator or the toolkit). dhcp_reservation: the port keeps DHCP and the DHCP server reserves ip_address for mac_address. dhcp: the port keeps DHCP with no reservation, so its address can change (a warning). preconfigured: the port is already configured; tools leave it alone. none: no host address before deployment (Network ATC or the storage networks give it one, or it isn't used); node preparation turns DHCP off on it. Exactly one management port per machine owns the management address: the one with role management and an ip_assignment other than none.",
+          "enum": [
+            "static",
+            "dhcp_reservation",
+            "dhcp",
+            "preconfigured",
+            "none"
+          ]
+        },
+        "ip_address": {
+          "description": "The host address. For the management port this is ARM physicalNodesSettings[].ipv4Address. Required with static. With dhcp_reservation give the reserved address: without it the tools can only check that the port has a DHCP address (a warning), and the deployment still needs it unless use_dhcp is true (a file with scope ztp doesn't deploy).",
+          "$ref": "#/$defs/ipv4"
+        },
+        "prefix_length": {
+          "description": "Prefix length of ip_address. Default for the management port: from networking.management.subnet, which it must match.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "gateway": {
+          "description": "Default gateway on this port. Default for the management port: networking.management.gateway. Leave it out on every other port: validation fails when more than one physical adapter has a default gateway.",
+          "$ref": "#/$defs/ipv4"
+        },
+        "dns_servers": {
+          "description": "Default for the management port: networking.management.dns_servers, which it must match.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ipv4"
+          }
+        },
+        "vlan_id": {
+          "description": "The VLAN of this port's traffic. With vlan_mode tagged the host tags it; with vlan_mode access the switch port is an access port in this VLAN and the host sends untagged frames (it records the switch side). Without vlan_mode, 0 or absent means untagged and anything else is tagged by the host.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4094
+        },
+        "vlan_mode": {
+          "description": "access: the switch port is an access (untagged) port; the host doesn't tag, so simplified provisioning sends VLAN 0. tagged: the switch port is a trunk and the host tags vlan_id.",
+          "enum": [
+            "access",
+            "tagged"
+          ]
+        },
+        "switch_port": {
+          "description": "Where the port is cabled.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "switch": {
+              "description": "The switch, for example a network_devices[].hostname.",
+              "type": "string"
+            },
+            "port": {
+              "description": "The switch port, for example Ethernet1/11.",
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            }
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

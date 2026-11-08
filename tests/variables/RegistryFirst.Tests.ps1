@@ -11,7 +11,7 @@ BeforeAll {
     $repo = Resolve-Path (Join-Path $PSScriptRoot '..\..')
     $script:Scripts = Join-Path $repo 'config\variables\scripts'
     $script:RegistryPath = Join-Path $repo 'config\variables\schema\master-registry.yaml'
-    $script:SchemaPath = Join-Path $repo 'config\infrastructure\infrastructure.schema.json'
+    $script:SchemaPath = Join-Path $repo 'config\variables\schema\infrastructure.schema.json'
     Import-Module (Join-Path $script:Scripts 'VariableRegistry.psm1') -Force
     $script:Registry = @(Get-RegistryVariable -Path $script:RegistryPath)
     $script:Schema = @(Get-InfrastructureSchemaVariable -SchemaPath $script:SchemaPath)
