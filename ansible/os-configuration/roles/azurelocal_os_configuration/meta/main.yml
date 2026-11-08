@@ -1,0 +1,15 @@
+---
+galaxy_info:
+  author: Hybrid Cloud Solutions
+  description: Ansible front end for the Azure Local OS configuration wrapper (Invoke-AzureLocalOsConfiguration.ps1).
+  company: Hybrid Cloud Solutions
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: GenericLinux
+      versions:
+        - all
+  galaxy_tags:
+    - azurelocal
+    - powershell
+dependencies: []

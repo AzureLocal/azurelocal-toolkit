@@ -1,0 +1,87 @@
+---
+# Front end for Invoke-AzureLocalOsConfiguration.ps1. The wrapper decides everything (ZTP versus ISO, transport, steps, the exit
+# code); these tasks start it with pwsh on this host (the controller, an execution environment or any runner that reaches the
+# nodes), show its plan, ask for approval and fail with the wrapper's exit code.
+
+- name: Check that the run uses exactly one runner
+  ansible.builtin.assert:
+    that:
+      - ansible_play_hosts_all | length == 1
+    fail_msg: >-
+      One OS configuration run uses one runner. Two runners would plan and apply the same nodes at the same time.
+    quiet: true
+  run_once: true
+
+- name: Check the run control values
+  ansible.builtin.assert:
+    that:
+      - azurelocal_os_configuration_infrastructure_file | length > 0
+      - azurelocal_os_configuration_phase != 'apply' or azurelocal_os_configuration_approved | bool
+    fail_msg: >-
+      azurelocal_os_configuration_infrastructure_file is required. The apply phase needs azurelocal_os_configuration_approved: true,
+      because nothing in that run asks for approval (an AWX workflow approval node, or an operator, did it before).
+    quiet: true
+
+- name: Resolve the phases of this run
+  ansible.builtin.set_fact:
+    azurelocal_os_configuration__phases: >-
+      {{ ['Plan'] if (ansible_check_mode | bool or azurelocal_os_configuration_phase == 'plan')
+      else (['Apply'] if azurelocal_os_configuration_phase == 'apply' else ['Plan', 'Apply']) }}
+    azurelocal_os_configuration__script: >-
+      {{ azurelocal_os_configuration_toolkit_root }}/scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1
+    azurelocal_os_configuration__launcher: >-
+      {{ azurelocal_os_configuration_toolkit_root }}/ansible/os-configuration/roles/azurelocal_os_configuration/files/Invoke-OsConfigurationFromAnsible.ps1
+    azurelocal_os_configuration__run_dir: >-
+      {{ azurelocal_os_configuration_report_root }}/{{ now(utc=true, fmt='%Y%m%dT%H%M%SZ') }}
+
+- name: Read the PowerShell version on the runner
+  ansible.builtin.command:
+    argv:
+      - "{{ azurelocal_os_configuration_pwsh }}"
+      - -NoProfile
+      - -NonInteractive
+      - -Command
+      - "$PSVersionTable.PSVersion.Major"
+  register: azurelocal_os_configuration__pwsh_major
+  changed_when: false
+  check_mode: false
+
+- name: Check PowerShell 7 and the files the run needs
+  ansible.builtin.assert:
+    that:
+      - azurelocal_os_configuration__pwsh_major.stdout | trim | int >= 7
+    fail_msg: "The wrapper needs PowerShell 7 or later; '{{ azurelocal_os_configuration_pwsh }}' is version {{ azurelocal_os_configuration__pwsh_major.stdout | trim }}."
+    quiet: true
+
+- name: Look for the wrapper, the launcher and the infrastructure file
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ azurelocal_os_configuration__script }}"
+    - "{{ azurelocal_os_configuration__launcher }}"
+    - "{{ azurelocal_os_configuration_infrastructure_file }}"
+  register: azurelocal_os_configuration__inputs
+
+- name: Check the wrapper, the launcher and the infrastructure file exist on the runner
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+    fail_msg: "Not found on the runner: {{ item.item }}"
+    quiet: true
+  loop: "{{ azurelocal_os_configuration__inputs.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Create the report folder of this run
+  ansible.builtin.file:
+    path: "{{ azurelocal_os_configuration__run_dir }}"
+    state: directory
+    mode: "0700"
+  check_mode: false
+
+- name: Run the phases
+  ansible.builtin.include_tasks: phase.yml
+  loop: "{{ azurelocal_os_configuration__phases }}"
+  loop_control:
+    loop_var: azurelocal_os_configuration__phase
+    label: "{{ azurelocal_os_configuration__phase }}"

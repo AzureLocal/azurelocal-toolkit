@@ -1,0 +1,6 @@
+# Real inventory and vault files stay out of Git; only the *.example files are committed.
+inventory/hosts.yml
+inventory/group_vars/
+inventory/host_vars/
+.vault_pass
+*.vault

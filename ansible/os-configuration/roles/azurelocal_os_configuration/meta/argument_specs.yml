@@ -1,0 +1,101 @@
+---
+argument_specs:
+  main:
+    short_description: Run Invoke-AzureLocalOsConfiguration.ps1 (Plan, approval, Apply) from Ansible.
+    options:
+      azurelocal_os_configuration_phase:
+        type: str
+        default: both
+        choices: [both, plan, apply]
+        description: Which phases to run. Check mode always runs Plan only.
+      azurelocal_os_configuration_approved:
+        type: bool
+        default: false
+        description: Skip the approval pause. Required for the apply phase.
+      azurelocal_os_configuration_approval_timeout_minutes:
+        type: int
+        default: 60
+        description: Minutes the pause waits for "yes".
+      azurelocal_os_configuration_infrastructure_file:
+        type: str
+        required: true
+        description: Wrapper -InfrastructureFile (path on the runner).
+      azurelocal_os_configuration_handoff_path:
+        type: list
+        elements: str
+        default: []
+        description: Wrapper -HandoffPath.
+      azurelocal_os_configuration_nodes:
+        type: list
+        elements: str
+        default: []
+        description: Wrapper -Node.
+      azurelocal_os_configuration_steps:
+        type: list
+        elements: str
+        default: []
+        choices: [RemoteManagement, Sbe, Drivers, Network, Dns, Time, Hostname, UnusedAdapters, LocalAdmin, Mpio, SanVerify, ClearStorage, ArcRegistration]
+        description: Wrapper -Step.
+      azurelocal_os_configuration_continue_on_node_failure:
+        type: bool
+        default: true
+        description: Wrapper -ContinueOnNodeFailure.
+      azurelocal_os_configuration_transport:
+        type: str
+        default: Auto
+        choices: [Auto, ArcRunCommand, WinRM]
+        description: Wrapper -Transport.
+      azurelocal_os_configuration_method:
+        type: str
+        default: Auto
+        choices: [Auto, Ztp, Iso]
+        description: Wrapper -Method. Auto lets the wrapper decide ZTP versus ISO per node.
+      azurelocal_os_configuration_clear_storage:
+        type: bool
+        default: false
+        description: Wrapper -ClearStorage.
+      azurelocal_os_configuration_fail_on_pending_changes:
+        type: bool
+        default: false
+        description: Wrapper -FailOnPendingChanges (Plan phase only).
+      azurelocal_os_configuration_config_path:
+        type: str
+        default: ""
+        description: Wrapper -ConfigPath.
+      azurelocal_os_configuration_settings:
+        type: dict
+        default: {}
+        description: Wrapper -Settings.
+      azurelocal_os_configuration_node_address:
+        type: dict
+        default: {}
+        description: Wrapper -NodeAddress (node name to address).
+      azurelocal_os_configuration_skip_validation:
+        type: bool
+        default: false
+        description: Wrapper -SkipValidation.
+      azurelocal_os_configuration_node_admin_user:
+        type: str
+        default: ""
+        description: The nodes' local administrator for WinRM (passed through the task environment).
+      azurelocal_os_configuration_node_admin_password:
+        type: str
+        default: ""
+        no_log: true
+        description: Its password. From ansible-vault or the AZL_NODE_ADMIN_PASSWORD environment variable.
+      azurelocal_os_configuration_toolkit_root:
+        type: str
+        description: The repository checkout on the runner.
+      azurelocal_os_configuration_pwsh:
+        type: str
+        default: pwsh
+        description: The PowerShell 7 executable.
+      azurelocal_os_configuration_azure_auth:
+        type: str
+        default: "None"
+        choices: ["None", ManagedIdentity]
+        description: How the launcher signs in to Azure before the wrapper.
+      azurelocal_os_configuration_report_root:
+        type: str
+        default: /var/tmp/azurelocal-os-configuration
+        description: Folder on the runner for the reports of each run.

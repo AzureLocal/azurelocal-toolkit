@@ -1,0 +1,62 @@
+---
+# What this role runs: Invoke-AzureLocalOsConfiguration.ps1. The engine stays PowerShell 7; this role only starts it.
+# Every wrapper parameter the role exposes is named after the wrapper parameter (see README.md).
+
+# --- Run control -------------------------------------------------------------------------------------------------------
+# both  : Plan, a pause for approval, then Apply (one run, an operator at the terminal).
+# plan  : Plan only (read only).
+# apply : Apply only. Requires azurelocal_os_configuration_approved: true (use it as the second job of an AWX workflow
+#         whose approval node followed the plan job). The wrapper re-plans each node itself, so it never acts on a stale plan.
+# Check mode (--check) always means Plan only, whatever this says.
+azurelocal_os_configuration_phase: both
+# true skips the pause (unattended runs, or the apply job behind an AWX approval node).
+azurelocal_os_configuration_approved: false
+# How long the pause waits for "yes" before the run fails. 0 waits for ever.
+azurelocal_os_configuration_approval_timeout_minutes: 60
+
+# --- The wrapper's parameters ------------------------------------------------------------------------------------------
+# -InfrastructureFile (required): path on the runner.
+azurelocal_os_configuration_infrastructure_file: ""
+# -HandoffPath: handoff files or directories on the runner. Empty for a cluster installed from ISO.
+azurelocal_os_configuration_handoff_path: []
+# -Node, -Step: limit the run. Empty = every node, the steps of each node's method.
+azurelocal_os_configuration_nodes: []
+azurelocal_os_configuration_steps: []
+# -ContinueOnNodeFailure
+azurelocal_os_configuration_continue_on_node_failure: true
+# -Transport Auto|ArcRunCommand|WinRM, -Method Auto|Ztp|Iso: the wrapper decides ZTP versus ISO per node on its own
+# (declared scenario.os_install plus evidence). Leave both on Auto unless you must force it.
+azurelocal_os_configuration_transport: Auto
+azurelocal_os_configuration_method: Auto
+# -ClearStorage forces the storage wipe on (Apply only). os_configuration.clear_storage in the master file does the same.
+azurelocal_os_configuration_clear_storage: false
+# -FailOnPendingChanges: Plan phase only; drift detection.
+azurelocal_os_configuration_fail_on_pending_changes: false
+# -ConfigPath, -Settings, -NodeAddress, -SkipValidation
+azurelocal_os_configuration_config_path: ""
+azurelocal_os_configuration_settings: {}
+azurelocal_os_configuration_node_address: {}
+azurelocal_os_configuration_skip_validation: false
+
+# --- The node credential (WinRM, ISO-installed nodes) --------------------------------------------------------------------
+# Never a command line argument, never in a file. The value comes from ansible-vault (point the password variable at a vault
+# variable, see inventory/vault.yml.example) or from the controller's environment variable AZL_NODE_ADMIN_PASSWORD (an AWX
+# custom credential type can inject it). Both empty: the wrapper reads identity.local_admin from the Key Vault, as always.
+azurelocal_os_configuration_node_admin_user: "{{ lookup('ansible.builtin.env', 'AZL_NODE_ADMIN_USER') }}"
+azurelocal_os_configuration_node_admin_password: "{{ lookup('ansible.builtin.env', 'AZL_NODE_ADMIN_PASSWORD') }}"
+
+# --- Runner -------------------------------------------------------------------------------------------------------------
+# The repository checkout on the runner. The default works when this playbook is run from the repository (ansible/os-configuration).
+azurelocal_os_configuration_toolkit_root: "{{ playbook_dir | dirname | dirname }}"
+azurelocal_os_configuration_pwsh: pwsh
+# None: the runner is already signed in to Azure (Connect-AzAccount, or a pipeline login). ManagedIdentity: the launcher runs
+# Connect-AzAccount -Identity before the wrapper (the runner is an Azure VM or Arc machine with a managed identity).
+azurelocal_os_configuration_azure_auth: "None"
+# Reports go to <report_root>/<UTC time>/plan and .../apply on the runner.
+azurelocal_os_configuration_report_root: /var/tmp/azurelocal-os-configuration
+
+# --- Exit codes: the same meaning as Invoke-AzureLocalOsConfiguration.ps1 ------------------------------------------------
+azurelocal_os_configuration_exit_meanings:
+  "0": "Apply: every node converged. Plan: every node could be read and nothing is blocked."
+  "1": "A node failed, is blocked or did not converge; or the nodes do not see the same SAN disks."
+  "2": "Bad input or nothing reachable. Nothing was changed."

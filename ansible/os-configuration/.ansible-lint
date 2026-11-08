@@ -1,0 +1,9 @@
+---
+# ansible-lint configuration for the OS configuration front end.
+# Run from this folder:  ansible-lint
+profile: moderate
+exclude_paths:
+  - .git/
+  - inventory/
+warn_list:
+  - experimental

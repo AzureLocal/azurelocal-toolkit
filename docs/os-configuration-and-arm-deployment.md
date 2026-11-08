@@ -144,6 +144,7 @@ The plan changes nothing, so it can run unattended. Its output is what a person 
 | --- | --- | --- |
 | GitHub Actions | `pipelines/github/os-configuration.yml` (copy to `.github/workflows/`) | Environment `azure-local-os-configuration` with required reviewers on the `apply` job |
 | GitLab CI | `pipelines/gitlab/os-configuration.gitlab-ci.yml` | `when: manual` on the apply job; `resource_group` allows one run at a time |
+| Ansible / AWX | `ansible/os-configuration/os-configuration.yml` (role `azurelocal_os_configuration`; see its [README](../ansible/os-configuration/README.md)) | A pause for approval between Plan and Apply; `--check` is the Plan only; in AWX a workflow approval node between a plan job and an apply job |
 
 Both run `pwsh -File .../Invoke-AzureLocalOsConfiguration.ps1 -InfrastructureFile ... -HandoffPath ... -Mode Plan|Apply -ReportDirectory ...` and nothing else; the logic is the script's. The runner is a self-hosted Linux runner with PowerShell 7 and the `powershell-yaml`, `Az.Accounts` and `Az.KeyVault` modules. ZTP-provisioned nodes need only Azure from the runner (with `hardware.sbe.delivery: node_pull` or `skip`); ISO-installed nodes, and the `winrm_copy` route of the SBE package, need a runner that reaches the nodes' management addresses on TCP 5985.
 
