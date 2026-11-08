@@ -15,6 +15,7 @@
     Get-AzlDellNodeDiscovery         Reads one iDRAC (GET only) and returns identity, BMC MAC, one entry per network port,
                                      storage and the BOSS card. Section failures are recorded in Warnings, never hidden.
     Get-AzlDellPortLabel             Redfish adapter and port IDs into the port name and slot infrastructure.yml uses.
+    Get-AzlDellAdapterModel          The adapter model, with a fallback chain for cards whose Model is empty (the embedded LOM).
     Select-AzlManagementPort         Which port is the management port, and why.
     ConvertTo-AzlDiscoveryProposal   The infrastructure.yml fragment (YAML text) for the operator to review.
     Set-AzlDellIdracVnc              Enables or disables the iDRAC VNC server (the only function that writes to an iDRAC).
@@ -182,10 +183,39 @@ function Get-AzlDellPortLabel {
     $portNumber = 1
     if ($PortId -match '-(\d+)(-\d+)?$') { $portNumber = [int]$Matches[1] }
     if ($AdapterId -match '^NIC\.Slot\.(\d+)') { return [pscustomobject]@{ Name = "Slot $($Matches[1]) Port $portNumber"; Slot = "Slot $($Matches[1])" } }
-    if ($AdapterId -match '^NIC\.Embedded\.(\d+)') { return [pscustomobject]@{ Name = "Embedded NIC $($Matches[1])"; Slot = 'Embedded' } }
+    if ($AdapterId -match '^NIC\.Embedded\.(\d+)') {
+        # One embedded adapter can carry both LOM ports (NIC.Embedded.1 with ports NIC.Embedded.1-1 and NIC.Embedded.2-1): the NIC number
+        # is in the PORT id, not the adapter id. Using the adapter id named the second port 'Embedded NIC 1 (2)'.
+        $embeddedNumber = $Matches[1]
+        if ($PortId -match '^NIC\.Embedded\.(\d+)') { $embeddedNumber = $Matches[1] }
+        return [pscustomobject]@{ Name = "Embedded NIC $embeddedNumber"; Slot = 'Embedded' }
+    }
     if ($AdapterId -match '^NIC\.Integrated\.(\d+)') { return [pscustomobject]@{ Name = "Integrated NIC $($Matches[1]) Port $portNumber"; Slot = "Integrated $($Matches[1])" } }
     $fallback = if ($PortId) { $PortId } else { $AdapterId }
     return [pscustomobject]@{ Name = $fallback; Slot = $AdapterId }
+}
+
+function Get-AzlDellAdapterModel {
+    <#
+    .SYNOPSIS
+        The adapter model for a port. The embedded (LOM) card often has an empty Model: fall back to the adapter Name, then the
+        controller or function description, with a trailing ' - <MAC>' removed.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param($Adapter, $Function = $null, $Controller = $null)
+    foreach ($candidate in @(
+            (Get-RfProp $Adapter 'Model' ''),
+            (Get-RfProp $Adapter 'Name' ''),
+            (Get-RfProp $Controller 'Model' ''),
+            (Get-RfProp $Function 'Name' ''),
+            (Get-RfProp $Function 'Description' ''))) {
+        $text = ([string]$candidate).Trim()
+        $text = ($text -replace '\s+-\s+([0-9A-Fa-f]{2}[:-]){5}[0-9A-Fa-f]{2}\s*$', '').Trim()
+        # A bare adapter id ('NIC.Embedded.1') or an empty value is no model.
+        if ($text -and $text -notmatch '^NIC\.[A-Za-z]+\.\d+(-\d+)*$') { return $text }
+    }
+    return ''
 }
 
 function Get-RfPortMac {
@@ -230,7 +260,7 @@ function Get-RfNetworkPort {
                     MacSource          = $mac.Source
                     AdapterId          = $adapterId
                     PortId             = $portId
-                    AdapterModel       = [string](Get-RfProp $adapter 'Model' '')
+                    AdapterModel       = (Get-AzlDellAdapterModel -Adapter $adapter -Function $function -Controller $controller)
                     AdapterManufacturer = [string](Get-RfProp $adapter 'Manufacturer' '')
                     FirmwarePackage    = [string](Get-RfProp $controller 'FirmwarePackageVersion' '')
                     LinkStatus         = $link
@@ -497,4 +527,4 @@ function Set-AzlDellIdracVnc {
     return [pscustomobject]@{ BmcAddress = $BmcAddress; Status = $status; Before = $before; After = "$State port $Port timeout ${TimeoutSeconds}s"; PasswordSet = [bool]$Password; Note = $note }
 }
 
-Export-ModuleMember -Function ConvertTo-AzlMacAddress, Invoke-AzlRedfish, Get-AzlBmcKeyVaultSecret, Resolve-AzlBmcCredential, Get-AzlDellPortLabel, Get-AzlDellNodeDiscovery, Select-AzlManagementPort, ConvertTo-AzlDiscoveryProposal, Set-AzlDellIdracVnc
+Export-ModuleMember -Function ConvertTo-AzlMacAddress, Invoke-AzlRedfish, Get-AzlBmcKeyVaultSecret, Resolve-AzlBmcCredential, Get-AzlDellPortLabel, Get-AzlDellAdapterModel, Get-AzlDellNodeDiscovery, Select-AzlManagementPort, ConvertTo-AzlDiscoveryProposal, Set-AzlDellIdracVnc

@@ -112,11 +112,29 @@ Describe 'MAC and port naming' {
         @{ Adapter = 'NIC.Slot.3'; Port = 'NIC.Slot.3-2-1'; Name = 'Slot 3 Port 2'; Slot = 'Slot 3' }
         @{ Adapter = 'NIC.Slot.3'; Port = 'NIC.Slot.3-1'; Name = 'Slot 3 Port 1'; Slot = 'Slot 3' }
         @{ Adapter = 'NIC.Embedded.2'; Port = 'NIC.Embedded.2-1-1'; Name = 'Embedded NIC 2'; Slot = 'Embedded' }
+        # Real lab shape: ONE embedded adapter carries both LOM ports and the NIC number is in the port id.
+        @{ Adapter = 'NIC.Embedded.1'; Port = 'NIC.Embedded.1-1'; Name = 'Embedded NIC 1'; Slot = 'Embedded' }
+        @{ Adapter = 'NIC.Embedded.1'; Port = 'NIC.Embedded.2-1'; Name = 'Embedded NIC 2'; Slot = 'Embedded' }
         @{ Adapter = 'NIC.Integrated.1'; Port = 'NIC.Integrated.1-2-1'; Name = 'Integrated NIC 1 Port 2'; Slot = 'Integrated 1' }
     ) {
         $l = Get-AzlDellPortLabel -AdapterId $Adapter -PortId $Port
         $l.Name | Should -Be $Name
         $l.Slot | Should -Be $Slot
+    }
+}
+
+Describe 'Get-AzlDellAdapterModel' {
+    It 'uses the adapter Model when there is one' {
+        Get-AzlDellAdapterModel -Adapter ([pscustomobject]@{ Model = 'MLNX 100GbE 2P ConnectX6 Adpt'; Name = 'x' }) | Should -Be 'MLNX 100GbE 2P ConnectX6 Adpt'
+    }
+    It 'falls back to the adapter Name without the MAC suffix when the embedded card has an empty Model (lab defect)' {
+        Get-AzlDellAdapterModel -Adapter ([pscustomobject]@{ Model = ''; Name = 'Broadcom Gigabit Ethernet BCM5720 - C4:CB:E1:B3:6F:C6' }) | Should -Be 'Broadcom Gigabit Ethernet BCM5720'
+    }
+    It 'does not take a bare adapter id as a model' {
+        Get-AzlDellAdapterModel -Adapter ([pscustomobject]@{ Model = $null; Name = 'NIC.Embedded.1' }) -Function ([pscustomobject]@{ Name = 'Broadcom NetXtreme Gigabit Ethernet' }) | Should -Be 'Broadcom NetXtreme Gigabit Ethernet'
+    }
+    It 'returns an empty string when nothing names the card' {
+        Get-AzlDellAdapterModel -Adapter ([pscustomobject]@{ Model = $null; Name = $null }) | Should -Be ''
     }
 }
 
