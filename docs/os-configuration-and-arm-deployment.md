@@ -1,5 +1,7 @@
 # OS configuration and ARM Validate/Deploy: prerequisites and run guide
 
+Hardware discovery comes first in the flow: before azurelocal-ztp, it reads each node's iDRAC (service tag, the MAC of every port, which port is the management port, the BOSS card) and fills `serial_number` and `network_adapters[].mac_address` in `infrastructure.yml`. ZTP and the OS configuration read those values; the OS configuration finds every port by MAC. See `scripts/common/idrac-management/README.md`.
+
 This page covers the two steps that run after azurelocal-ztp (or an ISO install) has handed off provisioned machines:
 
 1. **OS configuration** (Phase 03): `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` runs it for the whole instance in one go (plan, apply, verify, one report); it calls `Set-AzureLocalNodeConfiguration.ps1` in the same folder once per node, which you can also run on its own

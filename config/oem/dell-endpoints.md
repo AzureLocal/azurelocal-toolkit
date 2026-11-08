@@ -1,0 +1,21 @@
+<!-- Source: Microsoft Learn, Azure Local firewall requirements for Dell. A reference for the firewall and proxy rules the management network needs; the SBE endpoints apply at deployment and update. Keep it aligned with config/oem/dell.json. -->
+
+# Dell required endpoints for Azure Local deployments
+
+This page provides a comprehensive overview of the necessary endpoints for deploying Azure Local using Dell solutions. These URLs are maintained by the OEM hardware vendor. Please contact with your OEM provider if these URLs need to be updated.
+
+Each hardware vendor provided [Solution Builder Extension (SBE)](https://learn.microsoft.com/en-us/azure/azure-local/update/solution-builder-extension) will require some minimal endpoints to allow for discovery and download of [SBE](https://learn.microsoft.com/en-us/azure/azure-local/update/solution-builder-extension) updates for your solution.
+
+Refer to the table in the following document to determine if your solution supports an SBE as well is to review SBE release notes or and other documentation: https://learn.microsoft.com/en-us/azure/azure-local/update/solution-builder-extension?view=azloc-2605#identify-a-solution-builder-extension-update-for-your-hardware
+
+In addition to [SBE](https://learn.microsoft.com/en-us/azure/azure-local/update/solution-builder-extension) endpoints, some OEM hardware vendors will require additional endpoints for there specific use cases as noted below.
+
+**Last updated on June 5th, 2026** — Verified current against azloc-2605 (2026-04-09). AX-760 confirmed SBE-supported per Dell KB 000224407.
+
+| Id | Endpoint Description | Endpoint URL                                                           | Port | Notes                                                    | Arc gateway support | Required for                 |
+|----|---------------------|------------------------------------------------------------------------|------|----------------------------------------------------------|---------------------|------------------------------|
+| 1  | SBE Manifest endpoint    | downloads.dell.com/folderdatastore/apex-cp-azure/prod01/SBE_Discovery_Dell.xml  | 443  | Enables discovery and confirmation of validity for SBE updates from OEM | No                  | Deployment & Post deployment |
+| 2  | SBE Manifest redirection link     | aka.ms/AzureStackSBEUpdate/DellEmc                                   | 443  | Microsoft redirection to the explicit OEM SBE manifest endpoint. | No                 | Deployment & Post deployment |
+| 3  | Digicert Certificate Revocation Status | http://crl3.digicert.com/* | 80 | Enables Dell SBE Download Catalog Signer Verification | No | Deployment & Post deployment |
+| 4  | Digicert Certificate Revocation Status | http://crl4.digicert.com/* | 80 | Enables Dell SBE Download Catalog Signer Verification | No | Deployment & Post deployment |
+
