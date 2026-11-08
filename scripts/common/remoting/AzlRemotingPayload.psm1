@@ -89,11 +89,15 @@ function Get-RuleState([string]$name) {
         protocol = [string]$pf.Protocol; port = [string]$pf.LocalPort
     }
 }
-# The rules that let WinRM in, found by what they allow (inbound TCP 5985 or 5986), not by a name: the names differ by Windows version
-# (they differ by Windows version). The rules of this tool are left out.
-function Get-WinRmRuleName {
+# The rules that let WinRM in, found by what they allow, not by a name (the names differ by Windows version): an inbound Allow rule whose
+# LocalPort set is EXACTLY {5985} or EXACTLY {5986}. A rule that allows other ports as well is not ours to touch. $only: 'all', or 'http'
+# (only the {5985} rules, the ones that go away with the HTTP listener) or 'https' (only the {5986} rules). The rules of this tool are left out.
+function Get-WinRmRuleName([string]$only = 'all') {
     $names = @()
-    foreach ($f in @(Get-NetFirewallPortFilter -Protocol TCP -ErrorAction SilentlyContinue | Where-Object { @($_.LocalPort) -contains '5985' -or @($_.LocalPort) -contains '5986' })) {
+    $wanted = @(switch ($only) { 'http' { '5985' } 'https' { '5986' } default { '5985'; '5986' } })
+    foreach ($f in @(Get-NetFirewallPortFilter -Protocol TCP -ErrorAction SilentlyContinue)) {
+        $ports = @(@($f.LocalPort) | ForEach-Object { [string]$_ } | Where-Object { $_ } | Sort-Object -Unique)
+        if ($ports.Count -ne 1 -or $wanted -notcontains $ports[0]) { continue }
         foreach ($r in @(Get-NetFirewallRule -AssociatedNetFirewallPortFilter $f -ErrorAction SilentlyContinue)) {
             if ([string]$r.Direction -eq 'Inbound' -and [string]$r.Action -eq 'Allow' -and [string]$r.Name -notlike 'AzlOsConfig-*') { $names += [string]$r.Name }
         }
@@ -184,9 +188,15 @@ $mgmtIp = [string](Get-P $P 'managementIp' '')
 $currentIp = [string](Get-P $P 'currentAddress' '')
 $bind = [string](Get-P $P 'listenerBind' 'any')
 function Test-OwnAddress([string]$ip) { return [bool]($ip -and @(Get-NetIPAddress -IPAddress $ip -ErrorAction SilentlyContinue).Count -gt 0) }
-# The addresses this node holds out of the management address in the file and the address this session came in on. The file's
-# address may not be assigned yet (the Network step runs after this one); the address in use must stay reachable.
+# The addresses this node holds out of the management address in the file and the address this session came in on (the local proof uses them).
 function Get-OwnManagementAddress { return @(@($mgmtIp, $currentIp) | Where-Object { $_ -and (Test-OwnAddress $_) } | Select-Object -Unique) }
+# The address the listener and the local scope of the rules are bound to: the management address of the file, once the node holds it AND this
+# session came in on it (or there is no session address). The Network step runs after this one: until the node holds the address, the listener is
+# on * and the rules take any local address, so nothing stops answering when the address changes. The next pass narrows them.
+function Get-BindAddress {
+    if ($mgmtIp -and (Test-OwnAddress $mgmtIp) -and (-not $currentIp -or $currentIp -eq $mgmtIp)) { return $mgmtIp }
+    return ''
+}
 $results = New-Object System.Collections.ArrayList
 function Add-Result([string]$id, [string]$status, [string]$detail) { [void]$results.Add([pscustomobject]@{ id = $id; status = $status; detail = $detail }) }
 function Set-WsmanValue([string]$path, $value) { Set-Item -LiteralPath $path -Value $value -Force }
@@ -219,8 +229,11 @@ function Resolve-ServerCertificate {
         if (-not $pfx) { throw 'The certificate (Key Vault PFX) was not passed to the node.' }
         $flags = [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::MachineKeySet -bor [Security.Cryptography.X509Certificates.X509KeyStorageFlags]::PersistKeySet
         $c = New-Object Security.Cryptography.X509Certificates.X509Certificate2([Convert]::FromBase64String($pfx), '', $flags)
+        $already = Test-Path -LiteralPath ('Cert:\LocalMachine\My\' + $c.Thumbprint)
         $store = New-Object Security.Cryptography.X509Certificates.X509Store('My', 'LocalMachine')
         $store.Open('ReadWrite'); $store.Add($c); $store.Close()
+        # A certificate this change put in the store is taken out again by a revert; one that was there before is never touched.
+        if (-not $already) { Set-AddedCertificateMarker $c.Thumbprint }
         return $c
     }
     # selfSigned: the pre-join bootstrap certificate, with DNS names and IP addresses as subject alternative names ONLY
@@ -235,7 +248,18 @@ function Resolve-ServerCertificate {
     }
     $san = ((@($names | ForEach-Object { 'DNS=' + $_ }) + @($ips | ForEach-Object { 'IPAddress=' + $_ })) -join '&')
     $days = [int](Get-P $P 'certDays' 365)
-    return (New-SelfSignedCertificate -Subject ('CN=' + $names[0]) -FriendlyName 'AzlOsConfig WinRM bootstrap' -CertStoreLocation Cert:\LocalMachine\My -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 -KeyExportPolicy NonExportable -NotAfter (Get-Date).AddDays($days) -KeyUsage DigitalSignature, KeyEncipherment -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.1', ('2.5.29.17={text}' + $san)))
+    $made = New-SelfSignedCertificate -Subject ('CN=' + $names[0]) -FriendlyName 'AzlOsConfig WinRM bootstrap' -CertStoreLocation Cert:\LocalMachine\My -KeyAlgorithm RSA -KeyLength 2048 -HashAlgorithm SHA256 -KeyExportPolicy NonExportable -NotAfter (Get-Date).AddDays($days) -KeyUsage DigitalSignature, KeyEncipherment -TextExtension @('2.5.29.37={text}1.3.6.1.5.5.7.3.1', ('2.5.29.17={text}' + $san))
+    Set-AddedCertificateMarker $made.Thumbprint
+    return $made
+}
+function Set-AddedCertificateMarker([string]$thumbprint) {
+    $dir = Join-Path $stateRoot 'changes'
+    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+    Set-Content -LiteralPath (Join-Path $dir ($changeId + '.addedcert')) -Value $thumbprint -Encoding ASCII
+}
+function Remove-AddedCertificate([string]$thumbprint) {
+    $path = 'Cert:\LocalMachine\My\' + $thumbprint
+    if ($thumbprint -and (Test-Path -LiteralPath $path)) { Remove-Item -LiteralPath $path -Force }
 }
 function Add-Listener([string]$transport, [string]$address, $cert) {
     $sel = @{ Address = $address; Transport = $transport }
@@ -250,9 +274,8 @@ function Remove-Listener([string]$transport, [string]$address) {
 }
 function Get-ListenerAddress {
     if ($bind -eq 'managementIp') {
-        $own = @(Get-OwnManagementAddress)
-        if ($own.Count -eq 0) { throw 'The listener is to be bound to the management IP, and neither the management IP in the file nor the address of this session is an address of this node.' }
-        return ('IP:' + $own[0])
+        $held = Get-BindAddress
+        if ($held) { return ('IP:' + $held) }
     }
     return '*'
 }
@@ -278,7 +301,7 @@ function Add-Listeners($cert) {
 function Set-ManagedRule($spec, [bool]$union) {
     $name = [string]$spec.name
     $remote = @($spec.remote | ForEach-Object { [string]$_ })
-    $local = @(Get-OwnManagementAddress)
+    $local = @(Get-BindAddress | Where-Object { $_ })
     if ($local.Count -eq 0 -or -not [bool](Get-P $spec 'useLocal' $true)) { $local = @('Any') }
     $have = Get-NetFirewallRule -Name $name -ErrorAction SilentlyContinue
     if ($have -and $union) {
@@ -298,8 +321,8 @@ function Set-ManagedRule($spec, [bool]$union) {
 }
 # The rules Windows ships for WinRM, found by port: enabled, on every profile, with the scope of the profile. The OS install ships the
 # Public one limited to LocalSubnet, which a remote orchestrator cannot use. None found: our own rules carry the scope.
-function Set-DiscoveredWinRmScope($spec, [bool]$union) {
-    $names = @(Get-WinRmRuleName)
+function Set-DiscoveredWinRmScope($spec, [bool]$union, [string]$only = 'all') {
+    $names = @(Get-WinRmRuleName $only)
     if ($names.Count -eq 0) { return 'no built-in WinRM rule found' }
     $done = @()
     foreach ($name in $names) {
@@ -315,11 +338,13 @@ function Set-DiscoveredWinRmScope($spec, [bool]$union) {
     }
     return ($done -join '; ')
 }
+# Only the rules that allow exactly 5985 go with the HTTP listener. A rule that allows 5986 (or anything else besides) is never disabled here.
 function Disable-DiscoveredWinRm {
-    $names = @(Get-WinRmRuleName)
+    $names = @(Get-WinRmRuleName 'http')
     foreach ($name in $names) { Set-NetFirewallRule -Name $name -Enabled False }
     return ('disabled: ' + ($names -join ', '))
-}function Remove-ManagedRule([string]$name) {
+}
+function Remove-ManagedRule([string]$name) {
     if (Get-NetFirewallRule -Name $name -ErrorAction SilentlyContinue) { Remove-NetFirewallRule -Name $name; return ($name + ' removed') }
     return ($name + ' already absent')
 }
@@ -340,6 +365,24 @@ function New-Snapshot([string]$id) {
     }
     ConvertTo-Json -InputObject $snap -Depth 8 | Set-Content -LiteralPath $path -Encoding UTF8
     return $path
+}
+# The node puts the snapshot back by itself if nobody confirms the commit in time (a scope that locks the orchestrator out cannot be undone from
+# the orchestrator). A scheduled task as SYSTEM runs a copy of this very script file in revert mode; confirming (mode disarm) or the revert itself removes it.
+function Register-RevertTimer([string]$id, [int]$minutes) {
+    if (-not $PSCommandPath -or -not (Test-Path -LiteralPath $PSCommandPath)) { return 'no revert timer: the script file of this call is not available on the node' }
+    New-Item -ItemType Directory -Force -Path $stateRoot | Out-Null
+    $copy = Join-Path $stateRoot ('revert-' + $id + '.ps1')
+    Copy-Item -LiteralPath $PSCommandPath -Destination $copy -Force
+    $args64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((ConvertTo-Json -InputObject ([pscustomobject]@{ mode = 'revert'; changeId = $id; timer = $true }) -Compress)))
+    $action = New-ScheduledTaskAction -Execute 'powershell.exe' -Argument ('-NoProfile -NonInteractive -ExecutionPolicy Bypass -File "' + $copy + '" -ParamsB64 ' + $args64)
+    $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date).AddMinutes($minutes)
+    $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+    Register-ScheduledTask -TaskName ('AzlOsConfig-Revert-' + $id) -Action $action -Trigger $trigger -Principal $principal -Force | Out-Null
+    return ('the node reverts this change by itself in ' + $minutes + ' minutes unless it is confirmed')
+}
+function Unregister-RevertTimer([string]$id) {
+    Unregister-ScheduledTask -TaskName ('AzlOsConfig-Revert-' + $id) -Confirm:$false -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $stateRoot ('revert-' + $id + '.ps1')) -Force -ErrorAction SilentlyContinue
 }
 function Restore-Snapshot([string]$id) {
     $path = Join-Path (Join-Path $stateRoot 'changes') ($id + '.json')
@@ -376,6 +419,15 @@ function Restore-Snapshot([string]$id) {
             }
             else { $null = Remove-ManagedRule $n }
         } catch { $done += ('rule ' + $n + ': ' + $_.Exception.Message) }
+    }
+    # A WinRM rule that was not there when the snapshot was taken (Enable-PSRemoting creates the built-in ones on a node that has none) is removed.
+    foreach ($n in @(Get-WinRmRuleName)) {
+        if (@($snap.ruleNames) -notcontains $n) { try { Remove-NetFirewallRule -Name $n } catch { $done += ('rule ' + $n + ': ' + $_.Exception.Message) } }
+    }
+    # The certificate this change put in LocalMachine\My (after the listeners that used it are gone). One that was there before is not in the marker.
+    $marker = Join-Path (Join-Path $stateRoot 'changes') ($id + '.addedcert')
+    if (Test-Path -LiteralPath $marker) {
+        try { Remove-AddedCertificate ((Get-Content -LiteralPath $marker -Raw).Trim()); Remove-Item -LiteralPath $marker -Force } catch { $done += ('certificate: ' + $_.Exception.Message) }
     }
 
     if ($snap.rdp) {
@@ -421,8 +473,16 @@ function Disable-BuiltinRule([string]$name) {
 }
 
 if ($mode -eq 'revert') {
-    try { $problems = @(Restore-Snapshot $changeId); Add-Result 'revert' 'changed' $(if ($problems.Count) { 'restored with problems: ' + ($problems -join '; ') } else { 'the snapshot was restored' }); $reverted = ($problems.Count -eq 0); if ($reverted) { Remove-Item -LiteralPath (Join-Path $stateRoot 'pending.json') -Force -ErrorAction SilentlyContinue } }
+    try {
+        $problems = @(Restore-Snapshot $changeId); Add-Result 'revert' 'changed' $(if ($problems.Count) { 'restored with problems: ' + ($problems -join '; ') } else { 'the snapshot was restored' }); $reverted = ($problems.Count -eq 0)
+        if ($reverted) { Remove-Item -LiteralPath (Join-Path $stateRoot 'pending.json') -Force -ErrorAction SilentlyContinue; Unregister-RevertTimer $changeId }
+    }
     catch { Add-Result 'revert' 'failed' $_.Exception.Message }
+}
+elseif ($mode -eq 'disarm') {
+    # The orchestrator opened a fresh session after the commit: the node keeps the change and the timer goes.
+    try { Unregister-RevertTimer $changeId; Add-Result 'disarm' 'changed' 'the revert timer was removed' }
+    catch { Add-Result 'disarm' 'failed' $_.Exception.Message }
 }
 elseif ($mode -eq 'stage') {
     try {
@@ -445,8 +505,9 @@ elseif ($mode -eq 'stage') {
         # local proof: the listeners answer on this node
         foreach ($l in $listeners) {
             if ([string]$l.desired -eq 'present') {
+                $held = Get-BindAddress
                 $own = @(Get-OwnManagementAddress)
-                $ip = $(if ($own.Count) { $own[0] } else { '127.0.0.1' })
+                $ip = $(if ($held) { $held } elseif ($own.Count) { $own[0] } else { '127.0.0.1' })
                 if (-not (Test-LocalPort $ip ([int]$l.port))) { throw ('The ' + $l.transport + ' listener does not answer on ' + $ip + ':' + $l.port + ' after the change.') }
             }
         }
@@ -461,6 +522,13 @@ elseif ($mode -eq 'stage') {
 }
 elseif ($mode -eq 'commit') {
     try {
+        # Before anything is narrowed: if nobody confirms in time, the node restores the snapshot by itself. Not being able to arm it does not stop the commit
+        # (the orchestrator still opens a fresh session and reverts), but it is said.
+        $revertMinutes = [int](Get-P $P 'revertMinutes' 0)
+        if ($revertMinutes -gt 0) {
+            try { Add-Result 'revert-timer' 'changed' (Register-RevertTimer $changeId $revertMinutes) }
+            catch { Add-Result 'revert-timer' 'skipped' ('no revert timer: ' + $_.Exception.Message) }
+        }
         foreach ($r in $rules) {
             $kind = [string]$r.kind
             $desired = [string]$r.desired
@@ -471,7 +539,11 @@ elseif ($mode -eq 'commit') {
             }
             elseif ($kind -eq 'discoverWinRm') {
                 if ($desired -eq 'present') { Add-Result 'winrm-builtin-rules' 'changed' (Set-DiscoveredWinRmScope $r $false) }
-                elseif ($desired -eq 'absent' -or ($desired -eq 'absentAfterVerify' -and $verified)) { Add-Result 'winrm-builtin-rules' 'changed' (Disable-DiscoveredWinRm) }
+                elseif ($desired -eq 'absent' -or ($desired -eq 'absentAfterVerify' -and $verified)) {
+                    # The HTTP rules go with the HTTP listener; a rule that allows 5986 stays, with the scope of the profile.
+                    Add-Result 'winrm-builtin-rules' 'changed' (Disable-DiscoveredWinRm)
+                    Add-Result 'winrm-builtin-https-rules' 'changed' (Set-DiscoveredWinRmScope $r $false 'https')
+                }
             }
             elseif ($kind -eq 'disableRule') {
                 if ($desired -eq 'absent' -or ($desired -eq 'absentAfterVerify' -and $verified)) { Add-Result ([string]$r.name) 'changed' (Disable-BuiltinRule ([string]$r.name)) }
@@ -488,9 +560,11 @@ elseif ($mode -eq 'commit') {
                     if ($keep -notcontains ($have.transport + '|' + $have.address)) { Remove-Listener $have.transport $have.address; Add-Result 'listeners' 'changed' ('removed ' + $have.transport + ' listener on ' + $have.address) }
                 }
             }
-        }        Set-RdpState $true
+        }
+        Set-RdpState $true
         Add-Result 'commit' 'changed' 'committed'
         Remove-Item -LiteralPath (Join-Path $stateRoot 'pending.json') -Force -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath (Join-Path (Join-Path $stateRoot 'changes') ($changeId + '.addedcert')) -Force -ErrorAction SilentlyContinue
     }
     catch { $fail = $_.Exception.Message; Add-Result 'commit' 'failed' $fail }
 }

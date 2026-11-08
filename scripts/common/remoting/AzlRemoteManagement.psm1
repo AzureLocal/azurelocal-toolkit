@@ -53,7 +53,7 @@ function New-AzlRemotingNodeSpec {
         Names for the subject alternative names of the per-node certificate (the node name, its FQDN).
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][object]$RemotingProfile, [Parameter(Mandatory)][string]$Name, [string]$ManagementIp = '', [string[]]$DnsNames = @(), [string]$CurrentAddress = '')
+    param([Parameter(Mandatory)][object]$RemotingProfile, [Parameter(Mandatory)][string]$Name, [string]$ManagementIp = '', [string[]]$DnsNames = @(), [string]$CurrentAddress = '', [string]$SourceAddress = '', [int]$RevertMinutes = 10)
     $p = $RemotingProfile
     $t = $p.Transport
     $fw = $p.Firewall
@@ -92,7 +92,7 @@ function New-AzlRemotingNodeSpec {
     if ($t.HttpsEnabled) { $present.Add([ordered]@{ transport = 'HTTPS'; port = $t.HttpsPort; desired = 'present' }) }
     $ips = @($ManagementIp | Where-Object { $_ })
     [pscustomobject]@{
-        Node = $Name; ManagementIp = $ManagementIp; CurrentAddress = $CurrentAddress; DnsNames = @($DnsNames | Where-Object { $_ } | Select-Object -Unique); IpAddresses = $ips
+        Node = $Name; ManagementIp = $ManagementIp; CurrentAddress = $CurrentAddress; SourceAddress = $SourceAddress; RevertMinutes = $RevertMinutes; DnsNames = @($DnsNames | Where-Object { $_ } | Select-Object -Unique); IpAddresses = $ips
         ListenerBind = [string]$p.Listener.Bind; HttpListener = [bool]$t.HttpEnabled; HttpsListener = [bool]$t.HttpsEnabled
         Rules = $rules.ToArray(); Listeners = $listeners.ToArray(); PresentListeners = $present.ToArray()
         RuleNames = @($rules | Where-Object { $_.Contains('name') } | ForEach-Object { $_.name })
@@ -118,9 +118,11 @@ function Get-AzlRemotingChangeParameter {
         The parameters of the Change script (mode stage, commit or revert). Never a secret: a Key Vault certificate travels as a
         secret (Get-AzlRemotingSecret), not here.
     #>
-    param([Parameter(Mandatory)][object]$Spec, [Parameter(Mandatory)][ValidateSet('stage', 'commit', 'revert')][string]$Mode, [Parameter(Mandatory)][string]$ChangeId, [bool]$Verified = $false)
+    param([Parameter(Mandatory)][object]$Spec, [Parameter(Mandatory)][ValidateSet('stage', 'commit', 'revert', 'disarm')][string]$Mode, [Parameter(Mandatory)][string]$ChangeId, [bool]$Verified = $false)
     @{
         mode = $Mode; changeId = $ChangeId; verified = $Verified
+        # On commit the node arms a timer that puts the snapshot back by itself if the orchestrator does not confirm (mode disarm) in time.
+        revertMinutes = $(if ($Mode -eq 'commit') { [int]$Spec.RevertMinutes } else { 0 })
         managementIp = $Spec.ManagementIp; currentAddress = $Spec.CurrentAddress; listenerBind = $Spec.ListenerBind
         httpListener = $Spec.HttpListener; httpsListener = $Spec.HttpsListener
         rules = @($Spec.Rules); listeners = @($Spec.Listeners); ruleNames = @($Spec.RuleNames); rdpEnabled = $Spec.RdpEnabled
@@ -139,14 +141,69 @@ function Get-AzlRemotingCurrentAddress {
     return ''
 }
 
+function Get-AzlRemotingSourceAddress {
+    <#
+    .SYNOPSIS
+        The local address of this host that routes to a destination: the source address the node sees. Nothing is sent (a UDP socket is
+        connected, which only asks the routing table). Empty when it can't be worked out.
+    .PARAMETER Resolver
+        { param($Destination) } returns the address text. Default: a UDP socket. A test injects it.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([string]$Destination, [scriptblock]$Resolver = {
+            param($Destination)
+            $ip = $null
+            if (-not [System.Net.IPAddress]::TryParse($Destination, [ref]$ip)) { return '' }
+            $socket = [System.Net.Sockets.Socket]::new($ip.AddressFamily, [System.Net.Sockets.SocketType]::Dgram, [System.Net.Sockets.ProtocolType]::Udp)
+            try { $socket.Connect($ip, 5985); return $socket.LocalEndPoint.Address.ToString() } finally { $socket.Dispose() }
+        })
+    if (-not $Destination) { return '' }
+    try { return [string](& $Resolver $Destination) } catch { return '' }
+}
+
+function Test-AzlAddressInScope {
+    <#
+    .SYNOPSIS
+        Whether an address is inside a firewall RemoteAddress list (Any, CIDRs, addresses). LocalSubnet and the other keywords depend on the
+        node and can't be judged from here: they are taken as "can't tell", which counts as inside (nothing is blocked on a guess). Pure.
+    #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param([Parameter(Mandatory)][string]$Address, [string[]]$Scope = @())
+    $a = $null
+    if (-not [System.Net.IPAddress]::TryParse($Address, [ref]$a)) { return $true }
+    if ($a.IsIPv4MappedToIPv6) { $a = $a.MapToIPv4() }
+    foreach ($entry in @($Scope | Where-Object { $_ })) {
+        if ($entry -eq 'Any') { return $true }
+        if ($entry -in 'LocalSubnet', 'DNS', 'DHCP', 'WINS', 'DefaultGateway', 'Internet', 'Intranet') { return $true }
+        $c = ConvertTo-AzlCidr -Text $entry
+        if (-not $c.Valid) { continue }
+        $network = [System.Net.IPAddress]::Parse($c.Network)
+        if ($network.AddressFamily -ne $a.AddressFamily) { continue }
+        $x = $a.GetAddressBytes(); $y = $network.GetAddressBytes()
+        $same = $true
+        for ($i = 0; $i -lt $x.Length -and $same; $i++) {
+            $keep = [Math]::Max(0, [Math]::Min(8, $c.Prefix - 8 * $i))
+            $mask = if ($keep -eq 0) { 0 } else { (0xFF -shl (8 - $keep)) -band 0xFF }
+            if (($x[$i] -band $mask) -ne $y[$i]) { $same = $false }
+        }
+        if ($same) { return $true }
+    }
+    return $false
+}
+
 function Read-AzlRemotingState {
     <#
     .SYNOPSIS
-        The RemoteManagement Read on one node (changes nothing). Also records the address in use on the node spec.
+        The RemoteManagement Read on one node (changes nothing). Also records the address in use and this host's source address on the node spec.
+    .PARAMETER SourceResolver
+        { param($Destination) } the local address that routes to the node. Default: Get-AzlRemotingSourceAddress.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][object]$Spec, [Parameter(Mandatory)][object]$Transport)
+    param([Parameter(Mandatory)][object]$Spec, [Parameter(Mandatory)][object]$Transport, [scriptblock]$SourceResolver)
     $Spec.CurrentAddress = Get-AzlRemotingCurrentAddress -Transport $Transport -Node $Spec.Node
+    $Spec.SourceAddress = $(if ($SourceResolver) { Get-AzlRemotingSourceAddress -Destination $Spec.CurrentAddress -Resolver $SourceResolver } else { Get-AzlRemotingSourceAddress -Destination $Spec.CurrentAddress })
     Invoke-AzlNodeScript -Transport $Transport -Node $Spec.Node -Script (Get-AzlRemotingPayload -Name Read) -Parameters (Get-AzlRemotingReadParameter -Spec $Spec) -TimeoutSeconds 600
 }
 
@@ -188,10 +245,12 @@ function Get-RmPlanItem {
 }
 
 function Get-AzlRemotingListenIp {
-    # The address the listener binds to: the management address in the file if the node holds it, else the address in use.
+    # The address the listener and the local scope of the rules bind to: the management address in the file, once the node holds it AND this
+    # session came in on it (or has no address). Until then '' : the listener stays on * and the rules take any local address, so nothing
+    # stops answering when the Network step changes the address. The next pass narrows them. Same rule as Get-BindAddress on the node.
     param([object]$Spec, [object]$State)
     $own = @(Get-RmProp $State 'addresses' @() | ForEach-Object { [string]$_ })
-    foreach ($candidate in @($Spec.ManagementIp, $Spec.CurrentAddress)) { if ($candidate -and $candidate -in $own) { return $candidate } }
+    if ($Spec.ManagementIp -and $Spec.ManagementIp -in $own -and (-not $Spec.CurrentAddress -or $Spec.CurrentAddress -eq $Spec.ManagementIp)) { return [string]$Spec.ManagementIp }
     return ''
 }
 
@@ -215,7 +274,6 @@ function Compare-AzlRemotingState {
     $service = Get-RmProp $State 'service'
     $listeners = @(Get-RmProp $State 'listeners' @())
     $rules = @(Get-RmProp $State 'rules' @())
-    $own = @(Get-RmProp $State 'addresses' @() | ForEach-Object { [string]$_ })
     $listenIp = Get-AzlRemotingListenIp -Spec $Spec -State $State
 
     # ---- the WinRM baseline (the denylist)
@@ -237,11 +295,14 @@ function Compare-AzlRemotingState {
     }
 
     # ---- the listeners
-    $bindIp = $p.Listener.Bind -eq 'managementIp'
-    if ($bindIp -and -not $listenIp) {
-        $items.Add((Get-RmPlanItem $n 'listener address' "management IP '$($Spec.ManagementIp)' not on the node" 'bound to the management IP' Blocked "The listener is to be bound to the management IP, and neither $($Spec.ManagementIp) nor the address in use ($($Spec.CurrentAddress)) is an address of this node. Set the management address (Network step) first, or connect on the node's address."))
+    $wantsIp = $p.Listener.Bind -eq 'managementIp'
+    # Bound to the management IP only when the node holds it (and this session came in on it). Before that the listener stays on * : binding to the
+    # address in use would stop answering when the Network step changes the address.
+    $bindIp = $wantsIp -and [bool]$listenIp
+    if ($wantsIp -and -not $listenIp) {
+        $items.Add((Get-RmPlanItem $n 'listener address' "management IP '$($Spec.ManagementIp)' not on the node (or not the address in use)" 'bound to the management IP' Info "Until this node holds $($Spec.ManagementIp) and this session uses it, the listener stays on * and the firewall rules take any local address. The Network step sets the address; the next pass binds the listener and the rules to it."))
     }
-    else {
+    if ($true) {
         $wantAddress = if ($bindIp) { "IP:$listenIp" } else { '*' }
         foreach ($l in @($Spec.PresentListeners)) {
             $haveL = @($listeners | Where-Object { $_.transport -eq $l.transport -and ((-not $bindIp) -or $_.address -eq $wantAddress) })
@@ -266,7 +327,7 @@ function Compare-AzlRemotingState {
     }
 
     # ---- the firewall rules
-    $desiredLocal = @($Spec.ManagementIp, $Spec.CurrentAddress | Where-Object { $_ -and $_ -in $own } | Select-Object -Unique | ForEach-Object { ConvertTo-RmAddress $_ })
+    $desiredLocal = @(@($listenIp) | Where-Object { $_ } | ForEach-Object { ConvertTo-RmAddress $_ })
     if ($desiredLocal.Count -eq 0) { $desiredLocal = @('Any') }
     foreach ($r in $Spec.Rules) {
         $ruleName = if ($r.Contains('name')) { [string]$r['name'] } else { '' }
@@ -296,7 +357,9 @@ function Compare-AzlRemotingState {
                     continue
                 }
                 foreach ($f in $found) {
-                    if ($r.desired -eq 'present') {
+                    # Only a rule that allows exactly 5985 goes with the HTTP listener. A rule that allows 5986 keeps the scope of the profile, whatever happens to HTTP.
+                    $httpRule = ([string]$f.port -eq '5985')
+                    if ($r.desired -eq 'present' -or -not $httpRule) {
                         $reasons = @()
                         if (-not $f.enabled) { $reasons += 'disabled' }
                         if ($f.profile -ne 'Any') { $reasons += "profile $($f.profile)" }
@@ -337,6 +400,16 @@ function Compare-AzlRemotingState {
     if ($domain) { $items.Add((Get-RmPlanItem $n 'authentication' "domain joined, class $($p.Class)" $p.Authentication.Mode Info "$($p.Authentication.Description) Connect by FQDN with Kerberos and remove this host's TrustedHosts entries; after the join, check Group Policy did not widen the scope.")) }
     $pending = Get-RmProp $State 'pending'
     if ($pending) { $items.Add((Get-RmPlanItem $n 'staged change' "change $($pending.changeId) staged $($pending.taken) and not committed" 'none' Info 'An earlier run staged a change and did not commit it. The next apply restores its snapshot first.')) }
+
+    # ---- the operator must stay inside the scope the commit narrows the firewall to. The commit sets the exact scope of the profile; a source address
+    # of this host that is outside it would lock this host out of the node. Nothing of this step is applied then: every change becomes Blocked.
+    $source = [string]$Spec.SourceAddress
+    $scope = @($p.Firewall.RemoteAddress)
+    if ($source -and -not (Test-AzlAddressInScope -Address $source -Scope $scope)) {
+        $why = "This host reaches $n from $source, which is not in the firewall scope the class $($p.Class) sets on the node ($($scope -join ', ')). Applying it would lock this host out. Add $source (or its network) to os_configuration.remoting.allowed_source_cidrs, or run from a host inside the scope."
+        foreach ($i in @($items | Where-Object { $_.Action -eq 'Change' -and $_.Apply -and $_.Apply.kind -eq 'remoting' })) { $i.Action = 'Blocked'; $i.Apply = $null; $i.Note = ("Not applied: " + $why) }
+        $items.Insert(0, (Get-RmPlanItem $n 'operator access' "this host connects from $source" "inside $($scope -join ', ')" Blocked $why))
+    }
     return $items.ToArray()
 }
 
@@ -418,6 +491,37 @@ function Test-AzlRemotingPath {
     [pscustomobject]@{ Ok = $true; Verified = [bool]$read.Ok; Reason = $(if ($read.Ok) { '' } else { "The HTTPS path is not verified: $($read.Reason) Install the node's certificate in this host's trust store (docs: the pre-join certificate trust procedure), then run again." }) }
 }
 
+function Test-AzlRemotingFreshSession {
+    <#
+    .SYNOPSIS
+        After the commit: can this host open a NEW session to the node (the open one may survive a firewall change that a new one does not)?
+        A node reached through Arc has no firewall path to test. Returns Ok and Reason.
+    .PARAMETER Verified
+        The HTTPS path was verified, so a commit that removes HTTP leaves HTTPS only: the fresh session uses it.
+    .PARAMETER OpenAndRead
+        { param($Spec, $Transport, $Address, $Ssl) } returns Ok and Reason. Default: a new WinRM transport and a Read through it.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Spec, [object]$Transport, [bool]$Verified = $false, [scriptblock]$OpenAndRead)
+    if (-not $Transport -or $Transport.Kind -ne 'WinRM' -or -not $Transport.PSObject.Properties['State']) { return [pscustomobject]@{ Ok = $true; Reason = '' } }
+    $state = $Transport.State
+    $address = if ($Spec.CurrentAddress) { [string]$Spec.CurrentAddress } elseif ($state.Addresses.ContainsKey($Spec.Node)) { [string]$state.Addresses[$Spec.Node] } else { '' }
+    $ssl = [bool]$state.Ssl -or ($Spec.Profile.Transport.RemoveHttpAfterHttps -and $Verified)
+    if (-not $OpenAndRead) {
+        if (-not $state.ContainsKey('Credential') -or -not $state.Credential -or -not $address) { return [pscustomobject]@{ Ok = $true; Reason = '' } }
+        $OpenAndRead = {
+            param($Spec, $Transport, $Address, $Ssl)
+            $arguments = @{ Address = @{ $Spec.Node = $Address }; Credential = $Transport.State.Credential; UseSsl = [bool]$Ssl; Authentication = $Transport.State.Authentication; SkipCertificateCheck = [bool]$Transport.State.SkipCertificateCheck }
+            $fresh = New-AzlWinRmTransport @arguments
+            try { $null = Invoke-AzlNodeScript -Transport $fresh -Node $Spec.Node -Script (Get-AzlRemotingPayload -Name Read) -Parameters (Get-AzlRemotingReadParameter -Spec $Spec) -TimeoutSeconds 180 -Tries 1; return [pscustomobject]@{ Ok = $true; Reason = '' } }
+            catch { return [pscustomobject]@{ Ok = $false; Reason = $_.Exception.Message } }
+            finally { try { & $fresh.CloseSession $fresh $Spec.Node } catch { Write-Verbose "fresh session not closed: $($_.Exception.Message)" } }
+        }
+    }
+    $r = & $OpenAndRead $Spec $Transport $address $ssl
+    [pscustomobject]@{ Ok = [bool]$r.Ok; Reason = [string]$r.Reason }
+}
+
 function Invoke-AzlRemotingApply {
     <#
     .SYNOPSIS
@@ -445,8 +549,10 @@ function Invoke-AzlRemotingApply {
         [scriptblock]$Invoke,
         [scriptblock]$ConfirmPath,
         [scriptblock]$Guard,
+        [scriptblock]$Reconnect,
         [string]$ChangeId = ('rm-' + [guid]::NewGuid().ToString('N').Substring(0, 12))
     )
+    if (-not $Reconnect) { $Reconnect = { param($Verified) Test-AzlRemotingFreshSession -Spec $Spec -Transport $Transport -Verified $Verified } }
     $node = $Spec.Node
     if (-not $Invoke) {
         $Invoke = { param($Mode, $Parameters, $Secrets2) Write-Verbose "$node change call: $Mode"; Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlRemotingPayload -Name Change) -Parameters $Parameters -Secrets $Secrets2 -TimeoutSeconds 600 -Tries 1 }
@@ -463,7 +569,7 @@ function Invoke-AzlRemotingApply {
     }
 
     $change = [pscustomobject]@{
-        Name = 'RemoteManagement'; Node = $node; ChangeId = $ChangeId; Spec = $Spec; Secrets = $Secrets; Invoke = $Invoke; ConfirmPath = $ConfirmPath
+        Name = 'RemoteManagement'; Node = $node; ChangeId = $ChangeId; Spec = $Spec; Secrets = $Secrets; Invoke = $Invoke; ConfirmPath = $ConfirmPath; Reconnect = $Reconnect
         Stage = {
             param($Self)
             try {
@@ -479,7 +585,20 @@ function Invoke-AzlRemotingApply {
             try {
                 $r = & $Self.Invoke 'commit' (Get-AzlRemotingChangeParameter -Spec $Self.Spec -Mode commit -ChangeId $Self.ChangeId -Verified ([bool]$Confirmation.Verified)) $Self.Secrets
                 $failed = @($r.results | Where-Object { $_.status -eq 'failed' })
-                [pscustomobject]@{ Ok = ([bool]$r.ok -and $failed.Count -eq 0); Reason = $(if ($failed.Count) { ($failed | ForEach-Object { "$($_.id): $($_.detail)" }) -join '; ' } else { '' }); Answer = $r }
+                $ok = ([bool]$r.ok -and $failed.Count -eq 0)
+                $reason = $(if ($failed.Count) { ($failed | ForEach-Object { "$($_.id): $($_.detail)" }) -join '; ' } else { '' })
+                if ($ok) {
+                    # The commit narrowed the firewall: prove this host still gets in through a NEW session. If not, the guard reverts (and the node's own timer
+                    # would revert it anyway). Only when it does is the timer taken away.
+                    $fresh = & $Self.Reconnect ([bool]$Confirmation.Verified)
+                    if (-not $fresh.Ok) { $ok = $false; $reason = "After the commit this host could not open a new session to the node, so the change is reverted: $($fresh.Reason)" }
+                    else {
+                        $d = & $Self.Invoke 'disarm' (Get-AzlRemotingChangeParameter -Spec $Self.Spec -Mode disarm -ChangeId $Self.ChangeId) $Self.Secrets
+                        $dFailed = @((Get-RmProp $d 'results' @()) | Where-Object { $_.status -eq 'failed' })
+                        if ($dFailed.Count) { $ok = $false; $reason = "The node's revert timer could not be removed, so the change is reverted now rather than by the timer later: $(($dFailed | ForEach-Object { $_.detail }) -join '; ')" }
+                    }
+                }
+                [pscustomobject]@{ Ok = $ok; Reason = $reason; Answer = $r }
             }
             catch { [pscustomobject]@{ Ok = $false; Reason = "The commit call failed: $($_.Exception.Message)"; Answer = $null } }
         }
@@ -578,4 +697,4 @@ function Remove-AzlNodeCertificateTrust {
     if ($PSCmdlet.ShouldProcess("Cert:\$StoreLocation\Root\$Thumbprint", 'Remove')) { & $Remover $Thumbprint $StoreLocation }
 }
 
-Export-ModuleMember -Function Read-AzlRemotingState, Get-AzlRemotingCurrentAddress, New-AzlRemotingNodeSpec, Get-AzlRemotingReadParameter, Get-AzlRemotingChangeParameter, Get-AzlRemotingSecret, Compare-AzlRemotingState, Invoke-AzlDefaultRemotingGuard, Switch-AzlWinRmTransportToSsl, Test-AzlRemotingPath, Invoke-AzlRemotingApply, Save-AzlNodeCertificate, Import-AzlNodeCertificateTrust, Remove-AzlNodeCertificateTrust
+Export-ModuleMember -Function Read-AzlRemotingState, Get-AzlRemotingCurrentAddress, New-AzlRemotingNodeSpec, Get-AzlRemotingReadParameter, Get-AzlRemotingChangeParameter, Get-AzlRemotingSecret, Compare-AzlRemotingState, Invoke-AzlDefaultRemotingGuard, Switch-AzlWinRmTransportToSsl, Test-AzlRemotingPath, Test-AzlRemotingFreshSession, Get-AzlRemotingSourceAddress, Test-AzlAddressInScope, Invoke-AzlRemotingApply, Save-AzlNodeCertificate, Import-AzlNodeCertificateTrust, Remove-AzlNodeCertificateTrust
