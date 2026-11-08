@@ -233,6 +233,8 @@ function Get-AzlArmRunSetting {
         deploymentSettingsApiVersion = ''; revalidate = $false; allowRevalidate = $false; requireValidatedParameterHash = $false
         osReportMaxAgeHours = 48; staleSkewMinutes = 5; knownIssuesFile = ''; solutionVersion = ''; sbeCatalogPath = ''; registerResourceProviders = $false
         skipPreClusterVerification = $false; preClusterVerificationMaxAgeHours = 4; preClusterVerificationReportDirectory = ''
+        installEnvironmentChecker = $false; keepEnvironmentChecker = $false
+        verificationMinMemoryGiB = 32; verificationMinBootDiskGB = 200; verificationMinDataDiskGB = 500; verificationMinLinkGbps = 10; verificationMaxClockSkewSeconds = 300
     }
     $apply = {
         param($source)
@@ -267,7 +269,11 @@ function Get-AzlArmRunSetting {
     if ($s.pollMaxSeconds -lt $s.pollSeconds) { Stop-AzlArmInput 'Setting pollMaxSeconds must not be less than pollSeconds.' }
     if ([string]$s.approvalMode -notin 'stop', 'prompt', 'none') { Stop-AzlArmInput "Setting approval must be stop, prompt or none, not '$($s.approvalMode)'." }
     $s.approvalMode = [string]$s.approvalMode
-    foreach ($k in 'resume', 'requireOsConfigurationReport', 'revalidate', 'allowRevalidate', 'requireValidatedParameterHash', 'registerResourceProviders', 'skipPreClusterVerification') { $s[$k] = [bool]$s[$k] }
+    foreach ($k in 'resume', 'requireOsConfigurationReport', 'revalidate', 'allowRevalidate', 'requireValidatedParameterHash', 'registerResourceProviders', 'skipPreClusterVerification', 'installEnvironmentChecker', 'keepEnvironmentChecker') { $s[$k] = [bool]$s[$k] }
+    foreach ($k in 'verificationMinMemoryGiB', 'verificationMinBootDiskGB', 'verificationMinDataDiskGB', 'verificationMinLinkGbps', 'verificationMaxClockSkewSeconds') {
+        if ([int]$s[$k] -lt 1) { Stop-AzlArmInput "Setting $k must be 1 or more." }
+        $s[$k] = [int]$s[$k]
+    }
     if ([int]$s.preClusterVerificationMaxAgeHours -lt 1 -or [int]$s.preClusterVerificationMaxAgeHours -gt 168) { Stop-AzlArmInput 'Setting preClusterVerificationMaxAgeHours must be from 1 to 168.' }
     $s.preClusterVerificationMaxAgeHours = [int]$s.preClusterVerificationMaxAgeHours
     $s.preClusterVerificationReportDirectory = ([string]$s.preClusterVerificationReportDirectory).Trim()

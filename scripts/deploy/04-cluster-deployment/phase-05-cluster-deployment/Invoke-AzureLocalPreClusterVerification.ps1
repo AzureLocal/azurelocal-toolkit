@@ -49,6 +49,12 @@
 .PARAMETER Fix
     Opt in (Mode Verify): register the mandatory Azure Local resource providers that are not registered, and wait until they are
     Registered. Azure side only; nothing on a node or in Active Directory is ever changed. Needs Owner or Contributor on the subscription.
+.PARAMETER InstallEnvironmentChecker
+    Opt in (Mode Verify): install the module AzStackHci.EnvironmentChecker on the nodes for this run (the readiness checks run it there) and remove it
+    again at the end, in a finally block. Learn says to uninstall it from the nodes before the deployment, so without this switch nothing is installed
+    and the readiness checks are Skipped where the module is missing (they block unless accepted). The nodes need to reach the PowerShell Gallery.
+.PARAMETER KeepEnvironmentChecker
+    With -InstallEnvironmentChecker: do not remove the module at the end. The report then says it is still installed.
 .PARAMETER Category
     Run only these categories: azure, identity, nodes, network, storage, readiness. A partial run never passes the ARM precondition.
 .PARAMETER Settings
@@ -79,6 +85,8 @@ param(
     [string]$ReportDirectory,
     [string[]]$AcceptSkipped,
     [switch]$Fix,
+    [switch]$InstallEnvironmentChecker,
+    [switch]$KeepEnvironmentChecker,
     [ValidateSet('azure', 'identity', 'nodes', 'network', 'storage', 'readiness')][string[]]$Category,
     [hashtable]$Settings,
     [string]$ConfigPath,
