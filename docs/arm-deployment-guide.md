@@ -46,6 +46,7 @@ everything except submit.
 | `-AcknowledgeKnownIssues` | Known issue ids you accept, for example `arc-device-id-name`. |
 | `-Settings`, `-ConfigPath` | Run settings as a hashtable or JSON file; they win over the master file's `deployment` block. |
 | `-AllowRevalidate` | Validate an instance in a failed deployment state. Microsoft says not to; support-guided recovery only. |
+| `-RegisterResourceProviders` | Opt in: register the mandatory resource providers that are not registered and wait until they are Registered (Validate and Deploy only). Without it the run never changes Azure. Same as `deployment.register_resource_providers`. |
 | `-TemplateFile` | A local copy of the quickstart template instead of the download. |
 | `-Offline` | Plan only: no Azure call at all. |
 
@@ -76,7 +77,7 @@ Each check is `Passed`, `Failed` (stops the run, exit 1), `Warning`, or `Skipped
 | --- | --- | --- |
 | `AzureContext` | Signed in; the subscription and tenant are the file's | `Set-AzContext`, or fix `azure.subscription_id` |
 | `ResourceGroup` | `azure.resource_group` exists | Create it |
-| `ResourceProviders` | AzureStackHCI, HybridCompute, GuestConfiguration, HybridConnectivity, ExtendedLocation, ResourceConnector, KeyVault, Storage registered | `az provider register --namespace <name>` |
+| `ResourceProviders` | All 13 resource providers Microsoft requires are Registered (list below). Any one that is not is **Failed**, never a Warning, with its own command in the report | `Register-AzResourceProvider -ProviderNamespace <name>`, or run with `-RegisterResourceProviders` |
 | `Permissions` | May write deployments, clusters, vaults, storage accounts and role assignments at the resource group | Owner, or Contributor plus User Access Administrator |
 | `NamesAvailable` | Diagnostic and witness storage account names, and the new Key Vault's name, are free | Pick another name; a soft-deleted vault keeps its name |
 | `KeyVaultSecrets` | Every `keyvault://` reference points at a listed vault and an existing secret (the value is not read) | Create the secret; grant `Get` on secrets |
@@ -94,6 +95,39 @@ Each check is `Passed`, `Failed` (stops the run, exit 1), `Warning`, or `Skipped
 
 Skip a check on purpose with `deployment.skip_preconditions`; it still appears in the report as Skipped.
 
+### The mandatory resource providers
+
+Azure Local needs these 13 resource providers registered in the subscription before the deployment starts. The list is the one in
+Microsoft Learn, [Assign required permissions for Azure Local deployment](https://learn.microsoft.com/azure/azure-local/deploy/deployment-arc-register-server-permissions)
+(Azure prerequisites, *Register required resource providers*). Microsoft marks none of them optional for a hyperconverged deployment.
+
+| Provider | Provider | Provider |
+| --- | --- | --- |
+| `Microsoft.HybridCompute` | `Microsoft.GuestConfiguration` | `Microsoft.HybridConnectivity` |
+| `Microsoft.AzureStackHCI` | `Microsoft.Kubernetes` | `Microsoft.KubernetesConfiguration` |
+| `Microsoft.ExtendedLocation` | `Microsoft.ResourceConnector` | `Microsoft.HybridContainerService` |
+| `Microsoft.Attestation` | `Microsoft.Storage` | `Microsoft.Insights` |
+| `Microsoft.KeyVault` | | |
+
+Azure's own validation (step `ValidateArcIntegration`, check `AzStackHci_ArcIntegration_MandatoryRPRegistration_Check`) fails on any
+of them that is not registered, and `Microsoft.Insights` is needed for the diagnostic account and the Key Vault audit logging. A
+missing `Microsoft.HybridContainerService` used to be only a Warning here and the failure came later, from Azure; the precondition now
+fails first and names every missing provider with `Register-AzResourceProvider -ProviderNamespace <name>`. A provider that is
+`Registering` still counts as missing until it is `Registered`.
+
+**Registration is opt in.** By default the run reads and never changes Azure. To let the run register what is missing, pass
+`-RegisterResourceProviders` (or set `deployment.register_resource_providers: true`, or `-Settings @{ registerResourceProviders = $true }`):
+
+```powershell
+./Invoke-AzureLocalArmDeployment.ps1 -InfrastructureFile ./infrastructure.yml -Mode Validate -RegisterResourceProviders
+```
+
+* It registers only the providers that are not registered, asks once for each, and reads their state every 10 seconds for up to 15
+  minutes until all are `Registered`. A provider already `Registering` is waited for, not asked again.
+* It acts only in Mode Validate, Deploy or ValidateAndDeploy. Mode Plan and `-WhatIf` never change Azure; with the switch they still
+  report the providers as Failed and say nothing was registered.
+* It needs Owner or Contributor on the subscription. A refused registration, a provider that does not exist in the subscription, or a
+  provider still not `Registered` after 15 minutes is a Failed check that names the provider and the manual command.
 <!-- sbe-optional-arm:begin -->
 ### The Solution Builder Extension is opt-in
 

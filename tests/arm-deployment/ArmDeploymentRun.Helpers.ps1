@@ -75,6 +75,7 @@ function Get-FakeWorld {
         Clock = [pscustomobject]@{ Time = [datetime]::Parse('2026-11-07T12:00:00Z', [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal); Sleeps = [System.Collections.Generic.List[double]]::new() }
         Before = $null; BeforeArm = @{}; After = @{}; ArmAfter = @{}; LastMode = '';  Polls = 0; Submitted = $false; SubmitCalls = [System.Collections.Generic.List[object]]::new()
         PreReads = 0; Nodes = @{}; SecretReads = [System.Collections.Generic.List[string]]::new(); Overrides = @{}; PollFailures = 0
+        RegisteredProviders = [System.Collections.Generic.List[string]]::new()
     }
 }
 
@@ -88,6 +89,7 @@ function Get-FakeAdapter {
         GetContext = { [pscustomobject]@{ SubscriptionId = '00000000-0000-0000-0000-000000000000'; TenantId = '00000000-0000-0000-0000-000000000000'; Account = 'tester@example.invalid' } }
         GetResourceGroup = { [pscustomobject]@{ name = 'rg-iic-azl-01' } }
         GetProviderState = { 'Registered' }
+        RegisterProvider = { param($Subscription, $Namespace) $null = $Subscription; $w.RegisteredProviders.Add($Namespace) }.GetNewClosure()
         GetPermission = { , @([pscustomobject]@{ Actions = @('*'); NotActions = @() }) }
         TestNameAvailable = { [pscustomobject]@{ Available = $true; ExistsInResourceGroup = $false; Reason = '' } }
         TestSecret = { $true }

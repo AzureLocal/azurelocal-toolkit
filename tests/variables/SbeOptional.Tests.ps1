@@ -19,10 +19,11 @@ BeforeAll {
 }
 
 Describe 'The registry makes the SBE optional' {
-    It 'is bumped to 5.0.2 with a change-log entry that says the SBE is optional' {
-        $script:Raw._metadata.version | Should -Be '5.0.2'
-        $entry = @($script:Raw._metadata.change_log)[0]
-        $entry.version | Should -Be '5.0.2'
+    It 'was bumped to 5.0.2 with a change-log entry that says the SBE is optional' {
+        # Later versions may follow; the 5.0.2 entry stays in the change log.
+        [version]$script:Raw._metadata.version | Should -BeGreaterOrEqual ([version]'5.0.2')
+        $entry = @(@($script:Raw._metadata.change_log) | Where-Object { $_.version -eq '5.0.2' })[0]
+        $entry | Should -Not -BeNullOrEmpty
         $entry.change | Should -Match 'hardware\.sbe'
         $entry.change | Should -Match 'optional'
     }

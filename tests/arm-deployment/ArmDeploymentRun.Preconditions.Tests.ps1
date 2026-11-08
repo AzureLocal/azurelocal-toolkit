@@ -37,14 +37,14 @@ Describe 'AzureContext, ResourceGroup, ResourceProviders, Permissions' {
         (Get-Pre $r ResourceGroup).result | Should -Be 'Failed'
         (Get-Pre $r ResourceGroup).nextAction | Should -Match 'azure.resource_group'
     }
-    It 'an unregistered required provider fails with the command; an unregistered recommended one only warns' {
+    It 'an unregistered mandatory provider fails with the command, whichever one it is (the full list is in ArmDeploymentRun.ResourceProviders.Tests.ps1)' {
         $r = Invoke-TestRun -World (Get-FakeWorld) -Mode Plan -Override @{ GetProviderState = { param($Subscription, $Namespace) $null = $Subscription; if ($Namespace -eq 'Microsoft.AzureStackHCI') { 'NotRegistered' } else { 'Registered' } } }
         (Get-Pre $r ResourceProviders).result | Should -Be 'Failed'
         (Get-Pre $r ResourceProviders).evidence | Should -Match 'Microsoft.AzureStackHCI'
-        (Get-Pre $r ResourceProviders).nextAction | Should -Match 'az provider register --namespace Microsoft.AzureStackHCI'
+        (Get-Pre $r ResourceProviders).nextAction | Should -Match 'Register-AzResourceProvider -ProviderNamespace Microsoft.AzureStackHCI'
         $r2 = Invoke-TestRun -World (Get-FakeWorld) -Mode Plan -Override @{ GetProviderState = { param($Subscription, $Namespace) $null = $Subscription; if ($Namespace -eq 'Microsoft.Insights') { 'NotRegistered' } else { 'Registered' } } }
-        (Get-Pre $r2 ResourceProviders).result | Should -Be 'Warning'
-        $r2.ExitCode | Should -Be 0
+        (Get-Pre $r2 ResourceProviders).result | Should -Be 'Failed'
+        $r2.ExitCode | Should -Be 1
     }
     It 'Permissions: Owner passes, Reader fails, Contributor (no role assignment write) fails and names it' {
         $owner = Invoke-TestRun -World (Get-FakeWorld) -Mode Validate -Override @{ GetPermission = { , @([pscustomobject]@{ Actions = @('*'); NotActions = @() }) } }

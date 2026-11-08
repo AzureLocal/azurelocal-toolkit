@@ -51,6 +51,11 @@
     Resubmit a failed Deploy (and attach to a running one). Without it a failed Deploy is refused.
 .PARAMETER AllowRevalidate
     Allow Validate on an instance in a failed deployment state. Microsoft says not to; for support-guided recovery only.
+.PARAMETER RegisterResourceProviders
+    Opt in (Mode Validate, Deploy or ValidateAndDeploy): register the mandatory Azure Local resource providers that are not registered
+    and wait until they are Registered. Needs Owner or Contributor on the subscription. Without it nothing in Azure is changed and
+    a mandatory provider that is not registered fails the precondition ResourceProviders (with the command for each). Never done in
+    Plan or with -WhatIf. Same as deployment.register_resource_providers.
 .PARAMETER AutoApprove
     ValidateAndDeploy: continue to Deploy without asking (same as -ApprovalMode none).
 .PARAMETER ApprovalMode
@@ -86,6 +91,7 @@ param(
     [string]$TemplateFile,
     [switch]$Resume,
     [switch]$AllowRevalidate,
+    [switch]$RegisterResourceProviders,
     [switch]$AutoApprove,
     [ValidateSet('', 'stop', 'prompt', 'none')][string]$ApprovalMode = '',
     [switch]$ProbeOsConfiguration,

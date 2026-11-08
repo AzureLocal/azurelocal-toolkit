@@ -47,8 +47,24 @@ $script:Transitions = @{
     DeploymentTimedOut = @()
 }
 
-$script:RequiredProviders = @('Microsoft.AzureStackHCI', 'Microsoft.HybridCompute', 'Microsoft.GuestConfiguration', 'Microsoft.HybridConnectivity', 'Microsoft.ExtendedLocation', 'Microsoft.ResourceConnector', 'Microsoft.KeyVault', 'Microsoft.Storage')
-$script:RecommendedProviders = @('Microsoft.Kubernetes', 'Microsoft.KubernetesConfiguration', 'Microsoft.HybridContainerService', 'Microsoft.Attestation', 'Microsoft.Insights')
+# The resource providers Microsoft requires in the subscription before an Azure Local deployment. Source: Microsoft Learn,
+# "Assign required permissions for Azure Local deployment", Azure prerequisites, "Register required resource providers"
+# (https://learn.microsoft.com/azure/azure-local/deploy/deployment-arc-register-server-permissions): the page lists these 13
+# with Register-AzResourceProvider and marks none of them optional for a hyperconverged deployment. Microsoft.Insights is
+# required for monitoring and logging (the diagnostic account and the Key Vault audit logging fail validation without it);
+# Microsoft.Attestation is enforced by the readiness checks. Azure's own validation (step ValidateArcIntegration, check
+# AzStackHci_ArcIntegration_MandatoryRPRegistration_Check) fails on any of them that is not registered, so the precondition
+# ResourceProviders fails on any of them too. OptionalProviders is empty: a provider Microsoft marks optional (the small form
+# factor page does: "some providers are necessary only for specific use cases") would go there and only warn; none applies here.
+$script:MandatoryProviders = @(
+    'Microsoft.HybridCompute', 'Microsoft.GuestConfiguration', 'Microsoft.HybridConnectivity', 'Microsoft.AzureStackHCI',
+    'Microsoft.Kubernetes', 'Microsoft.KubernetesConfiguration', 'Microsoft.ExtendedLocation', 'Microsoft.ResourceConnector',
+    'Microsoft.HybridContainerService', 'Microsoft.Attestation', 'Microsoft.Storage', 'Microsoft.Insights', 'Microsoft.KeyVault'
+)
+$script:OptionalProviders = @()
+# Registering a provider takes seconds to a few minutes; the opt-in registration waits this long, reading every 10 seconds.
+$script:ProviderRegistrationTimeoutMinutes = 15
+$script:ProviderRegistrationPollSeconds = 10
 $script:RequiredActions = @('Microsoft.Resources/deployments/write', 'Microsoft.AzureStackHCI/clusters/write', 'Microsoft.AzureStackHCI/clusters/deploymentSettings/write', 'Microsoft.KeyVault/vaults/write', 'Microsoft.Storage/storageAccounts/write', 'Microsoft.Authorization/roleAssignments/write')
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -163,7 +179,8 @@ function Get-AzlArmRunSetting {
         pollFactor 1.5, transientErrorLimit 5, approvalMode stop|prompt|none, resume false, requireOsConfigurationReport false,
         skipPreconditions [], acknowledgeKnownIssues [], deploymentSettingsApiVersion '', revalidate false, allowRevalidate false,
         requireValidatedParameterHash false, osReportMaxAgeHours 48, staleSkewMinutes 5, knownIssuesFile '', solutionVersion '',
-        sbeCatalogPath ''. The master file's deployment block uses the same names in snake_case.
+        sbeCatalogPath '', registerResourceProviders false (opt in: register the missing mandatory resource providers). The master file's
+        deployment block uses the same names in snake_case.
     #>
     [CmdletBinding()]
     param([System.Collections.IDictionary]$Infrastructure, [string]$ConfigPath, [System.Collections.IDictionary]$Settings)
@@ -171,7 +188,7 @@ function Get-AzlArmRunSetting {
         validateTimeoutMinutes = 90; deployTimeoutMinutes = 360; pollSeconds = 15; pollMaxSeconds = 120; pollFactor = 1.5; transientErrorLimit = 5
         approvalMode = 'stop'; resume = $false; requireOsConfigurationReport = $false; skipPreconditions = @(); acknowledgeKnownIssues = @()
         deploymentSettingsApiVersion = ''; revalidate = $false; allowRevalidate = $false; requireValidatedParameterHash = $false
-        osReportMaxAgeHours = 48; staleSkewMinutes = 5; knownIssuesFile = ''; solutionVersion = ''; sbeCatalogPath = ''
+        osReportMaxAgeHours = 48; staleSkewMinutes = 5; knownIssuesFile = ''; solutionVersion = ''; sbeCatalogPath = ''; registerResourceProviders = $false
     }
     $apply = {
         param($source)
@@ -199,7 +216,7 @@ function Get-AzlArmRunSetting {
     if ($s.pollMaxSeconds -lt $s.pollSeconds) { Stop-AzlArmInput 'Setting pollMaxSeconds must not be less than pollSeconds.' }
     if ([string]$s.approvalMode -notin 'stop', 'prompt', 'none') { Stop-AzlArmInput "Setting approval must be stop, prompt or none, not '$($s.approvalMode)'." }
     $s.approvalMode = [string]$s.approvalMode
-    foreach ($k in 'resume', 'requireOsConfigurationReport', 'revalidate', 'allowRevalidate', 'requireValidatedParameterHash') { $s[$k] = [bool]$s[$k] }
+    foreach ($k in 'resume', 'requireOsConfigurationReport', 'revalidate', 'allowRevalidate', 'requireValidatedParameterHash', 'registerResourceProviders') { $s[$k] = [bool]$s[$k] }
     $s.solutionVersion = ([string]$s.solutionVersion).Trim()
     if ($s.solutionVersion -and $s.solutionVersion -notmatch '^\d+\.\d+\.\d+\.\d+$') { Stop-AzlArmInput "Setting solutionVersion must be four numeric parts, for example 12.2610.1004.50, not '$($s.solutionVersion)'." }
     $s.sbeCatalogPath = ([string]$s.sbeCatalogPath).Trim()
@@ -500,7 +517,8 @@ function New-AzlArmAzureAdapter {
     .SYNOPSIS
         The table of scriptblocks that touch Azure, a node or the clock. Tests replace members with fakes.
     .DESCRIPTION
-        Reads only, except Submit. Members: Now, Sleep, GetContext, GetResourceGroup, GetProviderState, GetPermission,
+        Reads only, except Submit and RegisterProvider (used only with -RegisterResourceProviders). Members: Now, Sleep, GetContext,
+        GetResourceGroup, GetProviderState, RegisterProvider, GetPermission,
         TestNameAvailable, TestSecret, GetSecret, GetArcMachine, GetDeploymentState, GetArmDeployment, GetTemplate, Submit,
         ResolveDns, TestActiveDirectory, ProbeOsConfiguration, Prompt. A member that is $null is "not available here"; the
         check that needs it is Skipped with that reason.
@@ -522,6 +540,12 @@ function New-AzlArmAzureAdapter {
             param($Subscription, $Namespace)
             $r = Invoke-AzlArm -Method GET -Path "/subscriptions/$Subscription/providers/$Namespace" -ApiVersion '2021-04-01' -AllowNotFound
             if ($r) { [string](Get-AzlProp $r 'registrationState' '') } else { 'NotFound' }
+        }
+        RegisterProvider = {
+            param($Subscription, $Namespace)
+            # The only provider-changing call, and only made when the operator passes -RegisterResourceProviders. The REST form of
+            # Register-AzResourceProvider -ProviderNamespace <ns>; it returns at once and the state moves through Registering.
+            $null = Invoke-AzlArm -Method POST -Path "/subscriptions/$Subscription/providers/$Namespace/register" -ApiVersion '2021-04-01'
         }
         GetPermission = {
             param($Subscription, $ResourceGroup)
@@ -869,14 +893,48 @@ $script:Checks['ResourceGroup'] = {
 
 $script:Checks['ResourceProviders'] = {
     param($Ctx)
-    $missing = @(); $weak = @()
-    foreach ($ns in $script:RequiredProviders) { if ((Invoke-AzlArmAdapter $Ctx.Run.Adapter GetProviderState @($Ctx.Subscription, $ns)) -ne 'Registered') { $missing += $ns } }
-    foreach ($ns in $script:RecommendedProviders) { if ((Invoke-AzlArmAdapter $Ctx.Run.Adapter GetProviderState @($Ctx.Subscription, $ns)) -ne 'Registered') { $weak += $ns } }
-    if ($missing) { return New-AzlArmCheckResult ResourceProviders Failed "Not registered: $($missing -join ', ')." (($missing | ForEach-Object { "az provider register --namespace $_" }) -join '; ') }
-    if ($weak) { return New-AzlArmCheckResult ResourceProviders Warning "Required providers are registered. Not registered (used by Arc VMs and AKS): $($weak -join ', ')." 'Register them before you create Arc VMs or AKS clusters.' }
-    New-AzlArmCheckResult ResourceProviders Passed 'All resource providers are registered.'
+    $adapter = $Ctx.Run.Adapter
+    $state = [ordered]@{}
+    foreach ($ns in $script:MandatoryProviders) { $state[$ns] = [string](Invoke-AzlArmAdapter $adapter GetProviderState @($Ctx.Subscription, $ns)) }
+    $missing = @($state.Keys | Where-Object { $state[$_] -ne 'Registered' })
+    $optional = @($script:OptionalProviders | Where-Object { (Invoke-AzlArmAdapter $adapter GetProviderState @($Ctx.Subscription, $_)) -ne 'Registered' })
+    $warn = if ($optional) { " Not registered (optional): $($optional -join ', ')." } else { '' }
+    $optionalCommands = (($optional | ForEach-Object { "Register-AzResourceProvider -ProviderNamespace $_" }) -join '; ')
+    if (-not $missing) {
+        if ($optional) { return New-AzlArmCheckResult ResourceProviders Warning "All $($script:MandatoryProviders.Count) mandatory resource providers are registered.$warn" $optionalCommands }
+        return New-AzlArmCheckResult ResourceProviders Passed "All $($script:MandatoryProviders.Count) mandatory resource providers are registered."
+    }
+    $commands = (($missing | ForEach-Object { "Register-AzResourceProvider -ProviderNamespace $_" }) -join '; ')
+    $listed = ($missing | ForEach-Object { "$_ ($(if ($state[$_]) { $state[$_] } else { 'unknown' }))" }) -join ', '
+    $reference = 'Microsoft Learn lists them as required (Assign required permissions for Azure Local deployment), and Azure''s validation step ValidateArcIntegration fails on any that is not registered (AzStackHci_ArcIntegration_MandatoryRPRegistration_Check).'
+    # Only the opt-in changes Azure, and never in Plan or with WhatIf (those read and report).
+    $asked = [bool]$Ctx.Settings.registerResourceProviders
+    $mayRegister = $asked -and $Ctx.Run.Mode -ne 'Plan' -and -not $Ctx.Run.WhatIf
+    if (-not $mayRegister) {
+        $hint = if ($asked) { 'Plan and WhatIf never change Azure, so nothing was registered.' } else { 'Or let the run do it: -RegisterResourceProviders (deployment.register_resource_providers) with Mode Validate or Deploy.' }
+        return New-AzlArmCheckResult ResourceProviders Failed "Mandatory resource providers not registered: $listed. $reference$warn" "Register them (Owner or Contributor on the subscription): $commands. $hint"
+    }
+    $notFound = @($missing | Where-Object { $state[$_] -eq 'NotFound' })
+    if ($notFound) { return New-AzlArmCheckResult ResourceProviders Failed "These mandatory resource providers do not exist in the subscription, so they cannot be registered: $($notFound -join ', ')." 'Check the Azure cloud: a sovereign cloud may not offer a provider.' }
+    $requested = [System.Collections.Generic.List[string]]::new()
+    foreach ($ns in $missing) {
+        if ($state[$ns] -eq 'Registering') { continue }   # already in progress: wait, do not ask again
+        try { $null = Invoke-AzlArmAdapter $adapter RegisterProvider @($Ctx.Subscription, $ns) }
+        catch { return New-AzlArmCheckResult ResourceProviders Failed "Registering $ns failed: $($_.Exception.Message)" "Owner or Contributor on the subscription is needed. Register it yourself: Register-AzResourceProvider -ProviderNamespace $ns" }
+        $requested.Add($ns)
+    }
+    $deadline = (& $adapter.Now).AddMinutes($script:ProviderRegistrationTimeoutMinutes)
+    $pending = @($missing)
+    while ($true) {
+        $pending = @($pending | Where-Object { (Invoke-AzlArmAdapter $adapter GetProviderState @($Ctx.Subscription, $_)) -ne 'Registered' })
+        if (-not $pending) { break }
+        if ((& $adapter.Now) -ge $deadline) {
+            return New-AzlArmCheckResult ResourceProviders Failed "Registration was requested ($($requested -join ', ')) but these are not Registered after $($script:ProviderRegistrationTimeoutMinutes) minutes: $($pending -join ', ')." 'Wait for them (Get-AzResourceProvider -ProviderNamespace <name> shows RegistrationState), then run again.'
+        }
+        $null = Invoke-AzlArmAdapter $adapter Sleep @($script:ProviderRegistrationPollSeconds)
+    }
+    New-AzlArmCheckResult ResourceProviders Passed "Registered by this run (-RegisterResourceProviders), now Registered: $($missing -join ', '). The other mandatory providers already were.$warn"
 }
-
 $script:Checks['Permissions'] = {
     param($Ctx)
     $perm = @(Invoke-AzlArmAdapter $Ctx.Run.Adapter GetPermission @($Ctx.Subscription, $Ctx.ResourceGroup))
@@ -1617,6 +1675,10 @@ function Invoke-AzlArmDeploymentRun {
         The parsed master file (Import-AzlInfrastructure), instead of -InfrastructureFile.
     .PARAMETER OsConfigurationReport
         A path (report.json, a node-level report, or the report directory) or an already parsed report.
+    .PARAMETER RegisterResourceProviders
+        Opt in. The precondition ResourceProviders registers the mandatory resource providers that are not registered and waits until
+        they are Registered. Only in Mode Validate, Deploy or ValidateAndDeploy, never in Plan or with -WhatIf. Without it nothing in
+        Azure is changed and a missing provider fails the precondition.
     .PARAMETER Settings
         Run settings (see Get-AzlArmRunSetting); they win over the master file's deployment block and -ConfigPath.
     .PARAMETER Adapter
@@ -1638,6 +1700,8 @@ function Invoke-AzlArmDeploymentRun {
         [string]$TemplateFile,
         [switch]$Resume,
         [switch]$AllowRevalidate,
+        # Opt in: register the mandatory resource providers that are not registered (Validate and Deploy only). Default: Azure is not changed.
+        [switch]$RegisterResourceProviders,
         [switch]$AutoApprove,
         [switch]$ProbeOsConfiguration,
         # Plan only: do not read Azure at all (no Get-AzContext, no REST call), whoever is signed in. Files only.
@@ -1680,6 +1744,7 @@ function Invoke-AzlArmDeploymentRun {
         if ($Settings) { foreach ($k in $Settings.Keys) { $settingsOverride[$k] = $Settings[$k] } }
         if ($Resume) { $settingsOverride['resume'] = $true }
         if ($AllowRevalidate) { $settingsOverride['allowRevalidate'] = $true }
+        if ($RegisterResourceProviders) { $settingsOverride['registerResourceProviders'] = $true }
         if ($AutoApprove) { $settingsOverride['approvalMode'] = 'none' }
         $run.Settings = Get-AzlArmRunSetting -Infrastructure $infra -ConfigPath $ConfigPath -Settings $settingsOverride
         $report.settings = $run.Settings
