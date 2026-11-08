@@ -109,6 +109,7 @@ hardware:
     password: "keyvault://kv-iic-mgmt-01/bmc-password"
     # rfs_write_attribute: true  # default: true for Dell (iDRAC Remote File Share), false for other vendors
     # verify_certificate: false  # default false: BMCs ship a self-signed certificate
+  # OPTIONAL: delete the sbe block to deploy without a Solution Builder Extension. Keep it only if your hardware partner supplies one.
   sbe:
     bundle_path: 'D:\sbe\dell' # folder on the management host with the OEM's SBE files, as downloaded
     # delivery: skip # 5.4.2, OS configuration only (ZTP ignores it): winrm_copy, node_pull (with node_pull_url) or skip (default)

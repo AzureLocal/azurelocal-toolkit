@@ -757,7 +757,8 @@ function Get-SemanticFinding {
     # Provisioning.
     $osVersion = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'provisioning.os_version'
     if ($osVersion -in @('latest', 'latest-preview')) {
-        New-Finding 'AZL-013' warning 'provisioning.os_version' "os_version is '$osVersion'. Pin a version so every run installs the same OS and the SBE can be checked against it."
+        $pinReason = if (Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'hardware.sbe') { 'so every run installs the same OS and the SBE can be checked against it' } else { 'so every run installs the same OS' }
+        New-Finding 'AZL-013' warning 'provisioning.os_version' "os_version is '$osVersion'. Pin a version $pinReason."
     }
     if ((Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'hardware.sbe.allow_unvalidated') -eq $true) {
         New-Finding 'AZL-013' warning 'hardware.sbe.allow_unvalidated' 'allow_unvalidated is true: the SBE is used even though the OEM has not validated it with os_version. Test only.'
@@ -779,9 +780,6 @@ function Get-SemanticFinding {
             if (-not $own -and $defaultBmc -isnot [System.Collections.IDictionary]) {
                 New-Finding 'AZL-015' error "nodes[$i].bmc" "Node '$($nodes[$i]['name'])' has no BMC login: set nodes[].bmc.username and password, or hardware.bmc. Simplified provisioning mounts the image through the BMC." $script:Learn.Simplified
             }
-        }
-        if (-not (Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'hardware.sbe.bundle_path')) {
-            New-Finding 'AZL-015' error 'hardware.sbe.bundle_path' 'Simplified provisioning prepares each machine with the OEM SBE before Validate: set the folder holding the SBE files.'
         }
     }
     if ($scenario['os_install'] -eq 'simplified' -and (Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'azure.location') -ne 'eastus') {
@@ -812,6 +810,7 @@ function Get-SemanticFinding {
     Get-ProvisioningNetworkFinding -Infra $Infra -Nodes $nodes -OwnerOf $ownerOf
     Get-SanFinding -Infra $Infra -Nodes $nodes
     Get-ZtpActionFinding -Infra $Infra -Nodes $nodes
+    Get-SbePresenceFinding -Infra $Infra # AZL-015 (hardware.sbe present and incomplete), AZL-032 (no SBE: Info)
     Get-SbeDeliveryFinding -Infra $Infra -Nodes $nodes -OwnerOf $ownerOf
     Get-OsConfigurationFinding -Infra $Infra
     Get-DeploymentOptionFinding -Infra $Infra
@@ -1355,6 +1354,31 @@ function Get-ZtpActionFinding {
     $timeouts = $simplified['timeouts']
     if ($timeouts -is [System.Collections.IDictionary] -and $timeouts['bootstrap_voucher_minutes'] -and $timeouts['bootstrap_minutes'] -and [int]$timeouts['bootstrap_voucher_minutes'] -gt [int]$timeouts['bootstrap_minutes']) {
         New-Finding 'AZL-029' warning 'provisioning.simplified.timeouts.bootstrap_voucher_minutes' "The voucher budget ($($timeouts['bootstrap_voucher_minutes']) minutes) is longer than the overall Bootstrap budget ($($timeouts['bootstrap_minutes']) minutes), so the overall one ends first."
+    }
+}
+
+# AZL-015 (SBE part) and AZL-032: the Solution Builder Extension is optional and opt-in. No hardware.sbe = deploy without one (the OS keeps
+# the OEM drivers already installed): an Info, never a warning or an error. A hardware.sbe that is there is complete: bundle_path (publisher,
+# family and version are then read from the package), or publisher, family and version for an SBE placed in C:\SBE by hand. In a file with
+# scope ztp, which only prepares the machines from the package, bundle_path is the one key needed.
+function Get-SbePresenceFinding {
+    param($Infra)
+    $sbe = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'hardware.sbe'
+    if ($null -eq $sbe) {
+        New-Finding 'AZL-032' info 'hardware.sbe' 'no SBE: deploying without a Solution Builder Extension (the OS keeps the OEM drivers already installed).' 'https://learn.microsoft.com/azure/azure-local/update/solution-builder-extension'
+        return
+    }
+    if ($sbe -isnot [System.Collections.IDictionary]) { return } # the schema reports the wrong type
+    $bundle = [string]$sbe['bundle_path']
+    if ((Get-AzlInfrastructureScope -Infrastructure $Infra) -eq 'ztp') {
+        if (-not $bundle) { New-Finding 'AZL-015' error 'hardware.sbe.bundle_path' 'hardware.sbe is set, so ZTP needs the folder holding the SBE files (bundle_path). To deploy without an SBE, remove the hardware.sbe block.' }
+        return
+    }
+    $remove = 'To deploy without an SBE, remove the hardware.sbe block.'
+    if (-not $bundle) {
+        foreach ($k in 'publisher', 'family', 'version') {
+            if (-not [string]$sbe[$k]) { New-Finding 'AZL-015' error "hardware.sbe.$k" "hardware.sbe is set without bundle_path (the folder with the package, from which publisher, family and version are read), so it needs a $k. $remove" }
+        }
     }
 }
 

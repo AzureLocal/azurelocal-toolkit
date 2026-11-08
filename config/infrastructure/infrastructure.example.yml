@@ -182,14 +182,18 @@ hardware:
     password: "keyvault://kv-iic-mgmt-01/bmc-password"
     rfs_write_attribute: true # default: true for Dell (iDRAC Remote File Share), false for other vendors
     verify_certificate: false # default false: BMCs ship a self-signed certificate
+  # OPTIONAL. Solution Builder Extension (SBE): delete the whole sbe block to deploy without one (the OS keeps the OEM drivers
+  # already installed, and nothing is delivered to C:\SBE). Keep it only if your hardware partner supplies an SBE for your solution
+  # version. When the block is there it is complete: publisher, family and version (family and version may be empty if bundle_path
+  # names the package: they are read from it), and bundle_path or delivery. Nothing adds this block or a delivery setting for you.
   sbe:
     publisher: "Dell"
     family: ""
     version: ""
     # Folder on the management host with the OEM's SBE files, as downloaded.
     bundle_path: 'D:\sbe\dell'
-    # Schema 5.4.2. How the package reaches each node's C:\SBE during OS configuration (Azure Arc Run Command can't carry a file,
-    # and there is no storage account route). One of:
+    # Schema 5.4.2. OPT-IN: how the package reaches each node's C:\SBE during OS configuration (Azure Arc Run Command can't carry a file,
+    # and there is no storage account route). Without a value nothing is copied. One of:
     #   skip        (default) the toolkit does not deliver it; the Sbe step says 'not delivered'; no other step is affected.
     #   winrm_copy  the toolkit copies it over WinRM (TCP 5985) from the host it runs on: that host must reach the nodes'
     #               management subnet (the operator host if it can, or a runner). Needs the nodes' local administrator as -Credential.

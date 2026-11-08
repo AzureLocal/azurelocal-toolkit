@@ -206,10 +206,10 @@ hardware:
   # used by: ztp
   bios_during_provisioning:
     example_name: "value"
-  # Solution Builder Extension.
+  # Optional Solution Builder Extension (SBE), opt-in: no hardware.sbe = deploy without a Solution Builder Extension (the OS keeps the OEM driv...
   # used by: ztp, deployment
   sbe:
-    # Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml.
+    # Required when hardware.sbe is present, unless publisher, family and version name an SBE you placed in C:\SBE yourself (and needed for any d...
     # used by: ztp, os_configuration, deployment
     bundle_path: "D:\\sbe\\dell"
     # Test only.

@@ -1130,10 +1130,90 @@ Describe 'Schema 5.5: the domain join (AZL-050 to AZL-053)' {
     }
     Context 'AZL-053: a local identity design with join keys' {
         It 'warns for domain_join_account and for local_admin_members; the local identity file without them is clean' {
-            @(Get-FindingFor -From $script:Local550 { param($d) $null = $d }) | Should -BeNullOrEmpty
+            @(Get-FindingFor -From $script:Local550 { param($d) $null = $d } | Where-Object Severity -ne 'info') | Should -BeNullOrEmpty # AZL-032 (Info) says the file has no SBE
             $f = @(Get-FindingFor -From $script:Local550 { param($d) $d.identity.active_directory = [ordered]@{ domain_fqdn = 'improbability.cloud'; ou_path = 'OU=x,DC=improbability,DC=cloud'; lcm_user = [ordered]@{ username = 'lcm'; password = 'keyvault://kv-iic-edge-mgmt/lcm-password' }; domain_join_account = [ordered]@{ username = 'svc-j'; password = 'keyvault://kv-iic-edge-mgmt/join' }; local_admin_members = @('g1') } } | Where-Object Id -eq 'AZL-053')
             $f.Count | Should -Be 2
             $f[0].Severity | Should -Be 'warning'
         }
+    }
+}
+
+Describe 'The Solution Builder Extension is optional (AZL-013, AZL-015, AZL-032)' {
+    $ztpExampleFiles = @(
+        Join-Path $PSScriptRoot '..\..\config\variables\examples\infrastructure.ztp.example.yml'
+        Join-Path $PSScriptRoot '..\..\config\variables\examples\scenarios\lom-management-ztp.yml'
+        Join-Path $PSScriptRoot '..\..\config\variables\examples\scenarios\rack-aware-ztp.yml'
+    )
+    BeforeAll {
+        # The lab file: the repo example with the hardware.sbe block deleted (the owner removed it).
+        function Get-NoSbeFinding([scriptblock]$Extra = {}, [string]$From = $script:ExamplePath) {
+            $apply = { param($d) $d.hardware.Remove('sbe'); & $Extra $d }.GetNewClosure()
+            Get-FindingFor -From $From $apply
+        }
+        $script:ZtpExample = Join-Path $repo 'config\variables\examples\infrastructure.ztp.example.yml'
+    }
+    It 'a file with no hardware.sbe has no errors and no warning about the SBE' {
+        $f = Get-NoSbeFinding
+        @($f | Where-Object Severity -eq 'error') | Should -BeNullOrEmpty
+        @($f | Where-Object { $_.Id -eq 'AZL-015' -and $_.Path -like 'hardware.sbe*' }) | Should -BeNullOrEmpty
+        @($f | Where-Object { $_.Severity -eq 'warning' -and $_.Message -match '\bSBE\b' }) | Should -BeNullOrEmpty
+    }
+    It 'a file with no hardware.sbe says so once, as an Info (not a warning, not an error)' {
+        $i = @(Get-NoSbeFinding | Where-Object { $_.Id -eq 'AZL-032' })
+        $i.Count | Should -Be 1
+        $i[0].Severity | Should -Be 'info'
+        $i[0].Message | Should -Be 'no SBE: deploying without a Solution Builder Extension (the OS keeps the OEM drivers already installed).'
+    }
+    It 'the ZTP example <_> without hardware.sbe has no errors' -ForEach $ztpExampleFiles {
+        @(Get-NoSbeFinding -From $_ | Where-Object Severity -eq 'error') | Should -BeNullOrEmpty
+    }
+    It 'a complete hardware.sbe gives neither AZL-015 nor the no-SBE Info' {
+        $f = Get-FindingFor { param($d) $d.hardware.sbe.version = '5.0.2609.1611'; $d.hardware.sbe.family = '16G-45n0c-Intel' }
+        @($f | Where-Object { $_.Id -in 'AZL-015', 'AZL-032' -and ($_.Id -eq 'AZL-032' -or $_.Path -like 'hardware.sbe*') }) | Should -BeNullOrEmpty
+        @($f | Where-Object Severity -eq 'error') | Should -BeNullOrEmpty
+    }
+    It 'family and version may be empty when bundle_path names the package (they are read from it): today''s example' {
+        $f = Get-FindingFor { }
+        @($f | Where-Object { $_.Id -eq 'AZL-015' -and $_.Path -like 'hardware.sbe*' }) | Should -BeNullOrEmpty
+    }
+    It 'a hardware.sbe with neither bundle_path nor publisher, family and version is AZL-015' {
+        $f = Get-FindingFor { param($d) $d.hardware.sbe = [ordered]@{ delivery = 'skip' } }
+        foreach ($k in 'publisher', 'family', 'version') {
+            $f | Where-Object { $_.Id -eq 'AZL-015' -and $_.Severity -eq 'error' -and $_.Path -eq "hardware.sbe.$k" } | Should -Not -BeNullOrEmpty -Because $k
+        }
+    }
+    It 'publisher, family and version alone name an SBE placed in C:\SBE by hand: no AZL-015' {
+        $f = Get-FindingFor { param($d) $d.hardware.sbe = [ordered]@{ publisher = 'Dell'; family = '16G-45n0c-Intel'; version = '5.0.2609.1611' } }
+        @($f | Where-Object { $_.Id -eq 'AZL-015' -and $_.Path -like 'hardware.sbe*' }) | Should -BeNullOrEmpty
+        @($f | Where-Object Severity -eq 'error') | Should -BeNullOrEmpty
+    }
+    It 'bundle_path alone is complete (the identity is read from the package): the ZTP scenario examples' {
+        $f = Get-FindingFor { param($d) $d.hardware.sbe = [ordered]@{ bundle_path = 'D:\sbe\dell' } }
+        @($f | Where-Object { $_.Id -in 'AZL-015', 'SCHEMA' -and $_.Path -like 'hardware.sbe*' }) | Should -BeNullOrEmpty
+    }
+    It 'the schema asks for bundle_path, or publisher, family and version, only when hardware.sbe is there' {
+        $f = Get-FindingFor { param($d) $d.hardware.sbe = [ordered]@{ publisher = 'Dell' } }
+        @($f | Where-Object Id -eq 'SCHEMA' | Where-Object { $_.Path -like 'hardware.sbe*' -or $_.Message -match 'family|version|bundle_path' }) | Should -Not -BeNullOrEmpty
+        @(Get-NoSbeFinding | Where-Object Id -eq 'SCHEMA') | Should -BeNullOrEmpty
+    }
+    It 'a ZTP file with only bundle_path is still complete' {
+        $f = Get-FindingFor -From $script:ZtpExample { }
+        @($f | Where-Object { $_.Severity -eq 'error' }) | Should -BeNullOrEmpty
+    }
+    It 'AZL-013 about an unpinned OS version mentions the SBE only when an SBE is configured' {
+        $with = @(Get-FindingFor { param($d) $d.provisioning.os_version = 'latest' } | Where-Object { $_.Id -eq 'AZL-013' -and $_.Path -eq 'provisioning.os_version' })
+        $without = @(Get-NoSbeFinding { param($d) $d.provisioning.os_version = 'latest' } | Where-Object { $_.Id -eq 'AZL-013' -and $_.Path -eq 'provisioning.os_version' })
+        $with.Count | Should -Be 1
+        $with[0].Message | Should -Match 'SBE'
+        $without.Count | Should -Be 1
+        $without[0].Message | Should -Not -Match 'SBE'
+    }
+    It 'the validator never adds a delivery setting to the file it reads' {
+        $doc = ConvertFrom-Yaml (Get-Content -LiteralPath $script:ExamplePath -Raw) -Ordered
+        $doc.hardware.sbe.Remove('delivery'); $doc.hardware.sbe.Remove('node_pull_url')
+        $file = Join-Path $TestDrive 'nodelivery.yml'
+        Set-Content -LiteralPath $file -Value (ConvertTo-Yaml $doc)
+        $infra = Import-AzlInfrastructure -Path $file -WarningAction SilentlyContinue
+        $infra.hardware.sbe.Contains('delivery') | Should -BeFalse
     }
 }

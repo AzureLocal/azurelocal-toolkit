@@ -381,23 +381,26 @@ hardware:
   # used by: ztp
   bios_during_provisioning:
     example_name: "value"
-  # Solution Builder Extension.
+  # Optional Solution Builder Extension (SBE), opt-in: no hardware.sbe = deploy without a Solution Builder Extension (the OS keeps the OEM driv...
   # used by: ztp, deployment
   sbe:
+    # Required when hardware.sbe is present and bundle_path is not (with bundle_path it is read from the package).
     # used by: os_configuration, deployment
     publisher: "Dell"
+    # Required when hardware.sbe is present and bundle_path is not.
     # used by: os_configuration, deployment
     family: ""
+    # Required when hardware.sbe is present and bundle_path is not.
     # used by: os_configuration, deployment
     version: ""
     # used by: deployment
     manifest_source: ""
     # used by: deployment
     manifest_creation_date: ""
-    # Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml.
+    # Required when hardware.sbe is present, unless publisher, family and version name an SBE you placed in C:\SBE yourself (and needed for any d...
     # used by: ztp, os_configuration, deployment
     bundle_path: "D:\\sbe\\dell"
-    # (since 5.4.2) 
+    # Opt-in (schema 5.4.2): the toolkit side-loads an SBE only when you set winrm_copy or node_pull here; no value means no delivery, and a hard...
     # one of: winrm_copy | node_pull | skip; default: "skip"; used by: os_configuration
     delivery: "skip"
     # (since 5.4.2) 

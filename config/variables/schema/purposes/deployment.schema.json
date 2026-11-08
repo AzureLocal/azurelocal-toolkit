@@ -401,17 +401,20 @@
           "minLength": 1
         },
         "sbe": {
-          "description": "Solution Builder Extension. The version is the one validated with provisioning.os_version. ARM sbeVersion, sbeFamily, sbePublisher, sbeManifestSource and sbeManifestCreationDate.",
+          "description": "Optional Solution Builder Extension (SBE), opt-in: no hardware.sbe = deploy without a Solution Builder Extension (the OS keeps the OEM drivers already installed). Leave the whole block out unless your hardware partner supplies an SBE for your solution version. Nothing in the toolkit adds this block, a delivery setting or an SBE value to a file. When the block is there it is complete: bundle_path (publisher, family and version are then read from the package), or publisher, family and version for an SBE you placed in C:\\SBE yourself. The version is the one validated with provisioning.os_version. ARM sbeVersion, sbeFamily, sbePublisher, sbeManifestSource and sbeManifestCreationDate; without the block the ARM deployment passes none of them (nor partnerProperties and partnerCredentiallist), and the template's own empty defaults apply.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
             "publisher": {
+              "description": "Required when hardware.sbe is present and bundle_path is not (with bundle_path it is read from the package). The SBE's publisher, for example Dell.",
               "type": "string"
             },
             "family": {
+              "description": "Required when hardware.sbe is present and bundle_path is not. The SBE family of your hardware, for example 16G-45n0c-Intel. With bundle_path it may be empty: it is then read from the package's manifest.",
               "type": "string"
             },
             "version": {
+              "description": "Required when hardware.sbe is present and bundle_path is not. The SBE version, for example 5.0.2609.1611, validated with the solution version you install. With bundle_path it may be empty: it is then read from the package's manifest.",
               "type": "string"
             },
             "manifest_source": {
@@ -421,7 +424,7 @@
               "type": "string"
             },
             "bundle_path": {
-              "description": "Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml. Used to prepare machines before Validate.",
+              "description": "Required when hardware.sbe is present, unless publisher, family and version name an SBE you placed in C:\\SBE yourself (and needed for any delivery). Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml. Used to prepare machines before Validate.",
               "type": "string"
             }
           }
