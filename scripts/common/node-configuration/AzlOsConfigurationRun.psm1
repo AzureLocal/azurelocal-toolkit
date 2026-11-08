@@ -362,6 +362,13 @@ function Test-AzlAzureSignedIn {
     try { return [bool](Get-AzContext) } catch { return $false }
 }
 
+function Get-AzlRunUtcNow {
+    # Seam for tests: the clock the restart wait counts its minutes on.
+    [OutputType([datetime])]
+    param()
+    return [datetime]::UtcNow
+}
+
 function Test-AzlWinRmPort {
     # Seam for tests: does the address accept a TCP connection on the WinRM port?
     param([Parameter(Mandatory)][string]$Address, [int]$Port = 5985, [int]$TimeoutMilliseconds = 4000)
@@ -667,6 +674,70 @@ function Get-AzlRunIdentityReader {
     return { param([string]$Address, [bool]$UseSsl, $State) Get-AzlRunNodeIdentity -Context $State.Context -Name $State.Name -Address $Address -UseSsl $UseSsl }
 }
 
+function Wait-AzlRunNodeRestart {
+    <#
+    .SYNOPSIS
+        After the run asked a node to restart: waits until the node answers again, before the final verify talks to it.
+    .DESCRIPTION
+        Polls TCP on the WinRM port (every PollSeconds), and once the port answers opens a session (the read-only identity read). A session that is refused or
+        times out while the node starts up is not an answer: the node is still coming up, so the wait goes on (the credential was accepted by this node earlier in
+        the same run). A NodeWaiting event every HeartbeatSeconds says 'waiting for restart' and what was seen last. The wait is bounded by the run setting
+        restartWaitMinutes (default 15); past it the result says the node did not come back within N minutes and what the last answer was. Nothing is changed on the node.
+    .OUTPUTS
+        Back ($true when the node answered), Message ('' when it did), WaitedSeconds.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][object]$Context,
+        [Parameter(Mandatory)][System.Collections.IDictionary]$Record,
+        [int]$PollSeconds = 15,
+        [int]$HeartbeatSeconds = 60
+    )
+    $name = [string]$Record.name
+    $minutes = [int](Get-AzlProp $Context 'RestartWaitMinutes' 15)
+    $addresses = @(@([string]$Record.address) + @($Record.evidence.Addresses) | Where-Object { $_ } | Select-Object -Unique)
+    if ($Record.transport -ne 'WinRM' -or $addresses.Count -eq 0) { return [pscustomobject]@{ Back = $true; Message = ''; WaitedSeconds = 0 } }
+    $hasCredential = [bool](Get-AzlProp $Context 'CredentialInfo.Credential' $null)
+    $started = Get-AzlRunUtcNow
+    $deadline = $started.AddMinutes($minutes)
+    $lastBeat = $started.AddSeconds(-$HeartbeatSeconds)
+    $answered = ""; $useSsl = $false
+    $phase = "port"; $seen = "nothing has answered yet at $($addresses -join ', ')"; $seenKind = ''
+    Write-AzlLine "   $name was asked to restart: waiting for restart (up to $minutes minute$(if ($minutes -ne 1) { 's' }))"
+    while ($true) {
+        foreach ($address in $addresses) {
+            $endpoint = Resolve-AzlNodeEndpoint -Context $Context -Address $address
+            if (-not $endpoint.Answers) { $phase = 'port'; $seenKind = ''; $seen = "no WinRM port answers at $address"; continue }
+            if (-not $hasCredential) { $phase = 'port'; $seenKind = ''; $seen = "the WinRM port answers at $address"; $answered = $address; $useSsl = [bool]$endpoint.UseSsl; break }
+            $phase = 'session'
+            try {
+                $null = Get-AzlRunNodeIdentity -Context $Context -Name $name -Address $address -UseSsl ([bool]$endpoint.UseSsl)
+                $answered = $address; $useSsl = [bool]$endpoint.UseSsl
+                break
+            }
+            catch { $seen = "the port answers at $address but a session cannot be opened: $($_.Exception.Message)"; $seenKind = Get-AzlSessionFailureKind -Message $_.Exception.Message }
+        }
+        $now = Get-AzlRunUtcNow
+        $elapsed = [int][Math]::Round(($now - $started).TotalSeconds)
+        if ($answered) {
+            $Record.address = $answered; $Record.useSsl = $useSsl
+            Send-AzlRunEvent -Context $Context -Record $Record -State NodeReconnected -Evidence "The node answered again after the restart (port and session) after $elapsed s." -Data @{ waiting = 'restart'; phase = $phase; elapsedSeconds = $elapsed }
+            return [pscustomobject]@{ Back = $true; Message = ''; WaitedSeconds = $elapsed }
+        }
+        if (($now - $lastBeat).TotalSeconds -ge $HeartbeatSeconds) {
+            Send-AzlRunEvent -Context $Context -Record $Record -State NodeWaiting -Level Warning -Evidence "${name}: waiting for restart ($elapsed s of $($minutes * 60) s); $seen." -Data @{ waiting = 'restart'; phase = $phase; elapsedSeconds = $elapsed }
+            $lastBeat = $now
+        }
+        if ($now -ge $deadline) { break }
+        Start-Sleep -Seconds $PollSeconds
+    }
+    $elapsed = [int][Math]::Round(((Get-AzlRunUtcNow) - $started).TotalSeconds)
+    $refusal = if ($seenKind -eq 'Refused') { ' The node is up and WinRM refuses the local administrator: check the password in the master file.' } else { '' }
+    $message = "$name did not come back within $minutes minute$(if ($minutes -ne 1) { 's' }) after it was asked to restart; last seen: $seen.$refusal The verification was not run and nothing more was changed. Check the node (console or BMC), then run the OS configuration again; finished steps are not repeated."
+    Send-AzlRunEvent -Context $Context -Record $Record -State NodeWaiting -Level Error -Evidence "${name}: waiting for restart ended after $elapsed s: $name did not come back within $minutes minute$(if ($minutes -ne 1) { 's' })." -Data @{ waiting = 'restart'; phase = $phase; elapsedSeconds = $elapsed }
+    [pscustomobject]@{ Back = $false; Message = $message; WaitedSeconds = $elapsed }
+}
+
 function Get-AzlNodeEvidence {
     <#
     .SYNOPSIS
@@ -798,7 +869,7 @@ function Get-AzlRunSetting {
     .SYNOPSIS
         Optional run settings: from a JSON file (-ConfigPath), over which a hashtable (-Settings) wins. Keys: retryTries,
         retryDelaySeconds, maxPasses, noRestart, failOnPendingChanges, nodeAddress, networkRollbackMinutes (the confirmation window, 10),
-        networkStableSeconds (60), reconnectWaitMinutes (15), staleRunCommandMinutes (15), addressProbe (true), remoting (a hashtable: transport,
+        networkStableSeconds (60), reconnectWaitMinutes (15), staleRunCommandMinutes (15), addressProbe (true), restartWaitMinutes (15: how long the run waits for a node it\n        restarted before the final verify; registered in config/variables/schema/master-registry.yaml), remoting (a hashtable: transport,
         bootstrapTransport, allowedSourceCidrs, useSsl, authentication).
     #>
     [CmdletBinding()]
@@ -810,8 +881,13 @@ function Get-AzlRunSetting {
         foreach ($k in $file.Keys) { $result[$k] = $file[$k] }
     }
     if ($Settings) { foreach ($k in $Settings.Keys) { $result[$k] = $Settings[$k] } }
-    $known = @('retryTries', 'retryDelaySeconds', 'maxPasses', 'noRestart', 'failOnPendingChanges', 'nodeAddress', 'networkRollbackMinutes', 'networkStableSeconds', 'reconnectWaitMinutes', 'staleRunCommandMinutes', 'addressProbe', 'remoting', 'approvedBootstrap', 'bootstrapArcWaitSeconds', 'addressResolution') # HOOK address-resolution: addressResolution = @{ sweep; allowWideSubnet; pingTimeoutMilliseconds }
+    $known = @('retryTries', 'retryDelaySeconds', 'maxPasses', 'noRestart', 'failOnPendingChanges', 'nodeAddress', 'networkRollbackMinutes', 'networkStableSeconds', 'reconnectWaitMinutes', 'staleRunCommandMinutes', 'addressProbe', 'remoting', 'approvedBootstrap', 'bootstrapArcWaitSeconds', 'addressResolution', 'restartWaitMinutes') # HOOK address-resolution: addressResolution = @{ sweep; allowWideSubnet; pingTimeoutMilliseconds }
     foreach ($k in $result.Keys) { if ($k -notin $known) { throw (Get-AzlInputError "Unknown run setting '$k'. Known: $($known -join ', ').") } }
+    if ($result.ContainsKey('restartWaitMinutes')) {
+        $minutes = 0
+        if ($result['restartWaitMinutes'] -is [bool] -or -not [int]::TryParse([string]$result['restartWaitMinutes'], [ref]$minutes) -or $minutes -lt 1) { throw (Get-AzlInputError "Run setting restartWaitMinutes must be a whole number of minutes, 1 or more, not '$($result['restartWaitMinutes'])'.") }
+        $result['restartWaitMinutes'] = $minutes
+    }
     try { $null = Get-AzlGuardSetting -Setting $result; $null = Get-AzlRemotingSetting -Setting $result } catch { throw (Get-AzlInputError $_.Exception.Message) }
     return $result
 }
@@ -1354,6 +1430,10 @@ function Invoke-AzlApplyPhase {
         if ($run.Entry) {
             $made = @(@($run.Entry.changes) | ForEach-Object { [ordered]@{ pass = $_.Pass; id = $_.Id; status = $_.Status; detail = $_.Detail } })
             $Record.changes += $made
+            if ([bool](Get-AzlProp $run.Entry 'restartRequired' $false) -and -not $run.Entry.restarted) {
+                $Record.restartRequired = $true
+                $Record.warnings += "$($Record.name): a restart is required (a driver install returned pnputil 3010) and was NOT done$(if ($Context.NoRestart) { ' (noRestart is set)' }). Restart the node, then run the OS configuration again."
+            }
             if ($run.Entry.restarted) {
                 $Record.restarted = $true
                 # The restart happens inside the apply call; these two are written when the call reports it, before the steps of that call.
@@ -1651,6 +1731,7 @@ function ConvertTo-AzlNodeReport {
         warnings       = @($Record.warnings)
         converged      = [bool]$Record.converged
         restarted      = [bool]$Record.restarted
+        restartRequired = [bool]$Record.restartRequired
         domainJoin     = $Record.domainJoin # DOMAINJOIN HOOK: applicable, domainJoined, domain, ou, secureChannel, error
         phases         = $Record.phases
     }
@@ -1705,7 +1786,7 @@ function Get-AzlNodeRecord {
         steps = $steps; setSteps = @($steps | Where-Object { $_ -in $script:NodeSteps })
         status = 'pending'; plan = @(); changes = @(); errors = @(); warnings = @(); verification = @(); wipe = @(); wipeItems = @()
         ports = @(); sanDisks = @(); hostname = ''; osVersion = ''; guard = @(); events = @(); bootstrap = [ordered]@{ used = $false }
-        pendingChanges = 0; blocked = 0; converged = $false; restarted = $false; phases = [ordered]@{}; outcomeSent = $false
+        pendingChanges = 0; blocked = 0; converged = $false; restarted = $false; restartRequired = $false; phases = [ordered]@{}; outcomeSent = $false
         osCaption = ''; osBuild = 0; lastGuard = $null; pendingGuard = @(); indeterminate = $false
         domainJoin = [ordered]@{ applicable = $false; domainJoined = $false; domain = ''; ou = ''; secureChannel = $null; error = '' } # DOMAINJOIN HOOK
     }
@@ -1824,6 +1905,7 @@ function Invoke-AzlOsConfiguration {
             TransportRequested = $Transport; TransportSetting = $null; GuardSettings = @{}; EventContext = $null
             Remoting = $null; ApprovedBootstrap = $false; BootstrapWindow = @{}; Bootstraps = [System.Collections.Generic.List[object]]::new(); TrustedHosts = $null
             BootstrapArcWaitSeconds = $(if ($run.ContainsKey('bootstrapArcWaitSeconds')) { [int]$run.bootstrapArcWaitSeconds } else { 180 })
+            RestartWaitMinutes = $(if ($run.ContainsKey('restartWaitMinutes')) { [int]$run.restartWaitMinutes } else { 15 })
         }
         # HOOK address-resolution: the sweep settings for the MAC lookup (sweep, allowWideSubnet, pingTimeoutMilliseconds).
         $addressSetting = if ($run.ContainsKey('addressResolution') -and $run.addressResolution -is [System.Collections.IDictionary]) { $run.addressResolution } else { @{} }
@@ -2064,6 +2146,16 @@ function Invoke-AzlOsConfiguration {
                 if ($r.status -ne 'applied') { continue }
                 Write-AzlLine "-- $($r.name)"
                 $before = @($r.errors).Count
+                # A node the run asked to restart (a driver install that returned pnputil 3010, a join, a rename) may still be down: the verify waits for its port and its
+                # session first, and says so when the node does not come back. A node that is down is never reported as a refused credential.
+                if ($r.restarted) {
+                    $back = Wait-AzlRunNodeRestart -Context $context -Record $r
+                    if (-not $back.Back) {
+                        $r.status = 'failed'; $r.converged = $false; $r.errors += $back.Message
+                        Write-AzlLine "   $($r.name): NOT verified ($($back.Message))"
+                        continue
+                    }
+                }
                 Resolve-AzlWinRmAddress -Context $context -Record $r -Node $nodeByName[$r.name]
                 $r.verification = @()
                 try { Invoke-AzlPlanPhase -Context $context -Record $r -Node $nodeByName[$r.name] -Phase Verify }
