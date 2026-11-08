@@ -509,3 +509,36 @@ Describe 'The result contract with the ARM run' {
         (Resolve-AzlPclReportDirectory -InfrastructureFile 'D:\Data\site\infrastructure.yml' -Configured 'E:\x') | Should -Be 'E:\x'
     }
 }
+
+Describe 'The readiness adapter gets the local administrator credential the engine already uses (lab: RD-004 and RD-005 Skipped)' {
+    It 'fills Adapters.Readiness.Credential (.\user) and the address map when the module brings none, and never writes the password' {
+        $mod = @'
+function Get-AzlVerificationAdapterDefault { @{ Readiness = @{ Run = { 'x' }; Credential = $null; Address = @{} } } }
+function Get-AzlVerificationCheckDefinition {
+    @(@{ Id = 'RC-001'; Category = 'readiness'; Title = 'readiness credential'; Source = 'x'; Run = { param($Context)
+        $r = $Context.Adapters['Readiness']
+        @{ Status = 'Passed'; Message = "user=$($r.Credential.UserName) addresses=$(@($r.Address.Keys).Count) first=$($r.Address['iic-n01'])" } } })
+}
+Export-ModuleMember -Function Get-AzlVerificationAdapterDefault, Get-AzlVerificationCheckDefinition
+'@
+        $w = New-PclWorld
+        $infra = Get-PclInfra
+        $r = Invoke-PclRun -World $w -Infra $infra -ExtensionFolder (New-PclModuleFolder -Files @{ 'AzlVerification.Rc.psm1' = $mod })
+        $c = Get-PclCheck $r 'RC-001'
+        $c.Status | Should -Be 'Passed'
+        $c.Message | Should -BeLike ('user=.\' + [string]$infra.identity.local_admin.username + '*')
+        $c.Message | Should -Match 'addresses=2'
+        (Get-Content $r.ReportPath -Raw) | Should -Not -Match 'Sup3r-S3cret'
+    }
+    It 'leaves a credential the module or the caller brought alone' {
+        $mod = @'
+function Get-AzlVerificationAdapterDefault { @{ Readiness = @{ Run = { 'x' }; Credential = ([pscredential]::new('own\admin', (ConvertTo-SecureString 'x' -AsPlainText -Force))); Address = @{} } } }
+function Get-AzlVerificationCheckDefinition {
+    @(@{ Id = 'RC-002'; Category = 'readiness'; Title = 'own credential'; Source = 'x'; Run = { param($Context) @{ Status = 'Passed'; Message = "user=$($Context.Adapters['Readiness'].Credential.UserName)" } } })
+}
+Export-ModuleMember -Function Get-AzlVerificationAdapterDefault, Get-AzlVerificationCheckDefinition
+'@
+        $r = Invoke-PclRun -ExtensionFolder (New-PclModuleFolder -Files @{ 'AzlVerification.Rc.psm1' = $mod })
+        (Get-PclCheck $r 'RC-002').Message | Should -Be 'user=own\admin'
+    }
+}

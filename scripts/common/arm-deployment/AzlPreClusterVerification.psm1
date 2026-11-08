@@ -690,15 +690,8 @@ function New-AzlPclRemoteRequest {
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification = 'The secret was just read from Key Vault; it is made a SecureString at once and only ever lives in memory.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds an in-memory request; changes no system state.')]
     param([Parameter(Mandatory)]$Ctx, [Parameter(Mandatory)][string]$Node, [Parameter(Mandatory)][scriptblock]$ScriptBlock, [object[]]$ArgumentList = @())
-    $local = Get-AzlProp $Ctx.Infra 'identity.local_admin'
-    $user = [string](Get-AzlProp $local 'username' ''); $ref = [string](Get-AzlProp $local 'password' '')
-    if (-not $user -or -not $ref) { throw 'identity.local_admin.username or password is not set: there is no credential for the node.' }
-    if (-not $Ctx.Cache.ContainsKey('AdminSecure')) {
-        $plain = [string](Invoke-AzlPclAdapter $Ctx GetSecret @($ref))
-        Register-AzlPclSecret $plain
-        $Ctx.Cache['AdminSecure'] = ConvertTo-SecureString -String $plain -AsPlainText -Force
-        $plain = $null
-    }
+    $user = [string](Get-AzlProp (Get-AzlProp $Ctx.Infra 'identity.local_admin') 'username' '')
+    $null = Get-AzlPclAdminSecure -Ctx $Ctx
     $entry = @($Ctx.Nodes | Where-Object { ([string]$_['name']) -ieq $Node }) | Select-Object -First 1
     $addresses = @()
     if ($entry) {
@@ -729,6 +722,50 @@ function Invoke-AzlPclRemoteShim {
         return $answer.Result
     }
     return (Invoke-AzlPclRemote -Request $First)
+}
+
+function Get-AzlPclAdminSecure {
+    <#
+    .SYNOPSIS
+        The local administrator password from Key Vault as a SecureString, read once per run and kept in memory (registered for scrubbing). Throws when the file
+        names no local administrator.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification = 'The secret was just read from Key Vault; it is made a SecureString at once and only ever lives in memory.')]
+    param([Parameter(Mandatory)]$Ctx)
+    $local = Get-AzlProp $Ctx.Infra 'identity.local_admin'
+    $user = [string](Get-AzlProp $local 'username' ''); $ref = [string](Get-AzlProp $local 'password' '')
+    if (-not $user -or -not $ref) { throw 'identity.local_admin.username or password is not set: there is no credential for the node.' }
+    if (-not $Ctx.Cache.ContainsKey('AdminSecure')) {
+        $plain = [string](Invoke-AzlPclAdapter $Ctx GetSecret @($ref))
+        Register-AzlPclSecret $plain
+        $Ctx.Cache['AdminSecure'] = ConvertTo-SecureString -String $plain -AsPlainText -Force
+        $plain = $null
+    }
+    return $Ctx.Cache['AdminSecure']
+}
+
+function Set-AzlPclReadinessCredential {
+    <#
+    .SYNOPSIS
+        Gives the readiness adapter (Adapters.Readiness.Credential and .Address) the local administrator credential the engine already uses for Remote.Invoke
+        and the management address of every node, unless the module or the caller already brought them. The Software and Network validators compare the nodes
+        through PowerShell sessions opened from one node and need exactly that credential (a local account: .\user). Returns $true when it set them.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Fills an in-memory table; changes no system state.')]
+    param([Parameter(Mandatory)]$Ctx)
+    $readiness = $Ctx.Adapter['Readiness']
+    if ($readiness -isnot [System.Collections.IDictionary]) { return $false }
+    if ($readiness.Contains('Credential') -and $readiness['Credential']) { return $false }
+    $secure = Get-AzlPclAdminSecure -Ctx $Ctx
+    $user = [string](Get-AzlProp (Get-AzlProp $Ctx.Infra 'identity.local_admin') 'username' '')
+    $map = @{}
+    foreach ($n in $Ctx.Nodes) {
+        $mgmt = Get-AzlManagementAdapter -Infrastructure $Ctx.Infra -Node $n
+        if ($mgmt -and $mgmt.IpAddress) { $map[[string]$n['name']] = [string]$mgmt.IpAddress }
+    }
+    $readiness['Credential'] = [pscredential]::new(".\$user", $secure)
+    if (-not $readiness.Contains('Address') -or -not $readiness['Address'] -or -not @($readiness['Address'].Keys).Count) { $readiness['Address'] = $map }
+    return $true
 }
 
 function Set-AzlPclEnvironmentChecker {
@@ -986,6 +1023,8 @@ function Invoke-AzlPreClusterVerification {
             $script:ShimContext = $ctx
             $Adapter['Remote']['Invoke'] = ${function:Invoke-AzlPclRemoteShim}
         }
+        # The readiness validators open PowerShell sessions between the nodes: they need the same local administrator credential. A secret that cannot be read only leaves them Skipped, with the reason.
+        try { $null = Set-AzlPclReadinessCredential -Ctx $ctx } catch { Write-Verbose "No readiness credential: $($_.Exception.Message)" }
         # The nodes are probed from the node itself over the engine's WinRM call (Adapters.Remote.Invoke), so a workgroup node reached by IP is not Skipped.
         if (-not $callerHasTestEndpoint -and $Adapter['Remote'] -is [System.Collections.IDictionary] -and $Adapter['Remote'].Contains('Invoke')) {
             if (-not ($Adapter['Azure'] -is [System.Collections.IDictionary])) { $Adapter['Azure'] = [ordered]@{} }
