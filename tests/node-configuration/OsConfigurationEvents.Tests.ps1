@@ -191,8 +191,6 @@ Describe 'ConvertFrom-AzlOsRetryWarning' {
 Describe 'Invoke-AzlSetNodeConfiguration and the retry events' {
     BeforeAll {
         Import-Module (Join-Path (Join-Path (Join-Path (Join-Path $PSScriptRoot '..') '..') (Join-Path 'scripts' 'common')) (Join-Path 'node-configuration' 'AzlOsConfigurationRun.psm1')) -Force
-    }
-    BeforeAll {
         # Runs the real Invoke-AzlSetNodeConfiguration against a stand-in for the script. Returns its result.
         function Invoke-StandIn([string[]]$ScriptLine, [string]$ReportPath) {
             $standIn = Join-Path $TestDrive "standin-$([guid]::NewGuid().ToString('N').Substring(0, 6)).ps1"

@@ -96,6 +96,8 @@ Each role variable passes one wrapper parameter. Empty values are left out, so t
 | `-Transport` | `azurelocal_os_configuration_transport` | `Auto` |
 | `-Method` | `azurelocal_os_configuration_method` | `Auto` |
 | `-ClearStorage` | `azurelocal_os_configuration_clear_storage` | `false` |
+| `-ConfirmWipeDeployedCluster` | `azurelocal_os_configuration_confirm_wipe_deployed_cluster` (Apply phase only) | `false` |
+| `-ApprovedWipeList` | `azurelocal_os_configuration_approved_wipe_list` | empty (in the phase `both`: this play's Plan `wipe-list.json`) |
 | `-ApprovedBootstrap` | `azurelocal_os_configuration_approved_bootstrap` (Apply phase only) | `false` |
 | `-EventLogPath` | `azurelocal_os_configuration_event_log_path` | empty (`os-configuration-events.jsonl` in the report folder of the phase) |
 | `-FailOnPendingChanges` | `azurelocal_os_configuration_fail_on_pending_changes` (Plan phase only) | `false` |

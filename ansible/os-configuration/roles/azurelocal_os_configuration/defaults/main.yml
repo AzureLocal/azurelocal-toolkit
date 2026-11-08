@@ -30,6 +30,11 @@ azurelocal_os_configuration_transport: Auto
 azurelocal_os_configuration_method: Auto
 # -ClearStorage forces the storage wipe on (Apply only). os_configuration.clear_storage in the master file does the same.
 azurelocal_os_configuration_clear_storage: false
+# -ConfirmWipeDeployedCluster: one-shot, per run: lets the storage wipe touch a node that belongs to a deployed cluster. Apply phase only.
+azurelocal_os_configuration_confirm_wipe_deployed_cluster: false
+# -ApprovedWipeList: the approval of the storage wipe, bound to what the reviewer saw (wipe-list.json or plan-report.json of the Plan). Empty: in the phase both
+# the role passes the wipe-list.json of this play's Plan; for the phase apply give the path of the Plan job's file.
+azurelocal_os_configuration_approved_wipe_list: ""
 # -ApprovedBootstrap: the pipeline approval of the one-time bootstrap (the environment classes production and dmz need it). Apply phase only; the
 # route itself (arc, smb or auto) is chosen in the master file (os_configuration.remoting.bootstrap_transport).
 azurelocal_os_configuration_approved_bootstrap: false

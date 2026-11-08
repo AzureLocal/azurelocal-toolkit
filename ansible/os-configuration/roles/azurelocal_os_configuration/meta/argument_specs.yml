@@ -54,6 +54,14 @@ argument_specs:
         type: bool
         default: false
         description: Wrapper -ClearStorage.
+      azurelocal_os_configuration_confirm_wipe_deployed_cluster:
+        type: bool
+        default: false
+        description: Wrapper -ConfirmWipeDeployedCluster (one run; Apply phase only).
+      azurelocal_os_configuration_approved_wipe_list:
+        type: str
+        default: ""
+        description: Wrapper -ApprovedWipeList (the Plan's wipe-list.json or plan-report.json). Empty means this play's Plan in the phase both.
       azurelocal_os_configuration_approved_bootstrap:
         type: bool
         default: false

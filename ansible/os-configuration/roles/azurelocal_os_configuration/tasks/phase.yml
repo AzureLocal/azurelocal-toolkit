@@ -56,11 +56,13 @@
       Node: "{{ azurelocal_os_configuration_nodes }}"
       Step: "{{ azurelocal_os_configuration_steps }}"
       ConfigPath: "{{ azurelocal_os_configuration_config_path }}"
+      ApprovedWipeList: "{{ azurelocal_os_configuration_approved_wipe_list if azurelocal_os_configuration_approved_wipe_list else ((azurelocal_os_configuration__run_dir ~ '/plan/wipe-list.json') if (azurelocal_os_configuration__phase == 'Apply' and azurelocal_os_configuration_phase == 'both') else '') }}"
       Settings: "{{ azurelocal_os_configuration_settings }}"
       NodeAddress: "{{ azurelocal_os_configuration_node_address }}"
     azurelocal_os_configuration__args_switches:
       ClearStorage: "{{ azurelocal_os_configuration_clear_storage | bool }}"
       ApprovedBootstrap: "{{ azurelocal_os_configuration_approved_bootstrap | bool and azurelocal_os_configuration__phase == 'Apply' }}"
+      ConfirmWipeDeployedCluster: "{{ azurelocal_os_configuration_confirm_wipe_deployed_cluster | bool and azurelocal_os_configuration__phase == 'Apply' }}"
       FailOnPendingChanges: "{{ azurelocal_os_configuration_fail_on_pending_changes | bool and azurelocal_os_configuration__phase == 'Plan' }}"
       SkipValidation: "{{ azurelocal_os_configuration_skip_validation | bool }}"
 
