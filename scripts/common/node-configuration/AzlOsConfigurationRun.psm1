@@ -40,6 +40,8 @@ Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'azure-local'
 Import-Module (Join-Path $PSScriptRoot 'AzlNodePayload.psm1')
 Import-Module (Join-Path $PSScriptRoot 'AzlNodeTransport.psm1')
 Import-Module (Join-Path $PSScriptRoot 'AzlNodeConfiguration.psm1')
+Import-Module (Join-Path $PSScriptRoot 'AzlGuardedChange.psm1')
+Import-Module (Join-Path $PSScriptRoot 'AzlRemoting.psm1')
 
 $script:SetScript = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', 'deploy', '04-cluster-deployment', 'phase-03-os-configuration', 'Set-AzureLocalNodeConfiguration.ps1'))
 $script:NodeSteps = @('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage')
@@ -171,7 +173,7 @@ function Resolve-AzlNodeMethod {
               a Connected Arc machine and doesn't answer on WinRM
           a handoff that names another subscription or resource group than the master file   -> an error (contradictory evidence)
         -Force Ztp needs a handoff or an Arc machine; -Force Iso is taken as given.
-        Transport: Ztp -> Arc Run Command; Iso -> Arc Run Command when the machine is a Connected Arc machine, else WinRM.
+        Transport: WinRM for both paths. Arc Run Command only when the caller asks for it (-Transport ArcRunCommand); never a fallback.
     .OUTPUTS
         Node, Declared, Method (Ztp|Iso|$null), Source (declared|evidence|forced), Transport, Warnings, Errors, Evidence.
     #>
@@ -234,12 +236,9 @@ function Resolve-AzlNodeMethod {
         }
     }
 
+    # PowerShell remoting (WinRM) for both paths. Arc Run Command is never chosen here: only the caller's explicit -Transport ArcRunCommand (applied by the run) selects it.
     $transport = $null
-    if ($method -eq 'Ztp') {
-        $transport = 'ArcRunCommand'
-        if (-not $arcConnected -and $winRm -and -not $e.HandoffPresent) { $transport = 'WinRM' }
-    }
-    elseif ($method -eq 'Iso') { $transport = if ($arcConnected) { 'ArcRunCommand' } else { 'WinRM' } }
+    if ($method) { $transport = 'WinRM' }
 
     [pscustomobject]@{
         Node      = $Node
@@ -324,12 +323,12 @@ function Get-AzlNodeEvidence {
         catch { $arcError = $_.Exception.Message }
     }
     else { $arcError = 'not signed in to Azure' }
-    $arcConnected = $arc -and [string]$arc.Status -eq 'Connected'
 
     # Does it answer on WinRM? Only worth asking when the other evidence is missing.
     $addresses = @(Get-AzlNodeAddressCandidate -Infrastructure $infra -Node $Node -Override $Context.NodeAddress)
+    if ($arc) { $addresses = @($addresses + @(Get-AzlNodeRemotingAddress -Node $Node -ManagementMac ([string](Get-AzlProp (Get-AzlManagementAdapter -Infrastructure $infra -Node $Node) 'MacAddress' '')) -ArcMachine $arc) | Select-Object -Unique) }
     $winRm = $null; $winRmAddress = ''; $winRmNote = ''
-    if (-not ($ready -or $arcConnected) -or $Context.Method -eq 'Iso') {
+    if ((Get-AzlProp $Context 'TransportRequested' 'Auto') -ne 'ArcRunCommand') {
         if ($addresses.Count -eq 0) { $winRm = $false; $winRmNote = 'no management address in the file to try' }
         else {
             $winRm = $false
@@ -376,7 +375,9 @@ function Get-AzlRunSetting {
     <#
     .SYNOPSIS
         Optional run settings: from a JSON file (-ConfigPath), over which a hashtable (-Settings) wins. Keys: retryTries,
-        retryDelaySeconds, maxPasses, noRestart, failOnPendingChanges, nodeAddress.
+        retryDelaySeconds, maxPasses, noRestart, failOnPendingChanges, nodeAddress, networkRollbackMinutes (the confirmation window, 10),
+        networkStableSeconds (60), reconnectWaitMinutes (15), staleRunCommandMinutes (15), addressProbe (true), remoting (a hashtable: transport,
+        bootstrapTransport, allowedSourceCidrs, useSsl, authentication).
     #>
     [CmdletBinding()]
     param([string]$ConfigPath, [hashtable]$Settings)
@@ -387,8 +388,9 @@ function Get-AzlRunSetting {
         foreach ($k in $file.Keys) { $result[$k] = $file[$k] }
     }
     if ($Settings) { foreach ($k in $Settings.Keys) { $result[$k] = $Settings[$k] } }
-    $known = @('retryTries', 'retryDelaySeconds', 'maxPasses', 'noRestart', 'failOnPendingChanges', 'nodeAddress')
+    $known = @('retryTries', 'retryDelaySeconds', 'maxPasses', 'noRestart', 'failOnPendingChanges', 'nodeAddress', 'networkRollbackMinutes', 'networkStableSeconds', 'reconnectWaitMinutes', 'staleRunCommandMinutes', 'addressProbe', 'remoting')
     foreach ($k in $result.Keys) { if ($k -notin $known) { throw (Get-AzlInputError "Unknown run setting '$k'. Known: $($known -join ', ').") } }
+    try { $null = Get-AzlGuardSetting -Setting $result; $null = Get-AzlRemotingSetting -Setting $result } catch { throw (Get-AzlInputError $_.Exception.Message) }
     return $result
 }
 
@@ -449,6 +451,8 @@ function Invoke-AzlNodeRun {
         MaxPasses          = $Context.MaxPasses
     }
     if ($Record.handoffFile) { $parameters.HandoffFile = $Record.handoffFile }
+    if ($Context.PSObject.Properties['GuardSettings'] -and $Context.GuardSettings.Count) { $parameters.Settings = $Context.GuardSettings }
+    if ($Context.PSObject.Properties['EventLogPath'] -and $Context.EventLogPath) { $parameters.EventLogPath = $Context.EventLogPath }
     if ($Context.ClearStorage) { $parameters.ClearStorage = $true }
     if ($Context.NoRestart) { $parameters.NoRestart = $true }
     if ($Context.SkipValidation) { $parameters.SkipValidation = $true }
@@ -456,6 +460,10 @@ function Invoke-AzlNodeRun {
     if ($Record.transport -eq 'WinRM') {
         $parameters.Credential = $Context.CredentialInfo.Credential
         if ($Record.address) { $parameters.NodeAddress = @{ $Record.name = $Record.address } }
+        if ($Context.PSObject.Properties['Remoting'] -and $Context.Remoting) {
+            if ($Context.Remoting.UseSsl) { $parameters.UseSsl = $true }
+            $parameters.Authentication = $Context.Remoting.Authentication
+        }
     }
     $run = Invoke-AzlSetNodeConfiguration -Parameters $parameters
     $entry = $null
@@ -594,6 +602,12 @@ function Merge-AzlRunResult {
     $Record.sanDisks = @($Run.Entry.sanDisks)
     $Record.hostname = [string](Get-AzlProp $Run.Entry 'hostname' '')
     $Record.osVersion = [string](Get-AzlProp $Run.Entry 'osVersion' '')
+    $guard = @(Get-AzlProp $Run.Entry 'guard' @())
+    if ($guard.Count) { $Record.guard = @($Record.guard) + $guard }
+    $events = @(Get-AzlProp $Run.Entry 'events' @())
+    if ($events.Count) { $Record.events = @($Record.events) + $events }
+    $finalAddress = [string](Get-AzlProp $Run.Entry 'address' '')
+    if ($finalAddress -and $Record.transport -eq 'WinRM') { $Record.address = $finalAddress }
     return $true
 }
 
@@ -622,6 +636,12 @@ function Test-AzlZtpVerification {
 
 function Invoke-AzlPlanPhase {
     param([object]$Context, [System.Collections.IDictionary]$Record, [System.Collections.IDictionary]$Node, [string]$Phase = 'Plan')
+    if ($Record.bootstrap.Contains('pending') -and $Record.bootstrap.pending) {
+        $Record.plan = @([pscustomobject]@{ Node = $Record.name; Step = 'RemoteManagement'; Item = 'remote management bootstrap'; Current = 'WinRM is closed to this host (the node firewall limits it to its own subnet)'; Desired = "WinRM open for $(@($Record.bootstrap.cidrs) -join ', ')"; Action = 'Change'; Note = 'Arc Run Command, once, only for this step. The rest of the plan can be read after it.' })
+        Merge-AzlRecordCount -Record $Record
+        $Record.status = 'planned'
+        return
+    }
     $run = Invoke-AzlNodeRun -Context $Context -Record $Record -Phase $Phase
     $readable = Merge-AzlRunResult -Record $Record -Run $run -Phase $Phase
     if (-not $readable) { $Record.status = 'failed'; return }
@@ -649,6 +669,14 @@ function Resolve-AzlWinRmAddress {
 
 function Invoke-AzlApplyPhase {
     param([object]$Context, [System.Collections.IDictionary]$Record, [System.Collections.IDictionary]$Node)
+    if ($Record.bootstrap.Contains('pending') -and $Record.bootstrap.pending) {
+        try {
+            Invoke-AzlRunBootstrap -Context $Context -Record $Record
+            $Record.changes += [ordered]@{ pass = 0; id = 'RemoteManagement/bootstrap'; status = 'changed'; detail = "opened $(@($Record.bootstrap.opened) -join ', ') for $(@($Record.bootstrap.cidrs) -join ', ') through Arc Run Command (once)" }
+            Invoke-AzlPlanPhase -Context $Context -Record $Record -Node $Node -Phase 'Plan'
+        }
+        catch { $Record.errors += "Bootstrap of $($Record.name) failed: $($_.Exception.Message)"; $Record.status = 'failed'; return }
+    }
     Resolve-AzlWinRmAddress -Context $Context -Record $Record -Node $Node
     $arcPending = @($Record.plan | Where-Object { $_.Step -eq 'ArcRegistration' -and $_.Action -eq 'Change' }).Count -gt 0
     $setPending = @($Record.plan | Where-Object { $_.Step -ne 'ArcRegistration' -and $_.Action -eq 'Change' }).Count -gt 0
@@ -659,6 +687,11 @@ function Invoke-AzlApplyPhase {
             $Record.changes += @(@($run.Entry.changes) | ForEach-Object { [ordered]@{ pass = $_.Pass; id = $_.Id; status = $_.Status; detail = $_.Detail } })
             if ($run.Entry.restarted) { $Record.restarted = $true }
         }
+        foreach ($g in @(Get-AzlProp $run.Entry 'guard' @() | Where-Object { $_ -and $_.state -ne 'Committed' })) {
+            if ($g.state -eq 'Unknown') { $Record.warnings += "PendingReconciliation: change $($g.changeId) ($($g.group)) on $($Record.name): $($g.reason) $($g.nextAction)" }
+            else { $Record.errors += "Guarded change $($g.changeId) ($($g.group)) on $($Record.name) ended $($g.state): $($g.reason) $($g.nextAction)" }
+        }
+        if ($run.Entry) { $Record.guard = @($Record.guard) + @(Get-AzlProp $run.Entry 'guard' @()); $Record.events = @($Record.events) + @(Get-AzlProp $run.Entry 'events' @()); $finalAddress = [string](Get-AzlProp $run.Entry 'address' ''); if ($finalAddress -and $Record.transport -eq 'WinRM') { $Record.address = $finalAddress; $Context.NodeAddress[$Record.name] = $finalAddress } }
         if ($run.Error) {
             if ($run.Unknown) { $Record.warnings += "The Apply of $($Record.name) ended in state Unknown after $($Context.RetryTries) tries; convergence is decided by the verification pass, not by the command." }
             else { $Record.errors += "Apply of $($Record.name) failed: $($run.Error)" }
@@ -679,6 +712,36 @@ function Invoke-AzlApplyPhase {
     $Record.status = 'applied'
 }
 
+function Invoke-AzlRemotingPreCheck {
+    <#
+    .SYNOPSIS
+        The remoting pre-check seam (a test replaces it): every WinRM node probed at the same time, rows with Reachable, Address, Result and Diagnosis.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object[]]$Candidate, [Parameter(Mandatory)][object]$Remoting, [Parameter(Mandatory)][object]$Context, [string[]]$ArcAvailable = @())
+    $has = [bool]$Context.CredentialInfo.Credential
+    Get-AzlRemotingFinding -Node $Candidate -Port $Remoting.Port -HasCredential $has -Origin ([string]$Context.CredentialInfo.Source) -ArcAvailable $ArcAvailable
+}
+
+function Invoke-AzlRunBootstrap {
+    <#
+    .SYNOPSIS
+        The one use of Arc Run Command in the WinRM mode: open WinRM (and RDP, ICMP when the plan has them) for the source CIDRs on one node, once.
+        Then the node is probed again; a node that still doesn't answer fails with the diagnosis.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][System.Collections.IDictionary]$Record)
+    $cidrs = @($Record.bootstrap.cidrs)
+    $arc = New-AzlArcRunCommandTransport -ArcResourceId @{ $Record.name = [string]$Record.evidence.ArcResourceId }
+    $withExtras = 'RemoteManagement' -in $Record.steps
+    $done = Invoke-AzlRemotingBootstrap -ArcTransport $arc -Node $Record.name -Cidr $cidrs -Rdp:$withExtras -Icmp:$withExtras -Https:([bool]$Context.Remoting.UseSsl)
+    $Record.bootstrap = [ordered]@{ used = $true; pending = $false; transport = 'ArcRunCommand'; opened = @($done.Opened); scope = @($done.Scope); cidrs = $cidrs }
+    Send-AzlGuardEvent -Context $Context.EventContext -Node $Record.name -State 'TransportResolved' -Step 'RemoteManagement' -Transport 'ArcRunCommand' -Level Warning -Evidence "Bootstrap through Arc Run Command, once: opened $(@($done.Opened) -join ', ') for $($cidrs -join ', '). Everything after this goes over WinRM." -Data @{ bootstrap = $true; cidrs = $cidrs }
+    Start-Sleep -Seconds 3
+    $reached = $false
+    foreach ($address in @($Record.evidence.Addresses)) { if (Test-AzlWinRmPort -Address $address -Port $Context.Remoting.Port) { $Record.address = $address; $reached = $true; break } }
+    if (-not $reached) { throw "$($Record.name) still doesn't answer on $($Context.Remoting.Port) after the bootstrap opened remote management for $($cidrs -join ', '). The runner's address may not be in those CIDRs, or a network firewall between this host and the node blocks TCP $($Context.Remoting.Port). Tried: $(@($Record.evidence.Addresses) -join ', ')." }
+}
 function Get-AzlWipeList {
     <#
     .SYNOPSIS
@@ -762,6 +825,10 @@ function ConvertTo-AzlNodeReport {
             winrm   = [ordered]@{ answers = $Record.evidence.WinRmAnswers; address = $Record.evidence.WinRmAddress; note = $Record.evidence.WinRmNote }
         }
         address        = $Record.address
+        stepTransports = [ordered]@{ all = $Record.transport; bootstrap = $(if ($Record.bootstrap.used) { 'ArcRunCommand' } else { '' }) }
+        bootstrap      = $Record.bootstrap
+        guard          = @($Record.guard)
+        events         = @($Record.events)
         steps          = @($Record.steps)
         status         = $Record.status
         planned        = [ordered]@{ changes = $Record.pendingChanges; blocked = $Record.blocked }
@@ -814,7 +881,7 @@ function Get-AzlNodeRecord {
         handoffFile = $evidence.HandoffFile; evidence = $evidence
         steps = $steps; setSteps = @($steps | Where-Object { $_ -in $script:NodeSteps })
         status = 'pending'; plan = @(); changes = @(); errors = @(); warnings = @(); verification = @(); wipe = @()
-        ports = @(); sanDisks = @(); hostname = ''; osVersion = ''
+        ports = @(); sanDisks = @(); hostname = ''; osVersion = ''; guard = @(); events = @(); bootstrap = [ordered]@{ used = $false }
         pendingChanges = 0; blocked = 0; converged = $false; restarted = $false; phases = [ordered]@{}
     }
 }
@@ -891,7 +958,13 @@ function Invoke-AzlOsConfiguration {
             NodeAddress = $addressOverride; Method = $Method; CredentialInfo = $null
             RetryTries = $tries; RetryDelaySeconds = $delays; MaxPasses = $(if ($run.ContainsKey('maxPasses')) { [int]$run.maxPasses } else { 3 })
             NoRestart = ($run.ContainsKey('noRestart') -and $run.noRestart -eq $true); SkipValidation = $SkipValidation.IsPresent
+            TransportRequested = $Transport; Remoting = $null; GuardSettings = @{}; EventLogPath = (Join-Path $reportDir 'os-configuration-events.jsonl'); EventContext = $null
         }
+        $context.Remoting = Get-AzlRemotingSetting -Infrastructure $infra -Setting $run -Transport $Transport
+        foreach ($k in 'networkRollbackMinutes', 'networkStableSeconds', 'reconnectWaitMinutes', 'staleRunCommandMinutes', 'addressProbe', 'remoting') { if ($run.ContainsKey($k)) { $context.GuardSettings[$k] = $run[$k] } }
+        if (-not $context.GuardSettings.ContainsKey('networkRollbackMinutes') -and (Get-AzlProp $infra 'os_configuration.network.confirm_minutes')) { $context.GuardSettings.networkRollbackMinutes = [int](Get-AzlProp $infra 'os_configuration.network.confirm_minutes') }
+        if (-not $context.GuardSettings.ContainsKey('networkStableSeconds') -and (Get-AzlProp $infra 'os_configuration.network.stable_seconds')) { $context.GuardSettings.networkStableSeconds = [int](Get-AzlProp $infra 'os_configuration.network.stable_seconds') }
+        $context.EventContext = New-AzlGuardEventContext -Path $context.EventLogPath
         $context.CredentialInfo = Get-AzlLocalAdminCredential -Infrastructure $infra -Credential $Credential
         $declared = [string](Get-AzlProp $infra 'scenario.os_install' '')
 
@@ -912,7 +985,7 @@ function Invoke-AzlOsConfiguration {
             $resolution = Resolve-AzlNodeMethod -Node ([string]$n['name']) -Declared $declared -Evidence $evidence -Force $Method
             foreach ($e in $resolution.Errors) { $inputProblems.Add($e) }
             foreach ($w in $resolution.Warnings) { Write-Warning $w }
-            if ($Transport -ne 'Auto' -and $resolution.Method) { $resolution.Transport = $Transport }
+            if ($resolution.Method) { $resolution.Transport = $context.Remoting.Kind }
             $record = Get-AzlNodeRecord -Node $n -Resolution $resolution -Step $Step
             $records.Add($record)
             if ($resolution.Method) { Write-AzlLine "  $($record.name): method $($record.method) ($($record.methodSource); declared $declared), transport $($record.transport)$(if ($record.address) { ", address $($record.address)" })." }
@@ -925,9 +998,28 @@ function Invoke-AzlOsConfiguration {
         $needsArcStep = @($records | Where-Object { $_.method -eq 'Iso' -and 'ArcRegistration' -in $_.steps })
         if ($needsArcStep.Count -and -not $context.AzureSignedIn) { throw (Get-AzlInputError "Arc registration needs an Azure sign-in to look up the Arc machine and get an ARM token: $(($needsArcStep | ForEach-Object { $_.name }) -join ', ').") }
 
+        # remoting pre-check: every node reached over WinRM, probed at the same time; one table, before anything changes
+        $winRmRecords = @($records | Where-Object { $_.transport -eq 'WinRM' })
+        if ($winRmRecords.Count) {
+            $candidates = @($winRmRecords | ForEach-Object { [pscustomobject]@{ Name = $_.name; Addresses = @($_.evidence.Addresses) } })
+            $arcAvailable = @($winRmRecords | Where-Object { $_.evidence.ArcStatus -eq 'Connected' } | ForEach-Object { $_.name })
+            $findings = @(Invoke-AzlRemotingPreCheck -Candidate $candidates -Remoting $context.Remoting -Context $context -ArcAvailable $arcAvailable)
+            $unreachable = [System.Collections.Generic.List[object]]::new()
+            foreach ($f in $findings) {
+                $r = $records | Where-Object { $_.name -eq $f.Node } | Select-Object -First 1
+                if ($f.Reachable) { $r.address = $f.Address; continue }
+                if ($context.Remoting.BootstrapTransport -eq 'arc' -and $f.Node -in $arcAvailable -and $f.Result -notin 'NoCredential', 'NoAddress') {
+                    $cidrs = @(Get-AzlRemotingAllowedCidr -Infrastructure $infra -RunnerCidr $context.Remoting.AllowedSourceCidrs)
+                    if ($cidrs.Count) { $r.bootstrap = [ordered]@{ used = $false; pending = $true; cidrs = $cidrs }; continue }
+                }
+                $unreachable.Add($f)
+            }
+            if ($unreachable.Count) { throw (Get-AzlInputError ("PowerShell remoting can't reach $($unreachable.Count) node(s); nothing was changed.$([Environment]::NewLine)$(Format-AzlRemotingFinding -Finding @($unreachable))")) }
+        }
+
         # ISO path: route, credentials, OS
         $pre = [System.Collections.Generic.List[string]]::new()
-        foreach ($r in @($records | Where-Object { $_.method -eq 'Iso' -and $_.transport -eq 'WinRM' })) {
+        foreach ($r in @($records | Where-Object { $_.transport -eq 'WinRM' -and -not $_.bootstrap.Contains('pending') })) {
             $check = Test-AzlIsoPrecondition -Context $context -Record $r
             foreach ($p in $check.Problems) { $pre.Add($p) }
             if ($check.Seen) { $r.warnings += "OS: $(Get-AzlProp $check.Seen 'caption' '') build $(Get-AzlProp $check.Seen 'build' '')" }

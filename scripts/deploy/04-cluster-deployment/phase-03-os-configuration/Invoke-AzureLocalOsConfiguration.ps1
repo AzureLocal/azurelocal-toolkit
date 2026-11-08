@@ -48,13 +48,13 @@
 .PARAMETER ContinueOnNodeFailure
     Keep going with the other nodes when one fails (default $true). Pass -ContinueOnNodeFailure:$false to stop at the first failure.
 .PARAMETER Transport
-    Auto (default; per node, from its method), ArcRunCommand or WinRM for every node.
+    Auto (default) is PowerShell remoting (WinRM) for every node, or what remoting.transport says. ArcRunCommand only when you pass it: the exception for sites with no route to the nodes, not recommended for network changes. Arc is never a silent fallback.
 .PARAMETER Method
     Auto (default; worked out per node), Ztp or Iso for every node.
 .PARAMETER Credential
     The nodes' local administrator for WinRM. Default: identity.local_admin from the master file, its password read from the Key Vault.
 .PARAMETER NodeAddress
-    Node name -> the address to open the WinRM session to, for an ISO-installed node that still holds the installer's address.
+    Node name -> the address to open the WinRM session to first, for a node that still holds the installer's address.
 .PARAMETER ClearStorage
     Force the storage wipe on, as os_configuration.clear_storage: true does.
 .PARAMETER FailOnPendingChanges
