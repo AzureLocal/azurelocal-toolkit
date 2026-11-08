@@ -289,11 +289,15 @@ function New-AzlWinRmTransport {
                     finally { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue }
                 } -ArgumentList $Script, $p, $q
                 if (-not (Wait-AzlNodeJob -Job $job -CapSeconds $cap -Transport $Self -Node $Node)) {
+                    # What the script had already written is kept (Receive-Job -Keep, before the job is stopped): a node script that emitted its AZLRESULT line and then stalled
+                    # still answered, and Invoke-AzlNodeScript decodes that line. Failed stays true: the call did not finish.
+                    $partial = ''
+                    try { $partial = (@(Receive-Job -Job $job -Keep -ErrorAction SilentlyContinue) | ForEach-Object { [string]$_ }) -join [Environment]::NewLine } catch { $partial = '' }
                     Stop-Job -Job $job -ErrorAction SilentlyContinue
                     Remove-Job -Job $job -Force -ErrorAction SilentlyContinue
                     if ($Self.State.Sessions.ContainsKey($Node)) { Remove-PSSession -Session $Self.State.Sessions[$Node] -ErrorAction SilentlyContinue; $Self.State.Sessions.Remove($Node) }
                     # What the script did on the node is not known: it may not have started, may still be running, or may have finished. The caller treats this as indeterminate.
-                    return [pscustomobject]@{ Output = ''; Error = "The call to $Node did not finish within $cap seconds and was abandoned."; Failed = $true; State = 'TimedOut' }
+                    return [pscustomobject]@{ Output = $partial; Error = "The call to $Node did not finish within $cap seconds and was abandoned."; Failed = $true; State = 'TimedOut' }
                 }
                 try { $output = Receive-Job -Job $job -ErrorAction Stop } finally { Remove-Job -Job $job -Force -ErrorAction SilentlyContinue }
                 [pscustomobject]@{ Output = ($output -join [Environment]::NewLine); Error = ''; Failed = $false; State = 'Succeeded' }
@@ -363,8 +367,12 @@ function Invoke-AzlNodeScript {
     while ($true) {
         $attempt++
         $run = & $Transport.Invoke $Transport $Node $Script $Parameters $Secrets $TimeoutSeconds
-        $result = ConvertTo-AzlNodeResult -Text $run.Output
+        # A call that was abandoned may carry a partial output: a result line that is cut or garbled there is no result, and the call is treated as the timeout it was.
+        try { $result = ConvertTo-AzlNodeResult -Text $run.Output }
+        catch { if ($run.Failed) { $result = $null } else { throw } }
         if ($result) {
+            # The node answered before the call was abandoned (its result line was already written): the answer is used, and it carries the mark so a caller can count the stall.
+            if ($run.Failed -and [string]$run.State -eq 'TimedOut') { Add-Member -InputObject $result -NotePropertyName azlRecoveredFromTimeout -NotePropertyValue $true -Force }
             # A Read answers with the sections nics, remote and time. All empty is not a node with nothing: the read gave nothing back.
             $names = @($result.PSObject.Properties.Name)
             if ('nics' -in $names -and 'remote' -in $names -and 'time' -in $names -and @($result.nics).Count -eq 0 -and $null -eq $result.remote -and $null -eq $result.time) {

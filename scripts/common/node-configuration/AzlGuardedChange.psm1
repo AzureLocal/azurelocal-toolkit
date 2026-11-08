@@ -247,18 +247,23 @@ function Resolve-AzlGuardStatus {
     }
     $s = $Status.state
     $repairs = @(Get-AzlProp $s 'repairs' @() | Where-Object { $_ })
-    $result = [ordered]@{ Final = $false; State = 'InProgress'; Reason = [string](Get-AzlProp $s 'reason' ''); Verdict = [string](Get-AzlProp $s 'verdict' ''); Repairs = $repairs; OldAddress = [string](Get-AzlProp $s 'oldAddress' ''); NewAddress = [string](Get-AzlProp $s 'newAddress' ''); Phase = [string]$s.state }
+    $result = [ordered]@{ Final = $false; State = 'InProgress'; Reason = [string](Get-AzlProp $s 'reason' ''); Verdict = [string](Get-AzlProp $s 'verdict' ''); Repairs = $repairs; OldAddress = [string](Get-AzlProp $s 'oldAddress' ''); NewAddress = [string](Get-AzlProp $s 'newAddress' ''); Phase = [string]$s.state; Partial = $false }
     switch ([string]$s.state) {
         'Committed' {
             $problem = ''
             $actualHash = [string](Get-AzlProp $Status 'scriptSha256Actual' '')
+            $live = Get-AzlProp $Status 'live' $null
             if ($ExpectedHash -and $actualHash -and $actualHash -ine $ExpectedHash) { $problem = "the staged script on the node has SHA-256 $actualHash, expected $ExpectedHash" }
-            elseif ($ExpectedIp -and $Status.live) {
-                $has = @($Status.live.ips | Where-Object { ([string]$_) -like "$ExpectedIp/*" }).Count
-                if (-not $has) { $problem = "the node says Committed but its management port holds $(@($Status.live.ips) -join ', '), not $ExpectedIp" }
+            elseif ($ExpectedIp -and $live) {
+                $has = @(Get-AzlProp $live 'ips' @() | Where-Object { ([string]$_) -like "$ExpectedIp/*" }).Count
+                if (-not $has) { $problem = "the node says Committed but its management port holds $(@(Get-AzlProp $live 'ips' @()) -join ', '), not $ExpectedIp" }
             }
             if ($problem) { $result.Final = $true; $result.State = 'Failed'; $result.Reason = "Committed could not be verified: $problem." }
-            else { $result.Final = $true; $result.State = 'Committed' }
+            else {
+                $result.Final = $true; $result.State = 'Committed'
+                # The early answer of the status script (partial = true) has the node's own state and identity but not the script hash or the live port: they were not read.
+                if ([bool](Get-AzlProp $Status 'partial' $false)) { $result.Partial = $true; $result.Reason = "$($result.Reason) [early answer: the node's own state and identity were read; the script hash and the live port were not]".Trim() }
+            }
         }
         { $_ -in 'RolledBack', 'Refused', 'Failed' } { $result.Final = $true; $result.State = [string]$s.state }
     }
@@ -546,6 +551,8 @@ function Invoke-AzlGuardedChange {
     $nodeNow = $null
     $sawDisconnect = $false
     $lastQuietRead = $stagedAt
+    # The confirmation token has been written for the AwaitingConfirm the host last saw (by the status read itself or by the ack-only call): it is not sent again for that phase.
+    $ackSent = $false
     while ($true) {
         $now = & $Clock.Now
         # The node's clock between two reads moves by the time that really passed on the host, not by what a sleep was asked for.
@@ -577,25 +584,37 @@ function Invoke-AzlGuardedChange {
             $onNew = (-not $isManagement) -or (-not $isWinRm) -or ($address -eq $newAddress)
             $parameters = @{ changeId = $changeId; mac = [string]$Spec.Management.Mac; cookie = $cookie; machineSid = $sid }
             if ($onNew -and $token) { $parameters.ackToken = $token }
+            # The state is known to be AwaitingConfirm and only the token is missing: the tiny ack script writes it (no log, no hash, no adapter query), and the next pass reads the state.
+            $ackOnly = ($lastPhase -eq 'AwaitingConfirm') -and $onNew -and $token -and -not $ackSent
             try {
-                $status = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlGuardStatusPayload) -Parameters $parameters -TimeoutSeconds 180 -Tries 1
-                if (-not $reconnected) {
-                    $reconnected = $true
-                    Send-AzlGuardEvent -Context $EventContext -Node $Node -State 'NodeReconnected' -Transport $Transport.Kind -Evidence "$Node answers again$(if ($address) { " on $address" })." -Data (& $data @{ address = $address; sawDisconnect = $sawDisconnect })
+                if ($ackOnly) {
+                    $ackSent = $true
+                    $ackResult = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlGuardAckPayload) -Parameters @{ changeId = $changeId; cookie = $cookie; machineSid = $sid; ackToken = $token } -TimeoutSeconds 30 -Tries 1
+                    if (-not (Get-AzlProp $ackResult 'written' $false)) { $lastError = "the acknowledgement was not written: $(Get-AzlProp $ackResult 'why' 'no reason given')" }
                 }
-                $resolved = Resolve-AzlGuardStatus -Status $status -ExpectedHash $scriptHash -ExpectedIp $(if ($isManagement) { $newAddress } else { '' })
-                if ($status.PSObject.Properties['nowUtc'] -and $status.nowUtc -and $status.state) {
-                    $nodeNow = ([datetime]::Parse([string]$status.nowUtc, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)).ToUniversalTime()
-                    $deadlineText = [string](Get-AzlProp $status.state 'deadlineUtc' '')
-                    if ($deadlineText) { $nodeDeadline = ([datetime]::Parse($deadlineText, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)).ToUniversalTime() }
-                    $lastNow = & $Clock.Now
+                else {
+                    $status = Invoke-AzlNodeScript -Transport $Transport -Node $Node -Script (Get-AzlGuardStatusPayload) -Parameters $parameters -TimeoutSeconds 180 -Tries 1
+                    if (-not $reconnected) {
+                        $reconnected = $true
+                        Send-AzlGuardEvent -Context $EventContext -Node $Node -State 'NodeReconnected' -Transport $Transport.Kind -Evidence "$Node answers again$(if ($address) { " on $address" })." -Data (& $data @{ address = $address; sawDisconnect = $sawDisconnect })
+                    }
+                    $resolved = Resolve-AzlGuardStatus -Status $status -ExpectedHash $scriptHash -ExpectedIp $(if ($isManagement) { $newAddress } else { '' })
+                    if ($status.PSObject.Properties['nowUtc'] -and $status.nowUtc -and $status.state) {
+                        $nodeNow = ([datetime]::Parse([string]$status.nowUtc, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)).ToUniversalTime()
+                        $deadlineText = [string](Get-AzlProp $status.state 'deadlineUtc' '')
+                        if ($deadlineText) { $nodeDeadline = ([datetime]::Parse($deadlineText, [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::RoundtripKind)).ToUniversalTime() }
+                        $lastNow = & $Clock.Now
+                    }
+                    # A status read that carried the token while the node was AwaitingConfirm has written it (ackWritten): the ack-only call is not needed for that phase.
+                    if ($resolved.Phase -ne 'AwaitingConfirm') { $ackSent = $false }
+                    elseif (Get-AzlProp $status 'ackWritten' $false) { $ackSent = $true }
+                    if ($resolved.Phase -ne $lastPhase) {
+                        $lastPhase = $resolved.Phase
+                        if ($resolved.Phase -eq 'Verifying') { Send-AzlGuardEvent -Context $EventContext -Node $Node -State 'NetworkChangeVerifying' -Transport $Transport.Kind -Evidence "The node is verifying change ${changeId}: its own checks must stay green for $($cfgSetting.networkStableSeconds) seconds." -Data (& $data @{}) }
+                        if ($resolved.Phase -eq 'AwaitingConfirm') { Send-AzlGuardEvent -Context $EventContext -Node $Node -State 'NetworkChangeAwaitingConfirm' -Transport $Transport.Kind -Evidence "Local checks passed on the node; the confirmation token $(if ($onNew -and $token) { 'was written through a new session' } else { 'is waiting for a session on the new address' })." -Data (& $data @{}) }
+                    }
+                    if ($resolved.Final) { break }
                 }
-                if ($resolved.Phase -ne $lastPhase) {
-                    $lastPhase = $resolved.Phase
-                    if ($resolved.Phase -eq 'Verifying') { Send-AzlGuardEvent -Context $EventContext -Node $Node -State 'NetworkChangeVerifying' -Transport $Transport.Kind -Evidence "The node is verifying change ${changeId}: its own checks must stay green for $($cfgSetting.networkStableSeconds) seconds." -Data (& $data @{}) }
-                    if ($resolved.Phase -eq 'AwaitingConfirm') { Send-AzlGuardEvent -Context $EventContext -Node $Node -State 'NetworkChangeAwaitingConfirm' -Transport $Transport.Kind -Evidence "Local checks passed on the node; the confirmation token $(if ($onNew -and $token) { 'was written through a new session' } else { 'is waiting for a session on the new address' })." -Data (& $data @{}) }
-                }
-                if ($resolved.Final) { break }
             }
             catch { $lastError = $_.Exception.Message }
         }

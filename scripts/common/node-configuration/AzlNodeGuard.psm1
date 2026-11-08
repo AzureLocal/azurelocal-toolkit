@@ -14,7 +14,9 @@
     Get-AzlGuardStagePayload The script a session runs to stage a change: writes the script, the config and the first state,
                              registers the WATCHDOG (scheduled task: at startup and every minute) and starts it. Returns at once.
     Get-AzlGuardStatusPayload  A short read-only script: the state file, the tail of the log, the live configuration of the
-                             management port, the staged file's SHA-256. With ack set it also writes the acknowledgement file.
+                             management port, the staged file's SHA-256. With ack set it also writes the acknowledgement file. The state, the identity
+                             and ackWritten go out FIRST as a partial result (partial = true) right after the acknowledgement; the full result is the last line.
+    Get-AzlGuardAckPayload   A tiny script that writes the acknowledgement file and nothing else (answers { written, why }).
     Get-AzlGuardEngine       The engine text (Windows PowerShell 5.1 syntax). A host test dot-sources it and injects fake node
                              operations with Set-GuardOps, so every rung of the ladders runs without a node.
 
@@ -1114,7 +1116,12 @@ $base = [string](Get-P $P 'dir' $stateDir)
 $statePath = ''
 if ($id) { $statePath = Join-Path (Join-Path $base ('net-' + $id)) ('net-' + $id + '.state.json') }
 else {
-    $latest = Get-ChildItem -LiteralPath $base -Recurse -Filter 'net-*.state.json' -ErrorAction SilentlyContinue | Where-Object { $_.Name -notlike '*.copy.json' } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    # The newest change: look only at the net-* folders of the state directory (one level, no recursion), each holding its own state file.
+    $latest = $null
+    foreach ($d in @(Get-ChildItem -LiteralPath $base -Directory -Filter 'net-*' -ErrorAction SilentlyContinue)) {
+        $f = Get-Item -LiteralPath (Join-Path $d.FullName ($d.Name + '.state.json')) -ErrorAction SilentlyContinue
+        if ($f -and (-not $latest -or $f.LastWriteTime -gt $latest.LastWriteTime)) { $latest = $f }
+    }
     if ($latest) { $statePath = $latest.FullName }
 }
 if (-not $statePath -or -not (Test-Path -LiteralPath $statePath)) { Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; found = $false; changeId = $id }); return }
@@ -1139,10 +1146,43 @@ if ($sidWanted -and $sid -and $sidWanted -ne $sid) { $identityOk = $false }
 $ack = $false
 $token = [string](Get-P $P 'ackToken' '')
 if ($token -and $identityOk -and [string]$state.state -eq 'AwaitingConfirm') { [IO.File]::WriteAllText((Join-Path $dir ('net-' + $id + '.ack')), $token, (New-Object Text.UTF8Encoding($false))); $ack = $true }
+$remaining = $null
+if (Get-P $state 'confirmDeadlineUtc' '') { $remaining = [int](([datetime]::Parse([string]$state.confirmDeadlineUtc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()) - (Get-Date).ToUniversalTime()).TotalSeconds }
+$compact = [pscustomobject]@{
+    changeId = $id; group = [string](Get-P $state 'group' ''); state = [string]$state.state; generation = [int](Get-P $state 'generation' 0); reason = [string](Get-P $state 'reason' ''); updatedUtc = [string](Get-P $state 'updatedUtc' ''); heartbeatUtc = [string](Get-P $state 'heartbeatUtc' '')
+    confirmDeadlineUtc = [string](Get-P $state 'confirmDeadlineUtc' ''); confirmSecondsLeft = $remaining; deadlineUtc = [string](Get-P $state 'deadlineUtc' '')
+    oldAddress = [string](Get-P $state 'oldAddress' ''); newAddress = [string](Get-P $state 'newAddress' ''); scriptSha256 = [string](Get-P $state 'scriptSha256' ''); verdict = [string](Get-P $state 'verdict' ''); verified = (Get-P $state 'verified' $null); partial = (Get-P $state 'partial' $false); lateConfirm = [bool](Get-P $state 'lateConfirm' $false)
+    restoredItems = @(Get-P $state 'restoredItems' @()); watchdog = [bool](Get-P $state 'watchdog' $false); finalizeError = [string](Get-P $state 'finalizeError' '')
+    repairs = @(Get-P $state 'repairs' @() | ForEach-Object { [pscustomobject]@{ rung = [string]$_.rung; item = [string](Get-P $_ 'item' ''); ok = [bool]$_.ok; detail = [string]$_.detail } })
+    checks = @(Get-P $state 'checks' @() | ForEach-Object { [pscustomobject]@{ name = [string]$_.name; ok = [bool]$_.ok; detail = [string]$_.detail } })
+}
+# The answer goes out NOW (partial = true): the state, the identity and whether the acknowledgement was written. Everything below is slower (the log, the script hash, the
+# live adapter) and may stall on a node whose network has just changed; the caller already has what decides the change. The full result below is the last line and wins.
+Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; found = $true; identityOk = $identityOk; state = $compact; ackWritten = $ack; machineSid = $sid; nowUtc = (Get-Date).ToUniversalTime().ToString('o'); partial = $true })
 $log = @()
 $logPath = Join-Path $dir ($id + '.log')
-if (Test-Path -LiteralPath $logPath) { $tail = [int](Get-P $P 'logTail' 14); if ($tail -lt 1) { $tail = 14 }
-    $log = @(Get-Content -LiteralPath $logPath -Tail $tail | ForEach-Object { if ($_.Length -gt 300) { $_.Substring(0, 300) } else { $_ } }) }
+if (Test-Path -LiteralPath $logPath) {
+    $tail = [int](Get-P $P 'logTail' 14); if ($tail -lt 1) { $tail = 14 }
+    # The last 8 KB through a stream that shares the file with its writer (the node-side engine appends to it), not Get-Content -Tail.
+    $fs = $null
+    try {
+        $fs = New-Object IO.FileStream($logPath, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::ReadWrite)
+        $take = [int][Math]::Min($fs.Length, 8192)
+        $cut = ($fs.Length -gt $take)
+        if ($take -gt 0) {
+            $null = $fs.Seek(-1 * $take, [IO.SeekOrigin]::End)
+            $buffer = New-Object byte[] $take
+            $got = 0
+            while ($got -lt $take) { $n = $fs.Read($buffer, $got, $take - $got); if ($n -le 0) { break }; $got += $n }
+            $lines = @([Text.Encoding]::UTF8.GetString($buffer, 0, $got) -split "`r?`n" | Where-Object { $_ -ne '' })
+            # When the file is longer than the 8 KB read, the first line is probably cut: it is dropped.
+            if ($cut -and $lines.Count -gt 1) { $lines = @($lines | Select-Object -Skip 1) }
+            $log = @($lines | Select-Object -Last $tail | ForEach-Object { if ($_.Length -gt 300) { $_.Substring(0, 300) } else { $_ } })
+        }
+    }
+    catch { $log = @() }
+    finally { if ($fs) { $fs.Dispose() } }
+}
 $actual = ''
 $scriptPath = Join-Path $dir ('net-' + $id + '.ps1')
 if (Test-Path -LiteralPath $scriptPath) { $actual = (Get-FileHash -LiteralPath $scriptPath -Algorithm SHA256).Hash }
@@ -1159,17 +1199,44 @@ if ($mac) {
         }
     }
 }
-$remaining = $null
-if (Get-P $state 'confirmDeadlineUtc' '') { $remaining = [int](([datetime]::Parse([string]$state.confirmDeadlineUtc, [Globalization.CultureInfo]::InvariantCulture, [Globalization.DateTimeStyles]::RoundtripKind).ToUniversalTime()) - (Get-Date).ToUniversalTime()).TotalSeconds }
-$compact = [pscustomobject]@{
-    changeId = $id; group = [string](Get-P $state 'group' ''); state = [string]$state.state; generation = [int](Get-P $state 'generation' 0); reason = [string](Get-P $state 'reason' ''); updatedUtc = [string](Get-P $state 'updatedUtc' ''); heartbeatUtc = [string](Get-P $state 'heartbeatUtc' '')
-    confirmDeadlineUtc = [string](Get-P $state 'confirmDeadlineUtc' ''); confirmSecondsLeft = $remaining; deadlineUtc = [string](Get-P $state 'deadlineUtc' '')
-    oldAddress = [string](Get-P $state 'oldAddress' ''); newAddress = [string](Get-P $state 'newAddress' ''); scriptSha256 = [string](Get-P $state 'scriptSha256' ''); verdict = [string](Get-P $state 'verdict' ''); verified = (Get-P $state 'verified' $null); partial = (Get-P $state 'partial' $false); lateConfirm = [bool](Get-P $state 'lateConfirm' $false)
-    restoredItems = @(Get-P $state 'restoredItems' @()); watchdog = [bool](Get-P $state 'watchdog' $false); finalizeError = [string](Get-P $state 'finalizeError' '')
-    repairs = @(Get-P $state 'repairs' @() | ForEach-Object { [pscustomobject]@{ rung = [string]$_.rung; item = [string](Get-P $_ 'item' ''); ok = [bool]$_.ok; detail = [string]$_.detail } })
-    checks = @(Get-P $state 'checks' @() | ForEach-Object { [pscustomobject]@{ name = [string]$_.name; ok = [bool]$_.ok; detail = [string]$_.detail } })
-}
 Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; found = $true; identityOk = $identityOk; state = $compact; log = $log; scriptSha256Actual = $actual; live = $live; ackWritten = $ack; machineSid = $sid; nowUtc = (Get-Date).ToUniversalTime().ToString('o') })
+'@
+
+$script:AckBody = @'
+# AZL-GUARD-ACK
+# Writes the confirmation token and nothing else: no log, no hash, no adapter. The same identity and state checks as the status script.
+$id = [string](Get-P $P 'changeId' '')
+$base = [string](Get-P $P 'dir' $stateDir)
+$written = $false
+$why = ''
+$statePath = ''
+if ($id) { $statePath = Join-Path (Join-Path $base ('net-' + $id)) ('net-' + $id + '.state.json') }
+if (-not $statePath -or -not (Test-Path -LiteralPath $statePath)) { $why = 'no state for this change' }
+else {
+    $state = $null
+    for ($try = 1; $try -le 3 -and -not $state; $try++) {
+        try { $state = Get-Content -LiteralPath $statePath -Raw -ErrorAction Stop | ConvertFrom-Json } catch { Start-Sleep -Milliseconds 300 }
+    }
+    if (-not $state) { $why = 'the state file is being written' }
+    else {
+        $sid = ''
+        try { $sid = ([Security.Principal.NTAccount]('{0}\{0}$' -f $env:COMPUTERNAME)).Translate([Security.Principal.SecurityIdentifier]).AccountDomainSid.Value } catch { $sid = '' }
+        $identityOk = $true
+        $cookieWanted = [string](Get-P $P 'cookie' '')
+        if ($cookieWanted -and $cookieWanted -ne [string](Get-P $state 'cookie' '')) { $identityOk = $false }
+        $sidWanted = [string](Get-P $P 'machineSid' '')
+        if ($sidWanted -and $sid -and $sidWanted -ne $sid) { $identityOk = $false }
+        $token = [string](Get-P $P 'ackToken' '')
+        if (-not $token) { $why = 'no token' }
+        elseif (-not $identityOk) { $why = 'identity mismatch' }
+        elseif ([string]$state.state -ne 'AwaitingConfirm') { $why = 'the change is ' + [string]$state.state }
+        else {
+            [IO.File]::WriteAllText((Join-Path (Split-Path -Parent $statePath) ('net-' + [string]$state.changeId + '.ack')), $token, (New-Object Text.UTF8Encoding($false)))
+            $written = $true
+        }
+    }
+}
+Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; written = $written; why = $why; changeId = $id })
 '@
 
 function Get-AzlGuardStagePayload {
@@ -1196,4 +1263,16 @@ function Get-AzlGuardStatusPayload {
     return ((Get-AzlNodePrologue) + [Environment]::NewLine + $script:StatusBody)
 }
 
-Export-ModuleMember -Function Get-AzlGuardScriptText, Get-AzlGuardEngine, Get-AzlGuardScriptHash, Get-AzlGuardStagePayload, Get-AzlGuardStatusPayload
+function Get-AzlGuardAckPayload {
+    <#
+    .SYNOPSIS
+        A tiny script that writes the confirmation token file of one change and nothing else (no log, no hash, no adapter query). Parameters: changeId, cookie,
+        machineSid, ackToken. Answers { written, why }. Used instead of the full status read when the host already knows the change awaits its confirmation.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+    return ((Get-AzlNodePrologue) + [Environment]::NewLine + $script:AckBody)
+}
+
+Export-ModuleMember -Function Get-AzlGuardScriptText, Get-AzlGuardEngine, Get-AzlGuardScriptHash, Get-AzlGuardStagePayload, Get-AzlGuardStatusPayload, Get-AzlGuardAckPayload
