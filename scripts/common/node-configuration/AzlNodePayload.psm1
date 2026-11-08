@@ -120,7 +120,7 @@ function Get-StorageWipeCandidate {
 '@
 
 $script:ReadBody = @'
-$Az = @{ err = @{}; nics = @(); remote = $null; time = $null; sbe = @(); drv = @(); adm = $null; stor = $null; san = $null; domainJoin = $null; reboot = $false }
+$Az = @{ err = @{}; nics = @(); remote = $null; time = $null; sbe = @(); sbeHeld = @(); drv = @(); adm = $null; stor = $null; san = $null; domainJoin = $null; reboot = $false }
 function Invoke-Section([string]$name, [scriptblock]$sb) {
     try { & $sb } catch { $Az.err[$name] = $_.Exception.Message }
 }
@@ -183,6 +183,14 @@ Invoke-Section 'sbe' {
             }
             [pscustomobject]@{ n = [string]$f.name; len = [int64]$len; ok = $ok }
         })
+}
+
+# ---- what C:\SBE holds, by file name only (read only, no content read, nothing removed). Asked for when the spec names no package: the SBE
+# is opt-in, and files an earlier delivery left there are reported so the operator knows; the toolkit does not remove them.
+Invoke-Section 'sbeHeld' {
+    if (@(Get-P $P 'sbeFiles' @()).Count -eq 0 -and (Test-Path -LiteralPath $sbeDir -PathType Container)) {
+        $Az.sbeHeld = @(Get-ChildItem -LiteralPath $sbeDir -File -ErrorAction Stop | Sort-Object Name | ForEach-Object { [string]$_.Name })
+    }
 }
 
 # ---- network drivers the SBE carries, for the ports that exist here
@@ -300,7 +308,7 @@ if ($null -eq $Az.time -and -not $Az.err.ContainsKey('time')) { $Az.err['time'] 
 if ($null -eq $Az.adm -and [string](Get-P $P 'adminUser' '') -and -not $Az.err.ContainsKey('admin')) { $Az.err['admin'] = 'the local administrator section returned no data' }
 Write-Result ([pscustomobject]@{
         v = 1; host = $env:COMPUTERNAME; boot = $os.LastBootUpTime.ToUniversalTime().ToString('o'); os = ('{0}.{1}' -f $os.Version, $ubr); reboot = $rebootPending
-        nics = $Az.nics; remote = $Az.remote; time = $Az.time; sbe = $Az.sbe; drv = $Az.drv; admin = $Az.adm; stor = $Az.stor; san = $Az.san; domainJoin = $Az.domainJoin; err = $Az.err
+        nics = $Az.nics; remote = $Az.remote; time = $Az.time; sbe = $Az.sbe; sbeHeld = $Az.sbeHeld; drv = $Az.drv; admin = $Az.adm; stor = $Az.stor; san = $Az.san; domainJoin = $Az.domainJoin; err = $Az.err
     })
 '@
 

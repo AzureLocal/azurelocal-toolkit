@@ -168,9 +168,8 @@ function Get-AzlNodeVersionData {
                 $v = [string](Get-AzlProp $sbe $pair[1] '')
                 if ($v) { $data[$pair[0]] = $v }
             }
-            # The route is the one the master file names (hardware.sbe.delivery); without one the package is not delivered (skip).
-            $delivery = [string](Get-AzlProp $sbe 'delivery' '')
-            if (-not $delivery -and (Get-AzlProp $sbe 'bundle_path' '')) { $delivery = 'skip' }
+            # The SBE is opt-in: the route is shown only when a person asked for one (hardware.sbe.delivery winrm_copy or node_pull). It has no default.
+            $delivery = Get-AzlSbeDeliveryRoute -Value (Get-AzlProp $sbe 'delivery')
             if ($delivery) { $data.sbeDelivery = $delivery }
         }
     }
@@ -229,7 +228,8 @@ function Send-AzlStepPlanEvent {
             }
             else {
                 $reason = switch ($step) {
-                    { $_ -in 'Sbe', 'Drivers' } { if (-not (Get-AzlProp $Context.Infra 'hardware.sbe.bundle_path' '')) { 'hardware.sbe.bundle_path is not set in the master file, so the SBE and the OEM drivers are skipped.' } else { 'the script found nothing to check for this step on this node.' } }
+                    'Sbe' { if (-not (Get-AzlSbeDeliveryRoute -Value (Get-AzlProp $Context.Infra 'hardware.sbe.delivery'))) { 'no SBE side-loading requested (the SBE is opt-in: hardware.sbe.delivery is not winrm_copy or node_pull).' } else { 'the script found nothing to check for this step on this node.' } }
+                    'Drivers' { if (-not (Get-AzlSbeDeliveryRoute -Value (Get-AzlProp $Context.Infra 'hardware.sbe.delivery'))) { 'no SBE configured, so there are no OEM drivers to install from it.' } else { 'the script found nothing to check for this step on this node.' } }
                     'ClearStorage' { if (-not $Context.ClearStorage) { 'os_configuration.clear_storage is off, so no storage is wiped.' } else { 'the script found nothing to check for this step on this node.' } }
                     default { 'the script found nothing to check for this step on this node (for example no SAN is configured).' }
                 }
@@ -1009,7 +1009,7 @@ function Invoke-AzlNodeRun {
         if ($Record.useSsl -or ($Context.PSObject.Properties['TransportSetting'] -and $Context.TransportSetting -and $Context.TransportSetting.UseSsl)) { $parameters.UseSsl = $true }
         if ($Context.PSObject.Properties['TransportSetting'] -and $Context.TransportSetting) { $parameters.Authentication = $Context.TransportSetting.Authentication }
     }
-    elseif ($Context.CredentialInfo.Credential -and 'Sbe' -in $steps -and [string](Get-AzlProp $Context.Infra 'hardware.sbe.delivery' 'skip') -eq 'winrm_copy') {
+    elseif ($Context.CredentialInfo.Credential -and 'Sbe' -in $steps -and (Get-AzlSbeDeliveryRoute -Value (Get-AzlProp $Context.Infra 'hardware.sbe.delivery')) -eq 'winrm_copy') {
         # The node is reached over Arc Run Command, which can't carry a file. hardware.sbe.delivery winrm_copy copies the SBE package
         # over WinRM, so the node script gets the local administrator for that one step (the other steps stay on Arc).
         $parameters.Credential = $Context.CredentialInfo.Credential
@@ -1324,10 +1324,7 @@ function Merge-AzlRunResult {
     $Record.wipeItems = $newWipe
     $Record.hostname = $newHostname
     $Record.osVersion = $newOsVersion
-    # hardware.sbe.delivery skip: the node is not failed, but the package is not on it and the OEM drivers wait, so say it once.
-    if ($Phase -eq 'Plan' -and @($Record.plan | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -eq 'Info' -and $_.Note -match 'NOT DELIVERED' }).Count) {
-        $Record.warnings += "$($Record.name): the SBE package is NOT DELIVERED (hardware.sbe.delivery is skip or not set), so the OEM network drivers are skipped. Set hardware.sbe.delivery to node_pull or winrm_copy, or put the package in C:\SBE yourself."
-    }
+    # The SBE is opt-in. A node with no SBE requested has a Skipped Sbe step ('no SBE side-loading requested'), not a warning: an absent SBE is not a fault.
     Add-AzlRunGuardEntry -Record $Record -Entry @(Get-AzlProp $Run.Entry 'guard' @())
     $events = @(Get-AzlProp $Run.Entry 'events' @())
     if ($events.Count) { $Record.events = @($Record.events) + $events }
@@ -1680,6 +1677,9 @@ function Format-AzlOsConfigurationSummary {
     param([Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Record, [string]$Mode = 'Plan', [switch]$Markdown, [int]$ExitCode = 0)
     # DOMAINJOIN HOOK: a Domain column only when a node's identity design is Active Directory.
     $showDomain = @($Record | Where-Object { [bool](Get-AzlProp (Get-AzlProp $_ 'domainJoin') 'applicable' $false) }).Count -gt 0
+    # The SBE is opt-in: when a node's plan has the Sbe step Skipped, nothing was side-loaded, and the summary says so (an absent SBE is not a fault).
+    $sbeSkipped = @($Record | Where-Object { @(Get-AzlProp $_ 'plan' @() | Where-Object { $_ -and $_.Step -eq 'Sbe' -and $_.Action -eq 'Skipped' }).Count })
+    $sbeLine = if ($sbeSkipped.Count) { 'SBE: opt-in, no SBE side-loading requested (nothing is copied to C:\SBE; set hardware.sbe.delivery to winrm_copy or node_pull only if your hardware partner provides an SBE).' } else { '' }
     $rows = foreach ($r in $Record) {
         $d = Get-AzlProp $r 'domainJoin'
         [pscustomobject][ordered]@{
@@ -1696,11 +1696,12 @@ function Format-AzlOsConfigurationSummary {
     if ($Markdown) {
         $lines = if ($showDomain) { @("| Node | Method | Transport | Changes | Converged | Restarted | Domain | Errors |", '| --- | --- | --- | --- | --- | --- | --- | --- |') } else { @("| Node | Method | Transport | Changes | Converged | Restarted | Errors |", '| --- | --- | --- | --- | --- | --- | --- |') }
         foreach ($row in $rows) { $lines += $(if ($showDomain) { "| $($row.Node) | $($row.Method) | $($row.Transport) | $($row.Changes) | $($row.Converged) | $($row.Restarted) | $($row.Domain) | $($row.Errors) |" } else { "| $($row.Node) | $($row.Method) | $($row.Transport) | $($row.Changes) | $($row.Converged) | $($row.Restarted) | $($row.Errors) |" }) }
+        if ($sbeLine) { $lines += ''; $lines += $sbeLine }
         $lines += ''; $lines += "Exit code: $ExitCode"
         return ($lines -join [Environment]::NewLine)
     }
     if (-not $showDomain) { $rows = @($rows | Select-Object -Property * -ExcludeProperty Domain) }
-    return (($rows | Format-Table -AutoSize -Wrap | Out-String -Width 200).TrimEnd() + [Environment]::NewLine + "Exit code: $ExitCode")
+    return (($rows | Format-Table -AutoSize -Wrap | Out-String -Width 200).TrimEnd() + $(if ($sbeLine) { [Environment]::NewLine + $sbeLine }) + [Environment]::NewLine + "Exit code: $ExitCode")
 }
 function ConvertTo-AzlNodeReport {
     param([System.Collections.IDictionary]$Record)

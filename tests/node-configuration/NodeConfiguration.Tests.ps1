@@ -496,10 +496,8 @@ Describe 'Comparison: SAN' {
 
 Describe 'Comparison: SBE and drivers' {
     BeforeEach {
-        $infra = Get-Infra
-        $bundle = [pscustomobject]@{ Name = 'SBE_Dell_X_1.0'; ZipName = 'SBE_Dell_X_1.0.zip'; HashSource = 'x'; Deployment = [ordered]@{}
-            Files = @([pscustomobject]@{ Name = 'SBE_Dell_X_1.0.zip'; Path = 'D:\sbe\SBE_Dell_X_1.0.zip'; Size = 100; Sha256 = 'AA' }, [pscustomobject]@{ Name = 'SBE_Dell_X_1.0.xml'; Path = 'D:\sbe\SBE_Dell_X_1.0.xml'; Size = 10; Sha256 = 'BB' }) }
-        $script:Spec = Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0] -SbeBundle $bundle
+        # The SBE is opt-in: a spec that carries the package has an explicit hardware.sbe.delivery.
+        $script:Spec = Get-SbeSpec node_pull 'https://sbe.example.invalid/sbe'
         $script:State = New-ConfiguredState $script:Spec
         $script:State.sbe = @([pscustomobject]@{ n = 'SBE_Dell_X_1.0.zip'; len = 100; ok = $true }, [pscustomobject]@{ n = 'SBE_Dell_X_1.0.xml'; len = 10; ok = $true })
     }
@@ -522,17 +520,6 @@ Describe 'Comparison: SBE and drivers' {
         $c[0].Apply.route | Should -Be 'winrm_copy'
         $c[0].Apply.localPath | Should -Be 'D:\sbe\SBE_Dell_X_1.0.zip'
         $c[0].Apply.Contains('url') | Should -BeFalse
-    }
-    It 'skip (and no key at all) reports the package as not delivered and changes nothing' {
-        $script:State.sbe = @()
-        foreach ($spec in $script:Spec, (Get-SbeSpec skip)) {
-            $plan = @(Compare-AzlNodeState -Spec $spec -State $script:State)
-            @($plan | Where-Object Action -eq 'Change') | Should -BeNullOrEmpty
-            $sbe = @($plan | Where-Object Step -eq 'Sbe')
-            $sbe.Count | Should -Be 2
-            $sbe | ForEach-Object { $_.Action | Should -Be 'Info'; $_.Note | Should -BeLike 'NOT DELIVERED*' }
-            @($plan | Where-Object { $_.Apply -and $_.Apply.kind -eq 'sbe-file' }) | Should -BeNullOrEmpty
-        }
     }
     It 'node_pull with no address is blocked, not guessed' {
         $script:Spec = Get-SbeSpec node_pull ''
@@ -757,7 +744,7 @@ Describe 'Invoke-AzlNodeConfiguration' {
             @($apply[0].Parameters.actions | ForEach-Object kind) | Should -Not -Contain 'sbe-file'
             @($apply[1].Parameters.actions | ForEach-Object kind | Select-Object -Unique) | Should -Be 'sbe-file'
         }
-        It 'skip changes nothing about the package, does not fail the node and keeps the other steps' {
+        It 'no SBE requested (delivery skip) does nothing on the node about the package, does not fail the node and keeps the other steps' {
             $spec = Get-SbeSpec skip
             $bad = New-ConfiguredState $spec; $bad.sbe = @(); $bad.admin = [pscustomobject]@{ ex = $true; en = $true; adm = $true; pw = $false }
             $good = New-ConfiguredState $spec; $good.sbe = @()
@@ -767,7 +754,8 @@ Describe 'Invoke-AzlNodeConfiguration' {
             $apply.Count | Should -Be 1
             @($apply[0].Parameters.actions | ForEach-Object kind) | Should -Be 'admin'
             $r.Converged | Should -BeTrue
-            @($r.Plan | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -eq 'Info' }).Count | Should -Be 2
+            @($r.Plan | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -eq 'Skipped' }).Count | Should -Be 1
+            @($r.Plan | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -in 'Change', 'Blocked' }).Count | Should -Be 0
         }
         It 'a failed pull is reported, tried once, and does not undo the other steps' {
             $spec = Get-SbeSpec node_pull 'https://sbe.example.invalid/sbe'
@@ -1144,13 +1132,131 @@ Describe 'SBE delivered last, together with the Unknown handling of the node scr
     }
 }
 
+Describe 'The SBE is opt-in only: nothing is side-loaded unless a person asks for it' {
+    BeforeAll {
+        # A spec for an infrastructure file that does not ask for the SBE, in each way it can not ask. The bundle is passed on purpose: even with the files at hand nothing is delivered.
+        function Get-NoSbeSpec([string]$Case) {
+            $infra = Get-Infra
+            switch ($Case) {
+                'no hardware.sbe block' { $infra['hardware'].Remove('sbe') }
+                'hardware.sbe without delivery' { $null = $infra['hardware']['sbe'].Remove('delivery') }
+                'delivery empty' { $infra['hardware']['sbe']['delivery'] = '' }
+                'delivery none' { $infra['hardware']['sbe']['delivery'] = 'none' }
+                'delivery skip' { $infra['hardware']['sbe']['delivery'] = 'skip' }
+            }
+            $bundle = [pscustomobject]@{ Name = 'SBE_Dell_X_1.0'; ZipName = 'SBE_Dell_X_1.0.zip'; HashSource = 'x'; Deployment = [ordered]@{}
+                Files = @([pscustomobject]@{ Name = 'SBE_Dell_X_1.0.zip'; Path = 'D:\sbe\SBE_Dell_X_1.0.zip'; Size = 100; Sha256 = 'AA' }, [pscustomobject]@{ Name = 'SBE_Dell_X_1.0.xml'; Path = 'D:\sbe\SBE_Dell_X_1.0.xml'; Size = 10; Sha256 = 'BB' }) }
+            Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0] -SbeBundle $bundle
+        }
+        $script:NoSbeCases = @('no hardware.sbe block', 'hardware.sbe without delivery', 'delivery empty', 'delivery none', 'delivery skip')
+    }
+    It 'the spec carries no package and the Read script is not asked to hash C:\SBE (<_>)' -ForEach @('no hardware.sbe block', 'hardware.sbe without delivery', 'delivery empty', 'delivery none', 'delivery skip') {
+        $spec = Get-NoSbeSpec $_
+        $spec.Sbe | Should -BeNullOrEmpty
+        $spec.SbeDelivery | Should -Be ''
+        $p = Get-AzlNodeReadParameter -Spec $spec
+        foreach ($key in 'sbeFiles', 'sbeDir', 'sbeZip', 'driverPaths') { $p.ContainsKey($key) | Should -BeFalse -Because "$key would make the node hash or open C:\SBE" }
+    }
+    It 'the Sbe step is Skipped with "no SBE side-loading requested" and the Drivers step with "no SBE configured" (<_>)' -ForEach @('no hardware.sbe block', 'hardware.sbe without delivery', 'delivery empty', 'delivery none', 'delivery skip') {
+        $spec = Get-NoSbeSpec $_
+        $plan = @(Compare-AzlNodeState -Spec $spec -State (New-ConfiguredState $spec))
+        $sbe = @($plan | Where-Object Step -eq 'Sbe')
+        $sbe.Count | Should -Be 1
+        $sbe[0].Action | Should -Be 'Skipped'
+        $sbe[0].Note | Should -Be 'no SBE side-loading requested'
+        $drivers = @($plan | Where-Object Step -eq 'Drivers')
+        $drivers.Count | Should -Be 1
+        $drivers[0].Action | Should -Be 'Skipped'
+        $drivers[0].Note | Should -Be 'no SBE configured'
+    }
+    It 'an absent SBE is never a Change or Blocked item and never reads "NOT DELIVERED" (<_>)' -ForEach @('no hardware.sbe block', 'hardware.sbe without delivery', 'delivery empty', 'delivery none', 'delivery skip') {
+        $spec = Get-NoSbeSpec $_
+        $state = New-ConfiguredState $spec
+        $plan = @(Compare-AzlNodeState -Spec $spec -State $state)
+        @($plan | Where-Object { $_.Step -in 'Sbe', 'Drivers' -and $_.Action -in 'Change', 'Blocked' }) | Should -BeNullOrEmpty
+        @($plan | Where-Object { $_.Apply -and $_.Apply.kind -in 'sbe-file', 'driver' }) | Should -BeNullOrEmpty
+        (($plan | ForEach-Object { "$($_.Item) $($_.Current) $($_.Desired) $($_.Note)" }) -join "`n") | Should -Not -Match 'NOT DELIVERED|not delivered'
+        @($plan | Where-Object { $_.Action -in 'Change', 'Blocked' }) | Should -BeNullOrEmpty -Because 'the configured node is converged; the missing SBE is not a difference'
+        (Format-AzlPlan -Plan $plan) | Should -Not -Match 'NOT DELIVERED'
+    }
+    It 'a run on a node with no SBE requested copies nothing, pulls nothing, installs no driver and ends converged' {
+        $spec = Get-NoSbeSpec 'delivery none'
+        $state = New-ConfiguredState $spec
+        $state | Add-Member -NotePropertyName sbeHeld -NotePropertyValue @('SBE_Dell_Old_5.0.zip') -Force
+        $t = New-FakeTransport @($state) { param($p) [pscustomobject]@{ reboot = $false; results = @() } }
+        $copies = [System.Collections.Generic.List[object]]::new()
+        $winrm = [pscustomobject]@{ Kind = 'WinRM'; Stage = $null }
+        $winrm.Stage = { $copies.Add([string]$args[3]); [pscustomobject]@{ Name = 'x'; Url = $null } }.GetNewClosure()
+        $r = Invoke-AzlNodeConfiguration -Spec $spec -Transport $t -SbeTransport $winrm -Execute -SecretResolver $script:Resolver
+        $copies.Count | Should -Be 0
+        @($t.Log | Where-Object Kind -eq 'Apply') | Should -BeNullOrEmpty
+        $r.Changes | Should -BeNullOrEmpty
+        $r.Blocked | Should -BeNullOrEmpty
+        $r.Converged | Should -BeTrue
+        @($t.Log | Where-Object Kind -eq 'Read')[0].Parameters.ContainsKey('sbeFiles') | Should -BeFalse
+    }
+    It 'files an earlier delivery left in C:\SBE are an Info item that names them and says they are not removed, never a Change' {
+        $spec = Get-NoSbeSpec 'no hardware.sbe block'
+        $state = New-ConfiguredState $spec
+        $state | Add-Member -NotePropertyName sbeHeld -NotePropertyValue @('SBE_Dell_Old_5.0.zip', 'SBE_Dell_Old_5.0.xml') -Force
+        $plan = @(Compare-AzlNodeState -Spec $spec -State $state)
+        $held = @($plan | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -eq 'Info' })
+        $held.Count | Should -Be 1
+        $held[0].Note | Should -Be 'C:\SBE holds SBE files that this run did not request: SBE_Dell_Old_5.0.zip, SBE_Dell_Old_5.0.xml; it does not remove them'
+        @($plan | Where-Object { $_.Action -in 'Change', 'Blocked' }) | Should -BeNullOrEmpty
+        @($plan | Where-Object { $_.Apply }) | Should -BeNullOrEmpty
+    }
+    It 'an empty C:\SBE, or one the Read could not list, adds no Info item' {
+        $spec = Get-NoSbeSpec 'delivery none'
+        $state = New-ConfiguredState $spec
+        @(Compare-AzlNodeState -Spec $spec -State $state | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -eq 'Info' }) | Should -BeNullOrEmpty
+        $state | Add-Member -NotePropertyName sbeHeld -NotePropertyValue @() -Force
+        @(Compare-AzlNodeState -Spec $spec -State $state | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -eq 'Info' }) | Should -BeNullOrEmpty
+    }
+    It 'asking for the Sbe step alone on a node with no SBE requested gives the one Skipped item and no node change' {
+        $spec = Get-NoSbeSpec 'no hardware.sbe block'
+        $plan = @(Compare-AzlNodeState -Spec $spec -State (New-ConfiguredState $spec) -Step Sbe)
+        $plan.Count | Should -Be 1
+        $plan[0].Action | Should -Be 'Skipped'
+    }
+    It 'only winrm_copy and node_pull ask for the SBE; the route has no default' {
+        Get-AzlSbeDeliveryRoute -Value 'winrm_copy' | Should -Be 'winrm_copy'
+        Get-AzlSbeDeliveryRoute -Value ' Node_Pull ' | Should -Be 'node_pull'
+        foreach ($v in $null, '', 'none', 'skip', 'None', 'copy', 'true') { Get-AzlSbeDeliveryRoute -Value $v | Should -Be '' }
+    }
+    It 'requested through winrm_copy or node_pull the Sbe step still acts, with a Change per missing file (<_>)' -ForEach @('winrm_copy', 'node_pull') {
+        $spec = Get-SbeSpec $_ 'https://sbe.example.invalid/sbe'
+        $spec.SbeDelivery | Should -Be $_
+        @(Compare-AzlNodeState -Spec $spec -State (New-ConfiguredState $spec) | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -eq 'Change' }).Count | Should -Be 2
+    }
+    It 'requested without a bundle (hardware.sbe.bundle_path missing) is Blocked with the reason, not silently dropped' {
+        $infra = Get-Infra
+        $infra['hardware']['sbe']['delivery'] = 'winrm_copy'
+        $spec = Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0]
+        $spec.Sbe | Should -BeNullOrEmpty
+        $spec.SbeDelivery | Should -Be 'winrm_copy'
+        $b = @(Compare-AzlNodeState -Spec $spec -State (New-ConfiguredState $spec) | Where-Object { $_.Step -eq 'Sbe' })
+        $b.Count | Should -Be 1
+        $b[0].Action | Should -Be 'Blocked'
+        $b[0].Note | Should -Match 'hardware\.sbe\.bundle_path'
+    }
+    It 'no code path of the node configuration, payload, transport or run assumes a delivery route' {
+        $dir = Join-Path $PSScriptRoot '..\..\scripts\common\node-configuration'
+        $files = @('AzlNodeConfiguration.psm1', 'AzlNodePayload.psm1', 'AzlNodeTransport.psm1', 'AzlOsConfigurationRun.psm1') | ForEach-Object { Join-Path $dir $_ }
+        $files += Join-Path $PSScriptRoot '..\..\scripts\deploy\04-cluster-deployment\phase-03-os-configuration\Set-AzureLocalNodeConfiguration.ps1'
+        foreach ($f in $files) {
+            $lines = @(Get-Content -LiteralPath $f)
+            # a read of hardware.sbe.delivery or .delivery with a default value
+            @($lines | Where-Object { $_ -match "hardware\.sbe\.delivery'\s+'[^']" -or $_ -match "'delivery'\s+'[^']" }) | Should -BeNullOrEmpty -Because "$(Split-Path $f -Leaf) reads hardware.sbe.delivery with a default"
+            @($lines | Where-Object { $_ -match "\`$delivery\s*=\s*'(skip|none|winrm_copy|node_pull)'" }) | Should -BeNullOrEmpty -Because "$(Split-Path $f -Leaf) assigns a delivery route"
+        }
+    }
+}
+
 Describe 'A driver install that returns pnputil 3010 (restart required)' {
     BeforeEach {
-        $infra = Get-Infra
-        $bundle = [pscustomobject]@{ Name = 'SBE_Dell_X_1.0'; ZipName = 'SBE_Dell_X_1.0.zip'; HashSource = 'x'; Deployment = [ordered]@{}
-            Files = @([pscustomobject]@{ Name = 'SBE_Dell_X_1.0.zip'; Path = 'D:\sbe\SBE_Dell_X_1.0.zip'; Size = 100; Sha256 = 'AA' }, [pscustomobject]@{ Name = 'SBE_Dell_X_1.0.xml'; Path = 'D:\sbe\SBE_Dell_X_1.0.xml'; Size = 10; Sha256 = 'BB' }) }
-        $script:Spec = Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0] -SbeBundle $bundle
-        $drv = @([pscustomobject]@{ inf = 'mlx5.inf'; ver = '25.1.2.0'; entry = 'DriversGE/Network/Mellanox/mlx5.inf'; ids = @('PCI\VEN_15B3&DEV_101D') })
+        $script:Spec = Get-SbeSpec node_pull 'https://sbe.example.invalid/sbe'
+        $drv =@([pscustomobject]@{ inf = 'mlx5.inf'; ver = '25.1.2.0'; entry = 'DriversGE/Network/Mellanox/mlx5.inf'; ids = @('PCI\VEN_15B3&DEV_101D') })
         $sbe = @([pscustomobject]@{ n = 'SBE_Dell_X_1.0.zip'; len = 100; ok = $true }, [pscustomobject]@{ n = 'SBE_Dell_X_1.0.xml'; len = 10; ok = $true })
         # before the restart the node still reports the old driver version (the new binding is loaded at the next boot), also after the install
         $script:Old = New-ConfiguredState $script:Spec; $script:Old.drv = $drv; $script:Old.sbe = $sbe

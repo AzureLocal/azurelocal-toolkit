@@ -22,9 +22,12 @@
       SanVerify         SAN only, read only: FC ports and WWPNs, the infrastructure and performance history LUNs
                         (visible, RAW, big enough, two or more paths)
       ClearStorage      leftover local storage; wiped only with -ClearStorage -Execute
-      Sbe               LAST. The OEM's SBE package (hardware.sbe.bundle_path) in C:\SBE, SHA-256 checked. How it reaches a node is
-                        hardware.sbe.delivery: winrm_copy, node_pull or skip (default; reports 'not delivered', changes nothing, and
-                        never stops the other steps). The drivers install from it, in the pass after it has landed.
+      Sbe               LAST. OPT-IN ONLY: the OEM's SBE package (hardware.sbe.bundle_path) is side-loaded into C:\SBE (SHA-256 checked)
+                        only when a person sets hardware.sbe.delivery to winrm_copy or node_pull. The key has no default: unset,
+                        none or skip means nothing is side-loaded, the step is Skipped ('no SBE side-loading requested') and so
+                        is the Drivers step ('no SBE configured'); nothing on the node is copied, read or removed (files an earlier
+                        delivery left in C:\SBE are only named, as Info). Use it only if the hardware partner provides an SBE.
+                        It never stops the other steps. The drivers install from it, in the pass after it has landed.
 
     Without -Execute it is a plan: one read-only script per node, then a table of what it would change. With -Execute it
     changes only the items marked Change, reads again, and repeats until the node matches (at most -MaxPasses). Re-running
@@ -175,15 +178,18 @@ $steps = if ($Step) { $Step } else { $allSteps }
 $nodes = @($infra.nodes | Where-Object { -not $Node -or $_.name -in $Node })
 if ($Node) { foreach ($n in $Node) { if ($n -notin @($infra.nodes | ForEach-Object { $_.name })) { throw "Node $n isn't in $InfrastructureFile. Nodes there: $(@($infra.nodes | ForEach-Object { $_.name }) -join ', ')." } } }
 
-# ---- the SBE package, checked before any node is touched
+# ---- the SBE package, checked before any node is touched. Opt-in only: nothing is loaded or checked unless a person set hardware.sbe.delivery
+# to winrm_copy or node_pull. The key has no default.
+$sbeDelivery = Get-AzlSbeDeliveryRoute -Value (Get-AzlProp $infra 'hardware.sbe.delivery')
 $bundle = $null
 $bundlePath = Get-AzlProp $infra 'hardware.sbe.bundle_path'
-if ($bundlePath -and -not $SpecOnly -and ('Sbe' -in $steps -or 'Drivers' -in $steps)) {
+if ($sbeDelivery -and $bundlePath -and -not $SpecOnly -and ('Sbe' -in $steps -or 'Drivers' -in $steps)) {
     $oem = Get-AzlOemConfig -Vendor ([string](Get-AzlProp $infra 'hardware.vendor' 'Dell'))
     $bundle = Get-AzlSbeBundle -Path $bundlePath -ManifestUrl ([string]$oem.sbe.discoveryManifestUrl) -OfflineManifest:$OfflineManifest
     Write-Line "SBE $($bundle.Name): SHA-256 matches $($bundle.HashSource)."
 }
-elseif (-not $bundlePath) { Write-Line 'hardware.sbe.bundle_path is not set: the SBE and the OEM drivers are skipped.' }
+elseif (-not $sbeDelivery) { Write-Line 'No SBE side-loading requested (opt-in: hardware.sbe.delivery is not winrm_copy or node_pull): nothing is side-loaded and the OEM drivers step is skipped.' }
+elseif (-not $bundlePath) { Write-Line "hardware.sbe.delivery is $sbeDelivery (SBE side-loading requested) but hardware.sbe.bundle_path is not set: the Sbe step is blocked." }
 
 $specs = foreach ($n in $nodes) { Get-AzlNodeSpec -Infrastructure $infra -Node $n -Handoff $handoff -SbeBundle $bundle -RemotingProfile $remotingProfile }
 
@@ -328,7 +334,6 @@ else {
 }
 # The SBE package can't ride Arc Run Command. With hardware.sbe.delivery winrm_copy and the nodes reached over Arc (only when -Transport ArcRunCommand was asked for),
 # the copy gets its own WinRM transport (sessions open only when a file has to be copied). Without -Credential the Sbe step reports why.
-$sbeDelivery = [string](Get-AzlProp $infra 'hardware.sbe.delivery' 'skip')
 $sbeTransport = $null
 if ($bundle -and $sbeDelivery -eq 'winrm_copy' -and $remoting.Kind -ne 'WinRM' -and $Credential) {
     $sbeAddresses = @{}
@@ -365,6 +370,7 @@ function Write-NodeReport {
         executed      = [bool]$Execute
         complete      = ($results.Count -eq @($specs).Count)
         transport     = $remoting.Kind
+        sbeRequested  = [bool]$sbeDelivery # the SBE is opt-in; false: nothing was side-loaded and the Sbe step is Skipped
         sbeDelivery   = $sbeDelivery
         sbeNotDelivered = @($sbeMissing | ForEach-Object { $_.Node })
         sbeNotDeliveredDetail = @($sbeMissing | ForEach-Object { [ordered]@{ node = $_.Node; reason = (Get-AzlSbeNotDeliveredReason -Result $_ -Delivery $sbeDelivery) } })

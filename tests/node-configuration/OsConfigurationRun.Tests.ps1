@@ -786,6 +786,17 @@ Describe 'Summary' {
         $text | Should -Match 'Exit code: 0'
         (Format-AzlOsConfigurationSummary -Record $recs -Mode Plan -Markdown) | Should -Match '\| n2 \| Iso \(evidence\) \| WinRM \|'
     }
+    It 'says the SBE is opt-in when no node asked for it, and never says "NOT delivered"' {
+        $skipped = @([pscustomobject]@{ Step = 'Sbe'; Item = 'package'; Action = 'Skipped'; Note = 'no SBE side-loading requested' })
+        $recs = @([pscustomobject]@{ name = 'n1'; method = 'Ztp'; methodSource = 'declared'; transport = 'WinRM'; changes = @(); pendingChanges = 0; blocked = 0; status = 'planned'; converged = $true; restarted = $false; errors = @(); plan = $skipped })
+        foreach ($markdown in $false, $true) {
+            $text = Format-AzlOsConfigurationSummary -Record $recs -Mode Plan -Markdown:$markdown
+            $text | Should -Match 'SBE: opt-in, no SBE side-loading requested'
+            $text | Should -Not -Match 'NOT delivered|NOT DELIVERED|not delivered'
+        }
+        $asked = @([pscustomobject]@{ name = 'n1'; method = 'Ztp'; methodSource = 'declared'; transport = 'WinRM'; changes = @(); pendingChanges = 0; blocked = 0; status = 'planned'; converged = $true; restarted = $false; errors = @(); plan = @([pscustomobject]@{ Step = 'Sbe'; Item = 'C:\SBE\x.zip'; Action = 'Ok'; Note = '' }) })
+        (Format-AzlOsConfigurationSummary -Record $asked -Mode Plan) | Should -Not -Match 'SBE: opt-in'
+    }
 }
 
 Describe 'Integration with the SBE delivery routes and the node script' {
@@ -821,18 +832,37 @@ Describe 'Integration with the SBE delivery routes and the node script' {
         $call.Params.Credential.UserName | Should -Not -BeNullOrEmpty
         'Sbe' | Should -BeIn $call.Params.Step
     }
-    It 'a plan that says the SBE package is NOT DELIVERED (skip) puts one warning in the node record and does not fail the node' {
-        $warnings = InModuleScope AzlOsConfigurationRun {
+    It 'a node with no SBE requested (the Sbe step Skipped) has no warning and no error: an absent SBE is not a fault' {
+        $r = InModuleScope AzlOsConfigurationRun {
             $record = [ordered]@{ name = 'n1'; phases = [ordered]@{}; plan = @(); errors = @(); warnings = @(); ports = @(); sanDisks = @(); hostname = ''; osVersion = '' }
-            $entry = [pscustomobject]@{ plan = @([pscustomobject]@{ step = 'Sbe'; item = 'C:\SBE\x.zip'; current = 'absent'; desired = 'present'; action = 'Info'; note = 'NOT DELIVERED: hardware.sbe.delivery is skip' }); ports = @(); sanDisks = @(); hostname = 'n1'; osVersion = '10.0' }
+            $entry = [pscustomobject]@{ plan = @(
+                    [pscustomobject]@{ step = 'Sbe'; item = 'package'; current = 'not requested'; desired = 'opt-in'; action = 'Skipped'; note = 'no SBE side-loading requested' }
+                    [pscustomobject]@{ step = 'Drivers'; item = 'network drivers'; current = 'not applicable'; desired = 'SBE versions'; action = 'Skipped'; note = 'no SBE configured' }); ports = @(); sanDisks = @(); hostname = 'n1'; osVersion = '10.0' }
             $run = [pscustomobject]@{ ExitCode = 0; Error = ''; Skipped = $false; Entry = $entry }
             $ok = Merge-AzlRunResult -Record $record -Run $run -Phase Plan
-            [pscustomobject]@{ Ok = $ok; Warnings = @($record.warnings); Errors = @($record.errors) }
+            [pscustomobject]@{ Ok = $ok; Warnings = @($record.warnings); Errors = @($record.errors); Pending = @($record.plan | Where-Object { $_.Action -in 'Change', 'Blocked' }).Count }
         }
-        $warnings.Ok | Should -BeTrue
-        $warnings.Errors | Should -BeNullOrEmpty
-        $warnings.Warnings.Count | Should -Be 1
-        $warnings.Warnings[0] | Should -Match 'NOT DELIVERED'
+        $r.Ok | Should -BeTrue
+        $r.Errors | Should -BeNullOrEmpty
+        $r.Warnings | Should -BeNullOrEmpty
+        $r.Pending | Should -Be 0
+    }
+    It 'the step list reasons name the SBE as opt-in when no route is set, and the Drivers step as having no SBE' {
+        $text = Get-Content -LiteralPath $script:ModulePath -Raw
+        $text | Should -Match 'no SBE side-loading requested'
+        $text | Should -Match 'no SBE configured'
+        $text | Should -Not -Match 'NOT DELIVERED'
+    }
+    It 'no route in the master file shows no sbeDelivery; none and skip are not routes (<_>)' -ForEach @($null, '', 'none', 'skip') {
+        $d = $_
+        $data = InModuleScope AzlOsConfigurationRun -Parameters @{ Delivery = $d } {
+            param($Delivery)
+            $sbe = [ordered]@{ publisher = 'Dell'; bundle_path = 'D:\sbe' }
+            if ($null -ne $Delivery) { $sbe.delivery = $Delivery }
+            Get-AzlNodeVersionData -Context ([pscustomobject]@{ Infra = [ordered]@{ hardware = [ordered]@{ sbe = $sbe } } }) -Record $null
+        }
+        $data.sbePublisher | Should -Be 'Dell'
+        $data.Contains('sbeDelivery') | Should -BeFalse
     }
     It '<_> on a ZTP node reached over Arc (explicit) needs no credential' -ForEach 'skip', 'node_pull' {
         $route = $_
@@ -913,7 +943,7 @@ Describe 'Event feed (os-configuration-events.jsonl)' {
         $m[0].handoff | Should -Be 'ready'
         $m[0].arc | Should -Be 'Connected'
         $m[0].sbePublisher | Should -Be 'Dell'
-        $m[0].sbeDelivery | Should -Be 'skip' -Because 'the fixture names no hardware.sbe.delivery, so the package is not delivered'
+        $m[0].PSObject.Properties.Name | Should -Not -Contain 'sbeDelivery' -Because 'the fixture names no hardware.sbe.delivery: the SBE is opt-in, so nothing is side-loaded and no route is shown'
         $m[0].PSObject.Properties.Name | Should -Not -Contain 'osVersion'
         $m[1].osVersion | Should -Be '10.0.26100.1'
         $m[1].build | Should -Be 26100

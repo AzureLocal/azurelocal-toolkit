@@ -137,3 +137,29 @@ Describe 'A WinRM call that is abandoned after its timeout is indeterminate, not
         $caught.Exception.Message | Should -Match 'abandoned'
     }
 }
+
+Describe 'The SBE is opt-in: the Read payload only lists C:\SBE by name unless it is asked to check a package' {
+    It 'lists the folder (sbeHeld) by name and reads no file content, hashes only the files the spec names, and removes nothing' {
+        $text = Get-AzlNodePayload -Name Read
+        $text | Should -Match 'sbeHeld'
+        $text | Should -Not -Match 'Remove-Item'
+        # the only hash in the Read payload is inside the section that runs per file of sbeFiles
+        $text | Should -Match "foreach \(\`$f in @\(Get-P \`$P 'sbeFiles' @\(\)\)\)"
+        ([regex]::Matches($text, 'Get-FileHash')).Count | Should -Be 1
+    }
+    It 'the Read of a node whose spec names no package lists the folder and does not hash it' -Skip:(-not $script:HasWindowsPowerShell) {
+        $dir = Join-Path $TestDrive 'sbe-held'
+        New-Item -ItemType Directory -Path $dir | Out-Null
+        Set-Content -LiteralPath (Join-Path $dir 'SBE_Dell_Old_5.0.zip') -Value 'x'
+        Set-Content -LiteralPath (Join-Path $dir 'SBE_Dell_Old_5.0.xml') -Value 'x'
+        $saved = $script:ParamsB64
+        try {
+            $script:ParamsB64 = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes((@{ mgmtMac = ''; sbeDir = $dir } | ConvertTo-Json -Compress)))
+            $r = Invoke-PayloadInWindowsPowerShell (Get-AzlNodePayload -Name Read) File
+        }
+        finally { $script:ParamsB64 = $saved }
+        @($r.sbeHeld | Sort-Object) | Should -Be @('SBE_Dell_Old_5.0.xml', 'SBE_Dell_Old_5.0.zip')
+        @($r.sbe).Count | Should -Be 0
+        @(Get-ChildItem -LiteralPath $dir).Count | Should -Be 2 -Because 'the Read removes nothing'
+    }
+}
