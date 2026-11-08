@@ -26,6 +26,9 @@
                  it; does the rest.
       Iso path   WinRM with identity.local_admin from a host that reaches the node. Also sets the computer name, checks the OS up
                  front, and registers the machine with Azure Arc.
+    Both paths run the DomainJoin step when scenario.identity is active_directory: after Network, Dns, Time and Hostname, before
+    LocalAdmin and the rest, and, on the Iso path, before the Arc registration (the registration does not need the join, and the
+    join restarts the node, so it comes first). A local identity design gets a 'not applicable: local identity' item instead.
     Both can be in one cluster. When the declaration and the evidence disagree the evidence wins and a warning names both; when
     there is no evidence the run stops with exit code 2.
 
@@ -43,10 +46,10 @@ Import-Module (Join-Path $PSScriptRoot 'AzlNodeConfiguration.psm1')
 
 $script:SetScript = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', 'deploy', '04-cluster-deployment', 'phase-03-os-configuration', 'Set-AzureLocalNodeConfiguration.ps1'))
 # The order the steps run in (the same as AzlNodeConfiguration): Sbe is last, so a package that can't be delivered never stops the others.
-$script:NodeSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
+$script:NodeSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe') # DOMAINJOIN HOOK: DomainJoin after Hostname/UnusedAdapters, before LocalAdmin
 $script:AllSteps = $script:NodeSteps + 'ArcRegistration'
 # What ZTP already guaranteed (the computer name, Arc registration) is verified, not redone.
-$script:ZtpSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe')
+$script:ZtpSteps = @('RemoteManagement', 'Drivers', 'Network', 'Dns', 'Time', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'Sbe') # DOMAINJOIN HOOK
 $script:IsoSteps = $script:AllSteps
 # Azure Local OS 23H2 is build 25398; anything older cannot be an Azure Local node.
 $script:MinimumBuild = 25398
@@ -454,6 +457,8 @@ function Invoke-AzlNodeRun {
     if ($Context.NoRestart) { $parameters.NoRestart = $true }
     if ($Context.SkipValidation) { $parameters.SkipValidation = $true }
     if ($Phase -eq 'Apply') { $parameters.Execute = $true }
+    $feed = [string](Get-AzlProp $Context 'EventLogPath' '') # DOMAINJOIN HOOK
+    if ($feed) { $parameters.EventContext = @{ Path = $feed; Method = [string]$Record.method; SchemaVersion = [string](Get-AzlProp $Context.Infra '_metadata.schema_version' ''); Phase = $Phase } }
     if ($Record.transport -eq 'WinRM') {
         $parameters.Credential = $Context.CredentialInfo.Credential
         if ($Record.address) { $parameters.NodeAddress = @{ $Record.name = $Record.address } }
@@ -587,6 +592,23 @@ function ConvertTo-AzlPlanItem {
     }
 }
 
+function Merge-AzlDomainJoinResult {
+    # DOMAINJOIN HOOK. Folds the node script's domainJoin summary (applicable, domainJoined, domain, ou, secureChannel, error) into the record.
+    # A failure text from the Apply call is kept when the verification pass, which has no changes, reports none.
+    param([System.Collections.IDictionary]$Record, [object]$Entry)
+    $d = Get-AzlProp $Entry 'domainJoin'
+    if (-not $d) { return }
+    $keep = [string]$Record.domainJoin['error']
+    $Record.domainJoin = [ordered]@{
+        applicable    = [bool](Get-AzlProp $d 'applicable' $false)
+        domainJoined  = [bool](Get-AzlProp $d 'domainJoined' $false)
+        domain        = [string](Get-AzlProp $d 'domain' '')
+        ou            = [string](Get-AzlProp $d 'ou' '')
+        secureChannel = Get-AzlProp $d 'secureChannel'
+        error         = $(if ([string](Get-AzlProp $d 'error' '')) { [string]$d.error } else { $keep })
+    }
+    if ($Record.domainJoin.error -and $Record.domainJoin.domainJoined) { $Record.domainJoin.error = '' }
+}
 function Merge-AzlRunResult {
     # Folds one Plan or Verify call into the node's record. Returns $true when the node could be read.
     param([System.Collections.IDictionary]$Record, [object]$Run, [string]$Phase)
@@ -601,6 +623,7 @@ function Merge-AzlRunResult {
     $Record.sanDisks = @($Run.Entry.sanDisks)
     $Record.hostname = [string](Get-AzlProp $Run.Entry 'hostname' '')
     $Record.osVersion = [string](Get-AzlProp $Run.Entry 'osVersion' '')
+    Merge-AzlDomainJoinResult -Record $Record -Entry $Run.Entry # DOMAINJOIN HOOK
     # hardware.sbe.delivery skip: the node is not failed, but the package is not on it and the OEM drivers wait, so say it once.
     if ($Phase -eq 'Plan' -and @($Record.plan | Where-Object { $_.Step -eq 'Sbe' -and $_.Action -eq 'Info' -and $_.Note -match 'NOT DELIVERED' }).Count) {
         $Record.warnings += "$($Record.name): the SBE package is NOT DELIVERED (hardware.sbe.delivery is skip or not set), so the OEM network drivers are skipped. Set hardware.sbe.delivery to node_pull or winrm_copy, or put the package in C:\SBE yourself."
@@ -668,6 +691,7 @@ function Invoke-AzlApplyPhase {
         $Record.phases['Apply'] = [ordered]@{ exitCode = $run.ExitCode; error = $run.Error; unknown = $run.Unknown }
         if ($run.Entry) {
             $Record.changes += @(@($run.Entry.changes) | ForEach-Object { [ordered]@{ pass = $_.Pass; id = $_.Id; status = $_.Status; detail = $_.Detail } })
+            Merge-AzlDomainJoinResult -Record $Record -Entry $run.Entry # DOMAINJOIN HOOK
             if ($run.Entry.restarted) { $Record.restarted = $true }
         }
         if ($run.Error) {
@@ -742,7 +766,10 @@ function Format-AzlOsConfigurationSummary {
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][AllowEmptyCollection()][object[]]$Record, [string]$Mode = 'Plan', [switch]$Markdown, [int]$ExitCode = 0)
+    # DOMAINJOIN HOOK: a Domain column only when a node's identity design is Active Directory.
+    $showDomain = @($Record | Where-Object { [bool](Get-AzlProp (Get-AzlProp $_ 'domainJoin') 'applicable' $false) }).Count -gt 0
     $rows = foreach ($r in $Record) {
+        $d = Get-AzlProp $r 'domainJoin'
         [pscustomobject][ordered]@{
             Node      = $r.name
             Method    = "$($r.method) ($($r.methodSource))"
@@ -750,18 +777,19 @@ function Format-AzlOsConfigurationSummary {
             Changes   = $(if ($Mode -eq 'Apply') { @($r.changes | Where-Object { $_.status -eq 'changed' }).Count } else { "$($r.pendingChanges) planned" })
             Converged = $(if ($Mode -eq 'Apply') { $r.converged } else { if ($r.pendingChanges -eq 0 -and $r.blocked -eq 0 -and $r.status -ne 'failed') { 'yes (nothing to change)' } else { 'no' } })
             Restarted = $r.restarted
+            Domain    = $(if (-not [bool](Get-AzlProp $d 'applicable' $false)) { '-' } elseif (Get-AzlProp $d 'domainJoined' $false) { "joined $(Get-AzlProp $d 'domain' '')" } else { 'not joined' })
             Errors    = @($r.errors).Count
         }
     }
     if ($Markdown) {
-        $lines = @("| Node | Method | Transport | Changes | Converged | Restarted | Errors |", '| --- | --- | --- | --- | --- | --- | --- |')
-        foreach ($row in $rows) { $lines += "| $($row.Node) | $($row.Method) | $($row.Transport) | $($row.Changes) | $($row.Converged) | $($row.Restarted) | $($row.Errors) |" }
+        $lines = if ($showDomain) { @("| Node | Method | Transport | Changes | Converged | Restarted | Domain | Errors |", '| --- | --- | --- | --- | --- | --- | --- | --- |') } else { @("| Node | Method | Transport | Changes | Converged | Restarted | Errors |", '| --- | --- | --- | --- | --- | --- | --- |') }
+        foreach ($row in $rows) { $lines += $(if ($showDomain) { "| $($row.Node) | $($row.Method) | $($row.Transport) | $($row.Changes) | $($row.Converged) | $($row.Restarted) | $($row.Domain) | $($row.Errors) |" } else { "| $($row.Node) | $($row.Method) | $($row.Transport) | $($row.Changes) | $($row.Converged) | $($row.Restarted) | $($row.Errors) |" }) }
         $lines += ''; $lines += "Exit code: $ExitCode"
         return ($lines -join [Environment]::NewLine)
     }
+    if (-not $showDomain) { $rows = @($rows | Select-Object -Property * -ExcludeProperty Domain) }
     return (($rows | Format-Table -AutoSize -Wrap | Out-String -Width 200).TrimEnd() + [Environment]::NewLine + "Exit code: $ExitCode")
 }
-
 function ConvertTo-AzlNodeReport {
     param([System.Collections.IDictionary]$Record)
     [ordered]@{
@@ -784,6 +812,7 @@ function ConvertTo-AzlNodeReport {
         warnings       = @($Record.warnings)
         converged      = [bool]$Record.converged
         restarted      = [bool]$Record.restarted
+        domainJoin     = $Record.domainJoin # DOMAINJOIN HOOK: applicable, domainJoined, domain, ou, secureChannel, error
         phases         = $Record.phases
     }
 }
@@ -825,7 +854,7 @@ function Get-AzlNodeRecord {
         handoffFile = $evidence.HandoffFile; evidence = $evidence
         steps = $steps; setSteps = @($steps | Where-Object { $_ -in $script:NodeSteps })
         status = 'pending'; plan = @(); changes = @(); errors = @(); warnings = @(); verification = @(); wipe = @()
-        ports = @(); sanDisks = @(); hostname = ''; osVersion = ''
+        ports = @(); sanDisks = @(); hostname = ''; osVersion = ''; domainJoin = [ordered]@{ applicable = $false; domainJoined = $false; domain = ''; ou = ''; secureChannel = $null; error = '' } # DOMAINJOIN HOOK
         pendingChanges = 0; blocked = 0; converged = $false; restarted = $false; phases = [ordered]@{}
     }
 }
@@ -853,7 +882,7 @@ function Invoke-AzlOsConfiguration {
         [string[]]$HandoffPath,
         [string[]]$Node,
         [ValidateSet('Plan', 'Apply')][string]$Mode = 'Plan',
-        [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'ArcRegistration')][string[]]$Step,
+        [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'ArcRegistration')][string[]]$Step,
         [string]$ReportDirectory,
         [string]$ConfigPath,
         [hashtable]$Settings,
@@ -904,6 +933,8 @@ function Invoke-AzlOsConfiguration {
             NoRestart = ($run.ContainsKey('noRestart') -and $run.noRestart -eq $true); SkipValidation = $SkipValidation.IsPresent
         }
         $context.CredentialInfo = Get-AzlLocalAdminCredential -Infrastructure $infra -Credential $Credential
+        # DOMAINJOIN HOOK: the DomainJoin events go to the run's event feed. A context that already carries the path (the event feed branch) keeps it.
+        if (-not $context.PSObject.Properties['EventLogPath']) { Add-Member -InputObject $context -NotePropertyName EventLogPath -NotePropertyValue (Join-Path $reportDir 'os-configuration-events.jsonl') }
         $declared = [string](Get-AzlProp $infra 'scenario.os_install' '')
 
         Write-AzlLine "OS configuration: $($context.ClusterName), mode $Mode, $($nodes.Count) node(s), report directory $reportDir"
