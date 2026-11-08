@@ -1,0 +1,179 @@
+# Azure Local ARM Validate and Deploy, Azure DevOps.
+#
+# Copy to your pipeline repository or point a pipeline at this file. It runs the command an operator runs by hand:
+#   pwsh -File scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1 ...
+# and nothing else; the logic (preconditions, Validate, polling, known issues, resume) is in the script, not here.
+# Design: docs/design/arm-validate-deploy.md. Guide: docs/arm-deployment-guide.md.
+#
+# Stages
+#   Preconditions   Read only. Parameters and every precondition. Always runs.
+#   Validate        Mode Validate. Runs for mode Validate and ValidateAndDeploy. A Validate that already passed with the same
+#                   parameters is not submitted again.
+#   Deploy          Mode Deploy (2.5 to 3 hours). A deployment job in the environment `azure-local-deploy`: add an Approvals
+#                   check to that environment (Pipelines > Environments > azure-local-deploy > Approvals and checks). The
+#                   approver reads the Validate stage's summary. The stage checks every precondition and that these parameters
+#                   validated. `resume` resubmits a failed Deploy.
+#
+# Setup (names only, no value is in this file)
+#   Service connection  an Azure Resource Manager service connection with workload identity federation (no client secret),
+#                       named in the parameter `azureServiceConnection`.
+#   Variable group      none needed. The local administrator and LCM passwords are read from the Key Vaults named by the
+#                       keyvault:// references in the master file; the identity needs Get on those secrets and the rights in
+#                       the design (section 12).
+#   Agent pool          a self-hosted pool with pwsh 7 (the AzurePowerShell task supplies Az.Accounts), parameter `agentPool`.
+#                       The Active Directory check needs a domain-joined agent; elsewhere it is Skipped, not failed.
+trigger: none
+pr: none
+
+parameters:
+  - name: mode
+    displayName: 'Plan: preconditions only. Validate: plus Validate. ValidateAndDeploy: plus Deploy after approval. Deploy: Deploy only, after approval.'
+    type: string
+    default: Plan
+    values: [Plan, Validate, ValidateAndDeploy, Deploy]
+  - name: infrastructureFile
+    displayName: Path of the master infrastructure.yml in the repository
+    type: string
+    default: config/infrastructure.yml
+  - name: osConfigurationReport
+    displayName: Path of the OS configuration report directory (the published artifact os-configuration-report of the OS configuration pipeline, downloaded into the workspace; may stay empty)
+    type: string
+    default: ''
+  - name: handoffFile
+    displayName: ZTP handoff file (optional)
+    type: string
+    default: ''
+  - name: resume
+    displayName: Deploy - resubmit a failed deployment (after reading the failing step and the known issue)
+    type: boolean
+    default: false
+  - name: acknowledgeKnownIssues
+    displayName: Known issue ids to proceed past, comma-separated (for example arc-device-id-name). Leave empty normally.
+    type: string
+    default: ''
+  - name: azureServiceConnection
+    displayName: Azure Resource Manager service connection (workload identity federation)
+    type: string
+    default: '<azure-service-connection-name>'
+  - name: agentPool
+    displayName: Self-hosted agent pool
+    type: string
+    default: '<self-hosted-agent-pool>'
+
+variables:
+  armScript: scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1
+
+stages:
+  - stage: Preconditions
+    displayName: Preconditions (read only)
+    jobs:
+      - job: Plan
+        pool:
+          name: ${{ parameters.agentPool }}
+        timeoutInMinutes: 30
+        steps:
+          - checkout: self
+          - task: AzurePowerShell@5
+            displayName: Preconditions
+            inputs:
+              azureSubscription: ${{ parameters.azureServiceConnection }}
+              azurePowerShellVersion: LatestVersion
+              pwsh: true
+              ScriptType: InlineScript
+              Inline: |
+                foreach ($m in 'powershell-yaml', 'Az.KeyVault') { if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery } }
+                $arguments = @{ InfrastructureFile = '${{ parameters.infrastructureFile }}'; Mode = 'Plan'; ReportDirectory = "$(Agent.TempDirectory)/arm-plan" }
+                if ('${{ parameters.osConfigurationReport }}') { $arguments.OsConfigurationReport = '${{ parameters.osConfigurationReport }}' }
+                if ('${{ parameters.handoffFile }}') { $arguments.HandoffFile = '${{ parameters.handoffFile }}' }
+                & '$(armScript)' @arguments
+                exit $LASTEXITCODE
+          - pwsh: |
+              $s = "$(Agent.TempDirectory)/arm-plan/summary.md"
+              if (Test-Path $s) { Write-Host "##vso[task.uploadsummary]$s" }
+            displayName: Summary
+            condition: always()
+          - publish: $(Agent.TempDirectory)/arm-plan
+            artifact: arm-deployment-plan
+            displayName: Publish the plan report and the event feed
+            condition: always()
+
+  - ${{ if or(eq(parameters.mode, 'Validate'), eq(parameters.mode, 'ValidateAndDeploy')) }}:
+      - stage: Validate
+        displayName: Validate
+        dependsOn: Preconditions
+        jobs:
+          - job: Validate
+            pool:
+              name: ${{ parameters.agentPool }}
+            timeoutInMinutes: 150
+            steps:
+              - checkout: self
+              - task: AzurePowerShell@5
+                displayName: Validate
+                inputs:
+                  azureSubscription: ${{ parameters.azureServiceConnection }}
+                  azurePowerShellVersion: LatestVersion
+                  pwsh: true
+                  ScriptType: InlineScript
+                  Inline: |
+                    foreach ($m in 'powershell-yaml', 'Az.KeyVault') { if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery } }
+                    $arguments = @{ InfrastructureFile = '${{ parameters.infrastructureFile }}'; Mode = 'Validate'; ReportDirectory = "$(Agent.TempDirectory)/arm-validate" }
+                    if ('${{ parameters.osConfigurationReport }}') { $arguments.OsConfigurationReport = '${{ parameters.osConfigurationReport }}' }
+                    if ('${{ parameters.handoffFile }}') { $arguments.HandoffFile = '${{ parameters.handoffFile }}' }
+                    & '$(armScript)' @arguments
+                    exit $LASTEXITCODE
+              - pwsh: |
+                  $s = "$(Agent.TempDirectory)/arm-validate/summary.md"
+                  if (Test-Path $s) { Write-Host "##vso[task.uploadsummary]$s" }
+                displayName: Summary (the approver reads this)
+                condition: always()
+              - publish: $(Agent.TempDirectory)/arm-validate
+                artifact: arm-deployment-validate
+                displayName: Publish the validate report and the event feed
+                condition: always()
+
+  - ${{ if or(eq(parameters.mode, 'ValidateAndDeploy'), eq(parameters.mode, 'Deploy')) }}:
+      - stage: Deploy
+        displayName: Deploy (needs approval)
+        dependsOn:
+          - Preconditions
+          - ${{ if eq(parameters.mode, 'ValidateAndDeploy') }}:
+              - Validate
+        jobs:
+          # A deployment job: the environment's Approvals check is the gate.
+          - deployment: Deploy
+            environment: azure-local-deploy
+            pool:
+              name: ${{ parameters.agentPool }}
+            # 2.5 to 3 hours of deployment; the script's own wait limit is 6 hours.
+            timeoutInMinutes: 480
+            strategy:
+              runOnce:
+                deploy:
+                  steps:
+                    - checkout: self
+                    - task: AzurePowerShell@5
+                      displayName: Deploy
+                      inputs:
+                        azureSubscription: ${{ parameters.azureServiceConnection }}
+                        azurePowerShellVersion: LatestVersion
+                        pwsh: true
+                        ScriptType: InlineScript
+                        Inline: |
+                          foreach ($m in 'powershell-yaml', 'Az.KeyVault') { if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery } }
+                          $arguments = @{ InfrastructureFile = '${{ parameters.infrastructureFile }}'; Mode = 'Deploy'; ReportDirectory = "$(Agent.TempDirectory)/arm-deploy" }
+                          if ('${{ parameters.osConfigurationReport }}') { $arguments.OsConfigurationReport = '${{ parameters.osConfigurationReport }}' }
+                          if ('${{ parameters.handoffFile }}') { $arguments.HandoffFile = '${{ parameters.handoffFile }}' }
+                          if ('${{ parameters.resume }}' -eq 'True') { $arguments.Resume = $true }
+                          if ('${{ parameters.acknowledgeKnownIssues }}') { $arguments.AcknowledgeKnownIssues = '${{ parameters.acknowledgeKnownIssues }}' }
+                          & '$(armScript)' @arguments
+                          exit $LASTEXITCODE
+                    - pwsh: |
+                        $s = "$(Agent.TempDirectory)/arm-deploy/summary.md"
+                        if (Test-Path $s) { Write-Host "##vso[task.uploadsummary]$s" }
+                      displayName: Summary
+                      condition: always()
+                    - publish: $(Agent.TempDirectory)/arm-deploy
+                      artifact: arm-deployment-deploy
+                      displayName: Publish the deploy report and the event feed
+                      condition: always()

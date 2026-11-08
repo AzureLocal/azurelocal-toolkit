@@ -1,0 +1,149 @@
+# Azure Local ARM Validate and Deploy, GitLab CI.
+#
+# Include it from a pipeline file of its own (include: local: pipelines/gitlab/stages/arm-deployment.yml) or copy it. It declares
+# its own stages, so it is NOT included from pipelines/gitlab/.gitlab-ci.yml, whose stage list belongs to the Terraform and
+# Ansible pipeline. It runs the command an operator runs by hand:
+#   pwsh -File scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1 ...
+# and nothing else; the logic (preconditions, Validate, polling, known issues, resume) is in the script, not here.
+# Design: docs/design/arm-validate-deploy.md. Guide: docs/arm-deployment-guide.md.
+#
+# Jobs
+#   arm-preconditions  stage arm-plan      Read only. Parameters and every precondition. Always runs.
+#   arm-validate       stage arm-validate  Mode Validate. Runs when ARM_MODE is Validate or ValidateAndDeploy. A Validate that
+#                                          already passed with the same parameters is not submitted again.
+#   arm-deploy         stage arm-deploy    Mode Deploy (2.5 to 3 hours). A MANUAL job: someone allowed to run jobs in the
+#                                          protected environment azure-local-deploy reads the arm-validate job's summary and
+#                                          plays it. It checks every precondition and that these parameters validated.
+#                                          ARM_RESUME=true resubmits a failed Deploy.
+#
+# CI/CD variables (Settings > CI/CD > Variables; the values below are placeholders, set the real ones there)
+#   ARM_MODE               Plan | Validate | ValidateAndDeploy | Deploy   (a pipeline run from the web form offers the list)
+#   AZURE_AUTH             oidc (a federated app registration) or managed-identity (the runner's managed identity)
+#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
+#   INFRASTRUCTURE_FILE    path of the master infrastructure.yml in the repository
+#   OS_CONFIGURATION_REPORT path of the OS configuration report directory (the artifact of the OS configuration pipeline: add
+#                          `needs: [{ pipeline: ..., job: ..., artifacts: true }]` or `dependencies` to the jobs below)
+#   HANDOFF_FILE           optional ZTP handoff file
+#   ARM_ACKNOWLEDGE        optional known issue ids to proceed past, comma-separated (for example arc-device-id-name)
+# No secret is stored here. The local administrator and LCM passwords are read from the Key Vaults named by the keyvault://
+# references in the master file. Runner: a Linux runner tagged azure-local with pwsh 7. The Active Directory check needs a
+# domain-joined runner; elsewhere it is Skipped, not failed.
+# Protected environment: Settings > CI/CD > Protected environments > azure-local-deploy (approval rules on Premium and above).
+
+stages:
+  - arm-plan
+  - arm-validate
+  - arm-deploy
+
+variables:
+  ARM_SCRIPT: scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1
+  ARM_MODE:
+    value: Plan
+    options: [Plan, Validate, ValidateAndDeploy, Deploy]
+    description: 'Plan: preconditions only. Validate: plus Validate. ValidateAndDeploy: plus a manual Deploy. Deploy: the manual Deploy only.'
+  ARM_RESUME: 'false'
+  ARM_ACKNOWLEDGE: ''
+  INFRASTRUCTURE_FILE: config/infrastructure.yml
+  OS_CONFIGURATION_REPORT: os-configuration-report
+  HANDOFF_FILE: ''
+  AZURE_AUTH: oidc # oidc | managed-identity
+  AZURE_CLIENT_ID: '<client-id-of-the-app-registration-or-managed-identity>'
+  AZURE_TENANT_ID: '<tenant-id>'
+  AZURE_SUBSCRIPTION_ID: '<subscription-id>'
+  REPORT_DIRECTORY: arm-deployment-report
+
+.arm-deployment:
+  tags: [azure-local, linux]
+  # OIDC: GitLab issues a token the Azure app registration trusts (federated credential, audience api://AzureADTokenExchange).
+  id_tokens:
+    AZURE_ID_TOKEN:
+      aud: api://AzureADTokenExchange
+  before_script:
+    - |
+      pwsh -NoProfile -Command '
+        foreach ($m in "powershell-yaml", "Az.Accounts", "Az.KeyVault") {
+          if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery }
+        }
+        Enable-AzContextAutosave -Scope CurrentUser | Out-Null
+        $connect = @{ Tenant = $env:AZURE_TENANT_ID; Subscription = $env:AZURE_SUBSCRIPTION_ID }
+        if ($env:AZURE_AUTH -eq "oidc") {
+          Connect-AzAccount -ServicePrincipal -ApplicationId $env:AZURE_CLIENT_ID -FederatedToken $env:AZURE_ID_TOKEN @connect | Out-Null
+        }
+        else {
+          if ($env:AZURE_CLIENT_ID -and $env:AZURE_CLIENT_ID -notlike "<*") { $connect.AccountId = $env:AZURE_CLIENT_ID }
+          Connect-AzAccount -Identity @connect | Out-Null
+        }
+      '
+    - |
+      # before_script and script share one shell, so ARM_ARGS is there in the script.
+      ARM_ARGS="-InfrastructureFile $INFRASTRUCTURE_FILE"
+      if [ -d "$OS_CONFIGURATION_REPORT" ] || [ -f "$OS_CONFIGURATION_REPORT" ]; then ARM_ARGS="$ARM_ARGS -OsConfigurationReport $OS_CONFIGURATION_REPORT"; fi
+      if [ -n "$HANDOFF_FILE" ]; then ARM_ARGS="$ARM_ARGS -HandoffFile $HANDOFF_FILE"; fi
+      export ARM_ARGS
+
+arm-preconditions:
+  extends: .arm-deployment
+  stage: arm-plan
+  resource_group: azure-local-arm-deployment
+  timeout: 30 minutes
+  script:
+    - pwsh -NoProfile -File "$ARM_SCRIPT" $ARM_ARGS -Mode Plan -ReportDirectory "$REPORT_DIRECTORY/plan"
+  after_script:
+    - 'if [ -f "$REPORT_DIRECTORY/plan/summary.md" ]; then cat "$REPORT_DIRECTORY/plan/summary.md"; fi'
+  artifacts:
+    when: always
+    expire_in: 30 days
+    name: arm-deployment-plan
+    paths:
+      - $REPORT_DIRECTORY/plan/
+
+arm-validate:
+  extends: .arm-deployment
+  stage: arm-validate
+  needs: [arm-preconditions]
+  resource_group: azure-local-arm-deployment
+  timeout: 2 hours 30 minutes
+  rules:
+    - if: '$ARM_MODE == "Validate" || $ARM_MODE == "ValidateAndDeploy"'
+  script:
+    - pwsh -NoProfile -File "$ARM_SCRIPT" $ARM_ARGS -Mode Validate -ReportDirectory "$REPORT_DIRECTORY/validate"
+  after_script:
+    - 'if [ -f "$REPORT_DIRECTORY/validate/summary.md" ]; then cat "$REPORT_DIRECTORY/validate/summary.md"; fi'
+  artifacts:
+    when: always
+    expire_in: 90 days
+    name: arm-deployment-validate
+    paths:
+      - $REPORT_DIRECTORY/validate/
+
+arm-deploy:
+  extends: .arm-deployment
+  stage: arm-deploy
+  needs:
+    - job: arm-preconditions
+    - job: arm-validate
+      optional: true
+  resource_group: azure-local-arm-deployment
+  # 2.5 to 3 hours of deployment; the script's own wait limit is 6 hours.
+  timeout: 7 hours
+  environment:
+    name: azure-local-deploy
+  rules:
+    # The approval gate: the job waits until someone plays it, after reading the arm-validate job's summary.
+    - if: '$ARM_MODE == "ValidateAndDeploy" || $ARM_MODE == "Deploy"'
+      when: manual
+      allow_failure: false
+  script:
+    - |
+      EXTRA=""
+      if [ "$ARM_RESUME" = "true" ]; then EXTRA="$EXTRA -Resume"; fi
+      if [ -n "$ARM_ACKNOWLEDGE" ]; then EXTRA="$EXTRA -AcknowledgeKnownIssues $ARM_ACKNOWLEDGE"; fi
+      pwsh -NoProfile -File "$ARM_SCRIPT" $ARM_ARGS -Mode Deploy -ReportDirectory "$REPORT_DIRECTORY/deploy" $EXTRA
+  after_script:
+    - 'if [ -f "$REPORT_DIRECTORY/deploy/summary.md" ]; then cat "$REPORT_DIRECTORY/deploy/summary.md"; fi'
+  artifacts:
+    when: always
+    expire_in: 90 days
+    name: arm-deployment-deploy
+    paths:
+      - $REPORT_DIRECTORY/deploy/
