@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="utf-8"?>
+<SBEUpdatesManifest>
+  <ManifestInfo ManifestType="SBE" ReleaseType="OEMRelease" CreationDate="2026-10-21T20:27:08Z" />
+  <ApplicableUpdate Version="5.0.2609.1715" Type="SBE" Family="17G-Intel">
+    <ValidatedConfigurations>
+      <RequiredPackages>
+        <Package Type="Solution" Version="12.*.1004.*" Inject="true" />
+        <Package Type="Solution" Version="12.*.1003.*" Inject="true" />
+        <Package Type="SBE" Version="5.0.2606.1713" Family="17G-Intel" />
+        <Package Type="SBE" Version="5.0.2603.1709" Family="AX-17G" />
+        <Package Type="SBE" Version="2.1.0.0" Family="*" />
+        <Package Type="SBE" Version="4.0.0.0" Family="17G-Intel" />
+      </RequiredPackages>
+    </ValidatedConfigurations>
+    <PartnerProperties><![CDATA[
+{}
+]]></PartnerProperties>
+    <CredentialList><![CDATA[
+[]
+]]></CredentialList>
+    <UpdateInfo>
+      <UpdateName>SBE_Dell_17G-Intel_5.0.2609.1715</UpdateName>
+      <Publisher>Dell</Publisher>
+      <LicenseUri>https://www.dell.com/learn/us/en/uscorp1/campaigns/global-eula</LicenseUri>
+      <Copyright>Copyright (c) 2026 Dell Inc. or its subsidiaries. All Rights Reserved.</Copyright>
+      <Version>5.0.2609.1715</Version>
+      <SupportedModels>
+        <SupportedModel>AX670</SupportedModel>
+        <SupportedModel>AX770</SupportedModel>
+        <SupportedModel>PowerEdgeR670</SupportedModel>
+        <SupportedModel>PowerEdgeR770</SupportedModel>
+      </SupportedModels>
+      <PackageSizeInMb>786</PackageSizeInMb>
+      <Description>Premier SBE for 17G AX Servers</Description>
+      <PackageHash>3ACE88EF859E38ADA13E48F67EE8A875992F71B839028DE97FC8CC0333346E73</PackageHash>
+      <UpdateImpact>
+      </UpdateImpact>
+      <AdvancedSBECapabilities>
+        <Capability>HealthServiceIntegration</Capability>
+        <Capability>DownloadConnector</Capability>
+        <Capability>SolutionUpdate</Capability>
+        <Capability>OrchestratedSBEUpdate</Capability>
+        <Capability>ClusterlessCAU</Capability>
+        <Capability>CombinedCAURun</Capability>
+      </AdvancedSBECapabilities>
+    </UpdateInfo>
+    <MetadataFile Name="SBE_Dell_17G-Intel_5.0.2609.1715.xml" Uri="" />
+    <File Name="SBE_Dell_17G-Intel_5.0.2609.1715.zip" Uri="" NotifyUri="https://dell.github.io/azurestack-docs/docs/hci/supportmatrix/2609/sbereleasenotes/" Type="DownloadConnector" NotifyMsg="Please use your Dell support account to access and review the document at https://www.dell.com/support/kbdoc/en-us/000224407. This document has information for downloading and installing Solution Builder Extension (SBE) package files." />
+  </ApplicableUpdate>
+  <ApplicableUpdate Version="5.0.2609.1611" Type="SBE" Family="16G-45n0c-Intel">
+    <ValidatedConfigurations>
+      <RequiredPackages>
+        <Package Type="Solution" Version="12.*.1004.*" Inject="true" />
+        <Package Type="Solution" Version="12.*.1003.*" Inject="true" />
+        <Package Type="SBE" Version="5.0.2606.1616" Family="16G-45n0c-Intel" />
+        <Package Type="SBE" Version="5.0.2603.1641" Family="AX-16G-45n0c" />
+        <Package Type="SBE" Version="2.1.0.0" Family="*" />
+        <Package Type="SBE" Version="4.0.0.0" Family="16G-45n0c-Intel" />
+      </RequiredPackages>
+    </ValidatedConfigurations>
+    <PartnerProperties><![CDATA[
+{}
+]]></PartnerProperties>
+    <CredentialList><![CDATA[
+[]
+]]></CredentialList>
+    <UpdateInfo>
+      <UpdateName>SBE_Dell_16G-45n0c-Intel_5.0.2609.1611</UpdateName>
+      <Publisher>Dell</Publisher>
+      <LicenseUri>https://www.dell.com/learn/us/en/uscorp1/campaigns/global-eula</LicenseUri>
+      <Copyright>Copyright (c) 2026 Dell Inc. or its subsidiaries. All Rights Reserved.</Copyright>
+      <Version>5.0.2609.1611</Version>
+      <SupportedModels>
+        <SupportedModel>AX660</SupportedModel>
+        <SupportedModel>AX760</SupportedModel>
+        <SupportedModel>AX4510c</SupportedModel>
+        <SupportedModel>AX4520c</SupportedModel>
+        <SupportedModel>APEXMC660</SupportedModel>
+        <SupportedModel>APEXMC760</SupportedModel>
+        <SupportedModel>APEXMC4510c</SupportedModel>
+        <SupportedModel>APEXMC4520c</SupportedModel>
+        <SupportedModel>PowerEdgeR660</SupportedModel>
+        <SupportedModel>PowerEdgeR760</SupportedModel>
+      </SupportedModels>
+      <PackageSizeInMb>990</PackageSizeInMb>
+      <Description>Premier SBE for 16G and 45n0c AX Servers</Description>
+      <PackageHash>1739C1C4E97A126C69387FCF39AC829CD6496257A7C77E0677D21FE9947E6642</PackageHash>
+      <UpdateImpact>
+      </UpdateImpact>
+      <AdvancedSBECapabilities>
+        <Capability>HealthServiceIntegration</Capability>
+        <Capability>DownloadConnector</Capability>
+        <Capability>SolutionUpdate</Capability>
+        <Capability>OrchestratedSBEUpdate</Capability>
+        <Capability>ClusterlessCAU</Capability>
+        <Capability>CombinedCAURun</Capability>
+      </AdvancedSBECapabilities>
+    </UpdateInfo>
+    <MetadataFile Name="SBE_Dell_16G-45n0c-Intel_5.0.2609.1611.xml" Uri="" />
+    <File Name="SBE_Dell_16G-45n0c-Intel_5.0.2609.1611.zip" Uri="" NotifyUri="https://dell.github.io/azurestack-docs/docs/hci/supportmatrix/2609/sbereleasenotes/" Type="DownloadConnector" NotifyMsg="Please use your Dell support account to access and review the document at https://www.dell.com/support/kbdoc/en-us/000224407. This document has information for downloading and installing Solution Builder Extension (SBE) package files." />
+  </ApplicableUpdate>
+  <ApplicableUpdate Version="5.0.2609.1511" Type="SBE" Family="AX-15G">
+    <ValidatedConfigurations>
+      <RequiredPackages>
+        <Package Type="Solution" Version="12.*.1004.*" Inject="true" />
+        <Package Type="Solution" Version="12.*.1003.*" Inject="true" />
+        <Package Type="SBE" Version="5.0.2606.1510" Family="AX-15G" />
+        <Package Type="SBE" Version="5.0.2603.1522" Family="AX-15G" />
+        <Package Type="SBE" Version="2.1.0.0" Family="*" />
+        <Package Type="SBE" Version="4.0.0.0" Family="AX-15G" />
+      </RequiredPackages>
+    </ValidatedConfigurations>
+    <PartnerProperties><![CDATA[
+{}
+]]></PartnerProperties>
+    <CredentialList><![CDATA[
+[]
+]]></CredentialList>
+    <UpdateInfo>
+      <UpdateName>SBE_Dell_AX-15G_5.0.2609.1511</UpdateName>
+      <Publisher>Dell</Publisher>
+      <LicenseUri>https://www.dell.com/learn/us/en/uscorp1/campaigns/global-eula</LicenseUri>
+      <Copyright>Copyright (c) 2026 Dell Inc. or its subsidiaries. All Rights Reserved.</Copyright>
+      <Version>5.0.2609.1511</Version>
+      <SupportedModels>
+        <SupportedModel>AX650</SupportedModel>
+        <SupportedModel>AX750</SupportedModel>
+        <SupportedModel>AX7525</SupportedModel>
+        <SupportedModel>AX6515</SupportedModel>
+      </SupportedModels>
+      <PackageSizeInMb>1149</PackageSizeInMb>
+      <Description>Premier SBE for 15G AX Servers</Description>
+      <PackageHash>B1956C00A7F4A3587140DBFC2BE8C55FB371046C7B2E4E51E2D8EDBEAEA62B7B</PackageHash>
+      <UpdateImpact>
+      </UpdateImpact>
+      <AdvancedSBECapabilities>
+        <Capability>HealthServiceIntegration</Capability>
+        <Capability>DownloadConnector</Capability>
+        <Capability>SolutionUpdate</Capability>
+        <Capability>OrchestratedSBEUpdate</Capability>
+        <Capability>ClusterlessCAU</Capability>
+        <Capability>CombinedCAURun</Capability>
+      </AdvancedSBECapabilities>
+    </UpdateInfo>
+    <MetadataFile Name="SBE_Dell_AX-15G_5.0.2609.1511.xml" Uri="" />
+    <File Name="SBE_Dell_AX-15G_5.0.2609.1511.zip" Uri="" NotifyUri="https://dell.github.io/azurestack-docs/docs/hci/supportmatrix/2609/sbereleasenotes/" Type="DownloadConnector" NotifyMsg="Please use your Dell support account to access and review the document at https://www.dell.com/support/kbdoc/en-us/000224407. This document has information for downloading and installing Solution Builder Extension (SBE) package files." />
+  </ApplicableUpdate>
+  <ApplicableUpdate Version="5.0.2609.1409" Type="SBE" Family="AX-14G">
+    <ValidatedConfigurations>
+      <RequiredPackages>
+        <Package Type="Solution" Version="12.*.1004.*" Inject="true" />
+        <Package Type="Solution" Version="12.*.1003.*" Inject="true" />
+        <Package Type="SBE" Version="5.0.2606.1407" Family="AX-14G" />
+        <Package Type="SBE" Version="5.0.2603.1407" Family="AX-14G" />
+        <Package Type="SBE" Version="2.1.0.0" Family="*" />
+        <Package Type="SBE" Version="4.0.0.0" Family="AX-14G" />
+      </RequiredPackages>
+    </ValidatedConfigurations>
+    <PartnerProperties><![CDATA[
+{}
+]]></PartnerProperties>
+    <CredentialList><![CDATA[
+[]
+]]></CredentialList>
+    <UpdateInfo>
+      <UpdateName>SBE_Dell_AX-14G_5.0.2609.1409</UpdateName>
+      <Publisher>Dell</Publisher>
+      <LicenseUri>https://www.dell.com/learn/us/en/uscorp1/campaigns/global-eula</LicenseUri>
+      <Copyright>Copyright (c) 2026 Dell Inc. or its subsidiaries. All Rights Reserved.</Copyright>
+      <Version>5.0.2609.1409</Version>
+      <SupportedModels>
+        <SupportedModel>AX640</SupportedModel>
+        <SupportedModel>AX740xd</SupportedModel>
+      </SupportedModels>
+      <PackageSizeInMb>760</PackageSizeInMb>
+      <Description>Premier SBE for 14G AX Servers</Description>
+      <PackageHash>AFB0B7BA7D35BBBEDEA9C6069BA32681373A1B8CF42728E53F1D45C146CBB7C1</PackageHash>
+      <UpdateImpact>
+      </UpdateImpact>
+      <AdvancedSBECapabilities>
+        <Capability>HealthServiceIntegration</Capability>
+        <Capability>DownloadConnector</Capability>
+        <Capability>SolutionUpdate</Capability>
+        <Capability>OrchestratedSBEUpdate</Capability>
+        <Capability>ClusterlessCAU</Capability>
+        <Capability>CombinedCAURun</Capability>
+      </AdvancedSBECapabilities>
+    </UpdateInfo>
+    <MetadataFile Name="SBE_Dell_AX-14G_5.0.2609.1409.xml" Uri="" />
+    <File Name="SBE_Dell_AX-14G_5.0.2609.1409.zip" Uri="" NotifyUri="https://dell.github.io/azurestack-docs/docs/hci/supportmatrix/2609/sbereleasenotes/" Type="DownloadConnector" NotifyMsg="Please use your Dell support account to access and review the document at https://www.dell.com/support/kbdoc/en-us/000224407. This document has information for downloading and installing Solution Builder Extension (SBE) package files." />
+  </ApplicableUpdate>
+  <ApplicableUpdate Version="5.0.2606.1616" Type="SBE" Family="16G-45n0c-Intel">
+    <ValidatedConfigurations>
+      <RequiredPackages>
+        <Package Type="Solution" Version="12.*.1003.*" Inject="true" />
+        <Package Type="Solution" Version="12.*.1002.*" MinVersionRequired="12.2603.1002.502" />
+        <Package Type="SBE" Version="5.0.2603.1641" Family="AX-16G-45n0c" />
+        <Package Type="SBE" Version="4.2.2512.1616" Family="AX-16G-45n0c" />
+        <Package Type="SBE" Version="2.1.0.0" Family="*" />
+        <Package Type="SBE" Version="4.0.0.0" Family="16G-45n0c-Intel" />
+        <Package Type="SBE" Version="4.2.2511.*" Family="APEXCP" />
+      </RequiredPackages>
+    </ValidatedConfigurations>
+    <PartnerProperties><![CDATA[
+{}
+]]></PartnerProperties>
+    <CredentialList><![CDATA[
+[]
+]]></CredentialList>
+    <UpdateInfo>
+      <UpdateName>SBE_Dell_16G-45n0c-Intel_5.0.2606.1616</UpdateName>
+      <Publisher>Dell</Publisher>
+      <LicenseUri>https://www.dell.com/learn/us/en/uscorp1/campaigns/global-eula</LicenseUri>
+      <Copyright>Copyright (c) 2026 Dell Inc. or its subsidiaries. All Rights Reserved.</Copyright>
+      <Version>5.0.2606.1616</Version>
+      <SupportedModels>
+        <SupportedModel>AX660</SupportedModel>
+        <SupportedModel>AX760</SupportedModel>
+        <SupportedModel>AX4510c</SupportedModel>
+        <SupportedModel>AX4520c</SupportedModel>
+        <SupportedModel>APEXMC660</SupportedModel>
+        <SupportedModel>APEXMC760</SupportedModel>
+        <SupportedModel>APEXMC4510c</SupportedModel>
+        <SupportedModel>APEXMC4520c</SupportedModel>
+        <SupportedModel>PowerEdgeR660</SupportedModel>
+        <SupportedModel>PowerEdgeR760</SupportedModel>
+      </SupportedModels>
+      <PackageSizeInMb>916</PackageSizeInMb>
+      <Description>Premier SBE for 16G and 45n0c AX Servers</Description>
+      <PackageHash>00D8E4CA44A571184B0C338D4EA88BCEDF23725A12A6114B86C9090FA2B83AC7</PackageHash>
+      <UpdateImpact>
+      </UpdateImpact>
+      <AdvancedSBECapabilities>
+        <Capability>HealthServiceIntegration</Capability>
+        <Capability>DownloadConnector</Capability>
+        <Capability>SolutionUpdate</Capability>
+        <Capability>OrchestratedSBEUpdate</Capability>
+        <Capability>ClusterlessCAU</Capability>
+      </AdvancedSBECapabilities>
+    </UpdateInfo>
+    <MetadataFile Name="SBE_Dell_16G-45n0c-Intel_5.0.2606.1616.xml" Uri="" />
+    <File Name="SBE_Dell_16G-45n0c-Intel_5.0.2606.1616.zip" Uri="" NotifyUri="https://dell.github.io/azurestack-docs/docs/hci/supportmatrix/2606/sbereleasenotes/" Type="DownloadConnector" NotifyMsg="Please use your Dell support account to access and review the document at https://www.dell.com/support/kbdoc/en-us/000224407. This document has information for downloading and installing Solution Builder Extension (SBE) package files." />
+  </ApplicableUpdate>
+</SBEUpdatesManifest>
