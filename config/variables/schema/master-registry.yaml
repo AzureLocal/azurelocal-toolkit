@@ -1,7 +1,7 @@
 # =============================================================================
 # Master Variable Registry - AzureLocal Cloud Team Cloud Management Platform
 # =============================================================================
-# Version: 5.0.13
+# Version: 5.0.14
 # Schema: variables.schema.json (v5.0.0)
 # Last Updated: 2026-11-08
 #
@@ -39,6 +39,9 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.14 (2026-11-08):
+#     - tools.sonar: config key tokenFile, parameters TokenFile and Force of Start-AzlSonar.ps1, and the parameters of scripts/Invoke-AzlSonarApi.ps1
+#       (the script wrapper of the Invoke-AzlSonarApi module function) are registered.
 #   v5.0.13 (2026-11-08):
 #     - Final audit. Examples are documentation placeholders (the management VLAN is 711, addresses are RFC 5737, MACs 00:00:5E:00:53:xx). Every
 #       infrastructure.yml key has a description (228 were empty). Keys that no tool reads are marked "Not read by the tools yet"; used_by that no
@@ -145,7 +148,7 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.13"
+  version: "5.0.14"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.3"
   last_updated: "2026-11-08"
@@ -154,6 +157,10 @@ _metadata:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-08"
+      version: "5.0.14"
+      change: "tools.sonar: config key tokenFile (Config), parameters TokenFile and Force of Start-AzlSonar.ps1, and the parameters of the new scripts/Invoke-AzlSonarApi.ps1 (Route, Since, All, Follow, EventName, DurationSeconds, ServerId, BaseUrl, Token, TokenFile, Raw, OutFile, TimeoutSeconds, MaxRetry), the script wrapper of the Invoke-AzlSonarApi module function."
+      reason: "Automation, scripts and agents need the access token of a Sonar start without scraping the launch output (TokenFile writes it to a user-only file and removes it at stop) and a supported way to call the read-only API (Invoke-AzlSonarApi); per owner rule R19 new Sonar parameters and config keys are registered here first."
     - date: "2026-11-08"
       version: "5.0.13"
       change: "Final audit and fix pass. (1) Examples: the management VLAN example 211 (typo) is 711 in six places, the addresses, hardware MACs and a subscription id in a description that came from a real lab are documentation placeholders (RFC 5737, 00:00:5E:00:53:xx, zero GUID). (2) Descriptions: 228 infrastructure.yml keys that had none now have one; keys no tool reads say Not read by the tools yet (a documented placeholder), 70 in all. (3) used_by: removed where no reader exists (networking.storage.switchless_links and tor_switches, scenario.deploy_method, storage.san.luns[].size_gib, storage.san.fibre_channel.fabrics[].zone_set, landing_zone.networks[].peer_with); added to security.telemetry.* (read by the ARM builder) and to networking.logical_networks[] and its keys (read by the logical network creation task, the gate and the remote management profile); networking.oob is tagged os_configuration for subnet only. (4) networking.logical_networks[]: new optional enabled, ip_allocation_method and nsg_name (the creation task reads them; the schema rejected them); gateway and ip_pool are the keys, the task reads default_gateway and ip_pools until it is changed (docs/design/variables-audit-tasks.md); networking.onprem.logical_networks[] is deprecated (replaced_by networking.logical_networks). (5) tools.discovery: parameters Vendor, ThrottleLimit and UseSession of Invoke-HardwareDiscovery.ps1 registered, all parameters with real descriptions. (6) read_at paths of 669 tool variables no longer start with a worktree name. (7) The header change log lists every bump from 5.0.1. (8) tools.arm_deployment.env_vars: HTTPS_PROXY, HTTP_PROXY and NO_PROXY, which the gate reads on the nodes. (9) storage.san: the OS configuration reads the SAN block, array, iSCSI targets, CHAP flag and nodes[].san, so those are tagged os_configuration; array.management_address, luns and the CHAP user and secret are read by nobody and say so. (10) VARIABLES.md reads used_by from this registry; the reader lists of variables-reference.metadata.psd1 are gone."
@@ -20121,6 +20128,7 @@ tools:
                 identityModel: {"name":"identityModel","type":"string","declared_type":"string","enum":["LocalIdentity; ActiveDirectory"],"required":"yes","read_at":"Config.ps1 Test-AzlSonarConfig/Read-AzlSonarConfig (all)","description":"Account guidance, This deployment note, TrustedHosts check. Master file: scenario.identity (active_directory and local_identity are converted). Registry has this concept as compute.clusters.azure_local.azl_identity_provider (line 7426), not under this name/path."}
                 provisioningRoute: {"name":"provisioningRoute","type":"string","declared_type":"string","default":"auto","enum":["auto; simplified; oem-image"],"required":"no","read_at":"Config.ps1 Read-AzlSonarConfig; AzurePoller.ps1; NodeProbe.ps1 (all)","description":"First mode: Provisioning (ZTP) or Provisioning (OS image). oem-image never reads edge machines; simplified never starts the node probe. Master file: scenario.os_install (simplified; iso)."}
                 accessToken: {"name":"accessToken","type":"boolean","declared_type":"bool","default":"true","enum":["true; false"],"required":"no","read_at":"Config.ps1; Server.ps1 (all)","description":"false turns the per-start access token off (single-user machines only)."}
+                tokenFile: {"name":"tokenFile","type":"string","declared_type":"string","default":"none","enum":["non-empty text; relative to the config file; not with accessToken false"],"required":"no","read_at":"Config.ps1 Test-AzlSonarConfig/Read-AzlSonarConfig; Server.ps1 Start-AzlSonarServer; TokenFile.ps1","description":"File Sonar writes the access token to at start (just the token, no URL; readable by the current user only) and removes at stop, so automation can read it without scraping the launch output. -TokenFile overrides it. An existing file that is not a Sonar token file is refused unless -Force."}
                 maxEventStreams: {"name":"maxEventStreams","type":"integer","declared_type":"int","default":"4","enum":["1 to 50"],"required":"no","read_at":"Config.ps1; Server.ps1 $script:AzlSonarSseMaxClients (all)","description":"Live browser streams served at once; more get 429."}
                 pollSeconds: {"name":"pollSeconds","type":"integer","declared_type":"int","default":"20","enum":["5 to 3600"],"required":"no","read_at":"Config.ps1; AzurePoller.ps1 (all)","description":"Seconds between Azure polls. -PollSeconds overrides it."}
                 nodes: {"name":"nodes","type":"array","declared_type":"list","enum":["at least one node"],"required":"yes","read_at":"Config.ps1 Test-AzlSonarConfig/Read-AzlSonarConfig (all)","description":"Machine cards, steps per machine, log filters. Master file: nodes[]. Registry has this concept as compute.cluster_nodes (line 8671), not under this name/path."}
@@ -20414,6 +20422,8 @@ tools:
                 Port: {"name":"Port","type":"integer","declared_type":"int","default":"8642","enum":["1 to 65535 (ValidateRange)"],"required":"no","read_at":"Start-AzlSonar.ps1; Start-AzlSonarServer (all)","description":"Local port; the server binds http://localhost:<Port>/ only. There is no port key in the config file."}
                 NoBrowser: {"name":"NoBrowser","type":"boolean","declared_type":"switch","default":"false","required":"no","read_at":"Start-AzlSonar.ps1 (all)","description":"Do not open the browser."}
                 NoAccessToken: {"name":"NoAccessToken","type":"boolean","declared_type":"switch","default":"false","required":"no","read_at":"Start-AzlSonar.ps1 (all)","description":"Turns the per-start access token off (same as config accessToken false). Single-user machines only."}
+                TokenFile: {"name":"TokenFile","type":"string","declared_type":"string","required":"no","read_at":"Start-AzlSonar.ps1 -> Start-AzlSonarServer -TokenFile; TokenFile.ps1","description":"Write the per-start access token (just the token) to this file, readable by the current user only (Windows: ACL of the current user, no inheritance; Linux: mode 600); removed when Sonar stops. The launch output shows the path and no token. Overrides config tokenFile. Needs the access token on."}
+                Force: {"name":"Force","type":"boolean","declared_type":"switch","default":"false","required":"no","read_at":"Start-AzlSonar.ps1 -> Start-AzlSonarServer -Force; TokenFile.ps1","description":"With -TokenFile or tokenFile: replace an existing file that is not a Sonar token file. Without it such a file is refused."}
                 Credential: {"name":"Credential","type":"pscredential","declared_type":"pscredential","required":"no (Live set)","read_at":"Start-AzlSonar.ps1; Resolve-AzlSonarCredential (all)","description":"Account that reads the logs on the seed node. Always wins over credential.source."}
                 Record: {"name":"Record","type":"string","declared_type":"string","required":"no (Live set)","read_at":"Start-AzlSonar.ps1; Start-AzlSonarServer (all)","description":"Append the run to this recording (JSON Lines). Overrides config recordPath."}
                 Publishable: {"name":"Publishable","type":"boolean","declared_type":"switch","default":"false","required":"no (Live set; needs -Record or recordPath and a new file)","read_at":"Start-AzlSonar.ps1 (all)","description":"With -Record: replace every identifier with stable pseudonyms; the finished file is verified and a failed check renames it .NOT-PUBLISHABLE."}
@@ -20422,6 +20432,24 @@ tools:
                 StartAt: {"name":"StartAt","type":"string","declared_type":"string","required":"no (Replay set)","read_at":"Start-AzlSonar.ps1 (all)","description":"Replay start: an offset (1:42:10, 90m, 1h30m), a UTC time inside the recording, or a phase (arc-registration, validation, deployment)."}
                 Autoplay: {"name":"Autoplay","type":"boolean","declared_type":"switch","default":"false","required":"no (Replay set)","read_at":"Start-AzlSonar.ps1 (all)","description":"Replay: start playing at once instead of paused."}
                 Monitor: {"name":"Monitor","type":"string","declared_type":"string","default":"Auto (config monitor, else Auto)","enum":["Auto; Discovery; Provisioning; OsConfiguration; Verification; Validate; Deployment; Update; AddNode; Repair (ValidateSet)"],"required":"no (Live set)","read_at":"Start-AzlSonar.ps1 param block -> Start-AzlSonarServer -Monitor","description":"Which stage to watch alone; overrides config monitor. Discovery needs no Azure sign-in."}
+            scripts_Invoke_AzlSonarApi_ps1:
+              type: object
+              area: "scripts/Invoke-AzlSonarApi.ps1"
+              properties:
+                Route: {"name":"Route","type":"string","declared_type":"string","enum":["/api/config; /api/about; /api/guidance; /api/details; /api/state; /api/logs; /api/events; /api/export; /api/replay (ValidateSet)"],"required":"yes (position 0)","read_at":"scripts/Invoke-AzlSonarApi.ps1 -> Invoke-AzlSonarApi (ApiClient.ps1)","description":"The API route to call (position 0)."}
+                Since: {"name":"Since","type":"integer","declared_type":"long","default":"0","enum":["0 or more (ValidateRange)"],"required":"no","read_at":"scripts/Invoke-AzlSonarApi.ps1 -> Invoke-AzlSonarApi (ApiClient.ps1)","description":"/api/logs only: return the lines after this sequence number (seq > Since)."}
+                All: {"name":"All","type":"boolean","declared_type":"switch","default":"false","required":"no","read_at":"scripts/Invoke-AzlSonarApi.ps1 -> Invoke-AzlSonarApi (ApiClient.ps1)","description":"/api/logs only: page until caught up (follows lastSeq while truncated is true) and report gaps and server restarts."}
+                Follow: {"name":"Follow","type":"boolean","declared_type":"switch","default":"false","required":"no","read_at":"scripts/Invoke-AzlSonarApi.ps1 -> Invoke-AzlSonarApi (ApiClient.ps1)","description":"/api/events only: read the Server-Sent Events stream and write one object per event ({ Event, Data })."}
+                EventName: {"name":"EventName","type":"string","declared_type":"string[]","enum":["hello; state; tailer; log (ValidateSet)"],"required":"no","read_at":"scripts/Invoke-AzlSonarApi.ps1 -> Invoke-AzlSonarApi (ApiClient.ps1)","description":"-Follow only: write only these events."}
+                DurationSeconds: {"name":"DurationSeconds","type":"integer","declared_type":"int","default":"0","enum":["0 to 86400 (ValidateRange)"],"required":"no","read_at":"scripts/Invoke-AzlSonarApi.ps1 -> Invoke-AzlSonarApi (ApiClient.ps1)","description":"-Follow only: stop after this many seconds; 0 follows until the stream ends or the caller stops."}
+                ServerId: {"name":"ServerId","type":"string","declared_type":"string","required":"no","read_at":"scripts/Invoke-AzlSonarApi.ps1 -> Invoke-AzlSonarApi (ApiClient.ps1)","description":"-All: the server id (Server) of your last call. A different id in the answer means Sonar restarted: the helper warns and reads the logs again from 0."}
+                BaseUrl: {"name":"BaseUrl","type":"string","declared_type":"string","default":"http://localhost:8642","enum":["http://localhost:<port> or http://127.0.0.1:<port>, no path"],"required":"no","read_at":"scripts/Invoke-AzlSonarApi.ps1 -> Invoke-AzlSonarApi (ApiClient.ps1)","description":"Where Sonar listens (loopback only)."}
+                Token: {"name":"Token","type":"string","declared_type":"string","required":"no","read_at":"scripts/Invoke-AzlSonarApi.ps1 -> Invoke-AzlSonarApi (ApiClient.ps1)","description":"The access token (the launch output holds it; prefer -TokenFile). Never written to any output."}
+                TokenFile: {"name":"TokenFile","type":"string","declared_type":"string","required":"no","read_at":"scripts/Invoke-AzlSonarApi.ps1 -> Invoke-AzlSonarApi (ApiClient.ps1)","description":"File that holds the access token (Start-AzlSonar.ps1 -TokenFile); read again when Sonar answers 401 after a restart."}
+                Raw: {"name":"Raw","type":"boolean","declared_type":"switch","default":"false","required":"no","read_at":"scripts/Invoke-AzlSonarApi.ps1 -> Invoke-AzlSonarApi (ApiClient.ps1)","description":"Return the response body as text (alias AsJson); with -All or -Follow one JSON line per log line or event."}
+                OutFile: {"name":"OutFile","type":"string","declared_type":"string","required":"no","read_at":"scripts/Invoke-AzlSonarApi.ps1 -> Invoke-AzlSonarApi (ApiClient.ps1)","description":"Save the response to this file (for /api/export) and return the file; a non-200 answer is not saved."}
+                TimeoutSeconds: {"name":"TimeoutSeconds","type":"integer","declared_type":"int","default":"30","enum":["1 to 3600 (ValidateRange)"],"required":"no","read_at":"scripts/Invoke-AzlSonarApi.ps1 -> Invoke-AzlSonarApi (ApiClient.ps1)","description":"Time allowed for one request (for -Follow: to connect and between two stream chunks)."}
+                MaxRetry: {"name":"MaxRetry","type":"integer","declared_type":"int","default":"2","enum":["0 to 10 (ValidateRange)"],"required":"no","read_at":"scripts/Invoke-AzlSonarApi.ps1 -> Invoke-AzlSonarApi (ApiClient.ps1)","description":"Retries after 429 (waits for Retry-After, at most 120 seconds each)."}
         secret_names:
           type: object
           properties:
