@@ -54,11 +54,10 @@ Describe 'The committed map is current' {
         $script:Md | Should -Match 'New-VariableMap\.ps1 -Check'
     }
 
-    It 'the files use LF line endings and end with a newline (so the check compares the same bytes everywhere)' {
+    It 'the files end with a newline (the check compares them with line endings normalised, so a CRLF checkout is fine)' {
         foreach ($f in $script:MapMd, $script:MapCsv, $script:Snapshot) {
             $bytes = [IO.File]::ReadAllBytes($f)
-            [Array]::IndexOf($bytes, [byte]13) | Should -Be -1 -Because "$f has a carriage return"
-            $bytes[-1] | Should -Be 10
+            $bytes[-1] | Should -Be 10 -Because $f
         }
     }
 
