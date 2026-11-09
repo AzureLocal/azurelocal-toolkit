@@ -13,7 +13,7 @@
       "additionalProperties": false,
       "properties": {
         "schema_version": {
-          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. The current version is 5.6.0.",
+          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. The current version is 5.6.3.",
           "type": "string",
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
@@ -38,6 +38,7 @@
           "type": "string"
         },
         "notes": {
+          "description": "Free text about this file for the people who keep it. Not read by the tools.",
           "type": "string"
         }
       }
@@ -46,7 +47,8 @@
       "description": "Azure tags applied to the resources the tools create. A policy that requires tags isn't supported by simplified provisioning.",
       "type": "object",
       "additionalProperties": {
-        "type": "string"
+        "type": "string",
+        "description": "The value of the tag."
       }
     },
     "azure": {
@@ -77,6 +79,7 @@
           "properties": {
             "type": {
               "description": "The kind of identity that runs the automation: a managed identity (preferred, no secret to keep) or a service principal.",
+              "type": "string",
               "enum": [
                 "managed_identity",
                 "service_principal"
@@ -141,13 +144,16 @@
             "additionalProperties": false,
             "properties": {
               "name": {
+                "description": "Name of the subscription; the other landing_zone entries refer to it.",
                 "type": "string"
               },
               "id": {
-                "$ref": "#/$defs/guid"
+                "$ref": "#/$defs/guid",
+                "description": "Subscription id (a GUID). Use your own; the templates hold only a placeholder."
               },
               "role": {
                 "description": "What the subscription is for.",
+                "type": "string",
                 "enum": [
                   "connectivity",
                   "identity",
@@ -159,28 +165,33 @@
                 ]
               },
               "management_group": {
+                "description": "Management group the subscription is under.",
                 "type": "string"
               }
             }
           }
         },
         "resource_groups": {
+          "description": "Resource groups of the landing zone.",
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
               "name": {
-                "$ref": "#/$defs/resource_group"
+                "$ref": "#/$defs/resource_group",
+                "description": "Name of the resource group."
               },
               "subscription": {
                 "description": "Name of a subscription in landing_zone.subscriptions.",
                 "type": "string"
               },
               "location": {
-                "$ref": "#/$defs/azure_region"
+                "$ref": "#/$defs/azure_region",
+                "description": "Azure region of the resource group."
               },
               "purpose": {
+                "description": "What the resource group is for, in words.",
                 "type": "string"
               }
             }
@@ -194,24 +205,31 @@
             "additionalProperties": false,
             "properties": {
               "name": {
+                "description": "Name of the virtual network.",
                 "type": "string"
               },
               "subscription": {
+                "description": "Name of the subscription (landing_zone.subscriptions[].name) that holds the network.",
                 "type": "string"
               },
               "resource_group": {
-                "$ref": "#/$defs/resource_group"
+                "$ref": "#/$defs/resource_group",
+                "description": "Resource group of the network."
               },
               "location": {
-                "$ref": "#/$defs/azure_region"
+                "$ref": "#/$defs/azure_region",
+                "description": "Azure region of the network."
               },
               "role": {
+                "description": "hub or spoke.",
+                "type": "string",
                 "enum": [
                   "hub",
                   "spoke"
                 ]
               },
               "address_space": {
+                "description": "Address ranges of the virtual network, in CIDR form.",
                 "type": "array",
                 "minItems": 1,
                 "items": {
@@ -219,37 +237,36 @@
                 }
               },
               "dns_servers": {
+                "description": "DNS servers of the virtual network.",
                 "type": "array",
                 "items": {
                   "$ref": "#/$defs/ipv4"
                 }
               },
               "subnets": {
+                "description": "Subnets of the virtual network.",
                 "type": "array",
                 "items": {
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
                     "name": {
+                      "description": "Name of the subnet, for example GatewaySubnet.",
                       "type": "string"
                     },
                     "prefix": {
-                      "$ref": "#/$defs/cidr"
+                      "$ref": "#/$defs/cidr",
+                      "description": "Address range of the subnet in CIDR form."
                     },
                     "network_security_group": {
+                      "description": "Name of the network security group on the subnet.",
                       "type": "string"
                     },
                     "route_table": {
+                      "description": "Name of the route table on the subnet.",
                       "type": "string"
                     }
                   }
-                }
-              },
-              "peer_with": {
-                "description": "Names of networks this one peers with.",
-                "type": "array",
-                "items": {
-                  "type": "string"
                 }
               }
             }
@@ -263,6 +280,8 @@
       "additionalProperties": false,
       "properties": {
         "platform": {
+          "description": "The CI/CD platform: github, gitlab or azure_devops.",
+          "type": "string",
           "enum": [
             "github",
             "gitlab",
@@ -270,6 +289,7 @@
           ]
         },
         "url": {
+          "description": "URL of the CI/CD platform (an organization or instance URL).",
           "type": "string"
         },
         "organization": {
@@ -277,6 +297,7 @@
           "type": "string"
         },
         "project": {
+          "description": "Name of the project or organization on the platform.",
           "type": "string"
         },
         "api_token": {
@@ -311,6 +332,7 @@
             },
             "visibility": {
               "description": "Repository visibility.",
+              "type": "string",
               "default": "private",
               "enum": [
                 "private",
@@ -410,6 +432,7 @@
           "properties": {
             "method": {
               "description": "oidc: a federated credential per repository and environment, no secret. client_secret: a secret, stored only in Key Vault (devops.authentication.client_secret) and in the platform as a masked variable.",
+              "type": "string",
               "default": "oidc",
               "enum": [
                 "oidc",
@@ -452,6 +475,7 @@
               },
               "os_type": {
                 "description": "Operating system.",
+                "type": "string",
                 "enum": [
                   "linux",
                   "windows"
@@ -459,6 +483,7 @@
               },
               "purpose": {
                 "description": "general: ARM, Arc, Terraform, Ansible and OS configuration. ztp: the azurelocal-ztp Boot, Bootstrap and Vouchers stages (Windows only).",
+                "type": "string",
                 "default": "general",
                 "enum": [
                   "general",
@@ -474,6 +499,7 @@
               },
               "compute_type": {
                 "description": "vm or vmss. Windows and ztp runners are VMs.",
+                "type": "string",
                 "default": "vm",
                 "enum": [
                   "vm",
@@ -512,10 +538,12 @@
                 "additionalProperties": false,
                 "properties": {
                   "name": {
+                    "description": "Name of the subnet the runner machines are placed in.",
                     "type": "string"
                   },
                   "prefix": {
-                    "$ref": "#/$defs/cidr"
+                    "$ref": "#/$defs/cidr",
+                    "description": "Address range of that subnet, in CIDR form."
                   }
                 }
               },
@@ -535,9 +563,11 @@
           "additionalProperties": false,
           "properties": {
             "vnet_name": {
+              "description": "Name of the virtual network the runners are placed in.",
               "type": "string"
             },
             "address_space": {
+              "description": "Address ranges of that virtual network, in CIDR form.",
               "type": "array",
               "minItems": 1,
               "items": {
@@ -545,6 +575,7 @@
               }
             },
             "dns_servers": {
+              "description": "DNS servers of that virtual network.",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/ipv4"
@@ -649,13 +680,17 @@
           }
         },
         "runner": {
+          "description": "One runner (the form before devops.runners[]). Kept for files written before 5.5; use devops.runners[].",
           "type": "object",
           "additionalProperties": false,
           "properties": {
             "name": {
+              "description": "Name of the runner.",
               "type": "string"
             },
             "type": {
+              "description": "Kind of runner: vm, container_app or existing.",
+              "type": "string",
               "enum": [
                 "vm",
                 "container_app",
@@ -663,21 +698,27 @@
               ]
             },
             "subscription": {
+              "description": "Subscription of the runner.",
               "type": "string"
             },
             "resource_group": {
-              "$ref": "#/$defs/resource_group"
+              "$ref": "#/$defs/resource_group",
+              "description": "Resource group of the runner."
             },
             "network": {
+              "description": "Virtual network of the runner.",
               "type": "string"
             },
             "subnet": {
+              "description": "Subnet of the runner.",
               "type": "string"
             },
             "private_ip": {
-              "$ref": "#/$defs/ipv4"
+              "$ref": "#/$defs/ipv4",
+              "description": "Private address of the runner."
             },
             "size": {
+              "description": "VM size of the runner.",
               "type": "string"
             },
             "labels": {
@@ -693,6 +734,7 @@
           }
         },
         "state": {
+          "description": "Where the Terraform state is kept.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
@@ -706,13 +748,16 @@
               "default": "cicd-infra.tfstate"
             },
             "storage_account": {
-              "$ref": "#/$defs/storage_account_name"
+              "$ref": "#/$defs/storage_account_name",
+              "description": "Storage account that holds the state."
             },
             "container": {
+              "description": "Blob container that holds the state.",
               "type": "string"
             },
             "resource_group": {
-              "$ref": "#/$defs/resource_group"
+              "$ref": "#/$defs/resource_group",
+              "description": "Resource group of the state storage account."
             }
           }
         }
@@ -1178,7 +1223,8 @@
         "pattern": "^[A-Za-z0-9_.\\[\\]-]{1,128}$"
       },
       "additionalProperties": {
-        "type": "string"
+        "type": "string",
+        "description": "The value of the BIOS attribute, as a string."
       }
     },
     "wwpn": {

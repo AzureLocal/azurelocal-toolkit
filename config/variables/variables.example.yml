@@ -720,7 +720,7 @@ network:
   management: {}
   vlans:
     management:
-      cidr: "192.168.203.0/24"
+      cidr: "192.0.2.0/24"
       dhcp:
         server: "192.168.10.5"
     oob:

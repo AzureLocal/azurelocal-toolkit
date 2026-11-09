@@ -13,7 +13,7 @@
       "additionalProperties": false,
       "properties": {
         "schema_version": {
-          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. The current version is 5.6.0.",
+          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. The current version is 5.6.3.",
           "type": "string",
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
@@ -38,6 +38,7 @@
           "type": "string"
         },
         "notes": {
+          "description": "Free text about this file for the people who keep it. Not read by the tools.",
           "type": "string"
         }
       }
@@ -49,6 +50,7 @@
       "properties": {
         "identity": {
           "description": "active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity.local_identity). https://learn.microsoft.com/azure/azure-local/deploy/deployment-local-identity-with-key-vault",
+          "type": "string",
           "enum": [
             "active_directory",
             "local_identity"
@@ -56,6 +58,7 @@
         },
         "storage_architecture": {
           "description": "s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both (S2D plus a SAN). san and hybrid TELL THE SOLUTION THERE IS A SAN: the OS configuration then does the host-side SAN work itself (the Mpio step: MPIO, MSDSM hardware ID, the MPIO claim of the device (mpclaim -n -i -d), load balance policy, vendor MPIO settings; for iSCSI the initiator service, auto-claim, portals and sessions) and checks each LUN is seen once (SanVerify). storage.san.type says whether the SAN is fibre_channel or iscsi. On every node the OS configuration also looks, read only, for FC or iSCSI LUNs that are visible while the file declares no SAN, and reports them. https://learn.microsoft.com/azure/azure-local/deploy/enable-external-storage",
+          "type": "string",
           "enum": [
             "s2d",
             "san",
@@ -64,6 +67,7 @@
         },
         "storage_connectivity": {
           "description": "switched: storage traffic goes through top-of-rack switches. switchless: machines are cabled directly to each other for storage. A single machine uses switched.",
+          "type": "string",
           "enum": [
             "switched",
             "switchless"
@@ -71,6 +75,7 @@
         },
         "topology": {
           "description": "standard, or rack_aware (machines split across two local availability zones; every node needs a zone).",
+          "type": "string",
           "enum": [
             "standard",
             "rack_aware"
@@ -78,6 +83,7 @@
         },
         "connectivity": {
           "description": "connected to Azure, or disconnected operations (needs the disconnected section).",
+          "type": "string",
           "enum": [
             "connected",
             "disconnected"
@@ -85,16 +91,10 @@
         },
         "cloud": {
           "description": "Azure public cloud or Azure Government.",
+          "type": "string",
           "enum": [
             "public",
             "government"
-          ]
-        },
-        "deploy_method": {
-          "description": "How the cluster is deployed: the Azure portal or an ARM template.",
-          "enum": [
-            "portal",
-            "arm"
           ]
         }
       }
@@ -173,6 +173,7 @@
         },
         "deployment_mode": {
           "description": "ARM deploymentMode: validate runs the checks only; deploy deploys.",
+          "type": "string",
           "enum": [
             "validate",
             "deploy"
@@ -185,6 +186,7 @@
           "properties": {
             "type": {
               "description": "cloud (an Azure Storage account), file_share (disconnected operations), or none. Two machines need a witness. https://learn.microsoft.com/azure/azure-local/concepts/cluster-witness",
+              "type": "string",
               "enum": [
                 "cloud",
                 "file_share",
@@ -278,6 +280,7 @@
         },
         "approval": {
           "description": "Mode ValidateAndDeploy: what happens between a good Validate and the Deploy. stop (default): the run ends in state AwaitingApproval and a later run with Mode Deploy continues. prompt: asks on the console, and stops without a console. none: continues at once (a lab). Pipelines run Validate and Deploy as two jobs with the platform's approval between them and do not use this. (since 5.6)",
+          "type": "string",
           "default": "stop",
           "enum": [
             "stop",
@@ -481,6 +484,7 @@
                     },
                     "type": {
                       "description": "Schema 5.4. fibre_channel (default; with storage.san.type fibre_channel the ports with their WWPNs are needed for zoning, rule AZL-028) or iscsi_offload (an adapter that presents SAN LUNs to the BIOS; it needs no ports here, its addresses are on network_adapters with role iscsi:a or iscsi:b).",
+                      "type": "string",
                       "default": "fibre_channel",
                       "enum": [
                         "fibre_channel",
@@ -731,6 +735,7 @@
                       },
                       "network_direct_technology": {
                         "description": "RDMA technology of the adapters: iwarp, roce_v2 (RoCEv2) or roce (RoCE, version 1). Sent to ARM as networkDirectTechnology 'iWARP', 'RoCEv2' or 'RoCE'; Learn's network considerations name RoCEv2 and iWARP, the ARM model also accepts RoCE. Used only when network_direct is on; leave out for RoCEv2. Set the technology your adapter vendor and switches are configured for.",
+                        "type": "string",
                         "enum": [
                           "iwarp",
                           "roce",
@@ -750,6 +755,7 @@
                       },
                       "load_balancing_algorithm": {
                         "description": "Load balancing of the switch-embedded team: dynamic or hyper_v_port (ARM loadBalancingAlgorithm 'Dynamic' or 'HyperVPort').",
+                        "type": "string",
                         "enum": [
                           "dynamic",
                           "hyper_v_port"
@@ -772,6 +778,7 @@
               "type": "boolean"
             },
             "networks": {
+              "description": "The storage networks (SMB), one per storage adapter. The adapter is named by the key nodes[].network_adapters[].name, the same on every machine.",
               "type": "array",
               "items": {
                 "type": "object",
@@ -808,18 +815,101 @@
             "additionalProperties": false,
             "properties": {
               "name": {
+                "description": "Name of the cluster network on a standalone port (fabric A or B of a SAN design), for example clusterNetwork-A. ARM sanNetworkList name.",
                 "type": "string"
               },
               "adapter": {
+                "description": "The port of this cluster network, by the key nodes[].network_adapters[].name (the same on every machine).",
                 "type": "string"
               },
               "vlan_id": {
+                "description": "VLAN of this cluster network, 0 to 4094. 0 means untagged.",
                 "type": "integer",
                 "minimum": 1,
                 "maximum": 4094
               },
               "subnet": {
-                "$ref": "#/$defs/cidr"
+                "$ref": "#/$defs/cidr",
+                "description": "Subnet of this cluster network in CIDR form."
+              }
+            }
+          }
+        },
+        "logical_networks": {
+          "description": "Arc VM logical networks created after deployment (task phase-06 task-08, Invoke-LogicalNetworks-Orchestrated.ps1: az stack-hci-vm network lnet create). Also read by the remote management security profile (purpose, address_prefix) and by the pre-cluster verification (name, vlan_id, address_prefix, purpose). The key names are the ones of this list: gateway and ip_pool. The older form networking.onprem.logical_networks[] (default_gateway, ip_pools) is deprecated.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/logical_network",
+            "properties": {
+              "name": {
+                "description": "Name of the Azure Local logical network resource.",
+                "type": "string"
+              },
+              "enabled": {
+                "description": "false skips this logical network when the logical networks are created, without removing it from the file. Default true. (Since 5.6.3.)",
+                "type": "boolean",
+                "default": true
+              },
+              "ip_allocation_method": {
+                "description": "How machines on this logical network get addresses: Static (the ip_pool is used; address_prefix is needed) or Dynamic (DHCP). Default Static. ARM and az stack-hci-vm: ipAllocationMethod. (Since 5.6.3.)",
+                "type": "string",
+                "default": "Static",
+                "enum": [
+                  "Static",
+                  "Dynamic"
+                ]
+              },
+              "nsg_name": {
+                "description": "Name of the network security group to associate with the logical network. Used only when the creation task runs with -AssociateNsg; the group must exist (SDN). (Since 5.6.3.)",
+                "type": "string"
+              },
+              "purpose": {
+                "description": "What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote management security profile adds its subnet to the allowed sources of dev and production (a candidate, not a trust: prefer listing the controller addresses in os_configuration.remoting.allowed_source_cidrs). automation, compute, storage and other have no effect on remote management.",
+                "type": "string",
+                "enum": [
+                  "management",
+                  "oob",
+                  "automation",
+                  "compute",
+                  "storage",
+                  "other"
+                ]
+              },
+              "vlan_id": {
+                "description": "VLAN ID of the logical network; 0 for untagged.",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4094
+              },
+              "address_prefix": {
+                "$ref": "#/$defs/cidr",
+                "description": "Address prefix of the logical network in CIDR form."
+              },
+              "gateway": {
+                "$ref": "#/$defs/ipv4",
+                "description": "Default gateway of the logical network. When it is left out the network is created without a gateway (az stack-hci-vm: --no-gateway). The creation script of task-08 still reads this key as default_gateway: a task in docs/design/variables-audit-tasks.md changes the script to this name."
+              },
+              "dns_servers": {
+                "description": "DNS servers handed to machines on this logical network (ARM and az stack-hci-vm: dnsServers).",
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/ipv4"
+                }
+              },
+              "ip_pool": {
+                "description": "The one address range Azure Local hands to virtual machines on this logical network (first and last address, both inside address_prefix); az stack-hci-vm takes one pool per network. Needed when ip_allocation_method is Static. The creation script of task-08 still reads a list called ip_pools (and its type): a task in docs/design/variables-audit-tasks.md changes the script to this name.",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "start": {
+                    "$ref": "#/$defs/ipv4",
+                    "description": "First address of the pool that virtual machines on this logical network draw from."
+                  },
+                  "end": {
+                    "$ref": "#/$defs/ipv4",
+                    "description": "Last address of that pool."
+                  }
+                }
               }
             }
           }
@@ -837,6 +927,7 @@
           "additionalProperties": false,
           "properties": {
             "username": {
+              "description": "User name of the deployment local administrator on every machine (ARM localAdminUserName). Not Administrator or Guest: the deployment renames the built-in account.",
               "type": "string",
               "minLength": 1
             },
@@ -857,15 +948,18 @@
           "properties": {
             "dns_server_config": {
               "description": "ARM dnsServerConfig: use_dns_server (UseDnsServer) or use_forwarder (UseForwarder).",
+              "type": "string",
               "enum": [
                 "use_dns_server",
                 "use_forwarder"
               ]
             },
             "dns_zone": {
+              "description": "DNS zone of the local identity instance, for example the zone the identity endpoints are published in. Used when dns_server_config is use_dns_server.",
               "type": "string"
             },
             "dns_forwarders": {
+              "description": "DNS servers the identity instance forwards to. Used when dns_server_config is use_forwarder (ARM UseForwarder).",
               "type": "array",
               "items": {
                 "$ref": "#/$defs/ipv4"
@@ -874,6 +968,7 @@
           }
         },
         "active_directory": {
+          "description": "The Active Directory the instance joins and its accounts. Applies when scenario.identity is active_directory.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
@@ -928,6 +1023,7 @@
       "properties": {
         "configuration_mode": {
           "description": "ARM configurationMode: express (Express), infra_only (InfraOnly) or keep_storage (KeepStorage).",
+          "type": "string",
           "enum": [
             "express",
             "infra_only",
@@ -941,6 +1037,7 @@
           "properties": {
             "type": {
               "description": "Whether the SAN is fibre_channel or iscsi. This selects the OS configuration's host-side steps: fibre_channel registers the array's MSDSM hardware ID (config/san/msdsm-vendors.json), CLAIMS it for MPIO (mpclaim -n -i -d with the vendor padded to 8 and the product padded to 16 characters, which puts it in MPIOSupportedDeviceList; the MSDSM registration alone is not enough, Azure Local already ships PURE FlashArray registered and the paths stayed separate), sets the load balance policy and the vendor MPIO settings, collects the WWPNs (Get-InitiatorPort) and restarts so MPIO claims the paths, then checks each LUN is seen once and listed by mpclaim -s -d; iscsi does the same and also starts the MSiSCSI service, enables MSDSM auto-claim for iSCSI and makes the target portals and sessions from storage.san.iscsi. Only type, and the array vendor and model (storage.san.array), are needed for the host-side work; the target WWPNs and the nodes' HBA WWPNs are needed later, for zoning and LUN masking (with fibre_channel, do not zone the HBA WWNs until after the Azure Local deployment).",
+              "type": "string",
               "enum": [
                 "fibre_channel",
                 "iscsi"
@@ -957,16 +1054,14 @@
                   "minLength": 1
                 },
                 "vendor": {
+                  "description": "Vendor of the storage array, for example Dell or Pure Storage. The OS configuration matches it with the array's MPIO vendor and product id when it claims the array.",
                   "type": "string",
                   "minLength": 1
                 },
                 "model": {
+                  "description": "Model of the storage array, for example PowerStore 1200T.",
                   "type": "string",
                   "minLength": 1
-                },
-                "management_address": {
-                  "$ref": "#/$defs/ipv4",
-                  "description": "The array's management address, when the SAN deployment drives it."
                 }
               }
             },
@@ -989,10 +1084,6 @@
                       },
                       "switch": {
                         "description": "The fabric's switch, for example a network_devices[].hostname.",
-                        "type": "string"
-                      },
-                      "zone_set": {
-                        "description": "The active zone set on this fabric.",
                         "type": "string"
                       }
                     }
@@ -1056,14 +1147,8 @@
                   "additionalProperties": false,
                   "properties": {
                     "enabled": {
+                      "description": "true when the iSCSI targets require CHAP. The OS configuration then makes the target portals but not the sessions (CHAP sessions need the secret, which no tool reads yet) and says so in its plan.",
                       "type": "boolean"
-                    },
-                    "username": {
-                      "type": "string",
-                      "minLength": 1
-                    },
-                    "secret": {
-                      "$ref": "#/$defs/kv_ref"
                     }
                   }
                 }
@@ -1076,25 +1161,6 @@
             "performance_history_lun_id": {
               "description": "LUN of the performance history volume (20 GB minimum). ARM infraPerfLunId.",
               "type": "string"
-            },
-            "luns": {
-              "type": "array",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "name": {
-                    "type": "string"
-                  },
-                  "size_gib": {
-                    "type": "number",
-                    "exclusiveMinimum": 0
-                  },
-                  "lun_id": {
-                    "type": "string"
-                  }
-                }
-              }
             }
           }
         }
@@ -1107,43 +1173,55 @@
       "properties": {
         "level": {
           "description": "ARM securityLevel: recommended (Recommended) or customized (Customized).",
+          "type": "string",
           "enum": [
             "recommended",
             "customized"
           ]
         },
         "drift_control": {
+          "description": "true turns drift control on: Azure Local resets the security settings to the baseline after drift. Part of the cluster security settings of the deployment.",
           "type": "boolean"
         },
         "credential_guard": {
+          "description": "true turns Credential Guard on in the security settings of the deployment.",
           "type": "boolean"
         },
         "smb_signing": {
+          "description": "true turns SMB signing on in the security settings of the deployment.",
           "type": "boolean"
         },
         "smb_cluster_encryption": {
+          "description": "true encrypts SMB traffic between the cluster nodes (not the storage traffic).",
           "type": "boolean"
         },
         "bitlocker_boot_volume": {
+          "description": "true turns BitLocker on for the boot volume.",
           "type": "boolean"
         },
         "bitlocker_data_volumes": {
+          "description": "true turns BitLocker on for the data volumes.",
           "type": "boolean"
         },
         "wdac": {
+          "description": "true turns Windows Defender Application Control on.",
           "type": "boolean"
         },
         "telemetry": {
+          "description": "What the cluster sends to Microsoft as telemetry. Not read by the tools yet.",
           "type": "object",
           "additionalProperties": false,
           "properties": {
             "streaming_data": {
+              "description": "true sends the streaming diagnostic data.",
               "type": "boolean"
             },
             "episodic_data_upload": {
+              "description": "true sends the episodic diagnostic data.",
               "type": "boolean"
             },
             "eu_location": {
+              "description": "true keeps the diagnostic data in the EU data boundary.",
               "type": "boolean"
             }
           }
@@ -1183,6 +1261,7 @@
             "properties": {
               "purpose": {
                 "description": "general: ARM, Arc, Terraform, Ansible and OS configuration. ztp: the azurelocal-ztp Boot, Bootstrap and Vouchers stages (Windows only).",
+                "type": "string",
                 "default": "general",
                 "enum": [
                   "general",
@@ -1654,7 +1733,8 @@
         "pattern": "^[A-Za-z0-9_.\\[\\]-]{1,128}$"
       },
       "additionalProperties": {
-        "type": "string"
+        "type": "string",
+        "description": "The value of the BIOS attribute, as a string."
       }
     },
     "wwpn": {

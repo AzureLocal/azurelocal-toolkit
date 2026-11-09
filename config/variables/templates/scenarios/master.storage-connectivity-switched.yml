@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for infrastructure.yml for scenario.storage_connectivity = switched with every variable. Schema 5.6.2. Scenario: storage_connectivity=switched.
+# Template for infrastructure.yml for scenario.storage_connectivity = switched with every variable. Schema 5.6.3. Scenario: storage_connectivity=switched.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -17,6 +17,7 @@ _metadata:
   last_updated: "2026-11-06"
   # The tool that wrote the file, for example azurelocal-trailwright 1.1.0.
   generated_by: ""
+  # Free text about this file for the people who keep it.
   notes: ""
 
 # The design choices.
@@ -46,7 +47,7 @@ scenario:
   # one of: iso | simplified; used by: ztp, os_configuration, monitoring
   os_install: "simplified"
   # How the cluster is deployed: the Azure portal or an ARM template.
-  # one of: portal | arm; used by: deployment
+  # one of: portal | arm
   deploy_method: "arm"
   # What kind of environment this is.
   # one of: lab | test | dev | production | dmz; default: "production"; used by: os_configuration
@@ -54,6 +55,7 @@ scenario:
 
 # Where the machines are.
 site:
+  # Name of the customer or organization the site belongs to.
   customer: "Infinite Improbability Corp"
   # Windows time zone ID of the site, for example UTC or Eastern Standard Time.
   # used by: ztp
@@ -63,10 +65,12 @@ site:
   code: "RAL"
   # Physical location, for example a city.
   location: "Raleigh, NC"
+  # Short code or name of the datacenter or room that holds the machines.
   datacenter: "RAL"
   # Display name of the site.
   # required; used by: ztp
   name: "Azure Local Cloud"
+  # Contact (a team mailbox, not a person) who owns the site.
   owner: "AzureLocal Cloud Team Team"
 
 # Which environment this file describes.
@@ -74,9 +78,12 @@ environment:
   # Environment identifier: lowercase letters, digits and hyphens.
   # required
   name: "iic-azl-01"
+  # Class of the environment: lab, demo, poc, dev, test, stg or prd.
   # required; one of: lab | demo | poc | dev | test | stg | prd
   type: "lab"
+  # Contact (a team mailbox) that owns the environment.
   owner: "platform-team@improbability.cloud"
+  # One sentence on what the environment is for.
   description: "Example two-machine Azure Local instance."
 
 # Azure tags applied to the resources the tools create.
@@ -399,10 +406,10 @@ nodes:
     # used by: ztp, os_configuration
     maintenance_address: "192.0.2.10"
     # (since 5.3) 
-    # used by: ztp, deployment
+    # used by: ztp, os_configuration, deployment
     san:
       # The host bus adapters in this machine that reach the SAN: Fibre Channel HBAs, and from 5.4 iSCSI offload adapters. azurelocal-ztp reads the...
-      # used by: ztp, deployment
+      # used by: ztp, os_configuration, deployment
       hbas:
         # Where the HBA is, as a PCIe slot label: Slot 2, Slot2 or slot-2 (the number is what counts). azurelocal-ztp turns the BIOS attribute of tha...
         # required; used by: ztp, deployment
@@ -423,7 +430,7 @@ nodes:
           # used by: ztp, deployment
           model: "Example 32G FC HBA"
           # The ports of the host bus adapter.
-          # used by: deployment
+          # used by: os_configuration, deployment
           ports:
             # A Fibre Channel World Wide Port Name: 16 hexadecimal digits, as 8 colon-separated pairs (50:00:09:72:08:12:34:56) or without colons.
             # required; used by: os_configuration, deployment
@@ -432,7 +439,7 @@ nodes:
               # required; used by: deployment
               fabric: "example"
       # The machine's iSCSI initiator name.
-      # used by: deployment
+      # used by: os_configuration, deployment
       initiator_iqn: ""
 
 # What every machine is.
@@ -520,6 +527,7 @@ hardware:
       # Model of the card, as the machine reports it.
       # used by: os_configuration
       model: ""
+      # The ports of this network card, in the order the vendor numbers them.
       # used by: os_configuration
       ports:
         # Adapter name in the OS, as the intents use it.
@@ -612,6 +620,7 @@ networking:
       # required; used by: os_configuration, deployment
       end: "192.0.2.29"
   # The out-of-band network of the BMCs.
+  # used by: os_configuration
   oob:
     # Subnet of the out-of-band (BMC) network in CIDR form.
     # used by: os_configuration
@@ -639,7 +648,7 @@ networking:
       # used by: os_configuration
       overrides:
         # Data Center Bridging (DCB) quality of service overrides for the storage traffic (ARM qosPolicyOverrides).
-        # used by: os_configuration
+        # used by: os_configuration, deployment
         qos:
           # 802.1p priority value of the cluster heartbeat traffic, 0 to 7 (ARM priorityValue8021Action_Cluster).
           # used by: os_configuration, deployment
@@ -651,7 +660,7 @@ networking:
           # used by: os_configuration, deployment
           smb_bandwidth_percent: 1
         # Physical adapter property overrides (ARM adapterPropertyOverrides: jumboPacket, networkDirect, networkDirectTechnology).
-        # used by: os_configuration
+        # used by: os_configuration, deployment
         adapter:
           # Value of the adapter's JumboPacket property in bytes: 1514 (standard frame), 4088 or 9014 (jumbo).
           # one of: 1514 | 4088 | 9014; used by: os_configuration, deployment
@@ -663,7 +672,7 @@ networking:
           # one of: iwarp | roce | roce_v2; used by: os_configuration, deployment
           network_direct_technology: "iwarp"
         # Virtual switch overrides of the intent's switch-embedded team (ARM virtualSwitchConfigurationOverrides).
-        # used by: os_configuration
+        # used by: os_configuration, deployment
         virtual_switch:
           # SR-IOV on the intent's virtual switch (ARM enableIov).
           # used by: os_configuration, deployment
@@ -674,12 +683,16 @@ networking:
   # Disaggregated (SAN) only: the cluster networks on standalone ports, fabric A and B.
   # when scenario.storage_architecture is san or hybrid; used by: os_configuration, deployment
   cluster_networks:
+    # Name of the cluster network on a standalone port (fabric A or B of a SAN design), for example clusterNetwork-A.
     # required; used by: os_configuration, deployment
     - name: ""
+      # The port of this cluster network, by the key nodes[].network_adapters[].name (the same on every machine).
       # required; used by: os_configuration, deployment
       adapter: ""
+      # VLAN of this cluster network, 0 to 4094. 0 means untagged.
       # required; used by: os_configuration, deployment
       vlan_id: 1
+      # Subnet of this cluster network in CIDR form.
       # required; used by: os_configuration, deployment
       subnet: "192.0.2.0/24"
       # What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote mana...
@@ -688,37 +701,56 @@ networking:
   # Every VLAN in the design, by name.
   # used by: os_configuration
   vlans:
+    # Name of the VLAN, for example storage-1.
     # required; used by: os_configuration
     - name: "storage-1"
+      # The VLAN number, 1 to 4094.
       # required; used by: os_configuration
       id: 711
+      # Subnet that runs in this VLAN, in CIDR form.
       # used by: os_configuration
       subnet: "203.0.113.0/24"
       # Free text.
       # used by: os_configuration
       purpose: ""
-  # Arc VM logical networks created after deployment.
+  # Arc VM logical networks created after deployment (task phase-06 task-08, Invoke-LogicalNetworks-Orchestrated.ps1: az stack-hci-vm network l...
+  # used by: os_configuration, deployment
   logical_networks:
     # Name of the Azure Local logical network resource.
-    # required
+    # required; used by: deployment
     - name: "lnet-workloads"
+      # false skips this logical network when the logical networks are created, without removing it from the file.
+      # default: true; used by: deployment
+      enabled: true
+      # How machines on this logical network get addresses: Static (the ip_pool is used; address_prefix is needed) or Dynamic (DHCP).
+      # one of: Static | Dynamic; default: "Static"; used by: deployment
+      ip_allocation_method: "Static"
+      # Name of the network security group to associate with the logical network.
+      # used by: deployment
+      nsg_name: "nsg-workloads"
       # What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote mana...
-      # one of: management | oob | automation | compute | storage | other; used by: os_configuration
+      # one of: management | oob | automation | compute | storage | other; used by: os_configuration, deployment
       purpose: "compute"
       # VLAN ID of the logical network; 0 for untagged.
+      # used by: deployment
       vlan_id: 2204
       # Address prefix of the logical network in CIDR form.
-      # used by: os_configuration
+      # used by: os_configuration, deployment
       address_prefix: "203.0.113.0/24"
       # Default gateway of the logical network.
+      # used by: deployment
       gateway: "203.0.113.1"
+      # DNS servers handed to machines on this logical network (ARM and az stack-hci-vm: dnsServers).
+      # used by: deployment
       dns_servers: ["192.0.2.4", "192.0.2.5"]
+      # The one address range Azure Local hands to virtual machines on this logical network (first and last address, both inside address_prefix); a...
+      # used by: deployment
       ip_pool:
         # First address of the pool that virtual machines on this logical network draw from.
-        # required
+        # required; used by: deployment
         start: "203.0.113.100"
         # Last address of that pool.
-        # required
+        # required; used by: deployment
         end: "203.0.113.200"
   # Details of scenario.outbound_path.
   # when scenario.outbound_path is proxy or proxy_arc_gateway
@@ -740,16 +772,25 @@ networking:
       # Resource group of the Azure Arc gateway resource.
       # used by: os_configuration
       resource_group: ""
+    # Outbound path over a private connection (ExpressRoute or site-to-site VPN) when scenario.outbound_path is private_path.
     # when scenario.outbound_path is private_path
     private_path:
+      # The private connection: expressroute or site_to_site_vpn.
       # one of: expressroute | site_to_site_vpn
       transport: "expressroute"
+      # Name of the Azure virtual network of the private path.
       virtual_network: ""
+      # Name of the workload subnet of that virtual network.
       workload_subnet: ""
+      # Name of the firewall subnet of that virtual network.
       firewall_subnet: ""
+      # Private address of the firewall on that path.
       firewall_private_ip: "192.0.2.10"
+      # TCP port of the firewall used on that path.
       firewall_port: 1
+      # true when the machines reach Azure Arc through an Azure Arc Private Link Scope on that path.
       arc_private_link_scope: false
+      # Host names and address ranges that bypass the proxy on this path.
       proxy_bypass: []
 
 # Accounts and the identity provider (scenario.identity).
@@ -757,6 +798,7 @@ identity:
   # The deployment's local administrator on every machine.
   # required; used by: ztp, os_configuration, deployment
   local_admin:
+    # User name of the deployment local administrator on every machine (ARM localAdminUserName).
     # required; used by: ztp, os_configuration, deployment, monitoring
     username: "azl-admin"
     # Optional.
@@ -771,15 +813,20 @@ identity:
     # ARM dnsServerConfig: use_dns_server (UseDnsServer) or use_forwarder (UseForwarder).
     # required; one of: use_dns_server | use_forwarder; used by: deployment
     dns_server_config: "use_dns_server"
+    # DNS zone of the local identity instance, for example the zone the identity endpoints are published in.
     # used by: deployment
     dns_zone: ""
+    # DNS servers the identity instance forwards to.
     # used by: deployment
     dns_forwarders: []
   # Entra ID groups, role assignments and PIM.
   entra:
+    # Entra ID groups the instance expects.
     groups:
+      # Display name of the Entra ID group.
       # required
       - name: "grp-iic-azl-operators"
+        # What the group is for, in words.
         purpose: "Operate the instance"
         # Azure role names assigned to the group.
         roles: ["Azure Stack HCI Administrator"]
@@ -787,6 +834,7 @@ identity:
         scope: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-azl-01"
     # User principal names of emergency access accounts, excluded from Conditional Access.
     break_glass_accounts: ["breakglass01@improbability.cloud"]
+  # The Active Directory the instance joins and its accounts.
   # when scenario.identity is active_directory
   active_directory:
     # ARM domainFqdn.
@@ -839,18 +887,23 @@ identity:
     dns_secure_dynamic_updates: false
     # Groups created in the OU for administration of the instance.
     security_groups:
+      # Name of the security group in Active Directory.
       # required; used by: os_configuration
       - name: "sg-iic-azl-01-admins"
+        # What the group is for, in words.
         # used by: os_configuration
         purpose: "Administrators of the instance"
+        # Members of the group, as account names (sAMAccountName or user principal name).
         members: []
         # (since 5.6.1) 
         # used by: os_configuration
         local_groups: []
     # Service and administration accounts, apart from the LCM user.
     service_accounts:
+      # Name of the service account.
       # required
       - name: "svc-iic-azl-backup"
+        # What the account is for, in words.
         purpose: "Backup agent"
         # A Key Vault secret reference: keyvault://<vault>/<secret>.
         password: "keyvault://kv-iic-mgmt-01/svc-backup-password"
@@ -861,31 +914,36 @@ storage:
   # ARM configurationMode: express (Express), infra_only (InfraOnly) or keep_storage (KeepStorage).
   # one of: express | infra_only | keep_storage; used by: deployment
   configuration_mode: "express"
+  # The cluster shared volumes to create after deployment.
   volumes:
+    # Name of the volume, for example vol-workloads-01.
     # required
     - name: "vol-workloads-01"
+      # Size of the volume in GiB.
       # required
       size_gib: 4096
+      # Resiliency of the volume: two_way, three_way, four_way, parity or nested_two_way.
       # one of: two_way | three_way | four_way | parity | nested_two_way
       resiliency: "two_way"
   # The external SAN of a disaggregated (san) or hybrid deployment.
-  # when scenario.storage_architecture is san or hybrid; used by: deployment
+  # when scenario.storage_architecture is san or hybrid; used by: os_configuration, deployment
   san:
     # Whether the SAN is fibre_channel or iscsi.
     # required; one of: fibre_channel | iscsi; used by: os_configuration, deployment
     type: "fibre_channel"
     # (since 5.3) 
-    # used by: deployment
+    # used by: os_configuration, deployment
     array:
       # The array's name, for example its hostname in the array manager.
       # required; used by: deployment
       name: "example"
+      # Vendor of the storage array, for example Dell or Pure Storage.
       # required; used by: os_configuration, deployment
       vendor: "example"
+      # Model of the storage array, for example PowerStore 1200T.
       # required; used by: os_configuration, deployment
       model: "example"
       # The array's management address, when the SAN deployment drives it.
-      # used by: deployment
       management_address: "192.0.2.10"
     # (since 5.3) 
     # used by: deployment
@@ -900,7 +958,6 @@ storage:
           # used by: deployment
           switch: ""
           # The active zone set on this fabric.
-          # used by: deployment
           zone_set: ""
       # The array's target ports (WWPNs) and the fabric each is cabled to.
       # used by: deployment
@@ -912,29 +969,29 @@ storage:
           # required; used by: deployment
           fabric: "example"
     # (since 5.3) 
-    # used by: deployment
+    # used by: os_configuration, deployment
     iscsi:
       # The array's iSCSI targets.
-      # used by: deployment
+      # used by: os_configuration, deployment
       targets:
         # An iSCSI qualified name (iqn.yyyy-mm.reversed.domain[:identifier]), or an eui. or naa. name.
-        # required; used by: deployment
+        # required; used by: os_configuration, deployment
         - iqn: ""
           # The target portals: an IPv4 address, optionally with a port (default 3260), for example 198.51.100.10 or 198.51.100.10:3260.
-          # required; used by: deployment
+          # required; used by: os_configuration, deployment
           portals: []
           # The storage network this target serves, matching the iSCSI port role: A for iscsi:a, B for iscsi:b.
-          # used by: deployment
+          # used by: os_configuration, deployment
           fabric: "example"
       # CHAP authentication of the sessions.
-      # used by: deployment
+      # used by: os_configuration, deployment
       chap:
-        # required; used by: deployment
+        # true when the iSCSI targets require CHAP.
+        # required; used by: os_configuration, deployment
         enabled: false
-        # used by: deployment
+        # CHAP user name for the iSCSI targets.
         username: "example"
         # A Key Vault secret reference: keyvault://<vault>/<secret>.
-        # used by: deployment
         secret: "keyvault://kv-example-01/secret"
     # LUN of the infrastructure volume (250 GB minimum).
     # used by: os_configuration, deployment
@@ -942,13 +999,15 @@ storage:
     # LUN of the performance history volume (20 GB minimum).
     # used by: os_configuration, deployment
     performance_history_lun_id: ""
-    # used by: deployment
+    # The LUNs the array presents to the cluster.
     luns:
-      # required; used by: deployment
+      # Name of the LUN as it is on the array.
+      # required
       - name: ""
-        # required; used by: deployment
+        # Size of the LUN in GiB.
+        # required
         size_gib: 0
-        # used by: deployment
+        # The logical unit number the array presents the LUN as, for example 2.
         lun_id: ""
 
 # Security settings of the deployment.
@@ -956,82 +1015,129 @@ security:
   # ARM securityLevel: recommended (Recommended) or customized (Customized).
   # one of: recommended | customized; used by: deployment
   level: "recommended"
+  # true turns drift control on: Azure Local resets the security settings to the baseline after drift.
   # used by: deployment
   drift_control: true
+  # true turns Credential Guard on in the security settings of the deployment.
   # used by: deployment
   credential_guard: true
+  # true turns SMB signing on in the security settings of the deployment.
   # used by: deployment
   smb_signing: true
+  # true encrypts SMB traffic between the cluster nodes (not the storage traffic).
   # used by: deployment
   smb_cluster_encryption: false
+  # true turns BitLocker on for the boot volume.
   # used by: deployment
   bitlocker_boot_volume: true
+  # true turns BitLocker on for the data volumes.
   # used by: deployment
   bitlocker_data_volumes: true
+  # true turns Windows Defender Application Control on.
   # used by: deployment
   wdac: true
+  # Name of the Key Vault that keeps the BitLocker recovery keys.
   backup_key_vault: ""
+  # What the cluster sends to Microsoft as telemetry.
+  # used by: deployment
   telemetry:
+    # true sends the streaming diagnostic data.
     # used by: deployment
     streaming_data: true
+    # true sends the episodic diagnostic data.
     # used by: deployment
     episodic_data_upload: true
+    # true keeps the diagnostic data in the EU data boundary.
     # used by: deployment
     eu_location: false
 
 # SDN enabled by Azure Arc.
 sdn:
+  # true when Software Defined Networking is turned on for the instance.
   # required
   enabled: false
+  # Prefix of the names of the SDN resources.
   prefix: ""
+  # How the SDN DNS records are created: dynamic or static.
   # one of: dynamic | static
   dns_records: "dynamic"
+  # true when the default network access policy of the SDN allows traffic that no rule denies.
   default_access_policy: false
 
+# Day-2 choices: updates, backup, disaster recovery, notifications, licensing and monitoring.
 operations:
+  # How updates are applied: portal or powershell.
   # one of: portal | powershell
   update_method: "portal"
+  # Backup of the instance and its workloads.
   backup:
+    # true when backup is part of the design.
     # required
     enabled: false
+    # What is backed up: host, guest or both.
     # one of: host | guest | both
     approach: "host"
+    # Name of the backup solution, for example Azure Backup.
     solution: ""
+    # Name of the Recovery Services vault.
     recovery_vault: ""
+    # Resource group of the Recovery Services vault.
     resource_group: ""
+    # Name of the backup policy.
     policy: ""
+  # Disaster recovery of the workloads.
   disaster_recovery:
+    # none, asr (Azure Site Recovery) or hyper_v_replica.
     # one of: none | asr | hyper_v_replica
     method: "none"
+    # Name of the Recovery Services vault used for replication.
     recovery_vault: ""
+    # Resource group of the Recovery Services vault.
     resource_group: ""
+    # Name of the replication policy.
     replication_policy: ""
+    # Name of the recovery plan.
     recovery_plan: ""
     # Network the VMs fail over to.
     network: ""
     # Isolated network for test failovers.
     test_network: ""
+    # Storage account that holds replication data.
     storage_account: ""
+    # Recovery time objective in minutes.
     target_rto_minutes: 0
+    # Recovery point objective in minutes.
     target_rpo_minutes: 0
   # Who hears about alerts.
   notifications:
+    # Addresses (team mailboxes) that receive the notifications of the operations tools.
     emails: ["noc@improbability.cloud"]
     # A Key Vault secret reference: keyvault://<vault>/<secret>.
     teams_webhook: "keyvault://kv-iic-mgmt-01/teams-webhook-url"
+  # Licensing benefits the instance uses.
   licensing:
     # Azure Hybrid Benefit for the host fee and Windows Server guests.
     azure_hybrid_benefit: true
+    # true when Windows Server guest licensing through Azure subscription is used.
     windows_server_subscription: false
+    # true when Azure Verification for VMs is turned on, so Windows Server 2025 guests get the Azure-only benefits.
     azure_verification_for_vms: false
+  # Azure Monitor for the instance.
   monitoring:
+    # true when Azure Monitor is part of the design.
     # required
     enabled: true
+    # Name of the Log Analytics workspace.
     log_analytics_workspace: "log-iic-azl-01"
+    # Resource group of the Log Analytics workspace.
     workspace_resource_group: "rg-iic-mgmt-01"
+    # Name of the data collection rule.
     data_collection_rule: ""
+    # Name of the data collection endpoint.
     data_collection_endpoint: ""
+    # true when health alerts are created.
     health_alerts: true
+    # Address that receives the alerts (a team mailbox).
     alert_email: ""
 
 # How the OS gets onto the machines (scenario.os_install), and the OS version.
@@ -1259,88 +1365,136 @@ os_configuration:
 # Disconnected operations: the control plane appliance, its endpoints, identity and certificates.
 # when scenario.connectivity is disconnected
 disconnected:
+  # management: this instance runs the control plane appliance. workload: it is managed by a management instance.
   # required; one of: management | workload
   role: "management"
+  # Folder the control plane appliance files are kept in.
   base_path: ""
+  # DNS suffix of the disconnected control plane.
   domain_suffix: ""
+  # Address of the appliance's ingress (the endpoint operators and tools call).
   ingress:
+    # IPv4 address of the ingress.
     ip_address: "192.0.2.10"
+    # Default gateway of the ingress network.
     gateway: "192.0.2.10"
+    # Prefix length of the ingress network, 8 to 30.
     prefix_length: 8
+  # Address of the appliance's management endpoint.
   management:
+    # IPv4 address of the management endpoint.
     ip_address: "192.0.2.10"
+    # Default gateway of the management network.
     gateway: "192.0.2.10"
+    # Prefix length of the management network, 8 to 30.
     prefix_length: 8
+  # DNS server the control plane uses.
   dns_server: "192.0.2.10"
+  # Time sources of the control plane, as host names or addresses.
   time_servers: []
+  # The identity provider of the disconnected control plane (Active Directory Federation Services).
   identity:
+    # URL of the identity authority (for example the AD FS endpoint).
     authority: ""
+    # Application (client) id registered for the control plane in the identity provider.
     client_id: ""
+    # User principal name of the first operator.
     root_operator_upn: ""
+    # LDAP server that serves the directory.
     ldap_server: ""
+    # true to use LDAP over TLS.
     ldaps: false
+    # Identifier of the directory group that is synchronized.
     sync_group_identifier: ""
+  # Name of the operator subscription.
   operator_subscription_name: ""
+  # Resource group the appliance resources are placed in.
   resource_group: ""
+  # true when an internal certificate authority issues the appliance certificates.
   internal_ca: false
 
 # Switches, firewalls, console servers and other devices in the design.
 network_devices:
+  # Host name of the network device.
   # required
   - hostname: "sw01-iic"
+    # Kind of device: switch, firewall, router, console_server, load_balancer or wireless_controller.
     # required; one of: switch | firewall | router | console_server | load_balancer | wireless_controller
     type: "switch"
+    # primary, secondary or standalone.
     # one of: primary | secondary | standalone
     role: "primary"
+    # Vendor of the device.
     vendor: "Dell"
+    # Model of the device.
     model: "S5248F-ON"
+    # Serial number of the device.
     serial_number: ""
+    # Firmware or OS version of the device.
     firmware_version: ""
+    # How the device is managed.
     management:
       # An IPv4 address, or dhcp.
       ip_address: "198.51.100.6"
+      # VLAN of the management interface of the device.
       vlan_id: 0
+      # Protocol used to manage the device: ssh, https, telnet or snmp.
       # one of: ssh | https | telnet | snmp
       protocol: "ssh"
+    # The login of the device.
     credentials:
+      # User name of the device login.
       # required
       username: "admin"
       # A Key Vault secret reference: keyvault://<vault>/<secret>.
       # required
       password: "keyvault://kv-iic-mgmt-01/switch-admin-password"
+    # High availability of the device.
     ha:
+      # true when the device is one half of a high availability pair.
       enabled: false
+      # The high availability mode, as the vendor names it.
       mode: ""
 
 # Part 2 of the implementation steps: the Azure foundation the instance depends on.
 landing_zone:
+  # Azure management groups of the landing zone.
   management_groups:
+    # Name (id) of the management group.
     # required
     - name: "mg-iic"
+      # Display name of the management group.
       display_name: "IIC"
       # Parent management group name; empty for the tenant root.
       parent: "mg-iic"
   # Subscriptions by role. azure.subscription_id is the one the instance uses.
   # used by: cicd_infra
   subscriptions:
+    # Name of the subscription; the other landing_zone entries refer to it.
     # required; used by: cicd_infra
     - name: "sub-iic-connectivity"
+      # Subscription id (a GUID).
       # used by: cicd_infra
       id: "00000000-0000-0000-0000-000000000000"
       # What the subscription is for.
       # required; one of: connectivity | identity | management | security | devops | workload | azure_local; used by: cicd_infra
       role: "connectivity"
+      # Management group the subscription is under.
       # used by: cicd_infra
       management_group: "mg-iic-platform"
+  # Resource groups of the landing zone.
   # used by: cicd_infra
   resource_groups:
+    # Name of the resource group.
     # required; used by: cicd_infra
     - name: "rg-iic-conn-01"
       # Name of a subscription in landing_zone.subscriptions.
       # used by: cicd_infra
       subscription: "sub-iic-connectivity"
+      # Azure region of the resource group.
       # used by: cicd_infra
       location: "eastus"
+      # What the resource group is for, in words.
       # used by: cicd_infra
       purpose: "hub network"
   # Resource provider namespaces to register, for example Microsoft.AzureStackHCI.
@@ -1348,110 +1502,170 @@ landing_zone:
   # Azure virtual networks.
   # used by: cicd_infra
   networks:
+    # Name of the virtual network.
     # required; used by: cicd_infra
     - name: "vnet-iic-hub-01"
+      # Name of the subscription (landing_zone.subscriptions[].name) that holds the network.
       # used by: cicd_infra
       subscription: "sub-iic-connectivity"
+      # Resource group of the network.
       # used by: cicd_infra
       resource_group: "rg-iic-conn-01"
+      # Azure region of the network.
       # used by: cicd_infra
       location: "eastus"
+      # hub or spoke.
       # one of: hub | spoke; used by: cicd_infra
       role: "hub"
+      # Address ranges of the virtual network, in CIDR form.
       # required; used by: cicd_infra
       address_space: ["10.20.0.0/22"]
+      # DNS servers of the virtual network.
       # used by: cicd_infra
       dns_servers: ["192.0.2.4", "192.0.2.5"]
+      # Subnets of the virtual network.
       # used by: cicd_infra
       subnets:
+        # Name of the subnet, for example GatewaySubnet.
         # required; used by: cicd_infra
         - name: "GatewaySubnet"
+          # Address range of the subnet in CIDR form.
           # required; used by: cicd_infra
           prefix: "10.20.0.0/27"
+          # Name of the network security group on the subnet.
           # used by: cicd_infra
           network_security_group: ""
+          # Name of the route table on the subnet.
           # used by: cicd_infra
           route_table: ""
       # Names of networks this one peers with.
-      # used by: cicd_infra
       peer_with: ["vnet-iic-hub-01"]
+  # Gateways, bastion and firewall of the connectivity hub.
   connectivity:
+    # The VPN gateway of the hub.
     vpn_gateway:
+      # Name of the VPN gateway.
       # required
       name: "vpng-iic-hub-01"
+      # Resource group of the VPN gateway.
       resource_group: "rg-iic-conn-01"
+      # Name of the virtual network the gateway sits in.
       network: "vnet-iic-hub-01"
+      # SKU of the VPN gateway, for example VpnGw1AZ.
       sku: "VpnGw1AZ"
+      # BGP autonomous system number of the gateway.
       bgp_asn: 65515
+      # Site-to-site connections to other sites.
       site_to_site:
+        # Name of the connection.
         # required
         - connection_name: "cn-iic-dal-01"
+          # Name of the local network gateway resource.
           local_gateway_name: "lgw-iic-dal-01"
+          # Public IPv4 address of the peer VPN device.
           peer_public_ip: "203.0.113.1"
+          # Address ranges behind the peer, in CIDR form.
           peer_address_prefixes: ["192.0.2.0/24", "198.51.100.0/24"]
+          # BGP peer address of the peer device.
           peer_bgp_address: "192.0.2.10"
+          # BGP autonomous system number of the peer.
           peer_asn: 1
           # A Key Vault secret reference: keyvault://<vault>/<secret>.
           # required
           shared_key: "keyvault://kv-iic-mgmt-01/vpn-shared-key"
+      # Point-to-site VPN for individual users.
       point_to_site:
+        # Address pool handed to point-to-site clients, in CIDR form.
         # required
         address_pool: "192.0.2.0/24"
+        # How clients sign in: entra_id, certificate or radius.
         # one of: entra_id | certificate | radius
         authentication: "entra_id"
+    # Azure Bastion of the hub.
     bastion:
+      # Name of the Bastion host.
       # required
       name: "bas-iic-hub-01"
+      # Resource group of the Bastion host.
       resource_group: "rg-iic-conn-01"
+      # SKU of the Bastion host, for example Standard.
       sku: "Standard"
+    # Azure Firewall of the hub.
     firewall:
+      # Name of the firewall.
       # required
       name: ""
+      # Resource group of the firewall.
       resource_group: ""
+      # SKU of the firewall.
       sku: ""
+      # Private address of the firewall.
       private_ip: "192.0.2.10"
   # Management VMs: domain controllers, jump box, Windows Admin Center, syslog.
   virtual_machines:
+    # Name of the virtual machine.
     # required
     - name: "vm-iic-dc-01"
       # Up to 15 letters, digits and hyphens.
       hostname: "iic-dc01"
+      # What the machine is: domain_controller, jumpbox, windows_admin_center, syslog, management or other.
       # required; one of: domain_controller | jumpbox | windows_admin_center | syslog | management | other
       role: "domain_controller"
       # Where the VM runs.
       # one of: azure | azure_local | onprem
       deploy_target: "azure"
+      # Name of the subscription that holds the machine.
       subscription: "sub-iic-management"
+      # Resource group of the machine.
       resource_group: "rg-iic-mgmt-01"
+      # Name of the virtual network the machine is in.
       network: "vnet-iic-mgmt-01"
+      # Name of the subnet the machine is in.
       subnet: "snet-iic-mgmt-01"
+      # Private IPv4 address of the machine.
       private_ip: "10.20.4.10"
+      # Azure VM size, for example Standard_D2s_v5.
       size: "Standard_D2s_v5"
+      # Operating system image of the machine.
       os: ""
+      # Local administrator user name of the machine.
       admin_username: "iic-vmadmin"
       # A Key Vault secret reference: keyvault://<vault>/<secret>.
       admin_password: "keyvault://kv-iic-mgmt-01/vm-admin-password"
+  # The Log Analytics workspace of the landing zone.
   log_analytics:
+    # Name of the workspace.
     # required
     name: "log-iic-azl-01"
+    # Resource group of the workspace.
     resource_group: "rg-iic-mgmt-01"
+    # Days the workspace keeps data.
     retention_days: 90
+  # Storage accounts of the landing zone.
   storage_accounts:
+    # Name of the storage account (3 to 24 lowercase letters and digits).
     # required
     - name: "stiicazl01wit"
+      # Resource group of the storage account.
       resource_group: "rg-iic-azl-01"
+      # SKU of the storage account, for example Standard_LRS.
       sku: "Standard_LRS"
+      # What the account is for, for example cloud witness.
       purpose: "cloud witness"
 
 # Part 1 of the implementation steps: the pipeline platform, the project and its settings, the environments, the sign-in to Azure and the sel...
+# used by: cicd_infra
 devops:
+  # The CI/CD platform: github, gitlab or azure_devops.
   # required; one of: github | gitlab | azure_devops; used by: cicd_infra
   platform: "github"
+  # URL of the CI/CD platform (an organization or instance URL).
   # used by: cicd_infra
   url: "https://github.com"
   # Organization, group or project collection.
   # used by: cicd_infra
   organization: "improbability-cloud"
+  # Name of the project or organization on the platform.
   # used by: cicd_infra
   project: "iic-azure-local"
   # (since 5.5) 
@@ -1574,8 +1788,10 @@ devops:
       # The runner subnet inside runner_network.address_space.
       # used by: cicd_infra
       subnet:
+        # Name of the subnet the runner machines are placed in.
         # required; used by: cicd_infra
         name: "snet-iic-runner-lnx-01"
+        # Address range of that subnet, in CIDR form.
         # required; used by: cicd_infra
         prefix: "10.20.10.0/26"
       # Data disk for the ZTP media, images and vouchers. 512 or more for ztp.
@@ -1584,10 +1800,13 @@ devops:
   # (since 5.5) 
   # used by: cicd_infra
   runner_network:
+    # Name of the virtual network the runners are placed in.
     # used by: cicd_infra
     vnet_name: "vnet-iic-devops-01"
+    # Address ranges of that virtual network, in CIDR form.
     # used by: cicd_infra
     address_space: ["10.20.10.0/24"]
+    # DNS servers of that virtual network.
     # used by: cicd_infra
     dns_servers: []
     # Peering with the hub VNet.
@@ -1638,22 +1857,31 @@ devops:
     # Vaults the runners read secrets from.
     # used by: cicd_infra
     key_vaults: ["kv-iic-mgmt-01"]
+  # One runner (the form before devops.runners[]).
   # used by: cicd_infra
   runner:
+    # Name of the runner.
     # required; used by: cicd_infra
     name: ""
+    # Kind of runner: vm, container_app or existing.
     # required; one of: vm | container_app | existing; used by: cicd_infra
     type: "vm"
+    # Subscription of the runner.
     # used by: cicd_infra
     subscription: ""
+    # Resource group of the runner.
     # used by: cicd_infra
     resource_group: ""
+    # Virtual network of the runner.
     # used by: cicd_infra
     network: ""
+    # Subnet of the runner.
     # used by: cicd_infra
     subnet: ""
+    # Private address of the runner.
     # used by: cicd_infra
     private_ip: "192.0.2.10"
+    # VM size of the runner.
     # used by: cicd_infra
     size: ""
     # Runner tags or labels that jobs select.
@@ -1662,6 +1890,7 @@ devops:
     # A Key Vault secret reference: keyvault://<vault>/<secret>.
     # used by: cicd_infra
     registration_token: "keyvault://kv-example-01/registration-token"
+  # Where the Terraform state is kept.
   # used by: cicd_infra
   state:
     # (since 5.5) 
@@ -1670,10 +1899,13 @@ devops:
     # (since 5.5) 
     # default: "cicd-infra.tfstate"; used by: cicd_infra
     key: "cicd-infra.tfstate"
+    # Storage account that holds the state.
     # used by: cicd_infra
     storage_account: "stiictfstate01"
+    # Blob container that holds the state.
     # used by: cicd_infra
     container: "tfstate"
+    # Resource group of the state storage account.
     # used by: cicd_infra
     resource_group: "rg-iic-mgmt-01"
 

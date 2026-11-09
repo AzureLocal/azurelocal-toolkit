@@ -6,14 +6,18 @@
 .DESCRIPTION
     One row per key, grouped by section: path, what it is, type, whether it is required in full and in ztp scope, the default,
     an example, where to get the value, and which tools read it. Types, required keys, defaults and descriptions come from
-    config/variables/schema/infrastructure.schema.json. Examples come from the templates and example files. Where to get a
-    value, and which tools read a key, come from config/variables/docs/variables-reference.metadata.psd1.
+    config/variables/schema/infrastructure.schema.json. Examples come from the templates and example files. Which tools read a
+    key comes from the used_by of the master registry (config/variables/schema/master-registry.yaml); where to get a value
+    comes from config/variables/docs/variables-reference.metadata.psd1.
 
     The page is generated: edit the schema or the metadata, then run this script. With -Check nothing is written; the script
     exits 1 when the page on disk differs from what it would write (the Pester tests run this).
 
 .PARAMETER SchemaPath
     The JSON schema. Default: config/variables/schema/infrastructure.schema.json.
+
+.PARAMETER RegistryPath
+    The master registry, for used_by. Default: config/variables/schema/master-registry.yaml.
 
 .PARAMETER MetadataPath
     Facts the schema doesn't hold. Default: config/variables/docs/variables-reference.metadata.psd1.
@@ -36,6 +40,7 @@
 [CmdletBinding()]
 param(
     [string]$SchemaPath = (Join-Path $PSScriptRoot '../../../config/variables/schema/infrastructure.schema.json'),
+    [string]$RegistryPath = (Join-Path $PSScriptRoot '../../../config/variables/schema/master-registry.yaml'),
     [string]$MetadataPath = (Join-Path $PSScriptRoot '../../../config/variables/docs/variables-reference.metadata.psd1'),
     [string]$OutputPath = (Join-Path $PSScriptRoot '../../../config/variables/docs/VARIABLES.md'),
     [string]$ExamplesPath = (Join-Path $PSScriptRoot '../../../config/variables/examples'),
@@ -48,6 +53,19 @@ Import-Module powershell-yaml -ErrorAction Stop
 $schema = Get-Content -LiteralPath $SchemaPath -Raw | ConvertFrom-Json -AsHashtable
 $meta = Import-PowerShellDataFile -LiteralPath $MetadataPath
 $defs = $schema['$defs']
+
+# Who reads a key: the used_by of the master registry (one source; the metadata file no longer lists readers).
+Import-Module (Join-Path $PSScriptRoot '../../../config/variables/scripts/VariableRegistry.psm1') -Force
+$usedBy = @{}
+foreach ($v in (Get-RegistryVariable -Path $RegistryPath)) {
+    if ($v.Path -like 'tools.*') { continue }
+    $usedBy[($v.Path -replace '\.\*$', '.<attribute>')] = @($v.UsedBy -split '\|' | Where-Object { $_ })
+}
+function Get-UsedBy([string]$Path) {
+    if ($usedBy.ContainsKey($Path) -and $usedBy[$Path].Count) { return $usedBy[$Path] }
+    if ($Path.EndsWith('.<attribute>')) { $parent = $Path.Substring(0, $Path.Length - '.<attribute>'.Length); if ($usedBy.ContainsKey($parent)) { return $usedBy[$parent] } }
+    return @()
+}
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Schema helpers
@@ -252,10 +270,13 @@ function Get-RequiredCell([bool]$Required, [bool]$Ancestors, [string]$Path, [str
 function Add-Row($Path, $Resolved, [bool]$ReqFull, [bool]$ReqZtp, [bool]$AncFull, [bool]$AncZtp, [bool]$IsMap) {
     $n = $Resolved.Node
     $desc = [string](Get-Val $n 'description')
-    $ztp = [bool](@($meta.Ztp | Where-Object { $Path -match $_ }).Count)
-    $os = [bool](@($meta.OsConfiguration | Where-Object { $Path -match $_ }).Count)
-    $cicd = [bool](@($meta.CicdInfra | Where-Object { $Path -match $_ }).Count)
-    $arm = ($desc -cmatch '\bARM\b') -or [bool](@($meta.ArmDeployment | Where-Object { $Path -match $_ }).Count)
+    $ub = Get-UsedBy $Path
+    $ztp = 'ztp' -in $ub
+    $os = 'os_configuration' -in $ub
+    $cicd = 'cicd_infra' -in $ub
+    $arm = 'deployment' -in $ub
+    $son = 'monitoring' -in $ub
+    $disc = 'discovery' -in $ub
     $tw = -not [bool](@($meta.TrailwrightNot | Where-Object { $Path -match $_ }).Count)
     $source = ($meta.Sources | Where-Object { $Path -match $_.Pattern } | Select-Object -First 1)
     $meaning = Get-FirstSentence $desc
@@ -273,7 +294,7 @@ function Add-Row($Path, $Resolved, [bool]$ReqFull, [bool]$ReqZtp, [bool]$AncFull
             Default  = Get-DefaultText $Resolved
             Example  = Get-ExampleText $Path $IsMap
             Source   = $(if ($source) { $source.Text } else { '' })
-            Zt       = $ztp; Os = $os; Arm = $arm; Tw = $tw; Ci = $cicd
+            Zt       = $ztp; Os = $os; Arm = $arm; Tw = $tw; Ci = $cicd; So = $son; Di = $disc
             IsSecret = ($Resolved.Ref -eq 'kv_ref')
             Deprecated = ($n -is [System.Collections.IDictionary] -and $n.Contains('deprecated') -and $n['deprecated'] -eq $true)
         })
@@ -353,7 +374,7 @@ Out-Line '| Required: full / ztp | Whether the key must be set in a file with `_
 Out-Line '| Default | What a tool does when the key is left out (from the schema). |'
 Out-Line '| Example | The value in the templates and examples. Placeholders only. |'
 Out-Line '| Where to get the value | Where the real value comes from. |'
-Out-Line '| Read by | **ZTP**: azurelocal-ztp (the list is what its `ConvertFrom-ZtpInfrastructureV5` reads, plus the 5.3 and 5.4 keys). **OS configuration**: the toolkit''s OS configuration phase (by design, by section). **CI/CD infrastructure**: tasks 01 to 06 of automation / 01-cicd-infra (the `devops` section, plus the Azure identifiers they sign in with). **ARM deployment**: the key becomes a parameter of Microsoft''s ARM deployment template (the schema description names the parameter), or is part of the SAN (`storage.san`, `nodes[].san`) that the ARM and SAN deployment reads. **Trailwright**: it can write the key from its design (host-local paths and files are set by the operator). |'
+Out-Line '| Read by | From `used_by` in the master registry. **ZTP**: azurelocal-ztp. **OS configuration**: the toolkit''s OS configuration phase. **CI/CD infrastructure**: tasks 01 to 06 of automation / 01-cicd-infra (the `devops` section, plus the Azure identifiers they sign in with). **ARM deployment**: the ARM Validate and Deploy run and the pre-cluster verification: the key becomes a parameter of Microsoft''s ARM deployment template (the schema description names the parameter), is part of the SAN (`storage.san`, `nodes[].san`), or is a check of the gate. **Sonar**: azurelocal-sonar. **Discovery**: the Redfish hardware discovery. **Trailwright**: it can write the key from its design (host-local paths and files are set by the operator). A key no tool reads has an empty cell besides Trailwright, and says "Not read by the tools yet". |'
 Out-Line
 Out-Line 'Two templates start a file: [`infrastructure.example.yml`](../examples/infrastructure.example.yml) (full scope: ZTP, OS configuration and the ARM deployment) and [`infrastructure.ztp.example.yml`](../examples/infrastructure.ztp.example.yml) (ztp scope: only what azurelocal-ztp reads). The generated [master file and purpose templates](../templates) list every variable, or only the ones a tool reads. See [Which template](infrastructure-file.md#which-template).'
 Out-Line
@@ -415,6 +436,8 @@ foreach ($section in $topProps) {
         if ($r.Os) { $readers += 'OS configuration' }
         if ($r.Ci) { $readers += 'CI/CD infrastructure' }
         if ($r.Arm) { $readers += 'ARM deployment' }
+        if ($r.So) { $readers += 'Sonar' }
+        if ($r.Di) { $readers += 'Discovery' }
         if ($r.Tw) { $readers += 'Trailwright' }
         $meaning = $r.Meaning
         if ($r.Deprecated) { $meaning = "Deprecated. $meaning" }

@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that 'ztp' reads (a strict subset of the master file). Schema 5.6.2.
+# Template for the part of infrastructure.yml that 'ztp' reads (a strict subset of the master file). Schema 5.6.3.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -17,6 +17,7 @@ _metadata:
   last_updated: "2026-11-06"
   # The tool that wrote the file, for example azurelocal-trailwright 1.1.0.
   generated_by: ""
+  # Free text about this file for the people who keep it.
   notes: ""
 
 # The design choices.
@@ -163,10 +164,10 @@ nodes:
     # used by: ztp, os_configuration
     maintenance_address: "192.0.2.10"
     # (since 5.3) 
-    # used by: ztp, deployment
+    # used by: ztp, os_configuration, deployment
     san:
       # The host bus adapters in this machine that reach the SAN: Fibre Channel HBAs, and from 5.4 iSCSI offload adapters. azurelocal-ztp reads the...
-      # used by: ztp, deployment
+      # used by: ztp, os_configuration, deployment
       hbas:
         # Where the HBA is, as a PCIe slot label: Slot 2, Slot2 or slot-2 (the number is what counts). azurelocal-ztp turns the BIOS attribute of tha...
         # required; used by: ztp, deployment
@@ -281,6 +282,7 @@ identity:
   # The deployment's local administrator on every machine.
   # required; used by: ztp, os_configuration, deployment
   local_admin:
+    # User name of the deployment local administrator on every machine (ARM localAdminUserName).
     # required; used by: ztp, os_configuration, deployment, monitoring
     username: "azl-admin"
     # At least 14 characters with lowercase, uppercase, a digit and a special character.

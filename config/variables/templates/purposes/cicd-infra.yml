@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that 'cicd_infra' reads (a strict subset of the master file). Schema 5.6.2.
+# Template for the part of infrastructure.yml that 'cicd_infra' reads (a strict subset of the master file). Schema 5.6.3.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -17,6 +17,7 @@ _metadata:
   last_updated: "2026-11-06"
   # The tool that wrote the file, for example azurelocal-trailwright 1.1.0.
   generated_by: ""
+  # Free text about this file for the people who keep it.
   notes: ""
 
 # Azure tags applied to the resources the tools create.
@@ -78,66 +79,86 @@ landing_zone:
   # Subscriptions by role. azure.subscription_id is the one the instance uses.
   # used by: cicd_infra
   subscriptions:
+    # Name of the subscription; the other landing_zone entries refer to it.
     # required; used by: cicd_infra
     - name: "sub-iic-connectivity"
+      # Subscription id (a GUID).
       # used by: cicd_infra
       id: "00000000-0000-0000-0000-000000000000"
       # What the subscription is for.
       # required; one of: connectivity | identity | management | security | devops | workload | azure_local; used by: cicd_infra
       role: "connectivity"
+      # Management group the subscription is under.
       # used by: cicd_infra
       management_group: "mg-iic-platform"
+  # Resource groups of the landing zone.
   # used by: cicd_infra
   resource_groups:
+    # Name of the resource group.
     # required; used by: cicd_infra
     - name: "rg-iic-conn-01"
       # Name of a subscription in landing_zone.subscriptions.
       # used by: cicd_infra
       subscription: "sub-iic-connectivity"
+      # Azure region of the resource group.
       # used by: cicd_infra
       location: "eastus"
+      # What the resource group is for, in words.
       # used by: cicd_infra
       purpose: "hub network"
   # Azure virtual networks.
   # used by: cicd_infra
   networks:
+    # Name of the virtual network.
     # required; used by: cicd_infra
     - name: "vnet-iic-hub-01"
+      # Name of the subscription (landing_zone.subscriptions[].name) that holds the network.
       # used by: cicd_infra
       subscription: "sub-iic-connectivity"
+      # Resource group of the network.
       # used by: cicd_infra
       resource_group: "rg-iic-conn-01"
+      # Azure region of the network.
       # used by: cicd_infra
       location: "eastus"
+      # hub or spoke.
       # one of: hub | spoke; used by: cicd_infra
       role: "hub"
+      # Address ranges of the virtual network, in CIDR form.
       # required; used by: cicd_infra
       address_space: ["10.20.0.0/22"]
+      # DNS servers of the virtual network.
       # used by: cicd_infra
       dns_servers: ["192.0.2.4", "192.0.2.5"]
+      # Subnets of the virtual network.
       # used by: cicd_infra
       subnets:
+        # Name of the subnet, for example GatewaySubnet.
         # required; used by: cicd_infra
         - name: "GatewaySubnet"
+          # Address range of the subnet in CIDR form.
           # required; used by: cicd_infra
           prefix: "10.20.0.0/27"
+          # Name of the network security group on the subnet.
           # used by: cicd_infra
           network_security_group: ""
+          # Name of the route table on the subnet.
           # used by: cicd_infra
           route_table: ""
-      # Names of networks this one peers with.
-      # used by: cicd_infra
-      peer_with: ["vnet-iic-hub-01"]
 
 # Part 1 of the implementation steps: the pipeline platform, the project and its settings, the environments, the sign-in to Azure and the sel...
+# used by: cicd_infra
 devops:
+  # The CI/CD platform: github, gitlab or azure_devops.
   # required; one of: github | gitlab | azure_devops; used by: cicd_infra
   platform: "github"
+  # URL of the CI/CD platform (an organization or instance URL).
   # used by: cicd_infra
   url: "https://github.com"
   # Organization, group or project collection.
   # used by: cicd_infra
   organization: "improbability-cloud"
+  # Name of the project or organization on the platform.
   # used by: cicd_infra
   project: "iic-azure-local"
   # (since 5.5) 
@@ -260,8 +281,10 @@ devops:
       # The runner subnet inside runner_network.address_space.
       # used by: cicd_infra
       subnet:
+        # Name of the subnet the runner machines are placed in.
         # required; used by: cicd_infra
         name: "snet-iic-runner-lnx-01"
+        # Address range of that subnet, in CIDR form.
         # required; used by: cicd_infra
         prefix: "10.20.10.0/26"
       # Data disk for the ZTP media, images and vouchers. 512 or more for ztp.
@@ -270,10 +293,13 @@ devops:
   # (since 5.5) 
   # used by: cicd_infra
   runner_network:
+    # Name of the virtual network the runners are placed in.
     # used by: cicd_infra
     vnet_name: "vnet-iic-devops-01"
+    # Address ranges of that virtual network, in CIDR form.
     # used by: cicd_infra
     address_space: ["10.20.10.0/24"]
+    # DNS servers of that virtual network.
     # used by: cicd_infra
     dns_servers: []
     # Peering with the hub VNet.
@@ -324,22 +350,31 @@ devops:
     # Vaults the runners read secrets from.
     # used by: cicd_infra
     key_vaults: ["kv-iic-mgmt-01"]
+  # One runner (the form before devops.runners[]).
   # used by: cicd_infra
   runner:
+    # Name of the runner.
     # required; used by: cicd_infra
     name: ""
+    # Kind of runner: vm, container_app or existing.
     # required; one of: vm | container_app | existing; used by: cicd_infra
     type: "vm"
+    # Subscription of the runner.
     # used by: cicd_infra
     subscription: ""
+    # Resource group of the runner.
     # used by: cicd_infra
     resource_group: ""
+    # Virtual network of the runner.
     # used by: cicd_infra
     network: ""
+    # Subnet of the runner.
     # used by: cicd_infra
     subnet: ""
+    # Private address of the runner.
     # used by: cicd_infra
     private_ip: "192.0.2.10"
+    # VM size of the runner.
     # used by: cicd_infra
     size: ""
     # Runner tags or labels that jobs select.
@@ -348,6 +383,7 @@ devops:
     # A Key Vault secret reference: keyvault://<vault>/<secret>.
     # used by: cicd_infra
     registration_token: "keyvault://kv-example-01/registration-token"
+  # Where the Terraform state is kept.
   # used by: cicd_infra
   state:
     # (since 5.5) 
@@ -356,9 +392,12 @@ devops:
     # (since 5.5) 
     # default: "cicd-infra.tfstate"; used by: cicd_infra
     key: "cicd-infra.tfstate"
+    # Storage account that holds the state.
     # used by: cicd_infra
     storage_account: "stiictfstate01"
+    # Blob container that holds the state.
     # used by: cicd_infra
     container: "tfstate"
+    # Resource group of the state storage account.
     # used by: cicd_infra
     resource_group: "rg-iic-mgmt-01"

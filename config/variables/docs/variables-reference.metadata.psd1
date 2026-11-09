@@ -3,60 +3,7 @@
     # renders config/variables/docs/VARIABLES.md. Patterns are regular expressions over the key path, with [] for array items
     # (nodes[].bmc.ip_address). The first match wins.
 
-    # Keys azurelocal-ztp reads: ConvertFrom-ZtpInfrastructureV5 in azurelocal-ztp (scripts/simplified-provisioning/
-    # ZtpEnvironment.Common.ps1), plus the 5.3 and 5.4 keys.
-    Ztp           = @(
-        '^_metadata\.(schema_version|scope)$'
-        '^scenario\.os_install$'
-        '^azure\.(tenant_id|location|subscription_id|resource_group|hci_resource_provider_object_id)$'
-        '^site\.(code|name|time_zone)$'
-        '^tags(\.|$)'
-        '^key_vaults(\[\]|$)'
-        '^nodes\[\]\.(name|arc_machine_name|arc_resource_name|serial_number|rack_position|maintenance_address)$'
-        '^nodes\[\]\.bmc\.ip_address$'
-        '^nodes\[\]\.(bios|bios_during_provisioning)(\.|$)'
-        '^nodes\[\]\.management(\.|$)'
-        '^nodes\[\]\.network_adapters(\[\]\.(name|mac_address|slot|roles|ip_assignment|ip_address|vlan_id|vlan_mode))?$'
-        '^nodes\[\]\.san(\.hbas(\[\]\.(slot|type|bios_attribute|bios_disabled_value|bios_enabled_value))?)?$'
-        '^hardware\.(vendor|model)$'
-        '^hardware\.bmc(\.|$)'
-        '^hardware\.(bios|bios_during_provisioning)(\.|$)'
-        '^hardware\.sbe\.(bundle_path|allow_unvalidated)$'
-        '^networking\.management\.(subnet|gateway|dns_servers|vlan_id|ip_assignment|site_ip_range|provisioning_network|static_method|provisioning_dhcp_range)(\.|$)'
-        '^networking\.ntp_servers$'
-        '^identity\.local_admin(\.|$)'
-        '^provisioning\.os_version$'
-        '^provisioning\.simplified(\.|$)'
-    )
-
-    # The toolkit's OS configuration phase (what its scripts read through Import-AzlInfrastructure). By design, by section.
-    OsConfiguration = @(
-        '^nodes\[\]\.(name|arc_machine_name|management|network_adapters|storage_ips|bios)'
-        '^hardware\.(vendor|model|network_cards)'
-        '^networking\.(management|ntp_servers|intents|storage|vlans|cluster_networks)'
-        '^identity\.local_admin'
-        '^identity\.active_directory\.(domain_fqdn|netbios_name|ou_path|domain_controllers|domain_join_account|join_options|local_admin_members)(\.|$)'
-        '^hardware\.sbe\.(bundle_path|delivery|node_pull_url)$'
-        '^cluster\.name$'
-        '^provisioning\.os_version$'
-        '^os_configuration(\.|$)'
-    )
-
-    # Keys the toolkit's CI/CD infrastructure scripts read (scripts/deploy/01-cicd-infra, schema 5.5).
-    CicdInfra     = @(
-        '^devops(\.|\[|$)'
-        '^azure\.(tenant_id|subscription_id|location|resource_group|automation_identity)(\.|$)'
-        '^key_vaults(\[\]|$)'
-        '^landing_zone\.(subscriptions|networks|resource_groups)(\[\]|$)'
-        '^tags(\.|$)'
-    )
-
-    # Keys the ARM and SAN deployment reads beyond those whose schema description names an ARM parameter.
-    ArmDeployment = @(
-        '^storage\.san(\.|$)'
-        '^nodes\[\]\.san(\.|$)'
-        '^deployment(\.|$)'
-    )
+    # Who reads a key is no longer listed here: it is the used_by of the master registry (config/variables/schema/master-registry.yaml).
 
     # Keys Trailwright does not write: host-local paths and files only the operator sets on the management host.
     TrailwrightNot = @(

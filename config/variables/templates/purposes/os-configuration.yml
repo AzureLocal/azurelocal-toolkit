@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that 'os_configuration' reads (a strict subset of the master file). Schema 5.6.2.
+# Template for the part of infrastructure.yml that 'os_configuration' reads (a strict subset of the master file). Schema 5.6.3.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -17,6 +17,7 @@ _metadata:
   last_updated: "2026-11-06"
   # The tool that wrote the file, for example azurelocal-trailwright 1.1.0.
   generated_by: ""
+  # Free text about this file for the people who keep it.
   notes: ""
 
 # The design choices.
@@ -181,17 +182,20 @@ nodes:
     # used by: ztp, os_configuration
     maintenance_address: "192.0.2.10"
     # (since 5.3) 
-    # used by: ztp, deployment
+    # used by: ztp, os_configuration, deployment
     san:
       # The host bus adapters in this machine that reach the SAN: Fibre Channel HBAs, and from 5.4 iSCSI offload adapters. azurelocal-ztp reads the...
-      # used by: ztp, deployment
+      # used by: ztp, os_configuration, deployment
       hbas:
         # The ports of the host bus adapter.
-        # used by: deployment
+        # used by: os_configuration, deployment
         - ports:
             # A Fibre Channel World Wide Port Name: 16 hexadecimal digits, as 8 colon-separated pairs (50:00:09:72:08:12:34:56) or without colons.
             # required; used by: os_configuration, deployment
             - wwpn: ""
+      # The machine's iSCSI initiator name.
+      # used by: os_configuration, deployment
+      initiator_iqn: ""
 
 # What every machine is.
 hardware:
@@ -234,6 +238,7 @@ hardware:
       # Model of the card, as the machine reports it.
       # used by: os_configuration
       model: ""
+      # The ports of this network card, in the order the vendor numbers them.
       # used by: os_configuration
       ports:
         # Adapter name in the OS, as the intents use it.
@@ -306,6 +311,7 @@ networking:
       # required; used by: os_configuration, deployment
       end: "192.0.2.29"
   # The out-of-band network of the BMCs.
+  # used by: os_configuration
   oob:
     # Subnet of the out-of-band (BMC) network in CIDR form.
     # used by: os_configuration
@@ -329,7 +335,7 @@ networking:
       # used by: os_configuration
       overrides:
         # Data Center Bridging (DCB) quality of service overrides for the storage traffic (ARM qosPolicyOverrides).
-        # used by: os_configuration
+        # used by: os_configuration, deployment
         qos:
           # 802.1p priority value of the cluster heartbeat traffic, 0 to 7 (ARM priorityValue8021Action_Cluster).
           # used by: os_configuration, deployment
@@ -341,7 +347,7 @@ networking:
           # used by: os_configuration, deployment
           smb_bandwidth_percent: 1
         # Physical adapter property overrides (ARM adapterPropertyOverrides: jumboPacket, networkDirect, networkDirectTechnology).
-        # used by: os_configuration
+        # used by: os_configuration, deployment
         adapter:
           # Value of the adapter's JumboPacket property in bytes: 1514 (standard frame), 4088 or 9014 (jumbo).
           # one of: 1514 | 4088 | 9014; used by: os_configuration, deployment
@@ -353,7 +359,7 @@ networking:
           # one of: iwarp | roce | roce_v2; used by: os_configuration, deployment
           network_direct_technology: "iwarp"
         # Virtual switch overrides of the intent's switch-embedded team (ARM virtualSwitchConfigurationOverrides).
-        # used by: os_configuration
+        # used by: os_configuration, deployment
         virtual_switch:
           # SR-IOV on the intent's virtual switch (ARM enableIov).
           # used by: os_configuration, deployment
@@ -367,15 +373,10 @@ networking:
     # Network ATC assigns the storage addresses.
     # used by: os_configuration, deployment
     auto_ip: true
-    # Switchless only: one or two links between each pair of machines.
-    # when scenario.storage_connectivity is switchless; one of: single | dual; used by: os_configuration
-    switchless_links: "single"
-    # Top-of-rack switches.
-    # used by: os_configuration
-    tor_switches: 2
     # dedicated: storage on its own ports. converged: storage shares ports with other traffic.
     # one of: dedicated | converged; used by: os_configuration
     layout: "converged"
+    # The storage networks (SMB), one per storage adapter.
     # used by: os_configuration
     networks:
       # For example StorageNetwork1.
@@ -393,12 +394,16 @@ networking:
   # Disaggregated (SAN) only: the cluster networks on standalone ports, fabric A and B.
   # when scenario.storage_architecture is san or hybrid; used by: os_configuration, deployment
   cluster_networks:
+    # Name of the cluster network on a standalone port (fabric A or B of a SAN design), for example clusterNetwork-A.
     # required; used by: os_configuration, deployment
     - name: ""
+      # The port of this cluster network, by the key nodes[].network_adapters[].name (the same on every machine).
       # required; used by: os_configuration, deployment
       adapter: ""
+      # VLAN of this cluster network, 0 to 4094. 0 means untagged.
       # required; used by: os_configuration, deployment
       vlan_id: 1
+      # Subnet of this cluster network in CIDR form.
       # required; used by: os_configuration, deployment
       subnet: "192.0.2.0/24"
       # What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote mana...
@@ -407,22 +412,26 @@ networking:
   # Every VLAN in the design, by name.
   # used by: os_configuration
   vlans:
+    # Name of the VLAN, for example storage-1.
     # required; used by: os_configuration
     - name: "storage-1"
+      # The VLAN number, 1 to 4094.
       # required; used by: os_configuration
       id: 711
+      # Subnet that runs in this VLAN, in CIDR form.
       # used by: os_configuration
       subnet: "203.0.113.0/24"
       # Free text.
       # used by: os_configuration
       purpose: ""
-  # Arc VM logical networks created after deployment.
+  # Arc VM logical networks created after deployment (task phase-06 task-08, Invoke-LogicalNetworks-Orchestrated.ps1: az stack-hci-vm network l...
+  # used by: os_configuration, deployment
   logical_networks:
     # What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote mana...
-    # one of: management | oob | automation | compute | storage | other; used by: os_configuration
+    # one of: management | oob | automation | compute | storage | other; used by: os_configuration, deployment
     - purpose: "compute"
       # Address prefix of the logical network in CIDR form.
-      # used by: os_configuration
+      # used by: os_configuration, deployment
       address_prefix: "203.0.113.0/24"
   # Details of scenario.outbound_path.
   # when scenario.outbound_path is proxy or proxy_arc_gateway
@@ -442,11 +451,13 @@ identity:
   # The deployment's local administrator on every machine.
   # required; used by: ztp, os_configuration, deployment
   local_admin:
+    # User name of the deployment local administrator on every machine (ARM localAdminUserName).
     # required; used by: ztp, os_configuration, deployment, monitoring
     username: "azl-admin"
     # At least 14 characters with lowercase, uppercase, a digit and a special character.
     # required; used by: ztp, os_configuration, deployment
     password: "keyvault://kv-iic-mgmt-01/local-admin-password"
+  # The Active Directory the instance joins and its accounts.
   # when scenario.identity is active_directory
   active_directory:
     # ARM domainFqdn.
@@ -493,8 +504,10 @@ identity:
     domain_controllers: ["192.0.2.4", "192.0.2.5"]
     # Groups created in the OU for administration of the instance.
     security_groups:
+      # Name of the security group in Active Directory.
       # required; used by: os_configuration
       - name: "sg-iic-azl-01-admins"
+        # What the group is for, in words.
         # used by: os_configuration
         purpose: "Administrators of the instance"
         # (since 5.6.1) 
@@ -505,18 +518,41 @@ identity:
 # when scenario.storage_architecture is san or hybrid
 storage:
   # The external SAN of a disaggregated (san) or hybrid deployment.
-  # when scenario.storage_architecture is san or hybrid; used by: deployment
+  # when scenario.storage_architecture is san or hybrid; used by: os_configuration, deployment
   san:
     # Whether the SAN is fibre_channel or iscsi.
     # required; one of: fibre_channel | iscsi; used by: os_configuration, deployment
     type: "fibre_channel"
     # (since 5.3) 
-    # used by: deployment
+    # used by: os_configuration, deployment
     array:
+      # Vendor of the storage array, for example Dell or Pure Storage.
       # required; used by: os_configuration, deployment
       vendor: "example"
+      # Model of the storage array, for example PowerStore 1200T.
       # required; used by: os_configuration, deployment
       model: "example"
+    # (since 5.3) 
+    # used by: os_configuration, deployment
+    iscsi:
+      # The array's iSCSI targets.
+      # used by: os_configuration, deployment
+      targets:
+        # An iSCSI qualified name (iqn.yyyy-mm.reversed.domain[:identifier]), or an eui. or naa. name.
+        # required; used by: os_configuration, deployment
+        - iqn: ""
+          # The target portals: an IPv4 address, optionally with a port (default 3260), for example 198.51.100.10 or 198.51.100.10:3260.
+          # required; used by: os_configuration, deployment
+          portals: []
+          # The storage network this target serves, matching the iSCSI port role: A for iscsi:a, B for iscsi:b.
+          # used by: os_configuration, deployment
+          fabric: "example"
+      # CHAP authentication of the sessions.
+      # used by: os_configuration, deployment
+      chap:
+        # true when the iSCSI targets require CHAP.
+        # required; used by: os_configuration, deployment
+        enabled: false
     # LUN of the infrastructure volume (250 GB minimum).
     # used by: os_configuration, deployment
     infra_volume_lun_id: ""
