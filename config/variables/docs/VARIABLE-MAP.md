@@ -10,16 +10,16 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](../../../docs/diagrams/variable-flow.drawio) ([PNG](../../../docs/diagrams/variable-flow.png)).
 
-Registry version 5.0.16. Sources of the scan: toolkit (this repository), sonar 7adc354, trailwright e8747e0, ztp e63bce0.
+Registry version 5.0.17. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
 
 ## In numbers
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Keys of infrastructure.yml | 574 | 269 | 105 | 3 | 195 | 2 |
-| Owned by a tool (`tools.*`) | 2426 | 2419 | 0 | 0 | 7 | 0 |
+| Owned by a tool (`tools.*`) | 2443 | 2436 | 0 | 0 | 7 | 0 |
 | Older variables-file sections | 1480 | 68 | 573 | 0 | 834 | 5 |
-| All registry leaves | 4480 | 2756 | 678 | 3 | 1036 | 7 |
+| All registry leaves | 4497 | 2773 | 678 | 3 | 1036 | 7 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -94,7 +94,7 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | os-configuration | OS configuration | 69 | 0 | 274 |
 | pre-cluster-verification | Pre-cluster verification | 64 | 0 | 0 |
 | arm-deployment | ARM Validate/Deploy | 74 | 0 | 242 |
-| sonar | Sonar | 14 | 0 | 249 |
+| sonar | Sonar | 14 | 0 | 266 |
 | cicd-infra | Outside the flow | 53 | 0 | 347 |
 | infrastructure-helpers | Outside the flow | 26 | 0 | 0 |
 | validator | Outside the flow | 108 | 0 | 0 |
@@ -1526,12 +1526,12 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | os_configuration | parameters | 49 | 49 | 0 |
 | os_configuration | run_settings | 27 | 27 | 0 |
 | os_configuration | secret_names | 10 | 10 | 0 |
-| sonar | config_keys | 52 | 52 | 0 |
+| sonar | config_keys | 60 | 60 | 0 |
 | sonar | env_vars | 3 | 3 | 0 |
-| sonar | event_fields | 110 | 110 | 0 |
-| sonar | parameters | 71 | 71 | 0 |
-| sonar | secret_names | 6 | 6 | 0 |
-| sonar | state_fields | 7 | 7 | 0 |
+| sonar | event_fields | 114 | 114 | 0 |
+| sonar | parameters | 72 | 72 | 0 |
+| sonar | secret_names | 9 | 9 | 0 |
+| sonar | state_fields | 8 | 8 | 0 |
 | ztp | config_keys | 178 | 171 | 7 |
 | ztp | env_vars | 12 | 12 | 0 |
 | ztp | handoff_fields | 39 | 39 | 0 |
