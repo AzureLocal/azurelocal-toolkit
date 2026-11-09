@@ -1023,7 +1023,7 @@ Describe 'Schema 5.6.4: the SBE package as a requirement (AZL-033)' {
         function Get-Sbe564Finding([scriptblock]$Change) { Get-FindingFor -From $script:Full564 $Change }
     }
     It 'a source on a share with a Key Vault credential, and the pinned hash and size, are clean' {
-        $f = Get-Sbe564Finding { param($d) $d.hardware.sbe.source_path = '\files.example.invalid\sbe\dell'; $d.hardware.sbe.source_username = 'EXAMPLE\svc-sbe-read'; $d.hardware.sbe.source_password = 'keyvault://kv-example-01/sbe-share-reader'; $d.hardware.sbe.package_sha256 = ('A' * 64); $d.hardware.sbe.package_size_bytes = 1048576 }
+        $f = Get-Sbe564Finding { param($d) $d.hardware.sbe.source_path = '\files.example.invalid\sbe\dell'; $d.hardware.sbe.source_username = 'EXAMPLE\svc-sbe-read'; $d.hardware.sbe.source_password = 'keyvault://kv-iic-mgmt-01/sbe-share-reader'; $d.hardware.sbe.package_sha256 = ('A' * 64); $d.hardware.sbe.package_size_bytes = 1048576 }
         @($f | Where-Object { $_.Id -in 'AZL-033', 'AZL-015', 'AZL-030' -and $_.Severity -eq 'error' }) | Should -BeNullOrEmpty
         @($f | Where-Object Severity -EQ 'error') | Should -BeNullOrEmpty
     }
@@ -1041,7 +1041,7 @@ Describe 'Schema 5.6.4: the SBE package as a requirement (AZL-033)' {
     }
     It 'a user name without a password reference (or the other way round) is AZL-033' {
         (Get-Sbe564Finding { param($d) $d.hardware.sbe.source_path = '\files.example.invalid\sbe'; $d.hardware.sbe.source_username = 'EXAMPLE\svc-sbe-read' }) | Where-Object { $_.Id -eq 'AZL-033' -and $_.Path -eq 'hardware.sbe.source_password' } | Should -Not -BeNullOrEmpty
-        (Get-Sbe564Finding { param($d) $d.hardware.sbe.source_path = '\files.example.invalid\sbe'; $d.hardware.sbe.source_password = 'keyvault://kv-example-01/sbe-share-reader' }) | Where-Object { $_.Id -eq 'AZL-033' -and $_.Path -eq 'hardware.sbe.source_password' } | Should -Not -BeNullOrEmpty
+        (Get-Sbe564Finding { param($d) $d.hardware.sbe.source_path = '\files.example.invalid\sbe'; $d.hardware.sbe.source_password = 'keyvault://kv-iic-mgmt-01/sbe-share-reader' }) | Where-Object { $_.Id -eq 'AZL-033' -and $_.Path -eq 'hardware.sbe.source_password' } | Should -Not -BeNullOrEmpty
     }
     It 'a path with a query string is AZL-033 (no credential in the file)' {
         (Get-Sbe564Finding { param($d) $d.hardware.sbe.source_path = 'https://files.example.invalid/sbe?sig=abc' }) | Where-Object { $_.Id -eq 'AZL-033' -and $_.Path -eq 'hardware.sbe.source_path' } | Should -Not -BeNullOrEmpty
