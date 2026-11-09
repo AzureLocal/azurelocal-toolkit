@@ -1166,12 +1166,13 @@ function Join-AzlArmList([string[]]$Item) {
 
 function Resolve-AzlArmSbeCatalogFile {
     # The catalog file the run reads, and where the path came from: the run setting sbeCatalogPath, else the SBE_Discovery_*.xml in
-    # hardware.sbe.bundle_path. A folder is searched for SBE_Discovery_*.xml. Nothing is downloaded.
+    # hardware.sbe.source_path (the share the package is available on), else hardware.sbe.bundle_path. A folder is searched for SBE_Discovery_*.xml. Nothing is downloaded.
     param($Ctx)
     $path = [string]$Ctx.Settings.sbeCatalogPath
     $from = 'run setting sbeCatalogPath'
+    if (-not $path) { $path = [string](Get-AzlProp $Ctx.Infra 'hardware.sbe.source_path' ''); $from = 'hardware.sbe.source_path' }
     if (-not $path) { $path = [string](Get-AzlProp $Ctx.Infra 'hardware.sbe.bundle_path' ''); $from = 'hardware.sbe.bundle_path' }
-    if (-not $path) { return [pscustomobject]@{ File = ''; Reason = 'No SBE discovery catalog is available: set hardware.sbe.bundle_path (the folder with the SBE files, including SBE_Discovery_*.xml) or the run setting sbeCatalogPath (deployment.sbe_catalog_path). Nothing is downloaded.' } }
+    if (-not $path) { return [pscustomobject]@{ File = ''; Reason = 'No SBE discovery catalog is available: set hardware.sbe.source_path or bundle_path (the share or folder with the SBE files, including SBE_Discovery_*.xml) or the run setting sbeCatalogPath (deployment.sbe_catalog_path). Nothing is downloaded.' } }
     if (Test-Path -LiteralPath $path -PathType Container) {
         $found = @(Get-ChildItem -LiteralPath $path -File -Filter 'SBE_Discovery_*.xml' | Sort-Object Name)
         if ($found.Count -eq 0) { return [pscustomobject]@{ File = ''; Reason = "No SBE_Discovery_*.xml in $path ($from), so the SBE was not compared with the solution version. Nothing is downloaded." } }

@@ -1017,6 +1017,47 @@ Describe 'Schema 5.4.2: how the SBE package reaches the nodes (AZL-030)' {
         @(Get-Sbe542Finding { param($d) $d.hardware.sbe.delivery = 'winrm_copy'; $d.hardware.sbe.Remove('node_pull_url') } | Where-Object Id -eq 'AZL-030') | Should -BeNullOrEmpty
     }
 }
+Describe 'Schema 5.6.4: the SBE package as a requirement (AZL-033)' {
+    BeforeAll {
+        $script:Full564 = Join-Path $repo 'config\variables\examples\infrastructure.example.yml'
+        function Get-Sbe564Finding([scriptblock]$Change) { Get-FindingFor -From $script:Full564 $Change }
+    }
+    It 'a source on a share with a Key Vault credential, and the pinned hash and size, are clean' {
+        $f = Get-Sbe564Finding { param($d) $d.hardware.sbe.source_path = '\files.example.invalid\sbe\dell'; $d.hardware.sbe.source_username = 'EXAMPLE\svc-sbe-read'; $d.hardware.sbe.source_password = 'keyvault://kv-example-01/sbe-share-reader'; $d.hardware.sbe.package_sha256 = ('A' * 64); $d.hardware.sbe.package_size_bytes = 1048576 }
+        @($f | Where-Object { $_.Id -in 'AZL-033', 'AZL-015', 'AZL-030' -and $_.Severity -eq 'error' }) | Should -BeNullOrEmpty
+        @($f | Where-Object Severity -EQ 'error') | Should -BeNullOrEmpty
+    }
+    It 'requirement not_applicable with a reason names no package and is clean' {
+        $f = Get-Sbe564Finding { param($d) $d.hardware.sbe = [ordered]@{ requirement = 'not_applicable'; not_applicable_reason = 'The cluster downloads the package with the vendor credential' } }
+        @($f | Where-Object Severity -EQ 'error') | Should -BeNullOrEmpty
+    }
+    It 'requirement not_applicable without a reason is AZL-033' {
+        $f = Get-Sbe564Finding { param($d) $d.hardware.sbe = [ordered]@{ requirement = 'not_applicable' } }
+        $f | Where-Object { $_.Id -eq 'AZL-033' -and $_.Severity -eq 'error' -and $_.Path -eq 'hardware.sbe.not_applicable_reason' } | Should -Not -BeNullOrEmpty
+    }
+    It 'requirement required without a source is AZL-033' {
+        $f = Get-Sbe564Finding { param($d) $d.hardware.sbe = [ordered]@{ requirement = 'required' } }
+        $f | Where-Object { $_.Id -eq 'AZL-033' -and $_.Severity -eq 'error' -and $_.Path -eq 'hardware.sbe.source_path' } | Should -Not -BeNullOrEmpty
+    }
+    It 'a user name without a password reference (or the other way round) is AZL-033' {
+        (Get-Sbe564Finding { param($d) $d.hardware.sbe.source_path = '\files.example.invalid\sbe'; $d.hardware.sbe.source_username = 'EXAMPLE\svc-sbe-read' }) | Where-Object { $_.Id -eq 'AZL-033' -and $_.Path -eq 'hardware.sbe.source_password' } | Should -Not -BeNullOrEmpty
+        (Get-Sbe564Finding { param($d) $d.hardware.sbe.source_path = '\files.example.invalid\sbe'; $d.hardware.sbe.source_password = 'keyvault://kv-example-01/sbe-share-reader' }) | Where-Object { $_.Id -eq 'AZL-033' -and $_.Path -eq 'hardware.sbe.source_password' } | Should -Not -BeNullOrEmpty
+    }
+    It 'a path with a query string is AZL-033 (no credential in the file)' {
+        (Get-Sbe564Finding { param($d) $d.hardware.sbe.source_path = 'https://files.example.invalid/sbe?sig=abc' }) | Where-Object { $_.Id -eq 'AZL-033' -and $_.Path -eq 'hardware.sbe.source_path' } | Should -Not -BeNullOrEmpty
+    }
+    It 'delivery is satisfied by source_path alone' {
+        $f = Get-Sbe564Finding { param($d) $d.hardware.sbe.Remove('bundle_path'); $d.hardware.sbe.source_path = '\files.example.invalid\sbe\dell'; $d.hardware.sbe.delivery = 'winrm_copy'; $d.hardware.sbe.Remove('node_pull_url') }
+        @($f | Where-Object { $_.Id -eq 'AZL-030' -and $_.Path -eq 'hardware.sbe.delivery' }) | Should -BeNullOrEmpty
+    }
+    It 'a block with source_path and no publisher, family or version is not AZL-015' {
+        $f = Get-Sbe564Finding { param($d) $d.hardware.sbe = [ordered]@{ source_path = '\files.example.invalid\sbe\dell' } }
+        @($f | Where-Object { $_.Id -eq 'AZL-015' -and $_.Path -like 'hardware.sbe*' }) | Should -BeNullOrEmpty
+    }
+    It 'the schema refuses a requirement other than required or not_applicable' {
+        (Get-Sbe564Finding { param($d) $d.hardware.sbe.requirement = 'maybe' }) | Where-Object Severity -EQ 'error' | Should -Not -BeNullOrEmpty
+    }
+}
 Describe 'Schema 5.4.3: os_configuration.clear_storage' {
     BeforeAll { $script:Full543 = Join-Path $repo 'config\variables\examples\infrastructure.example.yml' }
 
@@ -1166,7 +1207,8 @@ Describe 'The Solution Builder Extension is optional (AZL-013, AZL-015, AZL-032)
         $i = @(Get-NoSbeFinding | Where-Object { $_.Id -eq 'AZL-032' })
         $i.Count | Should -Be 1
         $i[0].Severity | Should -Be 'info'
-        $i[0].Message | Should -Be 'no SBE: deploying without a Solution Builder Extension (the OS keeps the OEM drivers already installed).'
+        $i[0].Message | Should -Match 'no hardware.sbe block: no package source is configured and nothing is side-loaded at build time'
+        $i[0].Message | Should -Match 'SB-001'
     }
     It 'the ZTP example <_> without hardware.sbe has no errors' -ForEach $ztpExampleFiles {
         @(Get-NoSbeFinding -From $_ | Where-Object Severity -eq 'error') | Should -BeNullOrEmpty

@@ -1400,19 +1400,34 @@ function Get-SbePresenceFinding {
     param($Infra)
     $sbe = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'hardware.sbe'
     if ($null -eq $sbe) {
-        New-Finding 'AZL-032' info 'hardware.sbe' 'no SBE: deploying without a Solution Builder Extension (the OS keeps the OEM drivers already installed).' 'https://learn.microsoft.com/azure/azure-local/update/solution-builder-extension'
+        New-Finding 'AZL-032' info 'hardware.sbe' 'no hardware.sbe block: no package source is configured and nothing is side-loaded at build time. The vendor catalog decides whether the SBE package is required (pre-cluster verification SB-001); for a vendor whose package is a manual download it is, so set hardware.sbe.source_path, or hardware.sbe.requirement not_applicable with a reason.' 'https://learn.microsoft.com/azure/azure-local/update/solution-builder-extension'
         return
     }
     if ($sbe -isnot [System.Collections.IDictionary]) { return } # the schema reports the wrong type
     $bundle = [string]$sbe['bundle_path']
+    $source = if ([string]$sbe['source_path']) { [string]$sbe['source_path'] } else { $bundle }
+    $requirement = ([string]$sbe['requirement']).Trim().ToLowerInvariant()
+    # AZL-033 (schema 5.6.4): the SBE package as a requirement. These hold in every scope.
+    if ($requirement -eq 'not_applicable' -and -not ([string]$sbe['not_applicable_reason']).Trim()) {
+        New-Finding 'AZL-033' error 'hardware.sbe.not_applicable_reason' 'hardware.sbe.requirement is not_applicable, so the file must say why (not_applicable_reason): no SBE exists for this hardware, or the cluster downloads it with the vendor credential.'
+    }
+    if ($requirement -eq 'required' -and -not $source) {
+        New-Finding 'AZL-033' error 'hardware.sbe.source_path' 'hardware.sbe.requirement is required, so the file must say where the downloaded package is available to the automation (source_path: a share or folder with SBE_Discovery_<Vendor>.xml, SBE_<Vendor>_<Family>_<Version>.xml and .zip).'
+    }
+    if ([bool]([string]$sbe['source_username']) -ne [bool]([string]$sbe['source_password'])) {
+        New-Finding 'AZL-033' error 'hardware.sbe.source_password' 'hardware.sbe.source_username and source_password (a keyvault:// reference) go together: the account that reads source_path needs both.'
+    }
+    if ($source -and $source -match '[?#]') {
+        New-Finding 'AZL-033' error 'hardware.sbe.source_path' 'The path carries a query string or fragment. infrastructure.yml holds no credential: use source_username and source_password (a Key Vault reference) for a share that needs one.'
+    }
     if ((Get-AzlInfrastructureScope -Infrastructure $Infra) -eq 'ztp') {
-        if (-not $bundle) { New-Finding 'AZL-015' error 'hardware.sbe.bundle_path' 'hardware.sbe is set, so ZTP needs the folder holding the SBE files (bundle_path). To deploy without an SBE, remove the hardware.sbe block.' }
+        if (-not $bundle -and -not $requirement) { New-Finding 'AZL-015' error 'hardware.sbe.bundle_path' 'hardware.sbe is set, so ZTP needs the folder holding the SBE files (bundle_path), or requirement (required, or not_applicable with a reason).' }
         return
     }
-    $remove = 'To deploy without an SBE, remove the hardware.sbe block.'
-    if (-not $bundle) {
+    $remove = 'To state that no package is needed, set requirement to not_applicable with not_applicable_reason.'
+    if (-not $source -and -not $requirement) {
         foreach ($k in 'publisher', 'family', 'version') {
-            if (-not [string]$sbe[$k]) { New-Finding 'AZL-015' error "hardware.sbe.$k" "hardware.sbe is set without bundle_path (the folder with the package, from which publisher, family and version are read), so it needs a $k. $remove" }
+            if (-not [string]$sbe[$k]) { New-Finding 'AZL-015' error "hardware.sbe.$k" "hardware.sbe is set without source_path or bundle_path (the share or folder with the package, from which publisher, family and version are read), so it needs a $k. $remove" }
         }
     }
 }
@@ -1425,8 +1440,8 @@ function Get-SbeDeliveryFinding {
     if ($sbe -isnot [System.Collections.IDictionary]) { return }
     $delivery = [string]$sbe['delivery']
     $url = [string]$sbe['node_pull_url']
-    if ($delivery -in 'winrm_copy', 'node_pull' -and -not $sbe['bundle_path']) {
-        New-Finding 'AZL-030' error 'hardware.sbe.delivery' "delivery is $delivery but hardware.sbe.bundle_path is empty: there is no package to deliver."
+    if ($delivery -in 'winrm_copy', 'node_pull' -and -not $sbe['bundle_path'] -and -not $sbe['source_path']) {
+        New-Finding 'AZL-030' error 'hardware.sbe.delivery' "delivery is $delivery but neither hardware.sbe.source_path nor hardware.sbe.bundle_path is set: there is no package to deliver."
     }
     if ($delivery -eq 'node_pull') {
         if (-not $url) { New-Finding 'AZL-030' error 'hardware.sbe.node_pull_url' 'delivery is node_pull: give the folder the nodes download the SBE files from (https://host/sbe/dell, or a UNC folder \\server\share\sbe).' }

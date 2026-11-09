@@ -21,10 +21,11 @@ BeforeAll {
     Mock -ModuleName AzlAzure Invoke-AzRestMethod { throw 'A test tried to call Azure.' }
     function Get-Pre($Result, [string]$Name) { @($Result.Preconditions | Where-Object { $_.name -eq $Name }) }
     function Get-SbeInfra {
-        param([string]$Version = '5.0.2606.1616', [string]$Family = '16G-45n0c-Intel', [string]$BundlePath)
+        param([string]$Version = '5.0.2606.1616', [string]$Family = '16G-45n0c-Intel', [string]$BundlePath, [string]$SourcePath)
         $infra = Get-TestInfra
         $sbe = [ordered]@{ publisher = 'Dell'; family = $Family; version = $Version; manifest_source = 'https://example.invalid/SBE_Discovery_Dell.xml'; manifest_creation_date = '2026-10-21T20:27:08Z' }
         if ($BundlePath) { $sbe.bundle_path = $BundlePath }
+        if ($SourcePath) { $sbe.source_path = $SourcePath }
         $infra.hardware = [ordered]@{ vendor = 'Dell'; sbe = $sbe }
         $infra
     }
@@ -222,6 +223,14 @@ Describe 'Precondition SbeValidatedWithSolution' {
         Copy-Item -LiteralPath $script:Catalog -Destination (Join-Path $bundle 'SBE_Discovery_Dell.xml')
         $r = Invoke-TestRun -World (Get-FakeWorld) -Infra (Get-SbeInfra -BundlePath $bundle) -Mode Plan -Settings @{ solutionVersion = '12.2610.1004.50' }
         (Get-Pre $r SbeValidatedWithSolution).result | Should -Be 'Failed'
+        (Get-Pre $r SbeValidatedWithSolution).evidence | Should -Match 'SBE_Discovery_Dell\.xml'
+    }
+    It 'reads SBE_Discovery_*.xml from hardware.sbe.source_path (the share the package is available on) before bundle_path' {
+        $share = Join-Path $TestDrive 'share'; $legacy = Join-Path $TestDrive 'legacy'
+        $null = New-Item -ItemType Directory -Path $share, $legacy
+        Copy-Item -LiteralPath $script:Catalog -Destination (Join-Path $share 'SBE_Discovery_Dell.xml')
+        $r = Invoke-TestRun -World (Get-FakeWorld) -Infra (Get-SbeInfra -Version '5.0.2609.1611' -SourcePath $share -BundlePath $legacy) -Mode Plan -Settings @{ solutionVersion = '12.2610.1004.50' }
+        (Get-Pre $r SbeValidatedWithSolution).result | Should -Be 'Passed'
         (Get-Pre $r SbeValidatedWithSolution).evidence | Should -Match 'SBE_Discovery_Dell\.xml'
     }
     It 'sbeCatalogPath may be a folder that holds SBE_Discovery_*.xml' {
