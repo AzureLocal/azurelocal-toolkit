@@ -23,12 +23,12 @@ BeforeAll {
 
 Describe 'The catalog' {
     BeforeAll { $script:Catalog = Get-AzlPclCatalog }
-    It 'is the built-in check plus the checks of the six verification modules, in the six categories, with no failing module' {
+    It 'is the built-in check plus the checks of the seven verification modules (the SB- checks of the SBE package are in the category nodes), in the six categories, with no failing module' {
         ($script:Catalog.Category | Select-Object -Unique | Sort-Object) | Should -Be @('azure', 'identity', 'network', 'nodes', 'readiness', 'storage')
         $script:Catalog.Count | Should -BeGreaterThan 80
         @($script:Catalog | Where-Object { $_.Id -like 'EXT-*' }) | Should -BeNullOrEmpty
         $script:Catalog.Id | Should -Contain 'ARM-001'
-        foreach ($prefix in 'AZ-', 'ID-', 'ND-', 'NW-', 'ST-', 'RD-') { @($script:Catalog | Where-Object { $_.Id -like "$prefix*" }).Count | Should -BeGreaterThan 0 -Because $prefix }
+        foreach ($prefix in 'AZ-', 'ID-', 'ND-', 'NW-', 'ST-', 'RD-', 'SB-') { @($script:Catalog | Where-Object { $_.Id -like "$prefix*" }).Count | Should -BeGreaterThan 0 -Because $prefix }
     }
     It 'has a unique id, a title and a source for every check, and the Learn pages at view azloc-2610' {
         @($script:Catalog.Id | Select-Object -Unique).Count | Should -Be $script:Catalog.Count
