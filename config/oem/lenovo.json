@@ -4,6 +4,11 @@
   "sbe": {
     "discoveryManifestUrl": "",
     "driverPaths": [],
+    "acquisition": "automatic_download",
+    "requiredByDefault": false,
+    "downloadRequiresLogin": false,
+    "verified": false,
+    "acquisitionNote": "Not yet verified against the vendor pages. ThinkAgile MX Premier clusters download and stage the package automatically; a Standard SBE is the first package from Lenovo's repository and later ones stage automatically. A known issue can make the automatic download fail on one 2601 solution build, then the three files are imported by hand. State the choice in the file (hardware.sbe.requirement) rather than rely on this default.",
     "note": "Unverified. Set driverPaths to the folders inside the OEM's SBE zip that hold network drivers, and discoveryManifestUrl to the OEM's published discovery manifest; until then the package is checked against its own SBE_Discovery_*.xml."
   }
 }

@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for infrastructure.yml for scenario.connectivity = connected with every variable. Schema 5.6.3. Scenario: connectivity=connected.
+# Template for infrastructure.yml for scenario.connectivity = connected with every variable. Schema 5.6.4. Scenario: connectivity=connected.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -485,7 +485,7 @@ hardware:
   # used by: ztp
   bios_during_provisioning:
     example_name: "value"
-  # Optional Solution Builder Extension (SBE), opt-in: no hardware.sbe = deploy without a Solution Builder Extension (the OS keeps the OEM driv...
+  # Solution Builder Extension (SBE), the hardware vendor's driver and firmware package.
   # used by: ztp, deployment
   sbe:
     # Required when hardware.sbe is present and bundle_path is not (with bundle_path it is read from the package).
@@ -503,9 +503,30 @@ hardware:
     # Creation date of the SBE manifest, as the manifest states it.
     # used by: deployment
     manifest_creation_date: ""
-    # Required when hardware.sbe is present, unless publisher, family and version name an SBE you placed in C:\SBE yourself (and needed for any d...
+    # Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml.
     # used by: ztp, os_configuration, deployment
     bundle_path: "D:\\sbe\\dell"
+    # (since 5.6.4) 
+    # one of: required | not_applicable; used by: os_configuration, deployment
+    requirement: "required"
+    # (since 5.6.4) 
+    # used by: os_configuration, deployment
+    not_applicable_reason: "The cluster downloads the package with the vendor credential"
+    # (since 5.6.4) 
+    # used by: os_configuration, deployment
+    source_path: "\\\\files.example.invalid\\sbe\\dell"
+    # (since 5.6.4) 
+    # used by: os_configuration, deployment
+    source_username: "EXAMPLE\\svc-sbe-read"
+    # (since 5.6.4) 
+    # used by: os_configuration, deployment
+    source_password: "keyvault://kv-iic-mgmt-01/sbe-share-reader"
+    # (since 5.6.4) 
+    # used by: os_configuration, deployment
+    package_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
+    # (since 5.6.4) 
+    # used by: os_configuration, deployment
+    package_size_bytes: 1048576
     # Opt-in (schema 5.4.2): the toolkit side-loads an SBE only when you set winrm_copy or node_pull here; no value means no delivery, and a hard...
     # one of: winrm_copy | node_pull | skip; default: "skip"; used by: os_configuration
     delivery: "skip"

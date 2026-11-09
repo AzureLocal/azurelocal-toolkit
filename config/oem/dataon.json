@@ -1,0 +1,14 @@
+{
+  "oem": "DataON",
+  "publisher": "DataON",
+  "sbe": {
+    "discoveryManifestUrl": "",
+    "driverPaths": [],
+    "acquisition": "manual_download",
+    "requiredByDefault": true,
+    "downloadRequiresLogin": true,
+    "verified": false,
+    "acquisitionNote": "Not yet verified against the vendor pages. DataON documents a manual import of the SBE; its download connector needs the cluster registered with the DataON portal. Other DataON systems and validated nodes use a Windows Admin Center extension and have no SBE: set hardware.sbe.requirement not_applicable with a reason for them.",
+    "note": "Unverified. Set driverPaths to the folders inside the OEM's SBE zip that hold network drivers, and discoveryManifestUrl to the OEM's published discovery manifest; until then the package is checked against its own SBE_Discovery_*.xml."
+  }
+}

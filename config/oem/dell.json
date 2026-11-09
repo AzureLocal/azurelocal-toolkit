@@ -4,6 +4,11 @@
   "sbe": {
     "discoveryManifestUrl": "https://aka.ms/AzureStackSBEUpdate/DellEMC",
     "driverPaths": [ "DriversGE/Network" ],
+    "acquisition": "manual_download",
+    "requiredByDefault": true,
+    "downloadRequiresLogin": true,
+    "verified": true,
+    "acquisitionNote": "Dell's package is a login-gated download from Dell support. Without Dell support credentials on the cluster (Set-SolutionExtensionSecretLocation) the first update is AdditionalContentRequired and the three files are imported with Add-SolutionUpdate. Microsoft Learn (Solution Builder Extension updates).",
     "note": "The folders inside the OEM's SBE zip that hold network drivers. Dell says the SBE can't install drivers or firmware during the deployment, so they go on the node first."
   }
 }

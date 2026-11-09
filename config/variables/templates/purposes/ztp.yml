@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that 'ztp' reads (a strict subset of the master file). Schema 5.6.3.
+# Template for the part of infrastructure.yml that 'ztp' reads (a strict subset of the master file). Schema 5.6.4.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -219,10 +219,10 @@ hardware:
   # used by: ztp
   bios_during_provisioning:
     example_name: "value"
-  # Optional Solution Builder Extension (SBE), opt-in: no hardware.sbe = deploy without a Solution Builder Extension (the OS keeps the OEM driv...
+  # Solution Builder Extension (SBE), the hardware vendor's driver and firmware package.
   # used by: ztp, deployment
   sbe:
-    # Required when hardware.sbe is present, unless publisher, family and version name an SBE you placed in C:\SBE yourself (and needed for any d...
+    # Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml.
     # used by: ztp, os_configuration, deployment
     bundle_path: "D:\\sbe\\dell"
     # Test only.

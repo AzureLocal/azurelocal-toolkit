@@ -4,6 +4,11 @@
   "sbe": {
     "discoveryManifestUrl": "",
     "driverPaths": [],
+    "acquisition": "manual_download",
+    "requiredByDefault": true,
+    "downloadRequiresLogin": true,
+    "verified": false,
+    "acquisitionNote": "Not yet verified against the vendor pages. Microsoft Learn lists the Standard SBE for the newer integrated systems (DL380 Gen11 SKU P65984-B21, DL145 Gen11 SKU P78955-B21) and the Minimal SBE plus a Windows Admin Center extension for other models, both from HPE's license portal. Set hardware.sbe.requirement not_applicable with a reason for a model that has no SBE.",
     "note": "Unverified. Set driverPaths to the folders inside the OEM's SBE zip that hold network drivers, and discoveryManifestUrl to the OEM's published discovery manifest; until then the package is checked against its own SBE_Discovery_*.xml."
   }
 }
