@@ -219,7 +219,7 @@ hardware:
   # used by: ztp
   bios_during_provisioning:
     example_name: "value"
-  # Solution Builder Extension (SBE), the hardware vendor's driver and firmware package.
+  # The hardware vendor's Solution Builder Extension (SBE) package, its driver and firmware update, is a REQUIREMENT (schema 5.6.4): the packag...
   # used by: ztp, deployment
   sbe:
     # Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml.

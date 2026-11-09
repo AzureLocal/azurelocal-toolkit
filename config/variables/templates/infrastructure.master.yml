@@ -485,16 +485,16 @@ hardware:
   # used by: ztp
   bios_during_provisioning:
     example_name: "value"
-  # Solution Builder Extension (SBE), the hardware vendor's driver and firmware package.
+  # The hardware vendor's Solution Builder Extension (SBE) package, its driver and firmware update, is a REQUIREMENT (schema 5.6.4): the packag...
   # used by: ztp, deployment
   sbe:
-    # Required when hardware.sbe is present and bundle_path is not (with bundle_path it is read from the package).
+    # Required when hardware.sbe is present and bundle_path is not (nor source_path or requirement; with a package it is read from it).
     # used by: os_configuration, deployment
     publisher: "Dell"
-    # Required when hardware.sbe is present and bundle_path is not.
+    # Required when hardware.sbe is present and bundle_path is not (nor source_path or requirement).
     # used by: os_configuration, deployment
     family: ""
-    # Required when hardware.sbe is present and bundle_path is not.
+    # Required when hardware.sbe is present and bundle_path is not (nor source_path or requirement).
     # used by: os_configuration, deployment
     version: ""
     # Where the SBE manifest comes from (a URL or a file path).
