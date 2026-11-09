@@ -1681,6 +1681,9 @@ function Format-AzlOsConfigurationSummary {
     # The SBE is opt-in: when a node's plan has the Sbe step Skipped, nothing was side-loaded, and the summary says so (an absent SBE is not a fault).
     $sbeSkipped = @($Record | Where-Object { @(Get-AzlProp $_ 'plan' @() | Where-Object { $_ -and $_.Step -eq 'Sbe' -and $_.Action -eq 'Skipped' }).Count })
     $sbeLine = if ($sbeSkipped.Count) { 'SBE: opt-in, no SBE side-loading requested (nothing is copied to C:\SBE; set hardware.sbe.delivery to winrm_copy or node_pull only if your hardware partner provides an SBE).' } else { '' }
+    # The package is a requirement even when it is not side-loaded: when the share holds it, the summary says so (an Info item of the Sbe step).
+    $sbeShared = @($Record | ForEach-Object { @(Get-AzlProp $_ 'plan' @() | Where-Object { $_ -and $_.Step -eq 'Sbe' -and $_.Action -eq 'Info' -and "$($_.Item)" -match 'SBE_[^\/]*\.zip$' }) } | Select-Object -First 1)
+    if ($sbeShared.Count) { $sbeLine = (@($sbeLine, "SBE: package available on the share, not side-loaded (switch off): $($sbeShared[0].Item). You need the same files for the first cluster update.") | Where-Object { $_ }) -join [Environment]::NewLine }
     $rows = foreach ($r in $Record) {
         $d = Get-AzlProp $r 'domainJoin'
         [pscustomobject][ordered]@{
@@ -1704,6 +1707,33 @@ function Format-AzlOsConfigurationSummary {
     if (-not $showDomain) { $rows = @($rows | Select-Object -Property * -ExcludeProperty Domain) }
     return (($rows | Format-Table -AutoSize -Wrap | Out-String -Width 200).TrimEnd() + $(if ($sbeLine) { [Environment]::NewLine + $sbeLine }) + [Environment]::NewLine + "Exit code: $ExitCode")
 }
+function Get-AzlNodeSbeReport {
+    <#
+    .SYNOPSIS
+        Which SBE package this node got, or has available: package, state, and the files with their change entries. state: delivered (a delivery change was made, or the
+        node already holds every file), available-not-side-loaded (the package is on the share, the switch is off), not-delivered (a delivery was asked for and did not
+        complete), not-configured. The change details name the package, family, version and source (Send-AzlSbePackage).
+    #>
+    [CmdletBinding()]
+    param([AllowNull()]$Record)
+    $plan = @(Get-AzlProp $Record 'plan' @() | Where-Object { $_ -and $_.Step -eq 'Sbe' })
+    $changes = @(Get-AzlProp $Record 'changes' @() | Where-Object { $_ -and [string](Get-AzlProp $_ 'id' '') -like 'Sbe/*' })
+    $zip = @($plan | Where-Object { "$($_.Item)" -match 'SBE_[^\/]*\.zip$' } | Select-Object -First 1)
+    $package = if ($zip.Count) { ([string]$zip[0].Item -split '[\/]')[-1] } else { '' }
+    $state = 'not-configured'
+    $delivery = @($plan | Where-Object { $_.Action -in 'Ok', 'Change', 'Blocked' })
+    if ($changes.Count -and @($changes | Where-Object { $_.status -eq 'failed' }).Count) { $state = 'not-delivered' }
+    elseif ($changes.Count -and @($changes | Where-Object { $_.status -eq 'changed' }).Count -and -not @($plan | Where-Object { $_.Action -in 'Change', 'Blocked' }).Count) { $state = 'delivered' }
+    elseif ($delivery.Count -and @($delivery | Where-Object { $_.Action -eq 'Ok' }).Count -eq $delivery.Count) { $state = 'delivered' }
+    elseif ($delivery.Count) { $state = 'not-delivered' }
+    elseif (@($plan | Where-Object { $_.Action -eq 'Info' -and "$($_.Item)" -match 'SBE_[^\/]*\.zip$' }).Count) { $state = 'available-not-side-loaded' }
+    [ordered]@{
+        state   = $state
+        package = $package
+        files   = @($changes | ForEach-Object { [ordered]@{ id = [string]$_.id; status = [string]$_.status; detail = [string]$_.detail } })
+    }
+}
+
 function ConvertTo-AzlNodeReport {
     param([System.Collections.IDictionary]$Record)
     [ordered]@{
@@ -1726,6 +1756,7 @@ function ConvertTo-AzlNodeReport {
         steps          = @($Record.steps)
         status         = $Record.status
         planned        = [ordered]@{ changes = $Record.pendingChanges; blocked = $Record.blocked }
+        sbe            = (Get-AzlNodeSbeReport -Record $Record)
         plan           = @($Record.plan | ForEach-Object { [ordered]@{ step = $_.Step; item = $_.Item; current = $_.Current; desired = $_.Desired; action = $_.Action; note = $_.Note } })
         changes        = @($Record.changes)
         verification   = @($Record.verification)
@@ -2222,4 +2253,4 @@ function Invoke-AzlOsConfiguration {
     }
 }
 
-Export-ModuleMember -Function Resolve-AzlArcRegistrationFailure, Remove-AzlStaleArcMachine, Get-AzlWipeKey, Get-AzlWipeHash, New-AzlWipeListDocument, Read-AzlApprovedWipeList, Test-AzlWipeApproval, Get-AzlHandoffFile, Merge-AzlHandoff, Find-AzlMergedHandoff, Resolve-AzlNodeMethod, Get-AzlNodeStepList, Get-AzlNodeEvidence, Get-AzlRunSetting, Get-AzlWipeList, Format-AzlWipeList, Get-AzlOsConfigurationExitCode, Format-AzlOsConfigurationSummary, Test-AzlIsoPrecondition, Invoke-AzlOsConfiguration
+Export-ModuleMember -Function Get-AzlNodeSbeReport, Resolve-AzlArcRegistrationFailure, Remove-AzlStaleArcMachine, Get-AzlWipeKey, Get-AzlWipeHash, New-AzlWipeListDocument, Read-AzlApprovedWipeList, Test-AzlWipeApproval, Get-AzlHandoffFile, Merge-AzlHandoff, Find-AzlMergedHandoff, Resolve-AzlNodeMethod, Get-AzlNodeStepList, Get-AzlNodeEvidence, Get-AzlRunSetting, Get-AzlWipeList, Format-AzlWipeList, Get-AzlOsConfigurationExitCode, Format-AzlOsConfigurationSummary, Test-AzlIsoPrecondition, Invoke-AzlOsConfiguration

@@ -124,9 +124,10 @@ function Get-AzlSbeBundle {
         Get-AzlSbeBundle -Path 'D:\sbe\dell' -ManifestUrl 'https://aka.ms/AzureStackSBEUpdate/DellEMC'
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][string]$Path, [string]$ManifestUrl, [switch]$OfflineManifest)
-    if (-not (Test-Path -LiteralPath $Path -PathType Container)) { throw "SBE folder $Path doesn't exist (hardware.sbe.bundle_path)." }
-    $zips = @(Get-ChildItem -LiteralPath $Path -File -Filter 'SBE_*.zip')
+    param([Parameter(Mandatory)][string]$Path, [string]$ManifestUrl, [switch]$OfflineManifest, [string]$PackageName)
+    if (-not (Test-Path -LiteralPath $Path -PathType Container)) { throw "SBE folder $Path doesn't exist (hardware.sbe.source_path or bundle_path)." }
+    # A share can hold more than one package: -PackageName (SBE_<Vendor>_<Family>_<Version>) says which one the node gets.
+    $zips = @(Get-ChildItem -LiteralPath $Path -File -Filter $(if ($PackageName) { "$PackageName.zip" } else { 'SBE_*.zip' }))
     if ($zips.Count -ne 1) { throw "Expected one SBE_*.zip in $Path, found $($zips.Count)." }
     $zip = $zips[0]
     $name = [IO.Path]::GetFileNameWithoutExtension($zip.Name)
@@ -154,6 +155,7 @@ function Get-AzlSbeBundle {
     [pscustomobject]@{
         Name       = $name
         ZipName    = $zip.Name
+        Source     = $Path
         Files      = @($files)
         HashSource = $source
         Deployment = [ordered]@{
@@ -269,6 +271,9 @@ function Get-AzlNodeSpec {
         Ports come from nodes[].network_adapters (or the one management port made from nodes[].management). The management
         port is the one Get-AzlManagementAdapter names, and it is found on the node by its MAC.
         The handoff adds the Arc machine's resource ID, the installed build and managementAddressVerified.
+    .PARAMETER SbeShare
+        What the SBE source (hardware.sbe.source_path, else bundle_path) holds, read without hashing (Get-AzlSbeShareInfo), for the Sbe step to report when nothing is side-loaded:
+        the package is available on the share but not delivered (the switch hardware.sbe.delivery is off). Optional; nothing is read from a node for it.
     .PARAMETER SbeBundle
         The result of Get-AzlSbeBundle. Without it, or when hardware.sbe.delivery is not winrm_copy or node_pull (the SBE is opt-in
         only), the spec carries no SBE and the SBE and driver steps are reported as not configured.
@@ -281,6 +286,7 @@ function Get-AzlNodeSpec {
         [Parameter(Mandatory)][System.Collections.IDictionary]$Node,
         [object]$Handoff,
         [object]$SbeBundle,
+        [object]$SbeShare,
         [string]$ConfigRoot = $script:ConfigRoot,
         # HOOK remoting-profiles: the effective profile (Resolve-AzlRemotingProfile). Without it the RemoteManagement step is the plain one.
         [object]$RemotingProfile,
@@ -357,8 +363,10 @@ function Get-AzlNodeSpec {
     $sbe = $null
     if ($SbeBundle -and $sbeDelivery) {
         $oem = Get-AzlOemConfig -Vendor ([string](Get-AzlProp $Infrastructure 'hardware.vendor' 'Dell')) -ConfigRoot $ConfigRoot
+        $bundleDeployment = Get-AzlProp $SbeBundle 'Deployment' $null
         $sbe = [pscustomobject]@{ Name = $SbeBundle.Name; ZipName = $SbeBundle.ZipName; Dir = 'C:\SBE'; Files = @($SbeBundle.Files); DriverPaths = @($oem.sbe.driverPaths)
-            Delivery = $sbeDelivery; PullUrl = [string](Get-AzlProp $Infrastructure 'hardware.sbe.node_pull_url' '') }
+            Delivery = $sbeDelivery; PullUrl = [string](Get-AzlProp $Infrastructure 'hardware.sbe.node_pull_url' '')
+            Source = [string](Get-AzlProp $SbeBundle 'Source' ''); Family = [string](Get-AzlProp $bundleDeployment 'sbeFamily' ''); Version = [string](Get-AzlProp $bundleDeployment 'sbeVersion' ''); Publisher = [string](Get-AzlProp $bundleDeployment 'sbePublisher' '') }
     }
 
     [pscustomobject]@{
@@ -373,6 +381,7 @@ function Get-AzlNodeSpec {
         LocalAdmin     = $(if ($local) { [pscustomobject]@{ Username = [string](Get-AzlProp $local 'username' ''); PasswordRef = [string](Get-AzlProp $local 'password' '') } } else { $null })
         Sbe            = $sbe
         SbeDelivery    = $sbeDelivery # '' unless a person asked for winrm_copy or node_pull
+        SbeShare       = $SbeShare # the package on the share, when nothing is delivered: reported as information only
         DomainJoin    = (Get-AzlDomainJoinSpec -Infrastructure $Infrastructure) # DOMAINJOIN HOOK
         San            = $san
         Architecture   = $architecture
@@ -559,7 +568,7 @@ function Compare-AzlNodeState {
                             $sbeItems.Add((New-AzlPlanItem $n 'Sbe' $path $current $wanted Change "node_pull (requested): the node downloads it from $url and checks the SHA-256." @{ id = "Sbe/$($f.Name)"; kind = 'sbe-file'; route = 'node_pull'; name = $f.Name; sha256 = $f.Sha256; size = $f.Size; url = $url }))
                         }
                     }
-                    'winrm_copy' { $sbeItems.Add((New-AzlPlanItem $n 'Sbe' $path $current $wanted Change 'winrm_copy (requested): copied over WinRM from the host running this script (it must reach the node on TCP 5985), then the SHA-256 is checked on the node.' @{ id = "Sbe/$($f.Name)"; kind = 'sbe-file'; route = 'winrm_copy'; name = $f.Name; sha256 = $f.Sha256; localPath = $f.Path; size = $f.Size })) }
+                    'winrm_copy' { $sbeItems.Add((New-AzlPlanItem $n 'Sbe' $path $current $wanted Change "winrm_copy (requested): copied over WinRM from the host running this script (it must reach the node on TCP 5985), read from $(if ($Spec.Sbe.Source) { $Spec.Sbe.Source } else { 'the SBE source' }), then the SHA-256 is checked on the node." @{ id = "Sbe/$($f.Name)"; kind = 'sbe-file'; route = 'winrm_copy'; name = $f.Name; sha256 = $f.Sha256; localPath = $f.Path; size = $f.Size })) }
                 }
             }
         }
@@ -573,7 +582,16 @@ function Compare-AzlNodeState {
         }
         else {
             $sbeItems.Add((New-AzlPlanItem $n 'Sbe' 'package' 'not requested' 'hardware.sbe.delivery winrm_copy or node_pull (opt-in)' Skipped 'no SBE side-loading requested'))
-            # Files an earlier delivery left in C:\SBE are only named (the Read lists the folder, read only). Removing them is a separate, explicit operator action.
+            # The package is a requirement even when the build does not side-load it: when a source is configured the step says what is on the share, as information.
+            $share = Get-AzlProp $Spec 'SbeShare' $null
+            if ($share) {
+                if ([bool](Get-AzlProp $share 'Available' $false)) {
+                    $sbeItems.Add((New-AzlPlanItem $n 'Sbe' ([string]$share.ZipName) 'available on the share' 'not side-loaded (switch off)' Info "package available on the share, not side-loaded (switch off): $($share.PackageName) (family $($share.Family), version $($share.Version)) at $($share.Path). hardware.sbe.delivery is skip, the default; set winrm_copy or node_pull to side-load it during the build. The same files are what the first cluster update imports (Add-SolutionUpdate)."))
+                }
+                else {
+                    $sbeItems.Add((New-AzlPlanItem $n 'Sbe' 'package' 'source configured, package not usable from this host' 'package available on the share' Info "SBE source $($share.Path) is configured but the package is not available from this host: $($share.Reason). Nothing is side-loaded (switch off). The pre-cluster verification (SB-002 to SB-004) is the check that blocks on it."))
+                }
+            }            # Files an earlier delivery left in C:\SBE are only named (the Read lists the folder, read only). Removing them is a separate, explicit operator action.
             $held = @(Get-AzlProp $State 'sbeHeld' @() | Where-Object { $_ } | ForEach-Object { [string]$_ })
             if ($held.Count) { $sbeItems.Add((New-AzlPlanItem $n 'Sbe' 'C:\SBE' ($held -join ', ') 'left as it is' Info "C:\SBE holds SBE files that this run did not request: $($held -join ', '); it does not remove them")) }
         }
@@ -1049,8 +1067,10 @@ function Send-AzlSbePackage {
     )
     $node = $Spec.Name
     $out = [System.Collections.Generic.List[object]]::new()
+    # Which SBE went to which node: every detail names the package (family, version), where it was read from and the node, so the report and the events carry it.
+    $sbeInfo = Get-AzlProp $Spec 'Sbe' $null
+    $pkg = $(if ($sbeInfo) { "SBE package $(Get-AzlProp $sbeInfo 'Name' '')$(if (Get-AzlProp $sbeInfo 'Family' '') { " (family $(Get-AzlProp $sbeInfo 'Family' ''), version $(Get-AzlProp $sbeInfo 'Version' ''))" })$(if (Get-AzlProp $sbeInfo 'Source' '') { " from $(Get-AzlProp $sbeInfo 'Source' '')" })" } else { 'SBE package' })
     $new = { param($a, $status, $detail) [pscustomobject]@{ Name = [string]$a.name; Id = [string]$a.id; Status = $status; Detail = $detail } }
-
     $pull = @($Item | ForEach-Object { $_.Apply } | Where-Object { $_.route -eq 'node_pull' })
     if ($pull.Count) {
         try {
@@ -1058,7 +1078,7 @@ function Send-AzlSbePackage {
             $result = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Apply) -Parameters @{ actions = $actions; sbeDir = $Spec.Sbe.Dir } -Secrets $Secrets -TimeoutSeconds 3600
             foreach ($a in $pull) {
                 $r = @($result.results | Where-Object { $_.id -eq $a.id }) | Select-Object -First 1
-                if ($r) { $out.Add((& $new $a $r.status $r.detail)) } else { $out.Add((& $new $a 'failed' 'The node reported no result for this file.')) }
+                if ($r) { $out.Add((& $new $a $r.status "$($r.detail) [$pkg to $node]")) } else { $out.Add((& $new $a 'failed' 'The node reported no result for this file.')) }
             }
         }
         catch { foreach ($a in $pull) { $out.Add((& $new $a 'failed' "node_pull failed: $($_.Exception.Message)")) } }
@@ -1074,7 +1094,7 @@ function Send-AzlSbePackage {
             if ($stop) { $out.Add((& $new $a 'failed' $stop)); continue }
             try {
                 $null = Send-AzlNodeFile -Transport $via -Node $node -LocalPath $a.localPath -RemotePath ("$($Spec.Sbe.Dir.TrimEnd('\'))\$($a.name)") -Sha256 $a.sha256
-                $out.Add((& $new $a 'changed' "$($a.name) copied over WinRM and SHA-256 verified"))
+                $out.Add((& $new $a 'changed' "$($a.name) copied over WinRM and SHA-256 verified ($($a.sha256)) [$pkg to $node]"))
             }
             catch {
                 $stop = "winrm_copy failed: $($_.Exception.Message)"

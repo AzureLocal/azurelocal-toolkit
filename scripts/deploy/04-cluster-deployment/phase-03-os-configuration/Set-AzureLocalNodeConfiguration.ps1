@@ -29,9 +29,10 @@
                         SAN (an unclaimed multipath is Blocked), and for a hybrid Fibre Channel design the Learn warning not to
                         zone the HBA WWNs until after the Azure Local deployment.
       ClearStorage      leftover local storage; wiped only with -ClearStorage -Execute
-      Sbe               LAST. OPT-IN ONLY: the OEM's SBE package (hardware.sbe.bundle_path) is side-loaded into C:\SBE (SHA-256 checked)
-                        only when a person sets hardware.sbe.delivery to winrm_copy or node_pull. The key has no default: unset,
-                        none or skip means nothing is side-loaded, the step is Skipped ('no SBE side-loading requested') and so
+      Sbe               LAST. The OEM's SBE package must be downloaded and available on the share (hardware.sbe.source_path, else bundle_path; the pre-cluster
+                        verification checks it). Side-loading it is OPT-IN ONLY: it is copied from that share into C:\SBE (SHA-256 checked, the package
+                        and node named in the report and the events) only when a person sets hardware.sbe.delivery to winrm_copy or node_pull. The key has no default: unset,
+                        none or skip means nothing is side-loaded, the step is Skipped ('no SBE side-loading requested'), with an Info line when the share holds the package ('package available on the share, not side-loaded (switch off)'), and so
                         is the Drivers step ('no SBE configured'); nothing on the node is copied, read or removed (files an earlier
                         delivery left in C:\SBE are only named, as Info). Use it only if the hardware partner provides an SBE.
                         It never stops the other steps. The drivers install from it, in the pass after it has landed.
@@ -157,6 +158,7 @@ $common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '
 Import-Module (Join-Path (Join-Path $common 'infrastructure') 'AzlInfrastructure.psm1') -Force
 Import-Module (Join-Path (Join-Path $common 'azure-local') 'AzlAzure.psm1') -Force
 Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlNodeConfiguration.psm1') -Force
+Import-Module (Join-Path (Join-Path $common 'sbe') 'AzlSbePackage.psm1') -Force
 Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlNodeTransport.psm1') -Force
 Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlGuardedChange.psm1') -Force
 Import-Module (Join-Path (Join-Path $common 'node-configuration') 'AzlRemoting.psm1') -Force
@@ -185,20 +187,38 @@ $steps = if ($Step) { $Step } else { $allSteps }
 $nodes = @($infra.nodes | Where-Object { -not $Node -or $_.name -in $Node })
 if ($Node) { foreach ($n in $Node) { if ($n -notin @($infra.nodes | ForEach-Object { $_.name })) { throw "Node $n isn't in $InfrastructureFile. Nodes there: $(@($infra.nodes | ForEach-Object { $_.name }) -join ', ')." } } }
 
-# ---- the SBE package, checked before any node is touched. Opt-in only: nothing is loaded or checked unless a person set hardware.sbe.delivery
-# to winrm_copy or node_pull. The key has no default.
+# ---- the SBE package. It is a REQUIREMENT that the OEM package is downloaded and available on the share the automation reads (hardware.sbe.source_path, else
+# bundle_path); the pre-cluster verification (SB-001 to SB-006) is the check that blocks on it. Side-loading it onto the nodes during the build stays opt-in:
+# nothing is loaded, hashed or copied unless a person set hardware.sbe.delivery to winrm_copy or node_pull. The key has no default. With the switch off the Sbe
+# step only reports what the share holds, as information (it reads the share's file list and the discovery manifest, no node).
 $sbeDelivery = Get-AzlSbeDeliveryRoute -Value (Get-AzlProp $infra 'hardware.sbe.delivery')
 $bundle = $null
-$bundlePath = Get-AzlProp $infra 'hardware.sbe.bundle_path'
+$sbeShare = $null
+$sbeMount = $null
+$sbeSource = Get-AzlSbeSource -Infrastructure $infra
+$bundlePath = $sbeSource.Path
+$sbePassword = ''
+if ($sbeSource.Path -and $sbeSource.Username -and $sbeSource.PasswordRef -and -not $SpecOnly -and ('Sbe' -in $steps -or 'Drivers' -in $steps)) { $sbePassword = Get-AzlSecret -Reference $sbeSource.PasswordRef }
 if ($sbeDelivery -and $bundlePath -and -not $SpecOnly -and ('Sbe' -in $steps -or 'Drivers' -in $steps)) {
     $oem = Get-AzlOemConfig -Vendor ([string](Get-AzlProp $infra 'hardware.vendor' 'Dell'))
-    $bundle = Get-AzlSbeBundle -Path $bundlePath -ManifestUrl ([string]$oem.sbe.discoveryManifestUrl) -OfflineManifest:$OfflineManifest
-    Write-Line "SBE $($bundle.Name): SHA-256 matches $($bundle.HashSource)."
+    # The share can hold more than one package: the one for the file's family and version, else the one whose SupportedModels list the hardware model.
+    $share = Get-AzlSbeShareInfo -Infrastructure $infra -Password $sbePassword
+    if ($share -and -not $share.Available) { throw "hardware.sbe.delivery is $sbeDelivery but the SBE package on $($share.Path) is not available from this host: $($share.Reason). Run the pre-cluster verification (SB-001 to SB-006) for the full finding." }
+    $sbeMount = Mount-AzlSbeSource -Source $sbeSource -Password $sbePassword
+    $bundle = Get-AzlSbeBundle -Path $sbeMount.Path -PackageName $(if ($share) { $share.PackageName } else { '' }) -ManifestUrl ([string]$oem.sbe.discoveryManifestUrl) -OfflineManifest:$OfflineManifest
+    Write-Line "SBE $($bundle.Name) (read from $bundlePath): SHA-256 matches $($bundle.HashSource)."
 }
-elseif (-not $sbeDelivery) { Write-Line 'No SBE side-loading requested (opt-in: hardware.sbe.delivery is not winrm_copy or node_pull): nothing is side-loaded and the OEM drivers step is skipped.' }
-elseif (-not $bundlePath) { Write-Line "hardware.sbe.delivery is $sbeDelivery (SBE side-loading requested) but hardware.sbe.bundle_path is not set: the Sbe step is blocked." }
+elseif (-not $sbeDelivery) {
+    Write-Line 'No SBE side-loading requested (opt-in: hardware.sbe.delivery is not winrm_copy or node_pull): nothing is side-loaded and the OEM drivers step is skipped.'
+    if ($bundlePath -and -not $SpecOnly -and 'Sbe' -in $steps) {
+        $sbeShare = Get-AzlSbeShareInfo -Infrastructure $infra -Password $sbePassword
+        if ($sbeShare -and $sbeShare.Available) { Write-Line "SBE package available on the share, not side-loaded (switch off): $($sbeShare.PackageName) at $($sbeShare.Path)." }
+        elseif ($sbeShare) { Write-Line "SBE source $($sbeShare.Path) is configured but its package is not available from this host: $($sbeShare.Reason)." }
+    }
+}
+elseif (-not $bundlePath) { Write-Line "hardware.sbe.delivery is $sbeDelivery (SBE side-loading requested) but neither hardware.sbe.source_path nor bundle_path is set: the Sbe step is blocked." }
 
-$specs = foreach ($n in $nodes) { Get-AzlNodeSpec -Infrastructure $infra -Node $n -Handoff $handoff -SbeBundle $bundle -RemotingProfile $remotingProfile }
+$specs = foreach ($n in $nodes) { Get-AzlNodeSpec -Infrastructure $infra -Node $n -Handoff $handoff -SbeBundle $bundle -SbeShare $sbeShare -RemotingProfile $remotingProfile }
 
 if ($SpecOnly) {
     foreach ($s in $specs) {
@@ -460,6 +480,7 @@ try {
     foreach ($p in $sanProblems) { Write-Warning $p }
 }
 finally {
+    Dismount-AzlSbeSource -Mount $sbeMount
     # The report is written whatever happened above: with the changes so far, and the error and the indeterminate mark of a call that was cut off.
     Write-NodeReport
 }
