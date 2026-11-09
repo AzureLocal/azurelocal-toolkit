@@ -7,7 +7,7 @@ This page covers the two steps that run after azurelocal-ztp (or an ISO install)
 1. **OS configuration** (Phase 03): `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1` runs it for the whole instance in one go (plan, apply, verify, one report); it calls `Set-AzureLocalNodeConfiguration.ps1` in the same folder once per node, which you can also run on its own
 2. **ARM Validate, then Deploy** (Phase 05): `scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalClusterDeployment.ps1`, with `New-AzureLocalArmParameters.ps1` for the parameter file alone.
 
-Both read the one environment file, `infrastructure.yml` (schema 5). This page doesn't repeat what each key means: see the [schema-wide variables reference](../config/variables/docs/VARIABLES.md) and `config/variables/docs/infrastructure-file.md`. What it adds is what must be true before you run, and which of it the code checks.
+Both read the one environment file, `infrastructure.yml` (schema 5). This page doesn't repeat what each key means: see the [schema-wide variables reference](../config/variables/docs/VARIABLES.md), `config/variables/docs/infrastructure-file.md` and the [variable map](../config/variables/docs/VARIABLE-MAP.md) (which key goes to which OS configuration step, which ARM parameter and which pre-cluster check, and who reads it). What it adds is what must be true before you run, and which of it the code checks.
 
 In the tables, **Checked** says what happens if the item is missing:
 

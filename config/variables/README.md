@@ -23,10 +23,11 @@ config/variables/
     infrastructure-file.md        what infrastructure.yml is and how to fill it in (was config/infrastructure/README.md)
     MIGRATION.md                  where every key from the earlier files went, and the schema 5.x steps
     VARIABLES.md                  GENERATED: every key, type, required, default, example, who reads it
+    VARIABLE-MAP.md               GENERATED: what variable goes where (by phase, tool, ARM parameter; who provides it, who reads it)
     variables-reference.metadata.psd1   where to get a value (facts the registry does not hold)
   tool-mappings/                  names of ZTP and Sonar variables mapped to registry paths
   scripts/                        validators, the reader (VariableRegistry.psm1) and the generator
-  reports/                        generated reports
+  reports/                        generated reports (variable-map.csv is the machine copy of the variable map)
 config/infrastructure/            two generated stubs for tools that read them in place, and pointers (see its README)
 ```
 
@@ -77,6 +78,20 @@ The registry also registers the variables each tool owns, apart from the keys of
 - A script parameter that is not registered fails `tests/variables/ToolRegistry.Tests.ps1` (`Test-ToolParameterRegistration.ps1` reads the `param()` block).
 - ZTP and Sonar live in other repositories: [`tool-mappings/`](tool-mappings/README.md) maps their names to registry paths, and the same check runs on their checkouts with `AZL_CHECK_EXTERNAL_TOOLS=1`.
 - The discovery variables describe the Dell Redfish discovery branch; its scripts are checked once it is merged.
+
+## The variable map
+
+[`docs/VARIABLE-MAP.md`](docs/VARIABLE-MAP.md) answers "what variable goes where": for every variable, where it is defined (registry path, type, default, allowed values), who provides the value (you, Trailwright, Dell/Redfish discovery, a Key Vault reference, a default), which purpose files carry it, which tool and function read it (the toolkit, azurelocal-ztp, azurelocal-sonar, Trailwright), what it becomes downstream (ARM template parameter, OS configuration step, Sonar configuration key, pre-cluster verification check) and whether anything reads it at all. It has views by phase, by tool and by ARM parameter, a "where do I set X" lookup for the 40 most used variables and a list of unread variables. [`reports/variable-map.csv`](reports/variable-map.csv) is the same data, one row per variable. The diagram is [`docs/diagrams/variable-flow.drawio`](../../docs/diagrams/variable-flow.drawio).
+
+The map is **generated** from the registry and a scan of the code (the registry stays the only master); never edit it:
+
+```powershell
+./config/variables/scripts/New-VariableMap.ps1                    # regenerate: scans the toolkit; ZTP, Sonar and Trailwright from the committed snapshot
+./config/variables/scripts/New-VariableMap.ps1 -RescanExternal    # also rescan the ZTP, Sonar and Trailwright checkouts
+./config/variables/scripts/New-VariableMap.ps1 -Check             # exit 1 if a committed file is stale
+```
+
+Change a variable or a script that reads one, and the map changes: regenerate it and commit it with the change. `tests/variables/VariableMap.Tests.ps1` fails when the committed map is stale, when a registry variable is missing from it, and when an ARM parameter the builder produces is missing from the by-ARM-parameter table.
 
 ## Checks
 
