@@ -381,8 +381,20 @@ New rules AZL-060 to AZL-068 (see README). **Steps for a 5.5 file:** set `_metad
 - **5.6.2: adapters are identified by hardware facts.** `nodes[].network_adapters[].mac_address` is now required. New optional keys: `port_index`, `pci_location` (`bus`, `device`, `function`), `vendor` (written by hardware discovery), `allowed_vlans` (the VLANs the switch port allows) and `os_name_override`. **Steps:** a file whose ports lack the MAC: run `Invoke-HardwareDiscovery.ps1 -UpdateInfrastructure` or add the MAC. Nothing else changes: without `os_name_override` no adapter is renamed and the deployment sends the name the node reports for the MAC. To get one name everywhere, add `os_name_override` per used port and run the OS configuration (step `NicNames`).
 - **5.6.3** adds `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`. Nothing is required. A logical network uses `gateway` and `ip_pool`; the 4.0 names `default_gateway` and `ip_pools` belong to the deprecated `networking.onprem.logical_networks[]`.
 
-## To registry 5.0.0: where the files went
+## To 5.6.4: the SBE package is a requirement
 
+Schema 5.6.4 adds optional keys to `hardware.sbe`: `requirement` (`required` or `not_applicable`), `not_applicable_reason`, `source_path`, `source_username`, `source_password` (a `keyvault://` reference), `package_sha256` and `package_size_bytes`. A 5.6.3 file is valid as it is. What changes is the **gate**, not the file format:
+
+| If your file | Then |
+| --- | --- |
+| has no `hardware.sbe` and the vendor is Dell, HPE or DataON | The pre-cluster verification fails SB-001: the OEM package must be downloaded and available on a share. Set `hardware.sbe.source_path` to the share or folder with the three files, or `requirement: not_applicable` with `not_applicable_reason` for hardware with no SBE or a cluster that downloads it with the vendor credential. AZL-032 (Info) says the same. |
+| has no `hardware.sbe` and the vendor is Lenovo | SB-001 is a Warning that asks you to state the choice (the vendor catalog says the cluster downloads the package itself). |
+| has `hardware.sbe.bundle_path` | It is read as `source_path` when `source_path` is empty. |
+| has `hardware.sbe.delivery` | Unchanged. `skip` stays the default; the build-time side-load is still only `winrm_copy` or `node_pull`, and it now copies from `source_path`. |
+
+Other rules: AZL-033 (the requirement keys are consistent), AZL-030 accepts `source_path` for a delivery, AZL-015 accepts `source_path` or `requirement` in place of `bundle_path`.
+
+## To registry 5.0.0: where the files went
 The registry became the source of the schema. Nothing in `infrastructure.yml` changes; the files moved. Tools that read the old paths keep working through two generated stubs.
 
 | Was | Now |
@@ -397,4 +409,4 @@ The registry became the source of the schema. Nothing in `infrastructure.yml` ch
 `identity.active_directory.security_groups` is the list of groups (`name`, `purpose`, `members`, `local_groups`); the 4.0 object-by-role form is `security_groups_by_role` (deprecated, expires 2027-05-07).
 ## Version history
 
-One history, in order: 5.2 (the ports of each machine), 5.3 (BIOS phases, the static method, the SAN), 5.4 (every ZTP setting), 5.4.1 (adapter wait), 5.4.2 (SBE delivery), 5.4.3 (`clear_storage`), 5.4.4 (the guarded network change and the transport keys: `os_configuration.network`, `os_configuration.remoting.transport`, `bootstrap_transport`, `allowed_source_cidrs`), 5.5 (the domain join keys and the CI/CD `devops` keys), 5.6 (the `deployment` block and the remote management security profile), 5.6.1 (`local_groups`), 5.6.2 (adapter identity), 5.6.3 (logical network keys). A file that uses any of them says the version of the newest key it uses (`5.6.3` is the current version); each key's description in the schema says `since` which version added it. Rules: AZL-030 SBE delivery, AZL-031 `clear_storage`, AZL-040 `deployment`, AZL-050 to AZL-053 domain join, AZL-060 to AZL-068 security profile, AZL-070 `devops`.
+One history, in order: 5.2 (the ports of each machine), 5.3 (BIOS phases, the static method, the SAN), 5.4 (every ZTP setting), 5.4.1 (adapter wait), 5.4.2 (SBE delivery), 5.4.3 (`clear_storage`), 5.4.4 (the guarded network change and the transport keys: `os_configuration.network`, `os_configuration.remoting.transport`, `bootstrap_transport`, `allowed_source_cidrs`), 5.5 (the domain join keys and the CI/CD `devops` keys), 5.6 (the `deployment` block and the remote management security profile), 5.6.1 (`local_groups`), 5.6.2 (adapter identity), 5.6.3 (logical network keys), 5.6.4 (the SBE package as a requirement). A file that uses any of them says the version of the newest key it uses (`5.6.4` is the current version); each key's description in the schema says `since` which version added it. Rules: AZL-030 SBE delivery, AZL-033 SBE package requirement, AZL-031 `clear_storage`, AZL-040 `deployment`, AZL-050 to AZL-053 domain join, AZL-060 to AZL-068 security profile, AZL-070 `devops`.

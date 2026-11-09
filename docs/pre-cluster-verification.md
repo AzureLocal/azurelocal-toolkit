@@ -137,7 +137,7 @@ Get-AzlVerificationCheckDefinition   # array of @{ Id; Category; Title; Source; 
 Get-AzlVerificationAdapterDefault    # optional: a table of read only scriptblocks the module's checks call through $Context.Adapters
 ```
 
-- `Category` is `azure`, `identity`, `nodes`, `network`, `storage` or `readiness`. `Blocking` defaults to true.
+- `Category` is `azure`, `identity`, `nodes`, `network`, `storage` or `readiness`. `Blocking` defaults to true. (The SBE package checks SB- sit in `nodes`.)
 - `Applies` returns `$true`, or `$false` / a reason string (the check is then NotApplicable with that text).
 - `Run` returns one or more results, as hashtables or objects: `@{ Status = 'Passed'|'Failed'|'Warning'|'Skipped'|'NotApplicable'; Node = '*'; Message; Remedy; Evidence }`. `Evidence` (a string or a list)
   is appended to the message in full. Return one result per node for a per-node check. Never return a secret.
@@ -148,7 +148,7 @@ Get-AzlVerificationAdapterDefault    # optional: a table of read only scriptbloc
 - `Adapters.Remote.Invoke` is supplied by the engine and serves both call forms the modules use: `Invoke(node, scriptblock [, argumentList])` returns what the script block output and throws when the call fails
   (the local administrator comes from Key Vault, the addresses from the file, the WinRM options are the toolkit's); `Invoke(request)` returns `Ok`, `Address`, `Result`, `Error`, `AuthFailed`.
 - A node read is complete or it is not: when a section of the node script failed (`err.<section>`), checks that need that section are Skipped for that node with the reason, never Passed on empty data.
-- A check that throws is Failed with the exception text; the run goes on. A module that does not load, a definition that is unusable, a **missing** module (the folder, or one of the six modules of the
+- A check that throws is Failed with the exception text; the run goes on. A module that does not load, a definition that is unusable, a **missing** module (the folder, or one of the seven modules of the
   repository) and an id defined by two modules each become a failing check (`EXT-<name>`), never a silent gap. A module that exports neither function is a library (`AzlVerification.NodeCommon.psm1`).
 - A definition with the Id of a built-in check (`ARM-001`) replaces it.
 
@@ -224,7 +224,7 @@ Learn wins; the differences are listed in `docs-2610-audit.md` of the documentat
 
 ## The catalog
 
-Generated from the effective catalog (`Get-AzlPclCatalog`): the built-in `ARM-001` and the six modules. Blocking = a Failed (or unaccepted Skipped) result blocks the verdict. Sources are Microsoft Learn pages at
+Generated from the effective catalog (`Get-AzlPclCatalog`): the built-in `ARM-001` and the seven modules. Blocking = a Failed (or unaccepted Skipped) result blocks the verdict. Sources are Microsoft Learn pages at
 `view=azloc-2610`, or repository files. `-Fix` can repair only `AZ-004`.
 
 ### AZURE
@@ -302,6 +302,27 @@ Generated from the effective catalog (`Get-AzlPclCatalog`): the built-in `ARM-00
 | ND-011 | Secure Boot on, TPM 2.0 present and ready, the same BIOS version on all nodes | verification module AzlVerification.Nodes | yes | [Learn: concepts/system-requirements-23h2](https://learn.microsoft.com/en-us/azure/azure-local/concepts/system-requirements-23h2?view=azloc-2610; https://learn.microsoft.com/en-us/azure/azure-local/manage/use-environment-checker?view=azloc-2610 (hardware validator: Firmware tests)) |
 | ND-012 | No node is already a member of a cluster | verification module AzlVerification.Nodes | yes | [Learn: deploy/deployment-install-os](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-install-os?view=azloc-2610 (clean the machines before the deployment); azl-toolkit phase-03-os-configuration task-11 Clear-StorageConfiguration) |
 
+#### The SBE package (SB-, category NODES)
+
+The OEM Solution Builder Extension package is a **requirement**: downloaded and available on a share the automation can read (`hardware.sbe.source_path`), for the first cluster update at the latest.
+The six checks read the share, read only, from the machine that runs the gate (they read a node only for the model it reports, through the snapshot the NODES checks already take). The side-load
+to the nodes during the build is a separate opt-in (`hardware.sbe.delivery`, default `skip`) and is not checked here. Anything a check cannot read is **Skipped** (blocking unless accepted), never Passed;
+a package that is there but wrong is **Failed** with the exact reason. A share that answers but has no such folder (`NotFound`) or refuses the credential (`AccessDenied`) is Failed; one that cannot be reached
+from this host is Skipped, because another host may reach it.
+
+| Id | Check | Reads | Blocking | Source |
+| --- | --- | --- | --- | --- |
+| SB-001 | The SBE package is required and its source (a share the automation can read) is configured, or the file declares it not applicable with a reason | verification module AzlVerification.Sbe | yes | https://learn.microsoft.com/en-us/azure/azure-local/update/solution-builder-extension?view=azloc-2610; https://learn.microsoft.com/en-us/azure/azure-local/update/update-via-powershell-23h2?view=azloc-2610#step-3-import-and-rediscover-updates |
+| SB-002 | The SBE source is reachable from this host with the configured credential (read only) | verification module AzlVerification.Sbe | yes | https://learn.microsoft.com/en-us/azure/azure-local/update/solution-builder-extension?view=azloc-2610; https://learn.microsoft.com/en-us/azure/azure-local/update/update-via-powershell-23h2?view=azloc-2610#step-3-import-and-rediscover-updates |
+| SB-003 | The three package files are there: SBE_Discovery_<Vendor>.xml, SBE_<Vendor>_<Family>_<Version>.xml and SBE_<Vendor>_<Family>_<Version>.zip | verification module AzlVerification.Sbe | yes | https://learn.microsoft.com/en-us/azure/azure-local/update/solution-builder-extension?view=azloc-2610; https://learn.microsoft.com/en-us/azure/azure-local/update/update-via-powershell-23h2?view=azloc-2610#step-3-import-and-rediscover-updates |
+| SB-004 | The package files agree: names match the discovery entry, sizes above zero, SHA-256 matches the manifest (and the hash pinned in the file) | verification module AzlVerification.Sbe | yes | https://learn.microsoft.com/en-us/azure/azure-local/update/solution-builder-extension?view=azloc-2610; https://learn.microsoft.com/en-us/azure/azure-local/update/update-via-powershell-23h2?view=azloc-2610#step-3-import-and-rediscover-updates |
+| SB-005 | The package family matches the hardware model of EVERY node (SupportedModels of the package's own discovery manifest) | verification module AzlVerification.Sbe | yes | https://learn.microsoft.com/en-us/azure/azure-local/update/solution-builder-extension?view=azloc-2610; https://learn.microsoft.com/en-us/azure/azure-local/update/update-via-powershell-23h2?view=azloc-2610#step-3-import-and-rediscover-updates |
+| SB-006 | The SBE version is validated for the target solution version (the validated solution versions of the package's discovery manifest) | verification module AzlVerification.Sbe | yes | https://learn.microsoft.com/en-us/azure/azure-local/update/solution-builder-extension?view=azloc-2610; https://learn.microsoft.com/en-us/azure/azure-local/update/update-via-powershell-23h2?view=azloc-2610#step-3-import-and-rediscover-updates |
+
+- **SB-001** decides from `hardware.sbe.requirement`: `required`, or `not_applicable` with `not_applicable_reason` (NotApplicable; without the reason it is Failed). Absent, the vendor catalog (`config/oem/<vendor>.json`, `sbe.acquisition` and `requiredByDefault`) decides: `required` for a manual download (Dell, HPE, DataON), a Warning asking you to state it where the cluster downloads the package itself (Lenovo Premier), Skipped for a vendor the catalog does not know. The catalog cells other than Dell are marked unverified.
+- **SB-005** takes the family-to-model mapping from the `SupportedModels` of the package's own `SBE_Discovery_<Vendor>.xml` entry; no model is written in the toolkit. Models are compared as letters and digits (`AX-760` is `AX760`). It checks the file's `hardware.model` and the model each node reports. For the 17G-Intel zip on AX-760 nodes it fails with the family's supported models, the node model, and the package that does list the model and is validated with the target solution.
+- **SB-006** reads the validated solution versions from the same entry (`12.*.1004.*` patterns, `MinVersionRequired`); the target is `deployment.solution_version` (run setting `solutionVersion`), else the ZTP handoff, else `provisioning.os_version`.
+- A share can hold several packages: `hardware.sbe.family` and `version` choose one, else the one whose `SupportedModels` list the file's model; otherwise SB-003 fails and says to choose.
 ### NETWORK
 
 | Id | Check | Reads | Blocking | Source |
