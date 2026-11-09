@@ -356,6 +356,10 @@ Schema 5.6 adds one optional section, `deployment`, for the toolkit's ARM Valida
 | `deployment.skip_preconditions` | none | Preconditions to skip on purpose (reported as Skipped) |
 | `deployment.acknowledge_known_issues` | none | Known issue ids you accept (`config/known-issues/arm-deployment.json`) |
 | `deployment.deployment_settings_api_version` | the template's | Patch Microsoft's template api-version |
+| `deployment.solution_version`, `deployment.sbe_catalog_path` | derived, the catalog in `hardware.sbe.bundle_path` | The precondition `SbeValidatedWithSolution` (registry 5.0.1) |
+| `deployment.register_resource_providers` | `false` | Opt in: register the mandatory resource providers that are missing (registry 5.0.3) |
+| `deployment.pre_cluster_verification_max_age_hours`, `pre_cluster_verification_report_directory` | 4, the environment data folder | The pre-cluster verification gate (registry 5.0.7) |
+| `deployment.verification_min_memory_gib`, `verification_min_boot_disk_gb`, `verification_min_data_disk_gb`, `verification_min_link_gbps`, `verification_max_clock_skew_seconds` | 32, 200, 500, 10, 300 | The node checks of the gate (registry 5.0.9) |
 
 **Steps:** nothing is required. To use the block, set `_metadata.schema_version` to `5.6.0` and add the keys you want. AZL-040 checks them.
 
@@ -370,6 +374,12 @@ Schema 5.6 adds one optional section, `deployment`, for the toolkit's ARM Valida
 | `networking.logical_networks[].purpose`, `networking.cluster_networks[].purpose` | `management`, `oob`, `automation`, `compute`, `storage` or `other`. `networking.vlans[].purpose` was already free text; its values `management` and `oob` (any case) now count too. |
 
 New rules AZL-060 to AZL-068 (see README). **Steps for a 5.5 file:** set `_metadata.schema_version` to `5.6.0`; add `scenario.environment_class` (`lab` for an isolated lab, `production` otherwise); for `dev`, `production` and `dmz` list your jump servers in `os_configuration.remoting.allowed_source_cidrs`; for production and dmz, plan the HTTPS certificate (`os_configuration.remoting.certificate`, or the self-signed pre-join certificate and its trust procedure in `docs/os-configuration-and-arm-deployment.md`). To use the `deployment` block, add the keys you want; AZL-040 checks them.
+
+## To 5.6.1, 5.6.2 and 5.6.3
+
+- **5.6.1** adds `identity.active_directory.security_groups[].local_groups`. Nothing is required.
+- **5.6.2: adapters are identified by hardware facts.** `nodes[].network_adapters[].mac_address` is now required. New optional keys: `port_index`, `pci_location` (`bus`, `device`, `function`), `vendor` (written by hardware discovery), `allowed_vlans` (the VLANs the switch port allows) and `os_name_override`. **Steps:** a file whose ports lack the MAC: run `Invoke-HardwareDiscovery.ps1 -UpdateInfrastructure` or add the MAC. Nothing else changes: without `os_name_override` no adapter is renamed and the deployment sends the name the node reports for the MAC. To get one name everywhere, add `os_name_override` per used port and run the OS configuration (step `NicNames`).
+- **5.6.3** adds `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`. Nothing is required. A logical network uses `gateway` and `ip_pool`; the 4.0 names `default_gateway` and `ip_pools` belong to the deprecated `networking.onprem.logical_networks[]`.
 
 ## To registry 5.0.0: where the files went
 
@@ -387,4 +397,4 @@ The registry became the source of the schema. Nothing in `infrastructure.yml` ch
 `identity.active_directory.security_groups` is the list of groups (`name`, `purpose`, `members`, `local_groups`); the 4.0 object-by-role form is `security_groups_by_role` (deprecated, expires 2027-05-07).
 ## Version history
 
-One history, in order: 5.2 (the ports of each machine), 5.3 (BIOS phases, the static method, the SAN), 5.4 (every ZTP setting), 5.4.1 (adapter wait), 5.4.2 (SBE delivery), 5.4.3 (`clear_storage`), 5.4.4 (the guarded network change and the transport keys: `os_configuration.network`, `os_configuration.remoting.transport`, `bootstrap_transport`, `allowed_source_cidrs`), 5.5 (the domain join keys and the CI/CD `devops` keys), 5.6 (the `deployment` block and the remote management security profile). A file that uses any of them says `5.6.0`, the current version; each key's description in the schema says `since` which version added it. Rules: AZL-030 SBE delivery, AZL-031 `clear_storage`, AZL-040 `deployment`, AZL-050 to AZL-053 domain join, AZL-060 to AZL-068 security profile, AZL-070 `devops`.
+One history, in order: 5.2 (the ports of each machine), 5.3 (BIOS phases, the static method, the SAN), 5.4 (every ZTP setting), 5.4.1 (adapter wait), 5.4.2 (SBE delivery), 5.4.3 (`clear_storage`), 5.4.4 (the guarded network change and the transport keys: `os_configuration.network`, `os_configuration.remoting.transport`, `bootstrap_transport`, `allowed_source_cidrs`), 5.5 (the domain join keys and the CI/CD `devops` keys), 5.6 (the `deployment` block and the remote management security profile), 5.6.1 (`local_groups`), 5.6.2 (adapter identity), 5.6.3 (logical network keys). A file that uses any of them says the version of the newest key it uses (`5.6.3` is the current version); each key's description in the schema says `since` which version added it. Rules: AZL-030 SBE delivery, AZL-031 `clear_storage`, AZL-040 `deployment`, AZL-050 to AZL-053 domain join, AZL-060 to AZL-068 security profile, AZL-070 `devops`.

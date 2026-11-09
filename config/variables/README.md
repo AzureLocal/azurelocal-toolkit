@@ -35,7 +35,8 @@ config/infrastructure/            two generated stubs for tools that read them i
 **A new or changed variable is added to the registry first.** Then the script, the example and the document follow, and the generated files are regenerated. A variable that exists only in a script, an infrastructure file or a hand-edited schema is drift, and the tests fail on it.
 
 1. Add the entry to `schema/master-registry.yaml` (see [Entry format](#entry-format)). Bump `_metadata.version`, add a `_metadata.change_log` entry and a line to the change log in the file header.
-2. Run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`. It rewrites the schema, the templates, the stubs and `docs/VARIABLES.md`. Commit the result with the registry change.
+2. Run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`. It rewrites the schema, the templates, the stubs and `docs/VARIABLES.md` (the "Read by" column of that page is the `used_by` of the registry; nothing else lists readers). If a tool variable changed, also run `./config/variables/scripts/New-ToolMapping.ps1 -Tool ztp` and `-Tool sonar`. Commit the result with the registry change.
+   Rules for the entry: the `example` is a documentation placeholder (RFC 5737 addresses `192.0.2.x`, `198.51.100.x`, `203.0.113.x`; the zero GUID; MACs `00:00:5E:00:53:xx`; `example.com`), never a value from a real environment. `used_by` lists only the purposes whose code reads the key. A key no tool reads yet is kept as a documented placeholder and its description says "Not read by the tools yet". An entry that replaces another is marked `deprecated` with `replaced_by`.
 3. Update `schema/variables.schema.json` and `variables.example.yml` if the variable is part of a variables file, and a worked example if it belongs in one.
 4. Run the checks below. All must pass.
 

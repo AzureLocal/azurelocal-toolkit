@@ -101,6 +101,7 @@ Two settings decide what happens to each machine before deployment. Both are opt
 | `ip_address`, `prefix_length`, `gateway`, `dns_servers` | | The host address. The management port takes the prefix, gateway and DNS from `networking.management`, and must match them if it sets them. |
 | `vlan_id`, `vlan_mode` | 0-4094; `access` or `tagged` | `access`: the switch port is an access port in `vlan_id` and the host sends untagged frames (simplified provisioning sends VLAN 0). `tagged`: the host tags `vlan_id`. |
 | `switch_port` | `switch`, `port`, `description` | Where the port is cabled. |
+| `allowed_vlans` | List of VLAN ids, 1 to 4094 | **Optional.** The VLANs the switch port allows (a trunk). The pre-cluster verification checks that the compute VLANs of `networking.vlans[]` reach the compute adapters and prints a switch port checklist in its report; without it the check says it could not verify. The gate cannot read the switch. |
 
 **Names, in short.** Roles and intents refer to a port by `name`. The physical adapter is found on a node by `mac_address`. The name the deployment sends to Azure (`intentList` adapter, `storageNetworkList` networkAdapterName) is what the node calls that adapter, or `os_name_override` when set. If the same port has different names on different nodes, the deployment and the pre-cluster verification stop and give the two ways out: install the nodes consistently, or set `os_name_override` and run the OS configuration (`NicNames`, opt-in). Migration: existing files need no change; to get one name everywhere add `os_name_override` per used port. See [Adapter identity and names](../../../docs/os-configuration-and-arm-deployment.md#adapter-identity-and-names-the-nicnames-step).
 
@@ -206,6 +207,27 @@ Schema 5.4 only adds keys; every 5.0 to 5.3 file stays valid. It does two things
 
 The mapping from slot label to attribute is data in ZTP, `config/oem/<vendor>.json`, `bios` section (Dell: `Slot{n}` with `Disabled` and `Enabled`, and `EmbNic1Nic2`). For a vendor without a mapping, an HBA must name its own `bios_attribute` (with optional `bios_disabled_value` and `bios_enabled_value`); ZTP stops rather than guess, and an unrelated raw key does not excuse it. An HBA slot is never turned off when a network port is listed in the same slot, however the port's label is written (`Slot 2 Port 1`, `PCIe Slot 2`; rule AZL-029). `ports` under an HBA are for zoning and LUN masking (rule AZL-028); the BIOS action needs only the `slot`.
 
+## The networks the tools read
+
+- `networking.management`: `subnet`, `gateway`, `vlan_id`, `dns_servers` and, for static addressing, `site_ip_range`, `infrastructure_pool`, `static_method`, `provisioning_network` and `provisioning_dhcp_range`.
+- `networking.oob`: the out-of-band network of the BMCs. Only `subnet` is read (the remote management security profile counts it as a source in `dev` and `production`); `gateway` and `vlan_id` are documentation.
+- `networking.vlans[]`, `networking.intents[]`, `networking.storage.networks[]`, `networking.cluster_networks[]`: the design. Ports are named by `nodes[].network_adapters[].name`; the physical adapter is found by MAC (see above).
+- `networking.logical_networks[]`: the Arc VM logical networks created after the deployment (task `phase-06-post-deployment/task-08-logical-network-creation`). Keys: `name`, `vlan_id`, `address_prefix`, `gateway`, `dns_servers`, `ip_pool` (`start`, `end`; one pool, which `az stack-hci-vm` takes), `purpose`, and since 5.6.3 `enabled` (default `true`), `ip_allocation_method` (`Static` default, or `Dynamic`) and `nsg_name` (used with `-AssociateNsg`). The 4.0 form `networking.onprem.logical_networks[]` (`default_gateway`, `ip_pools`) is deprecated. The creation script still reads the old names for the gateway and the pool: see [variables-audit-tasks](../../../docs/design/variables-audit-tasks.md).
+
+## The deployment block and the pre-cluster verification (schema 5.6)
+
+`deployment` is optional and every key has a default. A `-Settings` value on the command line wins over the file. The keys of `Invoke-AzureLocalArmDeployment.ps1` are the timeouts, polling, approval and resume (see [MIGRATION.md](MIGRATION.md#the-deployment-block)). The pre-cluster verification gate (`Invoke-AzureLocalPreClusterVerification.ps1`, which the ARM run requires before Validate and Deploy) reads:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `deployment.pre_cluster_verification_max_age_hours` | 4 (1 to 168) | How long a passing result stays valid for the ARM run |
+| `deployment.pre_cluster_verification_report_directory` | the environment data folder, `arm-report\verification\live` | Where the report, the summary and the event feed are written |
+| `deployment.verification_min_memory_gib`, `verification_min_boot_disk_gb`, `verification_min_data_disk_gb`, `verification_min_link_gbps` | 32, 200, 500, 10 | The node minimums (Microsoft Learn system requirements) |
+| `deployment.verification_max_clock_skew_seconds` | 300 | The largest clock difference between a node and this host (Kerberos allows 300) |
+| `deployment.register_resource_providers` | `false` | Opt in: register the mandatory resource providers that are missing (the run never changes Azure by itself) |
+
+The Environment Checker is chosen with the switches `-InstallEnvironmentChecker` and `-KeepEnvironmentChecker` of the gate (run settings `installEnvironmentChecker`, `keepEnvironmentChecker`); the bypass of the gate is only the switch `-SkipPreClusterVerification`, never a file key. `identity.active_directory.use_gmsa` and `dns_secure_dynamic_updates` are read by the identity checks of the gate.
+
 ## What the check covers
 
 **The schema** checks structure, types, formats (IPv4, CIDR, MAC, GUID), the `keyvault://` form, name lengths (cluster and node names up to 15 characters, the LCM user up to 20), and the conditional sections above. Every section rejects unknown keys, so a misspelt key is an error, not a silently ignored value.
@@ -306,7 +328,19 @@ With `scenario.identity: active_directory`, `Invoke-AzureLocalOsConfiguration.ps
 
 `_metadata.schema_version` is the schema version the file follows.
 
-- A **minor** version (5.4.0) adds optional keys. Files written for 5.0 stay valid.
+- A **minor** version (5.4.0) adds optional keys. Files written for 5.0 stay valid. One exception: 5.6.2 requires `nodes[].network_adapters[].mac_address` (the identity of the port).
 - A **major** version (6.0.0) can rename or remove keys. It comes with a migration in `MIGRATION.md`, and tools refuse files from a major they don't read.
+
+The current version is 5.6.3. 5.6.1 added `security_groups[].local_groups`; 5.6.2 identifies adapters by hardware facts (`mac_address` required; `port_index`, `pci_location`, `vendor`, `os_name_override`, `allowed_vlans`); 5.6.3 added `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`. Each key's description says which version added it.
+
+## How a variable is added
+
+The registry is the only master (rule R19). A variable that exists only in a script, an infrastructure file, a hand-edited schema or a document is drift, and the tests fail on it.
+
+1. **Registry first.** Add the entry to [`schema/master-registry.yaml`](../schema/master-registry.yaml): `type`, `description`, `required`, `default`, `enum` or limits, `example` (a documentation placeholder: RFC 5737 addresses, the zero GUID, `00:00:5E:00:53:xx` MACs, `example.com`; never a value from a real environment), `used_by` (only the purposes whose code reads it) and `since`. A key no tool reads yet says "Not read by the tools yet". A parameter, setting or event of a tool goes under `tools.<tool>.<kind>.<group>.<name>`.
+2. Bump `_metadata.version`, add a `_metadata.change_log` entry and a line to the change log in the file header (one of each per bump); bump `_metadata.infrastructure_schema_version` when a key of `infrastructure.yml` changes.
+3. Regenerate: `./config/variables/scripts/New-InfrastructureArtifacts.ps1`, then `./config/variables/scripts/New-ToolMapping.ps1 -Tool ztp` and `-Tool sonar`. Check with `-Check`.
+4. Only then change the script, the example and this page; add or update the tests (`tests/variables`, `tests/infrastructure`).
+5. Run the checks in [`config/variables/README.md`](../README.md#checks).
 
 Change the schema, the examples, the tests and this page together. The tests in `tests/infrastructure` validate every example and check every rule.
