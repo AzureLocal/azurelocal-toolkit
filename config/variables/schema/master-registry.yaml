@@ -148,7 +148,7 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.15"
+  version: "5.0.16"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.4"
   last_updated: "2026-11-09"
@@ -157,6 +157,10 @@ _metadata:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-09"
+      version: "5.0.16"
+      change: "Descriptions of ten keys no longer start with the words 'Schema 5.x.y.' (seven hardware.sbe keys of schema 5.6.4 and three older keys): the generated template comment is the first sentence of the description, so those keys showed an empty comment in infrastructure.master.yml and the purpose templates. The since field already carries the version. No key, type, default or rule changed."
+      reason: "Owner order: the master variable documentation must be complete and true. A key with an empty comment in the master template is not documented."
     - date: "2026-11-09"
       version: "5.0.15"
       change: "The SBE package is a requirement: hardware.sbe.requirement (required or not_applicable), not_applicable_reason, source_path (the share or folder where the downloaded OEM package is available to the automation), source_username, source_password (Key Vault reference) and the optional package_sha256 and package_size_bytes (infrastructure schema 5.6.4). Without the key the vendor catalog (config/oem/<vendor>.json sbe.acquisition and requiredByDefault) decides: required for a vendor whose package is a manual download. The pre-cluster verification gains the checks SB-001 to SB-006 (source configured or declared not applicable with a reason, reachable read only, the three files present, files consistent with the manifest and the SHA-256, family matches the model of every node, version validated for the target solution). The OS configuration Sbe step reads the package from source_path when delivery is on, verifies the hashes and records which package went to which node, and reports the package as available on the share but not side-loaded when delivery is off. hardware.sbe.delivery is unchanged: skip by default, the build-time side-load stays opt-in. deployment.sbe_catalog_path defaults to the discovery manifest in source_path before bundle_path. The Phase 06 script Get-AzureLocalSbeImportPlan.ps1 (parameters InfrastructureFile, ImportFolder, OutputPath; tools.arm_deployment.parameters) prints the files and the Add-SolutionUpdate commands that import the package into the cluster for the first update; it executes nothing."
@@ -2291,7 +2295,7 @@ identity:
               items:
                 {"type":"string"}
             local_groups:
-              description: "Schema 5.6.1. The local groups of every machine this AD group is added to after the deployment (for example Administrators, Remote Management Users). Empty or missing: the group is not added to any local group (WAC groups are applied on the WAC server only). Read by the post-deployment task that applies the security groups and by the Ansible AD preparation role."
+              description: "The local groups of every machine this AD group is added to after the deployment (for example Administrators, Remote Management Users). Empty or missing: the group is not added to any local group (WAC groups are applied on the WAC server only). Read by the post-deployment task that applies the security groups and by the Ansible AD preparation role."
               type: array
               since: "5.6.1"
               required: false
@@ -15697,7 +15701,7 @@ hardware:
           example: "D:\\sbe\\dell"
           used_by: [ztp, os_configuration, deployment]
         requirement:
-          description: "Schema 5.6.4. Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster verification fails without it). not_applicable: this hardware has no SBE, or the cluster downloads it with the vendor credential; needs not_applicable_reason. Absent: the vendor catalog (config/oem/<vendor>.json) decides: required for a vendor whose package is a manual download (Dell, HPE, DataON), a Warning that asks you to state it for a vendor whose cluster downloads the package itself (Lenovo Premier), Skipped for a vendor the catalog does not know. This key is about the package being available; whether the toolkit also copies it to the nodes during the build is delivery, a separate opt-in that stays off."
+          description: "Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster verification fails without it). not_applicable: this hardware has no SBE, or the cluster downloads it with the vendor credential; needs not_applicable_reason. Absent: the vendor catalog (config/oem/<vendor>.json) decides: required for a vendor whose package is a manual download (Dell, HPE, DataON), a Warning that asks you to state it for a vendor whose cluster downloads the package itself (Lenovo Premier), Skipped for a vendor the catalog does not know. This key is about the package being available; whether the toolkit also copies it to the nodes during the build is delivery, a separate opt-in that stays off."
           type: string
           since: "5.6.4"
           required: false
@@ -15705,28 +15709,28 @@ hardware:
           example: "required"
           used_by: [os_configuration, deployment]
         not_applicable_reason:
-          description: "Schema 5.6.4. Required when requirement is not_applicable: why no package is needed, in one sentence, for example that no SBE exists for the hardware model or that the cluster downloads it with the vendor credential. The gate shows it in its report; an empty reason fails SB-001."
+          description: "Required when requirement is not_applicable: why no package is needed, in one sentence, for example that no SBE exists for the hardware model or that the cluster downloads it with the vendor credential. The gate shows it in its report; an empty reason fails SB-001."
           type: string
           since: "5.6.4"
           required: false
           example: "The cluster downloads the package with the vendor credential"
           used_by: [os_configuration, deployment]
         source_path:
-          description: "Schema 5.6.4. Where the downloaded SBE package is available to the automation: a UNC share or a folder, for example \\\\server\\share\\sbe\\dell or D:\\sbe\\dell, that holds the three files as the vendor delivers them: SBE_Discovery_<Vendor>.xml, SBE_<Vendor>_<Family>_<Version>.xml and SBE_<Vendor>_<Family>_<Version>.zip (Microsoft Learn, Import and rediscover updates). Download them before you start: you need them for the first cluster update anyway, and the build can use them too (delivery). The pre-cluster verification reads this location, read only, from the machine that runs the automation, with source_username and source_password when they are set. When it is empty, bundle_path is used. No credential, token or query string in the path (rule AZL-030)."
+          description: "Where the downloaded SBE package is available to the automation: a UNC share or a folder, for example \\\\server\\share\\sbe\\dell or D:\\sbe\\dell, that holds the three files as the vendor delivers them: SBE_Discovery_<Vendor>.xml, SBE_<Vendor>_<Family>_<Version>.xml and SBE_<Vendor>_<Family>_<Version>.zip (Microsoft Learn, Import and rediscover updates). Download them before you start: you need them for the first cluster update anyway, and the build can use them too (delivery). The pre-cluster verification reads this location, read only, from the machine that runs the automation, with source_username and source_password when they are set. When it is empty, bundle_path is used. No credential, token or query string in the path (rule AZL-030)."
           type: string
           since: "5.6.4"
           required: false
           example: "\\\\files.example.invalid\\sbe\\dell"
           used_by: [os_configuration, deployment]
         source_username:
-          description: "Schema 5.6.4. The account that reads source_path when the account running the automation cannot (for example DOMAIN\\svc-sbe-read). Read access only. Needs source_password."
+          description: "The account that reads source_path when the account running the automation cannot (for example DOMAIN\\svc-sbe-read). Read access only. Needs source_password."
           type: string
           since: "5.6.4"
           required: false
           example: "EXAMPLE\\svc-sbe-read"
           used_by: [os_configuration, deployment]
         source_password:
-          description: "Schema 5.6.4. The Key Vault secret that holds the password of source_username, as a keyvault://<vault>/<secret> reference. It is read into memory for the run and never written or shown."
+          description: "The Key Vault secret that holds the password of source_username, as a keyvault://<vault>/<secret> reference. It is read into memory for the run and never written or shown."
           type: string
           format: kv_ref
           sensitive: true
@@ -15736,7 +15740,7 @@ hardware:
           example: "keyvault://kv-iic-mgmt-01/sbe-share-reader"
           used_by: [os_configuration, deployment]
         package_sha256:
-          description: "Schema 5.6.4. Optional. The SHA-256 of the payload zip (64 hexadecimal characters), as the vendor publishes it. The gate compares the zip on the share with it and with the PackageHash of the package's discovery manifest; without it the manifest's hash is used."
+          description: "Optional. The SHA-256 of the payload zip (64 hexadecimal characters), as the vendor publishes it. The gate compares the zip on the share with it and with the PackageHash of the package's discovery manifest; without it the manifest's hash is used."
           type: string
           since: "5.6.4"
           required: false
@@ -15744,7 +15748,7 @@ hardware:
           example: "0000000000000000000000000000000000000000000000000000000000000000"
           used_by: [os_configuration, deployment]
         package_size_bytes:
-          description: "Schema 5.6.4. Optional. The size of the payload zip in bytes, as downloaded. The gate compares the file on the share with it."
+          description: "Optional. The size of the payload zip in bytes, as downloaded. The gate compares the file on the share with it."
           type: integer
           since: "5.6.4"
           required: false
@@ -15761,7 +15765,7 @@ hardware:
           example: "node_pull"
           used_by: [os_configuration]
         node_pull_url:
-          description: "Schema 5.4.2. The folder the nodes pull the SBE files from (delivery node_pull). It is an address the NODES can reach, not necessarily the operator host: https://host/sbe/dell (the three files are fetched by name from it) or a UNC folder \\\\server\\share\\sbe (the node reads it as itself, so the share must allow it). Read-only, and it carries no credential: no user name, password, token or query string in the address (rule AZL-030)."
+          description: "The folder the nodes pull the SBE files from (delivery node_pull). It is an address the NODES can reach, not necessarily the operator host: https://host/sbe/dell (the three files are fetched by name from it) or a UNC folder \\\\server\\share\\sbe (the node reads it as itself, so the share must allow it). Read-only, and it carries no credential: no user name, password, token or query string in the address (rule AZL-030)."
           type: string
           since: "5.4.2"
           required: false
@@ -16601,7 +16605,7 @@ provisioning:
               example: 30
               used_by: [ztp]
             adapters_minutes:
-              description: "Schema 5.4.1. Network stage: how long to wait for an edge machine to report its network adapters. The stage polls every poll_interval_seconds (at least 5) until the management MAC is in the list, because the list can still be empty right after Ready. Default 10; 0 reads once and does not wait. When the budget is spent without the management MAC the machine is not verified in any mode (adapters never reported, a Warning that is never a success state) and the Handoff stage reads the adapters again."
+              description: "Network stage: how long to wait for an edge machine to report its network adapters. The stage polls every poll_interval_seconds (at least 5) until the management MAC is in the list, because the list can still be empty right after Ready. Default 10; 0 reads once and does not wait. When the budget is spent without the management MAC the machine is not verified in any mode (adapters never reported, a Warning that is never a success state) and the Handoff stage reads the adapters again."
               type: integer
               since: "5.4.1"
               required: false

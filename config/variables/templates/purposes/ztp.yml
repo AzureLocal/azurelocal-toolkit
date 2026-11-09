@@ -454,7 +454,7 @@ provisioning:
       # Boot and Restore stages: how long to wait for a node's BIOS to report the new values after the restart.
       # default: 30; used by: ztp
       bios_minutes: 30
-      # (since 5.4.1) 
+      # Network stage: how long to wait for an edge machine to report its network adapters.
       # default: 10; used by: ztp
       adapters_minutes: 10
       # Ready and Network stages: seconds between polls.

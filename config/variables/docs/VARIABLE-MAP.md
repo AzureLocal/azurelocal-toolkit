@@ -10,7 +10,7 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](../../../docs/diagrams/variable-flow.drawio) ([PNG](../../../docs/diagrams/variable-flow.png)).
 
-Registry version 5.0.15. Sources of the scan: toolkit (this repository), sonar 7adc354, trailwright e8747e0, ztp e63bce0.
+Registry version 5.0.16. Sources of the scan: toolkit (this repository), sonar 7adc354, trailwright e8747e0, ztp e63bce0.
 
 ## In numbers
 

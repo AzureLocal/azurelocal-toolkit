@@ -444,7 +444,7 @@
               "type": "string"
             },
             "requirement": {
-              "description": "Schema 5.6.4. Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster verification fails without it). not_applicable: this hardware has no SBE, or the cluster downloads it with the vendor credential; needs not_applicable_reason. Absent: the vendor catalog (config/oem/<vendor>.json) decides: required for a vendor whose package is a manual download (Dell, HPE, DataON), a Warning that asks you to state it for a vendor whose cluster downloads the package itself (Lenovo Premier), Skipped for a vendor the catalog does not know. This key is about the package being available; whether the toolkit also copies it to the nodes during the build is delivery, a separate opt-in that stays off.",
+              "description": "Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster verification fails without it). not_applicable: this hardware has no SBE, or the cluster downloads it with the vendor credential; needs not_applicable_reason. Absent: the vendor catalog (config/oem/<vendor>.json) decides: required for a vendor whose package is a manual download (Dell, HPE, DataON), a Warning that asks you to state it for a vendor whose cluster downloads the package itself (Lenovo Premier), Skipped for a vendor the catalog does not know. This key is about the package being available; whether the toolkit also copies it to the nodes during the build is delivery, a separate opt-in that stays off.",
               "type": "string",
               "enum": [
                 "required",
@@ -452,28 +452,28 @@
               ]
             },
             "not_applicable_reason": {
-              "description": "Schema 5.6.4. Required when requirement is not_applicable: why no package is needed, in one sentence, for example that no SBE exists for the hardware model or that the cluster downloads it with the vendor credential. The gate shows it in its report; an empty reason fails SB-001.",
+              "description": "Required when requirement is not_applicable: why no package is needed, in one sentence, for example that no SBE exists for the hardware model or that the cluster downloads it with the vendor credential. The gate shows it in its report; an empty reason fails SB-001.",
               "type": "string"
             },
             "source_path": {
-              "description": "Schema 5.6.4. Where the downloaded SBE package is available to the automation: a UNC share or a folder, for example \\\\server\\share\\sbe\\dell or D:\\sbe\\dell, that holds the three files as the vendor delivers them: SBE_Discovery_<Vendor>.xml, SBE_<Vendor>_<Family>_<Version>.xml and SBE_<Vendor>_<Family>_<Version>.zip (Microsoft Learn, Import and rediscover updates). Download them before you start: you need them for the first cluster update anyway, and the build can use them too (delivery). The pre-cluster verification reads this location, read only, from the machine that runs the automation, with source_username and source_password when they are set. When it is empty, bundle_path is used. No credential, token or query string in the path (rule AZL-030).",
+              "description": "Where the downloaded SBE package is available to the automation: a UNC share or a folder, for example \\\\server\\share\\sbe\\dell or D:\\sbe\\dell, that holds the three files as the vendor delivers them: SBE_Discovery_<Vendor>.xml, SBE_<Vendor>_<Family>_<Version>.xml and SBE_<Vendor>_<Family>_<Version>.zip (Microsoft Learn, Import and rediscover updates). Download them before you start: you need them for the first cluster update anyway, and the build can use them too (delivery). The pre-cluster verification reads this location, read only, from the machine that runs the automation, with source_username and source_password when they are set. When it is empty, bundle_path is used. No credential, token or query string in the path (rule AZL-030).",
               "type": "string"
             },
             "source_username": {
-              "description": "Schema 5.6.4. The account that reads source_path when the account running the automation cannot (for example DOMAIN\\svc-sbe-read). Read access only. Needs source_password.",
+              "description": "The account that reads source_path when the account running the automation cannot (for example DOMAIN\\svc-sbe-read). Read access only. Needs source_password.",
               "type": "string"
             },
             "source_password": {
               "$ref": "#/$defs/kv_ref",
-              "description": "Schema 5.6.4. The Key Vault secret that holds the password of source_username, as a keyvault://<vault>/<secret> reference. It is read into memory for the run and never written or shown."
+              "description": "The Key Vault secret that holds the password of source_username, as a keyvault://<vault>/<secret> reference. It is read into memory for the run and never written or shown."
             },
             "package_sha256": {
-              "description": "Schema 5.6.4. Optional. The SHA-256 of the payload zip (64 hexadecimal characters), as the vendor publishes it. The gate compares the zip on the share with it and with the PackageHash of the package's discovery manifest; without it the manifest's hash is used.",
+              "description": "Optional. The SHA-256 of the payload zip (64 hexadecimal characters), as the vendor publishes it. The gate compares the zip on the share with it and with the PackageHash of the package's discovery manifest; without it the manifest's hash is used.",
               "type": "string",
               "pattern": "^[A-Fa-f0-9]{64}$"
             },
             "package_size_bytes": {
-              "description": "Schema 5.6.4. Optional. The size of the payload zip in bytes, as downloaded. The gate compares the file on the share with it.",
+              "description": "Optional. The size of the payload zip in bytes, as downloaded. The gate compares the file on the share with it.",
               "type": "integer",
               "minimum": 1
             },
@@ -488,7 +488,7 @@
               ]
             },
             "node_pull_url": {
-              "description": "Schema 5.4.2. The folder the nodes pull the SBE files from (delivery node_pull). It is an address the NODES can reach, not necessarily the operator host: https://host/sbe/dell (the three files are fetched by name from it) or a UNC folder \\\\server\\share\\sbe (the node reads it as itself, so the share must allow it). Read-only, and it carries no credential: no user name, password, token or query string in the address (rule AZL-030).",
+              "description": "The folder the nodes pull the SBE files from (delivery node_pull). It is an address the NODES can reach, not necessarily the operator host: https://host/sbe/dell (the three files are fetched by name from it) or a UNC folder \\\\server\\share\\sbe (the node reads it as itself, so the share must allow it). Read-only, and it carries no credential: no user name, password, token or query string in the address (rule AZL-030).",
               "type": "string"
             }
           }
@@ -1086,7 +1086,7 @@
                     "type": "string"
                   },
                   "local_groups": {
-                    "description": "Schema 5.6.1. The local groups of every machine this AD group is added to after the deployment (for example Administrators, Remote Management Users). Empty or missing: the group is not added to any local group (WAC groups are applied on the WAC server only). Read by the post-deployment task that applies the security groups and by the Ansible AD preparation role.",
+                    "description": "The local groups of every machine this AD group is added to after the deployment (for example Administrators, Remote Management Users). Empty or missing: the group is not added to any local group (WAC groups are applied on the WAC server only). Read by the post-deployment task that applies the security groups and by the Ansible AD preparation role.",
                     "type": "array",
                     "items": {
                       "type": "string",

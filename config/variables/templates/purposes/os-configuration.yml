@@ -220,31 +220,31 @@ hardware:
     # Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml.
     # used by: ztp, os_configuration, deployment
     bundle_path: "D:\\sbe\\dell"
-    # (since 5.6.4) 
+    # Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster...
     # one of: required | not_applicable; used by: os_configuration, deployment
     requirement: "required"
-    # (since 5.6.4) 
+    # Required when requirement is not_applicable: why no package is needed, in one sentence, for example that no SBE exists for the hardware mod...
     # used by: os_configuration, deployment
     not_applicable_reason: "The cluster downloads the package with the vendor credential"
-    # (since 5.6.4) 
+    # Where the downloaded SBE package is available to the automation: a UNC share or a folder, for example \\server\share\sbe\dell or D:\sbe\del...
     # used by: os_configuration, deployment
     source_path: "\\\\files.example.invalid\\sbe\\dell"
-    # (since 5.6.4) 
+    # The account that reads source_path when the account running the automation cannot (for example DOMAIN\svc-sbe-read).
     # used by: os_configuration, deployment
     source_username: "EXAMPLE\\svc-sbe-read"
-    # (since 5.6.4) 
+    # The Key Vault secret that holds the password of source_username, as a keyvault://<vault>/<secret> reference.
     # used by: os_configuration, deployment
     source_password: "keyvault://kv-iic-mgmt-01/sbe-share-reader"
-    # (since 5.6.4) 
+    # Optional.
     # used by: os_configuration, deployment
     package_sha256: "0000000000000000000000000000000000000000000000000000000000000000"
-    # (since 5.6.4) 
+    # Optional.
     # used by: os_configuration, deployment
     package_size_bytes: 1048576
     # Opt-in (schema 5.4.2): the toolkit side-loads an SBE only when you set winrm_copy or node_pull here; no value means no delivery, and a hard...
     # one of: winrm_copy | node_pull | skip; default: "skip"; used by: os_configuration
     delivery: "skip"
-    # (since 5.4.2) 
+    # The folder the nodes pull the SBE files from (delivery node_pull).
     # used by: os_configuration
     node_pull_url: "https://sbe.iic.example/sbe/dell"
   # The physical network cards in every machine, and what each port is for.
@@ -531,7 +531,7 @@ identity:
         # What the group is for, in words.
         # used by: os_configuration
         purpose: "Administrators of the instance"
-        # (since 5.6.1) 
+        # The local groups of every machine this AD group is added to after the deployment (for example Administrators, Remote Management Users).
         # used by: os_configuration
         local_groups: []
 
