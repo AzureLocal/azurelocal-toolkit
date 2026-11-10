@@ -48,6 +48,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region Functions
 
@@ -273,8 +274,8 @@ try {
 
     # Get node activation status
     $nodeNames = @()
-    if ($config.compute.cluster_nodes) {
-        $nodeNames = $config.compute.cluster_nodes | ForEach-Object { $_.name }
+    if ($config.nodes) {
+        $nodeNames = Get-AzlInfrastructureNode -Infrastructure $config | ForEach-Object { $_.Name }
     }
 
     if ($nodeNames) {

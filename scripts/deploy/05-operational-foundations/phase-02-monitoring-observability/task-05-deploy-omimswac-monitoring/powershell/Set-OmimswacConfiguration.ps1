@@ -50,6 +50,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region Functions
 
@@ -268,8 +269,8 @@ try {
     if (-not $WacServerName -and $config.operations.monitoring.wac) {
         $WacServerName = $config.operations.monitoring.wac.server
     }
-    if (-not $ClusterNodes -and $config.compute.cluster_nodes) {
-        $ClusterNodes = $config.compute.cluster_nodes | ForEach-Object { $_.name }
+    if (-not $ClusterNodes -and $config.nodes) {
+        $ClusterNodes = Get-AzlInfrastructureNode -Infrastructure $config | ForEach-Object { $_.Name }
     }
     if (-not $ScomServerName -and $config.operations.monitoring.extended.scom) {
         $ScomServerName = $config.operations.monitoring.extended.scom.server

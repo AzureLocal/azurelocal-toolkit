@@ -60,6 +60,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region Functions
 
@@ -331,8 +332,8 @@ try {
     }
 
     # Get values from config if not provided
-    if (-not $NodeNames -and $config.compute.cluster_nodes) {
-        $NodeNames = $config.compute.cluster_nodes | ForEach-Object { $_.name }
+    if (-not $NodeNames -and $config.nodes) {
+        $NodeNames = Get-AzlInfrastructureNode -Infrastructure $config | ForEach-Object { $_.Name }
     }
     if (-not $DatadogApiKey -and $config.operations.monitoring.extended.datadog) {
         $DatadogApiKey = $config.operations.monitoring.extended.datadog.api_key
