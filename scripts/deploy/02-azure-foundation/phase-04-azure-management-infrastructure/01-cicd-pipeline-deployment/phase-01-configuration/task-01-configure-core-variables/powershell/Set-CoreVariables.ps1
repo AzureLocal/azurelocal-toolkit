@@ -1,3 +1,5 @@
+#Requires -Version 7.0
+# PLACEHOLDER: this script does not do the task. It ends with exit code 3 (NOT IMPLEMENTED) and changes nothing.
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
     [string]$EnvironmentName = '',
@@ -19,10 +21,13 @@ if ([string]::IsNullOrWhiteSpace($ProjectName)) { $ProjectName = $project_name }
 if ([string]::IsNullOrWhiteSpace($SubscriptionId)) { $SubscriptionId = $subscription_id }
 if ([string]::IsNullOrWhiteSpace($ResourceGroupName)) { $ResourceGroupName = $resource_group_name }
 
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
 function Get-DeploymentCommonModulePath {
     $current = Get-Item -LiteralPath $PSScriptRoot
     while ($null -ne $current) {
-        $candidate = Join-Path $current.FullName 'scripts\deploy\common\DeploymentScaffold.psm1'
+        $candidate = [System.IO.Path]::Combine($current.FullName, 'scripts', 'deploy', 'common', 'DeploymentScaffold.psm1')
         if (Test-Path -LiteralPath $candidate) {
             return $candidate
         }
@@ -41,9 +46,9 @@ Invoke-DeploymentStandalone `
     -ActionName 'Set-CoreVariables' `
     -LogPath $LogPath `
     -Parameters $PSBoundParameters `
-    -Configuration [ordered]@{
+    -Configuration ([ordered]@{
         environment_name = $EnvironmentName
         project_name = $ProjectName
         subscription_id = $SubscriptionId
         resource_group_name = $ResourceGroupName
-    }
+    })
