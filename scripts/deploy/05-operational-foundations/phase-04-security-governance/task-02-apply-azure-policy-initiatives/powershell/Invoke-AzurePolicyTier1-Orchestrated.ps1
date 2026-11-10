@@ -15,8 +15,10 @@
     One assignment per tag, named req-tag-<tag> (lower case, at most 24 characters, because a policy assignment name is limited to 24
     characters at management group scope). Two tags that give the same name are refused before anything is created.
 
-    Idempotent. An assignment that already exists (same id) is left alone and reported as AlreadyAssigned, with a warning when its
-    enforcement mode or definition differs from what this script would create. A second run with the same file creates nothing.
+    Idempotent. An assignment that already exists (same id) is left alone and reported as AlreadyAssigned, with a warning when it
+    enforces the tag instead of only reporting it. When the name is used by an assignment of another definition or of another tag, the
+    tag is not covered: it is reported as Conflict, nothing is changed and the script exits 1. A second run with the same file creates
+    nothing.
 
     The script reads Azure to find out what exists (read only) and writes only with New-AzPolicyAssignment, behind -WhatIf. It does not
     sign in: run Connect-AzAccount to the tenant in azure.tenant_id first. Assigning at the tenant root management group needs a role that
@@ -29,7 +31,7 @@
         landing_zone.policy.management_group     optional; the management group to assign at
 
     Exit codes: 0 all assignments exist (created now or already there, or planned under -WhatIf); 1 an Azure call failed, a precondition
-    failed (not signed in, wrong tenant, Az.Resources missing) or an assignment could not be created; 2 the file is missing a value this
+    failed (not signed in, wrong tenant, Az.Resources missing), an assignment could not be created or a name is in conflict; 2 the file is missing a value this
     script needs, or a value is not usable.
 
 .PARAMETER InfrastructureFile
@@ -91,6 +93,32 @@ function Get-AssignmentName([string]$Tag) {
     return "$AssignmentPrefix$clean"
 }
 
+# The tag an existing assignment reports (its tagName parameter), or $null when it cannot be read. Az.Resources 7 and later return the
+# parameters as a model object (ToJsonString) or a custom object; older versions keep them under Properties.Parameters.
+function Get-AssignedTagName($Assignment) {
+    $parameters = $null
+    foreach ($property in 'Parameter', 'Parameters') {
+        if ($Assignment.PSObject.Properties[$property] -and $null -ne $Assignment.$property) { $parameters = $Assignment.$property; break }
+    }
+    if ($null -eq $parameters -and $Assignment.PSObject.Properties['Properties'] -and $null -ne $Assignment.Properties -and $Assignment.Properties.PSObject.Properties['Parameters']) {
+        $parameters = $Assignment.Properties.Parameters
+    }
+    if ($null -eq $parameters) { return $null }
+    try {
+        $json = if ($parameters -is [string]) { $parameters } elseif ($parameters.PSObject.Methods['ToJsonString']) { $parameters.ToJsonString() } else { $parameters | ConvertTo-Json -Depth 6 -Compress }
+        $map = $json | ConvertFrom-Json -AsHashtable
+        if ($map -isnot [System.Collections.IDictionary]) { return $null }
+        foreach ($key in @($map.Keys)) {
+            if ($key -ne 'tagName') { continue }
+            $entry = $map[$key]
+            if ($entry -is [string]) { return $entry }
+            if ($entry -is [System.Collections.IDictionary]) { foreach ($inner in @($entry.Keys)) { if ($inner -eq 'value' -and $null -ne $entry[$inner]) { return [string]$entry[$inner] } } }
+        }
+    }
+    catch { return $null }
+    return $null
+}
+
 # ---- the values, from infrastructure.yml only
 try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
 catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.Message)" }
@@ -128,6 +156,8 @@ if ([string]$context.Tenant.Id -ne $tenantId) { Exit-Failed "Signed in to tenant
 try { $definition = Get-AzPolicyDefinition -Id $RequireTagDefinitionId }
 catch { Exit-Failed "The built-in policy definition $RequireTagDefinitionId could not be read: $($_.Exception.Message)" }
 if (-not $definition) { Exit-Failed "The built-in policy definition $RequireTagDefinitionId was not found." }
+# Az.Resources 7 and later return DisplayName on the object; older versions keep it under Properties.
+$definitionName = if ($definition.PSObject.Properties['DisplayName'] -and $definition.DisplayName) { [string]$definition.DisplayName } else { 'Require a tag on resources' }
 
 Write-Line "Tier 1 tag policy at $scope"
 Write-Line "Mode: audit (enforcement mode DoNotEnforce); $($tags.Count) tag(s): $($tags -join ', ')"
@@ -143,16 +173,25 @@ $results = foreach ($tag in $tags) {
         catch { if ($_.Exception.Message -notmatch 'NotFound|could not be found|does not exist|\b404\b') { throw } }
 
         if ($existing) {
-            $row.Action = 'AlreadyAssigned'
             $mode = if ($existing.PSObject.Properties['EnforcementMode']) { [string]$existing.EnforcementMode } else { '' }
             $defId = if ($existing.PSObject.Properties['PolicyDefinitionId']) { [string]$existing.PolicyDefinitionId } else { '' }
-            if (($mode -and $mode -ne 'DoNotEnforce') -or ($defId -and $defId -ne $RequireTagDefinitionId)) {
-                $row.Detail = "Differs from Tier 1 (enforcement mode '$mode', definition '$defId'); left unchanged."
+            $assignedTag = Get-AssignedTagName $existing
+            if (($defId -and $defId -ne $RequireTagDefinitionId) -or ($assignedTag -and $assignedTag -ne $tag)) {
+                # The name is taken by an assignment that does not report this tag, so the tag is not covered. Nothing is changed.
+                $row.Action = 'Conflict'
+                $row.Detail = "The name is used by another assignment (definition '$defId', tag '$assignedTag'); left unchanged. Remove or rename it, then run again."
                 Write-Warning "${name}: $($row.Detail)"
             }
-            Write-Line "[exists]  $name ($tag): already assigned, nothing changed."
+            else {
+                $row.Action = 'AlreadyAssigned'
+                if ($mode -and $mode -ne 'DoNotEnforce') {
+                    $row.Detail = "Differs from Tier 1 (enforcement mode '$mode': the tag is enforced, not only reported); left unchanged."
+                    Write-Warning "${name}: $($row.Detail)"
+                }
+                Write-Line "[exists]  $name ($tag): already assigned, nothing changed."
+            }
         }
-        elseif ($PSCmdlet.ShouldProcess($id, "Assign '$($definition.DisplayName)' for tag '$tag' in audit mode")) {
+        elseif ($PSCmdlet.ShouldProcess($id, "Assign '$definitionName' for tag '$tag' in audit mode")) {
             $assignment = @{
                 Name                 = $name
                 Scope                = $scope
@@ -184,10 +223,11 @@ $results = @($results)
 $created = @($results | Where-Object Action -EQ 'Created').Count
 $already = @($results | Where-Object Action -EQ 'AlreadyAssigned').Count
 $planned = @($results | Where-Object Action -EQ 'WouldCreate').Count
+$conflicts = @($results | Where-Object Action -EQ 'Conflict').Count
 $failed = @($results | Where-Object Action -EQ 'Failed').Count
-Write-Line "Summary: $created created, $already already assigned, $planned planned, $failed failed."
-if ($created -eq 0 -and $planned -eq 0 -and $failed -eq 0) { Write-Line 'Nothing to do: every assignment exists.' }
+Write-Line "Summary: $created created, $already already assigned, $planned planned, $conflicts in conflict, $failed failed."
+if ($created -eq 0 -and $planned -eq 0 -and $conflicts -eq 0 -and $failed -eq 0) { Write-Line 'Nothing to do: every assignment exists.' }
 
-[pscustomobject]@{ Scope = $scope; Created = $created; AlreadyAssigned = $already; Planned = $planned; Failed = $failed; Assignments = $results }
-if ($failed -gt 0) { exit 1 }
+[pscustomobject]@{ Scope = $scope; Created = $created; AlreadyAssigned = $already; Planned = $planned; Conflict = $conflicts; Failed = $failed; Assignments = $results }
+if ($failed -gt 0 -or $conflicts -gt 0) { exit 1 }
 exit 0

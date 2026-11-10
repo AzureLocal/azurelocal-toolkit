@@ -41,7 +41,7 @@ BeforeAll {
         $code = $LASTEXITCODE
         [pscustomobject]@{
             ExitCode = $code
-            Result   = @($all | Where-Object { $_.PSObject.Properties['Assignments'] })[0]
+            Result   = ($all | Where-Object { $_.PSObject.Properties['Assignments'] } | Select-Object -First 1)
             Text     = (@($all | Where-Object { $_ -is [Management.Automation.InformationRecord] -or $_ -is [Management.Automation.WarningRecord] -or $_ -is [Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join "`n")
         }
     }
@@ -134,6 +134,41 @@ Describe 'Invoke-AzurePolicyTier1-Orchestrated.ps1' {
             $r.Result.Assignments[0].Detail | Should -Match 'Differs from Tier 1'
             $r.Text | Should -Match 'left unchanged'
             Should -Invoke New-AzPolicyAssignment -Times 0 -Exactly
+        }
+
+        It 'accepts an existing assignment whose tagName parameter is the same tag (case-insensitive)' {
+            Mock Get-AzPolicyAssignment { [pscustomobject]@{ Id = $Id; EnforcementMode = 'DoNotEnforce'; PolicyDefinitionId = $global:AzlTier1TestDefinitionId; Parameter = [pscustomobject]@{ tagName = [pscustomobject]@{ value = 'Owner' } } } }
+            $r = Invoke-Tier1 (New-InfraFile @{ required_tags = @('owner') })
+            $r.ExitCode | Should -Be 0
+            $r.Result.AlreadyAssigned | Should -Be 1
+            $r.Result.Conflict | Should -Be 0
+        }
+
+        It 'reports a conflict and exits 1 when the name is used by an assignment for another tag' {
+            Mock Get-AzPolicyAssignment { [pscustomobject]@{ Id = $Id; EnforcementMode = 'DoNotEnforce'; PolicyDefinitionId = $global:AzlTier1TestDefinitionId; Parameter = [pscustomobject]@{ tagName = [pscustomobject]@{ value = 'something-else' } } } }
+            $r = Invoke-Tier1 (New-InfraFile @{ required_tags = @('owner') })
+            $r.ExitCode | Should -Be 1
+            $r.Result.Conflict | Should -Be 1
+            $r.Result.AlreadyAssigned | Should -Be 0
+            $r.Result.Assignments[0].Action | Should -Be 'Conflict'
+            $r.Text | Should -Match 'used by another assignment'
+            $r.Text | Should -Not -Match 'Nothing to do'
+            Should -Invoke New-AzPolicyAssignment -Times 0 -Exactly
+        }
+
+        It 'reports a conflict and exits 1 when the name is used by an assignment of another definition' {
+            Mock Get-AzPolicyAssignment { [pscustomobject]@{ Id = $Id; EnforcementMode = 'DoNotEnforce'; PolicyDefinitionId = '/providers/Microsoft.Authorization/policyDefinitions/another-definition' } }
+            $r = Invoke-Tier1 (New-InfraFile @{ required_tags = @('owner') })
+            $r.ExitCode | Should -Be 1
+            $r.Result.Conflict | Should -Be 1
+            Should -Invoke New-AzPolicyAssignment -Times 0 -Exactly
+        }
+
+        It 'reads the tag of an older Az.Resources assignment (Properties.Parameters)' {
+            Mock Get-AzPolicyAssignment { [pscustomobject]@{ Id = $Id; Properties = [pscustomobject]@{ Parameters = [pscustomobject]@{ tagName = [pscustomobject]@{ value = 'something-else' } } } } }
+            $r = Invoke-Tier1 (New-InfraFile @{ required_tags = @('owner') })
+            $r.ExitCode | Should -Be 1
+            $r.Result.Conflict | Should -Be 1
         }
     }
 

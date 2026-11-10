@@ -50,7 +50,7 @@ BeforeAll {
         $code = $LASTEXITCODE
         [pscustomobject]@{
             ExitCode = $code
-            Result   = @($all | Where-Object { $_.PSObject.Properties['Subscriptions'] })[0]
+            Result   = ($all | Where-Object { $_.PSObject.Properties['Subscriptions'] } | Select-Object -First 1)
             Text     = (@($all | Where-Object { $_ -is [Management.Automation.InformationRecord] -or $_ -is [Management.Automation.WarningRecord] -or $_ -is [Management.Automation.ErrorRecord] } | ForEach-Object { "$_" }) -join "`n")
         }
     }
