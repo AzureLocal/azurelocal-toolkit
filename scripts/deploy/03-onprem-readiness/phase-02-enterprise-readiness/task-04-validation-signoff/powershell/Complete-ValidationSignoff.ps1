@@ -49,6 +49,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region Functions
 
@@ -209,7 +210,7 @@ This document certifies that all pre-deployment validation checks have been comp
 ## Configuration Summary
 
 **Cluster Name:** $($config.compute.azure_local.cluster_name ?? 'Not configured')  
-**Node Count:** $($config.compute.cluster_nodes.Count ?? 'Not configured')  
+**Node Count:** $(if ($config.nodes) { @(Get-AzlInfrastructureNode -Infrastructure $config).Count } else { 'Not configured' })  
 **Azure Region:** $($config.azure_platform.location ?? 'Not configured')  
 **Subscription:** $($config.azure_platform.subscriptions.lab.id ?? 'Not configured')
 

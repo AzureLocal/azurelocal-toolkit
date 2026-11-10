@@ -50,6 +50,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region Functions
 
@@ -320,11 +321,11 @@ try {
     Write-LogMessage "  Authentication successful" -Level Success
 
     # Configure serial ports for cluster nodes
-    if ($config.compute.cluster_nodes) {
+    if ($config.nodes) {
         Write-LogMessage "Configuring serial ports for cluster nodes..." -Level Info
         $portNumber = 1
         
-        foreach ($node in $config.compute.cluster_nodes) {
+        foreach ($node in Get-AzlInfrastructureNode -Infrastructure $config) {
             $label = "$($node.name)-console"
             
             if ($PSCmdlet.ShouldProcess("Port $portNumber", "Configure as $label")) {
@@ -367,7 +368,7 @@ try {
     Write-LogMessage "Opengear Configuration Complete" -Level Success
     Write-LogMessage "=" * 60 -Level Info
     Write-LogMessage "  Host: $OpengearHost" -Level Info
-    Write-LogMessage "  Serial ports configured: $($config.compute.cluster_nodes.Count)" -Level Info
+    Write-LogMessage "  Serial ports configured: $(@(Get-AzlInfrastructureNode -Infrastructure $config).Count)" -Level Info
 
     return @{
         Status = 'Complete'
