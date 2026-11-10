@@ -20,7 +20,7 @@
     (Resolve-KeyVaultRef) then interactive Get-Credential prompt.
 
 .PARAMETER TargetNode
-    Limit node checks to specific node(s). Empty = all nodes in compute.cluster_nodes.
+    Limit node checks to specific node(s). Empty = all nodes in the nodes list.
 
 .PARAMETER WhatIf
     Log all planned checks without executing — validates config before a live run.
@@ -74,6 +74,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region LOGGING -----------------------------------------------------------------
 $taskFolderName = "task-08-post-deployment-verification"
@@ -133,9 +134,9 @@ if ([string]::IsNullOrEmpty($WacServer) -and $cfg.management.wac.server_fqdn) {
 
 # Cluster nodes: objects with Hostname (display) and Ip (PSRemoting connection target)
 $allNodes = @()
-if ($cfg.compute.cluster_nodes) {
-    $allNodes = @($cfg.compute.cluster_nodes.GetEnumerator() | ForEach-Object {
-        [PSCustomObject]@{ Hostname = $_.Value.hostname; Ip = $_.Value.management_ip }  # compute.cluster_nodes.<key>.hostname / management_ip
+if ($cfg.nodes) {
+    $allNodes = @(Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object {
+        [PSCustomObject]@{ Hostname = $_.Name; Ip = $_.ManagementIp }  # nodes[].name / nodes[].management.ip_address
     })
 }
 $nodesToCheck = if ($TargetNode.Count -gt 0) {

@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Invoke-ConfigureClusterQuorum-Orchestrated.ps1
@@ -13,7 +14,7 @@
       compute.azure_local.cluster_name                          - Cluster name
       compute.azure_local.cluster_witness_type                  - Witness type (cloud_witness / file_share_witness)
       compute.azure_local.cluster_witness_file_share_path       - UNC path (file_share_witness only)
-      compute.cluster_nodes.<key>.management_ip                 - Node IPs (first used for PSRemoting)
+      nodes[].management.ip_address                             - Node IPs (first used for PSRemoting)
       storage_accounts.storage_accounts.cluster_witness.name    - Witness storage account name
       storage_accounts.storage_accounts.cluster_witness.resource_group - Witness SA resource group
       storage_accounts.storage_accounts.cluster_witness.subscription   - Witness SA subscription
@@ -59,6 +60,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region LOGGING
 
@@ -200,10 +202,10 @@ if ($TargetNode.Count -gt 0) {
     $nodeIp = $TargetNode[0]
     Write-Log "Target node (override): $nodeIp"
 } else {
-    $firstNode = $cfg.compute.cluster_nodes.GetEnumerator() | Select-Object -First 1  # compute.cluster_nodes
-    if (-not $firstNode) { throw "No nodes found under compute.cluster_nodes in $configFile." }
-    $nodeIp = $firstNode.Value.management_ip
-    Write-Log "Target node (first from config): $($firstNode.Key) @ $nodeIp"
+    $firstNode = Get-AzlInfrastructureNode -Infrastructure $cfg | Select-Object -First 1  # nodes[]
+    if (-not $firstNode) { throw "No nodes found under nodes in $configFile." }
+    $nodeIp = $firstNode.ManagementIp
+    Write-Log "Target node (first from config): $($firstNode.Name) @ $nodeIp"
 }
 
 Write-Log "Cluster      : $clusterName"

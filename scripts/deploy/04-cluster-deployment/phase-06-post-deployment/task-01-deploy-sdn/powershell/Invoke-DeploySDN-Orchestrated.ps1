@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 # ==============================================================================
 # Script : Invoke-DeploySDN-Orchestrated.ps1
 # Purpose: Enable SDN integration on Azure Local by deploying Network Controller
@@ -26,6 +27,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 $taskFolderName = "task-01-deploy-sdn"
@@ -79,25 +81,23 @@ $vmSwitchName  = if ($VirtualSwitchName -ne "") { $VirtualSwitchName } else { $c
 # ── Determine target node ─────────────────────────────────────────────────────
 if ($TargetNode.Count) {
     # TargetNode supplied — look up its management_ip from config
-    $matchedKey = $cfg.compute.cluster_nodes.Keys | Where-Object {
-        $cfg.compute.cluster_nodes[$_].hostname -eq $TargetNode[0]
-    } | Select-Object -First 1
-    if ($matchedKey) {
-        $nodeHostname = $cfg.compute.cluster_nodes[$matchedKey].hostname          # compute.cluster_nodes.<key>.hostname (display only)
-        $nodeIp       = $cfg.compute.cluster_nodes[$matchedKey].management_ip     # compute.cluster_nodes.<key>.management_ip
+    $matchedNode = Get-AzlInfrastructureNode -Infrastructure $cfg -Name $TargetNode[0] | Select-Object -First 1
+    if ($matchedNode) {
+        $nodeHostname = $matchedNode.Name           # nodes[].name (display only)
+        $nodeIp       = $matchedNode.ManagementIp   # nodes[].management.ip_address
     } else {
         # Accept raw IP/name if not found in config (passthrough)
         $nodeHostname = $TargetNode[0]
         $nodeIp       = $TargetNode[0]
     }
 } else {
-    $firstKey     = $cfg.compute.cluster_nodes.Keys | Sort-Object | Select-Object -First 1  # compute.cluster_nodes.<first-key>
-    $nodeHostname = $cfg.compute.cluster_nodes[$firstKey].hostname                          # compute.cluster_nodes.<key>.hostname (display only)
-    $nodeIp       = $cfg.compute.cluster_nodes[$firstKey].management_ip                     # compute.cluster_nodes.<key>.management_ip
+    $firstNode    = Get-AzlInfrastructureNode -Infrastructure $cfg | Sort-Object Name | Select-Object -First 1   # nodes[]
+    $nodeHostname = $firstNode.Name             # nodes[].name (display only)
+    $nodeIp       = $firstNode.ManagementIp     # nodes[].management.ip_address
 }
 if (-not $nodeIp) {
-    Write-Log "management_ip missing for node '$nodeHostname' — cannot PSRemote" 'ERROR'
-    throw "compute.cluster_nodes.<key>.management_ip is required for PSRemoting"
+    Write-Log "management address missing for node '$nodeHostname' — cannot PSRemote" 'ERROR'
+    throw "nodes[].management.ip_address is required for PSRemoting"
 }
 
 # ── Credential resolution ─────────────────────────────────────────────────────

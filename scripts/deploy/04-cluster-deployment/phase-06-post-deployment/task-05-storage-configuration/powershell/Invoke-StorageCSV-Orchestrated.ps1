@@ -53,6 +53,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region LOGGING -----------------------------------------------------------------
 $scriptShortName = [System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath) -replace '^Invoke-|-Orchestrated$', ''
@@ -93,9 +94,9 @@ $clusterName    = $cfg.compute.azure_local.cluster_name          # compute.azure
 $csvConfig      = $cfg.compute.cluster_shared_volumes             # compute.cluster_shared_volumes
 
 # Sorted node hostnames for CSV ownership balancing (node01 → node02 → …)
-$nodeHostnames  = $cfg.compute.cluster_nodes.GetEnumerator() |
-    Sort-Object Key |
-    ForEach-Object { $_.Value.hostname }                          # compute.cluster_nodes.<key>.hostname
+$nodeHostnames  = Get-AzlInfrastructureNode -Infrastructure $cfg |
+    Sort-Object Name |
+    ForEach-Object { $_.Name }                                    # nodes[].name
 
 if (-not $csvConfig.enabled) {
     Write-Log "cluster_shared_volumes.enabled is false — nothing to do." "WARN"

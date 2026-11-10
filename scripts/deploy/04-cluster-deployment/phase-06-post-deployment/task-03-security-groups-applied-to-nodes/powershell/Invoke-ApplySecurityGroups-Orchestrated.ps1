@@ -21,6 +21,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 $scriptShortName = [System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath) -replace '^Invoke-|-Orchestrated$', ''
@@ -94,7 +95,7 @@ if ($assignments.Count -eq 0) {
 $nodes = if ($TargetNode.Count) {
     $TargetNode
 } else {
-    $cfg.compute.cluster_nodes.Values | ForEach-Object { $_.management_ip }    # compute.cluster_nodes.<key>.management_ip
+    Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object { $_.ManagementIp }    # nodes[].management.ip_address
 }
 
 Write-Log "Target nodes: $($nodes -join ', ')"

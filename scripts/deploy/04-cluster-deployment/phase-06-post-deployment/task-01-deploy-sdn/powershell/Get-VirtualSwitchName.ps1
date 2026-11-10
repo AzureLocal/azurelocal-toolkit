@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 # ==============================================================================
 # Script : Get-VirtualSwitchName.ps1
 # Purpose: Discover the external vSwitch name on the first cluster node and
@@ -14,6 +15,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 $taskFolderName = "task-01-deploy-sdn"
@@ -54,14 +56,13 @@ if ($existing -and $existing -ne "") {
 }
 
 # ── Determine target node ─────────────────────────────────────────────────────
-$nodeKey  = $cfg.compute.cluster_nodes.Keys | Sort-Object | Select-Object -First 1   # compute.cluster_nodes
-$nodeObj  = $cfg.compute.cluster_nodes[$nodeKey]
-$hostname = $nodeObj.hostname                                                          # compute.cluster_nodes.<key>.hostname (display only)
-$ip       = $nodeObj.management_ip                                                     # compute.cluster_nodes.<key>.management_ip
+$nodeObj  = Get-AzlInfrastructureNode -Infrastructure $cfg | Sort-Object Name | Select-Object -First 1   # nodes[]
+$hostname = $nodeObj.Name                                                              # nodes[].name (display only)
+$ip       = $nodeObj.ManagementIp                                                      # nodes[].management.ip_address
 
 if (-not $ip) {
-    Write-Log "management_ip missing for first cluster node — cannot PSRemote" 'ERROR'
-    throw "compute.cluster_nodes.$nodeKey.management_ip is required"
+    Write-Log "management address missing for first cluster node — cannot PSRemote" 'ERROR'
+    throw "nodes[].management.ip_address is required for node '$hostname'"
 }
 Write-Log "Target node: $hostname ($ip)"
 

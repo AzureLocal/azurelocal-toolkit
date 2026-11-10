@@ -50,9 +50,10 @@ identity:
       - name: sg-wac
         local_groups: []
       - name: sg-none
-compute:
-  cluster_nodes:
-    n1: { management_ip: 10.0.0.11 }
+nodes:
+  - name: n1
+    management:
+      ip_address: 192.0.2.11
 '@ | Set-Content $cfg
         $out = & pwsh -NoProfile -File $script:Task -ConfigPath $cfg -WhatIf -LogPath (Join-Path $TestDrive 'sg.log') 2>&1 | Out-String
         $out | Should -Match ([regex]::Escape('Will assign: IIC\sg-admins'))
