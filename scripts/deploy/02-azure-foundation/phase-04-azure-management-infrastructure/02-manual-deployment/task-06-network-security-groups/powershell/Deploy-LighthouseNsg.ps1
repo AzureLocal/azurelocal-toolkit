@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Creates Network Security Group (NSG) for Opengear Lighthouse VM with restrictive security rules.
@@ -273,8 +274,8 @@ if ($PSCmdlet.ShouldProcess("Allow-Outbound-NTP", "Add NSG rule")) {
 }
 
 # Allow HTTP (80) outbound for package updates (Ubuntu apt)
-if ($PSCmdlet.ShouldProcess("Allow-Outbound-HTazl-Updates", "Add NSG rule")) {
-    $nsg | Add-AzNetworkSecurityRuleConfig -Name "Allow-Outbound-HTazl-Updates" `
+if ($PSCmdlet.ShouldProcess("Allow-Outbound-HTTP-Updates", "Add NSG rule")) {
+    $nsg | Add-AzNetworkSecurityRuleConfig -Name "Allow-Outbound-HTTP-Updates" `
         -Description "Allow outbound HTTP for Ubuntu package updates (apt)" `
         -Access Allow `
         -Protocol Tcp `
@@ -284,7 +285,7 @@ if ($PSCmdlet.ShouldProcess("Allow-Outbound-HTazl-Updates", "Add NSG rule")) {
         -SourcePortRange "*" `
         -DestinationAddressPrefix "Internet" `
         -DestinationPortRange 80 | Out-Null
-    Write-Host "    ✓ Added rule: Allow-Outbound-HTazl-Updates (Priority 130)" -ForegroundColor Green
+    Write-Host "    ✓ Added rule: Allow-Outbound-HTTP-Updates (Priority 130)" -ForegroundColor Green
 }
 
 # Deny all other outbound internet traffic (VirtualNetwork/on-prem traffic remains open via default rules)

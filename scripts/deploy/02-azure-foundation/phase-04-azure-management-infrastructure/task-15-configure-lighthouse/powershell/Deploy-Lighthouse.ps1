@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Deploys Lighthouse server VM for Phoenix Azure Local infrastructure.
@@ -229,7 +230,7 @@ if ($PSCmdlet.ShouldProcess($nsgName, "Create NSG")) {
             -DestinationAddressPrefix "Internet" -DestinationPortRange 123 | Out-Null
         
         # Allow HTTP (80) for package updates
-        $nsg | Add-AzNetworkSecurityRuleConfig -Name "Allow-Outbound-HTazl-Updates" `
+        $nsg | Add-AzNetworkSecurityRuleConfig -Name "Allow-Outbound-HTTP-Updates" `
             -Description "Allow outbound HTTP for Ubuntu package updates (apt)" `
             -Access Allow -Protocol Tcp -Direction Outbound -Priority 130 `
             -SourceAddressPrefix "*" -SourcePortRange "*" `
