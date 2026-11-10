@@ -196,7 +196,8 @@ Describe 'Every ARM parameter the builder produces is in the by-ARM-parameter ta
     It 'gives the file key each well-known parameter comes from' {
         $cases = @{ clusterName = 'cluster.name'; location = 'azure.location'; tenantId = 'azure.tenant_id'; securityLevel = 'security.level'; defaultGateway = 'networking.management.gateway'; subnetMask = 'networking.management.subnet'; localAdminUserName = 'identity.local_admin.username'; diagnosticStorageAccountName = 'cluster.diagnostics.storage_account'; startingIPAddress = 'networking.management.infrastructure_pool.start' }
         foreach ($name in $cases.Keys) {
-            $row = [regex]::Match($script:Md, "(?m)^\| ``$name`` \|[^\r\n]*$").Value
+            # No end-of-line anchor: in .NET it matches before LF only, so it never matched a row of a CRLF checkout.
+            $row = [regex]::Match($script:Md, "(?m)^\| ``$name`` \|[^\r\n]*").Value
             $row | Should -Not -BeNullOrEmpty -Because $name
             $row | Should -Match ([regex]::Escape('`' + $cases[$name] + '`')) -Because "$name comes from $($cases[$name])"
         }
