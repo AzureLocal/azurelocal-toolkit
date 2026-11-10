@@ -55,4 +55,14 @@ Describe 'TaskCatalogue.psd1' {
         $gone = @($script:Catalogue.Tasks | ForEach-Object Path | Where-Object { $_ -notin $script:TaskFolders })
         $gone | Should -BeNullOrEmpty
     }
+
+    It 'has no azurecli folder for a task that does not act on Azure (AzureCli no)' {
+        $found = @(
+            foreach ($task in ($script:Catalogue.Tasks | Where-Object AzureCli -eq 'no')) {
+                $az = [System.IO.Path]::Combine($script:DeployRoot, $task.Path.Replace('/', [System.IO.Path]::DirectorySeparatorChar), 'azurecli')
+                if (Test-Path -LiteralPath $az) { "$($task.Path)/azurecli" }
+            }
+        )
+        $found | Should -BeNullOrEmpty -Because 'a real Azure CLI script means the task acts on Azure: set AzureCli to yes'
+    }
 }
