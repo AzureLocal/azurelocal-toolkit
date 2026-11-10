@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Generate Windows hosts file entries from infrastructure.yml.
@@ -38,6 +39,7 @@ param(
     [switch]$OutputOnly
 )
 
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 # Load configuration
 if ($Solution) {
     . "$PSScriptRoot\config-loader.ps1"
@@ -51,21 +53,20 @@ if ($Solution) {
 "@
     
     # Add nodes
-    if ($config.compute.cluster_nodes) {
+    $configNodes = @(Get-AzlInfrastructureNode -Infrastructure $config)
+    if ($configNodes.Count -gt 0) {
         $entries += "`n# Azure Local Nodes`n"
-        foreach ($node in $config.compute.cluster_nodes.PSObject.Properties) {
-            $nodeData = $node.Value
-            $entries += "$($nodeData.management_ip)    $($nodeData.hostname).$($config.identity.active_directory.fqdn) $($nodeData.hostname)`n"
+        foreach ($nodeData in $configNodes) {
+            $entries += "$($nodeData.ManagementIp)    $($nodeData.Name).$($config.identity.active_directory.fqdn) $($nodeData.Name)`n"
         }
     }
     
     # Add iDRACs
-    if ($config.compute.cluster_nodes) {
+    if ($configNodes.Count -gt 0) {
         $entries += "`n# Node iDRACs`n"
-        foreach ($node in $config.compute.cluster_nodes.PSObject.Properties) {
-            $nodeData = $node.Value
-            if ($nodeData.idrac_ip) {
-                $entries += "$($nodeData.idrac_ip)    $($nodeData.hostname)-idrac.$($config.identity.active_directory.fqdn) $($nodeData.hostname)-idrac`n"
+        foreach ($nodeData in $configNodes) {
+            if ($nodeData.BmcIp) {
+                $entries += "$($nodeData.BmcIp)    $($nodeData.Name)-idrac.$($config.identity.active_directory.fqdn) $($nodeData.Name)-idrac`n"
             }
         }
     }

@@ -191,14 +191,14 @@ print(json.dumps(extract_aliases(reg or {})))
     map and retries with the canonical path.
 
 .PARAMETER Path
-    Dot-notation path (e.g., "identity.azure_tenant_id" or "compute.cluster_nodes[0].hostname").
+    Dot-notation path (e.g., "identity.azure_tenant_id" or "nodes[0].name").
 
 .PARAMETER Default
     Value to return if the path does not exist. Defaults to $null.
 
 .EXAMPLE
     $tenantId = Get-CanonicalVariable -Path "identity.azure_tenant_id"
-    $node0 = Get-CanonicalVariable -Path "compute.cluster_nodes[0].hostname" -Default "unknown"
+    $node0 = Get-CanonicalVariable -Path "nodes[0].name" -Default "unknown"
 #>
 function Get-CanonicalVariable {
     [CmdletBinding()]

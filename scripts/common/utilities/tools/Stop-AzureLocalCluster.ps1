@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Safely shuts down an Azure Local (Azure Stack HCI) cluster for transport or maintenance.
@@ -113,6 +114,7 @@ param(
     [string]$LogPath
 )
 
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 # Load configuration if Solution specified
 if ($Solution) {
     . "$PSScriptRoot\config-loader.ps1"
@@ -122,8 +124,9 @@ if ($Solution) {
     
     # Map config values to script parameters
     if (-not $ClusterName) { $ClusterName = $config.compute.azure_local.cluster_name }
-    if (-not $Node01 -and $config.compute.cluster_nodes.Count -ge 1) { $Node01 = $config.compute.cluster_nodes[0].ip_address }
-    if (-not $Node02 -and $config.compute.cluster_nodes.Count -ge 2) { $Node02 = $config.compute.cluster_nodes[1].ip_address }
+    $configNodes = @(Get-AzlInfrastructureNode -Infrastructure $config)
+    if (-not $Node01 -and $configNodes.Count -ge 1) { $Node01 = $configNodes[0].ManagementIp }
+    if (-not $Node02 -and $configNodes.Count -ge 2) { $Node02 = $configNodes[1].ManagementIp }
     if (-not $KeyVaultName) { $KeyVaultName = $config.security.key_vaults.management.name }
     if (-not $DomainUserName) { $DomainUserName = $config.security.credentials.domain_join_username }
 }

@@ -47,7 +47,7 @@
     Auto-resolved from ConfigPath if not supplied.
 
 .PARAMETER NodeIPs
-    Node management IPs for PSRemoting log access. (compute.cluster_nodes[*].management_ip)
+    Node management IPs for PSRemoting log access. (nodes[].management.ip_address)
     Auto-resolved from ConfigPath if not supplied.
 
 .PARAMETER LocalAdminUsername
@@ -154,7 +154,7 @@ param(
     [string]$SubscriptionId = "",      # azure_platform.azure_identity.azure_subscription_id
 
     [Parameter(Mandatory = $false)]
-    [string[]]$NodeIPs = @(),          # compute.cluster_nodes[*].management_ip
+    [string[]]$NodeIPs = @(),          # nodes[].management.ip_address
 
     # --- Node credentials (direct — tier 1, override; tier 2 = KV from config) ---
     [Parameter(Mandatory = $false)]
@@ -224,6 +224,7 @@ if ($ConfigPath) {
         Write-Host "  [ERROR] powershell-yaml module required. Install with: Install-Module powershell-yaml -Scope CurrentUser" -ForegroundColor Red; exit 1
     }
     Import-Module powershell-yaml -ErrorAction Stop
+    Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force -ErrorAction Stop
     $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 
     # Cluster identity — override only if param not explicitly provided
@@ -235,11 +236,11 @@ if ($ConfigPath) {
     # Key Vault — resolve from security section
     if (-not $KeyVaultName)      { $KeyVaultName      = $cfg.security.keyvault.platform_keyvault_name }                                # security.keyvault.platform_keyvault_name
 
-    # Node IPs — collect all management_ip values from compute.cluster_nodes[*]
-    if ($NodeIPs.Count -eq 0 -and $cfg.compute.cluster_nodes) {
+    # Node IPs — collect the management address of every node in nodes[]
+    if ($NodeIPs.Count -eq 0 -and $cfg.nodes) {
         $NodeIPs = @(
-            $cfg.compute.cluster_nodes.Keys | Sort-Object | ForEach-Object {
-                $ip = $cfg.compute.cluster_nodes[$_].management_ip                                                                     # compute.cluster_nodes.<key>.management_ip
+            Get-AzlInfrastructureNode -Infrastructure $cfg | Sort-Object Name | ForEach-Object {
+                $ip = $_.ManagementIp                                                                                                  # nodes[].management.ip_address
                 if ($ip -and $ip -notmatch 'None|N/A') { $ip }
             }
         )
