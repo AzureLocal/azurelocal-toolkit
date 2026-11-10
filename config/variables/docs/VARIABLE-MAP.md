@@ -16,10 +16,10 @@ Registry version 5.0.18. Sources of the scan: toolkit (this repository), sonar 3
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 576 | 272 | 105 | 3 | 194 | 2 |
+| Keys of infrastructure.yml | 576 | 272 | 107 | 3 | 192 | 2 |
 | Owned by a tool (`tools.*`) | 2447 | 2440 | 0 | 0 | 7 | 0 |
 | Older variables-file sections | 1480 | 67 | 573 | 0 | 835 | 5 |
-| All registry leaves | 4503 | 2779 | 678 | 3 | 1036 | 7 |
+| All registry leaves | 4503 | 2779 | 680 | 3 | 1034 | 7 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -45,7 +45,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 64 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
 | ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 74 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 14 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
-| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 112 | _metadata, azure, devops, hardware, identity, key_vaults, landing_zone, networking, nodes, site, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
+| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 113 | _metadata, azure, devops, hardware, identity, key_vaults, landing_zone, networking, nodes, site, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
 
 ### Which section is read in which phase (number of keys)
 
@@ -64,7 +64,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `key_vaults` |  |  | 1 |  | 3 | 3 |  | 3 |
 | `cluster` | 9 |  | 1 | 1 | 1 | 11 | 1 |  |
 | `deployment` |  |  |  |  |  |  |  |  |
-| `nodes` | 10 | 16 | 27 | 15 | 5 | 4 | 1 | 16 |
+| `nodes` | 10 | 16 | 27 | 15 | 5 | 4 | 1 | 17 |
 | `hardware` | 11 | 2 | 6 | 4 | 4 | 3 |  | 13 |
 | `storage` | 4 |  |  | 9 | 3 | 4 |  |  |
 | `sdn` | 1 |  |  |  |  |  |  |  |
@@ -96,7 +96,7 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | arm-deployment | ARM Validate/Deploy | 74 | 0 | 246 |
 | sonar | Sonar | 14 | 0 | 266 |
 | cicd-infra | Outside the flow | 53 | 0 | 347 |
-| infrastructure-helpers | Outside the flow | 26 | 0 | 0 |
+| infrastructure-helpers | Outside the flow | 27 | 0 | 0 |
 | validator | Outside the flow | 108 | 0 | 0 |
 | toolkit-legacy-scripts | Outside the flow | 39 | 0 | 0 |
 
@@ -245,10 +245,10 @@ Where in the code (file, function, keys read by name; 2 places):
 
 ### infrastructure-helpers
 
-**Reads (26):**
-`networking.management.subnet`, `networking.management.gateway`, `networking.management.vlan_id`, `networking.management.dns_servers`, `networking.management.ip_assignment`, `networking.management.site_ip_range.start`, `networking.management.site_ip_range.end`, `networking.management.provisioning_network`, `networking.management.static_method`, `nodes[].name`, `nodes[].management.ip_address`, `nodes[].management.mac_address`, `nodes[].management.adapter_name`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].mac_address`, `nodes[].network_adapters[].roles`, `nodes[].network_adapters[].ip_assignment`, `nodes[].network_adapters[].ip_address`, `nodes[].network_adapters[].prefix_length`, `nodes[].network_adapters[].gateway`, `nodes[].network_adapters[].dns_servers`, `nodes[].network_adapters[].vlan_mode`, `nodes[].serial_number`, `nodes[].arc_machine_name`, `nodes[].arc_resource_name`, `_metadata.scope`
+**Reads (27):**
+`networking.management.subnet`, `networking.management.gateway`, `networking.management.vlan_id`, `networking.management.dns_servers`, `networking.management.ip_assignment`, `networking.management.site_ip_range.start`, `networking.management.site_ip_range.end`, `networking.management.provisioning_network`, `networking.management.static_method`, `nodes[].name`, `nodes[].management.ip_address`, `nodes[].management.mac_address`, `nodes[].management.adapter_name`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].mac_address`, `nodes[].network_adapters[].roles`, `nodes[].network_adapters[].ip_assignment`, `nodes[].network_adapters[].ip_address`, `nodes[].network_adapters[].prefix_length`, `nodes[].network_adapters[].gateway`, `nodes[].network_adapters[].dns_servers`, `nodes[].network_adapters[].vlan_mode`, `nodes[].serial_number`, `nodes[].bmc.ip_address`, `nodes[].arc_machine_name`, `nodes[].arc_resource_name`, `_metadata.scope`
 
-Where in the code (file, function, keys read by name; 11 places):
+Where in the code (file, function, keys read by name; 12 places):
 
 | File | Function | Keys |
 | --- | --- | ---: |
@@ -256,6 +256,7 @@ Where in the code (file, function, keys read by name; 11 places):
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AzlNodeNetworkAdapter` | 4 |
 | `scripts/common/infrastructure/AzlInfrastructureEdit.psm1` | `Get-AzlDiscoveryChange` | 4 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AzlArcMachineName` | 3 |
+| `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AzlInfrastructureNode` | 3 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AzlManagementMode` | 2 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AzlSiteIpRange` | 2 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Test-AzlProvisioningDhcpPort` | 2 |
@@ -400,9 +401,9 @@ Ranked by how many different tools read the key, then how many places in the cod
 | `scenario.identity` | active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity.local_identity). ht... | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; sonar | OS DomainJoin; Sonar identityModel; Gate RD-006 |
 | `identity.local_admin.username` | User name of the deployment local administrator on every machine (ARM localAdminUserName). | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; sonar | ARM localAdminUserName; OS LocalAdmin |
 | `networking.management.dns_servers` | ARM dnsServers. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; pre-cluster-verification; ztp | ARM dnsServers; OS Dns; Network; NicNames; UnusedAdapters; Gate ND-006; NW-015 |
+| `nodes[].management.ip_address` | Management address. | operator by hand; Trailwright questionnaire | infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | OS Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 |
 | `hardware.vendor` | OEM, for example Dell, HPE, Lenovo or DataON. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; toolkit-legacy-scripts; ztp | OS Drivers; Sbe |
 | `networking.management.gateway` | The one default gateway. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; pre-cluster-verification; ztp | ARM defaultGateway; OS Dns; Network; NicNames; UnusedAdapters; Gate NW-004; NW-015 |
-| `nodes[].management.ip_address` | Management address. | operator by hand; Trailwright questionnaire | infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | OS Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 |
 | `nodes[].network_adapters[].ip_address` | The host address. | operator by hand | infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | OS Dns; Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 |
 | `nodes[].network_adapters[].name` | The port's name in this file: the key that networking.intents[].adapters, networking.storage.networks[].adapter and networking.cluster_networks[].adapter use. | operator by hand; Dell/Redfish discovery (proposed) | arm-deployment; infrastructure-helpers; os-configuration; ztp | OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-001 (named) |
 | `key_vaults[].name` | Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens. | operator by hand | arm-deployment; cicd-infra; pre-cluster-verification; ztp |  |
@@ -423,17 +424,17 @@ Ranked by how many different tools read the key, then how many places in the cod
 | `nodes[].network_adapters[].mac_address` | The port's identity. | operator by hand; Dell/Redfish discovery (proposed) | infrastructure-helpers; os-configuration; ztp | OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-013 (named) |
 | `storage.san.type` | Whether the SAN is fibre_channel or iscsi. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification | OS Mpio; SanVerify; Gate ST-011 |
 | `identity.active_directory.ou_path` | Distinguished name of the dedicated OU. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification | ARM adouPath; OS DomainJoin |
+| `nodes[].bmc.ip_address` | IPv4 address of the BMC (iDRAC, iLO, XCC). | operator by hand; Trailwright questionnaire | discovery; infrastructure-helpers; ztp |  |
 | `nodes[].maintenance_address` | Simplified provisioning: the address the machine's maintenance environment answers on (its Configurator service, TCP 20001), when it is known: a DHCP reservati... | operator by hand | os-configuration; pre-cluster-verification; ztp |  |
 | `key_vaults[].resource_group` | Resource group that holds the vault. | operator by hand | arm-deployment; cicd-infra; pre-cluster-verification |  |
 | `key_vaults[].subscription_id` | Subscription (GUID) that holds the vault. | operator by hand | arm-deployment; cicd-infra; pre-cluster-verification |  |
 | `networking.ntp_servers` | Time sources, as host names or addresses. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification | OS Time; Gate ND-005 |
-| `site.name` | Site display name (short alias for site_name) | operator by hand; Trailwright questionnaire | toolkit-legacy-scripts; ztp |  |
 
 ## Unread and placeholder variables
 
 Variables the registry documents that no tool in the scan reads by name. Each is either a key a coming phase will read, a key only the validator checks, or a name kept for compatibility. Nothing here is an error; it is the list to look at before you spend time filling a key in that nothing uses yet.
 
-### Placeholder: documented, not read by any tool in the scan (194)
+### Placeholder: documented, not read by any tool in the scan (192)
 
 | Variable | Purposes | Provided by | Note |
 | --- | --- | --- | --- |
@@ -510,8 +511,6 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `devops.runner.registration_token` | cicd_infra | operator by hand; Key Vault reference (keyvault://) | documented in the registry; no tool in the scan reads it |
 | `scenario.deploy_method` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `key_vaults[].purpose` | ztp; cicd_infra | operator by hand | documented in the registry; no tool in the scan reads it |
-| `nodes[].bmc.type` | ztp; discovery | operator by hand | documented in the registry; no tool in the scan reads it |
-| `nodes[].rack` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `hardware.gpu.enabled` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `hardware.gpu.model` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `hardware.gpu.count_per_node` |  | operator by hand | documented in the registry; no tool in the scan reads it |
@@ -640,7 +639,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `storage.volumes[].resiliency` |  | operator by hand | only the validator names it |
 | `storage.san.fibre_channel.fabrics[].name` | deployment | operator by hand | only the validator names it |
 
-### Read as part: no tool names the key; a tool reads the section or list that holds it (105)
+### Read as part: no tool names the key; a tool reads the section or list that holds it (107)
 
 | Variable | Purposes | Provided by | Note |
 | --- | --- | --- | --- |
@@ -702,18 +701,20 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `deployment.verification_max_clock_skew_seconds` | deployment | operator by hand; default | read as part by arm-deployment; ztp |
 | `deployment.pre_cluster_verification_report_directory` | deployment | operator by hand | read as part by arm-deployment; ztp |
 | `deployment.register_resource_providers` | deployment | operator by hand; default | read as part by arm-deployment; ztp |
-| `nodes[].network_adapters[].port_index` | os_configuration; discovery | operator by hand; Dell/Redfish discovery (proposed) | read as part by discovery |
-| `nodes[].network_adapters[].vendor` | os_configuration; discovery | operator by hand; Dell/Redfish discovery (proposed) | read as part by discovery |
-| `nodes[].network_adapters[].speed_gbps` | os_configuration | operator by hand; Dell/Redfish discovery (proposed) | read as part by discovery |
-| `nodes[].network_adapters[].rdma` | os_configuration | operator by hand; Dell/Redfish discovery (proposed) | read as part by discovery |
-| `nodes[].network_adapters[].allowed_vlans` | deployment | operator by hand | read as part by discovery |
-| `nodes[].network_adapters[].switch_port.switch` | os_configuration | operator by hand | read as part by discovery |
-| `nodes[].network_adapters[].switch_port.port` | os_configuration | operator by hand | read as part by discovery |
-| `nodes[].network_adapters[].switch_port.description` | os_configuration | operator by hand | read as part by discovery |
-| `nodes[].network_adapters[].notes` | os_configuration | operator by hand | read as part by discovery |
-| `nodes[].bios.*` | ztp; os_configuration | operator by hand | read as part by infrastructure-helpers; ztp |
-| `nodes[].bios_during_provisioning.*` | ztp; os_configuration | operator by hand | read as part by infrastructure-helpers; ztp |
-| `nodes[].san.hbas[].ports[].fabric` | deployment | operator by hand | read as part by pre-cluster-verification |
+| `nodes[].network_adapters[].port_index` | os_configuration; discovery | operator by hand; Dell/Redfish discovery (proposed) | read as part by discovery; toolkit-legacy-scripts |
+| `nodes[].network_adapters[].vendor` | os_configuration; discovery | operator by hand; Dell/Redfish discovery (proposed) | read as part by discovery; toolkit-legacy-scripts |
+| `nodes[].network_adapters[].speed_gbps` | os_configuration | operator by hand; Dell/Redfish discovery (proposed) | read as part by discovery; toolkit-legacy-scripts |
+| `nodes[].network_adapters[].rdma` | os_configuration | operator by hand; Dell/Redfish discovery (proposed) | read as part by discovery; toolkit-legacy-scripts |
+| `nodes[].network_adapters[].allowed_vlans` | deployment | operator by hand | read as part by discovery; toolkit-legacy-scripts |
+| `nodes[].network_adapters[].switch_port.switch` | os_configuration | operator by hand | read as part by discovery; toolkit-legacy-scripts |
+| `nodes[].network_adapters[].switch_port.port` | os_configuration | operator by hand | read as part by discovery; toolkit-legacy-scripts |
+| `nodes[].network_adapters[].switch_port.description` | os_configuration | operator by hand | read as part by discovery; toolkit-legacy-scripts |
+| `nodes[].network_adapters[].notes` | os_configuration | operator by hand | read as part by discovery; toolkit-legacy-scripts |
+| `nodes[].bmc.type` | ztp; discovery | operator by hand | read as part by toolkit-legacy-scripts |
+| `nodes[].rack` |  | operator by hand; Trailwright questionnaire | read as part by toolkit-legacy-scripts |
+| `nodes[].bios.*` | ztp; os_configuration | operator by hand | read as part by infrastructure-helpers; toolkit-legacy-scripts; ztp |
+| `nodes[].bios_during_provisioning.*` | ztp; os_configuration | operator by hand | read as part by infrastructure-helpers; toolkit-legacy-scripts; ztp |
+| `nodes[].san.hbas[].ports[].fabric` | deployment | operator by hand | read as part by pre-cluster-verification; toolkit-legacy-scripts |
 | `hardware.bios.*` | ztp | operator by hand | read as part by infrastructure-helpers; ztp |
 | `hardware.bios_during_provisioning.*` | ztp | operator by hand | read as part by infrastructure-helpers; ztp |
 | `hardware.sbe.manifest_source` | deployment | operator by hand | read as part by ztp |
@@ -1254,15 +1255,15 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `nodes[].network_adapters[].name` | string, required | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; discovery | arm-deployment; infrastructure-helpers; os-configuration; ztp | OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-001 (named) | read |
 | `nodes[].network_adapters[].mac_address` | string (mac), required | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; discovery | infrastructure-helpers; os-configuration; ztp | OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-013 (named) | read |
 | `nodes[].network_adapters[].slot` | string | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; discovery | ztp | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read |
-| `nodes[].network_adapters[].port_index` | integer | operator; Dell/Redfish discovery (proposes) | os_configuration; discovery | (part: discovery) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
+| `nodes[].network_adapters[].port_index` | integer | operator; Dell/Redfish discovery (proposes) | os_configuration; discovery | (part: discovery; toolkit-legacy-scripts) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
 | `nodes[].network_adapters[].pci_location.bus` | integer | operator | os_configuration; discovery | os-configuration | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement | read |
 | `nodes[].network_adapters[].pci_location.device` | integer | operator | os_configuration; discovery | os-configuration | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement | read |
 | `nodes[].network_adapters[].pci_location.function` | integer | operator | os_configuration; discovery | os-configuration | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement | read |
-| `nodes[].network_adapters[].vendor` | string | operator; Dell/Redfish discovery (proposes) | os_configuration; discovery | (part: discovery) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
+| `nodes[].network_adapters[].vendor` | string | operator; Dell/Redfish discovery (proposes) | os_configuration; discovery | (part: discovery; toolkit-legacy-scripts) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
 | `nodes[].network_adapters[].os_name_override` | string | operator | os_configuration; deployment | os-configuration | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-013 (named) | read |
 | `nodes[].network_adapters[].model` | string | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; discovery | ztp | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read |
-| `nodes[].network_adapters[].speed_gbps` | number | operator; Dell/Redfish discovery (proposes) | os_configuration | (part: discovery) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
-| `nodes[].network_adapters[].rdma` | string, one of `none`, `iwarp`, `roce`, `roce_v2` | operator; Dell/Redfish discovery (proposes) | os_configuration | (part: discovery) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
+| `nodes[].network_adapters[].speed_gbps` | number | operator; Dell/Redfish discovery (proposes) | os_configuration | (part: discovery; toolkit-legacy-scripts) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
+| `nodes[].network_adapters[].rdma` | string, one of `none`, `iwarp`, `roce`, `roce_v2` | operator; Dell/Redfish discovery (proposes) | os_configuration | (part: discovery; toolkit-legacy-scripts) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
 | `nodes[].network_adapters[].roles` | array, required, one of `management`, `compute`, `storage`, `provisioning`, `iscsi:a`, `iscsi:b`, ... (7) | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; monitoring; discovery | infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | OS Dns; Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 | read |
 | `nodes[].network_adapters[].ip_assignment` | string, required, one of `static`, `dhcp_reservation`, `dhcp`, `preconfigured`, `none` | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; monitoring; discovery | infrastructure-helpers; os-configuration; ztp | OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement | read |
 | `nodes[].network_adapters[].ip_address` | string (ipv4) | operator | ztp; os_configuration; deployment; monitoring | infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | OS Dns; Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 | read |
@@ -1271,24 +1272,24 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `nodes[].network_adapters[].dns_servers` | array | operator | os_configuration | infrastructure-helpers | OS Dns; Network; NicNames; UnusedAdapters; ~Mpio; ~RemoteManagement; ~SanVerify | read |
 | `nodes[].network_adapters[].vlan_id` | integer | operator | ztp; os_configuration | ztp | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters; Gate NW-015 (named) | read |
 | `nodes[].network_adapters[].vlan_mode` | string, one of `access`, `tagged` | operator | ztp; os_configuration | infrastructure-helpers; ztp | OS Dns; Network; NicNames; UnusedAdapters; ~Mpio; ~RemoteManagement; ~SanVerify | read |
-| `nodes[].network_adapters[].allowed_vlans` | array | operator | deployment | (part: discovery) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters; Gate NW-015 (named) | read-as-part |
-| `nodes[].network_adapters[].switch_port.switch` | string | operator | os_configuration | (part: discovery) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
-| `nodes[].network_adapters[].switch_port.port` | string | operator | os_configuration | (part: discovery) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
-| `nodes[].network_adapters[].switch_port.description` | string | operator | os_configuration | (part: discovery) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
-| `nodes[].network_adapters[].notes` | string | operator | os_configuration | (part: discovery) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
+| `nodes[].network_adapters[].allowed_vlans` | array | operator | deployment | (part: discovery; toolkit-legacy-scripts) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters; Gate NW-015 (named) | read-as-part |
+| `nodes[].network_adapters[].switch_port.switch` | string | operator | os_configuration | (part: discovery; toolkit-legacy-scripts) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
+| `nodes[].network_adapters[].switch_port.port` | string | operator | os_configuration | (part: discovery; toolkit-legacy-scripts) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
+| `nodes[].network_adapters[].switch_port.description` | string | operator | os_configuration | (part: discovery; toolkit-legacy-scripts) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
+| `nodes[].network_adapters[].notes` | string | operator | os_configuration | (part: discovery; toolkit-legacy-scripts) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
 | `nodes[].serial_number` | string | operator; Trailwright; Dell/Redfish discovery (proposes, applies) | ztp; discovery | infrastructure-helpers; ztp |  | read |
-| `nodes[].bmc.ip_address` | string (ipv4) | operator; Trailwright | ztp; discovery | discovery; ztp |  | read |
-| `nodes[].bmc.type` | string, one of `idrac`, `ilo`, `xcc`, `other` | operator | ztp; discovery |  |  | placeholder |
+| `nodes[].bmc.ip_address` | string (ipv4) | operator; Trailwright | ztp; discovery | discovery; infrastructure-helpers; ztp |  | read |
+| `nodes[].bmc.type` | string, one of `idrac`, `ilo`, `xcc`, `other` | operator | ztp; discovery | (part: toolkit-legacy-scripts) |  | read-as-part |
 | `nodes[].bmc.username` | string | operator | ztp; discovery | discovery; ztp |  | read |
 | `nodes[].bmc.password` | string (kv_ref) | operator; Key Vault ref | ztp; discovery | discovery; ztp |  | read |
-| `nodes[].rack` | string | operator; Trailwright |  |  |  | placeholder |
+| `nodes[].rack` | string | operator; Trailwright |  | (part: toolkit-legacy-scripts) |  | read-as-part |
 | `nodes[].rack_position` | string | operator; Trailwright | ztp | ztp |  | read |
 | `nodes[].zone` | string | operator; Trailwright | deployment | arm-deployment |  | read |
 | `nodes[].storage_ips` | array | operator; Trailwright | os_configuration; deployment | arm-deployment | ARM storageNetworkList | read |
 | `nodes[].arc_machine_name` | string | operator; Trailwright | ztp; os_configuration; deployment; monitoring | infrastructure-helpers; ztp | OS Network | read |
 | `nodes[].arc_resource_name` | string | operator | ztp; os_configuration | infrastructure-helpers; ztp | OS Network | deprecated |
-| `nodes[].bios.*` | string | operator | ztp; os_configuration | (part: infrastructure-helpers; ztp) |  | read-as-part |
-| `nodes[].bios_during_provisioning.*` | string | operator | ztp; os_configuration | (part: infrastructure-helpers; ztp) |  | read-as-part |
+| `nodes[].bios.*` | string | operator | ztp; os_configuration | (part: infrastructure-helpers; toolkit-legacy-scripts; ztp) |  | read-as-part |
+| `nodes[].bios_during_provisioning.*` | string | operator | ztp; os_configuration | (part: infrastructure-helpers; toolkit-legacy-scripts; ztp) |  | read-as-part |
 | `nodes[].maintenance_address` | string (ipv4) | operator | ztp; os_configuration | os-configuration; pre-cluster-verification; ztp |  | read |
 | `nodes[].san.hbas[].slot` | string, required | operator | ztp; deployment | ztp | OS ~Mpio; ~SanVerify | read |
 | `nodes[].san.hbas[].type` | string, default `fibre_channel`, one of `fibre_channel`, `iscsi_offload` | operator; default | ztp; deployment | ztp | OS ~Mpio; ~SanVerify | read |
@@ -1297,7 +1298,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `nodes[].san.hbas[].bios_enabled_value` | string | operator | ztp; deployment | ztp | OS ~Mpio; ~SanVerify | read |
 | `nodes[].san.hbas[].model` | string | operator | ztp; deployment | ztp | OS ~Mpio; ~SanVerify | read |
 | `nodes[].san.hbas[].ports[].wwpn` | string (wwpn), required | operator | os_configuration; deployment | os-configuration | OS Mpio; SanVerify; Gate ST-011 (named) | read |
-| `nodes[].san.hbas[].ports[].fabric` | string, required | operator | deployment | (part: pre-cluster-verification) | OS ~Mpio; ~SanVerify | read-as-part |
+| `nodes[].san.hbas[].ports[].fabric` | string, required | operator | deployment | (part: pre-cluster-verification; toolkit-legacy-scripts) | OS ~Mpio; ~SanVerify | read-as-part |
 | `nodes[].san.initiator_iqn` | string (iscsi_name) | operator | os_configuration; deployment | os-configuration | OS Mpio; SanVerify | read |
 
 ### operations
