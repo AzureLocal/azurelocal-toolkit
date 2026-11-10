@@ -1,6 +1,6 @@
 # infrastructure.yml variables reference
 
-Every key of [`infrastructure.yml`](infrastructure-file.md), schema 5.6.4, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](../schema/infrastructure.schema.json) (itself generated from the master registry [`master-registry.yaml`](../schema/master-registry.yaml)), the examples and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don't edit it: change the registry (and the metadata) and run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`, then:
+Every key of [`infrastructure.yml`](infrastructure-file.md), schema 5.6.5, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](../schema/infrastructure.schema.json) (itself generated from the master registry [`master-registry.yaml`](../schema/master-registry.yaml)), the examples and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don't edit it: change the registry (and the metadata) and run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`, then:
 
 ```powershell
 ./scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1
@@ -767,6 +767,9 @@ Part 2 of the implementation steps: the Azure foundation the instance depends on
 | `landing_zone.resource_groups[].location` | Azure region of the resource group. | Azure region | no / no |  | `eastus` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
 | `landing_zone.resource_groups[].purpose` | What the resource group is for, in words. | string | no / no |  | `hub network` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
 | `landing_zone.resource_providers` | Resource provider namespaces to register, for example Microsoft.AzureStackHCI. | list of string | no / no |  | `[Microsoft.AzureStackHCI, Microsoft.HybridCompute, Micr...` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
+| `landing_zone.policy` | Azure Policy of the landing zone. | object | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
+| `landing_zone.policy.required_tags` | Tag names that every resource should carry, one audit assignment of the built-in policy 'Require a tag on resources' for each. | list of string | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
+| `landing_zone.policy.management_group` | Name (id) of the management group the tag policy is assigned at; the assignment cascades to everything under it. | string | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | Trailwright |
 | `landing_zone.networks` | Azure virtual networks. | list of objects | no / no |  |  | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
 | `landing_zone.networks[].name` | Name of the virtual network. | string | if section is set / if section is set |  | `vnet-iic-hub-01` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |
 | `landing_zone.networks[].subscription` | Name of the subscription (landing_zone.subscriptions[].name) that holds the network. | string | no / no |  | `sub-iic-connectivity` | Your Azure foundation design (parts 1 and 2 of the implementation steps). | CI/CD infrastructure, Trailwright |

@@ -1,7 +1,7 @@
 # =============================================================================
 # Master Variable Registry - AzureLocal Cloud Team Cloud Management Platform
 # =============================================================================
-# Version: 5.0.17
+# Version: 5.0.18
 # Schema: variables.schema.json (v5.0.0)
 # Last Updated: 2026-11-09
 #
@@ -39,6 +39,10 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.18 (2026-11-09):
+#     - landing_zone.policy (infrastructure schema 5.6.5): required_tags and management_group, the two values of the Tier 1 tag policy that
+#       scripts/deploy/05-operational-foundations/phase-04-security-governance/task-02-apply-azure-policy-initiatives/powershell/Invoke-AzurePolicyTier1-Orchestrated.ps1
+#       assigns in audit mode; the parameters of that script and of Invoke-SubscriptionMove-Orchestrated.ps1 (phase 01, task 02, which reads landing_zone.subscriptions[].id and management_group, keys that already existed) are registered under tools.arm_deployment.parameters.
 #   v5.0.17 (2026-11-09):
 #     - tools.sonar: config section updateAccount (source, username, domain, vault, usernameSecret, passwordSecret), parameter UpdateCredential of Start-AzlSonar.ps1,
 #       the secret names it reads, and the state fields update.local and update.sources. Sonar reads the cluster's own update service on one node.
@@ -151,15 +155,19 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.17"
+  version: "5.0.18"
   schema_version: "5.0.0"
-  infrastructure_schema_version: "5.6.4"
+  infrastructure_schema_version: "5.6.5"
   last_updated: "2026-11-09"
   total_variables: "5100+"
   maintainers:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-09"
+      version: "5.0.18"
+      change: "landing_zone.policy (infrastructure schema 5.6.5): required_tags (the tag names the Tier 1 tag policy requires; no default) and management_group (where it is assigned; empty means the tenant root management group, whose id is azure.tenant_id). Both optional keys. The parameters InfrastructureFile and LogPath of Invoke-AzurePolicyTier1-Orchestrated.ps1 and of Invoke-SubscriptionMove-Orchestrated.ps1 (which reads landing_zone.subscriptions[].id and management_group and azure.tenant_id, all registered before) are registered under tools.arm_deployment.parameters."
+      reason: "Registry first (R19): the Azure Policy task of the operational foundations (phase 04, task 02) assigns Microsoft's built-in policy 'Require a tag on resources' once per required tag, in audit mode (enforcement mode DoNotEnforce), at one management group. The tag names and the management group are values of the environment, so they come from infrastructure.yml and the registry holds them before the script reads them."
     - date: "2026-11-09"
       version: "5.0.17"
       change: "tools.sonar: config section updateAccount (object) with source, username, domain, vault, usernameSecret and passwordSecret, and the refused keys password, secret and secretValue; parameter UpdateCredential of Start-AzlSonar.ps1; the three Key Vault names it reads (secret_names); the state fields update.local and update.sources; the node update service fields Sonar reads (event_fields)."
@@ -17067,6 +17075,29 @@ landing_zone:
       example: [["Microsoft.AzureStackHCI", "Microsoft.HybridCompute", "Microsoft.Edge", "Microsoft.KeyVault"]]
       items:
         {"type":"string","pattern":"^[A-Za-z]+\\.[A-Za-z.]+$"}
+    policy:
+      description: "Azure Policy of the landing zone. Tier 1 is the tag policy: the built-in policy 'Require a tag on resources' assigned in audit mode (enforcement mode DoNotEnforce, so non-compliance is reported and nothing is denied) at one management group, once for each required tag. Optional."
+      type: object
+      required: false
+      since: "5.6.5"
+      additionalProperties: false
+      properties:
+        required_tags:
+          description: "Tag names that every resource should carry, one audit assignment of the built-in policy 'Require a tag on resources' for each. The names follow your tagging standard; the tools assume none. Tag names are case-insensitive in Azure, must not contain < > % & \ ? / and are at most 80 characters here."
+          type: array
+          required: false
+          since: "5.6.5"
+          minItems: 1
+          example: [["environment", "owner", "cost_center", "workload"]]
+          items:
+            {"type":"string","minLength":1,"maxLength":80}
+        management_group:
+          description: "Name (id) of the management group the tag policy is assigned at; the assignment cascades to everything under it. Empty or absent: the tenant root management group, whose id is azure.tenant_id. A management group id has 1 to 90 letters, digits, hyphens, underscores, periods and parentheses, starts with a letter or digit and does not end with a period."
+          type: string
+          required: false
+          since: "5.6.5"
+          pattern: "^([A-Za-z0-9]([A-Za-z0-9._()-]{0,88}[A-Za-z0-9_()-])?)?$"
+          example: "mg-iic"
     networks:
       description: "Azure virtual networks."
       type: array
@@ -17481,7 +17512,7 @@ file_metadata:
   additionalProperties: false
   properties:
     schema_version:
-      description: "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. The current version is 5.6.4."
+      description: "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. The current version is 5.6.5."
       type: string
       required: true
       pattern: "^5\\.[0-9]+\\.[0-9]+$"
@@ -18916,6 +18947,18 @@ tools:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-sbe-update-import/powershell/Get-AzureLocalSbeImportPlan.ps1","description":"Get-AzureLocalSbeImportPlan.ps1. The master infrastructure.yml (schema 5). hardware.sbe.source_path (else bundle_path) names the share the SBE package is read from; hardware.sbe.source_username and source_password give the read account."}
                 ImportFolder: {"name":"ImportFolder","type":"string","declared_type":"string","default":"'C:\\ClusterStorage\\Infrastructure_1\\Shares\\SU1_Infrastructure_1\\import'","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-sbe-update-import/powershell/Get-AzureLocalSbeImportPlan.ps1","description":"Get-AzureLocalSbeImportPlan.ps1. The folder on the cluster's infrastructure volume that the printed commands copy the three SBE files into before Add-SolutionUpdate -SourceFolder (Microsoft Learn, Import and rediscover updates). Nothing is executed."}
                 OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-10-sbe-update-import/powershell/Get-AzureLocalSbeImportPlan.ps1","description":"Get-AzureLocalSbeImportPlan.ps1. Optional: also write the plan (files, commands, notes) as JSON to this file. Keep it out of the repository."}
+            scripts_deploy_05_operational_foundations_phase_04_security_governance_task_02_apply_azure_policy_initiatives_powershell_Invoke_AzurePolicyTier1_Orchestrated_ps1:
+              type: object
+              area: "scripts/deploy/05-operational-foundations/phase-04-security-governance/task-02-apply-azure-policy-initiatives/powershell/Invoke-AzurePolicyTier1-Orchestrated.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-02-apply-azure-policy-initiatives/powershell/Invoke-AzurePolicyTier1-Orchestrated.ps1","description":"Invoke-AzurePolicyTier1-Orchestrated.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, landing_zone.policy.required_tags and landing_zone.policy.management_group are read; the file is not validated as a whole."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-02-apply-azure-policy-initiatives/powershell/Invoke-AzurePolicyTier1-Orchestrated.ps1","description":"Invoke-AzurePolicyTier1-Orchestrated.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_02_azure_foundation_phase_01_landing_zones_full_deployment_task_02_create_subscriptions_powershell_Invoke_SubscriptionMove_Orchestrated_ps1:
+              type: object
+              area: "scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-02-create-subscriptions/powershell/Invoke-SubscriptionMove-Orchestrated.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-02-create-subscriptions/powershell/Invoke-SubscriptionMove-Orchestrated.ps1","description":"Invoke-SubscriptionMove-Orchestrated.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id and landing_zone.subscriptions[] (name, id, management_group) are read; the file is not validated as a whole."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-02-create-subscriptions/powershell/Invoke-SubscriptionMove-Orchestrated.ps1","description":"Invoke-SubscriptionMove-Orchestrated.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
         event_fields:
           type: object
           properties:

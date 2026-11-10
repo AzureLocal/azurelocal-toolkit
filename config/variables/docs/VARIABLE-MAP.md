@@ -10,16 +10,16 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](../../../docs/diagrams/variable-flow.drawio) ([PNG](../../../docs/diagrams/variable-flow.png)).
 
-Registry version 5.0.17. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
+Registry version 5.0.18. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
 
 ## In numbers
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 574 | 269 | 105 | 3 | 195 | 2 |
-| Owned by a tool (`tools.*`) | 2443 | 2436 | 0 | 0 | 7 | 0 |
+| Keys of infrastructure.yml | 576 | 269 | 105 | 3 | 197 | 2 |
+| Owned by a tool (`tools.*`) | 2447 | 2440 | 0 | 0 | 7 | 0 |
 | Older variables-file sections | 1480 | 68 | 573 | 0 | 834 | 5 |
-| All registry leaves | 4497 | 2773 | 678 | 3 | 1036 | 7 |
+| All registry leaves | 4503 | 2777 | 678 | 3 | 1038 | 7 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -93,7 +93,7 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | ztp | ZTP | 89 | 0 | 1135 |
 | os-configuration | OS configuration | 69 | 0 | 274 |
 | pre-cluster-verification | Pre-cluster verification | 64 | 0 | 0 |
-| arm-deployment | ARM Validate/Deploy | 74 | 0 | 242 |
+| arm-deployment | ARM Validate/Deploy | 74 | 0 | 246 |
 | sonar | Sonar | 14 | 0 | 266 |
 | cicd-infra | Outside the flow | 53 | 0 | 347 |
 | infrastructure-helpers | Outside the flow | 26 | 0 | 0 |
@@ -433,7 +433,7 @@ Ranked by how many different tools read the key, then how many places in the cod
 
 Variables the registry documents that no tool in the scan reads by name. Each is either a key a coming phase will read, a key only the validator checks, or a name kept for compatibility. Nothing here is an error; it is the list to look at before you spend time filling a key in that nothing uses yet.
 
-### Placeholder: documented, not read by any tool in the scan (195)
+### Placeholder: documented, not read by any tool in the scan (197)
 
 | Variable | Purposes | Provided by | Note |
 | --- | --- | --- | --- |
@@ -586,6 +586,8 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `landing_zone.resource_groups[].location` | cicd_infra | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.resource_groups[].purpose` | cicd_infra | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.resource_providers` |  | operator by hand | documented in the registry; no tool in the scan reads it |
+| `landing_zone.policy.required_tags` |  | operator by hand | documented in the registry; no tool in the scan reads it |
+| `landing_zone.policy.management_group` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.connectivity.vpn_gateway.name` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.connectivity.vpn_gateway.resource_group` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.connectivity.vpn_gateway.network` |  | operator by hand | documented in the registry; no tool in the scan reads it |
@@ -1095,6 +1097,8 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `landing_zone.resource_groups[].location` | string (azure_region) | operator | cicd_infra |  |  | placeholder |
 | `landing_zone.resource_groups[].purpose` | string | operator | cicd_infra |  |  | placeholder |
 | `landing_zone.resource_providers` | array | operator |  |  |  | placeholder |
+| `landing_zone.policy.required_tags` | array | operator |  |  |  | placeholder |
+| `landing_zone.policy.management_group` | string | operator |  |  |  | placeholder |
 | `landing_zone.networks[].name` | string, required | operator | cicd_infra | (part: cicd-infra) |  | read-as-part |
 | `landing_zone.networks[].subscription` | string | operator | cicd_infra | (part: cicd-infra) |  | read-as-part |
 | `landing_zone.networks[].resource_group` | string (resource_group) | operator | cicd_infra | (part: cicd-infra) |  | read-as-part |
@@ -1503,7 +1507,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |
-| arm_deployment | parameters | 142 | 142 | 0 |
+| arm_deployment | parameters | 146 | 146 | 0 |
 | arm_deployment | report_fields | 20 | 20 | 0 |
 | arm_deployment | run_settings | 31 | 31 | 0 |
 | arm_deployment | secret_names | 2 | 2 | 0 |

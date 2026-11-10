@@ -47,7 +47,8 @@ Describe 'The registry: the SBE package is a requirement, the build-time side-lo
         @($script:ByPath['hardware.sbe.requirement'].Node.enum) | Should -Be @('required', 'not_applicable')
         $script:ByPath['hardware.sbe.source_password'].Node.format | Should -Be 'kv_ref'
         $script:ByPath['hardware.sbe.source_password'].Node.sensitive | Should -BeTrue
-        $script:Raw._metadata.infrastructure_schema_version | Should -Be '5.6.4'
+        # 5.6.4 added the SBE keys; later minor versions only add optional keys, so the test must not pin the current version.
+        $script:Raw._metadata.infrastructure_schema_version | Should -Match '^5\.6\.([4-9]|[1-9][0-9])$'
         @($script:Raw._metadata.change_log | Where-Object { $_.version -eq '5.0.15' }).Count | Should -Be 1
     }
     It 'says publisher, family and version are required only when hardware.sbe is present (and bundle_path is not): <_>' -ForEach 'publisher', 'family', 'version' {
