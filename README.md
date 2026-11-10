@@ -36,8 +36,6 @@ Hardware discovery -> ZTP -> OS configuration -> PRE-CLUSTER VERIFICATION GATE -
 
 ### The pre-cluster verification gate
 
-<!-- TODO(gate): the gate is being built on the branch feat/pre-cluster-verification-gate. When it is in main, replace this paragraph with its script name, what it checks and its exit codes, and link the Sonar Verification monitor. -->
-
 The gate sits between OS configuration and ARM Validate and changes nothing. Until its page is published, the input to ARM Validate is the OS configuration report (`-OsConfigurationReport <report directory>`): a node whose report says it is not converged is not ready for a cluster.
 
 ### The Solution Builder Extension (SBE) package is a requirement
