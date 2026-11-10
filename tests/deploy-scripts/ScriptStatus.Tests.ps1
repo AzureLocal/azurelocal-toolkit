@@ -86,6 +86,9 @@ Describe 'New-DeployScriptStatus.ps1 on a made-up deploy folder' {
         # task-02-both: real PowerShell and real Azure CLI
         Write-File (Join-Path $script:Deploy '01-s/phase-01-p/task-02-both/powershell/Real.ps1') $script:RealScript
         Write-File (Join-Path $script:Deploy '01-s/phase-01-p/task-02-both/azurecli/az-two.ps1') $script:RealScript
+        # task-02-both also holds an older Bash script; a bash folder with no script (task-01-azure) does not count
+        Write-File (Join-Path $script:Deploy '01-s/phase-01-p/task-02-both/bash/az-two.sh') '#!/usr/bin/env bash'
+        Write-File (Join-Path $script:Deploy '01-s/phase-01-p/task-01-azure/bash/.gitkeep') ''
         # task-03-onprem: PowerShell placeholder only, Azure CLI does not apply
         Write-File (Join-Path $script:Deploy '02-t/phase-01-q/task-03-onprem/powershell/Invoke-X-Orchestrated.ps1') $script:PlaceholderText
         # task-04-unclear: nothing built, Azure CLI not decided
@@ -128,6 +131,13 @@ Describe 'New-DeployScriptStatus.ps1 on a made-up deploy folder' {
     It 'flags a task that is not decided and lists why' {
         $script:Text | Should -Match ([regex]::Escape('| `phase-01-q/task-04-unclear` | not built | not built | unclear |'))
         $script:Text | Should -Match ([regex]::Escape('| `02-t/phase-01-q/task-04-unclear` | Not decided yet. |'))
+    }
+
+    It 'lists the task folders that still hold an older Bash script, and no others' {
+        $script:Text | Should -Match ([regex]::Escape('Task folders that still hold an older Bash script: 1.'))
+        $script:Text | Should -Match '(?m)^## Older Bash scripts$'
+        $script:Text | Should -Match ([regex]::Escape('- `01-s/phase-01-p/task-02-both`'))
+        $script:Text | Should -Not -Match ([regex]::Escape('- `01-s/phase-01-p/task-01-azure`'))
     }
 
     It 'groups the rows by stage' {

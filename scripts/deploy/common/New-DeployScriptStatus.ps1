@@ -125,8 +125,17 @@ Out-Line '# Script status'
 Out-Line
 Out-Line 'Which task folders under `scripts/deploy` have a script, per kind. **Generated** by `scripts/deploy/common/New-DeployScriptStatus.ps1` from the task folders and from `scripts/deploy/common/TaskCatalogue.psd1`. Do not edit it by hand: change the scripts or the catalogue and run the script. A test fails when this page is out of date (`./scripts/deploy/common/New-DeployScriptStatus.ps1 -Check`).'
 Out-Line
-Out-Line 'The toolkit is PowerShell. Azure CLI scripts exist only for tasks that act on Azure. There are no Bash scripts for tasks.'
+Out-Line 'The toolkit is PowerShell. Azure CLI scripts exist only for tasks that act on Azure. Bash is not part of the layout and is not in the tables below.'
 Out-Line
+# Older Bash scripts that are still in a task folder: said here, so the page does not claim there are none.
+$bashTasks = @($rows | Where-Object {
+        $bashFolder = Join-Path (Join-Path $DeployRoot $_.Path) 'bash'
+        (Test-Path -LiteralPath $bashFolder -PathType Container) -and @(Get-ChildItem -LiteralPath $bashFolder -Recurse -File -Filter '*.sh').Count -gt 0
+    })
+if ($bashTasks.Count -gt 0) {
+    Out-Line "Task folders that still hold an older Bash script: $($bashTasks.Count). They are listed under ""Older Bash scripts"" at the end of this page."
+    Out-Line
+}
 Out-Line '| Word | Meaning |'
 Out-Line '|---|---|'
 Out-Line '| built | The folder holds at least one real script. A folder can also hold a placeholder next to it (for example an orchestrated variant that is not written yet). |'
@@ -175,6 +184,15 @@ if ($unclear.Count -gt 0) {
     foreach ($row in $unclear) {
         Out-Line ('| `{0}` | {1} |' -f $row.Path, $row.Reason)
     }
+    Out-Line
+}
+
+if ($bashTasks.Count -gt 0) {
+    Out-Line '## Older Bash scripts'
+    Out-Line
+    Out-Line 'These task folders still hold a Bash script from before the layout was set. Nothing in the toolkit calls them.'
+    Out-Line
+    foreach ($row in $bashTasks) { Out-Line ('- `{0}`' -f $row.Path) }
     Out-Line
 }
 
