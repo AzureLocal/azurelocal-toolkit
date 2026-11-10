@@ -1,10 +1,11 @@
+#Requires -Version 7.0
 # Task 01 - Pre-Registration Environment Validation (orchestrated, all nodes)
 # infrastructure.yml variables:
-#   cluster_nodes[].management_ip  -> $ServerList
+#   nodes[].management.ip_address  -> $ServerList
 
 $ConfigPath = ".\configs\infrastructure.yml"
-$ServerList = (Get-Content $ConfigPath | Select-String 'management_ip:\s+"?([^"'' ]+)' |
-    ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+$ServerList = @(Get-AzlInfrastructureNode -Infrastructure (Get-Content $ConfigPath -Raw | ConvertFrom-Yaml) | ForEach-Object { $_.ManagementIp })
 
 Invoke-Command ($ServerList) {
     if (-not (Get-Module -ListAvailable -Name AzStackHci.EnvironmentChecker)) {

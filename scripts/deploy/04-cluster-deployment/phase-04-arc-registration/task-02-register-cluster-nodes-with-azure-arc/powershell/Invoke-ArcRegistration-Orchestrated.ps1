@@ -146,6 +146,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 # ── Log file initialization ───────────────────────────────────────────────
 # Scripts are always run from the repo root, so ./logs/<task-folder>/ is CWD-relative
@@ -197,13 +198,12 @@ function Get-Config {
     Import-Module powershell-yaml -ErrorAction Stop
     $cfg = Get-Content $Path -Raw | ConvertFrom-Yaml
 
-    # compute.cluster_nodes                                          # compute.cluster_nodes
-    $nodes = $cfg.compute.cluster_nodes.GetEnumerator() | ForEach-Object {
+    # nodes[]
+    $nodes = Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object {
         [PSCustomObject]@{
-            nodename = $_.Key                                        # compute.cluster_nodes.<key>
-            hostname = if ($_.Value.hostname) { $_.Value.hostname }  # compute.cluster_nodes.<key>.hostname
-                       else { $_.Key }
-            ip       = $_.Value.management_ip                        # compute.cluster_nodes.<key>.management_ip
+            nodename = $_.Name                                       # nodes[].name
+            hostname = $_.Name                                       # nodes[].name
+            ip       = $_.ManagementIp                               # nodes[].management.ip_address
         }
     }
 

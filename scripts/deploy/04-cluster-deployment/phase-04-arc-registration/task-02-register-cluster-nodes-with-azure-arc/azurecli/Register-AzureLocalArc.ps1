@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 # Task 02 - Register Nodes with Azure Arc via Azure CLI (orchestrated)
 # infrastructure.yml variables:
 #   azure.tenant_id         -> $TenantId
@@ -6,9 +7,10 @@
 #   azure.region            -> $Region
 #   azure.arc_gateway_id    -> $ArcGatewayId
 #   azure.spn_id            -> $SpnId
-#   cluster_nodes[].hostname -> $NodeNames
+#   nodes[].name            -> $NodeNames
 
 $ConfigPath = ".\configs\infrastructure.yml"
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 $cfg        = Get-Content $ConfigPath
 
 $TenantId       = ($cfg | Select-String 'tenant_id:\s+"?([^"'' ]+)'     | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
@@ -17,7 +19,7 @@ $ResourceGroup  = ($cfg | Select-String 'resource_group:\s+"?([^"'' ]+)' | ForEa
 $Region         = ($cfg | Select-String 'region:\s+"?([^"'' ]+)'         | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
 $ArcGatewayId   = ($cfg | Select-String 'arc_gateway_id:\s+"?([^"'' ]+)' | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
 $SpnId          = ($cfg | Select-String 'spn_id:\s+"?([^"'' ]+)'         | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
-$NodeNames      = ($cfg | Select-String 'hostname:\s+"?([^"'' ]+)'       | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() })
+$NodeNames      = @(Get-AzlInfrastructureNode -Infrastructure (Get-Content $ConfigPath -Raw | ConvertFrom-Yaml) | ForEach-Object { $_.Name })
 
 $SpnSecret = Read-Host "Enter SPN secret" -AsPlainText
 
