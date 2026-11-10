@@ -18,8 +18,8 @@ Registry version 5.0.18. Sources of the scan: toolkit (this repository), sonar 3
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Keys of infrastructure.yml | 576 | 272 | 105 | 3 | 194 | 2 |
 | Owned by a tool (`tools.*`) | 2447 | 2440 | 0 | 0 | 7 | 0 |
-| Older variables-file sections | 1480 | 68 | 573 | 0 | 834 | 5 |
-| All registry leaves | 4503 | 2780 | 678 | 3 | 1035 | 7 |
+| Older variables-file sections | 1480 | 67 | 573 | 0 | 835 | 5 |
+| All registry leaves | 4503 | 2779 | 678 | 3 | 1036 | 7 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -291,7 +291,7 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 **Reads (39):**
 `site.code`, `site.location`, `site.name`, `site.owner`, `tags.*`, `identity.active_directory.netbios_name`, `identity.active_directory.security_groups[].name`, `identity.active_directory.security_groups[].local_groups`, `networking.logical_networks[].name`, `networking.logical_networks[].enabled`, `networking.logical_networks[].ip_allocation_method`, `networking.logical_networks[].nsg_name`, `networking.logical_networks[].vlan_id`, `networking.logical_networks[].address_prefix`, `networking.logical_networks[].dns_servers`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.custom_location`, `hardware.vendor`, `hardware.model`, `hardware.sbe.publisher`, `hardware.sbe.family`, `hardware.sbe.version`, `hardware.sbe.bundle_path`, `hardware.sbe.requirement`, `hardware.sbe.not_applicable_reason`, `hardware.sbe.source_path`, `hardware.sbe.source_username`, `hardware.sbe.source_password`, `hardware.sbe.package_sha256`, `hardware.sbe.package_size_bytes`, `landing_zone.subscriptions[].name`, `landing_zone.subscriptions[].id`, `landing_zone.subscriptions[].management_group`, `landing_zone.policy.required_tags`, `landing_zone.policy.management_group`, `_metadata.schema_version`
 
-Where in the code (file, function, keys read by name; 32 places, the first 12):
+Where in the code (file, function, keys read by name; 31 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
@@ -784,7 +784,7 @@ These registry sections (`compute`, `identity.accounts`, `azure_platform`, ...) 
 | `cluster_shared_volumes` | 15 | 11 | 4 | 0 |
 | `compute` | 398 | 397 | 0 | 1 |
 | `devops` | 8 | 0 | 8 | 0 |
-| `environment` | 4 | 1 | 3 | 0 |
+| `environment` | 4 | 0 | 4 | 0 |
 | `identity` | 143 | 15 | 128 | 0 |
 | `infrastructure_scenarios` | 1 | 0 | 1 | 0 |
 | `marketplace_images` | 9 | 7 | 2 | 0 |
