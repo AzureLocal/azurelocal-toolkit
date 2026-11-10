@@ -15,6 +15,8 @@
     Get-AzlManagementIpAssignment  How the machines' management addresses are set: static (default), dhcp or preconfigured;
                               with -Node, that node's management port (schema 5.2 adds dhcp_reservation).
     Get-AzlArcMachineName     A node's Arc machine name: arc_machine_name, else the node name.
+    Get-AzlInfrastructureNode The nodes[] of the file, one object each: Name, ManagementIp, BmcIp, ArcMachineName and the entry.
+                              The one reader of the node list for the per-task scripts.
     Get-AzlNodeNetworkAdapter A node's ports: nodes[].network_adapters (5.2), or one port made from nodes[].management.
     Get-AzlManagementAdapter  The port that owns a node's management address, with the address, mask, gateway, DNS and
                               the VLAN the host tags, defaults applied from networking.management.
@@ -389,6 +391,43 @@ function Get-AzlArcMachineName {
         if ($Node.Contains($key) -and $Node[$key] -is [string] -and $Node[$key]) { return $Node[$key] }
     }
     return $null
+}
+
+function Get-AzlInfrastructureNode {
+    <#
+    .SYNOPSIS
+        The machines of a loaded infrastructure file (nodes[]), one object each, in the order of the file.
+    .DESCRIPTION
+        Name is nodes[].name, the host name. ManagementIp is the address of the management port: the port of
+        nodes[].network_adapters that owns it (Get-AzlManagementAdapter), else nodes[].management.ip_address; empty when
+        the node has neither. BmcIp is nodes[].bmc.ip_address (empty when not set). ArcMachineName is Get-AzlArcMachineName.
+        Node is the entry of the file itself.
+        An entry that is not a mapping, or has no name, is skipped. Reads the loaded file only.
+
+        This is the one reader of the node list for the per-task scripts. The file has no other node list: the old layout
+        of schema 4 and earlier (a mapping keyed by node, under compute, with hostname and management_ip) is gone.
+    .PARAMETER Infrastructure
+        The file as read by Import-AzlInfrastructure, or by ConvertFrom-Yaml.
+    .PARAMETER Name
+        Return only the nodes with these names (case-insensitive).
+    .EXAMPLE
+        Get-AzlInfrastructureNode -Infrastructure $infra | ForEach-Object { "$($_.Name) $($_.ManagementIp)" }
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure, [string[]]$Name)
+    foreach ($entry in @(Get-List $Infrastructure['nodes'])) {
+        if ($entry -isnot [System.Collections.IDictionary] -or -not $entry['name']) { continue }
+        $nodeName = [string]$entry['name']
+        if ($Name -and $nodeName -notin $Name) { continue }
+        $ip = ''
+        $port = Get-AzlManagementAdapter -Infrastructure $Infrastructure -Node $entry
+        if ($port -and $port.IpAddress) { $ip = [string]$port.IpAddress }
+        elseif ($entry['management'] -is [System.Collections.IDictionary] -and $entry['management']['ip_address']) { $ip = [string]$entry['management']['ip_address'] }
+        $bmc = ''
+        if ($entry['bmc'] -is [System.Collections.IDictionary] -and $entry['bmc']['ip_address']) { $bmc = [string]$entry['bmc']['ip_address'] }
+        [pscustomobject]@{ Name = $nodeName; ManagementIp = $ip; BmcIp = $bmc; ArcMachineName = (Get-AzlArcMachineName -Node $entry); Node = $entry }
+    }
 }
 
 function ConvertTo-UInt32Address([string]$Address) {
@@ -1723,4 +1762,4 @@ function Import-AzlInfrastructure {
     return Read-InfrastructureFile $Path
 }
 
-Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlManagementMode, Test-AzlProvisioningDhcpPort, Get-AzlArcMachineName, Get-AzlNodeNetworkAdapter, Get-AzlManagementAdapter, Get-AzlBiosSetting, Get-AzlBiosProvisioningOverride, Get-AzlManagementStaticMethod, Get-AzlInfrastructureScope, Get-AzlSiteIpRange
+Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlManagementMode, Test-AzlProvisioningDhcpPort, Get-AzlArcMachineName, Get-AzlInfrastructureNode, Get-AzlNodeNetworkAdapter, Get-AzlManagementAdapter, Get-AzlBiosSetting, Get-AzlBiosProvisioningOverride, Get-AzlManagementStaticMethod, Get-AzlInfrastructureScope, Get-AzlSiteIpRange

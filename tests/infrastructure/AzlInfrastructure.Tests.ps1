@@ -238,6 +238,59 @@ Describe 'Management address and Arc machine name' {
     }
 }
 
+Describe 'Get-AzlInfrastructureNode' {
+    BeforeAll {
+        $script:Lom = Join-Path $repo 'config\variables\examples\scenarios\lom-management-ztp.yml'
+    }
+    It 'returns the nodes of the example in file order, with the name, the management address and the Arc machine name' {
+        $infra = Import-AzlInfrastructure -Path $script:ExamplePath -SkipValidation
+        $nodes = @(Get-AzlInfrastructureNode -Infrastructure $infra)
+        $nodes.Count | Should -Be @($infra.nodes).Count
+        $nodes[0].Name | Should -Be $infra.nodes[0].name
+        $nodes[0].ManagementIp | Should -Be $infra.nodes[0].management.ip_address
+        $nodes[0].ArcMachineName | Should -Be (Get-AzlArcMachineName -Node $infra.nodes[0])
+        $nodes[0].Node | Should -Be $infra.nodes[0]
+        $nodes[1].Name | Should -Be $infra.nodes[1].name
+    }
+    It 'takes the address from the port that owns the management address when the node lists network_adapters' {
+        $infra = Import-AzlInfrastructure -Path $script:Lom -SkipValidation
+        $owner = Get-AzlManagementAdapter -Infrastructure $infra -Node $infra.nodes[0]
+        $owner.IpAddress | Should -Not -BeNullOrEmpty
+        (Get-AzlInfrastructureNode -Infrastructure $infra | Select-Object -First 1).ManagementIp | Should -Be $owner.IpAddress
+    }
+    It 'falls back to nodes[].management.ip_address when no port owns the address' {
+        $infra = [ordered]@{ nodes = @([ordered]@{ name = 'n01'; management = [ordered]@{ ip_address = '192.0.2.31' } }) }
+        $infra.nodes[0]['network_adapters'] = @([ordered]@{ name = 'Port1'; roles = @('storage'); ip_assignment = 'static'; ip_address = '203.0.113.5' })
+        (Get-AzlInfrastructureNode -Infrastructure $infra).ManagementIp | Should -Be '192.0.2.31'
+    }
+    It 'returns the BMC address of the node, empty when there is none' {
+        $infra = [ordered]@{ nodes = @([ordered]@{ name = 'n01'; bmc = [ordered]@{ ip_address = '198.51.100.31' } }, [ordered]@{ name = 'n02' }) }
+        @(Get-AzlInfrastructureNode -Infrastructure $infra | ForEach-Object BmcIp) | Should -Be @('198.51.100.31', '')
+    }
+    It 'leaves ManagementIp empty for a node with no address' {
+        $infra = [ordered]@{ nodes = @([ordered]@{ name = 'n01' }) }
+        (Get-AzlInfrastructureNode -Infrastructure $infra).ManagementIp | Should -BeExactly ''
+    }
+    It 'reads a plain hashtable as ConvertFrom-Yaml returns it' {
+        $infra = ConvertFrom-Yaml "nodes:`n  - name: n01`n    management:`n      ip_address: 192.0.2.41`n  - name: n02`n    management:`n      ip_address: 192.0.2.42`n"
+        $infra | Should -BeOfType [hashtable]
+        @(Get-AzlInfrastructureNode -Infrastructure $infra | ForEach-Object ManagementIp) | Should -Be @('192.0.2.41', '192.0.2.42')
+    }
+    It 'filters by name, ignoring case' {
+        $infra = [ordered]@{ nodes = @([ordered]@{ name = 'n01' }, [ordered]@{ name = 'n02' }) }
+        @(Get-AzlInfrastructureNode -Infrastructure $infra -Name 'N02').Name | Should -Be @('n02')
+        @(Get-AzlInfrastructureNode -Infrastructure $infra -Name 'zz') | Should -BeNullOrEmpty
+    }
+    It 'returns nothing for a file with no nodes, and skips entries without a name' {
+        @(Get-AzlInfrastructureNode -Infrastructure ([ordered]@{ site = 'x' })) | Should -BeNullOrEmpty
+        @(Get-AzlInfrastructureNode -Infrastructure ([ordered]@{ nodes = @('text', [ordered]@{ serial_number = 'S1' }) })) | Should -BeNullOrEmpty
+    }
+    It 'does not read the old compute.cluster_nodes layout' {
+        $infra = [ordered]@{ compute = [ordered]@{ cluster_nodes = [ordered]@{ node01 = [ordered]@{ hostname = 'n01'; management_ip = '192.0.2.51' } } } }
+        @(Get-AzlInfrastructureNode -Infrastructure $infra) | Should -BeNullOrEmpty
+    }
+}
+
 Describe 'Schema 5.2: network adapters' {
     BeforeAll {
         $script:Lom = Join-Path $repo 'config\variables\examples\scenarios\lom-management-ztp.yml'
