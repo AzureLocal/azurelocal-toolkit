@@ -8,7 +8,7 @@ This folder documents how this repository is configured, automated, and operated
 |------|---------|
 | `automation.md` | Every GitHub Actions workflow: what it does, why it exists, triggers, secrets |
 | `setup.md` | Branch protection, labels, secrets, CODEOWNERS, and replication guide |
-| `scripts-roadmap.md` | Outstanding work: Azure CLI and Bash script variants needed |
+| `scripts-roadmap.md` | Scope of the task scripts (PowerShell for every task, Azure CLI only where a task acts on Azure, no Bash) and where to see what is outstanding |
 | `scripts/` | Repo-management helper scripts |
 
 ## Canonical References
