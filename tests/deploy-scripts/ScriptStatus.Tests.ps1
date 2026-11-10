@@ -93,6 +93,9 @@ Describe 'New-DeployScriptStatus.ps1 on a made-up deploy folder' {
         Write-File (Join-Path $script:Deploy '02-t/phase-01-q/task-03-onprem/powershell/Invoke-X-Orchestrated.ps1') $script:PlaceholderText
         # task-04-unclear: nothing built, Azure CLI not decided
         Write-File (Join-Path $script:Deploy '02-t/phase-01-q/task-04-unclear/powershell/.gitkeep') ''
+        # ... and two placeholders that do not call an Invoke-Deployment function: one has only the comment line, one ends directly
+        Write-File (Join-Path $script:Deploy '02-t/phase-01-q/task-04-unclear/powershell/Marked.ps1') "#Requires -Version 7.0`n# PLACEHOLDER: this script does not do the task.`nexit 3"
+        Write-File (Join-Path $script:Deploy '02-t/phase-01-q/task-04-unclear/azurecli/az-direct.ps1') "Import-Module x`nStop-DeploymentPlaceholder -TaskPath 't' -Kind 'Azure CLI'"
         $script:Catalogue = Join-Path $script:Tmp 'catalogue.psd1'
         Write-File $script:Catalogue @"
 @{
@@ -128,7 +131,7 @@ Describe 'New-DeployScriptStatus.ps1 on a made-up deploy folder' {
         $script:Text | Should -Match ([regex]::Escape('| `phase-01-q/task-03-onprem` | not built | not applicable | no |'))
     }
 
-    It 'flags a task that is not decided and lists why' {
+    It 'flags a task that is not decided and lists why; a placeholder by comment line or by a direct stop is not built' {
         $script:Text | Should -Match ([regex]::Escape('| `phase-01-q/task-04-unclear` | not built | not built | unclear |'))
         $script:Text | Should -Match ([regex]::Escape('| `02-t/phase-01-q/task-04-unclear` | Not decided yet. |'))
     }

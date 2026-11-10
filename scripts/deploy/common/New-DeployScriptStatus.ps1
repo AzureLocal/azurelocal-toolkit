@@ -14,7 +14,8 @@
         Azure CLI applies   yes, no or unclear, from TaskCatalogue.psd1
 
     A placeholder is a script that only imports DeploymentScaffold.psm1 and calls one of its Invoke-Deployment functions. It
-    does not do the task: it ends with exit code 3 and changes nothing. It never counts as built.
+    does not do the task: it ends with exit code 3 and changes nothing. It never counts as built. A script is taken as a
+    placeholder when it has the "# PLACEHOLDER:" comment line or calls one of the placeholder functions of that module.
 
     The task folders come from the file system and the Azure CLI classification from the catalogue; the two must list the
     same folders, or this script stops with exit code 1 and names the difference.
@@ -52,7 +53,8 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 $DeployRoot = (Resolve-Path -LiteralPath $DeployRoot).Path.TrimEnd('\', '/')
-$placeholderPattern = 'Invoke-Deployment(AzCliPowerShell|Orchestrated|Standalone)\b'
+# A placeholder carries the "# PLACEHOLDER:" comment line, or calls a placeholder function of the shared module.
+$placeholderPattern = '(?m)^# PLACEHOLDER:|\b(Invoke-Deployment(AzCliPowerShell|Orchestrated|Standalone)|Stop-DeploymentPlaceholder)\b'
 
 function Get-RelativeTaskPath {
     param([string]$FullPath)
