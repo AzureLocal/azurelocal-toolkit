@@ -5,7 +5,7 @@
 
 $ConfigPath = ".\configs\infrastructure.yml"
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
-$ServerList = @(Get-AzlInfrastructureNode -Infrastructure (Get-Content $ConfigPath -Raw | ConvertFrom-Yaml) | ForEach-Object { $_.ManagementIp })
+$ServerList = @(Get-AzlInfrastructureNode -Infrastructure (Get-Content $ConfigPath -Raw | ConvertFrom-Yaml) | ForEach-Object { $_.ManagementIp } | Where-Object { $_ })
 
 Invoke-Command ($ServerList) {
     if (-not (Get-Module -ListAvailable -Name AzStackHci.EnvironmentChecker)) {

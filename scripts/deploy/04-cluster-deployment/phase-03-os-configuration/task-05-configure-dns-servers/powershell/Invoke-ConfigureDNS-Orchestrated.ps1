@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Invoke-ConfigureDNS-Orchestrated.ps1
@@ -21,7 +21,7 @@
     Phase:        03-os-configuration
     Task:         task-05-configure-dns-servers
     Execution:    Run from management server (PSRemoting outbound to nodes)
-    Prerequisites: PowerShell 5.1+, WinRM enabled on all nodes, admin credentials
+    Prerequisites: PowerShell 7+, WinRM enabled on all nodes, admin credentials
     Run after:    Task 04 — DHCP disabled on all adapters
 
 .EXAMPLE

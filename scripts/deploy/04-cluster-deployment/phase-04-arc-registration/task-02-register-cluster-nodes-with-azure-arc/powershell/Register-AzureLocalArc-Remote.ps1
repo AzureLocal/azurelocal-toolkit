@@ -19,7 +19,7 @@ $ResourceGroup  = ($cfg | Select-String 'resource_group:\s+"?([^"'' ]+)' | ForEa
 $Region         = ($cfg | Select-String 'region:\s+"?([^"'' ]+)'         | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
 $ArcGatewayId   = ($cfg | Select-String 'arc_gateway_id:\s+"?([^"'' ]+)' | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
 $SpnId          = ($cfg | Select-String 'spn_id:\s+"?([^"'' ]+)'         | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
-$ServerList     = @(Get-AzlInfrastructureNode -Infrastructure (Get-Content $ConfigPath -Raw | ConvertFrom-Yaml) | ForEach-Object { $_.ManagementIp })
+$ServerList     = @(Get-AzlInfrastructureNode -Infrastructure (Get-Content $ConfigPath -Raw | ConvertFrom-Yaml) | ForEach-Object { $_.ManagementIp } | Where-Object { $_ })
 
 $Cloud = "AzureCloud"
 

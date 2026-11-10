@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Invoke-DisableDHCP-Orchestrated.ps1
@@ -22,7 +22,7 @@
     Phase:        03-os-configuration
     Task:         task-04-disable-dhcp-on-management-adapter
     Execution:    Run from management server (PSRemoting outbound to nodes)
-    Prerequisites: PowerShell 5.1+, WinRM enabled on all nodes, admin credentials
+    Prerequisites: PowerShell 7+, WinRM enabled on all nodes, admin credentials
     Run after:    Task 03 — static IP configured on management NIC of all nodes
 
 .EXAMPLE
