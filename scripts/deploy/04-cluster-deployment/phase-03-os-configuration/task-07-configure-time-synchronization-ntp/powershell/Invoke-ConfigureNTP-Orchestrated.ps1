@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Invoke-ConfigureNazl-Orchestrated.ps1
@@ -10,8 +11,8 @@
 
     infrastructure.yml paths used:
       active_directory.ntp_servers    - List of NTP servers (joined for manualpeerlist)
-      cluster_nodes[].management_ip   - PSRemoting connection target per node
-      cluster_nodes[].hostname        - Node hostname (display only)
+      nodes[].management.ip_address   - PSRemoting connection target per node
+      nodes[].name                    - Node hostname (display only)
 
 .NOTES
     Author:       Azure Local Cloud AzureLocalCloud
@@ -37,6 +38,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region HELPERS
 
@@ -109,12 +111,12 @@ function Get-ClusterConfig {
         throw "identity.active_directory.ntp_servers not found or empty in $ConfigPath."
     }
 
-    $nodes = $cfg.compute.cluster_nodes.GetEnumerator() | ForEach-Object {
-        Write-Log "  Node: $($_.Key)  IP: $($_.Value.management_ip)"
-        [PSCustomObject]@{ hostname = $_.Key; management_ip = $_.Value.management_ip }
+    $nodes = Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object {
+        Write-Log "  Node: $($_.Name)  IP: $($_.ManagementIp)"
+        [PSCustomObject]@{ hostname = $_.Name; management_ip = $_.ManagementIp }
     }
 
-    if (-not $nodes) { throw "No nodes found under compute.cluster_nodes in $ConfigPath." }
+    if (-not $nodes) { throw "No nodes found under nodes in $ConfigPath." }
 
     $adminUser    = $cfg.identity.accounts.account_local_admin_username
     $adminPassUri = $cfg.identity.accounts.account_local_admin_password

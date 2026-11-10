@@ -25,13 +25,13 @@
     *** Task 11 (Clear Previous Storage) is conditional — run separately if needed.
 
     All values can be found in infrastructure.yml:
-      -StaticIP      -> compute.cluster_nodes.<name>.management_ip
+      -StaticIP      -> nodes[].management.ip_address
       -Gateway       -> compute.azure_local.default_gateway
       -PrefixLength  -> compute.azure_local.subnet_mask (e.g. 24 for 255.255.255.0)
       -DNSPrimary    -> compute.azure_local.dns_servers[0]
       -DNSSecondary  -> compute.azure_local.dns_servers[1]
       -NTPServer     -> NTP peer (e.g. time.windows.com or internal NTP)
-      -NewHostname   -> compute.cluster_nodes.<name>.hostname
+      -NewHostname   -> nodes[].name
 
 .PARAMETER StaticIP
     Static management IP to assign to the management adapter.

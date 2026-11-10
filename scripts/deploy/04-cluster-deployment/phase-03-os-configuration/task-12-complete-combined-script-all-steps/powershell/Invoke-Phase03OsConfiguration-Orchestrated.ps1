@@ -23,8 +23,8 @@
     *** Task 11 (Clear Previous Storage) is conditional — NOT included. Run separately if needed.
 
     infrastructure.yml paths used:
-      compute.cluster_nodes.<name>.management_ip  - PSRemoting connection IP per node
-      compute.cluster_nodes.<name>.hostname       - Target hostname per node
+      nodes[].management.ip_address               - PSRemoting connection IP per node
+      nodes[].name                                - Target hostname per node
       compute.azure_local.default_gateway         - Default gateway
       compute.azure_local.subnet_mask             - Subnet mask (converted to prefix length)
       compute.azure_local.dns_servers             - DNS server list (index 0=primary, 1=secondary)
@@ -86,6 +86,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region HELPERS
 
@@ -160,11 +161,11 @@ function Get-ClusterConfig {
     $az         = $cfg.compute.azure_local
     $ntpServers = @($cfg.identity.active_directory.ntp_servers)
 
-    $nodes = $cfg.compute.cluster_nodes.GetEnumerator() | ForEach-Object {
+    $nodes = Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object {
         [PSCustomObject]@{
-            nodename      = $_.Key
-            hostname      = $_.Value.hostname
-            management_ip = $_.Value.management_ip
+            nodename      = $_.Name
+            hostname      = $_.Name
+            management_ip = $_.ManagementIp
         }
     }
 
@@ -267,7 +268,7 @@ $adminPassUri = $cfg.AdminPassUri
 if (-not $gateway)           { throw "compute.azure_local.default_gateway not found in config." }
 if (-not $subnetMask)        { throw "compute.azure_local.subnet_mask not found in config." }
 if ($dnsServers.Count -lt 1) { throw "compute.azure_local.dns_servers not found or empty in config." }
-if ($nodes.Count -eq 0)      { throw "No nodes found under compute.cluster_nodes in config." }
+if ($nodes.Count -eq 0)      { throw "No nodes found under nodes in config." }
 
 $prefixLength = Convert-SubnetMaskToPrefix -Mask $subnetMask
 $dnsPrimary   = $dnsServers[0]

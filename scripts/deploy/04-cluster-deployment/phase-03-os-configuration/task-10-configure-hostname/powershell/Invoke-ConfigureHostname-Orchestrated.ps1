@@ -9,11 +9,10 @@
     infrastructure.yml, renames each node if needed, restarts it, waits for it to
     come back online, then verifies the new hostname.
 
-    The `hostname` value under each node in `compute.cluster_nodes` is used as the target hostname.
-    Falls back to the key name if `hostname` is not set.
+    The `name` of each entry in `nodes` is used as the target hostname.
 
     infrastructure.yml paths used:
-      compute.cluster_nodes                           - Node names and management IPs
+      nodes[]                                         - Node names and management IPs
       identity.accounts.account_local_admin_username  - Credential username
       identity.accounts.account_local_admin_password  - KV reference for password
 
@@ -56,6 +55,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region HELPERS
 
@@ -122,13 +122,13 @@ function Get-ClusterConfig {
 
     $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 
-    $nodes = $cfg.compute.cluster_nodes.GetEnumerator() | ForEach-Object {
-        $h = if ($_.Value.hostname) { $_.Value.hostname } else { $_.Key }
-        Write-Log "  Node: $h  ($($_.Key))  IP: $($_.Value.management_ip)"
-        [PSCustomObject]@{ hostname = $h; nodename = $_.Key; management_ip = $_.Value.management_ip }
+    $nodes = Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object {
+        $h = $_.Name
+        Write-Log "  Node: $h  ($($_.Name))  IP: $($_.ManagementIp)"
+        [PSCustomObject]@{ hostname = $h; nodename = $_.Name; management_ip = $_.ManagementIp }
     }
 
-    if (-not $nodes) { throw "No nodes found under compute.cluster_nodes in $ConfigPath." }
+    if (-not $nodes) { throw "No nodes found under nodes in $ConfigPath." }
 
     $adminUser    = $cfg.identity.accounts.account_local_admin_username
     $adminPassUri = $cfg.identity.accounts.account_local_admin_password

@@ -10,7 +10,7 @@
     Disconnected state.
 
     infrastructure.yml paths used:
-      compute.cluster_nodes                           - Node names and management IPs
+      nodes[]                                         - Node names and management IPs
       identity.accounts.account_local_admin_username  - Credential username
       identity.accounts.account_local_admin_password  - KV reference for password
 
@@ -44,6 +44,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region HELPERS
 
@@ -110,12 +111,12 @@ function Get-ClusterConfig {
 
     $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 
-    $nodes = $cfg.compute.cluster_nodes.GetEnumerator() | ForEach-Object {
-        Write-Log "  Node: $($_.Key)  IP: $($_.Value.management_ip)"
-        [PSCustomObject]@{ hostname = $_.Key; management_ip = $_.Value.management_ip }
+    $nodes = Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object {
+        Write-Log "  Node: $($_.Name)  IP: $($_.ManagementIp)"
+        [PSCustomObject]@{ hostname = $_.Name; management_ip = $_.ManagementIp }
     }
 
-    if (-not $nodes) { throw "No nodes found under compute.cluster_nodes in $ConfigPath." }
+    if (-not $nodes) { throw "No nodes found under nodes in $ConfigPath." }
 
     $adminUser    = $cfg.identity.accounts.account_local_admin_username
     $adminPassUri = $cfg.identity.accounts.account_local_admin_password

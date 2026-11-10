@@ -81,6 +81,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 # ============================================================================
 # FUNCTIONS
@@ -152,19 +153,19 @@ function Get-NodeConfigs {
 
     $nodeConfigs = [System.Collections.Generic.List[hashtable]]::new()
 
-    foreach ($entry in $Config.compute.cluster_nodes.GetEnumerator()) {
-        $nodeName = $entry.Key
-        $nodeData = $entry.Value
+    foreach ($entry in Get-AzlInfrastructureNode -Infrastructure $Config) {
+        $nodeName = $entry.Name
+        $nodeData = $entry
 
-        if (-not $nodeData.management_ip) {
-            Write-Log "Node $nodeName has no management_ip in infrastructure.yml — skipping" "WARN"
+        if (-not $nodeData.ManagementIp) {
+            Write-Log "Node $nodeName has no management address (nodes[].management.ip_address) in infrastructure.yml — skipping" "WARN"
             continue
         }
 
         $nodeConfigs.Add(@{
             NodeName      = $nodeName
-            CurrentIP     = $nodeData.management_ip  # DHCP-reserved = current IP = target IP
-            TargetIP      = $nodeData.management_ip
+            CurrentIP     = $nodeData.ManagementIp  # DHCP-reserved = current IP = target IP
+            TargetIP      = $nodeData.ManagementIp
             PrefixLength  = [int]$prefixLength
             Gateway       = $gateway
             DNSPrimary    = $dnsPrimary

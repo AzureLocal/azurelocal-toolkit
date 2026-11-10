@@ -32,6 +32,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 function Write-Log {
     param([string]$Message, [string]$Level = "INFO")
@@ -58,8 +59,8 @@ function Get-Config {
     if (-not (Test-Path $Path)) { throw "infrastructure.yml not found. Use -ConfigPath." }
     Import-Module powershell-yaml -ErrorAction Stop
     $cfg = Get-Content $Path -Raw | ConvertFrom-Yaml
-    $nodes = $cfg.compute.cluster_nodes.GetEnumerator() | ForEach-Object {
-        [PSCustomObject]@{ hostname = $_.Key; ip = $_.Value.management_ip }
+    $nodes = Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object {
+        [PSCustomObject]@{ hostname = $_.Name; ip = $_.ManagementIp }
     }
     return [PSCustomObject]@{
         Nodes        = @($nodes)

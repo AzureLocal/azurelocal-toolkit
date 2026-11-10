@@ -10,7 +10,7 @@
     management NIC.
 
     infrastructure.yml paths used:
-      nodes.<name>.management_ip    - PSRemoting connection target
+      nodes[].management.ip_address - PSRemoting connection target
       cluster.management_nic_name   - Adapter name to configure DNS on
       dns.primary                   - Primary DNS server IP
       dns.secondary                 - Secondary DNS server IP
@@ -39,6 +39,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 # ============================================================================
 #  LOGGING
@@ -180,12 +181,12 @@ function Get-ClusterConfig {
     Write-Log "  dns.primary         : $dnsPrimary"
     Write-Log "  dns.secondary       : $dnsSecondary"
 
-    $nodes = $cfg.compute.cluster_nodes.GetEnumerator() | ForEach-Object {
-        Write-Log "  Node: $($_.Key)  IP: $($_.Value.management_ip)"
-        [PSCustomObject]@{ NodeName = $_.Key; IP = $_.Value.management_ip }
+    $nodes = Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object {
+        Write-Log "  Node: $($_.Name)  IP: $($_.ManagementIp)"
+        [PSCustomObject]@{ NodeName = $_.Name; IP = $_.ManagementIp }
     }
 
-    if (-not $nodes) { throw "No nodes found under compute.cluster_nodes in $ConfigPath." }
+    if (-not $nodes) { throw "No nodes found under nodes in $ConfigPath." }
 
     return [PSCustomObject]@{
         ManagementNIC = $mgmtNIC

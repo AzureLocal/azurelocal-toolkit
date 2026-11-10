@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Invoke-VerifyDNS-Orchestrated.ps1
@@ -12,7 +13,7 @@
       cluster.management_nic_name  - Management adapter name to check
       dns.primary                  - Expected primary DNS server IP
       dns.secondary                - Expected secondary DNS server IP
-      nodes.<name>.management_ip   - PSRemoting connection target per node
+      nodes[].management.ip_address - PSRemoting connection target per node
 
 .NOTES
     Author:       Azure Local Cloud AzureLocalCloud
@@ -38,6 +39,7 @@ param(
 
 Set-StrictMode -Version 2.0
 $ErrorActionPreference = "Stop"
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region HELPERS
 
@@ -175,7 +177,7 @@ $cfg = Get-Content $configFile -Raw | ConvertFrom-Yaml
 $mgmtNIC           = $cfg.network_config.management_nic_name
 $expectedPrimary   = $cfg.compute.azure_local.dns_servers[0]
 $expectedSecondary = $cfg.compute.azure_local.dns_servers[1]
-$nodeNames         = @($cfg.compute.cluster_nodes.Keys)
+$nodeNames         = @(Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object { $_.Name })
 
 Write-Log "Management NIC         : $mgmtNIC"
 Write-Log "Expected Primary DNS   : $expectedPrimary"
@@ -185,7 +187,7 @@ Write-Log "Nodes                  : $($nodeNames -join ', ')"
 if (-not $mgmtNIC)          { throw "network_config.management_nic_name not found in config" }
 if (-not $expectedPrimary)  { throw "compute.azure_local.dns_servers[0] not found in config" }
 if (-not $expectedSecondary){ throw "compute.azure_local.dns_servers[1] not found in config" }
-if ($nodeNames.Count -eq 0) { throw "No nodes found under compute.cluster_nodes" }
+if ($nodeNames.Count -eq 0) { throw "No nodes found under nodes" }
 
 $adminUser    = $cfg.identity.accounts.account_local_admin_username
 $adminPassUri = $cfg.identity.accounts.account_local_admin_password
@@ -213,7 +215,7 @@ $endpoints = @(
 $nodeResults = @()
 
 foreach ($nodeName in $nodeNames) {
-    $mgmtIP = $cfg.compute.cluster_nodes[$nodeName].management_ip
+    $mgmtIP = (Get-AzlInfrastructureNode -Infrastructure $cfg -Name $nodeName).ManagementIp
     if (-not $mgmtIP) {
         Write-Log "[$nodeName] management_ip not found in config - skipping" "WARN"
         continue

@@ -1,7 +1,8 @@
+#Requires -Version 7.0
 # Task 10 - Configure Hostname (run locally on each node)
 # Set $NewHostname to the node's hostname from infrastructure.yml before running
 
-$NewHostname = "REPLACE_WITH_HOSTNAME"   # cluster_nodes[].hostname
+$NewHostname = "REPLACE_WITH_HOSTNAME"   # nodes[].name
 
 if ($NewHostname -match "^REPLACE_") { Write-Host "Set `$NewHostname before running" -ForegroundColor Red; exit 1 }
 

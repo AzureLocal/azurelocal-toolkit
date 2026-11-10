@@ -46,6 +46,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 # ============================================================================
 # FUNCTIONS
@@ -145,10 +146,10 @@ try {
     $config = Get-Content $resolvedConfig -Raw | ConvertFrom-Yaml
 
     # Build node list
-    $allNodes = $config.compute.cluster_nodes.GetEnumerator() | ForEach-Object {
+    $allNodes = Get-AzlInfrastructureNode -Infrastructure $config | ForEach-Object {
         [PSCustomObject]@{
-            Name = $_.Key
-            IP   = $_.Value.management_ip
+            Name = $_.Name
+            IP   = $_.ManagementIp
         }
     }
 

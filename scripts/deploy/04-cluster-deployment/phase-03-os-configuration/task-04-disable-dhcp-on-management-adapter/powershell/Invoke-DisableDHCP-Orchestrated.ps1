@@ -40,6 +40,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 # ============================================================================
 #  LOGGING
@@ -155,75 +156,6 @@ function Get-YamlValue {
     return $null
 }
 
-function Get-NodeNames {
-    param([string[]]$Lines)
-    $clusterNodesIdx    = -1
-    $clusterNodesIndent = -1
-
-    for ($i = 0; $i -lt $Lines.Count; $i++) {
-        if ($Lines[$i] -match "^(\s*)cluster_nodes\s*:") {
-            $clusterNodesIdx    = $i
-            $clusterNodesIndent = $Matches[1].Length
-            break
-        }
-    }
-    if ($clusterNodesIdx -eq -1) { return @() }
-
-    $names       = @()
-    $childIndent = -1
-
-    for ($i = $clusterNodesIdx + 1; $i -lt $Lines.Count; $i++) {
-        $line = $Lines[$i]
-        if ($line -match "^\s*$") { continue }
-        $thisIndent = ($line -replace "^(\s*).*", '$1').Length
-
-        # Back at or above cluster_nodes indent — done
-        if ($thisIndent -le $clusterNodesIndent) { break }
-
-        # First non-blank line sets the expected child indent
-        if ($childIndent -eq -1) { $childIndent = $thisIndent }
-
-        # Only collect direct children (exact childIndent, key-only lines)
-        if ($thisIndent -eq $childIndent -and $line -match "^\s+(\w[\w\-]*):\s*$") {
-            $names += $Matches[1]
-        }
-    }
-    return $names
-}
-
-# ============================================================================
-#  GET NODE CONFIGS
-# ============================================================================
-
-function Get-NodeConfigs {
-    [CmdletBinding()]
-    param([string]$ConfigPath)
-
-    $raw   = Get-Content -Path $ConfigPath -Raw
-    $lines = $raw -split "`n"
-
-    $nodeNames = Get-NodeNames -Lines $lines
-    if ($nodeNames.Count -eq 0) { throw "No nodes found in $ConfigPath." }
-
-    $configs = @()
-    foreach ($nodeName in $nodeNames) {
-        $mgmtIP = Get-YamlValue -Lines $lines -KeyPath @("cluster_nodes", $nodeName, "management_ip")
-        if (-not $mgmtIP) {
-            Write-Log "  WARN: nodes.$nodeName.management_ip not found — skipping $nodeName" "WARN"
-            continue
-        }
-
-        $configs += [PSCustomObject]@{
-            NodeName = $nodeName
-            IP       = $mgmtIP.Trim()
-        }
-        Write-Log "  Node: $nodeName  IP: $($mgmtIP.Trim())"
-    }
-
-    if ($configs.Count -eq 0) { throw "No valid node entries found in config." }
-    return $configs
-}
-
 function Resolve-KeyVaultRef {
     param([Parameter(Mandatory)][string]$KvUri)
     if ($KvUri -notmatch '^keyvault://([^/]+)/(.+)$') { return $null }
@@ -332,14 +264,14 @@ try {
 
     $config = Get-Content $resolvedConfig -Raw | ConvertFrom-Yaml
 
-    $nodes = $config.compute.cluster_nodes.GetEnumerator() | ForEach-Object {
+    $nodes = Get-AzlInfrastructureNode -Infrastructure $config | ForEach-Object {
         [PSCustomObject]@{
-            NodeName = $_.Key
-            IP       = $_.Value.management_ip
+            NodeName = $_.Name
+            IP       = $_.ManagementIp
         }
     }
 
-    if (-not $nodes) { throw "No nodes found under compute.cluster_nodes in $resolvedConfig" }
+    if (-not $nodes) { throw "No nodes found under nodes in $resolvedConfig" }
     Write-Log "Nodes to process: $($nodes.Count)"
 
     $excludePattern = "NDIS|Hyper-V Virtual|WAN Miniport|Bluetooth|Wi-Fi Direct|Microsoft Kernel Debug|Multiplexor"
