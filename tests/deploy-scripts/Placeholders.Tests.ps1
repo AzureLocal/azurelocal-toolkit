@@ -201,3 +201,18 @@ Describe 'Every placeholder' {
         $hits | Should -BeNullOrEmpty -Because 'a placeholder fails; nothing may call one'
     }
 }
+
+Describe 'Bash' {
+    It 'has no Bash placeholder and no Bash helper under scripts/deploy' {
+        @(Get-ChildItem -LiteralPath $script:Deploy -Recurse -File -Filter '*.sh' |
+                Where-Object { (Get-Content -LiteralPath $_.FullName -Raw) -match 'invoke_bash_deployment' }) | Should -BeNullOrEmpty
+        Test-Path -LiteralPath ([System.IO.Path]::Combine($script:Deploy, 'common', 'deployment-scaffold.sh')) | Should -BeFalse
+    }
+
+    It 'keeps a bash folder only where it holds a script' {
+        $empty = @(Get-ChildItem -LiteralPath $script:Deploy -Recurse -Directory -Filter 'bash' |
+                Where-Object { @(Get-ChildItem -LiteralPath $_.FullName -File -Filter '*.sh').Count -eq 0 } |
+                ForEach-Object { $_.FullName.Substring($script:Repo.Length) })
+        $empty | Should -BeNullOrEmpty
+    }
+}
