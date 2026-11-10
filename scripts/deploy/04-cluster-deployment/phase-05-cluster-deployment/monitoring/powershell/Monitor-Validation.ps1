@@ -36,7 +36,7 @@
     Azure subscription ID for the cluster. (azure_platform.azure_tenants[*].aztenant_subscription_id)
 
 .PARAMETER NodeIPs
-    Array of node management IP addresses for PSRemoting log access. (compute.cluster_nodes[*].management_ip)
+    Array of node management IP addresses for PSRemoting log access. (nodes[].management.ip_address)
 
 .PARAMETER LocalAdminUsername
     Local admin username for PSRemoting. If omitted, resolved from Key Vault or prompted.
@@ -132,7 +132,7 @@ param(
     [string]$SubscriptionId,       # azure_platform.azure_tenants[*].aztenant_subscription_id
 
     [Parameter(Mandatory = $false)]
-    [string[]]$NodeIPs = @(),       # compute.cluster_nodes[*].management_ip
+    [string[]]$NodeIPs = @(),       # nodes[].management.ip_address
 
     # --- Node credentials (direct — tier 1) ---
     [Parameter(Mandatory = $false)]

@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Test-ADPrerequisites-Standalone.ps1
@@ -33,7 +34,7 @@ $ErrorActionPreference = "Stop"
 
 #region CONFIGURATION — Edit these values before running
 
-$nodeIPs    = @("<NODE_IP_1>", "<NODE_IP_2>")                                    # compute.cluster_nodes[*].management_ip
+$nodeIPs    = @("<NODE_IP_1>", "<NODE_IP_2>")                                    # nodes[].management.ip_address
 $ouPath     = "<DOMAIN_OU_PATH>"                                                 # cluster_arm_deployment.domain_ou_path
 $lcmUser    = "<LCM_USERNAME>"                                                   # accounts.lcm_admin.username
 

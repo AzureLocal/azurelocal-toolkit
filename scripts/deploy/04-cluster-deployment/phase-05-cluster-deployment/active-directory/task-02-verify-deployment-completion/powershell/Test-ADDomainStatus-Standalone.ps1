@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Test-ADDomainStatus-Standalone.ps1
@@ -26,7 +27,7 @@ $ErrorActionPreference = "Stop"
 
 #region CONFIGURATION — Edit these values before running
 
-$nodeIPs     = @("<NODE_IP_1>", "<NODE_IP_2>")   # compute.cluster_nodes[*].ipv4_address
+$nodeIPs     = @("<NODE_IP_1>", "<NODE_IP_2>")   # nodes[].management.ip_address
 $domainFqdn  = "<DOMAIN_FQDN>"                    # cluster_arm_deployment.domain_fqdn
 $ouPath      = "<DOMAIN_OU_PATH>"                  # cluster_arm_deployment.domain_ou_path
 $lcmUser     = "<LCM_USERNAME>"                    # accounts.lcm_admin.username

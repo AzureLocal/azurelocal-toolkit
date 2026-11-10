@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1
@@ -59,6 +60,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region LOGGING
 $TaskFolderName = "task-03-verify-deployment-completion"
@@ -95,7 +97,7 @@ $cfg = Get-ClusterConfig -ConfigPath $ConfigPath
 #endregion CONFIG LOADING
 
 #region RESOLVE NODES
-$allNodes = $cfg.compute.cluster_nodes  # compute.cluster_nodes[*]
+$allNodes = @(Get-AzlInfrastructureNode -Infrastructure $cfg)  # nodes[]
 if ($TargetNode.Count -gt 0) {
     $nodes = @($allNodes | Where-Object { $_.name -in $TargetNode })
     if ($nodes.Count -eq 0) {
@@ -126,7 +128,7 @@ if (-not $Credential) {
 
 #region WHATIF
 if ($WhatIf) {
-    Write-Log "[WhatIf] Would verify Local Identity config on: $($nodes | ForEach-Object { $_.management_ip } | Join-String ', ')"
+    Write-Log "[WhatIf] Would verify Local Identity config on: $($nodes | ForEach-Object { $_.ManagementIp } | Join-String ', ')"
     Write-Log "[WhatIf] Checks: Domain = WORKGROUP, ADAware = 2"
     exit 0
 }
@@ -139,7 +141,7 @@ $failCount = 0
 $results   = [System.Collections.Generic.List[PSCustomObject]]::new()
 
 foreach ($node in $nodes) {
-    $ip = $node.management_ip  # compute.cluster_nodes[*].management_ip
+    $ip = $node.ManagementIp  # nodes[].management.ip_address
     Write-Log "Connecting to $($node.name) ($ip)..."
 
     try {

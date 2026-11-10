@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1
@@ -19,8 +20,8 @@
     infrastructure.yml paths used:
       identity.accounts.account_local_admin_username  - New account username to create
       identity.accounts.account_local_admin_password  - Key Vault ref for new account password
-      compute.cluster_nodes[].management_ip           - PSRemoting connection target per node
-      compute.cluster_nodes[] (key name)              - Node hostname (display only)
+      nodes[].management.ip_address                   - PSRemoting connection target per node
+      nodes[].name                                    - Node hostname (display only)
 
     Bootstrap credential note:
       The -Credential parameter (or interactive prompt fallback) provides the EXISTING
@@ -98,6 +99,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region HELPERS
 
@@ -181,13 +183,13 @@ function Get-ClusterConfig {
         throw "identity.accounts.account_local_admin_password not found in $ConfigPath."
     }
 
-    # compute.cluster_nodes
-    $nodes = $cfg.compute.cluster_nodes.GetEnumerator() | ForEach-Object {
-        Write-Log "  Node: $($_.Key)  IP: $($_.Value.management_ip)"
-        [PSCustomObject]@{ hostname = $_.Key; management_ip = $_.Value.management_ip }
+    # nodes[]
+    $nodes = Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object {
+        Write-Log "  Node: $($_.Name)  IP: $($_.ManagementIp)"
+        [PSCustomObject]@{ hostname = $_.Name; management_ip = $_.ManagementIp }
     }
 
-    if (-not $nodes) { throw "No nodes found under compute.cluster_nodes in $ConfigPath." }
+    if (-not $nodes) { throw "No nodes found under nodes in $ConfigPath." }
 
     return [PSCustomObject]@{
         AdminUser    = $adminUser

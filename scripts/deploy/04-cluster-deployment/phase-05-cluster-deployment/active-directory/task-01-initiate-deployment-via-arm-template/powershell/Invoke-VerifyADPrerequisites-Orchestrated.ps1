@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Invoke-VerifyADPrerequisites-Orchestrated.ps1
@@ -14,8 +15,8 @@
       cluster_arm_deployment.domain_fqdn               - AD domain FQDN
       cluster_arm_deployment.domain_ou_path             - OU distinguished name
       accounts.lcm_admin.username                       - LCM service account name
-      compute.cluster_nodes[].management_ip             - Node PSRemoting targets
-      compute.cluster_nodes[] (key name)                - Node hostname (display only)
+      nodes[].management.ip_address                    - Node PSRemoting targets
+      nodes[].name                                      - Node hostname (display only)
       identity.accounts.account_local_admin_username    - For credential resolution
       identity.accounts.account_local_admin_password    - For credential resolution (KV ref)
 
@@ -92,6 +93,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region HELPERS
 
@@ -191,10 +193,10 @@ function Get-ClusterConfig {
     param([hashtable]$Yaml)
 
     $nodes = @()
-    foreach ($node in $Yaml.compute.cluster_nodes) {
+    foreach ($node in Get-AzlInfrastructureNode -Infrastructure $Yaml) {
         $nodes += [pscustomobject]@{
-            Name        = $node.name                       # compute.cluster_nodes[].name
-            ManagementIP = $node.management_ip             # compute.cluster_nodes[].management_ip
+            Name        = $node.Name                       # nodes[].name
+            ManagementIP = $node.ManagementIp              # nodes[].management.ip_address
         }
     }
     return $nodes

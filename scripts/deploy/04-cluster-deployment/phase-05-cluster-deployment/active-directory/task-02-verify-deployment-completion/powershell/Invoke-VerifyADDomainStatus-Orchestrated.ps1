@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Invoke-VerifyADDomainStatus-Orchestrated.ps1
@@ -55,6 +56,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 # ── Logging ────────────────────────────────────────────────────────────
 $taskFolderName = "task-02-verify-deployment-completion"
@@ -110,7 +112,7 @@ catch {
 }
 
 # ── Extract Config Values ──────────────────────────────────────────────
-$clusterNodes = $cfg.compute.cluster_nodes                                   # compute.cluster_nodes
+$clusterNodes = @(Get-AzlInfrastructureNode -Infrastructure $cfg)                    # nodes[]
 $domainFqdn   = $cfg.cluster_arm_deployment.domain_fqdn                      # cluster_arm_deployment.domain_fqdn
 $ouPath       = $cfg.cluster_arm_deployment.domain_ou_path                   # cluster_arm_deployment.domain_ou_path
 $lcmUser      = $cfg.accounts.lcm_admin.username                            # accounts.lcm_admin.username
@@ -162,7 +164,7 @@ if (-not $Credential) {
 if ($WhatIf) {
     Write-Log "[WhatIf] Would verify AD domain status for:" -Level "WARNING"
     foreach ($node in $clusterNodes) {
-        Write-Log "[WhatIf]   $($node.name) ($($node.ipv4_address))" -Level "WARNING"
+        Write-Log "[WhatIf]   $($node.name) ($($node.ManagementIp))" -Level "WARNING"
     }
     Write-Log "[WhatIf] Domain:  $domainFqdn" -Level "WARNING"
     Write-Log "[WhatIf] OU:      $ouPath" -Level "WARNING"
@@ -181,7 +183,7 @@ if (-not (Test-Path $testScript)) {
 
 Write-Log "Calling Test-ADDomainStatus.ps1..."
 
-$nodeIPs = $clusterNodes | ForEach-Object { $_.ipv4_address }
+$nodeIPs = $clusterNodes | ForEach-Object { $_.ManagementIp }
 
 $testParams = @{
     NodeIPs     = $nodeIPs

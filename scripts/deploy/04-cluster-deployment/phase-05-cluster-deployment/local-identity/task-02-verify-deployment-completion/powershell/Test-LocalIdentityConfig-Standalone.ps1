@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Test-LocalIdentityConfig-Standalone.ps1
@@ -28,8 +29,8 @@
 
 #region CONFIGURATION
 $NodeIPs = @(
-    "REPLACE_NODE_01_IP"   # compute.cluster_nodes[0].management_ip
-    # "REPLACE_NODE_02_IP" # compute.cluster_nodes[1].management_ip — add additional nodes as needed
+    "REPLACE_NODE_01_IP"   # nodes[0].management.ip_address
+    # "REPLACE_NODE_02_IP" # nodes[1].management.ip_address — add additional nodes as needed
 )
 #endregion CONFIGURATION
 

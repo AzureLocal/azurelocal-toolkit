@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Test-ClusterHealth-Standalone.ps1
@@ -24,7 +25,7 @@
 #>
 
 #region CONFIGURATION
-$NodeIP = "REPLACE_NODE_01_IP"   # compute.cluster_nodes[*].management_ip — IP of any cluster node
+$NodeIP = "REPLACE_NODE_01_IP"   # nodes[].management.ip_address — IP of any cluster node
 #endregion CONFIGURATION
 
 if ($NodeIP -match '^REPLACE_') {

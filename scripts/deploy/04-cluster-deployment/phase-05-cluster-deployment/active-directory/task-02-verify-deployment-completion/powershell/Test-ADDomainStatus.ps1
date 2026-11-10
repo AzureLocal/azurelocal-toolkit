@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Test-ADDomainStatus.ps1
@@ -13,7 +14,7 @@
       - LCM service account delegation is intact
 
     infrastructure.yml paths used:
-      compute.cluster_nodes[*].ipv4_address                    - Node IPs
+      nodes[].management.ip_address                            - Node IPs
       cluster_arm_deployment.domain_fqdn                       - Expected domain FQDN
       cluster_arm_deployment.domain_ou_path                    - Expected OU
       accounts.lcm_admin.username                              - LCM service account
@@ -59,6 +60,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region HELPERS
 
@@ -133,7 +135,7 @@ Import-Module powershell-yaml -ErrorAction Stop
 $yaml = Get-Content -Path $configFile -Raw | ConvertFrom-Yaml
 
 # --- Extract values ---
-$nodeIPs     = @($yaml.compute.cluster_nodes | ForEach-Object { $_.ipv4_address })   # compute.cluster_nodes[*].ipv4_address
+$nodeIPs     = @(Get-AzlInfrastructureNode -Infrastructure $yaml | ForEach-Object { $_.ManagementIp })   # nodes[].management.ip_address
 $domainFqdn  = $yaml.cluster_arm_deployment.domain_fqdn                               # cluster_arm_deployment.domain_fqdn
 $ouPath      = $yaml.cluster_arm_deployment.domain_ou_path                             # cluster_arm_deployment.domain_ou_path
 $lcmUser     = $yaml.accounts.lcm_admin.username                                      # accounts.lcm_admin.username
