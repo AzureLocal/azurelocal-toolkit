@@ -16,10 +16,10 @@ Registry version 5.0.18. Sources of the scan: toolkit (this repository), sonar 3
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 576 | 269 | 105 | 3 | 197 | 2 |
+| Keys of infrastructure.yml | 576 | 271 | 105 | 3 | 195 | 2 |
 | Owned by a tool (`tools.*`) | 2447 | 2440 | 0 | 0 | 7 | 0 |
 | Older variables-file sections | 1480 | 68 | 573 | 0 | 834 | 5 |
-| All registry leaves | 4503 | 2777 | 678 | 3 | 1038 | 7 |
+| All registry leaves | 4503 | 2779 | 678 | 3 | 1036 | 7 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -45,7 +45,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 64 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
 | ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 74 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 14 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
-| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 109 | _metadata, azure, devops, hardware, identity, key_vaults, landing_zone, networking, nodes, site, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
+| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 111 | _metadata, azure, devops, hardware, identity, key_vaults, landing_zone, networking, nodes, site, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
 
 ### Which section is read in which phase (number of keys)
 
@@ -72,7 +72,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `os_configuration` |  |  |  | 10 |  |  |  |  |
 | `disconnected` | 8 |  |  |  |  |  |  |  |
 | `network_devices` |  |  | 3 |  |  |  |  |  |
-| `landing_zone` | 1 |  |  |  |  |  |  | 3 |
+| `landing_zone` | 1 |  |  |  |  |  |  | 5 |
 | `extensions` |  |  |  |  |  |  |  |  |
 | `_metadata` |  |  | 1 | 1 |  | 1 | 1 | 2 |
 
@@ -98,7 +98,7 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | cicd-infra | Outside the flow | 53 | 0 | 347 |
 | infrastructure-helpers | Outside the flow | 26 | 0 | 0 |
 | validator | Outside the flow | 108 | 0 | 0 |
-| toolkit-legacy-scripts | Outside the flow | 33 | 0 | 0 |
+| toolkit-legacy-scripts | Outside the flow | 36 | 0 | 0 |
 
 ### trailwright
 
@@ -288,10 +288,10 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 
 ### toolkit-legacy-scripts
 
-**Reads (33):**
-`site.code`, `site.location`, `site.name`, `site.owner`, `tags.*`, `identity.active_directory.netbios_name`, `identity.active_directory.security_groups[].name`, `identity.active_directory.security_groups[].local_groups`, `networking.logical_networks[].name`, `networking.logical_networks[].enabled`, `networking.logical_networks[].ip_allocation_method`, `networking.logical_networks[].nsg_name`, `networking.logical_networks[].vlan_id`, `networking.logical_networks[].address_prefix`, `networking.logical_networks[].dns_servers`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.custom_location`, `hardware.vendor`, `hardware.model`, `hardware.sbe.publisher`, `hardware.sbe.family`, `hardware.sbe.version`, `hardware.sbe.bundle_path`, `hardware.sbe.requirement`, `hardware.sbe.not_applicable_reason`, `hardware.sbe.source_path`, `hardware.sbe.source_username`, `hardware.sbe.source_password`, `hardware.sbe.package_sha256`, `hardware.sbe.package_size_bytes`, `_metadata.schema_version`
+**Reads (36):**
+`site.code`, `site.location`, `site.name`, `site.owner`, `tags.*`, `identity.active_directory.netbios_name`, `identity.active_directory.security_groups[].name`, `identity.active_directory.security_groups[].local_groups`, `networking.logical_networks[].name`, `networking.logical_networks[].enabled`, `networking.logical_networks[].ip_allocation_method`, `networking.logical_networks[].nsg_name`, `networking.logical_networks[].vlan_id`, `networking.logical_networks[].address_prefix`, `networking.logical_networks[].dns_servers`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.custom_location`, `hardware.vendor`, `hardware.model`, `hardware.sbe.publisher`, `hardware.sbe.family`, `hardware.sbe.version`, `hardware.sbe.bundle_path`, `hardware.sbe.requirement`, `hardware.sbe.not_applicable_reason`, `hardware.sbe.source_path`, `hardware.sbe.source_username`, `hardware.sbe.source_password`, `hardware.sbe.package_sha256`, `hardware.sbe.package_size_bytes`, `landing_zone.policy.required_tags`, `landing_zone.policy.management_group`, `_metadata.schema_version`
 
-Where in the code (file, function, keys read by name; 30 places, the first 12):
+Where in the code (file, function, keys read by name; 31 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
@@ -301,12 +301,12 @@ Where in the code (file, function, keys read by name; 30 places, the first 12):
 | `scripts/common/sbe/AzlSbePackage.psm1` | `Get-AzlSbeRequirement` | 3 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-03-security-groups-applied-to-nodes/powershell/Invoke-ApplySecurityGroups-Orchestrated.ps1` | `(script)` | 3 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/powershell/Invoke-ConfigureNSGs-Orchestrated.ps1` | `(script)` | 3 |
+| `scripts/deploy/05-operational-foundations/phase-04-security-governance/task-02-apply-azure-policy-initiatives/powershell/Invoke-AzurePolicyTier1-Orchestrated.ps1` | `(script)` | 3 |
 | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-11-deploy-management-vms/powershell/Deploy-ManagementVMs.ps1` | `(script)` | 2 |
 | `scripts/deploy/06-testing-validation/task-05-security-compliance-validation/powershell/Test-SecurityCompliance.ps1` | `(script)` | 2 |
 | `scripts/deploy/06-testing-validation/task-06-backup-dr-validation/powershell/Test-BackupDrValidation.ps1` | `(script)` | 2 |
 | `scripts/common/sbe/AzlSbePackage.psm1` | `Get-AzlSbeShareInfo` | 1 |
 | `scripts/common/service-principals/New-AzureLocalSP.ps1` | `(script)` | 1 |
-| `scripts/common/utilities/helpers/config-loader.ps1` | `Get-ConfigTags` | 1 |
 
 ## By ARM parameter: the template parameter and the file key it comes from
 
@@ -392,10 +392,10 @@ Ranked by how many different tools read the key, then how many places in the cod
 | `azure.location` | Azure region, for example eastus. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM location; OS ArcRegistration; Gate NW-005 |
 | `azure.subscription_id` | Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_id names another one. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; OS ArcRegistration; Sonar subscriptionId |
 | `azure.resource_group` | Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses). | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; OS ArcRegistration; Sonar resourceGroup |
+| `azure.tenant_id` | Microsoft Entra tenant ID (GUID) of the subscription. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; os-configuration; pre-cluster-verification; toolkit-legacy-scripts; ztp | ARM tenantId; OS ArcRegistration |
 | `cluster.name` | Cluster name: a NetBIOS name of up to 15 characters. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; sonar; ztp | ARM clusterName; customLocation; Sonar clusterName |
 | `_metadata.schema_version` | The schema version this file follows. | operator by hand | arm-deployment; os-configuration; sonar; toolkit-legacy-scripts; ztp |  |
 | `networking.management.subnet` | CIDR. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | ARM subnetMask; OS Dns; Network; NicNames; RemoteManagement; UnusedAdapters; Gate NW-015 |
-| `azure.tenant_id` | Microsoft Entra tenant ID (GUID) of the subscription. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; os-configuration; pre-cluster-verification; ztp | ARM tenantId; OS ArcRegistration |
 | `nodes[].network_adapters[].roles` | What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified provisioning reache... | operator by hand; Dell/Redfish discovery (proposed) | infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | OS Dns; Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 |
 | `scenario.identity` | active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity.local_identity). ht... | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; sonar | OS DomainJoin; Sonar identityModel; Gate RD-006 |
 | `identity.local_admin.username` | User name of the deployment local administrator on every machine (ARM localAdminUserName). | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; sonar | ARM localAdminUserName; OS LocalAdmin |
@@ -433,7 +433,7 @@ Ranked by how many different tools read the key, then how many places in the cod
 
 Variables the registry documents that no tool in the scan reads by name. Each is either a key a coming phase will read, a key only the validator checks, or a name kept for compatibility. Nothing here is an error; it is the list to look at before you spend time filling a key in that nothing uses yet.
 
-### Placeholder: documented, not read by any tool in the scan (197)
+### Placeholder: documented, not read by any tool in the scan (195)
 
 | Variable | Purposes | Provided by | Note |
 | --- | --- | --- | --- |
@@ -586,8 +586,6 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `landing_zone.resource_groups[].location` | cicd_infra | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.resource_groups[].purpose` | cicd_infra | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.resource_providers` |  | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.policy.required_tags` |  | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.policy.management_group` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.connectivity.vpn_gateway.name` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.connectivity.vpn_gateway.resource_group` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.connectivity.vpn_gateway.network` |  | operator by hand | documented in the registry; no tool in the scan reads it |
@@ -817,7 +815,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 
 | Path | Type, default, allowed | Provided by | Purposes | Read by | Becomes | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| `azure.tenant_id` | string (guid), required | operator; Trailwright | ztp; os_configuration; deployment; cicd_infra | arm-deployment; cicd-infra; os-configuration; pre-cluster-verification; ztp | ARM tenantId; OS ArcRegistration | read |
+| `azure.tenant_id` | string (guid), required | operator; Trailwright | ztp; os_configuration; deployment; cicd_infra | arm-deployment; cicd-infra; os-configuration; pre-cluster-verification; toolkit-legacy-scripts; ztp | ARM tenantId; OS ArcRegistration | read |
 | `azure.location` | string (azure_region), required | operator; Trailwright | ztp; os_configuration; deployment; cicd_infra; monitoring | arm-deployment; cicd-infra; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM location; OS ArcRegistration; Gate NW-005 | read |
 | `azure.subscription_id` | string (guid), required | operator; Trailwright | ztp; os_configuration; deployment; cicd_infra; monitoring | arm-deployment; cicd-infra; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; OS ArcRegistration; Sonar subscriptionId | read |
 | `azure.resource_group` | string (resource_group), required | operator; Trailwright | ztp; os_configuration; deployment; cicd_infra; monitoring | arm-deployment; cicd-infra; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; OS ArcRegistration; Sonar resourceGroup | read |
@@ -1097,8 +1095,8 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `landing_zone.resource_groups[].location` | string (azure_region) | operator | cicd_infra |  |  | placeholder |
 | `landing_zone.resource_groups[].purpose` | string | operator | cicd_infra |  |  | placeholder |
 | `landing_zone.resource_providers` | array | operator |  |  |  | placeholder |
-| `landing_zone.policy.required_tags` | array | operator |  |  |  | placeholder |
-| `landing_zone.policy.management_group` | string | operator |  |  |  | placeholder |
+| `landing_zone.policy.required_tags` | array | operator |  | toolkit-legacy-scripts |  | read |
+| `landing_zone.policy.management_group` | string | operator |  | toolkit-legacy-scripts |  | read |
 | `landing_zone.networks[].name` | string, required | operator | cicd_infra | (part: cicd-infra) |  | read-as-part |
 | `landing_zone.networks[].subscription` | string | operator | cicd_infra | (part: cicd-infra) |  | read-as-part |
 | `landing_zone.networks[].resource_group` | string (resource_group) | operator | cicd_infra | (part: cicd-infra) |  | read-as-part |
