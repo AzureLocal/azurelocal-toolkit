@@ -12,13 +12,13 @@
       - LCM service account has GenericAll delegation on OU
 
     infrastructure.yml paths used:
-      cluster_arm_deployment.domain_fqdn               - AD domain FQDN
-      cluster_arm_deployment.domain_ou_path             - OU distinguished name
-      accounts.lcm_admin.username                       - LCM service account name
+      identity.active_directory.domain_fqdn               - AD domain FQDN
+      identity.active_directory.ou_path             - OU distinguished name
+      identity.active_directory.lcm_user.username                       - LCM service account name
       nodes[].management.ip_address                    - Node PSRemoting targets
       nodes[].name                                      - Node hostname (display only)
-      identity.accounts.account_local_admin_username    - For credential resolution
-      identity.accounts.account_local_admin_password    - For credential resolution (KV ref)
+      identity.local_admin.username    - For credential resolution
+      identity.local_admin.password    - For credential resolution (KV ref)
 
 .PARAMETER ConfigPath
     Path to infrastructure.yml. Auto-discovers infrastructure*.yml if not provided.
@@ -37,13 +37,13 @@
     Override log file path. Default: .\logs\task-01-initiate-deployment-via-arm-template\<timestamp>.log
 
 .PARAMETER DomainFqdn
-    Override domain FQDN. Takes precedence over cluster_arm_deployment.domain_fqdn.
+    Override domain FQDN. Takes precedence over identity.active_directory.domain_fqdn.
 
 .PARAMETER DomainOuPath
-    Override OU path. Takes precedence over cluster_arm_deployment.domain_ou_path.
+    Override OU path. Takes precedence over identity.active_directory.ou_path.
 
 .PARAMETER LcmUsername
-    Override LCM service account name. Takes precedence over accounts.lcm_admin.username.
+    Override LCM service account name. Takes precedence over identity.active_directory.lcm_user.username.
 
 .EXAMPLE
     .\Invoke-VerifyADPrerequisites-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml
@@ -237,13 +237,13 @@ $yaml = Get-Content -Path $configFile -Raw | ConvertFrom-Yaml
 
 # --- Resolve values (parameter override > YAML) ---
 $domainFqdn = if ($DomainFqdn -ne "") { $DomainFqdn }
-              else { $yaml.cluster_arm_deployment.domain_fqdn }                 # cluster_arm_deployment.domain_fqdn
+              else { $yaml.identity.active_directory.domain_fqdn }                 # identity.active_directory.domain_fqdn
 
 $ouPath     = if ($DomainOuPath -ne "") { $DomainOuPath }
-              else { $yaml.cluster_arm_deployment.domain_ou_path }              # cluster_arm_deployment.domain_ou_path
+              else { $yaml.identity.active_directory.ou_path }              # identity.active_directory.ou_path
 
 $lcmUser    = if ($LcmUsername -ne "") { $LcmUsername }
-              else { $yaml.accounts.lcm_admin.username }                        # accounts.lcm_admin.username
+              else { $yaml.identity.active_directory.lcm_user.username }                        # identity.active_directory.lcm_user.username
 
 Write-Log "Domain FQDN: $domainFqdn"
 Write-Log "OU Path:     $ouPath"
@@ -264,8 +264,8 @@ Write-Log "Target nodes: $($nodes.Name -join ', ') ($($nodes.Count) node(s))"
 
 # --- Resolve credentials ---
 if (-not $Credential) {
-    $kvUsername = $yaml.identity.accounts.account_local_admin_username           # identity.accounts.account_local_admin_username
-    $kvPassword = $yaml.identity.accounts.account_local_admin_password          # identity.accounts.account_local_admin_password
+    $kvUsername = $yaml.identity.local_admin.username           # identity.local_admin.username
+    $kvPassword = $yaml.identity.local_admin.password          # identity.local_admin.password
 
     $securePwd = $null
     if ($kvPassword -match '^keyvault://') {

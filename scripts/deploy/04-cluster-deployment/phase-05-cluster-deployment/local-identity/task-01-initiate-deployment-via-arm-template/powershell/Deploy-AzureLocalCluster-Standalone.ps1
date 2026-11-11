@@ -39,8 +39,8 @@ $ErrorActionPreference = "Stop"
 
 #region CONFIGURATION — Edit these values before running
 
-$subscriptionId = "<SUBSCRIPTION_ID>"                              # azure_platform.azure_tenants[0].aztenant_subscription_id
-$resourceGroup  = "<RESOURCE_GROUP>"                               # compute.azure_local.resource_group
+$subscriptionId = "<SUBSCRIPTION_ID>"                              # azure.subscription_id
+$resourceGroup  = "<RESOURCE_GROUP>"                               # azure.resource_group
 $parametersFile = ".\azuredeploy.parameters.local-identity.json"   # Path to your parameters file
 $templateUri    = "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-cluster/azuredeploy.json"
 

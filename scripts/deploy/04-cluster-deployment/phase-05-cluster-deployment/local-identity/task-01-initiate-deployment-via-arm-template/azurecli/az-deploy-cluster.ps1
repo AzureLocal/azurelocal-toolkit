@@ -9,9 +9,9 @@
     az deployment group create against the Microsoft quickstart ARM template.
 
     infrastructure.yml paths used:
-      azure_platform.azure_tenants[0].aztenant_subscription_id  - Subscription
-      compute.azure_local.resource_group                        - Resource group
-      cluster_arm_deployment.arm_mode                           - Validate or Deploy
+      azure.subscription_id  - Subscription
+      azure.resource_group                        - Resource group
+      cluster.deployment_mode                           - Validate or Deploy
 
 .PARAMETER ConfigPath
     Path to infrastructure.yml. Auto-discovers if not provided.
@@ -20,7 +20,7 @@
     AD or LocalIdentity.
 
 .PARAMETER DeploymentMode
-    Validate or Deploy. Overrides cluster_arm_deployment.arm_mode.
+    Validate or Deploy. Overrides cluster.deployment_mode.
 
 .PARAMETER ParametersFile
     Path to a pre-built parameters file. Skips generation when provided.
@@ -60,8 +60,8 @@ if ($ConfigPath -eq "") {
 }
 
 $yaml = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Yaml
-$subscriptionId = $yaml.azure_platform.azure_tenants[0].aztenant_subscription_id   # azure_platform.azure_tenants[0].aztenant_subscription_id
-$resourceGroup  = $yaml.compute.azure_local.resource_group                          # compute.azure_local.resource_group
+$subscriptionId = $yaml.azure.subscription_id   # azure.subscription_id
+$resourceGroup  = $yaml.azure.resource_group                          # azure.resource_group
 
 Write-Host "Subscription:   $subscriptionId" -ForegroundColor Cyan
 Write-Host "Resource Group: $resourceGroup" -ForegroundColor Cyan

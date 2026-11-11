@@ -28,10 +28,10 @@ $ErrorActionPreference = "Stop"
 #region CONFIGURATION — Edit these values before running
 
 $nodeIPs     = @("<NODE_IP_1>", "<NODE_IP_2>")   # nodes[].management.ip_address
-$domainFqdn  = "<DOMAIN_FQDN>"                    # cluster_arm_deployment.domain_fqdn
-$ouPath      = "<DOMAIN_OU_PATH>"                  # cluster_arm_deployment.domain_ou_path
-$lcmUser     = "<LCM_USERNAME>"                    # accounts.lcm_admin.username
-$clusterName = "<CLUSTER_NAME>"                    # cluster_arm_deployment.cluster_name
+$domainFqdn  = "<DOMAIN_FQDN>"                    # identity.active_directory.domain_fqdn
+$ouPath      = "<DOMAIN_OU_PATH>"                  # identity.active_directory.ou_path
+$lcmUser     = "<LCM_USERNAME>"                    # identity.active_directory.lcm_user.username
+$clusterName = "<CLUSTER_NAME>"                    # cluster.name
 
 #endregion CONFIGURATION
 

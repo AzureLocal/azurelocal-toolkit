@@ -84,12 +84,16 @@ function Write-Log {
 
 #region CONFIG LOADING
 # Helpers — dot-source from repo root
-. (Join-Path (Get-Location).Path "scripts\common\utilities\helpers\config-loader.ps1")
 . (Join-Path (Get-Location).Path "scripts\common\utilities\helpers\keyvault-helper.ps1")
 
 if (-not $ConfigPath) { $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml" }
 Write-Log "Loading configuration from: $ConfigPath"
-$cfg = Get-ClusterConfig -ConfigPath $ConfigPath
+if (-not (Test-Path -LiteralPath $ConfigPath)) { throw "infrastructure.yml not found: $ConfigPath. Use -ConfigPath." }
+if (-not (Get-Module -ListAvailable -Name powershell-yaml)) {
+    Install-Module -Name powershell-yaml -Force -Scope CurrentUser -ErrorAction Stop
+}
+Import-Module powershell-yaml -ErrorAction Stop
+$cfg = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Yaml
 #endregion CONFIG LOADING
 
 #region RESOLVE NODES
@@ -108,11 +112,11 @@ Write-Log "Nodes to verify: $($nodes.name -join ', ')"
 
 #region RESOLVE CREDENTIAL
 if (-not $Credential) {
-    $kvPassword = $cfg.identity.accounts.account_local_admin_password  # identity.accounts.account_local_admin_password
-    $username   = $cfg.identity.accounts.account_local_admin_username  # identity.accounts.account_local_admin_username
+    $kvPassword = $cfg.identity.local_admin.password  # identity.local_admin.password
+    $username   = $cfg.identity.local_admin.username  # identity.local_admin.username
     if ($kvPassword -match '^keyvault://') {
         Write-Log "Resolving local admin password from Key Vault..."
-        $kvName  = $cfg.security.keyvault.kv_azl.kv_azl_name           # security.keyvault.kv_azl.kv_azl_name
+        $kvName  = $cfg.cluster.key_vault.name           # cluster.key_vault.name
         $secret  = Resolve-KeyVaultRef -Uri $kvPassword -VaultName $kvName
         $Credential = New-Object PSCredential($username, (ConvertTo-SecureString $secret -AsPlainText -Force))
     } else {

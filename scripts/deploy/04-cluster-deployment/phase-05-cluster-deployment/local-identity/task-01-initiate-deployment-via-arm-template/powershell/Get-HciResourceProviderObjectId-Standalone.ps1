@@ -45,7 +45,7 @@ Write-Host ""
 Write-Host "HCI Resource Provider Object ID: $($hciRP.Id)" -ForegroundColor Green
 Write-Host ""
 Write-Host "Set this value in your infrastructure.yml:" -ForegroundColor Yellow
-Write-Host "  YAML path: cluster_arm_deployment.resource_provider_object_id" -ForegroundColor Yellow
+Write-Host "  YAML path: azure.hci_resource_provider_object_id" -ForegroundColor Yellow
 Write-Host "  Value:     $($hciRP.Id)" -ForegroundColor Yellow
 
 # Return the object so it can be captured: $id = .\Get-HciResourceProviderObjectId-Standalone.ps1

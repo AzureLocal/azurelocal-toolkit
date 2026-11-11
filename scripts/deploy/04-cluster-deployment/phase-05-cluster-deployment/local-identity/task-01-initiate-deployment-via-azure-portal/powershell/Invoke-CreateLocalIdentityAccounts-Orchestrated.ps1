@@ -18,8 +18,8 @@
     Ref: https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault
 
     infrastructure.yml paths used:
-      identity.accounts.account_local_admin_username  - New account username to create
-      identity.accounts.account_local_admin_password  - Key Vault ref for new account password
+      identity.local_admin.username  - New account username to create
+      identity.local_admin.password  - Key Vault ref for new account password
       nodes[].management.ip_address                   - PSRemoting connection target per node
       nodes[].name                                    - Node hostname (display only)
 
@@ -49,7 +49,7 @@
 
 .PARAMETER LocalAdminUsername
     Override the local admin username to create. When provided, takes precedence over
-    identity.accounts.account_local_admin_username in infrastructure.yml.
+    identity.local_admin.username in infrastructure.yml.
 
 .EXAMPLE
     .\Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1
@@ -92,7 +92,7 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$LogPath = "",
 
-    # YAML-overridable: takes precedence over identity.accounts.account_local_admin_username
+    # YAML-overridable: takes precedence over identity.local_admin.username
     [Parameter(Mandatory = $false)]
     [string]$LocalAdminUsername = ""
 )
@@ -171,16 +171,16 @@ function Get-ClusterConfig {
 
     $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 
-    # identity.accounts.account_local_admin_username
-    $adminUser = $cfg.identity.accounts.account_local_admin_username
+    # identity.local_admin.username
+    $adminUser = $cfg.identity.local_admin.username
     if (-not $adminUser) {
-        throw "identity.accounts.account_local_admin_username not found in $ConfigPath."
+        throw "identity.local_admin.username not found in $ConfigPath."
     }
 
-    # identity.accounts.account_local_admin_password
-    $adminPassUri = $cfg.identity.accounts.account_local_admin_password
+    # identity.local_admin.password
+    $adminPassUri = $cfg.identity.local_admin.password
     if (-not $adminPassUri) {
-        throw "identity.accounts.account_local_admin_password not found in $ConfigPath."
+        throw "identity.local_admin.password not found in $ConfigPath."
     }
 
     # nodes[]
