@@ -1,9 +1,9 @@
 # =============================================================================
 # Master Variable Registry - AzureLocal Cloud Team Cloud Management Platform
 # =============================================================================
-# Version: 5.0.18
+# Version: 5.0.19
 # Schema: variables.schema.json (v5.0.0)
-# Last Updated: 2026-11-09
+# Last Updated: 2026-11-11
 #
 # This file defines ALL variable names, types, and descriptions used across
 # the AzureLocal Cloud Team Cloud Management Platform (AzureLocalCloud-CMP) and all
@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.19 (2026-11-11):
+#     - The parameters InfrastructureFile and LogPath of New-EntraSecurityGroups.ps1 (phase 03, task 02, which reads azure.tenant_id and identity.entra.groups[].name and purpose, keys that already existed) are registered under tools.arm_deployment.parameters.
 #   v5.0.18 (2026-11-09):
 #     - landing_zone.policy (infrastructure schema 5.6.5): required_tags and management_group, the two values of the Tier 1 tag policy that
 #       scripts/deploy/05-operational-foundations/phase-04-security-governance/task-02-apply-azure-policy-initiatives/powershell/Invoke-AzurePolicyTier1-Orchestrated.ps1
@@ -155,15 +157,19 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.18"
+  version: "5.0.19"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.5"
-  last_updated: "2026-11-09"
+  last_updated: "2026-11-11"
   total_variables: "5100+"
   maintainers:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-11"
+      version: "5.0.19"
+      change: "The parameters InfrastructureFile and LogPath of New-EntraSecurityGroups.ps1 (phase 03, task 02, which reads azure.tenant_id and identity.entra.groups[].name and purpose, keys that already existed) are registered under tools.arm_deployment.parameters."
+      reason: "Registry first: the script that creates the Microsoft Entra security groups of identity.entra.groups reads only keys that were already registered; its parameters are registered before it ships."
     - date: "2026-11-09"
       version: "5.0.18"
       change: "landing_zone.policy (infrastructure schema 5.6.5): required_tags (the tag names the Tier 1 tag policy requires; no default) and management_group (where it is assigned; empty means the tenant root management group, whose id is azure.tenant_id). Both optional keys. The parameters InfrastructureFile and LogPath of Invoke-AzurePolicyTier1-Orchestrated.ps1 and of Invoke-SubscriptionMove-Orchestrated.ps1 (which reads landing_zone.subscriptions[].id and management_group and azure.tenant_id, all registered before) are registered under tools.arm_deployment.parameters."
@@ -18959,6 +18965,12 @@ tools:
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-02-create-subscriptions/powershell/Invoke-SubscriptionMove-Orchestrated.ps1","description":"Invoke-SubscriptionMove-Orchestrated.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id and landing_zone.subscriptions[] (name, id, management_group) are read; the file is not validated as a whole."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-02-create-subscriptions/powershell/Invoke-SubscriptionMove-Orchestrated.ps1","description":"Invoke-SubscriptionMove-Orchestrated.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_02_azure_foundation_phase_03_rbac_permissions_task_02_assign_rbac_roles_powershell_New_EntraSecurityGroups_ps1:
+              type: object
+              area: "scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/powershell/New-EntraSecurityGroups.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/powershell/New-EntraSecurityGroups.ps1","description":"New-EntraSecurityGroups.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id and identity.entra.groups[] (name, purpose) are read; the file is not validated as a whole."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/powershell/New-EntraSecurityGroups.ps1","description":"New-EntraSecurityGroups.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
         event_fields:
           type: object
           properties:
