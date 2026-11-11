@@ -1,6 +1,6 @@
 # infrastructure.yml variables reference
 
-Every key of [`infrastructure.yml`](infrastructure-file.md), schema 5.6.5, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](../schema/infrastructure.schema.json) (itself generated from the master registry [`master-registry.yaml`](../schema/master-registry.yaml)), the examples and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don't edit it: change the registry (and the metadata) and run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`, then:
+Every key of [`infrastructure.yml`](infrastructure-file.md), schema 5.6.6, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](../schema/infrastructure.schema.json) (itself generated from the master registry [`master-registry.yaml`](../schema/master-registry.yaml)), the examples and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don't edit it: change the registry (and the metadata) and run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`, then:
 
 ```powershell
 ./scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1
@@ -597,7 +597,8 @@ Day-2 choices: updates, backup, disaster recovery, notifications, licensing and 
 | `operations.monitoring.log_analytics_workspace` | Name of the Log Analytics workspace. | string | no / no |  | `log-iic-azl-01` | Your operations design. | Trailwright |
 | `operations.monitoring.workspace_resource_group` | Resource group of the Log Analytics workspace. | resource group name | no / no |  | `rg-iic-mgmt-01` | Your operations design. | Trailwright |
 | `operations.monitoring.data_collection_rule` | Name of the data collection rule. | string | no / no |  |  | Your operations design. | Trailwright |
-| `operations.monitoring.data_collection_endpoint` | Name of the data collection endpoint. | string | no / no |  |  | Your operations design. | Trailwright |
+| `operations.monitoring.data_collection_endpoint` | Name of the data collection endpoint that Deploy-DataCollectionEndpoint.ps1 creates, in the region of the workspace. | string | no / no |  |  | Your operations design. | Trailwright |
+| `operations.monitoring.action_group` | Name of the Azure Monitor action group that tells the operations team about alerts. | string | no / no |  |  | Your operations design. | Trailwright |
 | `operations.monitoring.health_alerts` | true when health alerts are created. | boolean | no / no |  | `true` | Your operations design. | Trailwright |
 | `operations.monitoring.alert_email` | Address that receives the alerts (a team mailbox). | string | no / no |  |  | Your operations design. | Trailwright |
 
