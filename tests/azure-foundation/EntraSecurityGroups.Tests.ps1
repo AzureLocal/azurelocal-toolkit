@@ -23,6 +23,7 @@ BeforeAll {
     }
 
     $global:AzlGroupTestTenant = [guid]::NewGuid().ToString()
+    $global:AzlGroupTestExisting = [guid]::NewGuid().ToString()
 
     function New-InfraFile([object[]]$Groups, [object]$TenantId = $global:AzlGroupTestTenant) {
         $doc = [ordered]@{ azure = [ordered]@{ location = 'eastus' } }
@@ -53,7 +54,7 @@ BeforeAll {
 
 Describe 'New-EntraSecurityGroups.ps1' {
     AfterAll {
-        Remove-Variable -Name AzlGroupTestTenant -Scope Global -ErrorAction SilentlyContinue
+        Remove-Variable -Name AzlGroupTestTenant, AzlGroupTestExisting -Scope Global -ErrorAction SilentlyContinue
     }
 
     BeforeEach {
@@ -114,18 +115,18 @@ Describe 'New-EntraSecurityGroups.ps1' {
 
     Context 'the group already exists (idempotent)' {
         It 'creates nothing and says so' {
-            Mock Get-MgGroup { [pscustomobject]@{ Id = '11111111-1111-1111-1111-111111111111'; DisplayName = 'x' } }
+            Mock Get-MgGroup { [pscustomobject]@{ Id = $global:AzlGroupTestExisting; DisplayName = 'x' } }
             $r = Invoke-GroupRun (New-InfraFile @((New-Group 'grp-azl-operators' ''), (New-Group 'grp-azl-readers' '')))
             $r.ExitCode | Should -Be 0
             $r.Result.Created | Should -Be 0
             $r.Result.AlreadyExists | Should -Be 2
             Should -Invoke New-MgGroup -Times 0 -Exactly
             $r.Text | Should -Match 'Nothing to do'
-            $r.Result.Groups[0].Id | Should -Be '11111111-1111-1111-1111-111111111111'
+            $r.Result.Groups[0].Id | Should -Be $global:AzlGroupTestExisting
         }
 
         It 'a mixed file creates only the group that is missing' {
-            Mock Get-MgGroup { if ($Filter -match 'grp-azl-operators') { [pscustomobject]@{ Id = '22222222-2222-2222-2222-222222222222' } } }
+            Mock Get-MgGroup { if ($Filter -match 'grp-azl-operators') { [pscustomobject]@{ Id = [guid]::NewGuid().ToString() } } }
             $r = Invoke-GroupRun (New-InfraFile @((New-Group 'grp-azl-operators' ''), (New-Group 'grp-azl-readers' '')))
             $r.ExitCode | Should -Be 0
             $r.Result.Created | Should -Be 1
