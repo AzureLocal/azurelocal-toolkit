@@ -1,12 +1,15 @@
+#Requires -Version 7.0
 # Task 04 - Verify Arc Registration (orchestrated from management server)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 
 $ConfigPath = ".\configs\infrastructure.yml"
-$cfg = Get-Content $ConfigPath
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+$cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 
-$ServerList     = ($cfg | Select-String 'management_ip:\s+"?([^"\s]+)' -AllMatches).Matches |
-    ForEach-Object { $_.Groups[1].Value }
-$ResourceGroup  = ($cfg | Select-String 'resource_group:\s+"?([^"\s]+)').Matches[0].Groups[1].Value
-$SubscriptionId = ($cfg | Select-String 'subscription_id:\s+"?([^"\s]+)').Matches[0].Groups[1].Value
+$ServerList     = @(Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object { $_.ManagementIp } | Where-Object { $_ })
+$ResourceGroup  = $cfg.azure.resource_group
+$SubscriptionId = $cfg.azure.subscription_id
 
 # 1. Check local Arc agent on every node
 Write-Host "`n--- Local Agent Status ---" -ForegroundColor Cyan

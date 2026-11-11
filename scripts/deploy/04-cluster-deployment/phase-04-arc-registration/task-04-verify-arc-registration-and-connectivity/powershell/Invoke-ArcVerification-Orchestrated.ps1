@@ -33,10 +33,10 @@
     Override log file path. Default: ./logs/<task-folder>/<timestamp>_ArcVerification.log
 
 .PARAMETER SubscriptionId
-    Override subscription for Azure-side check. YAML path: azure_platform.subscriptions.lab.id
+    Override subscription for Azure-side check. YAML path: azure.subscription_id
 
 .PARAMETER ResourceGroup
-    Override resource group for Azure-side check. YAML path: compute.azure_local.arc_resource_group
+    Override resource group for Azure-side check. YAML path: azure.resource_group
 
 .PARAMETER SkipAzureCheck
     Skip Azure-side verification (only run local agent checks on nodes).
@@ -74,8 +74,8 @@ param(
     [string]$LogPath = "",
 
     # YAML-overridable Azure parameters (for Azure-side check)
-    [string]$SubscriptionId = "",        # azure_platform.subscriptions.lab.id
-    [string]$ResourceGroup  = "",        # compute.azure_local.arc_resource_group
+    [string]$SubscriptionId = "",        # azure.subscription_id
+    [string]$ResourceGroup  = "",        # azure.resource_group
 
     [switch]$SkipAzureCheck              # Skip Get-AzConnectedMachine check
 )
@@ -143,16 +143,16 @@ function Get-Config {
         }
     }
 
-    $az = $cfg.compute.azure_local                                   # compute.azure_local
+    $gw = Get-AzlArcGateway -Infrastructure $cfg                     # scenario.outbound_path, networking.outbound.arc_gateway
 
     return [PSCustomObject]@{
         Nodes            = @($nodes)
-        SubscriptionId   = $cfg.azure_platform.subscriptions.lab.id  # azure_platform.subscriptions.lab.id
-        ResourceGroup    = $az.arc_resource_group                    # compute.azure_local.arc_resource_group
-        ArcGatewayEnabled = [bool]$az.arc_gateway_enabled            # compute.azure_local.arc_gateway_enabled
-        ArcGatewayId     = $az.arc_gateway_id                        # compute.azure_local.arc_gateway_id
-        AdminUser        = $cfg.identity.accounts.account_local_admin_username   # identity.accounts.account_local_admin_username
-        AdminPassUri     = $cfg.identity.accounts.account_local_admin_password   # identity.accounts.account_local_admin_password
+        SubscriptionId   = $cfg.azure.subscription_id  # azure.subscription_id
+        ResourceGroup    = $cfg.azure.resource_group                 # azure.resource_group
+        ArcGatewayEnabled = [bool]$gw.Enabled                        # scenario.outbound_path is arc_gateway or proxy_arc_gateway
+        ArcGatewayId     = $gw.Id                                    # networking.outbound.arc_gateway
+        AdminUser        = $cfg.identity.local_admin.username   # identity.local_admin.username
+        AdminPassUri     = $cfg.identity.local_admin.password   # identity.local_admin.password
     }
 }
 
@@ -302,8 +302,8 @@ $cfg.Nodes | ForEach-Object { Write-Log "  $($_.hostname)  ($($_.ip))" INFO }
 # 3. Interactive Get-Credential prompt
 Write-Log "--- Resolving credentials ---" HEADER
 if (-not $Credential) {
-    $adminUser    = $cfg.AdminUser                                   # identity.accounts.account_local_admin_username
-    $adminPassUri = $cfg.AdminPassUri                                # identity.accounts.account_local_admin_password
+    $adminUser    = $cfg.AdminUser                                   # identity.local_admin.username
+    $adminPassUri = $cfg.AdminPassUri                                # identity.local_admin.password
     Write-Log "Resolving credentials from Key Vault..."
     $adminPass = Resolve-KeyVaultRef -KvUri $adminPassUri
     if ($adminPass) {

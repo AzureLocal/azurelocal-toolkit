@@ -34,14 +34,14 @@
     MaxIterations is reached.
 
     NODE ACCESS: Uses local administrator credentials resolved from Key Vault
-    (identity.accounts). The -Credential parameter overrides Key Vault resolution.
+    (identity.local_admin). The -Credential parameter overrides Key Vault resolution.
 
 .PARAMETER ConfigPath
     Path to infrastructure.yml. Defaults to auto-detect from script location.
 
 .PARAMETER Credential
     PSCredential for PSRemoting to cluster nodes. If omitted, resolved from
-    Key Vault using identity.accounts.account_local_admin_password, then
+    Key Vault using identity.local_admin.password, then
     interactive Get-Credential prompt.
 
 .PARAMETER TargetNode
@@ -62,11 +62,11 @@
 
 .PARAMETER SubscriptionId
     Override Azure subscription ID for Arc resource verification.
-    YAML path: azure_platform.subscriptions.lab.id
+    YAML path: azure.subscription_id
 
 .PARAMETER ResourceGroup
     Override Arc resource group for Azure verification.
-    YAML path: compute.azure_local.arc_resource_group
+    YAML path: azure.resource_group
 
 .PARAMETER ContinuousMode
     Continue monitoring even after all nodes report Succeeded or Failed.
@@ -122,8 +122,8 @@ param(
     [int]$MaxIterations       = 120,       # Max poll cycles (120 × 60s = 2 hours)
 
     # YAML-overridable Azure parameters (for Azure-side verification)
-    [string]$SubscriptionId = "",          # azure_platform.subscriptions.lab.id
-    [string]$ResourceGroup  = "",          # compute.azure_local.arc_resource_group
+    [string]$SubscriptionId = "",          # azure.subscription_id
+    [string]$ResourceGroup  = "",          # azure.resource_group
 
     [switch]$ContinuousMode,              # Continue after all nodes complete
     [switch]$Dashboard,                    # Full-screen dashboard display mode
@@ -201,10 +201,10 @@ function Get-Config {
 
     return [PSCustomObject]@{
         Nodes          = @($nodes)
-        AdminUser      = $cfg.identity.accounts.account_local_admin_username   # identity.accounts.account_local_admin_username
-        AdminPassUri   = $cfg.identity.accounts.account_local_admin_password   # identity.accounts.account_local_admin_password
-        SubscriptionId = $cfg.azure_platform.subscriptions.lab.id              # azure_platform.subscriptions.lab.id
-        ResourceGroup  = $cfg.compute.azure_local.arc_resource_group           # compute.azure_local.arc_resource_group
+        AdminUser      = $cfg.identity.local_admin.username   # identity.local_admin.username
+        AdminPassUri   = $cfg.identity.local_admin.password   # identity.local_admin.password
+        SubscriptionId = $cfg.azure.subscription_id              # azure.subscription_id
+        ResourceGroup  = $cfg.azure.resource_group           # azure.resource_group
     }
 }
 
@@ -973,8 +973,8 @@ $cfg.Nodes | ForEach-Object { Write-Log "  $($_.hostname)  ($($_.ip))" INFO }
 # 3. Interactive Get-Credential prompt
 Write-Log "--- Resolving credentials ---" HEADER
 if (-not $Credential) {
-    $adminUser    = $cfg.AdminUser                                   # identity.accounts.account_local_admin_username
-    $adminPassUri = $cfg.AdminPassUri                                # identity.accounts.account_local_admin_password
+    $adminUser    = $cfg.AdminUser                                   # identity.local_admin.username
+    $adminPassUri = $cfg.AdminPassUri                                # identity.local_admin.password
     Write-Log "Resolving credentials from Key Vault..."
     $adminPass = Resolve-KeyVaultRef -KvUri $adminPassUri
     if ($adminPass) {
@@ -1131,8 +1131,8 @@ for ($i = 1; $i -le $MaxIterations; $i++) {
             Write-Log "" INFO
             Write-Log "--- Azure-side Arc verification ---" HEADER
             try {
-                $azSub = $cfg.SubscriptionId                             # azure_platform.subscriptions.lab.id
-                $azRG  = $cfg.ResourceGroup                              # compute.azure_local.arc_resource_group
+                $azSub = $cfg.SubscriptionId                             # azure.subscription_id
+                $azRG  = $cfg.ResourceGroup                              # azure.resource_group
 
                 foreach ($entry in $connectedNodes) {
                     $arcName = $entry.Key.ToLower()
