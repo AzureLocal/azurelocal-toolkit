@@ -405,6 +405,30 @@ Describe 'Readers for the values the per-task scripts share' {
             $w.Path | Should -BeExactly ''
         }
     }
+    Context 'Get-AzlManagementNicName' {
+        It 'returns the one OS name every node shares' {
+            $infra = [ordered]@{ nodes = @(
+                    [ordered]@{ name = 'n01'; management = [ordered]@{ ip_address = '192.0.2.11'; adapter_name = 'Port1' } }
+                    [ordered]@{ name = 'n02'; management = [ordered]@{ ip_address = '192.0.2.12'; adapter_name = 'Port1' } }) }
+            Get-AzlManagementNicName -Infrastructure $infra | Should -Be 'Port1'
+        }
+        It 'returns nothing when the nodes differ' {
+            $infra = [ordered]@{ nodes = @(
+                    [ordered]@{ name = 'n01'; management = [ordered]@{ ip_address = '192.0.2.11'; adapter_name = 'Port1' } }
+                    [ordered]@{ name = 'n02'; management = [ordered]@{ ip_address = '192.0.2.12'; adapter_name = 'Port2' } }) }
+            Get-AzlManagementNicName -Infrastructure $infra | Should -BeNullOrEmpty
+        }
+        It 'returns nothing when a node has no management port, or the file has no nodes' {
+            $infra = [ordered]@{ nodes = @([ordered]@{ name = 'n01' }) }
+            Get-AzlManagementNicName -Infrastructure $infra | Should -BeNullOrEmpty
+            Get-AzlManagementNicName -Infrastructure ([ordered]@{ site = 'x' }) | Should -BeNullOrEmpty
+        }
+        It 'uses os_name_override of the management port of a node with network_adapters' {
+            $port = [ordered]@{ name = 'Embedded NIC 1'; mac_address = '00:00:5E:00:53:11'; roles = @('management'); ip_assignment = 'static'; ip_address = '192.0.2.11'; os_name_override = 'Mgmt1' }
+            $infra = [ordered]@{ nodes = @([ordered]@{ name = 'n01'; network_adapters = @($port) }) }
+            Get-AzlManagementNicName -Infrastructure $infra | Should -Be 'Mgmt1'
+        }
+    }
     Context 'Get-AzlManagementAdapter OsName' {
         It 'is the adapter_name of a node described with nodes[].management' {
             $infra = [ordered]@{ nodes = @([ordered]@{ name = 'n01'; management = [ordered]@{ ip_address = '192.0.2.11'; adapter_name = 'Port1' } }) }

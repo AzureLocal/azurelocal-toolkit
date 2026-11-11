@@ -19,6 +19,7 @@
                               The one reader of the node list for the per-task scripts.
     Get-AzlManagementNetwork  The management network every machine shares: subnet, prefix length, subnet mask, gateway, DNS servers,
                               VLAN (networking.management).
+    Get-AzlManagementNicName  The OS name of the management adapter when every node has the same one.
     Get-AzlArcGateway         The Azure Arc gateway: whether it is used, its name, resource group and resource ID.
     Get-AzlClusterWitness     The quorum witness: type, storage account, resource group, SKU, file share path.
     Get-AzlNodeNetworkAdapter A node's ports: nodes[].network_adapters (5.2), or one port made from nodes[].management.
@@ -461,6 +462,30 @@ function Get-AzlManagementNetwork {
         DnsServers   = @(Get-List $mgmt['dns_servers'] | ForEach-Object { [string]$_ })
         VlanId       = $(if ($null -ne $mgmt['vlan_id']) { [int]$mgmt['vlan_id'] } else { $null })
     }
+}
+
+function Get-AzlManagementNicName {
+    <#
+    .SYNOPSIS
+        The name the machines' operating system gives the management network adapter, when every node's management port has the
+        same one; $null when the nodes differ or none has a management port.
+    .DESCRIPTION
+        For each node, the OsName of Get-AzlManagementAdapter: nodes[].network_adapters[].os_name_override of the management port,
+        else its name; for a node described with nodes[].management, nodes[].management.adapter_name. The scripts that run one
+        Get-NetAdapter -Name over all the nodes use this. Where the names differ, ask Get-AzlManagementAdapter per node. Reads the
+        loaded file only.
+    .EXAMPLE
+        $nic = Get-AzlManagementNicName -Infrastructure $infra
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure)
+    $names = @(Get-AzlInfrastructureNode -Infrastructure $Infrastructure | ForEach-Object {
+            $port = Get-AzlManagementAdapter -Infrastructure $Infrastructure -Node $_.Node
+            if ($port -and $port.OsName) { $port.OsName } else { '' }
+        } | Select-Object -Unique)
+    if ($names.Count -eq 1 -and $names[0]) { return [string]$names[0] }
+    return $null
 }
 
 function Get-AzlArcGateway {
@@ -1856,4 +1881,4 @@ function Import-AzlInfrastructure {
     return Read-InfrastructureFile $Path
 }
 
-Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlManagementMode, Test-AzlProvisioningDhcpPort, Get-AzlArcMachineName, Get-AzlInfrastructureNode, Get-AzlManagementNetwork, Get-AzlArcGateway, Get-AzlClusterWitness, Get-AzlNodeNetworkAdapter, Get-AzlManagementAdapter, Get-AzlBiosSetting, Get-AzlBiosProvisioningOverride, Get-AzlManagementStaticMethod, Get-AzlInfrastructureScope, Get-AzlSiteIpRange
+Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlManagementMode, Test-AzlProvisioningDhcpPort, Get-AzlArcMachineName, Get-AzlInfrastructureNode, Get-AzlManagementNetwork, Get-AzlManagementNicName, Get-AzlArcGateway, Get-AzlClusterWitness, Get-AzlNodeNetworkAdapter, Get-AzlManagementAdapter, Get-AzlBiosSetting, Get-AzlBiosProvisioningOverride, Get-AzlManagementStaticMethod, Get-AzlInfrastructureScope, Get-AzlSiteIpRange
