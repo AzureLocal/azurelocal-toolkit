@@ -10,16 +10,16 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](../../../docs/diagrams/variable-flow.drawio) ([PNG](../../../docs/diagrams/variable-flow.png)).
 
-Registry version 5.0.21. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
+Registry version 5.0.22. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
 
 ## In numbers
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 576 | 276 | 121 | 3 | 174 | 2 |
-| Owned by a tool (`tools.*`) | 2453 | 2446 | 0 | 0 | 7 | 0 |
+| Keys of infrastructure.yml | 576 | 278 | 121 | 3 | 172 | 2 |
+| Owned by a tool (`tools.*`) | 2455 | 2448 | 0 | 0 | 7 | 0 |
 | Older variables-file sections | 1480 | 67 | 573 | 0 | 835 | 5 |
-| All registry leaves | 4509 | 2789 | 694 | 3 | 1016 | 7 |
+| All registry leaves | 4511 | 2793 | 694 | 3 | 1014 | 7 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -45,7 +45,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 64 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
 | ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 74 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 14 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
-| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 117 | _metadata, azure, devops, hardware, identity, key_vaults, landing_zone, networking, nodes, site, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
+| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 119 | _metadata, azure, devops, hardware, identity, key_vaults, landing_zone, networking, nodes, site, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
 
 ### Which section is read in which phase (number of keys)
 
@@ -54,7 +54,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `site` | 5 |  | 5 |  |  |  |  | 4 |
 | `environment` | 4 |  |  |  |  |  |  |  |
 | `tags` |  |  | 1 |  |  |  |  | 1 |
-| `identity` | 11 |  |  | 13 | 13 | 9 | 4 | 5 |
+| `identity` | 11 |  |  | 13 | 13 | 9 | 4 | 7 |
 | `networking` | 22 |  | 7 | 5 | 24 | 16 |  | 16 |
 | `security` | 1 |  |  |  |  | 11 |  |  |
 | `operations` | 13 |  |  |  |  |  |  |  |
@@ -93,12 +93,12 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | ztp | ZTP | 89 | 0 | 1135 |
 | os-configuration | OS configuration | 69 | 0 | 274 |
 | pre-cluster-verification | Pre-cluster verification | 64 | 0 | 0 |
-| arm-deployment | ARM Validate/Deploy | 74 | 0 | 252 |
+| arm-deployment | ARM Validate/Deploy | 74 | 0 | 254 |
 | sonar | Sonar | 14 | 0 | 266 |
 | cicd-infra | Outside the flow | 53 | 0 | 347 |
 | infrastructure-helpers | Outside the flow | 27 | 0 | 0 |
 | validator | Outside the flow | 108 | 0 | 0 |
-| toolkit-legacy-scripts | Outside the flow | 43 | 0 | 0 |
+| toolkit-legacy-scripts | Outside the flow | 45 | 0 | 0 |
 
 ### trailwright
 
@@ -289,15 +289,16 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 
 ### toolkit-legacy-scripts
 
-**Reads (43):**
-`site.code`, `site.location`, `site.name`, `site.owner`, `tags.*`, `identity.active_directory.netbios_name`, `identity.active_directory.security_groups[].name`, `identity.active_directory.security_groups[].local_groups`, `identity.entra.groups[].name`, `identity.entra.groups[].purpose`, `networking.logical_networks[].name`, `networking.logical_networks[].enabled`, `networking.logical_networks[].ip_allocation_method`, `networking.logical_networks[].nsg_name`, `networking.logical_networks[].vlan_id`, `networking.logical_networks[].address_prefix`, `networking.logical_networks[].dns_servers`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.custom_location`, `hardware.vendor`, `hardware.model`, `hardware.sbe.publisher`, `hardware.sbe.family`, `hardware.sbe.version`, `hardware.sbe.bundle_path`, `hardware.sbe.requirement`, `hardware.sbe.not_applicable_reason`, `hardware.sbe.source_path`, `hardware.sbe.source_username`, `hardware.sbe.source_password`, `hardware.sbe.package_sha256`, `hardware.sbe.package_size_bytes`, `landing_zone.management_groups[].name`, `landing_zone.management_groups[].display_name`, `landing_zone.subscriptions[].name`, `landing_zone.subscriptions[].id`, `landing_zone.subscriptions[].management_group`, `landing_zone.policy.required_tags`, `landing_zone.policy.management_group`, `_metadata.schema_version`
+**Reads (45):**
+`site.code`, `site.location`, `site.name`, `site.owner`, `tags.*`, `identity.active_directory.netbios_name`, `identity.active_directory.security_groups[].name`, `identity.active_directory.security_groups[].local_groups`, `identity.entra.groups[].name`, `identity.entra.groups[].purpose`, `identity.entra.groups[].roles`, `identity.entra.groups[].scope`, `networking.logical_networks[].name`, `networking.logical_networks[].enabled`, `networking.logical_networks[].ip_allocation_method`, `networking.logical_networks[].nsg_name`, `networking.logical_networks[].vlan_id`, `networking.logical_networks[].address_prefix`, `networking.logical_networks[].dns_servers`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.custom_location`, `hardware.vendor`, `hardware.model`, `hardware.sbe.publisher`, `hardware.sbe.family`, `hardware.sbe.version`, `hardware.sbe.bundle_path`, `hardware.sbe.requirement`, `hardware.sbe.not_applicable_reason`, `hardware.sbe.source_path`, `hardware.sbe.source_username`, `hardware.sbe.source_password`, `hardware.sbe.package_sha256`, `hardware.sbe.package_size_bytes`, `landing_zone.management_groups[].name`, `landing_zone.management_groups[].display_name`, `landing_zone.subscriptions[].name`, `landing_zone.subscriptions[].id`, `landing_zone.subscriptions[].management_group`, `landing_zone.policy.required_tags`, `landing_zone.policy.management_group`, `_metadata.schema_version`
 
-Where in the code (file, function, keys read by name; 34 places, the first 12):
+Where in the code (file, function, keys read by name; 35 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
 | `scripts/common/sbe/AzlSbePackage.psm1` | `Get-AzlSbeSource` | 9 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/powershell/Invoke-LogicalNetworks-Orchestrated.ps1` | `(script)` | 7 |
+| `scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/powershell/Set-EntraGroupRoleAssignments.ps1` | `(script)` | 6 |
 | `scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1` | `(script)` | 5 |
 | `scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-02-create-subscriptions/powershell/Invoke-SubscriptionMove-Orchestrated.ps1` | `(script)` | 4 |
 | `scripts/common/sbe/AzlSbePackage.psm1` | `Get-AzlSbeRequirement` | 3 |
@@ -307,7 +308,6 @@ Where in the code (file, function, keys read by name; 34 places, the first 12):
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-03-security-groups-applied-to-nodes/powershell/Invoke-ApplySecurityGroups-Orchestrated.ps1` | `(script)` | 3 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/powershell/Invoke-ConfigureNSGs-Orchestrated.ps1` | `(script)` | 3 |
 | `scripts/deploy/05-operational-foundations/phase-04-security-governance/task-02-apply-azure-policy-initiatives/powershell/Invoke-AzurePolicyTier1-Orchestrated.ps1` | `(script)` | 3 |
-| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-11-deploy-management-vms/powershell/Deploy-ManagementVMs.ps1` | `(script)` | 2 |
 
 ## By ARM parameter: the template parameter and the file key it comes from
 
@@ -434,7 +434,7 @@ Ranked by how many different tools read the key, then how many places in the cod
 
 Variables the registry documents that no tool in the scan reads by name. Each is either a key a coming phase will read, a key only the validator checks, or a name kept for compatibility. Nothing here is an error; it is the list to look at before you spend time filling a key in that nothing uses yet.
 
-### Placeholder: documented, not read by any tool in the scan (174)
+### Placeholder: documented, not read by any tool in the scan (172)
 
 | Variable | Purposes | Provided by | Note |
 | --- | --- | --- | --- |
@@ -450,8 +450,6 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `identity.active_directory.service_accounts[].purpose` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `identity.active_directory.service_accounts[].password` |  | operator by hand; Key Vault reference (keyvault://) | documented in the registry; no tool in the scan reads it |
 | `identity.local_admin.username_secret` | deployment | operator by hand; Key Vault reference (keyvault://) | documented in the registry; no tool in the scan reads it |
-| `identity.entra.groups[].roles` |  | operator by hand | documented in the registry; no tool in the scan reads it |
-| `identity.entra.groups[].scope` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `identity.entra.break_glass_accounts` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `networking.oob.gateway` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `networking.oob.vlan_id` |  | operator by hand | documented in the registry; no tool in the scan reads it |
@@ -1062,8 +1060,8 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `identity.local_identity.dns_forwarders` | array | operator; Trailwright | deployment | arm-deployment; pre-cluster-verification | ARM dnsZones | read |
 | `identity.entra.groups[].name` | string, required | operator |  | toolkit-legacy-scripts |  | read |
 | `identity.entra.groups[].purpose` | string | operator |  | toolkit-legacy-scripts |  | read |
-| `identity.entra.groups[].roles` | array | operator |  |  |  | placeholder |
-| `identity.entra.groups[].scope` | string | operator |  |  |  | placeholder |
+| `identity.entra.groups[].roles` | array | operator |  | toolkit-legacy-scripts |  | read |
+| `identity.entra.groups[].scope` | string | operator |  | toolkit-legacy-scripts |  | read |
 | `identity.entra.break_glass_accounts` | array | operator |  |  |  | placeholder |
 
 ### key_vaults
@@ -1501,7 +1499,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |
-| arm_deployment | parameters | 152 | 152 | 0 |
+| arm_deployment | parameters | 154 | 154 | 0 |
 | arm_deployment | report_fields | 20 | 20 | 0 |
 | arm_deployment | run_settings | 31 | 31 | 0 |
 | arm_deployment | secret_names | 2 | 2 | 0 |
