@@ -22,7 +22,7 @@
     $config = Get-SolutionConfig -Solution "azure-local"
     
     # Access values using fixed paths
-    $tenantId = $config.azure_platform.tenant.id
+    $tenantId = $config.azure.tenant_id
     $kvName = $config.security.key_vaults.management.name
 #>
 
@@ -343,7 +343,7 @@ function Export-TerraformTfvars {
 
 .EXAMPLE
     $config = Get-SolutionConfig -Solution "azure-local"
-    $tenantId = $config.azure_platform.tenant.id
+    $tenantId = $config.azure.tenant_id
     $kvName = $config.security.key_vaults.management.name
 
 .EXAMPLE
