@@ -102,7 +102,7 @@ Write-LogMessage "=== Configure Azure Update Manager ===" -Level Info
 # Load configuration
 $config = Import-InfrastructureConfig -Path $ConfigPath
 if ($config) {
-    $ResourceGroupName = if ($ResourceGroupName) { $ResourceGroupName } else { $config.azure.resource_group_name }
+    $ResourceGroupName = if ($ResourceGroupName) { $ResourceGroupName } else { $config.azure.resource_group }
     $SubscriptionId = if ($SubscriptionId) { $SubscriptionId } else { $config.azure.subscription_id }
 }
 

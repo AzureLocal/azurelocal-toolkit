@@ -284,13 +284,13 @@ try {
 
     # Get values from config if not provided
     if (-not $SubscriptionId -and $config.azure) {
-        $SubscriptionId = $config.azure_platform.subscriptions.lab.id
+        $SubscriptionId = $config.azure.subscription_id
     }
     if (-not $ResourceGroupName -and $config.azure) {
-        $ResourceGroupName = $config.azure_platform.resource_group
+        $ResourceGroupName = $config.azure.resource_group
     }
     if (-not $Location -and $config.azure) {
-        $Location = $config.azure_platform.location
+        $Location = $config.azure.location
     }
 
     if (-not $ResourceGroupName) {

@@ -232,13 +232,13 @@ try {
 
     # Get values from config if not provided
     if (-not $SubscriptionId -and $config.azure) {
-        $SubscriptionId = $config.azure_platform.subscriptions.lab.id
+        $SubscriptionId = $config.azure.subscription_id
     }
     if (-not $ResourceGroupName -and $config.azure) {
-        $ResourceGroupName = $config.azure_platform.resource_group
+        $ResourceGroupName = $config.azure.resource_group
     }
     if (-not $ClusterName -and $config.cluster) {
-        $ClusterName = $config.compute.azure_local.cluster_name
+        $ClusterName = $config.cluster.name
     }
 
     if (-not $ClusterName -or -not $ResourceGroupName) {

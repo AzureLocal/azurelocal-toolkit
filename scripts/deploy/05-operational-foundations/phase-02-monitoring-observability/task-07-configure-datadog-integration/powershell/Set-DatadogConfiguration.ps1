@@ -410,7 +410,7 @@ try {
     $ddConfig = New-DatadogAzureLocalConfig `
         -ApiKey "YOUR_API_KEY_HERE" `
         -Site $DatadogSite `
-        -ClusterName $config.compute.azure_local.cluster_name `
+        -ClusterName $config.cluster.name `
         -Tags @("customer:$($config.site.customer_name ?? 'unknown')")
 
     $configFile = ".\output\datadog\datadog-azurelocal.yaml"

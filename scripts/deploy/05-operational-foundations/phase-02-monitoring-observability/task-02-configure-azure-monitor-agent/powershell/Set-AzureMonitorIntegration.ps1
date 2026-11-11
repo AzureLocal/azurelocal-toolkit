@@ -85,8 +85,8 @@ if ($ConfigFile -and (Test-Path $ConfigFile)) {
         $Config = Get-Config -ConfigPath $ConfigFile
         
         # Override with config values
-        if (-not $SubscriptionId) { $SubscriptionId = $config.azure_platform.subscriptions.lab.id }
-        if (-not $ResourceGroup) { $ResourceGroup = $config.azure_platform.resource_group }
+        if (-not $SubscriptionId) { $SubscriptionId = $config.azure.subscription_id }
+        if (-not $ResourceGroup) { $ResourceGroup = $config.azure.resource_group }
         if (-not $WorkspaceId) { $WorkspaceId = $config.operations.monitoring.log_analytics.workspace_id }
     }
 }

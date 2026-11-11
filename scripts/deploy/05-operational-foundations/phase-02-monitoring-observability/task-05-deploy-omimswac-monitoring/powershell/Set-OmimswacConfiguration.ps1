@@ -324,7 +324,7 @@ try {
     Write-LogMessage "1. WINDOWS ADMIN CENTER:" -Level Info
     
     if ($WacServerName) {
-        Add-WacConnection -WacServer $WacServerName -ClusterName $config.compute.azure_local.cluster_name -Credential $Credential
+        Add-WacConnection -WacServer $WacServerName -ClusterName $config.cluster.name -Credential $Credential
     } else {
         Write-LogMessage "   - Install Windows Admin Center on a management server" -Level Info
         Write-LogMessage "   - Add Azure Local cluster connection" -Level Info
