@@ -1,7 +1,7 @@
 # =============================================================================
 # Master Variable Registry - AzureLocal Cloud Team Cloud Management Platform
 # =============================================================================
-# Version: 5.0.20
+# Version: 5.0.21
 # Schema: variables.schema.json (v5.0.0)
 # Last Updated: 2026-11-11
 #
@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.21 (2026-11-11):
+#     - The parameters InfrastructureFile and LogPath of Deploy-VpnGateway.ps1 (phase 04, manual deployment, task 02, which reads landing_zone.connectivity.vpn_gateway name, resource_group, network, sku and bgp_asn, landing_zone.networks[] and landing_zone.subscriptions[], keys that already existed) are registered under tools.arm_deployment.parameters.
 #   v5.0.20 (2026-11-11):
 #     - The parameters InfrastructureFile and LogPath of Set-ManagementGroupDisplayNames.ps1 (phase 01, task 01, which reads azure.tenant_id and landing_zone.management_groups[].name and display_name, keys that already existed) are registered under tools.arm_deployment.parameters.
 #   v5.0.19 (2026-11-11):
@@ -159,7 +161,7 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.20"
+  version: "5.0.21"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.5"
   last_updated: "2026-11-11"
@@ -168,6 +170,10 @@ _metadata:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-11"
+      version: "5.0.21"
+      change: "The parameters InfrastructureFile and LogPath of Deploy-VpnGateway.ps1 (phase 04, manual deployment, task 02, which reads landing_zone.connectivity.vpn_gateway name, resource_group, network, sku and bgp_asn, landing_zone.networks[] and landing_zone.subscriptions[], keys that already existed) are registered under tools.arm_deployment.parameters."
+      reason: "Registry first: the script that creates the hub VPN gateway reads only keys that were already registered; its parameters are registered before it ships."
     - date: "2026-11-11"
       version: "5.0.20"
       change: "The parameters InfrastructureFile and LogPath of Set-ManagementGroupDisplayNames.ps1 (phase 01, task 01, which reads azure.tenant_id and landing_zone.management_groups[].name and display_name, keys that already existed) are registered under tools.arm_deployment.parameters."
@@ -18983,6 +18989,12 @@ tools:
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-01-configure-management-groups/powershell/Set-ManagementGroupDisplayNames.ps1","description":"Set-ManagementGroupDisplayNames.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id and landing_zone.management_groups[] (name, display_name) are read; the file is not validated as a whole."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-01-configure-management-groups/powershell/Set-ManagementGroupDisplayNames.ps1","description":"Set-ManagementGroupDisplayNames.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_02_azure_foundation_phase_04_azure_management_infrastructure_02_manual_deployment_task_02_vpn_gateway_powershell_Deploy_VpnGateway_ps1:
+              type: object
+              area: "scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-02-vpn-gateway/powershell/Deploy-VpnGateway.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-02-vpn-gateway/powershell/Deploy-VpnGateway.ps1","description":"Deploy-VpnGateway.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.location, tags, landing_zone.connectivity.vpn_gateway (name, resource_group, network, sku, bgp_asn), landing_zone.networks[] (name, subscription, resource_group, location) and landing_zone.subscriptions[] (name, id) are read; the file is not validated as a whole."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-02-vpn-gateway/powershell/Deploy-VpnGateway.ps1","description":"Deploy-VpnGateway.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
         event_fields:
           type: object
           properties:
