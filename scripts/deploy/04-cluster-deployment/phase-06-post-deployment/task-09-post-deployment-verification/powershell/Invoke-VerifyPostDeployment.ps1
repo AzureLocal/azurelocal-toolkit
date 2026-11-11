@@ -34,7 +34,7 @@
     management.wac.server_fqdn in infrastructure.yml. If empty, WAC checks are skipped.
 
 .PARAMETER ClusterName
-    Override cluster name. Defaults to compute.azure_local.cluster_name from YAML.
+    Override cluster name. Defaults to cluster.name from YAML.
 
 .EXAMPLE
     # Run from repo root with default config:
@@ -69,7 +69,7 @@ param(
 
     # YAML-overridable
     [string]      $WacServer   = "",   # management.wac.server_fqdn — leave empty to skip WAC check
-    [string]      $ClusterName = ""    # compute.azure_local.cluster_name
+    [string]      $ClusterName = ""    # cluster.name
 )
 
 Set-StrictMode -Version Latest
@@ -123,7 +123,7 @@ $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 
 # Cluster name — YAML-overridable
 if ([string]::IsNullOrEmpty($ClusterName)) {
-    $ClusterName = $cfg.compute.azure_local.cluster_name              # compute.azure_local.cluster_name
+    $ClusterName = $cfg.cluster.name              # cluster.name
 }
 if ([string]::IsNullOrEmpty($ClusterName)) { throw "Cannot resolve cluster_name from config or -ClusterName" }
 
@@ -144,16 +144,8 @@ $nodesToCheck = if ($TargetNode.Count -gt 0) {
 } elseif ($allNodes.Count -gt 0) { $allNodes } else { @() }
 
 # Subscription / resource group for Azure CLI checks
-$subscriptionId = $null
-if ($cfg.azure_platform.subscriptions) {
-    $subKey         = ($cfg.azure_platform.subscriptions.GetEnumerator() | Select-Object -First 1).Key
-    $subscriptionId = $cfg.azure_platform.subscriptions.$subKey.id    # azure_platform.subscriptions.<key>.id
-}
-$resourceGroup = if ($cfg.azure_platform.resource_group_name) {
-                     $cfg.azure_platform.resource_group_name          # azure_platform.resource_group_name
-                 } elseif ($cfg.compute.azure_local.arc_resource_group) {
-                     $cfg.compute.azure_local.arc_resource_group      # compute.azure_local.arc_resource_group
-                 } else { $null }
+$subscriptionId = $cfg.azure.subscription_id                          # azure.subscription_id
+$resourceGroup  = if ($cfg.azure.resource_group) { $cfg.azure.resource_group } else { $null }   # azure.resource_group
 
 # Expected counts for pass/fail comparison
 $logicalNetworks = if ($cfg.networking.logical_networks) { $cfg.networking.logical_networks } else { @() }  # networking.logical_networks[]
@@ -205,9 +197,9 @@ function Resolve-KeyVaultRef {
 if (-not $Credential) {
     # Post-deployment: nodes are domain-joined and local admin is renamed by Azure Local.
     # Use the LCM domain account for PSRemoting.
-    $lcmUser       = $cfg.identity.accounts.account_lcm_username         # identity.accounts.account_lcm_username
-    $lcmPassUri    = $cfg.identity.accounts.account_lcm_password          # identity.accounts.account_lcm_password
-    $domainNetbios = $cfg.identity.active_directory.ad_netbios_name       # identity.active_directory.ad_netbios_name
+    $lcmUser       = $cfg.identity.active_directory.lcm_user.username         # identity.active_directory.lcm_user.username
+    $lcmPassUri    = $cfg.identity.active_directory.lcm_user.password          # identity.active_directory.lcm_user.password
+    $domainNetbios = $cfg.identity.active_directory.netbios_name       # identity.active_directory.netbios_name
     $lcmFqUser     = if ($domainNetbios) { "$domainNetbios\$lcmUser" } else { $lcmUser }
     Write-Log "Resolving LCM credentials from Key Vault..."
     $lcmPass = Resolve-KeyVaultRef -KvUri $lcmPassUri

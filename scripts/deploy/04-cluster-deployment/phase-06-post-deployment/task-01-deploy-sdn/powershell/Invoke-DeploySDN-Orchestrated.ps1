@@ -135,11 +135,11 @@ function Resolve-KeyVaultRef {
 if (-not $Credential) {
     # Post-deployment: nodes are domain-joined and local admin is renamed by Azure Local.
     # Try local admin first; fall back to LCM domain account on access denied.
-    $adminUser    = $cfg.identity.accounts.account_local_admin_username          # identity.accounts.account_local_admin_username
-    $adminPassUri = $cfg.identity.accounts.account_local_admin_password          # identity.accounts.account_local_admin_password
-    $lcmUser      = $cfg.identity.accounts.account_lcm_username                  # identity.accounts.account_lcm_username
-    $lcmPassUri   = $cfg.identity.accounts.account_lcm_password                  # identity.accounts.account_lcm_password
-    $netbiosName  = $cfg.identity.active_directory.ad_netbios_name               # identity.active_directory.ad_netbios_name
+    $adminUser    = $cfg.identity.local_admin.username          # identity.local_admin.username
+    $adminPassUri = $cfg.identity.local_admin.password          # identity.local_admin.password
+    $lcmUser      = $cfg.identity.active_directory.lcm_user.username                  # identity.active_directory.lcm_user.username
+    $lcmPassUri   = $cfg.identity.active_directory.lcm_user.password                  # identity.active_directory.lcm_user.password
+    $netbiosName  = $cfg.identity.active_directory.netbios_name               # identity.active_directory.netbios_name
 
     Write-Log "Resolving local admin credentials from Key Vault..."
     $adminPass = Resolve-KeyVaultRef -KvUri $adminPassUri

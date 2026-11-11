@@ -84,10 +84,10 @@ if (-not (Test-Path $ConfigPath)) {
 Import-Module powershell-yaml -ErrorAction Stop
 $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 
-$resourceGroup        = $cfg.compute.azure_local.arc_resource_group           # compute.azure_local.arc_resource_group
-$subscriptionId       = $cfg.azure_platform.subscriptions.lab.id                 # azure_platform.subscriptions.lab.id
-$location             = $cfg.azure_platform.region                               # azure_platform.region
-$customLocationName   = $cfg.compute.azure_local.azure_custom_location_name      # compute.azure_local.azure_custom_location_name
+$resourceGroup        = $cfg.azure.resource_group           # azure.resource_group
+$subscriptionId       = $cfg.azure.subscription_id                 # azure.subscription_id
+$location             = $cfg.azure.location                               # azure.location
+$customLocationName   = $cfg.azure.custom_location      # azure.custom_location
 $customLocation       = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroup/providers/Microsoft.ExtendedLocation/customLocations/$customLocationName"
 $csvConfig            = $cfg.compute.cluster_shared_volumes                      # compute.cluster_shared_volumes
 

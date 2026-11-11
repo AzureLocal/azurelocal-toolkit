@@ -26,12 +26,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 #region CONFIGURATION -----------------------------------------------------------
-$subscription_id    = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"  # azure_platform.subscription_id
-$resource_group     = "rg-iic01-azl-eus-01"                    # azure_platform.resource_group
-$location           = "eastus"                                  # azure_platform.location
+$subscription_id    = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"  # azure.subscription_id
+$resource_group     = "rg-iic01-azl-eus-01"                    # azure.resource_group
+$location           = "eastus"                                  # azure.location
 $custom_location_id = "/subscriptions/$subscription_id/resourceGroups/$resource_group" +
                       "/providers/Microsoft.ExtendedLocation/customLocations/cl-iic01"
-                                                                # compute.azure_local.custom_location_name
+                                                                # azure.custom_location
 
 $images = @(
     @{

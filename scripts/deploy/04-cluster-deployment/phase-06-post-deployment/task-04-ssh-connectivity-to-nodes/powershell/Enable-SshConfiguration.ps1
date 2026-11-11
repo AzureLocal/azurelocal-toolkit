@@ -297,9 +297,9 @@ try {
             return $null
         }
         # Post-deployment: nodes are domain-joined — use LCM domain account
-        $lcmUser       = $config.identity.accounts.account_lcm_username         # identity.accounts.account_lcm_username
-        $lcmPassUri    = $config.identity.accounts.account_lcm_password          # identity.accounts.account_lcm_password
-        $domainNetbios = $config.identity.active_directory.ad_netbios_name       # identity.active_directory.ad_netbios_name
+        $lcmUser       = $config.identity.active_directory.lcm_user.username         # identity.active_directory.lcm_user.username
+        $lcmPassUri    = $config.identity.active_directory.lcm_user.password          # identity.active_directory.lcm_user.password
+        $domainNetbios = $config.identity.active_directory.netbios_name       # identity.active_directory.netbios_name
         $lcmFqUser     = if ($domainNetbios) { "$domainNetbios\$lcmUser" } else { $lcmUser }
         Write-LogMessage "Resolving LCM credentials from Key Vault..." -Level Info
         $lcmPass = Resolve-KeyVaultRef -KvUri $lcmPassUri

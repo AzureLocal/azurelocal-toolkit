@@ -53,7 +53,7 @@ $sdnEnabled     = $cfg.networking.azure.sdn.sdn_enabled        # networking.azur
 $sdnPrefix      = $cfg.networking.azure.sdn.sdn_prefix         # networking.azure.sdn.sdn_prefix
 $sdnDnsMode     = $cfg.networking.azure.sdn.sdn_dns_mode       # networking.azure.sdn.sdn_dns_mode
 $sdnNcReservedIp = $cfg.networking.azure.sdn.sdn_nc_reserved_ip # networking.azure.sdn.sdn_nc_reserved_ip
-$domainFqdn     = $cfg.identity.active_directory.ad_domain_fqdn # identity.active_directory.ad_domain_fqdn
+$domainFqdn     = $cfg.identity.active_directory.domain_fqdn # identity.active_directory.domain_fqdn
 
 if (-not $sdnEnabled) {
     Write-Log "sdn_enabled is false — SDN is not configured for this cluster. Nothing to do." 'WARN'

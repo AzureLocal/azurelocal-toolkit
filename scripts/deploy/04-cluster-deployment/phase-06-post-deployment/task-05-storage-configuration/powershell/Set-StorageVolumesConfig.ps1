@@ -116,7 +116,7 @@ Write-Host ("-" * 56) -ForegroundColor DarkCyan
 $volumes  = @()
 $pathsMap = [ordered]@{}
 
-$clusterName = $cfg.compute.azure_local.cluster_name           # compute.azure_local.cluster_name
+$clusterName = $cfg.cluster.name           # cluster.name
 $resShort    = switch ($globalResiliency) {
     "Mirror"                  { "m2" }
     "MirrorAcceleratedParity" { "map" }

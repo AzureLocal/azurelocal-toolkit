@@ -102,10 +102,10 @@ if (-not $imgConfig.enabled) {
 }
 
 $images           = $imgConfig.images                                         # marketplace_images.images[]
-$subscriptionId   = $cfg.azure_platform.subscriptions.lab.id                  # azure_platform.subscriptions.lab.id
-$resourceGroup    = $cfg.compute.azure_local.arc_resource_group               # compute.azure_local.arc_resource_group
-$location         = $cfg.azure_platform.region                                # azure_platform.region
-$customLocName    = $cfg.compute.azure_local.azure_custom_location_name       # compute.azure_local.azure_custom_location_name
+$subscriptionId   = $cfg.azure.subscription_id                  # azure.subscription_id
+$resourceGroup    = $cfg.azure.resource_group               # azure.resource_group
+$location         = $cfg.azure.location                                # azure.location
+$customLocName    = $cfg.azure.custom_location       # azure.custom_location
 
 $customLocationId = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroup" +
                     "/providers/Microsoft.ExtendedLocation/customLocations/$customLocName"
