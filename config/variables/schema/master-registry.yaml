@@ -1,7 +1,7 @@
 # =============================================================================
 # Master Variable Registry - AzureLocal Cloud Team Cloud Management Platform
 # =============================================================================
-# Version: 5.0.19
+# Version: 5.0.20
 # Schema: variables.schema.json (v5.0.0)
 # Last Updated: 2026-11-11
 #
@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.20 (2026-11-11):
+#     - The parameters InfrastructureFile and LogPath of Set-ManagementGroupDisplayNames.ps1 (phase 01, task 01, which reads azure.tenant_id and landing_zone.management_groups[].name and display_name, keys that already existed) are registered under tools.arm_deployment.parameters.
 #   v5.0.19 (2026-11-11):
 #     - The parameters InfrastructureFile and LogPath of New-EntraSecurityGroups.ps1 (phase 03, task 02, which reads azure.tenant_id and identity.entra.groups[].name and purpose, keys that already existed) are registered under tools.arm_deployment.parameters.
 #   v5.0.18 (2026-11-09):
@@ -157,7 +159,7 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.19"
+  version: "5.0.20"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.5"
   last_updated: "2026-11-11"
@@ -166,6 +168,10 @@ _metadata:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-11"
+      version: "5.0.20"
+      change: "The parameters InfrastructureFile and LogPath of Set-ManagementGroupDisplayNames.ps1 (phase 01, task 01, which reads azure.tenant_id and landing_zone.management_groups[].name and display_name, keys that already existed) are registered under tools.arm_deployment.parameters."
+      reason: "Registry first: the script that sets the display name of existing management groups reads only keys that were already registered; its parameters are registered before it ships."
     - date: "2026-11-11"
       version: "5.0.19"
       change: "The parameters InfrastructureFile and LogPath of New-EntraSecurityGroups.ps1 (phase 03, task 02, which reads azure.tenant_id and identity.entra.groups[].name and purpose, keys that already existed) are registered under tools.arm_deployment.parameters."
@@ -18971,6 +18977,12 @@ tools:
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/powershell/New-EntraSecurityGroups.ps1","description":"New-EntraSecurityGroups.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id and identity.entra.groups[] (name, purpose) are read; the file is not validated as a whole."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/powershell/New-EntraSecurityGroups.ps1","description":"New-EntraSecurityGroups.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_02_azure_foundation_phase_01_landing_zones_full_deployment_task_01_configure_management_groups_powershell_Set_ManagementGroupDisplayNames_ps1:
+              type: object
+              area: "scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-01-configure-management-groups/powershell/Set-ManagementGroupDisplayNames.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-01-configure-management-groups/powershell/Set-ManagementGroupDisplayNames.ps1","description":"Set-ManagementGroupDisplayNames.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id and landing_zone.management_groups[] (name, display_name) are read; the file is not validated as a whole."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-01-configure-management-groups/powershell/Set-ManagementGroupDisplayNames.ps1","description":"Set-ManagementGroupDisplayNames.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
         event_fields:
           type: object
           properties:
