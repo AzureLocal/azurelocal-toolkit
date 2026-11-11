@@ -9,7 +9,7 @@
     forces an immediate resync, and reports the current sync status.
 
     Variables: All values come from infrastructure.yml
-      active_directory.ntp_servers[0]  -> $NTPServer
+      networking.ntp_servers[0]  -> $NTPServer
 
 .NOTES
     Author:       Azure Local Cloud AzureLocalCloud
@@ -28,7 +28,7 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 #region CONFIGURATION
-$NTPServer = "REPLACE_WITH_NTP_SERVER"   # active_directory.ntp_servers[0]
+$NTPServer = "REPLACE_WITH_NTP_SERVER"   # networking.ntp_servers[0]
 #endregion CONFIGURATION
 
 if ($NTPServer -match "^REPLACE_") {

@@ -11,8 +11,8 @@
 
     infrastructure.yml paths used:
       nodes[]                                         - Node names and management IPs
-      identity.accounts.account_local_admin_username  - Credential username
-      identity.accounts.account_local_admin_password  - KV reference for password
+      identity.local_admin.username  - Credential username
+      identity.local_admin.password  - KV reference for password
 
 .PARAMETER ConfigPath
     Path to infrastructure.yml. Auto-detected from .\configs\ if not specified.
@@ -118,8 +118,8 @@ function Get-ClusterConfig {
 
     if (-not $nodes) { throw "No nodes found under nodes in $ConfigPath." }
 
-    $adminUser    = $cfg.identity.accounts.account_local_admin_username
-    $adminPassUri = $cfg.identity.accounts.account_local_admin_password
+    $adminUser    = $cfg.identity.local_admin.username
+    $adminPassUri = $cfg.identity.local_admin.password
 
     return [PSCustomObject]@{
         Nodes        = @($nodes)

@@ -37,16 +37,16 @@
     Override log file path. Default: ./logs/<timestamp>_Phase03Verification.log
 
 .PARAMETER Gateway
-    Override default gateway from infrastructure.yml. Path: compute.azure_local.default_gateway
+    Override default gateway from infrastructure.yml. Path: networking.management.gateway
 
 .PARAMETER SubnetMask
-    Override subnet mask from infrastructure.yml. Path: compute.azure_local.subnet_mask
+    Override subnet mask from infrastructure.yml. Path: networking.management.subnet (a CIDR; the mask is worked out from it)
 
 .PARAMETER DnsServers
-    Override DNS servers from infrastructure.yml. Path: compute.azure_local.dns_servers
+    Override DNS servers from infrastructure.yml. Path: networking.management.dns_servers
 
 .PARAMETER NTPServers
-    Override NTP servers from infrastructure.yml. Path: identity.active_directory.ntp_servers
+    Override NTP servers from infrastructure.yml. Path: networking.ntp_servers
 
 .EXAMPLE
     .\Invoke-Phase03Verification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml
@@ -87,10 +87,10 @@ param(
     [string]$LogPath = "",
 
     # YAML-overridable values — empty string / empty array = use YAML
-    [string]  $Gateway    = "",        # compute.azure_local.default_gateway
-    [string]  $SubnetMask = "",        # compute.azure_local.subnet_mask
-    [string[]]$DnsServers = @(),       # compute.azure_local.dns_servers
-    [string[]]$NTPServers = @()        # identity.active_directory.ntp_servers
+    [string]  $Gateway    = "",        # networking.management.gateway
+    [string]  $SubnetMask = "",        # networking.management.subnet (as a mask)
+    [string[]]$DnsServers = @(),       # networking.management.dns_servers
+    [string[]]$NTPServers = @()        # networking.ntp_servers
 )
 
 Set-StrictMode -Version Latest
@@ -170,23 +170,23 @@ function Get-Config {
         }
     }
 
-    $az         = $cfg.compute.azure_local                           # compute.azure_local
-    $dnsServers = @($az.dns_servers)                                 # compute.azure_local.dns_servers
-    $ntpRaw     = @($cfg.identity.active_directory.ntp_servers)      # identity.active_directory.ntp_servers
+    $net        = Get-AzlManagementNetwork -Infrastructure $cfg      # networking.management
+    $dnsServers = @($net.DnsServers)                                 # networking.management.dns_servers
+    $ntpRaw     = @($cfg.networking.ntp_servers)      # networking.ntp_servers
     $ntpServer  = $ntpRaw -join ' '
-    $prefix     = Convert-SubnetMaskToPrefix $az.subnet_mask         # compute.azure_local.subnet_mask
+    $prefix     = Convert-SubnetMaskToPrefix $net.SubnetMask         # networking.management.subnet (as a mask)
 
     return [PSCustomObject]@{
         Nodes         = @($nodes)
-        Gateway       = $az.default_gateway                           # compute.azure_local.default_gateway
-        SubnetMask    = $az.subnet_mask                               # compute.azure_local.subnet_mask
+        Gateway       = $net.Gateway                           # networking.management.gateway
+        SubnetMask    = $net.SubnetMask                               # networking.management.subnet (as a mask)
         Prefix        = $prefix
-        DNSPrimary    = $dnsServers[0]                                # compute.azure_local.dns_servers[0]
-        DNSSecondary  = if ($dnsServers.Count -gt 1) { $dnsServers[1] } else { "" }  # compute.azure_local.dns_servers[1]
+        DNSPrimary    = $dnsServers[0]                                # networking.management.dns_servers[0]
+        DNSSecondary  = if ($dnsServers.Count -gt 1) { $dnsServers[1] } else { "" }  # networking.management.dns_servers[1]
         NTPServer     = $ntpServer
-        ManagementNIC = $cfg.network_config.management_nic_name       # network_config.management_nic_name
-        AdminUser     = $cfg.identity.accounts.account_local_admin_username   # identity.accounts.account_local_admin_username
-        AdminPassUri  = $cfg.identity.accounts.account_local_admin_password   # identity.accounts.account_local_admin_password
+        ManagementNIC = Get-AzlManagementNicName -Infrastructure $cfg  # nodes[].network_adapters[].name, or nodes[].management.adapter_name
+        AdminUser     = $cfg.identity.local_admin.username   # identity.local_admin.username
+        AdminPassUri  = $cfg.identity.local_admin.password   # identity.local_admin.password
     }
 }
 
@@ -424,8 +424,8 @@ Write-Log ($cfg | Select-Object Gateway, Prefix, DNSPrimary, DNSSecondary, NTPSe
 # 3. Interactive Get-Credential prompt
 Write-Log "--- Resolving credentials ---" HEADER
 if (-not $Credential) {
-    $adminUser    = $cfg.AdminUser                                   # identity.accounts.account_local_admin_username
-    $adminPassUri = $cfg.AdminPassUri                                # identity.accounts.account_local_admin_password
+    $adminUser    = $cfg.AdminUser                                   # identity.local_admin.username
+    $adminPassUri = $cfg.AdminPassUri                                # identity.local_admin.password
     Write-Log "Resolving credentials from Key Vault..."
     $adminPass = Resolve-KeyVaultRef -KvUri $adminPassUri
     if ($adminPass) {

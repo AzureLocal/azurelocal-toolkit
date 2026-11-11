@@ -10,7 +10,7 @@
     the Windows Time service.
 
     infrastructure.yml paths used:
-      active_directory.ntp_servers    - List of NTP servers (joined for manualpeerlist)
+      networking.ntp_servers    - List of NTP servers (joined for manualpeerlist)
       nodes[].management.ip_address   - PSRemoting connection target per node
       nodes[].name                    - Node hostname (display only)
 
@@ -106,9 +106,9 @@ function Get-ClusterConfig {
 
     $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 
-    $ntpServers = $cfg.identity.active_directory.ntp_servers
+    $ntpServers = $cfg.networking.ntp_servers
     if (-not $ntpServers -or $ntpServers.Count -eq 0) {
-        throw "identity.active_directory.ntp_servers not found or empty in $ConfigPath."
+        throw "networking.ntp_servers not found or empty in $ConfigPath."
     }
 
     $nodes = Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object {
@@ -118,8 +118,8 @@ function Get-ClusterConfig {
 
     if (-not $nodes) { throw "No nodes found under nodes in $ConfigPath." }
 
-    $adminUser    = $cfg.identity.accounts.account_local_admin_username
-    $adminPassUri = $cfg.identity.accounts.account_local_admin_password
+    $adminUser    = $cfg.identity.local_admin.username
+    $adminPassUri = $cfg.identity.local_admin.password
 
     return [PSCustomObject]@{
         NTPServers   = @($ntpServers)

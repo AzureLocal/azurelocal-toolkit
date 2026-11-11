@@ -26,10 +26,10 @@
 
     All values can be found in infrastructure.yml:
       -StaticIP      -> nodes[].management.ip_address
-      -Gateway       -> compute.azure_local.default_gateway
-      -PrefixLength  -> compute.azure_local.subnet_mask (e.g. 24 for 255.255.255.0)
-      -DNSPrimary    -> compute.azure_local.dns_servers[0]
-      -DNSSecondary  -> compute.azure_local.dns_servers[1]
+      -Gateway       -> networking.management.gateway
+      -PrefixLength  -> networking.management.subnet (the number after the slash, e.g. 24 for 192.0.2.0/24)
+      -DNSPrimary    -> networking.management.dns_servers[0]
+      -DNSSecondary  -> networking.management.dns_servers[1]
       -NTPServer     -> NTP peer (e.g. time.windows.com or internal NTP)
       -NewHostname   -> nodes[].name
 

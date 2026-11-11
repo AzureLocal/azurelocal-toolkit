@@ -135,21 +135,18 @@ function Resolve-ConfigPath {
 function Get-NodeConfigs {
     param([hashtable]$Config)
 
-    $azureLocal = $Config.compute.azure_local
-    $clusterNIC = $Config.network_config.management_nic_name
+    $net = Get-AzlManagementNetwork -Infrastructure $Config
 
-    if (-not $azureLocal.default_gateway) { throw "compute.azure_local.default_gateway not set in infrastructure.yml" }
-    if (-not $azureLocal.subnet_mask)     { throw "compute.azure_local.subnet_mask not set in infrastructure.yml" }
-    if (-not $azureLocal.dns_servers -or $azureLocal.dns_servers.Count -lt 2) { throw "compute.azure_local.dns_servers must have at least 2 entries in infrastructure.yml" }
-    if (-not $clusterNIC)                 { throw "network_config.management_nic_name not set in infrastructure.yml" }
+    if (-not $net.Gateway)    { throw "networking.management.gateway not set in infrastructure.yml" }
+    if (-not $net.SubnetMask) { throw "networking.management.subnet not set in infrastructure.yml (a CIDR such as 192.0.2.0/24)" }
+    if ($net.DnsServers.Count -lt 2) { throw "networking.management.dns_servers must have at least 2 entries in infrastructure.yml" }
 
-    # Convert subnet mask to prefix length
-    $maskBytes = $azureLocal.subnet_mask.Split('.') | ForEach-Object { [Convert]::ToString([int]$_, 2).PadLeft(8,'0') }
-    $prefixLength = ($maskBytes -join '').ToCharArray() | Where-Object { $_ -eq '1' } | Measure-Object | Select-Object -ExpandProperty Count
+    # networking.management.subnet is a CIDR: the prefix length is in it
+    $prefixLength = $net.PrefixLength
 
-    $gateway    = $azureLocal.default_gateway
-    $dnsPrimary = $azureLocal.dns_servers[0]
-    $dnsSecondary = $azureLocal.dns_servers[1]
+    $gateway    = $net.Gateway
+    $dnsPrimary = $net.DnsServers[0]
+    $dnsSecondary = $net.DnsServers[1]
 
     $nodeConfigs = [System.Collections.Generic.List[hashtable]]::new()
 
@@ -161,6 +158,11 @@ function Get-NodeConfigs {
             Write-Log "Node $nodeName has no management address (nodes[].management.ip_address) in infrastructure.yml — skipping" "WARN"
             continue
         }
+
+        # The OS name of the management adapter: nodes[].network_adapters[].os_name_override or name, or nodes[].management.adapter_name
+        $mgmtPort   = Get-AzlManagementAdapter -Infrastructure $Config -Node $entry.Node
+        $clusterNIC = if ($mgmtPort) { $mgmtPort.OsName } else { $null }
+        if (-not $clusterNIC) { throw "Node $nodeName has no management adapter name (nodes[].network_adapters[].name or nodes[].management.adapter_name) in infrastructure.yml" }
 
         $nodeConfigs.Add(@{
             NodeName      = $nodeName
@@ -439,8 +441,8 @@ try {
 
     # Get credentials
     if (-not $Credential) {
-        $adminUser    = $config.identity.accounts.account_local_admin_username
-        $adminPassUri = $config.identity.accounts.account_local_admin_password
+        $adminUser    = $config.identity.local_admin.username
+        $adminPassUri = $config.identity.local_admin.password
         Write-Log "Resolving credentials from Key Vault..."
         $adminPass = Resolve-KeyVaultRef -KvUri $adminPassUri
         if ($adminPass) {

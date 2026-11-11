@@ -25,11 +25,11 @@
     infrastructure.yml paths used:
       nodes[].management.ip_address               - PSRemoting connection IP per node
       nodes[].name                                - Target hostname per node
-      compute.azure_local.default_gateway         - Default gateway
-      compute.azure_local.subnet_mask             - Subnet mask (converted to prefix length)
-      compute.azure_local.dns_servers             - DNS server list (index 0=primary, 1=secondary)
-      identity.accounts.account_local_admin_username - Admin username
-      identity.accounts.account_local_admin_password - KV reference for admin password
+      networking.management.gateway               - Default gateway
+      networking.management.subnet                - Subnet (CIDR; the subnet mask is worked out from it, then converted to prefix length)
+      networking.management.dns_servers           - DNS server list (index 0=primary, 1=secondary)
+      identity.local_admin.username - Admin username
+      identity.local_admin.password - KV reference for admin password
 
 .PARAMETER ConfigPath
     Path to infrastructure.yml. Auto-detected from standard locations if not specified.
@@ -158,8 +158,8 @@ function Get-ClusterConfig {
 
     $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 
-    $az         = $cfg.compute.azure_local
-    $ntpServers = @($cfg.identity.active_directory.ntp_servers)
+    $net        = Get-AzlManagementNetwork -Infrastructure $cfg
+    $ntpServers = @($cfg.networking.ntp_servers)
 
     $nodes = Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object {
         [PSCustomObject]@{
@@ -170,13 +170,13 @@ function Get-ClusterConfig {
     }
 
     return [PSCustomObject]@{
-        Gateway      = $az.default_gateway
-        SubnetMask   = $az.subnet_mask
-        DnsServers   = @($az.dns_servers)
+        Gateway      = $net.Gateway
+        SubnetMask   = $net.SubnetMask
+        DnsServers   = @($net.DnsServers)
         NtpServers   = $ntpServers
         Nodes        = @($nodes)
-        AdminUser    = $cfg.identity.accounts.account_local_admin_username
-        AdminPassUri = $cfg.identity.accounts.account_local_admin_password
+        AdminUser    = $cfg.identity.local_admin.username
+        AdminPassUri = $cfg.identity.local_admin.password
     }
 }
 
@@ -265,9 +265,9 @@ $nodes        = $cfg.Nodes
 $adminUser    = $cfg.AdminUser
 $adminPassUri = $cfg.AdminPassUri
 
-if (-not $gateway)           { throw "compute.azure_local.default_gateway not found in config." }
-if (-not $subnetMask)        { throw "compute.azure_local.subnet_mask not found in config." }
-if ($dnsServers.Count -lt 1) { throw "compute.azure_local.dns_servers not found or empty in config." }
+if (-not $gateway)           { throw "networking.management.gateway not found in config." }
+if (-not $subnetMask)        { throw "networking.management.subnet not found in config (a CIDR such as 192.0.2.0/24)." }
+if ($dnsServers.Count -lt 1) { throw "networking.management.dns_servers not found or empty in config." }
 if ($nodes.Count -eq 0)      { throw "No nodes found under nodes in config." }
 
 $prefixLength = Convert-SubnetMaskToPrefix -Mask $subnetMask
