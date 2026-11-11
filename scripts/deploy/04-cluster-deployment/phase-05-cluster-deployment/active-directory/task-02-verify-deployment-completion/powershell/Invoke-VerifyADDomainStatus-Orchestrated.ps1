@@ -115,7 +115,7 @@ catch {
 $clusterNodes = @(Get-AzlInfrastructureNode -Infrastructure $cfg)                    # nodes[]
 $domainFqdn   = $cfg.identity.active_directory.domain_fqdn                      # identity.active_directory.domain_fqdn
 $ouPath       = $cfg.identity.active_directory.ou_path                   # identity.active_directory.ou_path
-$lcmUser      = $cfg.identity.active_directory.lcm_user.username                            # identity.active_directory.lcm_user.username
+$lcmUser      = $cfg['identity']?['active_directory']?['lcm_user']?['username']                            # identity.active_directory.lcm_user.username
 $clusterName  = $cfg.cluster.name                     # cluster.name
 
 Write-Log "Domain FQDN:    $domainFqdn"

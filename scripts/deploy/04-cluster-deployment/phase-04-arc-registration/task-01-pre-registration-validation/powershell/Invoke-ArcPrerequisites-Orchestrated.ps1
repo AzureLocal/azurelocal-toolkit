@@ -168,8 +168,8 @@ function Get-Config {
         AdminPassUri      = $cfg.identity.local_admin.password   # identity.local_admin.password
         TenantId          = $cfg.azure.tenant_id         # azure.tenant_id
         SubscriptionId    = $cfg.azure.subscription_id   # azure.subscription_id
-        SpnAppId          = $cfg.azure.automation_identity.client_id             # azure.automation_identity.client_id
-        SpnSecretUri      = $cfg.identity.service_principal.secret               # identity.service_principal.secret
+        SpnAppId          = $cfg['azure']?['automation_identity']?['client_id']             # azure.automation_identity.client_id
+        SpnSecretUri      = $cfg['identity']?['service_principal']?['secret']               # identity.service_principal.secret
         ResourceGroup     = $cfg.azure.resource_group                            # azure.resource_group
         ArcGatewayEnabled = [bool]$gw.Enabled                                    # scenario.outbound_path is arc_gateway or proxy_arc_gateway
         ArcGatewayId      = $gw.Id                                               # built from azure.subscription_id, the resource group and networking.outbound.arc_gateway.name

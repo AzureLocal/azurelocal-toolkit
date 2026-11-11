@@ -243,7 +243,7 @@ $ouPath     = if ($DomainOuPath -ne "") { $DomainOuPath }
               else { $yaml.identity.active_directory.ou_path }              # identity.active_directory.ou_path
 
 $lcmUser    = if ($LcmUsername -ne "") { $LcmUsername }
-              else { $yaml.identity.active_directory.lcm_user.username }                        # identity.active_directory.lcm_user.username
+              else { $yaml['identity']?['active_directory']?['lcm_user']?['username'] }                        # identity.active_directory.lcm_user.username
 
 Write-Log "Domain FQDN: $domainFqdn"
 Write-Log "OU Path:     $ouPath"

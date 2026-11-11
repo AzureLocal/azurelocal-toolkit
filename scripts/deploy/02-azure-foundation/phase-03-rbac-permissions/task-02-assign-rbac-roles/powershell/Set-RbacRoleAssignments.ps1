@@ -143,7 +143,7 @@ try {
 
     # Extract values from config using fixed paths
     $subscriptionId = $config.azure.subscription_id
-    $servicePrincipalAppId = $config.azure.automation_identity.client_id
+    $servicePrincipalAppId = $config['azure']?['automation_identity']?['client_id']
     
     # Extract Azure Local cluster resource group for resource group-level role assignments
     $clusterResourceGroup = $config.azure.resource_group

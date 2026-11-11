@@ -19,7 +19,7 @@ $SubscriptionId = $cfg.azure.subscription_id
 $ResourceGroup  = $cfg.azure.resource_group
 $Region         = $cfg.azure.location
 $ArcGatewayId   = $gateway.Id
-$SpnId          = $cfg.azure.automation_identity.client_id
+$SpnId          = $cfg['azure']?['automation_identity']?['client_id']
 $NodeNames      = @(Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object { $_.Name })
 
 $SpnSecret = Read-Host "Enter SPN secret" -AsPlainText

@@ -262,9 +262,9 @@ if ($ConfigPath) {
     }
 
     # LCM domain credentials (primary for domain-joined nodes)
-    $script:LcmUsername       = $cfg.identity.active_directory.lcm_user.username                                                           # identity.active_directory.lcm_user.username
-    $script:LcmPasswordUri    = $cfg.identity.active_directory.lcm_user.password                                                           # identity.active_directory.lcm_user.password
-    $script:NetbiosName       = $cfg.identity.active_directory.netbios_name                                                        # identity.active_directory.netbios_name
+    $script:LcmUsername       = $cfg['identity']?['active_directory']?['lcm_user']?['username']                                                           # identity.active_directory.lcm_user.username
+    $script:LcmPasswordUri    = $cfg['identity']?['active_directory']?['lcm_user']?['password']                                                           # identity.active_directory.lcm_user.password
+    $script:NetbiosName       = $cfg['identity']?['active_directory']?['netbios_name']                                                        # identity.active_directory.netbios_name
     # Parse the KV URI for the LCM secret name
     if ($script:LcmPasswordUri -match '^keyvault://([^/]+)/(.+)$') {
         $script:LcmKvName         = $Matches[1]

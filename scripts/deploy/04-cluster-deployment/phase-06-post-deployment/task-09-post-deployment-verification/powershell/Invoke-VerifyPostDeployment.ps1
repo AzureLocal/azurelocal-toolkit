@@ -197,9 +197,9 @@ function Resolve-KeyVaultRef {
 if (-not $Credential) {
     # Post-deployment: nodes are domain-joined and local admin is renamed by Azure Local.
     # Use the LCM domain account for PSRemoting.
-    $lcmUser       = $cfg.identity.active_directory.lcm_user.username         # identity.active_directory.lcm_user.username
-    $lcmPassUri    = $cfg.identity.active_directory.lcm_user.password          # identity.active_directory.lcm_user.password
-    $domainNetbios = $cfg.identity.active_directory.netbios_name       # identity.active_directory.netbios_name
+    $lcmUser       = $cfg['identity']?['active_directory']?['lcm_user']?['username']         # identity.active_directory.lcm_user.username
+    $lcmPassUri    = $cfg['identity']?['active_directory']?['lcm_user']?['password']          # identity.active_directory.lcm_user.password
+    $domainNetbios = $cfg['identity']?['active_directory']?['netbios_name']       # identity.active_directory.netbios_name
     $lcmFqUser     = if ($domainNetbios) { "$domainNetbios\$lcmUser" } else { $lcmUser }
     Write-Log "Resolving LCM credentials from Key Vault..."
     $lcmPass = Resolve-KeyVaultRef -KvUri $lcmPassUri

@@ -64,7 +64,7 @@ $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 
 # ── Build the AD group -> local groups list ────────────────────────────────────
 # identity.active_directory.security_groups[] of infrastructure.yml: name, purpose, local_groups (registry 4.1.0).
-$domainNetbios = $cfg.identity.active_directory.netbios_name                  # identity.active_directory.netbios_name
+$domainNetbios = $cfg['identity']?['active_directory']?['netbios_name']                  # identity.active_directory.netbios_name
 $sgConfig      = @($cfg.identity.active_directory.security_groups)            # identity.active_directory.security_groups[]
 
 # Build assignment list: [ { AdGroup, LocalGroups } ... ] — skip where local_groups is empty
@@ -151,9 +151,9 @@ function Resolve-KeyVaultRef {
 # 2. Key Vault — LCM account (domain account for PSRemoting to domain-joined nodes)
 # 3. Interactive Get-Credential prompt
 if (-not $Credential) {
-    $netBios    = $cfg.identity.active_directory.netbios_name            # identity.active_directory.netbios_name
-    $lcmUser    = $cfg.identity.active_directory.lcm_user.username              # identity.active_directory.lcm_user.username
-    $lcmPassUri = $cfg.identity.active_directory.lcm_user.password              # identity.active_directory.lcm_user.password
+    $netBios    = $cfg['identity']?['active_directory']?['netbios_name']            # identity.active_directory.netbios_name
+    $lcmUser    = $cfg['identity']?['active_directory']?['lcm_user']?['username']              # identity.active_directory.lcm_user.username
+    $lcmPassUri = $cfg['identity']?['active_directory']?['lcm_user']?['password']              # identity.active_directory.lcm_user.password
     # Prefix with DOMAIN\ so NTLM resolves correctly when connecting via IP from a non-domain machine
     $lcmUserFqn = "${netBios}\${lcmUser}"
     Write-Log "Resolving LCM credentials from Key Vault..."

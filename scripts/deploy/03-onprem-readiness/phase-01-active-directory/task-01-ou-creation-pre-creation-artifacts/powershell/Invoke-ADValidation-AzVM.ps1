@@ -83,7 +83,7 @@ if (-not $adDomainFqdn) { $adDomainFqdn = $config.identity.active_directory.doma
 $clusterOUPath = $config.identity.active_directory.ou_path
 if (-not $clusterOUPath) { $clusterOUPath = $config.identity.active_directory.ou_path }
 
-$lcmUsername = $config.identity.active_directory.lcm_user.username
+$lcmUsername = $config['identity']?['active_directory']?['lcm_user']?['username']
 $lcmSamAccount = if ($lcmUsername -match '^([^@]+)@') { $Matches[1] } else { $lcmUsername }
 
 # ============================================================================

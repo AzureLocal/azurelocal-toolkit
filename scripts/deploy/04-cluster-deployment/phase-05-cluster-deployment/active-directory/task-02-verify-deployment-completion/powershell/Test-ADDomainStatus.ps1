@@ -138,7 +138,7 @@ $yaml = Get-Content -Path $configFile -Raw | ConvertFrom-Yaml
 $nodeIPs     = @(Get-AzlInfrastructureNode -Infrastructure $yaml | ForEach-Object { $_.ManagementIp })   # nodes[].management.ip_address
 $domainFqdn  = $yaml.identity.active_directory.domain_fqdn                               # identity.active_directory.domain_fqdn
 $ouPath      = $yaml.identity.active_directory.ou_path                             # identity.active_directory.ou_path
-$lcmUser     = $yaml.identity.active_directory.lcm_user.username                                      # identity.active_directory.lcm_user.username
+$lcmUser     = $yaml['identity']?['active_directory']?['lcm_user']?['username']                                      # identity.active_directory.lcm_user.username
 $clusterName = $yaml.cluster.name                               # cluster.name
 
 Write-Log "Domain FQDN:  $domainFqdn"

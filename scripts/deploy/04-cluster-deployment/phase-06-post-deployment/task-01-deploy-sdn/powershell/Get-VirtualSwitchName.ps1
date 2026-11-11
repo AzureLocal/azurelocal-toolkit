@@ -109,9 +109,9 @@ if ($Credential) {
 } else {
     $adminUser    = $cfg.identity.local_admin.username          # identity.local_admin.username
     $adminPassUri = $cfg.identity.local_admin.password          # identity.local_admin.password
-    $lcmUser      = $cfg.identity.active_directory.lcm_user.username                  # identity.active_directory.lcm_user.username
-    $lcmPassUri   = $cfg.identity.active_directory.lcm_user.password                  # identity.active_directory.lcm_user.password
-    $netbiosName  = $cfg.identity.active_directory.netbios_name               # identity.active_directory.netbios_name
+    $lcmUser      = $cfg['identity']?['active_directory']?['lcm_user']?['username']                  # identity.active_directory.lcm_user.username
+    $lcmPassUri   = $cfg['identity']?['active_directory']?['lcm_user']?['password']                  # identity.active_directory.lcm_user.password
+    $netbiosName  = $cfg['identity']?['active_directory']?['netbios_name']               # identity.active_directory.netbios_name
 
     Write-Log "Resolving local admin credentials from Key Vault..."
     $adminPass = Resolve-KeyVaultRef -KvUri $adminPassUri

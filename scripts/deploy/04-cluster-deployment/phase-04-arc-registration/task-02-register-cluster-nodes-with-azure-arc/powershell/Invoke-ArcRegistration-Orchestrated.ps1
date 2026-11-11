@@ -216,8 +216,8 @@ function Get-Config {
         Region         = $cfg.azure.location                  # azure.location
         ResourceGroup  = $cfg.azure.resource_group                   # azure.resource_group
         ArcGatewayId   = $gw.Id                                      # networking.outbound.arc_gateway (empty unless scenario.outbound_path uses a gateway)
-        SpnAppId       = $cfg.azure.automation_identity.client_id      # azure.automation_identity.client_id
-        SpnSecretUri   = $cfg.identity.service_principal.secret      # identity.service_principal.secret
+        SpnAppId       = $cfg['azure']?['automation_identity']?['client_id']      # azure.automation_identity.client_id
+        SpnSecretUri   = $cfg['identity']?['service_principal']?['secret']      # identity.service_principal.secret
         AdminUser      = $cfg.identity.local_admin.username   # identity.local_admin.username
         AdminPassUri   = $cfg.identity.local_admin.password   # identity.local_admin.password
         Cloud          = "AzureCloud"

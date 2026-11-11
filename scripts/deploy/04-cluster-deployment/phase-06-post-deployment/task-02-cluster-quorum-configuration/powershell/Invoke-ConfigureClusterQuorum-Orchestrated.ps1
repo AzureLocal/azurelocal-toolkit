@@ -187,11 +187,11 @@ $resolvedWitSku  = if ($WitnessSku           -ne "") { $WitnessSku }           e
 $resolvedFsPath  = if ($FileSharePath        -ne "") { $FileSharePath }        else { $witness.Path }                                                             # cluster.witness.path (optional)
 $witnessRegion   = $cfg.azure.location                                                       # azure.location
 
-$lcmUser    = $cfg.identity.active_directory.lcm_user.username          # identity.active_directory.lcm_user.username
-$lcmPassUri = $cfg.identity.active_directory.lcm_user.password          # identity.active_directory.lcm_user.password
+$lcmUser    = $cfg['identity']?['active_directory']?['lcm_user']?['username']          # identity.active_directory.lcm_user.username
+$lcmPassUri = $cfg['identity']?['active_directory']?['lcm_user']?['password']          # identity.active_directory.lcm_user.password
 $localUser  = $cfg.identity.local_admin.username  # identity.local_admin.username
 $localPassUri=$cfg.identity.local_admin.password  # identity.local_admin.password
-$netbios    = $cfg.identity.active_directory.netbios_name        # identity.active_directory.netbios_name
+$netbios    = $cfg['identity']?['active_directory']?['netbios_name']        # identity.active_directory.netbios_name
 
 # ── Determine target node ─────────────────────────────────────────────────────
 $nodeIp = $null
