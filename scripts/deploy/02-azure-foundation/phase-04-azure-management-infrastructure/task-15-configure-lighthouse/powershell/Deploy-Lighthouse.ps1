@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-    Deploys Lighthouse server VM for Phoenix Azure Local infrastructure.
+    Deploys a Lighthouse server VM for Azure Local infrastructure.
 
 .DESCRIPTION
     This script creates:

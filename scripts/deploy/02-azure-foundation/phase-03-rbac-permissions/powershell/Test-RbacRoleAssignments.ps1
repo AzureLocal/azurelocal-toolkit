@@ -73,23 +73,9 @@ try {
     Write-Host "  Config loaded successfully" -ForegroundColor Green
 
     # Extract config values
-    # Handle different possible subscription structures
-    if ($config.azure_platform.subscriptions.demo) {
-        $subscriptionId = $config.azure_platform.subscriptions.demo.id
-    } elseif ($config.azure_platform.subscriptions.primary) {
-        $subscriptionId = $config.azure_platform.subscriptions.primary.id
-    } else {
-        # Get first subscription
-        $firstSubKey = $config.azure_platform.subscriptions.Keys | Select-Object -First 1
-        $subscriptionId = $config.azure_platform.subscriptions[$firstSubKey].id
-    }
+    $subscriptionId = $config.azure.subscription_id
 
-    # Handle different possible resource group structures
-    if ($config.azure_platform.resource_group_name) {
-        $targetResourceGroup = $config.azure_platform.resource_group_name
-    } else {
-        $targetResourceGroup = $config.azure_platform.resource_group_name
-    }
+    $targetResourceGroup = $config.azure.resource_group
 
     $subscriptionRoles = $config.identity.service_principal.roles.subscription
     $resourceGroupRoles = $config.identity.service_principal.roles.resource_group

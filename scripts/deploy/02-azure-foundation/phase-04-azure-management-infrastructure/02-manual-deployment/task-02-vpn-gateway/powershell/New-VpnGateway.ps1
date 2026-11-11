@@ -201,7 +201,7 @@ try {
         $VirtualNetworkName = $config.networking.azure.hub_spoke.vnet_name ?? "vnet-management"
     }
 
-    $location = $config.azure_platform.location ?? "eastus"
+    $location = $config.azure.location ?? "eastus"
     $isZoneRedundant = $GatewaySku -like '*AZ'
 
     Write-LogMessage "Resource Group: $ResourceGroupName" -Level Info

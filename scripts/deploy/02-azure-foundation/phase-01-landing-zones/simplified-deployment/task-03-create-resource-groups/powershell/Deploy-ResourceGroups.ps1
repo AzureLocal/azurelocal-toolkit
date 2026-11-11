@@ -10,9 +10,9 @@
 $config = Get-Content "./infrastructure.yml" | ConvertFrom-Yaml
 
 # Extract values
-$SubscriptionId    = $config.azure_platform.subscriptions.lab.id
-$ResourceGroupName = $config.azure_platform.resource_group_name
-$Location          = $config.compute.azure_local.cluster_location
+$SubscriptionId    = $config.azure.subscription_id
+$ResourceGroupName = $config.azure.resource_group
+$Location          = $config.azure.location
 
 Write-Host "Creating resource group: $ResourceGroupName" -ForegroundColor Cyan
 
