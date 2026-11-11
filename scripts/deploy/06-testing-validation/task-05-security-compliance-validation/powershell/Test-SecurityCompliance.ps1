@@ -170,7 +170,7 @@ function Test-EncryptionStatus {
             }
         }
         catch {
-            Write-Log "  $node: BitLocker check failed — $_" -Level "ERROR"
+            Write-Log "  ${node}: BitLocker check failed — $_" -Level "ERROR"
         }
     }
     return $results
@@ -197,7 +197,7 @@ function Test-WindowsDefenderStatus {
             Write-Log "  $node - RealTime=$($defender.RealTimeProtection), AV=$($defender.AntivirusEnabled), SigAge=$($defender.SignatureAge)d" -Level $(if ($rtOk -and $sigOk) { "SUCCESS" } else { "WARN" })
         }
         catch {
-            Write-Log "  $node: Defender AV check failed — $_" -Level "ERROR"
+            Write-Log "  ${node}: Defender AV check failed — $_" -Level "ERROR"
         }
     }
 }
@@ -214,10 +214,10 @@ function Test-AuditPolicies {
                 $enabledPolicies = ($output | Select-String "Success|Failure" | Where-Object { $_ -notmatch "No Auditing" }).Count
                 return @{ EnabledPolicies = $enabledPolicies }
             }
-            Write-Log "  $node: $($auditInfo.EnabledPolicies) audit policy categories enabled" -Level $(if ($auditInfo.EnabledPolicies -gt 0) { "SUCCESS" } else { "WARN" })
+            Write-Log "  ${node}: $($auditInfo.EnabledPolicies) audit policy categories enabled" -Level $(if ($auditInfo.EnabledPolicies -gt 0) { "SUCCESS" } else { "WARN" })
         }
         catch {
-            Write-Log "  $node: Audit policy check failed — $_" -Level "ERROR"
+            Write-Log "  ${node}: Audit policy check failed — $_" -Level "ERROR"
         }
     }
 }
@@ -257,7 +257,7 @@ Write-Log "========================================" -Level "HEADER"
 
 if ($ConfigPath) {
     $config = Import-InfrastructureConfig -Path $ConfigPath
-    if (-not $ClusterName -and $config) { $ClusterName = $config.platform.cluster_name }
+    if (-not $ClusterName -and $config) { $ClusterName = $config.cluster.name }
     if (-not $SubscriptionId -and $config) { $SubscriptionId = $config.azure.subscription_id }
     if (-not $ResourceGroupName -and $config) { $ResourceGroupName = $config.azure.resource_group }
 }

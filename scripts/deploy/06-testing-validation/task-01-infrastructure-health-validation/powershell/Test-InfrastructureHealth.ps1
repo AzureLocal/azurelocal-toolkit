@@ -216,7 +216,7 @@ Write-Log "========================================" -Level "HEADER"
 if ($ConfigPath) {
     $config = Import-InfrastructureConfig -Path $ConfigPath
     if (-not $ClusterName -and $config) {
-        $ClusterName = $config.platform.cluster_name
+        $ClusterName = $config.cluster.name
     }
 }
 if (-not $ClusterName) {

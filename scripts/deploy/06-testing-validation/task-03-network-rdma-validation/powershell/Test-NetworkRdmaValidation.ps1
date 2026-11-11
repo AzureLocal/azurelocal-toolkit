@@ -92,7 +92,7 @@ function Test-RdmaConfiguration {
             }
         }
         catch {
-            Write-Log "  $node: RDMA check failed — $_" -Level "ERROR"
+            Write-Log "  ${node}: RDMA check failed — $_" -Level "ERROR"
         }
     }
     return $results
@@ -118,7 +118,7 @@ function Test-DcbConfiguration {
                 }
             }
             else {
-                Write-Log "  $node: No QoS policies found" -Level "WARN"
+                Write-Log "  ${node}: No QoS policies found" -Level "WARN"
             }
 
             if ($dcbSettings.PFC) {
@@ -130,7 +130,7 @@ function Test-DcbConfiguration {
             $results += [PSCustomObject]@{ Node = $node; QosCount = ($dcbSettings.QosPolicy).Count; PfcCount = ($dcbSettings.PFC).Count }
         }
         catch {
-            Write-Log "  $node: DCB check failed — $_" -Level "ERROR"
+            Write-Log "  ${node}: DCB check failed — $_" -Level "ERROR"
         }
     }
     return $results
@@ -155,7 +155,7 @@ function Test-SmbDirectStatus {
             Write-Log "  $node - SMB 3.x connections: $($smbDirect.RdmaConnections), RDMA-capable: $($smbDirect.SmbDirectConnections)" -Level "INFO"
         }
         catch {
-            Write-Log "  $node: SMB Direct check failed — $_" -Level "ERROR"
+            Write-Log "  ${node}: SMB Direct check failed — $_" -Level "ERROR"
         }
     }
 }
@@ -194,7 +194,7 @@ Write-Log "========================================" -Level "HEADER"
 
 if ($ConfigPath) {
     $config = Import-InfrastructureConfig -Path $ConfigPath
-    if (-not $ClusterName -and $config) { $ClusterName = $config.platform.cluster_name }
+    if (-not $ClusterName -and $config) { $ClusterName = $config.cluster.name }
 }
 if (-not $ClusterName) {
     Write-Log "ClusterName is required." -Level "ERROR"
