@@ -1,7 +1,7 @@
 # =============================================================================
 # Master Variable Registry - AzureLocal Cloud Team Cloud Management Platform
 # =============================================================================
-# Version: 5.0.25
+# Version: 5.0.26
 # Schema: variables.schema.json (v5.0.0)
 # Last Updated: 2026-11-11
 #
@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.26 (2026-11-11):
+#     - The parameters InfrastructureFile and LogPath of Deploy-DataCollectionEndpoint.ps1 (phase 02 monitoring and observability, task 01, which reads operations.monitoring enabled, log_analytics_workspace, workspace_resource_group and data_collection_endpoint, azure.subscription_id, azure.location and tags, keys that already existed) are registered under tools.arm_deployment.parameters.
 #   v5.0.25 (2026-11-11):
 #     - The parameters InfrastructureFile and LogPath of Deploy-KeyVaults.ps1 (phase 04, manual deployment, task 10, which reads key_vaults[] name, subscription_id, resource_group and purpose, scenario.environment_class, azure.location, tags and the keyvault:// references, keys that already existed) are registered under tools.arm_deployment.parameters.
 #   v5.0.24 (2026-11-11):
@@ -169,7 +171,7 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.25"
+  version: "5.0.26"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.5"
   last_updated: "2026-11-11"
@@ -178,6 +180,10 @@ _metadata:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-11"
+      version: "5.0.26"
+      change: "The parameters InfrastructureFile and LogPath of Deploy-DataCollectionEndpoint.ps1 (phase 02 monitoring and observability, task 01, which reads operations.monitoring enabled, log_analytics_workspace, workspace_resource_group and data_collection_endpoint, azure.subscription_id, azure.location and tags, keys that already existed) are registered under tools.arm_deployment.parameters."
+      reason: "Registry first: the script that creates the data collection endpoint reads only keys that were already registered; its parameters are registered before it ships."
     - date: "2026-11-11"
       version: "5.0.25"
       change: "The parameters InfrastructureFile and LogPath of Deploy-KeyVaults.ps1 (phase 04, manual deployment, task 10, which reads key_vaults[] name, subscription_id, resource_group and purpose, scenario.environment_class, azure.location, tags and the keyvault:// references, keys that already existed) are registered under tools.arm_deployment.parameters."
@@ -19043,6 +19049,12 @@ tools:
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault/powershell/Deploy-KeyVaults.ps1","description":"Deploy-KeyVaults.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.location, tags, scenario.environment_class, key_vaults[] (name, subscription_id, resource_group, purpose) and the keyvault:// references anywhere in the file (names only) are read; the file is not validated as a whole."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault/powershell/Deploy-KeyVaults.ps1","description":"Deploy-KeyVaults.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_05_operational_foundations_phase_02_monitoring_observability_task_01_configure_log_analytics_workspace_powershell_Deploy_DataCollectionEndpoint_ps1:
+              type: object
+              area: "scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Deploy-DataCollectionEndpoint.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Deploy-DataCollectionEndpoint.ps1","description":"Deploy-DataCollectionEndpoint.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.subscription_id, azure.location, tags and operations.monitoring (enabled, log_analytics_workspace, workspace_resource_group, data_collection_endpoint) are read; the file is not validated as a whole."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Deploy-DataCollectionEndpoint.ps1","description":"Deploy-DataCollectionEndpoint.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
         event_fields:
           type: object
           properties:
