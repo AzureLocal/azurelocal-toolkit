@@ -35,15 +35,15 @@
     Any explicitly supplied parameters override the config values.
 
 .PARAMETER ResourceGroupName
-    Resource group containing the cluster. (azure_platform.resource_group_name)
+    Resource group containing the cluster. (azure.resource_group)
     Auto-resolved from ConfigPath if not supplied.
 
 .PARAMETER ClusterName
-    Name of the Azure Local cluster. (compute.azure_local.cluster_name)
+    Name of the Azure Local cluster. (cluster.name)
     Auto-resolved from ConfigPath if not supplied.
 
 .PARAMETER SubscriptionId
-    Azure subscription ID. (azure_platform.azure_identity.azure_subscription_id)
+    Azure subscription ID. (azure.subscription_id)
     Auto-resolved from ConfigPath if not supplied.
 
 .PARAMETER NodeIPs
@@ -51,11 +51,11 @@
     Auto-resolved from ConfigPath if not supplied.
 
 .PARAMETER LocalAdminUsername
-    Local admin username for PSRemoting. (identity.accounts.account_local_admin_username)
+    Local admin username for PSRemoting. (identity.local_admin.username)
     Auto-resolved from ConfigPath if not supplied.
 
 .PARAMETER LocalAdminPassword
-    Local admin password as SecureString. (identity.accounts.account_local_admin_password)
+    Local admin password as SecureString. (identity.local_admin.password)
     Auto-resolved from ConfigPath if not supplied.
 
 .PARAMETER KeyVaultName
@@ -66,7 +66,7 @@
     Subscription ID where Key Vault resides. Defaults to SubscriptionId if not set.
 
 .PARAMETER TenantId
-    Azure AD tenant ID for SPN authentication. (azure_platform.azure_tenants[*].aztenant_id)
+    Azure AD tenant ID for SPN authentication. (azure.tenant_id)
 
 .PARAMETER SPNClientId
     Service Principal app/client ID. If omitted, retrieved from Key Vault.
@@ -145,20 +145,20 @@ param(
 
     # --- Cluster / Environment (auto-resolved from config; override here if needed) ---
     [Parameter(Mandatory = $false)]
-    [string]$ResourceGroupName = "",   # azure_platform.resource_group_name
+    [string]$ResourceGroupName = "",   # azure.resource_group
 
     [Parameter(Mandatory = $false)]
-    [string]$ClusterName = "",         # compute.azure_local.cluster_name
+    [string]$ClusterName = "",         # cluster.name
 
     [Parameter(Mandatory = $false)]
-    [string]$SubscriptionId = "",      # azure_platform.azure_identity.azure_subscription_id
+    [string]$SubscriptionId = "",      # azure.subscription_id
 
     [Parameter(Mandatory = $false)]
     [string[]]$NodeIPs = @(),          # nodes[].management.ip_address
 
     # --- Node credentials (direct — tier 1, override; tier 2 = KV from config) ---
     [Parameter(Mandatory = $false)]
-    [string]$LocalAdminUsername,       # identity.accounts.account_local_admin_username
+    [string]$LocalAdminUsername,       # identity.local_admin.username
 
     [Parameter(Mandatory = $false)]
     [securestring]$LocalAdminPassword,
@@ -178,7 +178,7 @@ param(
 
     # --- SPN Authentication ---
     [Parameter(Mandatory = $false)]
-    [string]$TenantId = "",        # azure_platform.azure_tenants[*].aztenant_id
+    [string]$TenantId = "",        # azure.tenant_id
 
     [Parameter(Mandatory = $false)]
     [string]$SPNClientId,
@@ -228,10 +228,10 @@ if ($ConfigPath) {
     $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 
     # Cluster identity — override only if param not explicitly provided
-    if (-not $ResourceGroupName) { $ResourceGroupName = $cfg.azure_platform.resource_group_name }                                      # azure_platform.resource_group_name
-    if (-not $ClusterName)       { $ClusterName       = $cfg.compute.azure_local.cluster_name }                                        # compute.azure_local.cluster_name
-    if (-not $SubscriptionId)    { $SubscriptionId    = $cfg.azure_platform.subscriptions.lab.id }                                    # azure_platform.subscriptions.lab.id
-    if (-not $TenantId)          { $TenantId          = $cfg.azure_platform.tenant.id }                                                # azure_platform.tenant.id
+    if (-not $ResourceGroupName) { $ResourceGroupName = $cfg.azure.resource_group }                                      # azure.resource_group
+    if (-not $ClusterName)       { $ClusterName       = $cfg.cluster.name }                                        # cluster.name
+    if (-not $SubscriptionId)    { $SubscriptionId    = $cfg.azure.subscription_id }                                    # azure.subscription_id
+    if (-not $TenantId)          { $TenantId          = $cfg.azure.tenant_id }                                                # azure.tenant_id
 
     # Key Vault — resolve from security section
     if (-not $KeyVaultName)      { $KeyVaultName      = $cfg.security.keyvault.platform_keyvault_name }                                # security.keyvault.platform_keyvault_name
@@ -248,11 +248,11 @@ if ($ConfigPath) {
 
     # Local admin credentials — resolve from identity section
     if (-not $LocalAdminUsername) {
-        $LocalAdminUsername = $cfg.identity.accounts.account_local_admin_username                                                      # identity.accounts.account_local_admin_username
+        $LocalAdminUsername = $cfg.identity.local_admin.username                                                      # identity.local_admin.username
     }
     # If password is a keyvault:// URI, extract vault name + secret name for KV lookup
     if (-not $LocalAdminPassword) {
-        $rawPwd = $cfg.identity.accounts.account_local_admin_password                                                                  # identity.accounts.account_local_admin_password
+        $rawPwd = $cfg.identity.local_admin.password                                                                  # identity.local_admin.password
         if ($rawPwd -match '^keyvault://([^/]+)/(.+)$') {
             if (-not $KeyVaultName) { $KeyVaultName = $Matches[1] }
             $LocalAdminPasswordSecretName = $Matches[2]   # e.g. local-admin-password
@@ -262,9 +262,9 @@ if ($ConfigPath) {
     }
 
     # LCM domain credentials (primary for domain-joined nodes)
-    $script:LcmUsername       = $cfg.identity.accounts.account_lcm_username                                                           # identity.accounts.account_lcm_username
-    $script:LcmPasswordUri    = $cfg.identity.accounts.account_lcm_password                                                           # identity.accounts.account_lcm_password
-    $script:NetbiosName       = $cfg.identity.active_directory.ad_netbios_name                                                        # identity.active_directory.ad_netbios_name
+    $script:LcmUsername       = $cfg.identity.active_directory.lcm_user.username                                                           # identity.active_directory.lcm_user.username
+    $script:LcmPasswordUri    = $cfg.identity.active_directory.lcm_user.password                                                           # identity.active_directory.lcm_user.password
+    $script:NetbiosName       = $cfg.identity.active_directory.netbios_name                                                        # identity.active_directory.netbios_name
     # Parse the KV URI for the LCM secret name
     if ($script:LcmPasswordUri -match '^keyvault://([^/]+)/(.+)$') {
         $script:LcmKvName         = $Matches[1]
