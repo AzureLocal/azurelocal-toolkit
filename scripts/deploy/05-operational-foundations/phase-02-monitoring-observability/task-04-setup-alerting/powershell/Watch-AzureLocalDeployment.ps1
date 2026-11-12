@@ -71,10 +71,11 @@ $Script:ClusterConfig = @{
     NodeIPs = @("192.168.211.11", "192.168.211.12", "192.168.211.13", "192.168.211.14")
     NodeFQDNs = @("azl-lab-01-n01.azlocal.mgmt", "azl-lab-01-n02.azlocal.mgmt", "azl-lab-01-n03.azlocal.mgmt", "azl-lab-01-n04.azlocal.mgmt")
     NodeHostnames = @("azl-lab-01-n01", "azl-lab-01-n02", "azl-lab-01-n03", "azl-lab-01-n04")
-    LocalPassword = "!!AzureLocal2025!!"
+    LocalPassword = "REPLACE_LOCAL_PASSWORD"
     DomainUser = "azlocal\administrator"
     LocalUser = "Administrator"
 }
+if ($Script:ClusterConfig.LocalPassword -like 'REPLACE_*') { throw 'Set the values of $Script:ClusterConfig in Watch-AzureLocalDeployment.ps1 before running it. Never commit the edited file.' }
 
 Write-Host "🚀 Azure Local Cloud Azure Local Deployment Monitor" -ForegroundColor Cyan
 Write-Host "=================================================" -ForegroundColor Cyan

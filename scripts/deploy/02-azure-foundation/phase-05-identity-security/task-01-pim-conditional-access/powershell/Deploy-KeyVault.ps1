@@ -192,7 +192,7 @@ Write-Host "  Vault URI: https://$KeyVaultName.vault.azure.net/" -ForegroundColo
 Write-Host ""
 Write-Host "Next Steps:" -ForegroundColor Cyan
 Write-Host "  1. Store admin credentials in Key Vault" -ForegroundColor Yellow
-Write-Host "     `$secret = ConvertTo-SecureString '!!AzureLocal2025!!' -AsPlainText -Force" -ForegroundColor Gray
+Write-Host "     `$secret = ConvertTo-SecureString '<your-password>' -AsPlainText -Force" -ForegroundColor Gray
 Write-Host "     Set-AzKeyVaultSecret -VaultName '$KeyVaultName' -Name 'admin-password' -SecretValue `$secret" -ForegroundColor Gray
 Write-Host ""
 Write-Host "  2. Store domain admin credentials" -ForegroundColor Yellow
