@@ -22,7 +22,7 @@ All under `config/variables`. Generated files say so in their first lines; do no
 | File | What it is |
 | --- | --- |
 | [`schema/master-registry.yaml`](../schema/master-registry.yaml) | The master. Every variable, with type, default, allowed values, since version, and which purposes read it. |
-| [`schema/infrastructure.schema.json`](../schema/infrastructure.schema.json) | **Generated.** The contract: JSON Schema draft 2020-12. Its `$id` is `https://azurelocal.cloud/schemas/infrastructure/5/infrastructure.schema.json`. A stub copy stays at `config/infrastructure/infrastructure.schema.json` for tools that read that path. |
+| [`schema/infrastructure.schema.json`](../schema/infrastructure.schema.json) | **Generated.** The contract: JSON Schema draft 2020-12. Its `$id` is `https://azurelocal.cloud/schemas/infrastructure/5/infrastructure.schema.json`. |
 | [`schema/purposes/`](../schema/purposes) | **Generated.** The part of the schema one tool reads (`ztp`, `os-configuration`, `deployment`, `cicd-infra`, `monitoring`, `discovery`). |
 | [`templates/infrastructure.master.yml`](../templates/infrastructure.master.yml) | **Generated.** Every variable, with comments and the allowed values. [`templates/scenarios/`](../templates/scenarios) has it for one scenario choice; [`templates/purposes/`](../templates/purposes) only the variables one tool reads. |
 | [`examples/infrastructure.example.yml`](../examples/infrastructure.example.yml) | A complete worked file with every section and placeholder values: Active Directory, Storage Spaces Direct, switched, simplified provisioning, ARM. Start here for realistic values. |

@@ -403,14 +403,14 @@ Schema 5.6.4 adds optional keys to `hardware.sbe`: `requirement` (`required` or 
 Other rules: AZL-033 (the requirement keys are consistent), AZL-030 accepts `source_path` for a delivery, AZL-015 accepts `source_path` or `requirement` in place of `bundle_path`.
 
 ## To registry 5.0.0: where the files went
-The registry became the source of the schema. Nothing in `infrastructure.yml` changes; the files moved. Tools that read the old paths keep working through two generated stubs.
+The registry became the source of the schema. Nothing in `infrastructure.yml` changes; the files moved. The old folder `config/infrastructure` is gone (removed after registry 5.0.27): `config/variables` is the only place for the registry, the schemas, the templates, the examples and the documents, and azurelocal-ztp, azurelocal-sonar and Trailwright read the files there.
 
 | Was | Now |
 | --- | --- |
-| `config/infrastructure/infrastructure.schema.json` | `config/variables/schema/infrastructure.schema.json` (generated). A stub copy stays at the old path. |
-| `config/infrastructure/infrastructure.example.yml`, `infrastructure.ztp.example.yml` | `config/variables/examples/`. A stub copy of each stays at the old path. |
+| `config/infrastructure/infrastructure.schema.json` | `config/variables/schema/infrastructure.schema.json` (generated) |
+| `config/infrastructure/infrastructure.example.yml`, `infrastructure.ztp.example.yml` | `config/variables/examples/` |
 | `config/infrastructure/examples/*.yml` | `config/variables/examples/scenarios/` |
-| `config/infrastructure/README.md`, `MIGRATION.md`, `VARIABLES.md` | `config/variables/docs/` (pointer files stay) |
+| `config/infrastructure/README.md`, `MIGRATION.md`, `VARIABLES.md` | `config/variables/docs/` |
 | `config/infrastructure/variables-reference.metadata.psd1` | `config/variables/docs/variables-reference.metadata.psd1` |
 | (new) | `config/variables/schema/purposes/`, `config/variables/templates/` (generated) |
 

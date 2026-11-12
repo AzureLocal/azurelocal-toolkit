@@ -127,7 +127,6 @@ The repository is designed to be configuration-driven.
 | `config/variables/docs/` | How to fill in `infrastructure.yml`, the migration guide, the generated variables reference |
 | `config/variables/scripts/` | Validators, the registry reader and the artifact generator |
 | `config/variables/reports/` | Generated validation and drift reports |
-| `config/infrastructure/` | Generated stubs (schema, two example files) for tools that read those paths in place, and pointers to the new places |
 | `scripts/common/utilities/helpers/config-loader.ps1` | PowerShell loader and export helpers for configuration data |
 
 Where supported, automation should consume variables from the shared variable model rather than hardcoded values.

@@ -73,3 +73,6 @@ node_modules/
 /discovery/
 infrastructure.discovered.yml
 infrastructure*.yml.bak.*
+
+# Python cache
+__pycache__/

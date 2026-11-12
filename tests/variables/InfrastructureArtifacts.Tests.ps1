@@ -1,6 +1,6 @@
 #Requires -Version 7.0
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
-# The infrastructure.yml schema, the master template, the purpose templates and schemas, the stubs and the variables reference are
+# The infrastructure.yml schema, the master template, the purpose templates and schemas and the variables reference are
 # generated from config/variables/schema/master-registry.yaml. These tests regenerate them and fail when one is stale, and prove
 # that a purpose template is a strict subset of the master file and that a real file can be cut down to each purpose.
 
@@ -35,7 +35,7 @@ BeforeAll {
 }
 
 Describe 'Generated files are current' {
-    It 'New-InfrastructureArtifacts.ps1 -Check finds nothing stale (schema, purpose schemas, templates, stubs, VARIABLES.md)' {
+    It 'New-InfrastructureArtifacts.ps1 -Check finds nothing stale (schema, purpose schemas, templates, VARIABLES.md)' {
         $out = & pwsh -NoProfile -File (Join-Path $script:Vars 'scripts\New-InfrastructureArtifacts.ps1') -Check 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0 -Because $out
         $out | Should -Match 'generated files are current'
@@ -43,14 +43,6 @@ Describe 'Generated files are current' {
 
     It '<_> carries the generated-from header' -ForEach 'schema\infrastructure.schema.json', 'templates\infrastructure.master.yml', 'templates\purposes\ztp.yml', 'schema\purposes\ztp.schema.json' {
         (Get-Content -LiteralPath (Join-Path $script:Vars $_) -TotalCount 5 | Out-String) | Should -Match 'GENERATED from config/variables/schema/master-registry.yaml'
-    }
-
-    It 'the stubs at config/infrastructure say they are stubs and point to the source' {
-        $stub = Join-Path $script:Repo 'config\infrastructure'
-        (Get-Content (Join-Path $stub 'infrastructure.schema.json') -Raw) | Should -Match 'STUB'
-        (Get-Content (Join-Path $stub 'infrastructure.example.yml') -Raw) | Should -Match '# STUB: a copy of config/variables/examples/infrastructure.example.yml'
-        (Get-Content (Join-Path $stub 'infrastructure.ztp.example.yml') -Raw) | Should -Match '# STUB: a copy of config/variables/examples/infrastructure.ztp.example.yml'
-        ((Get-Content (Join-Path $stub 'infrastructure.schema.json') -Raw | ConvertFrom-Json).'$id') | Should -Be ((Get-Content (Join-Path $script:Vars 'schema\infrastructure.schema.json') -Raw | ConvertFrom-Json).'$id')
     }
 
     It 'the validator reads the generated schema' {

@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-    Builds the infrastructure.yml schema, the master template, the purpose templates and schemas, and the stubs, from the master registry.
+    Builds the infrastructure.yml schema, the master template, the purpose templates and schemas, from the master registry.
 
 .DESCRIPTION
     config/variables/schema/master-registry.yaml is the master of every variable. Nothing below is edited by hand:
@@ -12,7 +12,6 @@
     * templates/scenarios/master.<key>-<value>.yml   the master for one scenario choice (scenario.identity: local_identity, ...)
     * templates/purposes/<purpose>.yml          only the variables one purpose reads: a strict subset of the master
     * docs/VARIABLES.md                         the variables reference (New-InfrastructureVariablesReference.ps1, run at the end)
-    * config/infrastructure/*                   thin generated stubs for the tools that read the old paths in place
 
     The curated worked examples (config/variables/examples/*.yml) are written by hand and tested against the schema and the rules.
 
@@ -101,17 +100,6 @@ foreach ($key in $scenario.Keys) {
         $sameAsMaster = ((@($text -split "`n") | Select-Object -Skip 4) -join "`n") -ceq ((@($masterText -split "`n") | Select-Object -Skip 4) -join "`n")
         if ($sameAsMaster) { continue }
         $files[(Join-Path $variablesRoot "templates/scenarios/master.$($key -replace '_', '-')-$($value -replace '_', '-').yml")] = $text
-    }
-}
-
-# stubs for the tools that read the old paths in place (azurelocal-ztp, azurelocal-sonar, Trailwright)
-$stubDir = Join-Path $repoRoot 'config/infrastructure'
-$files[(Join-Path $stubDir 'infrastructure.schema.json')] = ConvertTo-JsonText $fullSchema "STUB. $generatedNote The schema now lives at config/variables/schema/infrastructure.schema.json; this copy exists for tools that read the old path (azurelocal-ztp, azurelocal-sonar, Trailwright)."
-foreach ($name in 'infrastructure.example.yml', 'infrastructure.ztp.example.yml') {
-    $src = Join-Path $variablesRoot "examples/$name"
-    if (Test-Path -LiteralPath $src) {
-        $body = ([IO.File]::ReadAllText($src) -replace "`r`n", "`n")
-        $files[(Join-Path $stubDir $name)] = "# STUB: a copy of config/variables/examples/$name for tools that read this path in place (azurelocal-ztp, azurelocal-sonar, Trailwright).`n# Do not edit this copy: edit the original; New-InfrastructureArtifacts.ps1 refreshes it and a test fails when it differs.`n" + $body
     }
 }
 
