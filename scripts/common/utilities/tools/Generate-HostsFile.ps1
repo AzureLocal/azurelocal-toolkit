@@ -42,7 +42,7 @@ param(
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 # Load configuration
 if ($Solution) {
-    . "$PSScriptRoot\config-loader.ps1"
+    . (Join-Path $PSScriptRoot (Join-Path ".." (Join-Path "helpers" "config-loader.ps1")))
     $config = Get-SolutionConfig -Solution $Solution
     
     # Build entries from config
@@ -57,7 +57,7 @@ if ($Solution) {
     if ($configNodes.Count -gt 0) {
         $entries += "`n# Azure Local Nodes`n"
         foreach ($nodeData in $configNodes) {
-            $entries += "$($nodeData.ManagementIp)    $($nodeData.Name).$($config.identity.active_directory.fqdn) $($nodeData.Name)`n"
+            $entries += "$($nodeData.ManagementIp)    $($nodeData.Name).$($config.identity.active_directory.domain_fqdn) $($nodeData.Name)`n"
         }
     }
     
@@ -66,7 +66,7 @@ if ($Solution) {
         $entries += "`n# Node iDRACs`n"
         foreach ($nodeData in $configNodes) {
             if ($nodeData.BmcIp) {
-                $entries += "$($nodeData.BmcIp)    $($nodeData.Name)-idrac.$($config.identity.active_directory.fqdn) $($nodeData.Name)-idrac`n"
+                $entries += "$($nodeData.BmcIp)    $($nodeData.Name)-idrac.$($config.identity.active_directory.domain_fqdn) $($nodeData.Name)-idrac`n"
             }
         }
     }

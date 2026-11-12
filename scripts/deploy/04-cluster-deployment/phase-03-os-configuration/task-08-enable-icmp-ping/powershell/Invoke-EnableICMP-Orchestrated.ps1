@@ -11,8 +11,8 @@
 
     infrastructure.yml paths used:
       nodes[]                          - Node names and management IPs
-      identity.accounts.account_local_admin_username
-      identity.accounts.account_local_admin_password
+      identity.local_admin.username
+      identity.local_admin.password
 
 .NOTES
     Author:       Azure Local Cloud AzureLocalCloud
@@ -112,8 +112,8 @@ function Get-ClusterConfig {
 
     if (-not $nodes) { throw "No nodes found under nodes in $ConfigPath." }
 
-    $adminUser    = $cfg.identity.accounts.account_local_admin_username
-    $adminPassUri = $cfg.identity.accounts.account_local_admin_password
+    $adminUser    = $cfg.identity.local_admin.username
+    $adminPassUri = $cfg.identity.local_admin.password
 
     return [PSCustomObject]@{
         Nodes        = @($nodes)

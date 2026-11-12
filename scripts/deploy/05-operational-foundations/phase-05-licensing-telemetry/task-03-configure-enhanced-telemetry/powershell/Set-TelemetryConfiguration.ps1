@@ -248,7 +248,7 @@ try {
         $NodeNames = Get-AzlInfrastructureNode -Infrastructure $config | ForEach-Object { $_.Name }
     }
     if (-not $ClusterName -and $config.cluster) {
-        $ClusterName = $config.compute.azure_local.cluster_name
+        $ClusterName = $config.cluster.name
     }
 
     if (-not $NodeNames) {

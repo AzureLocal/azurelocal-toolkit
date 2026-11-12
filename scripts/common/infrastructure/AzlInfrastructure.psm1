@@ -17,6 +17,11 @@
     Get-AzlArcMachineName     A node's Arc machine name: arc_machine_name, else the node name.
     Get-AzlInfrastructureNode The nodes[] of the file, one object each: Name, ManagementIp, BmcIp, ArcMachineName and the entry.
                               The one reader of the node list for the per-task scripts.
+    Get-AzlManagementNetwork  The management network every machine shares: subnet, prefix length, subnet mask, gateway, DNS servers,
+                              VLAN (networking.management).
+    Get-AzlManagementNicName  The OS name of the management adapter when every node has the same one.
+    Get-AzlArcGateway         The Azure Arc gateway: whether it is used, its name, resource group and resource ID.
+    Get-AzlClusterWitness     The quorum witness: type, storage account, resource group, SKU, file share path.
     Get-AzlNodeNetworkAdapter A node's ports: nodes[].network_adapters (5.2), or one port made from nodes[].management.
     Get-AzlManagementAdapter  The port that owns a node's management address, with the address, mask, gateway, DNS and
                               the VLAN the host tags, defaults applied from networking.management.
@@ -170,7 +175,7 @@ function Get-AzlManagementAdapter {
         The port that owns a node's management address, with networking.management's defaults applied. $null when the node
         has no such port, or more than one.
     .OUTPUTS
-        Name, MacAddress (AA:BB:CC:DD:EE:FF), IpAddress, PrefixLength, SubnetMask, Gateway, DnsServers, VlanId (the VLAN the
+        Name, OsName (os_name_override when the port sets one, else Name: for a node described with nodes[].management, the adapter_name, which is the OS name), MacAddress (AA:BB:CC:DD:EE:FF), IpAddress, PrefixLength, SubnetMask, Gateway, DnsServers, VlanId (the VLAN the
         host tags: 0 for an access port), VlanMode, IpAssignment, Source (network_adapters or management), Path.
     .EXAMPLE
         $infra.nodes | ForEach-Object { Get-AzlManagementAdapter -Infrastructure $infra -Node $_ }
@@ -187,6 +192,7 @@ function Get-AzlManagementAdapter {
     $siteVlan = if ($null -ne $mgmt['vlan_id']) { [int]$mgmt['vlan_id'] } else { 0 }
     [pscustomobject]@{
         Name         = [string]$a['name']
+        OsName       = $(if ($a.Contains('os_name_override') -and "$($a['os_name_override'])" -ne '') { [string]$a['os_name_override'] } else { [string]$a['name'] })
         MacAddress   = ConvertTo-AzlMac $a['mac_address']
         IpAddress    = $(if ($a.Contains('ip_address')) { [string]$a['ip_address'] } else { $null })
         PrefixLength = $prefix
@@ -427,6 +433,119 @@ function Get-AzlInfrastructureNode {
         $bmc = ''
         if ($entry['bmc'] -is [System.Collections.IDictionary] -and $entry['bmc']['ip_address']) { $bmc = [string]$entry['bmc']['ip_address'] }
         [pscustomobject]@{ Name = $nodeName; ManagementIp = $ip; BmcIp = $bmc; ArcMachineName = (Get-AzlArcMachineName -Node $entry); Node = $entry }
+    }
+}
+
+function Get-AzlManagementNetwork {
+    <#
+    .SYNOPSIS
+        The management network every machine shares: networking.management, with the subnet mask worked out from the CIDR.
+    .DESCRIPTION
+        Subnet is networking.management.subnet (CIDR). PrefixLength and SubnetMask come from it (255.255.255.0 for /24). Gateway,
+        DnsServers (an array) and VlanId are networking.management.gateway, dns_servers and vlan_id. A key the file does not set is
+        $null (an empty array for DnsServers). A node's own port can differ: Get-AzlManagementAdapter gives that, with these as
+        its defaults. Reads the loaded file only.
+    .EXAMPLE
+        (Get-AzlManagementNetwork -Infrastructure $infra).DnsServers
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure)
+    $mgmt = Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'networking.management'
+    if ($mgmt -isnot [System.Collections.IDictionary]) { $mgmt = @{} }
+    $prefix = if (Test-IsCidr $mgmt['subnet']) { [int]($mgmt['subnet'].Split('/')[1]) } else { $null }
+    [pscustomobject]@{
+        Subnet       = $(if ($mgmt['subnet']) { [string]$mgmt['subnet'] } else { $null })
+        PrefixLength = $prefix
+        SubnetMask   = $(if ($null -ne $prefix) { ConvertTo-SubnetMask $prefix } else { $null })
+        Gateway      = $(if ($mgmt['gateway']) { [string]$mgmt['gateway'] } else { $null })
+        DnsServers   = @(Get-List $mgmt['dns_servers'] | ForEach-Object { [string]$_ })
+        VlanId       = $(if ($null -ne $mgmt['vlan_id']) { [int]$mgmt['vlan_id'] } else { $null })
+    }
+}
+
+function Get-AzlManagementNicName {
+    <#
+    .SYNOPSIS
+        The name the machines' operating system gives the management network adapter, when every node's management port has the
+        same one; $null when the nodes differ or none has a management port.
+    .DESCRIPTION
+        For each node, the OsName of Get-AzlManagementAdapter: nodes[].network_adapters[].os_name_override of the management port,
+        else its name; for a node described with nodes[].management, nodes[].management.adapter_name. The scripts that run one
+        Get-NetAdapter -Name over all the nodes use this. Where the names differ, ask Get-AzlManagementAdapter per node. Reads the
+        loaded file only.
+    .EXAMPLE
+        $nic = Get-AzlManagementNicName -Infrastructure $infra
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure)
+    $names = @(Get-AzlInfrastructureNode -Infrastructure $Infrastructure | ForEach-Object {
+            $port = Get-AzlManagementAdapter -Infrastructure $Infrastructure -Node $_.Node
+            if ($port -and $port.OsName) { $port.OsName } else { '' }
+        } | Select-Object -Unique)
+    if ($names.Count -eq 1 -and $names[0]) { return [string]$names[0] }
+    return $null
+}
+
+function Get-AzlArcGateway {
+    <#
+    .SYNOPSIS
+        The Azure Arc gateway of the instance: whether the machines use one, its name and resource group, and its resource ID.
+    .DESCRIPTION
+        Enabled is true when scenario.outbound_path is arc_gateway or proxy_arc_gateway. Name and ResourceGroup are
+        networking.outbound.arc_gateway.name and resource_group (the resource group defaults to azure.resource_group, as the gateway
+        is in the same subscription as the machines). Id is the resource ID, built from azure.subscription_id, the resource group and
+        the name; it is empty when the gateway is not used or has no name. Reads the loaded file only.
+    .EXAMPLE
+        $gw = Get-AzlArcGateway -Infrastructure $infra; if ($gw.Enabled) { $gw.Id }
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure)
+    $path = [string](Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'scenario.outbound_path')
+    $enabled = $path -in 'arc_gateway', 'proxy_arc_gateway'
+    $gw = Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'networking.outbound.arc_gateway'
+    if ($gw -isnot [System.Collections.IDictionary]) { $gw = @{} }
+    $subscription = [string](Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'azure.subscription_id')
+    $group = if ($gw['resource_group']) { [string]$gw['resource_group'] } else { [string](Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'azure.resource_group') }
+    $name = if ($gw['name']) { [string]$gw['name'] } else { '' }
+    $id = ''
+    if ($enabled -and $name -and $subscription -and $group) { $id = "/subscriptions/$subscription/resourceGroups/$group/providers/Microsoft.HybridCompute/gateways/$name" }
+    [pscustomobject]@{ Enabled = $enabled; Name = $name; ResourceGroup = $group; SubscriptionId = $subscription; Id = $id }
+}
+
+function Get-AzlClusterWitness {
+    <#
+    .SYNOPSIS
+        The quorum witness of the cluster: its type and, for a cloud witness, the storage account; for a file share witness, the path.
+    .DESCRIPTION
+        Type is cluster.witness.type: cloud, file_share or none (empty when the file sets none). StorageAccount is
+        cluster.witness.storage_account and Path is cluster.witness.path. ResourceGroup and Sku come from the entry of
+        landing_zone.storage_accounts[] with that name; without one, ResourceGroup is azure.resource_group and Sku is empty.
+        SubscriptionId is azure.subscription_id. Reads the loaded file only.
+    .EXAMPLE
+        (Get-AzlClusterWitness -Infrastructure $infra).Type
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure)
+    $w = Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'cluster.witness'
+    if ($w -isnot [System.Collections.IDictionary]) { $w = @{} }
+    $account = if ($w['storage_account']) { [string]$w['storage_account'] } else { '' }
+    $entry = $null
+    $lz = Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'landing_zone.storage_accounts'
+    if ($account -and $null -ne $lz) {
+        $entry = @(Get-List $lz | Where-Object { $_ -is [System.Collections.IDictionary] -and [string]$_['name'] -eq $account }) | Select-Object -First 1
+    }
+    $group = if ($entry -and $entry['resource_group']) { [string]$entry['resource_group'] } else { [string](Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'azure.resource_group') }
+    [pscustomobject]@{
+        Type           = $(if ($w['type']) { [string]$w['type'] } else { '' })
+        StorageAccount = $account
+        Path           = $(if ($w['path']) { [string]$w['path'] } else { '' })
+        ResourceGroup  = $group
+        Sku            = $(if ($entry -and $entry['sku']) { [string]$entry['sku'] } else { '' })
+        SubscriptionId = [string](Get-AzlInfrastructureValue -Infrastructure $Infrastructure -Path 'azure.subscription_id')
     }
 }
 
@@ -1762,4 +1881,4 @@ function Import-AzlInfrastructure {
     return Read-InfrastructureFile $Path
 }
 
-Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlManagementMode, Test-AzlProvisioningDhcpPort, Get-AzlArcMachineName, Get-AzlInfrastructureNode, Get-AzlNodeNetworkAdapter, Get-AzlManagementAdapter, Get-AzlBiosSetting, Get-AzlBiosProvisioningOverride, Get-AzlManagementStaticMethod, Get-AzlInfrastructureScope, Get-AzlSiteIpRange
+Export-ModuleMember -Function Import-AzlInfrastructure, Test-AzlInfrastructure, Get-AzlInfrastructureValue, Get-AzlManagementIpAssignment, Get-AzlManagementMode, Test-AzlProvisioningDhcpPort, Get-AzlArcMachineName, Get-AzlInfrastructureNode, Get-AzlManagementNetwork, Get-AzlManagementNicName, Get-AzlArcGateway, Get-AzlClusterWitness, Get-AzlNodeNetworkAdapter, Get-AzlManagementAdapter, Get-AzlBiosSetting, Get-AzlBiosProvisioningOverride, Get-AzlManagementStaticMethod, Get-AzlInfrastructureScope, Get-AzlSiteIpRange

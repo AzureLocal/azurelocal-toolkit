@@ -98,13 +98,13 @@ catch {
 }
 
 # Extract values from config
-$adDomainFqdn = $config.identity.active_directory.ad_domain_fqdn
-if (-not $adDomainFqdn) { $adDomainFqdn = $config.identity.active_directory.fqdn }
+$adDomainFqdn = $config.identity.active_directory.domain_fqdn
+if (-not $adDomainFqdn) { $adDomainFqdn = $config.identity.active_directory.domain_fqdn }
 
-$clusterOUPath = $config.identity.active_directory.ad_clusters_ou_path
-if (-not $clusterOUPath) { $clusterOUPath = $config.identity.active_directory.ad_clusters_ou_path }
+$clusterOUPath = $config.identity.active_directory.ou_path
+if (-not $clusterOUPath) { $clusterOUPath = $config.identity.active_directory.ou_path }
 
-$lcmUsername = $config.identity.accounts.account_lcm_username
+$lcmUsername = $config['identity']?['active_directory']?['lcm_user']?['username']
 # Extract just the SAM account name (before @domain)
 $lcmSamAccount = if ($lcmUsername -match '^([^@]+)@') { $Matches[1] } else { $lcmUsername }
 

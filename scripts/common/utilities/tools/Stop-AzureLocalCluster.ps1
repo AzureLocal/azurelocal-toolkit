@@ -117,13 +117,13 @@ param(
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 # Load configuration if Solution specified
 if ($Solution) {
-    . "$PSScriptRoot\config-loader.ps1"
-    . "$PSScriptRoot\keyvault-helper.ps1"
+    . (Join-Path $PSScriptRoot (Join-Path ".." (Join-Path "helpers" "config-loader.ps1")))
+    . (Join-Path $PSScriptRoot (Join-Path ".." (Join-Path "helpers" "keyvault-helper.ps1")))
     
     $config = Get-SolutionConfig -Solution $Solution
     
     # Map config values to script parameters
-    if (-not $ClusterName) { $ClusterName = $config.compute.azure_local.cluster_name }
+    if (-not $ClusterName) { $ClusterName = $config.cluster.name }
     $configNodes = @(Get-AzlInfrastructureNode -Infrastructure $config)
     if (-not $Node01 -and $configNodes.Count -ge 1) { $Node01 = $configNodes[0].ManagementIp }
     if (-not $Node02 -and $configNodes.Count -ge 2) { $Node02 = $configNodes[1].ManagementIp }

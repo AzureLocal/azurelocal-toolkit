@@ -15,9 +15,9 @@
       - Deploy:   Full deployment. Run only after validation passes.
 
     infrastructure.yml paths used:
-      azure_platform.azure_tenants[0].aztenant_subscription_id  - Subscription
-      compute.azure_local.resource_group                        - Resource group
-      cluster_arm_deployment.arm_mode                           - Validate or Deploy
+      azure.subscription_id  - Subscription
+      azure.resource_group                        - Resource group
+      cluster.deployment_mode                           - Validate or Deploy
 
     The generation script (Generate-AzureLocal-Parameters.ps1) reads all 54 ARM
     parameter values from the config. This script orchestrates generation + deployment.
@@ -35,7 +35,7 @@
     is used and whether domainFqdn/adouPath are populated.
 
 .PARAMETER DeploymentMode
-    Validate or Deploy. Overrides cluster_arm_deployment.arm_mode in infrastructure.yml.
+    Validate or Deploy. Overrides cluster.deployment_mode in infrastructure.yml.
     Default: reads from config (typically "Validate").
 
 .PARAMETER ParametersFile
@@ -196,9 +196,9 @@ if (-not (Get-Module -ListAvailable -Name powershell-yaml)) {
 Import-Module powershell-yaml -ErrorAction Stop
 
 $yamlContent = Get-Content -Path $configFile -Raw | ConvertFrom-Yaml
-$subscriptionId = $yamlContent.azure_platform.azure_tenants[0].aztenant_subscription_id   # azure_platform.azure_tenants[0].aztenant_subscription_id
-$resourceGroup  = $yamlContent.compute.azure_local.resource_group                          # compute.azure_local.resource_group
-$clusterName    = $yamlContent.cluster_arm_deployment.cluster_name                         # cluster_arm_deployment.cluster_name
+$subscriptionId = $yamlContent.azure.subscription_id   # azure.subscription_id
+$resourceGroup  = $yamlContent.azure.resource_group                          # azure.resource_group
+$clusterName    = $yamlContent.cluster.name                         # cluster.name
 
 Write-Log "Subscription:   $subscriptionId"
 Write-Log "Resource Group: $resourceGroup"
@@ -207,7 +207,7 @@ Write-Log "Auth Type:      $AuthType"
 
 # --- Resolve deployment mode ---
 if ($DeploymentMode -eq "") {
-    $configMode = $yamlContent.cluster_arm_deployment.arm_mode                              # cluster_arm_deployment.arm_mode
+    $configMode = $yamlContent.cluster.deployment_mode                              # cluster.deployment_mode
     if ($configMode -eq "deploy") {
         $DeploymentMode = "Deploy"
     }

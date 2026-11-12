@@ -64,8 +64,8 @@ function Get-Config {
     }
     return [PSCustomObject]@{
         Nodes        = @($nodes)
-        AdminUser    = $cfg.identity.accounts.account_local_admin_username
-        AdminPassUri = $cfg.identity.accounts.account_local_admin_password
+        AdminUser    = $cfg.identity.local_admin.username
+        AdminPassUri = $cfg.identity.local_admin.password
     }
 }
 

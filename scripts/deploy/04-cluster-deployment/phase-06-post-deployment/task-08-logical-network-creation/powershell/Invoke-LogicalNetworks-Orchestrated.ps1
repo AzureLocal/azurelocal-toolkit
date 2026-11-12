@@ -95,20 +95,13 @@ if (-not (Test-Path $ConfigPath)) { Write-Log "Config not found: $ConfigPath" "F
 Import-Module powershell-yaml -ErrorAction Stop
 $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 
-# Subscription — find first subscription key that has an .id property
-$subscriptionId = $null
-foreach ($key in $cfg.azure_platform.subscriptions.Keys) {         # azure_platform.subscriptions.<key>.id
-    $sub = $cfg.azure_platform.subscriptions[$key]
-    if ($sub -is [System.Collections.IDictionary] -and $sub['id']) {
-        $subscriptionId = $sub['id']
-        break
-    }
-}
+# Subscription
+$subscriptionId = $cfg.azure.subscription_id                       # azure.subscription_id
 if (-not $subscriptionId) { throw "Cannot resolve subscription ID from config" }
 
-$resourceGroup      = $cfg.compute.azure_local.arc_resource_group               # compute.azure_local.arc_resource_group
-$location           = $cfg.azure_platform.region                                # azure_platform.region
-$customLocationName = $cfg.compute.azure_local.azure_custom_location_name       # compute.azure_local.azure_custom_location_name
+$resourceGroup      = $cfg.azure.resource_group               # azure.resource_group
+$location           = $cfg.azure.location                                # azure.location
+$customLocationName = $cfg.azure.custom_location       # azure.custom_location
 $vmSwitchName       = $cfg.compute.azure_local.vm_switch_name                   # compute.azure_local.vm_switch_name
 
 # Build custom location ID directly per MS docs — no API call needed

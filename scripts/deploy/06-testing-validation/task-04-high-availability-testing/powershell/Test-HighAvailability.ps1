@@ -167,7 +167,7 @@ function Test-LiveMigrationSettings {
             }
         }
         catch {
-            Write-Log "  $node: Migration settings check failed — $_" -Level "ERROR"
+            Write-Log "  ${node}: Migration settings check failed — $_" -Level "ERROR"
         }
     }
 
@@ -234,7 +234,7 @@ function Test-NodeDrainReadiness {
             Write-Log "  $node - DrainStatus=$drainStatus, State=$($clusterNode.State)" -Level $(if ($clusterNode.State -eq 'Up') { "SUCCESS" } else { "WARN" })
         }
         catch {
-            Write-Log "  $node: Drain readiness check failed — $_" -Level "ERROR"
+            Write-Log "  ${node}: Drain readiness check failed — $_" -Level "ERROR"
         }
     }
 }
@@ -249,7 +249,7 @@ Write-Log "========================================" -Level "HEADER"
 
 if ($ConfigPath) {
     $config = Import-InfrastructureConfig -Path $ConfigPath
-    if (-not $ClusterName -and $config) { $ClusterName = $config.platform.cluster_name }
+    if (-not $ClusterName -and $config) { $ClusterName = $config.cluster.name }
 }
 if (-not $ClusterName) {
     Write-Log "ClusterName is required." -Level "ERROR"

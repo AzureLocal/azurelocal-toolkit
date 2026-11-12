@@ -11,20 +11,20 @@
     witness), then sets quorum via PSRemoting to a single cluster node.
 
     infrastructure.yml paths used:
-      compute.azure_local.cluster_name                          - Cluster name
-      compute.azure_local.cluster_witness_type                  - Witness type (cloud_witness / file_share_witness)
-      compute.azure_local.cluster_witness_file_share_path       - UNC path (file_share_witness only)
+      cluster.name                          - Cluster name
+      cluster.witness.type                                      - Witness type (cloud / file_share; this script's -WitnessType takes cloud_witness / file_share_witness)
+      cluster.witness.path                                      - UNC path (file_share only)
       nodes[].management.ip_address                             - Node IPs (first used for PSRemoting)
-      storage_accounts.storage_accounts.cluster_witness.name    - Witness storage account name
-      storage_accounts.storage_accounts.cluster_witness.resource_group - Witness SA resource group
-      storage_accounts.storage_accounts.cluster_witness.subscription   - Witness SA subscription
-      storage_accounts.storage_accounts.cluster_witness.sku            - Witness SA SKU
-      azure_platform.region                                     - Region for SA creation
-      identity.accounts.account_lcm_username                    - LCM service account username
-      identity.accounts.account_lcm_password                    - LCM service account password (keyvault:// URI)
-      identity.accounts.account_local_admin_username            - Local admin username (fallback)
-      identity.accounts.account_local_admin_password            - Local admin password (keyvault:// URI, fallback)
-      identity.active_directory.ad_netbios_name                 - Netbios domain name (for LCM account)
+      cluster.witness.storage_account                           - Witness storage account name
+      landing_zone.storage_accounts[].resource_group            - Witness SA resource group (entry named cluster.witness.storage_account; else azure.resource_group)
+      azure.subscription_id                                     - Witness SA subscription
+      landing_zone.storage_accounts[].sku                       - Witness SA SKU (entry named cluster.witness.storage_account)
+      azure.location                                     - Region for SA creation
+      identity.active_directory.lcm_user.username                    - LCM service account username
+      identity.active_directory.lcm_user.password                    - LCM service account password (keyvault:// URI)
+      identity.local_admin.username            - Local admin username (fallback)
+      identity.local_admin.password            - Local admin password (keyvault:// URI, fallback)
+      identity.active_directory.netbios_name                 - Netbios domain name (for LCM account)
 
 .NOTES
     Author:       Azure Local Cloud AzureLocalCloud
@@ -50,12 +50,12 @@ param(
     [string]$LogPath              = "",          # Override log file path
 
     # YAML-overridable parameters
-    [string]$WitnessType          = "",          # Override: compute.azure_local.cluster_witness_type
-    [string]$WitnessAccountName   = "",          # Override: storage_accounts.storage_accounts.cluster_witness.name
-    [string]$WitnessResourceGroup = "",          # Override: storage_accounts.storage_accounts.cluster_witness.resource_group
-    [string]$WitnessSubscription  = "",          # Override: storage_accounts.storage_accounts.cluster_witness.subscription
-    [string]$WitnessSku           = "",          # Override: storage_accounts.storage_accounts.cluster_witness.sku
-    [string]$FileSharePath        = ""           # Override: compute.azure_local.cluster_witness_file_share_path
+    [string]$WitnessType          = "",          # Override: cluster.witness.type (cloud_witness / file_share_witness)
+    [string]$WitnessAccountName   = "",          # Override: cluster.witness.storage_account
+    [string]$WitnessResourceGroup = "",          # Override: landing_zone.storage_accounts[].resource_group
+    [string]$WitnessSubscription  = "",          # Override: azure.subscription_id (a subscription ID)
+    [string]$WitnessSku           = "",          # Override: landing_zone.storage_accounts[].sku
+    [string]$FileSharePath        = ""           # Override: cluster.witness.path
 )
 
 Set-StrictMode -Version Latest
@@ -175,26 +175,23 @@ Import-Module powershell-yaml -ErrorAction Stop
 $cfg = Get-Content $configFile -Raw | ConvertFrom-Yaml
 
 # ── Extract values (param overrides take precedence) ─────────────────────────
-$clusterName     = $cfg.compute.azure_local.cluster_name                                            # compute.azure_local.cluster_name
-$resolvedWitType = if ($WitnessType          -ne "") { $WitnessType }          else { $cfg.compute.azure_local.cluster_witness_type }                              # compute.azure_local.cluster_witness_type
-$resolvedAcctName= if ($WitnessAccountName   -ne "") { $WitnessAccountName }   else { $cfg.storage_accounts.storage_accounts.cluster_witness.name }               # storage_accounts.storage_accounts.cluster_witness.name
-$resolvedWitRg   = if ($WitnessResourceGroup -ne "") { $WitnessResourceGroup } else { $cfg.storage_accounts.storage_accounts.cluster_witness.resource_group }     # storage_accounts.storage_accounts.cluster_witness.resource_group
-$witSubRaw       = if ($WitnessSubscription  -ne "") { $WitnessSubscription }  else { $cfg.storage_accounts.storage_accounts.cluster_witness.subscription }       # storage_accounts.storage_accounts.cluster_witness.subscription
-# Resolve subscription key reference (e.g. "lab") to actual subscription ID via azure_platform.subscriptions.<key>.id
-$resolvedWitSub  = if ($witSubRaw -and $cfg.azure_platform.subscriptions -and $cfg.azure_platform.subscriptions[$witSubRaw]) {
-    $cfg.azure_platform.subscriptions[$witSubRaw].id
-} else {
-    $witSubRaw
-}
-$resolvedWitSku  = if ($WitnessSku           -ne "") { $WitnessSku }           else { $cfg.storage_accounts.storage_accounts.cluster_witness.sku }                # storage_accounts.storage_accounts.cluster_witness.sku
-$resolvedFsPath  = if ($FileSharePath        -ne "") { $FileSharePath }        else { $cfg.compute.azure_local.PSObject.Properties['cluster_witness_file_share_path']?.Value }  # compute.azure_local.cluster_witness_file_share_path (optional)
-$witnessRegion   = $cfg.azure_platform.region                                                       # azure_platform.region
+$clusterName     = $cfg.cluster.name                                            # cluster.name
+$witness         = Get-AzlClusterWitness -Infrastructure $cfg                   # cluster.witness, landing_zone.storage_accounts[], azure.subscription_id
+# The script's witness types are cloud_witness / file_share_witness / disk_witness; cluster.witness.type is cloud / file_share / none
+$configWitType   = switch ($witness.Type) { 'cloud' { 'cloud_witness' } 'file_share' { 'file_share_witness' } default { $witness.Type } }
+$resolvedWitType = if ($WitnessType          -ne "") { $WitnessType }          else { $configWitType }                                                            # cluster.witness.type
+$resolvedAcctName= if ($WitnessAccountName   -ne "") { $WitnessAccountName }   else { $witness.StorageAccount }                                                   # cluster.witness.storage_account
+$resolvedWitRg   = if ($WitnessResourceGroup -ne "") { $WitnessResourceGroup } else { $witness.ResourceGroup }                                                    # landing_zone.storage_accounts[].resource_group, else azure.resource_group
+$resolvedWitSub  = if ($WitnessSubscription  -ne "") { $WitnessSubscription }  else { $witness.SubscriptionId }                                                   # azure.subscription_id
+$resolvedWitSku  = if ($WitnessSku           -ne "") { $WitnessSku }           else { $witness.Sku }                                                              # landing_zone.storage_accounts[].sku
+$resolvedFsPath  = if ($FileSharePath        -ne "") { $FileSharePath }        else { $witness.Path }                                                             # cluster.witness.path (optional)
+$witnessRegion   = $cfg.azure.location                                                       # azure.location
 
-$lcmUser    = $cfg.identity.accounts.account_lcm_username          # identity.accounts.account_lcm_username
-$lcmPassUri = $cfg.identity.accounts.account_lcm_password          # identity.accounts.account_lcm_password
-$localUser  = $cfg.identity.accounts.account_local_admin_username  # identity.accounts.account_local_admin_username
-$localPassUri=$cfg.identity.accounts.account_local_admin_password  # identity.accounts.account_local_admin_password
-$netbios    = $cfg.identity.active_directory.ad_netbios_name        # identity.active_directory.ad_netbios_name
+$lcmUser    = $cfg['identity']?['active_directory']?['lcm_user']?['username']          # identity.active_directory.lcm_user.username
+$lcmPassUri = $cfg['identity']?['active_directory']?['lcm_user']?['password']          # identity.active_directory.lcm_user.password
+$localUser  = $cfg.identity.local_admin.username  # identity.local_admin.username
+$localPassUri=$cfg.identity.local_admin.password  # identity.local_admin.password
+$netbios    = $cfg['identity']?['active_directory']?['netbios_name']        # identity.active_directory.netbios_name
 
 # ── Determine target node ─────────────────────────────────────────────────────
 $nodeIp = $null

@@ -1,10 +1,13 @@
+#Requires -Version 7.0
 # Task 03 - Monitor Bootstrap Progress (orchestrated from management server)
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 
 $ConfigPath = ".\configs\infrastructure.yml"
-$cfg = Get-Content $ConfigPath
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+$cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 
-$ServerList = ($cfg | Select-String 'management_ip:\s+"?([^"\s]+)' -AllMatches).Matches |
-    ForEach-Object { $_.Groups[1].Value }
+$ServerList = @(Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object { $_.ManagementIp } | Where-Object { $_ })
 
 $IntervalSeconds = 60
 $MaxIterations   = 120

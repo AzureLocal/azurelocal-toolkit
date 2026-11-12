@@ -55,6 +55,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region Functions
 
@@ -135,11 +136,11 @@ Write-LogMessage "=== Configure Security Logging ===" -Level Info
 # Load configuration
 $config = Import-InfrastructureConfig -Path $ConfigPath
 if ($config) {
-    $ResourceGroupName = if ($ResourceGroupName) { $ResourceGroupName } else { $config.azure.resource_group_name }
+    $ResourceGroupName = if ($ResourceGroupName) { $ResourceGroupName } else { $config.azure.resource_group }
     $WorkspaceId = if ($WorkspaceId) { $WorkspaceId } else { $config.monitoring.log_analytics_workspace_id }
     $SubscriptionId = if ($SubscriptionId) { $SubscriptionId } else { $config.azure.subscription_id }
     if (-not $NodeNames) {
-        $NodeNames = $config.compute.nodes | ForEach-Object { $_.name }
+        $NodeNames = @(Get-AzlInfrastructureNode -Infrastructure $config | ForEach-Object { $_.Name })   # nodes[].name
     }
 }
 

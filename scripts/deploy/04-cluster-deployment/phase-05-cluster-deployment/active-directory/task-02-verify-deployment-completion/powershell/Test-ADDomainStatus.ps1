@@ -15,10 +15,10 @@
 
     infrastructure.yml paths used:
       nodes[].management.ip_address                            - Node IPs
-      cluster_arm_deployment.domain_fqdn                       - Expected domain FQDN
-      cluster_arm_deployment.domain_ou_path                    - Expected OU
-      accounts.lcm_admin.username                              - LCM service account
-      cluster_arm_deployment.cluster_name                      - Cluster name
+      identity.active_directory.domain_fqdn                       - Expected domain FQDN
+      identity.active_directory.ou_path                    - Expected OU
+      identity.active_directory.lcm_user.username                              - LCM service account
+      cluster.name                      - Cluster name
 
     Requires:
       - ActiveDirectory module
@@ -136,10 +136,10 @@ $yaml = Get-Content -Path $configFile -Raw | ConvertFrom-Yaml
 
 # --- Extract values ---
 $nodeIPs     = @(Get-AzlInfrastructureNode -Infrastructure $yaml | ForEach-Object { $_.ManagementIp })   # nodes[].management.ip_address
-$domainFqdn  = $yaml.cluster_arm_deployment.domain_fqdn                               # cluster_arm_deployment.domain_fqdn
-$ouPath      = $yaml.cluster_arm_deployment.domain_ou_path                             # cluster_arm_deployment.domain_ou_path
-$lcmUser     = $yaml.accounts.lcm_admin.username                                      # accounts.lcm_admin.username
-$clusterName = $yaml.cluster_arm_deployment.cluster_name                               # cluster_arm_deployment.cluster_name
+$domainFqdn  = $yaml.identity.active_directory.domain_fqdn                               # identity.active_directory.domain_fqdn
+$ouPath      = $yaml.identity.active_directory.ou_path                             # identity.active_directory.ou_path
+$lcmUser     = $yaml['identity']?['active_directory']?['lcm_user']?['username']                                      # identity.active_directory.lcm_user.username
+$clusterName = $yaml.cluster.name                               # cluster.name
 
 Write-Log "Domain FQDN:  $domainFqdn"
 Write-Log "OU Path:      $ouPath"

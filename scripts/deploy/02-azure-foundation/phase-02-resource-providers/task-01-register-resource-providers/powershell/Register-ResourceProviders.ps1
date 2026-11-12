@@ -180,8 +180,8 @@ try {
         Write-Log -Message "Loading configuration from: $ConfigFile" -Level "INFO"
         $config = Get-Configuration -Path $ConfigFile
         
-        if (-not $SubscriptionId -and $config.azure_platform.subscriptions.lab.id) {
-            $SubscriptionId = $config.azure_platform.subscriptions.lab.id
+        if (-not $SubscriptionId -and $config.azure.subscription_id) {
+            $SubscriptionId = $config.azure.subscription_id
         }
     }
 

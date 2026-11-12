@@ -92,9 +92,9 @@ if ($ConfigFile -and (Test-Path $ConfigFile)) {
         . (Join-Path $HelpersPath "config-loader.ps1")
         $Config = Get-Config -ConfigPath $ConfigFile
         
-        if (-not $SubscriptionId) { $SubscriptionId = $config.azure_platform.subscriptions.lab.id }
-        if (-not $ResourceGroup) { $ResourceGroup = $config.azure_platform.resource_group }
-        if (-not $Location) { $Location = $config.azure_platform.location }
+        if (-not $SubscriptionId) { $SubscriptionId = $config.azure.subscription_id }
+        if (-not $ResourceGroup) { $ResourceGroup = $config.azure.resource_group }
+        if (-not $Location) { $Location = $config.azure.location }
     }
 }
 

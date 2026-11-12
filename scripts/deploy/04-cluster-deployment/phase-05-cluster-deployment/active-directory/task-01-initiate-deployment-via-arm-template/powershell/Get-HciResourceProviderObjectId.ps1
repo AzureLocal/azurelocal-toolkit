@@ -8,10 +8,10 @@
     Config-driven script (Option 2). Reads infrastructure.yml, looks up the
     Microsoft.AzureStackHCI resource provider's service principal Object ID from
     Entra ID, and writes it back to the config file at
-    cluster_arm_deployment.resource_provider_object_id.
+    azure.hci_resource_provider_object_id.
 
     infrastructure.yml paths used:
-      cluster_arm_deployment.resource_provider_object_id  - Target field to update
+      azure.hci_resource_provider_object_id  - Target field to update
 
     Requires:
       - Az.Resources module (Get-AzADServicePrincipal)
@@ -151,18 +151,18 @@ Write-Log "HCI Resource Provider Object ID: $objectId" "SUCCESS"
 
 # --- Update config if requested ---
 if ($UpdateConfig) {
-    Write-Log "Updating infrastructure.yml at cluster_arm_deployment.resource_provider_object_id..."
+    Write-Log "Updating infrastructure.yml at azure.hci_resource_provider_object_id..."
 
     $content = Get-Content -Path $configFile -Raw
-    $pattern = '(?m)(^\s*resource_provider_object_id:\s*)"[^"]*"'
+    $pattern = '(?m)(^\s*hci_resource_provider_object_id:\s*)"[^"]*"'
     if ($content -match $pattern) {
         $updated = $content -replace $pattern, "`$1`"$objectId`""
         Set-Content -Path $configFile -Value $updated -NoNewline
         Write-Log "Updated $configFile with Object ID: $objectId" "SUCCESS"
     }
     else {
-        Write-Log "Could not find resource_provider_object_id field in $configFile. Update manually." "WARN"
-        Write-Log "  YAML path: cluster_arm_deployment.resource_provider_object_id" "WARN"
+        Write-Log "Could not find the hci_resource_provider_object_id field in $configFile. Update manually." "WARN"
+        Write-Log "  YAML path: azure.hci_resource_provider_object_id" "WARN"
         Write-Log "  Value:     $objectId" "WARN"
     }
 }
@@ -172,7 +172,7 @@ else {
     Write-Log "  .\Get-HciResourceProviderObjectId.ps1 -ConfigPath `"$configFile`" -UpdateConfig" "INFO"
     Write-Log ""
     Write-Log "Or set manually in infrastructure.yml:" "INFO"
-    Write-Log "  YAML path: cluster_arm_deployment.resource_provider_object_id" "INFO"
+    Write-Log "  YAML path: azure.hci_resource_provider_object_id" "INFO"
     Write-Log "  Value:     $objectId" "INFO"
 }
 

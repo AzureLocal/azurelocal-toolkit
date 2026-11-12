@@ -280,7 +280,7 @@ Write-Log "========================================" -Level "HEADER"
 
 if ($ConfigPath) {
     $config = Import-InfrastructureConfig -Path $ConfigPath
-    if (-not $ClusterName -and $config) { $ClusterName = $config.platform.cluster_name }
+    if (-not $ClusterName -and $config) { $ClusterName = $config.cluster.name }
     if (-not $SubscriptionId -and $config) { $SubscriptionId = $config.azure.subscription_id }
     if (-not $ResourceGroupName -and $config) { $ResourceGroupName = $config.azure.resource_group }
     if (-not $VaultName -and $config) { $VaultName = $config.backup.vault_name }

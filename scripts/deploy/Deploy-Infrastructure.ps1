@@ -306,13 +306,13 @@ try {
 
     # Set Azure context to correct subscription
     Write-Log "Step 4: Setting Azure subscription context..."
-    $targetSubscription = $config.azure_platform.subscriptions.lab.id
+    $targetSubscription = $config.azure.subscription_id
     Set-AzContext -SubscriptionId $targetSubscription | Out-Null
     Write-Log "Subscription context set: $targetSubscription" -Level Success
 
     # Deploy resource groups
     Write-Log "Step 5: Deploying resource groups..."
-    $location = $config.azure_platform.location
+    $location = $config.azure.location
     $tags = $config.tags
 
     if ($ResourceGroup) {
@@ -321,7 +321,7 @@ try {
     }
     else {
         Write-Log "Deploying all resource groups from configuration"
-        $rgName = $config.azure_platform.resource_group_name
+        $rgName = $config.azure.resource_group
         Deploy-ResourceGroup -Name $rgName -Location $location -Tags $tags -WhatIf:$WhatIfPreference
     }
 

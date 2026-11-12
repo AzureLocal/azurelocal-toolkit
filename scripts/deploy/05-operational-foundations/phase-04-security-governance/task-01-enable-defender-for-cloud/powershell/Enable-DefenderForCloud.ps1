@@ -100,7 +100,7 @@ Write-LogMessage "=== Enable Defender for Cloud ===" -Level Info
 $config = Import-InfrastructureConfig -Path $ConfigPath
 if ($config) {
     $SubscriptionId = if ($SubscriptionId) { $SubscriptionId } else { $config.azure.subscription_id }
-    $ResourceGroupName = if ($ResourceGroupName) { $ResourceGroupName } else { $config.azure.resource_group_name }
+    $ResourceGroupName = if ($ResourceGroupName) { $ResourceGroupName } else { $config.azure.resource_group }
 }
 
 if (-not $SubscriptionId) {

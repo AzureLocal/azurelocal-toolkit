@@ -16,7 +16,7 @@
 
     NODE ACCESS (standard credential resolution order):
       1. -Credential parameter (explicit override)
-      2. Key Vault lookup via identity.accounts.account_local_admin_password
+      2. Key Vault lookup via identity.local_admin.password
       3. Interactive Get-Credential prompt
 
     Configuration values are read from infrastructure.yml. All Azure values can be
@@ -55,7 +55,7 @@
 
 .PARAMETER Credential
     PSCredential for PSRemoting to cluster nodes. If omitted, resolved from
-    Key Vault using identity.accounts.account_local_admin_password, then
+    Key Vault using identity.local_admin.password, then
     falls back to interactive Get-Credential prompt. Use -SpnAppId / -SpnSecret
     to override Azure SPN credentials (separate from node credentials).
 
@@ -69,29 +69,29 @@
     Override log file path. Default: ./logs/<task-folder>/<timestamp>_ArcRegistration.log
 
 .PARAMETER TenantId
-    Override Azure tenant ID. YAML path: azure_platform.tenant.id
+    Override Azure tenant ID. YAML path: azure.tenant_id
 
 .PARAMETER SubscriptionId
-    Override Azure subscription ID. YAML path: azure_platform.subscriptions.lab.id
+    Override Azure subscription ID. YAML path: azure.subscription_id
 
 .PARAMETER Region
-    Override Azure region. YAML path: azure_platform.region
+    Override Azure region. YAML path: azure.location
 
 .PARAMETER ResourceGroup
-    Override Arc resource group. YAML path: compute.azure_local.arc_resource_group
+    Override Arc resource group. YAML path: azure.resource_group
 
 .PARAMETER ArcGatewayId
-    Override Arc gateway resource ID. YAML path: compute.azure_local.arc_gateway_id
+    Override Arc gateway resource ID. Default: built from scenario.outbound_path and networking.outbound.arc_gateway (name, resource_group)
     Pass empty string to disable Arc Gateway.
 
 .PARAMETER NoArcGateway
     Skip Arc Gateway usage. By default, the script requires an Arc Gateway to be
-    configured in infrastructure.yml (compute.azure_local.arc_gateway_enabled and
-    arc_gateway_id). Set this switch only if you are not using an Arc Gateway.
+    configured in infrastructure.yml (scenario.outbound_path arc_gateway or proxy_arc_gateway,
+    and networking.outbound.arc_gateway.name). Set this switch only if you are not using an Arc Gateway.
     If omitted and no gateway is configured, the script blocks with an error.
 
 .PARAMETER SpnAppId
-    Override service principal application (client) ID. YAML path: identity.service_principal.client_id
+    Override service principal application (client) ID. YAML path: azure.automation_identity.client_id
 
 .PARAMETER SpnSecret
     SPN secret (plaintext). If omitted, resolved from Key Vault via identity.service_principal.secret.
@@ -133,13 +133,13 @@ param(
     [string]$LogPath = "",
 
     # YAML-overridable Azure parameters
-    [string]$TenantId       = "",        # azure_platform.tenant.id
-    [string]$SubscriptionId = "",        # azure_platform.subscriptions.lab.id
-    [string]$Region         = "",        # azure_platform.region
-    [string]$ResourceGroup  = "",        # compute.azure_local.arc_resource_group
-    [string]$ArcGatewayId   = "",        # compute.azure_local.arc_gateway_id
+    [string]$TenantId       = "",        # azure.tenant_id
+    [string]$SubscriptionId = "",        # azure.subscription_id
+    [string]$Region         = "",        # azure.location
+    [string]$ResourceGroup  = "",        # azure.resource_group
+    [string]$ArcGatewayId   = "",        # networking.outbound.arc_gateway
     [switch]$NoArcGateway,                 # Skip Arc Gateway — not recommended
-    [string]$SpnAppId       = "",        # identity.service_principal.client_id
+    [string]$SpnAppId       = "",        # azure.automation_identity.client_id
     [string]$SpnSecret      = "",        # identity.service_principal.secret (resolved from KV)
     [string]$Cloud          = ""         # AzureCloud (default)
 )
@@ -207,19 +207,19 @@ function Get-Config {
         }
     }
 
-    $az = $cfg.compute.azure_local                                   # compute.azure_local
+    $gw = Get-AzlArcGateway -Infrastructure $cfg                     # scenario.outbound_path, networking.outbound.arc_gateway
 
     return [PSCustomObject]@{
         Nodes          = @($nodes)
-        TenantId       = $cfg.azure_platform.tenant.id               # azure_platform.tenant.id
-        SubscriptionId = $cfg.azure_platform.subscriptions.lab.id    # azure_platform.subscriptions.lab.id
-        Region         = $cfg.azure_platform.region                  # azure_platform.region
-        ResourceGroup  = $az.arc_resource_group                      # compute.azure_local.arc_resource_group
-        ArcGatewayId   = if ($az.arc_gateway_enabled) { $az.arc_gateway_id } else { "" }  # compute.azure_local.arc_gateway_id
-        SpnAppId       = $cfg.identity.service_principal.client_id      # identity.service_principal.client_id
-        SpnSecretUri   = $cfg.identity.service_principal.secret      # identity.service_principal.secret
-        AdminUser      = $cfg.identity.accounts.account_local_admin_username   # identity.accounts.account_local_admin_username
-        AdminPassUri   = $cfg.identity.accounts.account_local_admin_password   # identity.accounts.account_local_admin_password
+        TenantId       = $cfg.azure.tenant_id               # azure.tenant_id
+        SubscriptionId = $cfg.azure.subscription_id    # azure.subscription_id
+        Region         = $cfg.azure.location                  # azure.location
+        ResourceGroup  = $cfg.azure.resource_group                   # azure.resource_group
+        ArcGatewayId   = $gw.Id                                      # networking.outbound.arc_gateway (empty unless scenario.outbound_path uses a gateway)
+        SpnAppId       = $cfg['azure']?['automation_identity']?['client_id']      # azure.automation_identity.client_id
+        SpnSecretUri   = $cfg['identity']?['service_principal']?['secret']      # identity.service_principal.secret
+        AdminUser      = $cfg.identity.local_admin.username   # identity.local_admin.username
+        AdminPassUri   = $cfg.identity.local_admin.password   # identity.local_admin.password
         Cloud          = "AzureCloud"
     }
 }
@@ -310,12 +310,12 @@ if ($NoArcGateway) {
     Write-Log "================================================================" HEADER
     Write-Log "" INFO
     Write-Log "Arc Gateway is required by default. Your infrastructure YAML has:" FAIL
-    Write-Log "  arc_gateway_enabled: false or arc_gateway_id is empty" FAIL
+    Write-Log "  scenario.outbound_path is not arc_gateway or proxy_arc_gateway, or networking.outbound.arc_gateway.name is empty" FAIL
     Write-Log "" INFO
     Write-Log "To proceed, you must either:" INFO
     Write-Log "  1. Deploy an Arc Gateway and update infrastructure.yml:" INFO
-    Write-Log "       compute.azure_local.arc_gateway_enabled: true" INFO
-    Write-Log "       compute.azure_local.arc_gateway_id: /subscriptions/.../gateways/<name>" INFO
+    Write-Log "       scenario.outbound_path: arc_gateway (or proxy_arc_gateway)" INFO
+    Write-Log "       networking.outbound.arc_gateway.name: <name>" INFO
     Write-Log "  2. Run with -NoArcGateway if you do not want to use a gateway" INFO
     Write-Log "" INFO
     Write-Log "Log file: $logFile" INFO
@@ -338,8 +338,8 @@ Write-Log "SPN secret resolved." SUCCESS
 # ── Resolve node credentials (standard credential resolution) ─────────────────
 Write-Log "--- Resolving node credentials ---" HEADER
 if (-not $Credential) {
-    $adminUser    = $cfg.AdminUser                                   # identity.accounts.account_local_admin_username
-    $adminPassUri = $cfg.AdminPassUri                                # identity.accounts.account_local_admin_password
+    $adminUser    = $cfg.AdminUser                                   # identity.local_admin.username
+    $adminPassUri = $cfg.AdminPassUri                                # identity.local_admin.password
     Write-Log "Resolving credentials from Key Vault..."
     $adminPass = Resolve-KeyVaultRef -KvUri $adminPassUri
     if ($adminPass) {

@@ -162,7 +162,7 @@ try {
         }
     }
 
-    $location = $config.azure_platform.location ?? "eastus"
+    $location = $config.azure.location ?? "eastus"
 
     Write-LogMessage "Resource Group: $ResourceGroupName" -Level Info
     Write-LogMessage "VPN Gateway: $VpnGatewayName" -Level Info

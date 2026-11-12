@@ -33,25 +33,25 @@
     Name of the Azure Local cluster. (compute.arm_deployment.cluster_name)
 
 .PARAMETER SubscriptionId
-    Azure subscription ID. (azure_platform.azure_tenants[*].aztenant_subscription_id)
+    Azure subscription ID. (azure.subscription_id)
 
 .PARAMETER NodeIPs
     Node management IPs for PSRemoting log access. (nodes[].management.ip_address)
 
 .PARAMETER LocalAdminUsername
-    Local admin username for PSRemoting. (identity.accounts.account_local_admin_username)
+    Local admin username for PSRemoting. (identity.local_admin.username)
 
 .PARAMETER LocalAdminPassword
-    Local admin password as SecureString. (identity.accounts.account_local_admin_password)
+    Local admin password as SecureString. (identity.local_admin.password)
 
 .PARAMETER KeyVaultName
-    Key Vault name for credential resolution. (security.keyvault.kv_azl.kv_azl_name)
+    Key Vault name for credential resolution. (cluster.key_vault.name)
 
 .PARAMETER KeyVaultSubscriptionId
     Subscription ID where Key Vault resides. Defaults to SubscriptionId.
 
 .PARAMETER TenantId
-    Azure AD tenant ID for SPN authentication. (azure_platform.azure_tenants[*].aztenant_id)
+    Azure AD tenant ID for SPN authentication. (azure.tenant_id)
 
 .PARAMETER SPNClientId
     Service Principal app/client ID. If omitted, retrieved from Key Vault.
@@ -120,21 +120,21 @@ param(
     [string]$ClusterName,          # compute.arm_deployment.cluster_name
 
     [Parameter(Mandatory = $true)]
-    [string]$SubscriptionId,       # azure_platform.azure_tenants[*].aztenant_subscription_id
+    [string]$SubscriptionId,       # azure.subscription_id
 
     [Parameter(Mandatory = $false)]
     [string[]]$NodeIPs = @(),       # nodes[].management.ip_address
 
     # --- Node credentials (direct — tier 1) ---
     [Parameter(Mandatory = $false)]
-    [string]$LocalAdminUsername,   # identity.accounts.account_local_admin_username
+    [string]$LocalAdminUsername,   # identity.local_admin.username
 
     [Parameter(Mandatory = $false)]
     [securestring]$LocalAdminPassword,
 
     # --- Key Vault (tier 2) ---
     [Parameter(Mandatory = $false)]
-    [string]$KeyVaultName = "",    # security.keyvault.kv_azl.kv_azl_name
+    [string]$KeyVaultName = "",    # cluster.key_vault.name
 
     [Parameter(Mandatory = $false)]
     [string]$KeyVaultSubscriptionId = "",
@@ -147,7 +147,7 @@ param(
 
     # --- SPN Authentication ---
     [Parameter(Mandatory = $false)]
-    [string]$TenantId = "",        # azure_platform.azure_tenants[*].aztenant_id
+    [string]$TenantId = "",        # azure.tenant_id
 
     [Parameter(Mandatory = $false)]
     [string]$SPNClientId,

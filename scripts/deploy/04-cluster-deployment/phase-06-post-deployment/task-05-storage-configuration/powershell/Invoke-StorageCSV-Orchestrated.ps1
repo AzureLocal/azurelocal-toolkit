@@ -12,7 +12,7 @@
 
     Credential resolution order:
       1. -Credential parameter (if passed)
-      2. Key Vault  (identity.accounts.account_local_admin_username/password)
+      2. Key Vault  (identity.local_admin.username/password)
       3. Interactive Get-Credential prompt
 
 .PARAMETER ConfigPath
@@ -90,7 +90,7 @@ if (-not (Test-Path $ConfigPath)) {
 Import-Module powershell-yaml -ErrorAction Stop
 $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 
-$clusterName    = $cfg.compute.azure_local.cluster_name          # compute.azure_local.cluster_name
+$clusterName    = $cfg.cluster.name          # cluster.name
 $csvConfig      = $cfg.compute.cluster_shared_volumes             # compute.cluster_shared_volumes
 
 # Sorted node hostnames for CSV ownership balancing (node01 → node02 → …)
@@ -163,9 +163,9 @@ function Resolve-KeyVaultRef {
 # 2. Key Vault — LCM account (domain account for PSRemoting to domain-joined nodes)
 # 3. Interactive Get-Credential prompt
 if (-not $Credential) {
-    $netBios    = $cfg.identity.active_directory.domain.netbios            # identity.active_directory.domain.netbios
-    $lcmUser    = $cfg.identity.accounts.account_lcm_username              # identity.accounts.account_lcm_username
-    $lcmPassUri = $cfg.identity.accounts.account_lcm_password              # identity.accounts.account_lcm_password
+    $netBios    = $cfg['identity']?['active_directory']?['netbios_name']            # identity.active_directory.netbios_name
+    $lcmUser    = $cfg['identity']?['active_directory']?['lcm_user']?['username']              # identity.active_directory.lcm_user.username
+    $lcmPassUri = $cfg['identity']?['active_directory']?['lcm_user']?['password']              # identity.active_directory.lcm_user.password
     # Prefix with DOMAIN\ so NTLM resolves correctly when connecting via IP from a non-domain machine
     $lcmUserFqn = "${netBios}\${lcmUser}"
     Write-Log "Resolving LCM credentials from Key Vault..."

@@ -36,8 +36,8 @@
 
 .PARAMETER NoArcGateway
     Skip Arc Gateway validation and registration. By default, the script requires
-    an Arc Gateway to be configured in infrastructure.yml (compute.azure_local.arc_gateway_enabled
-    and arc_gateway_id). Set this switch only if you are not using an Arc Gateway.
+    an Arc Gateway to be configured in infrastructure.yml (scenario.outbound_path arc_gateway or
+    proxy_arc_gateway, and networking.outbound.arc_gateway.name). Set this switch only if you are not using an Arc Gateway.
     If omitted and no gateway is configured, the script blocks with an error.
 
 .PARAMETER SkipIdentity
@@ -160,20 +160,20 @@ function Get-Config {
         }
     }
 
-    $az = $cfg.compute.azure_local                                   # compute.azure_local
+    $gw = Get-AzlArcGateway -Infrastructure $cfg                     # scenario.outbound_path, networking.outbound.arc_gateway
 
     return [PSCustomObject]@{
         Nodes             = @($nodes)
-        AdminUser         = $cfg.identity.accounts.account_local_admin_username   # identity.accounts.account_local_admin_username
-        AdminPassUri      = $cfg.identity.accounts.account_local_admin_password   # identity.accounts.account_local_admin_password
-        TenantId          = $cfg.identity.azure_identity.azure_tenant_id         # identity.azure_identity.azure_tenant_id
-        SubscriptionId    = $cfg.identity.azure_identity.azure_subscription_id   # identity.azure_identity.azure_subscription_id
-        SpnAppId          = $cfg.identity.service_principal.client_id             # identity.service_principal.client_id
-        SpnSecretUri      = $cfg.identity.service_principal.secret               # identity.service_principal.secret
-        ResourceGroup     = $az.arc_resource_group                               # compute.azure_local.arc_resource_group
-        ArcGatewayEnabled = [bool]$az.arc_gateway_enabled                        # compute.azure_local.arc_gateway_enabled
-        ArcGatewayId      = if ($az.arc_gateway_id) { "$($az.arc_gateway_id)" } else { "" }  # compute.azure_local.arc_gateway_id
-        ArcGatewayName    = if ($az.arc_gateway_name) { "$($az.arc_gateway_name)" } else { "" }  # compute.azure_local.arc_gateway_name
+        AdminUser         = $cfg.identity.local_admin.username   # identity.local_admin.username
+        AdminPassUri      = $cfg.identity.local_admin.password   # identity.local_admin.password
+        TenantId          = $cfg.azure.tenant_id         # azure.tenant_id
+        SubscriptionId    = $cfg.azure.subscription_id   # azure.subscription_id
+        SpnAppId          = $cfg['azure']?['automation_identity']?['client_id']             # azure.automation_identity.client_id
+        SpnSecretUri      = $cfg['identity']?['service_principal']?['secret']               # identity.service_principal.secret
+        ResourceGroup     = $cfg.azure.resource_group                            # azure.resource_group
+        ArcGatewayEnabled = [bool]$gw.Enabled                                    # scenario.outbound_path is arc_gateway or proxy_arc_gateway
+        ArcGatewayId      = $gw.Id                                               # built from azure.subscription_id, the resource group and networking.outbound.arc_gateway.name
+        ArcGatewayName    = $gw.Name                                             # networking.outbound.arc_gateway.name
     }
 }
 
@@ -286,12 +286,12 @@ if ($NoArcGateway) {
     Write-Log "================================================================" HEADER
     Write-Log "" INFO
     Write-Log "Arc Gateway is required by default. Your infrastructure YAML has:" FAIL
-    Write-Log "  arc_gateway_enabled: false (or missing)" FAIL
+    Write-Log "  scenario.outbound_path is neither arc_gateway nor proxy_arc_gateway" FAIL
     Write-Log "" INFO
     Write-Log "To proceed, you must either:" INFO
     Write-Log "  1. Deploy an Arc Gateway and update infrastructure.yml:" INFO
-    Write-Log "       compute.azure_local.arc_gateway_enabled: true" INFO
-    Write-Log "       compute.azure_local.arc_gateway_id: /subscriptions/.../gateways/<name>" INFO
+    Write-Log "       scenario.outbound_path: arc_gateway (or proxy_arc_gateway)" INFO
+    Write-Log "       networking.outbound.arc_gateway.name: <name>" INFO
     Write-Log "  2. Run with -NoArcGateway if you do not want to use a gateway" INFO
     Write-Log "" INFO
     Write-Log "Log file: $logFile" INFO
@@ -302,9 +302,9 @@ if ($NoArcGateway) {
     Write-Log "  ARC GATEWAY ID MISSING" FAIL
     Write-Log "================================================================" HEADER
     Write-Log "" INFO
-    Write-Log "arc_gateway_enabled is true but arc_gateway_id is empty." FAIL
-    Write-Log "Update infrastructure.yml with the full resource ID:" INFO
-    Write-Log "  compute.azure_local.arc_gateway_id: /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.HybridCompute/gateways/<name>" INFO
+    Write-Log "scenario.outbound_path uses an Arc gateway but networking.outbound.arc_gateway.name is empty." FAIL
+    Write-Log "Update infrastructure.yml with the gateway name (and its resource group, if it is not azure.resource_group):" INFO
+    Write-Log "  networking.outbound.arc_gateway.name: <name>   (resource ID: /subscriptions/<sub>/resourceGroups/<rg>/providers/Microsoft.HybridCompute/gateways/<name>)" INFO
     Write-Log "" INFO
     Write-Log "Or run with -NoArcGateway to skip gateway usage." INFO
     Write-Log "Log file: $logFile" INFO
@@ -406,8 +406,8 @@ if (-not $SkipIdentity) {
         Write-Log "Subscription  : $($azCtx.Subscription.Id)" INFO
         Write-Log "" INFO
 
-        $spnAppId     = $cfg.SpnAppId          # identity.service_principal.client_id
-        $arcRg        = $cfg.ResourceGroup      # compute.azure_local.arc_resource_group
+        $spnAppId     = $cfg.SpnAppId          # azure.automation_identity.client_id
+        $arcRg        = $cfg.ResourceGroup      # azure.resource_group
         $spnSecretUri = $cfg.SpnSecretUri       # identity.service_principal.secret
 
         # --- Check 1: Verify SPN exists in Entra ID ---
@@ -495,7 +495,7 @@ if (-not $SkipIdentity) {
             $identityWarned++
         } elseif ([string]::IsNullOrWhiteSpace($cfg.ArcGatewayId)) {
             Write-Log "  [FAIL] Arc Gateway ID is empty in infrastructure.yml" FAIL
-            Write-Log "         Set compute.azure_local.arc_gateway_id or use -NoArcGateway" WARN
+            Write-Log "         Set networking.outbound.arc_gateway.name or use -NoArcGateway" WARN
             $identityFailed++
         } else {
             try {
@@ -566,8 +566,8 @@ if (-not $SkipConnectivity) {
     # 3. Interactive Get-Credential prompt
     Write-Log "--- Resolving credentials ---" HEADER
     if (-not $Credential) {
-        $adminUser    = $cfg.AdminUser                               # identity.accounts.account_local_admin_username
-        $adminPassUri = $cfg.AdminPassUri                            # identity.accounts.account_local_admin_password
+        $adminUser    = $cfg.AdminUser                               # identity.local_admin.username
+        $adminPassUri = $cfg.AdminPassUri                            # identity.local_admin.password
         Write-Log "Resolving credentials from Key Vault..."
         $adminPass = Resolve-KeyVaultRef -KvUri $adminPassUri
         if ($adminPass) {

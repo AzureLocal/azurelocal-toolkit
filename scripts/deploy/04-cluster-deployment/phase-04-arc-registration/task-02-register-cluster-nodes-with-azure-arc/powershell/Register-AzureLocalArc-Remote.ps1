@@ -1,25 +1,26 @@
 #Requires -Version 7.0
 # Task 02 - Register Nodes with Azure Arc (orchestrated, all nodes)
 # infrastructure.yml variables:
-#   azure.tenant_id         -> $TenantId
-#   azure.subscription_id   -> $SubscriptionId
-#   azure.resource_group    -> $ResourceGroup
-#   azure.region            -> $Region
-#   azure.arc_gateway_id    -> $ArcGatewayId
-#   azure.spn_id            -> $SpnId
+#   azure.tenant_id                        -> $TenantId
+#   azure.subscription_id                  -> $SubscriptionId
+#   azure.resource_group                   -> $ResourceGroup
+#   azure.location                         -> $Region
+#   scenario.outbound_path and networking.outbound.arc_gateway (name, resource_group) -> $ArcGatewayId
+#   azure.automation_identity.client_id    -> $SpnId
 #   nodes[].management.ip_address  -> $ServerList
 
 $ConfigPath = ".\configs\infrastructure.yml"
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
-$cfg        = Get-Content $ConfigPath
+$cfg        = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+$gateway    = Get-AzlArcGateway -Infrastructure $cfg
 
-$TenantId       = ($cfg | Select-String 'tenant_id:\s+"?([^"'' ]+)'     | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
-$SubscriptionId = ($cfg | Select-String 'subscription_id:\s+"?([^"'' ]+)' | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
-$ResourceGroup  = ($cfg | Select-String 'resource_group:\s+"?([^"'' ]+)' | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
-$Region         = ($cfg | Select-String 'region:\s+"?([^"'' ]+)'         | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
-$ArcGatewayId   = ($cfg | Select-String 'arc_gateway_id:\s+"?([^"'' ]+)' | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
-$SpnId          = ($cfg | Select-String 'spn_id:\s+"?([^"'' ]+)'         | ForEach-Object { $_.Matches[0].Groups[1].Value.Trim() }) | Select-Object -First 1
-$ServerList     = @(Get-AzlInfrastructureNode -Infrastructure (Get-Content $ConfigPath -Raw | ConvertFrom-Yaml) | ForEach-Object { $_.ManagementIp } | Where-Object { $_ })
+$TenantId       = $cfg.azure.tenant_id
+$SubscriptionId = $cfg.azure.subscription_id
+$ResourceGroup  = $cfg.azure.resource_group
+$Region         = $cfg.azure.location
+$ArcGatewayId   = $gateway.Id
+$SpnId          = $cfg['azure']?['automation_identity']?['client_id']
+$ServerList     = @(Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object { $_.ManagementIp } | Where-Object { $_ })
 
 $Cloud = "AzureCloud"
 

@@ -291,6 +291,161 @@ Describe 'Get-AzlInfrastructureNode' {
     }
 }
 
+Describe 'Readers for the values the per-task scripts share' {
+    Context 'Get-AzlManagementNetwork' {
+        It 'reads networking.management and works the subnet mask out of the CIDR' {
+            $infra = ConvertFrom-Yaml "networking:`n  management:`n    subnet: 192.0.2.0/24`n    gateway: 192.0.2.1`n    vlan_id: 711`n    dns_servers:`n      - 192.0.2.4`n      - 192.0.2.5`n"
+            $n = Get-AzlManagementNetwork -Infrastructure $infra
+            $n.Subnet | Should -Be '192.0.2.0/24'
+            $n.PrefixLength | Should -Be 24
+            $n.SubnetMask | Should -Be '255.255.255.0'
+            $n.Gateway | Should -Be '192.0.2.1'
+            $n.VlanId | Should -Be 711
+            $n.DnsServers | Should -Be @('192.0.2.4', '192.0.2.5')
+        }
+        It 'gives the mask of a prefix that is not a multiple of 8' {
+            $infra = ConvertFrom-Yaml "networking:`n  management:`n    subnet: 192.0.2.0/26`n"
+            (Get-AzlManagementNetwork -Infrastructure $infra).SubnetMask | Should -Be '255.255.255.192'
+        }
+        It 'agrees with the example file' {
+            $infra = Import-AzlInfrastructure -Path $script:ExamplePath -SkipValidation
+            $n = Get-AzlManagementNetwork -Infrastructure $infra
+            $n.Gateway | Should -Be $infra.networking.management.gateway
+            $n.Subnet | Should -Be $infra.networking.management.subnet
+            @($n.DnsServers).Count | Should -Be @($infra.networking.management.dns_servers).Count
+        }
+        It 'leaves a key the file does not set empty, and always returns an array for DnsServers' {
+            $n = Get-AzlManagementNetwork -Infrastructure ([ordered]@{ site = 'x' })
+            $n.Subnet | Should -BeNullOrEmpty
+            $n.SubnetMask | Should -BeNullOrEmpty
+            $n.Gateway | Should -BeNullOrEmpty
+            $n.VlanId | Should -BeNullOrEmpty
+            , $n.DnsServers | Should -BeOfType [object[]]
+            @($n.DnsServers).Count | Should -Be 0
+        }
+    }
+    Context 'Get-AzlArcGateway' {
+        BeforeAll {
+            function New-GatewayInfra([string]$Path, [string]$Name = 'arcgw-01', [string]$Group = '') {
+                $g = [ordered]@{ name = $Name }
+                if ($Group) { $g['resource_group'] = $Group }
+                [ordered]@{
+                    scenario   = [ordered]@{ outbound_path = $Path }
+                    azure      = [ordered]@{ subscription_id = '00000000-0000-0000-0000-000000000000'; resource_group = 'rg-cluster' }
+                    networking = [ordered]@{ outbound = [ordered]@{ arc_gateway = $g } }
+                }
+            }
+        }
+        It 'builds the resource ID for <Path>, in the gateway resource group when the file gives one' -ForEach @(@{ Path = 'arc_gateway' }, @{ Path = 'proxy_arc_gateway' }) {
+            $gw = Get-AzlArcGateway -Infrastructure (New-GatewayInfra $Path 'arcgw-01' 'rg-gateway')
+            $gw.Enabled | Should -BeTrue
+            $gw.Name | Should -Be 'arcgw-01'
+            $gw.ResourceGroup | Should -Be 'rg-gateway'
+            $gw.Id | Should -Be '/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-gateway/providers/Microsoft.HybridCompute/gateways/arcgw-01'
+        }
+        It 'uses azure.resource_group when the gateway names none' {
+            $gw = Get-AzlArcGateway -Infrastructure (New-GatewayInfra 'arc_gateway')
+            $gw.ResourceGroup | Should -Be 'rg-cluster'
+            $gw.Id | Should -Match '/resourceGroups/rg-cluster/'
+        }
+        It 'is not enabled, and has no ID, for the <Path> outbound path' -ForEach @(@{ Path = 'direct' }, @{ Path = 'proxy' }, @{ Path = 'private_path' }) {
+            $gw = Get-AzlArcGateway -Infrastructure (New-GatewayInfra $Path)
+            $gw.Enabled | Should -BeFalse
+            $gw.Id | Should -BeExactly ''
+        }
+        It 'has no ID when the gateway has no name' {
+            $gw = Get-AzlArcGateway -Infrastructure (New-GatewayInfra 'arc_gateway' '')
+            $gw.Enabled | Should -BeTrue
+            $gw.Id | Should -BeExactly ''
+        }
+        It 'returns an empty gateway for a file with no outbound section' {
+            $gw = Get-AzlArcGateway -Infrastructure ([ordered]@{ site = 'x' })
+            $gw.Enabled | Should -BeFalse
+            $gw.Name | Should -BeExactly ''
+            $gw.Id | Should -BeExactly ''
+        }
+    }
+    Context 'Get-AzlClusterWitness' {
+        It 'reads a cloud witness and takes the resource group and SKU from the landing zone storage account of that name' {
+            $infra = [ordered]@{
+                azure        = [ordered]@{ subscription_id = '00000000-0000-0000-0000-000000000000'; resource_group = 'rg-cluster' }
+                cluster      = [ordered]@{ witness = [ordered]@{ type = 'cloud'; storage_account = 'stwit01' } }
+                landing_zone = [ordered]@{ storage_accounts = @([ordered]@{ name = 'stother'; resource_group = 'rg-x'; sku = 'Premium_LRS' }, [ordered]@{ name = 'stwit01'; resource_group = 'rg-witness'; sku = 'Standard_LRS' }) }
+            }
+            $w = Get-AzlClusterWitness -Infrastructure $infra
+            $w.Type | Should -Be 'cloud'
+            $w.StorageAccount | Should -Be 'stwit01'
+            $w.ResourceGroup | Should -Be 'rg-witness'
+            $w.Sku | Should -Be 'Standard_LRS'
+            $w.SubscriptionId | Should -Be '00000000-0000-0000-0000-000000000000'
+        }
+        It 'uses azure.resource_group and no SKU when the landing zone does not list the account' {
+            $infra = [ordered]@{ azure = [ordered]@{ resource_group = 'rg-cluster' }; cluster = [ordered]@{ witness = [ordered]@{ type = 'cloud'; storage_account = 'stwit01' } } }
+            $w = Get-AzlClusterWitness -Infrastructure $infra
+            $w.ResourceGroup | Should -Be 'rg-cluster'
+            $w.Sku | Should -BeExactly ''
+        }
+        It 'reads a file share witness path' {
+            $infra = [ordered]@{ cluster = [ordered]@{ witness = [ordered]@{ type = 'file_share'; path = '\\fs01.example.test\witness' } } }
+            $w = Get-AzlClusterWitness -Infrastructure $infra
+            $w.Type | Should -Be 'file_share'
+            $w.Path | Should -Be '\\fs01.example.test\witness'
+            $w.StorageAccount | Should -BeExactly ''
+        }
+        It 'agrees with the example file' {
+            $infra = Import-AzlInfrastructure -Path $script:ExamplePath -SkipValidation
+            $w = Get-AzlClusterWitness -Infrastructure $infra
+            $w.Type | Should -Be $infra.cluster.witness.type
+            $w.StorageAccount | Should -Be $infra.cluster.witness.storage_account
+        }
+        It 'returns empty values for a file with no cluster section' {
+            $w = Get-AzlClusterWitness -Infrastructure ([ordered]@{ site = 'x' })
+            $w.Type | Should -BeExactly ''
+            $w.StorageAccount | Should -BeExactly ''
+            $w.Path | Should -BeExactly ''
+        }
+    }
+    Context 'Get-AzlManagementNicName' {
+        It 'returns the one OS name every node shares' {
+            $infra = [ordered]@{ nodes = @(
+                    [ordered]@{ name = 'n01'; management = [ordered]@{ ip_address = '192.0.2.11'; adapter_name = 'Port1' } }
+                    [ordered]@{ name = 'n02'; management = [ordered]@{ ip_address = '192.0.2.12'; adapter_name = 'Port1' } }) }
+            Get-AzlManagementNicName -Infrastructure $infra | Should -Be 'Port1'
+        }
+        It 'returns nothing when the nodes differ' {
+            $infra = [ordered]@{ nodes = @(
+                    [ordered]@{ name = 'n01'; management = [ordered]@{ ip_address = '192.0.2.11'; adapter_name = 'Port1' } }
+                    [ordered]@{ name = 'n02'; management = [ordered]@{ ip_address = '192.0.2.12'; adapter_name = 'Port2' } }) }
+            Get-AzlManagementNicName -Infrastructure $infra | Should -BeNullOrEmpty
+        }
+        It 'returns nothing when a node has no management port, or the file has no nodes' {
+            $infra = [ordered]@{ nodes = @([ordered]@{ name = 'n01' }) }
+            Get-AzlManagementNicName -Infrastructure $infra | Should -BeNullOrEmpty
+            Get-AzlManagementNicName -Infrastructure ([ordered]@{ site = 'x' }) | Should -BeNullOrEmpty
+        }
+        It 'uses os_name_override of the management port of a node with network_adapters' {
+            $port = [ordered]@{ name = 'Embedded NIC 1'; mac_address = '00:00:5E:00:53:11'; roles = @('management'); ip_assignment = 'static'; ip_address = '192.0.2.11'; os_name_override = 'Mgmt1' }
+            $infra = [ordered]@{ nodes = @([ordered]@{ name = 'n01'; network_adapters = @($port) }) }
+            Get-AzlManagementNicName -Infrastructure $infra | Should -Be 'Mgmt1'
+        }
+    }
+    Context 'Get-AzlManagementAdapter OsName' {
+        It 'is the adapter_name of a node described with nodes[].management' {
+            $infra = [ordered]@{ nodes = @([ordered]@{ name = 'n01'; management = [ordered]@{ ip_address = '192.0.2.11'; adapter_name = 'Port1' } }) }
+            (Get-AzlManagementAdapter -Infrastructure $infra -Node $infra.nodes[0]).OsName | Should -Be 'Port1'
+        }
+        It 'is os_name_override when the management port sets one, else the name of the port' {
+            $port = [ordered]@{ name = 'Embedded NIC 1'; mac_address = '00:00:5E:00:53:11'; roles = @('management'); ip_assignment = 'static'; ip_address = '192.0.2.11' }
+            $infra = [ordered]@{ nodes = @([ordered]@{ name = 'n01'; network_adapters = @($port) }) }
+            (Get-AzlManagementAdapter -Infrastructure $infra -Node $infra.nodes[0]).OsName | Should -Be 'Embedded NIC 1'
+            $port['os_name_override'] = 'Mgmt1'
+            $adapter = Get-AzlManagementAdapter -Infrastructure $infra -Node $infra.nodes[0]
+            $adapter.OsName | Should -Be 'Mgmt1'
+            $adapter.Name | Should -Be 'Embedded NIC 1'
+        }
+    }
+}
+
 Describe 'Schema 5.2: network adapters' {
     BeforeAll {
         $script:Lom = Join-Path $repo 'config\variables\examples\scenarios\lom-management-ztp.yml'

@@ -162,8 +162,8 @@ try {
     Write-Log "Targeting $($allNodes.Count) node(s): $($allNodes.Name -join ', ')"
 
     if (-not $Credential) {
-        $adminUser    = $config.identity.accounts.account_local_admin_username
-        $adminPassUri = $config.identity.accounts.account_local_admin_password
+        $adminUser    = $config.identity.local_admin.username
+        $adminPassUri = $config.identity.local_admin.password
         Write-Log "Resolving credentials from Key Vault..."
         $adminPass = Resolve-KeyVaultRef -KvUri $adminPassUri
         if ($adminPass) {

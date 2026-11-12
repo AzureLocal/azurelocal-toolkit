@@ -29,8 +29,8 @@
 #>
 
 #region CONFIGURATION
-$Username = "REPLACE_LOCAL_ADMIN_USERNAME"   # identity.accounts.account_local_admin_username — must be identical on all nodes
-$Password = "REPLACE_LOCAL_ADMIN_PASSWORD"   # identity.accounts.account_local_admin_password — minimum 14 characters
+$Username = "REPLACE_LOCAL_ADMIN_USERNAME"   # identity.local_admin.username — must be identical on all nodes
+$Password = "REPLACE_LOCAL_ADMIN_PASSWORD"   # identity.local_admin.password — minimum 14 characters
 #endregion CONFIGURATION
 
 Set-StrictMode -Version Latest

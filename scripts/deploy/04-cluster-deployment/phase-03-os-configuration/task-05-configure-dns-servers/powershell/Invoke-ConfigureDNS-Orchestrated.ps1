@@ -168,16 +168,16 @@ function Get-ClusterConfig {
 
     $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 
-    $mgmtNIC      = $cfg.network_config.management_nic_name
-    $dnsServers   = $cfg.compute.azure_local.dns_servers
-    $dnsPrimary   = $dnsServers[0]
-    $dnsSecondary = $dnsServers[1]
+    $mgmtNIC      = Get-AzlManagementNicName -Infrastructure $cfg
+    $dnsServers   = @((Get-AzlManagementNetwork -Infrastructure $cfg).DnsServers)
+    $dnsPrimary   = if ($dnsServers.Count -gt 0) { $dnsServers[0] } else { $null }
+    $dnsSecondary = if ($dnsServers.Count -gt 1) { $dnsServers[1] } else { $null }
 
-    if (-not $mgmtNIC)      { throw "network_config.management_nic_name not found in $ConfigPath." }
-    if (-not $dnsPrimary)   { throw "compute.azure_local.dns_servers[0] not found in $ConfigPath." }
-    if (-not $dnsSecondary) { throw "compute.azure_local.dns_servers[1] not found in $ConfigPath." }
+    if (-not $mgmtNIC)      { throw "The management adapter name (nodes[].network_adapters[].name or nodes[].management.adapter_name) is not set, or differs between the nodes, in $ConfigPath." }
+    if (-not $dnsPrimary)   { throw "networking.management.dns_servers[0] not found in $ConfigPath." }
+    if (-not $dnsSecondary) { throw "networking.management.dns_servers[1] not found in $ConfigPath." }
 
-    Write-Log "  management_nic_name : $mgmtNIC"
+    Write-Log "  management NIC name : $mgmtNIC"
     Write-Log "  dns.primary         : $dnsPrimary"
     Write-Log "  dns.secondary       : $dnsSecondary"
 
@@ -289,8 +289,8 @@ try {
     $config = Get-ClusterConfig -ConfigPath $resolvedConfig
     Write-Log "Nodes to process: $($config.Nodes.Count)"
 
-    $adminUser    = $config._cfg.identity.accounts.account_local_admin_username
-    $adminPassUri = $config._cfg.identity.accounts.account_local_admin_password
+    $adminUser    = $config._cfg.identity.local_admin.username
+    $adminPassUri = $config._cfg.identity.local_admin.password
     if (-not $Credential) {
         Write-Log "Resolving credentials from Key Vault..."
         $adminPass = Resolve-KeyVaultRef -KvUri $adminPassUri

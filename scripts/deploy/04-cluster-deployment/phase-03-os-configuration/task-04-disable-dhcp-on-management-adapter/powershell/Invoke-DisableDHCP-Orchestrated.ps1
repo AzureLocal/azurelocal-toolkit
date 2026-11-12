@@ -276,8 +276,8 @@ try {
 
     $excludePattern = "NDIS|Hyper-V Virtual|WAN Miniport|Bluetooth|Wi-Fi Direct|Microsoft Kernel Debug|Multiplexor"
 
-    $adminUser    = $config.identity.accounts.account_local_admin_username
-    $adminPassUri = $config.identity.accounts.account_local_admin_password
+    $adminUser    = $config.identity.local_admin.username
+    $adminPassUri = $config.identity.local_admin.password
     if (-not $Credential) {
         Write-Log "Resolving credentials from Key Vault..."
         $adminPass = Resolve-KeyVaultRef -KvUri $adminPassUri

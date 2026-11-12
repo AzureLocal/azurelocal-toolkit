@@ -113,10 +113,10 @@ catch {
 
 # ── Extract Config Values ──────────────────────────────────────────────
 $clusterNodes = @(Get-AzlInfrastructureNode -Infrastructure $cfg)                    # nodes[]
-$domainFqdn   = $cfg.cluster_arm_deployment.domain_fqdn                      # cluster_arm_deployment.domain_fqdn
-$ouPath       = $cfg.cluster_arm_deployment.domain_ou_path                   # cluster_arm_deployment.domain_ou_path
-$lcmUser      = $cfg.accounts.lcm_admin.username                            # accounts.lcm_admin.username
-$clusterName  = $cfg.cluster_arm_deployment.cluster_name                     # cluster_arm_deployment.cluster_name
+$domainFqdn   = $cfg.identity.active_directory.domain_fqdn                      # identity.active_directory.domain_fqdn
+$ouPath       = $cfg.identity.active_directory.ou_path                   # identity.active_directory.ou_path
+$lcmUser      = $cfg['identity']?['active_directory']?['lcm_user']?['username']                            # identity.active_directory.lcm_user.username
+$clusterName  = $cfg.cluster.name                     # cluster.name
 
 Write-Log "Domain FQDN:    $domainFqdn"
 Write-Log "OU Path:        $ouPath"
@@ -138,14 +138,14 @@ if (-not $clusterNodes -or $clusterNodes.Count -eq 0) {
 # ── Credential Resolution ─────────────────────────────────────────────
 if (-not $Credential) {
     # Try Key Vault resolution
-    $kvRef = $cfg.accounts.local_admin.password  # accounts.local_admin.password
+    $kvRef = $cfg.identity.local_admin.password  # identity.local_admin.password
     if ($kvRef -and $kvRef -match '^keyvault://') {
         Write-Log "Resolving credential from Key Vault reference..."
         try {
             $parts     = $kvRef -replace '^keyvault://', '' -split '/'
             $vaultName = $parts[0]; $secretName = $parts[1]
             $secret    = Get-AzKeyVaultSecret -VaultName $vaultName -Name $secretName -ErrorAction Stop
-            $adminUser = $cfg.accounts.local_admin.username  # accounts.local_admin.username
+            $adminUser = $cfg.identity.local_admin.username  # identity.local_admin.username
             $Credential = New-Object PSCredential($adminUser, $secret.SecretValue)
             Write-Log "Credential resolved from Key Vault." -Level "SUCCESS"
         }

@@ -142,21 +142,11 @@ try {
     Write-Host "Starting RBAC Role Assignment for Azure Local Deployment SPN" -ForegroundColor Cyan
 
     # Extract values from config using fixed paths
-    $subscriptionId = $config.azure_platform.subscriptions.lab.id
-    if (-not $subscriptionId) {
-        # Fallback to first available subscription
-        $subscriptions = $config.azure_platform.subscriptions
-        if ($subscriptions) {
-            $firstSub = $subscriptions.PSObject.Properties | Select-Object -First 1
-            if ($firstSub) {
-                $subscriptionId = $firstSub.Value.id
-            }
-        }
-    }
-    $servicePrincipalAppId = $config.identity.service_principal.client_id
+    $subscriptionId = $config.azure.subscription_id
+    $servicePrincipalAppId = $config['azure']?['automation_identity']?['client_id']
     
     # Extract Azure Local cluster resource group for resource group-level role assignments
-    $clusterResourceGroup = $config.azure_platform.resource_group_name
+    $clusterResourceGroup = $config.azure.resource_group
 
     # Validate required parameters
     if (-not $subscriptionId) {

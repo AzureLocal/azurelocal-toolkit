@@ -146,8 +146,8 @@ Write-LogMessage "=== Enable HCI Insights ===" -Level Info
 # Load configuration
 $config = Import-InfrastructureConfig -Path $ConfigPath
 if ($config) {
-    $ResourceGroupName = if ($ResourceGroupName) { $ResourceGroupName } else { $config.azure.resource_group_name }
-    $ClusterName = if ($ClusterName) { $ClusterName } else { $config.platform.cluster_name }
+    $ResourceGroupName = if ($ResourceGroupName) { $ResourceGroupName } else { $config.azure.resource_group }
+    $ClusterName = if ($ClusterName) { $ClusterName } else { $config.cluster.name }
     $WorkspaceId = if ($WorkspaceId) { $WorkspaceId } else { $config.monitoring.log_analytics_workspace_id }
     $SubscriptionId = if ($SubscriptionId) { $SubscriptionId } else { $config.azure.subscription_id }
 }

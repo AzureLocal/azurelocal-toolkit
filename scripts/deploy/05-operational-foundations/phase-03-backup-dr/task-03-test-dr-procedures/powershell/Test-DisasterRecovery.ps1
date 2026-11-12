@@ -411,7 +411,7 @@ try {
 
     # Get cluster name from config if not provided
     if (-not $ClusterName -and $config.cluster) {
-        $ClusterName = $config.compute.azure_local.cluster_name
+        $ClusterName = $config.cluster.name
     }
 
     if (-not $ClusterName) {
