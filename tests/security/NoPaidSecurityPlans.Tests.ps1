@@ -56,6 +56,7 @@ Describe 'No paid security plan is turned on by the automation' {
         $text = Get-Content -LiteralPath $path -Raw
         $text | Should -Match "'security', 'defender_for_cloud', 'enabled'"
         $text | Should -Match "'security', 'defender_for_cloud', 'apply_cloud_security_benchmark'"
+        $text | Should -Match "'security', 'defender_for_cloud', 'security_contact_email'"
     }
 
     It 'the paid script is run by nothing outside its own folder' {

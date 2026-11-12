@@ -10,16 +10,16 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](diagrams/variable-flow.drawio) ([PNG](diagrams/variable-flow.png)).
 
-Registry version 5.0.31. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
+Registry version 5.0.32. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
 
 ## In numbers
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 579 | 285 | 121 | 3 | 168 | 2 |
+| Keys of infrastructure.yml | 580 | 285 | 121 | 3 | 169 | 2 |
 | Owned by a tool (`tools.*`) | 2467 | 2460 | 0 | 0 | 7 | 0 |
 | Older variables-file sections | 1476 | 60 | 521 | 0 | 890 | 5 |
-| All registry leaves | 4522 | 2805 | 642 | 3 | 1065 | 7 |
+| All registry leaves | 4523 | 2805 | 642 | 3 | 1066 | 7 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -435,7 +435,7 @@ Ranked by how many different tools read the key, then how many places in the cod
 
 Variables the registry documents that no tool in the scan reads by name. Each is either a key a coming phase will read, a key only the validator checks, or a name kept for compatibility. Nothing here is an error; it is the list to look at before you spend time filling a key in that nothing uses yet.
 
-### Placeholder: documented, not read by any tool in the scan (168)
+### Placeholder: documented, not read by any tool in the scan (169)
 
 | Variable | Purposes | Provided by | Note |
 | --- | --- | --- | --- |
@@ -467,6 +467,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `networking.outbound.private_path.arc_private_link_scope` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `networking.outbound.private_path.proxy_bypass` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `security.backup_key_vault` |  | operator by hand | documented in the registry; no tool in the scan reads it |
+| `security.defender_for_cloud.security_contact_email` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `operations.monitoring.enabled` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `operations.monitoring.log_analytics_workspace` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `operations.monitoring.workspace_resource_group` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
@@ -1438,6 +1439,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `security.backup_key_vault` | string (key_vault_name) | operator |  |  |  | placeholder |
 | `security.defender_for_cloud.enabled` | boolean, default `true` | operator; default |  | toolkit-legacy-scripts |  | read |
 | `security.defender_for_cloud.apply_cloud_security_benchmark` | boolean, default `true` | operator; default |  | toolkit-legacy-scripts |  | read |
+| `security.defender_for_cloud.security_contact_email` | string | operator |  |  |  | placeholder |
 | `security.telemetry.streaming_data` | boolean | operator | deployment | arm-deployment | ARM streamingDataClient | read |
 | `security.telemetry.episodic_data_upload` | boolean | operator | deployment | arm-deployment | ARM episodicDataUpload | read |
 | `security.telemetry.eu_location` | boolean | operator | deployment | arm-deployment | ARM euLocation | read |

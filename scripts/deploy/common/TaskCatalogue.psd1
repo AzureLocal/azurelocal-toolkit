@@ -58,7 +58,6 @@
         @{ Path = '02-azure-foundation/phase-04-azure-management-infrastructure/task-13-configure-utility-server'; AzureCli = 'yes'; Reason = 'Deploys a virtual machine in Azure.' }
         @{ Path = '02-azure-foundation/phase-04-azure-management-infrastructure/task-14-configure-ndm-server'; AzureCli = 'yes'; Reason = 'Deploys a virtual machine in Azure.' }
         @{ Path = '02-azure-foundation/phase-04-azure-management-infrastructure/task-15-configure-lighthouse'; AzureCli = 'yes'; Reason = 'Deploys a virtual machine in Azure.' }
-        @{ Path = '02-azure-foundation/phase-05-identity-security/task-01-pim-conditional-access'; AzureCli = 'yes'; Reason = 'Configures Entra ID (PIM, Conditional Access) and Azure security settings.' }
         @{ Path = '03-onprem-readiness/phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts'; AzureCli = 'no'; Reason = 'Acts on on-premises Active Directory or DNS.' }
         @{ Path = '03-onprem-readiness/phase-01-active-directory/task-02-security-groups'; AzureCli = 'no'; Reason = 'Acts on on-premises Active Directory or DNS.' }
         @{ Path = '03-onprem-readiness/phase-01-active-directory/task-03-dns-node-a-records'; AzureCli = 'no'; Reason = 'Acts on on-premises Active Directory or DNS.' }
@@ -104,7 +103,6 @@
         @{ Path = '04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal'; AzureCli = 'unclear'; Reason = 'Named for the Azure portal, but the real scripts create local accounts on the nodes.' }
         @{ Path = '04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion'; AzureCli = 'unclear'; Reason = 'Verifies the deployment, but the real scripts only check the local identity set-up and cluster health on premises.' }
         @{ Path = '04-cluster-deployment/phase-05-cluster-deployment/monitoring'; AzureCli = 'yes'; Reason = 'Follows the ARM validation and deployment in Azure.' }
-        @{ Path = '04-cluster-deployment/phase-06-post-deployment/task-01-configure-windows-admin-center'; AzureCli = 'no'; Reason = 'Installs and configures Windows Admin Center on a server.' }
         @{ Path = '04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn'; AzureCli = 'unclear'; Reason = 'SDN is enabled on the cluster; Azure is only used to run commands and read secrets.' }
         @{ Path = '04-cluster-deployment/phase-06-post-deployment/task-02-cluster-quorum-configuration'; AzureCli = 'yes'; Reason = 'Creates or reads the storage account for the cloud witness.' }
         @{ Path = '04-cluster-deployment/phase-06-post-deployment/task-03-security-groups-applied-to-nodes'; AzureCli = 'no'; Reason = 'Applies Active Directory security groups on the nodes.' }
@@ -122,12 +120,6 @@
         @{ Path = '05-operational-foundations/phase-02-monitoring-observability/task-02-configure-azure-monitor-agent'; AzureCli = 'yes'; Reason = 'Configures Azure Monitor; a real Azure CLI script exists.' }
         @{ Path = '05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights'; AzureCli = 'yes'; Reason = 'Enables Azure Local Insights.' }
         @{ Path = '05-operational-foundations/phase-02-monitoring-observability/task-04-setup-alerting'; AzureCli = 'yes'; Reason = 'Sets up Azure Monitor alerting.' }
-        @{ Path = '05-operational-foundations/phase-02-monitoring-observability/task-05-deploy-omimswac-monitoring'; AzureCli = 'no'; Reason = 'Installs or configures a Windows Admin Center component on a server.' }
-        @{ Path = '05-operational-foundations/phase-02-monitoring-observability/task-05-deploy-wac'; AzureCli = 'no'; Reason = 'Installs or configures a Windows Admin Center component on a server.' }
-        @{ Path = '05-operational-foundations/phase-02-monitoring-observability/task-06-configure-network-device-logging'; AzureCli = 'yes'; Reason = 'Deploys the syslog virtual machine in Azure (the real script calls az).' }
-        @{ Path = '05-operational-foundations/phase-03-backup-dr/task-01-configure-azure-backup'; AzureCli = 'yes'; Reason = 'Configures Azure Backup; a real Azure CLI script exists.' }
-        @{ Path = '05-operational-foundations/phase-03-backup-dr/task-02-configure-site-recovery'; AzureCli = 'yes'; Reason = 'Configures Azure Site Recovery.' }
-        @{ Path = '05-operational-foundations/phase-03-backup-dr/task-03-test-dr-procedures'; AzureCli = 'unclear'; Reason = 'Tests disaster recovery; the real script uses no Azure command.' }
         @{ Path = '05-operational-foundations/phase-04-security-governance/task-01-enable-defender-for-cloud'; AzureCli = 'yes'; Reason = 'Enables Microsoft Defender for Cloud.' }
         @{ Path = '05-operational-foundations/phase-04-security-governance/task-02-apply-azure-policy-initiatives'; AzureCli = 'yes'; Reason = 'Applies Azure Policy.' }
         @{ Path = '05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines'; AzureCli = 'no'; Reason = 'Applies security baselines on the nodes; the real script uses no Azure command.' }
@@ -140,6 +132,5 @@
         @{ Path = '06-testing-validation/task-03-network-rdma-validation'; AzureCli = 'no'; Reason = 'Validates network and RDMA settings on the nodes.' }
         @{ Path = '06-testing-validation/task-04-high-availability-testing'; AzureCli = 'no'; Reason = 'Tests failover and live migration on the cluster.' }
         @{ Path = '06-testing-validation/task-05-security-compliance-validation'; AzureCli = 'yes'; Reason = 'Reads Azure Policy state, role assignments and Defender pricing.' }
-        @{ Path = '06-testing-validation/task-06-backup-dr-validation'; AzureCli = 'yes'; Reason = 'Reads Azure Backup and Site Recovery state.' }
     )
 }

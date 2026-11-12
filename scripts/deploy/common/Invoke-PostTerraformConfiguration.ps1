@@ -32,7 +32,7 @@
 .PARAMETER SkipSteps
     Array of step names to skip. Valid values:
     ad-preparation, dc-promotion, os-configuration, arc-registration,
-    monitoring-agents, wac-server, syslog-receiver
+    monitoring-agents
 
 .PARAMETER DryRun
     Previews the execution plan without running any steps.
@@ -51,7 +51,7 @@ param(
     [string[]]$TargetNodes = @(),
     [string]$LogPath = '',
     [ValidateSet('ad-preparation', 'dc-promotion', 'os-configuration',
-                 'arc-registration', 'monitoring-agents', 'wac-server', 'syslog-receiver')]
+                 'arc-registration', 'monitoring-agents')]
     [string[]]$SkipSteps = @(),
     [switch]$DryRun
 )
@@ -137,16 +137,6 @@ $steps = [ordered]@{
             'task-02-configure-azure-monitor-agent'
             'task-03-enable-hci-insights'
         )
-    }
-    'wac-server'        = @{
-        Description = 'Windows Admin Center Configuration'
-        TaskPath    = '05-operational-foundations\phase-02-monitoring-observability'
-        Tasks       = @('task-05-deploy-wac')
-    }
-    'syslog-receiver'   = @{
-        Description = 'Syslog/SNMP Receiver Configuration'
-        TaskPath    = '05-operational-foundations\phase-02-monitoring-observability'
-        Tasks       = @('task-06-configure-network-device-logging')
     }
 }
 

@@ -1,6 +1,6 @@
 # infrastructure.yml variables reference
 
-Every key of [`infrastructure.yml`](infrastructure-file.md), schema 5.6.7, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](../schema/infrastructure.schema.json) (itself generated from the master registry [`master-registry.yaml`](../schema/master-registry.yaml)), the examples and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don't edit it: change the registry (and the metadata) and run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`, then:
+Every key of [`infrastructure.yml`](infrastructure-file.md), schema 5.6.8, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](../schema/infrastructure.schema.json) (itself generated from the master registry [`master-registry.yaml`](../schema/master-registry.yaml)), the examples and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don't edit it: change the registry (and the metadata) and run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`, then:
 
 ```powershell
 ./config/variables/scripts/New-InfrastructureVariablesReference.ps1
@@ -545,6 +545,7 @@ Security settings of the deployment.
 | `security.defender_for_cloud` | The free level of Microsoft Defender for Cloud that Azure Local needs to show its security settings in the Azure portal. | object | no / no |  |  | Your security baseline; Microsoft's recommended defaults apply when omitted. | Trailwright |
 | `security.defender_for_cloud.enabled` | true (default) registers the Microsoft.Security resource provider on the subscription of the cluster, which turns on Foundational CSPM, the free plan... | boolean | no / no | `true` |  | Your security baseline; Microsoft's recommended defaults apply when omitted. | Trailwright |
 | `security.defender_for_cloud.apply_cloud_security_benchmark` | true (default) assigns the Microsoft cloud security benchmark initiative to the subscription of the cluster when it is not assigned yet. | boolean | no / no | `true` |  | Your security baseline; Microsoft's recommended defaults apply when omitted. | Trailwright |
+| `security.defender_for_cloud.security_contact_email` | Address that Microsoft Defender for Cloud sends its security notifications to (a team mailbox; several addresses are separated by semicolons). | string | no / no |  |  | Your security baseline; Microsoft's recommended defaults apply when omitted. | Trailwright |
 | `security.telemetry` | What the cluster sends to Microsoft as telemetry. | object | no / no |  |  | Your security baseline; Microsoft's recommended defaults apply when omitted. | ARM deployment, Trailwright |
 | `security.telemetry.streaming_data` | true sends the streaming diagnostic data. | boolean | no / no |  | `true` | Your security baseline; Microsoft's recommended defaults apply when omitted. | ARM deployment, Trailwright |
 | `security.telemetry.episodic_data_upload` | true sends the episodic diagnostic data. | boolean | no / no |  | `true` | Your security baseline; Microsoft's recommended defaults apply when omitted. | ARM deployment, Trailwright |

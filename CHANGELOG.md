@@ -12,6 +12,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Defender for Cloud: new optional key `security.defender_for_cloud.security_contact_email` (registry 5.0.32, infrastructure schema 5.6.8). `Enable-DefenderForCloud.ps1` sets it as the security contact of the subscription when there is none. Free.
+- Moved four groups of tasks out of the route into `scripts/deferred` (see its README): Windows Admin Center (three task folders), backup and disaster recovery (the stage 05 phase and the stage 06 validation), PIM and conditional access, and the network device syslog collector. Nothing runs them; they are no longer in the task catalogue, and `Invoke-PostTerraformConfiguration.ps1` no longer offers the `wac-server` and `syslog-receiver` roles.
+
 - Removed the Datadog task (stage 05, monitoring task 07: three scripts) and the old-layout Datadog keys (registry 5.0.31). The toolkit installs no third-party agent. Nothing called the task.
 - Removed the per-machine Azure Update Manager task (stage 05, security task 05: three scripts). It set patch assessment, the patch extension and a maintenance configuration on the machines one by one, which Microsoft does not support for Azure Local machines; the instance is updated as a whole.
 - Terraform: the `monitoring` module no longer adds the legacy `Updates` and `Security` Log Analytics solutions.

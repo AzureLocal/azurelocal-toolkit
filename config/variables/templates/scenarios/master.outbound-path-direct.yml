@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for infrastructure.yml for scenario.outbound_path = direct with every variable. Schema 5.6.7. Scenario: outbound_path=direct.
+# Template for infrastructure.yml for scenario.outbound_path = direct with every variable. Schema 5.6.8. Scenario: outbound_path=direct.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -1055,6 +1055,8 @@ security:
     # true (default) assigns the Microsoft cloud security benchmark initiative to the subscription of the cluster when it is not assigned yet.
     # default: true
     apply_cloud_security_benchmark: true
+    # Address that Microsoft Defender for Cloud sends its security notifications to (a team mailbox; several addresses are separated by semicolon...
+    security_contact_email: "security@improbability.cloud"
   # What the cluster sends to Microsoft as telemetry.
   # used by: deployment
   telemetry:

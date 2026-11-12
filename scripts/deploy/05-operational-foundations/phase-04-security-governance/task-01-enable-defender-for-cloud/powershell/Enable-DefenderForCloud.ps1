@@ -9,7 +9,11 @@
       Microsoft.Security resource provider is registered.
     - The Microsoft cloud security benchmark initiative, assigned to the subscription.
 
-    This script does those two things and nothing else. It never turns on a paid plan (Defender for
+    When security.defender_for_cloud.security_contact_email holds an address and the subscription has no
+    security contact yet, the script also sets that address as the security contact (free). It never
+    replaces a contact that exists.
+
+    Apart from that, this script does those two things and nothing else. It never turns on a paid plan (Defender for
     Servers, Storage, Key Vault, Resource Manager, DNS, SQL or Defender CSPM), never changes a pricing
     tier and never turns on agent auto-provisioning. Paid plans are the operator's own decision; see
     scripts/optional/paid-security-services.
@@ -21,7 +25,8 @@
 
 .PARAMETER ConfigPath
     Path to infrastructure.yml. The script reads azure.subscription_id,
-    security.defender_for_cloud.enabled and security.defender_for_cloud.apply_cloud_security_benchmark.
+    security.defender_for_cloud.enabled, security.defender_for_cloud.apply_cloud_security_benchmark and
+    security.defender_for_cloud.security_contact_email.
 
 .EXAMPLE
     .\Enable-DefenderForCloud.ps1 -ConfigPath .\configs\infrastructure.yml
@@ -31,7 +36,7 @@
 
 .NOTES
     Author: AzureLocal Cloud Team
-    Version: 2.0.0
+    Version: 2.1.0
     Stage: 05-operational-foundations
     Phase: phase-04-security-governance
     Task: task-01-enable-defender-for-cloud
@@ -56,6 +61,8 @@ $ErrorActionPreference = 'Stop'
 $script:BenchmarkDefinitionId = '/providers/Microsoft.Authorization/policySetDefinitions/1f3afdf9-d0c9-4c3d-847f-89da613e70a8'
 # Name Defender for Cloud itself gives the assignment, so the portal toggle shows it as on.
 $script:BenchmarkAssignmentName = 'SecurityCenterBuiltIn'
+# API version of the security contact resource (Microsoft.Security/securityContacts).
+$script:SecurityContactApiVersion = '2023-12-01-preview'
 
 #region Functions
 
@@ -129,6 +136,7 @@ if (-not $SubscriptionId) {
     $SubscriptionId = [string](Get-ConfigSetting -Config $config -Path 'azure', 'subscription_id' -Default '')
 }
 $enabled = ConvertTo-Switch -Key 'security.defender_for_cloud.enabled' -Value (Get-ConfigSetting -Config $config -Path 'security', 'defender_for_cloud', 'enabled' -Default $true)
+$contactEmail = ([string](Get-ConfigSetting -Config $config -Path 'security', 'defender_for_cloud', 'security_contact_email' -Default '')).Trim()
 $applyBenchmark = ConvertTo-Switch -Key 'security.defender_for_cloud.apply_cloud_security_benchmark' -Value (Get-ConfigSetting -Config $config -Path 'security', 'defender_for_cloud', 'apply_cloud_security_benchmark' -Default $true)
 
 if (-not $enabled) {
@@ -177,6 +185,30 @@ if ($applyBenchmark) {
 }
 else {
     Write-LogMessage "security.defender_for_cloud.apply_cloud_security_benchmark is false. The initiative is not assigned; the Azure Local security settings will not show in the portal." -Level Warning
+}
+
+# 3. Security contact (free): set only when the file names one and the subscription has none.
+if ($contactEmail) {
+    $addresses = @($contactEmail -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+    $invalid = @($addresses | Where-Object { $_ -notmatch '^[^@\s;]+@[^@\s;]+\.[^@\s;]+$' })
+    if (-not $addresses.Count -or $invalid.Count) { throw "security.defender_for_cloud.security_contact_email must hold one email address or several separated by semicolons; found '$contactEmail'." }
+    $contactEmail = $addresses -join ';'
+    $contactPath = "/subscriptions/$SubscriptionId/providers/Microsoft.Security/securityContacts/default?api-version=$($script:SecurityContactApiVersion)"
+    $current = Invoke-AzRestMethod -Method GET -Path $contactPath
+    if ($current.StatusCode -notin 200, 404) {
+        throw "The security contact of the subscription could not be read (HTTP $($current.StatusCode))."
+    }
+    if ($current.StatusCode -eq 200) {
+        # Any contact that exists is left alone, whatever it holds.
+        Write-LogMessage "The subscription already has a security contact. It is left as it is." -Level Info
+    }
+    elseif ($PSCmdlet.ShouldProcess("/subscriptions/$SubscriptionId", "Set the Defender for Cloud security contact")) {
+        # Alerts of high severity is the level Defender for Cloud itself uses for a new contact.
+        $payload = @{ properties = @{ emails = $contactEmail; isEnabled = $true; notificationsSources = @(@{ sourceType = 'Alert'; minimalSeverity = 'High' }) } } | ConvertTo-Json -Depth 5
+        $result = Invoke-AzRestMethod -Method PUT -Path $contactPath -Payload $payload
+        if ($result.StatusCode -notin 200, 201) { throw "The security contact could not be set (HTTP $($result.StatusCode)): $($result.Content)" }
+        Write-LogMessage "Security contact set." -Level Success
+    }
 }
 
 Write-LogMessage "No paid Defender plan was turned on or changed by this script." -Level Info
