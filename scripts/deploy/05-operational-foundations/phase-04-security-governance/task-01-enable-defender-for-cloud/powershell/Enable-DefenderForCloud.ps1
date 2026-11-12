@@ -1,33 +1,44 @@
 <#
 .SYNOPSIS
-    Enables Microsoft Defender for Cloud on Azure Local resources.
+    Turns on the free level of Microsoft Defender for Cloud that Azure Local needs.
 
 .DESCRIPTION
-    This script configures Defender for Cloud:
-    - Enables Defender for Servers plan
-    - Enables Defender for Storage plan
-    - Configures auto-provisioning of agents
-    - Validates Defender enrollment and secure score
+    Azure Local shows its security settings in the Azure portal only when two free items are in place
+    on the subscription of the cluster:
+    - Foundational CSPM, the free plan of Microsoft Defender for Cloud. It is on as soon as the
+      Microsoft.Security resource provider is registered.
+    - The Microsoft cloud security benchmark initiative, assigned to the subscription.
+
+    This script does those two things and nothing else. It never turns on a paid plan (Defender for
+    Servers, Storage, Key Vault, Resource Manager, DNS, SQL or Defender CSPM), never changes a pricing
+    tier and never turns on agent auto-provisioning. Paid plans are the operator's own decision; see
+    scripts/optional/paid-security-services.
+
+    Source: https://learn.microsoft.com/azure/azure-local/manage/manage-security-with-defender-for-cloud
 
 .PARAMETER SubscriptionId
-    Azure subscription ID.
-
-.PARAMETER ResourceGroupName
-    Azure resource group name.
+    Azure subscription ID of the cluster. Default: azure.subscription_id of the variables file.
 
 .PARAMETER ConfigPath
-    Path to infrastructure.yml configuration file.
+    Path to infrastructure.yml. The script reads azure.subscription_id,
+    security.defender_for_cloud.enabled and security.defender_for_cloud.apply_cloud_security_benchmark.
 
 .EXAMPLE
-    .\Enable-DefenderForCloud.ps1 -SubscriptionId "00000000-0000-0000-0000-000000000000"
+    .\Enable-DefenderForCloud.ps1 -ConfigPath .\configs\infrastructure.yml
+
+.EXAMPLE
+    .\Enable-DefenderForCloud.ps1 -SubscriptionId "00000000-0000-0000-0000-000000000000" -WhatIf
 
 .NOTES
-    Author: AzureLocal Cloud Team Team
-    Version: 1.0.0
+    Author: AzureLocal Cloud Team
+    Version: 2.0.0
     Stage: 05-operational-foundations
     Phase: phase-04-security-governance
     Task: task-01-enable-defender-for-cloud
 #>
+
+#Requires -Version 7.0
+#Requires -Modules Az.Accounts, Az.Resources
 
 [CmdletBinding(SupportsShouldProcess)]
 param(
@@ -35,17 +46,16 @@ param(
     [string]$SubscriptionId,
 
     [Parameter(Mandatory = $false)]
-    [string]$ResourceGroupName,
-
-    [Parameter(Mandatory = $false)]
     [string]$ConfigPath = ".\configs\infrastructure.yml"
 )
 
-#Requires -Version 7.0
-#Requires -Modules Az.Accounts, Az.Security
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# Built-in initiative "Microsoft cloud security benchmark". The ID is the same in every tenant.
+$script:BenchmarkDefinitionId = '/providers/Microsoft.Authorization/policySetDefinitions/1f3afdf9-d0c9-4c3d-847f-89da613e70a8'
+# Name Defender for Cloud itself gives the assignment, so the portal toggle shows it as on.
+$script:BenchmarkAssignmentName = 'SecurityCenterBuiltIn'
 
 #region Functions
 
@@ -68,96 +78,108 @@ function Write-LogMessage {
 function Import-InfrastructureConfig {
     [CmdletBinding()]
     param([string]$Path)
-    if (-not (Test-Path $Path)) { return $null }
+    if (-not (Test-Path -LiteralPath $Path)) { return $null }
     if (-not (Get-Module -Name powershell-yaml -ListAvailable)) {
-        Install-Module -Name powershell-yaml -Force -Scope CurrentUser
+        throw "The powershell-yaml module is needed to read '$Path'. Install it, or pass -SubscriptionId."
     }
     Import-Module powershell-yaml
-    $configContent = Get-Content -Path $Path -Raw
-    return ConvertFrom-Yaml $configContent
+    return ConvertFrom-Yaml (Get-Content -LiteralPath $Path -Raw)
 }
 
-function Enable-DefenderPlan {
-    [CmdletBinding(SupportsShouldProcess)]
-    param(
-        [string]$PlanName,
-        [string]$Tier = 'Standard'
-    )
-    if ($PSCmdlet.ShouldProcess($PlanName, "Enable Defender plan")) {
-        Write-LogMessage "Enabling Defender plan: $PlanName ($Tier)" -Level Info
-        Set-AzSecurityPricing -Name $PlanName -PricingTier $Tier
-        Write-LogMessage "Defender plan enabled: $PlanName" -Level Success
+function Get-ConfigSetting {
+    # Reads one key of a nested hashtable; returns $Default when any part of the path is absent.
+    param($Config, [string[]]$Path, $Default)
+    $node = $Config
+    foreach ($part in $Path) {
+        if ($node -isnot [System.Collections.IDictionary] -or -not $node.Contains($part)) { return $Default }
+        $node = $node[$part]
     }
+    if ($null -eq $node) { return $Default }
+    return $node
+}
+
+function ConvertTo-Switch {
+    # A YAML boolean arrives as [bool]; a quoted "false" arrives as a string, which [bool] would read as true.
+    param($Value, [string]$Key)
+    if ($Value -is [bool]) { return $Value }
+    switch -Regex ([string]$Value) {
+        '^\s*(true|yes|1)\s*$' { return $true }
+        '^\s*(false|no|0)\s*$' { return $false }
+    }
+    throw "$Key must be true or false; found '$Value'."
+}
+
+function Get-AssignmentDefinitionId {
+    # Az.Resources changed the shape of a policy assignment between versions; read either.
+    param($Assignment)
+    $names = $Assignment.PSObject.Properties.Name
+    if ($names -contains 'PolicyDefinitionId') { return [string]$Assignment.PolicyDefinitionId }
+    if ($names -contains 'Properties' -and $Assignment.Properties) { return [string]$Assignment.Properties.PolicyDefinitionId }
+    return ''
 }
 
 #endregion Functions
 
 #region Main
 
-Write-LogMessage "=== Enable Defender for Cloud ===" -Level Info
+Write-LogMessage "=== Microsoft Defender for Cloud: free level for Azure Local ===" -Level Info
 
-# Load configuration
 $config = Import-InfrastructureConfig -Path $ConfigPath
-if ($config) {
-    $SubscriptionId = if ($SubscriptionId) { $SubscriptionId } else { $config.azure.subscription_id }
-    $ResourceGroupName = if ($ResourceGroupName) { $ResourceGroupName } else { $config.azure.resource_group }
-}
-
 if (-not $SubscriptionId) {
-    Write-LogMessage "SubscriptionId is required." -Level Error
-    exit 1
+    $SubscriptionId = [string](Get-ConfigSetting -Config $config -Path 'azure', 'subscription_id' -Default '')
+}
+$enabled = ConvertTo-Switch -Key 'security.defender_for_cloud.enabled' -Value (Get-ConfigSetting -Config $config -Path 'security', 'defender_for_cloud', 'enabled' -Default $true)
+$applyBenchmark = ConvertTo-Switch -Key 'security.defender_for_cloud.apply_cloud_security_benchmark' -Value (Get-ConfigSetting -Config $config -Path 'security', 'defender_for_cloud', 'apply_cloud_security_benchmark' -Default $true)
+
+if (-not $enabled) {
+    Write-LogMessage "security.defender_for_cloud.enabled is false. Nothing to do." -Level Warning
+    return
+}
+if (-not $SubscriptionId) {
+    throw "SubscriptionId is required: pass -SubscriptionId or set azure.subscription_id in '$ConfigPath'."
 }
 
-# Set subscription context
 Set-AzContext -SubscriptionId $SubscriptionId | Out-Null
-Write-LogMessage "Working in subscription: $SubscriptionId" -Level Info
+Write-LogMessage "Subscription: $SubscriptionId" -Level Info
 
-# Check current Defender status
-Write-LogMessage "Checking current Defender for Cloud status..." -Level Info
-$currentPricing = Get-AzSecurityPricing
-
-foreach ($plan in $currentPricing) {
-    $status = if ($plan.PricingTier -eq 'Standard') { 'Enabled' } else { 'Disabled' }
-    Write-LogMessage "  $($plan.Name): $status" -Level Info
+# 1. Foundational CSPM (free): on once Microsoft.Security is registered.
+$provider = Get-AzResourceProvider -ProviderNamespace 'Microsoft.Security'
+$states = @($provider | ForEach-Object { $_.RegistrationState } | Select-Object -Unique)
+if ($states.Count -eq 1 -and $states[0] -eq 'Registered') {
+    Write-LogMessage "Microsoft.Security is registered. Foundational CSPM (free) is on." -Level Info
+}
+elseif ($PSCmdlet.ShouldProcess($SubscriptionId, "Register resource provider Microsoft.Security")) {
+    Register-AzResourceProvider -ProviderNamespace 'Microsoft.Security' | Out-Null
+    Write-LogMessage "Microsoft.Security registration requested. Foundational CSPM (free) is on when it completes." -Level Success
 }
 
-# Enable required Defender plans
-$requiredPlans = @(
-    @{ Name = 'VirtualMachines'; Description = 'Defender for Servers' }
-    @{ Name = 'StorageAccounts'; Description = 'Defender for Storage' }
-    @{ Name = 'KeyVaults'; Description = 'Defender for Key Vault' }
-    @{ Name = 'Arm'; Description = 'Defender for Resource Manager' }
-)
-
-foreach ($plan in $requiredPlans) {
-    $current = $currentPricing | Where-Object { $_.Name -eq $plan.Name }
-    if ($current -and $current.PricingTier -eq 'Standard') {
-        Write-LogMessage "$($plan.Description) already enabled." -Level Info
+# 2. Microsoft cloud security benchmark, assigned to the subscription.
+if ($applyBenchmark) {
+    $scope = "/subscriptions/$SubscriptionId"
+    $existing = @(Get-AzPolicyAssignment -Scope $scope | Where-Object {
+            (Get-AssignmentDefinitionId -Assignment $_) -eq $script:BenchmarkDefinitionId
+        })
+    if ($existing.Count -gt 0) {
+        Write-LogMessage "Microsoft cloud security benchmark is already assigned on this subscription or above it." -Level Info
     }
-    else {
-        Enable-DefenderPlan -PlanName $plan.Name
+    elseif (@(Get-AzPolicyAssignment -Scope $scope | Where-Object { $_.Name -eq $script:BenchmarkAssignmentName }).Count -gt 0) {
+        # New-AzPolicyAssignment would overwrite it. Never replace an assignment this script did not create.
+        throw "A policy assignment named '$($script:BenchmarkAssignmentName)' applies to $scope but points at another definition. Remove or rename it, or set security.defender_for_cloud.apply_cloud_security_benchmark to false."
     }
-}
-
-# Configure auto-provisioning
-Write-LogMessage "Configuring auto-provisioning settings..." -Level Info
-$autoProvision = Get-AzSecurityAutoProvisioningSetting -Name 'default'
-if ($autoProvision.AutoProvision -ne 'On') {
-    Set-AzSecurityAutoProvisioningSetting -Name 'default' -EnableAutoProvision
-    Write-LogMessage "Auto-provisioning enabled." -Level Success
+    elseif ($PSCmdlet.ShouldProcess($scope, "Assign the Microsoft cloud security benchmark initiative")) {
+        $definition = Get-AzPolicySetDefinition -Id $script:BenchmarkDefinitionId
+        New-AzPolicyAssignment -Name $script:BenchmarkAssignmentName `
+            -DisplayName 'Microsoft cloud security benchmark' `
+            -Scope $scope `
+            -PolicySetDefinition $definition | Out-Null
+        Write-LogMessage "Microsoft cloud security benchmark assigned. Allow at least one hour for the first evaluation." -Level Success
+    }
 }
 else {
-    Write-LogMessage "Auto-provisioning already enabled." -Level Info
+    Write-LogMessage "security.defender_for_cloud.apply_cloud_security_benchmark is false. The initiative is not assigned; the Azure Local security settings will not show in the portal." -Level Warning
 }
 
-# Display secure score
-Write-LogMessage "Retrieving secure score..." -Level Info
-$secureScore = Get-AzSecuritySecureScore
-foreach ($score in $secureScore) {
-    Write-LogMessage "  Secure Score: $($score.CurrentScore)/$($score.MaxScore) ($([math]::Round($score.Percentage, 1))%)" -Level Info
-}
-
-Write-LogMessage "=== Defender for Cloud Configuration Complete ===" -Level Success
-Write-LogMessage "Allow up to 24 hours for initial assessment data to populate." -Level Info
+Write-LogMessage "No paid Defender plan was turned on or changed by this script." -Level Info
+Write-LogMessage "=== Done ===" -Level Success
 
 #endregion Main

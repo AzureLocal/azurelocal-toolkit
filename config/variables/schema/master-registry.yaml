@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.29 (2026-11-12):
+#     - security.defender_for_cloud (infrastructure schema 5.6.7), keys enabled and apply_cloud_security_benchmark: the free level of Microsoft Defender for Cloud that Azure Local needs (Foundational CSPM and the Microsoft cloud security benchmark assignment), read by Enable-DefenderForCloud.ps1. The old-layout keys security.defender.def_for_servers_enabled and def_for_storage_enabled default to false and the section says its paid plans are not turned on by the automation.
 #   v5.0.27 (2026-11-11):
 #     - operations.monitoring.action_group (infrastructure schema 5.6.6): the name of the Azure Monitor action group that Deploy-ActionGroup.ps1 (phase 02, task 04) creates, with an email receiver for each address of operations.notifications.emails and operations.monitoring.alert_email. Its parameters InfrastructureFile and LogPath are registered under tools.arm_deployment.parameters. The descriptions of the monitoring and notification keys and of identity.entra.groups no longer say they are not read: the monitoring scripts and the Entra group scripts read them.
 #   v5.0.26 (2026-11-11):
@@ -173,15 +175,19 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.28"
+  version: "5.0.29"
   schema_version: "5.0.0"
-  infrastructure_schema_version: "5.6.6"
+  infrastructure_schema_version: "5.6.7"
   last_updated: "2026-11-11"
   total_variables: "5100+"
   maintainers:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-12"
+      version: "5.0.29"
+      change: "security.defender_for_cloud (infrastructure schema 5.6.7), keys enabled and apply_cloud_security_benchmark: the free level of Microsoft Defender for Cloud that Azure Local needs (Foundational CSPM and the Microsoft cloud security benchmark assignment), read by Enable-DefenderForCloud.ps1. The old-layout keys security.defender.def_for_servers_enabled and def_for_storage_enabled default to false and the section says its paid plans are not turned on by the automation."
+      reason: "Owner directives D106 and D111: the automation turns on only what Azure Local needs for security; nothing paid. Enable-DefenderForCloud.ps1 turned on four paid plans from a list written into it and read no key."
     - date: "2026-11-12"
       version: "5.0.28"
       change: "The storage section no longer carries applies_when san or hybrid. storage.configuration_mode and storage.volumes apply to every storage architecture, so the S2D scenario template keeps them; only storage.san stays limited to san or hybrid (its own applies_when). No key added or removed; the schema changes in one description."
@@ -12507,7 +12513,7 @@ security:
     _meta:
       solutions: ["all"]
       tier: optional
-      description: "Microsoft Defender for Cloud settings"
+      description: "Old layout. Microsoft Defender for Cloud settings, most of them for paid plans. The automation turns on no paid plan and reads none of these keys; the free level Azure Local needs is security.defender_for_cloud."
     # Core Defender for Cloud Settings
     def_for_cloud_enabled:
       type: boolean
@@ -12519,13 +12525,13 @@ security:
       type: boolean
       description: "Defender for Servers enabled"
       required: false
-      default: true
+      default: false
 
     def_for_storage_enabled:
       type: boolean
       description: "Defender for Storage enabled"
       required: false
-      default: true
+      default: false
 
     # Security & Compliance
     def_security_contact_email:
@@ -12817,6 +12823,27 @@ security:
       format: key_vault_name
       required: false
       pattern: "^[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]$"
+    defender_for_cloud:
+      description: "The free level of Microsoft Defender for Cloud that Azure Local needs to show its security settings in the Azure portal. Enable-DefenderForCloud.ps1 reads it. No paid plan is turned on by any key of this file."
+      type: object
+      required: false
+      since: "5.6.7"
+      additionalProperties: false
+      properties:
+        enabled:
+          description: "true (default) registers the Microsoft.Security resource provider on the subscription of the cluster, which turns on Foundational CSPM, the free plan. false leaves Defender for Cloud alone."
+          type: boolean
+          required: false
+          default: true
+          since: "5.6.7"
+          example: true
+        apply_cloud_security_benchmark:
+          description: "true (default) assigns the Microsoft cloud security benchmark initiative to the subscription of the cluster when it is not assigned yet. Free. Without it the security settings of Azure Local do not show in the portal."
+          type: boolean
+          required: false
+          default: true
+          since: "5.6.7"
+          example: true
     telemetry:
       used_by: [deployment]
       description: "What the cluster sends to Microsoft as telemetry. Not read by the tools yet."
@@ -17575,7 +17602,7 @@ file_metadata:
   additionalProperties: false
   properties:
     schema_version:
-      description: "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. The current version is 5.6.6."
+      description: "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. The current version is 5.6.7."
       type: string
       required: true
       pattern: "^5\\.[0-9]+\\.[0-9]+$"

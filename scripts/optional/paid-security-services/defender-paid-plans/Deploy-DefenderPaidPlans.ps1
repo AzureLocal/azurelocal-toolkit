@@ -33,14 +33,14 @@
 
 .EXAMPLE
     # Using solution configuration
-    .\Deploy-DefenderForCloud.ps1 -Solution "azure-local" -NotificationEmail "admin@example.com"
+    .\Deploy-DefenderPaidPlans.ps1 -Solution "azure-local" -NotificationEmail "admin@example.com"
 
 .EXAMPLE
     # Using direct parameters
-    .\Deploy-DefenderForCloud.ps1 -TenantId "your-tenant-id" -NotificationEmail "admin@example.com"
+    .\Deploy-DefenderPaidPlans.ps1 -TenantId "your-tenant-id" -NotificationEmail "admin@example.com"
 
 .EXAMPLE
-    .\Deploy-DefenderForCloud.ps1 -Solution "azure-local" -NotificationEmail "admin@example.com" -WhatIf
+    .\Deploy-DefenderPaidPlans.ps1 -Solution "azure-local" -NotificationEmail "admin@example.com" -WhatIf
 #>
 
 [CmdletBinding(SupportsShouldProcess)]

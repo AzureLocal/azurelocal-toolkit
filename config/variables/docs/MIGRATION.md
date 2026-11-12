@@ -381,6 +381,10 @@ New rules AZL-060 to AZL-068 (see README). **Steps for a 5.5 file:** set `_metad
 - **5.6.2: adapters are identified by hardware facts.** `nodes[].network_adapters[].mac_address` is now required. New optional keys: `port_index`, `pci_location` (`bus`, `device`, `function`), `vendor` (written by hardware discovery), `allowed_vlans` (the VLANs the switch port allows) and `os_name_override`. **Steps:** a file whose ports lack the MAC: run `Invoke-HardwareDiscovery.ps1 -UpdateInfrastructure` or add the MAC. Nothing else changes: without `os_name_override` no adapter is renamed and the deployment sends the name the node reports for the MAC. To get one name everywhere, add `os_name_override` per used port and run the OS configuration (step `NicNames`).
 - **5.6.3** adds `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`. Nothing is required. A logical network uses `gateway` and `ip_pool`; the 4.0 names `default_gateway` and `ip_pools` belong to the deprecated `networking.onprem.logical_networks[]`.
 
+## To 5.6.7: the free level of Defender for Cloud
+
+Schema 5.6.7 adds the optional section `security.defender_for_cloud` with `enabled` and `apply_cloud_security_benchmark` (both default true). Nothing is required: a 5.6.6 file is valid as it is. `Enable-DefenderForCloud.ps1` reads the section and turns on only the free level Azure Local needs: Foundational CSPM and the Microsoft cloud security benchmark assignment. No key of the file turns on a paid plan.
+
 ## To 5.6.6: the action group of the alerting task
 
 Schema 5.6.6 adds the optional key `operations.monitoring.action_group` (the name of the Azure Monitor action group). Nothing is required: a 5.6.5 file is valid as it is. The alerting task of the operational foundations (`Deploy-ActionGroup.ps1`) reads it, with `operations.monitoring.alert_email` and `operations.notifications.emails` for the receivers, and creates the group.

@@ -4,7 +4,7 @@
 
 .DESCRIPTION
     Comprehensive security and compliance validation including:
-    - Microsoft Defender for Cloud enrollment and plan status
+    - Microsoft Defender for Cloud free level (Foundational CSPM, cloud security benchmark)
     - RBAC role assignments on cluster Arc resource
     - BitLocker / encryption at rest status
     - Windows Defender Antivirus and exclusions
@@ -58,7 +58,6 @@ param(
 #Requires -Version 7.0
 #Requires -Module Az.Accounts
 #Requires -Module Az.Resources
-#Requires -Module Az.Security
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -92,16 +91,28 @@ function Test-DefenderForCloudStatus {
     try {
         Set-AzContext -SubscriptionId $SubId -ErrorAction Stop | Out-Null
 
-        $pricings = Get-AzSecurityPricing -ErrorAction SilentlyContinue
-        $plans = @("VirtualMachines", "Servers", "StorageAccounts", "KeyVaults")
+        # Only the free level Azure Local needs is checked: Foundational CSPM (on once Microsoft.Security
+        # is registered) and the Microsoft cloud security benchmark assignment. Paid plans are the
+        # operator's own decision and are neither expected nor reported as a gap.
+        $states = @(Get-AzResourceProvider -ProviderNamespace 'Microsoft.Security' -ErrorAction SilentlyContinue |
+                ForEach-Object { $_.RegistrationState } | Select-Object -Unique)
+        $ok = $states.Count -eq 1 -and $states[0] -eq 'Registered'
+        $state = if ($states.Count -gt 0) { $states -join ',' } else { 'NotFound' }
+        Write-Log "  Foundational CSPM (Microsoft.Security provider): $state" -Level $(if ($ok) { "SUCCESS" } else { "WARN" })
+        $results += [PSCustomObject]@{ Plan = 'FoundationalCspm'; Tier = $state; Status = if ($ok) { "PASS" } else { "WARN" } }
 
-        foreach ($plan in $plans) {
-            $pricing = $pricings | Where-Object { $_.Name -eq $plan }
-            $tier = if ($pricing) { $pricing.PricingTier } else { "NotFound" }
-            $ok = $tier -eq "Standard"
-            Write-Log "  $plan`: $tier" -Level $(if ($ok) { "SUCCESS" } else { "WARN" })
-            $results += [PSCustomObject]@{ Plan = $plan; Tier = $tier; Status = if ($ok) { "PASS" } else { "WARN" } }
-        }
+        $benchmarkId = '/providers/Microsoft.Authorization/policySetDefinitions/1f3afdf9-d0c9-4c3d-847f-89da613e70a8'
+        $assigned = @(Get-AzPolicyAssignment -Scope "/subscriptions/$SubId" -ErrorAction SilentlyContinue | Where-Object {
+                $names = $_.PSObject.Properties.Name
+                $id = if ($names -contains 'PolicyDefinitionId') { $_.PolicyDefinitionId }
+                elseif ($names -contains 'Properties' -and $_.Properties) { $_.Properties.PolicyDefinitionId }
+                else { '' }
+                $id -eq $benchmarkId
+            })
+        $ok = $assigned.Count -gt 0
+        $state = if ($ok) { 'Assigned' } else { 'NotAssigned' }
+        Write-Log "  Microsoft cloud security benchmark: $state" -Level $(if ($ok) { "SUCCESS" } else { "WARN" })
+        $results += [PSCustomObject]@{ Plan = 'CloudSecurityBenchmark'; Tier = $state; Status = if ($ok) { "PASS" } else { "WARN" } }
     }
     catch {
         Write-Log "  Defender check failed — $_" -Level "ERROR"
@@ -312,7 +323,7 @@ $encPass = ($encryptionResults | Where-Object { $_.Status -eq "PASS" }).Count
 Write-Host ""
 Write-Log "========================================" -Level "HEADER"
 Write-Log "Security & Compliance Summary" -Level "SUCCESS"
-Write-Log "  Defender plans enabled: $defenderPass / $($defenderResults.Count)" -Level "INFO"
+Write-Log "  Defender for Cloud free level checks passed: $defenderPass / $($defenderResults.Count)" -Level "INFO"
 Write-Log "  Encrypted volumes: $encPass / $($encryptionResults.Count)" -Level "INFO"
 
 #endregion Main

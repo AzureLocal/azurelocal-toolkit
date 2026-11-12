@@ -14,7 +14,7 @@ terraform {
 }
 
 # -----------------------------------------------------------------------------
-# Microsoft Defender for Cloud — Enable plans
+# Microsoft Defender for Cloud — paid plans. None by default (var.defender_plans is empty).
 # -----------------------------------------------------------------------------
 resource "azurerm_security_center_subscription_pricing" "plans" {
   for_each = var.defender_plans

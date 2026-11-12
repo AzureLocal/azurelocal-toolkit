@@ -241,16 +241,11 @@ variable "security_contact_email" {
 }
 
 variable "defender_plans" {
+  description = "Paid Microsoft Defender for Cloud plans to turn on, by plan name. Empty by default: the toolkit turns on no paid plan. The free level Azure Local needs is set by Enable-DefenderForCloud.ps1."
   type = map(object({
     enabled = bool
   }))
-  default = {
-    VirtualMachines = { enabled = true }
-    StorageAccounts = { enabled = true }
-    KeyVaults       = { enabled = true }
-    Dns             = { enabled = true }
-    Arm             = { enabled = true }
-  }
+  default = {}
 }
 
 variable "policy_assignments" {
