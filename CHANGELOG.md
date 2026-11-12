@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Variables: `storage.configuration_mode` and `storage.volumes` now apply to S2D clusters as well. The condition "san or hybrid" sat on the whole `storage` section and removed it from the S2D scenario template; it now limits only `storage.san`. Registry 5.0.28.
 - Variables: every variable script and document is under `config/variables`. `New-InfrastructureVariablesReference.ps1` (from `scripts/common/infrastructure`) and `Test-VariableConfig.ps1` (from `scripts/tools/qa`) are in `config/variables/scripts`; `variables-audit-tasks.md` and the variable flow diagram are in `config/variables/docs`. Removed, nothing called them: `CanonicalVariable.psm1`, `registry-variable.ps1` (`scripts/common/utilities/helpers`) and `canonical_variables.py`.
 - Removed `config/infrastructure` (the generated stub copies of the schema and of the two example files, and the pointer pages). `config/variables` is the only place for the master registry, the schemas, the templates, the examples and the variable documents; azurelocal-ztp, azurelocal-sonar and Trailwright read `config/variables/schema/infrastructure.schema.json` and `config/variables/examples/`.
 - The node-configuration scripts and modules build local paths per segment (`Join-Path`, `[IO.Path]::Combine`), so they run under `pwsh` on a Linux runner as well as Windows; `tests/node-configuration/CrossPlatform.Tests.ps1` scans them for backslash path literals. Paths on the nodes (`C:\SBE`) stay Windows paths.

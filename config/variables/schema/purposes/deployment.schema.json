@@ -1051,7 +1051,7 @@
       }
     },
     "storage": {
-      "description": "Volumes and the SAN.",
+      "description": "Storage of the instance: the deployment's storage mode, the volumes, and the SAN of a disaggregated or hybrid deployment (the san block applies only when scenario.storage_architecture is san or hybrid).",
       "type": "object",
       "additionalProperties": false,
       "properties": {

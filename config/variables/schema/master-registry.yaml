@@ -173,7 +173,7 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.27"
+  version: "5.0.28"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.6"
   last_updated: "2026-11-11"
@@ -182,6 +182,10 @@ _metadata:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-12"
+      version: "5.0.28"
+      change: "The storage section no longer carries applies_when san or hybrid. storage.configuration_mode and storage.volumes apply to every storage architecture, so the S2D scenario template keeps them; only storage.san stays limited to san or hybrid (its own applies_when). No key added or removed; the schema changes in one description."
+      reason: "Owner directive D107: the storage variables must cover S2D as well as SAN. The condition sat on the whole section by mistake and removed the volume keys from the template of an S2D cluster."
     - date: "2026-11-11"
       version: "5.0.27"
       change: "operations.monitoring.action_group (infrastructure schema 5.6.6): the name of the Azure Monitor action group that Deploy-ActionGroup.ps1 (phase 02, task 04) creates, with an email receiver for each address of operations.notifications.emails and operations.monitoring.alert_email. Its parameters InfrastructureFile and LogPath are registered under tools.arm_deployment.parameters. The descriptions of the monitoring and notification keys and of identity.entra.groups no longer say they are not read: the monitoring scripts and the Entra group scripts read them."
@@ -15968,10 +15972,9 @@ hardware:
               minimum: 0
 
 storage:
-  description: "Volumes and the SAN."
+  description: "Storage of the instance: the deployment's storage mode, the volumes, and the SAN of a disaggregated or hybrid deployment (the san block applies only when scenario.storage_architecture is san or hybrid)."
   type: object
   required: false
-  applies_when: "scenario.storage_architecture is san or hybrid"
   additionalProperties: false
   properties:
     configuration_mode:

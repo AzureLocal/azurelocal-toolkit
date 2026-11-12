@@ -946,8 +946,7 @@ identity:
         # A Key Vault secret reference: keyvault://<vault>/<secret>.
         password: "keyvault://kv-iic-mgmt-01/svc-backup-password"
 
-# Volumes and the SAN.
-# when scenario.storage_architecture is san or hybrid
+# Storage of the instance: the deployment's storage mode, the volumes, and the SAN of a disaggregated or hybrid deployment (the san block app...
 storage:
   # ARM configurationMode: express (Express), infra_only (InfraOnly) or keep_storage (KeepStorage).
   # one of: express | infra_only | keep_storage; used by: deployment

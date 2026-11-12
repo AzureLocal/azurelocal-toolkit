@@ -535,8 +535,7 @@ identity:
         # used by: os_configuration
         local_groups: []
 
-# Volumes and the SAN.
-# when scenario.storage_architecture is san or hybrid
+# Storage of the instance: the deployment's storage mode, the volumes, and the SAN of a disaggregated or hybrid deployment (the san block app...
 storage:
   # The external SAN of a disaggregated (san) or hybrid deployment.
   # when scenario.storage_architecture is san or hybrid; used by: os_configuration, deployment

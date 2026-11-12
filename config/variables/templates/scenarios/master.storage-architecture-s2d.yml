@@ -940,6 +940,23 @@ identity:
         # A Key Vault secret reference: keyvault://<vault>/<secret>.
         password: "keyvault://kv-iic-mgmt-01/svc-backup-password"
 
+# Storage of the instance: the deployment's storage mode, the volumes, and the SAN of a disaggregated or hybrid deployment (the san block app...
+storage:
+  # ARM configurationMode: express (Express), infra_only (InfraOnly) or keep_storage (KeepStorage).
+  # one of: express | infra_only | keep_storage; used by: deployment
+  configuration_mode: "express"
+  # The cluster shared volumes to create after deployment.
+  volumes:
+    # Name of the volume, for example vol-workloads-01.
+    # required
+    - name: "vol-workloads-01"
+      # Size of the volume in GiB.
+      # required
+      size_gib: 4096
+      # Resiliency of the volume: two_way, three_way, four_way, parity or nested_two_way.
+      # one of: two_way | three_way | four_way | parity | nested_two_way
+      resiliency: "two_way"
+
 # Security settings of the deployment.
 security:
   # ARM securityLevel: recommended (Recommended) or customized (Customized).

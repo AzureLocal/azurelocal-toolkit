@@ -485,11 +485,11 @@ Accounts and the identity provider (scenario.identity).
 
 ### storage
 
-Volumes and the SAN.
+Storage of the instance: the deployment's storage mode, the volumes, and the SAN of a disaggregated or hybrid deployment (the san block applies only...
 
 | Path | What it is | Type | Required: full / ztp | Default | Example | Where to get the value | Read by |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `storage` | Volumes and the SAN. | object | when scenario.storage_architecture is san or hybrid / no |  |  |  | OS configuration, ARM deployment, Trailwright |
+| `storage` | Storage of the instance: the deployment's storage mode, the volumes, and the SAN of a disaggregated or hybrid deployment (the san block applies only... | object | when scenario.storage_architecture is san or hybrid / no |  |  |  | OS configuration, ARM deployment, Trailwright |
 | `storage.configuration_mode` | ARM configurationMode: express (Express), infra_only (InfraOnly) or keep_storage (KeepStorage). | one of `express`, `infra_only`, `keep_storage` | no / no |  | `express` | Your storage design. | ARM deployment, Trailwright |
 | `storage.volumes` | The cluster shared volumes to create after deployment. | list of objects | no / no |  |  | Your storage design. | Trailwright |
 | `storage.volumes[].name` | Name of the volume, for example vol-workloads-01. | string | if section is set / if section is set |  | `vol-workloads-01` | Your storage design. | Trailwright |
