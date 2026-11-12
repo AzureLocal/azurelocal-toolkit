@@ -14,14 +14,10 @@ terraform {
 }
 
 # -----------------------------------------------------------------------------
-# Microsoft Defender for Cloud — paid plans. None by default (var.defender_plans is empty).
+# Microsoft Defender for Cloud — security contact only. This module sets no pricing tier:
+# the toolkit turns on no paid plan. The free level Azure Local needs is set by
+# Enable-DefenderForCloud.ps1.
 # -----------------------------------------------------------------------------
-resource "azurerm_security_center_subscription_pricing" "plans" {
-  for_each = var.defender_plans
-
-  tier          = each.value.enabled ? "Standard" : "Free"
-  resource_type = each.key
-}
 
 resource "azurerm_security_center_contact" "main" {
   count = var.security_contact_email != "" ? 1 : 0

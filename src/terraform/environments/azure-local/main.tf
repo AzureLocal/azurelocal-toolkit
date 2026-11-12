@@ -129,7 +129,6 @@ module "security" {
 
   subscription_id        = var.subscriptions.azure_local_id
   security_contact_email = var.security_contact_email
-  defender_plans         = var.defender_plans
   policy_assignments     = var.policy_assignments
   rg_policy_assignments  = var.rg_policy_assignments
 

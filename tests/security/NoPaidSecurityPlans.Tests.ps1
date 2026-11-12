@@ -27,6 +27,10 @@ Describe 'No paid security plan is turned on by the automation' {
             'New-AzSentinelOnboardingState'
             'Microsoft\.SecurityInsights/onboardingStates'
             'azurerm_sentinel_log_analytics_workspace_onboarding'
+            'azurerm_security_center_subscription_pricing'
+            'defender_plans'
+            # Nothing in the automation is for Microsoft Sentinel, not even a workspace named for it.
+            '(?-i:Sentinel)'
         )
     }
 
@@ -38,14 +42,11 @@ Describe 'No paid security plan is turned on by the automation' {
         }
     }
 
-    It 'the Terraform defender_plans variable is empty by default in <_>' -ForEach @(
-        'src/terraform/modules/security/variables.tf'
-        'src/terraform/environments/azure-local/variables.tf'
-    ) {
-        $text = Get-Content -LiteralPath (Join-Path $script:Root $_) -Raw
-        $block = [regex]::Match($text, '(?s)variable\s+"defender_plans"\s*\{.*?\n\}').Value
-        $block | Should -Not -BeNullOrEmpty
-        $block | Should -Match '(?m)^\s*default\s*=\s*\{\}\s*$'
+    It 'the workspace script creates one workspace and nothing for security operations' {
+        $path = Join-Path $script:Root 'scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Deploy-LogAnalyticsWorkspace.ps1'
+        $text = Get-Content -LiteralPath $path -Raw
+        [regex]::Matches($text, '(?m)^\s*\$null = New-AzOperationalInsightsWorkspace').Count | Should -Be 1
+        $text | Should -Not -Match 'SecuritySubscriptionId|SecurityResourceGroup|SecurityInsights'
     }
 
     It 'Enable-DefenderForCloud.ps1 reads the two registered keys' {

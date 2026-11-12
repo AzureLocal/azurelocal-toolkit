@@ -13,14 +13,6 @@ variable "security_contact_email" {
   default     = ""
 }
 
-variable "defender_plans" {
-  description = "Paid Microsoft Defender for Cloud plans to turn on, by plan name. Empty by default: the toolkit turns on no paid plan. The free level Azure Local needs is set by Enable-DefenderForCloud.ps1."
-  type = map(object({
-    enabled = bool
-  }))
-  default = {}
-}
-
 variable "policy_assignments" {
   description = "Subscription-level Azure Policy assignments."
   type = map(object({

@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.30 (2026-11-12):
+#     - The parameters InfrastructureFile and LogPath of Deploy-LogAnalyticsWorkspace.ps1 (phase 02 monitoring and observability, task 01, which reads operations.monitoring enabled, log_analytics_workspace and workspace_resource_group, azure.tenant_id, azure.subscription_id, azure.location and tags, keys that already existed) are registered under tools.arm_deployment.parameters. The script replaces Deploy-MonitoringSecurity.ps1, which also created a workspace for Microsoft Sentinel.
 #   v5.0.29 (2026-11-12):
 #     - security.defender_for_cloud (infrastructure schema 5.6.7), keys enabled and apply_cloud_security_benchmark: the free level of Microsoft Defender for Cloud that Azure Local needs (Foundational CSPM and the Microsoft cloud security benchmark assignment), read by Enable-DefenderForCloud.ps1. The old-layout keys security.defender.def_for_servers_enabled and def_for_storage_enabled default to false and the section says its paid plans are not turned on by the automation.
 #   v5.0.27 (2026-11-11):
@@ -175,15 +177,19 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.29"
+  version: "5.0.30"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.7"
-  last_updated: "2026-11-11"
+  last_updated: "2026-11-12"
   total_variables: "5100+"
   maintainers:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-12"
+      version: "5.0.30"
+      change: "The parameters InfrastructureFile and LogPath of Deploy-LogAnalyticsWorkspace.ps1 (phase 02 monitoring and observability, task 01, which reads operations.monitoring enabled, log_analytics_workspace and workspace_resource_group, azure.tenant_id, azure.subscription_id, azure.location and tags, keys that already existed) are registered under tools.arm_deployment.parameters."
+      reason: "Owner directive D112: the workspace script does nothing for Microsoft Sentinel. Deploy-MonitoringSecurity.ps1 created a second workspace for Sentinel, read a layout that no longer exists and could not run; the new script creates the one workspace of operations.monitoring, and its parameters are registered before use."
     - date: "2026-11-12"
       version: "5.0.29"
       change: "security.defender_for_cloud (infrastructure schema 5.6.7), keys enabled and apply_cloud_security_benchmark: the free level of Microsoft Defender for Cloud that Azure Local needs (Foundational CSPM and the Microsoft cloud security benchmark assignment), read by Enable-DefenderForCloud.ps1. The old-layout keys security.defender.def_for_servers_enabled and def_for_storage_enabled default to false and the section says its paid plans are not turned on by the automation."
@@ -19097,6 +19103,12 @@ tools:
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Deploy-DataCollectionEndpoint.ps1","description":"Deploy-DataCollectionEndpoint.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.subscription_id, azure.location, tags and operations.monitoring (enabled, log_analytics_workspace, workspace_resource_group, data_collection_endpoint) are read; the file is not validated as a whole."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Deploy-DataCollectionEndpoint.ps1","description":"Deploy-DataCollectionEndpoint.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_05_operational_foundations_phase_02_monitoring_observability_task_01_configure_log_analytics_workspace_powershell_Deploy_LogAnalyticsWorkspace_ps1:
+              type: object
+              area: "scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Deploy-LogAnalyticsWorkspace.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Deploy-LogAnalyticsWorkspace.ps1","description":"Deploy-LogAnalyticsWorkspace.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.subscription_id, azure.location, tags and operations.monitoring (enabled, log_analytics_workspace, workspace_resource_group) are read; the file is not validated as a whole."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Deploy-LogAnalyticsWorkspace.ps1","description":"Deploy-LogAnalyticsWorkspace.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
             scripts_deploy_05_operational_foundations_phase_02_monitoring_observability_task_04_setup_alerting_powershell_Deploy_ActionGroup_ps1:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-04-setup-alerting/powershell/Deploy-ActionGroup.ps1"
