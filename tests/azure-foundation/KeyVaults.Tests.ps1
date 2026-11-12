@@ -143,6 +143,14 @@ Describe 'Deploy-KeyVaults.ps1' {
             Should -Invoke New-AzKeyVault -Times 0 -Exactly
         }
 
+        It 'reports an existing vault without purge protection, and changes nothing' {
+            Mock Get-AzKeyVault { [pscustomobject]@{ VaultName = $VaultName; EnableRbacAuthorization = $true; EnableSoftDelete = $true; EnablePurgeProtection = $null } }
+            $r = Invoke-Vault (New-InfraFile)
+            $r.ExitCode | Should -Be 0
+            ($r.Result.Vaults | Select-Object -First 1).Detail | Should -Match 'purge protection is off'
+            Should -Invoke New-AzKeyVault -Times 0 -Exactly
+        }
+
         It 'creates only the vault that is missing' {
             Mock Get-AzKeyVault { if ($VaultName -eq 'kv-mgmt-01') { [pscustomobject]@{ VaultName = $VaultName; EnableRbacAuthorization = $true } } }
             $r = Invoke-Vault (New-InfraFile)

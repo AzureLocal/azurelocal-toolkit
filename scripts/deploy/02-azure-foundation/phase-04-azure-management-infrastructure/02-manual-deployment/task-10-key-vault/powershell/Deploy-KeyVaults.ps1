@@ -161,6 +161,9 @@ $vaultRows = foreach ($item in $plan) {
             if ($rbac -and $null -ne $rbac.Value -and -not [bool]$rbac.Value) { $differs += 'it uses access policies, not Azure RBAC' }
             $soft = $existing.PSObject.Properties['EnableSoftDelete']
             if ($soft -and $null -ne $soft.Value -and -not [bool]$soft.Value) { $differs += 'soft delete is off' }
+            # A vault this script would create with purge protection: say so when the existing one has none. It is never turned on here.
+            $purge = $existing.PSObject.Properties['EnablePurgeProtection']
+            if ($purgeProtection -and $purge -and -not [bool]$purge.Value) { $differs += 'purge protection is off' }
             if ($differs.Count) {
                 $row.Detail = "Differs from what this script creates ($($differs -join '; ')); left unchanged."
                 Write-Warning "$($item.Name): $($row.Detail)"
