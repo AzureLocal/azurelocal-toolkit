@@ -40,7 +40,7 @@ This task configures static IP addresses on Azure Local cluster nodes by convert
 
 ### For Node-Local and Orchestrated Scripts
 - Access to infrastructure.yml configuration file
-- Toolkit helper modules (config-loader.ps1, registry-variable.ps1, etc.)
+- Toolkit helper modules (config-loader.ps1, etc.)
 - powershell-yaml module (`Install-Module powershell-yaml -Scope CurrentUser`)
 
 ## Usage Examples

@@ -3,10 +3,10 @@
 Every key of [`infrastructure.yml`](infrastructure-file.md), schema 5.6.6, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](../schema/infrastructure.schema.json) (itself generated from the master registry [`master-registry.yaml`](../schema/master-registry.yaml)), the examples and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don't edit it: change the registry (and the metadata) and run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`, then:
 
 ```powershell
-./scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1
+./config/variables/scripts/New-InfrastructureVariablesReference.ps1
 ```
 
-A test fails when this page is out of date (`./scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1 -Check`).
+A test fails when this page is out of date (`./config/variables/scripts/New-InfrastructureVariablesReference.ps1 -Check`).
 
 ## How to read the tables
 

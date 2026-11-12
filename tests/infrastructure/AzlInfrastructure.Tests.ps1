@@ -952,7 +952,7 @@ Describe 'Variables reference (VARIABLES.md)' {
     BeforeAll {
         $script:Config = Join-Path $repo 'config\variables'
         $script:Page = Join-Path $script:Config 'docs\VARIABLES.md'
-        $script:Generator = Join-Path $repo 'scripts\common\infrastructure\New-InfrastructureVariablesReference.ps1'
+        $script:Generator = Join-Path $repo 'config\variables\scripts\New-InfrastructureVariablesReference.ps1'
         $script:PageText = (Get-Content -LiteralPath $script:Page -Raw).Replace("`r`n", "`n")
         $script:PagePaths = @([regex]::Matches($script:PageText, '(?m)^\| `([^`|]+)`') | ForEach-Object { $_.Groups[1].Value })
 
@@ -968,7 +968,7 @@ Describe 'Variables reference (VARIABLES.md)' {
     It 'is current: regenerating it from the schema gives the same page' {
         $out = Join-Path $TestDrive 'VARIABLES.md'
         & $script:Generator -OutputPath $out | Out-Null
-        (Get-Content -LiteralPath $out -Raw).Replace("`r`n", "`n") | Should -BeExactly $script:PageText -Because 'run ./scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1 and commit the result'
+        (Get-Content -LiteralPath $out -Raw).Replace("`r`n", "`n") | Should -BeExactly $script:PageText -Because 'run ./config/variables/scripts/New-InfrastructureVariablesReference.ps1 and commit the result'
     }
     It 'has a row for every key used in <_>' -ForEach @(
         'examples\infrastructure.example.yml', 'examples\infrastructure.ztp.example.yml',

@@ -274,7 +274,7 @@ Describe 'The map is linked and has a diagram' {
     }
 
     It 'the draw.io diagram is XML that shows the sources, the master file, the purpose files, the tools and Azure' {
-        $file = Join-Path $script:Repo 'docs\diagrams\variable-flow.drawio'
+        $file = Join-Path $script:Repo 'config\variables\docs\diagrams\variable-flow.drawio'
         Test-Path -LiteralPath $file | Should -BeTrue
         $xml = [xml](Get-Content -LiteralPath $file -Raw)
         $xml.mxfile | Should -Not -BeNullOrEmpty

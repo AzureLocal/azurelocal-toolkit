@@ -10,8 +10,7 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..\..')).Path
-$configRoot = Join-Path $repoRoot 'config\variables'
+$configRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 
 if (-not $VariablesPath) {
     $VariablesPath = Join-Path $configRoot 'variables.example.yml'

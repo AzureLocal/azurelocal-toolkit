@@ -24,7 +24,7 @@ The QA scripts target the main automation surfaces in this repo:
 | `Test-AnsibleCode.ps1` | Runs full Ansible QA when available, or a Basic YAML/import validation fallback | Supports `Native`, `WSL`, or `Basic` execution modes |
 | `Test-BicepCode.ps1` | Runs `az bicep build` and `az bicep lint` | Skips cleanly if no `.bicep` files exist |
 | `Test-ArmTemplates.ps1` | Runs ARM TTK validation against ARM template JSON files | Skips cleanly if no ARM templates exist |
-| `Test-VariableConfig.ps1` | Wraps the existing variable validation scripts into one QA entrypoint | Uses the existing `validate-registry.ps1` and `validate-variables.ps1` scripts |
+| `config/variables/scripts/Test-VariableConfig.ps1` | Lives with the variable files, not in this folder. Wraps the variable validation scripts into one QA entrypoint | Uses the existing `validate-registry.ps1` and `validate-variables.ps1` scripts |
 
 ## Recommended start point
 
@@ -144,8 +144,8 @@ Important parameters:
 Example:
 
 ```powershell
-pwsh -File .\scripts\tools\qa\Test-VariableConfig.ps1
-pwsh -File .\scripts\tools\qa\Test-VariableConfig.ps1 -StrictUnknown
+pwsh -File .\config\variables\scripts\Test-VariableConfig.ps1
+pwsh -File .\config\variables\scripts\Test-VariableConfig.ps1 -StrictUnknown
 ```
 
 ## Dependency summary

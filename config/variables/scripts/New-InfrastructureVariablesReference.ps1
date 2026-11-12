@@ -32,18 +32,18 @@
     Compare instead of write; exit 1 when the page is out of date.
 
 .EXAMPLE
-    ./scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1
+    ./config/variables/scripts/New-InfrastructureVariablesReference.ps1
 
 .EXAMPLE
-    ./scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1 -Check
+    ./config/variables/scripts/New-InfrastructureVariablesReference.ps1 -Check
 #>
 [CmdletBinding()]
 param(
-    [string]$SchemaPath = (Join-Path $PSScriptRoot '../../../config/variables/schema/infrastructure.schema.json'),
-    [string]$RegistryPath = (Join-Path $PSScriptRoot '../../../config/variables/schema/master-registry.yaml'),
-    [string]$MetadataPath = (Join-Path $PSScriptRoot '../../../config/variables/docs/variables-reference.metadata.psd1'),
-    [string]$OutputPath = (Join-Path $PSScriptRoot '../../../config/variables/docs/VARIABLES.md'),
-    [string]$ExamplesPath = (Join-Path $PSScriptRoot '../../../config/variables/examples'),
+    [string]$SchemaPath = (Join-Path $PSScriptRoot '../schema/infrastructure.schema.json'),
+    [string]$RegistryPath = (Join-Path $PSScriptRoot '../schema/master-registry.yaml'),
+    [string]$MetadataPath = (Join-Path $PSScriptRoot '../docs/variables-reference.metadata.psd1'),
+    [string]$OutputPath = (Join-Path $PSScriptRoot '../docs/VARIABLES.md'),
+    [string]$ExamplesPath = (Join-Path $PSScriptRoot '../examples'),
     [switch]$Check
 )
 Set-StrictMode -Version Latest
@@ -55,7 +55,7 @@ $meta = Import-PowerShellDataFile -LiteralPath $MetadataPath
 $defs = $schema['$defs']
 
 # Who reads a key: the used_by of the master registry (one source; the metadata file no longer lists readers).
-Import-Module (Join-Path $PSScriptRoot '../../../config/variables/scripts/VariableRegistry.psm1') -Force
+Import-Module (Join-Path $PSScriptRoot 'VariableRegistry.psm1') -Force
 $usedBy = @{}
 foreach ($v in (Get-RegistryVariable -Path $RegistryPath)) {
     if ($v.Path -like 'tools.*') { continue }
@@ -360,10 +360,10 @@ Out-Line
 Out-Line ('Every key of [`infrastructure.yml`](infrastructure-file.md), schema {0}, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](../schema/infrastructure.schema.json) (itself generated from the master registry [`master-registry.yaml`](../schema/master-registry.yaml)), the examples and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don''t edit it: change the registry (and the metadata) and run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`, then:' -f $latest)
 Out-Line
 Out-Line '```powershell'
-Out-Line './scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1'
+Out-Line './config/variables/scripts/New-InfrastructureVariablesReference.ps1'
 Out-Line '```'
 Out-Line
-Out-Line 'A test fails when this page is out of date (`./scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1 -Check`).'
+Out-Line 'A test fails when this page is out of date (`./config/variables/scripts/New-InfrastructureVariablesReference.ps1 -Check`).'
 Out-Line
 Out-Line '## How to read the tables'
 Out-Line
@@ -454,7 +454,7 @@ if ($Check) {
     if (-not (Test-Path -LiteralPath $OutputPath)) { Write-Error "$OutputPath doesn't exist; run this script without -Check."; exit 1 }
     $current = [IO.File]::ReadAllText((Resolve-Path -LiteralPath $OutputPath)).Replace("`r`n", "`n")
     if ($current -ne $page) {
-        Write-Error "$OutputPath is out of date. Run ./scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1 and commit the result."
+        Write-Error "$OutputPath is out of date. Run ./config/variables/scripts/New-InfrastructureVariablesReference.ps1 and commit the result."
         exit 1
     }
     Write-Host "$OutputPath is current ($($rows.Count) keys)."

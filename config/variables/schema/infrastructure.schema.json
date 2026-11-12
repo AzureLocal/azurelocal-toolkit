@@ -1742,7 +1742,7 @@
               },
               "gateway": {
                 "$ref": "#/$defs/ipv4",
-                "description": "Default gateway of the logical network. When it is left out the network is created without a gateway (az stack-hci-vm: --no-gateway). The creation script of task-08 still reads this key as default_gateway: a task in docs/design/variables-audit-tasks.md changes the script to this name."
+                "description": "Default gateway of the logical network. When it is left out the network is created without a gateway (az stack-hci-vm: --no-gateway). The creation script of task-08 still reads this key as default_gateway: a task in config/variables/docs/variables-audit-tasks.md changes the script to this name."
               },
               "dns_servers": {
                 "description": "DNS servers handed to machines on this logical network (ARM and az stack-hci-vm: dnsServers).",
@@ -1752,7 +1752,7 @@
                 }
               },
               "ip_pool": {
-                "description": "The one address range Azure Local hands to virtual machines on this logical network (first and last address, both inside address_prefix); az stack-hci-vm takes one pool per network. Needed when ip_allocation_method is Static. The creation script of task-08 still reads a list called ip_pools (and its type): a task in docs/design/variables-audit-tasks.md changes the script to this name.",
+                "description": "The one address range Azure Local hands to virtual machines on this logical network (first and last address, both inside address_prefix); az stack-hci-vm takes one pool per network. Needed when ip_allocation_method is Static. The creation script of task-08 still reads a list called ip_pools (and its type): a task in config/variables/docs/variables-audit-tasks.md changes the script to this name.",
                 "type": "object",
                 "additionalProperties": false,
                 "properties": {

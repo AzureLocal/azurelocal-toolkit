@@ -85,7 +85,7 @@ Describe 'AZL-040: the deployment options' {
 
 Describe 'The variables reference' {
     It 'is current (New-InfrastructureVariablesReference.ps1 -Check)' {
-        $out = & pwsh -NoProfile -NonInteractive -File ([IO.Path]::Combine($script:Repo, 'scripts', 'common', 'infrastructure', 'New-InfrastructureVariablesReference.ps1')) -Check 2>&1 | Out-String
+        $out = & pwsh -NoProfile -NonInteractive -File ([IO.Path]::Combine($script:Repo, 'config', 'variables', 'scripts', 'New-InfrastructureVariablesReference.ps1')) -Check 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0 -Because $out
     }
     It 'documents every key of the deployment block' {

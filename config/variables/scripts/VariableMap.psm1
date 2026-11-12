@@ -424,7 +424,7 @@ function ConvertTo-VariableMapMarkdown {
     & $line './config/variables/scripts/New-VariableMap.ps1 -Check    # exit 1 when a committed file is out of date (the tests run this)'
     & $line '```'
     & $line
-    & $line 'The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](../../../docs/diagrams/variable-flow.drawio) ([PNG](../../../docs/diagrams/variable-flow.png)).'
+    & $line 'The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](diagrams/variable-flow.drawio) ([PNG](diagrams/variable-flow.png)).'
     & $line
     & $line "Registry version $RegistryVersion. Sources of the scan: toolkit (this repository), $((@($Data.Sources) | ForEach-Object { $_ }) -join ', ')."
     & $line

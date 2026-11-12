@@ -118,7 +118,7 @@ foreach ($path in $files.Keys) {
     Write-Host "Wrote $path"
 }
 
-$reference = Join-Path $repoRoot 'scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1'
+$reference = Join-Path $repoRoot 'config/variables/scripts/New-InfrastructureVariablesReference.ps1'
 if ($Check) {
     $global:LASTEXITCODE = 0
     & $reference -Check *>$null

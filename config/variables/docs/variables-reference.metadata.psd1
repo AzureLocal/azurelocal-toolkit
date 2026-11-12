@@ -1,5 +1,5 @@
 @{
-    # Facts the JSON schema doesn't hold, for scripts/common/infrastructure/New-InfrastructureVariablesReference.ps1, which
+    # Facts the JSON schema doesn't hold, for config/variables/scripts/New-InfrastructureVariablesReference.ps1, which
     # renders config/variables/docs/VARIABLES.md. Patterns are regular expressions over the key path, with [] for array items
     # (nodes[].bmc.ip_address). The first match wins.
 
