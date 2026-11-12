@@ -10,7 +10,7 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](diagrams/variable-flow.drawio) ([PNG](diagrams/variable-flow.png)).
 
-Registry version 5.0.30. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
+Registry version 5.0.31. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
 
 ## In numbers
 
@@ -18,8 +18,8 @@ Registry version 5.0.30. Sources of the scan: toolkit (this repository), sonar 3
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Keys of infrastructure.yml | 579 | 285 | 121 | 3 | 168 | 2 |
 | Owned by a tool (`tools.*`) | 2467 | 2460 | 0 | 0 | 7 | 0 |
-| Older variables-file sections | 1480 | 62 | 521 | 0 | 892 | 5 |
-| All registry leaves | 4526 | 2807 | 642 | 3 | 1067 | 7 |
+| Older variables-file sections | 1476 | 60 | 521 | 0 | 890 | 5 |
+| All registry leaves | 4522 | 2805 | 642 | 3 | 1065 | 7 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -293,7 +293,7 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 **Reads (57):**
 `site.code`, `site.location`, `site.name`, `site.owner`, `tags.*`, `identity.active_directory.domain_fqdn`, `identity.active_directory.netbios_name`, `identity.active_directory.ou_path`, `identity.active_directory.lcm_user.username`, `identity.active_directory.lcm_user.password`, `identity.active_directory.security_groups[].name`, `identity.active_directory.security_groups[].local_groups`, `identity.local_admin.username`, `identity.local_admin.password`, `identity.entra.groups[].name`, `identity.entra.groups[].purpose`, `identity.entra.groups[].roles`, `identity.entra.groups[].scope`, `networking.logical_networks[].name`, `networking.logical_networks[].enabled`, `networking.logical_networks[].ip_allocation_method`, `networking.logical_networks[].nsg_name`, `networking.logical_networks[].vlan_id`, `networking.logical_networks[].address_prefix`, `networking.logical_networks[].dns_servers`, `security.defender_for_cloud.enabled`, `security.defender_for_cloud.apply_cloud_security_benchmark`, `operations.notifications.emails`, `scenario.environment_class`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.custom_location`, `azure.automation_identity.client_id`, `cluster.name`, `hardware.vendor`, `hardware.model`, `hardware.sbe.publisher`, `hardware.sbe.family`, `hardware.sbe.version`, `hardware.sbe.bundle_path`, `hardware.sbe.requirement`, `hardware.sbe.not_applicable_reason`, `hardware.sbe.source_path`, `hardware.sbe.source_username`, `hardware.sbe.source_password`, `hardware.sbe.package_sha256`, `hardware.sbe.package_size_bytes`, `landing_zone.management_groups[].name`, `landing_zone.management_groups[].display_name`, `landing_zone.subscriptions[].name`, `landing_zone.subscriptions[].id`, `landing_zone.subscriptions[].management_group`, `landing_zone.policy.required_tags`, `landing_zone.policy.management_group`, `_metadata.schema_version`
 
-Where in the code (file, function, keys read by name; 90 places, the first 12):
+Where in the code (file, function, keys read by name; 88 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
@@ -766,7 +766,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `tools.ztp.config_keys.config_oem_vendor_json.bios_status` | ztp | config_keys |
 | `tools.ztp.config_keys.config_oem_vendor_json.models_validatedBySimplifiedProvisioning` | ztp | config_keys |
 
-### Older variables-file sections (1480 variables)
+### Older variables-file sections (1476 variables)
 
 These registry sections (`compute`, `identity.accounts`, `azure_platform`, ...) describe the earlier variables file, not `infrastructure.yml`. The numbered deploy scripts under `scripts/deploy` read some of them. They are in the CSV (`kind` = `variables-file`).
 
@@ -781,7 +781,7 @@ These registry sections (`compute`, `identity.accounts`, `azure_platform`, ...) 
 | `infrastructure_scenarios` | 1 | 0 | 1 | 0 |
 | `marketplace_images` | 9 | 7 | 2 | 0 |
 | `networking` | 527 | 55 | 468 | 4 |
-| `operations` | 126 | 5 | 121 | 0 |
+| `operations` | 122 | 3 | 119 | 0 |
 | `security` | 109 | 56 | 53 | 0 |
 | `site` | 23 | 2 | 21 | 0 |
 | `storage_accounts` | 33 | 0 | 33 | 0 |

@@ -12,6 +12,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
+- Removed the Datadog task (stage 05, monitoring task 07: three scripts) and the old-layout Datadog keys (registry 5.0.31). The toolkit installs no third-party agent. Nothing called the task.
+- Removed the per-machine Azure Update Manager task (stage 05, security task 05: three scripts). It set patch assessment, the patch extension and a maintenance configuration on the machines one by one, which Microsoft does not support for Azure Local machines; the instance is updated as a whole.
+- Terraform: the `monitoring` module no longer adds the legacy `Updates` and `Security` Log Analytics solutions.
+
 - Log Analytics workspace (stage 05, monitoring task 01): `Deploy-MonitoringSecurity.ps1` is replaced by `Deploy-LogAnalyticsWorkspace.ps1`. It creates the one workspace of `operations.monitoring` from the master `infrastructure.yml` and nothing else. The old script also created a second workspace for Microsoft Sentinel in a security subscription and three data collection rules with fixed names, read a configuration layout that no longer exists and could not run. Nothing in the automation is for Microsoft Sentinel. Its parameters are registered (registry 5.0.30).
 - Terraform: the `security` module no longer has a Defender for Cloud pricing resource, and the `defender_plans` variable and the `defender_plan_ids` output are removed. The automation cannot turn on a paid plan.
 - Defender for Cloud: the automation turns on only the free level Azure Local needs (Foundational CSPM and the Microsoft cloud security benchmark assignment), from the new keys `security.defender_for_cloud.enabled` and `apply_cloud_security_benchmark` (registry 5.0.29, infrastructure schema 5.6.7). `Enable-DefenderForCloud.ps1` no longer turns on Defender for Servers, Storage, Key Vault or Resource Manager, nor agent auto-provisioning. The Terraform `defender_plans` default is empty. `Test-SecurityCompliance.ps1` checks the free level, not paid plans. The script that turns on paid plans moved to `scripts/optional/paid-security-services` and is run by nothing.

@@ -24,7 +24,7 @@
 .EXAMPLE
     # Store a new secret
     $config = Get-SolutionConfig -Solution "azure-local"
-    Set-SecretToKeyVault -Config $config -SecretName "my-secret" -SecretValue "secret-value"
+    Set-SecretToKeyVault -Config $config -SecretName "my-secret" -SecretValue "<secret-value>"
 #>
 
 #Requires -Modules Az.KeyVault, Az.Accounts

@@ -31,6 +31,8 @@ Describe 'No paid security plan is turned on by the automation' {
             'defender_plans'
             # Nothing in the automation is for Microsoft Sentinel, not even a workspace named for it.
             '(?-i:Sentinel)'
+            # No third-party agent.
+            'Datadog'
         )
     }
 

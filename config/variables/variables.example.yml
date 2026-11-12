@@ -484,9 +484,6 @@ operations:
       workspace_id: "/subscriptions/55555555-5555-5555-5555-555555555555/resourceGroups/rg-iic-monitor-01/providers/Microsoft.OperationalInsights/workspaces/law-iic-monitor-01"
       workspace_name: "law-iic-monitor-01"
     extended:
-      datadog:
-        api_key: "keyvault://kv-iic-platform/datadog-api-key"
-        site: "datadoghq.com"
       scom:
         server: "iic-scom01"
   policy: {}

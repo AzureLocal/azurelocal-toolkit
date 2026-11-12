@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.31 (2026-11-12):
+#     - Removed the old-layout Datadog keys (operations.monitoring.extended.datadog: monitoring_datadog_api_key, monitoring_datadog_site and their two aliases). The toolkit has no third-party agent; the Datadog task and its scripts are removed.
 #   v5.0.30 (2026-11-12):
 #     - The parameters InfrastructureFile and LogPath of Deploy-LogAnalyticsWorkspace.ps1 (phase 02 monitoring and observability, task 01, which reads operations.monitoring enabled, log_analytics_workspace and workspace_resource_group, azure.tenant_id, azure.subscription_id, azure.location and tags, keys that already existed) are registered under tools.arm_deployment.parameters. The script replaces Deploy-MonitoringSecurity.ps1, which also created a workspace for Microsoft Sentinel.
 #   v5.0.29 (2026-11-12):
@@ -177,7 +179,7 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.30"
+  version: "5.0.31"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.7"
   last_updated: "2026-11-12"
@@ -187,7 +189,11 @@ _metadata:
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
     - date: "2026-11-12"
-      version: "5.0.30"
+      version: "5.0.31"
+      change: "Removed the old-layout Datadog keys (operations.monitoring.extended.datadog: monitoring_datadog_api_key, monitoring_datadog_site and their two aliases)."
+      reason: "Owner directives D105 and D113: no third-party agent in the toolkit. The Datadog task came over in the first migration and nothing called it; its scripts are removed, so the keys have no purpose."
+    - date: "2026-11-12"
+      version: "5.0.31"
       change: "The parameters InfrastructureFile and LogPath of Deploy-LogAnalyticsWorkspace.ps1 (phase 02 monitoring and observability, task 01, which reads operations.monitoring enabled, log_analytics_workspace and workspace_resource_group, azure.tenant_id, azure.subscription_id, azure.location and tags, keys that already existed) are registered under tools.arm_deployment.parameters."
       reason: "Owner directive D112: the workspace script does nothing for Microsoft Sentinel. Deploy-MonitoringSecurity.ps1 created a second workspace for Sentinel, read a layout that no longer exists and could not run; the new script creates the one workspace of operations.monitoring, and its parameters are registered before use."
     - date: "2026-11-12"
@@ -12916,42 +12922,6 @@ operations:
     # ─── absorbed from dissolved monitoring_extended ───
     extended:
       # ─── Nested aliases (used in example file) ───
-      datadog:
-        monitoring_datadog_api_key:
-          category: "monitoring"
-          subcategory: "datadog"
-          type: string
-          description: "Datadog API key for agent configuration"
-          required: false
-          sensitive: true
-          pattern: "^keyvault://[a-z0-9-]+/.+$"
-          example: "keyvault://kv-azlc-AzureLocalCloud-secrets/datadog-api-key"
-
-        api_key:
-          type: string
-          description: "Datadog API key shorthand (alias for monitoring_datadog_api_key)"
-          alias_for: monitoring_datadog_api_key
-          sensitive: true
-
-        monitoring_datadog_site:
-          category: "monitoring"
-          subcategory: "datadog"
-          type: string
-          description: "Datadog site URL (region-specific)"
-          required: false
-          allowedValues:
-            - "datadoghq.com"
-            - "us3.datadoghq.com"
-            - "us5.datadoghq.com"
-            - "datadoghq.eu"
-          default: "datadoghq.com"
-          example: "datadoghq.com"
-
-        site:
-          type: string
-          description: "Datadog site shorthand (alias for monitoring_datadog_site)"
-          alias_for: monitoring_datadog_site
-
       scom:
         monitoring_scom_server:
           category: "monitoring"

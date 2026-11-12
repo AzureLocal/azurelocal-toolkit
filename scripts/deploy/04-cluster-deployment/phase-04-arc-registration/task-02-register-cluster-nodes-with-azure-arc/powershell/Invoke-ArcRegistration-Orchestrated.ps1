@@ -109,7 +109,7 @@
     .\Invoke-ArcRegistration-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -TargetNode azl-lab-01-n01
 
 .EXAMPLE
-    .\Invoke-ArcRegistration-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -SpnSecret "mySecret123"
+    .\Invoke-ArcRegistration-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -SpnSecret "<service-principal-secret>"
 
 
 .NOTES

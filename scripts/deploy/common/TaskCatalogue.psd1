@@ -125,7 +125,6 @@
         @{ Path = '05-operational-foundations/phase-02-monitoring-observability/task-05-deploy-omimswac-monitoring'; AzureCli = 'no'; Reason = 'Installs or configures a Windows Admin Center component on a server.' }
         @{ Path = '05-operational-foundations/phase-02-monitoring-observability/task-05-deploy-wac'; AzureCli = 'no'; Reason = 'Installs or configures a Windows Admin Center component on a server.' }
         @{ Path = '05-operational-foundations/phase-02-monitoring-observability/task-06-configure-network-device-logging'; AzureCli = 'yes'; Reason = 'Deploys the syslog virtual machine in Azure (the real script calls az).' }
-        @{ Path = '05-operational-foundations/phase-02-monitoring-observability/task-07-configure-datadog-integration'; AzureCli = 'unclear'; Reason = 'Datadog can be set up on the nodes or as an Azure resource; the real script uses no Azure command.' }
         @{ Path = '05-operational-foundations/phase-03-backup-dr/task-01-configure-azure-backup'; AzureCli = 'yes'; Reason = 'Configures Azure Backup; a real Azure CLI script exists.' }
         @{ Path = '05-operational-foundations/phase-03-backup-dr/task-02-configure-site-recovery'; AzureCli = 'yes'; Reason = 'Configures Azure Site Recovery.' }
         @{ Path = '05-operational-foundations/phase-03-backup-dr/task-03-test-dr-procedures'; AzureCli = 'unclear'; Reason = 'Tests disaster recovery; the real script uses no Azure command.' }
@@ -133,7 +132,6 @@
         @{ Path = '05-operational-foundations/phase-04-security-governance/task-02-apply-azure-policy-initiatives'; AzureCli = 'yes'; Reason = 'Applies Azure Policy.' }
         @{ Path = '05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines'; AzureCli = 'no'; Reason = 'Applies security baselines on the nodes; the real script uses no Azure command.' }
         @{ Path = '05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging'; AzureCli = 'unclear'; Reason = 'Security logging and audit policy can be on the nodes or in Azure; the real script uses no Azure command.' }
-        @{ Path = '05-operational-foundations/phase-04-security-governance/task-05-configure-azure-update-manager'; AzureCli = 'yes'; Reason = 'Configures Azure Update Manager.' }
         @{ Path = '05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit'; AzureCli = 'yes'; Reason = 'Enables Azure Hybrid Benefit.' }
         @{ Path = '05-operational-foundations/phase-05-licensing-telemetry/task-02-activate-windows-server-subscription'; AzureCli = 'yes'; Reason = 'Activates the Windows Server subscription through Azure.' }
         @{ Path = '05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry'; AzureCli = 'unclear'; Reason = 'Telemetry can be set on the nodes or in Azure; the real script uses no Azure command.' }

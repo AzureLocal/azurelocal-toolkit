@@ -129,18 +129,6 @@
       "reason": "Nested VLAN alias"
     },
     {
-      "alias_path": "operations.monitoring.extended.datadog.api_key",
-      "canonical_target": "monitoring_datadog_api_key",
-      "created": "2026-04-02",
-      "reason": "Nested monitoring alias"
-    },
-    {
-      "alias_path": "operations.monitoring.extended.datadog.site",
-      "canonical_target": "monitoring_datadog_site",
-      "created": "2026-04-02",
-      "reason": "Nested monitoring alias"
-    },
-    {
       "alias_path": "operations.monitoring.extended.scom.server",
       "canonical_target": "monitoring_scom_server",
       "created": "2026-04-02",

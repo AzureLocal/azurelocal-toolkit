@@ -27,35 +27,6 @@ resource "azurerm_log_analytics_workspace" "main" {
 }
 
 # -----------------------------------------------------------------------------
-# Log Analytics Solutions — for Azure Local monitoring
-# -----------------------------------------------------------------------------
-resource "azurerm_log_analytics_solution" "updates" {
-  solution_name         = "Updates"
-  workspace_resource_id = azurerm_log_analytics_workspace.main.id
-  workspace_name        = azurerm_log_analytics_workspace.main.name
-  location              = var.location
-  resource_group_name   = var.resource_group_name
-
-  plan {
-    publisher = "Microsoft"
-    product   = "OMSGallery/Updates"
-  }
-}
-
-resource "azurerm_log_analytics_solution" "security" {
-  solution_name         = "Security"
-  workspace_resource_id = azurerm_log_analytics_workspace.main.id
-  workspace_name        = azurerm_log_analytics_workspace.main.name
-  location              = var.location
-  resource_group_name   = var.resource_group_name
-
-  plan {
-    publisher = "Microsoft"
-    product   = "OMSGallery/Security"
-  }
-}
-
-# -----------------------------------------------------------------------------
 # Action Groups — notification targets for alerts
 # -----------------------------------------------------------------------------
 resource "azurerm_monitor_action_group" "critical" {
