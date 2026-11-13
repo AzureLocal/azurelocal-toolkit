@@ -5,14 +5,6 @@
 # or, when the value is fixed by Microsoft or a protocol, add a rule-level exception to the test; a reviewed one-off goes to enforcement-allowlist.psd1.
 @{
     Entries = @(
-        @{ File = 'scripts/common/utilities/helpers/config-loader.ps1'; Rule = 'A'; Literal = '_metadata.loaded_at'; Count = 2; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/helpers/config-loader.ps1'; Rule = 'A'; Literal = '_metadata.source_file'; Count = 2; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/helpers/config-loader.ps1'; Rule = 'A'; Literal = 'azure_infrastructure'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/helpers/config-loader.ps1'; Rule = 'A'; Literal = 'b2b_configuration'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/helpers/keyvault-helper.ps1'; Rule = 'A'; Literal = 'azure.subscription'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/helpers/keyvault-helper.ps1'; Rule = 'A'; Literal = 'azure.tenant'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Stop-AzureLocalCluster.ps1'; Rule = 'D'; Literal = 'Get-Credential'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Stop-AzureLocalCluster.ps1'; Rule = 'D'; Literal = 'Read-Host'; Count = 1; Reason = 'legacy script, not yet migrated' }
         @{ File = 'scripts/deferred/network-device-logging/phase-02-monitoring-observability/task-06-configure-network-device-logging/powershell/Deploy-SyslogVm.ps1'; Rule = 'B'; Literal = '10.x.x.x'; Count = 1; Reason = 'legacy script, not yet migrated' }
         @{ File = 'scripts/deferred/network-device-logging/phase-02-monitoring-observability/task-06-configure-network-device-logging/powershell/Deploy-SyslogVm.ps1'; Rule = 'B'; Literal = '10.x.x.x/24'; Count = 4; Reason = 'legacy script, not yet migrated' }
         @{ File = 'scripts/deferred/network-device-logging/phase-02-monitoring-observability/task-06-configure-network-device-logging/powershell/Deploy-SyslogVm.ps1'; Rule = 'B'; Literal = '192.x.x.x/24'; Count = 6; Reason = 'legacy script, not yet migrated' }
@@ -128,8 +120,5 @@
         @{ File = 'scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-03-configure-network-security-groups/powershell/Set-NsgConfiguration.ps1'; Rule = 'B'; Literal = 'nsg-azurelocal-baseline'; Count = 2; Reason = 'legacy script, not yet migrated' }
         @{ File = 'scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-03-configure-network-security-groups/powershell/Set-NsgConfiguration.ps1'; Rule = 'B'; Literal = 'nsg-azurelocal-sql'; Count = 2; Reason = 'legacy script, not yet migrated' }
         @{ File = 'scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-03-configure-network-security-groups/powershell/Set-NsgConfiguration.ps1'; Rule = 'B'; Literal = 'nsg-azurelocal-web'; Count = 2; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1'; Rule = 'A'; Literal = 'compute.cluster_nodes[].fqdn'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1'; Rule = 'A'; Literal = 'compute.cluster_nodes[].hostname'; Count = 2; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1'; Rule = 'A'; Literal = 'compute.cluster_nodes[].management_ip'; Count = 2; Reason = 'legacy script, not yet migrated' }
     )
 }

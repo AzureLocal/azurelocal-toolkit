@@ -19,8 +19,6 @@ BeforeDiscovery {
     $reason = @{
         'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1' =
         'reads the per-node field arc_resource_id (the full Arc machine resource ID); infrastructure.yml has only arc_machine_name'
-        'scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1' =
-        'matches the target node by the per-node field fqdn; schema 5 has no node fqdn key'
     }
     $files = @(Get-ChildItem -LiteralPath $scripts -Recurse -File | Where-Object { $_.Extension -in '.ps1', '.psm1' })
     # The files to check, as one list: a failure names every file that reads the old layout.

@@ -16,22 +16,24 @@
     This script is designed to be run from an external management workstation (jump box)
     with remote PowerShell access to the cluster nodes.
 
+.PARAMETER InfrastructureFile
+    Path to infrastructure.yml. Keys read: cluster.name, nodes[] (the management address of each machine) and, when no
+    -Credential is given, identity.active_directory.domain_join_account.username and .password (a secret reference, read by the
+    toolkit's secret resolver; sign in first with Connect-AzAccount when it is a keyvault:// reference) and
+    identity.active_directory.netbios_name.
+
 .PARAMETER ClusterName
-    The name of the Azure Local cluster. Default: cluster-01
+    The name of the Azure Local cluster. Default: cluster.name in -InfrastructureFile.
 
 .PARAMETER Node01
-    IP address or hostname of Node 01. Default: 192.168.150.11
+    IP address or hostname of Node 01. Default: the management address of the first machine in nodes[].
 
 .PARAMETER Node02
-    IP address or hostname of Node 02. Default: 192.168.150.12
+    IP address or hostname of Node 02. Default: the management address of the second machine in nodes[].
 
 .PARAMETER Credential
-    PSCredential object for connecting to the nodes. If not provided, prompts for credentials.
-
-.PARAMETER InfrastructureFile
-    Path to infrastructure.yml. When no -Credential is given, the password is the secret reference
-    identity.active_directory.domain_join_account.password in this file, read by the toolkit's secret resolver
-    (sign in first with Connect-AzAccount when it is a keyvault:// reference).
+    PSCredential object for connecting to the nodes. If not provided, the credential is built from the secret reference of the
+    domain account in -InfrastructureFile. The script never asks for one.
 
 .PARAMETER DomainUserName
     Domain username for authentication. Default: identity.active_directory.domain_join_account.username in -InfrastructureFile
@@ -40,29 +42,30 @@
     If specified, saves VM state instead of shutting down VMs. Default: $false (shutdown VMs)
 
 .PARAMETER Force
-    Skip confirmation prompts.
+    Confirms the shutdown of the whole cluster. Without -Force (and without -WhatIf) the script stops before it
+    contacts a node. The script never asks a question.
+
+.PARAMETER LogPath
+    Path of the log file. Default: logs\cluster-shutdown-<date>.log next to the script.
 
 .PARAMETER WhatIf
     Show what would happen without making changes.
 
 .EXAMPLE
-    .\Stop-AzureLocalCluster.ps1
-    Shuts down the cluster using default settings and the credentials of the infrastructure file.
+    .\Stop-AzureLocalCluster.ps1 -InfrastructureFile .\infrastructure.yml -WhatIf
+    Shows the plan: the cluster and the nodes come from the infrastructure file, the credential from its secret reference.
 
 .EXAMPLE
-    .\Stop-AzureLocalCluster.ps1 -SaveVMState -Force
-    Saves VM state instead of shutdown, skips confirmation.
+    .\Stop-AzureLocalCluster.ps1 -InfrastructureFile .\infrastructure.yml -SaveVMState -Force
+    Saves VM state instead of shutdown and shuts the cluster down.
 
 .EXAMPLE
-    # Using solution configuration
-    .\Stop-AzureLocalCluster.ps1 -Solution "azure-local"
-
-.EXAMPLE
-    $cred = Get-Credential
-    .\Stop-AzureLocalCluster.ps1 -Credential $cred
-    Uses provided credentials instead of the secret reference.
+    .\Stop-AzureLocalCluster.ps1 -InfrastructureFile .\infrastructure.yml -Credential $cred -Force
+    Uses the given credential instead of the secret reference.
 
 .NOTES
+    Exit codes: 0 done (or planned under -WhatIf); 1 a node could not be reached, or -Force was not given; 2 a value in the
+    infrastructure file is missing or unusable, or the credential could not be built.
     Author: Hybrid Cloud Solutions Team
     Date: 2025-12-06
     Version: 1.1.0
@@ -78,9 +81,8 @@
 
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
-    [Parameter()]
-    [ValidateSet("azure-local", "azure-arc-servers")]
-    [string]$Solution,
+    [Parameter(Mandatory)]
+    [string]$InfrastructureFile,
 
     [Parameter()]
     [string]$ClusterName,
@@ -95,9 +97,6 @@ param(
     [PSCredential]$Credential,
 
     [Parameter()]
-    [string]$InfrastructureFile,
-
-    [Parameter()]
     [string]$DomainUserName,
 
     [Parameter()]
@@ -110,25 +109,28 @@ param(
     [string]$LogPath
 )
 
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
-# Load configuration if Solution specified
-if ($Solution) {
-    . (Join-Path $PSScriptRoot (Join-Path ".." (Join-Path "helpers" "config-loader.ps1")))
-    
-    $config = Get-SolutionConfig -Solution $Solution
-    
-    # Map config values to script parameters
-    if (-not $ClusterName) { $ClusterName = $config.cluster.name }
-    $configNodes = @(Get-AzlInfrastructureNode -Infrastructure $config)
+# The cluster name and the two node addresses come from the infrastructure file unless a parameter gives them.
+try {
+    $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation
+    if (-not $ClusterName) { $ClusterName = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name') }
+    $configNodes = @(Get-AzlInfrastructureNode -Infrastructure $infra)
     if (-not $Node01 -and $configNodes.Count -ge 1) { $Node01 = $configNodes[0].ManagementIp }
     if (-not $Node02 -and $configNodes.Count -ge 2) { $Node02 = $configNodes[1].ManagementIp }
-    if (-not $DomainUserName) { $DomainUserName = $config.security.credentials.domain_join_username }
+}
+catch {
+    Write-Host "[ERROR] Could not read $InfrastructureFile : $($_.Exception.Message)" -ForegroundColor Red
+    exit 2
 }
 
-# Validate required parameters
+# Validate required values
 if (-not $ClusterName -or -not $Node01 -or -not $Node02) {
-    throw "ClusterName, Node01, and Node02 are required. Specify -Solution or provide parameters directly."
+    Write-Host "[ERROR] The cluster name and two node addresses are needed: cluster.name and two machines in nodes[] of $InfrastructureFile, or -ClusterName, -Node01 and -Node02." -ForegroundColor Red
+    exit 2
 }
 
 #region Variables
@@ -170,9 +172,9 @@ function Save-LogFile {
     try {
         $logDir = Split-Path $script:LogFile -Parent
         if (-not (Test-Path $logDir)) {
-            New-Item -ItemType Directory -Path $logDir -Force | Out-Null
+            New-Item -ItemType Directory -Path $logDir -Force -WhatIf:$false | Out-Null
         }
-        $script:LogEntries | Out-File -FilePath $script:LogFile -Encoding UTF8
+        $script:LogEntries | Out-File -FilePath $script:LogFile -Encoding UTF8 -WhatIf:$false
         Write-Host "Log saved to: $script:LogFile" -ForegroundColor DarkGray
     }
     catch {
@@ -189,16 +191,15 @@ function Get-ClusterCredential {
     # The domain account of identity.active_directory.domain_join_account: the password is a secret reference, read by the toolkit's
     # one secret resolver. The user name is -UserName, else the one in the file (qualified with the NetBIOS name when it is not).
     param(
-        [string]$InfrastructureFile,
+        [Parameter(Mandatory)]
+        $Infrastructure,
         [string]$UserName
     )
 
-    if (-not $InfrastructureFile) { throw "Give -InfrastructureFile (the secret reference of the domain account is read from it), or -Credential." }
-
-    Write-Step "Reading the domain credentials from the secret reference in $InfrastructureFile" "INFO"
+    Write-Step "Reading the domain credentials from the secret reference in the infrastructure file" "INFO"
 
     try {
-        $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation
+        $infra = $Infrastructure
         $reference = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.active_directory.domain_join_account.password'
         if (-not $UserName) {
             $UserName = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.active_directory.domain_join_account.username')
@@ -247,22 +248,20 @@ if (-not $Force -and -not $WhatIfPreference) {
     Write-Host "WARNING: This script will COMPLETELY SHUT DOWN the Azure Local cluster!" -ForegroundColor Red
     Write-Host "         All VMs will be stopped and all nodes will be powered off." -ForegroundColor Red
     Write-Host ""
-    $confirm = Read-Host "Are you sure you want to proceed? (yes/no)"
-    if ($confirm -ne "yes") {
-        Write-Step "Operation cancelled by user" "WARNING"
-        exit 0
-    }
+    Write-Step "Nothing was sent to a node. Run again with -Force to shut the cluster down, or with -WhatIf to see the plan." "WARNING"
+    exit 1
 }
+if ($Force) { $ConfirmPreference = 'None' }
 
 # Step 1: Get credentials
 Write-Step "========== STEP 1: AUTHENTICATION ==========" "STEP"
 if (-not $Credential) {
     try {
-        $Credential = Get-ClusterCredential -InfrastructureFile $InfrastructureFile -UserName $DomainUserName
+        $Credential = Get-ClusterCredential -Infrastructure $infra -UserName $DomainUserName
     }
     catch {
-        Write-Step "Reading the secret reference failed. Prompting for credentials..." "WARNING"
-        $Credential = Get-Credential -Message "Enter domain admin credentials for cluster access"
+        Write-Step "The credential could not be built from the secret reference. Fix the reference or give -Credential. $($_.Exception.Message)" "ERROR"
+        exit 2
     }
 }
 
@@ -366,7 +365,7 @@ Write-Host ""
 # Step 4: Shut down VMs
 Write-Step "========== STEP 4: SHUTDOWN VIRTUAL MACHINES ==========" "STEP"
 
-$runningVMs = $clusterInfo.VMs | Where-Object { $_.State -eq "Online" }
+$runningVMs = @($clusterInfo.VMs | Where-Object { $_.State -eq "Online" })
 if ($runningVMs.Count -gt 0) {
     Write-Step "Found $($runningVMs.Count) running VMs to stop" "INFO"
     
@@ -418,6 +417,7 @@ Start-Sleep -Seconds 5
 $vmCheck = Invoke-Command -ComputerName $Node01 -Credential $Credential -ScriptBlock {
     Get-ClusterGroup | Where-Object { $_.GroupType -eq "VirtualMachine" -and $_.State -eq "Online" }
 }
+$vmCheck = @($vmCheck | Where-Object { $_ })
 
 if ($vmCheck.Count -gt 0) {
     Write-Step "WARNING: $($vmCheck.Count) VMs still running. Proceeding anyway..." "WARNING"

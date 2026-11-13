@@ -483,8 +483,8 @@ function Connect-AzureFromConfig {
         [switch]$Force
     )
 
-    $tenantId = Get-ConfigValue -Config $Config -Path 'azure.tenant.id'
-    $subscriptionId = Get-ConfigValue -Config $Config -Path 'azure.subscription.id'
+    $tenantId = Get-ConfigValue -Config $Config -Path 'azure.tenant_id'
+    $subscriptionId = Get-ConfigValue -Config $Config -Path 'azure.subscription_id'
 
     if ([string]::IsNullOrEmpty($tenantId) -or [string]::IsNullOrEmpty($subscriptionId)) {
         throw "Azure tenant ID and subscription ID must be defined in configuration"

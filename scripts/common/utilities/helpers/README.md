@@ -120,9 +120,9 @@ All scripts use consistent paths to access configuration values. These paths are
 
 | Path | Description |
 |------|-------------|
-| `azure.tenant.id` | Azure AD tenant ID |
-| `azure.subscriptions.<name>.id` | Subscription ID by purpose |
-| `azure_infrastructure.key_vaults.platform.name` | Platform Key Vault name |
+| `azure.tenant_id` | Azure AD tenant ID |
+| `azure.subscription_id` | Subscription ID |
+| `key_vaults[].name` | Key Vault name (`Get-PlatformKeyVault`: the only vault listed, or the one whose `purpose` is given with `-Purpose`) |
 | `azure_infrastructure.resource_groups.<name>.name` | Resource group name |
 | `tags.*` | Standard Azure resource tags |
 | `credentials.<name>.password` | Credential secret URI |

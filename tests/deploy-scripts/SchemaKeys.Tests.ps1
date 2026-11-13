@@ -39,8 +39,6 @@ BeforeDiscovery {
     $script:OutOfScope = @{
         'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1' =
         'reads the per-node field arc_resource_id (see tests/deploy-scripts/NodeLayout.Tests.ps1)'
-        'scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1' =
-        'matches the target node by the per-node field fqdn (see tests/deploy-scripts/NodeLayout.Tests.ps1)'
     }
 
     # Reads that stay on a removed key, because schema 5 has no key for the value. One entry per file and key; the test for a left

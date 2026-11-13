@@ -1,17 +1,65 @@
-# ==============================================================================
-# Script : Invoke-NodeMaintenanceReboot.ps1
-# Purpose: Suspend a cluster node (drain workloads), reboot it, wait for it to
-#          come back online, then optionally resume it in the cluster.
-# Run    : From management server — reads infrastructure.yml, uses PSRemoting
-# Prereqs: FailoverClusters module on target node; KV access for credentials
-# ==============================================================================
+<#
+.SYNOPSIS
+    Suspends a cluster node (drains the workloads), reboots it, waits for it to come back, then resumes it.
 
-[CmdletBinding()]
+.DESCRIPTION
+    Reads the infrastructure file, finds the machine in nodes[], and works over PowerShell remoting from the management server.
+    The credential is the local administrator (identity.local_admin, the password is a secret reference read by the toolkit's secret
+    resolver); the LCM account (identity.active_directory.lcm_user) is the fallback when the local administrator is denied.
+    -Credential replaces both. The script never asks for a credential or a value.
+
+    Keys read from -InfrastructureFile:
+        nodes[].name, nodes[].management.ip_address (and the management port of nodes[].network_adapters)   find the machine and its address
+        identity.active_directory.domain_fqdn                  the node's fully qualified name (name.domain) is accepted as -TargetNode
+        identity.local_admin.username and .password            the local administrator
+        identity.active_directory.lcm_user.username and .password, identity.active_directory.netbios_name   the fallback account
+
+    A -TargetNode that is not in the file is used as it is (a host name or an address).
+
+    Exit codes: 0 done (or planned under -WhatIf); 1 the node did not come back, or a call failed; 2 the file is missing or unusable,
+    or no credential could be built.
+
+.PARAMETER InfrastructureFile
+    Path to infrastructure.yml (schema 5). The old name -ConfigPath still works.
+
+.PARAMETER Credential
+    Use this account instead of the ones in the file.
+
+.PARAMETER TargetNode
+    Host name, fully qualified name or management address of the node to reboot.
+
+.PARAMETER LogPath
+    Log file. Default: logs\node-maintenance-reboot\<date>_<time>_<node>.log in the current folder.
+
+.PARAMETER SkipDrain
+    Reboot without Suspend-ClusterNode.
+
+.PARAMETER SkipResume
+    Leave the node in maintenance after the reboot.
+
+.PARAMETER ResumeOnly
+    Skip the drain and the reboot; only resume a node that is in maintenance.
+
+.PARAMETER FailbackMode
+    Workload failback on resume: Immediate (default), NoFailback or Policy.
+
+.PARAMETER TimeoutSeconds
+    Most seconds to wait for the node to come back.
+
+.PARAMETER PingIntervalSeconds
+    Seconds between connectivity checks while waiting.
+
+.EXAMPLE
+    ./Invoke-NodeMaintenanceReboot.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode node01 -WhatIf
+
+    Shows what would happen. Changes nothing.
+#>
+#Requires -Version 7.0
+[CmdletBinding(SupportsShouldProcess)]
 param(
-    [string]$ConfigPath        = "",           # Path to infrastructure.yml; CWD-relative default
+    [Parameter(Mandatory)][Alias('ConfigPath')][string]$InfrastructureFile,   # Path to infrastructure.yml
     [PSCredential]$Credential,                 # Override credential resolution
     [Parameter(Mandatory)][string]$TargetNode, # Required — hostname or management IP of node to reboot
-    [switch]$WhatIf,                           # Dry-run — validate only, no changes
     [string]$LogPath           = "",           # Override log file path
 
     # Behaviour overrides
@@ -26,6 +74,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 
 # ── Logging ───────────────────────────────────────────────────────────────────
@@ -37,14 +86,14 @@ if (-not $LogPath) {
     $logDir  = Split-Path $LogPath
     $logFile = $LogPath
 }
-if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force -WhatIf:$false | Out-Null }
 
 function Write-Log {
     param([string]$Message, [string]$Level = 'INFO')
     $ts   = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
     $line = "[$ts][$Level] $Message"
     Write-Host $line -ForegroundColor $(switch ($Level) { 'WARN' { 'Yellow' } 'ERROR' { 'Red' } 'SUCCESS' { 'Green' } default { 'Cyan' } })
-    Add-Content -Path $logFile -Value $line
+    Add-Content -Path $logFile -Value $line -WhatIf:$false
 }
 
 Write-Log "Invoke-NodeMaintenanceReboot started"
@@ -57,30 +106,32 @@ Write-Log "TimeoutSeconds : $TimeoutSeconds"
 Write-Log "Log            : $logFile"
 
 # ── Config loading ────────────────────────────────────────────────────────────
-if (-not $ConfigPath) {
-    $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml"
+if (-not (Test-Path -LiteralPath $InfrastructureFile)) {
+    Write-Log "Infrastructure file not found: $InfrastructureFile" 'ERROR'
+    exit 2
 }
-if (-not (Test-Path $ConfigPath)) {
-    Write-Log "Config file not found: $ConfigPath" 'ERROR'
-    throw "Config file not found: $ConfigPath"
+Write-Log "Loading config: $InfrastructureFile"
+try { $cfg = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch {
+    Write-Log "The infrastructure file could not be read: $($_.Exception.Message)" 'ERROR'
+    exit 2
 }
-Write-Log "Loading config: $ConfigPath"
-$cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 $script:SecretInfrastructure = $cfg
 
 # ── Resolve node IP from config ───────────────────────────────────────────────
 $nodeHostname = $TargetNode
 $nodeIp       = $TargetNode
 
-$matchedKey = $cfg.compute.cluster_nodes.Keys | Where-Object {
-    $cfg.compute.cluster_nodes[$_].hostname -eq $TargetNode -or
-    $cfg.compute.cluster_nodes[$_].management_ip -eq $TargetNode -or
-    $cfg.compute.cluster_nodes[$_].fqdn -eq $TargetNode
-} | Select-Object -First 1
+$domainFqdn = [string](Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'identity.active_directory.domain_fqdn')
+$matchedNode = @(Get-AzlInfrastructureNode -Infrastructure $cfg | Where-Object {
+        $_.Name -eq $TargetNode -or
+        ($_.ManagementIp -and $_.ManagementIp -eq $TargetNode) -or
+        ($domainFqdn -and "$($_.Name).$domainFqdn" -eq $TargetNode)
+    } | Select-Object -First 1)
 
-if ($matchedKey) {
-    $nodeHostname = $cfg.compute.cluster_nodes[$matchedKey].hostname          # compute.cluster_nodes.<key>.hostname
-    $nodeIp       = $cfg.compute.cluster_nodes[$matchedKey].management_ip     # compute.cluster_nodes.<key>.management_ip
+if ($matchedNode.Count -gt 0) {
+    $nodeHostname = $matchedNode[0].Name
+    if ($matchedNode[0].ManagementIp) { $nodeIp = $matchedNode[0].ManagementIp }
     Write-Log "Node resolved  : $nodeHostname ($nodeIp)"
 } else {
     Write-Log "Node '$TargetNode' not found in config — using as-is (hostname/IP passthrough)" 'WARN'
@@ -101,32 +152,44 @@ function Resolve-KeyVaultRef {
 }
 
 if (-not $Credential) {
-    $adminUser    = $cfg.identity.accounts.account_local_admin_username          # identity.accounts.account_local_admin_username
-    $adminPassUri = $cfg.identity.accounts.account_local_admin_password          # identity.accounts.account_local_admin_password
-    $lcmUser      = $cfg.identity.accounts.account_lcm_username                  # identity.accounts.account_lcm_username
-    $lcmPassUri   = $cfg.identity.accounts.account_lcm_password                  # identity.accounts.account_lcm_password
-    $netbiosName  = $cfg.identity.active_directory.ad_netbios_name               # identity.active_directory.ad_netbios_name
+    $adminUser    = [string](Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'identity.local_admin.username')
+    $adminPassUri = [string](Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'identity.local_admin.password')
+    $lcmUser      = [string](Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'identity.active_directory.lcm_user.username')
+    $lcmPassUri   = [string](Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'identity.active_directory.lcm_user.password')
+    $netbiosName  = [string](Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'identity.active_directory.netbios_name')
 
-    Write-Log "Resolving local admin credentials from Key Vault..."
-    $adminPass = Resolve-KeyVaultRef -KvUri $adminPassUri
-    $adminUserFull = if ($adminUser -notmatch '\\|@') { ".\$adminUser" } else { $adminUser }
-    if ($adminPass) {
-        $localAdminCred = New-Object PSCredential($adminUserFull, (ConvertTo-SecureString $adminPass -AsPlainText -Force))
-        Write-Log "  Local admin resolved: '$adminUserFull'"
-    } else {
-        Write-Log "  Key Vault unavailable — prompting for local admin credentials." 'WARN'
-        $localAdminCred = Get-Credential -Message "Enter local Administrator credentials" -UserName $adminUserFull
+    $localAdminCred = $null
+    if ($adminUser -and $adminPassUri) {
+        Write-Log "Resolving local admin credentials from the secret reference..."
+        $adminPass = Resolve-KeyVaultRef -KvUri $adminPassUri
+        $adminUserFull = if ($adminUser -notmatch '\\|@') { ".\$adminUser" } else { $adminUser }
+        if ($adminPass) {
+            $localAdminCred = New-Object PSCredential($adminUserFull, (ConvertTo-SecureString $adminPass -AsPlainText -Force))
+            Write-Log "  Local admin resolved: '$adminUserFull'"
+        }
     }
 
-    Write-Log "Resolving LCM credentials from Key Vault..."
-    $lcmPass = Resolve-KeyVaultRef -KvUri $lcmPassUri
-    $lcmUserFull = if ($lcmUser -notmatch '\\|@') { "$netbiosName\$lcmUser" } else { $lcmUser }
-    if ($lcmPass) {
-        $lcmCred = New-Object PSCredential($lcmUserFull, (ConvertTo-SecureString $lcmPass -AsPlainText -Force))
-        Write-Log "  LCM resolved: '$lcmUserFull'"
-    } else {
-        Write-Log "  LCM secret unavailable — LCM fallback will not be available." 'WARN'
-        $lcmCred = $null
+    $lcmCred = $null
+    if ($lcmUser -and $lcmPassUri) {
+        Write-Log "Resolving LCM credentials from the secret reference..."
+        $lcmPass = Resolve-KeyVaultRef -KvUri $lcmPassUri
+        $lcmUserFull = if ($lcmUser -notmatch '\\|@' -and $netbiosName) { "$netbiosName\$lcmUser" } else { $lcmUser }
+        if ($lcmPass) {
+            $lcmCred = New-Object PSCredential($lcmUserFull, (ConvertTo-SecureString $lcmPass -AsPlainText -Force))
+            Write-Log "  LCM resolved: '$lcmUserFull'"
+        } else {
+            Write-Log "  LCM secret unavailable — LCM fallback will not be available." 'WARN'
+        }
+    }
+
+    if (-not $localAdminCred -and $lcmCred) {
+        Write-Log "  Local admin unavailable — the LCM account is used." 'WARN'
+        $localAdminCred = $lcmCred
+        $lcmCred        = $null
+    }
+    if (-not $localAdminCred) {
+        Write-Log "No credential could be built: identity.local_admin (username and a readable password reference) is needed, or give -Credential." 'ERROR'
+        exit 2
     }
 } else {
     $localAdminCred = $Credential
@@ -162,7 +225,7 @@ function Invoke-NodeCommand {
 }
 
 # ── WhatIf guard ──────────────────────────────────────────────────────────────
-if ($WhatIf) {
+if ($WhatIfPreference) {
     if ($ResumeOnly) {
         Write-Log "[WhatIf] Would resume cluster node    : $nodeHostname ($nodeIp) (ResumeOnly)" 'WARN'
         Write-Log "[WhatIf] Failback mode                : $FailbackMode" 'WARN'

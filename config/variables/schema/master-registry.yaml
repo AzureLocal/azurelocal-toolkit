@@ -19930,6 +19930,33 @@ tools:
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Get-HardwareInventory.ps1","description":"Get-HardwareInventory.ps1. The master infrastructure.yml (schema 5). Only nodes[], hardware.bmc, hardware.inventory, the hardware keys it compares with the BMC, secrets and key_vaults are read; the file is not validated as a whole."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Get-HardwareInventory.ps1","description":"Get-HardwareInventory.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_common_utilities_tools_Stop_AzureLocalCluster_ps1:
+              type: object
+              area: "scripts/common/utilities/tools/Stop-AzureLocalCluster.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/common/utilities/tools/Stop-AzureLocalCluster.ps1","description":"Stop-AzureLocalCluster.ps1. The master infrastructure.yml (schema 5). Reads cluster.name, nodes[] (the management address of each machine) and, when no Credential is given, identity.active_directory.domain_join_account (username, password reference) and identity.active_directory.netbios_name."}
+                ClusterName: {"name":"ClusterName","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/utilities/tools/Stop-AzureLocalCluster.ps1","description":"Stop-AzureLocalCluster.ps1. Optional: the cluster name. Default: cluster.name in the infrastructure file."}
+                Node01: {"name":"Node01","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/utilities/tools/Stop-AzureLocalCluster.ps1","description":"Stop-AzureLocalCluster.ps1. Optional: address or host name of the first node, shut down last. Default: the management address of the first machine in nodes[]."}
+                Node02: {"name":"Node02","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/utilities/tools/Stop-AzureLocalCluster.ps1","description":"Stop-AzureLocalCluster.ps1. Optional: address or host name of the second node, shut down first. Default: the management address of the second machine in nodes[]."}
+                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/common/utilities/tools/Stop-AzureLocalCluster.ps1","description":"Stop-AzureLocalCluster.ps1. Optional: the account for the remoting sessions. Without it the account is built from the secret reference of the domain account in the infrastructure file. The script never asks for one."}
+                DomainUserName: {"name":"DomainUserName","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/utilities/tools/Stop-AzureLocalCluster.ps1","description":"Stop-AzureLocalCluster.ps1. Optional: the domain user name. Default: identity.active_directory.domain_join_account.username."}
+                SaveVMState: {"name":"SaveVMState","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/common/utilities/tools/Stop-AzureLocalCluster.ps1","description":"Stop-AzureLocalCluster.ps1. Save the state of each virtual machine instead of shutting it down."}
+                Force: {"name":"Force","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/common/utilities/tools/Stop-AzureLocalCluster.ps1","description":"Stop-AzureLocalCluster.ps1. Confirms the shutdown of the whole cluster. Without it, and without -WhatIf, the script stops before it contacts a node."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/utilities/tools/Stop-AzureLocalCluster.ps1","description":"Stop-AzureLocalCluster.ps1. Optional: the log file. Default: logs\\cluster-shutdown-<date>.log next to the script."}
+            scripts_lifecycle_operations_powershell_Invoke_NodeMaintenanceReboot_ps1:
+              type: object
+              area: "scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1","description":"Invoke-NodeMaintenanceReboot.ps1. The master infrastructure.yml (schema 5). Reads nodes[] (name and management address), identity.active_directory.domain_fqdn, identity.local_admin (username, password reference) and identity.active_directory.lcm_user (username, password reference) with identity.active_directory.netbios_name. The old name ConfigPath is an alias."}
+                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1","description":"Invoke-NodeMaintenanceReboot.ps1. Optional: the account for the remoting sessions, instead of the local administrator and LCM accounts of the file."}
+                TargetNode: {"name":"TargetNode","type":"string","declared_type":"string","required":"Y","read_at":"scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1","description":"Invoke-NodeMaintenanceReboot.ps1. The node to reboot: host name, fully qualified name or management address."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1","description":"Invoke-NodeMaintenanceReboot.ps1. Optional: the log file. Default: logs\\node-maintenance-reboot\\<date>_<time>_<node>.log in the current folder."}
+                SkipDrain: {"name":"SkipDrain","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1","description":"Invoke-NodeMaintenanceReboot.ps1. Reboot without suspending the node first."}
+                SkipResume: {"name":"SkipResume","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1","description":"Invoke-NodeMaintenanceReboot.ps1. Leave the node in maintenance after the reboot."}
+                ResumeOnly: {"name":"ResumeOnly","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1","description":"Invoke-NodeMaintenanceReboot.ps1. Only resume a node that is in maintenance."}
+                FailbackMode: {"name":"FailbackMode","type":"string","declared_type":"string","default":"'Immediate'","enum":["Immediate","NoFailback","Policy"],"required":"N","read_at":"scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1","description":"Invoke-NodeMaintenanceReboot.ps1. Workload failback when the node resumes."}
+                TimeoutSeconds: {"name":"TimeoutSeconds","type":"integer","declared_type":"int","default":"500","required":"N","read_at":"scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1","description":"Invoke-NodeMaintenanceReboot.ps1. Most seconds to wait for the node to come back."}
+                PingIntervalSeconds: {"name":"PingIntervalSeconds","type":"integer","declared_type":"int","default":"10","required":"N","read_at":"scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1","description":"Invoke-NodeMaintenanceReboot.ps1. Seconds between connectivity checks while waiting."}
         event_fields:
           type: object
           properties:
@@ -23318,11 +23345,6 @@ tools:
               properties:
                 Config: {"name":"Config","type":"object","declared_type":"hashtable","required":"Y","read_at":"scripts/common/utilities/helpers/config-loader.ps1:214"}
                 OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","required":"Y","read_at":"scripts/common/utilities/helpers/config-loader.ps1:217"}
-            common_utilities_helpers_config_loader_ps1_Get_B2BConfig:
-              type: object
-              area: "common/utilities/helpers/config-loader.ps1::Get-B2BConfig"
-              properties:
-                Config: {"name":"Config","type":"string","required":"N","read_at":"scripts/common/utilities/helpers/config-loader.ps1:613"}
             common_utilities_helpers_config_loader_ps1_Get_ConfigTags:
               type: object
               area: "common/utilities/helpers/config-loader.ps1::Get-ConfigTags"
@@ -23355,6 +23377,7 @@ tools:
               area: "common/utilities/helpers/config-loader.ps1::Get-PlatformKeyVault"
               properties:
                 Config: {"name":"Config","type":"string","required":"Y","read_at":"scripts/common/utilities/helpers/config-loader.ps1:440"}
+                Purpose: {"name":"Purpose","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/utilities/helpers/config-loader.ps1","description":"function Get-PlatformKeyVault. The purpose of the vault (key_vaults[].purpose). Needed when the file lists more than one vault."}
             common_utilities_helpers_config_loader_ps1_Get_SolutionConfig:
               type: object
               area: "common/utilities/helpers/config-loader.ps1::Get-SolutionConfig"

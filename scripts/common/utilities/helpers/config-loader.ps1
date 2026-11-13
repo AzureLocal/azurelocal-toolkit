@@ -23,7 +23,7 @@
     
     # Access values using fixed paths
     $tenantId = $config.azure.tenant_id
-    $kvName = $config.security.key_vaults.management.name
+    $kvName = $config.key_vaults[0].name
 #>
 
 # Check for required module
@@ -40,12 +40,11 @@ $script:RepoRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 # These paths are standardized across all solution configurations
 $script:ConfigPaths = @{
     # Azure Identity
-    TenantId           = 'azure.tenant.id'
-    SubscriptionId     = 'azure.subscription.id'
+    TenantId           = 'azure.tenant_id'
+    SubscriptionId     = 'azure.subscription_id'
     
     # Key Vault
-    PlatformKeyVault   = 'azure_infrastructure.key_vaults.platform.name'
-    SecretsKeyVault    = 'azure_infrastructure.key_vaults.secrets.name'
+    KeyVaults          = 'key_vaults'
     
     # Resource Groups
     ManagementRG       = 'azure_infrastructure.resource_groups.management.name'
@@ -239,12 +238,12 @@ function Export-BicepParams {
 .EXAMPLE
     $config = Get-SolutionConfig -Solution "azure-local"
     $tenantId = $config.azure.tenant_id
-    $kvName = $config.security.key_vaults.management.name
+    $kvName = $config.key_vaults[0].name
 
 .EXAMPLE
     # Use the guaranteed config paths
     $config = Get-SolutionConfig -Solution "sofs-azure-local"
-    $kvName = Get-ConfigValue -Config $config -Path $script:ConfigPaths.PlatformKeyVault
+    $kvName = Get-ConfigValue -Config $config -Path $script:ConfigPaths.KeyVaults
 #>
 function Get-SolutionConfig {
     [CmdletBinding()]
@@ -263,16 +262,7 @@ function Get-SolutionConfig {
         throw "Solution configuration not found: $solutionPath"
     }
 
-    $config = Get-Configuration -Path $solutionPath
-    
-    # Add metadata about source
-    if (-not $config._metadata) {
-        $config._metadata = @{}
-    }
-    $config._metadata.source_file = $solutionPath
-    $config._metadata.loaded_at = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
-    
-    return $config
+    return (Get-Configuration -Path $solutionPath)
 }
 
 <#
@@ -287,15 +277,15 @@ function Get-SolutionConfig {
     The configuration hashtable.
 
 .PARAMETER Path
-    Dot-separated path (e.g., "azure.tenant.id").
+    Dot-separated path (e.g., "azure.tenant_id").
 
 .EXAMPLE
     $config = Get-SolutionConfig -Solution "azure-local"
-    $tenantId = Get-ConfigValue -Config $config -Path "azure.tenant.id"
+    $tenantId = Get-ConfigValue -Config $config -Path "azure.tenant_id"
 
 .EXAMPLE
     # Using the predefined paths
-    $kvName = Get-ConfigValue -Config $config -Path $script:ConfigPaths.PlatformKeyVault
+    $kvName = Get-ConfigValue -Config $config -Path $script:ConfigPaths.KeyVaults
 #>
 function Get-ConfigValue {
     [CmdletBinding()]
@@ -371,9 +361,9 @@ function Test-ConfigPaths {
 
         [Parameter(Mandatory = $false)]
         [string[]]$RequiredPaths = @(
-            'azure.tenant.id',
-            'azure.subscription.id',
-            'azure_infrastructure.key_vaults.platform.name',
+            'azure.tenant_id',
+            'azure.subscription_id',
+            'key_vaults',
             'azure_infrastructure.resource_groups.management.name',
             'solution.name',
             'solution.type'
@@ -407,21 +397,41 @@ function Test-ConfigPaths {
 .PARAMETER Config
     The configuration hashtable (from Get-SolutionConfig).
 
+.PARAMETER Purpose
+    The purpose of the vault (key_vaults[].purpose). Needed when the file lists more than one vault.
+
 .EXAMPLE
     $config = Get-SolutionConfig -Solution "azure-local"
     $kvName = Get-PlatformKeyVault -Config $config
+
+.NOTES
+    Reads key_vaults[].name, and key_vaults[].purpose when a purpose is given. With one vault listed, that vault is the answer.
 #>
 function Get-PlatformKeyVault {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        $Config
+        $Config,
+
+        [Parameter(Mandatory = $false)]
+        [string]$Purpose
     )
 
-    $kvName = Get-ConfigValue -Config $Config -Path 'azure_infrastructure.key_vaults.platform.name'
-    
+    $vaultList = @(Get-ConfigValue -Config $Config -Path 'key_vaults')
+    $kvName = $null
+    if ($Purpose) {
+        $match = @($vaultList | Where-Object { $_ -is [System.Collections.IDictionary] -and "$($_['purpose'])" -eq $Purpose })
+        if ($match.Count -eq 1) { $kvName = "$($match[0]['name'])" }
+    }
+    elseif ($vaultList.Count -eq 1 -and $vaultList[0] -is [System.Collections.IDictionary]) {
+        $kvName = "$($vaultList[0]['name'])"
+    }
+    elseif ($vaultList.Count -gt 1) {
+        throw "key_vaults lists $($vaultList.Count) vaults. Give -Purpose to say which one."
+    }
+
     if ([string]::IsNullOrEmpty($kvName)) {
-        throw "Platform Key Vault not defined in configuration at path: azure_infrastructure.key_vaults.platform.name"
+        throw "No Key Vault found in key_vaults$(if ($Purpose) { " with the purpose '$Purpose'" })."
     }
 
     return $kvName
@@ -526,8 +536,7 @@ function Get-AvailableSolutions {
 
 .EXAMPLE
     $config = Get-InfrastructureConfig
-    $b2b = $config.b2b_configuration
-    $tenantId = $b2b.Azure Local Cloud_mgmt.tenant_id
+    $tenantId = $config.azure.tenant_id
 
 .EXAMPLE
     # With custom path
@@ -550,58 +559,7 @@ function Get-InfrastructureConfig {
     }
 
     Write-Verbose "Loading infrastructure config from: $ConfigPath"
-    $config = Get-Configuration -Path $ConfigPath
-    
-    # Add metadata
-    if (-not $config._metadata) {
-        $config._metadata = @{}
-    }
-    $config._metadata.source_file = $ConfigPath
-    $config._metadata.loaded_at = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
-    
-    return $config
-}
-
-<#
-.SYNOPSIS
-    Gets B2B/Cross-Tenant configuration from infrastructure config.
-
-.DESCRIPTION
-    Helper function to extract the b2b_configuration section from
-    infrastructure.yml. Used by Stage 00 B2B scripts.
-
-.PARAMETER Config
-    Optional. Pre-loaded infrastructure config. If not provided,
-    loads from default infrastructure.yml location.
-
-.EXAMPLE
-    $b2b = Get-B2BConfig
-    $Azure Local CloudTenantId = $b2b.Azure Local Cloud_mgmt.tenant_id
-    $serviceTier = $b2b.service_tier
-
-.EXAMPLE
-    # With pre-loaded config
-    $config = Get-InfrastructureConfig
-    $b2b = Get-B2BConfig -Config $config
-#>
-function Get-B2BConfig {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $false)]
-        $Config
-    )
-
-    if (-not $Config) {
-        $Config = Get-InfrastructureConfig
-    }
-
-    $b2b = Get-ConfigValue -Config $Config -Path 'b2b_configuration'
-    
-    if ($null -eq $b2b) {
-        throw "B2B configuration not found in infrastructure.yml. Ensure b2b_configuration section exists."
-    }
-
-    return $b2b
+    return (Get-Configuration -Path $ConfigPath)
 }
 
 # Export functions — only applies when loaded as a module (.psm1), not when dot-sourced
@@ -611,7 +569,6 @@ Export-ModuleMember -Function @(
     'Get-MergedConfiguration', 
     'Get-SolutionConfig',
     'Get-InfrastructureConfig',
-    'Get-B2BConfig',
     'Get-ConfigValue',
     'Get-PlatformKeyVault',
     'Get-ConfigTags',
