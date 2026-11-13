@@ -25,23 +25,5 @@
             Literal = 'gitlab.com'
             Reason  = 'the public GitLab service address, fixed by the vendor; the module supports GitLab as a platform and the file can set another URL'
         }
-        @{
-            File    = 'scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups/powershell/Deploy-LighthouseNsg.ps1'
-            Rule    = 'B'
-            Literal = 'lighthouse.opengear.com'
-            Reason  = 'the Opengear Lighthouse service portal, a vendor-fixed endpoint named in an NSG rule description'
-        }
-        @{
-            File    = 'scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-15-configure-lighthouse/powershell/Deploy-Lighthouse.ps1'
-            Rule    = 'B'
-            Literal = 'lighthouse.opengear.com'
-            Reason  = 'the Opengear Lighthouse service portal, a vendor-fixed endpoint named in a message'
-        }
-        @{
-            File    = 'scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/task-14-configure-ndm-server/powershell/New-NdmServer.ps1'
-            Rule    = 'B'
-            Literal = 'community.chocolatey.org'
-            Reason  = 'the public Chocolatey package source, fixed by the vendor, used by the setup script it embeds'
-        }
     )
 }

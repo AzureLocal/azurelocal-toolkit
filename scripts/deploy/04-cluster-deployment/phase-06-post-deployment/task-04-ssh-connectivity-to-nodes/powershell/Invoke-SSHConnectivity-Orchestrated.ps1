@@ -144,7 +144,7 @@ if (-not $WhatIf) {
 # az connectedmachine extension create requires --location (must match the Arc machine's region)
 $firstRg = ($firstArcId -split '/')[4]
 $location = az group show --name $firstRg --query location -o tsv 2>$null
-if (-not $location) { $location = $cfg.azure_platform.region }   # azure_platform.region fallback
+if (-not $location) { $location = $cfg.azure.location }   # azure.location fallback
 Write-Log "Arc resource region: $location"
 #endregion
 

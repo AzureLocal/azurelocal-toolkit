@@ -69,7 +69,6 @@ BeforeAll {
     $script:WriteSide = [ordered]@{
         'scripts/common/utilities/tools/Add-KeyVaultCredentials.ps1'                                                                                                    = 'secret set'
         'scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault/powershell/Deploy-KeyVaults.ps1'              = 'New-AzKeyVault'
-        'scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-03-validate-configuration/powershell/Test-Configuration.ps1' = 'Set-AzKeyVaultSecret'
     }
 }
 
@@ -95,7 +94,6 @@ Describe 'Script text: no script reads a secret without the resolver' {
     It 'every write-side exception exists and still writes (<_>)' -ForEach @(
         'scripts/common/utilities/tools/Add-KeyVaultCredentials.ps1'
         'scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault/powershell/Deploy-KeyVaults.ps1'
-        'scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-03-validate-configuration/powershell/Test-Configuration.ps1'
     ) {
         $path = [IO.Path]::Combine($script:Repo, $_.Replace('/', [IO.Path]::DirectorySeparatorChar))
         Test-Path -LiteralPath $path | Should -BeTrue

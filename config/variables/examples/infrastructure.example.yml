@@ -519,7 +519,7 @@ landing_zone:
       subnet: "snet-iic-hub-mgmt-01"
       private_ip: "10.20.0.134"
       size: "Standard_D2s_v5"
-      os: "2025-datacenter-azure-edition" # the Azure Marketplace image SKU, for a machine that Terraform deploys
+      os: "windows_server_2025"
       admin_username: "iic-vmadmin"
       admin_password: "keyvault://kv-iic-mgmt-01/vm-admin-password"
   log_analytics: { name: "log-iic-azl-01", resource_group: "rg-iic-mgmt-01", retention_days: 90 }

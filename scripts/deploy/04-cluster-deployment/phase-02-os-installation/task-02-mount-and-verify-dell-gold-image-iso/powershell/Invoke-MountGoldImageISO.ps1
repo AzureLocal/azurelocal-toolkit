@@ -4,36 +4,46 @@
     Mount and verify a Dell gold image ISO via iDRAC Virtual Media (Redfish API).
 .DESCRIPTION
     For each node, ejects any currently-mounted virtual media and mounts the
-    gold image ISO from the path specified in config/variables.yml.
+    gold image ISO from provisioning.iso.image_uri of infrastructure.yml. The iDRAC addresses are nodes[].bmc.ip_address.
     Verifies the media is inserted before proceeding.
 .PARAMETER ConfigPath
-    Path to the YAML variables file. Defaults to ./config/variables.yml.
+    Path to the infrastructure.yml (schema 5). Defaults to ./configs/infrastructure.yml.
 .PARAMETER WhatIf
     Preview changes without making them.
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [string]$ConfigPath = "./config/variables.yml"
+    [string]$ConfigPath = "./configs/infrastructure.yml"
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'redfish', 'AzlRedfishCore.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 # ── Load config ───────────────────────────────────────────────────────────────
 if (-not (Test-Path $ConfigPath)) {
     throw "Config file not found: $ConfigPath"
 }
 $config   = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
-$nodes    = $config.cluster.nodes
-$isoPath  = $config.cluster.gold_image_iso_path
+$nodes    = Get-AzlInfrastructureValue -Infrastructure $config -Path 'nodes'
+$isoPath  = [string](Get-AzlInfrastructureValue -Infrastructure $config -Path 'provisioning.iso.image_uri')
+if (-not $isoPath) { throw "provisioning.iso.image_uri is missing in $ConfigPath. It is the address the iDRAC fetches the ISO from." }
 
 # ── iDRAC credentials: hardware.bmc in the infrastructure file (secret references) ─
 Write-Host "Reading the iDRAC credentials from the secret references..." -ForegroundColor Cyan
 $idracCred = Resolve-AzlBmcCredential -Infrastructure $config -NoPrompt
 
-# ── Helper: Invoke Redfish ────────────────────────────────────────────────────
+# ── Helper: the BMC address of a node (nodes[].bmc.ip_address) ────────────────
+function Get-NodeBmcAddress {
+    param([System.Collections.IDictionary]$Node)
+    $bmc = if ($Node.Contains('bmc')) { $Node['bmc'] } else { $null }
+    if ($bmc -is [System.Collections.IDictionary] -and $bmc.Contains('ip_address')) { return [string]$bmc['ip_address'] }
+    return ''
+}
+
+# ── Helper: Invoke Redfish────────────────────────────────────────────────────
 function Invoke-Redfish {
     param(
         [string]$BaseUri,
@@ -57,12 +67,14 @@ function Invoke-Redfish {
 
 # ── Process each node ─────────────────────────────────────────────────────────
 foreach ($node in $nodes) {
-    $baseUri     = "https://$($node.idrac_ip)"
+    $bmcIp = Get-NodeBmcAddress -Node $node
+    if (-not $bmcIp) { Write-Warning "  [SKIP] $($node.name) has no nodes[].bmc.ip_address"; continue }
+    $baseUri     = "https://$($bmcIp)"
     $vmMediaPath = "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
 
     Write-Host ""
     Write-Host "================================================"
-    Write-Host " Node: $($node.name) | iDRAC: $($node.idrac_ip)"
+    Write-Host " Node: $($node.name) | iDRAC: $($bmcIp)"
     Write-Host "================================================" -ForegroundColor Cyan
 
     if (-not ($PSCmdlet.ShouldProcess($node.name, "Mount gold image ISO"))) { continue }

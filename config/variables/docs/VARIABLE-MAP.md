@@ -10,16 +10,16 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](diagrams/variable-flow.drawio) ([PNG](diagrams/variable-flow.png)).
 
-Registry version 5.0.43. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
+Registry version 5.0.45. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
 
 ## In numbers
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 633 | 388 | 93 | 3 | 147 | 2 |
-| Owned by a tool (`tools.*`) | 3519 | 3311 | 0 | 0 | 208 | 0 |
-| Older variables-file sections | 1441 | 28 | 417 | 0 | 990 | 6 |
-| All registry leaves | 5593 | 3727 | 510 | 3 | 1345 | 8 |
+| Keys of infrastructure.yml | 645 | 427 | 82 | 3 | 131 | 2 |
+| Owned by a tool (`tools.*`) | 3535 | 3327 | 0 | 0 | 208 | 0 |
+| Older variables-file sections | 1441 | 26 | 63 | 0 | 1346 | 6 |
+| All registry leaves | 5621 | 3780 | 145 | 3 | 1685 | 8 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -39,13 +39,13 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | Phase | Tool | Keys of infrastructure.yml it reads or fills | Sections | Tool id | Hands on |
 | --- | --- | ---: | --- | --- | --- |
 | Design | Trailwright | 130 | azure, cluster, devops, disconnected, environment, hardware, identity, landing_zone, networking, nodes, operations, provisioning, scenario, sdn, security, site, storage | any (it writes the whole file) | infrastructure.yml (Trailwright exports it) |
-| Discovery | Get-HardwareInventory.ps1, Invoke-HardwareDiscovery.ps1 | 32 | hardware, nodes | discovery | a proposal for nodes[] (serial number, ports, MACs), reviewed by you |
+| Discovery | Get-HardwareInventory.ps1, Invoke-HardwareDiscovery.ps1 | 33 | hardware, nodes | discovery | a proposal for nodes[] (serial number, ports, MACs), reviewed by you |
 | ZTP | azurelocal-ztp | 89 | _metadata, azure, cluster, hardware, key_vaults, network_devices, networking, nodes, provisioning, scenario, site, tags | ztp | ztp-handoff.json (Arc machine IDs, installed build, management address verified), ztp-events.jsonl |
 | OS configuration | Set-AzureLocalNodeConfiguration.ps1, Invoke-AzureLocalOsConfiguration.ps1 | 70 | _metadata, azure, cluster, deployment, hardware, identity, networking, nodes, os_configuration, provisioning, scenario, storage | os_configuration | the OS configuration report (ports and OS adapter names by MAC, SAN disks), os-configuration-events.jsonl |
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 65 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
 | ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 91 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 14 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
-| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 228 | _metadata, azure, cluster, devops, hardware, identity, key_vaults, landing_zone, networking, nodes, operations, scenario, sdn, secrets, security, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
+| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 266 | _metadata, azure, cluster, devops, hardware, identity, key_vaults, landing_zone, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
 
 ### Which section is read in which phase (number of keys)
 
@@ -66,14 +66,14 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `cluster` | 9 |  | 1 | 1 | 1 | 11 | 1 | 4 |
 | `deployment` |  |  |  | 1 |  |  |  |  |
 | `nodes` | 10 | 18 | 27 | 15 | 5 | 6 | 1 | 18 |
-| `hardware` | 11 | 14 | 6 | 4 | 4 | 3 |  | 14 |
+| `hardware` | 11 | 15 | 6 | 4 | 4 | 3 |  | 14 |
 | `storage` | 4 |  |  | 9 | 3 | 15 |  | 30 |
 | `sdn` | 1 |  |  |  |  |  |  | 5 |
-| `provisioning` | 9 |  | 31 | 1 | 1 |  | 2 |  |
+| `provisioning` | 9 |  | 31 | 1 | 1 |  | 2 | 1 |
 | `os_configuration` |  |  |  | 10 |  |  |  |  |
 | `disconnected` | 8 |  |  |  |  |  |  |  |
 | `network_devices` |  |  | 3 |  |  |  |  |  |
-| `landing_zone` | 1 |  |  |  |  |  |  | 26 |
+| `landing_zone` | 1 |  |  |  |  |  |  | 63 |
 | `extensions` |  |  |  |  |  |  |  |  |
 | `_metadata` |  |  | 1 | 1 |  | 1 | 1 | 1 |
 
@@ -90,16 +90,16 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | Tool | Phase | Reads (keys) | Writes or fills (keys) | Owns (tool variables) |
 | --- | --- | ---: | ---: | ---: |
 | trailwright | Design | 0 | 130 | 0 |
-| discovery | Discovery | 24 | 13 | 150 |
+| discovery | Discovery | 25 | 13 | 150 |
 | ztp | ZTP | 89 | 0 | 1089 |
 | os-configuration | OS configuration | 70 | 0 | 274 |
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
-| arm-deployment | ARM Validate/Deploy | 91 | 0 | 321 |
+| arm-deployment | ARM Validate/Deploy | 91 | 0 | 337 |
 | sonar | Sonar | 14 | 0 | 266 |
 | cicd-infra | Outside the flow | 53 | 0 | 347 |
 | infrastructure-helpers | Outside the flow | 39 | 0 | 0 |
 | validator | Outside the flow | 112 | 0 | 0 |
-| toolkit-legacy-scripts | Outside the flow | 150 | 0 | 0 |
+| toolkit-legacy-scripts | Outside the flow | 190 | 0 | 0 |
 
 ### trailwright
 
@@ -111,8 +111,8 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 **Writes or fills (13):**
 `nodes[].name`, `nodes[].management.mac_address`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].mac_address`, `nodes[].network_adapters[].slot`, `nodes[].network_adapters[].port_index`, `nodes[].network_adapters[].vendor`, `nodes[].network_adapters[].model`, `nodes[].network_adapters[].speed_gbps`, `nodes[].network_adapters[].rdma`, `nodes[].network_adapters[].roles`, `nodes[].network_adapters[].ip_assignment`, `nodes[].serial_number`
 
-**Reads (24):**
-`nodes[].name`, `nodes[].management.mac_address`, `nodes[].network_adapters[].mac_address`, `nodes[].network_adapters[].roles`, `nodes[].serial_number`, `nodes[].bmc.ip_address`, `nodes[].bmc.type`, `nodes[].bmc.username`, `nodes[].bmc.password`, `nodes[].bios.*`, `hardware.vendor`, `hardware.model`, `hardware.cpu_cores`, `hardware.memory_gib`, `hardware.gpu.enabled`, `hardware.gpu.model`, `hardware.gpu.count_per_node`, `hardware.bmc.username`, `hardware.bmc.password`, `hardware.bmc.verify_certificate`, `hardware.inventory.output_directory`, `hardware.inventory.file_name_prefix`, `hardware.inventory.format`, `hardware.inventory.timeout_seconds`
+**Reads (25):**
+`nodes[].name`, `nodes[].management.mac_address`, `nodes[].network_adapters[].mac_address`, `nodes[].network_adapters[].roles`, `nodes[].serial_number`, `nodes[].bmc.ip_address`, `nodes[].bmc.type`, `nodes[].bmc.username`, `nodes[].bmc.password`, `nodes[].bios.*`, `hardware.vendor`, `hardware.model`, `hardware.cpu_cores`, `hardware.memory_gib`, `hardware.gpu.enabled`, `hardware.gpu.model`, `hardware.gpu.count_per_node`, `hardware.bmc.username`, `hardware.bmc.password`, `hardware.bmc.verify_certificate`, `hardware.inventory.output_directory`, `hardware.inventory.file_name_prefix`, `hardware.inventory.format`, `hardware.inventory.timeout_seconds`, `hardware.bios.*`
 
 Where in the code (file, function, keys read by name; 9 places):
 
@@ -120,11 +120,11 @@ Where in the code (file, function, keys read by name; 9 places):
 | --- | --- | ---: |
 | `scripts/common/redfish/AzlRedfishInventory.psm1` | `Compare-AzlHardwarePlan` | 10 |
 | `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Get-HardwareInventory.ps1` | `(script)` | 5 |
+| `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-04-bios-and-idrac-settings-validation/powershell/Test-BiosIdracSettings.ps1` | `(script)` | 5 |
+| `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-05-bios-and-idrac-settings-remediation/powershell/Set-BiosIdracSettings.ps1` | `(script)` | 5 |
 | `scripts/common/redfish/AzlRedfishCore.psm1` | `Resolve-AzlBmcCredential` | 4 |
 | `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Invoke-HardwareDiscovery.ps1` | `(script)` | 4 |
 | `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Invoke-HardwareDiscovery.ps1` | `Get-ExistingManagementMac` | 3 |
-| `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-04-bios-and-idrac-settings-validation/powershell/Test-BiosIdracSettings.ps1` | `(script)` | 3 |
-| `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-05-bios-and-idrac-settings-remediation/powershell/Set-BiosIdracSettings.ps1` | `(script)` | 3 |
 | `scripts/common/idrac-management/Enable-IdracVnc.ps1` | `(script)` | 2 |
 | `scripts/common/redfish/AzlRedfishInventory.psm1` | `Get-AzlHardwareSymmetry` | 2 |
 
@@ -296,25 +296,42 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 
 ### toolkit-legacy-scripts
 
-**Reads (150):**
-`tags.*`, `identity.active_directory.domain_fqdn`, `identity.active_directory.netbios_name`, `identity.active_directory.ou_path`, `identity.active_directory.lcm_user.username`, `identity.active_directory.lcm_user.password`, `identity.active_directory.domain_join_account.username`, `identity.active_directory.domain_join_account.password`, `identity.active_directory.security_groups[].name`, `identity.active_directory.security_groups[].local_groups`, `identity.local_admin.username`, `identity.local_admin.password`, `identity.local_identity.dns_zone`, `identity.entra.groups[].name`, `identity.entra.groups[].purpose`, `identity.entra.groups[].roles`, `identity.entra.groups[].scope`, `networking.management.infrastructure_pool.start`, `networking.management.infrastructure_pool.end`, `networking.intents[].name`, `networking.intents[].traffic`, `networking.logical_networks[].name`, `networking.logical_networks[].enabled`, `networking.logical_networks[].ip_allocation_method`, `networking.logical_networks[].nsg_name`, `networking.logical_networks[].vm_switch_name`, `networking.logical_networks[].vlan_id`, `networking.logical_networks[].address_prefix`, `networking.logical_networks[].gateway`, `networking.logical_networks[].dns_servers`, `networking.logical_networks[].ip_pool.start`, `networking.logical_networks[].ip_pool.end`, `networking.network_security_groups[].name`, `networking.network_security_groups[].rules[].name`, `networking.network_security_groups[].rules[].priority`, `networking.network_security_groups[].rules[].direction`, `networking.network_security_groups[].rules[].access`, `networking.network_security_groups[].rules[].protocol`, `networking.network_security_groups[].rules[].source_address_prefixes`, `networking.network_security_groups[].rules[].destination_address_prefixes`, `networking.network_security_groups[].rules[].source_port_ranges`, `networking.network_security_groups[].rules[].destination_port_ranges`, `networking.network_security_groups[].rules[].description`, `security.defender_for_cloud.enabled`, `security.defender_for_cloud.apply_cloud_security_benchmark`, `operations.monitoring.enabled`, `operations.monitoring.log_analytics_workspace`, `operations.monitoring.workspace_resource_group`, `operations.monitoring.retention_days`, `operations.monitoring.data_collection_rule`, `operations.monitoring.data_collection_endpoint`, `operations.monitoring.action_group`, `operations.monitoring.alert_email`, `operations.notifications.emails`, `devops.authentication.client_secret`, `scenario.identity`, `scenario.storage_architecture`, `scenario.storage_connectivity`, `scenario.environment_class`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.custom_location`, `azure.automation_identity.type`, `azure.automation_identity.name`, `azure.automation_identity.client_id`, `azure.automation_identity.subscription_id`, `azure.automation_identity.resource_group`, `key_vaults[].name`, `key_vaults[].subscription_id`, `key_vaults[].resource_group`, `key_vaults[].purpose`, `secrets.provider`, `secrets.file.directory`, `secrets.command.executable`, `secrets.command.arguments`, `secrets.command.timeout_seconds`, `cluster.name`, `hardware.vendor`, `hardware.model`, `hardware.sbe.publisher`, `hardware.sbe.family`, `hardware.sbe.version`, `hardware.sbe.bundle_path`, `hardware.sbe.requirement`, `hardware.sbe.not_applicable_reason`, `hardware.sbe.source_path`, `hardware.sbe.source_username`, `hardware.sbe.source_password`, `hardware.sbe.package_sha256`, `hardware.sbe.package_size_bytes`, `hardware.drives.capacity.media`, `storage.pool.name`, `storage.pool.thin_provisioning_alert_threshold_percent`, `storage.csv.read_cache_size_mib`, `storage.volumes[].name`, `storage.volumes[].size_gib`, `storage.volumes[].resiliency`, `storage.volumes[].provisioning_type`, `storage.volumes[].file_system`, `storage.volumes[].parity_percent`, `storage.volumes[].media_type`, `storage.volumes[].deduplication.type`, `storage.volumes[].deduplication.schedule.start_time`, `storage.volumes[].deduplication.schedule.days`, `storage.volumes[].deduplication.schedule.duration_hours`, `storage.paths[].name`, `storage.paths[].path`, `storage.vm_images[].name`, `storage.vm_images[].os_type`, `storage.vm_images[].publisher`, `storage.vm_images[].offer`, `storage.vm_images[].sku`, `storage.vm_images[].version`, `storage.vm_images[].storage_path`, `storage.san.type`, `storage.san.infra_volume_lun_id`, `storage.san.performance_history_lun_id`, `storage.san.luns[].name`, `storage.san.luns[].unique_id`, `storage.san.luns[].size_gib`, `storage.san.luns[].lun_id`, `sdn.enabled`, `sdn.prefix`, `sdn.dns_records`, `sdn.acknowledge_maintenance_window`, `sdn.acknowledge_dns_record`, `landing_zone.management_groups[].name`, `landing_zone.management_groups[].display_name`, `landing_zone.subscriptions[].name`, `landing_zone.subscriptions[].id`, `landing_zone.subscriptions[].management_group`, `landing_zone.policy.required_tags`, `landing_zone.policy.management_group`, `landing_zone.networks[].name`, `landing_zone.networks[].subscription`, `landing_zone.networks[].resource_group`, `landing_zone.networks[].location`, `landing_zone.networks[].subnets[].name`, `landing_zone.networks[].subnets[].prefix`, `landing_zone.networks[].subnets[].network_security_group`, `landing_zone.networks[].subnets[].route_table`, `landing_zone.connectivity.vpn_gateway.name`, `landing_zone.connectivity.vpn_gateway.resource_group`, `landing_zone.connectivity.vpn_gateway.network`, `landing_zone.connectivity.vpn_gateway.sku`, `landing_zone.connectivity.vpn_gateway.bgp_asn`, `landing_zone.virtual_machines[].admin_username`, `landing_zone.virtual_machines[].admin_password`
+**Reads (190):** the keys are listed by section; the CSV has each key with the file and function.
 
-Where in the code (file, function, keys read by name; 91 places, the first 12):
+- `azure`: 10 keys
+- `cluster`: 1 keys
+- `devops`: 1 keys
+- `hardware`: 14 keys
+- `identity`: 16 keys
+- `key_vaults`: 4 keys
+- `landing_zone`: 59 keys
+- `networking`: 26 keys
+- `nodes`: 2 keys
+- `operations`: 9 keys
+- `provisioning`: 1 keys
+- `scenario`: 4 keys
+- `sdn`: 5 keys
+- `secrets`: 5 keys
+- `security`: 2 keys
+- `storage`: 30 keys
+- `tags`: 1 keys
+
+Where in the code (file, function, keys read by name; 94 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-11-deploy-management-vms/powershell/Deploy-ManagementVMs.ps1` | `(script)` | 21 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/powershell/New-LogicalNetwork.ps1` | `(script)` | 20 |
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-03-s2s-vpn-connection/powershell/New-VpnConnection.ps1` | `(script)` | 19 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/powershell/New-NetworkSecurityGroup.ps1` | `(script)` | 18 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration/powershell/New-StorageVolume.ps1` | `(script)` | 17 |
 | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-02-vpn-gateway/powershell/Deploy-VpnGateway.ps1` | `(script)` | 14 |
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-04-p2s-vpn-connection/powershell/Configure-P2sVpn.ps1` | `(script)` | 14 |
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-07-nat-gateway/powershell/New-NatGateway.ps1` | `(script)` | 14 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Enable-ArcSdn.ps1` | `(script)` | 14 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-06-image-downloads/powershell/New-VmImage.ps1` | `(script)` | 14 |
 | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-01-virtual-network/powershell/Deploy-VirtualNetworks.ps1` | `(script)` | 13 |
-| `scripts/common/sbe/AzlSbePackage.psm1` | `Get-AzlSbeSource` | 9 |
-| `scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-01-create-azure-local-deployment-spn/powershell/New-AutomationManagedIdentity.ps1` | `(script)` | 9 |
-| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration/powershell/New-SanVolume.ps1` | `(script)` | 9 |
-| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault/powershell/Deploy-KeyVaults.ps1` | `(script)` | 8 |
-| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/powershell/Invoke-ArcRegistration-Orchestrated.ps1` | `Get-Config` | 8 |
+| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-05-azure-bastion/powershell/New-AzureBastion.ps1` | `(script)` | 13 |
 
 ## By ARM parameter: the template parameter and the file key it comes from
 
@@ -397,11 +414,11 @@ Ranked by how many different tools read the key, then how many places in the cod
 | Variable | What it is | Set it by | Read by | Becomes |
 | --- | --- | --- | --- | --- |
 | `azure.subscription_id` | Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_id names another one. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; nodes; OS ArcRegistration; Sonar subscriptionId |
+| `nodes[].name` | Host name: up to 15 characters. | operator by hand; Trailwright questionnaire; Dell/Redfish discovery (proposed) | arm-deployment; discovery; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; nodes; physicalNodesSettings; storageNetworkList; OS Hostname; Network; RemoteManagement; Sonar nodes[].name; Gate ND-001; NW-001; NW-015; SB-005; ST-011 |
 | `azure.resource_group` | Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses). | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; nodes; OS ArcRegistration; Sonar resourceGroup |
-| `nodes[].name` | Host name: up to 15 characters. | operator by hand; Trailwright questionnaire; Dell/Redfish discovery (proposed) | arm-deployment; discovery; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; ztp | ARM arcNodeResourceIds; nodes; physicalNodesSettings; storageNetworkList; OS Hostname; Network; RemoteManagement; Sonar nodes[].name; Gate ND-001; NW-001; NW-015; SB-005; ST-011 |
 | `azure.location` | Azure region, for example eastus. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM location; OS ArcRegistration; Gate NW-005 |
-| `cluster.name` | Cluster name: a NetBIOS name of up to 15 characters. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM clusterName; customLocation; Sonar clusterName |
 | `azure.tenant_id` | Microsoft Entra tenant ID (GUID) of the subscription. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; os-configuration; pre-cluster-verification; toolkit-legacy-scripts; ztp | ARM tenantId; OS ArcRegistration |
+| `cluster.name` | Cluster name: a NetBIOS name of up to 15 characters. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM clusterName; customLocation; Sonar clusterName |
 | `nodes[].network_adapters[].roles` | What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified provisioning reache... | operator by hand; Dell/Redfish discovery (proposed) | arm-deployment; discovery; infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | ARM nodes; OS Dns; Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 |
 | `identity.local_admin.username` | User name of the deployment local administrator on every machine (ARM localAdminUserName). | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | ARM localAdminUserName; OS LocalAdmin |
 | `scenario.identity` | active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity.local_identity). ht... | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | OS DomainJoin; Sonar identityModel; Gate RD-006 |
@@ -412,6 +429,7 @@ Ranked by how many different tools read the key, then how many places in the cod
 | `identity.active_directory.lcm_user.username` | Name only, no domain. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM AzureStackLCMAdminUsername; OS DomainJoin |
 | `identity.active_directory.domain_fqdn` | ARM domainFqdn. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM domainFqdn; OS DomainJoin |
 | `networking.management.dns_servers` | ARM dnsServers. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; pre-cluster-verification; ztp | ARM dnsServers; OS Dns; Network; NicNames; UnusedAdapters; Gate ND-006; NW-015 |
+| `nodes[].bmc.ip_address` | IPv4 address of the BMC (iDRAC, iLO, XCC). | operator by hand; Trailwright questionnaire | discovery; infrastructure-helpers; toolkit-legacy-scripts; ztp |  |
 | `scenario.storage_architecture` | s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both (S2D plus a SAN). san and hybrid TELL THE... | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM configurationMode; OS ClearStorage; Mpio; SanVerify; Gate NW-013; ST-004; ST-008 |
 | `_metadata.schema_version` | The schema version this file follows. | operator by hand | arm-deployment; os-configuration; sonar; ztp |  |
 | `identity.active_directory.netbios_name` | Up to 15 letters, digits and hyphens. | operator by hand; Trailwright questionnaire | os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | OS DomainJoin |
@@ -429,7 +447,6 @@ Ranked by how many different tools read the key, then how many places in the cod
 | `azure.hci_resource_provider_object_id` | Object ID of the Azure Local resource provider's service principal (application 1412d89f-b8a8-4111-b4fd-e82905cbd85d) in the tenant. | operator by hand; Trailwright questionnaire | arm-deployment; pre-cluster-verification; ztp | ARM hciResourceProviderObjectID |
 | `hardware.sbe.bundle_path` | Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; toolkit-legacy-scripts |  |
 | `networking.management.infrastructure_pool.start` | First address of the pool the Azure Local infrastructure services use (ARM startingIPAddress): inside the management subnet, outside every machine address and... | operator by hand; Trailwright questionnaire | arm-deployment; pre-cluster-verification; toolkit-legacy-scripts | ARM startingIPAddress; OS ~Dns; ~Network; ~NicNames; ~UnusedAdapters; Gate NW-015 |
-| `nodes[].bmc.ip_address` | IPv4 address of the BMC (iDRAC, iLO, XCC). | operator by hand; Trailwright questionnaire | discovery; infrastructure-helpers; ztp |  |
 | `nodes[].network_adapters[].ip_assignment` | How the installed OS gets this port's host address before deployment. | operator by hand; Dell/Redfish discovery (proposed) | infrastructure-helpers; os-configuration; ztp | OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement |
 | `scenario.cloud` | Azure public cloud or Azure Government. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification | OS ArcRegistration; Gate NW-005 |
 | `scenario.os_install` | iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp automates (needs pr... | operator by hand; Trailwright questionnaire | os-configuration; sonar; ztp | Sonar provisioningRoute |
@@ -441,7 +458,7 @@ Ranked by how many different tools read the key, then how many places in the cod
 
 Variables the registry documents that no tool in the scan reads by name. Each is either a key a coming phase will read, a key only the validator checks, or a name kept for compatibility. Nothing here is an error; it is the list to look at before you spend time filling a key in that nothing uses yet.
 
-### Placeholder: documented, not read by any tool in the scan (147)
+### Placeholder: documented, not read by any tool in the scan (131)
 
 | Variable | Tools | Provided by | Note |
 | --- | --- | --- | --- |
@@ -504,6 +521,16 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `devops.runner.registration_token` | cicd_infra | operator by hand; Key Vault reference (keyvault://) | documented in the registry; no tool in the scan reads it |
 | `scenario.deploy_method` | trailwright | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `azure.automation_identity.object_id` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
+| `nodes[].network_adapters[].port_index` | os_configuration; discovery | operator by hand; Dell/Redfish discovery (proposed) | documented in the registry; no tool in the scan reads it |
+| `nodes[].network_adapters[].vendor` | os_configuration; discovery | operator by hand; Dell/Redfish discovery (proposed) | documented in the registry; no tool in the scan reads it |
+| `nodes[].network_adapters[].speed_gbps` | os_configuration | operator by hand; Dell/Redfish discovery (proposed) | documented in the registry; no tool in the scan reads it |
+| `nodes[].network_adapters[].rdma` | os_configuration | operator by hand; Dell/Redfish discovery (proposed) | documented in the registry; no tool in the scan reads it |
+| `nodes[].network_adapters[].allowed_vlans` | deployment | operator by hand | documented in the registry; no tool in the scan reads it |
+| `nodes[].network_adapters[].switch_port.switch` | os_configuration | operator by hand | documented in the registry; no tool in the scan reads it |
+| `nodes[].network_adapters[].switch_port.port` | os_configuration | operator by hand | documented in the registry; no tool in the scan reads it |
+| `nodes[].network_adapters[].switch_port.description` | os_configuration | operator by hand | documented in the registry; no tool in the scan reads it |
+| `nodes[].network_adapters[].notes` | os_configuration | operator by hand | documented in the registry; no tool in the scan reads it |
+| `nodes[].rack` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `hardware.network_cards[].label` | os_configuration; trailwright | operator by hand | documented in the registry; no tool in the scan reads it |
 | `hardware.network_cards[].make` | os_configuration; trailwright | operator by hand | documented in the registry; no tool in the scan reads it |
 | `hardware.network_cards[].model` | os_configuration; trailwright | operator by hand | documented in the registry; no tool in the scan reads it |
@@ -549,40 +576,14 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `network_devices[].credentials.password` |  | operator by hand; Key Vault reference (keyvault://) | documented in the registry; no tool in the scan reads it |
 | `network_devices[].ha.enabled` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `network_devices[].ha.mode` |  | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.management_groups[].parent` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.management_groups[].role` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.resource_groups[].name` | cicd_infra; terraform | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.resource_groups[].subscription` | cicd_infra | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.resource_groups[].location` | cicd_infra | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.resource_groups[].purpose` | cicd_infra | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.resource_providers` |  | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.connectivity.vpn_gateway.site_to_site[].connection_name` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.connectivity.vpn_gateway.site_to_site[].local_gateway_name` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.connectivity.vpn_gateway.site_to_site[].peer_public_ip` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.connectivity.vpn_gateway.site_to_site[].peer_address_prefixes` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.connectivity.vpn_gateway.site_to_site[].peer_bgp_address` |  | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.connectivity.vpn_gateway.site_to_site[].peer_asn` |  | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.connectivity.vpn_gateway.site_to_site[].shared_key` | terraform | operator by hand; Key Vault reference (keyvault://) | documented in the registry; no tool in the scan reads it |
-| `landing_zone.connectivity.vpn_gateway.point_to_site.address_pool` |  | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.connectivity.vpn_gateway.point_to_site.authentication` |  | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.connectivity.bastion.name` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.connectivity.bastion.resource_group` |  | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.connectivity.bastion.sku` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.connectivity.firewall.name` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.connectivity.firewall.resource_group` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.connectivity.firewall.sku` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.connectivity.firewall.private_ip` |  | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.virtual_machines[].name` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.virtual_machines[].hostname` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.virtual_machines[].role` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.virtual_machines[].deploy_target` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.virtual_machines[].subscription` |  | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.virtual_machines[].resource_group` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.virtual_machines[].network` |  | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.virtual_machines[].subnet` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.virtual_machines[].private_ip` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.virtual_machines[].size` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
-| `landing_zone.virtual_machines[].os` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.log_analytics.name` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `landing_zone.log_analytics.resource_group` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.log_analytics.retention_days` |  | operator by hand | documented in the registry; no tool in the scan reads it |
@@ -601,7 +602,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `storage.san.fibre_channel.target_wwpns[].wwpn` | deployment | operator by hand | only the validator names it |
 | `storage.san.fibre_channel.target_wwpns[].fabric` | deployment | operator by hand | only the validator names it |
 
-### Read as part: no tool names the key; a tool reads the section or list that holds it (93)
+### Read as part: no tool names the key; a tool reads the section or list that holds it (82)
 
 | Variable | Tools | Provided by | Note |
 | --- | --- | --- | --- |
@@ -655,19 +656,8 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `deployment.verification_max_clock_skew_seconds` | deployment | operator by hand; default | read as part by arm-deployment; ztp |
 | `deployment.pre_cluster_verification_report_directory` | deployment | operator by hand | read as part by arm-deployment; ztp |
 | `deployment.register_resource_providers` | deployment | operator by hand; default | read as part by arm-deployment; ztp |
-| `nodes[].network_adapters[].port_index` | os_configuration; discovery | operator by hand; Dell/Redfish discovery (proposed) | read as part by toolkit-legacy-scripts |
-| `nodes[].network_adapters[].vendor` | os_configuration; discovery | operator by hand; Dell/Redfish discovery (proposed) | read as part by toolkit-legacy-scripts |
-| `nodes[].network_adapters[].speed_gbps` | os_configuration | operator by hand; Dell/Redfish discovery (proposed) | read as part by toolkit-legacy-scripts |
-| `nodes[].network_adapters[].rdma` | os_configuration | operator by hand; Dell/Redfish discovery (proposed) | read as part by toolkit-legacy-scripts |
-| `nodes[].network_adapters[].allowed_vlans` | deployment | operator by hand | read as part by toolkit-legacy-scripts |
-| `nodes[].network_adapters[].switch_port.switch` | os_configuration | operator by hand | read as part by toolkit-legacy-scripts |
-| `nodes[].network_adapters[].switch_port.port` | os_configuration | operator by hand | read as part by toolkit-legacy-scripts |
-| `nodes[].network_adapters[].switch_port.description` | os_configuration | operator by hand | read as part by toolkit-legacy-scripts |
-| `nodes[].network_adapters[].notes` | os_configuration | operator by hand | read as part by toolkit-legacy-scripts |
-| `nodes[].rack` |  | operator by hand; Trailwright questionnaire | read as part by toolkit-legacy-scripts |
-| `nodes[].bios_during_provisioning.*` | ztp; os_configuration | operator by hand | read as part by infrastructure-helpers; toolkit-legacy-scripts; ztp |
-| `nodes[].san.hbas[].ports[].fabric` | deployment | operator by hand | read as part by pre-cluster-verification; toolkit-legacy-scripts |
-| `hardware.bios.*` | ztp | operator by hand | read as part by infrastructure-helpers; ztp |
+| `nodes[].bios_during_provisioning.*` | ztp; os_configuration | operator by hand | read as part by infrastructure-helpers; ztp |
+| `nodes[].san.hbas[].ports[].fabric` | deployment | operator by hand | read as part by pre-cluster-verification |
 | `hardware.bios_during_provisioning.*` | ztp | operator by hand | read as part by infrastructure-helpers; ztp |
 | `hardware.sbe.manifest_source` | deployment | operator by hand | read as part by ztp |
 | `hardware.sbe.manifest_creation_date` | deployment | operator by hand | read as part by ztp |
@@ -931,15 +921,15 @@ These registry sections (`compute`, `identity.accounts`, `azure_platform`, ...) 
 
 | Section | Variables | read | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: |
-| `azure_platform` | 73 | 15 | 58 | 0 |
+| `azure_platform` | 73 | 0 | 73 | 0 |
 | `cluster_shared_volumes` | 15 | 0 | 15 | 0 |
-| `compute` | 398 | 396 | 0 | 2 |
+| `compute` | 398 | 57 | 339 | 2 |
 | `devops` | 8 | 0 | 8 | 0 |
 | `environment` | 4 | 0 | 4 | 0 |
 | `identity` | 143 | 2 | 141 | 0 |
 | `infrastructure_scenarios` | 1 | 0 | 1 | 0 |
 | `marketplace_images` | 9 | 0 | 9 | 0 |
-| `networking` | 522 | 17 | 501 | 4 |
+| `networking` | 522 | 15 | 503 | 4 |
 | `operations` | 92 | 2 | 90 | 0 |
 | `security` | 109 | 0 | 109 | 0 |
 | `site` | 23 | 2 | 21 | 0 |
@@ -1157,7 +1147,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `hardware.inventory.file_name_prefix` | string, default `hardware-inventory` | operator; default | discovery | discovery |  | read |
 | `hardware.inventory.format` | string, default `json`, one of `json`, `yaml` | operator; default | discovery | discovery |  | read |
 | `hardware.inventory.timeout_seconds` | integer, default `60` | operator; default | discovery | discovery |  | read |
-| `hardware.bios.*` | string | operator | ztp | (part: infrastructure-helpers; ztp) |  | read-as-part |
+| `hardware.bios.*` | string | operator | ztp | discovery |  | read |
 | `hardware.bios_during_provisioning.*` | string | operator | ztp | (part: infrastructure-helpers; ztp) |  | read-as-part |
 | `hardware.sbe.publisher` | string | operator | os_configuration; deployment | toolkit-legacy-scripts | ARM sbePublisher; Gate SB-004 (named) | read |
 | `hardware.sbe.family` | string | operator | os_configuration; deployment | toolkit-legacy-scripts | ARM sbeFamily; Gate SB-003 (named); SB-004 (named) | read |
@@ -1240,15 +1230,17 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | --- | --- | --- | --- | --- | --- | --- |
 | `landing_zone.management_groups[].name` | string, required | operator | terraform | toolkit-legacy-scripts |  | read |
 | `landing_zone.management_groups[].display_name` | string | operator | terraform | toolkit-legacy-scripts |  | read |
-| `landing_zone.management_groups[].parent` | string | operator |  |  |  | placeholder |
+| `landing_zone.management_groups[].parent` | string | operator |  | toolkit-legacy-scripts |  | read |
 | `landing_zone.management_groups[].role` | string, one of `root`, `platform`, `identity`, `connectivity`, `management`, `security`, ... (7) | operator | terraform |  |  | placeholder |
 | `landing_zone.subscriptions[].name` | string, required | operator | cicd_infra; trailwright | cicd-infra; toolkit-legacy-scripts |  | read |
 | `landing_zone.subscriptions[].id` | string (guid) | operator | cicd_infra; trailwright; terraform | cicd-infra; toolkit-legacy-scripts |  | read |
 | `landing_zone.subscriptions[].role` | string, required, one of `connectivity`, `identity`, `management`, `security`, `devops`, `workload`, ... (7) | operator | cicd_infra; trailwright; terraform | cicd-infra |  | read |
 | `landing_zone.subscriptions[].management_group` | string | operator | cicd_infra | toolkit-legacy-scripts |  | read |
-| `landing_zone.resource_groups[].name` | string (resource_group), required | operator | cicd_infra; terraform |  |  | placeholder |
+| `landing_zone.subscriptions[].billing_scope` | string | operator |  | toolkit-legacy-scripts |  | read |
+| `landing_zone.subscriptions[].workload` | string, default `Production`, one of `Production`, `DevTest` | operator; default |  | toolkit-legacy-scripts |  | read |
+| `landing_zone.resource_groups[].name` | string (resource_group), required | operator | cicd_infra; terraform | toolkit-legacy-scripts |  | read |
 | `landing_zone.resource_groups[].subscription` | string | operator | cicd_infra |  |  | placeholder |
-| `landing_zone.resource_groups[].location` | string (azure_region) | operator | cicd_infra |  |  | placeholder |
+| `landing_zone.resource_groups[].location` | string (azure_region) | operator | cicd_infra | toolkit-legacy-scripts |  | read |
 | `landing_zone.resource_groups[].purpose` | string | operator | cicd_infra |  |  | placeholder |
 | `landing_zone.resource_providers` | array | operator |  |  |  | placeholder |
 | `landing_zone.policy.required_tags` | array | operator |  | toolkit-legacy-scripts |  | read |
@@ -1270,33 +1262,42 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `landing_zone.connectivity.vpn_gateway.network` | string | operator |  | toolkit-legacy-scripts |  | read |
 | `landing_zone.connectivity.vpn_gateway.sku` | string | operator | terraform | toolkit-legacy-scripts |  | read |
 | `landing_zone.connectivity.vpn_gateway.bgp_asn` | integer | operator | terraform | toolkit-legacy-scripts |  | read |
-| `landing_zone.connectivity.vpn_gateway.site_to_site[].connection_name` | string, required | operator | terraform |  |  | placeholder |
-| `landing_zone.connectivity.vpn_gateway.site_to_site[].local_gateway_name` | string | operator | terraform |  |  | placeholder |
-| `landing_zone.connectivity.vpn_gateway.site_to_site[].peer_public_ip` | string (ipv4) | operator | terraform |  |  | placeholder |
-| `landing_zone.connectivity.vpn_gateway.site_to_site[].peer_address_prefixes` | array | operator | terraform |  |  | placeholder |
-| `landing_zone.connectivity.vpn_gateway.site_to_site[].peer_bgp_address` | string (ipv4) | operator |  |  |  | placeholder |
-| `landing_zone.connectivity.vpn_gateway.site_to_site[].peer_asn` | integer | operator |  |  |  | placeholder |
-| `landing_zone.connectivity.vpn_gateway.site_to_site[].shared_key` | string (kv_ref), required | operator; Key Vault ref | terraform |  |  | placeholder |
-| `landing_zone.connectivity.vpn_gateway.point_to_site.address_pool` | string (cidr), required | operator |  |  |  | placeholder |
-| `landing_zone.connectivity.vpn_gateway.point_to_site.authentication` | string, one of `entra_id`, `certificate`, `radius` | operator |  |  |  | placeholder |
-| `landing_zone.connectivity.bastion.name` | string, required | operator | terraform |  |  | placeholder |
-| `landing_zone.connectivity.bastion.resource_group` | string (resource_group) | operator |  |  |  | placeholder |
-| `landing_zone.connectivity.bastion.sku` | string | operator | terraform |  |  | placeholder |
+| `landing_zone.connectivity.vpn_gateway.site_to_site[].connection_name` | string, required | operator | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.vpn_gateway.site_to_site[].local_gateway_name` | string | operator | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.vpn_gateway.site_to_site[].peer_public_ip` | string (ipv4) | operator | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.vpn_gateway.site_to_site[].peer_address_prefixes` | array | operator | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.vpn_gateway.site_to_site[].peer_bgp_address` | string (ipv4) | operator |  | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.vpn_gateway.site_to_site[].peer_asn` | integer | operator |  | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.vpn_gateway.site_to_site[].shared_key` | string (kv_ref), required | operator; Key Vault ref | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.vpn_gateway.point_to_site.address_pool` | string (cidr), required | operator |  | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.vpn_gateway.point_to_site.authentication` | string, one of `entra_id`, `certificate`, `radius` | operator |  | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.vpn_gateway.point_to_site.protocols` | array, one of `OpenVPN`, `IkeV2`, `SSTP` | operator |  | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.vpn_gateway.point_to_site.root_certificate_name` | string | operator |  | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.vpn_gateway.point_to_site.root_certificate` | string (kv_ref) | operator; Key Vault ref |  | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.bastion.name` | string, required | operator | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.bastion.resource_group` | string (resource_group) | operator |  | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.bastion.sku` | string | operator | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.bastion.network` | string | operator |  | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.nat_gateway.name` | string, required | operator |  | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.nat_gateway.resource_group` | string (resource_group) | operator |  | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.nat_gateway.network` | string | operator |  | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.nat_gateway.subnets` | array | operator |  | toolkit-legacy-scripts |  | read |
+| `landing_zone.connectivity.nat_gateway.idle_timeout_minutes` | integer | operator |  | toolkit-legacy-scripts |  | read |
 | `landing_zone.connectivity.firewall.name` | string, required | operator |  |  |  | placeholder |
 | `landing_zone.connectivity.firewall.resource_group` | string (resource_group) | operator |  |  |  | placeholder |
 | `landing_zone.connectivity.firewall.sku` | string | operator |  |  |  | placeholder |
 | `landing_zone.connectivity.firewall.private_ip` | string (ipv4) | operator |  |  |  | placeholder |
-| `landing_zone.virtual_machines[].name` | string, required | operator | terraform |  |  | placeholder |
-| `landing_zone.virtual_machines[].hostname` | string (netbios_name) | operator | terraform |  |  | placeholder |
-| `landing_zone.virtual_machines[].role` | string, required, one of `domain_controller`, `jumpbox`, `windows_admin_center`, `syslog`, `management`, `other` | operator | terraform |  |  | placeholder |
-| `landing_zone.virtual_machines[].deploy_target` | string, one of `azure`, `azure_local`, `onprem` | operator | terraform |  |  | placeholder |
-| `landing_zone.virtual_machines[].subscription` | string | operator |  |  |  | placeholder |
-| `landing_zone.virtual_machines[].resource_group` | string (resource_group) | operator | terraform |  |  | placeholder |
-| `landing_zone.virtual_machines[].network` | string | operator |  |  |  | placeholder |
-| `landing_zone.virtual_machines[].subnet` | string | operator | terraform |  |  | placeholder |
-| `landing_zone.virtual_machines[].private_ip` | string (ipv4) | operator | terraform |  |  | placeholder |
-| `landing_zone.virtual_machines[].size` | string | operator | terraform |  |  | placeholder |
-| `landing_zone.virtual_machines[].os` | string | operator | terraform |  |  | placeholder |
+| `landing_zone.virtual_machines[].name` | string, required | operator | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.virtual_machines[].hostname` | string (netbios_name) | operator | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.virtual_machines[].role` | string, required, one of `domain_controller`, `jumpbox`, `windows_admin_center`, `syslog`, `management`, `other` | operator | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.virtual_machines[].deploy_target` | string, one of `azure`, `azure_local`, `onprem` | operator | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.virtual_machines[].subscription` | string | operator |  | toolkit-legacy-scripts |  | read |
+| `landing_zone.virtual_machines[].resource_group` | string (resource_group) | operator | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.virtual_machines[].network` | string | operator |  | toolkit-legacy-scripts |  | read |
+| `landing_zone.virtual_machines[].subnet` | string | operator | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.virtual_machines[].private_ip` | string (ipv4) | operator | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.virtual_machines[].size` | string | operator | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.virtual_machines[].os` | string, one of `windows_server_2022`, `windows_server_2025`, `ubuntu_2404` | operator | terraform | toolkit-legacy-scripts |  | read |
 | `landing_zone.virtual_machines[].admin_username` | string | operator | terraform | toolkit-legacy-scripts |  | read |
 | `landing_zone.virtual_machines[].admin_password` | string (kv_ref) | operator; Key Vault ref | terraform | toolkit-legacy-scripts |  | read |
 | `landing_zone.log_analytics.name` | string, required | operator; Trailwright |  |  |  | placeholder |
@@ -1420,22 +1421,22 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 
 | Path | Type, default, allowed | Provided by | Tools | Read by | Becomes | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| `nodes[].name` | string (netbios_name), required | operator; Trailwright; Dell/Redfish discovery (proposes) | ztp; os_configuration; deployment; monitoring; discovery; trailwright | arm-deployment; discovery; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; ztp | ARM arcNodeResourceIds; nodes; physicalNodesSettings; storageNetworkList; OS Hostname; Network; RemoteManagement; Sonar nodes[].name; Gate ND-001; NW-001; NW-015; SB-005; ST-011 | read |
+| `nodes[].name` | string (netbios_name), required | operator; Trailwright; Dell/Redfish discovery (proposes) | ztp; os_configuration; deployment; monitoring; discovery; trailwright | arm-deployment; discovery; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; nodes; physicalNodesSettings; storageNetworkList; OS Hostname; Network; RemoteManagement; Sonar nodes[].name; Gate ND-001; NW-001; NW-015; SB-005; ST-011 | read |
 | `nodes[].management.ip_address` | string (ipv4), required | operator; Trailwright | ztp; os_configuration; deployment; monitoring; trailwright; ansible | infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | OS Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 | read |
 | `nodes[].management.mac_address` | string (mac) | operator; Trailwright; Dell/Redfish discovery (proposes, applies) | ztp; os_configuration; discovery; trailwright | discovery; infrastructure-helpers; ztp | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters | read |
 | `nodes[].management.adapter_name` | string | operator | ztp; os_configuration; ansible | infrastructure-helpers; ztp | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters | read |
 | `nodes[].network_adapters[].name` | string, required | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; discovery | arm-deployment; infrastructure-helpers; os-configuration; ztp | ARM nodes; OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-001 (named) | read |
 | `nodes[].network_adapters[].mac_address` | string (mac), required | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; discovery | discovery; infrastructure-helpers; os-configuration; ztp | OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-013 (named) | read |
 | `nodes[].network_adapters[].slot` | string | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; discovery | ztp | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read |
-| `nodes[].network_adapters[].port_index` | integer | operator; Dell/Redfish discovery (proposes) | os_configuration; discovery | (part: toolkit-legacy-scripts) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
+| `nodes[].network_adapters[].port_index` | integer | operator; Dell/Redfish discovery (proposes) | os_configuration; discovery |  | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | placeholder |
 | `nodes[].network_adapters[].pci_location.bus` | integer | operator | os_configuration; discovery | os-configuration | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement | read |
 | `nodes[].network_adapters[].pci_location.device` | integer | operator | os_configuration; discovery | os-configuration | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement | read |
 | `nodes[].network_adapters[].pci_location.function` | integer | operator | os_configuration; discovery | os-configuration | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement | read |
-| `nodes[].network_adapters[].vendor` | string | operator; Dell/Redfish discovery (proposes) | os_configuration; discovery | (part: toolkit-legacy-scripts) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
+| `nodes[].network_adapters[].vendor` | string | operator; Dell/Redfish discovery (proposes) | os_configuration; discovery |  | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | placeholder |
 | `nodes[].network_adapters[].os_name_override` | string | operator | os_configuration; deployment | infrastructure-helpers; os-configuration | OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-013 (named) | read |
 | `nodes[].network_adapters[].model` | string | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; discovery | ztp | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read |
-| `nodes[].network_adapters[].speed_gbps` | number | operator; Dell/Redfish discovery (proposes) | os_configuration | (part: toolkit-legacy-scripts) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
-| `nodes[].network_adapters[].rdma` | string, one of `none`, `iwarp`, `roce`, `roce_v2` | operator; Dell/Redfish discovery (proposes) | os_configuration | (part: toolkit-legacy-scripts) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
+| `nodes[].network_adapters[].speed_gbps` | number | operator; Dell/Redfish discovery (proposes) | os_configuration |  | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | placeholder |
+| `nodes[].network_adapters[].rdma` | string, one of `none`, `iwarp`, `roce`, `roce_v2` | operator; Dell/Redfish discovery (proposes) | os_configuration |  | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | placeholder |
 | `nodes[].network_adapters[].roles` | array, required, one of `management`, `compute`, `storage`, `provisioning`, `iscsi:a`, `iscsi:b`, ... (7) | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; monitoring; discovery | arm-deployment; discovery; infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | ARM nodes; OS Dns; Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 | read |
 | `nodes[].network_adapters[].ip_assignment` | string, required, one of `static`, `dhcp_reservation`, `dhcp`, `preconfigured`, `none` | operator; Dell/Redfish discovery (proposes) | ztp; os_configuration; monitoring; discovery | infrastructure-helpers; os-configuration; ztp | OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement | read |
 | `nodes[].network_adapters[].ip_address` | string (ipv4) | operator | ztp; os_configuration; deployment; monitoring | infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | OS Dns; Mpio; Network; NicNames; RemoteManagement; SanVerify; UnusedAdapters; Gate ND-001; NW-001; NW-015; SB-005 | read |
@@ -1444,24 +1445,24 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `nodes[].network_adapters[].dns_servers` | array | operator | os_configuration | infrastructure-helpers | OS Dns; Network; NicNames; UnusedAdapters; ~Mpio; ~RemoteManagement; ~SanVerify | read |
 | `nodes[].network_adapters[].vlan_id` | integer | operator | ztp; os_configuration | ztp | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters; Gate NW-015 (named) | read |
 | `nodes[].network_adapters[].vlan_mode` | string, one of `access`, `tagged` | operator | ztp; os_configuration | infrastructure-helpers; ztp | OS Dns; Network; NicNames; UnusedAdapters; ~Mpio; ~RemoteManagement; ~SanVerify | read |
-| `nodes[].network_adapters[].allowed_vlans` | array | operator | deployment | (part: toolkit-legacy-scripts) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters; Gate NW-015 (named) | read-as-part |
-| `nodes[].network_adapters[].switch_port.switch` | string | operator | os_configuration | (part: toolkit-legacy-scripts) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
-| `nodes[].network_adapters[].switch_port.port` | string | operator | os_configuration | (part: toolkit-legacy-scripts) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
-| `nodes[].network_adapters[].switch_port.description` | string | operator | os_configuration | (part: toolkit-legacy-scripts) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
-| `nodes[].network_adapters[].notes` | string | operator | os_configuration | (part: toolkit-legacy-scripts) | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | read-as-part |
+| `nodes[].network_adapters[].allowed_vlans` | array | operator | deployment |  | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters; Gate NW-015 (named) | placeholder |
+| `nodes[].network_adapters[].switch_port.switch` | string | operator | os_configuration |  | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | placeholder |
+| `nodes[].network_adapters[].switch_port.port` | string | operator | os_configuration |  | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | placeholder |
+| `nodes[].network_adapters[].switch_port.description` | string | operator | os_configuration |  | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | placeholder |
+| `nodes[].network_adapters[].notes` | string | operator | os_configuration |  | OS ~Mpio; ~Network; ~NicNames; ~RemoteManagement; ~SanVerify; ~UnusedAdapters | placeholder |
 | `nodes[].serial_number` | string | operator; Trailwright; Dell/Redfish discovery (proposes, applies) | ztp; discovery; trailwright | discovery; infrastructure-helpers; ztp |  | read |
-| `nodes[].bmc.ip_address` | string (ipv4) | operator; Trailwright | ztp; discovery; trailwright | discovery; infrastructure-helpers; ztp |  | read |
+| `nodes[].bmc.ip_address` | string (ipv4) | operator; Trailwright | ztp; discovery; trailwright | discovery; infrastructure-helpers; toolkit-legacy-scripts; ztp |  | read |
 | `nodes[].bmc.type` | string, one of `idrac`, `ilo`, `xcc`, `other` | operator | ztp; discovery | discovery |  | read |
 | `nodes[].bmc.username` | string | operator | ztp; discovery | discovery; ztp |  | read |
 | `nodes[].bmc.password` | string (kv_ref) | operator; Key Vault ref | ztp; discovery | discovery; ztp |  | read |
-| `nodes[].rack` | string | operator; Trailwright |  | (part: toolkit-legacy-scripts) |  | read-as-part |
+| `nodes[].rack` | string | operator; Trailwright |  |  |  | placeholder |
 | `nodes[].rack_position` | string | operator; Trailwright | ztp | ztp |  | read |
 | `nodes[].zone` | string | operator; Trailwright | deployment; trailwright | arm-deployment |  | read |
 | `nodes[].storage_ips` | array | operator; Trailwright | os_configuration; deployment; trailwright | arm-deployment | ARM storageNetworkList | read |
 | `nodes[].arc_machine_name` | string | operator; Trailwright | ztp; os_configuration; deployment; monitoring | infrastructure-helpers; ztp | OS Network | read |
 | `nodes[].arc_resource_name` | string | operator | ztp; os_configuration | infrastructure-helpers; ztp | OS Network | deprecated |
 | `nodes[].bios.*` | string | operator | ztp; os_configuration | discovery |  | read |
-| `nodes[].bios_during_provisioning.*` | string | operator | ztp; os_configuration | (part: infrastructure-helpers; toolkit-legacy-scripts; ztp) |  | read-as-part |
+| `nodes[].bios_during_provisioning.*` | string | operator | ztp; os_configuration | (part: infrastructure-helpers; ztp) |  | read-as-part |
 | `nodes[].maintenance_address` | string (ipv4) | operator | ztp; os_configuration | os-configuration; pre-cluster-verification; ztp |  | read |
 | `nodes[].san.hbas[].slot` | string, required | operator | ztp; deployment | ztp | OS ~Mpio; ~SanVerify | read |
 | `nodes[].san.hbas[].type` | string, default `fibre_channel`, one of `fibre_channel`, `iscsi_offload` | operator; default | ztp; deployment | ztp | OS ~Mpio; ~SanVerify | read |
@@ -1470,7 +1471,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `nodes[].san.hbas[].bios_enabled_value` | string | operator | ztp; deployment | ztp | OS ~Mpio; ~SanVerify | read |
 | `nodes[].san.hbas[].model` | string | operator | ztp; deployment | ztp | OS ~Mpio; ~SanVerify | read |
 | `nodes[].san.hbas[].ports[].wwpn` | string (wwpn), required | operator | os_configuration; deployment | os-configuration | OS Mpio; SanVerify; Gate ST-011 (named) | read |
-| `nodes[].san.hbas[].ports[].fabric` | string, required | operator | deployment | (part: pre-cluster-verification; toolkit-legacy-scripts) | OS ~Mpio; ~SanVerify | read-as-part |
+| `nodes[].san.hbas[].ports[].fabric` | string, required | operator | deployment | (part: pre-cluster-verification) | OS ~Mpio; ~SanVerify | read-as-part |
 | `nodes[].san.initiator_iqn` | string (iscsi_name) | operator | os_configuration; deployment | arm-deployment; os-configuration | ARM nodes; OS Mpio; SanVerify | read |
 
 ### operations
@@ -1530,6 +1531,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `provisioning.os_version` | string, required | operator; Trailwright | ztp; os_configuration; trailwright | os-configuration; pre-cluster-verification; ztp | Gate ND-004; SB-003; SB-005; SB-006 | read |
 | `provisioning.iso.image_source` | string, one of `microsoft`, `oem` | operator; Trailwright |  |  |  | placeholder |
 | `provisioning.iso.image_version` | string | operator |  |  |  | placeholder |
+| `provisioning.iso.image_uri` | string | operator |  | toolkit-legacy-scripts |  | read |
 | `provisioning.simplified.site_name` | string, required | operator; Trailwright | ztp; monitoring; trailwright | sonar; ztp |  | read |
 | `provisioning.simplified.subscription_id` | string (guid) | operator | ztp | ztp |  | read |
 | `provisioning.simplified.resource_group` | string (resource_group) | operator | ztp; trailwright | ztp |  | read |
@@ -1718,7 +1720,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |
-| arm_deployment | parameters | 221 | 221 | 0 |
+| arm_deployment | parameters | 237 | 237 | 0 |
 | arm_deployment | report_fields | 20 | 20 | 0 |
 | arm_deployment | run_settings | 31 | 31 | 0 |
 | arm_deployment | secret_names | 2 | 2 | 0 |

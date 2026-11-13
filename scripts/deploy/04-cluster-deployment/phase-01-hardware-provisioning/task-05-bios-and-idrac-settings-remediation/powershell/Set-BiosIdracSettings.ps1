@@ -17,7 +17,7 @@
     comes from hardware.bmc.verify_certificate (default false: the BMC's own certificate is accepted). The script never prompts.
 
     Keys read: nodes[].name, nodes[].bmc (ip_address, username, password), hardware.bmc (username, password, verify_certificate),
-    hardware.bios_settings and hardware.idrac_settings (overrides of the desired values), secrets and key_vaults (for the references).
+    hardware.bios and nodes[].bios (overrides of the desired BIOS values), secrets and key_vaults (for the references).
 
 .PARAMETER ConfigPath
     Path to infrastructure.yml configuration.
@@ -153,7 +153,7 @@ $desiredBios = @{
     "SecureBoot"          = "Enabled"
     "TpmSecurity"         = "OnPbm"
 }
-$biosOverride = Get-AzlInfrastructureValue -Infrastructure $config -Path 'hardware.bios_settings'
+$biosOverride = Get-AzlInfrastructureValue -Infrastructure $config -Path 'hardware.bios'
 if ($biosOverride) {
     foreach ($key in $biosOverride.Keys) {
         $desiredBios[$key] = $biosOverride[$key]
@@ -163,18 +163,18 @@ if ($biosOverride) {
 $desiredIdrac = @{
     "IPMILan.1#Enable" = "Enabled"
 }
-$idracOverride = Get-AzlInfrastructureValue -Infrastructure $config -Path 'hardware.idrac_settings'
-if ($idracOverride) {
-    foreach ($key in $idracOverride.Keys) {
-        $desiredIdrac[$key] = $idracOverride[$key]
-    }
-}
+# The iDRAC baseline above is fixed in this script: infrastructure.yml has no key for iDRAC attributes.
 
 $nodesRemediated = 0
 $nodesRequireReboot = @()
 
 foreach ($node in $nodes) {
     $nodeName = [string]$node['name']
+    # The BIOS attributes of this machine: the baseline, then hardware.bios, then nodes[].bios (the key of the node wins).
+    $nodeBios = $desiredBios.Clone()
+    if ($node.Contains('bios') -and $node['bios'] -is [System.Collections.IDictionary]) {
+        foreach ($key in $node['bios'].Keys) { $nodeBios[$key] = $node['bios'][$key] }
+    }
     $bmcBlock = if ($node.Contains('bmc')) { $node['bmc'] } else { $null }
     $iDRACIp = if ($bmcBlock -is [System.Collections.IDictionary] -and $bmcBlock.Contains('ip_address')) { [string]$bmcBlock['ip_address'] } else { $null }
 
@@ -194,10 +194,10 @@ foreach ($node in $nodes) {
         $currentBios = (Get-RedfishData -BaseUri $baseUri -Endpoint "/redfish/v1/Systems/System.Embedded.1/Bios" -Credential $bmcCredential).Attributes
         $biosChanges = @{}
 
-        foreach ($key in $desiredBios.Keys) {
-            if ($currentBios.$key -ne $desiredBios[$key]) {
-                $biosChanges[$key] = $desiredBios[$key]
-                Write-Log "    BIOS: $key — $($currentBios.$key) -> $($desiredBios[$key])" -Level "WARN"
+        foreach ($key in $nodeBios.Keys) {
+            if ($currentBios.$key -ne $nodeBios[$key]) {
+                $biosChanges[$key] = $nodeBios[$key]
+                Write-Log "    BIOS: $key — $($currentBios.$key) -> $($nodeBios[$key])" -Level "WARN"
             }
         }
 

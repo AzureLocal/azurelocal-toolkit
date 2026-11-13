@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that Terraform ('terraform') reads (a strict subset of the master file). Schema 5.6.17.
+# Template for the part of infrastructure.yml that Terraform ('terraform') reads (a strict subset of the master file). Schema 5.6.19.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -198,7 +198,7 @@ landing_zone:
       # Name of the Bastion host.
       # required; used by: terraform
       name: "bas-iic-hub-01"
-      # SKU of the Bastion host, for example Standard.
+      # SKU of the Bastion host: Basic, Standard or Premium (New-AzBastion -Sku).
       # used by: terraform
       sku: "Standard"
   # Management VMs: domain controllers, jump box, Windows Admin Center, syslog.
@@ -228,9 +228,9 @@ landing_zone:
       # Azure VM size, for example Standard_D2s_v5.
       # used by: terraform
       size: "Standard_D2s_v5"
-      # Operating system image of the machine.
-      # used by: terraform
-      os: ""
+      # (since 5.6.19) 
+      # one of: windows_server_2022 | windows_server_2025 | ubuntu_2404; used by: terraform
+      os: "windows_server_2025"
       # Local administrator user name of the machine.
       # used by: terraform
       admin_username: "iic-vmadmin"

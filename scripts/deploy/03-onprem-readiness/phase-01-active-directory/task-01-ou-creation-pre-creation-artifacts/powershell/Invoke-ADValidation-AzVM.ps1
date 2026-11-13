@@ -17,11 +17,11 @@
 
 .PARAMETER ResourceGroupName
     Azure resource group containing the target VM.
-    If not specified, reads from config: azure_vms.dc01.resource_group
+    If not specified, reads landing_zone.virtual_machines[].resource_group of the first entry with role domain_controller.
 
 .PARAMETER VMName
     Azure VM name of the domain controller.
-    If not specified, reads from config: azure_vms.dc01.name
+    If not specified, reads landing_zone.virtual_machines[].name of the same entry.
 
 .EXAMPLE
     .\Invoke-ADValidation-AzVM.ps1 -ConfigFile "..\..\..\..\configs\infrastructure.yml"
@@ -59,19 +59,40 @@ Write-Host "Loading configuration from: $ConfigFile" -ForegroundColor Cyan
 Import-Module powershell-yaml -ErrorAction Stop
 $config = Get-Content $ConfigFile -Raw | ConvertFrom-Yaml
 
+function Get-DomainControllerVm {
+    # The domain controller VM of infrastructure.yml: the first landing_zone.virtual_machines[] entry with role domain_controller.
+    # Its name, hostname and resource_group come from that entry; the region from its resource group in landing_zone.resource_groups[],
+    # else azure.location. Returns $null when the file has no such entry.
+    param([System.Collections.IDictionary]$Config)
+    $zone = if ($Config.Contains('landing_zone')) { $Config['landing_zone'] } else { $null }
+    if ($zone -isnot [System.Collections.IDictionary] -or -not $zone.Contains('virtual_machines')) { return $null }
+    $vm = @($zone['virtual_machines']) | Where-Object { $_ -is [System.Collections.IDictionary] -and $_.Contains('role') -and $_['role'] -eq 'domain_controller' } | Select-Object -First 1
+    if (-not $vm) { return $null }
+    $name = if ($vm.Contains('name')) { [string]$vm['name'] } else { '' }
+    $group = if ($vm.Contains('resource_group')) { [string]$vm['resource_group'] } else { '' }
+    $location = ''
+    if ($group -and $zone.Contains('resource_groups')) {
+        $entry = @($zone['resource_groups']) | Where-Object { $_ -is [System.Collections.IDictionary] -and $_['name'] -eq $group } | Select-Object -First 1
+        if ($entry -and $entry.Contains('location')) { $location = [string]$entry['location'] }
+    }
+    if (-not $location -and $Config.Contains('azure') -and $Config['azure'] -is [System.Collections.IDictionary] -and $Config['azure'].Contains('location')) { $location = [string]$Config['azure']['location'] }
+    [pscustomobject]@{ Name = $name; HostName = $(if ($vm.Contains('hostname') -and $vm['hostname']) { [string]$vm['hostname'] } else { $name }); ResourceGroup = $group; Location = $location }
+}
+$dcVm = Get-DomainControllerVm -Config $config
+
 # Resolve VM target from config if not specified
 if (-not $ResourceGroupName) {
-    $ResourceGroupName = $config.compute.azure_vms.dc01.resource_group
+    $ResourceGroupName = if ($dcVm) { $dcVm.ResourceGroup }
     if (-not $ResourceGroupName) {
-        Write-Host "ERROR: -ResourceGroupName not specified and not found in config (azure_vms.dc01.resource_group)" -ForegroundColor Red
+        Write-Host "ERROR: -ResourceGroupName not specified and landing_zone.virtual_machines[] has no domain controller with a resource_group" -ForegroundColor Red
         exit 1
     }
 }
 
 if (-not $VMName) {
-    $VMName = $config.compute.azure_vms.dc01.name
+    $VMName = if ($dcVm) { $dcVm.Name }
     if (-not $VMName) {
-        Write-Host "ERROR: -VMName not specified and not found in config (azure_vms.dc01.name)" -ForegroundColor Red
+        Write-Host "ERROR: -VMName not specified and landing_zone.virtual_machines[] has no domain controller with a name" -ForegroundColor Red
         exit 1
     }
 }

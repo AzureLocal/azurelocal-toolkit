@@ -94,6 +94,7 @@ BeforeAll {
         '8c6f20a7-a545-4486-9777-f762fafe0d4d' = 'Azure DevOps approval check type'
         'fe1de3ee-a436-41b4-bb20-f6eb4cb879a7' = 'Azure DevOps task check type'
         '86b05a0c-73e6-4f7d-b3cf-e38f3b39a75b' = 'Azure DevOps evaluatebranchProtection task definition'
+        'c632b3df-fb67-4d84-bdcf-b95ad541b5c8' = 'Microsoft-registered Azure VPN Client application ID of the Azure public cloud, the audience of Microsoft Entra ID sign-in on a VPN gateway (Microsoft Learn: Configure P2S VPN Gateway for Microsoft Entra ID authentication)'
     }
 
     # Names of Azure regions (the API names). A value that equals one, outside a comparison or a table of regions, is a default.

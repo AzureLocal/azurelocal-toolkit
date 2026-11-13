@@ -16,7 +16,7 @@
       "additionalProperties": false,
       "properties": {
         "schema_version": {
-          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. 5.6.11 adds what the logical network, network security group and VM image scripts read: networking.network_security_groups (name and rules with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description), networking.logical_networks[].vm_switch_name and storage.vm_images (name, os_type, publisher, offer, sku, version, storage_path). 5.6.12 adds operations.monitoring.retention_days and removes operations.notifications.teams_webhook and operations.monitoring.health_alerts. 5.6.13 adds the secrets section (provider, file directory, command) and lets a secret reference use the env://, file:// and command:// forms besides keyvault://. 5.6.14 adds hardware.inventory (output_directory, file_name_prefix, format, timeout_seconds), which Get-HardwareInventory.ps1 reads. 5.6.15 adds what Enable-ArcSdn.ps1 reads: sdn.acknowledge_maintenance_window and sdn.acknowledge_dns_record, the rules of sdn.prefix, and sdn.dns_records (read now); it removes sdn.default_access_policy. 5.6.16 adds storage.san.luns[].unique_id (how New-SanVolume.ps1 finds the disk of a LUN) and removes security.backup_key_vault. 5.6.17 adds landing_zone.management_groups[].role and azure.automation_identity.object_id (the two keys the Terraform landing zone and identity modules need) and makes the Terraform and Ansible code readers of the file (New-IacVariableFiles.ps1). The current version is 5.6.17.",
+          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. 5.6.11 adds what the logical network, network security group and VM image scripts read: networking.network_security_groups (name and rules with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description), networking.logical_networks[].vm_switch_name and storage.vm_images (name, os_type, publisher, offer, sku, version, storage_path). 5.6.12 adds operations.monitoring.retention_days and removes operations.notifications.teams_webhook and operations.monitoring.health_alerts. 5.6.13 adds the secrets section (provider, file directory, command) and lets a secret reference use the env://, file:// and command:// forms besides keyvault://. 5.6.14 adds hardware.inventory (output_directory, file_name_prefix, format, timeout_seconds), which Get-HardwareInventory.ps1 reads. 5.6.15 adds what Enable-ArcSdn.ps1 reads: sdn.acknowledge_maintenance_window and sdn.acknowledge_dns_record, the rules of sdn.prefix, and sdn.dns_records (read now); it removes sdn.default_access_policy. 5.6.16 adds storage.san.luns[].unique_id (how New-SanVolume.ps1 finds the disk of a LUN) and removes security.backup_key_vault. 5.6.17 adds landing_zone.management_groups[].role and azure.automation_identity.object_id (the two keys the Terraform landing zone and identity modules need) and makes the Terraform and Ansible code readers of the file (New-IacVariableFiles.ps1). 5.6.19 adds provisioning.iso.image_uri (the address Invoke-MountGoldImageISO.ps1 gives the BMC virtual media), landing_zone.subscriptions[].billing_scope and workload, point_to_site.protocols, root_certificate_name and root_certificate, bastion.network and the nat_gateway object of landing_zone.connectivity, and a list of values for landing_zone.virtual_machines[].os. The current version is 5.6.19.",
           "type": "string",
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
@@ -3272,6 +3272,11 @@
             "image_version": {
               "description": "Build of the Azure Local OS image the ISO holds. No tool reads it yet; OS configuration reads the OS build from the machine. Not read by the tools yet: a documented placeholder.",
               "type": "string"
+            },
+            "image_uri": {
+              "description": "Schema 5.6.19. Where each machine's BMC fetches the OS ISO from, as the address you give the virtual media of the BMC (Redfish VirtualMedia.InsertMedia): an http, https, nfs or cifs address of the ISO. Invoke-MountGoldImageISO.ps1 (phase 02, task 02) inserts it as the virtual CD of every machine in nodes[].",
+              "type": "string",
+              "pattern": "^(https?|nfs|cifs)://[^ ]+$"
             }
           }
         },
@@ -4052,6 +4057,19 @@
               "management_group": {
                 "description": "Management group the subscription is under.",
                 "type": "string"
+              },
+              "billing_scope": {
+                "description": "Schema 5.6.19. The billing scope a new subscription is created under, when the entry has no id: an enrollment account (Enterprise Agreement), an invoice section (Microsoft Customer Agreement) or a customer (Microsoft Partner Agreement), as Microsoft Learn (Programmatically create Azure subscriptions) writes it. Deploy-Subscriptions.ps1 (phase 01, task 02) passes it to New-AzSubscriptionAlias; an entry with an id is an existing subscription and does not need it.",
+                "type": "string"
+              },
+              "workload": {
+                "description": "Schema 5.6.19. The workload type of a new subscription: Production or DevTest (the Workload parameter of New-AzSubscriptionAlias). DevTest needs the Dev/Test offer on your agreement. Read by Deploy-Subscriptions.ps1 for an entry with no id.",
+                "type": "string",
+                "default": "Production",
+                "enum": [
+                  "Production",
+                  "DevTest"
+                ]
               }
             },
             "required": [
@@ -4242,7 +4260,7 @@
                   "maximum": 4294967295
                 },
                 "site_to_site": {
-                  "description": "Site-to-site connections to other sites. Not read by the tools yet: a documented placeholder.",
+                  "description": "Site-to-site connections to other sites.",
                   "type": "array",
                   "items": {
                     "type": "object",
@@ -4269,10 +4287,10 @@
                       },
                       "peer_bgp_address": {
                         "$ref": "#/$defs/ipv4",
-                        "description": "BGP peer address of the peer device. Not read by the tools yet: a documented placeholder."
+                        "description": "BGP peer address of the peer device."
                       },
                       "peer_asn": {
-                        "description": "BGP autonomous system number of the peer. Not read by the tools yet: a documented placeholder.",
+                        "description": "BGP autonomous system number of the peer.",
                         "type": "integer",
                         "minimum": 1,
                         "maximum": 4294967295
@@ -4289,22 +4307,42 @@
                   }
                 },
                 "point_to_site": {
-                  "description": "Point-to-site VPN for individual users. Not read by the tools yet: a documented placeholder.",
+                  "description": "Point-to-site VPN for individual users.",
                   "type": "object",
                   "additionalProperties": false,
                   "properties": {
                     "address_pool": {
                       "$ref": "#/$defs/cidr",
-                      "description": "Address pool handed to point-to-site clients, in CIDR form. Not read by the tools yet: a documented placeholder."
+                      "description": "Address pool handed to point-to-site clients, in CIDR form."
                     },
                     "authentication": {
-                      "description": "How clients sign in: entra_id, certificate or radius.",
+                      "description": "How clients sign in: entra_id, certificate or radius. Configure-P2sVpn.ps1 (phase 04, manual deployment, task 04) builds entra_id and certificate; radius is not built (it needs the server address and its secret).",
                       "type": "string",
                       "enum": [
                         "entra_id",
                         "certificate",
                         "radius"
                       ]
+                    },
+                    "protocols": {
+                      "description": "Schema 5.6.19. The tunnel types the gateway accepts: OpenVPN, IkeV2 or SSTP (the VpnClientProtocol of Set-AzVirtualNetworkGateway). With entra_id only OpenVPN is allowed (Microsoft Learn, Configure P2S VPN Gateway for Microsoft Entra ID authentication). With certificate the default is OpenVPN and IkeV2.",
+                      "type": "array",
+                      "items": {
+                        "type": "string",
+                        "enum": [
+                          "OpenVPN",
+                          "IkeV2",
+                          "SSTP"
+                        ]
+                      }
+                    },
+                    "root_certificate_name": {
+                      "description": "Schema 5.6.19. The name of the root certificate on the gateway, for authentication certificate. The name identifies the certificate in the portal and does not have to match anything in the certificate.",
+                      "type": "string"
+                    },
+                    "root_certificate": {
+                      "$ref": "#/$defs/kv_ref",
+                      "description": "Schema 5.6.19. A secret reference to the public certificate data of the root certificate (the base64 text of the .cer file, without the BEGIN and END lines), for authentication certificate. The data is public; a reference keeps the file free of a long value."
                     }
                   },
                   "required": [
@@ -4330,8 +4368,47 @@
                   "description": "Resource group of the Bastion host."
                 },
                 "sku": {
-                  "description": "SKU of the Bastion host, for example Standard.",
+                  "description": "SKU of the Bastion host: Basic, Standard or Premium (New-AzBastion -Sku). New-AzureBastion.ps1 (phase 04, manual deployment, task 05) needs it.",
                   "type": "string"
+                },
+                "network": {
+                  "description": "Schema 5.6.19. Name of the virtual network the Bastion host is in: an entry of landing_zone.networks with a subnet named AzureBastionSubnet of /26 or larger (Microsoft Learn: Azure Bastion configuration settings). The subscription and region of the host are those of that entry.",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "name"
+              ]
+            },
+            "nat_gateway": {
+              "description": "Schema 5.6.19. An Azure NAT gateway for the outbound traffic of subnets of a landing zone network. New-NatGateway.ps1 (phase 04, manual deployment, task 07) creates it with a Standard public IP address and associates the subnets.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Name of the NAT gateway.",
+                  "type": "string"
+                },
+                "resource_group": {
+                  "$ref": "#/$defs/resource_group",
+                  "description": "Resource group of the NAT gateway and its public IP address; default: the resource group of the network."
+                },
+                "network": {
+                  "description": "Name of the virtual network (an entry of landing_zone.networks) whose subnets the gateway serves. Its subscription and region are those of that entry.",
+                  "type": "string"
+                },
+                "subnets": {
+                  "description": "Names of the subnets of that network that use the NAT gateway for outbound traffic.",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                "idle_timeout_minutes": {
+                  "description": "Minutes a TCP connection may stay idle before the NAT gateway drops it: 4 to 120 (Microsoft Learn, Azure NAT Gateway). Leave it out for the Azure default of 4.",
+                  "type": "integer",
+                  "minimum": 4,
+                  "maximum": 120
                 }
               },
               "required": [
@@ -4426,8 +4503,13 @@
                 "type": "string"
               },
               "os": {
-                "description": "Operating system image of the machine. For a machine that Terraform deploys: the Windows Server image SKU of the Azure Marketplace, for example 2025-datacenter-azure-edition.",
-                "type": "string"
+                "description": "Schema 5.6.19. Operating system image of the machine: windows_server_2022 or windows_server_2025 (Windows Server Datacenter: Azure Edition) or ubuntu_2404 (Ubuntu Server 24.04 LTS). Deploy-ManagementVMs.ps1 (phase 04, manual deployment, task 11) turns it into the Azure Marketplace image (publisher, offer, SKU, latest version) and sets the machine up as a Windows or Linux machine.",
+                "type": "string",
+                "enum": [
+                  "windows_server_2022",
+                  "windows_server_2025",
+                  "ubuntu_2404"
+                ]
               },
               "admin_username": {
                 "description": "Local administrator user name of the machine. The password is a Key Vault secret.",

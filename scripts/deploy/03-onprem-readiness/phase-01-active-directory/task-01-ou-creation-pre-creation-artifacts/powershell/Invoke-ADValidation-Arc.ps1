@@ -19,15 +19,15 @@
 
 .PARAMETER ResourceGroupName
     Azure resource group containing the Arc-enrolled machine.
-    If not specified, reads from config: azure_vms.dc01.resource_group
+    If not specified, reads landing_zone.virtual_machines[].resource_group of the first entry with role domain_controller.
 
 .PARAMETER MachineName
     Arc-enrolled machine name (hostname as registered in Azure Arc).
-    If not specified, reads from config: azure_vms.dc01.hostname
+    If not specified, reads landing_zone.virtual_machines[].hostname (else name) of the same entry.
 
 .PARAMETER Location
     Azure region of the Arc resource.
-    If not specified, reads from config: azure_vms.dc01.location
+    If not specified, reads the location of its resource group in landing_zone.resource_groups[], else azure.location.
 
 .PARAMETER SkipCleanup
     If specified, the Arc run command resource is NOT deleted after execution.
@@ -36,7 +36,7 @@
     .\Invoke-ADValidation-Arc.ps1 -ConfigFile "..\..\..\..\configs\infrastructure.yml"
 
 .EXAMPLE
-    .\Invoke-ADValidation-Arc.ps1 -ConfigFile ".\infrastructure.yml" -MachineName "azrsdc-eus-01" -ResourceGroupName "rg-azrlmgmt-dev-eus-01" -Location "eastus"
+    .\Invoke-ADValidation-Arc.ps1 -ConfigFile ".\infrastructure.yml" -MachineName "iic-dc01" -ResourceGroupName "rg-iic-mgmt-01" -Location "eastus"
 
 .NOTES
     Requires: Az.ConnectedMachine module, authenticated Azure session (Connect-AzAccount)
@@ -74,26 +74,50 @@ Write-Host "Loading configuration from: $ConfigFile" -ForegroundColor Cyan
 Import-Module powershell-yaml -ErrorAction Stop
 $config = Get-Content $ConfigFile -Raw | ConvertFrom-Yaml
 
+function Get-DomainControllerVm {
+    # The domain controller VM of infrastructure.yml: the first landing_zone.virtual_machines[] entry with role domain_controller.
+    # Its name, hostname and resource_group come from that entry; the region from its resource group in landing_zone.resource_groups[],
+    # else azure.location. Returns $null when the file has no such entry.
+    param([System.Collections.IDictionary]$Config)
+    $zone = if ($Config.Contains('landing_zone')) { $Config['landing_zone'] } else { $null }
+    if ($zone -isnot [System.Collections.IDictionary] -or -not $zone.Contains('virtual_machines')) { return $null }
+    $vm = @($zone['virtual_machines']) | Where-Object { $_ -is [System.Collections.IDictionary] -and $_.Contains('role') -and $_['role'] -eq 'domain_controller' } | Select-Object -First 1
+    if (-not $vm) { return $null }
+    $name = if ($vm.Contains('name')) { [string]$vm['name'] } else { '' }
+    $group = if ($vm.Contains('resource_group')) { [string]$vm['resource_group'] } else { '' }
+    $location = ''
+    if ($group -and $zone.Contains('resource_groups')) {
+        $entry = @($zone['resource_groups']) | Where-Object { $_ -is [System.Collections.IDictionary] -and $_['name'] -eq $group } | Select-Object -First 1
+        if ($entry -and $entry.Contains('location')) { $location = [string]$entry['location'] }
+    }
+    if (-not $location -and $Config.Contains('azure') -and $Config['azure'] -is [System.Collections.IDictionary] -and $Config['azure'].Contains('location')) { $location = [string]$Config['azure']['location'] }
+    [pscustomobject]@{ Name = $name; HostName = $(if ($vm.Contains('hostname') -and $vm['hostname']) { [string]$vm['hostname'] } else { $name }); ResourceGroup = $group; Location = $location }
+}
+$dcVm = Get-DomainControllerVm -Config $config
+
 # Resolve Arc target from config if not specified
 if (-not $ResourceGroupName) {
-    $ResourceGroupName = $config.compute.azure_vms.dc01.resource_group
+    $ResourceGroupName = if ($dcVm) { $dcVm.ResourceGroup }
     if (-not $ResourceGroupName) {
-        Write-Host "ERROR: -ResourceGroupName not specified and not found in config" -ForegroundColor Red
+        Write-Host "ERROR: -ResourceGroupName not specified and landing_zone.virtual_machines[] has no domain controller with a resource_group" -ForegroundColor Red
         exit 1
     }
 }
 
 if (-not $MachineName) {
-    $MachineName = $config.compute.azure_vms.dc01.hostname
+    $MachineName = if ($dcVm) { $dcVm.HostName }
     if (-not $MachineName) {
-        Write-Host "ERROR: -MachineName not specified and not found in config (azure_vms.dc01.hostname)" -ForegroundColor Red
+        Write-Host "ERROR: -MachineName not specified and landing_zone.virtual_machines[] has no domain controller with a hostname or name" -ForegroundColor Red
         exit 1
     }
 }
 
 if (-not $Location) {
-    $Location = $config.compute.azure_vms.dc01.location
-    if (-not $Location) { $Location = "eastus" }
+    $Location = if ($dcVm) { $dcVm.Location }
+    if (-not $Location) {
+        Write-Host "ERROR: -Location not specified and neither the resource group in landing_zone.resource_groups[] nor azure.location has a region" -ForegroundColor Red
+        exit 1
+    }
 }
 
 # Extract AD values from config

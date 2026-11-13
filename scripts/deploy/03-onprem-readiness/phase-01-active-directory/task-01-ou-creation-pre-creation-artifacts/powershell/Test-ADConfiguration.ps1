@@ -17,7 +17,7 @@
 
 .PARAMETER DomainController
     Target domain controller FQDN. If not specified, auto-detected from config
-    (azure_vms.dc01.fqdn) or Active Directory.
+    (landing_zone.virtual_machines[] with role domain_controller) or Active Directory.
 
 .EXAMPLE
     .\Validate-ADConfiguration.ps1 -ConfigFile ".\infrastructure.yml"
@@ -108,11 +108,31 @@ $lcmUsername = $config['identity']?['active_directory']?['lcm_user']?['username'
 # Extract just the SAM account name (before @domain)
 $lcmSamAccount = if ($lcmUsername -match '^([^@]+)@') { $Matches[1] } else { $lcmUsername }
 
+function Get-DomainControllerVm {
+    # The domain controller VM of infrastructure.yml: the first landing_zone.virtual_machines[] entry with role domain_controller.
+    # Its name, hostname and resource_group come from that entry; the region from its resource group in landing_zone.resource_groups[],
+    # else azure.location. Returns $null when the file has no such entry.
+    param([System.Collections.IDictionary]$Config)
+    $zone = if ($Config.Contains('landing_zone')) { $Config['landing_zone'] } else { $null }
+    if ($zone -isnot [System.Collections.IDictionary] -or -not $zone.Contains('virtual_machines')) { return $null }
+    $vm = @($zone['virtual_machines']) | Where-Object { $_ -is [System.Collections.IDictionary] -and $_.Contains('role') -and $_['role'] -eq 'domain_controller' } | Select-Object -First 1
+    if (-not $vm) { return $null }
+    $name = if ($vm.Contains('name')) { [string]$vm['name'] } else { '' }
+    $group = if ($vm.Contains('resource_group')) { [string]$vm['resource_group'] } else { '' }
+    $location = ''
+    if ($group -and $zone.Contains('resource_groups')) {
+        $entry = @($zone['resource_groups']) | Where-Object { $_ -is [System.Collections.IDictionary] -and $_['name'] -eq $group } | Select-Object -First 1
+        if ($entry -and $entry.Contains('location')) { $location = [string]$entry['location'] }
+    }
+    if (-not $location -and $Config.Contains('azure') -and $Config['azure'] -is [System.Collections.IDictionary] -and $Config['azure'].Contains('location')) { $location = [string]$Config['azure']['location'] }
+    [pscustomobject]@{ Name = $name; HostName = $(if ($vm.Contains('hostname') -and $vm['hostname']) { [string]$vm['hostname'] } else { $name }); ResourceGroup = $group; Location = $location }
+}
 # Determine domain controller
 if (-not $DomainController) {
-    # Try to get from config (azure_vms.dc01.fqdn)
-    if ($config.compute.azure_vms.dc01.fqdn) {
-        $DomainController = $config.compute.azure_vms.dc01.fqdn
+    # Try to get it from the file: the domain controller VM of landing_zone.virtual_machines[], with the domain of identity.active_directory.domain_fqdn
+    $dcVm = Get-DomainControllerVm -Config $config
+    if ($dcVm -and $dcVm.HostName -and $adDomainFqdn) {
+        $DomainController = "$($dcVm.HostName).$adDomainFqdn"
     }
     else {
         # Auto-detect from domain

@@ -16,7 +16,7 @@
     comes from hardware.bmc.verify_certificate (default false: the BMC's own certificate is accepted). The script never prompts.
 
     Keys read: nodes[].name, nodes[].bmc (ip_address, username, password), hardware.bmc (username, password, verify_certificate),
-    hardware.bios_settings and hardware.idrac_settings (overrides of the desired values), secrets and key_vaults (for the references).
+    hardware.bios and nodes[].bios (overrides of the desired BIOS values), secrets and key_vaults (for the references).
 
 .PARAMETER ConfigPath
     Path to infrastructure.yml configuration.
@@ -176,8 +176,8 @@ $desiredBios = @{
     "TpmSecurity"         = "OnPbm"
 }
 
-# Override with config if present
-$biosOverride = Get-AzlInfrastructureValue -Infrastructure $config -Path 'hardware.bios_settings'
+# Override with config if present: hardware.bios for every machine, nodes[].bios for one machine (the key of a node wins)
+$biosOverride = Get-AzlInfrastructureValue -Infrastructure $config -Path 'hardware.bios'
 if ($biosOverride) {
     foreach ($key in $biosOverride.Keys) {
         $desiredBios[$key] = $biosOverride[$key]
@@ -187,12 +187,7 @@ if ($biosOverride) {
 $desiredIdrac = @{
     "IPMILan.1#Enable"  = "Enabled"
 }
-$idracOverride = Get-AzlInfrastructureValue -Infrastructure $config -Path 'hardware.idrac_settings'
-if ($idracOverride) {
-    foreach ($key in $idracOverride.Keys) {
-        $desiredIdrac[$key] = $idracOverride[$key]
-    }
-}
+# The iDRAC baseline above is fixed in this script: infrastructure.yml has no key for iDRAC attributes.
 
 $report = @()
 $totalPass = 0
@@ -200,6 +195,11 @@ $totalFail = 0
 
 foreach ($node in $nodes) {
     $nodeName = [string]$node['name']
+    # The BIOS attributes of this machine: the baseline, then hardware.bios, then nodes[].bios (the key of the node wins).
+    $nodeBios = $desiredBios.Clone()
+    if ($node.Contains('bios') -and $node['bios'] -is [System.Collections.IDictionary]) {
+        foreach ($key in $node['bios'].Keys) { $nodeBios[$key] = $node['bios'][$key] }
+    }
     $bmcBlock = if ($node.Contains('bmc')) { $node['bmc'] } else { $null }
     $iDRACIp = if ($bmcBlock -is [System.Collections.IDictionary] -and $bmcBlock.Contains('ip_address')) { [string]$bmcBlock['ip_address'] } else { $null }
 
@@ -213,7 +213,7 @@ foreach ($node in $nodes) {
     try {
         # -Credential, else nodes[].bmc, else hardware.bmc (secret references read by the resolver). Never a prompt.
         $bmcCredential = Resolve-AzlBmcCredential -Credential $Credential -Infrastructure $config -Node $node -NoPrompt
-        $biosResults = Test-BiosSettings -iDRACIp $iDRACIp -Credential $bmcCredential -DesiredSettings $desiredBios
+        $biosResults = Test-BiosSettings -iDRACIp $iDRACIp -Credential $bmcCredential -DesiredSettings $nodeBios
         $idracResults = Test-IdracSettings -iDRACIp $iDRACIp -Credential $bmcCredential -DesiredSettings $desiredIdrac
 
         $allResults = $biosResults + $idracResults

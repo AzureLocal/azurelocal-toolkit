@@ -12,7 +12,6 @@ param()
 BeforeAll {
     $repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
     $script:Script = [IO.Path]::Combine($repo, 'scripts', 'deploy', '04-cluster-deployment', 'phase-06-post-deployment', 'task-09-post-deployment-verification', 'powershell', 'Invoke-VerifyPostDeployment.ps1')
-    $script:Standalone = [IO.Path]::Combine($repo, 'scripts', 'deploy', '04-cluster-deployment', 'phase-06-post-deployment', 'task-09-post-deployment-verification', 'powershell', 'Test-PostDeployment-Standalone.ps1')
     Import-Module powershell-yaml
 
     function New-InfraFile {
@@ -98,9 +97,9 @@ Describe 'Invoke-VerifyPostDeployment.ps1 counts one logical network and one ima
     }
 }
 
-Describe 'The post-deployment verification scripts read no old-layout image key' {
-    It 'neither script mentions marketplace_images in code' {
-        foreach ($path in $script:Script, $script:Standalone) {
+Describe 'The post-deployment verification script reads no old-layout image key' {
+    It 'the script mentions no marketplace_images in code' {
+        foreach ($path in $script:Script) {
             $tokens = $null
             [void][System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$null)
             (($tokens | Where-Object { $_.Kind -ne 'Comment' } | ForEach-Object { $_.Text }) -join ' ') | Should -Not -Match 'marketplace_images'

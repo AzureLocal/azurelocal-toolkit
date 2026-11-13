@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for infrastructure.yml for scenario.outbound_path = private_path with every variable. Schema 5.6.17. Scenario: outbound_path=private_path.
+# Template for infrastructure.yml for scenario.outbound_path = private_path with every variable. Schema 5.6.19. Scenario: outbound_path=private_path.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -1405,6 +1405,8 @@ provisioning:
     image_source: "microsoft"
     # Build of the Azure Local OS image the ISO holds.
     image_version: ""
+    # (since 5.6.19) 
+    image_uri: "http://192.0.2.50/images/azure-local.iso"
   # Simplified machine provisioning from Azure, as azurelocal-ztp runs it. https://learn.microsoft.com/azure/azure-local/deploy/simplified-mach...
   # when scenario.os_install is simplified; used by: ztp
   simplified:
@@ -1756,6 +1758,11 @@ landing_zone:
       # Management group the subscription is under.
       # used by: cicd_infra
       management_group: "mg-iic-platform"
+      # (since 5.6.19) 
+      billing_scope: "/providers/Microsoft.Billing/billingAccounts/1234567/enrollmentAccounts/7654321"
+      # (since 5.6.19) 
+      # one of: Production | DevTest; default: "Production"
+      workload: "Production"
   # Resource groups of the landing zone.
   # used by: cicd_infra
   resource_groups:
@@ -1867,6 +1874,12 @@ landing_zone:
         # How clients sign in: entra_id, certificate or radius.
         # one of: entra_id | certificate | radius
         authentication: "entra_id"
+        # (since 5.6.19) 
+        protocols: ["OpenVPN", "IkeV2"]
+        # (since 5.6.19) 
+        root_certificate_name: "P2SRootCert"
+        # (since 5.6.19) 
+        root_certificate: "keyvault://kv-iic-mgmt-01/vpn-root-certificate"
     # Azure Bastion of the hub.
     # used by: terraform
     bastion:
@@ -1875,9 +1888,24 @@ landing_zone:
       name: "bas-iic-hub-01"
       # Resource group of the Bastion host.
       resource_group: "rg-iic-conn-01"
-      # SKU of the Bastion host, for example Standard.
+      # SKU of the Bastion host: Basic, Standard or Premium (New-AzBastion -Sku).
       # used by: terraform
       sku: "Standard"
+      # (since 5.6.19) 
+      network: "vnet-iic-hub-01"
+    # (since 5.6.19) 
+    nat_gateway:
+      # Name of the NAT gateway.
+      # required
+      name: "ng-iic-hub-01"
+      # Resource group of the NAT gateway and its public IP address; default: the resource group of the network.
+      resource_group: "rg-iic-conn-01"
+      # Name of the virtual network (an entry of landing_zone.networks) whose subnets the gateway serves.
+      network: "vnet-iic-mgmt-01"
+      # Names of the subnets of that network that use the NAT gateway for outbound traffic.
+      subnets: ["snet-iic-mgmt-01", "snet-iic-mgmt-02"]
+      # Minutes a TCP connection may stay idle before the NAT gateway drops it: 4 to 120 (Microsoft Learn, Azure NAT Gateway).
+      idle_timeout_minutes: 10
     # Azure Firewall of the hub.
     firewall:
       # Name of the firewall.
@@ -1920,9 +1948,9 @@ landing_zone:
       # Azure VM size, for example Standard_D2s_v5.
       # used by: terraform
       size: "Standard_D2s_v5"
-      # Operating system image of the machine.
-      # used by: terraform
-      os: ""
+      # (since 5.6.19) 
+      # one of: windows_server_2022 | windows_server_2025 | ubuntu_2404; used by: terraform
+      os: "windows_server_2025"
       # Local administrator user name of the machine.
       # used by: terraform
       admin_username: "iic-vmadmin"

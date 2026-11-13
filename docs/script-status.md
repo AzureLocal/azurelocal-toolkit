@@ -19,7 +19,7 @@ Task folders: 116.
 
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
-| PowerShell | 105 | 11 | 0 |
+| PowerShell | 92 | 24 | 0 |
 | Azure CLI | 9 | 57 | 50 |
 
 Azure CLI applies to 58 tasks, does not apply to 50, and is not decided for 8.
@@ -42,8 +42,8 @@ Azure CLI applies to 58 tasks, does not apply to 50, and is not decided for 8.
 | `phase-01-landing-zones/full-deployment/task-01-configure-management-groups` | built | not built | yes |
 | `phase-01-landing-zones/full-deployment/task-02-create-subscriptions` | built | not built | yes |
 | `phase-01-landing-zones/full-deployment/task-03-create-resource-groups` | built | not built | yes |
-| `phase-01-landing-zones/simplified-deployment/task-01-configure-management-group` | built | not built | yes |
-| `phase-01-landing-zones/simplified-deployment/task-02-create-subscription` | built | not built | yes |
+| `phase-01-landing-zones/simplified-deployment/task-01-configure-management-group` | not built | not built | yes |
+| `phase-01-landing-zones/simplified-deployment/task-02-create-subscription` | not built | not built | yes |
 | `phase-01-landing-zones/simplified-deployment/task-03-create-resource-groups` | built | not built | yes |
 | `phase-02-resource-providers/task-01-register-resource-providers` | built | built | yes |
 | `phase-02-resource-providers/task-02-verify-provider-registration` | built | not built | yes |
@@ -60,23 +60,23 @@ Azure CLI applies to 58 tasks, does not apply to 50, and is not decided for 8.
 | `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-02-pipeline-execution/task-05-monitor-apply-stage` | not built | not applicable | no |
 | `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-02-pipeline-execution/task-06-verify-test-stage` | not built | not applicable | no |
 | `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-01-verify-resources` | not built | not built | yes |
-| `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-02-test-connectivity` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-03-validate-configuration` | built | not built | yes |
+| `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-02-test-connectivity` | not built | not built | yes |
+| `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-03-validate-configuration` | not built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-01-virtual-network` | built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-02-vpn-gateway` | built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-03-s2s-vpn-connection` | built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-04-p2s-vpn-connection` | built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-05-azure-bastion` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups` | built | not built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups` | not built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-07-nat-gateway` | built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-08-arc-gateway` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-09-log-analytics` | built | not built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-09-log-analytics` | not built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault` | built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-11-deploy-management-vms` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/task-12-configure-adds` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/task-13-configure-utility-server` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/task-14-configure-ndm-server` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/task-15-configure-lighthouse` | built | not built | yes |
+| `phase-04-azure-management-infrastructure/task-12-configure-adds` | not built | not built | yes |
+| `phase-04-azure-management-infrastructure/task-13-configure-utility-server` | not built | not built | yes |
+| `phase-04-azure-management-infrastructure/task-14-configure-ndm-server` | not built | not built | yes |
+| `phase-04-azure-management-infrastructure/task-15-configure-lighthouse` | not built | not built | yes |
 
 ## 03-onprem-readiness
 
@@ -100,9 +100,9 @@ Azure CLI applies to 58 tasks, does not apply to 50, and is not decided for 8.
 
 | Task | PowerShell | Azure CLI | Azure CLI applies |
 |---|---|---|---|
-| `phase-01-hardware-provisioning/task-01-create-dhcp-reservations-for-idrac-interfaces` | built | not applicable | no |
+| `phase-01-hardware-provisioning/task-01-create-dhcp-reservations-for-idrac-interfaces` | not built | not applicable | no |
 | `phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api` | built | not applicable | no |
-| `phase-01-hardware-provisioning/task-03-create-dhcp-reservations-for-management-nics` | built | not applicable | no |
+| `phase-01-hardware-provisioning/task-03-create-dhcp-reservations-for-management-nics` | not built | not applicable | no |
 | `phase-01-hardware-provisioning/task-04-bios-and-idrac-settings-validation` | built | not applicable | no |
 | `phase-01-hardware-provisioning/task-05-bios-and-idrac-settings-remediation` | built | not applicable | no |
 | `phase-02-os-installation/task-01-delete-and-recreate-virtual-disk-on-dell-boss-card` | built | not applicable | no |
@@ -147,7 +147,7 @@ Azure CLI applies to 58 tasks, does not apply to 50, and is not decided for 8.
 |---|---|---|---|
 | `phase-01-sdn-deployment/task-01-validate-sdn-prerequisites` | built | not applicable | no |
 | `phase-01-sdn-deployment/task-02-configure-network-security-groups` | built | not built | yes |
-| `phase-01-sdn-deployment/task-03-configure-network-security-groups` | built | not built | yes |
+| `phase-01-sdn-deployment/task-03-configure-network-security-groups` | not built | not built | yes |
 | `phase-02-monitoring-observability/task-01-configure-log-analytics-workspace` | built | not built | yes |
 | `phase-02-monitoring-observability/task-02-configure-azure-monitor-agent` | built | not built | yes |
 | `phase-02-monitoring-observability/task-03-enable-hci-insights` | built | not built | yes |

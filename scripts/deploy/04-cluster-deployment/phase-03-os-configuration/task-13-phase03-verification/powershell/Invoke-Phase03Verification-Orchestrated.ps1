@@ -291,7 +291,7 @@ $VerifyScript = {
         $dnsResolved = $true
     } catch {
         try {
-            $null = [System.Net.Dns]::GetHostAddresses("google.com")
+            $null = [System.Net.Dns]::GetHostAddresses("management.azure.com")
             $dnsResolved = $true
         } catch { }
     }

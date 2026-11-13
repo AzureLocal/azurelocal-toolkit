@@ -93,7 +93,7 @@ No script reads a secret by itself. A script does not call `Get-AzKeyVaultSecret
 
 The Arc registration scripts (phase 04, tasks 01 and 02) read the secret of the automation identity from `devops.authentication.client_secret`. When the file signs in with OIDC or a managed identity there is no such secret; the registration script then asks for it, and the pre-registration check warns.
 
-The scripts that write secrets or create vaults (`Add-KeyVaultCredentials.ps1`, `Deploy-KeyVaults.ps1`, `Test-Configuration.ps1` of the Key Vault validation) keep their own Key Vault calls. `tests/secrets/ScriptsUseResolver.Tests.ps1` lists them and fails when any other script reads a secret itself.
+The scripts that write secrets or create vaults (`Add-KeyVaultCredentials.ps1` and `Deploy-KeyVaults.ps1`) keep their own Key Vault calls. `tests/secrets/ScriptsUseResolver.Tests.ps1` lists them and fails when any other script reads a secret itself.
 
 ## Rules that hold for every provider
 

@@ -149,6 +149,9 @@ function Get-KeyValue {
 # Forms: how a value is shaped when it is not a plain copy. Each returns Found and Value. The names are in the registry.
 # ---------------------------------------------------------------------------------------------------------------------
 $script:Forms = [ordered]@{
+    # The file names the operating system of a machine as a choice (windows_server_2022, windows_server_2025, ubuntu_2404).
+    # Terraform takes the Windows Server image SKU that Microsoft publishes for that choice; a machine that is not Windows gives no value.
+    windows_image_sku   = { param($Entry, $Infra, $Ctx) $v = Get-KeyValue $Infra $Entry.Keys[0]; $sku = @{ windows_server_2022 = '2022-datacenter-azure-edition'; windows_server_2025 = '2025-datacenter-azure-edition' }; $name = if ($v.Found) { ([string]$v.Value).Trim().ToLowerInvariant() } else { '' }; if ($sku.ContainsKey($name)) { [pscustomobject]@{ Found = $true; Value = $sku[$name] } } else { [pscustomobject]@{ Found = $false; Value = $null } } }
     lowercase           = { param($Entry, $Infra, $Ctx) $v = Get-KeyValue $Infra $Entry.Keys[0]; if (-not $v.Found -or (Test-Empty $v.Value)) { return [pscustomobject]@{ Found = $false; Value = $null } }; [pscustomobject]@{ Found = $true; Value = ([string]$v.Value).ToLowerInvariant() } }
     present             = { param($Entry, $Infra, $Ctx) $v = Get-KeyValue $Infra $Entry.Keys[0]; [pscustomobject]@{ Found = $true; Value = [bool]($v.Found -and -not (Test-Empty $v.Value)) } }
     first_present       = { param($Entry, $Infra, $Ctx) foreach ($k in $Entry.Keys) { $v = Get-KeyValue $Infra $k; if ($v.Found -and -not (Test-Empty $v.Value)) { return [pscustomobject]@{ Found = $true; Value = $v.Value } } }; [pscustomobject]@{ Found = $false; Value = $null } }
