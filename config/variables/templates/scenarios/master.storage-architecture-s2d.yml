@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for infrastructure.yml for scenario.storage_architecture = s2d with every variable. Schema 5.6.14. Scenario: storage_architecture=s2d.
+# Template for infrastructure.yml for scenario.storage_architecture = s2d with every variable. Schema 5.6.16. Scenario: storage_architecture=s2d.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -1153,8 +1153,6 @@ security:
   # true turns Windows Defender Application Control on.
   # used by: deployment
   wdac: true
-  # Name of the Key Vault that keeps the BitLocker recovery keys.
-  backup_key_vault: ""
   # The free level of Microsoft Defender for Cloud that Azure Local needs to show its security settings in the Azure portal.
   defender_for_cloud:
     # true (default) registers the Microsoft.Security resource provider on the subscription of the cluster, which turns on Foundational CSPM, the...

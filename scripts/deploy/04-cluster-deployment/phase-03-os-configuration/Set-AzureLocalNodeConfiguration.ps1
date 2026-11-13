@@ -23,6 +23,10 @@
                         Vendor*/Product* entry removed for Pure), load balance policy, the vendor's MPIO settings, and a restart
                         so MPIO claims the paths. iscsi also: the MSiSCSI service, MSDSM auto-claim for iSCSI, the target portals
                         and the persistent multipath sessions. Only the type and the array vendor and model are needed.
+                        Not for a SAN-only design (storage_architecture san) on Azure Local 2610 or later: the deployment configures
+                        iSCSI there and Microsoft Learn says not to enable it on the machines before it, so the iSCSI part is
+                        skipped with a message. The release comes from deployment.solution_version, else the ZTP handoff; when it is
+                        not known the iSCSI part of a SAN-only design is Blocked. A hybrid design and earlier releases are unchanged.
       SanVerify         Read only. With a SAN declared: FC ports and WWPNs (or the iSCSI IQN), each LUN seen once by UniqueId, and for
                         san the infrastructure and performance history LUNs (visible, RAW, big enough, two or more paths). On every
                         node, SAN declared or not: a finding when Fibre Channel or iSCSI LUNs are visible while the file declares no

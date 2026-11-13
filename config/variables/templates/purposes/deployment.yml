@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that 'deployment' reads (a strict subset of the master file). Schema 5.6.14.
+# Template for the part of infrastructure.yml that 'deployment' reads (a strict subset of the master file). Schema 5.6.16.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -701,9 +701,6 @@ storage:
     # (since 5.3) 
     # used by: os_configuration, deployment
     array:
-      # The array's name, for example its hostname in the array manager.
-      # required; used by: deployment
-      name: "example"
       # Vendor of the storage array, for example Dell or Pure Storage.
       # required; used by: os_configuration, deployment
       vendor: "example"
@@ -719,9 +716,6 @@ storage:
         # For example A or B.
         # required; used by: deployment
         - name: "example"
-          # The fabric's switch, for example a network_devices[].hostname.
-          # used by: deployment
-          switch: ""
       # The array's target ports (WWPNs) and the fabric each is cabled to.
       # used by: deployment
       target_wwpns:
@@ -779,6 +773,21 @@ storage:
     # LUN of the performance history volume (20 GB minimum).
     # used by: os_configuration, deployment
     performance_history_lun_id: ""
+    # The LUNs the array presents to the cluster for workload volumes, after the deployment.
+    # used by: deployment
+    luns:
+      # Name of the LUN.
+      # required; used by: deployment
+      - name: "iic-san-vol-01"
+        # (since 5.6.16) 
+        # used by: deployment
+        unique_id: "60000000000000000000000000000001"
+        # Size of the LUN in GiB (binary units, as Windows counts).
+        # required; used by: deployment
+        size_gib: 1024
+        # The logical unit number the array presents the LUN as, for example 2.
+        # used by: deployment
+        lun_id: "2"
 
 # Security settings of the deployment.
 security:

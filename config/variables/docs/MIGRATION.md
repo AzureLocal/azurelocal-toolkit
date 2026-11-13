@@ -381,6 +381,16 @@ New rules AZL-060 to AZL-068 (see README). **Steps for a 5.5 file:** set `_metad
 - **5.6.2: adapters are identified by hardware facts.** `nodes[].network_adapters[].mac_address` is now required. New optional keys: `port_index`, `pci_location` (`bus`, `device`, `function`), `vendor` (written by hardware discovery), `allowed_vlans` (the VLANs the switch port allows) and `os_name_override`. **Steps:** a file whose ports lack the MAC: run `Invoke-HardwareDiscovery.ps1 -UpdateInfrastructure` or add the MAC. Nothing else changes: without `os_name_override` no adapter is renamed and the deployment sends the name the node reports for the MAC. To get one name everywhere, add `os_name_override` per used port and run the OS configuration (step `NicNames`).
 - **5.6.3** adds `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`. Nothing is required. A logical network uses `gateway` and `ip_pool`; the 4.0 names `default_gateway` and `ip_pools` belong to the deprecated `networking.onprem.logical_networks[]`.
 
+## To 5.6.16: SAN volumes, and keys that no tool reads
+
+Schema 5.6.16 adds one optional key and removes one. A 5.6.14 file is valid as it is, except that it must not carry `security.backup_key_vault`.
+
+- `storage.san.luns[].unique_id`: the UniqueId of the disk the LUN shows on the machines, as `Get-Disk` reports it (Microsoft Learn: use UniqueId as the authoritative identifier; disk numbers differ between machines). `New-SanVolume.ps1` (phase 06, task 05) finds the disk of a LUN only by this value. It never picks a disk by size or number, and it does nothing to a LUN that has no `unique_id`. Leave `storage.san.luns` out if you do not use the script.
+- `storage.san.luns[].name`, `size_gib` and `lun_id` are now read by the same script. `name` becomes the name of the cluster disk and of the CSV. `size_gib` and `lun_id` are cross-checks: a disk whose size differs by more than 1 percent, or that shows another LUN number, is refused.
+- **Removed: `security.backup_key_vault`.** No tool read it, and the toolkit names no Key Vault: the deployment keeps the BitLocker recovery keys in its own vault. Delete the key from your file (the schema refuses it).
+- Four keys that no tool can act on now say so in their description (Documentation only; not read by the tools): `storage.san.array.name`, `storage.san.array.management_address`, `storage.san.fibre_channel.fabrics[].switch` and `storage.san.fibre_channel.fabrics[].zone_set`. Nothing else changed for them.
+- The OS configuration no longer enables iSCSI before the deployment of a SAN-only design (`scenario.storage_architecture: san`, `storage.san.type: iscsi`) on Azure Local 2610 or later. Microsoft Learn says the deployment configures iSCSI from 2610 and the machines must not have it enabled by hand before. The release comes from `deployment.solution_version`, else the ZTP handoff; for a SAN-only iSCSI design with no known release the iSCSI item is Blocked until you set `deployment.solution_version` (for example `12.2610.1004.50`). A hybrid design and releases before 2610 are unchanged.
+
 ## To 5.6.14: hardware inventory
 
 Schema 5.6.14 adds one optional block. Nothing is required: a 5.6.13 file is valid as it is.

@@ -338,6 +338,13 @@ function Get-AzlNodeSpec {
         $initiators = @(foreach ($p in $ports) {
                 foreach ($role in $p.Roles) { if ($role -in 'iscsi:a', 'iscsi:b') { [pscustomobject]@{ Name = $p.Name; Role = $role; Fabric = $role.Substring(6).ToUpperInvariant(); Ip = [string]$p.IpAddress } } }
             })
+        # The Azure Local release of the deployment (the second part of the solution version, 12.2610.1004.50 is 2610): deployment.solution_version, else the ZTP handoff, else provisioning.os_version
+        # when that is a solution version. 0 when none gives one. From 2610 a SAN-only iSCSI design is configured by the deployment, so the OS configuration must not enable iSCSI before it.
+        $solutionVersion = ''
+        foreach ($candidate in @([string](Get-AzlProp $Infrastructure 'deployment.solution_version' ''), $(if ($Handoff) { [string]$Handoff.VsrVersion } else { '' }), [string](Get-AzlProp $Infrastructure 'provisioning.os_version' ''))) {
+            if ($candidate -match '^\d+\.\d{4}\.\d+\.\d+$') { $solutionVersion = $candidate; break }
+        }
+        $releaseTrain = if ($solutionVersion -match '^\d+\.(\d{4})\.') { [int]$Matches[1] } else { 0 }
         $san = [pscustomobject]@{
             Architecture = $architecture
             DeclaredBy   = $(if ($architecture -in 'san', 'hybrid') { "scenario.storage_architecture $architecture" } else { 'storage.san' })
@@ -350,6 +357,8 @@ function Get-AzlNodeSpec {
             IscsiTargets = $targets
             IscsiChap    = [bool](Get-AzlProp $Infrastructure 'storage.san.iscsi.chap.enabled' $false)
             IscsiPorts   = $initiators
+            SolutionVersion = $solutionVersion
+            ReleaseTrain = $releaseTrain
             InfraLunId   =[string](Get-AzlProp $Infrastructure 'storage.san.infra_volume_lun_id' '')
             PerfLunId    = [string](Get-AzlProp $Infrastructure 'storage.san.performance_history_lun_id' '')
             CheckLuns    = ($architecture -eq 'san')
@@ -857,7 +866,18 @@ function Compare-AzlNodeState {
                 }
             }
             else { & $add (New-AzlPlanItem $n 'Mpio' 'MSDSM vendor' "$($Spec.San.Vendor) $($Spec.San.Model)" 'a row in config/san/msdsm-vendors.json' Info 'No MSDSM hardware ID is known for this array; add it to config/san/msdsm-vendors.json (Learn: enable-external-storage, step 2).') }
-            if ($Spec.San.Type -eq 'iscsi') {
+            # Microsoft Learn, Install the Azure Local operating system for disaggregated deployments, Connect to SAN: starting with Azure Local 2610 the deployment configures iSCSI, and the
+            # machines must not have it enabled by hand before the deployment; for earlier releases the steps are done by hand. That is the SAN-only design (storage_architecture san). A hybrid
+            # design attaches the SAN after the deployment (Learn: Connect an external storage array to Azure Local); Learn says nothing against iSCSI sessions before it, so that is left as it was.
+            $iscsiByDeployment = ($Spec.San.Type -eq 'iscsi' -and $Spec.San.Architecture -eq 'san' -and $Spec.San.ReleaseTrain -ge 2610)
+            $iscsiReleaseUnknown = ($Spec.San.Type -eq 'iscsi' -and $Spec.San.Architecture -eq 'san' -and $Spec.San.ReleaseTrain -eq 0)
+            if ($iscsiByDeployment) {
+                & $add (New-AzlPlanItem $n 'Mpio' 'iSCSI before the deployment' 'not enabled here' 'left to the deployment' Skipped "Azure Local $($Spec.San.ReleaseTrain) (solution $($Spec.San.SolutionVersion)): the deployment configures iSCSI for a SAN-only design (template create-cluster-san-iscsi), and Microsoft Learn says not to enable iSCSI on the machines before it. The MSiSCSI service, MSDSM auto-claim for iSCSI, target portals and sessions are not made. storage.san.iscsi and nodes[].san.initiator_iqn go to the deployment through the ARM parameters.")
+            }
+            elseif ($iscsiReleaseUnknown) {
+                & $add (New-AzlPlanItem $n 'Mpio' 'iSCSI before the deployment' 'Azure Local release unknown' 'known release' Blocked "A SAN-only iSCSI design: Microsoft Learn says to enable iSCSI by hand before the deployment up to the release before 2610, and not to from 2610 (the deployment does it). The release is not known, so iSCSI is not touched. Set deployment.solution_version (for example 12.2610.1004.50) or give the ZTP handoff.")
+            }
+            elseif ($Spec.San.Type -eq 'iscsi') {
                 $svcOk = [string]$sanState.iscsiSvc -eq 'Running/Automatic'
                 & $add (New-AzlPlanItem $n 'Mpio' 'MSiSCSI service' $sanState.iscsiSvc 'Running/Automatic' $(if ($svcOk) { 'Ok' } else { 'Change' }) '' $(if (-not $svcOk) { @{ id = 'Mpio/iscsi-service'; kind = 'iscsi-service' } }))
                 $claimOk = [string]$sanState.iscsiClaim -eq 'True'

@@ -407,6 +407,65 @@ Describe 'iSCSI: the host-side steps' {
     }
 }
 
+Describe 'iSCSI before the deployment (Microsoft Learn, Install the Azure Local operating system for disaggregated deployments: from 2610 the deployment configures iSCSI)' {
+    BeforeEach {
+        $infra = Get-HybridInfra -Type iscsi -Vendor 'Dell' -Model 'PowerStore 1200T' -Incomplete
+        $infra.storage.san.iscsi = [ordered]@{ targets = @([ordered]@{ iqn = 'iqn.2010-06.com.example:array-a'; portals = @('198.51.100.10'); fabric = 'A' }) }
+        $adapters = $infra.nodes[0].network_adapters
+        $adapters[2].roles = @('iscsi:a'); $adapters[2].ip_assignment = 'static'; $adapters[2].ip_address = '198.51.100.21'; $adapters[2].prefix_length = 26
+        $script:Infra = $infra
+        $script:DellSet = [pscustomobject]@{ UseCustomPathRecoveryTime = 'Enabled'; CustomPathRecoveryTime = '10'; RetryCount = '3'; DiskTimeoutValue = '30' }
+        function Get-IscsiPlan([string]$Architecture, [string]$Version) {
+            $i = $script:Infra
+            $i.scenario.storage_architecture = $Architecture
+            if ($Version) { $i.deployment = [ordered]@{ solution_version = $Version } } else { $i.provisioning.os_version = 'latest' }   # the fixture names a 2610 solution in provisioning.os_version
+            $state = New-SanState -Hw @('DellEMC|PowerStore') -Mpdev @('DellEMC|PowerStore') -IscsiSvc 'Stopped/Manual' -IscsiClaim 'False'
+            $state.san.set = $script:DellSet
+            Get-Plan (Get-SpecOf $i) $state
+        }
+    }
+    It 'a SAN-only design on 2610 or later makes no service, auto-claim, portal or session, and says why (Skipped)' {
+        $plan = Get-IscsiPlan 'san' '12.2610.1004.50'
+        $item = $plan | Where-Object { $_.Item -eq 'iSCSI before the deployment' }
+        $item.Action | Should -Be 'Skipped'
+        $item.Note | Should -Match "don't|not to enable iSCSI"
+        @($plan | Where-Object { $_.Item -in 'MSiSCSI service', 'iSCSI auto-claim' }) | Should -BeNullOrEmpty
+        @($plan | Where-Object { $_.Apply -and $_.Apply.kind -in 'iscsi-service', 'iscsi-claim', 'iscsi-portal', 'iscsi-session' }) | Should -BeNullOrEmpty
+    }
+    It 'a SAN-only design on a later release than 2610 is treated the same' {
+        ((Get-IscsiPlan 'san' '12.2701.1.1') | Where-Object { $_.Item -eq 'iSCSI before the deployment' }).Action | Should -Be 'Skipped'
+    }
+    It 'a SAN-only design on a release before 2610 still does the manual steps (Learn: for earlier versions, follow the steps)' {
+        $plan = Get-IscsiPlan 'san' '12.2606.1004.50'
+        @($plan | Where-Object { $_.Item -eq 'iSCSI before the deployment' }) | Should -BeNullOrEmpty
+        ($plan | Where-Object { $_.Item -eq 'MSiSCSI service' }).Apply.kind | Should -Be 'iscsi-service'
+        @($plan | Where-Object { $_.Apply -and $_.Apply.kind -eq 'iscsi-portal' }).Count | Should -Be 1
+    }
+    It 'a SAN-only design whose release is not known is Blocked and nothing about iSCSI is changed' {
+        $plan = Get-IscsiPlan 'san' ''
+        ($plan | Where-Object { $_.Item -eq 'iSCSI before the deployment' }).Action | Should -Be 'Blocked'
+        @($plan | Where-Object { $_.Apply -and $_.Apply.kind -in 'iscsi-service', 'iscsi-claim', 'iscsi-portal', 'iscsi-session' }) | Should -BeNullOrEmpty
+    }
+    It 'takes the release from the ZTP handoff when the file gives none' {
+        $infra = $script:Infra; $infra.scenario.storage_architecture = 'san'; $infra.provisioning.os_version = 'latest'
+        (Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0]).San.ReleaseTrain | Should -Be 0
+        $spec = Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0] -Handoff ([pscustomobject]@{ VsrVersion = '12.2610.1004.50'; Nodes = @{} })
+        $spec.San.ReleaseTrain | Should -Be 2610
+        $spec.San.SolutionVersion | Should -Be '12.2610.1004.50'
+    }
+    It 'a hybrid design is unchanged on 2610 (Learn attaches the SAN after the deployment and says nothing against it before)' {
+        $plan = Get-IscsiPlan 'hybrid' '12.2610.1004.50'
+        @($plan | Where-Object { $_.Item -eq 'iSCSI before the deployment' }) | Should -BeNullOrEmpty
+        ($plan | Where-Object { $_.Item -eq 'MSiSCSI service' }).Apply.kind | Should -Be 'iscsi-service'
+    }
+    It 'Fibre Channel is unchanged: the MPIO steps still run for a SAN-only design on 2610' {
+        $infra = Get-HybridInfra -Type fibre_channel; $infra.scenario.storage_architecture = 'san'; $infra.deployment = [ordered]@{ solution_version = '12.2610.1004.50' }
+        $plan = Get-Plan (Get-SpecOf $infra) (New-SanState -Hw @())
+        @($plan | Where-Object { $_.Item -eq 'iSCSI before the deployment' }) | Should -BeNullOrEmpty
+        @($plan | Where-Object { $_.Item -like 'MSDSM*' -and $_.Action -eq 'Change' }).Count | Should -BeGreaterThan 0
+    }
+}
+
 Describe 'The apply: plan, approval, apply, verify' {
     BeforeEach {
         $script:Spec = Get-SpecOf (Get-HybridInfra -Incomplete)
