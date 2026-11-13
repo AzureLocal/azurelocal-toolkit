@@ -47,12 +47,8 @@ BeforeDiscovery {
 
     # Reads that stay on a removed key, because schema 5 has no key for the value. One entry per file and key; the test for a left
     # read fails once the file no longer reads the key, so the entry goes when the file is fixed.
-    $vmSwitch = 'compute.azure_local.vm_switch_name: the name of the virtual switch. Schema 5 has no key for it (it is found on the node and written back); the scripts fall back to finding it on the node'
     $rgRole = 'azure_platform.resource_groups.<role>: the resource group of a role (network, management, identity). Schema 5 has landing_zone.resource_groups[] with a free-text purpose, no role key; the script fails with "ResourceGroupName is required" unless the parameter is given'
     $left = @(
-        @{ File = 'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Get-VirtualSwitchName.ps1'; Id = 'compute.azure_local'; Reason = $vmSwitch }
-        @{ File = 'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Get-VirtualSwitchName-Standalone.ps1'; Id = 'compute.azure_local'; Reason = $vmSwitch }
-        @{ File = 'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Invoke-DeploySDN-Orchestrated.ps1'; Id = 'compute.azure_local'; Reason = $vmSwitch }
         @{ File = 'scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-02-vpn-gateway/powershell/New-VpnGateway.ps1'; Id = 'azure_platform'; Reason = $rgRole }
         @{ File = 'scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-03-s2s-vpn-connection/powershell/New-VpnConnection.ps1'; Id = 'azure_platform'; Reason = $rgRole }
         @{ File = 'scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-07-nat-gateway/powershell/New-NatGateway.ps1'; Id = 'azure_platform'; Reason = $rgRole }

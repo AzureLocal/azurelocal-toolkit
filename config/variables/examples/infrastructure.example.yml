@@ -354,6 +354,13 @@ security:
 
 sdn:
   enabled: false
+  # SDN enabled by Azure Arc (schema 5.6.15). Setting enabled to true CANNOT BE UNDONE and interrupts running workloads for a short time.
+  # Enable-ArcSdn.ps1 then runs Add-EceFeature -Name NC. Needs: prefix (8 characters or fewer), dns_records (dynamic or static),
+  # and the two answers below. Run it with -WhatIf first.
+  # prefix: "iic01"
+  # dns_records: dynamic # dynamic | static
+  # acknowledge_maintenance_window: false # true when a maintenance window is arranged
+  # acknowledge_dns_record: false # static DNS only: true when iic01-NC exists and points at the fifth address of the infrastructure pool
 
 operations:
   update_method: portal

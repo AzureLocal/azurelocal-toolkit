@@ -624,15 +624,16 @@ Security settings of the deployment.
 
 ### sdn
 
-SDN enabled by Azure Arc.
+SDN enabled by Azure Arc (Network Controller as a Failover Cluster service; Azure Local 2506 or later, OS build 26100 or later).
 
 | Path | What it is | Type | Required: full / ztp | Default | Example | Where to get the value | Read by |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| `sdn` | SDN enabled by Azure Arc. | object | no / no |  |  | Your SDN design. | ARM deployment, Trailwright |
-| `sdn.enabled` | true when Software Defined Networking is turned on for the instance. | boolean | if section is set / if section is set |  | `false` | Your SDN design. | ARM deployment, Trailwright |
-| `sdn.prefix` | Prefix of the names of the SDN resources. | string | no / no |  |  | Your SDN design. | Trailwright |
-| `sdn.dns_records` | How the SDN DNS records are created: dynamic or static. | one of `dynamic`, `static` | no / no |  |  | Your SDN design. | Trailwright |
-| `sdn.default_access_policy` | true when the default network access policy of the SDN allows traffic that no rule denies. | boolean | no / no |  |  | Your SDN design. | Trailwright |
+| `sdn` | SDN enabled by Azure Arc (Network Controller as a Failover Cluster service; Azure Local 2506 or later, OS build 26100 or later). | object | no / no |  |  | Your SDN design. | ARM deployment, Trailwright |
+| `sdn.enabled` | true to turn SDN enabled by Azure Arc on, which CANNOT BE UNDONE. | boolean | if section is set / if section is set |  | `false` | Your SDN design. | ARM deployment, Trailwright |
+| `sdn.prefix` | The SDN prefix (Add-EceFeature -SDNPrefix). | string | no / no |  |  | Your SDN design. | ARM deployment, Trailwright |
+| `sdn.dns_records` | How the A record <prefix>-NC of the Network Controller REST URL comes about. dynamic: Active Directory integrated dynamic DNS creates it when SDN is... | one of `dynamic`, `static` | no / no |  |  | Your SDN design. | ARM deployment, Trailwright |
+| `sdn.acknowledge_maintenance_window` | true when you accept that enabling SDN interrupts the network of running workloads for a short time and that a maintenance window is arranged on a pr... | boolean | no / no | `false` |  | Your SDN design. | ARM deployment, Trailwright |
+| `sdn.acknowledge_dns_record` | true when the static DNS record <prefix>-NC exists and points at the fifth address of networking.management.infrastructure_pool (Add-EceFeature -Ackn... | boolean | no / no | `false` |  | Your SDN design. | ARM deployment, Trailwright |
 
 ### operations
 

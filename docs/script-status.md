@@ -20,9 +20,9 @@ Task folders: 116.
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
 | PowerShell | 105 | 11 | 0 |
-| Azure CLI | 9 | 58 | 49 |
+| Azure CLI | 9 | 57 | 50 |
 
-Azure CLI applies to 58 tasks, does not apply to 49, and is not decided for 9.
+Azure CLI applies to 58 tasks, does not apply to 50, and is not decided for 8.
 
 ## 01-cicd-infra
 
@@ -130,7 +130,7 @@ Azure CLI applies to 58 tasks, does not apply to 49, and is not decided for 9.
 | `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-arm-template` | built | built | yes |
 | `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal` | built | not built | unclear |
 | `phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion` | built | not built | unclear |
-| `phase-06-post-deployment/task-01-deploy-sdn` | built | not built | unclear |
+| `phase-06-post-deployment/task-01-deploy-sdn` | built | not applicable | no |
 | `phase-06-post-deployment/task-02-cluster-quorum-configuration` | built | not built | yes |
 | `phase-06-post-deployment/task-03-security-groups-applied-to-nodes` | built | not applicable | no |
 | `phase-06-post-deployment/task-04-ssh-connectivity-to-nodes` | built | not built | yes |
@@ -182,6 +182,5 @@ Azure CLI may or may not apply. Decide, then set `AzureCli` to `yes` or `no` in 
 | `04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion` | Verifies the deployment, but the real scripts only check Active Directory and cluster health on premises. |
 | `04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal` | Named for the Azure portal, but the real scripts create local accounts on the nodes. |
 | `04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion` | Verifies the deployment, but the real scripts only check the local identity set-up and cluster health on premises. |
-| `04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn` | SDN is enabled on the cluster; Azure is only used to run commands and read secrets. |
 | `05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging` | Security logging and audit policy can be on the nodes or in Azure; the real script uses no Azure command. |
 | `05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry` | Telemetry can be set on the nodes or in Azure; the real script uses no Azure command. |

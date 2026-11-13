@@ -162,7 +162,6 @@ networking:
     bastion: {}
     firewall: {}
     sdn:
-      sdn_enabled: false
       load_balancer: {}
       gateway: {}
       network_controller: {}

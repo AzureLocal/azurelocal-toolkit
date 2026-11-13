@@ -41,6 +41,8 @@
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
 #   v5.0.40 (2026-11-13):
 #     - SAN volumes (infrastructure schema 5.6.16): New-SanVolume.ps1 (phase 06, task 05) prepares each LUN of storage.san.luns as an NTFS Cluster Shared Volume (GPT, one partition, 64 KB allocation unit, cluster disk, CSV) and finds the disk only by the new key storage.san.luns[].unique_id (the UniqueId of Get-Disk). storage.san.luns[].name (the name of the cluster disk and the CSV), size_gib and lun_id (both cross-checks) are now read. The OS configuration no longer enables iSCSI, auto-claim, portals or sessions before the deployment of a SAN-only design on Azure Local 2610 or later (Microsoft Learn: do not enable iSCSI manually before deployment); it needs deployment.solution_version (or the ZTP handoff) to tell the release. Four keys no tool can act on say Documentation only: storage.san.array.name, array.management_address, fibre_channel.fabrics[].switch and fabrics[].zone_set. Removed: security.backup_key_vault.
+#   v5.0.39 (2026-11-13):
+#     - SDN enabled by Azure Arc (infrastructure schema 5.6.15): sdn.prefix rules, sdn.dns_records read, sdn.acknowledge_maintenance_window and sdn.acknowledge_dns_record; Enable-ArcSdn.ps1 reads them. Removed sdn.default_access_policy and the 4.x networking.azure.sdn keys sdn_enabled, sdn_prefix, sdn_dns_mode, sdn_nc_reserved_ip and sdn_intent_pattern; networking.azure.sdn.nsgs is deprecated.
 #   v5.0.38 (2026-11-13):
 #     - Hardware inventory (infrastructure schema 5.6.14): hardware.inventory (output_directory, file_name_prefix, format, timeout_seconds) for Get-HardwareInventory.ps1, which reads every BMC over the standard Redfish API (read only, no vendor extension) and writes one inventory file per run. The keys hardware.vendor, model, cpu_cores, memory_gib, gpu.enabled, gpu.model, gpu.count_per_node, drives.capacity and drives.cache (media, count, size_tb) and nodes[].bmc.type are now read: the script compares them with what the BMC reports. The parameters InfrastructureFile and LogPath of Get-HardwareInventory.ps1 are registered; the entries of the removed Get-HardwareDiscovery-Standalone.ps1 and Get-DellServerInventory-FromiDRAC.ps1 are removed.
 #   v5.0.37 (2026-11-13):
@@ -208,6 +210,10 @@ _metadata:
       version: "5.0.40"
       change: "SAN volumes (infrastructure schema 5.6.16): New-SanVolume.ps1 (phase 06, task 05) prepares each LUN of storage.san.luns as an NTFS Cluster Shared Volume (GPT, one partition, 64 KB allocation unit, cluster disk, CSV) and finds the disk only by the new key storage.san.luns[].unique_id (the UniqueId of Get-Disk). storage.san.luns[].name (the name of the cluster disk and the CSV), size_gib and lun_id (both cross-checks) are now read. The OS configuration no longer enables iSCSI, auto-claim, portals or sessions before the deployment of a SAN-only design on Azure Local 2610 or later (Microsoft Learn: do not enable iSCSI manually before deployment); it needs deployment.solution_version (or the ZTP handoff) to tell the release. Four keys no tool can act on say Documentation only: storage.san.array.name, array.management_address, fibre_channel.fabrics[].switch and fabrics[].zone_set. Removed: security.backup_key_vault."
       reason: "Owner requirement: a script that turns the SAN LUNs of the design into CSVs without ever picking a disk by size or number, and a registry where every key is either read or marked as documentation. Learn (Connect an external storage array to Azure Local, steps 7 to 9): the UniqueId is the authoritative identifier, SAN volumes are GPT and NTFS with a 64 KB unit, the disks are added to the cluster and then to the CSVs. The iSCSI step of the OS configuration contradicted Learn for a SAN-only design from 2610 (Install the Azure Local operating system for disaggregated deployments: the deployment configures iSCSI, do not enable it before). security.backup_key_vault named a Key Vault for BitLocker recovery keys that no tool reads; the deployment keeps them in its own vault and the toolkit names no vault."
+    - date: "2026-11-13"
+      version: "5.0.39"
+      change: "SDN enabled by Azure Arc (infrastructure schema 5.6.15): sdn.prefix gets Microsoft Learn's rules (1 to 8 characters, letters, digits and single hyphens), sdn.dns_records (dynamic or static) is now read, and the new sdn.acknowledge_maintenance_window and sdn.acknowledge_dns_record are the answers to the two confirmations of Add-EceFeature. Enable-ArcSdn.ps1 (phase 06, task 01) reads them. Removed sdn.default_access_policy (Learn sets the default network access policy per VM network interface, not per instance) and the 4.x keys networking.azure.sdn.sdn_enabled, sdn_prefix, sdn_dns_mode, sdn_nc_reserved_ip and sdn_intent_pattern. networking.azure.sdn.nsgs is marked deprecated (replaced by networking.network_security_groups[]). The parameters of Enable-ArcSdn.ps1 are registered. Six scripts, one standalone and the Azure CLI placeholder of the old task-01 are removed."
+      reason: "Owner directive: SDN as Microsoft Learn documents it today, driven only by the infrastructure file. Learn recommends SDN enabled by Azure Arc for a new instance (Network Controller as a Failover Cluster service; logical networks, network interfaces and network security groups) and says not to mix it with on-premises tools; SDN Express, Windows Admin Center, virtual networks, the software load balancer and gateways are therefore not built. The old scripts read the unregistered 4.x names, passed both acknowledgements as true without asking, fixed the target node and the intent pattern, and (Enable-SDN-Standalone.ps1, Set-SDNDns-Standalone.ps1) carried values in the code."
     - date: "2026-11-13"
       version: "5.0.38"
       change: "Hardware inventory (infrastructure schema 5.6.14): hardware.inventory (output_directory, file_name_prefix, format, timeout_seconds) for Get-HardwareInventory.ps1, which reads every BMC over the standard Redfish API (read only, no vendor extension) and writes one inventory file per run. The keys hardware.vendor, model, cpu_cores, memory_gib, gpu.enabled, gpu.model, gpu.count_per_node, drives.capacity and drives.cache (media, count, size_tb) and nodes[].bmc.type are now read: the script compares them with what the BMC reports. The parameters InfrastructureFile and LogPath of Get-HardwareInventory.ps1 are registered; the entries of the removed Get-HardwareDiscovery-Standalone.ps1 and Get-DellServerInventory-FromiDRAC.ps1 are removed."
@@ -4696,42 +4702,9 @@ networking:
     # Requires Azure Local OS build 26100.x or later.
     # Reference: https://learn.microsoft.com/en-us/azure/azure-local/deploy/enable-sdn-integration
     sdn:
-      sdn_enabled:
-        description: "Whether SDN is enabled for this Azure Local cluster. IRREVERSIBLE — once true and applied, SDN cannot be disabled."
-        type: boolean
-        required: false
-        default: false
-        example: false
-
-      sdn_prefix:
-        description: "SDN prefix used to construct the Network Controller REST URL: https://<sdn_prefix>-NC.<domain>/. Must be 8 or fewer characters; alphanumeric and hyphens only; no consecutive hyphens; must not end with a hyphen. Must be unique per domain."
-        type: string
-        required: false
-        pattern: "^[a-zA-Z0-9]([a-zA-Z0-9-]{0,6}[a-zA-Z0-9])?$"
-        maxLength: 8
-        example: "iic01"
-
-      sdn_dns_mode:
-        description: "DNS environment mode for Network Controller REST URL registration. 'dynamic' = Active Directory–integrated DNS auto-creates the A record. 'static' = manually pre-create the A record for <sdn_prefix>-NC before enabling SDN."
-        type: string
-        required: false
-        enum: ["dynamic", "static"]
-        default: "dynamic"
-        example: "dynamic"
-
-      sdn_nc_reserved_ip:
-        description: "Reserved IP address for the Network Controller DNS A record. Must be the 5th IP in the management IP address range configured at cluster deployment. Required when sdn_dns_mode is 'static'."
-        type: string
-        required: false
-        format: ipv4
-        example: "192.0.2.14"
-
-      sdn_intent_pattern:
-        description: "Host networking intent pattern on this cluster. 1 = group all traffic on a single intent (switched storage required); 2 = management+compute in one intent with separate storage intent; 3 = fully disaggregated (management, compute, storage as separate intents). Three-intent pattern not supported on 2-node or 3-node switchless deployments."
-        type: integer
-        required: false
-        enum: [1, 2, 3]
-        example: 2
+      # The 4.x keys sdn_enabled, sdn_prefix, sdn_dns_mode, sdn_nc_reserved_ip and sdn_intent_pattern are gone (5.0.39): the sdn section of
+      # infrastructure.yml (enabled, prefix, dns_records, acknowledge_maintenance_window, acknowledge_dns_record) replaces them.
+      # The keys below are read only by the phase 05 operational foundations scripts (Set-SdnIntegration.ps1).
 
       sdn_network_controller:
         description: "Network Controller FQDN or REST endpoint — used post-deployment to reference the NC REST API. Derived value: <sdn_prefix>-NC.<domain>. Informational only; not a deployment input."
@@ -4767,7 +4740,9 @@ networking:
 
       nsgs:
         type: array
-        description: "SDN Network Security Groups configuration"
+        description: "The 4.x form of the network security groups. Deprecated: no tool reads this path; New-NetworkSecurityGroup.ps1 reads networking.network_security_groups[]."
+        deprecated: true
+        replaced_by: "networking.network_security_groups[]"
         items:
           type: object
           properties:
@@ -16611,30 +16586,49 @@ storage:
                 used_by: [deployment]
 
 sdn:
-  description: "SDN enabled by Azure Arc."
+  description: "SDN enabled by Azure Arc (Network Controller as a Failover Cluster service; Azure Local 2506 or later, OS build 26100 or later). It supports logical networks, network interfaces of Azure Local VMs and network security groups, and nothing else: no virtual networks, no software load balancer, no gateways. The older SDN managed by on-premises tools (SDN Express, Windows Admin Center, Network Controller VMs) is not built. https://learn.microsoft.com/azure/azure-local/deploy/enable-sdn-integration"
   type: object
   required: false
   additionalProperties: false
   properties:
     enabled:
-      description: "true when Software Defined Networking is turned on for the instance. New-NetworkSecurityGroup.ps1 (phase 06, task 07) and New-LogicalNetwork.ps1 (task 08, for a logical network with nsg_name) read it: network security groups need SDN enabled by Azure Arc, and the scripts do not turn it on."
+      description: "true to turn SDN enabled by Azure Arc on, which CANNOT BE UNDONE. Enable-ArcSdn.ps1 (phase 06, task 01) runs Add-EceFeature -Name NC on a machine of the instance when it is true. Microsoft Learn says that once SDN is enabled you cannot roll back or disable it, and false does not turn it off. Never set it where Network Controller was deployed with on-premises tools. Enabling interrupts the network of running workloads for a short time. New-NetworkSecurityGroup.ps1 (task 07) and New-LogicalNetwork.ps1 (task 08, for a logical network with nsg_name) also read it: network security groups need SDN enabled by Azure Arc."
       type: boolean
       required: true
       example: false
       used_by: [deployment]
     prefix:
-      description: "Prefix of the names of the SDN resources."
+      description: "The SDN prefix (Add-EceFeature -SDNPrefix). It names the Network Controller REST URL, https://<prefix>-NC.<domain>/, and tells the controllers of different instances apart. Microsoft Learn: not empty, eight characters or fewer, letters, digits and hyphens only, no two hyphens in a row, no hyphen at the end. The toolkit also refuses a hyphen at the start, which is not a valid DNS name. Required when sdn.enabled is true: Enable-ArcSdn.ps1 stops with exit 2 without it."
       type: string
       required: false
+      pattern: "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$"
+      minLength: 1
+      maxLength: 8
+      example: "iic01"
+      used_by: [deployment]
     dns_records:
       type: string
-      description: "How the SDN DNS records are created: dynamic or static. Not read by the tools yet: a documented placeholder."
+      description: "How the A record <prefix>-NC of the Network Controller REST URL comes about. dynamic: Active Directory integrated dynamic DNS creates it when SDN is enabled and you do nothing. static: you create it first; it must resolve to the fifth address of networking.management.infrastructure_pool (Microsoft Learn: the fifth IP address of the range you gave at deployment) and to nothing else. Required when sdn.enabled is true. Enable-ArcSdn.ps1 resolves the name on the machine before it enables SDN and stops when the answer is wrong."
       required: false
       enum: ["dynamic", "static"]
-    default_access_policy:
-      description: "true when the default network access policy of the SDN allows traffic that no rule denies. Not read by the tools yet: a documented placeholder."
+      example: "dynamic"
+      used_by: [deployment]
+    acknowledge_maintenance_window:
+      description: "true when you accept that enabling SDN interrupts the network of running workloads for a short time and that a maintenance window is arranged on a production instance (Add-EceFeature -AcknowledgeMaintenanceWindow). Enable-ArcSdn.ps1 asks nothing at run time, so this is the answer: it enables SDN only when this is true."
       type: boolean
       required: false
+      default: false
+      since: "5.6.15"
+      example: false
+      used_by: [deployment]
+    acknowledge_dns_record:
+      description: "true when the static DNS record <prefix>-NC exists and points at the fifth address of networking.management.infrastructure_pool (Add-EceFeature -AcknowledgeDNSRecordCreation). Read only when sdn.dns_records is static: with dynamic DNS Microsoft Learn asks for no acknowledgement."
+      type: boolean
+      required: false
+      default: false
+      since: "5.6.15"
+      example: false
+      used_by: [deployment]
 
 provisioning:
   description: "How the OS gets onto the machines (scenario.os_install), and the OS version."
@@ -17981,7 +17975,7 @@ file_metadata:
   additionalProperties: false
   properties:
     schema_version:
-      description: "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. 5.6.11 adds what the logical network, network security group and VM image scripts read: networking.network_security_groups (name and rules with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description), networking.logical_networks[].vm_switch_name and storage.vm_images (name, os_type, publisher, offer, sku, version, storage_path). 5.6.12 adds operations.monitoring.retention_days and removes operations.notifications.teams_webhook and operations.monitoring.health_alerts. 5.6.13 adds the secrets section (provider, file directory, command) and lets a secret reference use the env://, file:// and command:// forms besides keyvault://. 5.6.14 adds hardware.inventory (output_directory, file_name_prefix, format, timeout_seconds), which Get-HardwareInventory.ps1 reads. 5.6.16 adds storage.san.luns[].unique_id (how New-SanVolume.ps1 finds the disk of a LUN) and removes security.backup_key_vault. The current version is 5.6.16."
+      description: "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. 5.6.11 adds what the logical network, network security group and VM image scripts read: networking.network_security_groups (name and rules with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description), networking.logical_networks[].vm_switch_name and storage.vm_images (name, os_type, publisher, offer, sku, version, storage_path). 5.6.12 adds operations.monitoring.retention_days and removes operations.notifications.teams_webhook and operations.monitoring.health_alerts. 5.6.13 adds the secrets section (provider, file directory, command) and lets a secret reference use the env://, file:// and command:// forms besides keyvault://. 5.6.14 adds hardware.inventory (output_directory, file_name_prefix, format, timeout_seconds), which Get-HardwareInventory.ps1 reads. 5.6.15 adds what Enable-ArcSdn.ps1 reads: sdn.acknowledge_maintenance_window and sdn.acknowledge_dns_record, the rules of sdn.prefix, and sdn.dns_records (read now); it removes sdn.default_access_policy. 5.6.16 adds storage.san.luns[].unique_id (how New-SanVolume.ps1 finds the disk of a LUN) and removes security.backup_key_vault. The current version is 5.6.16."
       type: string
       required: true
       pattern: "^5\\.[0-9]+\\.[0-9]+$"
@@ -19481,6 +19475,14 @@ tools:
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault/powershell/Deploy-KeyVaults.ps1","description":"Deploy-KeyVaults.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.location, tags, scenario.environment_class, key_vaults[] (name, subscription_id, resource_group, purpose) and the keyvault:// references anywhere in the file (names only) are read; the file is not validated as a whole."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault/powershell/Deploy-KeyVaults.ps1","description":"Deploy-KeyVaults.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_04_cluster_deployment_phase_06_post_deployment_task_01_deploy_sdn_powershell_Enable_ArcSdn_ps1:
+              type: object
+              area: "scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Enable-ArcSdn.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Enable-ArcSdn.ps1","description":"Enable-ArcSdn.ps1. The master infrastructure.yml (schema 5). Only sdn.enabled, sdn.prefix, sdn.dns_records, sdn.acknowledge_maintenance_window, sdn.acknowledge_dns_record, networking.management.infrastructure_pool, networking.intents, scenario.identity, scenario.storage_architecture, scenario.storage_connectivity, identity.active_directory.domain_fqdn, identity.local_identity.dns_zone, identity.local_admin, nodes and the secrets section are read; the file is not validated as a whole."}
+                ComputerName: {"name":"ComputerName","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Enable-ArcSdn.ps1","description":"Enable-ArcSdn.ps1. Optional: the machine to connect to instead of the first machine of nodes[]."}
+                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Enable-ArcSdn.ps1","description":"Enable-ArcSdn.ps1. Optional: the account for the remoting session. Without it the script uses the local administrator of identity.local_admin (the password is a secret reference), or the account that runs the script."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Enable-ArcSdn.ps1","description":"Enable-ArcSdn.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
             scripts_deploy_04_cluster_deployment_phase_06_post_deployment_task_05_storage_configuration_powershell_New_StoragePath_ps1:
               type: object
               area: "scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration/powershell/New-StoragePath.ps1"

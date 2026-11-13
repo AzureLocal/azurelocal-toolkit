@@ -1298,18 +1298,23 @@ security:
     # used by: deployment
     eu_location: false
 
-# SDN enabled by Azure Arc.
+# SDN enabled by Azure Arc (Network Controller as a Failover Cluster service; Azure Local 2506 or later, OS build 26100 or later).
 sdn:
-  # true when Software Defined Networking is turned on for the instance.
+  # true to turn SDN enabled by Azure Arc on, which CANNOT BE UNDONE.
   # required; used by: deployment
   enabled: false
-  # Prefix of the names of the SDN resources.
-  prefix: ""
-  # How the SDN DNS records are created: dynamic or static.
-  # one of: dynamic | static
+  # The SDN prefix (Add-EceFeature -SDNPrefix).
+  # used by: deployment
+  prefix: "iic01"
+  # How the A record <prefix>-NC of the Network Controller REST URL comes about. dynamic: Active Directory integrated dynamic DNS creates it wh...
+  # one of: dynamic | static; used by: deployment
   dns_records: "dynamic"
-  # true when the default network access policy of the SDN allows traffic that no rule denies.
-  default_access_policy: false
+  # true when you accept that enabling SDN interrupts the network of running workloads for a short time and that a maintenance window is arrang...
+  # default: false; used by: deployment
+  acknowledge_maintenance_window: false
+  # true when the static DNS record <prefix>-NC exists and points at the fifth address of networking.management.infrastructure_pool (Add-EceFea...
+  # default: false; used by: deployment
+  acknowledge_dns_record: false
 
 # Day-2 choices: updates, backup, disaster recovery, notifications, licensing and monitoring.
 operations:
