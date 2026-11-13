@@ -1,6 +1,6 @@
 # infrastructure.yml: the one environment file
 
-> **Registry first.** The master of every variable is [`config/variables/schema/master-registry.yaml`](../schema/master-registry.yaml). The schema, the master and purpose templates and the variables reference below are **generated** from it by `./config/variables/scripts/New-InfrastructureArtifacts.ps1`; change the registry, not them. A test regenerates them and fails when one is stale. See [config/variables/README.md](../README.md).
+> **Registry first.** The master of every variable is [`config/variables/schema/master-registry.yaml`](../schema/master-registry.yaml). The schema, the master file, the one template per tool and the variables reference below are **generated** from it by `./config/variables/scripts/New-InfrastructureArtifacts.ps1`; change the registry, not them. A test regenerates them and fails when one is stale. See [config/variables/README.md](../README.md).
 
 `infrastructure.yml` describes one Azure Local instance: the design choices, the machines, the networks, identity, the Azure targets, how the OS gets onto the machines, and the cluster deployment. Every Azure Local tool reads the same file:
 
@@ -21,18 +21,33 @@ All under `config/variables`. Generated files say so in their first lines; do no
 
 | File | What it is |
 | --- | --- |
-| [`schema/master-registry.yaml`](../schema/master-registry.yaml) | The master. Every variable, with type, default, allowed values, since version, and which purposes read it. |
+| [`schema/master-registry.yaml`](../schema/master-registry.yaml) | The master. Every variable, with type, default, allowed values, since version, and which tools read it. |
 | [`schema/infrastructure.schema.json`](../schema/infrastructure.schema.json) | **Generated.** The contract: JSON Schema draft 2020-12. Its `$id` is `https://azurelocal.cloud/schemas/infrastructure/5/infrastructure.schema.json`. |
-| [`schema/purposes/`](../schema/purposes) | **Generated.** The part of the schema one tool reads (`ztp`, `os-configuration`, `deployment`, `cicd-infra`, `monitoring`, `discovery`). |
-| [`templates/infrastructure.master.yml`](../templates/infrastructure.master.yml) | **Generated.** Every variable, with comments and the allowed values. [`templates/scenarios/`](../templates/scenarios) has it for one scenario choice; [`templates/purposes/`](../templates/purposes) only the variables one tool reads. |
+| [`schema/tools/`](../schema/tools) | **Generated.** One schema per tool: the part of the schema that tool reads (`ztp`, `os-configuration`, `deployment`, `cicd-infra`, `monitoring`, `discovery`, `trailwright`, `ranger`). |
+| [`templates/infrastructure.master.yml`](../templates/infrastructure.master.yml) | **Generated.** Every variable, with comments and the allowed values. [`templates/scenarios/`](../templates/scenarios) has it for one scenario choice; [`templates/tools/`](../templates/tools) has one template per tool, with only the variables that tool reads. |
 | [`examples/infrastructure.example.yml`](../examples/infrastructure.example.yml) | A complete worked file with every section and placeholder values: Active Directory, Storage Spaces Direct, switched, simplified provisioning, ARM. Start here for realistic values. |
 | [`examples/scenarios/`](../examples/scenarios) | One file per scenario: local identity and switchless with Arc gateway, disaggregated Fibre Channel with a proxy (the full SAN details), disaggregated iSCSI (`disaggregated-iscsi.yml`), rack aware with ZTP, disconnected operations, a single machine on a DHCP reservation, management on the onboard LOMs with ZTP (`lom-management-ztp.yml`, every port listed), and no DHCP anywhere with switchless storage (`no-dhcp-switchless.yml`). |
 | [`examples/infrastructure.ztp.example.yml`](../examples/infrastructure.ztp.example.yml) | The ZTP-only worked file, `_metadata.scope: ztp`: only what azurelocal-ztp reads, for someone who uses it on its own. See [Which template](#which-template). |
 | [`VARIABLES.md`](VARIABLES.md) | **Generated.** The variables reference: every key with its type, required (full and ztp scope), default, example, where to get the value and which tool reads it. |
 | [`MIGRATION.md`](MIGRATION.md) | Where every key from the earlier files went: the environment file ZTP read, the toolkit's `variables.yml` (registry 4.0.0), and Trailwright's export. |
 
-To give a tool its input from your `infrastructure.yml`: `./config/variables/scripts/New-InfrastructureArtifacts.ps1 -Cut ztp -From ./infrastructure.yml`. The tool validates the cut file against `schema/purposes/ztp.schema.json`.
-## Which template
+To give a tool its input from your `infrastructure.yml`: `./config/variables/scripts/New-InfrastructureArtifacts.ps1 -Cut ztp -From ./infrastructure.yml`. The tool validates the cut file against `schema/tools/ztp.schema.json`.
+## One master file, one template per tool
+
+The registry is the only master. From it the generator writes **one master file** (`templates/infrastructure.master.yml`, every key) and **one template per tool** (`templates/tools/<tool>.yml`, only the keys that tool reads) with a matching JSON schema (`schema/tools/<tool>.schema.json`). Someone who fills in a file for one tool sees only that tool's keys. The tools are listed in the registry section `_tool_catalog`; the keys of a tool are the ones that name it in `used_by`. The file name is the tool id with hyphens for underscores.
+
+| Tool id | Tool | Template | Keys |
+| --- | --- | --- | ---: |
+| `ztp` | [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | [`ztp.yml`](../templates/tools/ztp.yml) | 119 |
+| `os_configuration` | OS configuration (toolkit) | [`os-configuration.yml`](../templates/tools/os-configuration.yml) | 168 |
+| `deployment` | Pre-cluster verification and ARM deployment (toolkit) | [`deployment.yml`](../templates/tools/deployment.yml) | 223 |
+| `cicd_infra` | CI/CD infrastructure (toolkit) | [`cicd-infra.yml`](../templates/tools/cicd-infra.yml) | 117 |
+| `monitoring` | [azurelocal-sonar](https://github.com/AzureLocal/azurelocal-sonar) | [`monitoring.yml`](../templates/tools/monitoring.yml) | 19 |
+| `discovery` | Hardware discovery (toolkit) | [`discovery.yml`](../templates/tools/discovery.yml) | 44 |
+| `trailwright` | [azurelocal-trailwright](https://github.com/AzureLocal/azurelocal-trailwright), which **writes** the file | [`trailwright.yml`](../templates/tools/trailwright.yml) | 195 |
+| `ranger` | [azurelocal-ranger](https://github.com/AzureLocal/azurelocal-ranger), design comparison (`-DesignPath`) | [`ranger.yml`](../templates/tools/ranger.yml) | 10 |
+
+The key counts are the keys below the file's own `_metadata` section, which every template keeps. [azurelocal-loadtools](https://github.com/AzureLocal/azurelocal-loadtools), [azurelocal-surveyor](https://github.com/AzureLocal/azurelocal-surveyor) and [azurelocal-draftsman](https://github.com/AzureLocal/azurelocal-draftsman) read no key of `infrastructure.yml`, so they have no template; their entries in `_tool_catalog` give the evidence. `ztp` is azurelocal-ztp and `monitoring` is azurelocal-sonar: the toolkit has no stage of its own for either. A test (`tests/variables/ToolTemplates.Tests.ps1`) fails when a template holds a key whose `used_by` does not name its tool, misses one that does, or when `used_by` names something that is not in `_tool_catalog`.
 
 Two templates come from the same schema. Pick by what runs after the OS is installed.
 

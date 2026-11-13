@@ -26,7 +26,6 @@ Import-Module (Join-Path $PSScriptRoot 'VariableRegistry.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'VariableMapScanner.psm1') -Force
 Import-Module (Join-Path $PSScriptRoot 'VariableMapSources.psm1') -Force
 
-$script:Purposes = 'ztp', 'os_configuration', 'deployment', 'monitoring', 'discovery', 'cicd_infra'
 
 # Tool ids, the phase each belongs to, in flow order. A tool id is what the scan reports as the reader.
 $script:PhaseOrder = [ordered]@{
@@ -273,7 +272,7 @@ function Get-VariableMapData {
         $sensitive = (($node.Contains('sensitive') -and $node['sensitive'] -eq $true) -or $r.Format -eq 'kv_ref')
         $required = switch -Regex ("$($r.Required)") { '^(True|true|Y|y|yes)$' { 'yes' } '^(False|false|N|n|no)$' { 'no' } default { '' } }
         $usedBy = $r.UsedBy
-        if (-not $usedBy -and $path.EndsWith('.*')) { $usedBy = $usedByPath[$path.Substring(0, $path.Length - 2)] }   # tags.* is carried by the purposes that carry tags
+        if (-not $usedBy -and $path.EndsWith('.*')) { $usedBy = $usedByPath[$path.Substring(0, $path.Length - 2)] }   # tags.* is carried by the tools that carry tags
         $purposes = @(if ($usedBy) { @($usedBy -split '\|') } else { @() })
 
         # readers
@@ -448,7 +447,7 @@ function ConvertTo-VariableMapMarkdown {
     & $line '| Column | Meaning |'
     & $line '| --- | --- |'
     & $line '| Provided by | Who gives the key its value. **operator by hand**: you write it. **Trailwright questionnaire**: a question in Trailwright''s catalog writes it. **Dell/Redfish discovery**: `ConvertTo-AzlDiscoveryProposal` writes it into the proposal (you review it; `Get-AzlDiscoveryChange` can apply some on request). **Key Vault reference**: the file holds a secret reference (`keyvault://<vault>/<secret>`, or the `env://`, `file://` or `command://` form), never the secret. **default**: the registry has a default for when the key is left out. Values that no person gives (the ZTP handoff, the OS configuration report) are in the ARM table below, because they feed the ARM parameters, not the file. |'
-    & $line '| Purposes | The purpose files that carry the key (registry `used_by`): `ztp`, `os_configuration`, `deployment`, `monitoring` (Sonar), `discovery`, `cicd_infra`. Each is a generated subset of the master file ([templates/purposes](../templates/purposes)). |'
+    & $line '| Tools | The tools that read the key (registry `used_by`; Trailwright writes it): the ids in `_tool_catalog` of the registry, for example `ztp` (azurelocal-ztp), `monitoring` (azurelocal-sonar), `os_configuration`, `deployment`, `cicd_infra`, `discovery`, `trailwright`, `ranger`. Each tool with keys has a generated template, a subset of the master file ([templates/tools](../templates/tools)). |'
     & $line '| Read by | The tools whose code reads the key by name (`chain` or `literal` in the scan, see Limits). In parentheses, a key that is read only as part of a section: `(part: tool)`. |'
     & $line '| Becomes | What the key turns into downstream: **ARM** template parameter, **OS** configuration step, **Sonar** configuration key, **Gate** pre-cluster verification check id. A leading `~` means the parameter or step is built from the whole parent section or list that holds the key. |'
     & $line
@@ -456,7 +455,7 @@ function ConvertTo-VariableMapMarkdown {
     # ---- by phase
     & $line '## By phase: Design, Discovery, ZTP, OS configuration, Pre-cluster verification, ARM Validate/Deploy, Sonar'
     & $line
-    & $line 'The master `infrastructure.yml` is the one file every phase reads. Each phase reads its own part (its purpose file); nobody edits a purpose file by hand.'
+    & $line 'The master `infrastructure.yml` is the one file every phase reads. Each phase reads its own part (its tool template); nobody edits a tool template by hand.'
     & $line
     $phaseOfTool = $script:ToolPhase
     $readersByPhase = @{}   # phase -> set of paths read
@@ -471,7 +470,7 @@ function ConvertTo-VariableMapMarkdown {
     $discoveryPaths = @($infraRows | Where-Object { $_.provided_by -like '*Redfish discovery*' } | ForEach-Object path)
     $ownByTool = @{}
     foreach ($tr in $toolRows) { if (-not $ownByTool.ContainsKey($tr.owner_tool)) { $ownByTool[$tr.owner_tool] = 0 }; $ownByTool[$tr.owner_tool]++ }
-    & $line '| Phase | Tool | Keys of infrastructure.yml it reads or fills | Sections | Purpose file | Hands on |'
+    & $line '| Phase | Tool | Keys of infrastructure.yml it reads or fills | Sections | Tool id | Hands on |'
     & $line '| --- | --- | ---: | --- | --- | --- |'
     $purposeOfPhase = @{ 'Design' = 'any (it writes the whole file)'; 'Discovery' = 'discovery'; 'ZTP' = 'ztp'; 'OS configuration' = 'os_configuration'; 'Pre-cluster verification' = 'deployment'; 'ARM Validate/Deploy' = 'deployment'; 'Sonar' = 'monitoring'; 'Outside the flow' = 'cicd_infra' }
     $handsOn = @{
@@ -649,7 +648,7 @@ function ConvertTo-VariableMapMarkdown {
         & $line "### $($st[1]) ($($set.Count))"
         & $line
         if ($set.Count) {
-            & $line '| Variable | Purposes | Provided by | Note |'
+            & $line '| Variable | Tools | Provided by | Note |'
             & $line '| --- | --- | --- | --- |'
             foreach ($row in $set) {
                 $note = if ($st[0] -eq 'read-as-part') { "read as part by $($row.read_as_part_by)" } else { $row.note }
@@ -701,7 +700,7 @@ function ConvertTo-VariableMapMarkdown {
     foreach ($g in $bySection) {
         & $line "### $($g.Name)"
         & $line
-        & $line '| Path | Type, default, allowed | Provided by | Purposes | Read by | Becomes | Status |'
+        & $line '| Path | Type, default, allowed | Provided by | Tools | Read by | Becomes | Status |'
         & $line '| --- | --- | --- | --- | --- | --- | --- |'
         foreach ($row in $g.Group) {
             $parts = [System.Collections.Generic.List[string]]::new()

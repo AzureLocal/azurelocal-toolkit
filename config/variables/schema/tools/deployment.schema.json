@@ -3,7 +3,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://azurelocal.cloud/schemas/infrastructure/5/infrastructure.deployment.schema.json",
   "title": "Azure Local infrastructure.yml (deployment)",
-  "description": "The part of infrastructure.yml that the purpose 'deployment' reads. Generated from master-registry.yaml; every key is also in the full schema.",
+  "description": "The part of infrastructure.yml that the tool 'deployment' reads. Generated from master-registry.yaml; every key is also in the full schema.",
   "type": "object",
   "additionalProperties": false,
   "properties": {

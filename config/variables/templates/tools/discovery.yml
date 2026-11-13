@@ -1,61 +1,63 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that 'discovery' reads (a strict subset of the master file). Schema 5.6.16.
+# Template for the part of infrastructure.yml that Hardware discovery ('discovery') reads (a strict subset of the master file). Schema 5.6.16.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
 _metadata:
   # The schema version this file follows.
-  # required; used by: ztp, os_configuration, deployment, monitoring
+  # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
   schema_version: "5.6.0"
   # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
-  # one of: full | ztp; default: "full"; used by: ztp
+  # one of: full | ztp; default: "full"; used by: ztp, trailwright
   scope: "full"
   # Your own version of this file.
+  # used by: trailwright
   file_version: "1.0.0"
   # Date of the last change, YYYY-MM-DD.
   last_updated: "2026-11-06"
   # The tool that wrote the file, for example azurelocal-trailwright 1.1.0.
+  # used by: trailwright
   generated_by: ""
   # Free text about this file for the people who keep it.
   notes: ""
 
 # (since 5.6.13) 
-# used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra
+# used by: ztp, os_configuration, deployment, discovery, cicd_infra
 secrets:
   # (since 5.6.13) 
-  # one of: keyvault | env | file | command; default: "keyvault"; used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+  # one of: keyvault | env | file | command; default: "keyvault"; used by: os_configuration, deployment, discovery, cicd_infra
   provider: "keyvault"
   # (since 5.6.13) 
-  # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+  # used by: os_configuration, deployment, discovery, cicd_infra
   file:
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+    # used by: os_configuration, deployment, discovery, cicd_infra
     directory: "C:\\ProgramData\\iic-secrets"
   # (since 5.6.13) 
-  # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+  # used by: os_configuration, deployment, discovery, cicd_infra
   command:
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+    # used by: os_configuration, deployment, discovery, cicd_infra
     executable: "iic-secret-tool"
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+    # used by: os_configuration, deployment, discovery, cicd_infra
     arguments: ["get", "{name}"]
     # (since 5.6.13) 
-    # default: 30; used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+    # default: 30; used by: os_configuration, deployment, discovery, cicd_infra
     timeout_seconds: 30
 
 # The machines, one entry each.
 # used by: deployment, monitoring
 nodes:
   # Host name: up to 15 characters.
-  # required; used by: ztp, os_configuration, deployment, monitoring, discovery
+  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, trailwright
   - name: "iic-azl-n01"
     # The machine's management port and address (schema 5.0 and 5.1).
     # used by: ztp, os_configuration
     management:
       # MAC of the management port.
-      # when scenario.os_install is simplified; used by: ztp, os_configuration, discovery
+      # when scenario.os_install is simplified; used by: ztp, os_configuration, discovery, trailwright
       mac_address: "00:00:5E:00:53:11"
     # Every physical network port of the machine (schema 5.2): name, MAC, roles and how each gets its host address.
     # used by: ztp, os_configuration
@@ -97,13 +99,13 @@ nodes:
         # required; one of: static | dhcp_reservation | dhcp | preconfigured | none; used by: ztp, os_configuration, monitoring, discovery
         ip_assignment: "static"
     # Serial number (Dell service tag).
-    # when scenario.os_install is simplified; used by: ztp, discovery
+    # when scenario.os_install is simplified; used by: ztp, discovery, trailwright
     serial_number: "SERIAL01"
     # The baseboard management controller (BMC) of the machine: address, type and login.
     # when scenario.os_install is simplified
     bmc:
       # IPv4 address of the BMC (iDRAC, iLO, XCC).
-      # when scenario.os_install is simplified; used by: ztp, discovery
+      # when scenario.os_install is simplified; used by: ztp, discovery, trailwright
       ip_address: "198.51.100.11"
       # Kind of BMC: idrac (Dell), ilo (HPE), xcc (Lenovo) or other.
       # one of: idrac | ilo | xcc | other; used by: ztp, discovery
@@ -118,16 +120,16 @@ nodes:
 # What every machine is.
 hardware:
   # OEM, for example Dell, HPE, Lenovo or DataON.
-  # required; used by: ztp, os_configuration, deployment, discovery
+  # required; used by: ztp, os_configuration, deployment, discovery, trailwright
   vendor: "Dell"
   # Model, for example AX-760.
-  # required; used by: ztp, os_configuration, discovery
+  # required; used by: ztp, os_configuration, discovery, trailwright
   model: "AX-760"
   # Physical cores per machine.
-  # used by: discovery
+  # used by: discovery, trailwright
   cpu_cores: 64
   # Memory per machine, GiB.
-  # used by: discovery
+  # used by: discovery, trailwright
   memory_gib: 1024
   # GPUs fitted in every machine.
   gpu:
@@ -175,22 +177,22 @@ hardware:
     # The capacity drives in each machine (Storage Spaces Direct).
     capacity:
       # Media type of the capacity drives: nvme, ssd or hdd.
-      # one of: nvme | ssd | hdd; used by: discovery
+      # one of: nvme | ssd | hdd; used by: discovery, trailwright
       media: "nvme"
       # Number of capacity drives in each machine.
-      # used by: discovery
+      # used by: discovery, trailwright
       count: 8
       # Size of one capacity drive in TB (decimal terabytes).
-      # used by: discovery
+      # used by: discovery, trailwright
       size_tb: 3.84
     # The cache drives in each machine (Storage Spaces Direct).
     cache:
       # Media type of the cache drives: nvme, ssd or hdd.
-      # one of: nvme | ssd | hdd; used by: discovery
+      # one of: nvme | ssd | hdd; used by: discovery, trailwright
       media: "nvme"
       # Number of cache drives in each machine.
-      # used by: discovery
+      # used by: discovery, trailwright
       count: 0
       # Size of one cache drive in TB (decimal terabytes).
-      # used by: discovery
+      # used by: discovery, trailwright
       size_tb: 0

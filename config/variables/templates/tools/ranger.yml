@@ -1,0 +1,71 @@
+# GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
+# Change the registry, then run the generator. A test regenerates this file and fails when it differs.
+# Template for the part of infrastructure.yml that azurelocal-ranger ('ranger') reads (a strict subset of the master file). Schema 5.6.16.
+# Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
+
+# About this file.
+_metadata:
+  # The schema version this file follows.
+  # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
+  schema_version: "5.6.0"
+  # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
+  # one of: full | ztp; default: "full"; used by: ztp, trailwright
+  scope: "full"
+  # Your own version of this file.
+  # used by: trailwright
+  file_version: "1.0.0"
+  # Date of the last change, YYYY-MM-DD.
+  last_updated: "2026-11-06"
+  # The tool that wrote the file, for example azurelocal-trailwright 1.1.0.
+  # used by: trailwright
+  generated_by: ""
+  # Free text about this file for the people who keep it.
+  notes: ""
+
+# The on-premises networks.
+networking:
+  # Network ATC intents.
+  # used by: os_configuration, deployment
+  intents:
+    # Name of the Network ATC intent, for example management_compute or storage.
+    # required; used by: os_configuration, deployment, trailwright, ranger
+    - name: "management"
+      # Traffic types the intent carries: management, compute and storage (ARM trafficType).
+      # required; used by: os_configuration, deployment, trailwright, ranger
+      traffic: ["management"]
+      # Adapters of the intent, by the key nodes[].network_adapters[].name (the port's name in this file, the same on every machine; the file finds...
+      # required; used by: os_configuration, deployment, trailwright, ranger
+      adapters: ["Port1", "Port2"]
+  # Every VLAN in the design, by name.
+  # used by: os_configuration
+  vlans:
+    # Name of the VLAN, for example storage-1.
+    # required; used by: os_configuration, trailwright, ranger
+    - name: "storage-1"
+      # The VLAN number, 1 to 4094.
+      # required; used by: os_configuration, trailwright, ranger
+      id: 711
+
+# Storage of the instance: the deployment's storage mode, the volumes, and the SAN of a disaggregated or hybrid deployment (the san block app...
+storage:
+  # The Storage Spaces Direct volumes to create after deployment, in addition to what the deployment itself creates (storage.configuration_mode...
+  # used by: deployment
+  volumes:
+    # Name of the volume, for example vol-workloads-01.
+    # required; used by: deployment, trailwright, ranger
+    - name: "vol-workloads-01"
+      # Size of the volume in GiB (binary units, as Windows counts).
+      # required; used by: deployment, trailwright, ranger
+      size_gib: 4096
+      # Resiliency of the volume. two_way, three_way and parity (dual parity, 4 or more machines) are the usual ones; four_way is for a rack aware...
+      # one of: two_way | three_way | four_way | parity | nested_two_way | mirror_accelerated_parity | nested_mirror_accelerated_parity; used by: deployment, trailwright, ranger
+      resiliency: "two_way"
+
+# SDN enabled by Azure Arc (Network Controller as a Failover Cluster service; Azure Local 2506 or later, OS build 26100 or later).
+sdn:
+  # true to turn SDN enabled by Azure Arc on, which CANNOT BE UNDONE.
+  # required; used by: deployment, trailwright, ranger
+  enabled: false
+  # The SDN prefix (Add-EceFeature -SDNPrefix).
+  # used by: deployment, trailwright, ranger
+  prefix: "iic01"

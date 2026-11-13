@@ -2,7 +2,7 @@
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
 # The variable map (config/variables/docs/VARIABLE-MAP.md and reports/variable-map.csv) is generated from the master registry and a scan
 # of the code. These tests fail when a committed file is out of date, when a registry variable is missing from the map or appears twice,
-# when an ARM parameter the builder produces is missing from the by-ARM-parameter table, or when the map disagrees with the purpose files.
+# when an ARM parameter the builder produces is missing from the by-ARM-parameter table, or when the map disagrees with the tool files.
 # Run: Import-Module Pester -RequiredVersion 5.9.1; Invoke-Pester ./tests/variables/VariableMap.Tests.ps1
 # The check against the ZTP, Sonar and Trailwright checkouts runs only with AZL_VARMAP_CHECK_EXTERNAL=1 (they change on their own).
 
@@ -10,7 +10,7 @@
 param()
 
 BeforeDiscovery {
-    $script:Purposes = 'ztp', 'os_configuration', 'deployment', 'cicd_infra', 'monitoring', 'discovery'
+    $script:Purposes = 'ztp', 'os_configuration', 'deployment', 'cicd_infra', 'monitoring', 'discovery', 'trailwright', 'ranger'
     $script:ExternalCheck = ($env:AZL_VARMAP_CHECK_EXTERNAL -eq '1')
 }
 
@@ -117,17 +117,17 @@ Describe 'Every registry variable is in the map once' {
     }
 }
 
-Describe 'The purposes in the map are the purpose files' {
-    It '<_>: the variables the map gives this purpose are the keys of schema/purposes/<_>.schema.json' -ForEach $script:Purposes {
+Describe 'The tools in the map are the tool files' {
+    It '<_>: the variables the map gives this tool are the keys of schema/tools/<_>.schema.json' -ForEach $script:Purposes {
         $name = $_
-        $schemaPath = Join-Path $script:Vars ("schema\purposes\{0}.schema.json" -f ($name -replace '_', '-'))
+        $schemaPath = Join-Path $script:Vars ("schema\tools\{0}.schema.json" -f ($name -replace '_', '-'))
         $inSchema = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
         foreach ($s in (Get-InfrastructureSchemaVariable -SchemaPath $schemaPath)) { [void]$inSchema.Add($s.Path) }
         $mapped = @($script:Rows | Where-Object { $_.kind -eq 'infrastructure.yml' -and $_.path -notlike '_metadata.*' -and (@($_.purposes -split '; ') -contains $name) } | ForEach-Object path)
         $mapped.Count | Should -BeGreaterThan 0
         $notInSchema = @($mapped | Where-Object { -not $inSchema.Contains($_) })
-        $notInSchema | Should -BeNullOrEmpty -Because "the map says $name carries these keys but its purpose schema lacks them"
-        # a leaf of the purpose schema (other than the file's own _metadata) must be one the map gives to this purpose
+        $notInSchema | Should -BeNullOrEmpty -Because "the map says $name carries these keys but its tool schema lacks them"
+        # a leaf of the tool schema (other than the file's own _metadata) must be one the map gives to this tool
         $leafRows = @($script:Rows | Where-Object { $_.kind -eq 'infrastructure.yml' -and $_.path -notlike '_metadata.*' } | ForEach-Object path)
         $schemaLeaves = @($leafRows | Where-Object { $inSchema.Contains($_) })
         $schemaLeaves.Count | Should -Be $mapped.Count
@@ -273,7 +273,7 @@ Describe 'The map is linked and has a diagram' {
         }
     }
 
-    It 'the draw.io diagram is XML that shows the sources, the master file, the purpose files, the tools and Azure' {
+    It 'the draw.io diagram is XML that shows the sources, the master file, the tool files, the tools and Azure' {
         $file = Join-Path $script:Repo 'config\variables\docs\diagrams\variable-flow.drawio'
         Test-Path -LiteralPath $file | Should -BeTrue
         $xml = [xml](Get-Content -LiteralPath $file -Raw)

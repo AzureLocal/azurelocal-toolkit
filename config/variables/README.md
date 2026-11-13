@@ -10,12 +10,12 @@ config/variables/
     master-registry.yaml          THE MASTER. Edit this.
     variables.schema.json         schema of a variables file (hand-maintained, accepts the infrastructure.yml sections)
     infrastructure.schema.json    GENERATED: the schema of infrastructure.yml (the validator reads this one)
-    purposes/<purpose>.schema.json  GENERATED: the part of the schema one purpose reads
+    tools/<tool>.schema.json        GENERATED: the part of the schema one tool reads (one per tool that has keys)
     alias-policy.json, canonical-drift-allowlist.json, legacy-compatible-roots.json
   templates/                      GENERATED
     infrastructure.master.yml       every variable, with comments and allowed values
     scenarios/master.<switch>-<value>.yml   the master for one scenario choice
-    purposes/<purpose>.yml          only the variables one purpose reads (a strict subset of the master)
+    tools/<tool>.yml                one template per tool: only the variables that tool reads (a strict subset of the master)
   examples/                       hand-written worked examples, tested against the schema and the rules
     infrastructure.example.yml, infrastructure.ztp.example.yml
     scenarios/*.yml
@@ -37,7 +37,7 @@ config/variables/
 
 1. Add the entry to `schema/master-registry.yaml` (see [Entry format](#entry-format)). Bump `_metadata.version`, add a `_metadata.change_log` entry and a line to the change log in the file header.
 2. Run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`. It rewrites the schema, the templates and `docs/VARIABLES.md` (the "Read by" column of that page is the `used_by` of the registry; nothing else lists readers). If a tool variable changed, also run `./config/variables/scripts/New-ToolMapping.ps1 -Tool ztp` and `-Tool sonar`. Commit the result with the registry change.
-   Rules for the entry: the `example` is a documentation placeholder (RFC 5737 addresses `192.0.2.x`, `198.51.100.x`, `203.0.113.x`; the zero GUID; MACs `00:00:5E:00:53:xx`; `example.com`), never a value from a real environment. `used_by` lists only the purposes whose code reads the key. A key no tool reads yet is kept as a documented placeholder and its description says "Not read by the tools yet". An entry that replaces another is marked `deprecated` with `replaced_by`.
+   Rules for the entry: the `example` is a documentation placeholder (RFC 5737 addresses `192.0.2.x`, `198.51.100.x`, `203.0.113.x`; the zero GUID; MACs `00:00:5E:00:53:xx`; `example.com`), never a value from a real environment. `used_by` lists only the tools whose code reads the key (Trailwright: writes it); the ids are in `_tool_catalog`. A key no tool reads yet is kept as a documented placeholder and its description says "Not read by the tools yet". An entry that replaces another is marked `deprecated` with `replaced_by`.
 3. Update `schema/variables.schema.json` and `variables.example.yml` if the variable is part of a variables file, and a worked example if it belongs in one.
 4. Run the checks below. All must pass.
 
@@ -52,7 +52,7 @@ The 4.0 entries are unchanged. The sections of `infrastructure.yml` write childr
 | `type`, `description`, `required`, `default`, `enum`, `example`, `pattern`, `minimum`, `maximum`, `minLength`, `maxLength`, `minItems`, `maxItems` | As before. `required: true` means the parent requires it; rules that depend on the scenario are in `_schema_rules`. |
 | `since` | The schema version that added the variable (`"5.4.3"`). |
 | `deprecated`, `replaced_by`, `alias_for`, `expires_on` | A name kept for compatibility. Every alias is also in `schema/alias-policy.json`, with an expiry inside `rules.max_alias_age_days`. |
-| `used_by` | The purposes that need the variable: `ztp`, `os_configuration`, `deployment`, `cicd_infra`, `monitoring` (Sonar), `discovery` (Redfish). The purpose templates and schemas are cut from this. |
+| `used_by` | The tools that read the variable (Trailwright: write it). A value is a tool id of `_tool_catalog`: `ztp` (azurelocal-ztp), `os_configuration`, `deployment`, `cicd_infra`, `monitoring` (azurelocal-sonar), `discovery` (Redfish), `trailwright`, `ranger`. A test fails on any other value. The template and the schema of each tool are generated from this. |
 | `applies_when` | The scenario condition that makes it relevant (`scenario.identity is active_directory`). The scenario templates leave out what does not apply. |
 | `format` | A named type from `_schema_defs` (`ipv4`, `cidr`, `mac`, `guid`, `kv_ref`, ...). `kv_ref` is a secret reference, never a secret value (`keyvault://<vault>/<secret>`, `env://<VARIABLE>`, `file://<name>` or `command://<name>`; see [secret-references.md](docs/secret-references.md)); those entries also carry `sensitive: true`. |
 | `schema_extra` | Other JSON Schema keywords of the variable, kept as written (`anyOf`, `not`, `dependentRequired`). |
@@ -69,11 +69,11 @@ Top-level `_schema_root` (header and the order of the sections), `_schema_defs` 
 ./config/variables/scripts/New-InfrastructureArtifacts.ps1 -Cut ztp -From ./infrastructure.yml -Out ./infrastructure.ztp.yml
 ```
 
-**From the master file to a tool's input.** An operator keeps one `infrastructure.yml` per environment (start from `templates/infrastructure.master.yml`, a scenario template, or the nearest worked example). To give azurelocal-ztp or Sonar its input, cut that file: `-Cut ztp` (or `-Cut monitoring`) writes only the keys that purpose reads, and the tool validates it against `schema/purposes/ztp.schema.json` (or `monitoring.schema.json`). The cut is always a subset of the master file, and the master file is validated by the full schema and the rules of `Test-InfrastructureFile.ps1`. A purpose schema checks the shape and values of the keys the purpose reads; completeness of the whole file is the full schema's job.
+**From the master file to a tool's input.** An operator keeps one `infrastructure.yml` per environment (start from `templates/infrastructure.master.yml`, a scenario template, or the nearest worked example). To give azurelocal-ztp or Sonar its input, cut that file: `-Cut ztp` (or `-Cut monitoring`) writes only the keys that tool reads, and the tool validates it against `schema/tools/ztp.schema.json` (or `monitoring.schema.json`). The cut is always a subset of the master file, and the master file is validated by the full schema and the rules of `Test-InfrastructureFile.ps1`. A tool schema checks the shape and values of the keys the tool reads; completeness of the whole file is the full schema's job.
 
 ## Variables owned by tools (`tools:`)
 
-The registry also registers the variables each tool owns, apart from the keys of `infrastructure.yml`: `tools.<tool>.<kind>.<group>.<name>` for `os_configuration`, `ztp`, `sonar`, `arm_deployment`, `cicd_infra` and `discovery`. Kinds: `parameters`, `run_settings`, `guard_settings`, `config_keys`, `event_fields`, `state_fields`, `handoff_fields`, `secret_names`, `env_vars`, `terraform_variables`, `pipeline_variables`, `pipeline_inputs`, `ansible_variables`. The group is the script, file or feed (its `area` says which); each entry has the real `name`, `type`, `default`, `enum`, `required`, `read_at` and `description`.
+The registry also registers the variables each tool owns, apart from the keys of `infrastructure.yml`: `tools.<tool>.<kind>.<group>.<name>` for `os_configuration`, `ztp`, `sonar`, `arm_deployment`, `cicd_infra`, `discovery` and `ranger` (only the parameters that name the design file). Kinds: `parameters`, `run_settings`, `guard_settings`, `config_keys`, `event_fields`, `state_fields`, `handoff_fields`, `secret_names`, `env_vars`, `terraform_variables`, `pipeline_variables`, `pipeline_inputs`, `ansible_variables`. The group is the script, file or feed (its `area` says which); each entry has the real `name`, `type`, `default`, `enum`, `required`, `read_at` and `description`.
 
 - A script parameter that is not registered fails `tests/variables/ToolRegistry.Tests.ps1` (`Test-ToolParameterRegistration.ps1` reads the `param()` block).
 - ZTP and Sonar live in other repositories: [`tool-mappings/`](tool-mappings/README.md) maps their names to registry paths, and the same check runs on their checkouts with `AZL_CHECK_EXTERNAL_TOOLS=1`.
@@ -81,7 +81,7 @@ The registry also registers the variables each tool owns, apart from the keys of
 
 ## The variable map
 
-[`docs/VARIABLE-MAP.md`](docs/VARIABLE-MAP.md) answers "what variable goes where": for every variable, where it is defined (registry path, type, default, allowed values), who provides the value (you, Trailwright, Dell/Redfish discovery, a Key Vault reference, a default), which purpose files carry it, which tool and function read it (the toolkit, azurelocal-ztp, azurelocal-sonar, Trailwright), what it becomes downstream (ARM template parameter, OS configuration step, Sonar configuration key, pre-cluster verification check) and whether anything reads it at all. It has views by phase, by tool and by ARM parameter, a "where do I set X" lookup for the 40 most used variables and a list of unread variables. [`reports/variable-map.csv`](reports/variable-map.csv) is the same data, one row per variable. The diagram is [`docs/diagrams/variable-flow.drawio`](docs/diagrams/variable-flow.drawio).
+[`docs/VARIABLE-MAP.md`](docs/VARIABLE-MAP.md) answers "what variable goes where": for every variable, where it is defined (registry path, type, default, allowed values), who provides the value (you, Trailwright, Dell/Redfish discovery, a Key Vault reference, a default), which tool templates carry it, which tool and function read it (the toolkit, azurelocal-ztp, azurelocal-sonar, Trailwright), what it becomes downstream (ARM template parameter, OS configuration step, Sonar configuration key, pre-cluster verification check) and whether anything reads it at all. It has views by phase, by tool and by ARM parameter, a "where do I set X" lookup for the 40 most used variables and a list of unread variables. [`reports/variable-map.csv`](reports/variable-map.csv) is the same data, one row per variable. The diagram is [`docs/diagrams/variable-flow.drawio`](docs/diagrams/variable-flow.drawio).
 
 The map is **generated** from the registry and a scan of the code (the registry stays the only master); never edit it:
 

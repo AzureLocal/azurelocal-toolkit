@@ -16,6 +16,9 @@ Three things changed throughout:
 
 Not carried over: `cluster_ip` (the deployment takes it from the infrastructure pool), `cluster_node_count` (it's the number of `nodes`), the `nested` topology, `disk_witness`, and generated ARM parameters (tools generate them from the file).
 
+## One template per tool (registry 5.0.41)
+
+The generated folders `config/variables/templates/purposes` and `config/variables/schema/purposes` are now `config/variables/templates/tools` and `config/variables/schema/tools`, and the generator writes a template and a schema for every tool that has keys, not only for the six earlier ones: `trailwright` and `ranger` are new. The file names of the six are unchanged. The generator parameter `-Cut <tool>` takes the same ids; the module functions `Get-PurposePath` and `Select-InfrastructurePurpose` are now `Get-ToolPath` and `Select-InfrastructureTool` (parameter `-Tool`). No key was added, removed or renamed, and the infrastructure schema version is unchanged (5.6.14). In the registry, `used_by` lost `monitoring` on `identity.active_directory.lcm_user` (and its two keys) and on the `secrets` section, which Sonar does not read.
 ## From the azurelocal-ztp environment file
 
 | Before | Schema 5 |
@@ -503,7 +506,7 @@ The registry became the source of the schema. Nothing in `infrastructure.yml` ch
 | `config/infrastructure/examples/*.yml` | `config/variables/examples/scenarios/` |
 | `config/infrastructure/README.md`, `MIGRATION.md`, `VARIABLES.md` | `config/variables/docs/` |
 | `config/infrastructure/variables-reference.metadata.psd1` | `config/variables/docs/variables-reference.metadata.psd1` |
-| (new) | `config/variables/schema/purposes/`, `config/variables/templates/` (generated) |
+| (new) | `config/variables/schema/tools/`, `config/variables/templates/` (generated) |
 
 `identity.active_directory.security_groups` is the list of groups (`name`, `purpose`, `members`, `local_groups`); the 4.0 object-by-role form is `security_groups_by_role` (deprecated, expires 2027-05-07).
 ## Version history

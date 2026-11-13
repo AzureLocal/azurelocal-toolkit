@@ -1,21 +1,23 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that 'os_configuration' reads (a strict subset of the master file). Schema 5.6.16.
+# Template for the part of infrastructure.yml that OS configuration ('os_configuration') reads (a strict subset of the master file). Schema 5.6.16.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
 _metadata:
   # The schema version this file follows.
-  # required; used by: ztp, os_configuration, deployment, monitoring
+  # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
   schema_version: "5.6.0"
   # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
-  # one of: full | ztp; default: "full"; used by: ztp
+  # one of: full | ztp; default: "full"; used by: ztp, trailwright
   scope: "full"
   # Your own version of this file.
+  # used by: trailwright
   file_version: "1.0.0"
   # Date of the last change, YYYY-MM-DD.
   last_updated: "2026-11-06"
   # The tool that wrote the file, for example azurelocal-trailwright 1.1.0.
+  # used by: trailwright
   generated_by: ""
   # Free text about this file for the people who keep it.
   notes: ""
@@ -23,19 +25,19 @@ _metadata:
 # The design choices.
 scenario:
   # active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity...
-  # one of: active_directory | local_identity; used by: os_configuration, deployment, monitoring
+  # one of: active_directory | local_identity; used by: os_configuration, deployment, monitoring, trailwright
   identity: "active_directory"
   # s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both (S2D plus a SAN). san...
-  # one of: s2d | san | hybrid; used by: os_configuration, deployment
+  # one of: s2d | san | hybrid; used by: os_configuration, deployment, trailwright
   storage_architecture: "s2d"
   # Azure public cloud or Azure Government.
-  # one of: public | government; used by: os_configuration, deployment
+  # one of: public | government; used by: os_configuration, deployment, trailwright
   cloud: "public"
   # How the machines reach Azure.
-  # one of: direct | proxy | arc_gateway | proxy_arc_gateway | private_path; used by: os_configuration
+  # one of: direct | proxy | arc_gateway | proxy_arc_gateway | private_path; used by: os_configuration, trailwright
   outbound_path: "direct"
   # iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp...
-  # one of: iso | simplified; used by: ztp, os_configuration, monitoring
+  # one of: iso | simplified; used by: ztp, os_configuration, monitoring, trailwright
   os_install: "simplified"
   # What kind of environment this is.
   # one of: lab | test | dev | production | dmz; default: "production"; used by: os_configuration
@@ -44,63 +46,63 @@ scenario:
 # The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
 azure:
   # Microsoft Entra tenant ID (GUID) of the subscription.
-  # required; used by: ztp, os_configuration, deployment, cicd_infra
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, trailwright
   tenant_id: "00000000-0000-0000-0000-000000000000"
   # Azure region, for example eastus.
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright
   location: "eastus"
   # Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_i...
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright
   subscription_id: "00000000-0000-0000-0000-000000000000"
   # Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses).
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright
   resource_group: "rg-iic-azl-01"
 
 # (since 5.6.13) 
-# used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra
+# used by: ztp, os_configuration, deployment, discovery, cicd_infra
 secrets:
   # (since 5.6.13) 
-  # one of: keyvault | env | file | command; default: "keyvault"; used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+  # one of: keyvault | env | file | command; default: "keyvault"; used by: os_configuration, deployment, discovery, cicd_infra
   provider: "keyvault"
   # (since 5.6.13) 
-  # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+  # used by: os_configuration, deployment, discovery, cicd_infra
   file:
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+    # used by: os_configuration, deployment, discovery, cicd_infra
     directory: "C:\\ProgramData\\iic-secrets"
   # (since 5.6.13) 
-  # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+  # used by: os_configuration, deployment, discovery, cicd_infra
   command:
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+    # used by: os_configuration, deployment, discovery, cicd_infra
     executable: "iic-secret-tool"
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+    # used by: os_configuration, deployment, discovery, cicd_infra
     arguments: ["get", "{name}"]
     # (since 5.6.13) 
-    # default: 30; used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+    # default: 30; used by: os_configuration, deployment, discovery, cicd_infra
     timeout_seconds: 30
 
 # The Azure Local instance (the cluster deployment).
 cluster:
   # Cluster name: a NetBIOS name of up to 15 characters.
-  # required; used by: os_configuration, deployment, monitoring
+  # required; used by: os_configuration, deployment, monitoring, trailwright
   name: "iic-azl-01"
 
 # The machines, one entry each.
 # used by: deployment, monitoring
 nodes:
   # Host name: up to 15 characters.
-  # required; used by: ztp, os_configuration, deployment, monitoring, discovery
+  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, trailwright
   - name: "iic-azl-n01"
     # The machine's management port and address (schema 5.0 and 5.1).
     # used by: ztp, os_configuration
     management:
       # Management address.
-      # required; used by: ztp, os_configuration, deployment, monitoring
+      # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
       ip_address: "192.0.2.11"
       # MAC of the management port.
-      # when scenario.os_install is simplified; used by: ztp, os_configuration, discovery
+      # when scenario.os_install is simplified; used by: ztp, os_configuration, discovery, trailwright
       mac_address: "00:00:5E:00:53:11"
       # Name of the management port in the installed OS, for example 'SLOT 3 Port 1'.
       # used by: ztp, os_configuration
@@ -187,7 +189,7 @@ nodes:
         # used by: os_configuration
         notes: ""
     # Storage address on each storage network, in networking.storage.networks order, when networking.storage.auto_ip is false.
-    # used by: os_configuration, deployment
+    # used by: os_configuration, deployment, trailwright
     storage_ips: []
     # Name of the machine's Arc resource (Microsoft.HybridCompute/machines).
     # used by: ztp, os_configuration, deployment, monitoring
@@ -225,10 +227,10 @@ nodes:
 # What every machine is.
 hardware:
   # OEM, for example Dell, HPE, Lenovo or DataON.
-  # required; used by: ztp, os_configuration, deployment, discovery
+  # required; used by: ztp, os_configuration, deployment, discovery, trailwright
   vendor: "Dell"
   # Model, for example AX-760.
-  # required; used by: ztp, os_configuration, discovery
+  # required; used by: ztp, os_configuration, discovery, trailwright
   model: "AX-760"
   # The hardware vendor's Solution Builder Extension (SBE) package, its driver and firmware update, is a REQUIREMENT (schema 5.6.4): the packag...
   # used by: ztp, deployment
@@ -246,19 +248,19 @@ hardware:
     # used by: ztp, os_configuration, deployment
     bundle_path: "D:\\sbe\\dell"
     # Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster...
-    # one of: required | not_applicable; used by: os_configuration, deployment
+    # one of: required | not_applicable; used by: os_configuration, deployment, trailwright
     requirement: "required"
     # Required when requirement is not_applicable: why no package is needed, in one sentence, for example that no SBE exists for the hardware mod...
-    # used by: os_configuration, deployment
+    # used by: os_configuration, deployment, trailwright
     not_applicable_reason: "The cluster downloads the package with the vendor credential"
     # Where the downloaded SBE package is available to the automation: a UNC share or a folder, for example \\server\share\sbe\dell or D:\sbe\del...
-    # used by: os_configuration, deployment
+    # used by: os_configuration, deployment, trailwright
     source_path: "\\\\files.example.invalid\\sbe\\dell"
     # The account that reads source_path when the account running the automation cannot (for example DOMAIN\svc-sbe-read).
-    # used by: os_configuration, deployment
+    # used by: os_configuration, deployment, trailwright
     source_username: "EXAMPLE\\svc-sbe-read"
     # The Key Vault secret that holds the password of source_username, as a keyvault://<vault>/<secret> reference.
-    # used by: os_configuration, deployment
+    # used by: os_configuration, deployment, trailwright
     source_password: "keyvault://kv-iic-mgmt-01/sbe-share-reader"
     # Optional.
     # used by: os_configuration, deployment
@@ -267,7 +269,7 @@ hardware:
     # used by: os_configuration, deployment
     package_size_bytes: 1048576
     # Opt-in (schema 5.4.2): the toolkit side-loads an SBE only when you set winrm_copy or node_pull here; no value means no delivery, and a hard...
-    # one of: winrm_copy | node_pull | skip; default: "skip"; used by: os_configuration
+    # one of: winrm_copy | node_pull | skip; default: "skip"; used by: os_configuration, trailwright
     delivery: "skip"
     # The folder the nodes pull the SBE files from (delivery node_pull).
     # used by: os_configuration
@@ -276,28 +278,28 @@ hardware:
   # used by: os_configuration
   network_cards:
     # Where the card sits, as the chassis labels it, for example Slot 6 or Embedded.
-    # used by: os_configuration
+    # used by: os_configuration, trailwright
     - label: "Onboard"
       # Manufacturer of the card.
-      # used by: os_configuration
+      # used by: os_configuration, trailwright
       make: ""
       # Model of the card, as the machine reports it.
-      # used by: os_configuration
+      # used by: os_configuration, trailwright
       model: ""
       # The ports of this network card, in the order the vendor numbers them.
       # used by: os_configuration
       ports:
         # Adapter name in the OS, as the intents use it.
-        # required; used by: os_configuration
+        # required; used by: os_configuration, trailwright
         - name: "Port1"
           # Port speed in Gbit/s.
-          # used by: os_configuration
+          # used by: os_configuration, trailwright
           speed_gbps: 25
           # RDMA technology the port supports: none, iwarp, roce (RoCE) or roce_v2 (RoCEv2).
-          # one of: none | iwarp | roce | roce_v2; used by: os_configuration
+          # one of: none | iwarp | roce | roce_v2; used by: os_configuration, trailwright
           rdma: "none"
           # unused, intent:<intent name>, cluster:a, cluster:b, iscsi:a or iscsi:b.
-          # used by: os_configuration
+          # used by: os_configuration, trailwright
           role: "intent:management"
 
 # The on-premises networks.
@@ -306,22 +308,22 @@ networking:
   # required; used by: os_configuration
   management:
     # CIDR.
-    # required; used by: ztp, os_configuration, deployment
+    # required; used by: ztp, os_configuration, deployment, trailwright
     subnet: "192.0.2.0/24"
     # The one default gateway.
-    # required; used by: ztp, os_configuration, deployment
+    # required; used by: ztp, os_configuration, deployment, trailwright
     gateway: "192.0.2.1"
     # 0 means untagged.
-    # used by: ztp, os_configuration
+    # used by: ztp, os_configuration, trailwright
     vlan_id: 0
     # ARM dnsServers.
-    # required; used by: ztp, os_configuration, deployment
+    # required; used by: ztp, os_configuration, deployment, trailwright
     dns_servers: ["192.0.2.4", "192.0.2.5"]
     # Deprecated in 5.2: set each port's ip_assignment in nodes[].network_adapters.
     # one of: static | dhcp | preconfigured; default: "static"; used by: ztp, os_configuration, deployment
     ip_assignment: "static"
     # ARM useDhcp: the deployment takes the host and cluster addresses from DHCP instead of static addresses and the infrastructure_pool.
-    # used by: os_configuration, deployment
+    # used by: os_configuration, deployment, trailwright
     use_dhcp: false
     # Simplified provisioning: the address range of the site's network setting (Microsoft.Edge/configurations/networkConfigurations ipv4.addressR...
     # used by: ztp, os_configuration
@@ -351,10 +353,10 @@ networking:
     # used by: os_configuration, deployment
     infrastructure_pool:
       # First address of the pool the Azure Local infrastructure services use (ARM startingIPAddress): inside the management subnet, outside every...
-      # required; used by: os_configuration, deployment
+      # required; used by: os_configuration, deployment, trailwright
       start: "192.0.2.20"
       # Last address of the infrastructure pool (ARM endingIPAddress).
-      # required; used by: os_configuration, deployment
+      # required; used by: os_configuration, deployment, trailwright
       end: "192.0.2.29"
   # The out-of-band network of the BMCs.
   # used by: os_configuration
@@ -369,13 +371,13 @@ networking:
   # used by: os_configuration, deployment
   intents:
     # Name of the Network ATC intent, for example management_compute or storage.
-    # required; used by: os_configuration, deployment
+    # required; used by: os_configuration, deployment, trailwright, ranger
     - name: "management"
       # Traffic types the intent carries: management, compute and storage (ARM trafficType).
-      # required; used by: os_configuration, deployment
+      # required; used by: os_configuration, deployment, trailwright, ranger
       traffic: ["management"]
       # Adapters of the intent, by the key nodes[].network_adapters[].name (the port's name in this file, the same on every machine; the file finds...
-      # required; used by: os_configuration, deployment
+      # required; used by: os_configuration, deployment, trailwright, ranger
       adapters: ["Port1", "Port2"]
       # Network ATC overrides.
       # used by: os_configuration
@@ -384,73 +386,73 @@ networking:
         # used by: os_configuration, deployment
         qos:
           # 802.1p priority value of the cluster heartbeat traffic, 0 to 7 (ARM priorityValue8021Action_Cluster).
-          # used by: os_configuration, deployment
+          # used by: os_configuration, deployment, trailwright
           cluster_priority: 0
           # 802.1p priority value of the SMB Direct (RDMA storage) traffic, 0 to 7 (ARM priorityValue8021Action_SMB).
-          # used by: os_configuration, deployment
+          # used by: os_configuration, deployment, trailwright
           smb_priority: 0
           # Share of the link reserved for SMB Direct storage traffic, 1 to 100 percent (ARM bandwidthPercentage_SMB).
-          # used by: os_configuration, deployment
+          # used by: os_configuration, deployment, trailwright
           smb_bandwidth_percent: 1
         # Physical adapter property overrides (ARM adapterPropertyOverrides: jumboPacket, networkDirect, networkDirectTechnology).
         # used by: os_configuration, deployment
         adapter:
           # Value of the adapter's JumboPacket property in bytes: 1514 (standard frame), 4088 or 9014 (jumbo).
-          # one of: 1514 | 4088 | 9014; used by: os_configuration, deployment
+          # one of: 1514 | 4088 | 9014; used by: os_configuration, deployment, trailwright
           jumbo_packet: 1514
           # RDMA (Network Direct) on the adapters of this intent. true is sent to ARM as networkDirect 'Enabled', false as 'Disabled'.
-          # used by: os_configuration, deployment
+          # used by: os_configuration, deployment, trailwright
           network_direct: false
           # RDMA technology of the adapters: iwarp, roce_v2 (RoCEv2) or roce (RoCE, version 1).
-          # one of: iwarp | roce | roce_v2; used by: os_configuration, deployment
+          # one of: iwarp | roce | roce_v2; used by: os_configuration, deployment, trailwright
           network_direct_technology: "iwarp"
         # Virtual switch overrides of the intent's switch-embedded team (ARM virtualSwitchConfigurationOverrides).
         # used by: os_configuration, deployment
         virtual_switch:
           # SR-IOV on the intent's virtual switch (ARM enableIov).
-          # used by: os_configuration, deployment
+          # used by: os_configuration, deployment, trailwright
           enable_iov: false
           # Load balancing of the switch-embedded team: dynamic or hyper_v_port (ARM loadBalancingAlgorithm 'Dynamic' or 'HyperVPort').
-          # one of: dynamic | hyper_v_port; used by: os_configuration, deployment
+          # one of: dynamic | hyper_v_port; used by: os_configuration, deployment, trailwright
           load_balancing_algorithm: "dynamic"
   # Storage networks (Storage Spaces Direct).
   # when scenario.storage_connectivity is switchless; used by: os_configuration, deployment
   storage:
     # Network ATC assigns the storage addresses.
-    # used by: os_configuration, deployment
+    # used by: os_configuration, deployment, trailwright
     auto_ip: true
     # dedicated: storage on its own ports. converged: storage shares ports with other traffic.
-    # one of: dedicated | converged; used by: os_configuration
+    # one of: dedicated | converged; used by: os_configuration, trailwright
     layout: "converged"
     # The storage networks (SMB), one per storage adapter.
     # used by: os_configuration
     networks:
       # For example StorageNetwork1.
-      # required; used by: os_configuration, deployment
+      # required; used by: os_configuration, deployment, trailwright
       - name: "StorageNetwork1"
         # The adapter of this storage network, by the key nodes[].network_adapters[].name (the same on every machine).
-        # required; used by: os_configuration, deployment
+        # required; used by: os_configuration, deployment, trailwright
         adapter: "Port3"
         # Network ATC defaults are 711 and 712.
-        # required; used by: os_configuration, deployment
+        # required; used by: os_configuration, deployment, trailwright
         vlan_id: 711
         # Needed when auto_ip is false.
-        # used by: os_configuration, deployment
+        # used by: os_configuration, deployment, trailwright
         subnet: "192.0.2.0/24"
   # Disaggregated (SAN) only: the cluster networks on standalone ports, fabric A and B.
   # when scenario.storage_architecture is san or hybrid; used by: os_configuration, deployment
   cluster_networks:
     # Name of the cluster network on a standalone port (fabric A or B of a SAN design), for example clusterNetwork-A.
-    # required; used by: os_configuration, deployment
+    # required; used by: os_configuration, deployment, trailwright
     - name: ""
       # The port of this cluster network, by the key nodes[].network_adapters[].name (the same on every machine).
-      # required; used by: os_configuration, deployment
+      # required; used by: os_configuration, deployment, trailwright
       adapter: ""
       # VLAN of this cluster network, 0 to 4094. 0 means untagged.
-      # required; used by: os_configuration, deployment
+      # required; used by: os_configuration, deployment, trailwright
       vlan_id: 1
       # Subnet of this cluster network in CIDR form.
-      # required; used by: os_configuration, deployment
+      # required; used by: os_configuration, deployment, trailwright
       subnet: "192.0.2.0/24"
       # What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote mana...
       # one of: management | oob | automation | compute | storage | other; used by: os_configuration
@@ -459,13 +461,13 @@ networking:
   # used by: os_configuration
   vlans:
     # Name of the VLAN, for example storage-1.
-    # required; used by: os_configuration
+    # required; used by: os_configuration, trailwright, ranger
     - name: "storage-1"
       # The VLAN number, 1 to 4094.
-      # required; used by: os_configuration
+      # required; used by: os_configuration, trailwright, ranger
       id: 711
       # Subnet that runs in this VLAN, in CIDR form.
-      # used by: os_configuration
+      # used by: os_configuration, trailwright
       subnet: "203.0.113.0/24"
       # Free text.
       # used by: os_configuration
@@ -477,7 +479,7 @@ networking:
     # one of: management | oob | automation | compute | storage | other; used by: os_configuration, deployment
     - purpose: "compute"
       # Address prefix of the logical network in CIDR form.
-      # used by: os_configuration, deployment
+      # used by: os_configuration, deployment, trailwright
       address_prefix: "203.0.113.0/24"
   # Details of scenario.outbound_path.
   # when scenario.outbound_path is proxy or proxy_arc_gateway
@@ -486,7 +488,7 @@ networking:
     # when scenario.outbound_path is arc_gateway or proxy_arc_gateway
     arc_gateway:
       # Name of the Azure Arc gateway resource (Azure public cloud only; not supported with simplified machine provisioning in the preview).
-      # required; used by: os_configuration
+      # required; used by: os_configuration, trailwright
       name: ""
       # Resource group of the Azure Arc gateway resource.
       # used by: os_configuration
@@ -498,31 +500,31 @@ identity:
   # required; used by: ztp, os_configuration, deployment
   local_admin:
     # User name of the deployment local administrator on every machine (ARM localAdminUserName).
-    # required; used by: ztp, os_configuration, deployment, monitoring
+    # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
     username: "azl-admin"
     # At least 14 characters with lowercase, uppercase, a digit and a special character.
-    # required; used by: ztp, os_configuration, deployment
+    # required; used by: ztp, os_configuration, deployment, trailwright
     password: "keyvault://kv-iic-mgmt-01/local-admin-password"
   # The Active Directory the instance joins and its accounts.
   # when scenario.identity is active_directory
   active_directory:
     # ARM domainFqdn.
-    # required; used by: os_configuration, deployment
+    # required; used by: os_configuration, deployment, trailwright
     domain_fqdn: "improbability.cloud"
     # Up to 15 letters, digits and hyphens.
     # used by: os_configuration, deployment, monitoring
     netbios_name: "IIC"
     # Distinguished name of the dedicated OU.
-    # required; used by: os_configuration, deployment
+    # required; used by: os_configuration, deployment, trailwright
     ou_path: "OU=iic-azl-01,OU=AzureLocal,DC=improbability,DC=cloud"
     # The LCM deployment user, created in the OU by the AD preparation module.
-    # required; used by: deployment, monitoring
+    # required; used by: deployment
     lcm_user:
       # Name only, no domain.
-      # required; used by: os_configuration, deployment, monitoring
+      # required; used by: os_configuration, deployment, trailwright
       username: "lcm-iic-azl-01"
       # At least 14 characters with lowercase, uppercase, a digit and a special character.
-      # required; used by: os_configuration, deployment, monitoring
+      # required; used by: os_configuration, deployment, trailwright
       password: "keyvault://kv-iic-mgmt-01/lcm-password"
     # Optional override.
     # used by: os_configuration
@@ -566,7 +568,7 @@ storage:
   # when scenario.storage_architecture is san or hybrid; used by: os_configuration, deployment
   san:
     # Whether the SAN is fibre_channel or iscsi.
-    # required; one of: fibre_channel | iscsi; used by: os_configuration, deployment
+    # required; one of: fibre_channel | iscsi; used by: os_configuration, deployment, trailwright
     type: "fibre_channel"
     # (since 5.3) 
     # used by: os_configuration, deployment
@@ -599,17 +601,17 @@ storage:
         # required; used by: os_configuration, deployment
         enabled: false
     # LUN of the infrastructure volume (250 GB minimum).
-    # used by: os_configuration, deployment
+    # used by: os_configuration, deployment, trailwright
     infra_volume_lun_id: ""
     # LUN of the performance history volume (20 GB minimum).
-    # used by: os_configuration, deployment
+    # used by: os_configuration, deployment, trailwright
     performance_history_lun_id: ""
 
 # How the OS gets onto the machines (scenario.os_install), and the OS version.
 # when scenario.os_install is simplified
 provisioning:
   # The solution version the machines run: latest, latest-preview, or a version such as 12.2610.1004.50.
-  # required; used by: ztp, os_configuration
+  # required; used by: ztp, os_configuration, trailwright
   os_version: "12.2610.1004.50"
 
 # How the toolkit's OS configuration run (Invoke-AzureLocalOsConfiguration.ps1) treats the machines after the OS is installed, whichever way...

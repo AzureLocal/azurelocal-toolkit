@@ -1,9 +1,9 @@
 {
   "$comment": "GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit: change the registry and run the generator.",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "https://azurelocal.cloud/schemas/infrastructure/5/infrastructure.cicd-infra.schema.json",
-  "title": "Azure Local infrastructure.yml (cicd_infra)",
-  "description": "The part of infrastructure.yml that the purpose 'cicd_infra' reads. Generated from master-registry.yaml; every key is also in the full schema.",
+  "$id": "https://azurelocal.cloud/schemas/infrastructure/5/infrastructure.ranger.schema.json",
+  "title": "Azure Local infrastructure.yml (ranger)",
+  "description": "The part of infrastructure.yml that the tool 'ranger' reads. Generated from master-registry.yaml; every key is also in the full schema.",
   "type": "object",
   "additionalProperties": false,
   "properties": {
@@ -43,781 +43,125 @@
         }
       }
     },
-    "tags": {
-      "description": "Azure tags applied to the resources the tools create. A policy that requires tags isn't supported by simplified provisioning.",
-      "type": "object",
-      "additionalProperties": {
-        "type": "string",
-        "description": "The value of the tag."
-      }
-    },
-    "azure": {
-      "description": "The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless provisioning.simplified says otherwise) the site and edge machines.",
+    "networking": {
+      "description": "The on-premises networks.",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "tenant_id": {
-          "$ref": "#/$defs/guid",
-          "description": "Microsoft Entra tenant ID (GUID) of the subscription. Read it with (Get-AzContext).Tenant.Id or from the Microsoft Entra ID overview page in the Azure portal."
-        },
-        "location": {
-          "$ref": "#/$defs/azure_region",
-          "description": "Azure region, for example eastus. Simplified provisioning works only in eastus in the preview."
-        },
-        "subscription_id": {
-          "$ref": "#/$defs/guid",
-          "description": "Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_id names another one. Read it with (Get-AzContext).Subscription.Id."
-        },
-        "resource_group": {
-          "$ref": "#/$defs/resource_group",
-          "description": "Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses). The Azure Local resource provider needs the Azure Connected Machine Resource Manager role on it; the ZTP template assigns that role."
-        },
-        "automation_identity": {
-          "description": "The identity that runs automation with no one signed in (pipelines, ZTP, the ARM deployment).",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "type": {
-              "description": "The kind of identity that runs the automation: a managed identity (preferred, no secret to keep) or a service principal.",
-              "type": "string",
-              "enum": [
-                "managed_identity",
-                "service_principal"
-              ]
-            },
-            "name": {
-              "description": "Managed identity resource name, or the service principal's display name.",
-              "type": "string"
-            },
-            "client_id": {
-              "$ref": "#/$defs/guid",
-              "description": "Client (application) ID of the identity (GUID). Not a secret."
-            },
-            "subscription_id": {
-              "$ref": "#/$defs/guid",
-              "description": "Subscription (GUID) that holds the identity."
-            },
-            "resource_group": {
-              "$ref": "#/$defs/resource_group",
-              "description": "Resource group that holds the identity."
-            }
-          }
-        }
-      }
-    },
-    "key_vaults": {
-      "description": "Every Key Vault that a keyvault:// reference in this file names, with where it is. Tools resolve references against this list, and grant roles on the vault from it.",
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "properties": {
-          "name": {
-            "$ref": "#/$defs/key_vault_name",
-            "description": "Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens."
-          },
-          "subscription_id": {
-            "$ref": "#/$defs/guid",
-            "description": "Subscription (GUID) that holds the vault."
-          },
-          "resource_group": {
-            "$ref": "#/$defs/resource_group",
-            "description": "Resource group that holds the vault."
-          },
-          "purpose": {
-            "description": "What the vault holds, for example management, deployment or backup.",
-            "type": "string"
-          }
-        }
-      }
-    },
-    "secrets": {
-      "description": "Schema 5.6.13. Where the toolkit reads secrets from. Every secret in this file is a reference, never a value; a reference names its own provider in its scheme: keyvault://<vault>/<secret> (Azure Key Vault, the default), env://<VARIABLE_NAME>, file://<name> or command://<name>. One file can mix providers. A file or command reference holds a NAME only: the directory of the secret files and the command are set here, so a reference in a shared file cannot point a machine at an arbitrary path or run an arbitrary command. Optional; every key has a default. See docs/secret-references.md.",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "provider": {
-          "description": "Schema 5.6.13. The provider New-AzlSecretReference uses for a new reference when the caller does not name one. It does not change how an existing reference is read: that follows the reference's own scheme. Default keyvault.",
-          "type": "string",
-          "default": "keyvault",
-          "enum": [
-            "keyvault",
-            "env",
-            "file",
-            "command"
-          ]
-        },
-        "file": {
-          "description": "Schema 5.6.13. Settings of the file provider (file://<name>). Needed only when a reference uses it.",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "directory": {
-              "description": "Schema 5.6.13. The absolute path of the directory that holds the secret files. file://<name> reads the file <name> in it: one secret per file, UTF-8, the trailing line break removed. A name cannot hold a path, so no reference can leave this directory. Links are refused. A warning is written when Everyone, Users or Authenticated Users (Windows), or group or other (Linux, macOS), can read the file.",
-              "type": "string",
-              "minLength": 1
-            }
-          }
-        },
-        "command": {
-          "description": "Schema 5.6.13. Settings of the command provider (command://<name>). Needed only when a reference uses it. The toolkit starts the executable directly with the argument list, with no shell, closes its standard input and reads its standard output as the secret (the trailing line break removed). A command that exits with a code other than 0 fails, and its standard error is reported without the secret.",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "executable": {
-              "description": "Schema 5.6.13. The program to start: a command name found on the path, or an absolute path. Not a command line: the arguments are in command.arguments.",
-              "type": "string",
-              "minLength": 1
-            },
-            "arguments": {
-              "description": "Schema 5.6.13. The arguments, one list item each. The text {name} in an item is replaced by the name in the reference (command://<name>). At least one item must hold {name}. Each item is passed as one argument; nothing is split or quoted by a shell.",
-              "type": "array",
-              "items": {
+        "intents": {
+          "description": "Network ATC intents. ARM intentList. https://learn.microsoft.com/azure/azure-local/concepts/host-network-requirements",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/intent",
+            "properties": {
+              "name": {
+                "description": "Name of the Network ATC intent, for example management_compute or storage. The same on every machine.",
                 "type": "string",
                 "minLength": 1
+              },
+              "traffic": {
+                "description": "Traffic types the intent carries: management, compute and storage (ARM trafficType). Management and storage can each be in one intent only; compute can be in any number.",
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "management",
+                    "compute",
+                    "storage"
+                  ]
+                }
+              },
+              "adapters": {
+                "description": "Adapters of the intent, by the key nodes[].network_adapters[].name (the port's name in this file, the same on every machine; the file finds the physical adapter by its MAC, so the OS may call it anything). With nodes[].network_adapters (5.2) each name must be a port in every node's list. The name the deployment sends to Azure (ARM intentList adapter) is what the OS calls that adapter on the nodes, found by MAC, or nodes[].network_adapters[].os_name_override when the file sets one. The first adapter matters: the management virtual adapter takes the MAC of the first adapter of the management intent, so that adapter owns the management address.",
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
               }
-            },
-            "timeout_seconds": {
-              "description": "Schema 5.6.13. How long the command may run before it is stopped and the read fails. Default 30.",
-              "type": "integer",
-              "default": 30,
-              "minimum": 1,
-              "maximum": 300
             }
           }
-        }
-      }
-    },
-    "landing_zone": {
-      "description": "Part 2 of the implementation steps: the Azure foundation the instance depends on. Optional; leave it out when the foundation exists and is managed elsewhere.",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "subscriptions": {
-          "description": "Subscriptions by role. azure.subscription_id is the one the instance uses.",
+        },
+        "vlans": {
+          "description": "Every VLAN in the design, by name.",
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
               "name": {
-                "description": "Name of the subscription; the other landing_zone entries refer to it.",
+                "description": "Name of the VLAN, for example storage-1. The intents and the storage networks refer to the number, not to the name.",
                 "type": "string"
               },
               "id": {
-                "$ref": "#/$defs/guid",
-                "description": "Subscription id (a GUID). Use your own; the templates hold only a placeholder."
-              },
-              "role": {
-                "description": "What the subscription is for.",
-                "type": "string",
-                "enum": [
-                  "connectivity",
-                  "identity",
-                  "management",
-                  "security",
-                  "devops",
-                  "workload",
-                  "azure_local"
-                ]
-              },
-              "management_group": {
-                "description": "Management group the subscription is under.",
-                "type": "string"
-              }
-            }
-          }
-        },
-        "resource_groups": {
-          "description": "Resource groups of the landing zone.",
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "name": {
-                "$ref": "#/$defs/resource_group",
-                "description": "Name of the resource group."
-              },
-              "subscription": {
-                "description": "Name of a subscription in landing_zone.subscriptions.",
-                "type": "string"
-              },
-              "location": {
-                "$ref": "#/$defs/azure_region",
-                "description": "Azure region of the resource group."
-              },
-              "purpose": {
-                "description": "What the resource group is for, in words.",
-                "type": "string"
-              }
-            }
-          }
-        },
-        "networks": {
-          "description": "Azure virtual networks.",
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "name": {
-                "description": "Name of the virtual network.",
-                "type": "string"
-              },
-              "subscription": {
-                "description": "Name of the subscription (landing_zone.subscriptions[].name) that holds the network.",
-                "type": "string"
-              },
-              "resource_group": {
-                "$ref": "#/$defs/resource_group",
-                "description": "Resource group of the network."
-              },
-              "location": {
-                "$ref": "#/$defs/azure_region",
-                "description": "Azure region of the network."
-              },
-              "role": {
-                "description": "hub or spoke.",
-                "type": "string",
-                "enum": [
-                  "hub",
-                  "spoke"
-                ]
-              },
-              "address_space": {
-                "description": "Address ranges of the virtual network, in CIDR form.",
-                "type": "array",
-                "minItems": 1,
-                "items": {
-                  "$ref": "#/$defs/cidr"
-                }
-              },
-              "dns_servers": {
-                "description": "DNS servers of the virtual network.",
-                "type": "array",
-                "items": {
-                  "$ref": "#/$defs/ipv4"
-                }
-              },
-              "subnets": {
-                "description": "Subnets of the virtual network.",
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "additionalProperties": false,
-                  "properties": {
-                    "name": {
-                      "description": "Name of the subnet, for example GatewaySubnet.",
-                      "type": "string"
-                    },
-                    "prefix": {
-                      "$ref": "#/$defs/cidr",
-                      "description": "Address range of the subnet in CIDR form."
-                    },
-                    "network_security_group": {
-                      "description": "Name of the network security group on the subnet.",
-                      "type": "string"
-                    },
-                    "route_table": {
-                      "description": "Name of the route table on the subnet.",
-                      "type": "string"
-                    }
-                  }
-                }
+                "description": "The VLAN number, 1 to 4094. The pre-cluster verification compares it with the VLANs the switch ports are meant to allow.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4094
               }
             }
           }
         }
       }
     },
-    "devops": {
-      "description": "Part 1 of the implementation steps: the pipeline platform, the project and its settings, the environments, the sign-in to Azure and the self-hosted runners (tasks 01 to 06 of automation / 01-cicd-infra). Optional. Schema 5.5 added repository, settings, environments, authentication, runners, runner_network, runner_access, api_token and state.key.",
+    "storage": {
+      "description": "Storage of the instance: the deployment's storage mode, the volumes, and the SAN of a disaggregated or hybrid deployment (the san block applies only when scenario.storage_architecture is san or hybrid).",
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "platform": {
-          "description": "The CI/CD platform: github, gitlab or azure_devops.",
+        "volumes": {
+          "description": "The Storage Spaces Direct volumes to create after deployment, in addition to what the deployment itself creates (storage.configuration_mode). New-StorageVolume.ps1 (phase 06, task 05) creates each one that does not exist yet with New-Volume and never changes or removes one that exists. Not used with scenario.storage_architecture san.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "description": "Name of the volume, for example vol-workloads-01. It becomes the folder C:\\ClusterStorage\\<name>. Not a name the deployment manages (UserStorage_<n>, Infrastructure_<n>).",
+                "type": "string"
+              },
+              "size_gib": {
+                "description": "Size of the volume in GiB (binary units, as Windows counts).",
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "resiliency": {
+                "description": "Resiliency of the volume. two_way, three_way and parity (dual parity, 4 or more machines) are the usual ones; four_way is for a rack aware cluster; nested_two_way and nested_mirror_accelerated_parity are for a cluster of two machines; mirror_accelerated_parity needs 4 or more machines and ReFS (the two accelerated-parity values are new in 5.6.9). Leave it out and Storage Spaces Direct chooses: two-way mirror with one or two machines, three-way mirror with three or more.",
+                "type": "string",
+                "enum": [
+                  "two_way",
+                  "three_way",
+                  "four_way",
+                  "parity",
+                  "nested_two_way",
+                  "mirror_accelerated_parity",
+                  "nested_mirror_accelerated_parity"
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "sdn": {
+      "description": "SDN enabled by Azure Arc (Network Controller as a Failover Cluster service; Azure Local 2506 or later, OS build 26100 or later). It supports logical networks, network interfaces of Azure Local VMs and network security groups, and nothing else: no virtual networks, no software load balancer, no gateways. The older SDN managed by on-premises tools (SDN Express, Windows Admin Center, Network Controller VMs) is not built. https://learn.microsoft.com/azure/azure-local/deploy/enable-sdn-integration",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "description": "true to turn SDN enabled by Azure Arc on, which CANNOT BE UNDONE. Enable-ArcSdn.ps1 (phase 06, task 01) runs Add-EceFeature -Name NC on a machine of the instance when it is true. Microsoft Learn says that once SDN is enabled you cannot roll back or disable it, and false does not turn it off. Never set it where Network Controller was deployed with on-premises tools. Enabling interrupts the network of running workloads for a short time. New-NetworkSecurityGroup.ps1 (task 07) and New-LogicalNetwork.ps1 (task 08, for a logical network with nsg_name) also read it: network security groups need SDN enabled by Azure Arc.",
+          "type": "boolean"
+        },
+        "prefix": {
+          "description": "The SDN prefix (Add-EceFeature -SDNPrefix). It names the Network Controller REST URL, https://<prefix>-NC.<domain>/, and tells the controllers of different instances apart. Microsoft Learn: not empty, eight characters or fewer, letters, digits and hyphens only, no two hyphens in a row, no hyphen at the end. The toolkit also refuses a hyphen at the start, which is not a valid DNS name. Required when sdn.enabled is true: Enable-ArcSdn.ps1 stops with exit 2 without it.",
           "type": "string",
-          "enum": [
-            "github",
-            "gitlab",
-            "azure_devops"
-          ]
-        },
-        "url": {
-          "description": "URL of the CI/CD platform (an organization or instance URL).",
-          "type": "string"
-        },
-        "organization": {
-          "description": "Organization, group or project collection.",
-          "type": "string"
-        },
-        "project": {
-          "description": "Name of the project or organization on the platform.",
-          "type": "string"
-        },
-        "api_token": {
-          "$ref": "#/$defs/kv_ref",
-          "description": "Schema 5.5. Key Vault reference to a token with administrator rights on the organization or project. The setup scripts (tasks 02 to 05) use it when the platform CLI is not already signed in. Without it they read GH_TOKEN, GITLAB_TOKEN or AZURE_DEVOPS_EXT_PAT from the environment."
-        },
-        "subscription": {
-          "description": "Schema 5.5. Name of the subscription in landing_zone.subscriptions that holds the runners (role devops). Default: the subscription with role devops.",
-          "type": "string"
-        },
-        "resource_group": {
-          "$ref": "#/$defs/resource_group",
-          "description": "Schema 5.5. Resource group of the runners, their identity and their network."
-        },
-        "create_resource_group": {
-          "description": "Schema 5.5. Create devops.resource_group. False when it exists.",
-          "type": "boolean",
-          "default": false
-        },
-        "repository": {
-          "description": "Schema 5.5. The deployment repository or project that task 02 creates.",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "name": {
-              "description": "Repository name. Default: devops.project.",
-              "type": "string"
-            },
-            "template": {
-              "description": "GitHub: owner/repo of a template repository. GitLab: the ID or path of the template project. Azure DevOps: the clone URL to import. Empty creates an empty repository.",
-              "type": "string"
-            },
-            "visibility": {
-              "description": "Repository visibility.",
-              "type": "string",
-              "default": "private",
-              "enum": [
-                "private",
-                "internal"
-              ]
-            },
-            "default_branch": {
-              "description": "The protected default branch.",
-              "type": "string",
-              "default": "main"
-            }
-          }
-        },
-        "settings": {
-          "description": "Schema 5.5. What task 03 sets on the repository: branch protection, approvals and security.",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "required_approvals": {
-              "description": "Approvals a pull request needs before it merges. 0 for a sandbox.",
-              "type": "integer",
-              "default": 2,
-              "minimum": 0,
-              "maximum": 10
-            },
-            "reviewers": {
-              "description": "The team or group whose members review: a GitHub team slug (org/team), a GitLab group path or an Azure DevOps group name.",
-              "type": "string"
-            },
-            "squash_only": {
-              "description": "Allow squash merges only.",
-              "type": "boolean",
-              "default": true
-            },
-            "secret_scanning": {
-              "description": "Turn on secret scanning and push protection (GitHub), secret push rules (GitLab) or the secret file check (Azure DevOps).",
-              "type": "boolean",
-              "default": true
-            },
-            "resolve_conversations": {
-              "description": "All conversations must be resolved before a merge.",
-              "type": "boolean",
-              "default": true
-            },
-            "required_status_checks": {
-              "description": "Pipeline checks that must pass before a merge.",
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          }
-        },
-        "environments": {
-          "description": "Schema 5.5. The deployment environments that task 04 creates, with their approval gate.",
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "name": {
-                "description": "Environment name, for example azr-prod-us, or ztp-reinstall for the approval in front of the ZTP Boot stage.",
-                "type": "string",
-                "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
-              },
-              "approval_required": {
-                "description": "A named reviewer must approve each deployment.",
-                "type": "boolean",
-                "default": false
-              },
-              "approvers": {
-                "description": "GitHub user names or org/team slugs, GitLab user names or group paths, Azure DevOps e-mail addresses.",
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "wait_minutes": {
-                "description": "Delay before a deployment starts (GitHub).",
-                "type": "integer",
-                "default": 0,
-                "minimum": 0,
-                "maximum": 43200
-              },
-              "deployment_branch": {
-                "description": "The only branch that may deploy to the environment.",
-                "type": "string",
-                "default": "main"
-              }
-            }
-          }
-        },
-        "authentication": {
-          "description": "Schema 5.5. How the pipelines sign in to Azure (tasks 01 and 05). The app registration is azure.automation_identity.name.",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "method": {
-              "description": "oidc: a federated credential per repository and environment, no secret. client_secret: a secret, stored only in Key Vault (devops.authentication.client_secret) and in the platform as a masked variable.",
-              "type": "string",
-              "default": "oidc",
-              "enum": [
-                "oidc",
-                "client_secret"
-              ]
-            },
-            "client_secret": {
-              "$ref": "#/$defs/kv_ref",
-              "description": "Key Vault reference where task 01 stores the generated client secret (method client_secret)."
-            },
-            "roles": {
-              "description": "Roles the service principal gets on each subscription. Default: Contributor and User Access Administrator, as the automation docs say. Narrow them when you can.",
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "grant_graph_role_management": {
-              "description": "Also add the Microsoft Graph application permission RoleManagement.ReadWrite.Directory and grant admin consent. High privilege: leave false unless a pipeline assigns Entra roles.",
-              "type": "boolean",
-              "default": false
-            },
-            "register_encryption_at_host": {
-              "description": "Register Microsoft.Compute and the EncryptionAtHost feature on each subscription.",
-              "type": "boolean",
-              "default": true
-            }
-          }
-        },
-        "runners": {
-          "description": "Schema 5.5. The self-hosted runners that task 06 deploys with Terraform. One Linux general pool and at most one Windows ztp runner; use the module directly for more. Replaces devops.runner when present.",
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": false,
-            "properties": {
-              "name": {
-                "description": "Name prefix of the VM or VMs, for example vm-contoso-runner-lnx.",
-                "type": "string"
-              },
-              "os_type": {
-                "description": "Operating system.",
-                "type": "string",
-                "enum": [
-                  "linux",
-                  "windows"
-                ]
-              },
-              "purpose": {
-                "description": "general: ARM, Arc, Terraform, Ansible and OS configuration. ztp: the azurelocal-ztp Boot, Bootstrap and Vouchers stages (Windows only).",
-                "type": "string",
-                "default": "general",
-                "enum": [
-                  "general",
-                  "ztp"
-                ]
-              },
-              "count": {
-                "description": "Number of VMs.",
-                "type": "integer",
-                "default": 1,
-                "minimum": 1,
-                "maximum": 20
-              },
-              "compute_type": {
-                "description": "vm or vmss. Windows and ztp runners are VMs.",
-                "type": "string",
-                "default": "vm",
-                "enum": [
-                  "vm",
-                  "vmss"
-                ]
-              },
-              "size": {
-                "description": "VM size. Default Standard_D2s_v5 (Linux) and Standard_D4s_v5 (Windows ztp).",
-                "type": "string"
-              },
-              "labels": {
-                "description": "Labels added to the defaults (azure, the OS, terraform, ansible, ztp).",
-                "type": "array",
-                "items": {
-                  "type": "string"
-                }
-              },
-              "registration_secret": {
-                "$ref": "#/$defs/kv_ref",
-                "description": "Key Vault reference to the secret the runner reads at boot: a PAT or App token (GitHub), the runner authentication token (GitLab), a PAT with Agent Pools read and manage (Azure DevOps). Only the reference is here."
-              },
-              "pool": {
-                "description": "The Azure Pipelines agent pool, or the GitHub runner group. A ztp runner gets its own.",
-                "type": "string"
-              },
-              "private_ips": {
-                "description": "Static private addresses, one per VM. Empty uses dynamic addresses.",
-                "type": "array",
-                "items": {
-                  "$ref": "#/$defs/ipv4"
-                }
-              },
-              "subnet": {
-                "description": "The runner subnet inside runner_network.address_space.",
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "name": {
-                    "description": "Name of the subnet the runner machines are placed in.",
-                    "type": "string"
-                  },
-                  "prefix": {
-                    "$ref": "#/$defs/cidr",
-                    "description": "Address range of that subnet, in CIDR form."
-                  }
-                }
-              },
-              "data_disk_gb": {
-                "description": "Data disk for the ZTP media, images and vouchers. 512 or more for ztp.",
-                "type": "integer",
-                "default": 0,
-                "minimum": 0,
-                "maximum": 32767
-              }
-            }
-          }
-        },
-        "runner_network": {
-          "description": "Schema 5.5. The VNet of the runners, the peering with the hub and the lab ranges they reach.",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "vnet_name": {
-              "description": "Name of the virtual network the runners are placed in.",
-              "type": "string"
-            },
-            "address_space": {
-              "description": "Address ranges of that virtual network, in CIDR form.",
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "$ref": "#/$defs/cidr"
-              }
-            },
-            "dns_servers": {
-              "description": "DNS servers of that virtual network.",
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/ipv4"
-              }
-            },
-            "hub_peering": {
-              "description": "Peering with the hub VNet. The hub half is created in the hub subscription unless create_hub_side is false.",
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": {
-                  "description": "Peer the runner VNet with the hub.",
-                  "type": "boolean",
-                  "default": false
-                },
-                "hub_network": {
-                  "description": "Name of the hub in landing_zone.networks (its subscription and resource group give the VNet ID).",
-                  "type": "string"
-                },
-                "hub_vnet_id": {
-                  "description": "Resource ID of the hub VNet. Use it instead of hub_network.",
-                  "type": "string"
-                },
-                "use_remote_gateways": {
-                  "description": "Use the hub VPN or ExpressRoute gateway to reach the lab.",
-                  "type": "boolean",
-                  "default": true
-                },
-                "create_hub_side": {
-                  "description": "Create the hub half of the peering. False when the network team owns it.",
-                  "type": "boolean",
-                  "default": true
-                }
-              }
-            },
-            "reachable_cidrs": {
-              "description": "Lab networks the runners reach: management, storage, BMC.",
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/cidr"
-              }
-            },
-            "reachable_tcp_ports": {
-              "description": "TCP ports allowed outbound to the lab networks. Default 22, 443, 445, 3389, 5985, 5986.",
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "bmc_cidrs": {
-              "description": "The BMC networks. The ztp runner accepts inbound TCP 445 from these only. Required for a ztp runner.",
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/cidr"
-              }
-            },
-            "admin_source_cidrs": {
-              "description": "Ranges that may reach SSH or RDP on the runners. Empty allows none.",
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/cidr"
-              }
-            }
-          }
-        },
-        "runner_access": {
-          "description": "Schema 5.5. What the runners may do in Azure (least privilege).",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "resource_groups": {
-              "description": "Resource groups where the runners are Contributor. Default: azure.resource_group. Add the Azure Local managed resource group if it can take deployments.",
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/resource_group"
-              }
-            },
-            "rbac_administrator": {
-              "description": "Role Based Access Control Administrator on those resource groups, which the Azure Local deployment and ZTP need.",
-              "type": "boolean",
-              "default": true
-            },
-            "rbac_delegable_role_ids": {
-              "description": "Limit the roles the runners may assign to these role definition GUIDs. Empty allows any role.",
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/guid"
-              }
-            },
-            "arc_run_command": {
-              "description": "Azure Connected Machine Resource Administrator on those resource groups, so jobs can run Arc Run Command on the machines.",
-              "type": "boolean",
-              "default": true
-            },
-            "key_vaults": {
-              "description": "Vaults the runners read secrets from. Default: every vault in key_vaults.",
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/key_vault_name"
-              }
-            }
-          }
-        },
-        "runner": {
-          "description": "One runner (the form before devops.runners[]). Kept for files written before 5.5; use devops.runners[].",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "name": {
-              "description": "Name of the runner.",
-              "type": "string"
-            },
-            "type": {
-              "description": "Kind of runner: vm, container_app or existing.",
-              "type": "string",
-              "enum": [
-                "vm",
-                "container_app",
-                "existing"
-              ]
-            },
-            "subscription": {
-              "description": "Subscription of the runner.",
-              "type": "string"
-            },
-            "resource_group": {
-              "$ref": "#/$defs/resource_group",
-              "description": "Resource group of the runner."
-            },
-            "network": {
-              "description": "Virtual network of the runner.",
-              "type": "string"
-            },
-            "subnet": {
-              "description": "Subnet of the runner.",
-              "type": "string"
-            },
-            "private_ip": {
-              "$ref": "#/$defs/ipv4",
-              "description": "Private address of the runner."
-            },
-            "size": {
-              "description": "VM size of the runner.",
-              "type": "string"
-            },
-            "labels": {
-              "description": "Runner tags or labels that jobs select.",
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "registration_token": {
-              "$ref": "#/$defs/kv_ref",
-              "description": "A Key Vault secret reference: keyvault://<vault>/<secret>. The vault must be listed in key_vaults."
-            }
-          }
-        },
-        "state": {
-          "description": "Where the Terraform state is kept.",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "subscription_id": {
-              "$ref": "#/$defs/guid",
-              "description": "Schema 5.5. Subscription of the state storage account."
-            },
-            "key": {
-              "description": "Schema 5.5. Blob name of the CI/CD runners state. Default cicd-infra.tfstate.",
-              "type": "string",
-              "default": "cicd-infra.tfstate"
-            },
-            "storage_account": {
-              "$ref": "#/$defs/storage_account_name",
-              "description": "Storage account that holds the state."
-            },
-            "container": {
-              "description": "Blob container that holds the state.",
-              "type": "string"
-            },
-            "resource_group": {
-              "$ref": "#/$defs/resource_group",
-              "description": "Resource group of the state storage account."
-            }
-          }
+          "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$",
+          "minLength": 1,
+          "maxLength": 8
         }
       }
     }

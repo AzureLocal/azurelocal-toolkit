@@ -1,0 +1,2307 @@
+{
+  "$comment": "GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit: change the registry and run the generator.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://azurelocal.cloud/schemas/infrastructure/5/infrastructure.trailwright.schema.json",
+  "title": "Azure Local infrastructure.yml (trailwright)",
+  "description": "The part of infrastructure.yml that the tool 'trailwright' writes. Generated from master-registry.yaml; every key is also in the full schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "_metadata": {
+      "description": "About this file.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. 5.6.11 adds what the logical network, network security group and VM image scripts read: networking.network_security_groups (name and rules with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description), networking.logical_networks[].vm_switch_name and storage.vm_images (name, os_type, publisher, offer, sku, version, storage_path). 5.6.12 adds operations.monitoring.retention_days and removes operations.notifications.teams_webhook and operations.monitoring.health_alerts. 5.6.13 adds the secrets section (provider, file directory, command) and lets a secret reference use the env://, file:// and command:// forms besides keyvault://. 5.6.14 adds hardware.inventory (output_directory, file_name_prefix, format, timeout_seconds), which Get-HardwareInventory.ps1 reads. 5.6.15 adds what Enable-ArcSdn.ps1 reads: sdn.acknowledge_maintenance_window and sdn.acknowledge_dns_record, the rules of sdn.prefix, and sdn.dns_records (read now); it removes sdn.default_access_policy. 5.6.16 adds storage.san.luns[].unique_id (how New-SanVolume.ps1 finds the disk of a LUN) and removes security.backup_key_vault. The current version is 5.6.16.",
+          "type": "string",
+          "pattern": "^5\\.[0-9]+\\.[0-9]+$"
+        },
+        "scope": {
+          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity beyond local_admin) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key).",
+          "default": "full",
+          "enum": [
+            "full",
+            "ztp"
+          ]
+        },
+        "file_version": {
+          "description": "Your own version of this file.",
+          "type": "string"
+        },
+        "last_updated": {
+          "$ref": "#/$defs/date",
+          "description": "Date of the last change, YYYY-MM-DD."
+        },
+        "generated_by": {
+          "description": "The tool that wrote the file, for example azurelocal-trailwright 1.1.0. Empty when written by hand.",
+          "type": "string"
+        },
+        "notes": {
+          "description": "Free text about this file for the people who keep it. Not read by the tools.",
+          "type": "string"
+        }
+      }
+    },
+    "scenario": {
+      "description": "The design choices. Every other section is read in the light of these: a choice makes its section required, and tools pick their path from here. All of them are required, so nothing is assumed.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "identity": {
+          "description": "active_directory: machines join an AD domain (needs identity.active_directory). local_identity: no AD, secrets in Key Vault (needs identity.local_identity). https://learn.microsoft.com/azure/azure-local/deploy/deployment-local-identity-with-key-vault",
+          "type": "string",
+          "enum": [
+            "active_directory",
+            "local_identity"
+          ]
+        },
+        "storage_architecture": {
+          "description": "s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both (S2D plus a SAN). san and hybrid TELL THE SOLUTION THERE IS A SAN: the OS configuration then does the host-side SAN work itself (the Mpio step: MPIO, MSDSM hardware ID, the MPIO claim of the device (mpclaim -n -i -d), load balance policy, vendor MPIO settings; for iSCSI the initiator service, auto-claim, portals and sessions, except for a san design on Azure Local 2610 or later, where the deployment configures iSCSI and Microsoft Learn says not to enable it before) and checks each LUN is seen once (SanVerify). storage.san.type says whether the SAN is fibre_channel or iscsi. On every node the OS configuration also looks, read only, for FC or iSCSI LUNs that are visible while the file declares no SAN, and reports them. https://learn.microsoft.com/azure/azure-local/deploy/enable-external-storage",
+          "type": "string",
+          "enum": [
+            "s2d",
+            "san",
+            "hybrid"
+          ]
+        },
+        "storage_connectivity": {
+          "description": "switched: storage traffic goes through top-of-rack switches. switchless: machines are cabled directly to each other for storage. A single machine uses switched.",
+          "type": "string",
+          "enum": [
+            "switched",
+            "switchless"
+          ]
+        },
+        "topology": {
+          "description": "standard, or rack_aware (machines split across two local availability zones; every node needs a zone).",
+          "type": "string",
+          "enum": [
+            "standard",
+            "rack_aware"
+          ]
+        },
+        "connectivity": {
+          "description": "connected to Azure, or disconnected operations (needs the disconnected section).",
+          "type": "string",
+          "enum": [
+            "connected",
+            "disconnected"
+          ]
+        },
+        "cloud": {
+          "description": "Azure public cloud or Azure Government.",
+          "type": "string",
+          "enum": [
+            "public",
+            "government"
+          ]
+        },
+        "outbound_path": {
+          "description": "How the machines reach Azure. Paths with a proxy need networking.outbound.proxy; paths with Arc gateway need networking.outbound.arc_gateway; private_path needs networking.outbound.private_path.",
+          "type": "string",
+          "enum": [
+            "direct",
+            "proxy",
+            "arc_gateway",
+            "proxy_arc_gateway",
+            "private_path"
+          ]
+        },
+        "os_install": {
+          "description": "iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp automates (needs provisioning.simplified, and on every node a serial number, a BMC address and the management MAC: management.mac_address, or from 5.2 a mac_address on every network_adapters port with role management and at least one port with role provisioning).",
+          "type": "string",
+          "enum": [
+            "iso",
+            "simplified"
+          ]
+        },
+        "deploy_method": {
+          "description": "How the cluster is deployed: the Azure portal or an ARM template. Not read by the tools yet: a documented placeholder.",
+          "type": "string",
+          "enum": [
+            "portal",
+            "arm"
+          ]
+        }
+      }
+    },
+    "site": {
+      "description": "Where the machines are.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "customer": {
+          "description": "Name of the customer or organization the site belongs to. Documentation only; not read by the tools.",
+          "type": "string"
+        },
+        "time_zone": {
+          "description": "Windows time zone ID of the site, for example UTC or Eastern Standard Time. Simplified provisioning sets it on the site.",
+          "type": "string"
+        },
+        "code": {
+          "description": "Short site code, 2 to 8 uppercase letters or digits.",
+          "type": "string",
+          "pattern": "^[A-Z0-9]{2,8}$"
+        },
+        "name": {
+          "description": "Display name of the site. Also the display name of the Microsoft.Edge site in simplified provisioning.",
+          "type": "string",
+          "minLength": 1
+        },
+        "owner": {
+          "type": "string",
+          "description": "Contact (a team mailbox, not a person) who owns the site. Documentation only; not read by the tools."
+        }
+      }
+    },
+    "environment": {
+      "description": "Which environment this file describes.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Environment identifier: lowercase letters, digits and hyphens.",
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{1,40}$"
+        },
+        "type": {
+          "description": "Class of the environment: lab, demo, poc, dev, test, stg or prd. Documentation and naming; scenario.environment_class is the key that changes what the tools allow.",
+          "type": "string",
+          "enum": [
+            "lab",
+            "demo",
+            "poc",
+            "dev",
+            "test",
+            "stg",
+            "prd"
+          ]
+        }
+      }
+    },
+    "azure": {
+      "description": "The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless provisioning.simplified says otherwise) the site and edge machines.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "tenant_id": {
+          "$ref": "#/$defs/guid",
+          "description": "Microsoft Entra tenant ID (GUID) of the subscription. Read it with (Get-AzContext).Tenant.Id or from the Microsoft Entra ID overview page in the Azure portal."
+        },
+        "location": {
+          "$ref": "#/$defs/azure_region",
+          "description": "Azure region, for example eastus. Simplified provisioning works only in eastus in the preview."
+        },
+        "subscription_id": {
+          "$ref": "#/$defs/guid",
+          "description": "Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_id names another one. Read it with (Get-AzContext).Subscription.Id."
+        },
+        "resource_group": {
+          "$ref": "#/$defs/resource_group",
+          "description": "Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses). The Azure Local resource provider needs the Azure Connected Machine Resource Manager role on it; the ZTP template assigns that role."
+        },
+        "hci_resource_provider_object_id": {
+          "$ref": "#/$defs/guid",
+          "description": "Object ID of the Azure Local resource provider's service principal (application 1412d89f-b8a8-4111-b4fd-e82905cbd85d) in the tenant. Optional: tools look it up when they can read the directory."
+        },
+        "custom_location": {
+          "description": "Name of the custom location the deployment creates.",
+          "type": "string"
+        }
+      }
+    },
+    "key_vaults": {
+      "description": "Every Key Vault that a keyvault:// reference in this file names, with where it is. Tools resolve references against this list, and grant roles on the vault from it.",
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/key_vault_name",
+            "description": "Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens."
+          },
+          "subscription_id": {
+            "$ref": "#/$defs/guid",
+            "description": "Subscription (GUID) that holds the vault."
+          },
+          "resource_group": {
+            "$ref": "#/$defs/resource_group",
+            "description": "Resource group that holds the vault."
+          },
+          "purpose": {
+            "description": "What the vault holds, for example management, deployment or backup.",
+            "type": "string"
+          }
+        }
+      }
+    },
+    "cluster": {
+      "description": "The Azure Local instance (the cluster deployment).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/netbios_name",
+          "description": "Cluster name: a NetBIOS name of up to 15 characters. ARM parameter clusterName."
+        },
+        "naming_prefix": {
+          "description": "Prefix of the Azure resources the deployment creates. ARM parameter namingPrefix.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9-]{1,16}$"
+        },
+        "witness": {
+          "description": "The quorum witness of the cluster. A two-machine cluster and a rack aware cluster need one (rule AZL-008). See cluster.witness.type.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "description": "cloud (an Azure Storage account), file_share (disconnected operations), or none. Two machines need a witness. https://learn.microsoft.com/azure/azure-local/concepts/cluster-witness",
+              "type": "string",
+              "enum": [
+                "cloud",
+                "file_share",
+                "none"
+              ]
+            },
+            "storage_account": {
+              "$ref": "#/$defs/storage_account_name",
+              "description": "Cloud witness storage account. ARM clusterWitnessStorageAccountName."
+            },
+            "path": {
+              "description": "File share witness UNC path.",
+              "type": "string"
+            }
+          }
+        },
+        "key_vault": {
+          "description": "The Key Vault the deployment uses for the instance's secrets (one per instance). ARM keyVaultName.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "$ref": "#/$defs/key_vault_name",
+              "description": "Name of the Key Vault the deployment creates for the cluster (ARM keyVaultName): 3 to 24 characters, letters, digits and hyphens, starting with a letter."
+            },
+            "create_new": {
+              "description": "ARM createNewKeyVault.",
+              "type": "boolean"
+            },
+            "soft_delete_retention_days": {
+              "description": "Days a deleted secret or vault stays recoverable, 7 to 90.",
+              "type": "integer",
+              "minimum": 7,
+              "maximum": 90
+            }
+          }
+        },
+        "diagnostics": {
+          "description": "Key Vault audit logs. ARM diagnosticStorageAccountName, logsRetentionInDays and storageAccountType.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "storage_account": {
+              "$ref": "#/$defs/storage_account_name",
+              "description": "Name of the storage account that receives the cluster diagnostic logs: 3 to 24 lowercase letters and digits."
+            },
+            "logs_retention_days": {
+              "description": "Days the diagnostic logs are kept.",
+              "type": "integer",
+              "minimum": 0
+            },
+            "storage_account_type": {
+              "description": "SKU of the diagnostic storage account, for example Standard_LRS.",
+              "type": "string",
+              "examples": [
+                "Standard_LRS"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "deployment": {
+      "description": "How the toolkit's ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks for approval and recovers. Optional; every key has a default; a -Settings value on the command line wins over this block. (since 5.6)",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "solution_version": {
+          "description": "The solution version the nodes run (four numeric parts, for example 12.2610.1004.50). The precondition SbeValidatedWithSolution compares it with the solution versions the OEM's SBE discovery catalog lists for the configured SBE. Leave empty to use the ZTP handoff's solution version, else the version derived from the nodes' OS build (reported as derived; only builds that map unambiguously).",
+          "type": "string",
+          "pattern": "^\\d+\\.\\d+\\.\\d+\\.\\d+$"
+        }
+      }
+    },
+    "nodes": {
+      "description": "The machines, one entry each. ARM physicalNodesSettings and arcNodeResourceIds. Up to 16 with Storage Spaces Direct, up to 64 disaggregated (the validator checks which applies).",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "$ref": "#/$defs/node",
+        "properties": {
+          "name": {
+            "$ref": "#/$defs/netbios_name",
+            "description": "Host name: up to 15 characters. Also the edge machine name and, for an ISO install, the Arc machine name. With simplified provisioning the Arc machine name is arc_machine_name, which defaults to this."
+          },
+          "management": {
+            "description": "The machine's management port and address (schema 5.0 and 5.1). From 5.2, network_adapters describes it instead: the port with role management and an ip_assignment other than none. When both are given they must agree; prefer network_adapters.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "ip_address": {
+                "$ref": "#/$defs/ipv4",
+                "description": "Management address. ARM physicalNodesSettings[].ipv4Address. How it gets onto the management port before deployment is networking.management.ip_assignment: set on the port (static), reserved in DHCP for mac_address (dhcp), or already there (preconfigured). With network_adapters it is the management port's ip_address."
+              },
+              "mac_address": {
+                "$ref": "#/$defs/mac",
+                "description": "MAC of the management port. Provisioning finds and targets the port by it: simplified provisioning names the port by this MAC when it sets the static address (edge machine networkAdapters[].macAddress), and node preparation finds the adapter by it. With ip_assignment dhcp, reserve ip_address for this MAC. Required with simplified provisioning."
+              }
+            }
+          },
+          "serial_number": {
+            "description": "Serial number (Dell service tag). Maps each simplified-provisioning voucher to its machine.",
+            "type": "string",
+            "minLength": 1
+          },
+          "bmc": {
+            "description": "The baseboard management controller (BMC) of the machine: address, type and login. ZTP drives the machine through it over Redfish (virtual media, boot override, BIOS settings, power); hardware discovery reads the machine through it.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "ip_address": {
+                "$ref": "#/$defs/ipv4",
+                "description": "IPv4 address of the BMC (iDRAC, iLO, XCC). It must answer HTTPS (TCP 443) from the host that runs ZTP or discovery."
+              }
+            }
+          },
+          "zone": {
+            "description": "Rack-aware: the local availability zone. ARM localAvailabilityZones.",
+            "type": "string"
+          },
+          "storage_ips": {
+            "description": "Storage address on each storage network, in networking.storage.networks order, when networking.storage.auto_ip is false.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ipv4"
+            }
+          }
+        }
+      }
+    },
+    "hardware": {
+      "description": "What every machine is. The layout is the same on every machine.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "vendor": {
+          "description": "OEM, for example Dell, HPE, Lenovo or DataON. ZTP picks config/oem/<vendor>.json from it.",
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "description": "Model, for example AX-760. Used to select the SBE.",
+          "type": "string",
+          "minLength": 1
+        },
+        "cpu_cores": {
+          "description": "Physical cores per machine. Get-HardwareInventory.ps1 compares it with the cores the BMC reports (the sum over all processors).",
+          "type": "integer",
+          "minimum": 1
+        },
+        "memory_gib": {
+          "description": "Memory per machine, GiB. Get-HardwareInventory.ps1 compares it with the memory the BMC reports.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "sbe": {
+          "description": "The hardware vendor's Solution Builder Extension (SBE) package, its driver and firmware update, is a REQUIREMENT (schema 5.6.4): the package is downloaded and available on a share the automation can read (source_path), for the build and for the first cluster update, which needs it anyway (a vendor whose SBE has no download connector for your cluster reports AdditionalContentRequired; Dell's download is behind a support login). Whether it is required comes from requirement; when that key is absent the vendor catalog (config/oem/<vendor>.json) decides: required for a vendor whose package is a manual download (Dell, HPE, DataON), not required by default where the cluster downloads it itself. Say not_applicable, with not_applicable_reason, for hardware that has no SBE or a cluster that downloads it with the vendor credential. What stays opt-in is only the build-time side-load: nothing is copied to a node unless you set delivery to winrm_copy or node_pull (default skip), and nothing in the toolkit adds a delivery setting or an SBE value to a file. The pre-cluster verification (SB-001 to SB-006) checks that the package on the share is complete, consistent, for the hardware model of every node and validated for the target solution version. The version is the one validated with provisioning.os_version. ARM sbeVersion, sbeFamily, sbePublisher, sbeManifestSource and sbeManifestCreationDate; without a package the ARM deployment passes none of them (nor partnerProperties and partnerCredentiallist), and the template's own empty defaults apply.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "requirement": {
+              "description": "Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster verification fails without it). not_applicable: this hardware has no SBE, or the cluster downloads it with the vendor credential; needs not_applicable_reason. Absent: the vendor catalog (config/oem/<vendor>.json) decides: required for a vendor whose package is a manual download (Dell, HPE, DataON), a Warning that asks you to state it for a vendor whose cluster downloads the package itself (Lenovo Premier), Skipped for a vendor the catalog does not know. This key is about the package being available; whether the toolkit also copies it to the nodes during the build is delivery, a separate opt-in that stays off.",
+              "type": "string",
+              "enum": [
+                "required",
+                "not_applicable"
+              ]
+            },
+            "not_applicable_reason": {
+              "description": "Required when requirement is not_applicable: why no package is needed, in one sentence, for example that no SBE exists for the hardware model or that the cluster downloads it with the vendor credential. The gate shows it in its report; an empty reason fails SB-001.",
+              "type": "string"
+            },
+            "source_path": {
+              "description": "Where the downloaded SBE package is available to the automation: a UNC share or a folder, for example \\\\server\\share\\sbe\\dell or D:\\sbe\\dell, that holds the three files as the vendor delivers them: SBE_Discovery_<Vendor>.xml, SBE_<Vendor>_<Family>_<Version>.xml and SBE_<Vendor>_<Family>_<Version>.zip (Microsoft Learn, Import and rediscover updates). Download them before you start: you need them for the first cluster update anyway, and the build can use them too (delivery). The pre-cluster verification reads this location, read only, from the machine that runs the automation, with source_username and source_password when they are set. When it is empty, bundle_path is used. No credential, token or query string in the path (rule AZL-030).",
+              "type": "string"
+            },
+            "source_username": {
+              "description": "The account that reads source_path when the account running the automation cannot (for example DOMAIN\\svc-sbe-read). Read access only. Needs source_password.",
+              "type": "string"
+            },
+            "source_password": {
+              "$ref": "#/$defs/kv_ref",
+              "description": "The Key Vault secret that holds the password of source_username, as a keyvault://<vault>/<secret> reference. It is read into memory for the run and never written or shown."
+            },
+            "delivery": {
+              "description": "Opt-in (schema 5.4.2): the toolkit side-loads an SBE only when you set winrm_copy or node_pull here; no value means no delivery, and a hardware.sbe block with no delivery copies nothing and touches no C:\\SBE. Nothing in the toolkit sets this key for you. How the SBE package reaches the nodes. It lands in each node's C:\\SBE during OS configuration. winrm_copy: the toolkit copies the files over WinRM (a PSSession, TCP 5985) from the host it runs on, so that host must reach the nodes' management subnet (the operator host if it can, or a runner that can); needs the nodes' local administrator as -Credential. node_pull: each node downloads the files itself from node_pull_url, a read-only HTTPS or SMB location that you serve from a host the nodes can reach; the toolkit checks the SHA-256 on the node after the download. skip (default, also when the key is absent): the toolkit does not deliver the package, the Sbe step reports it as not delivered (an SBE you configured and placed yourself), and no other step is affected. There is no Azure storage account route: Azure Arc Run Command cannot carry a file.",
+              "type": "string",
+              "default": "skip",
+              "enum": [
+                "winrm_copy",
+                "node_pull",
+                "skip"
+              ]
+            }
+          }
+        },
+        "network_cards": {
+          "description": "The physical network cards in every machine, and what each port is for. A summary of the hardware; from 5.2 each node's ports, with MACs and addresses, are nodes[].network_adapters.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "description": "Where the card sits, as the chassis labels it, for example Slot 6 or Embedded.",
+                "type": "string"
+              },
+              "make": {
+                "description": "Manufacturer of the card.",
+                "type": "string"
+              },
+              "model": {
+                "description": "Model of the card, as the machine reports it.",
+                "type": "string"
+              },
+              "ports": {
+                "description": "The ports of this network card, in the order the vendor numbers them.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "description": "Adapter name in the OS, as the intents use it.",
+                      "type": "string"
+                    },
+                    "speed_gbps": {
+                      "description": "Port speed in Gbit/s.",
+                      "type": "number",
+                      "minimum": 0
+                    },
+                    "rdma": {
+                      "description": "RDMA technology the port supports: none, iwarp, roce (RoCE) or roce_v2 (RoCEv2).",
+                      "type": "string",
+                      "enum": [
+                        "none",
+                        "iwarp",
+                        "roce",
+                        "roce_v2"
+                      ]
+                    },
+                    "role": {
+                      "description": "unused, intent:<intent name>, cluster:a, cluster:b, iscsi:a or iscsi:b.",
+                      "type": "string",
+                      "pattern": "^(unused|intent:.+|cluster:[ab]|iscsi:[ab])$"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "drives": {
+          "description": "Drives per machine. Get-HardwareInventory.ps1 compares them with the drives the BMC reports and the role (cache or capacity) it works out from the media types.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "capacity": {
+              "$ref": "#/$defs/drive_group",
+              "description": "The capacity drives in each machine (Storage Spaces Direct).",
+              "properties": {
+                "media": {
+                  "description": "Media type of the capacity drives: nvme, ssd or hdd.",
+                  "type": "string",
+                  "enum": [
+                    "nvme",
+                    "ssd",
+                    "hdd"
+                  ]
+                },
+                "count": {
+                  "description": "Number of capacity drives in each machine.",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "size_tb": {
+                  "description": "Size of one capacity drive in TB (decimal terabytes). Get-HardwareInventory.ps1 compares it with the size the BMC reports (within 5 percent).",
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            },
+            "cache": {
+              "$ref": "#/$defs/drive_group",
+              "description": "The cache drives in each machine (Storage Spaces Direct). Leave out when there is no cache tier.",
+              "properties": {
+                "media": {
+                  "description": "Media type of the cache drives: nvme, ssd or hdd.",
+                  "type": "string",
+                  "enum": [
+                    "nvme",
+                    "ssd",
+                    "hdd"
+                  ]
+                },
+                "count": {
+                  "description": "Number of cache drives in each machine.",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "size_tb": {
+                  "description": "Size of one cache drive in TB (decimal terabytes). Get-HardwareInventory.ps1 compares it with the size the BMC reports (within 5 percent).",
+                  "type": "number",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "networking": {
+      "description": "The on-premises networks.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "management": {
+          "description": "The management network and the infrastructure IP pool. DNS servers can't be changed after deployment.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "subnet": {
+              "$ref": "#/$defs/cidr",
+              "description": "CIDR. ARM subnetMask is derived from it."
+            },
+            "gateway": {
+              "$ref": "#/$defs/ipv4",
+              "description": "The one default gateway. ARM defaultGateway."
+            },
+            "vlan_id": {
+              "description": "0 means untagged. Can't be changed after deployment. The VLAN the host tags on the management port: simplified provisioning sets it on that port (edge machine networkAdapters[].vlanId). With nodes[].network_adapters the management port's host VLAN (0 when its vlan_mode is access) must match it.",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4094
+            },
+            "dns_servers": {
+              "description": "ARM dnsServers.",
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/ipv4"
+              }
+            },
+            "use_dhcp": {
+              "description": "ARM useDhcp: the deployment takes the host and cluster addresses from DHCP instead of static addresses and the infrastructure_pool. Default false. A deployment setting, not how each machine's management port gets its address before deployment: that is ip_assignment.",
+              "type": "boolean"
+            },
+            "infrastructure_pool": {
+              "description": "At least six contiguous addresses in the management subnet, outside the machines' addresses. ARM startingIPAddress and endingIPAddress.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "start": {
+                  "$ref": "#/$defs/ipv4",
+                  "description": "First address of the pool the Azure Local infrastructure services use (ARM startingIPAddress): inside the management subnet, outside every machine address and the gateway."
+                },
+                "end": {
+                  "$ref": "#/$defs/ipv4",
+                  "description": "Last address of the infrastructure pool (ARM endingIPAddress). The pool holds at least 6 contiguous addresses."
+                }
+              }
+            }
+          }
+        },
+        "intents": {
+          "description": "Network ATC intents. ARM intentList. https://learn.microsoft.com/azure/azure-local/concepts/host-network-requirements",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/intent",
+            "properties": {
+              "name": {
+                "description": "Name of the Network ATC intent, for example management_compute or storage. The same on every machine.",
+                "type": "string",
+                "minLength": 1
+              },
+              "traffic": {
+                "description": "Traffic types the intent carries: management, compute and storage (ARM trafficType). Management and storage can each be in one intent only; compute can be in any number.",
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "enum": [
+                    "management",
+                    "compute",
+                    "storage"
+                  ]
+                }
+              },
+              "adapters": {
+                "description": "Adapters of the intent, by the key nodes[].network_adapters[].name (the port's name in this file, the same on every machine; the file finds the physical adapter by its MAC, so the OS may call it anything). With nodes[].network_adapters (5.2) each name must be a port in every node's list. The name the deployment sends to Azure (ARM intentList adapter) is what the OS calls that adapter on the nodes, found by MAC, or nodes[].network_adapters[].os_name_override when the file sets one. The first adapter matters: the management virtual adapter takes the MAC of the first adapter of the management intent, so that adapter owns the management address.",
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "overrides": {
+                "description": "Network ATC overrides. Leave out to keep Network ATC's defaults, which Microsoft recommends (Learn: 'We recommend that you use the default values'). The deployment sends the adapter overrides on every intent (ARM overrideAdapterProperty true) so Azure's network validation sees the value that is meant: storage intents get RDMA on and a 9014 packet, an intent without storage traffic gets RDMA off and the default 1514 packet. A value given here wins over that default.",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "qos": {
+                    "description": "Data Center Bridging (DCB) quality of service overrides for the storage traffic (ARM qosPolicyOverrides). Leave out to keep Network ATC's validated defaults: cluster priority 7, SMB priority 3, SMB bandwidth 50 percent.",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "cluster_priority": {
+                        "description": "802.1p priority value of the cluster heartbeat traffic, 0 to 7 (ARM priorityValue8021Action_Cluster). Network ATC default 7. The physical switches must carry the same value.",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 7
+                      },
+                      "smb_priority": {
+                        "description": "802.1p priority value of the SMB Direct (RDMA storage) traffic, 0 to 7 (ARM priorityValue8021Action_SMB). Network ATC default 3. The physical switches must carry the same value.",
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 7
+                      },
+                      "smb_bandwidth_percent": {
+                        "description": "Share of the link reserved for SMB Direct storage traffic, 1 to 100 percent (ARM bandwidthPercentage_SMB). Network ATC default 50.",
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 100
+                      }
+                    }
+                  },
+                  "adapter": {
+                    "description": "Physical adapter property overrides (ARM adapterPropertyOverrides: jumboPacket, networkDirect, networkDirectTechnology). Microsoft: change these only on OEM guidance and validate them with the OEM.",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "jumbo_packet": {
+                        "description": "Value of the adapter's JumboPacket property in bytes: 1514 (standard frame), 4088 or 9014 (jumbo). The ARM parameter takes it as a string. Leave out for the default this tool sets: 9014 on an intent that carries storage traffic, 1514 on any other. Learn recommends a maximum transmission unit of 9216 bytes on the physical switches for RDMA storage traffic and the same MTU end to end on hosts and switches; for an external SAN storage fabric use the MTU your storage vendor specifies.",
+                        "type": "integer",
+                        "enum": [
+                          1514,
+                          4088,
+                          9014
+                        ]
+                      },
+                      "network_direct": {
+                        "description": "RDMA (Network Direct) on the adapters of this intent. true is sent to ARM as networkDirect 'Enabled', false as 'Disabled'. Leave out for the default this tool sets: on for an intent that carries storage traffic, off for any other. Set false to disable RDMA, for example when you test in virtual machines.",
+                        "type": "boolean"
+                      },
+                      "network_direct_technology": {
+                        "description": "RDMA technology of the adapters: iwarp, roce_v2 (RoCEv2) or roce (RoCE, version 1). Sent to ARM as networkDirectTechnology 'iWARP', 'RoCEv2' or 'RoCE'; Learn's network considerations name RoCEv2 and iWARP, the ARM model also accepts RoCE. Used only when network_direct is on; leave out for RoCEv2. Set the technology your adapter vendor and switches are configured for.",
+                        "type": "string",
+                        "enum": [
+                          "iwarp",
+                          "roce",
+                          "roce_v2"
+                        ]
+                      }
+                    }
+                  },
+                  "virtual_switch": {
+                    "description": "Virtual switch overrides of the intent's switch-embedded team (ARM virtualSwitchConfigurationOverrides). Leave out for Network ATC's defaults.",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "enable_iov": {
+                        "description": "SR-IOV on the intent's virtual switch (ARM enableIov). Cannot be changed after the switch exists.",
+                        "type": "boolean"
+                      },
+                      "load_balancing_algorithm": {
+                        "description": "Load balancing of the switch-embedded team: dynamic or hyper_v_port (ARM loadBalancingAlgorithm 'Dynamic' or 'HyperVPort').",
+                        "type": "string",
+                        "enum": [
+                          "dynamic",
+                          "hyper_v_port"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "storage": {
+          "description": "Storage networks (Storage Spaces Direct). ARM storageNetworkList, enableStorageAutoIp and storageConnectivitySwitchless.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "auto_ip": {
+              "description": "Network ATC assigns the storage addresses. When false, each node lists its storage_ips. Default true.",
+              "type": "boolean"
+            },
+            "switchless_links": {
+              "description": "Switchless only: one or two links between each pair of machines. Not read by the tools yet: a documented placeholder.",
+              "type": "string",
+              "enum": [
+                "single",
+                "dual"
+              ]
+            },
+            "tor_switches": {
+              "description": "Top-of-rack switches. Not read by the tools yet: a documented placeholder.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 2
+            },
+            "layout": {
+              "description": "dedicated: storage on its own ports. converged: storage shares ports with other traffic.",
+              "type": "string",
+              "enum": [
+                "dedicated",
+                "converged"
+              ]
+            },
+            "networks": {
+              "description": "The storage networks (SMB), one per storage adapter. The adapter is named by the key nodes[].network_adapters[].name, the same on every machine.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "description": "For example StorageNetwork1.",
+                    "type": "string"
+                  },
+                  "adapter": {
+                    "description": "The adapter of this storage network, by the key nodes[].network_adapters[].name (the same on every machine). The name the deployment sends to Azure (storageNetworkList networkAdapterName) is what the OS calls that adapter, found by MAC, or its os_name_override.",
+                    "type": "string"
+                  },
+                  "vlan_id": {
+                    "description": "Network ATC defaults are 711 and 712.",
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 4094
+                  },
+                  "subnet": {
+                    "$ref": "#/$defs/cidr",
+                    "description": "Needed when auto_ip is false."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "cluster_networks": {
+          "description": "Disaggregated (SAN) only: the cluster networks on standalone ports, fabric A and B. ARM sanNetworkList.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "description": "Name of the cluster network on a standalone port (fabric A or B of a SAN design), for example clusterNetwork-A. ARM sanNetworkList name.",
+                "type": "string"
+              },
+              "adapter": {
+                "description": "The port of this cluster network, by the key nodes[].network_adapters[].name (the same on every machine).",
+                "type": "string"
+              },
+              "vlan_id": {
+                "description": "VLAN of this cluster network, 0 to 4094. 0 means untagged.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4094
+              },
+              "subnet": {
+                "$ref": "#/$defs/cidr",
+                "description": "Subnet of this cluster network in CIDR form."
+              }
+            }
+          }
+        },
+        "vlans": {
+          "description": "Every VLAN in the design, by name.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "description": "Name of the VLAN, for example storage-1. The intents and the storage networks refer to the number, not to the name.",
+                "type": "string"
+              },
+              "id": {
+                "description": "The VLAN number, 1 to 4094. The pre-cluster verification compares it with the VLANs the switch ports are meant to allow.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4094
+              },
+              "subnet": {
+                "$ref": "#/$defs/cidr",
+                "description": "Subnet that runs in this VLAN, in CIDR form. When the purpose is management or oob, the remote management security profile treats the subnet as a source the machines may be reached from."
+              }
+            }
+          }
+        },
+        "logical_networks": {
+          "description": "Arc VM logical networks created after deployment (task phase-06 task-08, New-LogicalNetwork.ps1: az stack-hci-vm network lnet create). Also read by the remote management security profile (purpose, address_prefix) and by the pre-cluster verification (name, vlan_id, address_prefix, purpose). The older form networking.onprem.logical_networks[] (default_gateway, ip_pools) is deprecated. A Static network needs address_prefix, gateway, dns_servers, vlan_id and ip_pool (Learn: DNS server, gateway and VLAN ID must be specified for a static logical network). Microsoft Learn: once a logical network exists you cannot change its gateway, IP pool, address space, VLAN ID or virtual switch name, so the script never changes an existing one.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/logical_network",
+            "properties": {
+              "name": {
+                "description": "Name of the Azure Local logical network resource.",
+                "type": "string"
+              },
+              "vlan_id": {
+                "description": "VLAN ID of the logical network; 0 for untagged. Needed when ip_allocation_method is Static (Learn: DNS server, gateway and VLAN ID must be specified for a static logical network). For a Dynamic network, leave it out for 0.",
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 4094
+              },
+              "address_prefix": {
+                "$ref": "#/$defs/cidr",
+                "description": "Address prefix of the logical network in CIDR form. Needed when ip_allocation_method is Static (az stack-hci-vm takes one prefix). Not used for a Dynamic network; it is still read by the remote management security profile and the pre-cluster verification."
+              },
+              "gateway": {
+                "$ref": "#/$defs/ipv4",
+                "description": "Default gateway of the logical network, inside address_prefix. Needed when ip_allocation_method is Static (Learn: gateway, DNS server and VLAN ID must be specified for a static logical network). Not used for a Dynamic network."
+              },
+              "dns_servers": {
+                "description": "DNS servers handed to machines on this logical network (az stack-hci-vm: --dns-servers). Needed when ip_allocation_method is Static; not used for a Dynamic network.",
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/ipv4"
+                }
+              },
+              "ip_pool": {
+                "description": "The one address range Azure Local hands to virtual machines on this logical network (first and last address, both inside address_prefix), sent as --ip-pool-start and --ip-pool-end. Needed when ip_allocation_method is Static. The pool type is not a key: Learn's static examples give none. Not used for a Dynamic network.",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "start": {
+                    "$ref": "#/$defs/ipv4",
+                    "description": "First address of the pool that virtual machines on this logical network draw from."
+                  },
+                  "end": {
+                    "$ref": "#/$defs/ipv4",
+                    "description": "Last address of that pool."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "outbound": {
+          "description": "Details of scenario.outbound_path.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "proxy": {
+              "description": "Proxy server for the machines' outbound traffic, for scenario.outbound_path proxy or proxy_arc_gateway. The PowerShell tools of this repository do not send it yet.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "url": {
+                  "description": "URL of the proxy server, for example http://proxy.example.test:3128.",
+                  "type": "string",
+                  "pattern": "^https?://"
+                }
+              }
+            },
+            "arc_gateway": {
+              "description": "The Arc gateway resource, in the same subscription as the machines.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Name of the Azure Arc gateway resource (Azure public cloud only; not supported with simplified machine provisioning in the preview).",
+                  "type": "string"
+                }
+              }
+            },
+            "private_path": {
+              "description": "Outbound path over a private connection (ExpressRoute or site-to-site VPN) when scenario.outbound_path is private_path. Not read by the tools yet.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "transport": {
+                  "description": "The private connection: expressroute or site_to_site_vpn. Not read by the tools yet: a documented placeholder.",
+                  "type": "string",
+                  "enum": [
+                    "expressroute",
+                    "site_to_site_vpn"
+                  ]
+                },
+                "virtual_network": {
+                  "description": "Name of the Azure virtual network of the private path. Not read by the tools yet: a documented placeholder.",
+                  "type": "string"
+                },
+                "workload_subnet": {
+                  "description": "Name of the workload subnet of that virtual network. Not read by the tools yet: a documented placeholder.",
+                  "type": "string"
+                },
+                "firewall_subnet": {
+                  "description": "Name of the firewall subnet of that virtual network. Not read by the tools yet: a documented placeholder.",
+                  "type": "string"
+                },
+                "firewall_private_ip": {
+                  "$ref": "#/$defs/ipv4",
+                  "description": "Private address of the firewall on that path. Not read by the tools yet: a documented placeholder."
+                },
+                "firewall_port": {
+                  "description": "TCP port of the firewall used on that path. Not read by the tools yet: a documented placeholder.",
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 65535
+                },
+                "arc_private_link_scope": {
+                  "description": "true when the machines reach Azure Arc through an Azure Arc Private Link Scope on that path. Not read by the tools yet: a documented placeholder.",
+                  "type": "boolean"
+                },
+                "proxy_bypass": {
+                  "description": "Host names and address ranges that bypass the proxy on this path. Not read by the tools yet: a documented placeholder.",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "identity": {
+      "description": "Accounts and the identity provider (scenario.identity).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "local_admin": {
+          "description": "The deployment's local administrator on every machine. Not the built-in Administrator: the deployment renames it. ARM localAdminUserName and localAdminPassword.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "username": {
+              "description": "User name of the deployment local administrator on every machine (ARM localAdminUserName). Not Administrator or Guest: the deployment renames the built-in account.",
+              "type": "string",
+              "minLength": 1
+            },
+            "password": {
+              "$ref": "#/$defs/kv_ref",
+              "description": "At least 14 characters with lowercase, uppercase, a digit and a special character."
+            }
+          }
+        },
+        "local_identity": {
+          "description": "Local identity with Key Vault. The instance's secrets go to cluster.key_vault.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "dns_server_config": {
+              "description": "ARM dnsServerConfig: use_dns_server (UseDnsServer) or use_forwarder (UseForwarder).",
+              "type": "string",
+              "enum": [
+                "use_dns_server",
+                "use_forwarder"
+              ]
+            },
+            "dns_zone": {
+              "description": "DNS zone of the local identity instance, for example the zone the identity endpoints are published in. Used when dns_server_config is use_dns_server.",
+              "type": "string"
+            },
+            "dns_forwarders": {
+              "description": "DNS servers the identity instance forwards to. Used when dns_server_config is use_forwarder (ARM UseForwarder).",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ipv4"
+              }
+            }
+          }
+        },
+        "active_directory": {
+          "description": "The Active Directory the instance joins and its accounts. Applies when scenario.identity is active_directory.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "domain_fqdn": {
+              "description": "ARM domainFqdn.",
+              "type": "string",
+              "pattern": "^[A-Za-z0-9-]+(\\.[A-Za-z0-9-]+)+$"
+            },
+            "ou_path": {
+              "description": "Distinguished name of the dedicated OU. ARM adouPath. https://learn.microsoft.com/azure/azure-local/deploy/deployment-prep-active-directory",
+              "type": "string",
+              "pattern": "^[Oo][Uu]=.+,[Dd][Cc]=.+$"
+            },
+            "lcm_user": {
+              "description": "The LCM deployment user, created in the OU by the AD preparation module. ARM AzureStackLCMAdminUsername and AzureStackLCMAdminPassword.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "username": {
+                  "description": "Name only, no domain. Up to 20 characters.",
+                  "type": "string",
+                  "pattern": "^[^@\\\\]+$",
+                  "minLength": 1,
+                  "maxLength": 20
+                },
+                "password": {
+                  "$ref": "#/$defs/kv_ref",
+                  "description": "At least 14 characters with lowercase, uppercase, a digit and a special character."
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "storage": {
+      "description": "Storage of the instance: the deployment's storage mode, the volumes, and the SAN of a disaggregated or hybrid deployment (the san block applies only when scenario.storage_architecture is san or hybrid).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "configuration_mode": {
+          "description": "ARM configurationMode: express (Express), infra_only (InfraOnly) or keep_storage (KeepStorage).",
+          "type": "string",
+          "enum": [
+            "express",
+            "infra_only",
+            "keep_storage"
+          ]
+        },
+        "volumes": {
+          "description": "The Storage Spaces Direct volumes to create after deployment, in addition to what the deployment itself creates (storage.configuration_mode). New-StorageVolume.ps1 (phase 06, task 05) creates each one that does not exist yet with New-Volume and never changes or removes one that exists. Not used with scenario.storage_architecture san.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "description": "Name of the volume, for example vol-workloads-01. It becomes the folder C:\\ClusterStorage\\<name>. Not a name the deployment manages (UserStorage_<n>, Infrastructure_<n>).",
+                "type": "string"
+              },
+              "size_gib": {
+                "description": "Size of the volume in GiB (binary units, as Windows counts).",
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              "resiliency": {
+                "description": "Resiliency of the volume. two_way, three_way and parity (dual parity, 4 or more machines) are the usual ones; four_way is for a rack aware cluster; nested_two_way and nested_mirror_accelerated_parity are for a cluster of two machines; mirror_accelerated_parity needs 4 or more machines and ReFS (the two accelerated-parity values are new in 5.6.9). Leave it out and Storage Spaces Direct chooses: two-way mirror with one or two machines, three-way mirror with three or more.",
+                "type": "string",
+                "enum": [
+                  "two_way",
+                  "three_way",
+                  "four_way",
+                  "parity",
+                  "nested_two_way",
+                  "mirror_accelerated_parity",
+                  "nested_mirror_accelerated_parity"
+                ]
+              }
+            }
+          }
+        },
+        "san": {
+          "description": "The external SAN of a disaggregated (san) or hybrid deployment. Its presence, and scenario.storage_architecture san or hybrid, tell the solution there is a SAN; type says fibre_channel or iscsi, and the OS configuration does the host-side MPIO and MSDSM work from that (type, array.vendor and array.model are all it needs). From 5.3 it also records the array, the Fibre Channel fabrics and target WWPNs or the iSCSI targets, which the SAN deployment and zoning work read; each machine's own HBAs or initiator are nodes[].san.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "type": {
+              "description": "Whether the SAN is fibre_channel or iscsi. This selects the OS configuration's host-side steps: fibre_channel registers the array's MSDSM hardware ID (config/san/msdsm-vendors.json), CLAIMS it for MPIO (mpclaim -n -i -d with the vendor padded to 8 and the product padded to 16 characters, which puts it in MPIOSupportedDeviceList; the MSDSM registration alone is not enough, Azure Local already ships PURE FlashArray registered and the paths stayed separate), sets the load balance policy and the vendor MPIO settings, collects the WWPNs (Get-InitiatorPort) and restarts so MPIO claims the paths, then checks each LUN is seen once and listed by mpclaim -s -d; iscsi does the same and also starts the MSiSCSI service, enables MSDSM auto-claim for iSCSI and makes the target portals and sessions from storage.san.iscsi (not for scenario.storage_architecture san on Azure Local 2610 or later: the deployment configures iSCSI there and Microsoft Learn says not to enable it by hand before it; the release is deployment.solution_version, else the ZTP handoff). Only type, and the array vendor and model (storage.san.array), are needed for the host-side work; the target WWPNs and the nodes' HBA WWPNs are needed later, for zoning and LUN masking (with fibre_channel, do not zone the HBA WWNs until after the Azure Local deployment).",
+              "type": "string",
+              "enum": [
+                "fibre_channel",
+                "iscsi"
+              ]
+            },
+            "infra_volume_lun_id": {
+              "description": "LUN of the infrastructure volume (250 GB minimum). ARM infraVolLunId.",
+              "type": "string"
+            },
+            "performance_history_lun_id": {
+              "description": "LUN of the performance history volume (20 GB minimum). ARM infraPerfLunId.",
+              "type": "string"
+            },
+            "luns": {
+              "description": "The LUNs the array presents to the cluster for workload volumes, after the deployment. New-SanVolume.ps1 (phase 06, task 05) prepares each one that is not a Cluster Shared Volume yet: it finds the disk by unique_id, brings it online, initializes it as GPT, creates one NTFS partition with 64 KB allocation units, adds it to the failover cluster as a disk named name and adds it to the CSVs. It never changes a disk that has a partition or data. Not the LUNs of the infrastructure and performance history volumes (infra_volume_lun_id, performance_history_lun_id): the deployment owns those.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "description": "Name of the LUN. It becomes the name of the cluster disk and of the Cluster Shared Volume, so it is the name you see in Failover Cluster Manager and in Get-ClusterSharedVolume. Use the name the array shows, so the two match. 1 to 63 letters, digits, dot, underscore or hyphen, unique in the list; not UserStorage_<n> or Infrastructure_<n>. New-SanVolume.ps1 reads it.",
+                    "type": "string"
+                  },
+                  "size_gib": {
+                    "description": "Size of the LUN in GiB (binary units, as Windows counts). New-SanVolume.ps1 compares it with the size of the disk and refuses a disk that differs by more than 1 percent.",
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "security": {
+      "description": "Security settings of the deployment. Omitted settings take Microsoft's recommended defaults.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "description": "ARM securityLevel: recommended (Recommended) or customized (Customized).",
+          "type": "string",
+          "enum": [
+            "recommended",
+            "customized"
+          ]
+        },
+        "drift_control": {
+          "description": "true turns drift control on: Azure Local resets the security settings to the baseline after drift. Part of the cluster security settings of the deployment.",
+          "type": "boolean"
+        },
+        "credential_guard": {
+          "description": "true turns Credential Guard on in the security settings of the deployment.",
+          "type": "boolean"
+        },
+        "smb_signing": {
+          "description": "true turns SMB signing on in the security settings of the deployment.",
+          "type": "boolean"
+        },
+        "smb_cluster_encryption": {
+          "description": "true encrypts SMB traffic between the cluster nodes (not the storage traffic).",
+          "type": "boolean"
+        },
+        "bitlocker_boot_volume": {
+          "description": "true turns BitLocker on for the boot volume.",
+          "type": "boolean"
+        },
+        "bitlocker_data_volumes": {
+          "description": "true turns BitLocker on for the data volumes.",
+          "type": "boolean"
+        },
+        "wdac": {
+          "description": "true turns Windows Defender Application Control on.",
+          "type": "boolean"
+        },
+        "telemetry": {
+          "description": "What the cluster sends to Microsoft as telemetry. Not read by the tools yet.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "streaming_data": {
+              "description": "true sends the streaming diagnostic data.",
+              "type": "boolean"
+            },
+            "episodic_data_upload": {
+              "description": "true sends the episodic diagnostic data.",
+              "type": "boolean"
+            },
+            "eu_location": {
+              "description": "true keeps the diagnostic data in the EU data boundary.",
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "sdn": {
+      "description": "SDN enabled by Azure Arc (Network Controller as a Failover Cluster service; Azure Local 2506 or later, OS build 26100 or later). It supports logical networks, network interfaces of Azure Local VMs and network security groups, and nothing else: no virtual networks, no software load balancer, no gateways. The older SDN managed by on-premises tools (SDN Express, Windows Admin Center, Network Controller VMs) is not built. https://learn.microsoft.com/azure/azure-local/deploy/enable-sdn-integration",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "description": "true to turn SDN enabled by Azure Arc on, which CANNOT BE UNDONE. Enable-ArcSdn.ps1 (phase 06, task 01) runs Add-EceFeature -Name NC on a machine of the instance when it is true. Microsoft Learn says that once SDN is enabled you cannot roll back or disable it, and false does not turn it off. Never set it where Network Controller was deployed with on-premises tools. Enabling interrupts the network of running workloads for a short time. New-NetworkSecurityGroup.ps1 (task 07) and New-LogicalNetwork.ps1 (task 08, for a logical network with nsg_name) also read it: network security groups need SDN enabled by Azure Arc.",
+          "type": "boolean"
+        },
+        "prefix": {
+          "description": "The SDN prefix (Add-EceFeature -SDNPrefix). It names the Network Controller REST URL, https://<prefix>-NC.<domain>/, and tells the controllers of different instances apart. Microsoft Learn: not empty, eight characters or fewer, letters, digits and hyphens only, no two hyphens in a row, no hyphen at the end. The toolkit also refuses a hyphen at the start, which is not a valid DNS name. Required when sdn.enabled is true: Enable-ArcSdn.ps1 stops with exit 2 without it.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9]+(-[A-Za-z0-9]+)*$",
+          "minLength": 1,
+          "maxLength": 8
+        },
+        "dns_records": {
+          "description": "How the A record <prefix>-NC of the Network Controller REST URL comes about. dynamic: Active Directory integrated dynamic DNS creates it when SDN is enabled and you do nothing. static: you create it first; it must resolve to the fifth address of networking.management.infrastructure_pool (Microsoft Learn: the fifth IP address of the range you gave at deployment) and to nothing else. Required when sdn.enabled is true. Enable-ArcSdn.ps1 resolves the name on the machine before it enables SDN and stops when the answer is wrong.",
+          "type": "string",
+          "enum": [
+            "dynamic",
+            "static"
+          ]
+        }
+      }
+    },
+    "operations": {
+      "description": "Day-2 choices: updates, backup, disaster recovery, notifications, licensing and monitoring. Only Azure Monitor (monitoring) and the notification addresses are read by the tools so far (the monitoring scripts of phase 02, operational foundations); the rest is not read yet. Sonar reads its own settings.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "update_method": {
+          "description": "How updates are applied: portal or powershell. Not read by the tools yet: a documented placeholder.",
+          "type": "string",
+          "enum": [
+            "portal",
+            "powershell"
+          ]
+        },
+        "backup": {
+          "description": "Backup of the instance and its workloads.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "description": "true when backup is part of the design.",
+              "type": "boolean"
+            },
+            "approach": {
+              "description": "What is backed up: host, guest or both.",
+              "type": "string",
+              "enum": [
+                "host",
+                "guest",
+                "both"
+              ]
+            },
+            "solution": {
+              "description": "Name of the backup solution, for example Azure Backup.",
+              "type": "string"
+            }
+          }
+        },
+        "disaster_recovery": {
+          "description": "Disaster recovery of the workloads. Not read by the tools yet: a documented placeholder.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "description": "none, asr (Azure Site Recovery) or hyper_v_replica.",
+              "type": "string",
+              "enum": [
+                "none",
+                "asr",
+                "hyper_v_replica"
+              ]
+            }
+          }
+        },
+        "monitoring": {
+          "description": "Azure Monitor for the instance. Only Azure Monitor (monitoring) and the notification addresses are read by the tools so far (the monitoring scripts of phase 02, operational foundations); the rest is not read yet. Sonar reads its own settings.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "description": "true when Azure Monitor is part of the design. When it is false, every monitoring script of phase 02 (workspace, endpoint, Azure Monitor Agent, Insights association, action group) does nothing and exits 0.",
+              "type": "boolean"
+            },
+            "log_analytics_workspace": {
+              "description": "Name of the Log Analytics workspace. Deploy-LogAnalyticsWorkspace.ps1 creates it; Deploy-DataCollectionEndpoint.ps1 looks it up and takes the region of the endpoint from it. The Insights data collection rule sends to it.",
+              "type": "string"
+            },
+            "workspace_resource_group": {
+              "$ref": "#/$defs/resource_group",
+              "description": "Resource group of the Log Analytics workspace. It is also the resource group of the data collection endpoint and of the action group that the monitoring scripts create and of the Insights data collection rule that Enable-HciInsights.ps1 looks up."
+            },
+            "data_collection_rule": {
+              "description": "Name of the existing data collection rule that Insights for Azure Local uses. Enable-HciInsights.ps1 (phase 02, task 03) looks it up in operations.monitoring.workspace_resource_group and associates it with the Arc machine of every node; it never creates or changes the rule. Microsoft Learn documents no template for the rule and says not to build your own, so create it once in the Azure portal (the instance, Capabilities, Insights, Get Started) and put its name here. Learn names the AzureStackHCI- prefix for the rule the portal creates.",
+              "type": "string"
+            },
+            "data_collection_endpoint": {
+              "description": "Name of the data collection endpoint that Deploy-DataCollectionEndpoint.ps1 creates, in the region of the workspace.",
+              "type": "string"
+            },
+            "alert_email": {
+              "description": "Address that receives the alerts (a team mailbox). Deploy-ActionGroup.ps1 makes it an email receiver of the action group, next to the addresses of operations.notifications.emails.",
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "provisioning": {
+      "description": "How the OS gets onto the machines (scenario.os_install), and the OS version.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "os_version": {
+          "description": "The solution version the machines run: latest, latest-preview, or a version such as 12.2610.1004.50. Pin a version. Simplified provisioning installs it, and the SBE must be validated with it.",
+          "type": "string",
+          "pattern": "^(latest|latest-preview|12\\.[0-9]{4}\\.[0-9]+\\.[0-9]+)$"
+        },
+        "simplified": {
+          "description": "Simplified machine provisioning from Azure, as azurelocal-ztp runs it. https://learn.microsoft.com/azure/azure-local/deploy/simplified-machine-provisioning",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "site_name": {
+              "description": "Resource name of the Microsoft.Edge site.",
+              "type": "string",
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,62}$"
+            },
+            "resource_group": {
+              "$ref": "#/$defs/resource_group",
+              "description": "Resource group of the site and edge machines, when it isn't azure.resource_group."
+            },
+            "maintenance_iso": {
+              "description": "The provisioning (maintenance environment) ISO: latest, a train such as 2610, a build such as 10.2610.0.3063, or a Microsoft download URL.",
+              "type": "string",
+              "pattern": "^(latest|[0-9]{4}|10\\.[0-9]{4}\\.[0-9]+\\.[0-9]+|https://.+)$"
+            },
+            "admin": {
+              "description": "The local administrator that the provisioned OS gets. Prepare signs in as <node>\\<username>.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "username": {
+                  "description": "Name of the local administrator the OS install creates on each machine (Learn: step 3, provision machines from Azure).",
+                  "type": "string",
+                  "minLength": 1
+                },
+                "password": {
+                  "$ref": "#/$defs/kv_ref",
+                  "description": "At least 12 characters with lowercase, uppercase, a digit and a special character. Create the secret before the run."
+                }
+              }
+            },
+            "media_share": {
+              "description": "The SMB share the BMCs mount the images from.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "description": "Name of the SMB share ZTP creates over the folder of the virtual USB images: letters, digits and hyphens.",
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9-]+$"
+                },
+                "host": {
+                  "$ref": "#/$defs/ipv4",
+                  "description": "The management host's address as the BMCs reach it."
+                }
+              }
+            },
+            "ntp": {
+              "description": "Schema 5.4. The time setting of the site configuration, used while the machines are provisioned. Default: Automatic. (networking.ntp_servers is OS configuration; it is not copied here.)",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "configuration": {
+                  "description": "Automatic or Manual.",
+                  "type": "string",
+                  "default": "Automatic",
+                  "enum": [
+                    "Automatic",
+                    "Manual"
+                  ]
+                },
+                "server": {
+                  "description": "The NTP server (address or name) when configuration is Manual.",
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "disconnected": {
+      "description": "Disconnected operations: the control plane appliance, its endpoints, identity and certificates.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "role": {
+          "description": "management: this instance runs the control plane appliance. workload: it is managed by a management instance.",
+          "type": "string",
+          "enum": [
+            "management",
+            "workload"
+          ]
+        },
+        "base_path": {
+          "description": "Folder the control plane appliance files are kept in. Not read by the tools yet: a documented placeholder.",
+          "type": "string"
+        },
+        "domain_suffix": {
+          "description": "DNS suffix of the disconnected control plane. Not read by the tools yet: a documented placeholder.",
+          "type": "string"
+        },
+        "ingress": {
+          "$ref": "#/$defs/appliance_endpoint",
+          "description": "Address of the appliance's ingress (the endpoint operators and tools call). Not read by the tools yet: a documented placeholder.",
+          "properties": {
+            "ip_address": {
+              "$ref": "#/$defs/ipv4",
+              "description": "IPv4 address of the ingress."
+            },
+            "gateway": {
+              "$ref": "#/$defs/ipv4",
+              "description": "Default gateway of the ingress network."
+            },
+            "prefix_length": {
+              "description": "Prefix length of the ingress network, 8 to 30.",
+              "type": "integer",
+              "minimum": 8,
+              "maximum": 30
+            }
+          }
+        },
+        "management": {
+          "$ref": "#/$defs/appliance_endpoint",
+          "description": "Address of the appliance's management endpoint.",
+          "properties": {
+            "ip_address": {
+              "$ref": "#/$defs/ipv4",
+              "description": "IPv4 address of the management endpoint."
+            },
+            "prefix_length": {
+              "description": "Prefix length of the management network, 8 to 30.",
+              "type": "integer",
+              "minimum": 8,
+              "maximum": 30
+            }
+          }
+        },
+        "dns_server": {
+          "$ref": "#/$defs/ipv4",
+          "description": "DNS server the control plane uses."
+        },
+        "time_servers": {
+          "description": "Time sources of the control plane, as host names or addresses. Not read by the tools yet: a documented placeholder.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "identity": {
+          "description": "The identity provider of the disconnected control plane (Active Directory Federation Services).",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "authority": {
+              "description": "URL of the identity authority (for example the AD FS endpoint).",
+              "type": "string"
+            },
+            "client_id": {
+              "description": "Application (client) id registered for the control plane in the identity provider.",
+              "type": "string"
+            },
+            "root_operator_upn": {
+              "description": "User principal name of the first operator. Not read by the tools yet: a documented placeholder.",
+              "type": "string"
+            },
+            "ldap_server": {
+              "description": "LDAP server that serves the directory. Not read by the tools yet: a documented placeholder.",
+              "type": "string"
+            },
+            "ldaps": {
+              "description": "true to use LDAP over TLS. Not read by the tools yet: a documented placeholder.",
+              "type": "boolean"
+            },
+            "sync_group_identifier": {
+              "description": "Identifier of the directory group that is synchronized. Not read by the tools yet: a documented placeholder.",
+              "type": "string"
+            }
+          }
+        },
+        "operator_subscription_name": {
+          "description": "Name of the operator subscription. Not read by the tools yet: a documented placeholder.",
+          "type": "string"
+        },
+        "resource_group": {
+          "description": "Resource group the appliance resources are placed in.",
+          "type": "string"
+        },
+        "internal_ca": {
+          "description": "true when an internal certificate authority issues the appliance certificates. Not read by the tools yet: a documented placeholder.",
+          "type": "boolean"
+        }
+      }
+    },
+    "landing_zone": {
+      "description": "Part 2 of the implementation steps: the Azure foundation the instance depends on. Optional; leave it out when the foundation exists and is managed elsewhere.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "subscriptions": {
+          "description": "Subscriptions by role. azure.subscription_id is the one the instance uses.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "description": "Name of the subscription; the other landing_zone entries refer to it.",
+                "type": "string"
+              },
+              "id": {
+                "$ref": "#/$defs/guid",
+                "description": "Subscription id (a GUID). Use your own; the templates hold only a placeholder."
+              },
+              "role": {
+                "description": "What the subscription is for.",
+                "type": "string",
+                "enum": [
+                  "connectivity",
+                  "identity",
+                  "management",
+                  "security",
+                  "devops",
+                  "workload",
+                  "azure_local"
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "ipv4": {
+      "type": "string",
+      "pattern": "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
+    },
+    "cidr": {
+      "type": "string",
+      "pattern": "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])$"
+    },
+    "mac": {
+      "description": "AA:BB:CC:DD:EE:FF or AA-BB-CC-DD-EE-FF.",
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$"
+    },
+    "guid": {
+      "type": "string",
+      "pattern": "^[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}$"
+    },
+    "date": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+    },
+    "azure_region": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]{2,30}$"
+    },
+    "resource_group": {
+      "type": "string",
+      "pattern": "^[-\\w\\._\\(\\)]{1,90}$"
+    },
+    "key_vault_name": {
+      "type": "string",
+      "pattern": "^[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]$"
+    },
+    "storage_account_name": {
+      "type": "string",
+      "pattern": "^[a-z0-9]{3,24}$"
+    },
+    "netbios_name": {
+      "description": "Up to 15 letters, digits and hyphens.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,14}$"
+    },
+    "kv_ref": {
+      "description": "A secret reference, never a secret value. Four forms, one per provider: keyvault://<vault>/<secret> (the vault must be listed in key_vaults), env://<VARIABLE_NAME>, file://<name> (a file in secrets.file.directory) and command://<name> (the command in secrets.command). The format keeps its old name, kv_ref. See docs/secret-references.md. (the three non-Key-Vault forms since 5.6.13)",
+      "type": "string",
+      "pattern": "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
+    },
+    "bmc_credentials": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "username": {
+          "description": "A reference to the secret holding the user name, or the user name itself.",
+          "type": "string",
+          "minLength": 1
+        },
+        "password": {
+          "$ref": "#/$defs/kv_ref"
+        },
+        "rfs_write_attribute": {
+          "description": "Schema 5.4. azurelocal-ztp, Boot stage: also set the iDRAC Remote File Share attribute RFS.<n>.WriteProtected to Read Write before it inserts the virtual media. iDRAC 7.30 rejects WriteProtected=false in InsertMedia, and the maintenance environment cannot write its voucher to a read-only drive. Default: true for Dell (azurelocal-ztp config/oem/dell.json, bmc.rfsWriteAttribute), false for the other vendors, whose BMCs have no such attribute. Set it when your BMC differs from its vendor's usual behaviour.",
+          "type": "boolean"
+        },
+        "verify_certificate": {
+          "description": "Schema 5.4. Check the BMCs' TLS certificates. Default false: BMCs ship a self-signed certificate, so azurelocal-ztp accepts it. Set true once the BMCs carry a certificate that the management host trusts.",
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "node": {
+      "description": "One machine. Describe its management port either with management (schema 5.0) or, from 5.2, with network_adapters, which lists every port and derives management from the port that owns the management address.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "Host name: up to 15 characters. Also the edge machine name and, for an ISO install, the Arc machine name. With simplified provisioning the Arc machine name is arc_machine_name, which defaults to this.",
+          "$ref": "#/$defs/netbios_name"
+        },
+        "management": {
+          "description": "The machine's management port and address (schema 5.0 and 5.1). From 5.2, network_adapters describes it instead: the port with role management and an ip_assignment other than none. When both are given they must agree; prefer network_adapters.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ip_address": {
+              "description": "Management address. ARM physicalNodesSettings[].ipv4Address. How it gets onto the management port before deployment is networking.management.ip_assignment: set on the port (static), reserved in DHCP for mac_address (dhcp), or already there (preconfigured). With network_adapters it is the management port's ip_address.",
+              "$ref": "#/$defs/ipv4"
+            },
+            "mac_address": {
+              "description": "MAC of the management port. Provisioning finds and targets the port by it: simplified provisioning names the port by this MAC when it sets the static address (edge machine networkAdapters[].macAddress), and node preparation finds the adapter by it. With ip_assignment dhcp, reserve ip_address for this MAC. Required with simplified provisioning.",
+              "$ref": "#/$defs/mac"
+            },
+            "adapter_name": {
+              "description": "Name of the management port in the installed OS, for example 'SLOT 3 Port 1'. Optional: mac_address identifies the port. Simplified provisioning also sends it with the port's settings; leave it out unless you know the name the OS gives the port.",
+              "type": "string"
+            }
+          }
+        },
+        "network_adapters": {
+          "description": "Every physical network port of the machine (schema 5.2): name, MAC, roles and how each gets its host address. Exactly one port owns the management address: role management and an ip_assignment other than none. Intents name ports by these names. List them on every node or on none.",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/network_adapter"
+          }
+        },
+        "serial_number": {
+          "description": "Serial number (Dell service tag). Maps each simplified-provisioning voucher to its machine.",
+          "type": "string",
+          "minLength": 1
+        },
+        "bmc": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ip_address": {
+              "$ref": "#/$defs/ipv4"
+            },
+            "type": {
+              "enum": [
+                "idrac",
+                "ilo",
+                "xcc",
+                "other"
+              ]
+            },
+            "username": {
+              "type": "string",
+              "minLength": 1
+            },
+            "password": {
+              "$ref": "#/$defs/kv_ref"
+            }
+          }
+        },
+        "rack": {
+          "type": "string"
+        },
+        "rack_position": {
+          "type": "string"
+        },
+        "zone": {
+          "description": "Rack-aware: the local availability zone. ARM localAvailabilityZones.",
+          "type": "string"
+        },
+        "storage_ips": {
+          "description": "Storage address on each storage network, in networking.storage.networks order, when networking.storage.auto_ip is false.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ipv4"
+          }
+        },
+        "arc_machine_name": {
+          "description": "Name of the machine's Arc resource (Microsoft.HybridCompute/machines). Default: name. Simplified provisioning sets it when it claims the machine (edge machine arcMachineResourceId); without it the service names the Arc machine ROE1-<id>, and an Arc machine can't be renamed. The deployment uses it in ARM arcNodeResourceIds. An ISO install registers the Arc machine under the host name, so leave it out there. 1-54 letters, digits, '-', '_' and '.', not ending in '.'.",
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_.-]{0,53}[A-Za-z0-9_-]$"
+        },
+        "arc_resource_name": {
+          "description": "Deprecated: use arc_machine_name. Read as arc_machine_name when that isn't set.",
+          "type": "string",
+          "deprecated": true
+        },
+        "bios": {
+          "description": "BIOS attributes for this machine in their FINAL state, merged over hardware.bios (a key here wins). See hardware.bios.",
+          "$ref": "#/$defs/bios_settings"
+        },
+        "bios_during_provisioning": {
+          "description": "Schema 5.3. Temporary BIOS attributes for this machine's OS install only, merged over hardware.bios_during_provisioning (a key here wins); during-provisioning values win over bios. azurelocal-ztp sets each key back to its bios value in its Restore stage. See hardware.bios_during_provisioning.",
+          "$ref": "#/$defs/bios_settings"
+        },
+        "maintenance_address": {
+          "description": "Schema 5.3. Simplified provisioning: the address the machine's maintenance environment answers on (its Configurator service, TCP 20001), when it is known: a DHCP reservation, or an address set at the console. azurelocal-ztp's Device stage then talks to it directly. Without it, the Device stage finds the maintenance environment by MAC, scanning networking.management.provisioning_dhcp_range.",
+          "$ref": "#/$defs/ipv4"
+        },
+        "san": {
+          "description": "Schema 5.3. This machine's SAN connections: its Fibre Channel HBAs and their WWPNs (storage.san.type fibre_channel), or its iSCSI initiator IQN (storage.san.type iscsi; the iSCSI ports' addresses are on network_adapters with role iscsi:a and iscsi:b). Needed on every machine when storage.san.type is set.",
+          "$ref": "#/$defs/node_san"
+        }
+      }
+    },
+    "intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "traffic": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "management",
+              "compute",
+              "storage"
+            ]
+          }
+        },
+        "adapters": {
+          "description": "Adapters of the intent, by the key nodes[].network_adapters[].name (the port's name in this file, the same on every machine; the file finds the physical adapter by its MAC, so the OS may call it anything). With nodes[].network_adapters (5.2) each name must be a port in every node's list. The name the deployment sends to Azure (ARM intentList adapter) is what the OS calls that adapter on the nodes, found by MAC, or nodes[].network_adapters[].os_name_override when the file sets one. The first adapter matters: the management virtual adapter takes the MAC of the first adapter of the management intent, so that adapter owns the management address.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "overrides": {
+          "description": "Network ATC overrides. Leave out to keep Network ATC's defaults, which Microsoft recommends.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "qos": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "cluster_priority": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 7
+                },
+                "smb_priority": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 7
+                },
+                "smb_bandwidth_percent": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100
+                }
+              }
+            },
+            "adapter": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "jumbo_packet": {
+                  "enum": [
+                    1514,
+                    4088,
+                    9014
+                  ]
+                },
+                "network_direct": {
+                  "type": "boolean"
+                },
+                "network_direct_technology": {
+                  "enum": [
+                    "iwarp",
+                    "roce",
+                    "roce_v2"
+                  ]
+                }
+              }
+            },
+            "virtual_switch": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enable_iov": {
+                  "type": "boolean"
+                },
+                "load_balancing_algorithm": {
+                  "enum": [
+                    "dynamic",
+                    "hyper_v_port"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "logical_network": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "ip_allocation_method": {
+          "enum": [
+            "Static",
+            "Dynamic"
+          ]
+        },
+        "nsg_name": {
+          "type": "string"
+        },
+        "vm_switch_name": {
+          "type": "string"
+        },
+        "purpose": {
+          "description": "What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote management security profile adds its subnet to the allowed sources of dev and production (a candidate, not a trust: prefer listing the controller addresses in os_configuration.remoting.allowed_source_cidrs). automation, compute, storage and other have no effect on remote management.",
+          "enum": [
+            "management",
+            "oob",
+            "automation",
+            "compute",
+            "storage",
+            "other"
+          ]
+        },
+        "vlan_id": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4094
+        },
+        "address_prefix": {
+          "$ref": "#/$defs/cidr"
+        },
+        "gateway": {
+          "$ref": "#/$defs/ipv4"
+        },
+        "dns_servers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ipv4"
+          }
+        },
+        "ip_pool": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "start": {
+              "$ref": "#/$defs/ipv4"
+            },
+            "end": {
+              "$ref": "#/$defs/ipv4"
+            }
+          }
+        }
+      }
+    },
+    "drive_group": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "media": {
+          "enum": [
+            "nvme",
+            "ssd",
+            "hdd"
+          ]
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "size_tb": {
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "appliance_endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "ip_address": {
+          "$ref": "#/$defs/ipv4"
+        },
+        "gateway": {
+          "$ref": "#/$defs/ipv4"
+        },
+        "prefix_length": {
+          "type": "integer",
+          "minimum": 8,
+          "maximum": 30
+        }
+      }
+    },
+    "network_device": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hostname": {
+          "type": "string",
+          "minLength": 1
+        },
+        "type": {
+          "enum": [
+            "switch",
+            "firewall",
+            "router",
+            "console_server",
+            "load_balancer",
+            "wireless_controller"
+          ]
+        },
+        "role": {
+          "enum": [
+            "primary",
+            "secondary",
+            "standalone"
+          ]
+        },
+        "vendor": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "serial_number": {
+          "type": "string"
+        },
+        "firmware_version": {
+          "type": "string"
+        },
+        "management": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "ip_address": {
+              "description": "An IPv4 address, or dhcp."
+            },
+            "vlan_id": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 4094
+            },
+            "protocol": {
+              "enum": [
+                "ssh",
+                "https",
+                "telnet",
+                "snmp"
+              ]
+            }
+          }
+        },
+        "credentials": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "username": {
+              "type": "string",
+              "minLength": 1
+            },
+            "password": {
+              "$ref": "#/$defs/kv_ref"
+            }
+          }
+        },
+        "ha": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "mode": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "bios_settings": {
+      "description": "BIOS attributes: vendor attribute name -> value, as the BMC's Redfish Bios resource names them (Attributes of /redfish/v1/Systems/<id>/Bios). Values are strings, even for numbers; tools convert them to the type the BMC reports. azurelocal-ztp applies them in its Boot stage, before the maintenance boot: it reads the current values, PATCHes only those that differ to the Bios Settings resource with @Redfish.SettingsApplyTime OnReset, powers the machine on or restarts it, and waits until the BIOS reports every value. Used twice: as bios (the machine's FINAL state) and as bios_during_provisioning (TEMPORARY values for the OS install, which the Restore stage sets back to the bios values). Dell examples: Slot2: Disabled (turn off the card in PCIe slot 2, for example a Fibre Channel HBA whose SAN LUN the maintenance environment would otherwise install onto; as a temporary value, with Slot2: Enabled in bios); Slot2: BootDriverDisabled (the card stays visible to the OS but never boots); EmbNic1Nic2: Enabled (the embedded LOM ports, when they show as DisabledOs and the OS can't see them).",
+      "type": "object",
+      "propertyNames": {
+        "pattern": "^[A-Za-z0-9_.\\[\\]-]{1,128}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "description": "The value of the BIOS attribute, as a string."
+      }
+    },
+    "wwpn": {
+      "description": "A Fibre Channel World Wide Port Name: 16 hexadecimal digits, as 8 colon-separated pairs (50:00:09:72:08:12:34:56) or without colons.",
+      "type": "string",
+      "pattern": "^([0-9A-Fa-f]{2}:){7}[0-9A-Fa-f]{2}$|^[0-9A-Fa-f]{16}$"
+    },
+    "iscsi_name": {
+      "description": "An iSCSI qualified name (iqn.yyyy-mm.reversed.domain[:identifier]), or an eui. or naa. name.",
+      "type": "string",
+      "pattern": "^(iqn\\.[0-9]{4}-[0-9]{2}\\.[A-Za-z0-9.-]+(:\\S+)?|eui\\.[0-9A-Fa-f]{16}|naa\\.[0-9A-Fa-f]{16,32})$"
+    },
+    "iscsi_portal": {
+      "description": "An iSCSI target portal: an IPv4 address, optionally with :port (default 3260).",
+      "type": "string",
+      "pattern": "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(:([1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5]))?$"
+    },
+    "node_san": {
+      "description": "One machine's SAN connections (schema 5.3). Fibre Channel: hbas, each with its slot and ports, and every port's WWPN and fabric. iSCSI: initiator_iqn.",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hbas": {
+          "description": "The host bus adapters in this machine that reach the SAN: Fibre Channel HBAs, and from 5.4 iSCSI offload adapters. azurelocal-ztp reads their slots (schema 5.4): while the OS installs it turns those PCIe slots off in the BIOS, so the maintenance environment can't install onto a SAN LUN, and turns them on again afterwards (provisioning.simplified.isolate_san_adapters).",
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "slot": {
+                "description": "Where the HBA is, as a PCIe slot label: Slot 2, Slot2 or slot-2 (the number is what counts). azurelocal-ztp turns the BIOS attribute of that slot off for the OS install and puts it back afterwards; the attribute name per vendor is in its config/oem/<vendor>.json. For another label (for example OCP 1), or a vendor azurelocal-ztp has no mapping for, give bios_attribute.",
+                "type": "string",
+                "minLength": 1
+              },
+              "type": {
+                "description": "Schema 5.4. fibre_channel (default; with storage.san.type fibre_channel the ports with their WWPNs are needed for zoning, rule AZL-028) or iscsi_offload (an adapter that presents SAN LUNs to the BIOS; it needs no ports here, its addresses are on network_adapters with role iscsi:a or iscsi:b).",
+                "enum": [
+                  "fibre_channel",
+                  "iscsi_offload"
+                ],
+                "default": "fibre_channel"
+              },
+              "bios_attribute": {
+                "description": "Schema 5.4. The vendor's BIOS attribute name for this adapter's slot, as the BMC's Redfish Bios resource names it. With no vendor mapping in azurelocal-ztp this is the only way to isolate the adapter during the install; with a mapping it overrides the attribute derived from slot. An explicit bios_during_provisioning key for the same attribute still wins.",
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_.\\[\\]-]{1,128}$"
+              },
+              "bios_disabled_value": {
+                "description": "Schema 5.4. The value of bios_attribute that turns the slot off for the OS install. Default: the vendor mapping's disabled value, else Disabled.",
+                "type": "string",
+                "minLength": 1
+              },
+              "bios_enabled_value": {
+                "description": "Schema 5.4. The value that turns the slot back on when azurelocal-ztp finds it already at bios_disabled_value in the Restore stage (for example a crashed earlier run left it off). Otherwise Restore puts back the value it found before the install. Default: the vendor mapping's enabled value, else Enabled.",
+                "type": "string",
+                "minLength": 1
+              },
+              "model": {
+                "type": "string"
+              },
+              "ports": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "wwpn": {
+                      "$ref": "#/$defs/wwpn"
+                    },
+                    "fabric": {
+                      "description": "A name in storage.san.fibre_channel.fabrics.",
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "initiator_iqn": {
+          "description": "The machine's iSCSI initiator name. Unique in the file.",
+          "$ref": "#/$defs/iscsi_name"
+        }
+      }
+    },
+    "network_adapter": {
+      "description": "One physical network port of the machine (schema 5.2). List every port, used or not, so each tool reads the same NICs. A port can carry several roles (a converged design).",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "description": "The port's name in this file: the key that networking.intents[].adapters, networking.storage.networks[].adapter and networking.cluster_networks[].adapter use. The same on every machine, unique on the machine. It labels a physical adapter that is found on the node by mac_address, so it does not have to be the name the OS gave the adapter (OS names differ between installs and between ZTP and ISO installs, for example Port0, SLOT 3 Port 1 or NIC1). Discovery writes it from the slot and the port, for example 'Slot 3 Port 1'. The name the deployment sends to Azure is what the OS calls the adapter (read by MAC) or os_name_override when set. A file that already uses the OS name here keeps working.",
+          "type": "string",
+          "minLength": 1
+        },
+        "mac_address": {
+          "description": "The port's identity. Tools find the physical adapter on a node by this MAC (case and separators are ignored), never by a name: node preparation, the ARM parameters and the pre-cluster verification all resolve the OS adapter name from it. Hardware discovery writes it. Required. Also needed for a DHCP reservation and, with simplified provisioning, for the management port.",
+          "$ref": "#/$defs/mac"
+        },
+        "slot": {
+          "description": "Where the port is, for example Embedded (a LOM), Slot 3 or OCP 1. From 5.4 azurelocal-ztp reads it: a management or provisioning port in slot Embedded makes it enable the embedded NICs in the BIOS (provisioning.simplified.enable_embedded_nics), and a slot that also holds a SAN adapter (nodes[].san.hbas[].slot) is never turned off.",
+          "type": "string"
+        },
+        "port_index": {
+          "description": "The number of the port on its adapter, counted from 1, as the BMC reports it (Redfish PhysicalPortNumber, else the order of the port on the card). With slot and pci_location it says which physical connector the port is. Written by hardware discovery; a record of the hardware, nothing is configured from it.",
+          "type": "integer",
+          "minimum": 1
+        },
+        "pci_location": {
+          "description": "Where the adapter sits on the PCI bus, as hardware discovery reports it (bus, device, function as decimal numbers). A verification aid, informational: OS configuration compares it with the node's own hardware information (Get-NetAdapterHardwareInfo) and reports a difference; the port is still found by mac_address.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "bus": {
+              "description": "PCI bus number (decimal).",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255
+            },
+            "device": {
+              "description": "PCI device number (decimal).",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 31
+            },
+            "function": {
+              "description": "PCI function number (decimal).",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 7
+            }
+          }
+        },
+        "vendor": {
+          "description": "The adapter manufacturer as hardware discovery reports it, for example the Manufacturer of the Redfish NetworkAdapter. Informational: no tool behaves differently for a brand; every make is handled through the same keys (mac_address, slot, port_index, model, speed_gbps, rdma).",
+          "type": "string"
+        },
+        "os_name_override": {
+          "description": "Optional, off by default. The name you want this adapter to have in the OS, for example 'Mgmt1', 'Compute1' or 'Storage1'. Without it nothing is renamed: the OS configuration step NicNames leaves every adapter name alone and the deployment sends the name the OS already uses (found by mac_address). With it, NicNames renames the adapter found by mac_address to this name (a guarded change, idempotent, the management adapter last) and the deployment sends this name. Give the same value for the same port (name) on every machine: Network ATC needs one adapter name per intent adapter on every node. 1 to 64 characters: letters, digits, space, underscore, dot, hyphen and parentheses.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64,
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9 _.()-]{0,63}$"
+        },
+        "model": {
+          "description": "Card model, for example 'NVIDIA ConnectX-6 Dx'. Ports in one intent must be the same make, model and speed.",
+          "type": "string"
+        },
+        "speed_gbps": {
+          "type": "number",
+          "minimum": 0
+        },
+        "rdma": {
+          "enum": [
+            "none",
+            "iwarp",
+            "roce",
+            "roce_v2"
+          ]
+        },
+        "roles": {
+          "description": "What the port is for: management, compute, storage (the Network ATC traffic types), provisioning (the maintenance environment of simplified provisioning reaches Azure through this port, before the machine is claimed; how it gets its address there is networking.management.provisioning_network), iscsi:a or iscsi:b (schema 5.3: a port that carries iSCSI traffic to the SAN's fabric A or B; give it a static address, prefix_length and VLAN, no gateway), or unused. A converged port lists several, for example [management, compute]. unused stands alone.",
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "management",
+              "compute",
+              "storage",
+              "provisioning",
+              "iscsi:a",
+              "iscsi:b",
+              "unused"
+            ]
+          }
+        },
+        "ip_assignment": {
+          "description": "How the installed OS gets this port's host address before deployment. For the management port this is the management address mode (config/variables/docs/infrastructure-file.md): dhcp_reservation is Mode A (Reserved, recommended); static is Mode B (Static with DHCP) or Mode C (Static without management DHCP). static: ip_address is set on the port (with simplified provisioning azurelocal-ztp's Device stage sets it by MAC before the OS install, the install resets every port to DHCP, and OS configuration sets it again by MAC; otherwise the operator or the toolkit). dhcp_reservation: the port keeps DHCP and the DHCP server reserves ip_address for mac_address. dhcp: the port keeps DHCP with no reservation, so its address can change (a warning). preconfigured: the port is already configured; tools leave it alone. none: no host address before deployment (Network ATC or the storage networks give it one, or it isn't used); node preparation turns DHCP off on it. Exactly one management port per machine owns the management address: the one with role management and an ip_assignment other than none.",
+          "enum": [
+            "static",
+            "dhcp_reservation",
+            "dhcp",
+            "preconfigured",
+            "none"
+          ]
+        },
+        "ip_address": {
+          "description": "The host address. For the management port this is ARM physicalNodesSettings[].ipv4Address. Required with static. With dhcp_reservation give the reserved address: without it the tools can only check that the port has a DHCP address (a warning), and the deployment still needs it unless use_dhcp is true (a file with scope ztp doesn't deploy).",
+          "$ref": "#/$defs/ipv4"
+        },
+        "prefix_length": {
+          "description": "Prefix length of ip_address. Default for the management port: from networking.management.subnet, which it must match.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 32
+        },
+        "gateway": {
+          "description": "Default gateway on this port. Default for the management port: networking.management.gateway. Leave it out on every other port: validation fails when more than one physical adapter has a default gateway.",
+          "$ref": "#/$defs/ipv4"
+        },
+        "dns_servers": {
+          "description": "Default for the management port: networking.management.dns_servers, which it must match.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ipv4"
+          }
+        },
+        "vlan_id": {
+          "description": "The VLAN of this port's traffic. With vlan_mode tagged the host tags it; with vlan_mode access the switch port is an access port in this VLAN and the host sends untagged frames (it records the switch side). Without vlan_mode, 0 or absent means untagged and anything else is tagged by the host.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 4094
+        },
+        "vlan_mode": {
+          "description": "access: the switch port is an access (untagged) port; the host doesn't tag, so simplified provisioning sends VLAN 0. tagged: the switch port is a trunk and the host tags vlan_id.",
+          "enum": [
+            "access",
+            "tagged"
+          ]
+        },
+        "allowed_vlans": {
+          "description": "Optional. The VLAN ids the switch port of this adapter allows, when the port is a trunk that carries more than the VLAN of the port itself: the tenant (compute) VLANs of the compute adapters. The pre-cluster verification checks that every VLAN used by compute traffic in networking.vlans[] and networking.logical_networks[] is in this list on the compute adapters; without it a tagged compute port is reported Skipped (the file says nothing about what the port allows). This is switch-side metadata for the checklist of the gate; it does not configure the switch or the NIC.",
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 4094
+          }
+        },
+        "switch_port": {
+          "description": "Where the port is cabled.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "switch": {
+              "description": "The switch, for example a network_devices[].hostname.",
+              "type": "string"
+            },
+            "port": {
+              "description": "The switch port, for example Ethernet1/11.",
+              "type": "string"
+            },
+            "description": {
+              "type": "string"
+            }
+          }
+        },
+        "notes": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

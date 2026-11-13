@@ -120,8 +120,8 @@ The repository is designed to be configuration-driven.
 
 | Path | Purpose |
 |------|---------|
-| `config/variables/` | **The master of every variable** ([README](config/variables/README.md)). `schema/master-registry.yaml` is edited by hand; the `infrastructure.yml` schema, the master and purpose templates and the variables reference are generated from it (`scripts/New-InfrastructureArtifacts.ps1`). Registry first: a new variable goes in the registry before anything uses it. |
-| `config/variables/schema/` | The registry, the variables schema, the generated `infrastructure.schema.json` and per-purpose schemas |
+| `config/variables/` | **The master of every variable** ([README](config/variables/README.md)). `schema/master-registry.yaml` is edited by hand; the `infrastructure.yml` schema, the master file, one template per tool and the variables reference are generated from it (`scripts/New-InfrastructureArtifacts.ps1`). Registry first: a new variable goes in the registry before anything uses it. |
+| `config/variables/schema/` | The registry, the variables schema, the generated `infrastructure.schema.json` and one schema per tool |
 | `config/variables/templates/` | Generated: `infrastructure.master.yml` (every variable), scenario templates, one template per tool (ztp, os-configuration, deployment, cicd-infra, monitoring, discovery) |
 | `config/variables/examples/` | Worked `infrastructure.yml` examples (a full file, a ZTP-only file, one per scenario) and `variables.example.yml` |
 | `config/variables/docs/` | How to fill in `infrastructure.yml`, the migration guide, the generated variables reference |

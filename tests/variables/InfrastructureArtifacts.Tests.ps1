@@ -1,14 +1,16 @@
 #Requires -Version 7.0
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
-# The infrastructure.yml schema, the master template, the purpose templates and schemas and the variables reference are
+# The infrastructure.yml schema, the master template, the tool templates and schemas and the variables reference are
 # generated from config/variables/schema/master-registry.yaml. These tests regenerate them and fail when one is stale, and prove
-# that a purpose template is a strict subset of the master file and that a real file can be cut down to each purpose.
+# that a tool template is a strict subset of the master file and that a real file can be cut down to each tool.
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Pester blocks.')]
 param()
 
 BeforeDiscovery {
-    $script:Purposes = 'ztp', 'os_configuration', 'deployment', 'cicd_infra', 'monitoring', 'discovery'
+    # the tools that have at least one key: the ones that get a template and a schema
+    Import-Module (Join-Path (Resolve-Path (Join-Path $PSScriptRoot '..\..')) 'config\variables\scripts\InfrastructureArtifacts.psm1') -Force
+    $script:Tools = @(Get-ToolWithKey -Registry (Get-RegistryDocument -Path (Join-Path (Resolve-Path (Join-Path $PSScriptRoot '..\..')) 'config\variables\schema\master-registry.yaml')))
 }
 
 BeforeAll {
@@ -35,13 +37,13 @@ BeforeAll {
 }
 
 Describe 'Generated files are current' {
-    It 'New-InfrastructureArtifacts.ps1 -Check finds nothing stale (schema, purpose schemas, templates, VARIABLES.md)' {
+    It 'New-InfrastructureArtifacts.ps1 -Check finds nothing stale (schema, tool schemas, templates, VARIABLES.md)' {
         $out = & pwsh -NoProfile -File (Join-Path $script:Vars 'scripts\New-InfrastructureArtifacts.ps1') -Check 2>&1 | Out-String
         $LASTEXITCODE | Should -Be 0 -Because $out
         $out | Should -Match 'generated files are current'
     }
 
-    It '<_> carries the generated-from header' -ForEach 'schema\infrastructure.schema.json', 'templates\infrastructure.master.yml', 'templates\purposes\ztp.yml', 'schema\purposes\ztp.schema.json' {
+    It '<_> carries the generated-from header' -ForEach 'schema\infrastructure.schema.json', 'templates\infrastructure.master.yml', 'templates\tools\ztp.yml', 'schema\tools\ztp.schema.json' {
         (Get-Content -LiteralPath (Join-Path $script:Vars $_) -TotalCount 5 | Out-String) | Should -Match 'GENERATED from config/variables/schema/master-registry.yaml'
     }
 
@@ -66,19 +68,19 @@ Describe 'The schema built from the registry' {
     }
 }
 
-Describe 'Purpose templates and schemas' {
-    It 'the <_> template is a strict subset of the master file' -ForEach $script:Purposes {
+Describe 'Tool templates and schemas' {
+    It 'the <_> template is a strict subset of the master file' -ForEach $script:Tools {
         $file = $_ -replace '_', '-'
         $master = @(Get-DataPath (ConvertFrom-Yaml (Get-Content (Join-Path $script:Vars 'templates\infrastructure.master.yml') -Raw) -Ordered) '' | Sort-Object -Unique)
-        $part = @(Get-DataPath (ConvertFrom-Yaml (Get-Content (Join-Path $script:Vars "templates\purposes\$file.yml") -Raw) -Ordered) '' | Sort-Object -Unique)
+        $part = @(Get-DataPath (ConvertFrom-Yaml (Get-Content (Join-Path $script:Vars "templates\tools\$file.yml") -Raw) -Ordered) '' | Sort-Object -Unique)
         $part.Count | Should -BeGreaterThan 3
         @($part | Where-Object { $master -notcontains $_ -and $_ -notmatch '\.example_name$' }) | Should -BeNullOrEmpty
         $part.Count | Should -BeLessThan $master.Count
     }
 
-    It 'the <_> schema is a subset of the full schema (same keys, nothing added)' -ForEach $script:Purposes {
+    It 'the <_> schema is a subset of the full schema (same keys, nothing added)' -ForEach $script:Tools {
         $full = Get-Content (Join-Path $script:Vars 'schema\infrastructure.schema.json') -Raw | ConvertFrom-Json -AsHashtable
-        $part = Get-Content (Join-Path $script:Vars "schema\purposes\$($_ -replace '_', '-').schema.json") -Raw | ConvertFrom-Json -AsHashtable
+        $part = Get-Content (Join-Path $script:Vars "schema\tools\$($_ -replace '_', '-').schema.json") -Raw | ConvertFrom-Json -AsHashtable
         function Test-Subset($p, $f, [string]$at) {
             if ($f -is [System.Collections.IDictionary] -and $f.Contains('$ref')) {
                 $merged = [ordered]@{}
@@ -97,13 +99,13 @@ Describe 'Purpose templates and schemas' {
         @(Test-Subset $part.properties $full.properties 'properties') | Should -BeNullOrEmpty
     }
 
-    It 'a real file cut down to <_> validates against the purpose schema, for every example, and keeps only values it had' -ForEach $script:Purposes {
-        $purpose = $_
-        $schemaFile = Join-Path $script:Vars "schema\purposes\$($purpose -replace '_', '-').schema.json"
+    It 'a real file cut down to <_> validates against the tool schema, for every example, and keeps only values it had' -ForEach $script:Tools {
+        $tool = $_
+        $schemaFile = Join-Path $script:Vars "schema\tools\$($tool -replace '_', '-').schema.json"
         foreach ($example in (Get-ChildItem (Join-Path $script:Vars 'examples') -Recurse -Filter '*.yml')) {
             $doc = ConvertFrom-Yaml (Get-Content $example.FullName -Raw) -Ordered
-            $cut = Select-InfrastructurePurpose -Registry $script:Registry -Document $doc -Purpose $purpose
-            @(Get-SchemaError ($cut | ConvertTo-Json -Depth 50) $schemaFile) | Should -BeNullOrEmpty -Because "$($example.Name) cut to $purpose"
+            $cut = Select-InfrastructureTool -Registry $script:Registry -Document $doc -Tool $tool
+            @(Get-SchemaError ($cut | ConvertTo-Json -Depth 50) $schemaFile) | Should -BeNullOrEmpty -Because "$($example.Name) cut to $tool"
             $original = @(Get-DataPath $doc '')
             @(Get-DataPath $cut '' | Where-Object { $original -notcontains $_ }) | Should -BeNullOrEmpty
         }
@@ -111,7 +113,7 @@ Describe 'Purpose templates and schemas' {
 
     It 'the ztp cut keeps what ZTP reads and drops the rest' {
         $doc = ConvertFrom-Yaml (Get-Content (Join-Path $script:Vars 'examples\infrastructure.example.yml') -Raw) -Ordered
-        $cut = Select-InfrastructurePurpose -Registry $script:Registry -Document $doc -Purpose ztp
+        $cut = Select-InfrastructureTool -Registry $script:Registry -Document $doc -Tool ztp
         $paths = @(Get-DataPath $cut '')
         $paths | Should -Contain 'nodes[].bmc.ip_address'
         $paths | Should -Contain 'networking.management.subnet'
@@ -119,21 +121,21 @@ Describe 'Purpose templates and schemas' {
         $paths | Should -Not -Contain 'storage'
     }
 
-    It 'the master file cut to a purpose and the rest together make the master file again' {
+    It 'the master file cut to a tool and the rest together make the master file again' {
         $doc = ConvertFrom-Yaml (Get-Content (Join-Path $script:Vars 'examples\infrastructure.example.yml') -Raw) -Ordered
         $all = @(Get-DataPath $doc '' | Sort-Object -Unique)
         $union = @()
-        foreach ($p in $script:Purposes) { $union += @(Get-DataPath (Select-InfrastructurePurpose -Registry $script:Registry -Document $doc -Purpose $p) '') }
+        foreach ($p in $script:Tools) { $union += @(Get-DataPath (Select-InfrastructureTool -Registry $script:Registry -Document $doc -Tool $p) '') }
         @($union | Sort-Object -Unique | Where-Object { $all -notcontains $_ }) | Should -BeNullOrEmpty
     }
 }
 
 Describe 'The cut command' {
-    It 'writes a purpose file that validates against the purpose schema' {
+    It 'writes a tool file that validates against the tool schema' {
         $out = Join-Path $TestDrive 'infra.ztp.yml'
         & (Join-Path $script:Vars 'scripts\New-InfrastructureArtifacts.ps1') -Cut ztp -From (Join-Path $script:Vars 'examples\infrastructure.example.yml') -Out $out 6>$null
         $out | Should -Exist
         $json = ConvertFrom-Yaml (Get-Content $out -Raw) -Ordered | ConvertTo-Json -Depth 50
-        @(Get-SchemaError $json (Join-Path $script:Vars 'schema\purposes\ztp.schema.json')) | Should -BeNullOrEmpty
+        @(Get-SchemaError $json (Join-Path $script:Vars 'schema\tools\ztp.schema.json')) | Should -BeNullOrEmpty
     }
 }

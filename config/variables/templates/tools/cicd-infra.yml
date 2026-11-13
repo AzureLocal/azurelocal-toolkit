@@ -1,21 +1,23 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that 'cicd_infra' reads (a strict subset of the master file). Schema 5.6.16.
+# Template for the part of infrastructure.yml that CI/CD infrastructure ('cicd_infra') reads (a strict subset of the master file). Schema 5.6.16.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
 _metadata:
   # The schema version this file follows.
-  # required; used by: ztp, os_configuration, deployment, monitoring
+  # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
   schema_version: "5.6.0"
   # (since 5.3) full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, id...
-  # one of: full | ztp; default: "full"; used by: ztp
+  # one of: full | ztp; default: "full"; used by: ztp, trailwright
   scope: "full"
   # Your own version of this file.
+  # used by: trailwright
   file_version: "1.0.0"
   # Date of the last change, YYYY-MM-DD.
   last_updated: "2026-11-06"
   # The tool that wrote the file, for example azurelocal-trailwright 1.1.0.
+  # used by: trailwright
   generated_by: ""
   # Free text about this file for the people who keep it.
   notes: ""
@@ -28,16 +30,16 @@ tags:
 # The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
 azure:
   # Microsoft Entra tenant ID (GUID) of the subscription.
-  # required; used by: ztp, os_configuration, deployment, cicd_infra
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, trailwright
   tenant_id: "00000000-0000-0000-0000-000000000000"
   # Azure region, for example eastus.
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright
   location: "eastus"
   # Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_i...
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright
   subscription_id: "00000000-0000-0000-0000-000000000000"
   # Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses).
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright
   resource_group: "rg-iic-azl-01"
   # The identity that runs automation with no one signed in (pipelines, ZTP, the ARM deployment).
   # used by: deployment, cicd_infra
@@ -62,41 +64,41 @@ azure:
 # used by: ztp, cicd_infra
 key_vaults:
   # Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens.
-  # required; used by: ztp, deployment, cicd_infra
+  # required; used by: ztp, deployment, cicd_infra, trailwright
   - name: "kv-iic-mgmt-01"
     # Subscription (GUID) that holds the vault.
-    # required; used by: ztp, deployment, cicd_infra
+    # required; used by: ztp, deployment, cicd_infra, trailwright
     subscription_id: "00000000-0000-0000-0000-000000000000"
     # Resource group that holds the vault.
-    # required; used by: ztp, deployment, cicd_infra
+    # required; used by: ztp, deployment, cicd_infra, trailwright
     resource_group: "rg-iic-mgmt-01"
     # What the vault holds, for example management, deployment or backup.
-    # used by: ztp, cicd_infra
+    # used by: ztp, cicd_infra, trailwright
     purpose: "management"
 
 # (since 5.6.13) 
-# used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra
+# used by: ztp, os_configuration, deployment, discovery, cicd_infra
 secrets:
   # (since 5.6.13) 
-  # one of: keyvault | env | file | command; default: "keyvault"; used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+  # one of: keyvault | env | file | command; default: "keyvault"; used by: os_configuration, deployment, discovery, cicd_infra
   provider: "keyvault"
   # (since 5.6.13) 
-  # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+  # used by: os_configuration, deployment, discovery, cicd_infra
   file:
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+    # used by: os_configuration, deployment, discovery, cicd_infra
     directory: "C:\\ProgramData\\iic-secrets"
   # (since 5.6.13) 
-  # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+  # used by: os_configuration, deployment, discovery, cicd_infra
   command:
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+    # used by: os_configuration, deployment, discovery, cicd_infra
     executable: "iic-secret-tool"
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+    # used by: os_configuration, deployment, discovery, cicd_infra
     arguments: ["get", "{name}"]
     # (since 5.6.13) 
-    # default: 30; used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+    # default: 30; used by: os_configuration, deployment, discovery, cicd_infra
     timeout_seconds: 30
 
 # Part 2 of the implementation steps: the Azure foundation the instance depends on.
@@ -105,13 +107,13 @@ landing_zone:
   # used by: cicd_infra
   subscriptions:
     # Name of the subscription; the other landing_zone entries refer to it.
-    # required; used by: cicd_infra
+    # required; used by: cicd_infra, trailwright
     - name: "sub-iic-connectivity"
       # Subscription id (a GUID).
-      # used by: cicd_infra
+      # used by: cicd_infra, trailwright
       id: "00000000-0000-0000-0000-000000000000"
       # What the subscription is for.
-      # required; one of: connectivity | identity | management | security | devops | workload | azure_local; used by: cicd_infra
+      # required; one of: connectivity | identity | management | security | devops | workload | azure_local; used by: cicd_infra, trailwright
       role: "connectivity"
       # Management group the subscription is under.
       # used by: cicd_infra
