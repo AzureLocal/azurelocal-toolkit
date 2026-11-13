@@ -84,7 +84,7 @@ Describe 'The mandatory resource providers (Microsoft Learn)' {
         $r.ExitCode | Should -Be 1
     }
 
-    It 'the tplabs failure: Microsoft.HybridContainerService missing is a Failure, no longer a Warning, and names the Azure check' {
+    It 'the lab failure: Microsoft.HybridContainerService missing is a Failure, no longer a Warning, and names the Azure check' {
         $fake = Get-ProviderFake -State @{ 'Microsoft.HybridContainerService' = 'NotRegistered' }
         $r = Invoke-TestRun -World (Get-FakeWorld) -Mode Validate -Override $fake.Override
         $pre = Get-Pre $r ResourceProviders

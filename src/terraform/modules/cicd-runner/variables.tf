@@ -9,7 +9,7 @@
 # ------------------------------------------------------------------ core ----
 
 variable "name_prefix" {
-  description = "Prefix for every resource name, for example tplabs-runner-lnx. VMs are named <name_prefix>-01, -02 and so on."
+  description = "Prefix for every resource name, for example iic-runner-lnx. VMs are named <name_prefix>-01, -02 and so on."
   type        = string
 
   validation {

@@ -1069,7 +1069,7 @@ function Get-AzlArmArcMachineCached {
 # OS build -> the solution line it ships with (first three parts of the solution version; the last part is the build of the
 # solution package and is not known from the OS build). Add a row only when both were seen together on a real deployment.
 $script:SolutionOsBuilds = @(
-    [pscustomobject]@{ OsBuild = '10.0.26100.33650'; Solution = '12.2610.1004'; Evidence = 'tplabs lab 2026-11-08: nodes on 10.0.26100.33650, Azure reported Solution version 12.2610.1004.50' }
+    [pscustomobject]@{ OsBuild = '10.0.26100.33650'; Solution = '12.2610.1004'; Evidence = 'lab run 2026-11-08: nodes on 10.0.26100.33650, Azure reported Solution version 12.2610.1004.50' }
 )
 
 function Read-AzlArmSbeCatalog {

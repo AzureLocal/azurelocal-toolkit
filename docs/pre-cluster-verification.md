@@ -15,7 +15,7 @@ current result of this gate for the same infrastructure file.
 
 ```powershell
 # 1. What would be checked (offline, reads nothing, writes plan.json and plan.md):
-./Invoke-AzureLocalPreClusterVerification.ps1 -InfrastructureFile D:\Data\azl-ztp\tplabs\infrastructure.yml
+./Invoke-AzureLocalPreClusterVerification.ps1 -InfrastructureFile D:\Data\azl-ztp\iic\infrastructure.yml
 
 # 2. Check (read only against Azure, Active Directory and the nodes; writes the result the ARM run reads):
 ./Invoke-AzureLocalPreClusterVerification.ps1 -InfrastructureFile <infrastructure.yml> -OsConfigurationReport <osconfig report directory> -Mode Verify
@@ -78,7 +78,7 @@ Without `-Fix`, and in Plan, nothing is changed anywhere.
 ## Output
 
 The report directory is `-ReportDirectory`, else `deployment.pre_cluster_verification_report_directory`, else `arm-report\verification\live` in the **environment data folder**: the folder
-that holds `provisioning.simplified.evidence_path` (for example `D:\Data\azl-ztp\tplabs\evidence` gives `D:\Data\azl-ztp\tplabs\arm-report\verification\live`), else the one that holds
+that holds `provisioning.simplified.evidence_path` (for example `D:\Data\azl-ztp\iic\evidence` gives `D:\Data\azl-ztp\iic\arm-report\verification\live`), else the one that holds
 `media_path`, else the folder of the infrastructure file. Sonar follows `precluster-verification-events.jsonl` there.
 
 | File | Content |

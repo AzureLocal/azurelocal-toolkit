@@ -57,7 +57,7 @@ function Resolve-AzlPclReportDirectory {
         The report directory of the gate: -Configured when given (deployment.pre_cluster_verification_report_directory), else
         arm-report\verification\live in the environment data folder, else a folder in the temp directory.
         The environment data folder is the folder that holds the evidence folder of the file (provisioning.simplified.evidence_path, for
-        example D:\Data\azl-ztp\tplabs\evidence gives D:\Data\azl-ztp\tplabs), else the one that holds media_path, else the folder of
+        example D:\Data\azl-ztp\iic\evidence gives D:\Data\azl-ztp\iic), else the one that holds media_path, else the folder of
         the infrastructure file. With -Infrastructure (the parsed file) the first two are used.
     #>
     [CmdletBinding()]

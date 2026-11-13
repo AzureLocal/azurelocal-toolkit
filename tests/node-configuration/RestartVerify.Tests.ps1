@@ -1,6 +1,6 @@
 #Requires -Version 7.0
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
-# The verification after a node restart. The lab case (node tplabs-azl-n03, apply-n03-pass5): every step applied, the drivers asked for a restart (pnputil 3010),
+# The verification after a node restart. The lab case (node iic-azl-n03, apply-n03-pass5): every step applied, the drivers asked for a restart (pnputil 3010),
 # the node went down, and the run's final verify opened its session while the node was still restarting. WinRM said "Access is denied" after 0.1 s, the run called that
 # a refused credential, ended with status failed and exit 1, and a verification 20 minutes later found the node converged. These tests fake the node's restart
 # (the port is closed for a while, then a session is refused for a while, then the node answers) and a clock that moves only when the run sleeps: no network, no Azure,

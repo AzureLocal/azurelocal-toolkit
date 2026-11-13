@@ -227,12 +227,12 @@ Describe 'Select-AzlVerifiedNodeAddress' {
     }
     It 'only the handoff exists and it is wrong: nothing proves the identity, the message names what answered where, nothing is accepted' {
         $r = Resolve-Node -Answer @('192.0.2.117') -Handoff (Get-Handoff '192.0.2.117') -Arc $null
-        $reader = New-Reader @{ '192.0.2.117' = @{ Name = 'TPLABS-AZL-N03'; Mac = @('C4:CB:E1:B3:6F:D0', 'C4:CB:E1:B3:6F:D1') } } ([System.Collections.Generic.List[string]]::new())
+        $reader = New-Reader @{ '192.0.2.117' = @{ Name = 'LAB-AZL-N03'; Mac = @('02:00:00:00:6F:D0', '02:00:00:00:6F:D1') } } ([System.Collections.Generic.List[string]]::new())
         $v = Select-AzlVerifiedNodeAddress -Resolution $r -Expected $script:Expected -IdentityReader $reader
         $v.Verified | Should -BeFalse
         $v.Address | Should -BeNullOrEmpty
         $v.Message | Should -Match 'No address proved to be iic-n01'
-        $v.Message | Should -Match 'address 192\.0\.2\.117 answered but is TPLABS-AZL-N03/C4:CB:E1:B3:6F:D0,C4:CB:E1:B3:6F:D1, not iic-n01'
+        $v.Message | Should -Match 'address 192\.0\.2\.117 answered but is LAB-AZL-N03/02:00:00:00:6F:D0,02:00:00:00:6F:D1, not iic-n01'
         $v.Message | Should -Match 'found by ztp-handoff'
         $v.Message | Should -Match 'Nothing was changed|nothing was changed'
         $v.Message | Should -Match '-NodeAddress'

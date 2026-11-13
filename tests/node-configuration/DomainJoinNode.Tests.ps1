@@ -79,10 +79,10 @@ function Resolve-DnsName {
         if (@($Scenario.srvDeadServers) -contains $Server) { throw ('Server ' + $Server + ' does not answer [DNS_ERROR_RCODE_SERVER_FAILURE,Microsoft.DnsClient.Commands.ResolveDnsName]') }
         if (-not $TcpOnly -and $Scenario.srvUdpFails) { throw ([string]$Scenario.srvUdpError) }
         # an answer with no SRV record: only the additional A records (a truncated UDP answer)
-        if (-not $TcpOnly -and $Scenario.srvUdpEmpty) { return @([pscustomobject]@{ IPAddress = '192.168.211.40'; Type = 'A' }) }
-        $answer = @([pscustomobject]@{ NameTarget = 'mgmt-ral-dc-01.haas.mgmt'; Type = 'SRV' })
+        if (-not $TcpOnly -and $Scenario.srvUdpEmpty) { return @([pscustomobject]@{ IPAddress = '192.0.2.40'; Type = 'A' }) }
+        $answer = @([pscustomobject]@{ NameTarget = 'iic-dc-01.improbability.cloud'; Type = 'SRV' })
         # the additional records of a real answer: A records, which have no NameTarget (strict mode throws on a plain .NameTarget)
-        if ($Scenario.srvAdditional) { $answer += [pscustomobject]@{ IPAddress = '192.168.211.40'; Type = 'A' } }
+        if ($Scenario.srvAdditional) { $answer += [pscustomobject]@{ IPAddress = '192.0.2.40'; Type = 'A' } }
         return $answer
     }
 }
@@ -164,7 +164,7 @@ foreach ($required in 'Add-Computer', 'shutdown.exe', 'icacls.exe', 'gpupdate.ex
             addComputerCode = 0; addComputerMessage = ''; failMember = ''; moveFails = $false; ouMissing = $false
             authFails = $false; authFailsMessage = 'Logon failure: unknown user name or bad password.'; authFailsHResult = -2147023570
             registerFails = $false; setContentFails = $false; shutdownExit = 0; dnAfterGpupdate = ''; icaclsExit = 0; memberExists = ''
-            dnsServers = @('192.168.211.30', '192.168.211.31'); tcpClosed = @(); dcNames = @{}; srvDeadServers = @(); srvUdpFails = $false; srvUdpError = ''; srvUdpEmpty = $false; srvAdditional = $false
+            dnsServers = @('192.0.2.30', '192.0.2.31'); tcpClosed = @(); dcNames = @{}; srvDeadServers = @(); srvUdpFails = $false; srvUdpError = ''; srvUdpEmpty = $false; srvAdditional = $false
         }
         foreach ($k in $Scenario.Keys) { $sc[$k] = $Scenario[$k] }
         ($sc | ConvertTo-Json -Depth 8) | Set-Content -LiteralPath (Join-Path $dir 'scenario.json') -Encoding UTF8
@@ -306,90 +306,90 @@ Describe 'Probe: the membership, read only' {
 
 Describe 'Probe: the domain controller SRV lookup says why it failed and does not depend on one transport' {
     BeforeAll {
-        $script:Haas = @{ domain = 'haas.mgmt'; dcs = @('192.168.211.30', '192.168.211.31') }
-        $script:HaasNames = @{ '192.168.211.30' = 'mgmt-ral-dc-01.haas.mgmt'; '192.168.211.31' = 'mgmt-ral-dc-02.haas.mgmt' }
+        $script:Dom = @{ domain = 'improbability.cloud'; dcs = @('192.0.2.30', '192.0.2.31') }
+        $script:DcNames = @{ '192.0.2.30' = 'iic-dc-01.improbability.cloud'; '192.0.2.31' = 'iic-dc-02.improbability.cloud' }
     }
     It 'asks each DNS server of the management adapter explicitly with -DnsOnly, after flushing the client cache' {
-        $r = Invoke-DjNode -Payload DomainJoinProbe -Params $script:Haas
+        $r = Invoke-DjNode -Payload DomainJoinProbe -Params $script:Dom
         $r.Exit | Should -Be 0 -Because $r.Console
         $d = $r.Answer.domainJoin
         $d.srvOk | Should -BeTrue
-        $d.srvServer | Should -Be '192.168.211.30'
+        $d.srvServer | Should -Be '192.0.2.30'
         $d.srvTransport | Should -Be 'udp'
-        @($d.srvServers) | Should -Be @('192.168.211.30', '192.168.211.31')
+        @($d.srvServers) | Should -Be @('192.0.2.30', '192.0.2.31')
         $d.srvReason | Should -BeNullOrEmpty
         $d.srvElapsedMs | Should -BeGreaterOrEqual 0
         $r.Calls | Should -Contain 'Clear-DnsClientCache'
-        @($r.Calls | Where-Object { $_ -like 'Resolve-DnsName SRV _ldap._tcp.dc._msdcs.haas.mgmt server=192.168.211.30 transport=udp' }).Count | Should -Be 1
-        ([array]::IndexOf($r.Calls, 'Clear-DnsClientCache')) | Should -BeLessThan ([array]::IndexOf($r.Calls, 'Resolve-DnsName SRV _ldap._tcp.dc._msdcs.haas.mgmt server=192.168.211.30 transport=udp'))
+        @($r.Calls | Where-Object { $_ -like 'Resolve-DnsName SRV _ldap._tcp.dc._msdcs.improbability.cloud server=192.0.2.30 transport=udp' }).Count | Should -Be 1
+        ([array]::IndexOf($r.Calls, 'Clear-DnsClientCache')) | Should -BeLessThan ([array]::IndexOf($r.Calls, 'Resolve-DnsName SRV _ldap._tcp.dc._msdcs.improbability.cloud server=192.0.2.30 transport=udp'))
     }
     It 'an answer with additional A records (no NameTarget) is still an SRV answer, under strict mode' {
-        $d = (Invoke-DjNode -Payload DomainJoinProbe -Params $script:Haas -Scenario @{ srvAdditional = $true }).Answer.domainJoin
+        $d = (Invoke-DjNode -Payload DomainJoinProbe -Params $script:Dom -Scenario @{ srvAdditional = $true }).Answer.domainJoin
         $d.srvOk | Should -BeTrue
-        @($d.srvTargets) | Should -Be @('mgmt-ral-dc-01.haas.mgmt')
+        @($d.srvTargets) | Should -Be @('iic-dc-01.improbability.cloud')
     }
     It 'SRV fails over UDP and works over TCP: the probe passes and records the transport, the server and why UDP failed' {
-        $r = Invoke-DjNode -Payload DomainJoinProbe -Params $script:Haas -Scenario @{ srvUdpFails = $true; srvUdpError = 'This operation returned because the timeout period expired' }
+        $r = Invoke-DjNode -Payload DomainJoinProbe -Params $script:Dom -Scenario @{ srvUdpFails = $true; srvUdpError = 'This operation returned because the timeout period expired' }
         $d = $r.Answer.domainJoin
         $d.srvOk | Should -BeTrue
         $d.srvTransport | Should -Be 'tcp'
-        $d.srvServer | Should -Be '192.168.211.30'
-        $d.srvReason | Should -Match '192\.168\.211\.30 UDP \d+ ms: This operation returned because the timeout period expired'
+        $d.srvServer | Should -Be '192.0.2.30'
+        $d.srvReason | Should -Match '192.0.2.30 UDP \d+ ms: This operation returned because the timeout period expired'
         $d.srvAttempts.Count | Should -Be 2
-        $r.Calls | Should -Contain 'Resolve-DnsName SRV _ldap._tcp.dc._msdcs.haas.mgmt server=192.168.211.30 transport=tcp'
+        $r.Calls | Should -Contain 'Resolve-DnsName SRV _ldap._tcp.dc._msdcs.improbability.cloud server=192.0.2.30 transport=tcp'
         $d.dcChecks | Should -BeNullOrEmpty -Because 'the explicit controllers are only checked when SRV discovery failed'
     }
     It 'an empty (truncated) UDP answer is retried over TCP' {
-        $d = (Invoke-DjNode -Payload DomainJoinProbe -Params $script:Haas -Scenario @{ srvUdpEmpty = $true }).Answer.domainJoin
+        $d = (Invoke-DjNode -Payload DomainJoinProbe -Params $script:Dom -Scenario @{ srvUdpEmpty = $true }).Answer.domainJoin
         $d.srvOk | Should -BeTrue
         $d.srvTransport | Should -Be 'tcp'
         $d.srvReason | Should -Match 'no SRV record \(empty or truncated\)'
     }
     It 'a dead first DNS server falls over to the second one' {
-        $d = (Invoke-DjNode -Payload DomainJoinProbe -Params $script:Haas -Scenario @{ srvDeadServers = @('192.168.211.30') }).Answer.domainJoin
+        $d = (Invoke-DjNode -Payload DomainJoinProbe -Params $script:Dom -Scenario @{ srvDeadServers = @('192.0.2.30') }).Answer.domainJoin
         $d.srvOk | Should -BeTrue
-        $d.srvServer | Should -Be '192.168.211.31'
-        $d.srvReason | Should -Match '192\.168\.211\.30 UDP'
-        $d.srvReason | Should -Match '192\.168\.211\.30 TCP'
+        $d.srvServer | Should -Be '192.0.2.31'
+        $d.srvReason | Should -Match '192.0.2.30 UDP'
+        $d.srvReason | Should -Match '192.0.2.30 TCP'
     }
     It 'when every try fails: both servers, both transports, two rounds, and the reason carries the exception text and its error id' {
-        $r = Invoke-DjNode -Payload DomainJoinProbe -Params $script:Haas -Scenario @{ srvDeadServers = @('192.168.211.30', '192.168.211.31'); dcReachable = $false }
+        $r = Invoke-DjNode -Payload DomainJoinProbe -Params $script:Dom -Scenario @{ srvDeadServers = @('192.0.2.30', '192.0.2.31'); dcReachable = $false }
         $d = $r.Answer.domainJoin
         $d.srvOk | Should -BeFalse
         $d.srvAttempts.Count | Should -Be 8
-        $d.srvReason | Should -Match 'Server 192\.168\.211\.30 does not answer \[DNS_ERROR_RCODE_SERVER_FAILURE'
-        $d.srvReason | Should -Match '192\.168\.211\.31 TCP'
+        $d.srvReason | Should -Match 'Server 192.0.2.30 does not answer \[DNS_ERROR_RCODE_SERVER_FAILURE'
+        $d.srvReason | Should -Match '192.0.2.31 TCP'
         $d.srvTransport | Should -BeNullOrEmpty
     }
     It 'SRV fails but every controller of the file answers on TCP 389 and has a name that resolves: the probe offers the first name for the join' {
-        $d = (Invoke-DjNode -Payload DomainJoinProbe -Params $script:Haas -Scenario @{ srvDeadServers = @('192.168.211.30', '192.168.211.31'); dcNames = $script:HaasNames }).Answer.domainJoin
+        $d = (Invoke-DjNode -Payload DomainJoinProbe -Params $script:Dom -Scenario @{ srvDeadServers = @('192.0.2.30', '192.0.2.31'); dcNames = $script:DcNames }).Answer.domainJoin
         $d.srvOk | Should -BeFalse
         $d.dcAllOk | Should -BeTrue
-        $d.dcServer | Should -Be 'mgmt-ral-dc-01.haas.mgmt'
+        $d.dcServer | Should -Be 'iic-dc-01.improbability.cloud'
         @($d.dcChecks).Count | Should -Be 2
         $d.dcChecks[0].tcp389 | Should -BeTrue
-        $d.dcChecks[1].name | Should -Be 'mgmt-ral-dc-02.haas.mgmt'
+        $d.dcChecks[1].name | Should -Be 'iic-dc-02.improbability.cloud'
     }
     It 'a controller that does not answer on TCP 389, or has no name, makes dcAllOk false and says why' {
-        $d = (Invoke-DjNode -Payload DomainJoinProbe -Params $script:Haas -Scenario @{ srvDeadServers = @('192.168.211.30', '192.168.211.31'); dcNames = @{ '192.168.211.30' = 'mgmt-ral-dc-01.haas.mgmt' }; tcpClosed = @('192.168.211.30') }).Answer.domainJoin
+        $d = (Invoke-DjNode -Payload DomainJoinProbe -Params $script:Dom -Scenario @{ srvDeadServers = @('192.0.2.30', '192.0.2.31'); dcNames = @{ '192.0.2.30' = 'iic-dc-01.improbability.cloud' }; tcpClosed = @('192.0.2.30') }).Answer.domainJoin
         $d.dcAllOk | Should -BeFalse
         $d.dcChecks[0].tcp389 | Should -BeFalse
         $d.dcChecks[0].error | Should -Match 'TCP 389'
-        $d.dcChecks[1].error | Should -Match 'name lookup for 192\.168\.211\.31 failed: DNS name does not exist'
+        $d.dcChecks[1].error | Should -Match 'name lookup for 192.0.2.31 failed: DNS name does not exist'
     }
 }
 
 Describe 'Apply: join names a domain controller when the plan says so' {
     It 'passes -Server to Add-Computer only when the plan set server' {
-        $with = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam @{ server = 'mgmt-ral-dc-01.haas.mgmt' }) -Secrets $script:Secret
+        $with = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam @{ server = 'iic-dc-01.improbability.cloud' }) -Secrets $script:Secret
         $with.Answer.status | Should -Be 'joined'
-        $with.Answer.server | Should -Be 'mgmt-ral-dc-01.haas.mgmt'
-        @($with.Calls | Where-Object { $_ -like 'Add-Computer*' })[0] | Should -Match 'Server=mgmt-ral-dc-01\.haas\.mgmt$'
+        $with.Answer.server | Should -Be 'iic-dc-01.improbability.cloud'
+        @($with.Calls | Where-Object { $_ -like 'Add-Computer*' })[0] | Should -Match 'Server=iic-dc-01.improbability.cloud$'
         $without = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam) -Secrets $script:Secret
         @($without.Calls | Where-Object { $_ -like 'Add-Computer*' })[0] | Should -Match 'Server=$'
     }
     It 'still joins once, with the same protections: the host name check and the other domain check come before the server is used' {
-        $r = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam @{ server = 'mgmt-ral-dc-01.haas.mgmt'; expectedHost = 'other' }) -Secrets $script:Secret
+        $r = Invoke-DjNode -Payload DomainJoinApply -Params (Get-JoinParam @{ server = 'iic-dc-01.improbability.cloud'; expectedHost = 'other' }) -Secrets $script:Secret
         $r.Answer.status | Should -Be 'failed'
         @($r.Calls | Where-Object { $_ -like 'Add-Computer*' }).Count | Should -Be 0
     }

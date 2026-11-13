@@ -25,7 +25,7 @@
     Path to infrastructure.yml for automated configuration.
 
 .EXAMPLE
-    .\New-VirtualNetwork.ps1 -ResourceGroupName "rg-azlmgmt-prd-eus-01" -Location "eastus"
+    .\New-VirtualNetwork.ps1 -ResourceGroupName "rg-iic-mgmt-eus-01" -Location "eastus"
 
 .EXAMPLE
     .\New-VirtualNetwork.ps1 -ConfigFile "config/infrastructure.yml"

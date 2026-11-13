@@ -22,7 +22,7 @@
     Workspace SKU. Default: PerGB2018
 
 .EXAMPLE
-    .\New-LogAnalyticsWorkspace.ps1 -WorkspaceName "log-azl-prd-eus" -ResourceGroupName "rg-azlmgmt-prd-eus-01"
+    .\New-LogAnalyticsWorkspace.ps1 -WorkspaceName "log-azl-prd-eus" -ResourceGroupName "rg-iic-mgmt-eus-01"
 
 .NOTES
     Author: Azure Local Cloud AzureLocalCloud Team

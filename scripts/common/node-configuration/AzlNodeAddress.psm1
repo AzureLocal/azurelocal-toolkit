@@ -542,7 +542,7 @@ function Resolve-AzlNodeAddress {
 # ---------------------------------------------------------------------------------------------------------------------
 
 function Format-AzlMacText {
-    # 'C4:CB:E1:B3:6E:28' for 12 hex digits (as ConvertTo-AzlAddressMacKey returns them).
+    # '02:00:00:00:6E:28' for 12 hex digits (as ConvertTo-AzlAddressMacKey returns them).
     [CmdletBinding()]
     [OutputType([string])]
     param([AllowNull()][AllowEmptyString()][string]$MacKey)

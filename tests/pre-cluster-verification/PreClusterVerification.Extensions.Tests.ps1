@@ -144,8 +144,8 @@ Describe 'Running the checks of a module' {
 
 Describe 'The default report directory' {
     It 'is arm-report\verification\live in the folder that holds the evidence folder (the environment data folder)' {
-        $infra = @{ provisioning = @{ simplified = @{ evidence_path = 'D:\Data\azl-ztp\tplabs\evidence'; media_path = 'D:\Data\azl-ztp\tplabs\media' } } }
-        Resolve-AzlPclReportDirectory -InfrastructureFile 'D:\git\env\infrastructure.yml' -Infrastructure $infra | Should -Be 'D:\Data\azl-ztp\tplabs\arm-report\verification\live'
+        $infra = @{ provisioning = @{ simplified = @{ evidence_path = 'D:\Data\azl-ztp\iic\evidence'; media_path = 'D:\Data\azl-ztp\iic\media' } } }
+        Resolve-AzlPclReportDirectory -InfrastructureFile 'D:\git\env\infrastructure.yml' -Infrastructure $infra | Should -Be 'D:\Data\azl-ztp\iic\arm-report\verification\live'
     }
     It 'falls back to the media folder, then to the folder of the file' {
         Resolve-AzlPclReportDirectory -InfrastructureFile 'D:\git\env\infrastructure.yml' -Infrastructure @{ provisioning = @{ simplified = @{ media_path = 'E:\site\media' } } } | Should -Be 'E:\site\arm-report\verification\live'

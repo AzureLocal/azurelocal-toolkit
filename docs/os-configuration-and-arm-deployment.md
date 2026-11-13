@@ -226,7 +226,7 @@ os_configuration:
 
 ```text
 STORAGE WIPE (os_configuration.clear_storage in the master file). Local disks that WOULD BE WIPED if you apply. ...
-  tplabs-azl-n01: 1 pool(s), 2 virtual disk(s), disks: 3 (1000 GB) ...
+  iic-azl-n01: 1 pool(s), 2 virtual disk(s), disks: 3 (1000 GB) ...
 ```
 
 With it off, leftover storage is reported as blocking (exit 1) and nothing is wiped.
@@ -704,7 +704,7 @@ With a SAN declared, the **Mpio** step (plan, approval, apply, verify, with the 
 
 | Type | Step |
 | --- | --- |
-| both | the MultipathIO feature (a restart if it was off); the array's MSDSM hardware ID (`New-MSDSMSupportedHW`, or `mpclaim` for Hitachi); **the MPIO claim of the device**: `mpclaim -n -i -d "<vendor padded to 8><product padded to 16>"` (for Pure `"PURE    FlashArray"`), which puts the array in MPIO's own list (`MPIOSupportedDeviceList`). Registering the ID with MSDSM is not enough: on the tplabs lab Azure Local already shipped `PURE`/`FlashArray` registered in MSDSM and eight FC disks (two LUNs over four paths) still stayed separate, with `Get-MPIOAvailableHW` showing `IsMultipathed False`, until the claim and a restart; the plan reads both and shows `MPIO claims PURE|FlashArray`. For Pure (`removeGenericEntry` in the table) the generic `Vendor*` / `Product*` entry removed (Learn step 2.2); the load balance policy; the vendor's MPIO settings; then one restart so MPIO claims the paths (Learn step 6), when the hardware ID is registered and the paths are still separate disks |
+| both | the MultipathIO feature (a restart if it was off); the array's MSDSM hardware ID (`New-MSDSMSupportedHW`, or `mpclaim` for Hitachi); **the MPIO claim of the device**: `mpclaim -n -i -d "<vendor padded to 8><product padded to 16>"` (for Pure `"PURE    FlashArray"`), which puts the array in MPIO's own list (`MPIOSupportedDeviceList`). Registering the ID with MSDSM is not enough: in a lab Azure Local already shipped `PURE`/`FlashArray` registered in MSDSM and eight FC disks (two LUNs over four paths) still stayed separate, with `Get-MPIOAvailableHW` showing `IsMultipathed False`, until the claim and a restart; the plan reads both and shows `MPIO claims PURE|FlashArray`. For Pure (`removeGenericEntry` in the table) the generic `Vendor*` / `Product*` entry removed (Learn step 2.2); the load balance policy; the vendor's MPIO settings; then one restart so MPIO claims the paths (Learn step 6), when the hardware ID is registered and the paths are still separate disks |
 | `fibre_channel` | the node's WWPNs (`Get-InitiatorPort`) are collected and reported (SanVerify) for the fabric administrator; they are never zoned by the toolkit |
 | `iscsi` | also: the `MSiSCSI` service Automatic and running, `Enable-MSDSMAutomaticClaim -BusType iSCSI` (with a restart when LUNs are already visible), a target portal and a persistent multipath session from each `iscsi:a` / `iscsi:b` port to each portal of the targets of its fabric (`New-IscsiTargetPortal`, `Connect-IscsiTarget`); the node's IQN is reported. With CHAP on, the portals are made and the sessions are left to you |
 

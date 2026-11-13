@@ -685,8 +685,8 @@ environment:
     - azurelocalcloud
     - ProjectIIC
     - iic-reference
-    - Azure Local Cloudpoc
-    - Azure Local Cloudproductlabs
+    - iic-poc
+    - iic-labs
     example: "azurelocalcloud"
 
   env_type:
@@ -759,8 +759,8 @@ tags:
     - azurelocalcloud
     - ProjectIIC
     - iic-reference
-    - Azure Local Cloudpoc
-    - Azure Local Cloudproductlabs
+    - iic-poc
+    - iic-labs
     example: "azurelocalcloud"
 
   Project:
@@ -771,8 +771,8 @@ tags:
     - "Azure Local Cloud Management"
     - "Project Phoenix"
     - "Azure Local Cloud Demos"
-    - "Azure Local Cloud POC"
-    - "Azure Local Cloud Product Labs"
+    - "IIC POC"
+    - "IIC Labs"
     example: "AzureLocal Cloud Team Cloud Management Platform"
 
   ManagedBy:
@@ -963,45 +963,45 @@ azure_platform:
       required: false
       example: "iic-reference.cloud"
 
-    # Tenant: Azure Local Cloud POC
-    aztenant_Azure Local Cloudpoc_id:
+    # Tenant: IIC POC
+    aztenant_iic-poc_id:
       type: string
-      description: "Azure Local Cloud POC Tenant ID"
+      description: "IIC POC Tenant ID"
       required: false
       format: uuid
       example: "12345678-1234-1234-1234-123456789013"
 
-    aztenant_Azure Local Cloudpoc_domain:
+    aztenant_iic-poc_domain:
       type: string
-      description: "Azure Local Cloud POC tenant domain"
+      description: "IIC POC tenant domain"
       required: false
-      example: "Azure Local Cloudpoc.onmicrosoft.com"
+      example: "iic-poc.onmicrosoft.com"
 
-    aztenant_Azure Local Cloudpoc_primary_domain:
+    aztenant_iic-poc_primary_domain:
       type: string
-      description: "Azure Local Cloud POC primary domain"
+      description: "IIC POC primary domain"
       required: false
-      example: "Azure Local Cloudpoc.cloud"
+      example: "iic-poc.cloud"
 
-    # Tenant: Azure Local Cloud Product Labs
-    aztenant_Azure Local Cloudproductlabs_id:
+    # Tenant: IIC Labs
+    aztenant_iic-labs_id:
       type: string
-      description: "Azure Local Cloud Product Labs Tenant ID"
+      description: "IIC Labs Tenant ID"
       required: false
       format: uuid
       example: "12345678-1234-1234-1234-123456789014"
 
-    aztenant_Azure Local Cloudproductlabs_domain:
+    aztenant_iic-labs_domain:
       type: string
-      description: "Azure Local Cloud Product Labs tenant domain"
+      description: "IIC Labs tenant domain"
       required: false
-      example: "Azure Local Cloudproductlabs.onmicrosoft.com"
+      example: "iic-labs.onmicrosoft.com"
 
-    aztenant_Azure Local Cloudproductlabs_primary_domain:
+    aztenant_iic-labs_primary_domain:
       type: string
-      description: "Azure Local Cloud Product Labs primary domain"
+      description: "IIC Labs primary domain"
       required: false
-      example: "Azure Local Cloudproductlabs.cloud"
+      example: "iic-labs.cloud"
   # ─── management_groups ───
   management_groups:
     _meta:

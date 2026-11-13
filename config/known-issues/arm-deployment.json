@@ -199,7 +199,7 @@
       "retry": "after-fix",
       "confidence": "observed",
       "link": "https://learn.microsoft.com/azure/azure-local/deploy/deployment-arc-register-server-permissions",
-      "evidence": "azl-toolkit lessons (proven repo): tplabs re-registration after a node rebuild."
+      "evidence": "azl-toolkit lessons (proven repo): a lab re-registration after a node rebuild."
     },
     {
       "id": "arc-registration-unauthorized",
@@ -281,7 +281,7 @@
       "retry": "after-fix",
       "confidence": "documented",
       "link": "https://learn.microsoft.com/azure/azure-local/update/solution-builder-extension",
-      "evidence": "tplabs lab 2026-11-08, validate-3 (arm-report/validate-3/summary.md): step 0.60 InvokeEnvironmentChecker, SBE_Dell_16G-45n0c-Intel_5.0.2606.1616 with Solution version 12.2610.1004.50; Azure listed SBE_Dell_17G-Intel_5.0.2609.1715, SBE_Dell_16G-45n0c-Intel_5.0.2609.1611, SBE_Dell_AX-15G_5.0.2609.1511 and SBE_Dell_AX-14G_5.0.2609.1409 as validated. Dell's catalog (SBE_Discovery_Dell.xml, 2026-10-21) gives 5.0.2606.1616 Solution 12.*.1003.* and 12.*.1002.*, 5.0.2609.1611 Solution 12.*.1004.* and 12.*.1003.*."
+      "evidence": "lab run 2026-11-08, validate-3 (arm-report/validate-3/summary.md): step 0.60 InvokeEnvironmentChecker, SBE_Dell_16G-45n0c-Intel_5.0.2606.1616 with Solution version 12.2610.1004.50; Azure listed SBE_Dell_17G-Intel_5.0.2609.1715, SBE_Dell_16G-45n0c-Intel_5.0.2609.1611, SBE_Dell_AX-15G_5.0.2609.1511 and SBE_Dell_AX-14G_5.0.2609.1409 as validated. Dell's catalog (SBE_Discovery_Dell.xml, 2026-10-21) gives 5.0.2606.1616 Solution 12.*.1003.* and 12.*.1002.*, 5.0.2609.1611 Solution 12.*.1004.* and 12.*.1003.*."
     },
     {
       "id": "sbe-referenced-but-not-configured",
@@ -299,7 +299,7 @@
       "retry": "after-fix",
       "confidence": "pattern",
       "link": "https://learn.microsoft.com/azure/azure-local/update/solution-builder-extension",
-      "evidence": "Pattern, not seen in a run yet. The toolkit can produce the state: the same Azure error as unvalidated-solution-sbe-combination (tplabs lab 2026-11-08, validate-3) with an SBE package still on the nodes and no hardware.sbe version in infrastructure.yml."
+      "evidence": "Pattern, not seen in a run yet. The toolkit can produce the state: the same Azure error as unvalidated-solution-sbe-combination (lab run 2026-11-08, validate-3) with an SBE package still on the nodes and no hardware.sbe version in infrastructure.yml."
     }
   ]
 }

@@ -22,7 +22,7 @@
     Use RBAC for authorization instead of access policies. Default: true
 
 .EXAMPLE
-    .\New-KeyVault.ps1 -KeyVaultName "kv-azl-prd-eus" -ResourceGroupName "rg-azlmgmt-prd-eus-01"
+    .\New-KeyVault.ps1 -KeyVaultName "kv-azl-prd-eus" -ResourceGroupName "rg-iic-mgmt-eus-01"
 
 .NOTES
     Author: Azure Local Cloud AzureLocalCloud Team

@@ -20,7 +20,7 @@
     Azure subscription ID. Uses current context if not specified.
 
 .EXAMPLE
-    .\New-ArcGateway.ps1 -ArcGatewayName "arcgw-azl-prd-eus" -ResourceGroupName "rg-azlmgmt-prd-eus-01"
+    .\New-ArcGateway.ps1 -ArcGatewayName "arcgw-azl-prd-eus" -ResourceGroupName "rg-iic-mgmt-eus-01"
 
 .NOTES
     Author: Azure Local Cloud AzureLocalCloud Team

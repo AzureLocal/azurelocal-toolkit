@@ -22,7 +22,7 @@
     Bastion SKU: Basic or Standard. Default: Standard
 
 .EXAMPLE
-    .\New-AzureBastion.ps1 -BastionName "bas-azl-prd-eus" -ResourceGroupName "rg-azlmgmt-prd-eus-01" -VNetName "vnet-azrl-mgmt-01"
+    .\New-AzureBastion.ps1 -BastionName "bas-azl-prd-eus" -ResourceGroupName "rg-iic-mgmt-eus-01" -VNetName "vnet-azrl-mgmt-01"
 
 .NOTES
     Author: Azure Local Cloud AzureLocalCloud Team

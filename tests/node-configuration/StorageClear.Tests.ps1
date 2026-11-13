@@ -129,7 +129,7 @@ function Clear-Disk { [CmdletBinding()] param($Number, [switch]$RemoveData, [swi
 Describe 'storage-clear on the node: a deployed cluster is refused' -Skip:(-not $script:HasWindowsPowerShell) {
     It '<Name>: refused, the detail says which evidence tripped it, nothing is touched' -ForEach @(
         @{ Name = 'ClusSvc is Running'; With = @{ serviceStatus = 'Running' }; Pools = $false; Reason = 'ClusSvc\) is running' }
-        @{ Name = 'HKLM:\Cluster names a cluster'; With = @{ registry = $true; registryName = 'tplabs-cl01' }; Pools = $false; Reason = "HKLM:.Cluster names the cluster 'tplabs-cl01'" }
+        @{ Name = 'HKLM:\Cluster names a cluster'; With = @{ registry = $true; registryName = 'iic-cl01' }; Pools = $false; Reason = "HKLM:.Cluster names the cluster 'iic-cl01'" }
         @{ Name = 'C:\ClusterStorage holds a volume'; With = @{ csv = $true; csvFiles = @('Volume1') }; Pools = $false; Reason = 'C:.ClusterStorage holds' }
         @{ Name = 'an S2D pool exists'; With = @{}; Pools = $true; Reason = 'pool exists.*OldPool' }
     ) {
@@ -237,7 +237,7 @@ Describe 'the Read script reports what the wipe list needs' -Skip:(-not $script:
     }
     It '<Name> is deployed, and says which evidence' -ForEach @(
         @{ Name = 'a running ClusSvc'; With = @{ serviceStatus = 'Running' }; Pools = $false; Evidence = 'ClusSvc\) is running' }
-        @{ Name = 'HKLM:\Cluster with a cluster name'; With = @{ registry = $true; registryName = 'tplabs-cl01' }; Pools = $false; Evidence = "HKLM:.Cluster names the cluster 'tplabs-cl01'" }
+        @{ Name = 'HKLM:\Cluster with a cluster name'; With = @{ registry = $true; registryName = 'iic-cl01' }; Pools = $false; Evidence = "HKLM:.Cluster names the cluster 'iic-cl01'" }
         @{ Name = 'C:\ClusterStorage with a volume'; With = @{ csv = $true; csvFiles = @('Volume1') }; Pools = $false; Evidence = 'C:.ClusterStorage holds' }
         @{ Name = 'an S2D pool'; With = @{}; Pools = $true; Evidence = 'pool exists.*OldPool' }
     ) {

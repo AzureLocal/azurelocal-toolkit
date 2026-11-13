@@ -270,7 +270,7 @@
           "description": "Environment identifier",
           "examples": [
             "ProjectIIC",
-            "Azure Local Cloudproductlabs"
+            "iic-labs"
           ]
         },
         "env_type": {

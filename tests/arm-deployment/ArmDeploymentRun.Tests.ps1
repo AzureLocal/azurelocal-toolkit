@@ -170,8 +170,8 @@ Describe 'Failing step' {
         $steps = @(
             Get-TestStep '0' 'Cloud deployment' 'Success'
             Get-TestStep '0.40' 'Deploy Moc and ARB Stack' 'Success' 1
-            Get-TestStep '0.41' 'Deploy Arc infrastructure components' 'Error' 1 @('ParentResourceNotFound: parent resource machines/tplabs-azl-n01 was not found')
-            Get-TestStep '0.41.2' 'DeployVmoArcExtension' 'Error' 2 @('ParentResourceNotFound: machines/tplabs-azl-n01')
+            Get-TestStep '0.41' 'Deploy Arc infrastructure components' 'Error' 1 @('ParentResourceNotFound: parent resource machines/iic-azl-n01 was not found')
+            Get-TestStep '0.41.2' 'DeployVmoArcExtension' 'Error' 2 @('ParentResourceNotFound: machines/iic-azl-n01')
             Get-TestStep '0.42' 'Next' 'NotStarted' 1)
         $f = @(Get-AzlArmFailedStep -Steps $steps)
         $f.Count | Should -Be 1
@@ -194,7 +194,7 @@ Describe 'Known issues' {
         foreach ($i in Get-AzlArmKnownIssue) { $i['cause'] | Should -Not -BeNullOrEmpty; @($i['remediation']).Count | Should -BeGreaterThan 0; $i['retry'] | Should -BeIn 'none', 'after-fix', 'resubmit-once', 'no-validate'; $i['confidence'] | Should -BeIn 'documented', 'observed', 'pattern' }
     }
     It 'maps the real 2026-11-06 failure (step 0.41, ParentResourceNotFound, build 2690) to the device-ID Arc name issue' {
-        $k = Find-AzlArmKnownIssue -Phase Deploy -StepId '0.41' -StepName 'Deploy Arc infrastructure components' -ErrorText 'ParentResourceNotFound: The Resource Microsoft.HybridCompute/machines/tplabs-azl-n01 was not found' -Build '12.2690.1003.15'
+        $k = Find-AzlArmKnownIssue -Phase Deploy -StepId '0.41' -StepName 'Deploy Arc infrastructure components' -ErrorText 'ParentResourceNotFound: The Resource Microsoft.HybridCompute/machines/iic-azl-n01 was not found' -Build '12.2690.1003.15'
         $k.Id | Should -Be 'arc-device-id-name'
         $k.Retry | Should -Be 'none'
         $k.BuildNote | Should -BeNullOrEmpty
@@ -381,7 +381,7 @@ Describe 'Run: Deploy and resume' {
         $script:Deployed = Get-TestState -Validation 'Succeeded' -Deployment 'Succeeded' -DeploymentSteps @(Get-TestStep '0.57' 'Done' 'Success' 0 @() '2026-11-07T13:30:00Z')
         $script:Fail041 = Get-TestState -Prov 'Failed' -Validation 'Succeeded' -Deployment 'Error' -DeploymentSteps @(
             Get-TestStep '0.40' 'Deploy Moc and ARB Stack' 'Success' 1 @() '2026-11-07T12:40:00Z'
-            Get-TestStep '0.41' 'Deploy Arc infrastructure components' 'Error' 1 @('ParentResourceNotFound: machines/tplabs-azl-n01 was not found') '2026-11-07T12:50:00Z')
+            Get-TestStep '0.41' 'Deploy Arc infrastructure components' 'Error' 1 @('ParentResourceNotFound: machines/iic-azl-n01 was not found') '2026-11-07T12:50:00Z')
         function Get-Hash { (Invoke-TestRun -World (Get-FakeWorld) -Mode Plan).Report.parameterHash }
     }
     It 'Deploy without a successful validation is refused by a precondition: exit 1, nothing submitted' {

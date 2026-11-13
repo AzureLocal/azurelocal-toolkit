@@ -17,17 +17,17 @@ BeforeAll {
     '{ "parameters": {}, "resources": [] }' | Set-Content -LiteralPath $script:TemplateFile
     Mock -ModuleName AzlAzure Invoke-AzRestMethod { throw 'A test tried to call Azure.' }
 
-    $script:DiskSentence = 'Two disks have been found on node tplabs-azl-n01 that cannot be distinguished from one another. The disk signature and the identifiers in SCSI page 83h VPD are the same for both, so the cluster cannot tell which disk is which. Check the storage mapping of the node.'
+    $script:DiskSentence = 'Two disks have been found on node iic-azl-n01 that cannot be distinguished from one another. The disk signature and the identifiers in SCSI page 83h VPD are the same for both, so the cluster cannot tell which disk is which. Check the storage mapping of the node.'
     $script:ReportFile = 'C:\Users\lcmuser\AppData\Local\Temp\AzStackHciEnvironmentChecker-ClusterValidationReport-2026.11.07-12.20.31.htm'
     # What Test-Cluster said, as it sits in AdditionalData.Detail.
     $script:ClusterDetail = @(
         "Test-Cluster finished. Report: $($script:ReportFile)"
-        '[!!Warning!!] Network - Validate Network Communication: Node tplabs-azl-n02 has an adapter without a default gateway.'
+        '[!!Warning!!] Network - Validate Network Communication: Node iic-azl-n02 has an adapter without a default gateway.'
         "[!!Failed!!] Storage - List Disks: $($script:DiskSentence)"
         ''
         'Inventory - List Cluster Network Information: passed') -join "`r`n"
     $results = @(
-        [ordered]@{ Name = 'AzStackHci_Cluster_Validate'; Title = 'Cluster validation'; Description = 'Run Test-Cluster on the node set before the cluster is created'; Status = 'FAILURE'; Severity = 'CRITICAL'; Remediation = 'https://aka.ms/hci-envch'; AdditionalData = [ordered]@{ Source = 'tplabs-azl-n01'; Detail = $script:ClusterDetail } }
+        [ordered]@{ Name = 'AzStackHci_Cluster_Validate'; Title = 'Cluster validation'; Description = 'Run Test-Cluster on the node set before the cluster is created'; Status = 'FAILURE'; Severity = 'CRITICAL'; Remediation = 'https://aka.ms/hci-envch'; AdditionalData = [ordered]@{ Source = 'iic-azl-n01'; Detail = $script:ClusterDetail } }
         [ordered]@{ Name = 'AzStackHci_Network_Test'; Description = 'Network is reachable'; Status = 'SUCCESS'; Severity = 'INFORMATIONAL'; Remediation = 'https://aka.ms/hci-envch'; AdditionalData = [ordered]@{ Detail = 'ok' } })
     $script:ResultsJson = ConvertTo-Json -InputObject @($results) -Depth 10 -Compress
     $script:ValidateClusterError = "Type 'ValidateCluster' of Role 'EnvironmentValidator' raised an exception:`r`n`r`nThe environment validation failed. Results: $($script:ResultsJson)"
@@ -164,7 +164,7 @@ Describe 'Run: a validation that fails at step 170 ValidateCluster' {
     }
     It 'summary.md lists each failed and warned check with its message, the report file and the remediation' {
         $script:Summary | Should -Match ([regex]::Escape("**Failed** Storage - List Disks: $($script:DiskSentence)"))
-        $script:Summary | Should -Match '\*\*Warning\*\* Network - Validate Network Communication: Node tplabs-azl-n02'
+        $script:Summary | Should -Match '\*\*Warning\*\* Network - Validate Network Communication: Node iic-azl-n02'
         $script:Summary | Should -Match ([regex]::Escape($script:ReportFile))
         $script:Summary | Should -Match 'Remediation: https://aka\.ms/hci-envch'
         $script:Summary | Should -Match '1 other check\(s\) passed'

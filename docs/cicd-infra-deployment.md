@@ -176,7 +176,7 @@ Job routing:
 
 ## Moving the hand-written Bicep runner into Terraform
 
-An earlier session built a Linux runner with Bicep (`workloads/foundation/runner` in the tplabs environment repository: the VNet, subnet, NSG, a user-assigned identity, two peerings, four role assignments and a VM with cloud-init). Do not delete it. Choose one:
+An earlier session built a Linux runner with Bicep (`workloads/foundation/runner` in an environment repository: the VNet, subnet, NSG, a user-assigned identity, two peerings, four role assignments and a VM with cloud-init). Do not delete it. Choose one:
 
 **Recommended: adopt the long-lived parts, replace the VM.** The VNet, the identity, the NSG and the peerings are shared by other work, and the hub peering cannot be made twice for the same address range. A VM is cheap to replace, and its `custom_data` change would replace it anyway. Give the module the existing names so nothing is renamed (`nsg_name`, `identity_name`, `hub_peering.spoke_name` and `hub_name`), then import:
 

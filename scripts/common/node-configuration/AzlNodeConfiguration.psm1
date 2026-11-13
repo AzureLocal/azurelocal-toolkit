@@ -818,7 +818,7 @@ function Compare-AzlNodeState {
                     if ($hw.PSObject.Properties['mpclaim']) { $apply.mpclaim = $hw.mpclaim }
                     & $add (New-AzlPlanItem $n 'Mpio' "MSDSM $key" $(if ($have) { 'registered' } else { 'absent' }) 'registered' $(if ($have) { 'Ok' } else { 'Change' }) $(if (-not $have) { 'Needs a restart before MPIO claims the LUNs.' } else { '' }) $(if (-not $have) { $apply }))
                 }
-                # Registering the hardware ID with MSDSM is NOT enough (proven on the tplabs lab: Azure Local already ships PURE|FlashArray registered in MSDSM, yet eight FC disks, two LUNs
+                # Registering the hardware ID with MSDSM is NOT enough (proven in a lab: Azure Local already ships PURE|FlashArray registered in MSDSM, yet eight FC disks, two LUNs
                 # over four paths, stayed separate). MPIO claims a device only when it is in its own list, HKLM\SYSTEM\CurrentControlSet\Control\MPDEV\MPIOSupportedDeviceList, which
                 # `mpclaim -n -i -d "<vendor padded to 8><product padded to 16>"` writes; Get-MPIOAvailableHW shows IsMultipathed False before it. A restart makes MPIO use it.
                 if ($sanState.PSObject.Properties['mpdev'] -and [bool](Get-AzlProp $sanState 'mpdevRead' $true)) {
