@@ -76,9 +76,36 @@ Top-level `_schema_root` (header and the order of the sections), `_schema_defs` 
 The registry also registers the variables each tool owns, apart from the keys of `infrastructure.yml`: `tools.<tool>.<kind>.<group>.<name>` for `os_configuration`, `ztp`, `sonar`, `arm_deployment`, `cicd_infra`, `discovery`, `ranger`, `loadtools`, `draftsman`, `terraform` and `ansible` (see "The own settings of a tool" in [docs/infrastructure-file.md](docs/infrastructure-file.md)). Kinds: `parameters`, `run_settings`, `guard_settings`, `config_keys`, `event_fields`, `state_fields`, `handoff_fields`, `secret_names`, `env_vars`, `terraform_variables`, `pipeline_variables`, `pipeline_inputs`, `ansible_variables`, and `variables` (the variables of `src/terraform` and `src/ansible`). The group is the script, file or feed (its `area` says which); each entry has the real `name`, `type`, `default`, `enum`, `required`, `read_at` and `description`.
 
 - The Terraform and Ansible variables (`tools.terraform.variables`, `tools.ansible.variables`) each say where they come from: `class`, `source`, `infrastructure_key`, `form` and `target`. `scripts/New-IacVariableFiles.ps1` reads those entries and writes `terraform.tfvars.json`, `backend.hcl`, `group_vars/all.yml` and `host_vars/<node>.yml` from `infrastructure.yml`; `tests/variables/IacVariables.Tests.ps1` fails when a declared variable is not registered. See [Terraform and Ansible variable files](docs/infrastructure-file.md#terraform-and-ansible-variable-files-schema-5617).
-- A script parameter that is not registered fails `tests/variables/ToolRegistry.Tests.ps1` (`Test-ToolParameterRegistration.ps1` reads the `param()` block).
+- A script parameter that is not registered fails `tests/variables/ToolRegistry.Tests.ps1` (`Test-ToolParameterRegistration.ps1` reads the `param()` block) and `tests/variables/ScriptParameterRegistry.Tests.ps1` (see [Script parameters](#script-parameters-generated)).
 - ZTP, Sonar, Ranger, Loadtools and Draftsman live in other repositories: [`tool-mappings/`](tool-mappings/README.md) maps their names to registry paths, and the same check runs on their checkouts with `AZL_CHECK_EXTERNAL_TOOLS=1`.
 - The discovery variables describe the Dell Redfish discovery branch; its scripts are checked once it is merged.
+
+## Script parameters (generated)
+
+Every parameter of every script a person calls is a registry variable. Nobody keeps that list by hand: `New-ScriptParameterRegistry.ps1` reads the `param()` block of each `.ps1` with the PowerShell parser (name, declared type, default as written, `ValidateSet` values, `Mandatory`, the `.PARAMETER` help text as the description, else a neutral sentence built from the name) and writes one group per script, one entry per parameter, between two marker comments at the end of `tools.arm_deployment.parameters`. Nothing between the markers is edited by hand.
+
+```powershell
+./config/variables/scripts/New-ScriptParameterRegistry.ps1           # write the block
+./config/variables/scripts/New-ScriptParameterRegistry.ps1 -Check    # exit 1 if the registry is out of date
+```
+
+- **Scanned:** every `.ps1` under `scripts/`, `ansible/`, `tools/` and `pipelines/`, and the entry scripts in `config/variables/scripts`. Modules (`.psm1`), tests and the Claude hooks are not scanned. The common parameters that `[CmdletBinding()]` adds (`-WhatIf`, `-Verbose`, ...) are not registered unless the script declares them.
+- **Hand-written groups win.** A parameter that a hand-written group of any tool already registers (a group whose `area` is the script) is not written again, so a description you wrote stays. Generated groups are named `<script path>_generated`. To give a parameter a better description, write the `.PARAMETER` help in the script, or register it by hand in a group of its own (the generator then leaves it out of the block).
+- **Placeholder scripts** (they end with exit code 3, NOT IMPLEMENTED) are registered like any other; the group and each description say so.
+- **A default that looks like an environment value** (an address, a name, an ID, a region, a drive path) is a hard-coded value. The generator prints a warning for each. `tests/variables/Enforcement.Tests.ps1` (rule C) fails on the kinds it knows in `scripts/`; the generator also looks at `config/variables/scripts`, `ansible/` and `tools/`. Fix the script: read the value from the infrastructure file.
+- **A script whose `param()` block does not parse** stops the generator with exit 1. A syntax error elsewhere in a script only prints a warning (the parser reads the block first).
+
+**When to run it:** when you add, remove or change a script parameter (and after merging a branch that did). The same moment as the other generator commands:
+
+| Command | Run it when |
+|---|---|
+| `New-InfrastructureArtifacts.ps1` | The registry's infrastructure keys changed. Rewrites the schema, templates and `docs/VARIABLES.md`. |
+| `New-ToolMapping.ps1` | A variable of ztp, sonar, ranger, loadtools or draftsman changed. |
+| `New-ScriptParameterRegistry.ps1` | A script parameter was added, removed or changed. Rewrites the generated block of the registry. |
+| `New-VariableMap.ps1` | Any of the above, or any script or test change. Rewrites the variable map. |
+| `scripts/deploy/common/New-DeployScriptStatus.ps1` | A deploy script was added, removed or turned from a placeholder into a real script. |
+
+Order: edit the script and the registry, then `New-ScriptParameterRegistry.ps1`, `New-InfrastructureArtifacts.ps1`, `New-ToolMapping.ps1`, `New-VariableMap.ps1`, `New-DeployScriptStatus.ps1`. Each has `-Check`, which must pass. There is no CI step in this repository that runs the `-Check` commands (`azure-pipelines.yml` extends the central pipeline template, which is not in this repository); `tests/variables/ScriptParameterRegistry.Tests.ps1` runs the generator's `-Check` and fails on any script parameter that is not registered, so `Invoke-Pester ./tests/variables` is the gate.
 
 ## The variable map
 
@@ -121,6 +148,7 @@ Both files write an address masked (`10.x.x.x/24`) and never hold an ID that is 
 ./config/variables/scripts/validate-variables.ps1 -StrictUnknown     # variables.example.yml: schema + every path in the registry
 ./config/variables/scripts/Compare-InfrastructureSchemaToRegistry.ps1 -FailOnGap   # generated schema vs registry (always clean; kept as a guard)
 ./config/variables/scripts/New-InfrastructureArtifacts.ps1 -Check
+./config/variables/scripts/New-ScriptParameterRegistry.ps1 -Check    # every script parameter is registered
 Invoke-Pester ./tests/variables, ./tests/infrastructure
 ```
 
