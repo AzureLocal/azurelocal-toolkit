@@ -469,7 +469,7 @@ function New-AzlArmParameterSet {
                 if (-not $p.chapUsername -or -not $p.chapCredential) { throw 'storage.san.iscsi.chap.enabled is true: storage.san.iscsi.chap.username and chap.secret (a secret reference) are needed.' }
             }
             $iscsiNetworks = @{}
-            foreach ($net in ConvertTo-List (Get-AzlProp $iscsi 'networks' @())) { $iscsiNetworks[([string]$net['fabric']).ToLowerInvariant()] = $net }
+            foreach ($iscsiNet in ConvertTo-List (Get-AzlProp $iscsi 'networks' @())) { $iscsiNetworks[([string]$iscsiNet['fabric']).ToLowerInvariant()] = $iscsiNet }
             if (-not $iscsiNetworks.Count) { throw 'An iSCSI SAN deployment needs storage.san.iscsi.networks: the subnet and VLAN of each iSCSI path (fabric A and B).' }
             $targets = @(ConvertTo-List (Get-AzlProp $iscsi 'targets' @()))
             $jumbo = [int](Get-AzlProp $iscsi 'jumbo_packet' 1514)
@@ -482,10 +482,10 @@ function New-AzlArmParameterSet {
                         }) | Sort-Object Fabric, Name
                     if (-not $ports) { throw "Node $($n['name']) has no port with the role iscsi:a or iscsi:b (nodes[].network_adapters[].roles)." }
                     $config = @(foreach ($port in $ports) {
-                            $net = $iscsiNetworks[$port.Fabric]
-                            if (-not $net) { throw "Port $($port.Name) of node $($n['name']) has the role iscsi:$($port.Fabric), but storage.san.iscsi.networks has no entry for fabric $($port.Fabric.ToUpperInvariant())." }
-                            $entry = [ordered]@{ networkAdapterName = (& $resolve $port.Name); vlanId = [int](Get-AzlProp $net 'vlan_id' 0); addressPrefix = [string]$net['subnet'] }
-                            $nextHop = [string](Get-AzlProp $net 'next_hop' '')
+                            $iscsiNet = $iscsiNetworks[$port.Fabric]
+                            if (-not $iscsiNet) { throw "Port $($port.Name) of node $($n['name']) has the role iscsi:$($port.Fabric), but storage.san.iscsi.networks has no entry for fabric $($port.Fabric.ToUpperInvariant())." }
+                            $entry = [ordered]@{ networkAdapterName = (& $resolve $port.Name); vlanId = [int](Get-AzlProp $iscsiNet 'vlan_id' 0); addressPrefix = [string]$iscsiNet['subnet'] }
+                            $nextHop = [string](Get-AzlProp $iscsiNet 'next_hop' '')
                             # The target portals of this path, each with its next hop. A portal in the subnet of the port is its own next hop, as in
                             # Microsoft's sample; with networks[].next_hop the portals are reached through that router.
                             $portals = @($targets | Where-Object { -not $_['fabric'] -or ([string]$_['fabric']).ToLowerInvariant() -eq $port.Fabric } | ForEach-Object { ConvertTo-List $_['portals'] } | ForEach-Object { ([string]$_).Split(':')[0] } | Select-Object -Unique)

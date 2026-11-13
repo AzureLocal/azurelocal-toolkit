@@ -264,8 +264,8 @@ function Resolve-AzlRemotingProfile {
         A hashtable of overrides (see above).
     .PARAMETER DataPath
         The profile table; default config/remoting-profiles.json.
-    .PARAMETER Data
-        An already loaded table (for a test).
+    .PARAMETER ProfileTable
+        An already loaded table (for a test). The old name Data still works.
     .OUTPUTS
         Class, ClassSource, Valid, Relaxed, Posture, Summary, Settings, Firewall, TrustedHosts, Transport, Listener,
         Authentication, Rdp, Icmp, Certificate, Bootstrap, Baseline, NodeToNode, AfterDomainJoin, ServerIdentity, NodeAddresses,
@@ -280,9 +280,9 @@ function Resolve-AzlRemotingProfile {
         [Parameter(Mandatory)][AllowNull()][object]$Infrastructure,
         [hashtable]$Override = @{},
         [string]$DataPath = $script:DefaultDataPath,
-        [hashtable]$Data
+        [Alias('Data')][hashtable]$ProfileTable
     )
-    if (-not $Data) { $Data = Get-AzlRemotingProfileData -Path $DataPath }
+    if (-not $ProfileTable) { $ProfileTable = Get-AzlRemotingProfileData -Path $DataPath }
     $issues = [System.Collections.Generic.List[object]]::new()
     $issue = { param($id, $severity, $path, $message) $issues.Add((Get-RpIssue $id $severity $path $message)) }
     $settings = [ordered]@{}
@@ -293,19 +293,19 @@ function Resolve-AzlRemotingProfile {
 
     # ---- the baseline: the table must keep it, and no override may touch it
     foreach ($name in $script:RequiredBaseline.Keys) {
-        $have = Get-RpValue $Data "baseline.$name"
+        $have = Get-RpValue $ProfileTable "baseline.$name"
         $want = $script:RequiredBaseline[$name]
         $same = if ($want -is [bool]) { ($have -is [bool]) -and ($have -eq $want) } else { [string]$have -eq [string]$want }
         if (-not $same) { & $issue 'RP-BASELINE' 'error' "baseline.$name" "The profile table weakens the baseline: baseline.$name must be '$want' in every class and is '$have'. The denylist can't be changed." }
     }
     $profilesWanted = @('Domain', 'Private', 'Public')
-    $haveProfiles = (@(Get-RpList (Get-RpValue $Data 'baseline.firewallProfiles')) | Sort-Object) -join ','
+    $haveProfiles = (@(Get-RpList (Get-RpValue $ProfileTable 'baseline.firewallProfiles')) | Sort-Object) -join ','
     if ($haveProfiles -ne (($profilesWanted | Sort-Object) -join ',')) {
         & $issue 'RP-BASELINE' 'error' 'baseline.firewallProfiles' 'The profile table must apply the firewall rules on Domain, Private and Public.'
     }
     foreach ($className in $script:RequiredClassBaseline.Keys) {
         $need = $script:RequiredClassBaseline[$className]
-        $classRow = Get-RpValue $Data "classes.$className"
+        $classRow = Get-RpValue $ProfileTable "classes.$className"
         if ($null -eq $classRow) { continue }
         $weak = { param($what, $must, $is) & $issue 'RP-BASELINE' 'error' "classes.$className.$what" "The profile table weakens the baseline: classes.$className.$what must be $must and is '$is'. The table can make a class stricter, never looser." }
         foreach ($pair in @(@('sources.widestPrefixV4', $need.PrefixV4), @('sources.widestPrefixV6', $need.PrefixV6))) {
@@ -319,7 +319,7 @@ function Resolve-AzlRemotingProfile {
         if (-not $script:ApprovalRank.ContainsKey($approvalHave) -or $script:ApprovalRank[$approvalHave] -lt $script:ApprovalRank[$need.Approval]) { & $weak 'bootstrap.approval' "'$($need.Approval)' or stricter" $approvalHave }
         if (-not $need.AnyAllowed -and (Get-RpValue $classRow 'sources.any' $false) -eq $true) { & $weak 'sources.any' 'false' 'true' }
     }
-    $denied = @(Get-RpList (Get-RpValue $Data 'deniedOverrideKeys') | ForEach-Object { ([string]$_).ToLowerInvariant() })
+    $denied = @(Get-RpList (Get-RpValue $ProfileTable 'deniedOverrideKeys') | ForEach-Object { ([string]$_).ToLowerInvariant() })
     foreach ($key in $ov.Keys) {
         if ($key -in $denied) { & $issue 'RP-BASELINE' 'error' "override.$key" "The override '$key' would change the baseline (AllowUnencrypted false, Basic and CredSSP off, no SkipCACheck or SkipCNCheck, TLS 1.2 or higher). No override can change it." }
         elseif ($key -notin $script:KnownOverride) { & $issue 'RP-OVERRIDE' 'error' "override.$key" "Unknown override '$key'. Known: $($script:KnownOverride -join ', ')." }
@@ -331,14 +331,14 @@ function Resolve-AzlRemotingProfile {
     $classSource = ''
     if ($ov.ContainsKey('environment_class') -and $null -ne $ov['environment_class']) { $rawClass = $ov['environment_class']; $classSource = 'override environment_class' }
     elseif ($null -ne $fileClass) { $rawClass = $fileClass; $classSource = 'master file scenario.environment_class' }
-    else { $rawClass = [string](Get-RpValue $Data 'defaultClass' 'production'); $classSource = "default (scenario.environment_class is missing, so it is $rawClass)" }
+    else { $rawClass = [string](Get-RpValue $ProfileTable 'defaultClass' 'production'); $classSource = "default (scenario.environment_class is missing, so it is $rawClass)" }
     $class = ([string]$rawClass).Trim().ToLowerInvariant()
     $valid = $class -in $script:AllowedClasses
     if (-not $valid) {
         & $issue 'AZL-060' 'error' 'scenario.environment_class' "The environment class '$rawClass' isn't valid. Allowed values: $($script:AllowedClasses -join ', '). A missing class means production."
         $class = 'production'   # only to keep the rest of the arithmetic meaningful; the profile is not Valid
     }
-    $row = $Data.classes[$class]
+    $row = $ProfileTable.classes[$class]
     & $set 'class' $class $classSource
     $relaxed = $class -in $script:RelaxedClasses
     $remote = Get-RpValue $Infrastructure 'os_configuration.remoting'
@@ -436,8 +436,8 @@ function Resolve-AzlRemotingProfile {
     $sourceRow = $row.sources
     $widest4 = [int]$sourceRow.widestPrefixV4
     $widest6 = [int]$sourceRow.widestPrefixV6
-    $floor4 = [int](Get-RpValue $Data 'widestPrefix.hardFloorV4' 9)
-    $floor6 = [int](Get-RpValue $Data 'widestPrefix.hardFloorV6' 9)
+    $floor4 = [int](Get-RpValue $ProfileTable 'widestPrefix.hardFloorV4' 9)
+    $floor6 = [int](Get-RpValue $ProfileTable 'widestPrefix.hardFloorV6' 9)
     # The table can only narrow the width a class takes: the hard floor is the widest that is ever possible, whatever the table says.
     $limitFor = { param($info) if ($info.Family -eq 'IPv4') { [Math]::Max($widest4, $floor4) } else { [Math]::Max($widest6, $floor6) } }
     $floorFor = { param($info) if ($info.Family -eq 'IPv4') { $floor4 } else { $floor6 } }
@@ -609,12 +609,12 @@ function Resolve-AzlRemotingProfile {
         Icmp            = [pscustomobject]@{ Enabled = $icmpEnabled; EchoOnly = $true }
         Certificate     = $certificate
         Bootstrap       = $bootstrap
-        Baseline        = [pscustomobject]$Data.baseline
+        Baseline        = [pscustomobject]$ProfileTable.baseline
         NodeToNode      = [string]$row.nodeToNode
         AfterDomainJoin = [pscustomobject]$row.afterDomainJoin
         ServerIdentity  = [string]$row.serverIdentity
         NodeAddresses   = $nodeAddresses
-        DataVersion     = [string](Get-RpValue $Data 'version' '')
+        DataVersion     = [string](Get-RpValue $ProfileTable 'version' '')
         Issues          = $issueArray
         Warnings        = @($issueArray | Where-Object Severity -eq 'warning' | ForEach-Object { $_.Message })
         Errors          = @($issueArray | Where-Object Severity -eq 'error' | ForEach-Object { $_.Message })

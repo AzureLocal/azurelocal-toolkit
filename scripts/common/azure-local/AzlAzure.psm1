@@ -84,9 +84,9 @@ function Invoke-AzlArm {
     if ($status -lt 200 -or $status -ge 300) {
         $detail = $response.Content
         try {
-            $parsed = $response.Content | ConvertFrom-Json
-            $code = Get-AzlProp $parsed 'error.code'
-            $message = Get-AzlProp $parsed 'error.message'
+            $errorBody = $response.Content | ConvertFrom-Json
+            $code = Get-AzlProp $errorBody 'error.code'
+            $message = Get-AzlProp $errorBody 'error.message'
             if ($code -or $message) { $detail = "$code $message".Trim() }
         }
         catch { Write-Verbose "The error body wasn't JSON: $($_.Exception.Message)" }

@@ -1366,13 +1366,13 @@ function Get-SanFinding {
                 New-Finding 'AZL-028' error $Path "Fabric '$Fabric' isn't defined in storage.san.fibre_channel.fabrics ($(if ($fabrics) { $fabrics -join ', ' } else { 'none are listed' }))."
             }
         }
-        $targets = @(Get-List $fc['target_wwpns'] | Where-Object { $_ -is [System.Collections.IDictionary] })
-        if ($targets.Count -eq 0) {
+        $fcTargets = @(Get-List $fc['target_wwpns'] | Where-Object { $_ -is [System.Collections.IDictionary] })
+        if ($fcTargets.Count -eq 0) {
             New-Finding 'AZL-028' $need 'storage.san.fibre_channel.target_wwpns' "A Fibre Channel SAN needs the array's target WWPNs for zoning: list them with the fabric each is cabled to.$(if ($need -eq 'warning') { ' The OS configuration''s MPIO work does not need them.' })"
         }
-        for ($t = 0; $t -lt $targets.Count; $t++) {
-            & $fabricMissing $targets[$t]['fabric'] "storage.san.fibre_channel.target_wwpns[$t].fabric"
-            if ($targets[$t]['wwpn']) { $names.Add([pscustomobject]@{ Key = ([string]$targets[$t]['wwpn']).Replace(':', '').ToUpperInvariant(); Display = [string]$targets[$t]['wwpn']; Path = "storage.san.fibre_channel.target_wwpns[$t]" }) }
+        for ($t = 0; $t -lt $fcTargets.Count; $t++) {
+            & $fabricMissing $fcTargets[$t]['fabric'] "storage.san.fibre_channel.target_wwpns[$t].fabric"
+            if ($fcTargets[$t]['wwpn']) { $names.Add([pscustomobject]@{ Key = ([string]$fcTargets[$t]['wwpn']).Replace(':', '').ToUpperInvariant(); Display = [string]$fcTargets[$t]['wwpn']; Path = "storage.san.fibre_channel.target_wwpns[$t]" }) }
         }
         for ($i = 0; $i -lt $Nodes.Count; $i++) {
             $mine = & $nodeSan $i
