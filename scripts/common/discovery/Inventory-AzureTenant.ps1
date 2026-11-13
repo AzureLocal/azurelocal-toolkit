@@ -59,8 +59,7 @@
 
     INTEGRATION WITH DATA FRAMEWORK:
     - Outputs to discovery/ folder as azure-inventory.json
-    - Compatible with Update-InfrastructureFromDiscovery.ps1
-    - Feeds into infrastructure.yml single source of truth
+    - A read-only record of the tenant. Nothing writes it into infrastructure.yml: the operator enters the values by hand.
 
     REQUIREMENTS:
     - Az PowerShell module
@@ -1726,8 +1725,8 @@ try {
     Write-Host ""
     Write-Host "Next Steps:" -ForegroundColor Cyan
     Write-Host "  1. Review inventory JSON in: $OutputPath" -ForegroundColor White
-    Write-Host "  2. Run: .\Update-InfrastructureFromDiscovery.ps1" -ForegroundColor White
-    Write-Host "  3. Validate infrastructure.yml updates" -ForegroundColor White
+    Write-Host "  2. Enter the values you need in infrastructure.yml by hand" -ForegroundColor White
+    Write-Host "  3. Validate infrastructure.yml with Test-InfrastructureFile.ps1" -ForegroundColor White
     Write-Host ""
 
     if ($script:Inventory.Errors.Count -gt 0) {

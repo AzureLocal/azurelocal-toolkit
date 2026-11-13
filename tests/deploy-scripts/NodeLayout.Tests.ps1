@@ -17,8 +17,6 @@ BeforeDiscovery {
     # Files that still read compute.cluster_nodes, each with the reason it was left. An entry goes when the file is fixed: the
     # test for a left file fails once the file no longer reads the old layout.
     $reason = @{
-        'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1' =
-        'reads per-node fields schema 5 has no key for: fqdn, service_tag, model, management_vlan, hardware.cpu, hardware.cores, hardware.memory, and network_adapters as a map with mac'
         'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1' =
         'reads the per-node field arc_resource_id (the full Arc machine resource ID); infrastructure.yml has only arc_machine_name'
         'scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1' =

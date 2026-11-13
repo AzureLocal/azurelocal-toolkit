@@ -23195,24 +23195,6 @@ tools:
               properties:
                 Path: {"name":"Path","type":"string","declared_type":"string","required":"Y","read_at":"scripts/common/AzureLocalConfig.psm1:277","description":"Configuration path using dot notation (e.g., 'azure.mgmt_subscription_id')"}
                 DefaultValue: {"name":"DefaultValue","type":"object","declared_type":"object","required":"N","read_at":"scripts/common/AzureLocalConfig.psm1:280","description":"Default value to return if the path is not found"}
-            common_discovery_Compare_Discovery_ps1:
-              type: object
-              area: "common/discovery/Compare-Discovery.ps1"
-              properties:
-                Solution: {"name":"Solution","type":"string","declared_type":"string","enum":["azure-local","failover-clusters-scvmm","scvmm-azure-arc","azure-arc-servers"],"required":"N","read_at":"scripts/common/discovery/Compare-Discovery.ps1:30"}
-                DiscoveryFile: {"name":"DiscoveryFile","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/discovery/Compare-Discovery.ps1:34","description":"Path to the discovery JSON file to compare."}
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","default":"(Join-Path $PSScriptRoot \"..\\..\\infrastructure.yml\")","required":"N","read_at":"scripts/common/discovery/Compare-Discovery.ps1:37","description":"Path to infrastructure.yml. Defaults to repository root."}
-                OutputFormat: {"name":"OutputFormat","type":"string","declared_type":"string","default":"\"Console\"","enum":["Console","YAML","JSON"],"required":"N","read_at":"scripts/common/discovery/Compare-Discovery.ps1:40","description":"Output format: Console, YAML, or JSON."}
-            common_discovery_Get_DellServerInventory_FromiDRAC_ps1:
-              type: object
-              area: "common/discovery/Get-DellServerInventory-FromiDRAC.ps1"
-              properties:
-                Solution: {"name":"Solution","type":"string","declared_type":"string","enum":["azure-local","failover-clusters-scvmm","scvmm-azure-arc","azure-arc-servers"],"required":"N","read_at":"scripts/common/discovery/Get-DellServerInventory-FromiDRAC.ps1:73"}
-                iDRACIP: {"name":"iDRACIP","type":"string","declared_type":"string[]","required":"N","read_at":"scripts/common/discovery/Get-DellServerInventory-FromiDRAC.ps1:77","description":"IP address of the iDRAC interface to connect to"}
-                Credential: {"name":"Credential","type":"system.management.automation.pscredential","declared_type":"System.Management.Automation.PSCredential","required":"N","read_at":"scripts/common/discovery/Get-DellServerInventory-FromiDRAC.ps1:81","description":"PSCredential object for iDRAC authentication. If not provided, prompts for credentials."}
-                OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","default":"\".\\discovery\"","required":"N","read_at":"scripts/common/discovery/Get-DellServerInventory-FromiDRAC.ps1:84","description":"Directory for output files. Defaults to .\\discovery"}
-                KeepTimestampedFiles: {"name":"KeepTimestampedFiles","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/common/discovery/Get-DellServerInventory-FromiDRAC.ps1:87","description":"If specified, also saves individual timestamped files in addition to the consolidated file"}
-                RunPostDiscovery: {"name":"RunPostDiscovery","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/common/discovery/Get-DellServerInventory-FromiDRAC.ps1:90","description":"If specified, runs the Update-InfrastructureFromDiscovery.ps1 script after collection"}
             common_discovery_Get_OnPremInventory_ps1:
               type: object
               area: "common/discovery/Get-OnPremInventory.ps1"
@@ -23242,33 +23224,6 @@ tools:
                 IncludeAzureLocal: {"name":"IncludeAzureLocal","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/common/discovery/Inventory-AzureTenant.ps1:105","description":"Include Azure Local (Stack HCI) specific resources. Defaults to true."}
                 MaxParallelJobs: {"name":"MaxParallelJobs","type":"integer","declared_type":"int","default":"10","enum":["range 1..20"],"required":"N","read_at":"scripts/common/discovery/Inventory-AzureTenant.ps1:108"}
                 SubscriptionFilter: {"name":"SubscriptionFilter","type":"string","declared_type":"string[]","required":"N","read_at":"scripts/common/discovery/Inventory-AzureTenant.ps1:112","description":"Array of subscription IDs to filter. If not specified, all subscriptions are inventoried."}
-            common_discovery_Inventory_OnPrem_ps1:
-              type: object
-              area: "common/discovery/Inventory-OnPrem.ps1"
-              properties:
-                Solution: {"name":"Solution","type":"string","declared_type":"string","enum":["azure-local","failover-clusters-scvmm","scvmm-azure-arc","azure-arc-servers"],"required":"N","read_at":"scripts/common/discovery/Inventory-OnPrem.ps1:93"}
-                DeviceType: {"name":"DeviceType","type":"string","declared_type":"string[]","default":"@(\"all\")","enum":["udm","edgerouter","opengear","switch","snmp","all"],"required":"N","read_at":"scripts/common/discovery/Inventory-OnPrem.ps1:97","description":"Filter by device type: udm, edgerouter, opengear, switch, snmp, all Default: all"}
-                DeviceIP: {"name":"DeviceIP","type":"string","declared_type":"string[]","required":"N","read_at":"scripts/common/discovery/Inventory-OnPrem.ps1:101","description":"Specific device IP(s) to scan. Overrides infrastructure.yml device list."}
-                DeviceName: {"name":"DeviceName","type":"string","declared_type":"string[]","required":"N","read_at":"scripts/common/discovery/Inventory-OnPrem.ps1:104","description":"Specific device name(s) from infrastructure.yml to scan."}
-                KeyVaultName: {"name":"KeyVaultName","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/discovery/Inventory-OnPrem.ps1:107","description":"Azure Key Vault name for credential retrieval. Default: reads from infrastructure.yml"}
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/discovery/Inventory-OnPrem.ps1:110","description":"Path to infrastructure.yml file. Default: repository root."}
-                OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/discovery/Inventory-OnPrem.ps1:113","description":"Output directory for inventory file. Default: ./discovery"}
-                SkipKeyVault: {"name":"SkipKeyVault","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/common/discovery/Inventory-OnPrem.ps1:116","description":"Skip Key Vault credential retrieval (use for devices with no auth or testing)."}
-                Timeout: {"name":"Timeout","type":"integer","declared_type":"int","default":"30","required":"N","read_at":"scripts/common/discovery/Inventory-OnPrem.ps1:119","description":"API/connection timeout in seconds. Default: 30"}
-                Force: {"name":"Force","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/common/discovery/Inventory-OnPrem.ps1:122","description":"Skip confirmation prompts."}
-            common_discovery_Update_InfrastructureFromDiscovery_ps1:
-              type: object
-              area: "common/discovery/Update-InfrastructureFromDiscovery.ps1"
-              properties:
-                Solution: {"name":"Solution","type":"string","declared_type":"string","enum":["azure-local","failover-clusters-scvmm","scvmm-azure-arc","azure-arc-servers"],"required":"N","read_at":"scripts/common/discovery/Update-InfrastructureFromDiscovery.ps1:78"}
-                Azure: {"name":"Azure","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/common/discovery/Update-InfrastructureFromDiscovery.ps1:82","description":"Import Azure discovery data only"}
-                iDRAC: {"name":"iDRAC","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/common/discovery/Update-InfrastructureFromDiscovery.ps1:85","description":"Import iDRAC/hardware discovery data only"}
-                All: {"name":"All","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/common/discovery/Update-InfrastructureFromDiscovery.ps1:88","description":"Import all discovery sources (default if no source specified)"}
-                AddNew: {"name":"AddNew","type":"boolean","declared_type":"bool","default":"$true","required":"N","read_at":"scripts/common/discovery/Update-InfrastructureFromDiscovery.ps1:91","description":"Add newly discovered resources to infrastructure.yml (subscriptions, VMs, VNets, Key Vaults) Default: $true. Use -AddNew:$false to only update existing entries."}
-                ExcludeCICDVNets: {"name":"ExcludeCICDVNets","type":"boolean","declared_type":"bool","default":"$true","required":"N","read_at":"scripts/common/discovery/Update-InfrastructureFromDiscovery.ps1:94","description":"Exclude CI/CD runner VNets (vnet-cicd-runners-*) from being added. Default: $true (they are auto-provisioned by GitLab runner module)"}
-                DiscoveryPath: {"name":"DiscoveryPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/discovery/Update-InfrastructureFromDiscovery.ps1:97","description":"Path to discovery folder. Default: \"discovery/\""}
-                InfrastructurePath: {"name":"InfrastructurePath","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/discovery/Update-InfrastructureFromDiscovery.ps1:100","description":"Path to infrastructure.yml. Default: \"infrastructure.yml\""}
-                Force: {"name":"Force","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/common/discovery/Update-InfrastructureFromDiscovery.ps1:103","description":"Skip confirmation prompt"}
             common_RedfishUtils_psm1_Get_NetworkAdapters:
               type: object
               area: "common/RedfishUtils.psm1::Get-NetworkAdapters"
@@ -23581,14 +23536,6 @@ tools:
                 Solution: {"name":"Solution","type":"string","declared_type":"string","enum":["azure-local","failover-clusters-scvmm","scvmm-azure-arc","azure-arc-servers"],"required":"N","read_at":"scripts/common/utilities/tools/Add-KeyVaultCredentials.ps1:29","description":"Solution name to load configuration from (azure-local, failover-clusters-scvmm, etc.)"}
                 KeyVaultName: {"name":"KeyVaultName","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/utilities/tools/Add-KeyVaultCredentials.ps1:33","description":"Name of the Azure Key Vault. If not specified, loads from solution.yaml"}
                 Force: {"name":"Force","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/common/utilities/tools/Add-KeyVaultCredentials.ps1:36","description":"Overwrite existing secrets"}
-            common_utilities_tools_Cleanup_Infrastructure_ps1:
-              type: object
-              area: "common/utilities/tools/Cleanup-Infrastructure.ps1"
-              properties:
-                Solution: {"name":"Solution","type":"string","declared_type":"string","enum":["azure-local","failover-clusters-scvmm","scvmm-azure-arc","azure-arc-servers"],"required":"N","read_at":"scripts/common/utilities/tools/Cleanup-Infrastructure.ps1:35"}
-                SubscriptionId: {"name":"SubscriptionId","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/utilities/tools/Cleanup-Infrastructure.ps1:39","description":"Azure subscription ID (no default)"}
-                ResourceGroup: {"name":"ResourceGroup","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/utilities/tools/Cleanup-Infrastructure.ps1:40","description":"Resource group name (example: rg-connectivity-hub)"}
-                Force: {"name":"Force","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/common/utilities/tools/Cleanup-Infrastructure.ps1:41","description":"Skip confirmation prompts (use with caution)"}
             common_utilities_tools_Copy_ZTPISO_ps1:
               type: object
               area: "common/utilities/tools/Copy-ZTPISO.ps1"
@@ -23638,13 +23585,6 @@ tools:
               area: "common/utilities/tools/Extract-ZTPTools.ps1"
               properties:
                 Force: {"name":"Force","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/common/utilities/tools/Extract-ZTPTools.ps1:30","description":"Skip confirmation prompts"}
-            common_utilities_tools_Generate_ClusterConfigMD_ps1:
-              type: object
-              area: "common/utilities/tools/Generate-ClusterConfigMD.ps1"
-              properties:
-                Solution: {"name":"Solution","type":"string","declared_type":"string","enum":["azure-local","failover-clusters-scvmm","scvmm-azure-arc","azure-arc-servers"],"required":"N","read_at":"scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1:46","description":"Solution name to load configuration from (e.g., \"azure-local\"). When specified, paths are derived from solution configuration."}
-                InfrastructurePath: {"name":"InfrastructurePath","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1:50","description":"Path to infrastructure.yml. Default: repository root."}
-                OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1:53","description":"Path for cluster-config.md. Default: repository root."}
             common_utilities_tools_Generate_ConfigFromMD_ps1:
               type: object
               area: "common/utilities/tools/Generate-ConfigFromMD.ps1"
@@ -23659,13 +23599,6 @@ tools:
                 ReferencePath: {"name":"ReferencePath","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/utilities/tools/Generate-ConfigFromReference.ps1:44","description":"Path to the cluster-reference.env file. Default: config/cluster-reference.env (relative to repo root)"}
                 OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/utilities/tools/Generate-ConfigFromReference.ps1:47","description":"Path for the generated cluster-config.md. Default: config/cluster/cluster-config.md"}
                 Force: {"name":"Force","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/common/utilities/tools/Generate-ConfigFromReference.ps1:50","description":"Overwrite existing cluster-config.md without prompting."}
-            common_utilities_tools_Generate_HostsFile_ps1:
-              type: object
-              area: "common/utilities/tools/Generate-HostsFile.ps1"
-              properties:
-                Solution: {"name":"Solution","type":"string","declared_type":"string","enum":["azure-local","failover-clusters-scvmm","scvmm-azure-arc","azure-arc-servers"],"required":"N","read_at":"scripts/common/utilities/tools/Generate-HostsFile.ps1:30","description":"Solution name to load configuration from (e.g., \"azure-local\")."}
-                HostsPath: {"name":"HostsPath","type":"string","declared_type":"string","default":"\"C:\\Windows\\System32\\drivers\\etc\\hosts\"","required":"N","read_at":"scripts/common/utilities/tools/Generate-HostsFile.ps1:34","description":"Path to the hosts file. Default: C:\\Windows\\System32\\drivers\\etc\\hosts"}
-                OutputOnly: {"name":"OutputOnly","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/common/utilities/tools/Generate-HostsFile.ps1:37","description":"Only display entries, do not write to hosts file."}
             common_utilities_tools_Get_BootSettings_ps1:
               type: object
               area: "common/utilities/tools/Get-BootSettings.ps1"

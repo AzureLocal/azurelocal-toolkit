@@ -37,8 +37,6 @@ BeforeDiscovery {
 
     # Files that are not checked, with the reason. Out of scope for the move to schema 5 keys.
     $script:OutOfScope = @{
-        'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1' =
-        'reads per-node fields and many sections schema 5 has no key for (see tests/deploy-scripts/NodeLayout.Tests.ps1)'
         'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1' =
         'reads the per-node field arc_resource_id (see tests/deploy-scripts/NodeLayout.Tests.ps1)'
         'scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1' =

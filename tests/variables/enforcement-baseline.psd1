@@ -8,19 +8,6 @@
         @{ File = 'scripts/common/arm-deployment/AzlArmDeployment.psm1'; Rule = 'A'; Literal = 'networking.storage.networks[].fabric'; Count = 1; Reason = 'legacy script, not yet migrated' }
         @{ File = 'scripts/common/arm-deployment/AzlArmDeployment.psm1'; Rule = 'A'; Literal = 'networking.storage.networks[].next_hop'; Count = 1; Reason = 'legacy script, not yet migrated' }
         @{ File = 'scripts/common/azure-local/AzlAzure.psm1'; Rule = 'A'; Literal = 'error'; Count = 2; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/discovery/Compare-Discovery.ps1'; Rule = 'A'; Literal = 'active_directory'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/discovery/Compare-Discovery.ps1'; Rule = 'A'; Literal = 'azure_vms'; Count = 3; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/discovery/Compare-Discovery.ps1'; Rule = 'A'; Literal = 'azure.tenant'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/discovery/Compare-Discovery.ps1'; Rule = 'A'; Literal = 'nodes[].service_tag'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/discovery/Inventory-OnPrem.ps1'; Rule = 'A'; Literal = 'networking.onprem.network_devices[].api_key'; Count = 4; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/discovery/Inventory-OnPrem.ps1'; Rule = 'A'; Literal = 'networking.onprem.network_devices[].credential_ref'; Count = 3; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/discovery/Inventory-OnPrem.ps1'; Rule = 'A'; Literal = 'networking.onprem.network_devices[].ip'; Count = 3; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/discovery/Inventory-OnPrem.ps1'; Rule = 'A'; Literal = 'networking.onprem.network_devices[].role'; Count = 2; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/discovery/Inventory-OnPrem.ps1'; Rule = 'A'; Literal = 'networking.onprem.network_devices[].type'; Count = 5; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/discovery/Update-InfrastructureFromDiscovery.ps1'; Rule = 'A'; Literal = 'azure_infrastructure'; Count = 3; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/discovery/Update-InfrastructureFromDiscovery.ps1'; Rule = 'A'; Literal = 'azure_vms'; Count = 5; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/discovery/Update-InfrastructureFromDiscovery.ps1'; Rule = 'A'; Literal = 'azure.subscriptions'; Count = 3; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/discovery/Update-InfrastructureFromDiscovery.ps1'; Rule = 'A'; Literal = 'network'; Count = 4; Reason = 'legacy script, not yet migrated' }
         @{ File = 'scripts/common/infrastructure/AzlInfrastructure.psm1'; Rule = 'A'; Literal = 'storage.san.iscsi.targets[].wwpn'; Count = 1; Reason = 'legacy script, not yet migrated' }
         @{ File = 'scripts/common/remoting/AzlRemotingProfile.psm1'; Rule = 'A'; Literal = 'baseline'; Count = 1; Reason = 'legacy script, not yet migrated' }
         @{ File = 'scripts/common/remoting/AzlRemotingProfile.psm1'; Rule = 'A'; Literal = 'version'; Count = 1; Reason = 'legacy script, not yet migrated' }
@@ -32,47 +19,6 @@
         @{ File = 'scripts/common/utilities/helpers/config-loader.ps1'; Rule = 'A'; Literal = 'b2b_configuration'; Count = 1; Reason = 'legacy script, not yet migrated' }
         @{ File = 'scripts/common/utilities/helpers/keyvault-helper.ps1'; Rule = 'A'; Literal = 'azure.subscription'; Count = 1; Reason = 'legacy script, not yet migrated' }
         @{ File = 'scripts/common/utilities/helpers/keyvault-helper.ps1'; Rule = 'A'; Literal = 'azure.tenant'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Cleanup-Infrastructure.ps1'; Rule = 'B'; Literal = 'nic-dc01'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Cleanup-Infrastructure.ps1'; Rule = 'B'; Literal = 'nic-dc02'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Cleanup-Infrastructure.ps1'; Rule = 'B'; Literal = 'nic-jump'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Cleanup-Infrastructure.ps1'; Rule = 'B'; Literal = 'nic-lighthouse'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Cleanup-Infrastructure.ps1'; Rule = 'B'; Literal = 'nsg-infra'; Count = 2; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Cleanup-Infrastructure.ps1'; Rule = 'B'; Literal = 'pip-lighthouse'; Count = 2; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Cleanup-Infrastructure.ps1'; Rule = 'B'; Literal = 'snet-infra'; Count = 2; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Cleanup-Infrastructure.ps1'; Rule = 'B'; Literal = 'vm-dc01'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Cleanup-Infrastructure.ps1'; Rule = 'B'; Literal = 'vm-dc02'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Cleanup-Infrastructure.ps1'; Rule = 'B'; Literal = 'vm-jump'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Cleanup-Infrastructure.ps1'; Rule = 'B'; Literal = 'vm-lighthouse'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Cleanup-Infrastructure.ps1'; Rule = 'B'; Literal = 'vnet-connectivity-hub'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = '_metadata.discovery'; Count = 2; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = '_metadata.last_manual_edit'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'azure_platform.subscriptions.id'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'azure_platform.subscriptions.name'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'azure_platform.tenant'; Count = 3; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'compute.azure_local'; Count = 8; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'compute.azure_vms'; Count = 6; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'compute.cluster_nodes[].fqdn'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'compute.cluster_nodes[].hardware'; Count = 4; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'compute.cluster_nodes[].idrac_ip'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'compute.cluster_nodes[].management_ip'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'compute.cluster_nodes[].management_vlan'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'compute.cluster_nodes[].model'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'compute.cluster_nodes[].name'; Count = 2; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'compute.cluster_nodes[].network_adapters'; Count = 3; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'compute.cluster_nodes[].serial_number'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'compute.cluster_nodes[].service_tag'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'networking.onprem.network_devices[].management_ip'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'networking.onprem.network_devices[].model'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'networking.onprem.network_devices[].name'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'networking.onprem.network_devices[].purpose'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'networking.onprem.network_devices[].vlan'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'networking.onprem.vlans.cidr'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'networking.onprem.vlans.gateway'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'networking.onprem.vlans.id'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'networking.onprem.vlans.name'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1'; Rule = 'A'; Literal = 'networking.onprem.vlans.purpose'; Count = 1; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-HostsFile.ps1'; Rule = 'B'; Literal = '10.x.x.x'; Count = 2; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/utilities/tools/Generate-HostsFile.ps1'; Rule = 'B'; Literal = '192.x.x.x'; Count = 6; Reason = 'legacy script, not yet migrated' }
         @{ File = 'scripts/common/utilities/tools/Stop-AzureLocalCluster.ps1'; Rule = 'D'; Literal = 'Get-Credential'; Count = 1; Reason = 'legacy script, not yet migrated' }
         @{ File = 'scripts/common/utilities/tools/Stop-AzureLocalCluster.ps1'; Rule = 'D'; Literal = 'Read-Host'; Count = 1; Reason = 'legacy script, not yet migrated' }
         @{ File = 'scripts/deferred/network-device-logging/phase-02-monitoring-observability/task-06-configure-network-device-logging/powershell/Deploy-SyslogVm.ps1'; Rule = 'B'; Literal = '10.x.x.x'; Count = 1; Reason = 'legacy script, not yet migrated' }
