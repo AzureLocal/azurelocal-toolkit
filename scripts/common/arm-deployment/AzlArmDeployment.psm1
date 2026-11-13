@@ -30,7 +30,7 @@ Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'azure-local', 'AzlAzure.
 $script:CatalogPath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'config', 'azure', 'arm-templates', 'template-parameters.json')
 $script:DeploymentsApiVersion = '2024-03-01'
 $script:HciApiVersion = '2026-10-01'
-$script:SecretParameters = @('localAdminPassword', 'AzureStackLCMAdminPassword')
+$script:SecretParameters = @('localAdminPassword', 'AzureStackLCMAdminPassword', 'chapCredential')
 
 function ConvertTo-List([AllowNull()][object]$Value) {
     if ($null -eq $Value) { return @() }
@@ -66,9 +66,9 @@ function Select-AzlArmTemplate {
     .DESCRIPTION
         Active Directory with Storage Spaces Direct: create-cluster (rack aware: create-cluster-rac-enabled). Local identity:
         create-adless-cluster-external-dns-public-preview. A Fibre Channel SAN (disaggregated): create-cluster-san, or
-        create-cluster-adless-san with local identity. A hybrid design deploys with Storage Spaces Direct and the SAN is
+        create-cluster-adless-san with local identity. An iSCSI SAN (disaggregated): create-cluster-san-iscsi. A hybrid design deploys with Storage Spaces Direct and the SAN is
         connected afterwards (Learn: Connect an external storage array), so it uses the S2D template. Not generated yet:
-        iSCSI (its template takes a different node list), disconnected operations, Azure Government with local identity or a SAN.
+        an iSCSI SAN with local identity (Microsoft has no template), disconnected operations, Azure Government with local identity or a SAN.
     .OUTPUTS
         Name, Uri, Warnings.
     .EXAMPLE
@@ -90,9 +90,12 @@ function Select-AzlArmTemplate {
         $name = 'create-cluster-for-usgov'
     }
     elseif ($storage -eq 'san') {
-        if ($sanType -eq 'iscsi') { throw 'iSCSI SAN isn''t generated yet: create-cluster-san-iscsi takes a different node list (nodes, CHAP). Use the portal, or extend this generator.' }
         if ($topology -eq 'rack_aware') { throw 'Rack aware with a SAN isn''t generated: Microsoft has no quickstart template for it.' }
-        $name = if ($identity -eq 'local_identity') { 'create-cluster-adless-san' } else { 'create-cluster-san' }
+        if ($sanType -eq 'iscsi') {
+            if ($identity -eq 'local_identity') { throw 'An iSCSI SAN with local identity isn''t generated: Microsoft has no quickstart template for it.' }
+            $name = 'create-cluster-san-iscsi'
+        }
+        else { $name = if ($identity -eq 'local_identity') { 'create-cluster-adless-san' } else { 'create-cluster-san' } }
     }
     else {
         if ($storage -eq 'hybrid') { $warnings += 'Hybrid: the cluster is deployed with Storage Spaces Direct. Connect the SAN afterwards (Learn: enable-external-storage); the SAN parameters are not part of this deployment.' }
@@ -429,7 +432,7 @@ function New-AzlArmParameterSet {
     }
 
     # ---- storage networks (S2D) or cluster networks (SAN)
-    if ($template.Name -in 'create-cluster-san', 'create-cluster-adless-san') {
+    if ($template.Name -in 'create-cluster-san', 'create-cluster-adless-san', 'create-cluster-san-iscsi') {
         foreach ($pair in @(@('infraVolLunId', 'storage.san.infra_volume_lun_id'), @('infraPerfLunId', 'storage.san.performance_history_lun_id'))) {
             try { $p[$pair[0]] = Resolve-AzlSanLunId -LunId ([string](& $g $pair[1] '')) -NodeReport $NodeReport -Source $SanLunIdSource }
             catch {
@@ -440,13 +443,60 @@ function New-AzlArmParameterSet {
         }
         $cluster = @(ConvertTo-List (& $g 'networking.cluster_networks' @()))
         if (-not $cluster) { throw 'A SAN deployment needs networking.cluster_networks (ARM sanNetworkList).' }
+        # The adapter properties of the cluster networks: networking.cluster_network_properties; the registry defaults are the values of Microsoft's template.
+        $clusterProperties = & $g 'networking.cluster_network_properties' $null
         $p.sanNetworkList = [ordered]@{
             clusterNetworkConfig = [ordered]@{
-                adapterProperties = [ordered]@{ bandwidthPercentageSmb = 50; jumboPacket = 9014; priorityValue8021ActionCluster = 7; priorityValue8021ActionSmb = 3 }
+                adapterProperties = [ordered]@{
+                    bandwidthPercentageSmb         = [int](Get-AzlProp $clusterProperties 'bandwidth_percentage_smb' 50)
+                    jumboPacket                    = [int](Get-AzlProp $clusterProperties 'jumbo_packet' 9014)
+                    priorityValue8021ActionCluster = [int](Get-AzlProp $clusterProperties 'priority_cluster' 7)
+                    priorityValue8021ActionSmb     = [int](Get-AzlProp $clusterProperties 'priority_smb' 3)
+                }
                 adapterIPConfig   = @($cluster | ForEach-Object { [ordered]@{ name = [string]$_['name']; networkAdapterName = (& $resolve ([string]$_['adapter'])); vlanId = [int]$_['vlan_id']; addressPrefix = [string]$_['subnet'] } })
             }
         }
-        $warnings.Add('sanNetworkList.adapterProperties (bandwidth 50, jumbo 9014, priorities 7 and 3) are Microsoft''s sample values; infrastructure.yml has no keys for them.')
+        # ---- iSCSI: the template takes one object per node (Arc ID, name, address, initiator name, iSCSI ports) and the CHAP type.
+        # The iSCSI ports are dedicated physical ports outside Network ATC (Learn: Connect an external storage array to Azure Local).
+        if ($template.Name -eq 'create-cluster-san-iscsi') {
+            $iscsi = & $g 'storage.san.iscsi' $null
+            $chapOn = [bool](Get-AzlProp $iscsi 'chap.enabled' $false)
+            $p.chapType = if (-not $chapOn) { 'None' } elseif ([bool](Get-AzlProp $iscsi 'chap.mutual' $false)) { 'Mutual' } else { 'OneWay' }
+            if ($chapOn) {
+                $p.chapUsername = [string](Get-AzlProp $iscsi 'chap.username' '')
+                $p.chapCredential = & $kvRef (Get-AzlProp $iscsi 'chap.secret')
+                if (-not $p.chapUsername -or -not $p.chapCredential) { throw 'storage.san.iscsi.chap.enabled is true: storage.san.iscsi.chap.username and chap.secret (a keyvault:// reference) are needed.' }
+            }
+            $iscsiNetworks = @{}
+            foreach ($net in ConvertTo-List (Get-AzlProp $iscsi 'networks' @())) { $iscsiNetworks[([string]$net['fabric']).ToLowerInvariant()] = $net }
+            if (-not $iscsiNetworks.Count) { throw 'An iSCSI SAN deployment needs storage.san.iscsi.networks: the subnet and VLAN of each iSCSI path (fabric A and B).' }
+            $targets = @(ConvertTo-List (Get-AzlProp $iscsi 'targets' @()))
+            $jumbo = [int](Get-AzlProp $iscsi 'jumbo_packet' 1514)
+            $p.nodes = @(for ($i = 0; $i -lt $nodes.Count; $i++) {
+                    $n = $nodes[$i]
+                    $iqn = [string](Get-AzlProp $n 'san.initiator_iqn' '')
+                    if (-not $iqn) { throw "Node $($n['name']) has no san.initiator_iqn. The iSCSI deployment needs the initiator name of every machine." }
+                    $ports = @(foreach ($port in Get-AzlNodeNetworkAdapter -Infrastructure $Infrastructure -Node $n) {
+                            foreach ($role in ConvertTo-List $port['roles']) { if ("$role" -in 'iscsi:a', 'iscsi:b') { [pscustomobject]@{ Name = [string]$port['name']; Fabric = "$role".Split(':')[1] } } }
+                        }) | Sort-Object Fabric, Name
+                    if (-not $ports) { throw "Node $($n['name']) has no port with the role iscsi:a or iscsi:b (nodes[].network_adapters[].roles)." }
+                    $config = @(foreach ($port in $ports) {
+                            $net = $iscsiNetworks[$port.Fabric]
+                            if (-not $net) { throw "Port $($port.Name) of node $($n['name']) has the role iscsi:$($port.Fabric), but storage.san.iscsi.networks has no entry for fabric $($port.Fabric.ToUpperInvariant())." }
+                            $entry = [ordered]@{ networkAdapterName = (& $resolve $port.Name); vlanId = [int](Get-AzlProp $net 'vlan_id' 0); addressPrefix = [string]$net['subnet'] }
+                            $nextHop = [string](Get-AzlProp $net 'next_hop' '')
+                            # The target portals of this path, each with its next hop. A portal in the subnet of the port is its own next hop, as in
+                            # Microsoft's sample; with networks[].next_hop the portals are reached through that router.
+                            $portals = @($targets | Where-Object { -not $_['fabric'] -or ([string]$_['fabric']).ToLowerInvariant() -eq $port.Fabric } | ForEach-Object { ConvertTo-List $_['portals'] } | ForEach-Object { ([string]$_).Split(':')[0] } | Select-Object -Unique)
+                            if (-not $portals) { throw "storage.san.iscsi.targets lists no portal for fabric $($port.Fabric.ToUpperInvariant()). The iSCSI deployment needs the target portals of every path." }
+                            $entry.targetPortalAddresses = @($portals | ForEach-Object { [ordered]@{ ipAddress = $_; nextHop = $(if ($nextHop) { $nextHop } else { $_ }) } })
+                            $entry
+                        })
+                    [ordered]@{ arcNodeResourceId = $arcIds[$i]; name = [string]$n['name']; ipv4Address = [string]$physical[$i].ipv4Address; initiatorIqn = $iqn; iScsiNetworkConfig = [ordered]@{ adapterProperties = [ordered]@{ jumboPacket = $jumbo }; adapterIPConfig = $config } }
+                })
+            # This template takes the nodes as one list and has no networking type, pattern or security level parameter.
+            foreach ($k in 'arcNodeResourceIds', 'physicalNodesSettings', 'networkingType', 'networkingPattern', 'securityLevel') { $p.Remove($k) }
+        }
     }
     else {
         $autoIp = [bool](& $g 'networking.storage.auto_ip' $true)

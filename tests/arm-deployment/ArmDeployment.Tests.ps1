@@ -57,8 +57,8 @@ Describe 'Template selection' {
         $infra = Convert-ToS2d (Get-Infra); $infra.scenario.storage_architecture = 'hybrid'
         (Select-AzlArmTemplate -Infrastructure $infra -Catalog $script:Catalog).Warnings | Should -Match 'Connect the SAN afterwards'
     }
-    It 'says plainly what is not generated: iSCSI, disconnected, rack aware SAN' {
-        $infra = Get-Infra; $infra.storage.san.type = 'iscsi'
+    It 'says plainly what is not generated: iSCSI with local identity, disconnected, rack aware SAN' {
+        $infra = Get-Infra; $infra.storage.san.type = 'iscsi'; $infra.scenario.identity = 'local_identity'
         { Select-AzlArmTemplate -Infrastructure $infra -Catalog $script:Catalog } | Should -Throw '*iSCSI*'
         $infra = Get-Infra; $infra.scenario.connectivity = 'disconnected'
         { Select-AzlArmTemplate -Infrastructure $infra -Catalog $script:Catalog } | Should -Throw '*Disconnected*'

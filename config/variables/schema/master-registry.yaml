@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.34 (2026-11-12):
+#     - SAN deployment (infrastructure schema 5.6.10): networking.cluster_network_properties (bandwidth_percentage_smb, jumbo_packet, priority_cluster, priority_smb) replaces four values the ARM parameter generator carried; storage.san.iscsi.networks[] (fabric, vlan_id, subnet, next_hop), storage.san.iscsi.jumbo_packet and storage.san.iscsi.chap.mutual feed the iSCSI quickstart template (create-cluster-san-iscsi), which the generator now produces. storage.san.iscsi.chap.username and secret are read by the deployment.
 #   v5.0.33 (2026-11-12):
 #     - Storage (infrastructure schema 5.6.9): storage.pool (name, thin_provisioning_alert_threshold_percent), storage.csv.read_cache_size_mib, storage.paths[] (name, path) and, on storage.volumes[], provisioning_type, file_system, parity_percent, media_type and deduplication (type, schedule.start_time, days, duration_hours); storage.volumes[].resiliency gains mirror_accelerated_parity and nested_mirror_accelerated_parity. New-StorageVolume.ps1 and New-StoragePath.ps1 (phase 06, task 05) read them, and storage.volumes is no longer a placeholder; their parameters are registered under tools.arm_deployment.parameters. They replace six scripts that read the unregistered compute.cluster_shared_volumes.
 #   v5.0.32 (2026-11-12):
@@ -183,15 +185,19 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.33"
+  version: "5.0.34"
   schema_version: "5.0.0"
-  infrastructure_schema_version: "5.6.9"
+  infrastructure_schema_version: "5.6.10"
   last_updated: "2026-11-12"
   total_variables: "5100+"
   maintainers:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-12"
+      version: "5.0.34"
+      change: "SAN deployment (infrastructure schema 5.6.10): networking.cluster_network_properties (bandwidth_percentage_smb, jumbo_packet, priority_cluster, priority_smb) replaces four values the ARM parameter generator carried; storage.san.iscsi.networks[] (fabric, vlan_id, subnet, next_hop), storage.san.iscsi.jumbo_packet and storage.san.iscsi.chap.mutual feed the iSCSI quickstart template (create-cluster-san-iscsi), which the generator now produces. storage.san.iscsi.chap.username and secret are read by the deployment."
+      reason: "Owner directives D96 and D115: no hard-coded value in the deployment, and an iSCSI SAN deployment generated from the master file. The keys follow Microsoft's create-cluster-san-iscsi template (nodes[].iScsiNetworkConfig, chapType) and Learn (the iSCSI ports are dedicated physical ports outside Network ATC)."
     - date: "2026-11-12"
       version: "5.0.33"
       change: "Storage (infrastructure schema 5.6.9): storage.pool (name, thin_provisioning_alert_threshold_percent), storage.csv.read_cache_size_mib, storage.paths[] (name, path) and, on storage.volumes[], provisioning_type, file_system, parity_percent, media_type and deduplication (type, schedule.start_time, days, duration_hours); storage.volumes[].resiliency gains mirror_accelerated_parity and nested_mirror_accelerated_parity. New-StorageVolume.ps1 and New-StoragePath.ps1 (phase 06, task 05) read them, and storage.volumes is no longer a placeholder; their parameters are registered under tools.arm_deployment.parameters. They replace six scripts that read the unregistered compute.cluster_shared_volumes."
@@ -7568,6 +7574,53 @@ networking:
                 required: false
                 pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])$"
                 used_by: [os_configuration, deployment]
+    cluster_network_properties:
+      description: "Schema 5.6.10. Disaggregated (SAN) only: the adapter properties of the cluster networks (ARM sanNetworkList.clusterNetworkConfig.adapterProperties). The defaults are the values of Microsoft's quickstart template."
+      type: object
+      required: false
+      since: "5.6.10"
+      used_by: [deployment]
+      applies_when: "scenario.storage_architecture is san"
+      additionalProperties: false
+      properties:
+        bandwidth_percentage_smb:
+          description: "Share of the bandwidth reserved for SMB traffic (CSV and live migration), 1 to 97 percent. ARM bandwidthPercentageSmb."
+          type: integer
+          required: false
+          minimum: 1
+          maximum: 97
+          default: 50
+          since: "5.6.10"
+          example: 50
+          used_by: [deployment]
+        jumbo_packet:
+          description: "Value of the JumboPacket property of the cluster network adapters, in bytes: 1514 (standard frame), 4088 or 9014 (jumbo). ARM jumboPacket."
+          type: integer
+          required: false
+          default: 9014
+          since: "5.6.10"
+          example: 9014
+          used_by: [deployment]
+        priority_cluster:
+          description: "802.1p priority of the cluster heartbeat traffic, 0 to 7. ARM priorityValue8021ActionCluster."
+          type: integer
+          required: false
+          minimum: 0
+          maximum: 7
+          default: 7
+          since: "5.6.10"
+          example: 7
+          used_by: [deployment]
+        priority_smb:
+          description: "802.1p priority of the SMB traffic, 0 to 7. ARM priorityValue8021ActionSmb."
+          type: integer
+          required: false
+          minimum: 0
+          maximum: 7
+          default: 3
+          since: "5.6.10"
+          example: 3
+          used_by: [deployment]
     cluster_networks:
       description: "Disaggregated (SAN) only: the cluster networks on standalone ports, fabric A and B. ARM sanNetworkList."
       type: array
@@ -16339,7 +16392,7 @@ storage:
                   required: true
                   used_by: [os_configuration, deployment]
                 username:
-                  description: "CHAP user name for the iSCSI targets. Not read by the tools yet: a documented placeholder."
+                  description: "CHAP user name for the iSCSI targets. ARM chapUsername of the iSCSI deployment."
                   type: string
                   required: false
                   minLength: 1
@@ -16350,6 +16403,64 @@ storage:
                   sensitive: true
                   required: false
                   pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+                mutual:
+                  description: "Schema 5.6.10. true: the initiators also authenticate the targets (ARM chapType Mutual); false: one-way CHAP (OneWay). With enabled false the deployment gets chapType None. Microsoft's template uses the one CHAP credential for both directions."
+                  type: boolean
+                  required: false
+                  default: false
+                  since: "5.6.10"
+                  example: false
+                  used_by: [deployment]
+            jumbo_packet:
+              description: "Schema 5.6.10. Value of the JumboPacket property of the iSCSI ports, in bytes: 1514 (standard frame), 4088 or 9014 (jumbo). Use the same frame size on the whole iSCSI path. ARM iScsiNetworkConfig.adapterProperties.jumboPacket."
+              type: integer
+              required: false
+              default: 1514
+              since: "5.6.10"
+              example: 9014
+              used_by: [deployment]
+            networks:
+              description: "Schema 5.6.10. The iSCSI networks, one per path. The iSCSI ports are dedicated physical ports outside the network intents; a port belongs to a path by its role iscsi:a or iscsi:b (nodes[].network_adapters[].roles). The iSCSI deployment reads this (ARM iScsiNetworkConfig.adapterIPConfig)."
+              type: array
+              required: false
+              since: "5.6.10"
+              used_by: [deployment]
+              items:
+                type: object
+                additionalProperties: false
+                properties:
+                  fabric:
+                    description: "The path: A for the ports with the role iscsi:a, B for iscsi:b."
+                    type: string
+                    required: true
+                    enum: ["A", "B"]
+                    since: "5.6.10"
+                    example: "A"
+                    used_by: [deployment]
+                  vlan_id:
+                    description: "VLAN of this iSCSI network, 0 to 4094. 0 means untagged (the switch port is an access port)."
+                    type: integer
+                    required: false
+                    minimum: 0
+                    maximum: 4094
+                    default: 0
+                    since: "5.6.10"
+                    example: 0
+                    used_by: [deployment]
+                  subnet:
+                    description: "Subnet of this iSCSI network in CIDR form."
+                    type: string
+                    required: true
+                    since: "5.6.10"
+                    example: "198.51.100.0/24"
+                    used_by: [deployment]
+                  next_hop:
+                    description: "Only when the target portals of this path are in another subnet: the router address on this network. The deployment then reaches each portal of the path through it. Leave it out when the portals are in the subnet: each portal is then sent as its own next hop, as in the template of Microsoft. The iSCSI ports never get a default gateway."
+                    type: string
+                    required: false
+                    since: "5.6.10"
+                    example: "198.51.100.1"
+                    used_by: [deployment]
         infra_volume_lun_id:
           description: "LUN of the infrastructure volume (250 GB minimum). ARM infraVolLunId."
           type: string
@@ -17752,7 +17863,7 @@ file_metadata:
   additionalProperties: false
   properties:
     schema_version:
-      description: "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. The current version is 5.6.9."
+      description: "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. The current version is 5.6.10."
       type: string
       required: true
       pattern: "^5\\.[0-9]+\\.[0-9]+$"

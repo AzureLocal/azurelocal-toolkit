@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that 'deployment' reads (a strict subset of the master file). Schema 5.6.9.
+# Template for the part of infrastructure.yml that 'deployment' reads (a strict subset of the master file). Schema 5.6.10.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -406,6 +406,21 @@ networking:
         # Needed when auto_ip is false.
         # used by: os_configuration, deployment
         subnet: "192.0.2.0/24"
+  # (since 5.6.10) 
+  # when scenario.storage_architecture is san; used by: deployment
+  cluster_network_properties:
+    # Share of the bandwidth reserved for SMB traffic (CSV and live migration), 1 to 97 percent.
+    # default: 50; used by: deployment
+    bandwidth_percentage_smb: 50
+    # Value of the JumboPacket property of the cluster network adapters, in bytes: 1514 (standard frame), 4088 or 9014 (jumbo).
+    # default: 9014; used by: deployment
+    jumbo_packet: 9014
+    # 802.1p priority of the cluster heartbeat traffic, 0 to 7.
+    # default: 7; used by: deployment
+    priority_cluster: 7
+    # 802.1p priority of the SMB traffic, 0 to 7.
+    # default: 3; used by: deployment
+    priority_smb: 3
   # Disaggregated (SAN) only: the cluster networks on standalone ports, fabric A and B.
   # when scenario.storage_architecture is san or hybrid; used by: os_configuration, deployment
   cluster_networks:
@@ -646,6 +661,27 @@ storage:
         # true when the iSCSI targets require CHAP.
         # required; used by: os_configuration, deployment
         enabled: false
+        # (since 5.6.10) true: the initiators also authenticate the targets (ARM chapType Mutual); false: one-way CHAP (OneWay).
+        # default: false; used by: deployment
+        mutual: false
+      # (since 5.6.10) 
+      # default: 1514; used by: deployment
+      jumbo_packet: 9014
+      # (since 5.6.10) 
+      # used by: deployment
+      networks:
+        # The path: A for the ports with the role iscsi:a, B for iscsi:b.
+        # required; one of: A | B; used by: deployment
+        - fabric: "A"
+          # VLAN of this iSCSI network, 0 to 4094. 0 means untagged (the switch port is an access port).
+          # default: 0; used by: deployment
+          vlan_id: 0
+          # Subnet of this iSCSI network in CIDR form.
+          # required; used by: deployment
+          subnet: "198.51.100.0/24"
+          # Only when the target portals of this path are in another subnet: the router address on this network.
+          # used by: deployment
+          next_hop: "198.51.100.1"
     # LUN of the infrastructure volume (250 GB minimum).
     # used by: os_configuration, deployment
     infra_volume_lun_id: ""

@@ -381,6 +381,13 @@ New rules AZL-060 to AZL-068 (see README). **Steps for a 5.5 file:** set `_metad
 - **5.6.2: adapters are identified by hardware facts.** `nodes[].network_adapters[].mac_address` is now required. New optional keys: `port_index`, `pci_location` (`bus`, `device`, `function`), `vendor` (written by hardware discovery), `allowed_vlans` (the VLANs the switch port allows) and `os_name_override`. **Steps:** a file whose ports lack the MAC: run `Invoke-HardwareDiscovery.ps1 -UpdateInfrastructure` or add the MAC. Nothing else changes: without `os_name_override` no adapter is renamed and the deployment sends the name the node reports for the MAC. To get one name everywhere, add `os_name_override` per used port and run the OS configuration (step `NicNames`).
 - **5.6.3** adds `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`. Nothing is required. A logical network uses `gateway` and `ip_pool`; the 4.0 names `default_gateway` and `ip_pools` belong to the deprecated `networking.onprem.logical_networks[]`.
 
+## To 5.6.10: SAN deployment values
+
+Schema 5.6.10 adds optional keys. Nothing is required for a Fibre Channel SAN or a Storage Spaces Direct file: a 5.6.9 file is valid as it is.
+
+- `networking.cluster_network_properties` (`bandwidth_percentage_smb`, `jumbo_packet`, `priority_cluster`, `priority_smb`): the adapter properties of the SAN cluster networks. The defaults are the values the deployment sent before (50, 9014, 7, 3).
+- An iSCSI SAN is now deployed from the file. It needs `storage.san.iscsi.networks[]` (one entry per path: `fabric`, `subnet`, and `vlan_id` and `next_hop` when they apply), a port with the role `iscsi:a` or `iscsi:b` and `san.initiator_iqn` on every node. Optional: `storage.san.iscsi.jumbo_packet` and `storage.san.iscsi.chap.mutual`.
+
 ## To 5.6.9: storage volumes and storage paths
 
 Schema 5.6.9 adds optional storage keys. Nothing is required: a 5.6.8 file is valid as it is.
@@ -390,6 +397,7 @@ Schema 5.6.9 adds optional storage keys. Nothing is required: a 5.6.8 file is va
 - `storage.paths[]` (`name`, `path`): `New-StoragePath.ps1` creates each storage path that does not exist yet.
 
 A file that still has `compute.cluster_shared_volumes` (never a registered key): move each volume to `storage.volumes[]` (`volume_name` becomes `name`, `size_gb` becomes `size_gib`, `filesystem` becomes `file_system` in lower case, `resiliency` Mirror or Parity becomes one of the listed values) and each storage path to `storage.paths[]`. The scripts that read the old block are removed.
+
 ## To 5.6.8: the security contact of Defender for Cloud
 
 Schema 5.6.8 adds the optional key `security.defender_for_cloud.security_contact_email`. Nothing is required: a 5.6.7 file is valid as it is. `Enable-DefenderForCloud.ps1` sets the address as the security contact of the subscription when the subscription has none; it never replaces a contact that exists. The contact is free.

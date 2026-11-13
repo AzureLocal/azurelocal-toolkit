@@ -630,9 +630,10 @@ Describe 'Events, report and exit codes' {
         $r.ExitCode | Should -Be 0
         ($r.Preconditions | Where-Object name -eq 'ResourceGroup').result | Should -Be 'Skipped'
     }
-    It 'exit 2: an unsupported scenario says so (iSCSI SAN)' {
+    It 'exit 2: an unsupported scenario says so (iSCSI SAN with local identity)' {
         $infra = Get-TestInfra -Storage san
         $infra.storage.san.type = 'iscsi'
+        $infra.scenario.identity = 'local_identity'
         $r = Invoke-TestRun -World (Get-FakeWorld) -Infra $infra -Mode Plan
         $r.ExitCode | Should -Be 2
         $r.Message | Should -Match 'iSCSI'
