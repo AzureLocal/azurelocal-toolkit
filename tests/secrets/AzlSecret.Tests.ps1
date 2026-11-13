@@ -250,26 +250,22 @@ Describe 'Command provider' {
         $infra = New-CommandInfra '$in = [Console]::In.ReadToEnd(); [Console]::Out.Write("stdin-closed-{name}")' 20
         ConvertTo-Plain (Get-AzlSecretValue 'command://x' -Infrastructure $infra) | Should -BeExactly 'stdin-closed-x'
     }
-    It 'fails with CommandFailed, the exit code and the standard error, but not the standard output' {
-        $infra = New-CommandInfra '[Console]::Out.Write("STDOUT-VALUE-NOT-FOR-MESSAGES"); [Console]::Error.Write("denied for {name}"); exit 3' 20
+    It 'fails with CommandFailed and the exit code, and shows neither the standard output nor the standard error' {
+        $infra = New-CommandInfra "[Console]::Out.Write('$($script:Canary)'); [Console]::Error.Write('denied for {name}: token $($script:Canary) and half $($script:Canary.Substring(0, 6))'); exit 3" 20
         $f = Get-Failure { Get-AzlSecretValue 'command://lcm' -Infrastructure $infra }
         Get-Category $f | Should -Be 'CommandFailed'
         $f.Data['AzlExit'] | Should -Be 1
         $f.Message | Should -Match 'exit code 3'
-        $f.Message | Should -Match 'denied for lcm'
-        $f.Message | Should -Not -Match 'STDOUT-VALUE-NOT-FOR-MESSAGES'
+        $f.Message | Should -Not -Match 'denied for'
+        $f.Message | Should -Not -Match ([regex]::Escape($script:Canary.Substring(0, 6)))
     }
-    It 'removes the secret from the standard error text' {
-        $infra = New-CommandInfra "[Console]::Out.Write('$($script:Canary)'); [Console]::Error.Write('bad token $($script:Canary) for {name}'); exit 4" 20
-        $f = Get-Failure { Get-AzlSecretValue 'command://lcm' -Infrastructure $infra }
-        $f.Message | Should -Match 'bad token \*\*\* for lcm'
-        $f.Message | Should -Not -Match $script:Canary
-    }
-    It 'cuts a long standard error to one short line' {
-        $infra = New-CommandInfra '[Console]::Error.Write(("line`n" * 500)); exit 2' 20
-        $f = Get-Failure { Get-AzlSecretValue 'command://lcm' -Infrastructure $infra }
-        $f.Message.Length | Should -BeLessThan 600
-        $f.Message | Should -Not -Match "`n"
+    It 'gives up at the time limit when a child process keeps the output open after the command has ended' {
+        # The command starts a child that inherits the pipes and sleeps, then ends at once. Reading the output must not wait for the child.
+        $infra = New-CommandInfra 'Start-Process -FilePath (Get-Process -Id $PID).Path -ArgumentList "-NoProfile","-Command","Start-Sleep -Seconds 30" -NoNewWindow; [Console]::Out.Write("{name}")' 3
+        $watch = [Diagnostics.Stopwatch]::StartNew()
+        $result = try { Get-AzlSecretValue 'command://x' -Infrastructure $infra; 'returned' } catch { [string]$_.Exception.Data['AzlSecretError'] }
+        $watch.Elapsed.TotalSeconds | Should -BeLessThan 20
+        $result | Should -BeIn 'CommandTimeout', 'returned'
     }
     It 'stops a command that runs too long (CommandTimeout)' {
         $infra = New-CommandInfra 'Start-Sleep -Seconds 60; Write-Output "{name}"' 1

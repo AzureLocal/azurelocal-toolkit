@@ -36,8 +36,8 @@
                   array: no shell, no command string, no Invoke-Expression. The text {name} in an argument is replaced by the name
                   in the reference (the name is restricted, so it cannot carry quotes or separators). At least one argument must
                   hold {name}. The standard input is closed. The command must finish within secrets.command.timeout_seconds
-                  (default 30), else it is killed. Standard output is the secret (trailing line breaks removed). The exit code and
-                  a short, single-line, scrubbed copy of the standard error are reported when it fails; standard output is not.
+                  (default 30), else it is killed; the limit also covers reading its output. Standard output is the secret
+                  (trailing line breaks removed). When it fails only the exit code is reported, never its output or its errors.
 
     Security rules
         1. A secret value is returned only as a SecureString (Get-AzlSecretValue) or, from the clearly named
@@ -135,17 +135,6 @@ function ConvertTo-AzlSecureText {
     return $secure
 }
 
-function Hide-AzlSecretText {
-    # Single line, cut short, with the secret removed. For text from another program.
-    param([AllowNull()][string]$Text, [AllowNull()][string]$Secret, [int]$Max = 300)
-    if ([string]::IsNullOrWhiteSpace($Text)) { return '' }
-    $out = $Text
-    if (-not [string]::IsNullOrEmpty($Secret)) { $out = $out.Replace($Secret, '***') }
-    $out = ($out -replace '\s+', ' ').Trim()
-    if ($out.Length -gt $Max) { $out = $out.Substring(0, $Max - 3) + '...' }
-    return $out
-}
-
 function ConvertFrom-AzlSecretUtf8 {
     # UTF-8 (strict), byte order mark dropped, trailing line breaks removed. Empty is an error.
     param([byte[]]$Bytes, [string]$Reference)
@@ -229,13 +218,33 @@ function Get-AzlFileSecureValue {
     $info = [IO.FileInfo]::new($path)
     if (-not $info.Exists) { Stop-AzlSecret -Category FileNotFound -Message "The file for $Reference does not exist in secrets.file.directory." }
     if ($info.Attributes -band [IO.FileAttributes]::ReparsePoint -or $info.LinkTarget) { Stop-AzlSecret -Category FileUnsafe -Message "The file for $Reference is a link. Links are refused; put the secret in a plain file." }
-    if ($info.Length -gt $script:MaxBytes) { Stop-AzlSecret -Category TooLarge -Message "The file for $Reference is larger than $($script:MaxBytes / 1KB) KiB." }
+    if ($info.Attributes -band ([IO.FileAttributes]::Directory -bor [IO.FileAttributes]::Device)) { Stop-AzlSecret -Category FileUnsafe -Message "The file for $Reference is not a plain file." }
     if (Test-AzlSecretFileBroadAccess -Path $path) {
         Write-Warning "The file for $Reference can be read by everybody on this machine (Everyone, Users or group/other). Restrict it to the account that runs the toolkit."
     }
-    $bytes = [IO.File]::ReadAllBytes($path)
-    try { return (ConvertTo-AzlSecureText -Text (ConvertFrom-AzlSecretUtf8 -Bytes $bytes -Reference $Reference)) }
-    finally { [Array]::Clear($bytes, 0, $bytes.Length) }
+    # One handle: the size is taken from the opened file and at most MaxBytes + 1 bytes are read, so a file swapped or grown after the checks
+    # above cannot make this read without limit.
+    $bytes = [byte[]]::new($script:MaxBytes + 1)
+    $stream = $null
+    try {
+        $stream = [IO.FileStream]::new($path, [IO.FileMode]::Open, [IO.FileAccess]::Read, [IO.FileShare]::Read)
+        if (-not $stream.CanSeek -or $stream.Length -gt $script:MaxBytes) { Stop-AzlSecret -Category TooLarge -Message "The file for $Reference is larger than $($script:MaxBytes / 1KB) KiB, or is not a plain file." }
+        $count = 0
+        while ($count -lt $bytes.Length) {
+            $read = $stream.Read($bytes, $count, $bytes.Length - $count)
+            if ($read -le 0) { break }
+            $count += $read
+        }
+        if ($count -gt $script:MaxBytes) { Stop-AzlSecret -Category TooLarge -Message "The file for $Reference is larger than $($script:MaxBytes / 1KB) KiB." }
+        $content = [byte[]]::new($count)
+        [Array]::Copy($bytes, $content, $count)
+        try { return (ConvertTo-AzlSecureText -Text (ConvertFrom-AzlSecretUtf8 -Bytes $content -Reference $Reference)) }
+        finally { [Array]::Clear($content, 0, $content.Length) }
+    }
+    finally {
+        if ($stream) { $stream.Dispose() }
+        [Array]::Clear($bytes, 0, $bytes.Length)
+    }
 }
 
 function Get-AzlCommandSecureValue {
@@ -276,17 +285,18 @@ function Get-AzlCommandSecureValue {
         $process.StandardInput.Close()
         $outTask = $process.StandardOutput.ReadToEndAsync()
         $errTask = $process.StandardError.ReadToEndAsync()
-        if (-not $process.WaitForExit($timeout * 1000)) {
+        # One deadline covers the exit of the command and the reading of both streams: a child process that keeps the pipes open
+        # after the command has ended must not make this wait for ever.
+        $deadline = [Diagnostics.Stopwatch]::StartNew()
+        $exited = $process.WaitForExit($timeout * 1000)
+        $left = [Math]::Max(0, ($timeout * 1000) - [int]$deadline.ElapsedMilliseconds)
+        if (-not $exited -or -not [Threading.Tasks.Task]::WaitAll([Threading.Tasks.Task[]]@($outTask, $errTask), $left)) {
             try { $process.Kill($true) } catch { Write-Verbose 'The command had already ended.' }
             Stop-AzlSecret -Category CommandTimeout -Message "The command for $Reference did not finish within $timeout seconds and was stopped."
         }
-        $process.WaitForExit()
         $stdout = $outTask.GetAwaiter().GetResult()
-        $stderr = $errTask.GetAwaiter().GetResult()
-        if ($process.ExitCode -ne 0) {
-            $detail = Hide-AzlSecretText -Text $stderr -Secret $stdout.TrimEnd("`r", "`n")
-            Stop-AzlSecret -Category CommandFailed -Message "The command for $Reference failed with exit code $($process.ExitCode).$(if ($detail) { " Standard error: $detail" })"
-        }
+        # The standard error text is never shown: a command can print a secret there in a form that cannot be recognised and removed.
+        if ($process.ExitCode -ne 0) { Stop-AzlSecret -Category CommandFailed -Message "The command for $Reference failed with exit code $($process.ExitCode). Its output is not shown; run the command yourself to see it." }
         $text = $stdout.TrimEnd("`r", "`n")
         if ($text.Length -eq 0) { Stop-AzlSecret -Category EmptySecret -Message "The command for $Reference returned no output." }
         if ([Text.Encoding]::UTF8.GetByteCount($text) -gt $script:MaxBytes) { Stop-AzlSecret -Category TooLarge -Message "The command for $Reference returned more than $($script:MaxBytes / 1KB) KiB." }
