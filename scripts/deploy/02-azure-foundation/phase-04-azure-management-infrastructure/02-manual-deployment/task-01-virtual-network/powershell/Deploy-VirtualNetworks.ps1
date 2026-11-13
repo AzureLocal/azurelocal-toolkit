@@ -14,7 +14,8 @@
     changes nothing.
 
     A subnet's network_security_group and route_table are names of resources in the same resource group as the network. If the resource does
-    not exist yet (the security group task comes after this one) the subnet is created without it and the script says so; run the script again
+    not exist yet the subnet is created without it and the script says so. Run task 06 (New-LandingZoneNsg.ps1, which creates the groups of
+    landing_zone.network_security_groups) before this script; if you did not, run this script again
     after the security groups exist and it attaches them. Peerings are created with virtual network access and forwarded traffic allowed and
     with no gateway transit: add transit with the gateway once the VPN gateway task has run.
 

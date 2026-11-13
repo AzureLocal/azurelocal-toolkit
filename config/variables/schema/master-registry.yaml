@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.48 (2026-11-13):
+#     - New registry keys and scripts (infrastructure schema 5.6.21). landing_zone.network_security_groups[] (name, rules[] with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description): New-LandingZoneNsg.ps1 (phase 04, task 06) creates each group in the subscription, resource group and region of the networks whose subnets name it; the Terraform variable nsgs, whose proposed key this is, now comes from it. security.baseline_settings[] (type, name, value, acknowledge_weaker_security): Set-SecurityBaselines.ps1 rewritten to Set-AzsSecurity -Cluster, as Microsoft Learn documents it for 2610. Ansible: New-IacVariableFiles.ps1 writes inventory/hosts.yml; the WinRM connection settings are registered under tools.ansible.variables (target inventory). New readers of keys that nothing read: landing_zone.resource_groups[] (Deploy-ResourceGroups.ps1), identity.active_directory.security_groups[].members (Set-ADGroupMemberships.ps1), operations.licensing.azure_hybrid_benefit (Enable-AzureHybridBenefit.ps1, rewritten to the instance setting), network_devices[] (Set-PowerSwitchEndpoint.ps1, Test-OpengearVerification.ps1), site.customer (the handover scripts). Not keys: nodes[].bmc.mac_address and networking.dhcp.server (the DHCP reservations of the nodes are the network team's task, and the BMC ones are not in Microsoft Learn), hardware.bmc.settings (one fixed vendor attribute), provisioning.iso.path (provisioning.iso.image_uri covers the ISO location).
 #   v5.0.47 (2026-11-13):
 #     - Every parameter of every script is a registered variable, and a generator keeps it so (no infrastructure key, infrastructure schema unchanged). New: config/variables/scripts/New-ScriptParameterRegistry.ps1 reads the param() block of each .ps1 under scripts/, ansible/, tools/ and pipelines/ and of the entry scripts of config/variables/scripts with the PowerShell parser and writes one group per script, one entry per parameter, between two marker comments at the end of tools.arm_deployment.parameters (group names end in _generated). A parameter that a hand-written group already registers is left to that group. The tests in tests/variables/ScriptParameterRegistry.Tests.ps1 fail when a script parameter is not registered, when a registration names a parameter the script does not have, or when the generated block is stale.
 #   v5.0.45 (2026-11-13):
@@ -207,15 +209,19 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.47"
+  version: "5.0.48"
   schema_version: "5.0.0"
-  infrastructure_schema_version: "5.6.19"
+  infrastructure_schema_version: "5.6.21"
   last_updated: "2026-11-13"
   total_variables: "5100+"
   maintainers:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-13"
+      version: "5.0.48"
+      change: "New registry keys and scripts (infrastructure schema 5.6.21). landing_zone.network_security_groups[] (name, rules[] with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description): New-LandingZoneNsg.ps1 (phase 04, task 06) creates each group in the subscription, resource group and region of the networks whose subnets name it; the Terraform variable nsgs, whose proposed key this is, now comes from it. security.baseline_settings[] (type, name, value, acknowledge_weaker_security): Set-SecurityBaselines.ps1 rewritten to Set-AzsSecurity -Cluster, as Microsoft Learn documents it for 2610. Ansible: New-IacVariableFiles.ps1 writes inventory/hosts.yml; the WinRM connection settings are registered under tools.ansible.variables (target inventory). New readers of keys that nothing read: landing_zone.resource_groups[] (Deploy-ResourceGroups.ps1), identity.active_directory.security_groups[].members (Set-ADGroupMemberships.ps1), operations.licensing.azure_hybrid_benefit (Enable-AzureHybridBenefit.ps1, rewritten to the instance setting), network_devices[] (Set-PowerSwitchEndpoint.ps1, Test-OpengearVerification.ps1), site.customer (the handover scripts). Not keys: nodes[].bmc.mac_address and networking.dhcp.server (the DHCP reservations of the nodes are the network team's task, and the BMC ones are not in Microsoft Learn), hardware.bmc.settings (one fixed vendor attribute), provisioning.iso.path (provisioning.iso.image_uri covers the ISO location)."
+      reason: "Owner requirement: every key has a reader, no script carries a value a deployment chooses, and a script does only what Microsoft Learn documents. The work order of the variables research (areas A1 to A18) names the readers and the gaps the cleanup of scripts/deploy left."
     - date: "2026-11-13"
       version: "5.0.47"
       change: "Every parameter of every script is a registered variable, and a generator keeps it so (infrastructure schema unchanged, no infrastructure key). New config/variables/scripts/New-ScriptParameterRegistry.ps1 (with -Check) reads the param() block of each .ps1 under scripts/, ansible/, tools/ and pipelines/ and of the entry scripts of config/variables/scripts with the PowerShell parser (name, declared type, default as written, ValidateSet values, Mandatory, the .PARAMETER help text as description, else a neutral sentence built from the name) and writes one group per script, one entry per parameter, between the BEGIN and END script-parameters markers at the end of tools.arm_deployment.parameters. Parameters that a hand-written group already registers are not written again; placeholder scripts (exit code 3, NOT IMPLEMENTED) are registered and marked in the group and in each description. New tests/variables/ScriptParameterRegistry.Tests.ps1."
@@ -13074,6 +13080,42 @@ security:
       required: false
       example: true
 
+    baseline_settings:
+      description: "Schema 5.6.21. Individual security baseline settings to change after the deployment, by Set-AzsSecurity (Azure Local 2610 or later). Drift control stays on and protects the value you set instead of the baseline value. Set-SecurityBaselines.ps1 (stage 05, phase 04, task 03) applies each entry to the whole instance (-Cluster, the way Microsoft Learn recommends: the change is recorded as cluster policy intent and survives solution updates). Only Set-AzsSecurity may change these settings: Group Policy or the registry is not supported and drift control reverts it. Some settings cannot be changed at all (Learn lists them); the script refuses them. The names come from the security baseline CSV of your version (the Name column), which Learn links under View and download security settings. Empty or missing: the script does nothing."
+      type: array
+      required: false
+      since: "5.6.21"
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          type:
+            description: "Schema 5.6.21. The policy type that owns the setting (the -Type parameter of Set-AzsSecurity): SecuritySettings (the OS security baseline: registry, security policy, audit policy and user rights settings; most changes), SecuredCore (virtualization-based security, hypervisor-enforced code integrity, System Guard launch) or DefenderAntivirus (Microsoft Defender Antivirus configuration)."
+            type: string
+            required: true
+            since: "5.6.21"
+            enum: ["SecuritySettings", "SecuredCore", "DefenderAntivirus"]
+            example: "SecuritySettings"
+          name:
+            description: "Schema 5.6.21. The name of the setting exactly as the Name column of the security baseline CSV writes it (-SettingName); the cmdlet does not complete or correct names. For example LanmanWorkstationEnableInsecureGuestLogons."
+            type: string
+            required: true
+            since: "5.6.21"
+            minLength: 1
+            example: "LanmanWorkstationEnableInsecureGuestLogons"
+          value:
+            description: "Schema 5.6.21. The value to set: a string, an integer (sent as a string) or a list of strings. What a setting accepts is in the baseline CSV; the cmdlet rejects a value it cannot use."
+            required: true
+            since: "5.6.21"
+            example: "1"
+            schema_extra: {"anyOf":[{"type":"string"},{"type":"integer"},{"type":"array","items":{"type":"string"},"minItems":1}]}
+          acknowledge_weaker_security:
+            description: "Schema 5.6.21. true confirms that you understand a change that weakens the security posture, for the few settings where Set-AzsSecurity shows a warning and asks (the script then passes -Force, together with -Confirm:$false, as Learn describes for unattended use). false or missing: such a setting is not changed and is reported as Failed with the cmdlet's warning. Blocked settings cannot be changed with it."
+            type: boolean
+            required: false
+            since: "5.6.21"
+            default: false
+            example: false
     defender_for_cloud:
       description: "The free level of Microsoft Defender for Cloud that Azure Local needs to show its security settings in the Azure portal. Enable-DefenderForCloud.ps1 reads it. No paid plan is turned on by any key of this file."
       type: object
@@ -14016,7 +14058,7 @@ operations:
       additionalProperties: false
       properties:
         azure_hybrid_benefit:
-          description: "Azure Hybrid Benefit for the host fee and Windows Server guests. Not read by the tools yet: a documented placeholder."
+          description: "true to activate Azure Hybrid Benefit for Azure Local on the instance: it waives the Azure Local host service fee for an instance whose physical cores are covered by Windows Server Datacenter licenses with active Software Assurance. Enable-AzureHybridBenefit.ps1 (stage 05, phase 05, task 01) activates it with Invoke-AzStackHciExtendClusterSoftwareAssuranceBenefit. Activation cannot be undone, and Learn supports it only for hyperconverged instances with cloud connected management and no external storage, so the script refuses scenario.storage_architecture san or hybrid and scenario.connectivity disconnected. false or missing: the script does nothing; it never turns the benefit off."
           type: boolean
           required: false
           example: true
@@ -15294,7 +15336,7 @@ nodes:
         required: true
         pattern: "^[A-Za-z0-9][A-Za-z0-9-]{0,14}$"
         example: "iic-azl-n01"
-        used_by: [ztp, os_configuration, deployment, monitoring, discovery, trailwright]
+        used_by: [ztp, os_configuration, deployment, monitoring, discovery, trailwright, ansible]
       management:
         description: "The machine's management port and address (schema 5.0 and 5.1). From 5.2, network_adapters describes it instead: the port with role management and an ip_assignment other than none. When both are given they must agree; prefer network_adapters."
         type: object
@@ -17784,6 +17826,124 @@ landing_zone:
             example: [["vnet-iic-hub-01"]]
             items:
               {"type":"string"}
+    network_security_groups:
+      description: "Schema 5.6.21. Network security groups (NSG) of the Azure landing zone networks, with their rules. A subnet names its group in landing_zone.networks[].subnets[].network_security_group; New-LandingZoneNsg.ps1 (phase 04, manual deployment, task 06) creates each group listed here in the subscription, resource group and region of every network whose subnets name it (Deploy-VirtualNetworks.ps1 looks the group up there and attaches it), and adds the rules that are missing. A group that no subnet names is not created. These are Azure virtual network groups, not the Azure Local groups of networking.network_security_groups."
+      type: array
+      required: false
+      since: "5.6.21"
+      used_by: [terraform]
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          name:
+            description: "Schema 5.6.21. Name of the network security group, 1 to 80 characters: letters, digits, underscore, period and hyphen; it starts with a letter or digit and ends with a letter, digit or underscore. It cannot be changed afterwards."
+            type: string
+            required: true
+            since: "5.6.21"
+            used_by: [terraform]
+            pattern: "^[A-Za-z0-9]([A-Za-z0-9._-]{0,78}[A-Za-z0-9_])?$"
+            example: "nsg-iic-mgmt-01"
+          rules:
+            description: "Schema 5.6.21. The security rules of the group. A group with no rules has only the default rules Azure adds (Microsoft Learn, Azure network security groups overview). The script adds the rules that are missing; a rule that exists with the same name is left alone and, when it differs from the file, reported. It never removes or changes a rule."
+            type: array
+            required: false
+            since: "5.6.21"
+            used_by: [terraform]
+            items:
+              type: object
+              additionalProperties: false
+              properties:
+                name:
+                  description: "Schema 5.6.21. Name of the rule, 1 to 80 characters, with the same characters as the group name. Unique inside the group."
+                  type: string
+                  required: true
+                  since: "5.6.21"
+                  used_by: [terraform]
+                  pattern: "^[A-Za-z0-9]([A-Za-z0-9._-]{0,78}[A-Za-z0-9_])?$"
+                  example: "allow-rdp-from-hub"
+                priority:
+                  description: "Schema 5.6.21. Priority of the rule, 100 to 4096. A lower number is processed first. Two rules of a group cannot have the same priority and direction (Microsoft Learn, Azure network security groups overview)."
+                  type: integer
+                  required: true
+                  since: "5.6.21"
+                  used_by: [terraform]
+                  minimum: 100
+                  maximum: 4096
+                  example: 100
+                direction:
+                  description: "Schema 5.6.21. Whether the rule applies to incoming (Inbound) or outgoing (Outbound) traffic."
+                  type: string
+                  required: true
+                  since: "5.6.21"
+                  used_by: [terraform]
+                  enum: ["Inbound", "Outbound"]
+                  example: "Inbound"
+                access:
+                  description: "Schema 5.6.21. Allow or Deny the traffic the rule matches."
+                  type: string
+                  required: true
+                  since: "5.6.21"
+                  used_by: [terraform]
+                  enum: ["Allow", "Deny"]
+                  example: "Allow"
+                protocol:
+                  description: "Schema 5.6.21. Protocol the rule matches: * (any, the default), Tcp, Udp, Icmp, Esp or Ah (New-AzNetworkSecurityRuleConfig -Protocol)."
+                  type: string
+                  required: false
+                  since: "5.6.21"
+                  used_by: [terraform]
+                  enum: ["*", "Tcp", "Udp", "Icmp", "Esp", "Ah"]
+                  default: "*"
+                  example: "Tcp"
+                source_address_prefixes:
+                  description: "Schema 5.6.21. Source the rule matches: * (any, the default), IPv4 addresses or ranges in CIDR form, or one service tag such as VirtualNetwork or Internet (a rule takes only one service tag, and a service tag cannot be mixed with addresses). A list."
+                  type: array
+                  required: false
+                  since: "5.6.21"
+                  used_by: [terraform]
+                  minItems: 1
+                  example: [["192.0.2.0/24", "198.51.100.0/24"]]
+                  items:
+                    {"type":"string","pattern":"^(\\*|((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(/([0-9]|[12][0-9]|3[0-2]))?|[A-Za-z][A-Za-z0-9.]*)$"}
+                source_port_ranges:
+                  description: "Schema 5.6.21. Source ports the rule matches: * (any, the default), a port or a range such as 1024-2048, each from 0 to 65535. A list."
+                  type: array
+                  required: false
+                  since: "5.6.21"
+                  used_by: [terraform]
+                  minItems: 1
+                  example: [["*", "1024-2048"]]
+                  items:
+                    {"type":"string","pattern":"^(\\*|[0-9]{1,5}(-[0-9]{1,5})?)$"}
+                destination_address_prefixes:
+                  description: "Schema 5.6.21. Destination the rule matches: * (any, the default), IPv4 addresses or ranges in CIDR form, or one service tag. A list."
+                  type: array
+                  required: false
+                  since: "5.6.21"
+                  used_by: [terraform]
+                  minItems: 1
+                  example: [["203.0.113.0/24", "198.51.100.0/24"]]
+                  items:
+                    {"type":"string","pattern":"^(\\*|((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(/([0-9]|[12][0-9]|3[0-2]))?|[A-Za-z][A-Za-z0-9.]*)$"}
+                destination_port_ranges:
+                  description: "Schema 5.6.21. Destination ports the rule matches: * (any), a port or a range such as 8000-8100, each from 0 to 65535. A list. Required: New-AzNetworkSecurityRuleConfig has no default for it."
+                  type: array
+                  required: true
+                  since: "5.6.21"
+                  used_by: [terraform]
+                  minItems: 1
+                  example: [["443", "8000-8100"]]
+                  items:
+                    {"type":"string","pattern":"^(\\*|[0-9]{1,5}(-[0-9]{1,5})?)$"}
+                description:
+                  description: "Schema 5.6.21. Optional text for the rule, at most 140 characters."
+                  type: string
+                  required: false
+                  since: "5.6.21"
+                  used_by: [terraform]
+                  maxLength: 140
+                  example: "Allow RDP from the hub network"
     connectivity:
       description: "Gateways, bastion and firewall of the connectivity hub."
       type: object
@@ -18031,7 +18191,7 @@ landing_zone:
       description: "Management VMs: domain controllers, jump box, Windows Admin Center, syslog."
       type: array
       required: false
-      used_by: [terraform]
+      used_by: [terraform, ansible]
       items:
         type: object
         additionalProperties: false
@@ -18041,7 +18201,7 @@ landing_zone:
             type: string
             required: true
             example: "vm-iic-dc-01"
-            used_by: [terraform]
+            used_by: [terraform, ansible]
           hostname:
             description: "Up to 15 letters, digits and hyphens."
             type: string
@@ -18049,14 +18209,14 @@ landing_zone:
             required: false
             pattern: "^[A-Za-z0-9][A-Za-z0-9-]{0,14}$"
             example: "iic-dc01"
-            used_by: [terraform]
+            used_by: [terraform, ansible]
           role:
             type: string
             description: "What the machine is: domain_controller, jumpbox, windows_admin_center, syslog, management or other."
             required: true
             enum: ["domain_controller", "jumpbox", "windows_admin_center", "syslog", "management", "other"]
             example: "domain_controller"
-            used_by: [terraform]
+            used_by: [terraform, ansible]
           deploy_target:
             type: string
             description: "Where the VM runs."
@@ -18095,7 +18255,7 @@ landing_zone:
             required: false
             pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
             example: "10.20.4.10"
-            used_by: [terraform]
+            used_by: [terraform, ansible]
           size:
             description: "Azure VM size, for example Standard_D2s_v5."
             type: string
@@ -18109,7 +18269,7 @@ landing_zone:
             since: "5.6.19"
             enum: ["windows_server_2022", "windows_server_2025", "ubuntu_2404"]
             example: "windows_server_2025"
-            used_by: [terraform]
+            used_by: [terraform, ansible]
           admin_username:
             description: "Local administrator user name of the machine. The password is a Key Vault secret."
             type: string
@@ -18196,7 +18356,7 @@ file_metadata:
   additionalProperties: false
   properties:
     schema_version:
-      description: "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. 5.6.11 adds what the logical network, network security group and VM image scripts read: networking.network_security_groups (name and rules with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description), networking.logical_networks[].vm_switch_name and storage.vm_images (name, os_type, publisher, offer, sku, version, storage_path). 5.6.12 adds operations.monitoring.retention_days and removes operations.notifications.teams_webhook and operations.monitoring.health_alerts. 5.6.13 adds the secrets section (provider, file directory, command) and lets a secret reference use the env://, file:// and command:// forms besides keyvault://. 5.6.14 adds hardware.inventory (output_directory, file_name_prefix, format, timeout_seconds), which Get-HardwareInventory.ps1 reads. 5.6.15 adds what Enable-ArcSdn.ps1 reads: sdn.acknowledge_maintenance_window and sdn.acknowledge_dns_record, the rules of sdn.prefix, and sdn.dns_records (read now); it removes sdn.default_access_policy. 5.6.16 adds storage.san.luns[].unique_id (how New-SanVolume.ps1 finds the disk of a LUN) and removes security.backup_key_vault. 5.6.17 adds landing_zone.management_groups[].role and azure.automation_identity.object_id (the two keys the Terraform landing zone and identity modules need) and makes the Terraform and Ansible code readers of the file (New-IacVariableFiles.ps1). 5.6.19 adds provisioning.iso.image_uri (the address Invoke-MountGoldImageISO.ps1 gives the BMC virtual media), landing_zone.subscriptions[].billing_scope and workload, point_to_site.protocols, root_certificate_name and root_certificate, bastion.network and the nat_gateway object of landing_zone.connectivity, and a list of values for landing_zone.virtual_machines[].os. The current version is 5.6.19."
+      description: "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. 5.6.11 adds what the logical network, network security group and VM image scripts read: networking.network_security_groups (name and rules with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description), networking.logical_networks[].vm_switch_name and storage.vm_images (name, os_type, publisher, offer, sku, version, storage_path). 5.6.12 adds operations.monitoring.retention_days and removes operations.notifications.teams_webhook and operations.monitoring.health_alerts. 5.6.13 adds the secrets section (provider, file directory, command) and lets a secret reference use the env://, file:// and command:// forms besides keyvault://. 5.6.14 adds hardware.inventory (output_directory, file_name_prefix, format, timeout_seconds), which Get-HardwareInventory.ps1 reads. 5.6.15 adds what Enable-ArcSdn.ps1 reads: sdn.acknowledge_maintenance_window and sdn.acknowledge_dns_record, the rules of sdn.prefix, and sdn.dns_records (read now); it removes sdn.default_access_policy. 5.6.16 adds storage.san.luns[].unique_id (how New-SanVolume.ps1 finds the disk of a LUN) and removes security.backup_key_vault. 5.6.17 adds landing_zone.management_groups[].role and azure.automation_identity.object_id (the two keys the Terraform landing zone and identity modules need) and makes the Terraform and Ansible code readers of the file (New-IacVariableFiles.ps1). 5.6.19 adds provisioning.iso.image_uri (the address Invoke-MountGoldImageISO.ps1 gives the BMC virtual media), landing_zone.subscriptions[].billing_scope and workload, point_to_site.protocols, root_certificate_name and root_certificate, bastion.network and the nat_gateway object of landing_zone.connectivity, and a list of values for landing_zone.virtual_machines[].os. 5.6.21 adds landing_zone.network_security_groups[] (the network security groups of the Azure landing zone networks: name and rules, created by New-LandingZoneNsg.ps1) and security.baseline_settings[] (type, name, value and acknowledge_weaker_security of the security baseline settings that Set-SecurityBaselines.ps1 changes with Set-AzsSecurity). The current version is 5.6.21."
       type: string
       required: true
       pattern: "^5\\.[0-9]+\\.[0-9]+$"
@@ -19511,6 +19671,14 @@ tools:
                 security_groups: {"name":"security_groups","type":"array","declared_type":"list","required":"Y","read_at":"src/ansible/inventory/group_vars/all.yml (written by config/variables/scripts/New-IacVariableFiles.ps1)","description":"Security groups of the instance: name, purpose and local_groups.","class":"a","source":"infrastructure","infrastructure_key":"identity.active_directory.security_groups","target":"group_vars"}
                 hci_insights_enabled: {"name":"hci_insights_enabled","type":"boolean","declared_type":"bool","required":"Y","read_at":"src/ansible/inventory/group_vars/all.yml (written by config/variables/scripts/New-IacVariableFiles.ps1)","description":"Whether the monitoring role runs the Azure Local Insights step.","class":"a","source":"infrastructure","infrastructure_key":"operations.monitoring.enabled","target":"group_vars"}
                 azure_dns_forwarder_ip: {"name":"azure_dns_forwarder_ip","type":"string","declared_type":"str","default":"168.63.129.16","required":"N","read_at":"src/ansible/inventory/group_vars/all.yml (written by config/variables/scripts/New-IacVariableFiles.ps1)","description":"The address of Azure DNS (168.63.129.16), which the conditional forwarders and the DNS forwarder of the domain controllers use.","class":"c","source":"tool","target":"group_vars","note":"A fixed address of Azure."}
+            src_ansible_inventory_hosts_yml:
+              type: object
+              area: "src/ansible/inventory/hosts.yml"
+              properties:
+                ansible_connection: {"name":"ansible_connection","type":"string","declared_type":"str","default":"winrm","required":"N","read_at":"src/ansible/inventory/hosts.yml (written by config/variables/scripts/New-IacVariableFiles.ps1)","description":"How Ansible connects to the Windows machines of the inventory: WinRM.","class":"c","source":"tool","target":"inventory","note":"A setting of the code."}
+                ansible_winrm_transport: {"name":"ansible_winrm_transport","type":"string","declared_type":"str","default":"kerberos","required":"N","read_at":"src/ansible/inventory/hosts.yml (written by config/variables/scripts/New-IacVariableFiles.ps1)","description":"The WinRM authentication of the Windows machines: Kerberos, which needs a domain account and machines that are in the domain. A machine outside the domain needs another transport, which the code does not set.","class":"c","source":"tool","target":"inventory","note":"A setting of the code."}
+                ansible_winrm_server_cert_validation: {"name":"ansible_winrm_server_cert_validation","type":"string","declared_type":"str","default":"ignore","required":"N","read_at":"src/ansible/inventory/hosts.yml (written by config/variables/scripts/New-IacVariableFiles.ps1)","description":"Whether Ansible checks the WinRM certificate of a machine: ignore or validate. The default is ignore because the machines use self-signed WinRM certificates before the domain certificates exist; it is a security choice, so set validate when the machines have a certificate that the Ansible host trusts.","class":"c","source":"tool","target":"inventory","note":"A setting of the code."}
+                ansible_port: {"name":"ansible_port","type":"integer","declared_type":"int","default":"5986","required":"N","read_at":"src/ansible/inventory/hosts.yml (written by config/variables/scripts/New-IacVariableFiles.ps1)","description":"The WinRM port of the Windows machines: 5986 is WinRM over HTTPS.","class":"c","source":"tool","target":"inventory","note":"A setting of the code."}
             src_ansible_inventory_host_vars__node__yml:
               type: object
               area: "src/ansible/inventory/host_vars/<node>.yml"
@@ -19928,6 +20096,12 @@ tools:
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-01-create-azure-local-deployment-spn/powershell/New-AutomationManagedIdentity.ps1","description":"New-AutomationManagedIdentity.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.location, azure.subscription_id, azure.resource_group, tags and azure.automation_identity (type, name, subscription_id, resource_group) are read; the file is not validated as a whole."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-01-create-azure-local-deployment-spn/powershell/New-AutomationManagedIdentity.ps1","description":"New-AutomationManagedIdentity.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_02_azure_foundation_phase_01_landing_zones_full_deployment_task_03_create_resource_groups_powershell_Deploy_ResourceGroups_ps1:
+              type: object
+              area: "scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-03-create-resource-groups/powershell/Deploy-ResourceGroups.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-03-create-resource-groups/powershell/Deploy-ResourceGroups.ps1","description":"Deploy-ResourceGroups.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.subscription_id, azure.resource_group, azure.location, tags, landing_zone.subscriptions[] and landing_zone.resource_groups[] (name, subscription, location, purpose) are read; the file is not validated as a whole."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-03-create-resource-groups/powershell/Deploy-ResourceGroups.ps1","description":"Deploy-ResourceGroups.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
             scripts_deploy_02_azure_foundation_phase_04_azure_management_infrastructure_02_manual_deployment_task_01_virtual_network_powershell_Deploy_VirtualNetworks_ps1:
               type: object
               area: "scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-01-virtual-network/powershell/Deploy-VirtualNetworks.ps1"
@@ -20101,6 +20275,12 @@ tools:
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-08-arc-gateway/powershell/New-ArcGateway.ps1","description":"New-ArcGateway.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.subscription_id, azure.location, azure.resource_group, tags, scenario.outbound_path and networking.outbound.arc_gateway (name, resource_group) are read; the file is not validated as a whole."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-08-arc-gateway/powershell/New-ArcGateway.ps1","description":"New-ArcGateway.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_02_azure_foundation_phase_04_azure_management_infrastructure_02_manual_deployment_task_06_network_security_groups_powershell_New_LandingZoneNsg_ps1:
+              type: object
+              area: "scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups/powershell/New-LandingZoneNsg.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups/powershell/New-LandingZoneNsg.ps1","description":"New-LandingZoneNsg.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.location, tags, landing_zone.network_security_groups[] (name, rules[]), landing_zone.networks[] (with the network_security_group of each subnet) and landing_zone.subscriptions[] are read; the file is not validated as a whole."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups/powershell/New-LandingZoneNsg.ps1","description":"New-LandingZoneNsg.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
             scripts_deploy_02_azure_foundation_phase_04_azure_management_infrastructure_02_manual_deployment_task_07_nat_gateway_powershell_New_NatGateway_ps1:
               type: object
               area: "scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-07-nat-gateway/powershell/New-NatGateway.ps1"
@@ -20113,6 +20293,68 @@ tools:
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-11-deploy-management-vms/powershell/Deploy-ManagementVMs.ps1","description":"Deploy-ManagementVMs.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.location, tags, landing_zone.virtual_machines[] (name, hostname, deploy_target, subscription, resource_group, network, subnet, private_ip, size, os, admin_username, admin_password), landing_zone.networks[] and landing_zone.subscriptions[] are read; the file is not validated as a whole."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-11-deploy-management-vms/powershell/Deploy-ManagementVMs.ps1","description":"Deploy-ManagementVMs.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_04_cluster_deployment_phase_06_post_deployment_task_04_ssh_connectivity_to_nodes_powershell_Invoke_SSHConnectivity_Orchestrated_ps1:
+              type: object
+              area: "scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1"
+              properties:
+                ConfigPath: {"name":"ConfigPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1","description":"Invoke-SSHConnectivity-Orchestrated.ps1. Path to infrastructure.yml (schema 5). Only azure.subscription_id, azure.resource_group, azure.location, nodes[].name and nodes[].arc_machine_name are read. Defaults to configs\\infrastructure.yml in the current folder."}
+                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1","description":"Invoke-SSHConnectivity-Orchestrated.ps1. Not used: the script uses the Azure CLI sign-in."}
+                TargetNode: {"name":"TargetNode","type":"string","declared_type":"string[]","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1","description":"Invoke-SSHConnectivity-Orchestrated.ps1. Limit the run to these node names (nodes[].name). Empty means every node."}
+                WhatIf: {"name":"WhatIf","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1","description":"Invoke-SSHConnectivity-Orchestrated.ps1. Log the planned actions and change nothing."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1","description":"Invoke-SSHConnectivity-Orchestrated.ps1. Log file. The default is logs\\task-04-ssh-connectivity-to-nodes\\ in the current folder."}
+                SshdPort: {"name":"SshdPort","type":"integer","declared_type":"int","default":"22","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1","description":"Invoke-SSHConnectivity-Orchestrated.ps1. The port the HybridConnectivity SSH endpoint allows (Microsoft Learn, SSH access to Azure Arc-enabled servers; only one port can be allowed)."}
+            scripts_deploy_05_operational_foundations_phase_05_licensing_telemetry_task_01_enable_azure_hybrid_benefit_powershell_Enable_AzureHybridBenefit_ps1:
+              type: object
+              area: "scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit/powershell/Enable-AzureHybridBenefit.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit/powershell/Enable-AzureHybridBenefit.ps1","description":"Enable-AzureHybridBenefit.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.subscription_id, azure.resource_group, cluster.name, scenario.storage_architecture, scenario.connectivity and operations.licensing.azure_hybrid_benefit are read; the file is not validated as a whole."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit/powershell/Enable-AzureHybridBenefit.ps1","description":"Enable-AzureHybridBenefit.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_05_operational_foundations_phase_04_security_governance_task_03_configure_security_baselines_powershell_Set_SecurityBaselines_ps1:
+              type: object
+              area: "scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Set-SecurityBaselines.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Set-SecurityBaselines.ps1","description":"Set-SecurityBaselines.ps1. The master infrastructure.yml (schema 5). Only security.baseline_settings[] (type, name, value, acknowledge_weaker_security), nodes[] (name, management.ip_address) and identity.local_admin (username, password) are read; the file is not validated as a whole."}
+                ComputerName: {"name":"ComputerName","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Set-SecurityBaselines.ps1","description":"Set-SecurityBaselines.ps1. Optional: the machine to connect to instead of the first entry of nodes[]."}
+                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Set-SecurityBaselines.ps1","description":"Set-SecurityBaselines.ps1. Optional: the account for the remoting session. Without it the script uses identity.local_admin of the file, or the account that runs it."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Set-SecurityBaselines.ps1","description":"Set-SecurityBaselines.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_03_onprem_readiness_phase_01_active_directory_task_05_group_assignments_powershell_Set_ADGroupMemberships_ps1:
+              type: object
+              area: "scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Set-ADGroupMemberships.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Set-ADGroupMemberships.ps1","description":"Set-ADGroupMemberships.ps1. The master infrastructure.yml (schema 5). Only scenario.identity, identity.active_directory.domain_fqdn and identity.active_directory.security_groups[] (name, members) are read; the file is not validated as a whole."}
+                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Set-ADGroupMemberships.ps1","description":"Set-ADGroupMemberships.ps1. Optional: the account that changes the groups. Without it the account that runs the script is used."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Set-ADGroupMemberships.ps1","description":"Set-ADGroupMemberships.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_handover_customer_transfer_powershell_Set_CustomerTransfer_ps1:
+              type: object
+              area: "scripts/handover/customer-transfer/powershell/Set-CustomerTransfer.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/handover/customer-transfer/powershell/Set-CustomerTransfer.ps1","description":"Set-CustomerTransfer.ps1. The master infrastructure.yml (schema 5). Only cluster.name, azure.tenant_id, azure.subscription_id, azure.resource_group and site.customer are read; the file is not validated as a whole."}
+                CustomerTenantId: {"name":"CustomerTenantId","type":"string","declared_type":"string","required":"Y","read_at":"scripts/handover/customer-transfer/powershell/Set-CustomerTransfer.ps1","description":"Set-CustomerTransfer.ps1. The customer's Microsoft Entra tenant id (a GUID). It is put in the portal link of the transfer record."}
+                CustomerAdminUPN: {"name":"CustomerAdminUPN","type":"string","declared_type":"string","required":"Y","read_at":"scripts/handover/customer-transfer/powershell/Set-CustomerTransfer.ps1","description":"Set-CustomerTransfer.ps1. The user principal name (or the mail address of a guest) of the customer administrator who gets the roles."}
+                OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/handover/customer-transfer/powershell/Set-CustomerTransfer.ps1","description":"Set-CustomerTransfer.ps1. Optional: the folder where the transfer record (Markdown and JSON) is written. It is created when it does not exist. Without it nothing is written."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/handover/customer-transfer/powershell/Set-CustomerTransfer.ps1","description":"Set-CustomerTransfer.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_handover_documentation_powershell_New_DeploymentDocumentation_ps1:
+              type: object
+              area: "scripts/handover/documentation/powershell/New-DeploymentDocumentation.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/handover/documentation/powershell/New-DeploymentDocumentation.ps1","description":"New-DeploymentDocumentation.ps1. The master infrastructure.yml (schema 5). Only cluster.name, site.customer, azure.tenant_id, azure.subscription_id, azure.resource_group and azure.location are read, and with -IncludeCredentialLocations the secret references of the whole file; the file is not validated."}
+                OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","required":"Y","read_at":"scripts/handover/documentation/powershell/New-DeploymentDocumentation.ps1","description":"New-DeploymentDocumentation.ps1. The folder for the documentation package (a Markdown page and a JSON file). It is created when it does not exist."}
+                IncludeCredentialLocations: {"name":"IncludeCredentialLocations","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/handover/documentation/powershell/New-DeploymentDocumentation.ps1","description":"New-DeploymentDocumentation.ps1. Also list the secret references of the file (where the secrets are kept), never their values."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/handover/documentation/powershell/New-DeploymentDocumentation.ps1","description":"New-DeploymentDocumentation.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_03_onprem_readiness_phase_03_network_infrastructure_task_02_dell_powerswitch_configuration_powershell_Set_PowerSwitchEndpoint_ps1:
+              type: object
+              area: "scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Set-PowerSwitchEndpoint.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Set-PowerSwitchEndpoint.ps1","description":"Set-PowerSwitchEndpoint.ps1. The master infrastructure.yml (schema 5). Only network_devices[] of type switch (hostname, type, role, vendor, management.ip_address, management.protocol, credentials.username, credentials.password) is read; the file is not validated as a whole."}
+                TimeoutSeconds: {"name":"TimeoutSeconds","type":"integer","declared_type":"int","default":"5","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Set-PowerSwitchEndpoint.ps1","description":"Set-PowerSwitchEndpoint.ps1. How long to wait for a ping or a TCP connection of one device, 1 to 120 seconds."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Set-PowerSwitchEndpoint.ps1","description":"Set-PowerSwitchEndpoint.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_03_onprem_readiness_phase_02_enterprise_readiness_task_03_opengear_verification_powershell_Test_OpengearVerification_ps1:
+              type: object
+              area: "scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Test-OpengearVerification.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Test-OpengearVerification.ps1","description":"Test-OpengearVerification.ps1. The master infrastructure.yml (schema 5). Only network_devices[] of type console_server (hostname, type, role, vendor, management.ip_address, management.protocol, credentials.username, credentials.password) is read; the file is not validated as a whole."}
+                TimeoutSeconds: {"name":"TimeoutSeconds","type":"integer","declared_type":"int","default":"5","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Test-OpengearVerification.ps1","description":"Test-OpengearVerification.ps1. How long to wait for a ping or a TCP connection of one device, 1 to 120 seconds."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Test-OpengearVerification.ps1","description":"Test-OpengearVerification.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
             # BEGIN script-parameters (generated by config/variables/scripts/New-ScriptParameterRegistry.ps1; do not edit by hand)
             config_variables_scripts_Compare_InfrastructureSchemaToRegistry_ps1_generated:
               type: object
@@ -20693,13 +20935,6 @@ tools:
               properties:
                 ConfigPath: {"name":"ConfigPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-03-create-resource-groups/azurecli/az-create-resource-groups.ps1","description":"az-create-resource-groups.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Config path (no help text for this parameter)."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-03-create-resource-groups/azurecli/az-create-resource-groups.ps1","description":"az-create-resource-groups.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
-            scripts_deploy_02_azure_foundation_phase_01_landing_zones_full_deployment_task_03_create_resource_groups_powershell_Deploy_ResourceGroups_ps1_generated:
-              type: object
-              area: "scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-03-create-resource-groups/powershell/Deploy-ResourceGroups.ps1"
-              properties:
-                Solution: {"name":"Solution","type":"string","declared_type":"string","enum":["azure-local","azure-arc-servers"],"required":"Y","read_at":"scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-03-create-resource-groups/powershell/Deploy-ResourceGroups.ps1","description":"Deploy-ResourceGroups.ps1. The solution name (e.g., \"azure-local\")."}
-                ResourceGroupFilter: {"name":"ResourceGroupFilter","type":"string","declared_type":"string","default":"all","enum":["management","compute","storage","network","arc","all"],"required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-03-create-resource-groups/powershell/Deploy-ResourceGroups.ps1","description":"Deploy-ResourceGroups.ps1. Optional. Filter to create only specific resource groups. Valid values: \"management\", \"compute\", \"storage\", \"network\", \"arc\", \"all\". Defaults to \"all\"."}
-                SkipExisting: {"name":"SkipExisting","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-03-create-resource-groups/powershell/Deploy-ResourceGroups.ps1","description":"Deploy-ResourceGroups.ps1. If specified, skips resource groups that already exist without error."}
             scripts_deploy_02_azure_foundation_phase_01_landing_zones_full_deployment_task_03_create_resource_groups_powershell_Invoke_ResourceGroups_Orchestrated_ps1_generated:
               type: object
               area: "scripts/deploy/02-azure-foundation/phase-01-landing-zones/full-deployment/task-03-create-resource-groups/powershell/Invoke-ResourceGroups-Orchestrated.ps1"
@@ -21337,16 +21572,6 @@ tools:
                 Credential: {"name":"Credential","type":"string","declared_type":"System.Management.Automation.PSCredential","default":"$null","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Invoke-ADGroupMemberships-Orchestrated.ps1","description":"Invoke-ADGroupMemberships-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Credential (no help text for this parameter)."}
                 TargetNode: {"name":"TargetNode","type":"array","declared_type":"string[]","default":"@()","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Invoke-ADGroupMemberships-Orchestrated.ps1","description":"Invoke-ADGroupMemberships-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Target node (no help text for this parameter)."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Invoke-ADGroupMemberships-Orchestrated.ps1","description":"Invoke-ADGroupMemberships-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
-            scripts_deploy_03_onprem_readiness_phase_01_active_directory_task_05_group_assignments_powershell_Set_ADGroupMemberships_ps1_generated:
-              type: object
-              area: "scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Set-ADGroupMemberships.ps1"
-              properties:
-                DomainController: {"name":"DomainController","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Set-ADGroupMemberships.ps1","description":"Set-ADGroupMemberships.ps1. Target domain controller FQDN."}
-                ClusterName: {"name":"ClusterName","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Set-ADGroupMemberships.ps1","description":"Set-ADGroupMemberships.ps1. Name of the Azure Local cluster."}
-                NodeNames: {"name":"NodeNames","type":"array","declared_type":"string[]","required":"Y","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Set-ADGroupMemberships.ps1","description":"Set-ADGroupMemberships.ps1. Array of cluster node names."}
-                DeploymentUser: {"name":"DeploymentUser","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Set-ADGroupMemberships.ps1","description":"Set-ADGroupMemberships.ps1. SAM account name of the deployment administrator."}
-                OUPath: {"name":"OUPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Set-ADGroupMemberships.ps1","description":"Set-ADGroupMemberships.ps1. Organizational Unit path for group objects."}
-                ConfigFile: {"name":"ConfigFile","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-05-group-assignments/powershell/Set-ADGroupMemberships.ps1","description":"Set-ADGroupMemberships.ps1. Path to infrastructure.yml configuration."}
             scripts_deploy_03_onprem_readiness_phase_02_enterprise_readiness_task_01_hardware_inspection_powershell_Invoke_HardwareInspection_Orchestrated_ps1_generated:
               type: object
               area: "scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-01-hardware-inspection/powershell/Invoke-HardwareInspection-Orchestrated.ps1"
@@ -21391,16 +21616,6 @@ tools:
                 Credential: {"name":"Credential","type":"string","declared_type":"System.Management.Automation.PSCredential","default":"$null","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Invoke-OpengearVerification-Orchestrated.ps1","description":"Invoke-OpengearVerification-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Credential (no help text for this parameter)."}
                 TargetNode: {"name":"TargetNode","type":"array","declared_type":"string[]","default":"@()","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Invoke-OpengearVerification-Orchestrated.ps1","description":"Invoke-OpengearVerification-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Target node (no help text for this parameter)."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Invoke-OpengearVerification-Orchestrated.ps1","description":"Invoke-OpengearVerification-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
-            scripts_deploy_03_onprem_readiness_phase_02_enterprise_readiness_task_03_opengear_verification_powershell_Test_OpengearVerification_ps1_generated:
-              type: object
-              area: "scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Test-OpengearVerification.ps1"
-              properties:
-                OpengearHost: {"name":"OpengearHost","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Test-OpengearVerification.ps1","description":"Test-OpengearVerification.ps1. Hostname or IP address of the Opengear device."}
-                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Test-OpengearVerification.ps1","description":"Test-OpengearVerification.ps1. Credentials for Opengear access."}
-                SshPort: {"name":"SshPort","type":"integer","declared_type":"int","default":"22","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Test-OpengearVerification.ps1","description":"Test-OpengearVerification.ps1. Ssh port (no help text for this parameter)."}
-                WebPort: {"name":"WebPort","type":"integer","declared_type":"int","default":"443","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Test-OpengearVerification.ps1","description":"Test-OpengearVerification.ps1. Web port (no help text for this parameter)."}
-                ConfigPath: {"name":"ConfigPath","type":"string","declared_type":"string","default":".\\configs\\infrastructure.yml","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Test-OpengearVerification.ps1","description":"Test-OpengearVerification.ps1. Path to infrastructure.yml configuration file."}
-                OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","default":".\\output\\opengear-verification","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-03-opengear-verification/powershell/Test-OpengearVerification.ps1","description":"Test-OpengearVerification.ps1. Output path (no help text for this parameter)."}
             scripts_deploy_03_onprem_readiness_phase_02_enterprise_readiness_task_04_validation_signoff_powershell_Complete_ValidationSignoff_ps1_generated:
               type: object
               area: "scripts/deploy/03-onprem-readiness/phase-02-enterprise-readiness/task-04-validation-signoff/powershell/Complete-ValidationSignoff.ps1"
@@ -21428,15 +21643,6 @@ tools:
                 Credential: {"name":"Credential","type":"string","declared_type":"System.Management.Automation.PSCredential","default":"$null","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-01-opengear-console-server/powershell/Invoke-OpengearEndpoint-Orchestrated.ps1","description":"Invoke-OpengearEndpoint-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Credential (no help text for this parameter)."}
                 TargetNode: {"name":"TargetNode","type":"array","declared_type":"string[]","default":"@()","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-01-opengear-console-server/powershell/Invoke-OpengearEndpoint-Orchestrated.ps1","description":"Invoke-OpengearEndpoint-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Target node (no help text for this parameter)."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-01-opengear-console-server/powershell/Invoke-OpengearEndpoint-Orchestrated.ps1","description":"Invoke-OpengearEndpoint-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
-            scripts_deploy_03_onprem_readiness_phase_03_network_infrastructure_task_01_opengear_console_server_powershell_Set_OpengearEndpoint_ps1_generated:
-              type: object
-              area: "scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-01-opengear-console-server/powershell/Set-OpengearEndpoint.ps1"
-              properties:
-                OpengearHost: {"name":"OpengearHost","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-01-opengear-console-server/powershell/Set-OpengearEndpoint.ps1","description":"Set-OpengearEndpoint.ps1. Hostname or IP address of the Opengear device."}
-                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-01-opengear-console-server/powershell/Set-OpengearEndpoint.ps1","description":"Set-OpengearEndpoint.ps1. Credentials for Opengear admin access."}
-                WebPort: {"name":"WebPort","type":"integer","declared_type":"int","default":"443","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-01-opengear-console-server/powershell/Set-OpengearEndpoint.ps1","description":"Set-OpengearEndpoint.ps1. Web port (no help text for this parameter)."}
-                ConfigPath: {"name":"ConfigPath","type":"string","declared_type":"string","default":".\\configs\\infrastructure.yml","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-01-opengear-console-server/powershell/Set-OpengearEndpoint.ps1","description":"Set-OpengearEndpoint.ps1. Path to infrastructure.yml configuration file."}
-                Force: {"name":"Force","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-01-opengear-console-server/powershell/Set-OpengearEndpoint.ps1","description":"Set-OpengearEndpoint.ps1. Force switch (no help text for this parameter)."}
             scripts_deploy_03_onprem_readiness_phase_03_network_infrastructure_task_02_dell_powerswitch_configuration_powershell_Invoke_PowerSwitchEndpoint_Orchestrated_ps1_generated:
               type: object
               area: "scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Invoke-PowerSwitchEndpoint-Orchestrated.ps1"
@@ -21446,17 +21652,6 @@ tools:
                 Credential: {"name":"Credential","type":"string","declared_type":"System.Management.Automation.PSCredential","default":"$null","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Invoke-PowerSwitchEndpoint-Orchestrated.ps1","description":"Invoke-PowerSwitchEndpoint-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Credential (no help text for this parameter)."}
                 TargetNode: {"name":"TargetNode","type":"array","declared_type":"string[]","default":"@()","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Invoke-PowerSwitchEndpoint-Orchestrated.ps1","description":"Invoke-PowerSwitchEndpoint-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Target node (no help text for this parameter)."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Invoke-PowerSwitchEndpoint-Orchestrated.ps1","description":"Invoke-PowerSwitchEndpoint-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
-            scripts_deploy_03_onprem_readiness_phase_03_network_infrastructure_task_02_dell_powerswitch_configuration_powershell_Set_PowerSwitchEndpoint_ps1_generated:
-              type: object
-              area: "scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Set-PowerSwitchEndpoint.ps1"
-              properties:
-                SwitchHost: {"name":"SwitchHost","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Set-PowerSwitchEndpoint.ps1","description":"Set-PowerSwitchEndpoint.ps1. Hostname or IP address of the PowerSwitch."}
-                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Set-PowerSwitchEndpoint.ps1","description":"Set-PowerSwitchEndpoint.ps1. Credentials for switch admin access."}
-                SshPort: {"name":"SshPort","type":"integer","declared_type":"int","default":"22","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Set-PowerSwitchEndpoint.ps1","description":"Set-PowerSwitchEndpoint.ps1. Ssh port (no help text for this parameter)."}
-                ConfigPath: {"name":"ConfigPath","type":"string","declared_type":"string","default":".\\configs\\infrastructure.yml","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Set-PowerSwitchEndpoint.ps1","description":"Set-PowerSwitchEndpoint.ps1. Path to infrastructure.yml configuration file."}
-                ConfigTemplatePath: {"name":"ConfigTemplatePath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Set-PowerSwitchEndpoint.ps1","description":"Set-PowerSwitchEndpoint.ps1. Config template path (no help text for this parameter)."}
-                ApplyConfig: {"name":"ApplyConfig","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Set-PowerSwitchEndpoint.ps1","description":"Set-PowerSwitchEndpoint.ps1. Apply config switch (no help text for this parameter)."}
-                Force: {"name":"Force","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Set-PowerSwitchEndpoint.ps1","description":"Set-PowerSwitchEndpoint.ps1. Force switch (no help text for this parameter)."}
             scripts_deploy_03_onprem_readiness_phase_03_network_infrastructure_task_03_firewall_endpoint_verification_powershell_Invoke_FirewallEndpoint_Orchestrated_ps1_generated:
               type: object
               area: "scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-03-firewall-endpoint-verification/powershell/Invoke-FirewallEndpoint-Orchestrated.ps1"
@@ -22053,16 +22248,6 @@ tools:
                 ConfigPath: {"name":"ConfigPath","type":"string","declared_type":"string","default":".\\configs\\infrastructure.yml","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Enable-SshConfiguration.ps1","description":"Enable-SshConfiguration.ps1. Config path (no help text for this parameter)."}
                 EnableKeyAuth: {"name":"EnableKeyAuth","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Enable-SshConfiguration.ps1","description":"Enable-SshConfiguration.ps1. Enable key auth switch (no help text for this parameter)."}
                 DisablePasswordAuth: {"name":"DisablePasswordAuth","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Enable-SshConfiguration.ps1","description":"Enable-SshConfiguration.ps1. Disable password auth switch (no help text for this parameter)."}
-            scripts_deploy_04_cluster_deployment_phase_06_post_deployment_task_04_ssh_connectivity_to_nodes_powershell_Invoke_SSHConnectivity_Orchestrated_ps1_generated:
-              type: object
-              area: "scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1"
-              properties:
-                ConfigPath: {"name":"ConfigPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1","description":"Invoke-SSHConnectivity-Orchestrated.ps1. Config path (no help text for this parameter)."}
-                Credential: {"name":"Credential","type":"string","declared_type":"PSCredential","default":"$null","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1","description":"Invoke-SSHConnectivity-Orchestrated.ps1. Credential (no help text for this parameter)."}
-                TargetNode: {"name":"TargetNode","type":"array","declared_type":"string[]","default":"@()","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1","description":"Invoke-SSHConnectivity-Orchestrated.ps1. Target node (no help text for this parameter)."}
-                WhatIf: {"name":"WhatIf","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1","description":"Invoke-SSHConnectivity-Orchestrated.ps1. What if switch (no help text for this parameter)."}
-                LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1","description":"Invoke-SSHConnectivity-Orchestrated.ps1. Log path (no help text for this parameter)."}
-                SshdPort: {"name":"SshdPort","type":"integer","declared_type":"int","default":"22","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1","description":"Invoke-SSHConnectivity-Orchestrated.ps1. Sshd port (no help text for this parameter)."}
             scripts_deploy_04_cluster_deployment_phase_06_post_deployment_task_05_storage_configuration_azurecli_az_configure_storage_ps1_generated:
               type: object
               area: "scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration/azurecli/az-configure-storage.ps1"
@@ -22280,16 +22465,6 @@ tools:
                 Credential: {"name":"Credential","type":"string","declared_type":"System.Management.Automation.PSCredential","default":"$null","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Invoke-SecurityBaselines-Orchestrated.ps1","description":"Invoke-SecurityBaselines-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Credential (no help text for this parameter)."}
                 TargetNode: {"name":"TargetNode","type":"array","declared_type":"string[]","default":"@()","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Invoke-SecurityBaselines-Orchestrated.ps1","description":"Invoke-SecurityBaselines-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Target node (no help text for this parameter)."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Invoke-SecurityBaselines-Orchestrated.ps1","description":"Invoke-SecurityBaselines-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
-            scripts_deploy_05_operational_foundations_phase_04_security_governance_task_03_configure_security_baselines_powershell_Set_SecurityBaselines_ps1_generated:
-              type: object
-              area: "scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Set-SecurityBaselines.ps1"
-              properties:
-                NodeNames: {"name":"NodeNames","type":"array","declared_type":"string[]","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Set-SecurityBaselines.ps1","description":"Set-SecurityBaselines.ps1. Array of cluster node hostnames."}
-                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Set-SecurityBaselines.ps1","description":"Set-SecurityBaselines.ps1. Credentials for node access."}
-                ConfigPath: {"name":"ConfigPath","type":"string","declared_type":"string","default":".\\configs\\infrastructure.yml","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Set-SecurityBaselines.ps1","description":"Set-SecurityBaselines.ps1. Config path (no help text for this parameter)."}
-                OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","default":".\\output\\security-baselines","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Set-SecurityBaselines.ps1","description":"Set-SecurityBaselines.ps1. Output path (no help text for this parameter)."}
-                ApplyBaselines: {"name":"ApplyBaselines","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Set-SecurityBaselines.ps1","description":"Set-SecurityBaselines.ps1. Apply baselines switch (no help text for this parameter)."}
-                AuditOnly: {"name":"AuditOnly","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-04-security-governance/task-03-configure-security-baselines/powershell/Set-SecurityBaselines.ps1","description":"Set-SecurityBaselines.ps1. Audit only switch (no help text for this parameter)."}
             scripts_deploy_05_operational_foundations_phase_04_security_governance_task_04_enable_security_logging_azurecli_az_configure_security_logging_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging/azurecli/az-configure-security-logging.ps1"
@@ -22323,13 +22498,6 @@ tools:
               properties:
                 ConfigPath: {"name":"ConfigPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit/azurecli/az-enable-hybrid-benefit.ps1","description":"az-enable-hybrid-benefit.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Config path (no help text for this parameter)."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit/azurecli/az-enable-hybrid-benefit.ps1","description":"az-enable-hybrid-benefit.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
-            scripts_deploy_05_operational_foundations_phase_05_licensing_telemetry_task_01_enable_azure_hybrid_benefit_powershell_Enable_AzureHybridBenefit_ps1_generated:
-              type: object
-              area: "scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit/powershell/Enable-AzureHybridBenefit.ps1"
-              properties:
-                ResourceGroupName: {"name":"ResourceGroupName","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit/powershell/Enable-AzureHybridBenefit.ps1","description":"Enable-AzureHybridBenefit.ps1. Azure resource group name."}
-                ConfigPath: {"name":"ConfigPath","type":"string","declared_type":"string","default":".\\configs\\infrastructure.yml","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit/powershell/Enable-AzureHybridBenefit.ps1","description":"Enable-AzureHybridBenefit.ps1. Path to infrastructure.yml configuration file."}
-                SubscriptionId: {"name":"SubscriptionId","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit/powershell/Enable-AzureHybridBenefit.ps1","description":"Enable-AzureHybridBenefit.ps1. Subscription id (no help text for this parameter)."}
             scripts_deploy_05_operational_foundations_phase_05_licensing_telemetry_task_01_enable_azure_hybrid_benefit_powershell_Invoke_AzureHybridBenefit_Orchestrated_ps1_generated:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit/powershell/Invoke-AzureHybridBenefit-Orchestrated.ps1"
@@ -22508,25 +22676,6 @@ tools:
                 TaskCatalogPath: {"name":"TaskCatalogPath","type":"string","declared_type":"string","default":"(Join-Path $PSScriptRoot 'TaskCatalogue.psd1')","required":"N","read_at":"scripts/deploy/common/New-DeployScriptStatus.ps1","description":"New-DeployScriptStatus.ps1. Task catalog path (no help text for this parameter)."}
                 OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","default":"([System.IO.Path]::GetFullPath([System.IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'docs', 'script-status.md')))","required":"N","read_at":"scripts/deploy/common/New-DeployScriptStatus.ps1","description":"New-DeployScriptStatus.ps1. Output path (no help text for this parameter)."}
                 Check: {"name":"Check","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/common/New-DeployScriptStatus.ps1","description":"New-DeployScriptStatus.ps1. Check switch (no help text for this parameter)."}
-            scripts_handover_customer_transfer_powershell_Set_CustomerTransfer_ps1_generated:
-              type: object
-              area: "scripts/handover/customer-transfer/powershell/Set-CustomerTransfer.ps1"
-              properties:
-                ClusterName: {"name":"ClusterName","type":"string","declared_type":"string","required":"Y","read_at":"scripts/handover/customer-transfer/powershell/Set-CustomerTransfer.ps1","description":"Set-CustomerTransfer.ps1. Name of the Azure Local cluster."}
-                CustomerTenantId: {"name":"CustomerTenantId","type":"string","declared_type":"string","required":"Y","read_at":"scripts/handover/customer-transfer/powershell/Set-CustomerTransfer.ps1","description":"Set-CustomerTransfer.ps1. Customer's Azure AD tenant ID."}
-                CustomerAdminUPN: {"name":"CustomerAdminUPN","type":"string","declared_type":"string","required":"Y","read_at":"scripts/handover/customer-transfer/powershell/Set-CustomerTransfer.ps1","description":"Set-CustomerTransfer.ps1. Customer administrator's User Principal Name."}
-                AzureSubscriptionId: {"name":"AzureSubscriptionId","type":"string","declared_type":"string","required":"N","read_at":"scripts/handover/customer-transfer/powershell/Set-CustomerTransfer.ps1","description":"Set-CustomerTransfer.ps1. Azure subscription ID."}
-                ResourceGroup: {"name":"ResourceGroup","type":"string","declared_type":"string","required":"N","read_at":"scripts/handover/customer-transfer/powershell/Set-CustomerTransfer.ps1","description":"Set-CustomerTransfer.ps1. Azure resource group name."}
-                OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/handover/customer-transfer/powershell/Set-CustomerTransfer.ps1","description":"Set-CustomerTransfer.ps1. Path to save transfer documentation."}
-            scripts_handover_documentation_powershell_New_DeploymentDocumentation_ps1_generated:
-              type: object
-              area: "scripts/handover/documentation/powershell/New-DeploymentDocumentation.ps1"
-              properties:
-                ClusterName: {"name":"ClusterName","type":"string","declared_type":"string","required":"Y","read_at":"scripts/handover/documentation/powershell/New-DeploymentDocumentation.ps1","description":"New-DeploymentDocumentation.ps1. Name of the Azure Local cluster."}
-                CustomerName: {"name":"CustomerName","type":"string","declared_type":"string","required":"Y","read_at":"scripts/handover/documentation/powershell/New-DeploymentDocumentation.ps1","description":"New-DeploymentDocumentation.ps1. Customer organization name for documentation."}
-                OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","required":"Y","read_at":"scripts/handover/documentation/powershell/New-DeploymentDocumentation.ps1","description":"New-DeploymentDocumentation.ps1. Path to save documentation package."}
-                ConfigFile: {"name":"ConfigFile","type":"string","declared_type":"string","required":"N","read_at":"scripts/handover/documentation/powershell/New-DeploymentDocumentation.ps1","description":"New-DeploymentDocumentation.ps1. Path to infrastructure.yml configuration file."}
-                IncludeCredentialLocations: {"name":"IncludeCredentialLocations","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/handover/documentation/powershell/New-DeploymentDocumentation.ps1","description":"New-DeploymentDocumentation.ps1. Switch to include Key Vault credential locations (not values)."}
             scripts_lifecycle_operations_powershell_Invoke_ClusterOperations_ps1_generated:
               type: object
               area: "scripts/lifecycle/operations/powershell/Invoke-ClusterOperations.ps1"
@@ -25412,7 +25561,7 @@ tools:
                 vnet_address_space: {"name":"vnet_address_space","type":"array","declared_type":"list(string)","required":"Y","read_at":"src/terraform/environments/azure-local/variables.tf:96","description":"Hub VNet address space.","class":"a","source":"infrastructure","infrastructure_key":"landing_zone.networks[role=hub].address_space","target":"tfvars"}
                 dns_servers: {"name":"dns_servers","type":"array","declared_type":"list(string)","default":"[]","required":"N","read_at":"src/terraform/environments/azure-local/variables.tf:101","description":"Custom DNS servers.","class":"a","source":"infrastructure","infrastructure_key":"landing_zone.networks[role=hub].dns_servers","target":"tfvars"}
                 subnets: {"name":"subnets","type":"object","declared_type":"map(object({...}))","required":"Y","read_at":"src/terraform/environments/azure-local/variables.tf:107","description":"Subnet configurations by key. The gateway and Bastion subnets use the keys gateway and bastion.","class":"a","source":"infrastructure","infrastructure_key":"landing_zone.networks[role=hub].subnets[]","form":"subnets_map","target":"tfvars"}
-                nsgs: {"name":"nsgs","type":"array","declared_type":"list(object({...}))","default":"[]","required":"N","read_at":"src/terraform/environments/azure-local/variables.tf:115","description":"NSG configurations with rules.","class":"b","source":"tool","target":"tfvars","proposed_key":"landing_zone.network_security_groups[]"}
+                nsgs: {"name":"nsgs","type":"array","declared_type":"list(object({...}))","default":"[]","required":"N","read_at":"src/terraform/environments/azure-local/variables.tf:115","description":"NSG configurations with rules.","class":"a","source":"infrastructure","infrastructure_key":["landing_zone.network_security_groups[]"],"form":"nsgs","target":"tfvars","note":"Terraform takes one value in each address and port field of a rule; a rule with a list of several values is refused (exit 2). The PowerShell route (New-LandingZoneNsg.ps1) takes lists."}
                 nsg_subnet_map: {"name":"nsg_subnet_map","type":"object","declared_type":"map(string)","default":"{}","required":"N","read_at":"src/terraform/environments/azure-local/variables.tf:135","description":"Map of subnet key to NSG name.","class":"a","source":"infrastructure","infrastructure_key":"landing_zone.networks[role=hub].subnets[].network_security_group","form":"nsg_subnet_map","target":"tfvars"}
                 enable_nat_gateway: {"name":"enable_nat_gateway","type":"boolean","declared_type":"bool","default":"true","required":"N","read_at":"src/terraform/environments/azure-local/variables.tf:141","description":"Whether to deploy a NAT Gateway.","class":"c","source":"tool","target":"tfvars"}
                 nat_gateway_idle_timeout: {"name":"nat_gateway_idle_timeout","type":"integer","declared_type":"number","default":"4","required":"N","read_at":"src/terraform/environments/azure-local/variables.tf:147","description":"NAT Gateway idle timeout in minutes.","class":"c","source":"tool","target":"tfvars"}

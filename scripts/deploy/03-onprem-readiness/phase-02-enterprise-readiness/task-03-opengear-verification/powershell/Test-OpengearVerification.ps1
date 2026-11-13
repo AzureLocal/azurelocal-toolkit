@@ -1,360 +1,141 @@
 <#
 .SYNOPSIS
-    Verifies Opengear console server configuration and connectivity.
+    Checks that every console server of network_devices in infrastructure.yml can be reached and that its login can be read. Changes nothing.
 
 .DESCRIPTION
-    This script validates Opengear console server setup:
-    - Tests network connectivity
-    - Verifies serial port configuration
-    - Validates access to connected devices
-    - Checks logging configuration
+    Phase 02 (enterprise readiness), Task 03 (console server verification). The console server (Opengear, or another make) is the way to reach
+    a node's serial console when the network is not there yet. Its serial ports, users and alerts are set up on the device, in its own tools and
+    in its vendor's documentation; Microsoft Learn has nothing on them. The earlier script of this task called a REST interface of the device and
+    tested serial port numbers it computed (3000 plus the port number). Neither call is documented for the device in the file, so the script no
+    longer makes them. What it does is the check that comes before that work:
 
-.PARAMETER OpengearHost
-    Hostname or IP address of the Opengear device.
+    For each entry of network_devices whose type is console_server it reports the device (hostname, role, vendor) and then:
+      1. the management address (management.ip_address); an entry whose address is dhcp or missing is skipped, because the address is not known;
+      2. whether the address answers a ping (information only: a console server may drop ICMP);
+      3. whether the management port accepts a TCP connection. The port follows management.protocol: ssh 22, https 443, telnet 23 (ssh when the
+         file gives none). snmp uses UDP, which a TCP check cannot test, so it is skipped;
+      4. whether the login of the device can be read: credentials.password is a secret reference, which the toolkit's secret resolver
+         (scripts/common/secrets/AzlSecret.psm1) reads into memory and discards. The value is never shown, written or sent anywhere. The script
+         does not sign in to the console server.
 
-.PARAMETER Credential
-    Credentials for Opengear access.
+    Nothing is sent to the device but the TCP connection and the ping. No prompt, no change, no file.
 
-.PARAMETER ConfigPath
-    Path to infrastructure.yml configuration file.
+    Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
+        network_devices[]: hostname, type, role, vendor, management.ip_address, management.protocol, credentials.username, credentials.password
+
+    Exit codes: 0 every console server passed the checks or the file lists none (a skipped entry is not a failure); 1 a console server did not answer on
+    its management port, or its password reference could not be read; 2 a value in the file is not usable (a host name listed twice, an address that is
+    not IPv4 and not dhcp, a management protocol that is not ssh, https, telnet or snmp).
+
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here.
+
+.PARAMETER TimeoutSeconds
+    How long to wait for a ping or a TCP connection of one device. Default 5.
+
+.PARAMETER LogPath
+    Optional. Also append the progress lines to this file. Keep it out of the repository.
 
 .EXAMPLE
-    .\Test-OpengearVerification.ps1 -OpengearHost "192.168.1.100"
+    ./Test-OpengearVerification.ps1 -InfrastructureFile ./infrastructure.yml
 
-.NOTES
-    Author: Azure Local Cloud AzureLocalCloud
-    Version: 1.0.0
-    Stage: 04-onprem-readiness
-    Step: stage-09-enterprise-readiness/step-03-opengear-verification
+    Checks the console servers of the file and prints one row each.
 #>
-
+#Requires -Version 7.0
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $false)]
-    [string]$OpengearHost,
-
-    [Parameter(Mandatory = $false)]
-    [pscredential]$Credential,
-
-    [Parameter(Mandatory = $false)]
-    [int]$SshPort = 22,
-
-    [Parameter(Mandatory = $false)]
-    [int]$WebPort = 443,
-
-    [Parameter(Mandatory = $false)]
-    [string]$ConfigPath = ".\configs\infrastructure.yml",
-
-    [Parameter(Mandatory = $false)]
-    [string]$OutputPath = ".\output\opengear-verification"
+    [Parameter(Mandatory)][string]$InfrastructureFile,
+    [ValidateRange(1, 120)][int]$TimeoutSeconds = 5,
+    [string]$LogPath
 )
-
-#Requires -Version 7.0
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$logFile = $LogPath
 
-#region Functions
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 
-function Write-LogMessage {
-    param(
-        [string]$Message,
-        [ValidateSet('Info', 'Warning', 'Error', 'Success')]
-        [string]$Level = 'Info'
-    )
-    
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $color = switch ($Level) {
-        'Info'    { 'Cyan' }
-        'Warning' { 'Yellow' }
-        'Error'   { 'Red' }
-        'Success' { 'Green' }
-    }
-    Write-Host "[$timestamp] [$Level] $Message" -ForegroundColor $color
+# The kind of device this script checks (the type values of network_devices).
+$DeviceType = 'console_server'
+# The TCP port of each management protocol (SSH, HTTPS and Telnet are fixed by their standards). SNMP is UDP: no TCP check.
+$ManagementPort = @{ ssh = 22; https = 443; telnet = 23 }
+$Ipv4 = '^((25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(25[0-5]|2[0-4]\d|1?\d?\d)$'
+
+function Write-Line([string]$Text) {
+    Write-Information -MessageData $Text -InformationAction Continue
+    if ($logFile) { Add-Content -LiteralPath $logFile -Value ('[{0:yyyy-MM-dd HH:mm:ss}] {1}' -f (Get-Date), $Text) -WhatIf:$false }
+}
+function Exit-InputProblem([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 2 }
+function Get-Entry([object]$Entry, [string]$Key) {
+    if ($Entry -is [System.Collections.IDictionary] -and $Entry.Contains($Key) -and $null -ne $Entry[$Key]) { return ([string]$Entry[$Key]).Trim() }
+    ''
 }
 
-function Import-InfrastructureConfig {
-    [CmdletBinding()]
-    param([string]$Path)
+# ---- the values, from infrastructure.yml only
+try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.Message)" }
 
-    if (-not (Test-Path $Path)) { return $null }
-
-    if (-not (Get-Module -Name powershell-yaml -ListAvailable)) {
-        Install-Module -Name powershell-yaml -Force -Scope CurrentUser
-    }
-    Import-Module powershell-yaml
-
-    $configContent = Get-Content -Path $Path -Raw
-    return ConvertFrom-Yaml $configContent
+$raw = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'network_devices'
+$devices = @(@($raw) | Where-Object { $_ -is [System.Collections.IDictionary] -and (Get-Entry $_ 'type') -ieq $DeviceType })
+if ($devices.Count -eq 0) {
+    Write-Line "The file lists no network_devices of type ${DeviceType}: nothing to do."
+    exit 0
 }
 
-function Test-NetworkConnectivity {
-    <#
-    .SYNOPSIS
-        Tests basic network connectivity to Opengear device.
-    #>
-    [CmdletBinding()]
-    param(
-        [string]$Host,
-        [int]$SshPort,
-        [int]$WebPort
-    )
-
-    $results = @{
-        Ping      = $false
-        SSH       = $false
-        WebUI     = $false
-    }
-
-    # Test ping
-    Write-LogMessage "  Testing ICMP ping..." -Level Info
-    $ping = Test-Connection -ComputerName $Host -Count 2 -Quiet
-    $results.Ping = $ping
-    Write-LogMessage "    Ping: $(if($ping){'✓ Reachable'}else{'✗ Unreachable'})" -Level $(if($ping){'Success'}else{'Error'})
-
-    # Test SSH port
-    Write-LogMessage "  Testing SSH port ($SshPort)..." -Level Info
-    try {
-        $tcpClient = New-Object System.Net.Sockets.TcpClient
-        $connect = $tcpClient.BeginConnect($Host, $SshPort, $null, $null)
-        $wait = $connect.AsyncWaitHandle.WaitOne(3000, $false)
-        if ($wait -and $tcpClient.Connected) {
-            $results.SSH = $true
-            $tcpClient.Close()
-        }
-    } catch { }
-    Write-LogMessage "    SSH: $(if($results.SSH){'✓ Open'}else{'✗ Closed'})" -Level $(if($results.SSH){'Success'}else{'Error'})
-
-    # Test Web UI port
-    Write-LogMessage "  Testing Web UI port ($WebPort)..." -Level Info
-    try {
-        $tcpClient = New-Object System.Net.Sockets.TcpClient
-        $connect = $tcpClient.BeginConnect($Host, $WebPort, $null, $null)
-        $wait = $connect.AsyncWaitHandle.WaitOne(3000, $false)
-        if ($wait -and $tcpClient.Connected) {
-            $results.WebUI = $true
-            $tcpClient.Close()
-        }
-    } catch { }
-    Write-LogMessage "    WebUI: $(if($results.WebUI){'✓ Open'}else{'✗ Closed'})" -Level $(if($results.WebUI){'Success'}else{'Error'})
-
-    return $results
+$plan = [System.Collections.Generic.List[object]]::new()
+$seen = @{}
+$index = -1
+foreach ($device in $devices) {
+    $index++
+    $name = Get-Entry $device 'hostname'
+    if (-not $name) { Exit-InputProblem "A network_devices entry of type $DeviceType has no hostname." }
+    if ($seen.ContainsKey($name.ToLowerInvariant())) { Exit-InputProblem "The hostname '$name' is listed twice in network_devices." }
+    $seen[$name.ToLowerInvariant()] = $true
+    $management = if ($device.Contains('management') -and $device['management'] -is [System.Collections.IDictionary]) { $device['management'] } else { @{} }
+    $address = Get-Entry $management 'ip_address'
+    if ($address -and $address -ine 'dhcp' -and $address -notmatch $Ipv4) { Exit-InputProblem "network_devices '$name': management.ip_address '$address' is not an IPv4 address or dhcp." }
+    $protocol = (Get-Entry $management 'protocol').ToLowerInvariant()
+    if (-not $protocol) { $protocol = 'ssh' }
+    if ($protocol -notin 'ssh', 'https', 'telnet', 'snmp') { Exit-InputProblem "network_devices '$name': management.protocol '$protocol' is not ssh, https, telnet or snmp." }
+    $credentials = if ($device.Contains('credentials') -and $device['credentials'] -is [System.Collections.IDictionary]) { $device['credentials'] } else { @{} }
+    $plan.Add([pscustomobject]@{
+            Name = $name; Role = (Get-Entry $device 'role'); Vendor = (Get-Entry $device 'vendor'); Address = $address; Protocol = $protocol
+            User = (Get-Entry $credentials 'username'); PasswordReference = (Get-Entry $credentials 'password')
+        })
 }
 
-function Get-OpengearConfig {
-    <#
-    .SYNOPSIS
-        Retrieves configuration from Opengear via REST API.
-    #>
-    [CmdletBinding()]
-    param(
-        [string]$Host,
-        [int]$Port,
-        [pscredential]$Credential
-    )
-
-    try {
-        $baseUri = "https://${Host}:${Port}/api/v1"
-        
-        # Get auth token
-        $authBody = @{
-            username = $Credential.UserName
-            password = $Credential.GetNetworkCredential().Password
-        } | ConvertTo-Json
-
-        $authResponse = Invoke-RestMethod `
-            -Uri "$baseUri/sessions" `
-            -Method POST `
-            -Body $authBody `
-            -ContentType 'application/json' `
-            -SkipCertificateCheck
-
-        $token = $authResponse.session
-
-        $headers = @{
-            'Authorization' = "Token $token"
-        }
-
-        # Get system info
-        $systemInfo = Invoke-RestMethod `
-            -Uri "$baseUri/system" `
-            -Headers $headers `
-            -SkipCertificateCheck
-
-        # Get serial ports
-        $serialPorts = Invoke-RestMethod `
-            -Uri "$baseUri/serialPorts" `
-            -Headers $headers `
-            -SkipCertificateCheck
-
-        return @{
-            System      = $systemInfo
-            SerialPorts = $serialPorts.serialPorts
-        }
-    } catch {
-        Write-LogMessage "  Failed to query Opengear API: $_" -Level Warning
-        return $null
+Write-Line "Checking $($plan.Count) device(s) of type $DeviceType"
+$rows = foreach ($item in $plan) {
+    $row = [ordered]@{ Device = $item.Name; Role = $item.Role; Vendor = $item.Vendor; Address = $item.Address; Port = ''; Ping = ''; Management = ''; Login = ''; Action = ''; Detail = '' }
+    $problems = [System.Collections.Generic.List[string]]::new()
+    if (-not $item.Address -or $item.Address -ieq 'dhcp') {
+        $row.Action = 'Skipped'; $row.Detail = 'The management address is dhcp or not set, so the device cannot be reached from the file.'
+        Write-Line "[skip]    $($item.Name): $($row.Detail)"
+        [pscustomobject]$row
+        continue
     }
+    $row.Ping = if (Test-Connection -TargetName $item.Address -Count 1 -TimeoutSeconds $TimeoutSeconds -Quiet) { 'Answers' } else { 'NoAnswer' }
+    if ($ManagementPort.ContainsKey($item.Protocol)) {
+        $row.Port = [string]$ManagementPort[$item.Protocol]
+        if (Test-Connection -TargetName $item.Address -TcpPort $ManagementPort[$item.Protocol] -TimeoutSeconds $TimeoutSeconds -Quiet) { $row.Management = 'Open' }
+        else { $row.Management = 'Closed'; $problems.Add("$($item.Protocol) port $($row.Port) did not accept a connection") }
+    }
+    else { $row.Management = 'Skipped'; $row.Detail = 'snmp is UDP; a TCP check cannot test it. ' }
+    if (-not $item.PasswordReference) { $row.Login = 'NotListed' }
+    else {
+        $check = Test-AzlSecretReference -Reference $item.PasswordReference -Infrastructure $infra -Detailed
+        if ($check.Resolvable) { $row.Login = 'Readable' }
+        else { $row.Login = 'NotReadable'; $problems.Add("the password reference could not be read ($($check.Category))") }
+    }
+    if (-not $item.User) { $row.Login = if ($row.Login -eq 'Readable') { 'NoUserName' } else { $row.Login } }
+    if ($problems.Count) { $row.Action = 'Failed'; $row.Detail += ($problems -join '; ') }
+    else { $row.Action = 'Verified' }
+    Write-Line ("[{0}] {1} ({2}, {3}): ping {4}, {5} {6}, login {7}{8}" -f $(if ($problems.Count) { 'failed  ' } else { 'ok      ' }), $item.Name, $item.Address, $(if ($item.Role) { $item.Role } else { 'no role' }), $row.Ping, $item.Protocol, $row.Management, $row.Login, $(if ($problems.Count) { " - $($problems -join '; ')" } else { '' }))
+    [pscustomobject]$row
 }
-
-function Test-SerialPortConnectivity {
-    <#
-    .SYNOPSIS
-        Tests connectivity to devices connected via serial ports.
-    #>
-    [CmdletBinding()]
-    param(
-        [string]$OpengearHost,
-        [int]$SshPort,
-        [pscredential]$Credential,
-        [array]$Ports
-    )
-
-    $results = @()
-
-    foreach ($port in $Ports) {
-        $portNumber = $port.id
-        $portLabel = $port.label ?? "Port $portNumber"
-        
-        Write-LogMessage "  Testing serial port: $portLabel (Port $portNumber)" -Level Info
-
-        # Test SSH to serial port (typically opengear_host:port_number_base + port)
-        $serialSshPort = 3000 + $portNumber
-        
-        try {
-            $tcpClient = New-Object System.Net.Sockets.TcpClient
-            $connect = $tcpClient.BeginConnect($OpengearHost, $serialSshPort, $null, $null)
-            $wait = $connect.AsyncWaitHandle.WaitOne(2000, $false)
-            $accessible = $wait -and $tcpClient.Connected
-            if ($accessible) { $tcpClient.Close() }
-        } catch {
-            $accessible = $false
-        }
-
-        $results += @{
-            PortNumber  = $portNumber
-            Label       = $portLabel
-            SshPort     = $serialSshPort
-            Accessible  = $accessible
-            Mode        = $port.mode
-            Status      = $port.status
-        }
-
-        Write-LogMessage "    $(if($accessible){'✓'}else{'✗'}) $portLabel - SSH port $serialSshPort" -Level $(if($accessible){'Success'}else{'Warning'})
-    }
-
-    return $results
-}
-
-#endregion Functions
-
-#region Main
-
-try {
-    Write-LogMessage "=" * 60 -Level Info
-    Write-LogMessage "Opengear Console Server Verification" -Level Info
-    Write-LogMessage "=" * 60 -Level Info
-
-    # Load configuration
-    $config = $null
-    if (Test-Path $ConfigPath) {
-        $config = Import-InfrastructureConfig -Path $ConfigPath
-    }
-
-    # Get Opengear host from config if not provided
-    if (-not $OpengearHost) {
-        $OpengearHost = $config.networking.onprem.network_devices.opengear.host
-        if (-not $OpengearHost) {
-            throw "OpengearHost is required"
-        }
-    }
-
-    # Prompt for credentials if not provided
-    if (-not $Credential) {
-        $Credential = Get-Credential -Message "Enter Opengear credentials"
-    }
-
-    Write-LogMessage "Opengear Host: $OpengearHost" -Level Info
-
-    # Test network connectivity
-    Write-LogMessage "Testing network connectivity..." -Level Info
-    $networkResults = Test-NetworkConnectivity -Host $OpengearHost -SshPort $SshPort -WebPort $WebPort
-
-    if (-not $networkResults.Ping -and -not $networkResults.SSH) {
-        Write-LogMessage "Opengear device is not reachable" -Level Error
-        return @{
-            Status  = 'Failed'
-            Network = $networkResults
-        }
-    }
-
-    # Get Opengear configuration
-    Write-LogMessage "Querying Opengear configuration..." -Level Info
-    $opengearConfig = $null
-    if ($networkResults.WebUI) {
-        $opengearConfig = Get-OpengearConfig -Host $OpengearHost -Port $WebPort -Credential $Credential
-    }
-
-    $serialPortResults = @()
-    if ($opengearConfig) {
-        Write-LogMessage "System Info:" -Level Info
-        Write-LogMessage "  Model: $($opengearConfig.System.model)" -Level Info
-        Write-LogMessage "  Firmware: $($opengearConfig.System.firmware_version)" -Level Info
-        Write-LogMessage "  Serial Ports: $($opengearConfig.SerialPorts.Count)" -Level Info
-
-        # Test serial port connectivity
-        if ($opengearConfig.SerialPorts) {
-            Write-LogMessage "Testing serial port connectivity..." -Level Info
-            $serialPortResults = Test-SerialPortConnectivity `
-                -OpengearHost $OpengearHost `
-                -SshPort $SshPort `
-                -Credential $Credential `
-                -Ports $opengearConfig.SerialPorts
-        }
-    } else {
-        Write-LogMessage "Could not retrieve Opengear configuration via API" -Level Warning
-    }
-
-    # Generate report
-    if (-not (Test-Path $OutputPath)) {
-        New-Item -Path $OutputPath -ItemType Directory -Force | Out-Null
-    }
-
-    $reportFile = Join-Path $OutputPath "opengear-verification-$(Get-Date -Format 'yyyyMMdd-HHmmss').json"
-    $report = @{
-        Timestamp    = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-        Host         = $OpengearHost
-        Network      = $networkResults
-        System       = $opengearConfig.System
-        SerialPorts  = $serialPortResults
-    }
-    $report | ConvertTo-Json -Depth 10 | Set-Content -Path $reportFile
-    Write-LogMessage "Report saved: $reportFile" -Level Success
-
-    # Summary
-    Write-LogMessage "=" * 60 -Level Info
-    Write-LogMessage "Opengear Verification Complete" -Level Success
-    Write-LogMessage "=" * 60 -Level Info
-
-    $allPassed = $networkResults.Ping -and $networkResults.SSH
-    Write-LogMessage "  Network: $(if($allPassed){'✓ All tests passed'}else{'⚠ Some tests failed'})" -Level $(if($allPassed){'Success'}else{'Warning'})
-    
-    if ($serialPortResults) {
-        $accessiblePorts = ($serialPortResults | Where-Object { $_.Accessible }).Count
-        Write-LogMessage "  Serial Ports: $accessiblePorts / $($serialPortResults.Count) accessible" -Level Info
-    }
-
-    return @{
-        Status           = if($allPassed){'Passed'}else{'Warning'}
-        Network          = $networkResults
-        System           = $opengearConfig.System
-        SerialPorts      = $serialPortResults
-        ReportPath       = $reportFile
-    }
-
-} catch {
-    Write-LogMessage "Opengear verification failed: $_" -Level Error
-    throw
-}
-
-#endregion Main
+$rows = @($rows)
+$rows
+$failed = @($rows | Where-Object Action -EQ 'Failed').Count
+Write-Line "Summary: $(@($rows | Where-Object Action -EQ 'Verified').Count) verified, $(@($rows | Where-Object Action -EQ 'Skipped').Count) skipped, $failed failed."
+if ($failed -gt 0) { exit 1 }
+exit 0

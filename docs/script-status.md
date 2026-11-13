@@ -67,7 +67,7 @@ Azure CLI applies to 58 tasks, does not apply to 50, and is not decided for 8.
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-03-s2s-vpn-connection` | built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-04-p2s-vpn-connection` | built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-05-azure-bastion` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups` | not built | not built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups` | built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-07-nat-gateway` | built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-08-arc-gateway` | built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-09-log-analytics` | not built | not built | yes |
@@ -91,7 +91,7 @@ Azure CLI applies to 58 tasks, does not apply to 50, and is not decided for 8.
 | `phase-02-enterprise-readiness/task-02-network-service-verification` | built | not applicable | no |
 | `phase-02-enterprise-readiness/task-03-opengear-verification` | built | not applicable | no |
 | `phase-02-enterprise-readiness/task-04-validation-signoff` | built | not applicable | no |
-| `phase-03-network-infrastructure/task-01-opengear-console-server` | built | not applicable | no |
+| `phase-03-network-infrastructure/task-01-opengear-console-server` | not built | not applicable | no |
 | `phase-03-network-infrastructure/task-02-dell-powerswitch-configuration` | built | not applicable | no |
 | `phase-03-network-infrastructure/task-03-firewall-endpoint-verification` | built | not applicable | no |
 | `phase-03-network-infrastructure/task-04-network-validation` | built | not applicable | no |

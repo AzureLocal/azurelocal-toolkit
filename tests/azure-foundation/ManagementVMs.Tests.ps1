@@ -97,6 +97,7 @@ Describe 'Deploy-ManagementVMs.ps1' {
             $r = Invoke-Vms (New-InfraFile)
             $r.ExitCode | Should -Be 0 -Because $r.Text
             $r.Rows[0].Action | Should -Be 'Created'
+            $r.Rows[0].Role | Should -Be 'domain_controller'
             Should -Invoke Set-AzContext -Times 1 -Exactly -ParameterFilter { $SubscriptionId -eq $global:AzlVmSub }
             Should -Invoke New-AzNetworkInterface -Times 1 -Exactly -ParameterFilter { $Name -eq 'vm-iic-dc-01-nic' -and $ResourceGroupName -eq 'rg-iic-mgmt-01' -and $Location -eq 'westeurope' -and $SubnetId -eq '/subnet/snet-iic-mgmt-01' -and $PrivateIpAddress -eq '192.0.2.10' }
             Should -Invoke New-AzVMConfig -Times 1 -Exactly -ParameterFilter { $VMName -eq 'vm-iic-dc-01' -and $VMSize -eq 'Standard_D2s_v5' }

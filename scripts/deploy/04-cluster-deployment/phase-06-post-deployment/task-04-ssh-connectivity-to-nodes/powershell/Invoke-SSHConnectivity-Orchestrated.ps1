@@ -7,7 +7,7 @@
 .DESCRIPTION
     Phase 06 — Post-Deployment | Task 04 — SSH Connectivity to Nodes
 
-    For each node in infrastructure.yml:
+    For each machine in nodes[] of infrastructure.yml:
       1. Deploys the WindowsOpenSSH Arc VM extension via az connectedmachine extension create
       2. Registers Microsoft.HybridConnectivity RP (once per subscription)
       3. Creates the HybridConnectivity default endpoint
@@ -18,12 +18,22 @@
 
     No WinRM/PSRemoting required — the Arc agent handles the OpenSSH install.
 
+    The Arc machine of a node is in the resource group azure.resource_group of the subscription azure.subscription_id and is named by
+    nodes[].arc_machine_name (the node name when the file gives none). Steps: Microsoft Learn, SSH access to Azure Arc-enabled servers, and
+    Connect to an Azure Local VM using SSH (the WindowsOpenSSH extension).
+
+    Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
+        azure.subscription_id, azure.resource_group, azure.location
+        nodes[].name, nodes[].arc_machine_name
+
 .PARAMETER ConfigPath
-    Path to infrastructure YAML config. Defaults to config/infrastructure.yml
-    relative to CWD (repo root).
+    Path to infrastructure.yml (schema 5). Defaults to configs\infrastructure.yml relative to the current folder.
+
+.PARAMETER Credential
+    Not used. The script uses the Azure CLI sign-in.
 
 .PARAMETER TargetNode
-    Limit to specific node key names. Empty = all nodes in config.
+    Limit to specific node names (nodes[].name). Empty = all nodes in the file.
 
 .PARAMETER WhatIf
     Log planned actions without making changes.
@@ -37,7 +47,6 @@
 .NOTES
     Run from the repo root.
     Requires: az CLI logged in with Contributor/Owner on the subscription.
-    Requires: powershell-yaml module  (Install-Module powershell-yaml)
 #>
 
 [CmdletBinding()]
@@ -52,6 +61,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
+
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 #region LOGGING -----------------------------------------------------------------
 $scriptShortName = [System.IO.Path]::GetFileNameWithoutExtension($PSCommandPath) -replace '^Invoke-|-Orchestrated$', ''
@@ -86,8 +97,7 @@ if (-not (Test-Path $ConfigPath)) {
 }
 Write-Log "Loading config: $ConfigPath"
 
-Import-Module powershell-yaml -ErrorAction Stop
-$cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+$cfg = Import-AzlInfrastructure -Path $ConfigPath -SkipValidation
 #endregion
 
 #region AZ CLI CHECK ------------------------------------------------------------
@@ -101,11 +111,11 @@ Write-Log "Authenticated — subscription context: $azSub" "PASS"
 #endregion
 
 #region NODE LIST ---------------------------------------------------------------
-$allNodes = @($cfg.compute.cluster_nodes.GetEnumerator())   # compute.cluster_nodes
-
+# nodes[]: the host name and the Arc machine name of each machine.
+$allNodes = @(Get-AzlInfrastructureNode -Infrastructure $cfg)
 
 if ($TargetNode.Count -gt 0) {
-    $allNodes = $allNodes | Where-Object { $_.Key -in $TargetNode }
+    $allNodes = @($allNodes | Where-Object { $_.Name -in $TargetNode })
     Write-Log "Filtered to $($allNodes.Count) node(s): $($TargetNode -join ', ')"
 } else {
     Write-Log "Processing all $($allNodes.Count) node(s) from config"
@@ -114,9 +124,13 @@ if ($allNodes.Count -eq 0) { Write-Log "No matching nodes — exiting" -Level "W
 #endregion
 
 #region HYBRIDCONNECTIVITY RP (once per subscription) ---------------------------
-# Parse subscription from first node's arc_resource_id
-$firstArcId = $allNodes[0].Value.arc_resource_id   # compute.cluster_nodes.<key>.arc_resource_id
-$subId      = ($firstArcId -split '/')[2]
+# The Arc machines are in azure.resource_group of azure.subscription_id.
+$subId   = ([string](Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'azure.subscription_id')).Trim()
+$nodeRg0 = ([string](Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'azure.resource_group')).Trim()
+if (-not $subId -or -not $nodeRg0) {
+    Write-Log "azure.subscription_id and azure.resource_group are needed: the Arc machines of the nodes are there." "FAIL"
+    throw "azure.subscription_id or azure.resource_group is missing in $ConfigPath"
+}
 
 Write-Log "Checking HybridConnectivity RP on subscription: $subId"
 if (-not $WhatIf) {
@@ -140,10 +154,9 @@ if (-not $WhatIf) {
 }
 #endregion
 
-#region GET LOCATION FROM FIRST NODE RESOURCE GROUP ----------------------------
+#region GET LOCATION FROM THE RESOURCE GROUP -----------------------------------
 # az connectedmachine extension create requires --location (must match the Arc machine's region)
-$firstRg = ($firstArcId -split '/')[4]
-$location = az group show --name $firstRg --query location -o tsv 2>$null
+$location = az group show --name $nodeRg0 --query location -o tsv 2>$null
 if (-not $location) { $location = $cfg.azure.location }   # azure.location fallback
 Write-Log "Arc resource region: $location"
 #endregion
@@ -158,6 +171,8 @@ $results = $allNodes | ForEach-Object -Parallel {
     $WhatIf    = $using:WhatIf
     $location  = $using:location
     $SshdPort  = $using:SshdPort
+    $nodeSub   = $using:subId
+    $nodeRg    = $using:nodeRg0
 
     function Write-Log {
         param([string]$Message, [string]$Level = "INFO")
@@ -177,12 +192,8 @@ $results = $allNodes | ForEach-Object -Parallel {
         }
     }
 
-    $arcResourceId = $nodeEntry.Value.arc_resource_id   # compute.cluster_nodes.<key>.arc_resource_id
-    $hostname      = $nodeEntry.Value.hostname           # compute.cluster_nodes.<key>.hostname
-    $arcParts      = $arcResourceId -split '/'
-    $nodeSub       = $arcParts[2]
-    $nodeRg        = $arcParts[4]
-    $machineName   = $arcParts[-1]
+    $hostname    = $nodeEntry.Name             # nodes[].name
+    $machineName = $nodeEntry.ArcMachineName   # nodes[].arc_machine_name, else the node name
 
     Write-Log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     Write-Log "Node: $hostname | Arc machine: $machineName | RG: $nodeRg"

@@ -16,10 +16,7 @@ BeforeDiscovery {
 
     # Files that still read compute.cluster_nodes, each with the reason it was left. An entry goes when the file is fixed: the
     # test for a left file fails once the file no longer reads the old layout.
-    $reason = @{
-        'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1' =
-        'reads the per-node field arc_resource_id (the full Arc machine resource ID); infrastructure.yml has only arc_machine_name'
-    }
+    $reason = @{}
     $files = @(Get-ChildItem -LiteralPath $scripts -Recurse -File | Where-Object { $_.Extension -in '.ps1', '.psm1' })
     # The files to check, as one list: a failure names every file that reads the old layout.
     $script:CodeFile = @($files | Where-Object { -not $reason.ContainsKey((& $rel $_.FullName)) } | ForEach-Object { @{ Path = $_.FullName; Relative = (& $rel $_.FullName) } })

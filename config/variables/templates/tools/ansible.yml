@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that Ansible ('ansible') reads (a strict subset of the master file). Schema 5.6.19.
+# Template for the part of infrastructure.yml that Ansible ('ansible') reads (a strict subset of the master file). Schema 5.6.21.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -65,9 +65,12 @@ cluster:
 # The machines, one entry each.
 # used by: deployment, monitoring
 nodes:
-  # The machine's management port and address (schema 5.0 and 5.1).
-  # used by: ztp, os_configuration
-  - management:
+  # Host name: up to 15 characters.
+  # required; used by: ztp, os_configuration, deployment, monitoring, discovery, trailwright, ansible
+  - name: "iic-azl-n01"
+    # The machine's management port and address (schema 5.0 and 5.1).
+    # used by: ztp, os_configuration
+    management:
       # Management address.
       # required; used by: ztp, os_configuration, deployment, monitoring, trailwright, ansible
       ip_address: "192.0.2.11"
@@ -157,6 +160,27 @@ operations:
     # true when Azure Monitor is part of the design.
     # required; used by: trailwright, ansible
     enabled: true
+
+# Part 2 of the implementation steps: the Azure foundation the instance depends on.
+landing_zone:
+  # Management VMs: domain controllers, jump box, Windows Admin Center, syslog.
+  # used by: terraform, ansible
+  virtual_machines:
+    # Name of the virtual machine.
+    # required; used by: terraform, ansible
+    - name: "vm-iic-dc-01"
+      # Up to 15 letters, digits and hyphens.
+      # used by: terraform, ansible
+      hostname: "iic-dc01"
+      # What the machine is: domain_controller, jumpbox, windows_admin_center, syslog, management or other.
+      # required; one of: domain_controller | jumpbox | windows_admin_center | syslog | management | other; used by: terraform, ansible
+      role: "domain_controller"
+      # Private IPv4 address of the machine.
+      # used by: terraform, ansible
+      private_ip: "10.20.4.10"
+      # (since 5.6.19) 
+      # one of: windows_server_2022 | windows_server_2025 | ubuntu_2404; used by: terraform, ansible
+      os: "windows_server_2025"
 
 # Part 1 of the implementation steps: the pipeline platform, the project and its settings, the environments, the sign-in to Azure and the sel...
 # used by: cicd_infra

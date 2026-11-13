@@ -36,10 +36,7 @@ BeforeDiscovery {
     )
 
     # Files that are not checked, with the reason. Out of scope for the move to schema 5 keys.
-    $script:OutOfScope = @{
-        'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1' =
-        'reads the per-node field arc_resource_id (see tests/deploy-scripts/NodeLayout.Tests.ps1)'
-    }
+    $script:OutOfScope = @{}
 
     # Reads that stay on a removed key, because schema 5 has no key for the value. One entry per file and key; the test for a left
     # read fails once the file no longer reads the key, so the entry goes when the file is fixed.

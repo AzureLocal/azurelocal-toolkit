@@ -154,7 +154,7 @@ foreach ($machine in $machines) {
     $location = if (Get-Entry $network 'location') { Get-Entry $network 'location' } else { $defaultLocation }
     if (-not $location) { Exit-InputProblem "No region: the network '$networkName' has no location and azure.location is empty." }
     $plan.Add([pscustomobject]@{
-            Name = $name; Skip = ''; HostName = $hostName; Network = $networkName; NetworkGroup = $networkGroup; Subnet = $subnetName; PrivateIp = $ip; Size = $size; Os = $os
+            Name = $name; Skip = ''; Role = (Get-Entry $machine 'role'); HostName = $hostName; Network = $networkName; NetworkGroup = $networkGroup; Subnet = $subnetName; PrivateIp = $ip; Size = $size; Os = $os
             User = $user; Reference = $reference; Group = $group; Location = $location; SubscriptionId = $subscriptionId
         })
 }
@@ -177,7 +177,7 @@ $rows = [System.Collections.Generic.List[object]]::new()
 $currentSubscription = ''
 try {
     foreach ($item in $plan) {
-        $row = [ordered]@{ Machine = $item.Name; Action = ''; PrivateIp = ''; Detail = '' }
+        $row = [ordered]@{ Machine = $item.Name; Role = $(if ($item.PSObject.Properties['Role']) { $item.Role } else { '' }); Action = ''; PrivateIp = ''; Detail = '' }
         if ($item.Skip) {
             $row.Action = 'Skipped'; $row.Detail = $item.Skip
             Write-Line "[skip]    $($item.Name): $($item.Skip)."

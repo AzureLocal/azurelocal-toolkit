@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that Terraform ('terraform') reads (a strict subset of the master file). Schema 5.6.19.
+# Template for the part of infrastructure.yml that Terraform ('terraform') reads (a strict subset of the master file). Schema 5.6.21.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -161,6 +161,45 @@ landing_zone:
         # Name of the network security group on the subnet.
         # used by: cicd_infra, terraform
         - network_security_group: ""
+  # (since 5.6.21) 
+  # used by: terraform
+  network_security_groups:
+    # (since 5.6.21) 
+    # required; used by: terraform
+    - name: "nsg-iic-mgmt-01"
+      # (since 5.6.21) 
+      # used by: terraform
+      rules:
+        # (since 5.6.21) 
+        # required; used by: terraform
+        - name: "allow-rdp-from-hub"
+          # (since 5.6.21) 
+          # required; used by: terraform
+          priority: 100
+          # (since 5.6.21) 
+          # required; one of: Inbound | Outbound; used by: terraform
+          direction: "Inbound"
+          # (since 5.6.21) 
+          # required; one of: Allow | Deny; used by: terraform
+          access: "Allow"
+          # (since 5.6.21) 
+          # one of: * | Tcp | Udp | Icmp | Esp | Ah; default: "*"; used by: terraform
+          protocol: "*"
+          # (since 5.6.21) 
+          # used by: terraform
+          source_address_prefixes: ["192.0.2.0/24", "198.51.100.0/24"]
+          # (since 5.6.21) 
+          # used by: terraform
+          source_port_ranges: ["*", "1024-2048"]
+          # (since 5.6.21) 
+          # used by: terraform
+          destination_address_prefixes: ["203.0.113.0/24", "198.51.100.0/24"]
+          # (since 5.6.21) 
+          # required; used by: terraform
+          destination_port_ranges: ["443", "8000-8100"]
+          # (since 5.6.21) 
+          # used by: terraform
+          description: "Allow RDP from the hub network"
   # Gateways, bastion and firewall of the connectivity hub.
   connectivity:
     # The VPN gateway of the hub.
@@ -202,16 +241,16 @@ landing_zone:
       # used by: terraform
       sku: "Standard"
   # Management VMs: domain controllers, jump box, Windows Admin Center, syslog.
-  # used by: terraform
+  # used by: terraform, ansible
   virtual_machines:
     # Name of the virtual machine.
-    # required; used by: terraform
+    # required; used by: terraform, ansible
     - name: "vm-iic-dc-01"
       # Up to 15 letters, digits and hyphens.
-      # used by: terraform
+      # used by: terraform, ansible
       hostname: "iic-dc01"
       # What the machine is: domain_controller, jumpbox, windows_admin_center, syslog, management or other.
-      # required; one of: domain_controller | jumpbox | windows_admin_center | syslog | management | other; used by: terraform
+      # required; one of: domain_controller | jumpbox | windows_admin_center | syslog | management | other; used by: terraform, ansible
       role: "domain_controller"
       # Where the VM runs.
       # one of: azure | azure_local | onprem; used by: terraform
@@ -223,13 +262,13 @@ landing_zone:
       # used by: terraform
       subnet: "snet-iic-mgmt-01"
       # Private IPv4 address of the machine.
-      # used by: terraform
+      # used by: terraform, ansible
       private_ip: "10.20.4.10"
       # Azure VM size, for example Standard_D2s_v5.
       # used by: terraform
       size: "Standard_D2s_v5"
       # (since 5.6.19) 
-      # one of: windows_server_2022 | windows_server_2025 | ubuntu_2404; used by: terraform
+      # one of: windows_server_2022 | windows_server_2025 | ubuntu_2404; used by: terraform, ansible
       os: "windows_server_2025"
       # Local administrator user name of the machine.
       # used by: terraform

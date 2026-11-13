@@ -1,386 +1,214 @@
 <#
 .SYNOPSIS
-    Transfers Azure Local management to customer and validates access.
+    Gives the customer administrator access to the Azure Local resources in Azure and writes the transfer record.
 
 .DESCRIPTION
-    This script handles the customer handover process including:
-    - Creating customer admin accounts
-    - Assigning RBAC roles
-    - Configuring Windows Admin Center access
-    - Generating access documentation
-    - Validating customer access
+    Handover, customer transfer. For the instance that infrastructure.yml describes (cluster.name in the resource group azure.resource_group of
+    the subscription azure.subscription_id) the script:
+      1. looks the customer administrator up in Microsoft Entra ID (by user principal name, then by mail for a guest);
+      2. assigns the Contributor role on the resource group and the Reader role on the subscription, when the administrator does not have them
+         (Microsoft Learn: Assign Azure roles using Azure PowerShell, New-AzRoleAssignment);
+      3. counts the role assignments the administrator now has;
+      4. writes the transfer record: a Markdown page and a JSON file in -OutputPath (when it is given).
 
-.PARAMETER ClusterName
-    Name of the Azure Local cluster.
+    The script no longer touches the cluster nodes: the earlier step that was meant to add the customer administrator to the local
+    Administrators group of every node only printed "manual configuration required", and local access is the customer's decision (a domain
+    group, see identity.active_directory.security_groups). The record says so.
+
+    Idempotent. A role the administrator already has is reported and not assigned again. The script never removes a role assignment.
+    -WhatIf reads Azure and changes nothing, and writes no file.
+
+    The script does not sign in: run Connect-AzAccount to the tenant in azure.tenant_id first, with an account that may create role assignments
+    (Owner or User Access Administrator). It changes the subscription of the session while it works and puts it back.
+
+    Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
+        cluster.name, azure.tenant_id, azure.subscription_id, azure.resource_group, site.customer
+
+    Exit codes: 0 the transfer is in place (assigned now, already there, planned under -WhatIf) and the record is written; 1 an Azure call failed or a
+    precondition failed (not signed in, wrong tenant, Az modules missing, the administrator not found, an assignment failed); 2 a value in the file or
+    a parameter is missing or not usable.
+
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here.
 
 .PARAMETER CustomerTenantId
-    Customer's Azure AD tenant ID.
+    The customer's Microsoft Entra tenant id (a GUID). It is put in the portal link of the record.
 
 .PARAMETER CustomerAdminUPN
-    Customer administrator's User Principal Name.
-
-.PARAMETER AzureSubscriptionId
-    Azure subscription ID.
-
-.PARAMETER ResourceGroup
-    Azure resource group name.
+    The user principal name (or mail address of a guest) of the customer administrator.
 
 .PARAMETER OutputPath
-    Path to save transfer documentation.
+    Optional. The folder for the transfer record (Markdown and JSON). It is created when it does not exist. Without it nothing is written.
+
+.PARAMETER LogPath
+    Optional. Also append the progress lines to this file. Keep it out of the repository.
 
 .EXAMPLE
-    .\Set-CustomerTransfer.ps1 -ClusterName "azl-cluster-01" -CustomerTenantId "xxx" -CustomerAdminUPN "admin@Contoso.com"
+    ./Set-CustomerTransfer.ps1 -InfrastructureFile ./infrastructure.yml -CustomerTenantId <tenant-id> -CustomerAdminUPN admin@improbability.cloud -WhatIf
 
-.NOTES
-    Author: Azure Local Cloud AzureLocalCloud Team
-    Version: 1.0.0
-    Created: 2026-02-01
-    
-    Requires appropriate Azure AD and Azure RBAC permissions.
+    Shows which roles would be assigned and writes nothing.
+
+.EXAMPLE
+    Connect-AzAccount -Tenant <tenant-id>
+    ./Set-CustomerTransfer.ps1 -InfrastructureFile ./infrastructure.yml -CustomerTenantId <tenant-id> -CustomerAdminUPN admin@improbability.cloud -OutputPath ./handover
+
+    Assigns the roles and writes the transfer record. Run it again: the roles are reported as already assigned.
 #>
-
-[CmdletBinding()]
+#Requires -Version 7.0
+[CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$ClusterName,
-
-    [Parameter(Mandatory = $true)]
-    [string]$CustomerTenantId,
-
-    [Parameter(Mandatory = $true)]
-    [string]$CustomerAdminUPN,
-
-    [Parameter(Mandatory = $false)]
-    [string]$AzureSubscriptionId,
-
-    [Parameter(Mandatory = $false)]
-    [string]$ResourceGroup,
-
-    [Parameter(Mandatory = $false)]
-    [string]$OutputPath
+    [Parameter(Mandatory)][string]$InfrastructureFile,
+    [Parameter(Mandatory)][string]$CustomerTenantId,
+    [Parameter(Mandatory)][string]$CustomerAdminUPN,
+    [string]$OutputPath,
+    [string]$LogPath
 )
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$logFile = $LogPath
 
-# Import helpers
-$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$HelpersPath = Join-Path $ScriptRoot "..\..\..\common\utilities\helpers"
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
-if (Test-Path (Join-Path $HelpersPath "logging.ps1")) {
-    . (Join-Path $HelpersPath "logging.ps1")
+$Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
+# The two roles of the transfer: the customer administrator manages the resource group and can read the subscription.
+$ResourceGroupRole = 'Contributor'
+$SubscriptionRole = 'Reader'
+
+function Write-Line([string]$Text) {
+    Write-Information -MessageData $Text -InformationAction Continue
+    if ($logFile) { Add-Content -LiteralPath $logFile -Value ('[{0:yyyy-MM-dd HH:mm:ss}] {1}' -f (Get-Date), $Text) -WhatIf:$false }
 }
-else {
-    function Write-Log {
-        param([string]$Message, [string]$Level = "INFO")
-        $color = switch ($Level) {
-            "INFO" { "White" }; "WARN" { "Yellow" }; "ERROR" { "Red" }; "SUCCESS" { "Green" }
-        }
-        Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message" -ForegroundColor $color
-    }
-}
+function Exit-InputProblem([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 2 }
+function Exit-Failed([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 1 }
+function Get-Text([string]$Path) { ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path $Path)).Trim() }
 
-# Track transfer status
-$TransferStatus = @{
-    Timestamp = Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ"
-    CustomerAdmin = $CustomerAdminUPN
-    Steps = @()
-}
+# ---- the values, from infrastructure.yml only
+try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.Message)" }
 
-function Add-TransferStep {
-    param(
-        [string]$Step,
-        [string]$Status,
-        [string]$Details
-    )
-    
-    $TransferStatus.Steps += @{
-        Step = $Step
-        Status = $Status
-        Details = $Details
-        Timestamp = Get-Date -Format "HH:mm:ss"
-    }
-    
-    $statusLevel = if ($Status -eq "Success") { "SUCCESS" } elseif ($Status -eq "Failed") { "ERROR" } else { "WARN" }
-    Write-Log -Message "$Step : $Status" -Level $statusLevel
-    if ($Details) {
-        Write-Log -Message "  $Details" -Level "INFO"
-    }
-}
+$clusterName = Get-Text 'cluster.name'
+$tenantId = Get-Text 'azure.tenant_id'
+$subscriptionId = Get-Text 'azure.subscription_id'
+$resourceGroup = Get-Text 'azure.resource_group'
+$customer = Get-Text 'site.customer'
 
-function Set-ClusterAdminAccess {
-    Write-Log -Message "Configuring cluster admin access..." -Level "INFO"
-    
-    try {
-        $nodes = Get-ClusterNode -Cluster $ClusterName | Where-Object { $_.State -eq "Up" }
-        
-        foreach ($node in $nodes) {
-            # Add customer admin to local administrators
-            $result = Invoke-Command -ComputerName $node.Name -ScriptBlock {
-                param($adminUPN)
-                
-                try {
-                    # Check if user already exists in local admins
-                    $admins = Get-LocalGroupMember -Group "Administrators" -ErrorAction SilentlyContinue
-                    $exists = $admins | Where-Object { $_.Name -like "*$adminUPN*" }
-                    
-                    if (-not $exists) {
-                        # For domain users, would need proper SID or domain\user format
-                        # This is a simplified example
-                        Write-Output "User needs to be added via domain group policy or AD group"
-                        return @{ Success = $true; Message = "Manual configuration required for domain users" }
-                    }
-                    else {
-                        return @{ Success = $true; Message = "User already has access" }
-                    }
-                }
-                catch {
-                    return @{ Success = $false; Message = $_.Exception.Message }
-                }
-            } -ArgumentList $CustomerAdminUPN -ErrorAction Stop
-            
-            if ($result.Success) {
-                Add-TransferStep -Step "Cluster Admin - $($node.Name)" -Status "Success" -Details $result.Message
-            }
-            else {
-                Add-TransferStep -Step "Cluster Admin - $($node.Name)" -Status "Warning" -Details $result.Message
-            }
-        }
-    }
-    catch {
-        Add-TransferStep -Step "Cluster Admin Access" -Status "Failed" -Details $_.Exception.Message
-    }
+if (-not $clusterName) { Exit-InputProblem 'cluster.name is missing. It is the name of the Azure Local instance that is handed over.' }
+if ($tenantId -notmatch $Guid) { Exit-InputProblem 'azure.tenant_id is missing or is not a GUID. It is the tenant the sign-in must belong to.' }
+if ($subscriptionId -notmatch $Guid -or $subscriptionId -eq [guid]::Empty.ToString()) { Exit-InputProblem 'azure.subscription_id is missing, not a GUID or the all-zero placeholder.' }
+if (-not $resourceGroup) { Exit-InputProblem 'azure.resource_group is missing. The roles are assigned on it.' }
+if ($CustomerTenantId.Trim() -notmatch $Guid) { Exit-InputProblem '-CustomerTenantId is not a GUID.' }
+$admin = $CustomerAdminUPN.Trim()
+if ($admin -notmatch '^[^@\s]+@[^@\s]+$') { Exit-InputProblem '-CustomerAdminUPN is not a user principal name (name@domain).' }
+$CustomerTenantId = $CustomerTenantId.Trim()
+
+# ---- preconditions (read only)
+foreach ($cmd in 'Get-AzContext', 'Set-AzContext', 'Get-AzADUser', 'Get-AzRoleAssignment', 'New-AzRoleAssignment') {
+    if (-not (Get-Command -Name $cmd -ErrorAction SilentlyContinue)) { Exit-Failed "$cmd was not found. Install the Az.Accounts, Az.Resources modules: Install-Module Az.Accounts, Az.Resources -Scope CurrentUser." }
+}
+$context = Get-AzContext
+if (-not $context) { Exit-Failed 'Not signed in to Azure. Run Connect-AzAccount -Tenant <azure.tenant_id>.' }
+if ([string]$context.Tenant.Id -ne $tenantId) { Exit-Failed "Signed in to tenant $($context.Tenant.Id), but azure.tenant_id is $tenantId. Sign in to the right tenant." }
+$originalContext = $context
+
+$steps = [System.Collections.Generic.List[object]]::new()
+function Add-Step([string]$Step, [string]$Status, [string]$Detail = '') {
+    $steps.Add([pscustomobject][ordered]@{ Step = $Step; Status = $Status; Detail = $Detail; Time = (Get-Date -Format 'HH:mm:ss') })
+    $tag = switch ($Status) { 'Failed' { '[failed] ' } 'AlreadyAssigned' { '[exists] ' } 'Skipped' { '[skip]   ' } { $_ -like 'Would*' } { '[plan]   ' } default { '[done]   ' } }
+    Write-Line ("{0}{1}: {2}{3}" -f $tag, $Step, $Status, $(if ($Detail) { " ($Detail)" } else { '' }))
 }
 
-function Set-AzureRbacAccess {
-    if (-not $AzureSubscriptionId -or -not $ResourceGroup) {
-        Write-Log -Message "Skipping Azure RBAC (SubscriptionId and ResourceGroup required)" -Level "INFO"
-        return
-    }
-    
-    Write-Log -Message "Configuring Azure RBAC access..." -Level "INFO"
-    
-    try {
-        Set-AzContext -SubscriptionId $AzureSubscriptionId -ErrorAction Stop | Out-Null
-        
-        # Get the customer user
-        $user = Get-AzADUser -UserPrincipalName $CustomerAdminUPN -ErrorAction SilentlyContinue
-        
-        if (-not $user) {
-            # Try as guest user
-            $user = Get-AzADUser -Filter "mail eq '$CustomerAdminUPN'" -ErrorAction SilentlyContinue
-        }
-        
-        if ($user) {
-            # Assign Azure Stack HCI Administrator role
-            $scope = "/subscriptions/$AzureSubscriptionId/resourceGroups/$ResourceGroup"
-            
-            $existingAssignment = Get-AzRoleAssignment -ObjectId $user.Id -Scope $scope -RoleDefinitionName "Contributor" -ErrorAction SilentlyContinue
-            
-            if (-not $existingAssignment) {
-                New-AzRoleAssignment -ObjectId $user.Id -Scope $scope -RoleDefinitionName "Contributor" -ErrorAction Stop | Out-Null
-                Add-TransferStep -Step "Azure RBAC - Contributor" -Status "Success" -Details "Assigned to $CustomerAdminUPN"
-            }
-            else {
-                Add-TransferStep -Step "Azure RBAC - Contributor" -Status "Success" -Details "Already assigned"
-            }
-            
-            # Also assign Reader at subscription level
-            $subScope = "/subscriptions/$AzureSubscriptionId"
-            $existingSub = Get-AzRoleAssignment -ObjectId $user.Id -Scope $subScope -RoleDefinitionName "Reader" -ErrorAction SilentlyContinue
-            
-            if (-not $existingSub) {
-                New-AzRoleAssignment -ObjectId $user.Id -Scope $subScope -RoleDefinitionName "Reader" -ErrorAction Stop | Out-Null
-                Add-TransferStep -Step "Azure RBAC - Subscription Reader" -Status "Success" -Details "Assigned to subscription"
-            }
-        }
-        else {
-            Add-TransferStep -Step "Azure RBAC" -Status "Warning" -Details "User not found in Azure AD. Invite may be required."
-        }
-    }
-    catch {
-        Add-TransferStep -Step "Azure RBAC" -Status "Failed" -Details $_.Exception.Message
-    }
-}
-
-function Test-CustomerAccess {
-    Write-Log -Message "Validating customer access configuration..." -Level "INFO"
-    
-    $validations = @()
-    
-    # Test Azure access
-    if ($AzureSubscriptionId -and $ResourceGroup) {
-        try {
-            Set-AzContext -SubscriptionId $AzureSubscriptionId | Out-Null
-            
-            $user = Get-AzADUser -UserPrincipalName $CustomerAdminUPN -ErrorAction SilentlyContinue
-            if ($user) {
-                $assignments = Get-AzRoleAssignment -ObjectId $user.Id -ErrorAction SilentlyContinue
-                $validations += @{
-                    Check = "Azure RBAC Assignments"
-                    Status = "Verified"
-                    Details = "$($assignments.Count) role(s) assigned"
-                }
-            }
-        }
-        catch {
-            $validations += @{
-                Check = "Azure RBAC Verification"
-                Status = "Failed"
-                Details = $_.Exception.Message
-            }
-        }
-    }
-    
-    # Provide access URLs
-    $validations += @{
-        Check = "Azure Portal Access"
-        Status = "Ready"
-        Details = "https://portal.azure.com/#@$CustomerTenantId/resource/subscriptions/$AzureSubscriptionId/resourceGroups/$ResourceGroup"
-    }
-    
-    foreach ($v in $validations) {
-        Add-TransferStep -Step $v.Check -Status $v.Status -Details $v.Details
-    }
-}
-
-function New-TransferDocumentation {
-    Write-Log -Message "Generating transfer documentation..." -Level "INFO"
-    
-    $docContent = @"
-# Azure Local Customer Transfer Documentation
-
-**Transfer Date:** $(Get-Date -Format "yyyy-MM-dd")
-**Cluster:** $ClusterName
-**Customer Admin:** $CustomerAdminUPN
-
----
-
-## Access Information
-
-### Azure Portal
-- URL: https://portal.azure.com
-- Subscription: $AzureSubscriptionId
-- Resource Group: $ResourceGroup
-
-### Windows Admin Center
-- Access via Azure Portal > Azure Arc > Azure Local > Manage
-
-### Cluster Direct Access
-- RDP to cluster nodes (requires VPN/Bastion)
-- PowerShell Remoting: `Enter-PSSession -ComputerName <NodeName>`
-
----
-
-## Assigned Permissions
-
-| Resource | Role | Scope |
-|----------|------|-------|
-| Resource Group | Contributor | $ResourceGroup |
-| Subscription | Reader | $AzureSubscriptionId |
-
----
-
-## Transfer Steps Completed
-
-| Step | Status | Details | Time |
-|------|--------|---------|------|
-$(($TransferStatus.Steps | ForEach-Object { "| $($_.Step) | $($_.Status) | $($_.Details) | $($_.Timestamp) |" }) -join "`n")
-
----
-
-## Next Steps for Customer
-
-1. **Verify Azure Portal Access**
-   - Log in to Azure Portal with $CustomerAdminUPN
-   - Navigate to Resource Group: $ResourceGroup
-   - Verify cluster visibility
-
-2. **Configure Additional Users**
-   - Add team members via Azure RBAC
-   - Consider creating Azure AD groups for role-based access
-
-3. **Set Up Alerting**
-   - Configure Azure Monitor alerts for critical events
-   - Set up email/SMS notifications
-
-4. **Schedule Training**
-   - Windows Admin Center navigation
-   - Common operational tasks
-   - Troubleshooting procedures
-
----
-
-## Support Information
-
-| Tier | Contact | SLA |
-|------|---------|-----|
-| L1 Support | Customer IT Team | - |
-| L2 Support | Azure Local Cloud | Per contract |
-| L3 Support | Microsoft | Azure Support Plan |
-
----
-
-*Transfer completed by Azure Local Cloud AzureLocalCloud Team*
-"@
-    
-    if ($OutputPath) {
-        $docPath = Join-Path $OutputPath "Customer-Transfer-$ClusterName-$(Get-Date -Format 'yyyyMMdd').md"
-        $docContent | Set-Content -Path $docPath -Encoding UTF8
-        Write-Log -Message "Transfer documentation: $docPath" -Level "SUCCESS"
-    }
-    
-    # Also save JSON
-    if ($OutputPath) {
-        $jsonPath = Join-Path $OutputPath "Customer-Transfer-$ClusterName-$(Get-Date -Format 'yyyyMMdd').json"
-        $TransferStatus | ConvertTo-Json -Depth 5 | Set-Content -Path $jsonPath -Encoding UTF8
-    }
-}
-
-# Main execution
+Write-Line "Customer transfer of '$clusterName' to $admin"
+$scopeGroup = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroup"
+$scopeSubscription = "/subscriptions/$subscriptionId"
 try {
-    Write-Log -Message "========================================" -Level "INFO"
-    Write-Log -Message "Customer Transfer Process" -Level "INFO"
-    Write-Log -Message "Cluster: $ClusterName" -Level "INFO"
-    Write-Log -Message "Customer Admin: $CustomerAdminUPN" -Level "INFO"
-    Write-Log -Message "========================================" -Level "INFO"
-    Write-Host ""
-    
-    # Create output directory
-    if ($OutputPath -and -not (Test-Path $OutputPath)) {
-        New-Item -Path $OutputPath -ItemType Directory -Force | Out-Null
+    $null = Set-AzContext -SubscriptionId $subscriptionId -Tenant $tenantId -ErrorAction Stop
+
+    $user = $null
+    try { $user = Get-AzADUser -UserPrincipalName $admin -ErrorAction Stop } catch { Write-Verbose "No user with the user principal name: $($_.Exception.Message)" }
+    if (-not $user) {
+        $escaped = $admin.Replace("'", "''")
+        try { $user = Get-AzADUser -Filter "mail eq '$escaped'" -ErrorAction Stop } catch { Write-Verbose "No user with that mail address: $($_.Exception.Message)" }
     }
-    
-    # Execute transfer steps
-    Set-ClusterAdminAccess
-    Write-Host ""
-    
-    Set-AzureRbacAccess
-    Write-Host ""
-    
-    Test-CustomerAccess
-    Write-Host ""
-    
-    New-TransferDocumentation
-    
-    # Summary
-    Write-Host ""
-    Write-Log -Message "========================================" -Level "INFO"
-    
-    $successful = ($TransferStatus.Steps | Where-Object { $_.Status -eq "Success" }).Count
-    $warnings = ($TransferStatus.Steps | Where-Object { $_.Status -eq "Warning" }).Count
-    $failed = ($TransferStatus.Steps | Where-Object { $_.Status -eq "Failed" }).Count
-    
-    Write-Host "Transfer Summary:" -ForegroundColor White
-    Write-Host "  Successful: $successful" -ForegroundColor Green
-    Write-Host "  Warnings: $warnings" -ForegroundColor Yellow
-    Write-Host "  Failed: $failed" -ForegroundColor Red
-    
-    if ($failed -eq 0) {
-        Write-Log -Message "Customer transfer completed successfully" -Level "SUCCESS"
+    $user = @($user) | Select-Object -First 1
+    if (-not $user) {
+        Add-Step 'Customer administrator' 'Failed' "$admin was not found in Microsoft Entra ID. A guest may have to be invited first."
     }
     else {
-        Write-Log -Message "Customer transfer completed with issues" -Level "WARN"
+        Add-Step 'Customer administrator' 'Found' $admin
+        foreach ($assignment in @(@{ Role = $ResourceGroupRole; Scope = $scopeGroup; Where = "resource group $resourceGroup" }, @{ Role = $SubscriptionRole; Scope = $scopeSubscription; Where = 'the subscription' })) {
+            $step = "Azure role $($assignment.Role) on $($assignment.Where)"
+            try {
+                $existing = @(Get-AzRoleAssignment -ObjectId $user.Id -Scope $assignment.Scope -RoleDefinitionName $assignment.Role -ErrorAction Stop)
+                if ($existing.Count -gt 0) { Add-Step $step 'AlreadyAssigned'; continue }
+                if ($PSCmdlet.ShouldProcess("$admin on $($assignment.Scope)", "Assign the role $($assignment.Role)")) {
+                    $null = New-AzRoleAssignment -ObjectId $user.Id -Scope $assignment.Scope -RoleDefinitionName $assignment.Role -ErrorAction Stop
+                    Add-Step $step 'Assigned'
+                }
+                else { Add-Step $step 'WouldAssign' }
+            }
+            catch { Add-Step $step 'Failed' $_.Exception.Message }
+        }
+        try {
+            $all = @(Get-AzRoleAssignment -ObjectId $user.Id -ErrorAction Stop)
+            Add-Step 'Role assignments of the administrator' 'Verified' "$($all.Count) role assignment(s) in the subscription"
+        }
+        catch { Add-Step 'Role assignments of the administrator' 'Failed' $_.Exception.Message }
+    }
+    Add-Step 'Local administrator access on the nodes' 'Skipped' 'Not changed by this script. Give the customer a domain group (identity.active_directory.security_groups) and add it to the local Administrators group.'
+}
+catch { Add-Step 'Azure' 'Failed' $_.Exception.Message }
+finally {
+    if ($originalContext -and $originalContext.PSObject.Properties['Subscription'] -and $originalContext.Subscription -and $originalContext.Subscription.PSObject.Properties['Id']) {
+        try { $null = Set-AzContext -SubscriptionId $originalContext.Subscription.Id -Tenant $tenantId -ErrorAction Stop } catch { Write-Verbose "Could not restore the original subscription context: $($_.Exception.Message)" }
     }
 }
-catch {
-    Write-Log -Message "Customer transfer failed: $_" -Level "ERROR"
-    exit 1
+
+# ---- the transfer record
+$portalLink = "https://portal.azure.com/#@$CustomerTenantId/resource$scopeGroup"
+$stamp = Get-Date -Format 'yyyyMMdd'
+$recordRows = @($steps | ForEach-Object { "| $($_.Step) | $($_.Status) | $($_.Detail) | $($_.Time) |" }) -join "`n"
+$markdown = @"
+# Azure Local customer transfer
+
+- Transfer date: $(Get-Date -Format 'yyyy-MM-dd')
+- Customer: $(if ($customer) { $customer } else { 'not set (site.customer)' })
+- Cluster: $clusterName
+- Customer administrator: $admin
+
+## Access
+
+- Azure portal: $portalLink
+- Subscription: $subscriptionId
+- Resource group: $resourceGroup
+
+## Assigned roles
+
+| Role | Scope |
+| --- | --- |
+| $ResourceGroupRole | resource group $resourceGroup |
+| $SubscriptionRole | subscription $subscriptionId |
+
+## Steps
+
+| Step | Status | Details | Time |
+| --- | --- | --- | --- |
+$recordRows
+"@
+$record = [ordered]@{ Timestamp = (Get-Date -Format 'yyyy-MM-ddTHH:mm:ssZ'); Customer = $customer; Cluster = $clusterName; CustomerAdmin = $admin; PortalLink = $portalLink; Steps = @($steps) }
+
+if ($OutputPath) {
+    if ($PSCmdlet.ShouldProcess($OutputPath, 'Write the transfer record')) {
+        $null = New-Item -Path $OutputPath -ItemType Directory -Force
+        $name = "Customer-Transfer-$clusterName-$stamp"
+        Set-Content -LiteralPath (Join-Path $OutputPath "$name.md") -Value $markdown -Encoding UTF8
+        Set-Content -LiteralPath (Join-Path $OutputPath "$name.json") -Value ($record | ConvertTo-Json -Depth 6) -Encoding UTF8
+        Write-Line "[done]    Transfer record written to $OutputPath ($name.md and $name.json)."
+    }
+    else { Write-Line "[plan]    The transfer record would be written to $OutputPath." }
 }
+
+$steps
+$failed = @($steps | Where-Object Status -EQ 'Failed').Count
+Write-Line "Summary: $(@($steps | Where-Object Status -In 'Assigned', 'AlreadyAssigned', 'Found', 'Verified').Count) done, $(@($steps | Where-Object Status -EQ 'Skipped').Count) skipped, $failed failed."
+if ($failed -gt 0) { exit 1 }
+exit 0

@@ -171,7 +171,7 @@ Describe 'Each registered variable says where it comes from' {
             if ($cls -eq 'd' -and -not $n.Contains('out_of_scope')) { "$($e.Path): class d without out_of_scope" }
             if ($src -in 'secret', 'runtime' -and $n.Contains('default') -and (ConvertTo-ComparableDefault $n['default']) -ne '') { "$($e.Path): a secret or run-time variable has a default value" }
             if (-not $n.Contains('target')) { "$($e.Path): no target" }
-            elseif ($n['target'] -notin 'tfvars', 'backend_hcl', 'group_vars', 'host_vars', 'none') { "$($e.Path): target '$($n['target'])'" }
+            elseif ($n['target'] -notin 'tfvars', 'backend_hcl', 'group_vars', 'host_vars', 'inventory', 'none') { "$($e.Path): target '$($n['target'])'" }
         }
         @($problems) | Should -BeNullOrEmpty
     }
@@ -229,7 +229,7 @@ Describe 'Each registered variable says where it comes from' {
 Describe 'The generator, run on the example file' {
     It 'finishes with exit code 0 and writes every file' {
         $script:RunResult.Exit | Should -Be 0 -Because $script:RunResult.Output
-        foreach ($rel in 'terraform\azure-local\terraform.tfvars.json', 'terraform\azure-local\backend.hcl', 'terraform\backend\terraform.tfvars.json', 'terraform\cicd-infra\terraform.tfvars.json', 'terraform\cicd-infra\backend.hcl', 'ansible\inventory\group_vars\all.yml') {
+        foreach ($rel in 'terraform\azure-local\terraform.tfvars.json', 'terraform\azure-local\backend.hcl', 'terraform\backend\terraform.tfvars.json', 'terraform\cicd-infra\terraform.tfvars.json', 'terraform\cicd-infra\backend.hcl', 'ansible\inventory\group_vars\all.yml', 'ansible\inventory\hosts.yml') {
             Join-Path $script:Run $rel | Should -Exist
         }
         @(Get-ChildItem (Join-Path $script:Run 'ansible\inventory\host_vars') -Filter *.yml).Count | Should -Be 2
@@ -316,6 +316,72 @@ Describe 'The generator, run on the example file' {
         $generated = (Get-Content (Join-Path $script:Run 'ansible\inventory\group_vars\all.yml') -Raw).Replace("`r`n", "`n")
         $committed = (Get-Content (Join-Path $script:Repo 'src\ansible\inventory\group_vars\all.yml') -Raw).Replace("`r`n", "`n")
         $committed | Should -BeExactly $generated
+    }
+
+    It 'writes the Ansible inventory: the nodes and the Windows machines with their addresses, in the groups of the playbooks, and the connection settings from the registry' {
+        $inventory = ConvertFrom-Yaml (Get-Content (Join-Path $script:Run 'ansible\inventory\hosts.yml') -Raw)
+        $children = $inventory.all.children
+        @($children.cluster_nodes.hosts.Keys | Sort-Object) | Should -Be @('iic-azl-n01', 'iic-azl-n02')
+        $children.cluster_nodes.hosts['iic-azl-n01'].ansible_host | Should -Be '192.0.2.11'
+        $children.domain_controllers.hosts['iic-dc01'].ansible_host | Should -Match '^\d+\.\d+\.\d+\.\d+$'
+        @($children.windows.children.Keys) | Should -Contain 'cluster_nodes'
+        $children.windows.vars.ansible_connection | Should -Be 'winrm'
+        $children.windows.vars.ansible_winrm_transport | Should -Be 'kerberos'
+        $children.windows.vars.ansible_winrm_server_cert_validation | Should -Be 'ignore'
+        $children.windows.vars.ansible_port | Should -Be 5986
+        $children.windows.vars.ansible_port | Should -BeOfType [int]
+        (Get-Content (Join-Path $script:Run 'ansible\inventory\hosts.yml') -Raw) | Should -Not -Match 'password|secret|keyvault://'
+    }
+
+    It 'leaves a Linux machine out of the inventory and says so, and refuses a machine with no address' {
+        $text = [IO.File]::ReadAllText($script:Example)
+        $withLinux = $text -replace '(?m)^(\s+)os: "windows_server_2025"(.*)$', '$1os: ubuntu_2404$2'
+        $withLinux | Should -Not -Be $text   # the example has a Windows machine to turn into a Linux one
+        if ($true) {
+            $file = Join-Path $TestDrive 'linux.yml'
+            Set-Content -LiteralPath $file -Value $withLinux
+            $out = Join-Path $TestDrive 'linux'
+            $r = Invoke-Generator -InfrastructureFile $file -OutputDirectory $out -Argument @('-Target', 'Ansible')
+            $r.Exit | Should -Be 0 -Because $r.Output
+            (Get-Content (Join-Path $out 'ansible\inventory\hosts.yml') -Raw) | Should -Match 'Not listed \(Linux'
+        }
+        $noAddress = $text -replace '(?m)^(\s+)private_ip: .*$', ''
+        $file2 = Join-Path $TestDrive 'noaddress.yml'
+        Set-Content -LiteralPath $file2 -Value $noAddress
+        $out2 = Join-Path $TestDrive 'noaddress'
+        $r2 = Invoke-Generator -InfrastructureFile $file2 -OutputDirectory $out2 -Argument @('-Target', 'Ansible')
+        $r2.Exit | Should -Be 2 -Because $r2.Output
+        $r2.Output | Should -Match 'private_ip'
+        Test-Path $out2 | Should -BeFalse
+    }
+
+    It 'writes landing_zone.network_security_groups[] as the Terraform variable nsgs, one value in each rule field, and refuses a rule with a list of several' {
+        $doc = ConvertFrom-Yaml ([IO.File]::ReadAllText($script:Example)) -Ordered
+        $rule = [ordered]@{ name = 'allow-rdp'; priority = 100; direction = 'Inbound'; access = 'Allow'; protocol = 'Tcp'; source_address_prefixes = @('192.0.2.0/24'); destination_port_ranges = @('3389') }
+        $doc.landing_zone.network_security_groups = @([ordered]@{ name = 'nsg-iic-mgmt-01'; rules = @($rule) })
+        $file = Join-Path $TestDrive 'nsg.yml'
+        Set-Content -LiteralPath $file -Value (ConvertTo-Yaml $doc)
+        $out = Join-Path $TestDrive 'nsg'
+        $r = Invoke-Generator -InfrastructureFile $file -OutputDirectory $out -Argument @('-Target', 'AzureLocal')
+        $r.Exit | Should -Be 0 -Because $r.Output
+        $json = Get-Content (Join-Path $out 'terraform\azure-local\terraform.tfvars.json') -Raw | ConvertFrom-Json -AsHashtable
+        @($json.nsgs).Count | Should -Be 1
+        $json.nsgs[0].name | Should -Be 'nsg-iic-mgmt-01'
+        $json.nsgs[0].rules[0].source_address_prefix | Should -Be '192.0.2.0/24'
+        $json.nsgs[0].rules[0].destination_port_range | Should -Be '3389'
+        $json.nsgs[0].rules[0].source_port_range | Should -Be '*'
+        $json.nsgs[0].rules[0].destination_address_prefix | Should -Be '*'
+        $json.nsgs[0].rules[0].priority | Should -Be 100
+
+        $rule.destination_port_ranges = @('3389', '443')
+        $doc.landing_zone.network_security_groups = @([ordered]@{ name = 'nsg-iic-mgmt-01'; rules = @($rule) })
+        $file2 = Join-Path $TestDrive 'nsg2.yml'
+        Set-Content -LiteralPath $file2 -Value (ConvertTo-Yaml $doc)
+        $out2 = Join-Path $TestDrive 'nsg2'
+        $r2 = Invoke-Generator -InfrastructureFile $file2 -OutputDirectory $out2 -Argument @('-Target', 'AzureLocal')
+        $r2.Exit | Should -Be 2 -Because $r2.Output
+        $r2.Output | Should -Match 'destination_port_ranges lists 2 values'
+        Test-Path $out2 | Should -BeFalse
     }
 
     It 'plans and writes nothing under -WhatIf' {

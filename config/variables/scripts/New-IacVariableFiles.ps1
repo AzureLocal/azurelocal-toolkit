@@ -11,6 +11,7 @@
         <OutputDirectory>/terraform/azure-local/terraform.tfvars.json   and backend.hcl
         <OutputDirectory>/terraform/backend/terraform.tfvars.json
         <OutputDirectory>/terraform/cicd-infra/terraform.tfvars.json    and backend.hcl
+        <OutputDirectory>/ansible/inventory/hosts.yml
         <OutputDirectory>/ansible/inventory/group_vars/all.yml
         <OutputDirectory>/ansible/inventory/host_vars/<node>.yml
 
@@ -35,7 +36,8 @@
     landing_zone.* (management_groups[], subscriptions[], resource_groups[], networks[], connectivity, virtual_machines[]),
     operations.monitoring.*, operations.notifications.emails, security.defender_for_cloud.security_contact_email, devops.*,
     identity.active_directory.*, networking.management.*, networking.ntp_servers, networking.outbound.*, scenario.outbound_path,
-    cluster.name, nodes[].name, nodes[].management.ip_address, nodes[].management.adapter_name.
+    cluster.name, nodes[].name, nodes[].management.ip_address, nodes[].management.adapter_name, landing_zone.virtual_machines[] (name, hostname,
+    role, private_ip, os: the machines of the Ansible inventory).
 
     Exit codes: 0 every file is written, unchanged or planned under -WhatIf, or there was nothing to write; 1 a precondition failed
     (the registry or a module cannot be read, a file cannot be written); 2 a value in the file is missing or not usable, or the
@@ -75,7 +77,7 @@
 .EXAMPLE
     ./New-IacVariableFiles.ps1 -InfrastructureFile ./infrastructure.yml -OutputDirectory D:\work\iac -Target Ansible
 
-    Writes group_vars/all.yml and host_vars/<node>.yml only.
+    Writes hosts.yml, group_vars/all.yml and host_vars/<node>.yml only.
 #>
 [CmdletBinding(SupportsShouldProcess)]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Every form is a scriptblock called with the same three arguments (entry, file, context); most forms use some of them.')]
@@ -183,6 +185,42 @@ $script:Forms = [ordered]@{
             $map[$key] = [ordered]@{ name = $name; address_prefix = $prefix }
         }
         [pscustomobject]@{ Found = ($map.Count -gt 0); Value = $map }
+    }
+    # landing_zone.network_security_groups[] as the Terraform variable nsgs: the module takes ONE value in each address and port field of a rule
+    # (source_address_prefix, source_port_range, destination_address_prefix, destination_port_range), the file takes lists. A list with more than one value is an error.
+    nsgs                = {
+        param($Entry, $Infra, $Ctx)
+        $v = Get-KeyValue $Infra $Entry.Keys[0]
+        if (-not $v.Found) { return [pscustomobject]@{ Found = $false; Value = $null } }
+        $out = [System.Collections.Generic.List[object]]::new()
+        $gi = -1
+        foreach ($group in @($v.Value)) {
+            $gi++
+            if ($group -isnot [System.Collections.IDictionary]) { continue }
+            $rules = [System.Collections.Generic.List[object]]::new()
+            $ri = -1
+            $rawRules = if ($group.Contains('rules')) { $group['rules'] } else { $null }
+            foreach ($rule in @($rawRules)) {
+                $ri++
+                if ($rule -isnot [System.Collections.IDictionary]) { continue }
+                $one = [ordered]@{}
+                foreach ($pair in @(@('source_address_prefixes', 'source_address_prefix', '*'), @('source_port_ranges', 'source_port_range', '*'), @('destination_address_prefixes', 'destination_address_prefix', '*'), @('destination_port_ranges', 'destination_port_range', ''))) {
+                    $list = @(if ($rule.Contains($pair[0])) { @($rule[$pair[0]]) | Where-Object { $null -ne $_ -and "$_" -ne '' } | ForEach-Object { [string]$_ } })
+                    if ($list.Count -gt 1) { $Ctx.Errors.Add("landing_zone.network_security_groups[$gi].rules[$ri].$($pair[0]) lists $($list.Count) values. The Terraform module takes one: split the rule, or use New-LandingZoneNsg.ps1."); continue }
+                    $one[$pair[1]] = if ($list.Count -eq 1) { $list[0] } else { $pair[2] }
+                }
+                if (-not $one['destination_port_range']) { $Ctx.Errors.Add("landing_zone.network_security_groups[$gi].rules[$ri].destination_port_ranges is missing."); continue }
+                $protocol = Get-IacText $(if ($rule.Contains('protocol')) { $rule['protocol'] })
+                $rules.Add([ordered]@{
+                        name = Get-IacText $rule['name']; priority = [int]$rule['priority']; direction = Get-IacText $rule['direction']; access = Get-IacText $rule['access']
+                        protocol = $(if ($protocol) { $protocol } else { '*' })
+                        source_address_prefix = $one['source_address_prefix']; destination_port_range = $one['destination_port_range']
+                        source_port_range = $one['source_port_range']; destination_address_prefix = $one['destination_address_prefix']
+                    })
+            }
+            $out.Add([ordered]@{ name = Get-IacText $group['name']; rules = $rules.ToArray() })
+        }
+        [pscustomobject]@{ Found = ($out.Count -gt 0); Value = $out.ToArray() }
     }
     nsg_subnet_map      = {
         param($Entry, $Infra, $Ctx)
@@ -446,6 +484,60 @@ function Add-TerraformEnvironment([string]$TargetName, [string]$AreaSuffix, [str
     if ($nw.Count) { Add-File $TargetName "terraform/$Folder/not-written.txt" ((($nw -join "`n") + "`n")) }
 }
 
+# The Ansible inventory (inventory/hosts.yml): the machines of the file in the groups the playbooks use, and how Ansible connects to the Windows ones.
+#   cluster_nodes      nodes[]                                                   ansible_host: the management address of the node
+#   domain_controllers landing_zone.virtual_machines[] with role domain_controller   ansible_host: private_ip
+#   management         the other landing_zone.virtual_machines[]                 ansible_host: private_ip
+#   windows            all three groups, with the connection settings of the registry (tools.ansible.variables, target inventory)
+# A Linux machine (os ubuntu_2404) is left out: the connection settings are WinRM. The file says how many.
+function Add-AnsibleInventory([object[]]$GroupEntries) {
+    $connection = [ordered]@{}
+    foreach ($e in @($GroupEntries | Where-Object { $_.Target -eq 'inventory' })) { $connection[$e.Name] = if ($e.Type -eq 'integer') { [int]$e.Default } else { [string]$e.Default } }
+    $groups = [ordered]@{ domain_controllers = [ordered]@{}; management = [ordered]@{}; cluster_nodes = [ordered]@{} }
+    $owner = @{}
+    $left = [System.Collections.Generic.List[string]]::new()
+    $hostPattern = '^[A-Za-z0-9][A-Za-z0-9._-]*$'
+    $index = -1
+    foreach ($node in @(Get-AzlInfrastructureNode -Infrastructure $infra)) {
+        $index++
+        if ($node.Name -notmatch $hostPattern) { $ctx.Errors.Add("nodes[$index].name '$($node.Name)' is not usable as a host name."); continue }
+        if ($owner.ContainsKey($node.Name.ToLowerInvariant())) { $ctx.Errors.Add("nodes[$index].name '$($node.Name)' is listed twice."); continue }
+        $owner[$node.Name.ToLowerInvariant()] = 'nodes'
+        if (-not $node.ManagementIp) { $ctx.Errors.Add("nodes[$index]: '$($node.Name)' has no management address (nodes[].management.ip_address), which is its ansible_host."); continue }
+        $groups.cluster_nodes[$node.Name] = [ordered]@{ ansible_host = $node.ManagementIp }
+    }
+    $machines = Get-KeyValue $infra 'landing_zone.virtual_machines'
+    $index = -1
+    foreach ($machine in @(if ($machines.Found) { $machines.Value })) {
+        $index++
+        if ($machine -isnot [System.Collections.IDictionary]) { continue }
+        $name = Get-IacText $machine['name']
+        $hostName = if (Get-IacText $machine['hostname']) { Get-IacText $machine['hostname'] } else { $name }
+        if ($hostName -notmatch $hostPattern) { $ctx.Errors.Add("landing_zone.virtual_machines[$index]: the name '$hostName' is missing or is not usable as a host name."); continue }
+        if ((Get-IacText $machine['os']) -eq 'ubuntu_2404') { $left.Add($hostName); continue }
+        if ($owner.ContainsKey($hostName.ToLowerInvariant())) { $ctx.Errors.Add("landing_zone.virtual_machines[$index]: the host name '$hostName' is already used by $($owner[$hostName.ToLowerInvariant()])."); continue }
+        $owner[$hostName.ToLowerInvariant()] = 'landing_zone.virtual_machines'
+        $address = Get-IacText $machine['private_ip']
+        if (-not $address) { $ctx.Errors.Add("landing_zone.virtual_machines[$index]: '$hostName' has no private_ip, which is its ansible_host."); continue }
+        $group = if ((Get-IacText $machine['role']) -eq 'domain_controller') { 'domain_controllers' } else { 'management' }
+        $groups[$group][$hostName] = [ordered]@{ ansible_host = $address }
+    }
+    $filled = @($groups.Keys | Where-Object { $groups[$_].Count -gt 0 })
+    if ($filled.Count -eq 0) { $skipped.Add('ansible/inventory/hosts.yml: the file lists no node and no Windows virtual machine.'); return }
+    $children = [ordered]@{}
+    foreach ($g in $filled) { $children[$g] = [ordered]@{ hosts = $groups[$g] } }
+    $windowsChildren = [ordered]@{}
+    foreach ($g in $filled) { $windowsChildren[$g] = [ordered]@{} }
+    $windows = [ordered]@{ children = $windowsChildren }
+    if ($connection.Count) { $windows.vars = $connection }
+    $children.windows = $windows
+    $text = "# Written by config/variables/scripts/New-IacVariableFiles.ps1 from nodes[] and landing_zone.virtual_machines[] of infrastructure.yml. Do not edit.`n"
+    $text += "# ansible_host is the management address of a node and the private_ip of a virtual machine. The connection settings of the windows group are settings of the code (tools.ansible.variables).`n"
+    if ($left.Count) { $text += "# Not listed (Linux, connected by SSH, which this file does not set up): $($left -join ', ').`n" }
+    $text += (ConvertTo-Yaml ([ordered]@{ all = [ordered]@{ children = $children } })).TrimEnd() + "`n"
+    Add-File 'Ansible' 'ansible/inventory/hosts.yml' $text
+}
+
 foreach ($t in $Target) {
     switch ($t) {
         'AzureLocal' {
@@ -491,6 +583,7 @@ foreach ($t in $Target) {
             $nw = @(Get-NotWritten -GroupEntries $group -Kind 'group_vars')
             if ($nw.Count) { [void]$sb.Append("`n"); foreach ($l in $nw) { [void]$sb.Append("# $l`n") } }
             Add-File 'Ansible' 'ansible/inventory/group_vars/all.yml' $sb.ToString()
+            Add-AnsibleInventory $group
             # host_vars: one file for each node
             $hostEntries = @($group | Where-Object { $_.Target -eq 'host_vars' })
             $nodes = Get-KeyValue $infra 'nodes'

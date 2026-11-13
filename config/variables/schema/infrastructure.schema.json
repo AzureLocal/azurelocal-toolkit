@@ -16,7 +16,7 @@
       "additionalProperties": false,
       "properties": {
         "schema_version": {
-          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. 5.6.11 adds what the logical network, network security group and VM image scripts read: networking.network_security_groups (name and rules with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description), networking.logical_networks[].vm_switch_name and storage.vm_images (name, os_type, publisher, offer, sku, version, storage_path). 5.6.12 adds operations.monitoring.retention_days and removes operations.notifications.teams_webhook and operations.monitoring.health_alerts. 5.6.13 adds the secrets section (provider, file directory, command) and lets a secret reference use the env://, file:// and command:// forms besides keyvault://. 5.6.14 adds hardware.inventory (output_directory, file_name_prefix, format, timeout_seconds), which Get-HardwareInventory.ps1 reads. 5.6.15 adds what Enable-ArcSdn.ps1 reads: sdn.acknowledge_maintenance_window and sdn.acknowledge_dns_record, the rules of sdn.prefix, and sdn.dns_records (read now); it removes sdn.default_access_policy. 5.6.16 adds storage.san.luns[].unique_id (how New-SanVolume.ps1 finds the disk of a LUN) and removes security.backup_key_vault. 5.6.17 adds landing_zone.management_groups[].role and azure.automation_identity.object_id (the two keys the Terraform landing zone and identity modules need) and makes the Terraform and Ansible code readers of the file (New-IacVariableFiles.ps1). 5.6.19 adds provisioning.iso.image_uri (the address Invoke-MountGoldImageISO.ps1 gives the BMC virtual media), landing_zone.subscriptions[].billing_scope and workload, point_to_site.protocols, root_certificate_name and root_certificate, bastion.network and the nat_gateway object of landing_zone.connectivity, and a list of values for landing_zone.virtual_machines[].os. The current version is 5.6.19.",
+          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. 5.6.11 adds what the logical network, network security group and VM image scripts read: networking.network_security_groups (name and rules with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description), networking.logical_networks[].vm_switch_name and storage.vm_images (name, os_type, publisher, offer, sku, version, storage_path). 5.6.12 adds operations.monitoring.retention_days and removes operations.notifications.teams_webhook and operations.monitoring.health_alerts. 5.6.13 adds the secrets section (provider, file directory, command) and lets a secret reference use the env://, file:// and command:// forms besides keyvault://. 5.6.14 adds hardware.inventory (output_directory, file_name_prefix, format, timeout_seconds), which Get-HardwareInventory.ps1 reads. 5.6.15 adds what Enable-ArcSdn.ps1 reads: sdn.acknowledge_maintenance_window and sdn.acknowledge_dns_record, the rules of sdn.prefix, and sdn.dns_records (read now); it removes sdn.default_access_policy. 5.6.16 adds storage.san.luns[].unique_id (how New-SanVolume.ps1 finds the disk of a LUN) and removes security.backup_key_vault. 5.6.17 adds landing_zone.management_groups[].role and azure.automation_identity.object_id (the two keys the Terraform landing zone and identity modules need) and makes the Terraform and Ansible code readers of the file (New-IacVariableFiles.ps1). 5.6.19 adds provisioning.iso.image_uri (the address Invoke-MountGoldImageISO.ps1 gives the BMC virtual media), landing_zone.subscriptions[].billing_scope and workload, point_to_site.protocols, root_certificate_name and root_certificate, bastion.network and the nat_gateway object of landing_zone.connectivity, and a list of values for landing_zone.virtual_machines[].os. 5.6.21 adds landing_zone.network_security_groups[] (the network security groups of the Azure landing zone networks: name and rules, created by New-LandingZoneNsg.ps1) and security.baseline_settings[] (type, name, value and acknowledge_weaker_security of the security baseline settings that Set-SecurityBaselines.ps1 changes with Set-AzsSecurity). The current version is 5.6.21.",
           "type": "string",
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
@@ -2979,6 +2979,58 @@
           "description": "true turns Windows Defender Application Control on.",
           "type": "boolean"
         },
+        "baseline_settings": {
+          "description": "Schema 5.6.21. Individual security baseline settings to change after the deployment, by Set-AzsSecurity (Azure Local 2610 or later). Drift control stays on and protects the value you set instead of the baseline value. Set-SecurityBaselines.ps1 (stage 05, phase 04, task 03) applies each entry to the whole instance (-Cluster, the way Microsoft Learn recommends: the change is recorded as cluster policy intent and survives solution updates). Only Set-AzsSecurity may change these settings: Group Policy or the registry is not supported and drift control reverts it. Some settings cannot be changed at all (Learn lists them); the script refuses them. The names come from the security baseline CSV of your version (the Name column), which Learn links under View and download security settings. Empty or missing: the script does nothing.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type": {
+                "description": "Schema 5.6.21. The policy type that owns the setting (the -Type parameter of Set-AzsSecurity): SecuritySettings (the OS security baseline: registry, security policy, audit policy and user rights settings; most changes), SecuredCore (virtualization-based security, hypervisor-enforced code integrity, System Guard launch) or DefenderAntivirus (Microsoft Defender Antivirus configuration).",
+                "type": "string",
+                "enum": [
+                  "SecuritySettings",
+                  "SecuredCore",
+                  "DefenderAntivirus"
+                ]
+              },
+              "name": {
+                "description": "Schema 5.6.21. The name of the setting exactly as the Name column of the security baseline CSV writes it (-SettingName); the cmdlet does not complete or correct names. For example LanmanWorkstationEnableInsecureGuestLogons.",
+                "type": "string",
+                "minLength": 1
+              },
+              "value": {
+                "description": "Schema 5.6.21. The value to set: a string, an integer (sent as a string) or a list of strings. What a setting accepts is in the baseline CSV; the cmdlet rejects a value it cannot use.",
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    },
+                    "minItems": 1
+                  }
+                ]
+              },
+              "acknowledge_weaker_security": {
+                "description": "Schema 5.6.21. true confirms that you understand a change that weakens the security posture, for the few settings where Set-AzsSecurity shows a warning and asks (the script then passes -Force, together with -Confirm:$false, as Learn describes for unattended use). false or missing: such a setting is not changed and is reported as Failed with the cmdlet's warning. Blocked settings cannot be changed with it.",
+                "type": "boolean",
+                "default": false
+              }
+            },
+            "required": [
+              "type",
+              "name",
+              "value"
+            ]
+          }
+        },
         "defender_for_cloud": {
           "description": "The free level of Microsoft Defender for Cloud that Azure Local needs to show its security settings in the Azure portal. Enable-DefenderForCloud.ps1 reads it. No paid plan is turned on by any key of this file.",
           "type": "object",
@@ -3186,7 +3238,7 @@
           "additionalProperties": false,
           "properties": {
             "azure_hybrid_benefit": {
-              "description": "Azure Hybrid Benefit for the host fee and Windows Server guests. Not read by the tools yet: a documented placeholder.",
+              "description": "true to activate Azure Hybrid Benefit for Azure Local on the instance: it waives the Azure Local host service fee for an instance whose physical cores are covered by Windows Server Datacenter licenses with active Software Assurance. Enable-AzureHybridBenefit.ps1 (stage 05, phase 05, task 01) activates it with Invoke-AzStackHciExtendClusterSoftwareAssuranceBenefit. Activation cannot be undone, and Learn supports it only for hyperconverged instances with cloud connected management and no external storage, so the script refuses scenario.storage_architecture san or hybrid and scenario.connectivity disconnected. false or missing: the script does nothing; it never turns the benefit off.",
               "type": "boolean"
             },
             "windows_server_subscription": {
@@ -4224,6 +4276,122 @@
             "required": [
               "name",
               "address_space"
+            ]
+          }
+        },
+        "network_security_groups": {
+          "description": "Schema 5.6.21. Network security groups (NSG) of the Azure landing zone networks, with their rules. A subnet names its group in landing_zone.networks[].subnets[].network_security_group; New-LandingZoneNsg.ps1 (phase 04, manual deployment, task 06) creates each group listed here in the subscription, resource group and region of every network whose subnets name it (Deploy-VirtualNetworks.ps1 looks the group up there and attaches it), and adds the rules that are missing. A group that no subnet names is not created. These are Azure virtual network groups, not the Azure Local groups of networking.network_security_groups.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "description": "Schema 5.6.21. Name of the network security group, 1 to 80 characters: letters, digits, underscore, period and hyphen; it starts with a letter or digit and ends with a letter, digit or underscore. It cannot be changed afterwards.",
+                "type": "string",
+                "pattern": "^[A-Za-z0-9]([A-Za-z0-9._-]{0,78}[A-Za-z0-9_])?$"
+              },
+              "rules": {
+                "description": "Schema 5.6.21. The security rules of the group. A group with no rules has only the default rules Azure adds (Microsoft Learn, Azure network security groups overview). The script adds the rules that are missing; a rule that exists with the same name is left alone and, when it differs from the file, reported. It never removes or changes a rule.",
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "description": "Schema 5.6.21. Name of the rule, 1 to 80 characters, with the same characters as the group name. Unique inside the group.",
+                      "type": "string",
+                      "pattern": "^[A-Za-z0-9]([A-Za-z0-9._-]{0,78}[A-Za-z0-9_])?$"
+                    },
+                    "priority": {
+                      "description": "Schema 5.6.21. Priority of the rule, 100 to 4096. A lower number is processed first. Two rules of a group cannot have the same priority and direction (Microsoft Learn, Azure network security groups overview).",
+                      "type": "integer",
+                      "minimum": 100,
+                      "maximum": 4096
+                    },
+                    "direction": {
+                      "description": "Schema 5.6.21. Whether the rule applies to incoming (Inbound) or outgoing (Outbound) traffic.",
+                      "type": "string",
+                      "enum": [
+                        "Inbound",
+                        "Outbound"
+                      ]
+                    },
+                    "access": {
+                      "description": "Schema 5.6.21. Allow or Deny the traffic the rule matches.",
+                      "type": "string",
+                      "enum": [
+                        "Allow",
+                        "Deny"
+                      ]
+                    },
+                    "protocol": {
+                      "description": "Schema 5.6.21. Protocol the rule matches: * (any, the default), Tcp, Udp, Icmp, Esp or Ah (New-AzNetworkSecurityRuleConfig -Protocol).",
+                      "type": "string",
+                      "default": "*",
+                      "enum": [
+                        "*",
+                        "Tcp",
+                        "Udp",
+                        "Icmp",
+                        "Esp",
+                        "Ah"
+                      ]
+                    },
+                    "source_address_prefixes": {
+                      "description": "Schema 5.6.21. Source the rule matches: * (any, the default), IPv4 addresses or ranges in CIDR form, or one service tag such as VirtualNetwork or Internet (a rule takes only one service tag, and a service tag cannot be mixed with addresses). A list.",
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "string",
+                        "pattern": "^(\\*|((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(/([0-9]|[12][0-9]|3[0-2]))?|[A-Za-z][A-Za-z0-9.]*)$"
+                      }
+                    },
+                    "source_port_ranges": {
+                      "description": "Schema 5.6.21. Source ports the rule matches: * (any, the default), a port or a range such as 1024-2048, each from 0 to 65535. A list.",
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "string",
+                        "pattern": "^(\\*|[0-9]{1,5}(-[0-9]{1,5})?)$"
+                      }
+                    },
+                    "destination_address_prefixes": {
+                      "description": "Schema 5.6.21. Destination the rule matches: * (any, the default), IPv4 addresses or ranges in CIDR form, or one service tag. A list.",
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "string",
+                        "pattern": "^(\\*|((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(/([0-9]|[12][0-9]|3[0-2]))?|[A-Za-z][A-Za-z0-9.]*)$"
+                      }
+                    },
+                    "destination_port_ranges": {
+                      "description": "Schema 5.6.21. Destination ports the rule matches: * (any), a port or a range such as 8000-8100, each from 0 to 65535. A list. Required: New-AzNetworkSecurityRuleConfig has no default for it.",
+                      "type": "array",
+                      "minItems": 1,
+                      "items": {
+                        "type": "string",
+                        "pattern": "^(\\*|[0-9]{1,5}(-[0-9]{1,5})?)$"
+                      }
+                    },
+                    "description": {
+                      "description": "Schema 5.6.21. Optional text for the rule, at most 140 characters.",
+                      "type": "string",
+                      "maxLength": 140
+                    }
+                  },
+                  "required": [
+                    "name",
+                    "priority",
+                    "direction",
+                    "access",
+                    "destination_port_ranges"
+                  ]
+                }
+              }
+            },
+            "required": [
+              "name"
             ]
           }
         },

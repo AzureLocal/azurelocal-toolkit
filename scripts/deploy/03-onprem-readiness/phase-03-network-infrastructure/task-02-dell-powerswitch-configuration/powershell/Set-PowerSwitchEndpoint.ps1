@@ -1,320 +1,140 @@
 <#
 .SYNOPSIS
-    Configures Dell PowerSwitch for Azure Local deployment.
+    Checks that every switch of network_devices in infrastructure.yml can be reached and that its login can be read. Changes nothing on a switch.
 
 .DESCRIPTION
-    This script configures the Dell PowerSwitch (SONiC) for Azure Local:
-    - Verifies switch connectivity
-    - Applies base configuration
-    - Configures VLANs and port channels
-    - Sets up LLDP and QoS
+    Phase 03 (network infrastructure), Task 02 (switches). The name of the script is kept; it does not configure a switch. The VLANs, port channels,
+    LLDP and QoS of a switch are the network team's work, written for the make and model (Microsoft Learn, Physical network requirements for
+    Azure Local, lists what the network must support; it has no switch commands). What the script does is the check that comes before that work:
 
-.PARAMETER SwitchHost
-    Hostname or IP address of the PowerSwitch.
+    For each entry of network_devices whose type is switch it reports the device (hostname, role, vendor) and then:
+      1. the management address (management.ip_address); an entry whose address is dhcp or missing is skipped, because the address is not known;
+      2. whether the address answers a ping (information only: a switch may drop ICMP);
+      3. whether the management port accepts a TCP connection. The port follows management.protocol: ssh 22, https 443, telnet 23 (ssh when the
+         file gives none). snmp uses UDP, which a TCP check cannot test, so it is skipped;
+      4. whether the login of the device can be read: credentials.password is a secret reference, which the toolkit's secret resolver
+         (scripts/common/secrets/AzlSecret.psm1) reads into memory and discards. The value is never shown, written or sent anywhere. The script
+         does not sign in to the switch.
 
-.PARAMETER Credential
-    Credentials for switch admin access.
+    Nothing is sent to a switch but the TCP connection and the ping. No prompt, no change, no file. -WhatIf makes no difference to what it does;
+    it only reads.
 
-.PARAMETER ConfigPath
-    Path to infrastructure.yml configuration file.
+    Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
+        network_devices[]: hostname, type, role, vendor, management.ip_address, management.protocol, credentials.username, credentials.password
+
+    Exit codes: 0 every switch passed the checks or the file lists none (a skipped entry is not a failure); 1 a switch did not answer on its management
+    port, or its password reference could not be read; 2 a value in the file is not usable (a host name listed twice, an address that is not IPv4 and
+    not dhcp, a management protocol that is not ssh, https, telnet or snmp).
+
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here.
+
+.PARAMETER TimeoutSeconds
+    How long to wait for a ping or a TCP connection of one switch. Default 5.
+
+.PARAMETER LogPath
+    Optional. Also append the progress lines to this file. Keep it out of the repository.
 
 .EXAMPLE
-    .\Set-PowerSwitchEndpoint.ps1 -SwitchHost "switch01.customer.local"
+    ./Set-PowerSwitchEndpoint.ps1 -InfrastructureFile ./infrastructure.yml
 
-.NOTES
-    Author: Azure Local Cloud AzureLocalCloud
-    Version: 1.0.0
-    Stage: 04-onprem-readiness
-    Step: stage-10-network-device-deployment/step-02-powerswitch-endpoint
+    Checks the switches of the file and prints one row each.
 #>
-
-[CmdletBinding(SupportsShouldProcess)]
-param(
-    [Parameter(Mandatory = $false)]
-    [string]$SwitchHost,
-
-    [Parameter(Mandatory = $false)]
-    [pscredential]$Credential,
-
-    [Parameter(Mandatory = $false)]
-    [int]$SshPort = 22,
-
-    [Parameter(Mandatory = $false)]
-    [string]$ConfigPath = ".\configs\infrastructure.yml",
-
-    [Parameter(Mandatory = $false)]
-    [string]$ConfigTemplatePath,
-
-    [Parameter(Mandatory = $false)]
-    [switch]$ApplyConfig,
-
-    [Parameter(Mandatory = $false)]
-    [switch]$Force
-)
-
 #Requires -Version 7.0
-
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)][string]$InfrastructureFile,
+    [ValidateRange(1, 120)][int]$TimeoutSeconds = 5,
+    [string]$LogPath
+)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$logFile = $LogPath
 
-#region Functions
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 
-function Write-LogMessage {
-    param(
-        [string]$Message,
-        [ValidateSet('Info', 'Warning', 'Error', 'Success')]
-        [string]$Level = 'Info'
-    )
-    
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $color = switch ($Level) {
-        'Info'    { 'Cyan' }
-        'Warning' { 'Yellow' }
-        'Error'   { 'Red' }
-        'Success' { 'Green' }
-    }
-    Write-Host "[$timestamp] [$Level] $Message" -ForegroundColor $color
+# The kind of device this script checks (the type values of network_devices).
+$DeviceType = 'switch'
+# The TCP port of each management protocol (SSH, HTTPS and Telnet are fixed by their standards). SNMP is UDP: no TCP check.
+$ManagementPort = @{ ssh = 22; https = 443; telnet = 23 }
+$Ipv4 = '^((25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(25[0-5]|2[0-4]\d|1?\d?\d)$'
+
+function Write-Line([string]$Text) {
+    Write-Information -MessageData $Text -InformationAction Continue
+    if ($logFile) { Add-Content -LiteralPath $logFile -Value ('[{0:yyyy-MM-dd HH:mm:ss}] {1}' -f (Get-Date), $Text) -WhatIf:$false }
+}
+function Exit-InputProblem([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 2 }
+function Get-Entry([object]$Entry, [string]$Key) {
+    if ($Entry -is [System.Collections.IDictionary] -and $Entry.Contains($Key) -and $null -ne $Entry[$Key]) { return ([string]$Entry[$Key]).Trim() }
+    ''
 }
 
-function Import-InfrastructureConfig {
-    [CmdletBinding()]
-    param([string]$Path)
+# ---- the values, from infrastructure.yml only
+try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.Message)" }
 
-    if (-not (Test-Path $Path)) { return $null }
-
-    if (-not (Get-Module -Name powershell-yaml -ListAvailable)) {
-        Install-Module -Name powershell-yaml -Force -Scope CurrentUser
-    }
-    Import-Module powershell-yaml
-
-    $configContent = Get-Content -Path $Path -Raw
-    return ConvertFrom-Yaml $configContent
+$raw = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'network_devices'
+$devices = @(@($raw) | Where-Object { $_ -is [System.Collections.IDictionary] -and (Get-Entry $_ 'type') -ieq $DeviceType })
+if ($devices.Count -eq 0) {
+    Write-Line "The file lists no network_devices of type ${DeviceType}: nothing to do."
+    exit 0
 }
 
-function Test-SwitchConnectivity {
-    <#
-    .SYNOPSIS
-        Tests connectivity to the PowerSwitch.
-    #>
-    [CmdletBinding()]
-    param(
-        [string]$Host,
-        [int]$SshPort
-    )
-
-    $results = @{
-        Ping = $false
-        SSH  = $false
-    }
-
-    # Test ping
-    $results.Ping = Test-Connection -ComputerName $Host -Count 2 -Quiet
-
-    # Test SSH port
-    try {
-        $tcpClient = New-Object System.Net.Sockets.TcpClient
-        $connect = $tcpClient.BeginConnect($Host, $SshPort, $null, $null)
-        $wait = $connect.AsyncWaitHandle.WaitOne(3000, $false)
-        if ($wait -and $tcpClient.Connected) {
-            $results.SSH = $true
-            $tcpClient.Close()
-        }
-    } catch { }
-
-    return $results
+$plan = [System.Collections.Generic.List[object]]::new()
+$seen = @{}
+$index = -1
+foreach ($device in $devices) {
+    $index++
+    $name = Get-Entry $device 'hostname'
+    if (-not $name) { Exit-InputProblem "A network_devices entry of type $DeviceType has no hostname." }
+    if ($seen.ContainsKey($name.ToLowerInvariant())) { Exit-InputProblem "The hostname '$name' is listed twice in network_devices." }
+    $seen[$name.ToLowerInvariant()] = $true
+    $management = if ($device.Contains('management') -and $device['management'] -is [System.Collections.IDictionary]) { $device['management'] } else { @{} }
+    $address = Get-Entry $management 'ip_address'
+    if ($address -and $address -ine 'dhcp' -and $address -notmatch $Ipv4) { Exit-InputProblem "network_devices '$name': management.ip_address '$address' is not an IPv4 address or dhcp." }
+    $protocol = (Get-Entry $management 'protocol').ToLowerInvariant()
+    if (-not $protocol) { $protocol = 'ssh' }
+    if ($protocol -notin 'ssh', 'https', 'telnet', 'snmp') { Exit-InputProblem "network_devices '$name': management.protocol '$protocol' is not ssh, https, telnet or snmp." }
+    $credentials = if ($device.Contains('credentials') -and $device['credentials'] -is [System.Collections.IDictionary]) { $device['credentials'] } else { @{} }
+    $plan.Add([pscustomobject]@{
+            Name = $name; Role = (Get-Entry $device 'role'); Vendor = (Get-Entry $device 'vendor'); Address = $address; Protocol = $protocol
+            User = (Get-Entry $credentials 'username'); PasswordReference = (Get-Entry $credentials 'password')
+        })
 }
 
-function Get-SwitchVersion {
-    <#
-    .SYNOPSIS
-        Gets SONiC version information from the switch.
-    #>
-    [CmdletBinding()]
-    param(
-        [string]$Host,
-        [int]$Port,
-        [pscredential]$Credential
-    )
-
-    # Note: This uses SSH. In production, consider using Posh-SSH module
-    Write-LogMessage "  Querying switch version (requires manual SSH or Posh-SSH)..." -Level Info
-    
-    # Placeholder - in production would use Posh-SSH
-    # Example with Posh-SSH:
-    # $session = New-SSHSession -ComputerName $Host -Port $Port -Credential $Credential -AcceptKey
-    # $result = Invoke-SSHCommand -SessionId $session.SessionId -Command "show version"
-    # Remove-SSHSession -SessionId $session.SessionId
-    # return $result.Output
-
-    return @{
-        Note = "SSH connection required - use Posh-SSH module in production"
+Write-Line "Checking $($plan.Count) device(s) of type $DeviceType"
+$rows = foreach ($item in $plan) {
+    $row = [ordered]@{ Device = $item.Name; Role = $item.Role; Vendor = $item.Vendor; Address = $item.Address; Port = ''; Ping = ''; Management = ''; Login = ''; Action = ''; Detail = '' }
+    $problems = [System.Collections.Generic.List[string]]::new()
+    if (-not $item.Address -or $item.Address -ieq 'dhcp') {
+        $row.Action = 'Skipped'; $row.Detail = 'The management address is dhcp or not set, so the device cannot be reached from the file.'
+        Write-Line "[skip]    $($item.Name): $($row.Detail)"
+        [pscustomobject]$row
+        continue
     }
+    $row.Ping = if (Test-Connection -TargetName $item.Address -Count 1 -TimeoutSeconds $TimeoutSeconds -Quiet) { 'Answers' } else { 'NoAnswer' }
+    if ($ManagementPort.ContainsKey($item.Protocol)) {
+        $row.Port = [string]$ManagementPort[$item.Protocol]
+        if (Test-Connection -TargetName $item.Address -TcpPort $ManagementPort[$item.Protocol] -TimeoutSeconds $TimeoutSeconds -Quiet) { $row.Management = 'Open' }
+        else { $row.Management = 'Closed'; $problems.Add("$($item.Protocol) port $($row.Port) did not accept a connection") }
+    }
+    else { $row.Management = 'Skipped'; $row.Detail = 'snmp is UDP; a TCP check cannot test it. ' }
+    if (-not $item.PasswordReference) { $row.Login = 'NotListed' }
+    else {
+        $check = Test-AzlSecretReference -Reference $item.PasswordReference -Infrastructure $infra -Detailed
+        if ($check.Resolvable) { $row.Login = 'Readable' }
+        else { $row.Login = 'NotReadable'; $problems.Add("the password reference could not be read ($($check.Category))") }
+    }
+    if (-not $item.User) { $row.Login = if ($row.Login -eq 'Readable') { 'NoUserName' } else { $row.Login } }
+    if ($problems.Count) { $row.Action = 'Failed'; $row.Detail += ($problems -join '; ') }
+    else { $row.Action = 'Verified' }
+    Write-Line ("[{0}] {1} ({2}, {3}): ping {4}, {5} {6}, login {7}{8}" -f $(if ($problems.Count) { 'failed  ' } else { 'ok      ' }), $item.Name, $item.Address, $(if ($item.Role) { $item.Role } else { 'no role' }), $row.Ping, $item.Protocol, $row.Management, $row.Login, $(if ($problems.Count) { " - $($problems -join '; ')" } else { '' }))
+    [pscustomobject]$row
 }
-
-function New-SwitchConfigFromTemplate {
-    <#
-    .SYNOPSIS
-        Generates switch configuration from template.
-    #>
-    [CmdletBinding()]
-    param(
-        [string]$TemplatePath,
-        [hashtable]$Config
-    )
-
-    if (-not (Test-Path $TemplatePath)) {
-        Write-LogMessage "  Config template not found: $TemplatePath" -Level Warning
-        return $null
-    }
-
-    $template = Get-Content -Path $TemplatePath -Raw
-
-    # Replace placeholders with actual values
-    $switchConfig = $template
-
-    # Management VLAN
-    if ($config.networking.onprem.vlans.management) {
-        $switchConfig = $switchConfig -replace '\{\{MGMT_VLAN\}\}', $config.networking.onprem.vlans.management.id
-    }
-
-    # Storage VLAN
-    if ($config.networking.onprem.vlans.storage) {
-        $switchConfig = $switchConfig -replace '\{\{STORAGE_VLAN\}\}', $config.networking.onprem.vlans.storage.id
-    }
-
-    # VM VLAN range
-    if ($config.networking.onprem.vlans.workload) {
-        $switchConfig = $switchConfig -replace '\{\{COMPUTE_VLAN_START\}\}', $config.networking.onprem.vlans.workload.start
-        $switchConfig = $switchConfig -replace '\{\{COMPUTE_VLAN_END\}\}', $config.networking.onprem.vlans.workload.end
-    }
-
-    return $switchConfig
-}
-
-function Get-PowerSwitchValidation {
-    <#
-    .SYNOPSIS
-        Validates switch configuration requirements for Azure Local.
-    #>
-    [CmdletBinding()]
-    param([hashtable]$Config)
-
-    $checks = @()
-
-    # Check VLAN configuration
-    $checks += @{
-        Name    = "Management VLAN"
-        Status  = if ($config.networking.onprem.vlans.management) { 'Configured' } else { 'Missing' }
-        Details = $config.networking.onprem.vlans.management.id ?? 'Not defined'
-    }
-
-    $checks += @{
-        Name    = "Storage VLAN"
-        Status  = if ($config.networking.onprem.vlans.storage) { 'Configured' } else { 'Missing' }
-        Details = $config.networking.onprem.vlans.storage.id ?? 'Not defined'
-    }
-
-    # Check MTU settings
-    $checks += @{
-        Name    = "Jumbo Frames"
-        Status  = if ($config.networking.onprem.mtu -ge 9000) { 'Configured' } else { 'Warning' }
-        Details = "MTU: $($config.networking.onprem.mtu ?? 'Default')"
-    }
-
-    return $checks
-}
-
-#endregion Functions
-
-#region Main
-
-try {
-    Write-LogMessage "=" * 60 -Level Info
-    Write-LogMessage "Dell PowerSwitch Configuration" -Level Info
-    Write-LogMessage "=" * 60 -Level Info
-
-    # Load configuration
-    $config = $null
-    if (Test-Path $ConfigPath) {
-        $config = Import-InfrastructureConfig -Path $ConfigPath
-        Write-LogMessage "Configuration loaded" -Level Info
-    }
-
-    # Get switch host from config if not provided
-    if (-not $SwitchHost) {
-        $SwitchHost = $config.networking.onprem.network_devices.powerswitch.host
-        if (-not $SwitchHost) {
-            throw "SwitchHost is required"
-        }
-    }
-
-    Write-LogMessage "PowerSwitch Host: $SwitchHost" -Level Info
-
-    # Test connectivity
-    Write-LogMessage "Testing connectivity..." -Level Info
-    $connectivity = Test-SwitchConnectivity -Host $SwitchHost -SshPort $SshPort
-    Write-LogMessage "  Ping: $(if($connectivity.Ping){'✓'}else{'✗'})" -Level $(if($connectivity.Ping){'Success'}else{'Error'})
-    Write-LogMessage "  SSH: $(if($connectivity.SSH){'✓'}else{'✗'})" -Level $(if($connectivity.SSH){'Success'}else{'Error'})
-
-    if (-not $connectivity.SSH) {
-        throw "Cannot connect to switch via SSH"
-    }
-
-    # Validate configuration requirements
-    Write-LogMessage "Validating configuration requirements..." -Level Info
-    $validation = Get-PowerSwitchValidation -Config $config
-
-    foreach ($check in $validation) {
-        $level = switch ($check.Status) {
-            'Configured' { 'Success' }
-            'Warning'    { 'Warning' }
-            'Missing'    { 'Error' }
-            default      { 'Info' }
-        }
-        Write-LogMessage "  $($check.Name): $($check.Status) ($($check.Details))" -Level $level
-    }
-
-    # Generate configuration if template provided
-    if ($ConfigTemplatePath) {
-        Write-LogMessage "Generating switch configuration from template..." -Level Info
-        $switchConfig = New-SwitchConfigFromTemplate -TemplatePath $ConfigTemplatePath -Config $config
-        
-        if ($switchConfig) {
-            $configFile = ".\output\switch-config-$(Get-Date -Format 'yyyyMMdd-HHmmss').txt"
-            if (-not (Test-Path (Split-Path $configFile -Parent))) {
-                New-Item -Path (Split-Path $configFile -Parent) -ItemType Directory -Force | Out-Null
-            }
-            Set-Content -Path $configFile -Value $switchConfig
-            Write-LogMessage "  Configuration saved: $configFile" -Level Success
-        }
-    }
-
-    # Display manual steps
-    Write-LogMessage "" -Level Info
-    Write-LogMessage "MANUAL CONFIGURATION STEPS:" -Level Warning
-    Write-LogMessage "  1. SSH to switch: ssh admin@$SwitchHost" -Level Info
-    Write-LogMessage "  2. Enter configuration mode: configure terminal" -Level Info
-    Write-LogMessage "  3. Apply VLAN configuration for Azure Local" -Level Info
-    Write-LogMessage "  4. Configure port channels for node uplinks" -Level Info
-    Write-LogMessage "  5. Enable LLDP on all ports" -Level Info
-    Write-LogMessage "  6. Configure QoS for storage traffic" -Level Info
-    Write-LogMessage "  7. Save configuration: write memory" -Level Info
-
-    # Summary
-    Write-LogMessage "=" * 60 -Level Info
-    Write-LogMessage "PowerSwitch Configuration Check Complete" -Level Success
-    Write-LogMessage "=" * 60 -Level Info
-
-    return @{
-        Status       = 'ValidationComplete'
-        Host         = $SwitchHost
-        Connectivity = $connectivity
-        Validation   = $validation
-    }
-
-} catch {
-    Write-LogMessage "PowerSwitch configuration failed: $_" -Level Error
-    throw
-}
-
-#endregion Main
+$rows = @($rows)
+$rows
+$failed = @($rows | Where-Object Action -EQ 'Failed').Count
+Write-Line "Summary: $(@($rows | Where-Object Action -EQ 'Verified').Count) verified, $(@($rows | Where-Object Action -EQ 'Skipped').Count) skipped, $failed failed."
+if ($failed -gt 0) { exit 1 }
+exit 0
