@@ -26,6 +26,7 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'infrastructure', 'AzlInfrastructure.psm1'))
 Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'azure-local', 'AzlAzure.psm1'))
+Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'secrets', 'AzlSecret.psm1'))
 
 $script:CatalogPath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'config', 'azure', 'arm-templates', 'template-parameters.json')
 $script:DeploymentsApiVersion = '2024-03-01'
@@ -465,7 +466,7 @@ function New-AzlArmParameterSet {
             if ($chapOn) {
                 $p.chapUsername = [string](Get-AzlProp $iscsi 'chap.username' '')
                 $p.chapCredential = & $kvRef (Get-AzlProp $iscsi 'chap.secret')
-                if (-not $p.chapUsername -or -not $p.chapCredential) { throw 'storage.san.iscsi.chap.enabled is true: storage.san.iscsi.chap.username and chap.secret (a keyvault:// reference) are needed.' }
+                if (-not $p.chapUsername -or -not $p.chapCredential) { throw 'storage.san.iscsi.chap.enabled is true: storage.san.iscsi.chap.username and chap.secret (a secret reference) are needed.' }
             }
             $iscsiNetworks = @{}
             foreach ($net in ConvertTo-List (Get-AzlProp $iscsi 'networks' @())) { $iscsiNetworks[([string]$net['fabric']).ToLowerInvariant()] = $net }
@@ -574,7 +575,7 @@ function Test-AzlArmParameterSet {
         if ($bad) { $problems.Add("$k should be $type, not $($v.GetType().Name).") }
         if ($def.Contains('allowed') -and $v -is [string] -and $v -and @($def['allowed'] | Where-Object { $_ -ieq $v }).Count -eq 0) { $problems.Add("$k is '$v'; the template allows $($def['allowed'] -join ', ').") }
     }
-    foreach ($s in $script:SecretParameters) { if ($values.Contains($s) -and $values[$s] -is [string]) { $problems.Add("$s holds a value; a secret must be a keyvault:// reference.") } }
+    foreach ($s in $script:SecretParameters) { if ($values.Contains($s) -and $values[$s] -is [string]) { $problems.Add("$s holds a value; a secret must be a secret reference (keyvault://, env://, file:// or command://).") } }
     return $problems.ToArray()
 }
 
@@ -585,7 +586,9 @@ function ConvertTo-AzlArmParameterFile {
     .PARAMETER SecretMode
         Placeholder (default): secrets are null and the deployment fills them from Key Vault in memory.
         KeyVaultReference: secrets are { reference: { keyVault: { id }, secretName } }; ARM reads them itself. The vault needs
-        "Azure Resource Manager for template deployment" access enabled.
+        "Azure Resource Manager for template deployment" access enabled. Only a keyvault:// reference can be handed to ARM
+        like this. With env://, file:// or command:// this mode refuses, because ARM cannot read those providers; use
+        Placeholder and let Invoke-AzlArmDeployment read the value on this machine.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -600,6 +603,8 @@ function ConvertTo-AzlArmParameterFile {
         if ($v -is [System.Collections.IDictionary] -and $v.Contains('KeyVault')) {
             if ($SecretMode -eq 'Placeholder' -or -not $Infrastructure) { $out[$k] = [ordered]@{ value = $null }; continue }
             $ref = ConvertFrom-AzlKeyVaultRef -Reference $v.KeyVault
+            # ARM reads only Key Vault. A secret from env, file or command cannot be handed over as a reference.
+            if (-not $ref) { throw "Parameter $k is not a keyvault:// reference (provider: $(Get-AzlSecretProvider $v.KeyVault)). ARM can read only a keyvault:// reference, so -SecretMode KeyVaultReference refuses it. Use -SecretMode Placeholder: the deployment then reads the secret on this machine and sends it as a secure parameter." }
             $vault = @(ConvertTo-List $Infrastructure['key_vaults']) | Where-Object { $_['name'] -eq $ref.Vault } | Select-Object -First 1
             if (-not $vault) { throw "Vault $($ref.Vault) isn't listed under key_vaults." }
             $out[$k] = [ordered]@{ reference = [ordered]@{ keyVault = [ordered]@{ id = "/subscriptions/$($vault['subscription_id'])/resourceGroups/$($vault['resource_group'])/providers/Microsoft.KeyVault/vaults/$($vault['name'])" }; secretName = $ref.Secret } }
@@ -714,7 +719,14 @@ function Invoke-AzlArmDeployment {
         real deployment and needs a Validate that succeeded. Refuses Validate when the instance is in a failed deployment
         state (Microsoft: another Validate resets the system's properties and can break license sync); -AllowRevalidate
         overrides that and is for support-guided recovery only.
-        The secret parameters are read from Key Vault into memory and sent to ARM as secure parameters; they are never written.
+        The secret parameters are read into memory and sent to ARM as secure parameters; they are never written. They are read
+        with the toolkit's secret resolver (AzlSecret.psm1), so a reference can use any provider: keyvault://, env://, file:// or
+        command://. This is why every provider works here: the value is read on this machine and sent in the request body of a
+        securestring template parameter. Only the parameter FILE with -SecretMode KeyVaultReference hands ARM a Key Vault
+        reference to read, and that works with Key Vault alone (see ConvertTo-AzlArmParameterFile).
+    .PARAMETER Infrastructure
+        The loaded infrastructure file. Needed by the default -SecretResolver (the vault must be listed under key_vaults; the
+        secrets section holds the file directory and the command).
     .OUTPUTS
         Mode, DeploymentName, ProvisioningState, ValidationStatus, ValidationSteps, FailedSteps, Error.
     #>
@@ -734,7 +746,10 @@ function Invoke-AzlArmDeployment {
         [switch]$NoWait,
         [switch]$AllowRevalidate,
         [switch]$SkipValidationCheck,
-        [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref }
+        # The loaded infrastructure file: the default resolver needs it (key_vaults and the secrets section).
+        [System.Collections.IDictionary]$Infrastructure,
+        # Reads a secret reference to its value (plain text, for the request body). Default: the toolkit resolver, any provider.
+        [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecretPlainText -Reference $Ref -Infrastructure $Infrastructure }
     )
     $clusterName = [string]$ParameterSet.Parameters['clusterName']
     foreach ($lun in 'infraVolLunId', 'infraPerfLunId') { if ($ParameterSet.Parameters.Contains($lun) -and -not $ParameterSet.Parameters[$lun]) { throw "$lun is empty. Run the OS configuration first (its report maps the LUN numbers to the disks' UniqueIds), or write the UniqueId in storage.san." } }

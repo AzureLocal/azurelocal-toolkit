@@ -22,6 +22,7 @@ config/variables/
   docs/
     infrastructure-file.md        what infrastructure.yml is and how to fill it in
     MIGRATION.md                  where every key from the earlier files went, and the schema 5.x steps
+    secret-references.md          secret references and the four providers (keyvault, env, file, command), the secrets section
     VARIABLES.md                  GENERATED: every key, type, required, default, example, who reads it
     VARIABLE-MAP.md               GENERATED: what variable goes where (by phase, tool, ARM parameter; who provides it, who reads it)
     variables-reference.metadata.psd1   where to get a value (facts the registry does not hold)
@@ -53,7 +54,7 @@ The 4.0 entries are unchanged. The sections of `infrastructure.yml` write childr
 | `deprecated`, `replaced_by`, `alias_for`, `expires_on` | A name kept for compatibility. Every alias is also in `schema/alias-policy.json`, with an expiry inside `rules.max_alias_age_days`. |
 | `used_by` | The purposes that need the variable: `ztp`, `os_configuration`, `deployment`, `cicd_infra`, `monitoring` (Sonar), `discovery` (Redfish). The purpose templates and schemas are cut from this. |
 | `applies_when` | The scenario condition that makes it relevant (`scenario.identity is active_directory`). The scenario templates leave out what does not apply. |
-| `format` | A named type from `_schema_defs` (`ipv4`, `cidr`, `mac`, `guid`, `kv_ref`, ...). `kv_ref` is a `keyvault://<vault>/<secret>` reference, never a secret value; those entries also carry `sensitive: true`. |
+| `format` | A named type from `_schema_defs` (`ipv4`, `cidr`, `mac`, `guid`, `kv_ref`, ...). `kv_ref` is a secret reference, never a secret value (`keyvault://<vault>/<secret>`, `env://<VARIABLE>`, `file://<name>` or `command://<name>`; see [secret-references.md](docs/secret-references.md)); those entries also carry `sensitive: true`. |
 | `schema_extra` | Other JSON Schema keywords of the variable, kept as written (`anyOf`, `not`, `dependentRequired`). |
 | `file_schema` | On a 4.0-form section that infrastructure.yml shares (`site`, `identity`, ...): the node's keywords in the infrastructure schema. |
 | `data_path` (on a top-level section) | The path in a data file, when it differs from the section name: `file_metadata` is `_metadata`. |

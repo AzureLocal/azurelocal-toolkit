@@ -252,6 +252,7 @@ The pre-cluster verification checks the package (SB-001 to SB-006): source confi
 | --- | --- |
 | AZL-000 | `schema_version` is 5.x |
 | AZL-001 | Every `keyvault://` reference names a vault listed in `key_vaults` |
+| AZL-054 | A `file://` reference needs `secrets.file.directory`; a `command://` reference needs `secrets.command.executable` and an argument with `{name}` (5.6.13) |
 | AZL-002, AZL-003 | Node names and management addresses are unique |
 | AZL-004 | Node addresses (`nodes[].management`, or the 5.2 management port) and the gateway are in the management subnet |
 | AZL-005 | The infrastructure pool is in the subnet, has at least six consecutive addresses, and holds no node or gateway address |
@@ -326,7 +327,7 @@ const validate = new Ajv2020({ strict: true, allErrors: true }).compile(schema);
 ## Rules for the file
 
 - Keys are `snake_case` at every level, and so are enum values.
-- Secrets are never values. A password key accepts only a `keyvault://` reference.
+- Secrets are never values. A password key accepts only a secret reference: `keyvault://<vault>/<secret>`, `env://<VARIABLE>`, `file://<name>` or `command://<name>` (schema 5.6.13). See [Secret references and providers](secret-references.md).
 - Anything the schema doesn't define goes under `extensions.<your-key>`: settings for one environment or one tool. Tools ignore keys they don't own.
 - The file can hold subscription and tenant IDs. Keep files with real values in private environment repositories, never in a public repository.
 
@@ -346,7 +347,7 @@ With `scenario.identity: active_directory`, `Invoke-AzureLocalOsConfiguration.ps
 - A **minor** version (5.4.0) adds optional keys. Files written for 5.0 stay valid. One exception: 5.6.2 requires `nodes[].network_adapters[].mac_address` (the identity of the port).
 - A **major** version (6.0.0) can rename or remove keys. It comes with a migration in `MIGRATION.md`, and tools refuse files from a major they don't read.
 
-The current version is 5.6.10. 5.6.1 added `security_groups[].local_groups`; 5.6.2 identifies adapters by hardware facts (`mac_address` required; `port_index`, `pci_location`, `vendor`, `os_name_override`, `allowed_vlans`); 5.6.3 added `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`; 5.6.4 added the SBE package as a requirement (below); 5.6.5 added `landing_zone.policy` (the tag names and the management group of the Tier 1 tag policy); 5.6.6 added `operations.monitoring.action_group` (the name of the alerting action group); 5.6.7 added `security.defender_for_cloud` (the free level of Defender for Cloud); 5.6.8 added `security.defender_for_cloud.security_contact_email`; 5.6.9 added the storage keys `storage.pool`, `storage.csv`, `storage.paths` and the volume options under `storage.volumes`; 5.6.10 added `networking.cluster_network_properties` and the iSCSI deployment keys under `storage.san.iscsi`. Each key's description says which version added it.
+The current version is 5.6.13. 5.6.1 added `security_groups[].local_groups`; 5.6.2 identifies adapters by hardware facts (`mac_address` required; `port_index`, `pci_location`, `vendor`, `os_name_override`, `allowed_vlans`); 5.6.3 added `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`; 5.6.4 added the SBE package as a requirement (below); 5.6.5 added `landing_zone.policy` (the tag names and the management group of the Tier 1 tag policy); 5.6.6 added `operations.monitoring.action_group` (the name of the alerting action group); 5.6.7 added `security.defender_for_cloud` (the free level of Defender for Cloud); 5.6.8 added `security.defender_for_cloud.security_contact_email`; 5.6.9 added the storage keys `storage.pool`, `storage.csv`, `storage.paths` and the volume options under `storage.volumes`; 5.6.10 added `networking.cluster_network_properties` and the iSCSI deployment keys under `storage.san.iscsi`; 5.6.13 added the `secrets` section (`provider`, `file.directory`, `command`) and the `env://`, `file://` and `command://` reference forms. Each key's description says which version added it.
 
 ## How a variable is added
 

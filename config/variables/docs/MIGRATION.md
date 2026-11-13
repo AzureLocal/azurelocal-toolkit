@@ -381,6 +381,17 @@ New rules AZL-060 to AZL-068 (see README). **Steps for a 5.5 file:** set `_metad
 - **5.6.2: adapters are identified by hardware facts.** `nodes[].network_adapters[].mac_address` is now required. New optional keys: `port_index`, `pci_location` (`bus`, `device`, `function`), `vendor` (written by hardware discovery), `allowed_vlans` (the VLANs the switch port allows) and `os_name_override`. **Steps:** a file whose ports lack the MAC: run `Invoke-HardwareDiscovery.ps1 -UpdateInfrastructure` or add the MAC. Nothing else changes: without `os_name_override` no adapter is renamed and the deployment sends the name the node reports for the MAC. To get one name everywhere, add `os_name_override` per used port and run the OS configuration (step `NicNames`).
 - **5.6.3** adds `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`. Nothing is required. A logical network uses `gateway` and `ip_pool`; the 4.0 names `default_gateway` and `ip_pools` belong to the deprecated `networking.onprem.logical_networks[]`.
 
+## To 5.6.13: secret providers
+
+Schema 5.6.13 adds an optional section and two kinds of secret reference. Nothing is required: a 5.6.10 file is valid as it is, and every `keyvault://` reference keeps working unchanged.
+
+- The section `secrets` (`provider`, `file.directory`, `command.executable`, `command.arguments`, `command.timeout_seconds`) holds the settings of the providers other than Key Vault.
+- Every key that holds a secret reference (format `kv_ref`) now also accepts `env://<VARIABLE_NAME>`, `file://<name>` and `command://<name>`. A `file://` or `command://` reference holds a name only; the directory and the command come from the `secrets` section. Rule `AZL-054` reports a reference whose setting is missing.
+- One resolver, `scripts/common/secrets/AzlSecret.psm1`, reads all four. The ARM deployment already uses it. The other scripts still read Key Vault their own way until they are moved to it.
+- `-SecretMode KeyVaultReference` accepts `keyvault://` references only, because Azure Resource Manager cannot read the other providers.
+
+See [Secret references and providers](secret-references.md).
+
 ## To 5.6.10: SAN deployment values
 
 Schema 5.6.10 adds optional keys. Nothing is required for a Fibre Channel SAN or a Storage Spaces Direct file: a 5.6.9 file is valid as it is.

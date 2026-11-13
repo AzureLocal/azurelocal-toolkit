@@ -744,6 +744,22 @@ function Get-SemanticFinding {
         }
     }
 
+    # A file:// or command:// reference holds a name only; the directory and the command are settings of the secrets section (5.6.13).
+    $fileDirectory = & $v 'secrets.file.directory'
+    $commandExe = & $v 'secrets.command.executable'
+    $commandArgs = @(& $v 'secrets.command.arguments' | ForEach-Object { $_ } | Where-Object { $null -ne $_ })
+    $reportedFile = $false; $reportedCommand = $false
+    foreach ($leaf in (Get-StringLeaf $Infra '')) {
+        if (-not $reportedFile -and $leaf.Value -match '^file://' -and [string]::IsNullOrWhiteSpace([string]$fileDirectory)) {
+            New-Finding 'AZL-054' error $leaf.Path 'A file:// reference needs secrets.file.directory, the directory that holds the secret files.'
+            $reportedFile = $true
+        }
+        if (-not $reportedCommand -and $leaf.Value -match '^command://' -and ([string]::IsNullOrWhiteSpace([string]$commandExe) -or -not (@($commandArgs | Where-Object { ([string]$_).Contains('{name}') }).Count))) {
+            New-Finding 'AZL-054' error $leaf.Path 'A command:// reference needs secrets.command.executable and secrets.command.arguments, with {name} in at least one argument.'
+            $reportedCommand = $true
+        }
+    }
+
     # Node names and management addresses are unique.
     foreach ($group in ($nodes | Group-Object { $_['name'] } | Where-Object Count -gt 1)) {
         New-Finding 'AZL-002' error 'nodes' "Node name '$($group.Name)' is used $($group.Count) times."

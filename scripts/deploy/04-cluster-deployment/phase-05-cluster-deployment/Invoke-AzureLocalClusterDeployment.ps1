@@ -145,7 +145,7 @@ if (-not $Execute) {
     return [pscustomobject]@{ Mode = $Mode; Template = $set.Template.Name; ParameterFile = $parameterFile; ParameterCount = $set.Parameters.Count; Submitted = $false }
 }
 
-$arguments = @{ ParameterSet = $set; Template = $template; SubscriptionId = $subscription; ResourceGroup = $resourceGroup; Mode = $Mode; NoWait = $NoWait; AllowRevalidate = $AllowRevalidate; SkipValidationCheck = $SkipValidationCheck }
+$arguments = @{ ParameterSet = $set; Template = $template; SubscriptionId = $subscription; ResourceGroup = $resourceGroup; Mode = $Mode; NoWait = $NoWait; AllowRevalidate = $AllowRevalidate; SkipValidationCheck = $SkipValidationCheck; Infrastructure = $infra }
 if ($DeploymentSettingsApiVersion) { $arguments.DeploymentSettingsApiVersion = $DeploymentSettingsApiVersion }
 if ($TimeoutMinutes) { $arguments.TimeoutMinutes = $TimeoutMinutes }
 $result = Invoke-AzlArmDeployment @arguments

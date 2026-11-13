@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.37 (2026-11-13):
+#     - Secret providers (infrastructure schema 5.6.13): the section secrets (provider, file.directory, command.executable, command.arguments, command.timeout_seconds) and the reference forms env://, file:// and command:// besides keyvault:// for every kv_ref key. One resolver, scripts/common/secrets/AzlSecret.psm1; the ARM deployment reads its secret parameters through it.
 #   v5.0.34 (2026-11-12):
 #     - SAN deployment (infrastructure schema 5.6.10): networking.cluster_network_properties (bandwidth_percentage_smb, jumbo_packet, priority_cluster, priority_smb) replaces four values the ARM parameter generator carried; storage.san.iscsi.networks[] (fabric, vlan_id, subnet, next_hop), storage.san.iscsi.jumbo_packet and storage.san.iscsi.chap.mutual feed the iSCSI quickstart template (create-cluster-san-iscsi), which the generator now produces. storage.san.iscsi.chap.username and secret are read by the deployment.
 #   v5.0.33 (2026-11-12):
@@ -185,15 +187,19 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.34"
+  version: "5.0.37"
   schema_version: "5.0.0"
-  infrastructure_schema_version: "5.6.10"
+  infrastructure_schema_version: "5.6.13"
   last_updated: "2026-11-12"
   total_variables: "5100+"
   maintainers:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-13"
+      version: "5.0.37"
+      change: "Secret providers (infrastructure schema 5.6.13): the new section secrets (provider, file.directory, command.executable, command.arguments, command.timeout_seconds) and the reference forms env://<VARIABLE>, file://<name> and command://<name> besides keyvault://<vault>/<secret> for every key of format kv_ref. The format keeps its name; its pattern accepts the four forms."
+      reason: "Owner requirement: four secret providers (Azure Key Vault by default, environment variable, file, custom command) behind one resolver that every script calls, and no script names a vault. A reference holds a name only; the directory and the command are settings, so a shared file cannot point a machine at a path or run a command."
     - date: "2026-11-12"
       version: "5.0.34"
       change: "SAN deployment (infrastructure schema 5.6.10): networking.cluster_network_properties (bandwidth_percentage_smb, jumbo_packet, priority_cluster, priority_smb) replaces four values the ARM parameter generator carried; storage.san.iscsi.networks[] (fabric, vlan_id, subnet, next_hop), storage.san.iscsi.jumbo_packet and storage.san.iscsi.chap.mutual feed the iSCSI quickstart template (create-cluster-san-iscsi), which the generator now produces. storage.san.iscsi.chap.username and secret are read by the deployment."
@@ -2306,7 +2312,7 @@ identity:
             format: kv_ref
             sensitive: true
             required: true
-            pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+            pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
             example: "keyvault://kv-iic-mgmt-01/lcm-password"
       domain_join_account:
         description: "Optional override. The OS configuration run joins each machine to the domain (Add-Computer) before the cluster validation and deployment with the LCM user (lcm_user), which Microsoft's Active Directory preparation gives the right to create and delete computer objects in the dedicated OU and which is the account used for domain-join actions. Set this only when your site joins machines with another account; it needs the same rights on ou_path. (since 5.5)"
@@ -2327,7 +2333,7 @@ identity:
             format: kv_ref
             sensitive: true
             required: true
-            pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+            pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
             used_by: [os_configuration, monitoring]
       local_admin_members:
         description: "Domain principals the OS configuration adds to the local Administrators group of every machine after the join and the restart, so a domain account can be used for remoting and log access (a domain account is not a local administrator by default; the deployment adds the LCM user itself later). Names without the domain; users and groups. Default: the security_groups entries whose purpose says they administer the instance, and the LCM user. (since 5.5)"
@@ -2435,7 +2441,7 @@ identity:
               format: kv_ref
               sensitive: true
               required: false
-              pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+              pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
               example: "keyvault://kv-iic-mgmt-01/svc-backup-password"
   # ─── managed_identities ───
   managed_identities:
@@ -2827,7 +2833,7 @@ identity:
           type: string
           format: kv_ref
           required: false
-          pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+          pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
           example: "keyvault://kv-iic-mgmt-01/local-admin-username"
           used_by: [deployment]
         password:
@@ -2836,7 +2842,7 @@ identity:
           format: kv_ref
           sensitive: true
           required: true
-          pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+          pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
           example: "keyvault://kv-iic-mgmt-01/local-admin-password"
           used_by: [ztp, os_configuration, deployment]
     local_identity:
@@ -14055,7 +14061,7 @@ operations:
           format: kv_ref
           sensitive: true
           required: false
-          pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+          pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
           example: "keyvault://kv-iic-mgmt-01/teams-webhook-url"
     licensing:
       description: "Licensing benefits the instance uses."
@@ -14180,7 +14186,7 @@ devops:
       sensitive: true
       since: "5.5"
       required: false
-      pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+      pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
       example: "keyvault://kv-iic-mgmt-01/devops-admin-token"
       used_by: [cicd_infra]
     subscription:
@@ -14362,7 +14368,7 @@ devops:
           format: kv_ref
           sensitive: true
           required: false
-          pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+          pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
           used_by: [cicd_infra]
         roles:
           description: "Roles the service principal gets on each subscription. Default: Contributor and User Access Administrator, as the automation docs say. Narrow them when you can."
@@ -14452,7 +14458,7 @@ devops:
             format: kv_ref
             sensitive: true
             required: false
-            pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+            pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
             example: "keyvault://kv-iic-mgmt-01/github-runner-token"
             used_by: [cicd_infra]
           pool:
@@ -14708,7 +14714,7 @@ devops:
           format: kv_ref
           sensitive: true
           required: false
-          pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+          pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
           used_by: [cicd_infra]
     state:
       description: "Where the Terraform state is kept."
@@ -14977,6 +14983,75 @@ key_vaults:
         required: false
         example: "management"
         used_by: [ztp, cicd_infra]
+
+secrets:
+  description: "Schema 5.6.13. Where the toolkit reads secrets from. Every secret in this file is a reference, never a value; a reference names its own provider in its scheme: keyvault://<vault>/<secret> (Azure Key Vault, the default), env://<VARIABLE_NAME>, file://<name> or command://<name>. One file can mix providers. A file or command reference holds a NAME only: the directory of the secret files and the command are set here, so a reference in a shared file cannot point a machine at an arbitrary path or run an arbitrary command. Optional; every key has a default. See docs/secret-references.md."
+  type: object
+  required: false
+  since: "5.6.13"
+  used_by: [ztp, os_configuration, deployment, monitoring, discovery, cicd_infra]
+  additionalProperties: false
+  properties:
+    provider:
+      description: "Schema 5.6.13. The provider New-AzlSecretReference uses for a new reference when the caller does not name one. It does not change how an existing reference is read: that follows the reference's own scheme. Default keyvault."
+      type: string
+      required: false
+      since: "5.6.13"
+      default: "keyvault"
+      enum: ["keyvault", "env", "file", "command"]
+      example: "keyvault"
+      used_by: [os_configuration, deployment, monitoring, discovery, cicd_infra]
+    file:
+      description: "Schema 5.6.13. Settings of the file provider (file://<name>). Needed only when a reference uses it."
+      type: object
+      required: false
+      since: "5.6.13"
+      used_by: [os_configuration, deployment, monitoring, discovery, cicd_infra]
+      additionalProperties: false
+      properties:
+        directory:
+          description: "Schema 5.6.13. The absolute path of the directory that holds the secret files. file://<name> reads the file <name> in it: one secret per file, UTF-8, the trailing line break removed. A name cannot hold a path, so no reference can leave this directory. Links are refused. A warning is written when Everyone, Users or Authenticated Users (Windows), or group or other (Linux, macOS), can read the file."
+          type: string
+          required: false
+          since: "5.6.13"
+          minLength: 1
+          example: "C:\\ProgramData\\iic-secrets"
+          used_by: [os_configuration, deployment, monitoring, discovery, cicd_infra]
+    command:
+      description: "Schema 5.6.13. Settings of the command provider (command://<name>). Needed only when a reference uses it. The toolkit starts the executable directly with the argument list, with no shell, closes its standard input and reads its standard output as the secret (the trailing line break removed). A command that exits with a code other than 0 fails, and its standard error is reported without the secret."
+      type: object
+      required: false
+      since: "5.6.13"
+      used_by: [os_configuration, deployment, monitoring, discovery, cicd_infra]
+      additionalProperties: false
+      properties:
+        executable:
+          description: "Schema 5.6.13. The program to start: a command name found on the path, or an absolute path. Not a command line: the arguments are in command.arguments."
+          type: string
+          required: false
+          since: "5.6.13"
+          minLength: 1
+          example: "iic-secret-tool"
+          used_by: [os_configuration, deployment, monitoring, discovery, cicd_infra]
+        arguments:
+          description: "Schema 5.6.13. The arguments, one list item each. The text {name} in an item is replaced by the name in the reference (command://<name>). At least one item must hold {name}. Each item is passed as one argument; nothing is split or quoted by a shell."
+          type: array
+          required: false
+          since: "5.6.13"
+          example: [["get", "{name}"]]
+          used_by: [os_configuration, deployment, monitoring, discovery, cicd_infra]
+          items:
+            {"type":"string","minLength":1}
+        timeout_seconds:
+          description: "Schema 5.6.13. How long the command may run before it is stopped and the read fails. Default 30."
+          type: integer
+          required: false
+          since: "5.6.13"
+          default: 30
+          minimum: 1
+          maximum: 300
+          example: 30
+          used_by: [os_configuration, deployment, monitoring, discovery, cicd_infra]
 
 cluster:
   description: "The Azure Local instance (the cluster deployment)."
@@ -15534,7 +15609,7 @@ nodes:
             format: kv_ref
             sensitive: true
             required: false
-            pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+            pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
       rack:
         description: "Rack identifier, for the as-built record."
         type: string
@@ -15771,7 +15846,7 @@ hardware:
           format: kv_ref
           sensitive: true
           required: true
-          pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+          pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
           example: "keyvault://kv-iic-mgmt-01/bmc-password"
           used_by: [ztp, discovery]
         rfs_write_attribute:
@@ -15889,7 +15964,7 @@ hardware:
           sensitive: true
           since: "5.6.4"
           required: false
-          pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+          pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
           example: "keyvault://kv-iic-mgmt-01/sbe-share-reader"
           used_by: [os_configuration, deployment]
         package_sha256:
@@ -16402,7 +16477,7 @@ storage:
                   format: kv_ref
                   sensitive: true
                   required: false
-                  pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+                  pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
                 mutual:
                   description: "Schema 5.6.10. true: the initiators also authenticate the targets (ARM chapType Mutual); false: one-way CHAP (OneWay). With enabled false the deployment gets chapType None. Microsoft's template uses the one CHAP credential for both directions."
                   type: boolean
@@ -16603,7 +16678,7 @@ provisioning:
               format: kv_ref
               sensitive: true
               required: true
-              pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+              pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
               example: "keyvault://kv-iic-mgmt-01/provisioning-admin-password"
               used_by: [ztp]
         maintenance_password:
@@ -16613,7 +16688,7 @@ provisioning:
           sensitive: true
           since: "5.3"
           required: false
-          pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+          pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
           used_by: [ztp]
         media_share:
           description: "The SMB share the BMCs mount the images from."
@@ -17300,7 +17375,7 @@ network_devices:
             format: kv_ref
             sensitive: true
             required: true
-            pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+            pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
             example: "keyvault://kv-iic-mgmt-01/switch-admin-password"
       ha:
         description: "High availability of the device."
@@ -17641,7 +17716,7 @@ landing_zone:
                     format: kv_ref
                     sensitive: true
                     required: true
-                    pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+                    pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
                     example: "keyvault://kv-iic-mgmt-01/vpn-shared-key"
             point_to_site:
               description: "Point-to-site VPN for individual users. Not read by the tools yet: a documented placeholder."
@@ -17790,7 +17865,7 @@ landing_zone:
             format: kv_ref
             sensitive: true
             required: false
-            pattern: "^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"
+            pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
             example: "keyvault://kv-iic-mgmt-01/vm-admin-password"
     log_analytics:
       description: "The Log Analytics workspace of the landing zone."
@@ -17863,7 +17938,7 @@ file_metadata:
   additionalProperties: false
   properties:
     schema_version:
-      description: "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. The current version is 5.6.10."
+      description: "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. 5.6.13 adds the secrets section (provider, file directory, command) and lets a secret reference use the env://, file:// and command:// forms besides keyvault://. The current version is 5.6.13."
       type: string
       required: true
       pattern: "^5\\.[0-9]+\\.[0-9]+$"
@@ -17908,6 +17983,7 @@ _schema_root:
     - tags
     - azure
     - key_vaults
+    - secrets
     - cluster
     - deployment
     - nodes
@@ -17969,9 +18045,9 @@ _schema_defs:
     type: string
     pattern: ^[A-Za-z0-9][A-Za-z0-9-]{0,14}$
   kv_ref:
-    description: 'A Key Vault secret reference: keyvault://<vault>/<secret>. The vault must be listed in key_vaults.'
+    description: 'A secret reference, never a secret value. Four forms, one per provider: keyvault://<vault>/<secret> (the vault must be listed in key_vaults), env://<VARIABLE_NAME>, file://<name> (a file in secrets.file.directory) and command://<name> (the command in secrets.command). The format keeps its old name, kv_ref. See docs/secret-references.md. (the three non-Key-Vault forms since 5.6.13)'
     type: string
-    pattern: ^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$
+    pattern: ^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$
   bmc_credentials:
     type: object
     additionalProperties: false
@@ -19481,8 +19557,8 @@ tools:
               type: object
               area: "scripts/common/arm-deployment/AzlArmDeployment.psm1"
               properties:
-                identity_local_admin_password_keyvault_reference: {"name":"identity.local_admin.password (keyvault:// reference)","type":"keyvault://<vault>/<secret>","declared_type":"keyvault://<vault>/<secret>","enum":["^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"],"required":"Y","read_at":"scripts/common/arm-deployment/AzlArmDeployment.psm1:32","description":"ARM secure parameter localAdminPassword: the reference is read from Key Vault into memory at submit, never written (SecretParameters)."}
-                identity_active_directory_lcm_user_password_keyvault_reference: {"name":"identity.active_directory.lcm_user.password (keyvault:// reference)","type":"keyvault://<vault>/<secret>","declared_type":"keyvault://<vault>/<secret>","enum":["^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"],"required":"conditional","read_at":"scripts/common/arm-deployment/AzlArmDeployment.psm1:32","description":"ARM secure parameter AzureStackLCMAdminPassword (Active Directory identity only). Read from Key Vault into memory at submit."}
+                identity_local_admin_password_keyvault_reference: {"name":"identity.local_admin.password (keyvault:// reference)","type":"keyvault://<vault>/<secret>","declared_type":"keyvault://<vault>/<secret>","enum":["^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"],"required":"Y","read_at":"scripts/common/arm-deployment/AzlArmDeployment.psm1:32","description":"ARM secure parameter localAdminPassword: the reference is read from Key Vault into memory at submit, never written (SecretParameters)."}
+                identity_active_directory_lcm_user_password_keyvault_reference: {"name":"identity.active_directory.lcm_user.password (keyvault:// reference)","type":"keyvault://<vault>/<secret>","declared_type":"keyvault://<vault>/<secret>","enum":["^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"],"required":"conditional","read_at":"scripts/common/arm-deployment/AzlArmDeployment.psm1:32","description":"ARM secure parameter AzureStackLCMAdminPassword (Active Directory identity only). Read from Key Vault into memory at submit."}
         env_vars:
           type: object
           properties:
@@ -20303,7 +20379,7 @@ tools:
               type: object
               area: "scripts/common/idrac-management/AzlDellRedfish.psm1"
               properties:
-                keyvault_vault_secret_BMC_password_and_optionally_BMC_user_name: {"name":"keyvault://<vault>/<secret> (BMC password and, optionally, BMC user name)","type":"keyvault://<vault>/<secret>","declared_type":"keyvault://<vault>/<secret>","enum":["^keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}$"],"required":"conditional","read_at":"scripts/common/idrac-management/AzlDellRedfish.psm1:91","description":"Read by Get-AzlBmcKeyVaultSecret (Az.KeyVault, needs Connect-AzAccount) for hardware.bmc / nodes[].bmc username and password. Falls back to a Get-Credential prompt. No password is written or logged."}
+                keyvault_vault_secret_BMC_password_and_optionally_BMC_user_name: {"name":"keyvault://<vault>/<secret> (BMC password and, optionally, BMC user name)","type":"keyvault://<vault>/<secret>","declared_type":"keyvault://<vault>/<secret>","enum":["^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"],"required":"conditional","read_at":"scripts/common/idrac-management/AzlDellRedfish.psm1:91","description":"Read by Get-AzlBmcKeyVaultSecret (Az.KeyVault, needs Connect-AzAccount) for hardware.bmc / nodes[].bmc username and password. Falls back to a Get-Credential prompt. No password is written or logged."}
             scripts_common_idrac_management_Enable_IdracVnc_ps1:
               type: object
               area: "scripts/common/idrac-management/Enable-IdracVnc.ps1"

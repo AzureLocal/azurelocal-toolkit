@@ -382,7 +382,7 @@ Out-Line
 # Secrets
 Out-Line '## Secrets: keyvault:// references'
 Out-Line
-Out-Line '**No secret value is ever written in the file.** A secret key holds only `keyvault://<vault>/<secret>`: the vault name and the secret name. Create each secret in Key Vault before the run, and list every vault you reference under `key_vaults` (with its subscription and resource group). The validator refuses a plain value (the key must match the reference form) and a reference to an unlisted vault (rule AZL-001). Keep files with real vault names in a private environment repository.'
+Out-Line '**No secret value is ever written in the file.** A secret key holds only `keyvault://<vault>/<secret>`: the vault name and the secret name. Create each secret in Key Vault before the run, and list every vault you reference under `key_vaults` (with its subscription and resource group). The validator refuses a plain value (the key must match the reference form) and a reference to an unlisted vault (rule AZL-001). Keep files with real vault names in a private environment repository. Besides Key Vault, a reference can use another provider: `env://<VARIABLE_NAME>`, `file://<name>` (a file in `secrets.file.directory`) or `command://<name>` (the command in `secrets.command`); see [secret-references.md](secret-references.md).'
 Out-Line
 Out-Line 'The templates expect these secrets. The names are the templates'' placeholders (vault `kv-iic-mgmt-01`); use your own, and match the vault name to a `key_vaults` entry.'
 Out-Line

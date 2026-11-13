@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for infrastructure.yml for scenario.outbound_path = proxy_arc_gateway with every variable. Schema 5.6.10. Scenario: outbound_path=proxy_arc_gateway.
+# Template for infrastructure.yml for scenario.outbound_path = proxy_arc_gateway with every variable. Schema 5.6.13. Scenario: outbound_path=proxy_arc_gateway.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -145,6 +145,31 @@ key_vaults:
     # What the vault holds, for example management, deployment or backup.
     # used by: ztp, cicd_infra
     purpose: "management"
+
+# (since 5.6.13) 
+# used by: ztp, os_configuration, deployment, monitoring, discovery, cicd_infra
+secrets:
+  # (since 5.6.13) 
+  # one of: keyvault | env | file | command; default: "keyvault"; used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+  provider: "keyvault"
+  # (since 5.6.13) 
+  # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+  file:
+    # (since 5.6.13) 
+    # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+    directory: "C:\\ProgramData\\iic-secrets"
+  # (since 5.6.13) 
+  # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+  command:
+    # (since 5.6.13) 
+    # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+    executable: "iic-secret-tool"
+    # (since 5.6.13) 
+    # used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+    arguments: ["get", "{name}"]
+    # (since 5.6.13) 
+    # default: 30; used by: os_configuration, deployment, monitoring, discovery, cicd_infra
+    timeout_seconds: 30
 
 # The Azure Local instance (the cluster deployment).
 cluster:

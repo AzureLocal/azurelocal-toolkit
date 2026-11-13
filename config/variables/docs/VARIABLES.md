@@ -1,6 +1,6 @@
 # infrastructure.yml variables reference
 
-Every key of [`infrastructure.yml`](infrastructure-file.md), schema 5.6.10, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](../schema/infrastructure.schema.json) (itself generated from the master registry [`master-registry.yaml`](../schema/master-registry.yaml)), the examples and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don't edit it: change the registry (and the metadata) and run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`, then:
+Every key of [`infrastructure.yml`](infrastructure-file.md), schema 5.6.13, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](../schema/infrastructure.schema.json) (itself generated from the master registry [`master-registry.yaml`](../schema/master-registry.yaml)), the examples and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don't edit it: change the registry (and the metadata) and run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`, then:
 
 ```powershell
 ./config/variables/scripts/New-InfrastructureVariablesReference.ps1
@@ -23,7 +23,7 @@ Two templates start a file: [`infrastructure.example.yml`](../examples/infrastru
 
 ## Secrets: keyvault:// references
 
-**No secret value is ever written in the file.** A secret key holds only `keyvault://<vault>/<secret>`: the vault name and the secret name. Create each secret in Key Vault before the run, and list every vault you reference under `key_vaults` (with its subscription and resource group). The validator refuses a plain value (the key must match the reference form) and a reference to an unlisted vault (rule AZL-001). Keep files with real vault names in a private environment repository.
+**No secret value is ever written in the file.** A secret key holds only `keyvault://<vault>/<secret>`: the vault name and the secret name. Create each secret in Key Vault before the run, and list every vault you reference under `key_vaults` (with its subscription and resource group). The validator refuses a plain value (the key must match the reference form) and a reference to an unlisted vault (rule AZL-001). Keep files with real vault names in a private environment repository. Besides Key Vault, a reference can use another provider: `env://<VARIABLE_NAME>`, `file://<name>` (a file in `secrets.file.directory`) or `command://<name>` (the command in `secrets.command`); see [secret-references.md](secret-references.md).
 
 The templates expect these secrets. The names are the templates' placeholders (vault `kv-iic-mgmt-01`); use your own, and match the vault name to a `key_vaults` entry.
 
@@ -155,6 +155,21 @@ Every Key Vault that a keyvault:// reference in this file names, with where it i
 | `key_vaults[].subscription_id` | Subscription (GUID) that holds the vault. | GUID | if section is set / yes |  | `00000000-0000-0000-0000-000000000000` | Azure portal > Key vaults. List every vault a keyvault:// reference names. | ZTP, CI/CD infrastructure, ARM deployment, Trailwright |
 | `key_vaults[].resource_group` | Resource group that holds the vault. | resource group name | if section is set / yes |  | `rg-iic-mgmt-01` | Azure portal > Key vaults. List every vault a keyvault:// reference names. | ZTP, CI/CD infrastructure, ARM deployment, Trailwright |
 | `key_vaults[].purpose` | What the vault holds, for example management, deployment or backup. | string | no / no |  | `management` | Azure portal > Key vaults. List every vault a keyvault:// reference names. | ZTP, CI/CD infrastructure, Trailwright |
+
+### secrets
+
+Where the toolkit reads secrets from. (since 5.6.13)
+
+| Path | What it is | Type | Required: full / ztp | Default | Example | Where to get the value | Read by |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `secrets` | Where the toolkit reads secrets from. (since 5.6.13) | object | no / no |  |  |  | ZTP, OS configuration, CI/CD infrastructure, ARM deployment, Sonar, Discovery, Trailwright |
+| `secrets.provider` | The provider New-AzlSecretReference uses for a new reference when the caller does not name one. (since 5.6.13) | one of `keyvault`, `env`, `file`, `command` | no / no | `keyvault` |  |  | OS configuration, CI/CD infrastructure, ARM deployment, Sonar, Discovery, Trailwright |
+| `secrets.file` | Settings of the file provider (file://<name>). (since 5.6.13) | object | no / no |  |  |  | OS configuration, CI/CD infrastructure, ARM deployment, Sonar, Discovery, Trailwright |
+| `secrets.file.directory` | The absolute path of the directory that holds the secret files. file://<name> reads the file <name> in it: one secret per file, UTF-8, the trailing l... (since 5.6.13) | string | no / no |  |  |  | OS configuration, CI/CD infrastructure, ARM deployment, Sonar, Discovery, Trailwright |
+| `secrets.command` | Settings of the command provider (command://<name>). (since 5.6.13) | object | no / no |  |  |  | OS configuration, CI/CD infrastructure, ARM deployment, Sonar, Discovery, Trailwright |
+| `secrets.command.executable` | The program to start: a command name found on the path, or an absolute path. (since 5.6.13) | string | no / no |  |  |  | OS configuration, CI/CD infrastructure, ARM deployment, Sonar, Discovery, Trailwright |
+| `secrets.command.arguments` | The arguments, one list item each. (since 5.6.13) | list of string | no / no |  |  |  | OS configuration, CI/CD infrastructure, ARM deployment, Sonar, Discovery, Trailwright |
+| `secrets.command.timeout_seconds` | How long the command may run before it is stopped and the read fails. (since 5.6.13) | integer | no / no | `30` |  |  | OS configuration, CI/CD infrastructure, ARM deployment, Sonar, Discovery, Trailwright |
 
 ### cluster
 

@@ -15,8 +15,11 @@
     Exit codes: 0 the requested part succeeded; 1 a precondition failed, or the validation or deployment failed or timed out;
     2 bad input (a file or a required key is missing, unsupported scenario, no Azure sign-in when one is needed).
 
-    Secrets: parameters hold keyvault:// references. The values are read into memory only when submitting, are remembered to be
-    scrubbed from every text this module writes, and are never written.
+    Secrets: parameters hold secret references (keyvault://, env://, file:// or command://). The values are read into memory only
+    when submitting, through the toolkit's secret resolver (scripts/common/secrets/AzlSecret.psm1), are remembered to be scrubbed
+    from every text this module writes, and are never written. They are sent as the value of a secure template parameter, which
+    works with every provider. Only the parameter FILE option -SecretMode KeyVaultReference hands ARM a Key Vault reference to
+    read, and that needs keyvault:// references.
 #>
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -24,6 +27,7 @@ $ErrorActionPreference = 'Stop'
 Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'infrastructure', 'AzlInfrastructure.psm1'))
 Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'azure-local', 'AzlAzure.psm1'))
 Import-Module ([IO.Path]::Combine($PSScriptRoot, 'AzlArmDeployment.psm1'))
+Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'secrets', 'AzlSecret.psm1'))
 # The contract with the pre-cluster verification gate: where its result is and when it counts (the gate itself loads this module, so only the contract is imported).
 Import-Module ([IO.Path]::Combine($PSScriptRoot, 'AzlPreClusterGate.psm1'))
 
@@ -31,6 +35,7 @@ $script:RepoRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..'
 $script:KnownIssuesPath = [IO.Path]::Combine($script:RepoRoot, 'config', 'known-issues', 'arm-deployment.json')
 $script:ParameterSourcesPath = [IO.Path]::Combine($script:RepoRoot, 'config', 'azure', 'arm-templates', 'parameter-sources.json')
 $script:SecretValues = [System.Collections.Generic.List[string]]::new()
+$script:RunInfrastructure = $null
 $script:EventMaxText = 2000
 # Event data members that carry the whole Azure text of a failure (the evidence member is the one-line form). Not cut; secrets still removed.
 $script:EventFullTextKeys = @('detail', 'checks', 'ignoredSteps')
@@ -912,7 +917,11 @@ function New-AzlArmAzureAdapter {
             $s = Get-AzKeyVaultSecret -VaultName $Vault -Name $Secret -ErrorAction Stop
             return [bool]$s
         }
-        GetSecret = { param($Reference) Get-AzlSecret -Reference $Reference }
+        # The toolkit's secret resolver: any provider (keyvault://, env://, file://, command://). It needs the infrastructure file
+        # for key_vaults and the secrets section. The value is plain text because it goes into the request body of a secure parameter.
+        GetSecret = { param($Reference, $Infrastructure) Get-AzlSecretPlainText -Reference $Reference -Infrastructure $Infrastructure }
+        # Can the reference be read now? Providers other than Key Vault (Key Vault goes through TestSecret). No value is returned.
+        TestSecretReference = { param($Reference, $Infrastructure) Test-AzlSecretReference -Reference $Reference -Infrastructure $Infrastructure -Detailed }
         GetHciResourceProviderObjectId = { Get-AzlHciResourceProviderObjectId }
         GetArcMachine = {
             param($Node, $ResourceId, $ArcMachineName, $Subscription, $ResourceGroup)
@@ -1321,14 +1330,21 @@ $script:Checks['KeyVaultSecrets'] = {
     $bad = @()
     foreach ($r in $refs) {
         $parts = ConvertFrom-AzlKeyVaultRef -Reference $r.Reference
-        if (-not $parts) { $bad += "$($r.Parameter): '$($r.Reference)' is not a keyvault:// reference"; continue }
+        if (-not $parts) {
+            # Not Key Vault: env://, file:// or command:// are read by this machine, so the resolver proves them. Anything else is not a reference.
+            if (-not (Get-AzlSecretProvider -Reference $r.Reference)) { $bad += "$($r.Parameter): the value is not a secret reference (keyvault://, env://, file:// or command://)"; continue }
+            if (-not (Test-AzlArmAdapterHas $Ctx.Run.Adapter TestSecretReference)) { $bad += "$($r.Parameter): '$($r.Reference)' cannot be checked here"; continue }
+            $probe = Invoke-AzlArmAdapter $Ctx.Run.Adapter TestSecretReference @($r.Reference, $Ctx.Infra)
+            if (-not $probe.Resolvable) { $bad += "$($r.Parameter): $($probe.Message)" }
+            continue
+        }
         if ($parts.Vault -notin $listed) { $bad += "$($r.Parameter): vault $($parts.Vault) is not listed under key_vaults"; continue }
         $exists = $false
         try { $exists = [bool](Invoke-AzlArmAdapter $Ctx.Run.Adapter TestSecret @($parts.Vault, $parts.Secret)) } catch { $bad += "$($r.Parameter): secret $($parts.Secret) in $($parts.Vault) could not be read ($($_.Exception.Message))"; continue }
         if (-not $exists) { $bad += "$($r.Parameter): secret $($parts.Secret) is not in vault $($parts.Vault)" }
     }
-    if ($bad) { return New-AzlArmCheckResult KeyVaultSecrets Failed ($bad -join '; ') 'Create the secret (Add-KeyVaultCredentials.ps1), grant this identity Get on secrets, or fix the keyvault:// reference.' }
-    New-AzlArmCheckResult KeyVaultSecrets Passed "$($refs.Count) secret reference(s) resolve to existing secrets (values not read)."
+    if ($bad) { return New-AzlArmCheckResult KeyVaultSecrets Failed ($bad -join '; ') 'Create the secret (Add-KeyVaultCredentials.ps1), grant this identity Get on secrets, or fix the reference (keyvault://, env://, file:// or command://; the secrets section of the file holds the file directory and the command).' }
+    New-AzlArmCheckResult KeyVaultSecrets Passed "$($refs.Count) secret reference(s) resolve (no value is logged or returned)."
 }
 
 $script:Checks['ArcMachinesConnected'] = {
@@ -1933,7 +1949,8 @@ function Invoke-AzlArmPhase {
             Mode = $mode; DeploymentName = $name
             # The resolver is called by the submit code, which is outside this module; a scriptblock keeps this module's scope, so it
             # reaches the run's adapter through the script variable (a closure would lose the module's private functions).
-            SecretResolver = { param($Ref) $v = Invoke-AzlArmAdapter $script:RunAdapter GetSecret @($Ref); Register-AzlArmSecret $v; $v }
+            # The infrastructure file goes along because the resolver needs key_vaults and the secrets section.
+            SecretResolver = { param($Ref) $v = Invoke-AzlArmAdapter $script:RunAdapter GetSecret @($Ref, $script:RunInfrastructure); Register-AzlArmSecret $v; $v }
         }
         if ($set.deploymentSettingsApiVersion) { $args2.DeploymentSettingsApiVersion = $set.deploymentSettingsApiVersion }
         if ($Phase -eq 'Deploy' -and $action.Kind -eq 'Resubmit') { $args2.SkipValidationCheck = $true }
@@ -2204,6 +2221,7 @@ function Invoke-AzlArmDeploymentRun {
         elseif ($ProbeOsConfiguration -and (Test-AzlArmAdapterHas $Adapter ProbeOsConfiguration)) { $osReport = Invoke-AzlArmAdapter $Adapter ProbeOsConfiguration @($InfrastructureFile, $HandoffFile) }
 
         $script:RunAdapter = $Adapter
+        $script:RunInfrastructure = $infra
         try { $template = Select-AzlArmTemplate -Infrastructure $infra }
         catch { Stop-AzlArmInput "No template for this design: $($_.Exception.Message)" }
         $report.template = [ordered]@{ name = $template.Name; uri = $template.Uri }
