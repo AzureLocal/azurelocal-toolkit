@@ -24,6 +24,10 @@ BeforeAll {
     $script:RegistryPath = Join-Path $script:Vars 'schema\master-registry.yaml'
     $script:Registry = Get-RegistryDocument -Path $script:RegistryPath
     $script:Catalog = Get-ToolCatalog -Registry $script:Registry
+    # BeforeDiscovery values are not visible in the run phase: the tests below read them here
+    $script:AllTools = @($script:Catalog.Keys)
+    $script:ToolsWithKeys = @(Get-ToolWithKey -Registry $script:Registry)
+    $script:ToolsWithoutKeys = @($script:AllTools | Where-Object { $_ -notin $script:ToolsWithKeys })
     # the keys of infrastructure.yml: every registry variable that is not a tool-owned one
     $script:Variables = @(Get-RegistryVariable -Path $script:RegistryPath -Registry $script:Registry | Where-Object { $_.Path -notlike 'tools.*' })
 
@@ -44,6 +48,7 @@ BeforeAll {
         $allowed = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
         foreach ($p in $Tagged) {
             [void]$allowed.Add($p)
+            [void]$allowed.Add($p + '.*')   # a free-key map below a key (tags.*) is written as <path>.example_name in a template
             $up = $p
             while ($up -match '^(?<parent>.+)(\[\]|\.[^.\[\]]+)$') { $up = $Matches['parent']; [void]$allowed.Add($up); [void]$allowed.Add($up + '[]') }
         }
