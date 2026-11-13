@@ -4,8 +4,6 @@ Which task folders under `scripts/deploy` have a script, per kind. **Generated**
 
 The toolkit is PowerShell. Azure CLI scripts exist only for tasks that act on Azure. Bash is not part of the layout and is not in the tables below.
 
-Task folders that still hold an older Bash script: 6. They are listed under "Older Bash scripts" at the end of this page.
-
 | Word | Meaning |
 |---|---|
 | built | The folder holds at least one real script. A folder can also hold a placeholder next to it (for example an orchestrated variant that is not written yet). |
@@ -187,14 +185,3 @@ Azure CLI may or may not apply. Decide, then set `AzureCli` to `yes` or `no` in 
 | `04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn` | SDN is enabled on the cluster; Azure is only used to run commands and read secrets. |
 | `05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging` | Security logging and audit policy can be on the nodes or in Azure; the real script uses no Azure command. |
 | `05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry` | Telemetry can be set on the nodes or in Azure; the real script uses no Azure command. |
-
-## Older Bash scripts
-
-These task folders still hold a Bash script from before the layout was set. Nothing in the toolkit calls them.
-
-- `01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners`
-- `02-azure-foundation/phase-01-landing-zones/full-deployment/task-02-create-subscriptions`
-- `02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-02-pipeline-execution/task-01-commit-and-push`
-- `02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-01-verify-resources`
-- `02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-02-test-connectivity`
-- `02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-03-validate-configuration`

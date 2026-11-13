@@ -79,5 +79,5 @@ The "After" column says what this branch adds. Paths are relative to the reposit
 
 ## What stays a scaffold
 
-- The `azurecli` and `bash` variants of tasks 02 to 05 and the `bash` variant of task 06 keep their old content (the task 01 Bash script has been removed), except that the `azurecli` variants now call the PowerShell implementation. Bash is outside the repository's scripting standard; the docs page should stop pointing to it.
+- The `azurecli` and `bash` variants of tasks 02 to 05 and the `bash` variant of task 06 keep their old content (the task 01 Bash script has been removed), except that the `azurecli` variants now call the PowerShell implementation. Bash is outside the repository's scripting standard; the docs page should stop pointing to it. Update: the remaining Bash scripts are removed; the toolkit holds no Bash.
 - The standalone scaffold line `-Configuration [ordered]@{` was in 12 scripts under `scripts/deploy`; the six in `01-cicd-infra` are replaced here and six others remain.
