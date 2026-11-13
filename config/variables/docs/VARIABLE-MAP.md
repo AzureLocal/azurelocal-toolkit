@@ -114,7 +114,7 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 **Reads (22):**
 `nodes[].name`, `nodes[].management.mac_address`, `nodes[].serial_number`, `nodes[].bmc.ip_address`, `nodes[].bmc.type`, `nodes[].bmc.username`, `nodes[].bmc.password`, `nodes[].bios.*`, `hardware.vendor`, `hardware.model`, `hardware.cpu_cores`, `hardware.memory_gib`, `hardware.gpu.enabled`, `hardware.gpu.model`, `hardware.gpu.count_per_node`, `hardware.bmc.username`, `hardware.bmc.password`, `hardware.bmc.verify_certificate`, `hardware.inventory.output_directory`, `hardware.inventory.file_name_prefix`, `hardware.inventory.format`, `hardware.inventory.timeout_seconds`
 
-Where in the code (file, function, keys read by name; 7 places):
+Where in the code (file, function, keys read by name; 9 places):
 
 | File | Function | Keys |
 | --- | --- | ---: |
@@ -124,6 +124,8 @@ Where in the code (file, function, keys read by name; 7 places):
 | `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Invoke-HardwareDiscovery.ps1` | `(script)` | 4 |
 | `scripts/common/idrac-management/Enable-IdracVnc.ps1` | `(script)` | 2 |
 | `scripts/common/redfish/AzlRedfishInventory.psm1` | `Get-AzlHardwareSymmetry` | 2 |
+| `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-04-bios-and-idrac-settings-validation/powershell/Test-BiosIdracSettings.ps1` | `(script)` | 2 |
+| `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-05-bios-and-idrac-settings-remediation/powershell/Set-BiosIdracSettings.ps1` | `(script)` | 2 |
 | `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Invoke-HardwareDiscovery.ps1` | `Get-ExistingManagementMac` | 1 |
 
 ### ztp

@@ -10,14 +10,19 @@
     - Generates compliance report with pass/fail per setting
     - Does NOT make changes — use task-05 for remediation
 
+    The BMC login comes from infrastructure.yml: hardware.bmc.username and password, and a node's own nodes[].bmc.username and
+    password when it has them (they win for that node). The password is a secret reference (keyvault://, env://, file:// or
+    command://) read by the toolkit's secret resolver; no value is written to the file. Whether the BMC certificate is checked
+    comes from hardware.bmc.verify_certificate (default false: the BMC's own certificate is accepted). The script never prompts.
+
+    Keys read: nodes[].name, nodes[].bmc (ip_address, username, password), hardware.bmc (username, password, verify_certificate),
+    hardware.bios_settings and hardware.idrac_settings (overrides of the desired values), secrets and key_vaults (for the references).
+
 .PARAMETER ConfigPath
     Path to infrastructure.yml configuration.
 
-.PARAMETER iDRACUsername
-    iDRAC admin username.
-
-.PARAMETER iDRACPassword
-    iDRAC admin password as SecureString.
+.PARAMETER Credential
+    Optional. Use this BMC login for every node instead of the one in infrastructure.yml.
 
 .PARAMETER OutputPath
     Path to save validation report. Default: .\logs\bios-validation-report.json
@@ -39,10 +44,7 @@ param(
     [string]$ConfigPath,
 
     [Parameter(Mandatory = $false)]
-    [string]$iDRACUsername,
-
-    [Parameter(Mandatory = $false)]
-    [SecureString]$iDRACPassword,
+    [PSCredential]$Credential,
 
     [Parameter(Mandatory = $false)]
     [string]$OutputPath = ".\logs\bios-validation-report.json"
@@ -52,6 +54,11 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+$common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common'))
+Import-Module ([IO.Path]::Combine($common, 'infrastructure', 'AzlInfrastructure.psm1'))
+Import-Module ([IO.Path]::Combine($common, 'secrets', 'AzlSecret.psm1'))
+Import-Module ([IO.Path]::Combine($common, 'redfish', 'AzlRedfishCore.psm1'))
 
 function Write-Log {
     param([string]$Message, [string]$Level = "INFO")
@@ -71,19 +78,7 @@ function Resolve-ConfigPath {
 
 function Import-InfrastructureConfig {
     param([string]$Path)
-    if (-not (Get-Module -Name powershell-yaml -ListAvailable)) {
-        Install-Module -Name powershell-yaml -Force -Scope CurrentUser
-    }
-    Import-Module powershell-yaml
-    return Get-Content -Path $Path -Raw | ConvertFrom-Yaml
-}
-
-function Get-RedfishCredential {
-    if ($iDRACUsername -and $iDRACPassword) {
-        return [PSCredential]::new($iDRACUsername, $iDRACPassword)
-    }
-    Write-Log "No iDRAC credentials provided — prompting..." -Level "WARN"
-    return Get-Credential -Message "Enter iDRAC credentials"
+    return Import-AzlInfrastructure -Path $Path -SkipValidation
 }
 
 function Get-RedfishData {
@@ -93,9 +88,12 @@ function Get-RedfishData {
         [PSCredential]$Credential
     )
     $uri = "$BaseUri$Endpoint"
+    # The BMC's own certificate is accepted unless hardware.bmc.verify_certificate is true.
+    $tls = @{}
+    if (-not $script:VerifyCertificate) { $tls.SkipCertificateCheck = $true }
     $response = Invoke-RestMethod -Uri $uri -Credential $Credential `
         -Method Get -ContentType 'application/json' `
-        -SkipCertificateCheck -ErrorAction Stop
+        @tls -ErrorAction Stop
     return $response
 }
 
@@ -158,13 +156,14 @@ Write-Log "=== BIOS and iDRAC Settings Validation ===" -Level "HEADER"
 $configFile = Resolve-ConfigPath -ExplicitPath $ConfigPath
 $config = Import-InfrastructureConfig -Path $configFile
 
-$nodes = $config.compute.nodes
+$nodes = Get-AzlInfrastructureValue -Infrastructure $config -Path 'nodes'
 if (-not $nodes -or $nodes.Count -eq 0) {
     Write-Log "No nodes found in configuration." -Level "ERROR"
     exit 1
 }
 
-$credential = Get-RedfishCredential
+$verifyValue = Get-AzlInfrastructureValue -Infrastructure $config -Path 'hardware.bmc.verify_certificate'
+$script:VerifyCertificate = ($null -ne $verifyValue -and ([string]$verifyValue).Trim().ToLowerInvariant() -in 'true', '1', 'yes')
 
 # Define desired BIOS settings baseline for Azure Local
 $desiredBios = @{
@@ -178,18 +177,20 @@ $desiredBios = @{
 }
 
 # Override with config if present
-if ($config.hardware.bios_settings) {
-    foreach ($key in $config.hardware.bios_settings.Keys) {
-        $desiredBios[$key] = $config.hardware.bios_settings[$key]
+$biosOverride = Get-AzlInfrastructureValue -Infrastructure $config -Path 'hardware.bios_settings'
+if ($biosOverride) {
+    foreach ($key in $biosOverride.Keys) {
+        $desiredBios[$key] = $biosOverride[$key]
     }
 }
 
 $desiredIdrac = @{
     "IPMILan.1#Enable"  = "Enabled"
 }
-if ($config.hardware.idrac_settings) {
-    foreach ($key in $config.hardware.idrac_settings.Keys) {
-        $desiredIdrac[$key] = $config.hardware.idrac_settings[$key]
+$idracOverride = Get-AzlInfrastructureValue -Infrastructure $config -Path 'hardware.idrac_settings'
+if ($idracOverride) {
+    foreach ($key in $idracOverride.Keys) {
+        $desiredIdrac[$key] = $idracOverride[$key]
     }
 }
 
@@ -198,8 +199,9 @@ $totalPass = 0
 $totalFail = 0
 
 foreach ($node in $nodes) {
-    $nodeName = $node.name
-    $iDRACIp = $node.bmc.ip_address
+    $nodeName = [string]$node['name']
+    $bmcBlock = if ($node.Contains('bmc')) { $node['bmc'] } else { $null }
+    $iDRACIp = if ($bmcBlock -is [System.Collections.IDictionary] -and $bmcBlock.Contains('ip_address')) { [string]$bmcBlock['ip_address'] } else { $null }
 
     if (-not $iDRACIp) {
         Write-Log "  $nodeName : No BMC IP — skipping" -Level "WARN"
@@ -209,8 +211,10 @@ foreach ($node in $nodes) {
     Write-Log "  Validating $nodeName ($iDRACIp)..." -Level "INFO"
 
     try {
-        $biosResults = Test-BiosSettings -iDRACIp $iDRACIp -Credential $credential -DesiredSettings $desiredBios
-        $idracResults = Test-IdracSettings -iDRACIp $iDRACIp -Credential $credential -DesiredSettings $desiredIdrac
+        # -Credential, else nodes[].bmc, else hardware.bmc (secret references read by the resolver). Never a prompt.
+        $bmcCredential = Resolve-AzlBmcCredential -Credential $Credential -Infrastructure $config -Node $node -NoPrompt
+        $biosResults = Test-BiosSettings -iDRACIp $iDRACIp -Credential $bmcCredential -DesiredSettings $desiredBios
+        $idracResults = Test-IdracSettings -iDRACIp $iDRACIp -Credential $bmcCredential -DesiredSettings $desiredIdrac
 
         $allResults = $biosResults + $idracResults
         $pass = ($allResults | Where-Object { $_.Status -eq "PASS" }).Count
