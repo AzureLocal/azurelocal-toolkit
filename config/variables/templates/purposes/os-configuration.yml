@@ -470,7 +470,7 @@ networking:
       # Free text.
       # used by: os_configuration
       purpose: ""
-  # Arc VM logical networks created after deployment (task phase-06 task-08, Invoke-LogicalNetworks-Orchestrated.ps1: az stack-hci-vm network l...
+  # Arc VM logical networks created after deployment (task phase-06 task-08, New-LogicalNetwork.ps1: az stack-hci-vm network lnet create).
   # used by: os_configuration, deployment
   logical_networks:
     # What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote mana...

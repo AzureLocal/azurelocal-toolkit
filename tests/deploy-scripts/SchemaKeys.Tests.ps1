@@ -53,7 +53,6 @@ BeforeDiscovery {
         @{ File = 'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Get-VirtualSwitchName.ps1'; Id = 'compute.azure_local'; Reason = $vmSwitch }
         @{ File = 'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Get-VirtualSwitchName-Standalone.ps1'; Id = 'compute.azure_local'; Reason = $vmSwitch }
         @{ File = 'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Invoke-DeploySDN-Orchestrated.ps1'; Id = 'compute.azure_local'; Reason = $vmSwitch }
-        @{ File = 'scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/powershell/Invoke-LogicalNetworks-Orchestrated.ps1'; Id = 'compute.azure_local'; Reason = $vmSwitch }
         @{ File = 'scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-02-vpn-gateway/powershell/New-VpnGateway.ps1'; Id = 'azure_platform'; Reason = $rgRole }
         @{ File = 'scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-03-s2s-vpn-connection/powershell/New-VpnConnection.ps1'; Id = 'azure_platform'; Reason = $rgRole }
         @{ File = 'scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-07-nat-gateway/powershell/New-NatGateway.ps1'; Id = 'azure_platform'; Reason = $rgRole }

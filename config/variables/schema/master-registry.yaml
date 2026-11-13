@@ -41,6 +41,8 @@
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
 #   v5.0.37 (2026-11-13):
 #     - Secret providers (infrastructure schema 5.6.13): the section secrets (provider, file.directory, command.executable, command.arguments, command.timeout_seconds) and the reference forms env://, file:// and command:// besides keyvault:// for every kv_ref key. One resolver, scripts/common/secrets/AzlSecret.psm1; the ARM deployment reads its secret parameters through it.
+#   v5.0.35 (2026-11-13):
+#     - Post-deployment networking and images (infrastructure schema 5.6.11): networking.network_security_groups (name, rules[] with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description), networking.logical_networks[].vm_switch_name and storage.vm_images[] (name, os_type, publisher, offer, sku, version, storage_path). New-NetworkSecurityGroup.ps1, New-LogicalNetwork.ps1 and New-VmImage.ps1 (phase 06, tasks 07, 08 and 06) read them; their parameters are registered under tools.arm_deployment.parameters. They replace seven scripts (two orchestrators, three standalone copies and Get-ImageDownloads.ps1) that read the unregistered network.nsgs and marketplace_images, or the 4.0 names default_gateway and ip_pools, and carried a fixed image catalogue. The logical network definition of the schema now accepts enabled, ip_allocation_method, nsg_name and vm_switch_name (it rejected the first three as unknown keys).
 #   v5.0.34 (2026-11-12):
 #     - SAN deployment (infrastructure schema 5.6.10): networking.cluster_network_properties (bandwidth_percentage_smb, jumbo_packet, priority_cluster, priority_smb) replaces four values the ARM parameter generator carried; storage.san.iscsi.networks[] (fabric, vlan_id, subnet, next_hop), storage.san.iscsi.jumbo_packet and storage.san.iscsi.chap.mutual feed the iSCSI quickstart template (create-cluster-san-iscsi), which the generator now produces. storage.san.iscsi.chap.username and secret are read by the deployment.
 #   v5.0.33 (2026-11-12):
@@ -190,7 +192,7 @@ _metadata:
   version: "5.0.37"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.13"
-  last_updated: "2026-11-12"
+  last_updated: "2026-11-13"
   total_variables: "5100+"
   maintainers:
     - name: "AzureLocal Cloud Team Team"
@@ -200,6 +202,10 @@ _metadata:
       version: "5.0.37"
       change: "Secret providers (infrastructure schema 5.6.13): the new section secrets (provider, file.directory, command.executable, command.arguments, command.timeout_seconds) and the reference forms env://<VARIABLE>, file://<name> and command://<name> besides keyvault://<vault>/<secret> for every key of format kv_ref. The format keeps its name; its pattern accepts the four forms."
       reason: "Owner requirement: four secret providers (Azure Key Vault by default, environment variable, file, custom command) behind one resolver that every script calls, and no script names a vault. A reference holds a name only; the directory and the command are settings, so a shared file cannot point a machine at a path or run a command."
+    - date: "2026-11-13"
+      version: "5.0.35"
+      change: "Post-deployment networking and images (infrastructure schema 5.6.11): networking.network_security_groups[] (name, rules[]: name, priority 100 to 4096, direction, access, protocol, source_address_prefixes, destination_address_prefixes, source_port_ranges, destination_port_ranges, description up to 140 characters), networking.logical_networks[].vm_switch_name and storage.vm_images[] (name, os_type, publisher, offer, sku, version, storage_path). sdn.enabled is read by the NSG and logical network scripts. The logical network definition in _schema_defs accepts enabled, ip_allocation_method, nsg_name and vm_switch_name. The 4.0 compute.azure_local.vm_switch_name is marked deprecated. The parameters of the three new scripts are registered."
+      reason: "Owner directives D96 and D115: no hard-coded value in the post-deployment tasks, and every key read by a script is registered. The NSG script read the unregistered network.nsgs; the image scripts carried a fixed catalogue and the logical network script read default_gateway and ip_pools. The keys follow Microsoft Learn: network security groups need SDN and at least one rule, the virtual switch is found with Get-VMSwitch -SwitchType External, and Azure Marketplace images are created with name, OS type, publisher, offer, SKU and version."
     - date: "2026-11-12"
       version: "5.0.34"
       change: "SAN deployment (infrastructure schema 5.6.10): networking.cluster_network_properties (bandwidth_percentage_smb, jumbo_packet, priority_cluster, priority_smb) replaces four values the ARM parameter generator carried; storage.san.iscsi.networks[] (fabric, vlan_id, subnet, next_hop), storage.san.iscsi.jumbo_packet and storage.san.iscsi.chap.mutual feed the iSCSI quickstart template (create-cluster-san-iscsi), which the generator now produces. storage.san.iscsi.chap.username and secret are read by the deployment."
@@ -7704,7 +7710,7 @@ networking:
             required: false
             used_by: [os_configuration]
     logical_networks:
-      description: "Arc VM logical networks created after deployment (task phase-06 task-08, Invoke-LogicalNetworks-Orchestrated.ps1: az stack-hci-vm network lnet create). Also read by the remote management security profile (purpose, address_prefix) and by the pre-cluster verification (name, vlan_id, address_prefix, purpose). The key names are the ones of this list: gateway and ip_pool. The older form networking.onprem.logical_networks[] (default_gateway, ip_pools) is deprecated."
+      description: "Arc VM logical networks created after deployment (task phase-06 task-08, New-LogicalNetwork.ps1: az stack-hci-vm network lnet create). Also read by the remote management security profile (purpose, address_prefix) and by the pre-cluster verification (name, vlan_id, address_prefix, purpose). The older form networking.onprem.logical_networks[] (default_gateway, ip_pools) is deprecated. A Static network needs address_prefix, gateway, dns_servers, vlan_id and ip_pool (Learn: DNS server, gateway and VLAN ID must be specified for a static logical network). Microsoft Learn: once a logical network exists you cannot change its gateway, IP pool, address space, VLAN ID or virtual switch name, so the script never changes an existing one."
       type: array
       required: false
       used_by: [os_configuration, deployment]
@@ -7735,11 +7741,18 @@ networking:
             used_by: [deployment]
             example: "Static"
           nsg_name:
-            description: "Name of the network security group to associate with the logical network. Used only when the creation task runs with -AssociateNsg; the group must exist (SDN). (Since 5.6.3.)"
+            description: "Name of the network security group to associate with the logical network. The association is made when the logical network is created, so create the group first (networking.network_security_groups[], New-NetworkSecurityGroup.ps1): the name must be one of that list, and sdn.enabled must be true. Leave it out for a logical network without a group. The script does not associate a group with a logical network that exists. (Since 5.6.3.)"
             type: string
             required: false
             used_by: [deployment]
             example: "nsg-workloads"
+          vm_switch_name:
+            description: "Name of the external virtual switch on the cluster that this logical network is created on (az stack-hci-vm: --vm-switch-name; it cannot be changed afterwards). Leave it out: the script reads the external virtual switches of the cluster with Get-VMSwitch -SwitchType External, the command Microsoft Learn gives, and uses the one it finds. Name it only when the cluster has more than one external switch (for example one for each compute intent); the name must be one the cluster reports. Network ATC names the switch after the intent, but the script does not build a name from the intent."
+            type: string
+            required: false
+            since: "5.6.11"
+            used_by: [deployment]
+            example: "ConvergedSwitch(management_compute_storage)"
           purpose:
             type: string
             used_by: [os_configuration, deployment]
@@ -7748,7 +7761,7 @@ networking:
             enum: ["management", "oob", "automation", "compute", "storage", "other"]
             example: "compute"
           vlan_id:
-            description: "VLAN ID of the logical network; 0 for untagged."
+            description: "VLAN ID of the logical network; 0 for untagged. Needed when ip_allocation_method is Static (Learn: DNS server, gateway and VLAN ID must be specified for a static logical network). For a Dynamic network, leave it out for 0."
             type: integer
             required: false
             used_by: [deployment]
@@ -7756,7 +7769,7 @@ networking:
             maximum: 4094
             example: 2204
           address_prefix:
-            description: "Address prefix of the logical network in CIDR form."
+            description: "Address prefix of the logical network in CIDR form. Needed when ip_allocation_method is Static (az stack-hci-vm takes one prefix). Not used for a Dynamic network; it is still read by the remote management security profile and the pre-cluster verification."
             used_by: [os_configuration, deployment]
             type: string
             format: cidr
@@ -7764,7 +7777,7 @@ networking:
             pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])$"
             example: "203.0.113.0/24"
           gateway:
-            description: "Default gateway of the logical network. When it is left out the network is created without a gateway (az stack-hci-vm: --no-gateway). The creation script of task-08 still reads this key as default_gateway: a task in config/variables/docs/variables-audit-tasks.md changes the script to this name."
+            description: "Default gateway of the logical network, inside address_prefix. Needed when ip_allocation_method is Static (Learn: gateway, DNS server and VLAN ID must be specified for a static logical network). Not used for a Dynamic network."
             type: string
             format: ipv4
             required: false
@@ -7772,7 +7785,7 @@ networking:
             pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
             example: "203.0.113.1"
           dns_servers:
-            description: "DNS servers handed to machines on this logical network (ARM and az stack-hci-vm: dnsServers)."
+            description: "DNS servers handed to machines on this logical network (az stack-hci-vm: --dns-servers). Needed when ip_allocation_method is Static; not used for a Dynamic network."
             type: array
             required: false
             used_by: [deployment]
@@ -7780,7 +7793,7 @@ networking:
             items:
               {"format":"ipv4","type":"string","pattern":"^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"}
           ip_pool:
-            description: "The one address range Azure Local hands to virtual machines on this logical network (first and last address, both inside address_prefix); az stack-hci-vm takes one pool per network. Needed when ip_allocation_method is Static. The creation script of task-08 still reads a list called ip_pools (and its type): a task in config/variables/docs/variables-audit-tasks.md changes the script to this name."
+            description: "The one address range Azure Local hands to virtual machines on this logical network (first and last address, both inside address_prefix), sent as --ip-pool-start and --ip-pool-end. Needed when ip_allocation_method is Static. The pool type is not a key: Learn's static examples give none. Not used for a Dynamic network."
             type: object
             required: false
             used_by: [deployment]
@@ -7802,6 +7815,125 @@ networking:
                 required: true
                 pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
                 example: "203.0.113.200"
+    network_security_groups:
+      description: "Schema 5.6.11. Network security groups (NSG) for Azure Local virtual machines and logical networks, with their rules. New-NetworkSecurityGroup.ps1 (phase 06, task 07: az stack-hci-vm network nsg create and nsg rule create) creates each group and the rules it does not have yet. NSGs on Azure Local need SDN enabled by Azure Arc (sdn.enabled true); the script does not turn SDN on and refuses a file that lists a group while SDN is off. Run it before New-LogicalNetwork.ps1: a logical network is tied to its group when the logical network is created (networking.logical_networks[].nsg_name). Microsoft Learn: a group must have at least one rule, because an empty group denies all inbound traffic and a machine or logical network that uses it cannot be reached; the script refuses a group without rules. No Az PowerShell cmdlet creates these groups, so the script uses the Azure CLI with the stack-hci-vm extension."
+      type: array
+      required: false
+      since: "5.6.11"
+      used_by: [deployment]
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          name:
+            description: "Name of the network security group, 1 to 80 characters: letters, digits, underscore, period and hyphen; it starts with a letter or digit and ends with a letter, digit or underscore (Learn: naming rules for Microsoft.Network). It cannot be changed afterwards."
+            type: string
+            required: true
+            since: "5.6.11"
+            pattern: "^[A-Za-z0-9]([A-Za-z0-9._-]{0,78}[A-Za-z0-9_])?$"
+            example: "nsg-workloads"
+            used_by: [deployment]
+          rules:
+            description: "The security rules of the group. At least one is needed. The script creates the rules that are missing; a rule that exists (same name) is left alone and, when it differs from the file, reported."
+            type: array
+            required: true
+            since: "5.6.11"
+            minItems: 1
+            used_by: [deployment]
+            items:
+              type: object
+              additionalProperties: false
+              properties:
+                name:
+                  description: "Name of the rule, 1 to 80 characters, with the same characters as the group name. Unique inside the group."
+                  type: string
+                  required: true
+                  since: "5.6.11"
+                  pattern: "^[A-Za-z0-9]([A-Za-z0-9._-]{0,78}[A-Za-z0-9_])?$"
+                  example: "allow-https-in"
+                  used_by: [deployment]
+                priority:
+                  description: "Priority of the rule, 100 to 4096. Unique inside the group. A lower number is evaluated first. Leave gaps between the numbers for rules you add later."
+                  type: integer
+                  required: true
+                  since: "5.6.11"
+                  minimum: 100
+                  maximum: 4096
+                  example: 100
+                  used_by: [deployment]
+                direction:
+                  description: "Whether the rule applies to incoming (Inbound) or outgoing (Outbound) traffic. To control both directions, write two rules."
+                  type: string
+                  required: true
+                  since: "5.6.11"
+                  enum: ["Inbound", "Outbound"]
+                  example: "Inbound"
+                  used_by: [deployment]
+                access:
+                  description: "Allow or Deny the traffic the rule matches."
+                  type: string
+                  required: true
+                  since: "5.6.11"
+                  enum: ["Allow", "Deny"]
+                  example: "Allow"
+                  used_by: [deployment]
+                protocol:
+                  description: "Protocol the rule matches: * (any, the default), Tcp, Udp or Icmp (az stack-hci-vm network nsg rule create --protocol). The script accepts any letter case."
+                  type: string
+                  required: false
+                  since: "5.6.11"
+                  enum: ["*", "Tcp", "Udp", "Icmp"]
+                  default: "*"
+                  example: "Tcp"
+                  used_by: [deployment]
+                source_address_prefixes:
+                  description: "Source addresses the rule matches: * (any, the default), an IPv4 address or an IPv4 range in CIDR form. A list. Service tags are not used on Azure Local."
+                  type: array
+                  required: false
+                  since: "5.6.11"
+                  minItems: 1
+                  example: [["192.0.2.0/24", "198.51.100.0/24"]]
+                  used_by: [deployment]
+                  items:
+                    {"type":"string","pattern":"^(\\*|((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(/([0-9]|[12][0-9]|3[0-2]))?)$"}
+                destination_address_prefixes:
+                  description: "Destination addresses the rule matches: * (any, the default), an IPv4 address or an IPv4 range in CIDR form. A list."
+                  type: array
+                  required: false
+                  since: "5.6.11"
+                  minItems: 1
+                  example: [["203.0.113.0/24", "198.51.100.0/24"]]
+                  used_by: [deployment]
+                  items:
+                    {"type":"string","pattern":"^(\\*|((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(/([0-9]|[12][0-9]|3[0-2]))?)$"}
+                source_port_ranges:
+                  description: "Source ports the rule matches: * (any, the default), a port or a range such as 1024-2048, each from 0 to 65535. A list."
+                  type: array
+                  required: false
+                  since: "5.6.11"
+                  minItems: 1
+                  example: [["*", "1024-2048"]]
+                  used_by: [deployment]
+                  items:
+                    {"type":"string","pattern":"^(\\*|[0-9]{1,5}(-[0-9]{1,5})?)$"}
+                destination_port_ranges:
+                  description: "Destination ports the rule matches: * (any), a port or a range such as 8000-8100, each from 0 to 65535. A list. Required: the Azure CLI default is port 80, which is not a default to rely on."
+                  type: array
+                  required: true
+                  since: "5.6.11"
+                  minItems: 1
+                  example: [["443", "8000-8100"]]
+                  used_by: [deployment]
+                  items:
+                    {"type":"string","pattern":"^(\\*|[0-9]{1,5}(-[0-9]{1,5})?)$"}
+                description:
+                  description: "Optional text for the rule, at most 140 characters. The characters & | < > ^ % and the double quote are not allowed: the Azure CLI is started through a command file on Windows, which treats them as commands."
+                  type: string
+                  required: false
+                  since: "5.6.11"
+                  maxLength: 140
+                  example: "Allow HTTPS from the workload network"
+                  used_by: [deployment]
     outbound:
       description: "Details of scenario.outbound_path."
       type: object
@@ -8899,7 +9031,9 @@ compute:
       # ---------------------------------------------------------------------------
       vm_switch_name:
         type: string
-        description: "Hyper-V vSwitch name used when creating logical networks. Auto-discovered from the first cluster node via Get-VMSwitch if empty or not set."
+        description: "Hyper-V vSwitch name used when creating logical networks, the 4.0 form. Deprecated: no tool reads this path; New-LogicalNetwork.ps1 reads networking.logical_networks[].vm_switch_name, or finds the external virtual switch on the cluster."
+        deprecated: true
+        replaced_by: "networking.logical_networks[].vm_switch_name"
         required: false
         default: ""
         example: "ConvergedSwitch(hci)"
@@ -16314,6 +16448,69 @@ storage:
             since: "5.6.9"
             example: "C:\\ClusterStorage\\vol-workloads-01\\vms"
             used_by: [deployment]
+    vm_images:
+      description: "Schema 5.6.11. The Azure Marketplace images to download to the instance as Azure Local VM images (Learn: Create Azure Local VM image using Azure Marketplace images). New-VmImage.ps1 (phase 06, task 06) creates each image that does not exist yet in azure.resource_group, on azure.custom_location, in azure.location, with the file-level tags. An image that exists is left alone; a failed one is reported, never deleted. Needs the Microsoft.EdgeMarketplace resource provider registered in the subscription and the Azure Connected Machine Resource Manager role for the Microsoft.AzureStackHCI resource provider app on the resource group. Only Azure Marketplace images are supported: images from a local path, a storage account, an existing virtual machine or an Azure compute gallery are not (they need image preparation that this file does not describe). The list lives in storage because an image is kept on a storage path of the instance."
+      type: array
+      required: false
+      since: "5.6.11"
+      used_by: [deployment]
+      items:
+        type: object
+        additionalProperties: false
+        properties:
+          name:
+            description: "Name of the VM image resource, 1 to 80 characters: letters, digits, hyphen, period and underscore; it starts and ends with a letter or digit. It cannot be renamed. Learn: a newer Marketplace image is a new image with a new name (the portal increments the number), so pin the version in the name if you keep several."
+            type: string
+            required: true
+            since: "5.6.11"
+            pattern: "^[A-Za-z0-9]([A-Za-z0-9._-]{0,78}[A-Za-z0-9])?$"
+            example: "img-ws2025-azure-edition"
+            used_by: [deployment]
+          os_type:
+            description: "Operating system of the image, Windows or Linux (az stack-hci-vm image create --os-type). The images in Learn's Marketplace table are Windows images; for a Linux image Learn describes other procedures (Red Hat Enterprise Linux and Ubuntu: prepare the image, export the disk)."
+            type: string
+            required: true
+            since: "5.6.11"
+            enum: ["Windows", "Linux"]
+            example: "Windows"
+            used_by: [deployment]
+          publisher:
+            description: "Publisher of the Marketplace image, as Learn's table gives it (lowercase)."
+            type: string
+            required: true
+            since: "5.6.11"
+            example: "microsoftwindowsserver"
+            used_by: [deployment]
+          offer:
+            description: "Offer of the Marketplace image."
+            type: string
+            required: true
+            since: "5.6.11"
+            example: "windowsserver"
+            used_by: [deployment]
+          sku:
+            description: "SKU of the Marketplace image."
+            type: string
+            required: true
+            since: "5.6.11"
+            example: "2025-datacenter-azure-edition"
+            used_by: [deployment]
+          version:
+            description: "Version of the Marketplace image, for example 26100.4652.250808, or latest (the default: Azure picks the newest version when the image is created, and the script reports which). The script never writes the version it finds back to this file."
+            type: string
+            required: false
+            since: "5.6.11"
+            pattern: "^(latest|[0-9]+(\\.[0-9]+){1,3})$"
+            default: "latest"
+            example: "latest"
+            used_by: [deployment]
+          storage_path:
+            description: "Name of the storage path the image is kept on, one of storage.paths[].name; create it first (New-StoragePath.ps1). Leave it out and Azure Local chooses a storage path itself (Learn: Choose automatically)."
+            type: string
+            required: false
+            since: "5.6.11"
+            example: "sp-workloads-01"
+            used_by: [deployment]
     san:
       description: "The external SAN of a disaggregated (san) or hybrid deployment. Its presence, and scenario.storage_architecture san or hybrid, tell the solution there is a SAN; type says fibre_channel or iscsi, and the OS configuration does the host-side MPIO and MSDSM work from that (type, array.vendor and array.model are all it needs). From 5.3 it also records the array, the Fibre Channel fabrics and target WWPNs or the iSCSI targets, which the SAN deployment and zoning work read; each machine's own HBAs or initiator are nodes[].san."
       type: object
@@ -16575,10 +16772,11 @@ sdn:
   additionalProperties: false
   properties:
     enabled:
-      description: "true when Software Defined Networking is turned on for the instance."
+      description: "true when Software Defined Networking is turned on for the instance. New-NetworkSecurityGroup.ps1 (phase 06, task 07) and New-LogicalNetwork.ps1 (task 08, for a logical network with nsg_name) read it: network security groups need SDN enabled by Azure Arc, and the scripts do not turn it on."
       type: boolean
       required: true
       example: false
+      used_by: [deployment]
     prefix:
       description: "Prefix of the names of the SDN resources."
       type: string
@@ -17938,7 +18136,7 @@ file_metadata:
   additionalProperties: false
   properties:
     schema_version:
-      description: "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. 5.6.13 adds the secrets section (provider, file directory, command) and lets a secret reference use the env://, file:// and command:// forms besides keyvault://. The current version is 5.6.13."
+      description: "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. 5.6.11 adds what the logical network, network security group and VM image scripts read: networking.network_security_groups (name and rules with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description), networking.logical_networks[].vm_switch_name and storage.vm_images (name, os_type, publisher, offer, sku, version, storage_path). 5.6.13 adds the secrets section (provider, file directory, command) and lets a secret reference use the env://, file:// and command:// forms besides keyvault://. The current version is 5.6.13."
       type: string
       required: true
       pattern: "^5\\.[0-9]+\\.[0-9]+$"
@@ -18276,6 +18474,16 @@ _schema_defs:
     - name
     properties:
       name:
+        type: string
+      enabled:
+        type: boolean
+      ip_allocation_method:
+        enum:
+        - Static
+        - Dynamic
+      nsg_name:
+        type: string
+      vm_switch_name:
         type: string
       purpose:
         description: "What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote management security profile adds its subnet to the allowed sources of dev and production (a candidate, not a trust: prefer listing the controller addresses in os_configuration.remoting.allowed_source_cidrs). automation, compute, storage and other have no effect on remote management."
@@ -19442,6 +19650,26 @@ tools:
                 ComputerName: {"name":"ComputerName","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration/powershell/New-StorageVolume.ps1","description":"New-StorageVolume.ps1. Optional: the machine to connect to instead of cluster.name, for example one node when the cluster name does not resolve from where the script runs."}
                 Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration/powershell/New-StorageVolume.ps1","description":"New-StorageVolume.ps1. Optional: the account for the remoting sessions to the cluster. Without it the account that runs the script is used. The script reads no secret itself."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration/powershell/New-StorageVolume.ps1","description":"New-StorageVolume.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_04_cluster_deployment_phase_06_post_deployment_task_06_image_downloads_powershell_New_VmImage_ps1:
+              type: object
+              area: "scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-06-image-downloads/powershell/New-VmImage.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-06-image-downloads/powershell/New-VmImage.ps1","description":"New-VmImage.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.subscription_id, azure.resource_group, azure.location, azure.custom_location, tags, storage.paths and storage.vm_images are read; the file is not validated as a whole. The script never writes to it."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-06-image-downloads/powershell/New-VmImage.ps1","description":"New-VmImage.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_04_cluster_deployment_phase_06_post_deployment_task_07_configure_nsgs_powershell_New_NetworkSecurityGroup_ps1:
+              type: object
+              area: "scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/powershell/New-NetworkSecurityGroup.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/powershell/New-NetworkSecurityGroup.ps1","description":"New-NetworkSecurityGroup.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.subscription_id, azure.resource_group, azure.location, azure.custom_location, tags, sdn.enabled and networking.network_security_groups are read; the file is not validated as a whole."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/powershell/New-NetworkSecurityGroup.ps1","description":"New-NetworkSecurityGroup.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_04_cluster_deployment_phase_06_post_deployment_task_08_logical_network_creation_powershell_New_LogicalNetwork_ps1:
+              type: object
+              area: "scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/powershell/New-LogicalNetwork.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/powershell/New-LogicalNetwork.ps1","description":"New-LogicalNetwork.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.subscription_id, azure.resource_group, azure.location, azure.custom_location, tags, cluster.name, sdn.enabled, networking.network_security_groups and networking.logical_networks are read; the file is not validated as a whole."}
+                ComputerName: {"name":"ComputerName","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/powershell/New-LogicalNetwork.ps1","description":"New-LogicalNetwork.ps1. Optional: the machine to ask for its external virtual switches instead of cluster.name, for example one node when the cluster name does not resolve from where the script runs."}
+                Credential: {"name":"Credential","type":"string","declared_type":"pscredential","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/powershell/New-LogicalNetwork.ps1","description":"New-LogicalNetwork.ps1. Optional: the account for the remoting session to the cluster. Without it the account that runs the script is used. The script reads no secret and never prompts."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/powershell/New-LogicalNetwork.ps1","description":"New-LogicalNetwork.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
             scripts_deploy_05_operational_foundations_phase_02_monitoring_observability_task_01_configure_log_analytics_workspace_powershell_Deploy_DataCollectionEndpoint_ps1:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Deploy-DataCollectionEndpoint.ps1"

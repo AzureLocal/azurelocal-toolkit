@@ -788,7 +788,7 @@ networking:
       # Free text.
       # used by: os_configuration
       purpose: ""
-  # Arc VM logical networks created after deployment (task phase-06 task-08, Invoke-LogicalNetworks-Orchestrated.ps1: az stack-hci-vm network l...
+  # Arc VM logical networks created after deployment (task phase-06 task-08, New-LogicalNetwork.ps1: az stack-hci-vm network lnet create).
   # used by: os_configuration, deployment
   logical_networks:
     # Name of the Azure Local logical network resource.
@@ -803,6 +803,9 @@ networking:
       # Name of the network security group to associate with the logical network.
       # used by: deployment
       nsg_name: "nsg-workloads"
+      # Name of the external virtual switch on the cluster that this logical network is created on (az stack-hci-vm: --vm-switch-name; it cannot be...
+      # used by: deployment
+      vm_switch_name: "ConvergedSwitch(management_compute_storage)"
       # What the network is for (since 5.6). management and oob mark a network the machines' remote management may be reached from: the remote mana...
       # one of: management | oob | automation | compute | storage | other; used by: os_configuration, deployment
       purpose: "compute"
@@ -812,13 +815,13 @@ networking:
       # Address prefix of the logical network in CIDR form.
       # used by: os_configuration, deployment
       address_prefix: "203.0.113.0/24"
-      # Default gateway of the logical network.
+      # Default gateway of the logical network, inside address_prefix.
       # used by: deployment
       gateway: "203.0.113.1"
-      # DNS servers handed to machines on this logical network (ARM and az stack-hci-vm: dnsServers).
+      # DNS servers handed to machines on this logical network (az stack-hci-vm: --dns-servers).
       # used by: deployment
       dns_servers: ["192.0.2.4", "192.0.2.5"]
-      # The one address range Azure Local hands to virtual machines on this logical network (first and last address, both inside address_prefix); a...
+      # The one address range Azure Local hands to virtual machines on this logical network (first and last address, both inside address_prefix), s...
       # used by: deployment
       ip_pool:
         # First address of the pool that virtual machines on this logical network draw from.
@@ -827,6 +830,45 @@ networking:
         # Last address of that pool.
         # required; used by: deployment
         end: "203.0.113.200"
+  # (since 5.6.11) 
+  # used by: deployment
+  network_security_groups:
+    # Name of the network security group, 1 to 80 characters: letters, digits, underscore, period and hyphen; it starts with a letter or digit an...
+    # required; used by: deployment
+    - name: "nsg-workloads"
+      # The security rules of the group.
+      # required; used by: deployment
+      rules:
+        # Name of the rule, 1 to 80 characters, with the same characters as the group name.
+        # required; used by: deployment
+        - name: "allow-https-in"
+          # Priority of the rule, 100 to 4096.
+          # required; used by: deployment
+          priority: 100
+          # Whether the rule applies to incoming (Inbound) or outgoing (Outbound) traffic.
+          # required; one of: Inbound | Outbound; used by: deployment
+          direction: "Inbound"
+          # Allow or Deny the traffic the rule matches.
+          # required; one of: Allow | Deny; used by: deployment
+          access: "Allow"
+          # Protocol the rule matches: * (any, the default), Tcp, Udp or Icmp (az stack-hci-vm network nsg rule create --protocol).
+          # one of: * | Tcp | Udp | Icmp; default: "*"; used by: deployment
+          protocol: "*"
+          # Source addresses the rule matches: * (any, the default), an IPv4 address or an IPv4 range in CIDR form.
+          # used by: deployment
+          source_address_prefixes: ["192.0.2.0/24", "198.51.100.0/24"]
+          # Destination addresses the rule matches: * (any, the default), an IPv4 address or an IPv4 range in CIDR form.
+          # used by: deployment
+          destination_address_prefixes: ["203.0.113.0/24", "198.51.100.0/24"]
+          # Source ports the rule matches: * (any, the default), a port or a range such as 1024-2048, each from 0 to 65535.
+          # used by: deployment
+          source_port_ranges: ["*", "1024-2048"]
+          # Destination ports the rule matches: * (any), a port or a range such as 8000-8100, each from 0 to 65535.
+          # required; used by: deployment
+          destination_port_ranges: ["443", "8000-8100"]
+          # Optional text for the rule, at most 140 characters.
+          # used by: deployment
+          description: "Allow HTTPS from the workload network"
   # Details of scenario.outbound_path.
   # when scenario.outbound_path is proxy or proxy_arc_gateway
   outbound:
@@ -1054,6 +1096,30 @@ storage:
       # The folder on a cluster shared volume, for example C:\ClusterStorage\vol-workloads-01\vms for a volume of storage.volumes, or the folder of...
       # required; used by: deployment
       path: "C:\\ClusterStorage\\vol-workloads-01\\vms"
+  # (since 5.6.11) 
+  # used by: deployment
+  vm_images:
+    # Name of the VM image resource, 1 to 80 characters: letters, digits, hyphen, period and underscore; it starts and ends with a letter or digi...
+    # required; used by: deployment
+    - name: "img-ws2025-azure-edition"
+      # Operating system of the image, Windows or Linux (az stack-hci-vm image create --os-type).
+      # required; one of: Windows | Linux; used by: deployment
+      os_type: "Windows"
+      # Publisher of the Marketplace image, as Learn's table gives it (lowercase).
+      # required; used by: deployment
+      publisher: "microsoftwindowsserver"
+      # Offer of the Marketplace image.
+      # required; used by: deployment
+      offer: "windowsserver"
+      # SKU of the Marketplace image.
+      # required; used by: deployment
+      sku: "2025-datacenter-azure-edition"
+      # Version of the Marketplace image, for example 26100.4652.250808, or latest (the default: Azure picks the newest version when the image is c...
+      # default: "latest"; used by: deployment
+      version: "latest"
+      # Name of the storage path the image is kept on, one of storage.paths[].name; create it first (New-StoragePath.ps1).
+      # used by: deployment
+      storage_path: "sp-workloads-01"
   # The external SAN of a disaggregated (san) or hybrid deployment.
   # when scenario.storage_architecture is san or hybrid; used by: os_configuration, deployment
   san:
@@ -1214,7 +1280,7 @@ security:
 # SDN enabled by Azure Arc.
 sdn:
   # true when Software Defined Networking is turned on for the instance.
-  # required
+  # required; used by: deployment
   enabled: false
   # Prefix of the names of the SDN resources.
   prefix: ""

@@ -392,6 +392,14 @@ Schema 5.6.13 adds an optional section and two kinds of secret reference. Nothin
 
 See [Secret references and providers](secret-references.md).
 
+## To 5.6.11: network security groups, the virtual switch of a logical network, and VM images
+
+Schema 5.6.11 adds optional keys. Nothing is required: a 5.6.10 file is valid as it is.
+
+- `networking.network_security_groups[]` (`name` and `rules[]`: `name`, `priority` 100 to 4096, `direction`, `access`, `protocol`, `source_address_prefixes`, `destination_address_prefixes`, `source_port_ranges`, `destination_port_ranges`, `description` up to 140 characters): `New-NetworkSecurityGroup.ps1` creates each group and the rules it does not have. The script read the unregistered path `network.nsgs` before. Network security groups need `sdn.enabled: true` (the script does not turn SDN on) and every group needs at least one rule. Run it before `New-LogicalNetwork.ps1`.
+- `networking.logical_networks[].vm_switch_name`: optional. Leave it out and `New-LogicalNetwork.ps1` uses the one external virtual switch the cluster reports; name it only when the cluster has more than one. `nsg_name` now has to name a group of `networking.network_security_groups` and needs `sdn.enabled: true`. The `-AssociateNsg` switch is gone: `nsg_name` decides. The script reads `gateway` and `ip_pool` (it read `default_gateway` and `ip_pools`). The keys `enabled`, `ip_allocation_method` and `nsg_name` of 5.6.3 were rejected as unknown keys by the schema; they are accepted now.
+- `storage.vm_images[]` (`name`, `os_type`, `publisher`, `offer`, `sku`, `version`, `storage_path`): `New-VmImage.ps1` downloads each Azure Marketplace image that does not exist yet. It replaces the image catalogue that was written into `Get-ImageDownloads.ps1` and the old `marketplace_images` section (never part of the schema). Only Azure Marketplace images are supported.
+
 ## To 5.6.10: SAN deployment values
 
 Schema 5.6.10 adds optional keys. Nothing is required for a Fibre Channel SAN or a Storage Spaces Direct file: a 5.6.9 file is valid as it is.
