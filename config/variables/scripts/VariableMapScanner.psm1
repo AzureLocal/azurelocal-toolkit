@@ -12,6 +12,10 @@
               $infra.cluster.name, $node['bmc']['ip_address'], foreach ($n in $infra.nodes) { $n.serial_number }.
     literal   A string that is exactly a registry path ('cluster.name', 'nodes[].name'), or a reader command given a base and a key:
               Get-AzlProp $node 'bmc.ip_address' (any command named Get-*Prop|Value|Leaf), .Contains('x') / .ContainsKey('x').
+              Also a helper function of the same file that reads one key of a map, proven from its body ($Map[$Key]), called with a
+              literal key on a variable that already resolves to a path: $storage = Get-AzlInfrastructureValue ... -Path 'storage';
+              foreach ($v in @(Get-Field $storage 'volumes')) { Get-Field $v 'name' }  reads storage.volumes and storage.volumes[].name.
+              The same for a helper that reads a script variable, function Get-Field([string]$Key) { $monitoring[$Key] }.
     inferred  A path built from a prefix and a literal in the same statement:  & $v "networking.management.$k" with
               foreach ($k in 'subnet', 'gateway') ..., or $item[$k] with a foreach over literal keys.
 
@@ -192,8 +196,41 @@ function Find-MapReader {
             }
         }
 
+        # Field readers: helper functions of this file that read one key of a map. Proven from the body, never from the name.
+        #   map      function Get-Field($Map, [string]$Key, ...) { ... $Map[$Key] ... }   called  Get-Field $item 'name'
+        #   closure  function Get-Field([string]$Key) { ... $monitoring[$Key] ... }        called  Get-Field 'action_group'  ($monitoring is a script variable)
+        # A call gives a path only when the map (the first argument, or the script variable) already resolves to a path of the file, which
+        # is the case when the code got it from the file with Get-AzlInfrastructureValue 'section.name' or from the file's variable, and
+        # the key is a literal. A path the registry does not have gives nothing (and is not reported as unknown).
+        $fieldReader = @{}
+        foreach ($fn in $ast.FindAll({ param($a) $a -is [System.Management.Automation.Language.FunctionDefinitionAst] }, $true)) {
+            $fp = @(if ($fn.Parameters) { $fn.Parameters } elseif ($null -ne $fn.Body.ParamBlock) { $fn.Body.ParamBlock.Parameters })
+            if ($fp.Count -lt 1) { continue }
+            $keyParam = $null; $mapParam = $null
+            if ($fp.Count -ge 2) { $mapParam = $fp[0].Name.VariablePath.UserPath.ToLowerInvariant(); $keyParam = $fp[1].Name.VariablePath.UserPath.ToLowerInvariant() }
+            elseif ($fp.Count -eq 1) { $keyParam = $fp[0].Name.VariablePath.UserPath.ToLowerInvariant() }
+            $indexes = @($fn.Body.FindAll({ param($a) $a -is [System.Management.Automation.Language.IndexExpressionAst] -and $a.Target -is [System.Management.Automation.Language.VariableExpressionAst] -and $a.Index -is [System.Management.Automation.Language.VariableExpressionAst] }, $true))
+            foreach ($ix in $indexes) {
+                $target = $ix.Target.VariablePath.UserPath.ToLowerInvariant()
+                if ($ix.Index.VariablePath.UserPath.ToLowerInvariant() -ne $keyParam) { continue }
+                if ($fp.Count -ge 2 -and $target -eq $mapParam) { $fieldReader[$fn.Name.ToLowerInvariant()] = @{ Kind = 'map'; Variable = $null }; break }
+                if ($fp.Count -eq 1 -and $target -ne $keyParam) { $fieldReader[$fn.Name.ToLowerInvariant()] = @{ Kind = 'closure'; Variable = $target }; break }
+            }
+        }
+
         $resolve = $null
         $resolveUnderscore = $null
+        # The map node and the key argument of a call to a field reader (either can be $null).
+        $fieldParts = {
+            param($call, $spec)
+            $pos = @($call.CommandElements | Select-Object -Skip 1 | Where-Object { $_ -isnot [System.Management.Automation.Language.CommandParameterAst] })
+            if ($spec.Kind -eq 'map') {
+                if ($pos.Count -lt 2) { return [pscustomobject]@{ Base = $null; KeyAst = $null } }
+                return [pscustomobject]@{ Base = (& $resolve $pos[0]); KeyAst = $pos[1] }
+            }
+            if ($pos.Count -lt 1) { return [pscustomobject]@{ Base = $null; KeyAst = $null } }
+            return [pscustomobject]@{ Base = (& $lookup $spec.Variable '(script)'); KeyAst = $pos[0] }
+        }
         $resolve = {
             param($node)
             if ($null -eq $node) { return $null }
@@ -204,11 +241,15 @@ function Find-MapReader {
                 'ArrayExpressionAst' { if ($node.SubExpression.Statements.Count -eq 1) { return (& $resolve $node.SubExpression.Statements[0]) } return $null }
                 'SubExpressionAst' { if ($node.SubExpression.Statements.Count -eq 1) { return (& $resolve $node.SubExpression.Statements[0]) } return $null }
                 'ArrayLiteralAst' { if ($node.Elements.Count -eq 1) { return (& $resolve $node.Elements[0]) } return $null }
+                # @(if ($storage.Contains('paths')) { $storage['paths'] }): one condition, one statement; what an else branch gives is not read from the file.
+                'IfStatementAst' { if ($node.Clauses.Count -eq 1 -and $node.Clauses[0].Item2.Statements.Count -eq 1) { return (& $resolve $node.Clauses[0].Item2.Statements[0]) } return $null }
                 'PipelineAst' {
                     $first = $node.PipelineElements[0]
                     for ($i = 1; $i -lt $node.PipelineElements.Count; $i++) {
                         $e = $node.PipelineElements[$i]
-                        if ($e -isnot [System.Management.Automation.Language.CommandAst] -or $script:FilterCommand -notcontains $e.GetCommandName().ToLowerInvariant()) { return $null }
+                        if ($e -isnot [System.Management.Automation.Language.CommandAst]) { return $null }
+                        $cn = $e.GetCommandName()
+                        if (-not $cn -or $script:FilterCommand -notcontains $cn.ToLowerInvariant()) { return $null }
                     }
                     return (& $resolve $first)
                 }
@@ -253,6 +294,11 @@ function Find-MapReader {
                     if ($script:PassThroughCommand -contains $n -or $n -match '^(convertto|get)-\w*(list|array)$') {
                         foreach ($a in $args1) { if ($a -is [System.Management.Automation.Language.CommandParameterAst]) { continue }; $r = & $resolve $a; if ($null -ne $r) { return $r }; break }
                         return $null
+                    }
+                    if ($fieldReader.ContainsKey($n)) {
+                        $fp1 = & $fieldParts $node $fieldReader[$n]
+                        if ($null -eq $fp1.Base -or $fp1.KeyAst -isnot [System.Management.Automation.Language.StringConstantExpressionAst]) { return $null }
+                        return (Join-MapPath -Index $Index -Base $fp1.Base -Member $fp1.KeyAst.Value)
                     }
                     if ($script:LoaderCommand -contains $n) { return $script:RootName }
                     if ($script:ReturnPath.ContainsKey($n)) { return $script:ReturnPath[$n] }
@@ -415,6 +461,22 @@ function Find-MapReader {
             }
             if ($n -is [System.Management.Automation.Language.CommandAst]) {
                 $name = $n.GetCommandName()
+                if ($name -and $fieldReader.ContainsKey($name.ToLowerInvariant())) {
+                    $r = & $resolve $n
+                    if ($r) { & $emit $r $n 'literal'; continue }
+                    # Get-Field $entry $key inside foreach ($key in 'publisher', 'offer', 'sku'): the literals of the loop are the keys.
+                    $fp2 = & $fieldParts $n $fieldReader[$name.ToLowerInvariant()]
+                    if ($fp2.Base -and $fp2.KeyAst -is [System.Management.Automation.Language.VariableExpressionAst]) {
+                        $keyName = $fp2.KeyAst.VariablePath.UserPath
+                        $loop = $n.Parent
+                        while ($null -ne $loop -and -not ($loop -is [System.Management.Automation.Language.ForEachStatementAst] -and $loop.Variable.VariablePath.UserPath -eq $keyName)) { $loop = $loop.Parent }
+                        if ($loop -is [System.Management.Automation.Language.ForEachStatementAst]) {
+                            $lits = $loop.Condition.FindAll({ param($a) $a -is [System.Management.Automation.Language.StringConstantExpressionAst] }, $true)
+                            foreach ($l in $lits) { $j = Join-MapPath -Index $Index -Base $fp2.Base -Member $l.Value; if ($j) { & $emit $j $n 'inferred' } }
+                        }
+                    }
+                    continue
+                }
                 if ($name -and $name.ToLowerInvariant() -match $script:ReaderCommandPattern) {
                     $r = & $resolve $n
                     if ($r) { & $emit $r $n 'literal' }
