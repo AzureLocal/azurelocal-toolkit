@@ -104,8 +104,26 @@ Describe 'New-SanVolume.ps1' {
             Reset-Cluster
             $cred = [pscredential]::new('user', (ConvertTo-SecureString -String ([guid]::NewGuid().ToString()) -AsPlainText -Force))
             $null = Invoke-San (New-InfraFile) -Extra @{ ComputerName = 'iic-n02'; Credential = $cred }
-            (Get-Call 'PrepareDisk')[0].Computer | Should -Be 'iic-n02'
+            (Get-Call 'ReadState')[0].Computer | Should -Be 'iic-n02'
             (Get-Call 'PrepareDisk')[0].Credential.UserName | Should -Be 'user'
+        }
+
+        It 'sends every change to the machine that answered the read, never to the cluster name again' {
+            $null = Invoke-San (New-InfraFile)
+            (Get-Call 'ReadState')[0].Computer | Should -Be 'iic-cluster-01'
+            foreach ($step in 'PrepareDisk', 'AddClusterDisk', 'AddCsv') {
+                @(Get-Call $step).Count | Should -Be 1
+                (Get-Call $step)[0].Computer | Should -Be $global:AzlSanState.Computer
+            }
+        }
+
+        It 'changes nothing when the read does not say which machine answered' {
+            $global:AzlSanState.Computer = ''
+            $r = Invoke-San (New-InfraFile)
+            $r.ExitCode | Should -Be 1
+            @(Get-Call 'PrepareDisk').Count | Should -Be 0
+            @(Get-Call 'AddClusterDisk').Count | Should -Be 0
+            @(Get-Call 'AddCsv').Count | Should -Be 0
         }
 
         It 'looks for iSCSI disks when storage.san.type is iscsi' {
@@ -455,6 +473,34 @@ Describe 'New-SanVolume.ps1' {
         It 'never writes when Get-Partition finds a partition on a disk that says it has none' {
             Mock Get-Partition { [pscustomobject]@{ PartitionNumber = 1 } }
             { Invoke-Prepare } | Should -Throw '*REFUSED*not empty*'
+            Should -Invoke Initialize-Disk -Times 0
+            Should -Invoke Format-Volume -Times 0
+        }
+
+        It 'never writes when the partitions cannot be read (a failed query is not an empty disk)' {
+            Mock Get-Partition { throw 'The storage service did not answer.' }
+            { Invoke-Prepare } | Should -Throw '*REFUSED*could not be read*'
+            Should -Invoke Initialize-Disk -Times 0
+            Should -Invoke New-Partition -Times 0
+            Should -Invoke Format-Volume -Times 0
+        }
+
+        It 'goes on when Windows says the disk has no partition objects' {
+            Mock Get-Partition { throw "No MSFT_Partition objects found with property 'DiskNumber' equal to '3'." }
+            (Invoke-Prepare).Number | Should -Be 3
+            Should -Invoke Format-Volume -Times 1
+        }
+
+        It 'never writes when the disk number shows another UniqueId after it is online' {
+            $global:AzlDiskAfterOnline = New-RealDisk @{ IsOffline = $false; UniqueId = (New-Id) }
+            { Invoke-Prepare } | Should -Throw '*REFUSED*no longer reports*'
+            Should -Invoke Initialize-Disk -Times 0
+            Should -Invoke Format-Volume -Times 0
+        }
+
+        It 'never writes when the disk shows as clustered after it is online' {
+            $global:AzlDiskAfterOnline = New-RealDisk @{ IsOffline = $false; IsClustered = $true }
+            { Invoke-Prepare } | Should -Throw '*REFUSED*clustered*'
             Should -Invoke Initialize-Disk -Times 0
             Should -Invoke Format-Volume -Times 0
         }

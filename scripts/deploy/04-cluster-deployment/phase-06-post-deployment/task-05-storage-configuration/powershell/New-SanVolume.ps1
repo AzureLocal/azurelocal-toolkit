@@ -29,7 +29,7 @@
         and before it writes anything);
       - the UniqueId is not the infrastructure or the performance history volume LUN of the deployment.
     A disk that already has a partition or data is never initialized, formatted or cleared. If a run stops after the disk was formatted and before it was clustered,
-    the next run refuses that disk (it has a partition). Add it by hand with: Get-Disk -Number <n> | Add-ClusterDisk, then run the script again; the script then
+    the next run refuses that disk (it has a partition). Add it by hand on one machine, finding the disk by its UniqueId and not by its number: Get-Disk | Where-Object UniqueId -eq "<unique_id>" | Add-ClusterDisk, then run the script again; the script then
     renames the cluster disk and adds it to the CSVs.
 
     Idempotent. A LUN whose disk is already a CSV with the right name is reported as AlreadyExists and left alone. A disk that is a cluster disk in Available Storage
@@ -152,7 +152,14 @@ $Remote = @{
         if ($found[0].IsOffline) { Set-Disk -Number $number -IsOffline $false -ErrorAction Stop }
         # Look again now that the disk is online: an offline disk can hide its partitions.
         $disk = Get-Disk -Number $number -ErrorAction Stop
-        $partitions = @(Get-Partition -DiskNumber $number -ErrorAction SilentlyContinue)
+        if (([string]$disk.UniqueId).Trim() -ine $UniqueId) { throw "REFUSED: disk $number no longer reports the UniqueId $UniqueId after it was brought online. Nothing else was changed." }
+        if ($disk.IsBoot -or $disk.IsSystem -or $disk.IsClustered -or $disk.IsHighlyAvailable -or $disk.IsScaleOut) { throw "REFUSED: disk $number is a boot, system or clustered disk. The disk was brought online and nothing else was changed." }
+        $partitions = @()
+        try { $partitions = @(Get-Partition -DiskNumber $number -ErrorAction Stop) }
+        catch {
+            # Windows answers "No MSFT_Partition objects found" for a disk without partitions; any other failure means the disk could not be inspected.
+            if ($_.Exception.Message -notmatch 'No MSFT_Partition objects found') { throw "REFUSED: the partitions of disk $number could not be read ($($_.Exception.Message)), so it is not known to be empty. The disk was brought online and nothing else was changed." }
+        }
         if ([string]$disk.PartitionStyle -ne 'RAW' -or [int]$disk.NumberOfPartitions -gt 0 -or $partitions.Count -gt 0) { throw "REFUSED: disk $number has partition style $($disk.PartitionStyle) and $([math]::Max([int]$disk.NumberOfPartitions, $partitions.Count)) partition(s). It is not empty, so it is not touched. The disk was brought online and nothing else was changed." }
         if ($disk.IsReadOnly) { Set-Disk -Number $number -IsReadOnly $false -ErrorAction Stop }
         Initialize-Disk -Number $number -PartitionStyle GPT -Confirm:$false -ErrorAction Stop
@@ -163,7 +170,14 @@ $Remote = @{
         param($Step, $UniqueId, $Name, $Existing)
         $found = @(Get-Disk -ErrorAction Stop | Where-Object { ([string]$_.UniqueId).Trim() -ieq $UniqueId })
         if ($found.Count -ne 1) { throw "$($found.Count) disks report the UniqueId $UniqueId on this machine; exactly one is needed. Nothing was added to the cluster." }
-        $resource = if ($Existing) { Get-ClusterResource -Name $Existing -ErrorAction Stop } else { @($found[0] | Add-ClusterDisk -ErrorAction Stop)[0] }
+        $resource = $null
+        if ($Existing) {
+            $resource = Get-ClusterResource -Name $Existing -ErrorAction Stop
+            $idOfResource = (([string](Get-ClusterParameter -InputObject $resource -Name DiskIdGuid -ErrorAction Stop).Value) -replace '[{}\s]', '').ToLowerInvariant()
+            $idOfDisk = (([string]$found[0].Guid) -replace '[{}\s]', '').ToLowerInvariant()
+            if (-not $idOfDisk -or $idOfResource -ne $idOfDisk) { throw "REFUSED: the cluster disk '$Existing' is not the disk with UniqueId $UniqueId on this machine. Nothing was changed." }
+        }
+        else { $resource = @($found[0] | Add-ClusterDisk -ErrorAction Stop)[0] }
         if ([string]$resource.Name -ne $Name) { $resource.Name = $Name }
         @{ Resource = [string]$resource.Name }
     }
@@ -236,6 +250,9 @@ foreach ($lun in $lunList) {
 Write-Line "Cluster '$target': reading the SAN disks and the cluster disks"
 try { $state = Invoke-Cluster 'ReadState' }
 catch { Exit-Failed "The cluster '$target' could not be read: $($_.Exception.Message)" }
+# The cluster name can answer from any machine. The checks below describe the machine that answered, so every later call goes to that machine by name.
+$readFrom = ([string]$state.Computer).Trim()
+if (-not $readFrom) { Exit-Failed "The cluster '$target' did not say which machine answered, so the later steps cannot be sent to the same machine. Nothing was changed." }
 $disks = @($state.Disks)
 $resources = @($state.Resources)
 $csvs = @($state.Csvs)
@@ -301,16 +318,16 @@ foreach ($plan in $plans) {
             try {
                 $existing = ''
                 if (-not $resource) {
-                    $null = Invoke-Cluster 'PrepareDisk' @($plan.UniqueId, $busType, $plan.SizeBytes, $SizeTolerance, $plan.Name, $AllocationUnitBytes)
+                    $null = Invoke-Cluster 'PrepareDisk' @($plan.UniqueId, $busType, $plan.SizeBytes, $SizeTolerance, $plan.Name, $AllocationUnitBytes) $readFrom
                     $created = $true
                     $progress = "disk #$($disk.Number) is formatted but not in the cluster yet"
                 }
                 else { $existing = $resource.Name }
                 if (-not $resource -or $resource.Name -ne $plan.Name) {
-                    $null = Invoke-Cluster 'AddClusterDisk' @($plan.UniqueId, $plan.Name, $existing)
+                    $null = Invoke-Cluster 'AddClusterDisk' @($plan.UniqueId, $plan.Name, $existing) $readFrom
                     $progress = "the cluster disk is named '$($plan.Name)' but is not a CSV yet"
                 }
-                $added = Invoke-Cluster 'AddCsv' @($plan.Name)
+                $added = Invoke-Cluster 'AddCsv' @($plan.Name) $readFrom
                 Add-Row $item $(if ($created) { 'Created' } else { 'AddedToCsv' }) "$summary; CSV path $($added.Path)"
             }
             catch {
