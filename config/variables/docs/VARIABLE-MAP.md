@@ -16,10 +16,10 @@ Registry version 5.0.48. Sources of the scan: toolkit (this repository), sonar 3
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 652 | 458 | 82 | 3 | 107 | 2 |
+| Keys of infrastructure.yml | 653 | 459 | 82 | 3 | 107 | 2 |
 | Owned by a tool (`tools.*`) | 4706 | 4498 | 0 | 0 | 208 | 0 |
 | Older variables-file sections | 1417 | 22 | 6 | 0 | 1383 | 6 |
-| All registry leaves | 6775 | 4978 | 88 | 3 | 1698 | 8 |
+| All registry leaves | 6776 | 4979 | 88 | 3 | 1698 | 8 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -45,7 +45,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 65 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
 | ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 91 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 14 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
-| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 296 | _metadata, azure, cluster, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
+| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 297 | _metadata, azure, cluster, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
 
 ### Which section is read in which phase (number of keys)
 
@@ -73,7 +73,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `os_configuration` |  |  |  | 10 |  |  |  |  |
 | `disconnected` | 8 |  |  |  |  |  |  |  |
 | `network_devices` |  |  | 3 |  |  |  |  | 8 |
-| `landing_zone` | 1 |  |  |  |  |  |  | 75 |
+| `landing_zone` | 1 |  |  |  |  |  |  | 76 |
 | `extensions` |  |  |  |  |  |  |  |  |
 | `_metadata` |  |  | 1 | 1 |  | 1 | 1 | 1 |
 
@@ -99,7 +99,7 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | cicd-infra | Outside the flow | 53 | 0 | 347 |
 | infrastructure-helpers | Outside the flow | 39 | 0 | 0 |
 | validator | Outside the flow | 111 | 0 | 0 |
-| toolkit-legacy-scripts | Outside the flow | 220 | 0 | 0 |
+| toolkit-legacy-scripts | Outside the flow | 221 | 0 | 0 |
 
 ### trailwright
 
@@ -296,7 +296,7 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 
 ### toolkit-legacy-scripts
 
-**Reads (220):** the keys are listed by section; the CSV has each key with the file and function.
+**Reads (221):** the keys are listed by section; the CSV has each key with the file and function.
 
 - `azure`: 10 keys
 - `cluster`: 1 keys
@@ -304,7 +304,7 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 - `hardware`: 14 keys
 - `identity`: 17 keys
 - `key_vaults`: 4 keys
-- `landing_zone`: 71 keys
+- `landing_zone`: 72 keys
 - `network_devices`: 8 keys
 - `networking`: 26 keys
 - `nodes`: 2 keys
@@ -1203,6 +1203,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | --- | --- | --- | --- | --- | --- | --- |
 | `landing_zone.management_groups[].name` | string, required | operator | terraform | toolkit-legacy-scripts |  | read |
 | `landing_zone.management_groups[].display_name` | string | operator | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.management_groups[].parent` | string | operator |  | toolkit-legacy-scripts |  | read |
 | `landing_zone.management_groups[].role` | string, one of `root`, `platform`, `identity`, `connectivity`, `management`, `security`, ... (7) | operator | terraform |  |  | placeholder |
 | `landing_zone.subscriptions[].name` | string, required | operator | cicd_infra; trailwright | cicd-infra; toolkit-legacy-scripts |  | read |
 | `landing_zone.subscriptions[].id` | string (guid) | operator | cicd_infra; trailwright; terraform | cicd-infra; toolkit-legacy-scripts |  | read |

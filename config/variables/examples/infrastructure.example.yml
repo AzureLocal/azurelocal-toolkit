@@ -451,12 +451,12 @@ landing_zone:
   management_groups:
     # role (5.6.17) names the group of the fixed hierarchy the Terraform landing zone module builds: it is read by New-IacVariableFiles.ps1 only.
     - { name: "mg-iic", display_name: "IIC", role: root }
-    - { name: "mg-iic-platform", display_name: "IIC Platform", role: platform }
-    - { name: "mg-iic-identity", role: identity }
-    - { name: "mg-iic-connectivity", role: connectivity }
-    - { name: "mg-iic-management", role: management }
-    - { name: "mg-iic-security", role: security }
-    - { name: "mg-iic-landing-zones", display_name: "IIC Landing Zones", role: landing_zones }
+    - { name: "mg-iic-platform", display_name: "IIC Platform", parent: "mg-iic", role: platform }
+    - { name: "mg-iic-identity", parent: "mg-iic-platform", role: identity }
+    - { name: "mg-iic-connectivity", parent: "mg-iic-platform", role: connectivity }
+    - { name: "mg-iic-management", parent: "mg-iic-platform", role: management }
+    - { name: "mg-iic-security", parent: "mg-iic-platform", role: security }
+    - { name: "mg-iic-landing-zones", display_name: "IIC Landing Zones", parent: "mg-iic", role: landing_zones }
   subscriptions:
     - { name: "sub-iic-connectivity", id: "00000000-0000-0000-0000-000000000000", role: connectivity, management_group: "mg-iic-platform" }
     - { name: "sub-iic-identity", id: "00000000-0000-0000-0000-000000000000", role: identity, management_group: "mg-iic-platform" }

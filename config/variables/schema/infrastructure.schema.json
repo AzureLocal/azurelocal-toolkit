@@ -4032,6 +4032,10 @@
                 "description": "Display name of the management group.",
                 "type": "string"
               },
+              "parent": {
+                "description": "Parent management group name; empty for the tenant root. Read by Deploy-ManagementGroups.ps1.",
+                "type": "string"
+              },
               "role": {
                 "description": "Which group of the fixed Azure landing zone hierarchy this is: root, platform, identity, connectivity, management, security or landing_zones. The Terraform landing zone module builds exactly this hierarchy and takes the names from the groups that carry a role. Leave it out when Terraform does not build the hierarchy.",
                 "type": "string",

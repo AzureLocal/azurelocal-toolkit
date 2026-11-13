@@ -1651,6 +1651,8 @@ landing_zone:
       # Display name of the management group.
       # used by: terraform
       display_name: "IIC"
+      # Parent management group name; empty for the tenant root.
+      parent: "mg-iic"
       # Which group of the fixed Azure landing zone hierarchy this is: root, platform, identity, connectivity, management, security or landing_zone...
       # one of: root | platform | identity | connectivity | management | security | landing_zones; used by: terraform
       role: "root"

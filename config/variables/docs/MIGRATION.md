@@ -444,7 +444,6 @@ Removed:
 | Key | Why, and what to use |
 | --- | --- |
 | `landing_zone.resource_providers` | Microsoft fixes the list of resource providers. `deployment.register_resource_providers` is the choice. |
-| `landing_zone.management_groups[].parent` | Derived from `role`, which places a group in the fixed hierarchy. |
 | `identity.entra.break_glass_accounts`, `identity.break_glass_account_ids` | Emergency access accounts belong to conditional access and PIM, which are out of scope. |
 | `identity.managed_identities.*` (eight keys) | The old layout. The one identity the toolkit uses is `azure.automation_identity.*`. |
 | `landing_zone.log_analytics.resource_group`, `.retention_days` | Use `operations.monitoring.workspace_resource_group` and `.retention_days`. |
