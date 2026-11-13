@@ -130,10 +130,11 @@ Describe 'Enable-HciInsights.ps1' {
             Should -Invoke New-AzDataCollectionRuleAssociation -Times 0 -Exactly
         }
 
-        It 'never re-points an association with the right name that belongs to another rule' {
+        It 'never re-points an association with the right name that belongs to another rule, and reports the conflict with exit code 1' {
             Mock Get-AzDataCollectionRuleAssociation { [pscustomobject]@{ Name = 'iic-azl-n01-dataCollectionRuleAssociations'; DataCollectionRuleId = "/subscriptions/$($global:AzlInsTestSub)/resourceGroups/rg-other/providers/Microsoft.Insights/dataCollectionRules/another" } } -ParameterFilter { $TargetResourceId -like '*iic-azl-n01' }
             $r = Invoke-Insights (New-InfraFile)
-            $r.ExitCode | Should -Be 0
+            $r.ExitCode | Should -Be 1
+            ($r.Rows | Where-Object Name -EQ 'iic-azl-n01').Action | Should -Be 'Conflict'
             ($r.Rows | Where-Object Name -EQ 'iic-azl-n01').Detail | Should -Match 'points to another rule'
             Should -Invoke New-AzDataCollectionRuleAssociation -Times 0 -Exactly -ParameterFilter { $TargetResourceId -like '*iic-azl-n01' }
             Should -Invoke New-AzDataCollectionRuleAssociation -Times 1 -Exactly -ParameterFilter { $TargetResourceId -like '*iic-arc-n02' }

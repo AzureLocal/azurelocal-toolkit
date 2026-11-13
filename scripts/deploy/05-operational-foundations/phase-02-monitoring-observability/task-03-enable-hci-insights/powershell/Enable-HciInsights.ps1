@@ -18,8 +18,8 @@
 
     When operations.monitoring.enabled is false the design has no Azure Monitor and the script does nothing and exits 0.
 
-    Idempotent. An association that exists is reported as AlreadyExists and left alone (an association with the right name that points to another
-    rule is reported, not changed). -WhatIf changes nothing.
+    Idempotent. An association that exists is reported as AlreadyExists and left alone. An association with the right name that points to another
+    rule is reported as Conflict, never changed, and the script ends with exit code 1. -WhatIf changes nothing.
 
     The script reads Azure (read only) and writes only with New-AzDataCollectionRuleAssociation, behind -WhatIf. It does not sign in: run
     Connect-AzAccount to the tenant in azure.tenant_id first. You need Monitoring Contributor (or Contributor) on the resource group.
@@ -157,8 +157,8 @@ try {
                 Write-Line "[exists]  '$machine' is already associated with '$ruleName'."
             }
             elseif ($sameName.Count -gt 0) {
-                $row.Action = 'AlreadyExists'
-                $row.Detail = "The association '$associationName' points to another rule; left unchanged. Remove it by hand if '$ruleName' should replace it."
+                $row.Action = 'Conflict'
+                $row.Detail = "The association '$associationName' points to another rule; left unchanged, so this node is not associated with '$ruleName'. Remove that association by hand, then run this script again."
                 Write-Warning "${machine}: $($row.Detail)"
             }
             elseif ($PSCmdlet.ShouldProcess("Arc machine '$machine'", "Associate with data collection rule '$ruleName'")) {
@@ -186,5 +186,5 @@ finally {
 }
 
 $rows
-if (@($rows | Where-Object Action -EQ 'Failed')) { exit 1 }
+if (@($rows | Where-Object { $_.Action -in 'Failed', 'Conflict' })) { exit 1 }
 exit 0
