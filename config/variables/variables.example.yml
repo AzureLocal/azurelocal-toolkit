@@ -480,9 +480,8 @@ security:
 
 operations:
   monitoring:
-    log_analytics:
-      workspace_id: "/subscriptions/55555555-5555-5555-5555-555555555555/resourceGroups/rg-iic-monitor-01/providers/Microsoft.OperationalInsights/workspaces/law-iic-monitor-01"
-      workspace_name: "law-iic-monitor-01"
+    enabled: true
+    log_analytics_workspace: "law-iic-monitor-01"
     extended:
       scom:
         server: "iic-scom01"

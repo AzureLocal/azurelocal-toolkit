@@ -392,6 +392,18 @@ Schema 5.6.13 adds an optional section and two kinds of secret reference. Nothin
 
 See [Secret references and providers](secret-references.md).
 
+## To 5.6.12: Azure Monitor keys
+
+Schema 5.6.12 adds one optional key and removes two. A 5.6.10 file is valid as it is, except that it must not carry `operations.notifications.teams_webhook` or `operations.monitoring.health_alerts`. Azure Monitor in the toolkit is only the Log Analytics workspace, the data collection endpoint, the Azure Monitor Agent extension and the association of the Insights rule.
+
+- `operations.monitoring.retention_days` (30 to 730, default 30): the retention of the workspace `Deploy-LogAnalyticsWorkspace.ps1` creates. A workspace that exists is not changed. Retention beyond 31 days is charged by Azure.
+- `operations.monitoring.data_collection_rule` is now read: `Enable-HciInsights.ps1` associates the rule with the Arc machine of every node. It never creates the rule: Microsoft Learn documents no template for the Insights rule and says not to build your own. Enable Insights once in the Azure portal (the instance, Capabilities, Insights, Get Started) and put the name of its rule in this key; the script stops with exit 1 until the rule exists.
+- **Removed: `operations.monitoring.health_alerts`.** Nothing reads it: alerting beyond the existing action group is not part of the toolkit. Delete the key from your file (the schema refuses it). Turn on the health alerts of Azure Local in the Azure portal if you want them.
+- **Removed: `operations.notifications.teams_webhook`.** Nothing read it. The alerting of Azure Local in Microsoft Learn is an action group with email receivers, and a webhook URL put in an action group is stored in the group in plain form. Delete the key from your file (the schema refuses it). To tell a Teams channel, add the address of the channel's mailbox to `operations.notifications.emails`.
+- Old-layout keys (the `variables.yml` of registry 4.x) under `operations.monitoring` are gone from the registry: `monitoring_log_analytics_workspace_name` (use `log_analytics_workspace`), `monitoring_resource_group` (`workspace_resource_group`), `monitoring_enabled` (`enabled`), `monitoring_alert_action_group_name` (`action_group`), `monitoring_alert_email_receiver` and `monitoring_alert_email_addresses` (`alert_email` and `operations.notifications.emails`), `monitoring_performance_counter_sampling_frequency`, `monitoring_log_analytics_retention_days` (`retention_days`), `monitoring_windows_performance_dcr_name`, `windows_events_dcr_name` and the `monitoring_dcr_*` names (`data_collection_rule`: Insights has one rule). The event channels, counters and sample rate of Insights belong to the rule the portal creates and are not keys. The others (`monitoring_log_analytics_workspace_sku`, the agent switches, `monitoring_application_insights_name`, `monitoring_alert_severity_levels`, `monitoring_alert_webhook_receiver`, `monitoring_workspace`, `monitoring_metrics_retention_days`, the Linux syslog keys, `monitoring_dcr_destination_table`, `log_analytics.workspace_id`) describe something Learn does not offer as a choice for Azure Local, and nothing reads them.
+
+`operations.monitoring.wac.server` and `operations.monitoring.extended.scom.server` stay: the parked Windows Admin Center task reads them. Their canonical names `monitoring_wac_server` and `monitoring_scom_server` are removed.
+
 ## To 5.6.11: network security groups, the virtual switch of a logical network, and VM images
 
 Schema 5.6.11 adds optional keys. Nothing is required: a 5.6.10 file is valid as it is.

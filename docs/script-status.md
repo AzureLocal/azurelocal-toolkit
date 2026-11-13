@@ -20,7 +20,7 @@ Task folders: 116.
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
 | PowerShell | 105 | 11 | 0 |
-| Azure CLI | 10 | 57 | 49 |
+| Azure CLI | 9 | 58 | 49 |
 
 Azure CLI applies to 58 tasks, does not apply to 49, and is not decided for 9.
 
@@ -149,7 +149,7 @@ Azure CLI applies to 58 tasks, does not apply to 49, and is not decided for 9.
 | `phase-01-sdn-deployment/task-02-configure-network-security-groups` | built | not built | yes |
 | `phase-01-sdn-deployment/task-03-configure-network-security-groups` | built | not built | yes |
 | `phase-02-monitoring-observability/task-01-configure-log-analytics-workspace` | built | not built | yes |
-| `phase-02-monitoring-observability/task-02-configure-azure-monitor-agent` | built | built | yes |
+| `phase-02-monitoring-observability/task-02-configure-azure-monitor-agent` | built | not built | yes |
 | `phase-02-monitoring-observability/task-03-enable-hci-insights` | built | not built | yes |
 | `phase-02-monitoring-observability/task-04-setup-alerting` | built | not built | yes |
 | `phase-04-security-governance/task-01-enable-defender-for-cloud` | built | not built | yes |

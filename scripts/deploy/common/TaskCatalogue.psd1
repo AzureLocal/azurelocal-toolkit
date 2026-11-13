@@ -115,7 +115,7 @@
         @{ Path = '05-operational-foundations/phase-01-sdn-deployment/task-02-configure-network-security-groups'; AzureCli = 'yes'; Reason = 'Configures SDN integration with az stack-hci.' }
         @{ Path = '05-operational-foundations/phase-01-sdn-deployment/task-03-configure-network-security-groups'; AzureCli = 'yes'; Reason = 'Creates network security groups in Azure.' }
         @{ Path = '05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace'; AzureCli = 'yes'; Reason = 'Configures the Log Analytics workspace.' }
-        @{ Path = '05-operational-foundations/phase-02-monitoring-observability/task-02-configure-azure-monitor-agent'; AzureCli = 'yes'; Reason = 'Configures Azure Monitor; a real Azure CLI script exists.' }
+        @{ Path = '05-operational-foundations/phase-02-monitoring-observability/task-02-configure-azure-monitor-agent'; AzureCli = 'yes'; Reason = 'Installs the Azure Monitor Agent extension on the instance (Az.StackHCI); the Azure CLI twin is a placeholder.' }
         @{ Path = '05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights'; AzureCli = 'yes'; Reason = 'Enables Azure Local Insights.' }
         @{ Path = '05-operational-foundations/phase-02-monitoring-observability/task-04-setup-alerting'; AzureCli = 'yes'; Reason = 'Sets up Azure Monitor alerting.' }
         @{ Path = '05-operational-foundations/phase-04-security-governance/task-01-enable-defender-for-cloud'; AzureCli = 'yes'; Reason = 'Enables Microsoft Defender for Cloud.' }

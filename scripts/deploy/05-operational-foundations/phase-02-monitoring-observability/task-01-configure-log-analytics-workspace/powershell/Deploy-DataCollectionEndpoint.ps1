@@ -5,12 +5,13 @@
 .DESCRIPTION
     Phase 02 (monitoring and observability), Task 01 (Log Analytics workspace). Once the Log Analytics workspace exists, this script creates the
     data collection endpoint (DCE) of operations.monitoring.data_collection_endpoint in the resource group of the workspace
-    (operations.monitoring.workspace_resource_group), in the region of the workspace, with public network access enabled. A DCE is the ingestion
-    address the data collection rules and the Azure Monitor Agent send to; it must be in the region of the workspace it feeds, which is why the
-    region is read from the workspace and not assumed.
+    (operations.monitoring.workspace_resource_group), in the region of the workspace. A DCE is the ingestion address the data collection rules
+    and the Azure Monitor Agent send to; it must be in the region of the workspace it feeds, which is why the region is read from the workspace
+    and not assumed. The network access setting is left at the Azure default (public); the script sets no private link, because Microsoft
+    Learn asks for an endpoint only when the agents use private links.
 
-    It creates only the endpoint. It does not create the workspace (the task's workspace script does), the data collection rule, or any
-    association. The second half of the original deployment, the action group for alerts, is Deploy-ActionGroup.ps1 in the alerting task.
+    It creates only the endpoint. It does not create the workspace (the task's workspace script does), the data collection rule
+    (Enable-HciInsights.ps1, task 03), or any association. The action group for alerts is Deploy-ActionGroup.ps1 in the alerting task.
 
     When operations.monitoring.enabled is false the design has no Azure Monitor and the script does nothing and exits 0.
 
@@ -86,28 +87,29 @@ function ConvertTo-RegionKey([string]$Region) { ($Region -replace '\s', '').ToLo
 try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
 catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.Message)" }
 
-$tenantId = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.tenant_id')
-$subscriptionId = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.subscription_id')
-$defaultLocation = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.location')
+function Get-Text([string]$Path) {
+    $value = Get-AzlInfrastructureValue -Infrastructure $infra -Path $Path
+    if ($null -eq $value) { return '' }
+    ([string]$value).Trim()
+}
+
+$tenantId = Get-Text 'azure.tenant_id'
+$subscriptionId = Get-Text 'azure.subscription_id'
+$defaultLocation = Get-Text 'azure.location'
 $monitoring = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'operations.monitoring'
 $rawTags = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'tags'
 $tags = @{}
 if ($rawTags -is [System.Collections.IDictionary]) { foreach ($k in $rawTags.Keys) { if ($null -ne $rawTags[$k]) { $tags[[string]$k] = [string]$rawTags[$k] } } }
 
-function Get-Field([string]$Key) {
-    if ($monitoring -is [System.Collections.IDictionary] -and $monitoring.Contains($Key) -and $null -ne $monitoring[$Key]) { return ([string]$monitoring[$Key]).Trim() }
-    ''
-}
-
 if ($tenantId -notmatch $Guid) { Exit-InputProblem 'azure.tenant_id is missing or is not a GUID. It is the tenant the sign-in must belong to.' }
 if ($monitoring -isnot [System.Collections.IDictionary]) { Exit-InputProblem 'operations.monitoring is missing. Describe the workspace and the data collection endpoint.' }
-if ((Get-Field 'enabled').ToLowerInvariant() -eq 'false') {
+if ((Get-Text 'operations.monitoring.enabled').ToLowerInvariant() -eq 'false') {
     Write-Line 'operations.monitoring.enabled is false: Azure Monitor is not part of the design, so no data collection endpoint is created.'
     exit 0
 }
-$workspaceName = Get-Field 'log_analytics_workspace'
-$group = Get-Field 'workspace_resource_group'
-$endpointName = Get-Field 'data_collection_endpoint'
+$workspaceName = Get-Text 'operations.monitoring.log_analytics_workspace'
+$group = Get-Text 'operations.monitoring.workspace_resource_group'
+$endpointName = Get-Text 'operations.monitoring.data_collection_endpoint'
 if (-not $workspaceName) { Exit-InputProblem 'operations.monitoring.log_analytics_workspace is missing.' }
 if (-not $group) { Exit-InputProblem 'operations.monitoring.workspace_resource_group is missing.' }
 if (-not $endpointName) { Exit-InputProblem 'operations.monitoring.data_collection_endpoint is missing. Name the endpoint to create.' }
@@ -150,8 +152,8 @@ try {
             Write-Warning "${endpointName}: $($row.Detail)"
         }
     }
-    elseif ($PSCmdlet.ShouldProcess("data collection endpoint '$endpointName' in '$group'", "Create ($region, public network access enabled)")) {
-        $arguments = @{ Name = $endpointName; ResourceGroupName = $group; SubscriptionId = $subscriptionId; Location = $region; NetworkAclsPublicNetworkAccess = 'Enabled'; ErrorAction = 'Stop' }
+    elseif ($PSCmdlet.ShouldProcess("data collection endpoint '$endpointName' in '$group'", "Create ($region)")) {
+        $arguments = @{ Name = $endpointName; ResourceGroupName = $group; SubscriptionId = $subscriptionId; Location = $region; ErrorAction = 'Stop' }
         if ($tags.Count) { $arguments.Tag = $tags }
         $null = New-AzDataCollectionEndpoint @arguments
         $row.Action = 'Created'

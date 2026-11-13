@@ -353,10 +353,12 @@ operations:
     enabled: true
     log_analytics_workspace: "log-iic-azl-01"
     workspace_resource_group: "rg-iic-mgmt-01"
-    health_alerts: true
+    retention_days: 30
+    data_collection_endpoint: "dce-iic-azl-01"
+    data_collection_rule: "AzureStackHCI-iic-azl-01"
+    action_group: "ag-iic-azl-01"
   notifications:
     emails: ["noc@improbability.cloud"]
-    teams_webhook: "keyvault://kv-iic-mgmt-01/teams-webhook-url"
   backup:
     enabled: false
   disaster_recovery:

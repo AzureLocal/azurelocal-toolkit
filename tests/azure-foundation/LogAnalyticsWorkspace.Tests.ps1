@@ -78,9 +78,23 @@ Describe 'Deploy-LogAnalyticsWorkspace.ps1' {
             Should -Invoke New-AzOperationalInsightsWorkspace -Times 1 -Exactly -ParameterFilter { $Name -eq 'log-azl-01' -and $ResourceGroupName -eq 'rg-mgmt-01' -and $Location -eq 'westus2' }
         }
 
-        It 'sets no pricing tier and no retention (Azure defaults)' {
+        It 'sets no pricing tier, and no retention when the file has none (Azure defaults)' {
             $null = Invoke-Workspace (New-InfraFile)
             Should -Invoke New-AzOperationalInsightsWorkspace -Times 1 -Exactly -ParameterFilter { -not $Sku -and -not $RetentionInDays }
+        }
+
+        It 'passes operations.monitoring.retention_days when the file sets it, and still no pricing tier' {
+            $r = Invoke-Workspace (New-InfraFile -Monitoring (New-Monitoring @{ retention_days = 90 }))
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            Should -Invoke New-AzOperationalInsightsWorkspace -Times 1 -Exactly -ParameterFilter { $RetentionInDays -eq 90 -and -not $Sku }
+        }
+
+        It 'refuses a retention outside 30 to 730 days or not a number: <_>' -ForEach 29, 731, 'a month' {
+            $r = Invoke-Workspace (New-InfraFile -Monitoring (New-Monitoring @{ retention_days = $_ }))
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match 'retention_days'
+            Should -Invoke New-AzOperationalInsightsWorkspace -Times 0 -Exactly
+            Should -Invoke Get-AzContext -Times 0 -Exactly
         }
 
         It 'works in the subscription of the file and puts the original subscription back' {
@@ -127,6 +141,19 @@ Describe 'Deploy-LogAnalyticsWorkspace.ps1' {
         It 'compares regions without regard to case or spaces' {
             Mock Get-AzOperationalInsightsWorkspace { [pscustomobject]@{ Name = $Name; Location = 'East US' } }
             (Invoke-Workspace (New-InfraFile)).Result.Detail | Should -BeNullOrEmpty
+        }
+
+        It 'reports a retention that differs from the file, and changes nothing' {
+            Mock Get-AzOperationalInsightsWorkspace { [pscustomobject]@{ Name = $Name; Location = 'eastus'; RetentionInDays = 30 } }
+            $r = Invoke-Workspace (New-InfraFile -Monitoring (New-Monitoring @{ retention_days = 90 }))
+            $r.ExitCode | Should -Be 0
+            $r.Result.Detail | Should -Match 'keeps data for 30 days, operations.monitoring.retention_days is 90'
+            Should -Invoke New-AzOperationalInsightsWorkspace -Times 0 -Exactly
+        }
+
+        It 'says nothing about a retention that matches the file' {
+            Mock Get-AzOperationalInsightsWorkspace { [pscustomobject]@{ Name = $Name; Location = 'eastus'; RetentionInDays = 90 } }
+            (Invoke-Workspace (New-InfraFile -Monitoring (New-Monitoring @{ retention_days = 90 }))).Result.Detail | Should -BeNullOrEmpty
         }
     }
 
@@ -291,7 +318,7 @@ Describe 'Deploy-LogAnalyticsWorkspace.ps1' {
         It 'reads only registry keys that exist' {
             $registry = @(Get-RegistryVariable -Path ([IO.Path]::Combine($repo, 'config', 'variables', 'schema', 'master-registry.yaml')))
             foreach ($key in 'azure.tenant_id', 'azure.subscription_id', 'azure.location', 'operations.monitoring.enabled', 'operations.monitoring.log_analytics_workspace',
-                'operations.monitoring.workspace_resource_group') {
+                'operations.monitoring.workspace_resource_group', 'operations.monitoring.retention_days') {
                 @($registry | Where-Object Path -EQ $key).Count | Should -Be 1 -Because $key
             }
         }

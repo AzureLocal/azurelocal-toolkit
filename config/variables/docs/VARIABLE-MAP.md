@@ -16,10 +16,10 @@ Registry version 5.0.37. Sources of the scan: toolkit (this repository), sonar 3
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 627 | 298 | 132 | 3 | 192 | 2 |
-| Owned by a tool (`tools.*`) | 2481 | 2474 | 0 | 0 | 7 | 0 |
-| Older variables-file sections | 1476 | 46 | 470 | 0 | 954 | 6 |
-| All registry leaves | 4584 | 2818 | 602 | 3 | 1153 | 8 |
+| Keys of infrastructure.yml | 626 | 304 | 132 | 3 | 185 | 2 |
+| Owned by a tool (`tools.*`) | 2485 | 2478 | 0 | 0 | 7 | 0 |
+| Older variables-file sections | 1446 | 45 | 470 | 0 | 925 | 6 |
+| All registry leaves | 4557 | 2827 | 602 | 3 | 1117 | 8 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -45,7 +45,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 64 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
 | ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 87 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 14 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
-| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 143 | _metadata, azure, cluster, devops, hardware, identity, key_vaults, landing_zone, networking, nodes, operations, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
+| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 149 | _metadata, azure, cluster, devops, hardware, identity, key_vaults, landing_zone, networking, nodes, operations, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
 
 ### Which section is read in which phase (number of keys)
 
@@ -57,7 +57,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `identity` | 11 |  |  | 13 | 13 | 9 | 4 | 13 |
 | `networking` | 22 |  | 7 | 5 | 24 | 20 |  | 11 |
 | `security` | 1 |  |  |  |  | 11 |  | 2 |
-| `operations` | 13 |  |  |  |  |  |  | 1 |
+| `operations` | 13 |  |  |  |  |  |  | 7 |
 | `devops` | 4 |  |  |  |  |  |  | 41 |
 | `scenario` | 9 |  | 1 | 6 | 5 | 6 | 2 | 3 |
 | `azure` | 8 |  | 5 | 4 | 5 | 6 | 3 | 7 |
@@ -94,12 +94,12 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | ztp | ZTP | 89 | 0 | 1135 |
 | os-configuration | OS configuration | 69 | 0 | 274 |
 | pre-cluster-verification | Pre-cluster verification | 64 | 0 | 0 |
-| arm-deployment | ARM Validate/Deploy | 87 | 0 | 280 |
+| arm-deployment | ARM Validate/Deploy | 87 | 0 | 284 |
 | sonar | Sonar | 14 | 0 | 266 |
 | cicd-infra | Outside the flow | 53 | 0 | 347 |
 | infrastructure-helpers | Outside the flow | 39 | 0 | 0 |
 | validator | Outside the flow | 111 | 0 | 0 |
-| toolkit-legacy-scripts | Outside the flow | 60 | 0 | 0 |
+| toolkit-legacy-scripts | Outside the flow | 66 | 0 | 0 |
 
 ### trailwright
 
@@ -291,8 +291,8 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 
 ### toolkit-legacy-scripts
 
-**Reads (60):**
-`site.code`, `site.location`, `site.name`, `site.owner`, `tags.*`, `identity.active_directory.domain_fqdn`, `identity.active_directory.netbios_name`, `identity.active_directory.ou_path`, `identity.active_directory.lcm_user.username`, `identity.active_directory.lcm_user.password`, `identity.active_directory.security_groups[].name`, `identity.active_directory.security_groups[].local_groups`, `identity.local_admin.username`, `identity.local_admin.password`, `identity.entra.groups[].name`, `identity.entra.groups[].purpose`, `identity.entra.groups[].roles`, `identity.entra.groups[].scope`, `security.defender_for_cloud.enabled`, `security.defender_for_cloud.apply_cloud_security_benchmark`, `operations.notifications.emails`, `scenario.storage_architecture`, `scenario.environment_class`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.custom_location`, `azure.automation_identity.client_id`, `secrets.provider`, `secrets.file.directory`, `secrets.command.executable`, `secrets.command.arguments`, `secrets.command.timeout_seconds`, `cluster.name`, `hardware.vendor`, `hardware.model`, `hardware.sbe.publisher`, `hardware.sbe.family`, `hardware.sbe.version`, `hardware.sbe.bundle_path`, `hardware.sbe.requirement`, `hardware.sbe.not_applicable_reason`, `hardware.sbe.source_path`, `hardware.sbe.source_username`, `hardware.sbe.source_password`, `hardware.sbe.package_sha256`, `hardware.sbe.package_size_bytes`, `hardware.drives.capacity.media`, `storage.pool.thin_provisioning_alert_threshold_percent`, `storage.csv.read_cache_size_mib`, `sdn.enabled`, `landing_zone.management_groups[].name`, `landing_zone.management_groups[].display_name`, `landing_zone.subscriptions[].name`, `landing_zone.subscriptions[].id`, `landing_zone.subscriptions[].management_group`, `landing_zone.policy.required_tags`, `landing_zone.policy.management_group`, `_metadata.schema_version`
+**Reads (66):**
+`site.code`, `site.location`, `site.name`, `site.owner`, `tags.*`, `identity.active_directory.domain_fqdn`, `identity.active_directory.netbios_name`, `identity.active_directory.ou_path`, `identity.active_directory.lcm_user.username`, `identity.active_directory.lcm_user.password`, `identity.active_directory.security_groups[].name`, `identity.active_directory.security_groups[].local_groups`, `identity.local_admin.username`, `identity.local_admin.password`, `identity.entra.groups[].name`, `identity.entra.groups[].purpose`, `identity.entra.groups[].roles`, `identity.entra.groups[].scope`, `security.defender_for_cloud.enabled`, `security.defender_for_cloud.apply_cloud_security_benchmark`, `operations.monitoring.enabled`, `operations.monitoring.log_analytics_workspace`, `operations.monitoring.workspace_resource_group`, `operations.monitoring.retention_days`, `operations.monitoring.data_collection_rule`, `operations.monitoring.data_collection_endpoint`, `operations.notifications.emails`, `scenario.storage_architecture`, `scenario.environment_class`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.custom_location`, `azure.automation_identity.client_id`, `secrets.provider`, `secrets.file.directory`, `secrets.command.executable`, `secrets.command.arguments`, `secrets.command.timeout_seconds`, `cluster.name`, `hardware.vendor`, `hardware.model`, `hardware.sbe.publisher`, `hardware.sbe.family`, `hardware.sbe.version`, `hardware.sbe.bundle_path`, `hardware.sbe.requirement`, `hardware.sbe.not_applicable_reason`, `hardware.sbe.source_path`, `hardware.sbe.source_username`, `hardware.sbe.source_password`, `hardware.sbe.package_sha256`, `hardware.sbe.package_size_bytes`, `hardware.drives.capacity.media`, `storage.pool.thin_provisioning_alert_threshold_percent`, `storage.csv.read_cache_size_mib`, `sdn.enabled`, `landing_zone.management_groups[].name`, `landing_zone.management_groups[].display_name`, `landing_zone.subscriptions[].name`, `landing_zone.subscriptions[].id`, `landing_zone.subscriptions[].management_group`, `landing_zone.policy.required_tags`, `landing_zone.policy.management_group`, `_metadata.schema_version`
 
 Where in the code (file, function, keys read by name; 87 places, the first 12):
 
@@ -300,16 +300,16 @@ Where in the code (file, function, keys read by name; 87 places, the first 12):
 | --- | --- | ---: |
 | `scripts/common/sbe/AzlSbePackage.psm1` | `Get-AzlSbeSource` | 9 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/powershell/New-LogicalNetwork.ps1` | `(script)` | 8 |
+| `scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Deploy-DataCollectionEndpoint.ps1` | `(script)` | 8 |
+| `scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Deploy-LogAnalyticsWorkspace.ps1` | `(script)` | 8 |
 | `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/powershell/Invoke-ArcRegistration-Orchestrated.ps1` | `Get-Config` | 7 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-02-cluster-quorum-configuration/powershell/Invoke-ConfigureClusterQuorum-Orchestrated.ps1` | `(script)` | 7 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/powershell/New-NetworkSecurityGroup.ps1` | `(script)` | 7 |
+| `scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights/powershell/Enable-HciInsights.ps1` | `(script)` | 7 |
 | `scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/powershell/Set-EntraGroupRoleAssignments.ps1` | `(script)` | 6 |
 | `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation/powershell/Invoke-ArcPrerequisites-Orchestrated.ps1` | `Get-Config` | 6 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration/powershell/New-StoragePath.ps1` | `(script)` | 6 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-06-image-downloads/powershell/New-VmImage.ps1` | `(script)` | 6 |
-| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1` | `(script)` | 6 |
-| `scripts/common/utilities/tools/Generate-ClusterConfigMD.ps1` | `(script)` | 5 |
-| `scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-01-create-azure-local-deployment-spn/powershell/New-AutomationManagedIdentity.ps1` | `(script)` | 5 |
 
 ## By ARM parameter: the template parameter and the file key it comes from
 
@@ -436,7 +436,7 @@ Ranked by how many different tools read the key, then how many places in the cod
 
 Variables the registry documents that no tool in the scan reads by name. Each is either a key a coming phase will read, a key only the validator checks, or a name kept for compatibility. Nothing here is an error; it is the list to look at before you spend time filling a key in that nothing uses yet.
 
-### Placeholder: documented, not read by any tool in the scan (192)
+### Placeholder: documented, not read by any tool in the scan (185)
 
 | Variable | Purposes | Provided by | Note |
 | --- | --- | --- | --- |
@@ -480,13 +480,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `networking.outbound.private_path.proxy_bypass` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `security.backup_key_vault` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `security.defender_for_cloud.security_contact_email` |  | operator by hand | documented in the registry; no tool in the scan reads it |
-| `operations.monitoring.enabled` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
-| `operations.monitoring.log_analytics_workspace` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
-| `operations.monitoring.workspace_resource_group` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
-| `operations.monitoring.data_collection_rule` |  | operator by hand | documented in the registry; no tool in the scan reads it |
-| `operations.monitoring.data_collection_endpoint` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `operations.monitoring.action_group` |  | operator by hand | documented in the registry; no tool in the scan reads it |
-| `operations.monitoring.health_alerts` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `operations.monitoring.alert_email` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `operations.update_method` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `operations.backup.enabled` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
@@ -505,7 +499,6 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `operations.disaster_recovery.storage_account` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `operations.disaster_recovery.target_rto_minutes` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `operations.disaster_recovery.target_rpo_minutes` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
-| `operations.notifications.teams_webhook` |  | operator by hand; Key Vault reference (keyvault://) | documented in the registry; no tool in the scan reads it |
 | `operations.licensing.azure_hybrid_benefit` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `operations.licensing.windows_server_subscription` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `operations.licensing.azure_verification_for_vms` |  | operator by hand | documented in the registry; no tool in the scan reads it |
@@ -803,7 +796,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `tools.ztp.config_keys.config_oem_vendor_json.bios_status` | ztp | config_keys |
 | `tools.ztp.config_keys.config_oem_vendor_json.models_validatedBySimplifiedProvisioning` | ztp | config_keys |
 
-### Older variables-file sections (1476 variables)
+### Older variables-file sections (1446 variables)
 
 These registry sections (`compute`, `identity.accounts`, `azure_platform`, ...) describe the earlier variables file, not `infrastructure.yml`. The numbered deploy scripts under `scripts/deploy` read some of them. They are in the CSV (`kind` = `variables-file`).
 
@@ -818,7 +811,7 @@ These registry sections (`compute`, `identity.accounts`, `azure_platform`, ...) 
 | `infrastructure_scenarios` | 1 | 0 | 1 | 0 |
 | `marketplace_images` | 9 | 8 | 1 | 0 |
 | `networking` | 527 | 55 | 468 | 4 |
-| `operations` | 122 | 3 | 119 | 0 |
+| `operations` | 92 | 2 | 90 | 0 |
 | `security` | 109 | 2 | 107 | 0 |
 | `site` | 23 | 2 | 21 | 0 |
 | `storage_accounts` | 33 | 0 | 33 | 0 |
@@ -1349,13 +1342,13 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 
 | Path | Type, default, allowed | Provided by | Purposes | Read by | Becomes | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| `operations.monitoring.enabled` | boolean, required | operator; Trailwright |  |  |  | placeholder |
-| `operations.monitoring.log_analytics_workspace` | string | operator; Trailwright |  |  |  | placeholder |
-| `operations.monitoring.workspace_resource_group` | string (resource_group) | operator; Trailwright |  |  |  | placeholder |
-| `operations.monitoring.data_collection_rule` | string | operator |  |  |  | placeholder |
-| `operations.monitoring.data_collection_endpoint` | string | operator |  |  |  | placeholder |
+| `operations.monitoring.enabled` | boolean, required | operator; Trailwright |  | toolkit-legacy-scripts |  | read |
+| `operations.monitoring.log_analytics_workspace` | string | operator; Trailwright |  | toolkit-legacy-scripts |  | read |
+| `operations.monitoring.workspace_resource_group` | string (resource_group) | operator; Trailwright |  | toolkit-legacy-scripts |  | read |
+| `operations.monitoring.retention_days` | integer, default `30` | operator; default |  | toolkit-legacy-scripts |  | read |
+| `operations.monitoring.data_collection_rule` | string | operator |  | toolkit-legacy-scripts |  | read |
+| `operations.monitoring.data_collection_endpoint` | string | operator |  | toolkit-legacy-scripts |  | read |
 | `operations.monitoring.action_group` | string | operator |  |  |  | placeholder |
-| `operations.monitoring.health_alerts` | boolean | operator |  |  |  | placeholder |
 | `operations.monitoring.alert_email` | string | operator |  |  |  | placeholder |
 | `operations.update_method` | string, one of `portal`, `powershell` | operator; Trailwright |  |  |  | placeholder |
 | `operations.backup.enabled` | boolean, required | operator; Trailwright |  |  |  | placeholder |
@@ -1375,7 +1368,6 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `operations.disaster_recovery.target_rto_minutes` | integer | operator; Trailwright |  |  |  | placeholder |
 | `operations.disaster_recovery.target_rpo_minutes` | integer | operator; Trailwright |  |  |  | placeholder |
 | `operations.notifications.emails` | array | operator; Trailwright |  | toolkit-legacy-scripts |  | read |
-| `operations.notifications.teams_webhook` | string (kv_ref) | operator; Key Vault ref |  |  |  | placeholder |
 | `operations.licensing.azure_hybrid_benefit` | boolean | operator; Trailwright |  |  |  | placeholder |
 | `operations.licensing.windows_server_subscription` | boolean | operator |  |  |  | placeholder |
 | `operations.licensing.azure_verification_for_vms` | boolean | operator |  |  |  | placeholder |
@@ -1589,7 +1581,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |
-| arm_deployment | parameters | 180 | 180 | 0 |
+| arm_deployment | parameters | 184 | 184 | 0 |
 | arm_deployment | report_fields | 20 | 20 | 0 |
 | arm_deployment | run_settings | 31 | 31 | 0 |
 | arm_deployment | secret_names | 2 | 2 | 0 |

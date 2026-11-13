@@ -1215,8 +1215,6 @@ operations:
   notifications:
     # Addresses (team mailboxes) that receive the notifications of the operations tools.
     emails: ["noc@improbability.cloud"]
-    # A Key Vault secret reference: keyvault://<vault>/<secret>.
-    teams_webhook: "keyvault://kv-iic-mgmt-01/teams-webhook-url"
   # Licensing benefits the instance uses.
   licensing:
     # Azure Hybrid Benefit for the host fee and Windows Server guests.
@@ -1234,14 +1232,15 @@ operations:
     log_analytics_workspace: "log-iic-azl-01"
     # Resource group of the Log Analytics workspace.
     workspace_resource_group: "rg-iic-mgmt-01"
-    # Name of the data collection rule.
-    data_collection_rule: ""
+    # How many days the workspace keeps its data (the default retention).
+    # default: 30
+    retention_days: 30
+    # Name of the existing data collection rule that Insights for Azure Local uses.
+    data_collection_rule: "AzureStackHCI-iic-azl-01"
     # Name of the data collection endpoint that Deploy-DataCollectionEndpoint.ps1 creates, in the region of the workspace.
-    data_collection_endpoint: ""
+    data_collection_endpoint: "dce-iic-azl-01"
     # Name of the Azure Monitor action group that tells the operations team about alerts.
     action_group: "ag-iic-azl-01"
-    # true when health alerts are created.
-    health_alerts: true
     # Address that receives the alerts (a team mailbox).
     alert_email: ""
 

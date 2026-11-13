@@ -41,6 +41,8 @@
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
 #   v5.0.37 (2026-11-13):
 #     - Secret providers (infrastructure schema 5.6.13): the section secrets (provider, file.directory, command.executable, command.arguments, command.timeout_seconds) and the reference forms env://, file:// and command:// besides keyvault:// for every kv_ref key. One resolver, scripts/common/secrets/AzlSecret.psm1; the ARM deployment reads its secret parameters through it.
+#   v5.0.36 (2026-11-13):
+#     - Azure Monitor (infrastructure schema 5.6.12): operations.monitoring.retention_days (workspace retention, read by Deploy-LogAnalyticsWorkspace.ps1); data_collection_rule is now read by Enable-HciInsights.ps1, which associates the rule that the portal created with every node and never creates a rule. Scope: Azure Monitor is only the workspace, the data collection endpoint, the Azure Monitor Agent extension and the Insights association. Removed: operations.notifications.teams_webhook, operations.monitoring.health_alerts (nothing reads it) and 28 old-layout keys under operations.monitoring (monitoring_* and log_analytics.*). New scripts Install-AzureMonitorAgent.ps1 and Enable-HciInsights.ps1 (rewritten); Set-AzureMonitorIntegration.ps1 (and its Azure CLI twin) and Watch-AzureLocalDeployment.ps1 removed (Sonar watches deployments); their parameters registered or removed under tools.arm_deployment.parameters.
 #   v5.0.35 (2026-11-13):
 #     - Post-deployment networking and images (infrastructure schema 5.6.11): networking.network_security_groups (name, rules[] with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description), networking.logical_networks[].vm_switch_name and storage.vm_images[] (name, os_type, publisher, offer, sku, version, storage_path). New-NetworkSecurityGroup.ps1, New-LogicalNetwork.ps1 and New-VmImage.ps1 (phase 06, tasks 07, 08 and 06) read them; their parameters are registered under tools.arm_deployment.parameters. They replace seven scripts (two orchestrators, three standalone copies and Get-ImageDownloads.ps1) that read the unregistered network.nsgs and marketplace_images, or the 4.0 names default_gateway and ip_pools, and carried a fixed image catalogue. The logical network definition of the schema now accepts enabled, ip_allocation_method, nsg_name and vm_switch_name (it rejected the first three as unknown keys).
 #   v5.0.34 (2026-11-12):
@@ -202,6 +204,10 @@ _metadata:
       version: "5.0.37"
       change: "Secret providers (infrastructure schema 5.6.13): the new section secrets (provider, file.directory, command.executable, command.arguments, command.timeout_seconds) and the reference forms env://<VARIABLE>, file://<name> and command://<name> besides keyvault://<vault>/<secret> for every key of format kv_ref. The format keeps its name; its pattern accepts the four forms."
       reason: "Owner requirement: four secret providers (Azure Key Vault by default, environment variable, file, custom command) behind one resolver that every script calls, and no script names a vault. A reference holds a name only; the directory and the command are settings, so a shared file cannot point a machine at a path or run a command."
+    - date: "2026-11-13"
+      version: "5.0.36"
+      change: "Azure Monitor (infrastructure schema 5.6.12). Added operations.monitoring.retention_days (integer, default 30, 30 to 730). Removed operations.notifications.teams_webhook and operations.monitoring.health_alerts (current-layout keys, see MIGRATION.md) and the old-layout keys of operations.monitoring: log_analytics.workspace_id and workspace_name, monitoring_log_analytics_workspace_name, _sku and _retention_days, monitoring_agent_windows_enabled and _linux_enabled, monitoring_application_insights_name, monitoring_alert_email_addresses, _severity_levels, _action_group_name, _email_receiver and _webhook_receiver, monitoring_resource_group, monitoring_enabled, monitoring_workspace, monitoring_metrics_retention_days, monitoring_windows_performance_dcr_name, windows_events_dcr_name, monitoring_performance_counter_sampling_frequency, monitoring_dcr_destination_table, monitoring_dcr_linux_syslog_facilities, _log_levels and _name, monitoring_dcr_windows_events_logs, _events_name, _perf_counters and _perf_name, and monitoring_wac_server and monitoring_scom_server. operations.monitoring.wac.server and extended.scom.server stay as plain keys: the parked Windows Admin Center task (scripts/deferred) reads them. The descriptions of enabled, workspace_resource_group, log_analytics_workspace, data_collection_rule and data_collection_endpoint say which script reads each key. Parameters of Install-AzureMonitorAgent.ps1 and Enable-HciInsights.ps1 are registered under tools.arm_deployment.parameters."
+      reason: "Owner directives: every Azure Monitor value is a registered key that a script reads, no monitoring script carries a hard-coded value, and Azure Monitor in the toolkit is only what Insights needs plus the Log Analytics workspace (workspace with retention, data collection endpoint, Azure Monitor Agent extension, association of the Insights rule). Keys come only from what Microsoft Learn documents as a choice for Azure Local. Learn documents no template for the Insights data collection rule and says not to build your own, so Enable-HciInsights.ps1 only associates the rule the portal created (data_collection_rule names it); the event channels, counters and sample rate are not keys. The workspace pricing tier is not a key (pay-as-you-go is the only tier that fits, commitment tiers start at 100 GB a day, legacy tiers are closed to new customers). health_alerts is removed because alerting beyond the existing action group is out of scope and no script reads it. The old-layout keys had no reader or only the removed Set-AzureMonitorIntegration.ps1; each one was either replaced by a current-layout key or describes something Learn does not document for Azure Local (Application Insights, an Azure Monitor workspace, Linux syslog, a metrics retention that Azure fixes at 93 days, a webhook URL that an action group would store in plain form)."
     - date: "2026-11-13"
       version: "5.0.35"
       change: "Post-deployment networking and images (infrastructure schema 5.6.11): networking.network_security_groups[] (name, rules[]: name, priority 100 to 4096, direction, access, protocol, source_address_prefixes, destination_address_prefixes, source_port_ranges, destination_port_ranges, description up to 140 characters), networking.logical_networks[].vm_switch_name and storage.vm_images[] (name, os_type, publisher, offer, sku, version, storage_path). sdn.enabled is read by the NSG and logical network scripts. The logical network definition in _schema_defs accepts enabled, ip_allocation_method, nsg_name and vm_switch_name. The 4.0 compute.azure_local.vm_switch_name is marked deprecated. The parameters of the three new scripts are registered."
@@ -13109,298 +13115,69 @@ operations:
       tier: required
       description: "Log Analytics, DCRs, alerts, and monitoring configuration"
 
-    # ─── Nested aliases (used in example file) ───
-    log_analytics:
-      type: object
-      description: "Log Analytics configuration (nested alias)"
-      workspace_id:
-        type: string
-        description: "Log Analytics workspace ID"
-        format: uuid
-      workspace_name:
-        type: string
-        description: "Log Analytics workspace name (alias for monitoring_log_analytics_workspace_name)"
-        alias_for: monitoring_log_analytics_workspace_name
-
+    # The old-layout (variables.yml) keys of Azure Monitor, monitoring_* and log_analytics.*, were removed in registry 5.0.36: see the change log. The
+    # two groups below belong to the parked Windows Admin Center task (scripts/deferred) and stay until that task is taken up again.
+    # The two keys below are read only by the parked Windows Admin Center monitoring task (scripts/deferred/windows-admin-center); no active script
+    # reads them. They stay until that task is taken up again or removed.
     wac:
       type: object
-      description: "Windows Admin Center configuration (nested alias)"
+      description: "Windows Admin Center (parked task)"
       server:
         type: string
-        description: "WAC server FQDN (alias for monitoring_wac_server)"
-        alias_for: monitoring_wac_server
+        description: "FQDN of the Windows Admin Center server. Read only by the parked Windows Admin Center monitoring task."
 
-    # ─── absorbed from dissolved monitoring_extended ───
     extended:
-      # ─── Nested aliases (used in example file) ───
       scom:
-        monitoring_scom_server:
-          category: "monitoring"
-          subcategory: "scom"
-          type: string
-          description: "SCOM management server FQDN"
-          required: false
-          example: "scom-mgmt01.azlocal.cloud"
-
+        type: object
+        description: "System Center Operations Manager (parked task)"
         server:
           type: string
-          description: "SCOM server shorthand (alias for monitoring_scom_server)"
-          alias_for: monitoring_scom_server
+          description: "FQDN of the SCOM management server. Read only by the parked Windows Admin Center monitoring task."
 
-      wac_monitoring:
-        monitoring_wac_server:
-          category: "monitoring"
-          subcategory: "wac"
-          type: string
-          description: "Windows Admin Center server FQDN for monitoring integration"
-          required: false
-          example: "wac01.azlocal.cloud"
-          note: "For WAC VM configuration, see azure_jumpbox_vm.wac section"
-
-    monitoring_log_analytics_workspace_name:
-      category: "monitoring"
-      subcategory: "log-analytics"
-      type: string
-      description: "Log Analytics workspace name"
-      required: false
-      pattern: "^law-[a-z0-9-]+$"
-      example: "law-azlc-AzureLocalCloud-eus-monitoring"
-
-    monitoring_log_analytics_workspace_sku:
-      category: "monitoring"
-      subcategory: "log-analytics"
-      type: string
-      description: "Log Analytics workspace SKU"
-      required: false
-      allowedValues:
-      - Free
-      - PerGB2018
-      - PerNode
-      - Premium
-      - Standard
-      - Standalone
-      default: "PerGB2018"
-
-    monitoring_log_analytics_retention_days:
-      category: "monitoring"
-      subcategory: "retention"
-      type: integer
-      description: "Log retention in days"
-      required: false
-      minimum: 30
-      maximum: 730
-      default: 90
-
-    monitoring_agent_windows_enabled:
-      type: boolean
-      description: "Enable Azure Monitor Agent on Windows VMs"
-      required: false
-      default: true
-
-    monitoring_agent_linux_enabled:
-      type: boolean
-      description: "Enable Azure Monitor Agent on Linux VMs"
-      required: false
-      default: true
-
-    monitoring_application_insights_name:
-      type: string
-      description: "Application Insights name"
-      required: false
-      pattern: "^ai-[a-z0-9-]+$"
-      example: "ai-azlc-AzureLocalCloud-eus-app"
-
-    monitoring_alert_email_addresses:
-      type: array
-      description: "Email addresses for alerts"
-      required: false
-      items:
-        type: string
-      format: email
-      example:
-      - "AzureLocalCloud@contoso.cloud"
-
-    monitoring_alert_severity_levels:
-      type: array
-      description: "Alert severity levels to monitor"
-      required: false
-      items:
-        type: integer
-      minimum: 0
-      maximum: 4
-      example:
-      - 0
-      - 1
-      - 2
-
-    monitoring_resource_group:
-      type: string
-      description: "Monitoring resource group"
-      required: false
-      pattern: "^rg-[a-z0-9-]+$"
-      example: "rg-azlc-AzureLocalCloud-eus-management-monitoring"
-
-    monitoring_enabled:
-      type: boolean
-      description: "Enable Azure Monitor"
-      required: false
-      default: true
-
-    monitoring_workspace:
-      type: string
-      description: "Azure Monitor workspace name"
-      required: false
-      pattern: "^amw-[a-z0-9-]+$"
-      example: "amw-azlc-AzureLocalCloud-eus"
-
-    # Metrics Configuration
-    monitoring_metrics_retention_days:
-      type: integer
-      description: "Metrics retention days"
-      required: true
-      example: "90"
-
-    # Data Collection Rules (DCR)
-    monitoring_windows_performance_dcr_name:
-      type: string
-      description: "Windows performance data collection rule name"
-      required: false
-      pattern: "^dcr-[a-z0-9-]+$"
-      example: "dcr-azlc-AzureLocalCloud-eus-winperf"
-
-    windows_events_dcr_name:
-      type: string
-      description: "Windows events data collection rule name"
-      required: false
-      pattern: "^dcr-[a-z0-9-]+$"
-      example: "dcr-azlc-AzureLocalCloud-eus-winevents"
-
-    monitoring_performance_counter_sampling_frequency:
-      type: integer
-      description: "Performance counter sampling frequency (seconds)"
-      required: false
-      minimum: 10
-      maximum: 3600
-      default: 60
-
-    monitoring_dcr_destination_table:
-      type: string
-      description: "Log Analytics workspace table name for data collection rule output data. Use standard tables (Perf, Event, Syslog) or custom tables with _CL suffix for custom log data"
-      required: false
-      pattern: "^[A-Za-z][A-Za-z0-9_]*(_CL)?$"
-      example: "Perf"
-
-    monitoring_dcr_linux_syslog_facilities:
-      type: array
-      description: "Linux syslog facilities"
-      required: false
-      items:
-        type: string
-      example:
-      - "[\"auth\", \"authpriv\", \"cron\"]"
-
-    monitoring_dcr_linux_syslog_log_levels:
-      type: array
-      description: "Linux syslog log levels"
-      required: false
-      items:
-        type: string
-      example:
-      - "[\"Emergency\", \"Alert\", \"Critical\"]"
-
-    monitoring_dcr_linux_syslog_name:
-      type: string
-      description: "Linux syslog DCR name"
-      required: false
-      example: "dcr-linux-syslog"
-
-    monitoring_dcr_windows_events_logs:
-      type: array
-      description: "Windows event logs"
-      required: false
-      items:
-        type: string
-      example:
-      - "[\"System\", \"Application\"]"
-
-    monitoring_dcr_windows_events_name:
-      type: string
-      description: "Windows events DCR name"
-      required: false
-      example: "dcr-windows-events"
-
-    monitoring_dcr_windows_perf_counters:
-      type: array
-      description: "Windows performance counters"
-      required: false
-      items:
-        type: string
-      example:
-      - "[\"\\\\Processor(_Total)\\\\% Processor Time\"]"
-
-    monitoring_dcr_windows_perf_name:
-      type: string
-      description: "Windows performance DCR name"
-      required: false
-      example: "dcr-windows-perf"
-
-    # Alert Configuration
-    monitoring_alert_action_group_name:
-      type: string
-      description: "Alert action group name"
-      required: false
-      example: "ag-azlc-AzureLocalCloud-alerts"
-
-    monitoring_alert_email_receiver:
-      type: string
-      description: "Alert email receiver"
-      required: false
-      format: email
-      example: "<alerts@company.com>"
-
-    monitoring_alert_webhook_receiver:
-      type: string
-      description: "Alert webhook receiver"
-      required: false
-      example: "<https://webhook.url>"
     # --- infrastructure.yml schema 5.x variables (registry 4.1.0) ---
     properties:
       enabled:
-        description: "true when Azure Monitor is part of the design."
+        description: "true when Azure Monitor is part of the design. When it is false, every monitoring script of phase 02 (workspace, endpoint, Azure Monitor Agent, Insights association, action group) does nothing and exits 0."
         type: boolean
         required: true
         example: true
       log_analytics_workspace:
-        description: "Name of the Log Analytics workspace. Deploy-DataCollectionEndpoint.ps1 looks it up, and takes the region of the data collection endpoint from it."
+        description: "Name of the Log Analytics workspace. Deploy-LogAnalyticsWorkspace.ps1 creates it; Deploy-DataCollectionEndpoint.ps1 looks it up and takes the region of the endpoint from it. The Insights data collection rule sends to it."
         type: string
         required: false
         example: "log-iic-azl-01"
       workspace_resource_group:
-        description: "Resource group of the Log Analytics workspace. It is also the resource group of the data collection endpoint and of the action group that the monitoring scripts create."
+        description: "Resource group of the Log Analytics workspace. It is also the resource group of the data collection endpoint and of the action group that the monitoring scripts create and of the Insights data collection rule that Enable-HciInsights.ps1 looks up."
         type: string
         format: resource_group
         required: false
         pattern: "^[-\\w\\._\\(\\)]{1,90}$"
         example: "rg-iic-mgmt-01"
+      retention_days:
+        description: "How many days the workspace keeps its data (the default retention). Deploy-LogAnalyticsWorkspace.ps1 passes it when it creates the workspace; a workspace that exists is never changed. 30 is the Azure default and costs nothing extra; Microsoft Learn says retention beyond 31 days is charged. The pricing tier is not a key: a new workspace is pay-as-you-go, the commitment tiers start at 100 GB a day and the legacy tiers are closed to new customers."
+        type: integer
+        required: false
+        since: "5.6.12"
+        minimum: 30
+        maximum: 730
+        default: 30
+        example: 30
       data_collection_rule:
-        description: "Name of the data collection rule. Not read by the tools yet: a documented placeholder."
+        description: "Name of the existing data collection rule that Insights for Azure Local uses. Enable-HciInsights.ps1 (phase 02, task 03) looks it up in operations.monitoring.workspace_resource_group and associates it with the Arc machine of every node; it never creates or changes the rule. Microsoft Learn documents no template for the rule and says not to build your own, so create it once in the Azure portal (the instance, Capabilities, Insights, Get Started) and put its name here. Learn names the AzureStackHCI- prefix for the rule the portal creates."
         type: string
         required: false
+        example: "AzureStackHCI-iic-azl-01"
       data_collection_endpoint:
         description: "Name of the data collection endpoint that Deploy-DataCollectionEndpoint.ps1 creates, in the region of the workspace."
         type: string
         required: false
+        example: "dce-iic-azl-01"
       action_group:
         description: "Name of the Azure Monitor action group that tells the operations team about alerts. Deploy-ActionGroup.ps1 creates it, with an email receiver for each address of operations.notifications.emails and operations.monitoring.alert_email. Letters, digits, space and . _ - ( ), starting with a letter or digit."
         type: string
         required: false
         since: "5.6.6"
         example: "ag-iic-azl-01"
-      health_alerts:
-        description: "true when health alerts are created. Not read by the tools yet: a documented placeholder."
-        type: boolean
-        required: false
-        example: true
       alert_email:
         description: "Address that receives the alerts (a team mailbox). Deploy-ActionGroup.ps1 makes it an email receiver of the action group, next to the addresses of operations.notifications.emails."
         type: string
@@ -14177,7 +13954,7 @@ operations:
           required: false
           minimum: 0
     notifications:
-      description: "Who hears about alerts. A webhook URL is a secret."
+      description: "Who hears about alerts. Only email addresses: the action group of Azure Local alerting is an email group."
       type: object
       required: false
       additionalProperties: false
@@ -14189,14 +13966,6 @@ operations:
           example: [["noc@improbability.cloud"]]
           items:
             {"type":"string"}
-        teams_webhook:
-          description: "A Key Vault secret reference: keyvault://<vault>/<secret>. The vault must be listed in key_vaults. Not read by the tools yet: a documented placeholder."
-          type: string
-          format: kv_ref
-          sensitive: true
-          required: false
-          pattern: "^(keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
-          example: "keyvault://kv-iic-mgmt-01/teams-webhook-url"
     licensing:
       description: "Licensing benefits the instance uses."
       type: object
@@ -18136,7 +17905,7 @@ file_metadata:
   additionalProperties: false
   properties:
     schema_version:
-      description: "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. 5.6.11 adds what the logical network, network security group and VM image scripts read: networking.network_security_groups (name and rules with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description), networking.logical_networks[].vm_switch_name and storage.vm_images (name, os_type, publisher, offer, sku, version, storage_path). 5.6.13 adds the secrets section (provider, file directory, command) and lets a secret reference use the env://, file:// and command:// forms besides keyvault://. The current version is 5.6.13."
+      description: "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. 5.6.11 adds what the logical network, network security group and VM image scripts read: networking.network_security_groups (name and rules with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description), networking.logical_networks[].vm_switch_name and storage.vm_images (name, os_type, publisher, offer, sku, version, storage_path). 5.6.12 adds operations.monitoring.retention_days and removes operations.notifications.teams_webhook and operations.monitoring.health_alerts. 5.6.13 adds the secrets section (provider, file directory, command) and lets a secret reference use the env://, file:// and command:// forms besides keyvault://. The current version is 5.6.13."
       type: string
       required: true
       pattern: "^5\\.[0-9]+\\.[0-9]+$"
@@ -19680,8 +19449,20 @@ tools:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Deploy-LogAnalyticsWorkspace.ps1"
               properties:
-                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Deploy-LogAnalyticsWorkspace.ps1","description":"Deploy-LogAnalyticsWorkspace.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.subscription_id, azure.location, tags and operations.monitoring (enabled, log_analytics_workspace, workspace_resource_group) are read; the file is not validated as a whole."}
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Deploy-LogAnalyticsWorkspace.ps1","description":"Deploy-LogAnalyticsWorkspace.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.subscription_id, azure.location, tags and operations.monitoring (enabled, log_analytics_workspace, workspace_resource_group, retention_days) are read; the file is not validated as a whole."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Deploy-LogAnalyticsWorkspace.ps1","description":"Deploy-LogAnalyticsWorkspace.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_05_operational_foundations_phase_02_monitoring_observability_task_02_configure_azure_monitor_agent_powershell_Install_AzureMonitorAgent_ps1:
+              type: object
+              area: "scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-02-configure-azure-monitor-agent/powershell/Install-AzureMonitorAgent.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-02-configure-azure-monitor-agent/powershell/Install-AzureMonitorAgent.ps1","description":"Install-AzureMonitorAgent.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.subscription_id, azure.resource_group, cluster.name and operations.monitoring.enabled are read; the file is not validated as a whole."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-02-configure-azure-monitor-agent/powershell/Install-AzureMonitorAgent.ps1","description":"Install-AzureMonitorAgent.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
+            scripts_deploy_05_operational_foundations_phase_02_monitoring_observability_task_03_enable_hci_insights_powershell_Enable_HciInsights_ps1:
+              type: object
+              area: "scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights/powershell/Enable-HciInsights.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights/powershell/Enable-HciInsights.ps1","description":"Enable-HciInsights.ps1. The master infrastructure.yml (schema 5). Only azure.tenant_id, azure.subscription_id, azure.resource_group, cluster.name, nodes[] (name, arc_machine_name) and operations.monitoring (enabled, workspace_resource_group, data_collection_rule) are read; the file is not validated as a whole."}
+                LogPath: {"name":"LogPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights/powershell/Enable-HciInsights.ps1","description":"Enable-HciInsights.ps1. Optional: also append the progress lines to this file. Keep it out of the repository."}
             scripts_deploy_05_operational_foundations_phase_02_monitoring_observability_task_04_setup_alerting_powershell_Deploy_ActionGroup_ps1:
               type: object
               area: "scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-04-setup-alerting/powershell/Deploy-ActionGroup.ps1"

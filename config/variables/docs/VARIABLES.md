@@ -34,7 +34,6 @@ The templates expect these secrets. The names are the templates' placeholders (v
 | `identity.local_admin.password` | `kv-iic-mgmt-01` | `local-admin-password` | At least 14 characters with lowercase, uppercase, a digit and a special character. | full, ztp |
 | `identity.active_directory.lcm_user.password` | `kv-iic-mgmt-01` | `lcm-password` | At least 14 characters with lowercase, uppercase, a digit and a special character. | full |
 | `identity.active_directory.service_accounts[].password` | `kv-iic-mgmt-01` | `svc-backup-password` | Key Vault reference for the password of identity.active_directory.service_accounts[]. | full |
-| `operations.notifications.teams_webhook` | `kv-iic-mgmt-01` | `teams-webhook-url` | Key Vault reference for the teams_webhook of operations.notifications. | full |
 | `provisioning.simplified.admin.password` | `kv-iic-mgmt-01` | `provisioning-admin-password` | At least 12 characters with lowercase, uppercase, a digit and a special character. | ztp, full |
 | `network_devices[].credentials.password` | `kv-iic-mgmt-01` | `switch-admin-password` | Key Vault reference for the password of network_devices[].credentials. | full |
 | `landing_zone.connectivity.vpn_gateway.site_to_site[].shared_key` | `kv-iic-mgmt-01` | `vpn-shared-key` | Key Vault reference for the shared_key of landing_zone.connectivity.vpn_gateway.site_to_site[]. | full |
@@ -658,7 +657,6 @@ Day-2 choices: updates, backup, disaster recovery, notifications, licensing and 
 | `operations.disaster_recovery.target_rpo_minutes` | Recovery point objective in minutes. | integer | no / no |  |  | Your operations design. | Trailwright |
 | `operations.notifications` | Who hears about alerts. | object | no / no |  |  | Your operations design. | Trailwright |
 | `operations.notifications.emails` | Addresses (team mailboxes) that receive the notifications of the operations tools. | list of string | no / no |  | `[noc@improbability.cloud]` | Your operations design. | Trailwright |
-| `operations.notifications.teams_webhook` (secret) | Key Vault reference for the teams_webhook of operations.notifications. | keyvault:// reference | no / no |  | `keyvault://kv-iic-mgmt-01/teams-webhook-url` | Your operations design. | Trailwright |
 | `operations.licensing` | Licensing benefits the instance uses. | object | no / no |  |  | Your operations design. | Trailwright |
 | `operations.licensing.azure_hybrid_benefit` | Azure Hybrid Benefit for the host fee and Windows Server guests. | boolean | no / no |  | `true` | Your operations design. | Trailwright |
 | `operations.licensing.windows_server_subscription` | true when Windows Server guest licensing through Azure subscription is used. | boolean | no / no |  | `false` | Your operations design. | Trailwright |
@@ -667,10 +665,10 @@ Day-2 choices: updates, backup, disaster recovery, notifications, licensing and 
 | `operations.monitoring.enabled` | true when Azure Monitor is part of the design. | boolean | if section is set / if section is set |  | `true` | Your operations design. | Trailwright |
 | `operations.monitoring.log_analytics_workspace` | Name of the Log Analytics workspace. | string | no / no |  | `log-iic-azl-01` | Your operations design. | Trailwright |
 | `operations.monitoring.workspace_resource_group` | Resource group of the Log Analytics workspace. | resource group name | no / no |  | `rg-iic-mgmt-01` | Your operations design. | Trailwright |
-| `operations.monitoring.data_collection_rule` | Name of the data collection rule. | string | no / no |  |  | Your operations design. | Trailwright |
-| `operations.monitoring.data_collection_endpoint` | Name of the data collection endpoint that Deploy-DataCollectionEndpoint.ps1 creates, in the region of the workspace. | string | no / no |  |  | Your operations design. | Trailwright |
-| `operations.monitoring.action_group` | Name of the Azure Monitor action group that tells the operations team about alerts. | string | no / no |  |  | Your operations design. | Trailwright |
-| `operations.monitoring.health_alerts` | true when health alerts are created. | boolean | no / no |  | `true` | Your operations design. | Trailwright |
+| `operations.monitoring.retention_days` | How many days the workspace keeps its data (the default retention). | integer | no / no | `30` | `30` | Your operations design. | Trailwright |
+| `operations.monitoring.data_collection_rule` | Name of the existing data collection rule that Insights for Azure Local uses. | string | no / no |  | `AzureStackHCI-iic-azl-01` | Your operations design. | Trailwright |
+| `operations.monitoring.data_collection_endpoint` | Name of the data collection endpoint that Deploy-DataCollectionEndpoint.ps1 creates, in the region of the workspace. | string | no / no |  | `dce-iic-azl-01` | Your operations design. | Trailwright |
+| `operations.monitoring.action_group` | Name of the Azure Monitor action group that tells the operations team about alerts. | string | no / no |  | `ag-iic-azl-01` | Your operations design. | Trailwright |
 | `operations.monitoring.alert_email` | Address that receives the alerts (a team mailbox). | string | no / no |  |  | Your operations design. | Trailwright |
 
 ### provisioning

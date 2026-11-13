@@ -127,24 +127,6 @@
       "canonical_target": "vlan_workload_1_gateway",
       "created": "2026-04-02",
       "reason": "Nested VLAN alias"
-    },
-    {
-      "alias_path": "operations.monitoring.extended.scom.server",
-      "canonical_target": "monitoring_scom_server",
-      "created": "2026-04-02",
-      "reason": "Nested monitoring alias"
-    },
-    {
-      "alias_path": "operations.monitoring.log_analytics.workspace_name",
-      "canonical_target": "monitoring_log_analytics_workspace_name",
-      "created": "2026-04-02",
-      "reason": "Nested monitoring alias"
-    },
-    {
-      "alias_path": "operations.monitoring.wac.server",
-      "canonical_target": "monitoring_wac_server",
-      "created": "2026-04-02",
-      "reason": "Nested monitoring alias"
     }
   ],
   "retired_aliases": [],
