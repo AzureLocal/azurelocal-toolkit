@@ -54,6 +54,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 
 #region Functions
 
@@ -278,23 +279,12 @@ try {
     # Resolve credentials — Key Vault first, then interactive fallback
     if (-not $Credential) {
         function Resolve-KeyVaultRef {
+            # Reads a secret reference through the toolkit's one secret resolver (AzlSecret.psm1): any provider, no Azure CLI.
+            # Returns the text, or $null when it cannot be read; the caller then prompts. No value is logged.
             param([string]$KvUri)
-            if ($KvUri -notmatch '^keyvault://([^/]+)/(.+)$') { return $null }
-            $vaultName = $Matches[1]; $secretName = $Matches[2]
-            if (Get-Module -Name Az.KeyVault -ListAvailable -ErrorAction SilentlyContinue) {
-                try {
-                    $s = Get-AzKeyVaultSecret -VaultName $vaultName -Name $secretName -AsPlainText -ErrorAction Stop
-                    if ($s) { return $s }
-                } catch {}
-            }
-            try {
-                $azCmd = Get-Command az -ErrorAction SilentlyContinue
-                if ($azCmd) {
-                    $val = (& az keyvault secret show --vault-name $vaultName --name $secretName --query value --output tsv --only-show-errors 2>$null)
-                    if ($LASTEXITCODE -eq 0 -and -not [string]::IsNullOrWhiteSpace($val)) { return $val }
-                }
-            } catch {}
-            return $null
+            if (-not (Get-AzlSecretProvider -Reference $KvUri)) { return $null }
+            try { return (Get-AzlSecretPlainText -Reference $KvUri -Infrastructure $config) }
+            catch { Write-LogMessage "The secret could not be read: $($_.Exception.Message)" -Level Warning; return $null }
         }
         # Post-deployment: nodes are domain-joined — use LCM domain account
         $lcmUser       = $config['identity']?['active_directory']?['lcm_user']?['username']         # identity.active_directory.lcm_user.username

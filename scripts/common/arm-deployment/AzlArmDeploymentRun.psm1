@@ -912,10 +912,14 @@ function New-AzlArmAzureAdapter {
             [pscustomobject]@{ Available = [bool](Get-AzlProp $r 'nameAvailable' $false); ExistsInResourceGroup = $false; Reason = [string](Get-AzlProp $r 'message' '') }
         }
         TestSecret = {
-            param($Vault, $Secret)
-            # Metadata only: the value is not read.
-            $s = Get-AzKeyVaultSecret -VaultName $Vault -Name $Secret -ErrorAction Stop
-            return [bool]$s
+            param($Vault, $Secret, $Infrastructure)
+            # The toolkit's secret resolver proves the secret can be read (the value is read into memory, dropped, never returned).
+            # $false when the secret is not in the vault; anything else (no permission, not signed in, vault not listed) throws.
+            $reference = New-AzlSecretReference -Name $Secret -Vault $Vault -Provider keyvault -Infrastructure $Infrastructure
+            $probe = Test-AzlSecretReference -Reference $reference -Infrastructure $Infrastructure -Detailed
+            if ($probe.Resolvable) { return $true }
+            if ($probe.Category -eq 'SecretNotFound') { return $false }
+            throw $probe.Message
         }
         # The toolkit's secret resolver: any provider (keyvault://, env://, file://, command://). It needs the infrastructure file
         # for key_vaults and the secrets section. The value is plain text because it goes into the request body of a secure parameter.
@@ -1340,7 +1344,7 @@ $script:Checks['KeyVaultSecrets'] = {
         }
         if ($parts.Vault -notin $listed) { $bad += "$($r.Parameter): vault $($parts.Vault) is not listed under key_vaults"; continue }
         $exists = $false
-        try { $exists = [bool](Invoke-AzlArmAdapter $Ctx.Run.Adapter TestSecret @($parts.Vault, $parts.Secret)) } catch { $bad += "$($r.Parameter): secret $($parts.Secret) in $($parts.Vault) could not be read ($($_.Exception.Message))"; continue }
+        try { $exists = [bool](Invoke-AzlArmAdapter $Ctx.Run.Adapter TestSecret @($parts.Vault, $parts.Secret, $Ctx.Infra)) } catch { $bad += "$($r.Parameter): secret $($parts.Secret) in $($parts.Vault) could not be read ($($_.Exception.Message))"; continue }
         if (-not $exists) { $bad += "$($r.Parameter): secret $($parts.Secret) is not in vault $($parts.Vault)" }
     }
     if ($bad) { return New-AzlArmCheckResult KeyVaultSecrets Failed ($bad -join '; ') 'Create the secret (Add-KeyVaultCredentials.ps1), grant this identity Get on secrets, or fix the reference (keyvault://, env://, file:// or command://; the secrets section of the file holds the file directory and the command).' }

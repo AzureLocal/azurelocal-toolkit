@@ -42,7 +42,7 @@
     The VNC password (4 to 8 characters), for third-party VNC clients.
 
 .PARAMETER VncSecretReference
-    A keyvault://vault/secret reference holding the VNC password.
+    A secret reference (keyvault://, env://, file:// or command://) holding the VNC password. Read with the infrastructure file given in -ConfigPath.
 
 .PARAMETER VerifyCertificate
     Check the iDRAC TLS certificate. Default: not checked (self-signed).
@@ -95,7 +95,7 @@ elseif ($BmcAddress) { $targets.Add([pscustomobject]@{ Name = $BmcAddress; Addre
 else { throw 'Give -ConfigPath (config-driven) or -BmcAddress (one iDRAC).' }
 if ($targets.Count -eq 0) { throw 'No matching node with a bmc.ip_address. Check -TargetNode.' }
 
-if (-not $VncPassword -and $VncSecretReference) { $VncPassword = Get-AzlBmcKeyVaultSecret -Reference $VncSecretReference }
+if (-not $VncPassword -and $VncSecretReference) { $VncPassword = Get-AzlBmcKeyVaultSecret -Reference $VncSecretReference -Infrastructure $infrastructure }
 $cred = Resolve-AzlBmcCredential -Credential $Credential -Infrastructure $infrastructure -Node ($targets[0].Node)
 
 $results = foreach ($t in $targets) {

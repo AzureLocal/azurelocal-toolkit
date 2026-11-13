@@ -198,7 +198,7 @@ $sbeMount = $null
 $sbeSource = Get-AzlSbeSource -Infrastructure $infra
 $bundlePath = $sbeSource.Path
 $sbePassword = ''
-if ($sbeSource.Path -and $sbeSource.Username -and $sbeSource.PasswordRef -and -not $SpecOnly -and ('Sbe' -in $steps -or 'Drivers' -in $steps)) { $sbePassword = Get-AzlSecret -Reference $sbeSource.PasswordRef }
+if ($sbeSource.Path -and $sbeSource.Username -and $sbeSource.PasswordRef -and -not $SpecOnly -and ('Sbe' -in $steps -or 'Drivers' -in $steps)) { $sbePassword = Get-AzlSecret -Reference $sbeSource.PasswordRef -Infrastructure $infra }
 if ($sbeDelivery -and $bundlePath -and -not $SpecOnly -and ('Sbe' -in $steps -or 'Drivers' -in $steps)) {
     $oem = Get-AzlOemConfig -Vendor ([string](Get-AzlProp $infra 'hardware.vendor' 'Dell'))
     # The share can hold more than one package: the one for the file's family and version, else the one whose SupportedModels list the hardware model.
@@ -268,7 +268,7 @@ else {
         $admin = Get-AzlProp $infra 'identity.local_admin'
         $user = [string](Get-AzlProp $admin 'username' ''); $reference = [string](Get-AzlProp $admin 'password' '')
         if ($user -and $reference) {
-            try { $secure = ConvertTo-SecureString -String (Get-AzlSecret -Reference $reference) -AsPlainText -Force; $Credential = [pscredential]::new($user, $secure); $credentialSource = "vault ($reference)" }
+            try { $secure = ConvertTo-SecureString -String (Get-AzlSecret -Reference $reference -Infrastructure $infra) -AsPlainText -Force; $Credential = [pscredential]::new($user, $secure); $credentialSource = "vault ($reference)" }
             catch { Write-Warning "Can't read the local administrator's password ($reference): $($_.Exception.Message)" }
         }
     }
@@ -443,7 +443,7 @@ try {
         if ($ApprovedWipeId) { $wipeArgs.ApprovedWipeId = $(if ($ApprovedWipeId.ContainsKey($s.Name)) { @($ApprovedWipeId[$s.Name]) } else { @() }) }
         $nodeResult = $null
         try {
-            $nodeResult = Invoke-AzlNodeConfiguration -Spec $s -Transport $nodeTransports[$s.Name] -Execute:$Execute -Step $steps -ClearStorage:$ClearStorage -ConfirmWipeDeployedCluster:$ConfirmWipeDeployedCluster @wipeArgs -NoRestart:$NoRestart -MaxPasses $MaxPasses -GuardSetting $guardSetting -EventContext $eventContext -SbeTransport $sbeTransport -DomainJoinLatch $djLatch
+            $nodeResult = Invoke-AzlNodeConfiguration -Spec $s -Transport $nodeTransports[$s.Name] -Infrastructure $infra -Execute:$Execute -Step $steps -ClearStorage:$ClearStorage -ConfirmWipeDeployedCluster:$ConfirmWipeDeployedCluster @wipeArgs -NoRestart:$NoRestart -MaxPasses $MaxPasses -GuardSetting $guardSetting -EventContext $eventContext -SbeTransport $sbeTransport -DomainJoinLatch $djLatch
         }
         catch {
             # A call that failed or timed out ends this node, not the report: what was done so far is kept, the error is on the node, and the exit code is 1.

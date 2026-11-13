@@ -24,7 +24,7 @@
     node reports, through the same one-call snapshot the NODES checks use. Contract with the engine: see AzlVerification.NodeCommon.psm1. Read only.
 
     Share reader (Adapters.Sbe): List(request), ReadText(request, name), GetHash(request, name). Tests replace them with fakes.
-    Credential (Adapters.KeyVault.GetSecret): hardware.sbe.source_password is a keyvault:// reference; the secret is kept in memory only.
+    Credential (Adapters.KeyVault.GetSecret, called with the reference and the infrastructure file): hardware.sbe.source_password is a secret reference; the secret is kept in memory only.
 #>
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -77,7 +77,7 @@ function Get-AzlVerSbeSetup {
             $get = Get-AzlVerAdapterMember -Context $Context -Group 'KeyVault' -Name 'GetSecret'
             if (-not $get) { $setup.Stage = 'NoCredential'; $setup.Reason = 'there is no Key Vault adapter here, so the share credential cannot be read' }
             else {
-                try { $password = [string](& $get $source.PasswordRef) }
+                try { $password = [string](& $get $source.PasswordRef $infra) }
                 catch { $setup.Stage = 'NoCredential'; $setup.Reason = "the share credential $($source.PasswordRef) could not be read from Key Vault: $($_.Exception.Message)" }
                 if ($password) { $setup.Secret = @($password) }
                 elseif ($setup.Stage -ne 'NoCredential') { $setup.Stage = 'NoCredential'; $setup.Reason = "the share credential $($source.PasswordRef) is empty in Key Vault" }

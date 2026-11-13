@@ -1,10 +1,12 @@
-#Requires -Modules Az.Compute, Az.Network, Az.KeyVault
+#Requires -Version 7.0
+#Requires -Modules Az.Compute, Az.Network
 <#
 .SYNOPSIS
     Deploy management VMs (DC01, DC02, Utility, NDM, Lighthouse) to Azure.
 .DESCRIPTION
     Creates NICs with static IPs and VMs for each management role, sourcing
-    credentials and configuration from config/variables.yml and Key Vault.
+    configuration from config/variables.yml and the administrator credentials from the secret reference of the first entry of
+    landing_zone.virtual_machines (admin_username, admin_password), read by the toolkit's secret resolver.
 .PARAMETER ConfigPath
     Path to the YAML variables file. Defaults to ./config/variables.yml.
 .PARAMETER WhatIf
@@ -18,22 +20,26 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
+
 if (-not (Test-Path $ConfigPath)) {
     throw "Config file not found: $ConfigPath"
 }
 $config = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 $azure  = $config.azure
 $rg     = $azure.resource_group
-$kvName = $azure.key_vault.name
 $vms    = $azure.management_vms
 
 Write-Host "Deploying management VMs..." -ForegroundColor Cyan
 
-# ── Retrieve local admin credentials from Key Vault ───────────────────────────
-Write-Host "  Retrieving admin credentials from Key Vault..."
-$adminUser  = Get-AzKeyVaultSecret -VaultName $kvName -Name "vm-admin-username" -AsPlainText
-$adminPass  = Get-AzKeyVaultSecret -VaultName $kvName -Name "vm-admin-password" -AsPlainText |
-              ConvertTo-SecureString -AsPlainText -Force
+# ── Local admin credentials: the secret reference in the infrastructure file ───
+Write-Host "  Reading the admin credentials from the secret reference..."
+$vmAdmin = @($config.landing_zone.virtual_machines) | Where-Object { $_ } | Select-Object -First 1
+if (-not $vmAdmin -or -not $vmAdmin.admin_username -or -not $vmAdmin.admin_password) {
+    throw "landing_zone.virtual_machines needs an entry with admin_username and admin_password (a secret reference) in $ConfigPath."
+}
+$adminUser  = [string]$vmAdmin.admin_username
+$adminPass  = Get-AzlSecretValue -Reference ([string]$vmAdmin.admin_password) -Infrastructure $config
 $adminCreds = New-Object System.Management.Automation.PSCredential($adminUser, $adminPass)
 
 # ── Get subnet ────────────────────────────────────────────────────────────────

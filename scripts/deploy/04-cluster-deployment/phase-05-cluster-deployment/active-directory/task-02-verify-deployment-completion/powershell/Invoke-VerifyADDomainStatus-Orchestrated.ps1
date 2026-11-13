@@ -57,6 +57,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 
 # ── Logging ────────────────────────────────────────────────────────────
 $taskFolderName = "task-02-verify-deployment-completion"
@@ -139,18 +140,16 @@ if (-not $clusterNodes -or $clusterNodes.Count -eq 0) {
 if (-not $Credential) {
     # Try Key Vault resolution
     $kvRef = $cfg.identity.local_admin.password  # identity.local_admin.password
-    if ($kvRef -and $kvRef -match '^keyvault://') {
-        Write-Log "Resolving credential from Key Vault reference..."
+    if ($kvRef -and (Get-AzlSecretProvider -Reference $kvRef)) {
+        Write-Log "Resolving credential from the secret reference..."
         try {
-            $parts     = $kvRef -replace '^keyvault://', '' -split '/'
-            $vaultName = $parts[0]; $secretName = $parts[1]
-            $secret    = Get-AzKeyVaultSecret -VaultName $vaultName -Name $secretName -ErrorAction Stop
+            $secret    = Get-AzlSecretValue -Reference $kvRef -Infrastructure $cfg
             $adminUser = $cfg.identity.local_admin.username  # identity.local_admin.username
-            $Credential = New-Object PSCredential($adminUser, $secret.SecretValue)
-            Write-Log "Credential resolved from Key Vault." -Level "SUCCESS"
+            $Credential = New-Object PSCredential($adminUser, $secret)
+            Write-Log "Credential resolved from the secret reference." -Level "SUCCESS"
         }
         catch {
-            Write-Log "Key Vault resolution failed: $($_.Exception.Message)" -Level "WARNING"
+            Write-Log "Secret resolution failed: $($_.Exception.Message)" -Level "WARNING"
         }
     }
 

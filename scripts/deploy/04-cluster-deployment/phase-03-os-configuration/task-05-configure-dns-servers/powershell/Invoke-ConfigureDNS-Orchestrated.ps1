@@ -40,6 +40,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 
 # ============================================================================
 #  LOGGING
@@ -167,6 +168,7 @@ function Get-ClusterConfig {
     param([string]$ConfigPath)
 
     $cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+    $script:SecretInfrastructure = $cfg
 
     $mgmtNIC      = Get-AzlManagementNicName -Infrastructure $cfg
     $dnsServers   = @((Get-AzlManagementNetwork -Infrastructure $cfg).DnsServers)
@@ -198,29 +200,15 @@ function Get-ClusterConfig {
 }
 
 function Resolve-KeyVaultRef {
+    # Reads a secret reference through the toolkit's one secret resolver (AzlSecret.psm1): any provider, no Azure CLI.
+    # Returns the text, or $null when it cannot be read; the caller then falls back as before. No value is logged.
     param([Parameter(Mandatory)][string]$KvUri)
-    if ($KvUri -notmatch '^keyvault://([^/]+)/(.+)$') { return $null }
-    $vaultName  = $Matches[1]
-    $secretName = $Matches[2]
-    Write-Log "  Fetching '$secretName' from Key Vault '$vaultName'..."
-    if (Get-Module -Name Az.KeyVault -ListAvailable -ErrorAction SilentlyContinue) {
-        try {
-            $secret = Get-AzKeyVaultSecret -VaultName $vaultName -Name $secretName -AsPlainText -ErrorAction Stop
-            if ($secret) { return $secret }
-            Write-Log "  Az.KeyVault returned no secret." WARN
-        } catch {
-            Write-Log "  Az.KeyVault failed: $($_.Exception.Message)" WARN
-        }
-    }
+    if (-not (Get-AzlSecretProvider -Reference $KvUri)) { return $null }
     try {
-        $azOut = & az keyvault secret show --vault-name $vaultName --name $secretName --query value -o tsv 2>&1
-        if ($LASTEXITCODE -eq 0 -and $azOut) { return ($azOut | Out-String).Trim() }
-        $errDetail = if ($azOut) { ": $azOut" } else { " (exit $LASTEXITCODE)" }
-        Write-Log "  az CLI failed$errDetail." WARN
-        return $null
-    } catch {
-        return $null
+        $value = Get-AzlSecretPlainText -Reference $KvUri -Infrastructure $script:SecretInfrastructure
+        return $value
     }
+    catch { Write-Log "  The secret could not be read: $($_.Exception.Message)" "WARN"; return $null }
 }
 
 # ============================================================================

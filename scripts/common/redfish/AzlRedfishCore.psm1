@@ -24,6 +24,8 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'secrets', 'AzlSecret.psm1'))
+
 $script:ToolVersion = '2.0.0'
 $script:SchemaVersion = '2.0'
 $script:SupportedVendors = @('Dell')
@@ -161,13 +163,12 @@ function Limit-AzlRedfishRaw {
 #region credentials
 
 function Get-AzlBmcKeyVaultSecret {
-    # One Key Vault read. A wrapper so a test replaces it and no vault is needed. The password stays a SecureString.
+    # One secret read, through the toolkit's one secret resolver (any provider: keyvault://, env://, file://, command://). The name is
+    # kept for the callers. A wrapper so a test replaces it and no vault is needed. The password stays a SecureString.
     [CmdletBinding()]
-    param([Parameter(Mandatory)][string]$Reference, [switch]$AsPlainText)
-    if ($Reference -notmatch '^keyvault://(?<vault>[^/]+)/(?<secret>[^/]+)$') { throw "'$Reference' isn't a keyvault://<vault>/<secret> reference." }
-    if (-not (Get-Command Get-AzKeyVaultSecret -ErrorAction SilentlyContinue)) { throw 'Az.KeyVault is not installed (Install-Module Az.KeyVault), or run Connect-AzAccount first.' }
-    if ($AsPlainText) { return [string](Get-AzKeyVaultSecret -VaultName $Matches['vault'] -Name $Matches['secret'] -AsPlainText) }
-    return (Get-AzKeyVaultSecret -VaultName $Matches['vault'] -Name $Matches['secret']).SecretValue
+    param([Parameter(Mandatory)][string]$Reference, [System.Collections.IDictionary]$Infrastructure, [switch]$AsPlainText)
+    if ($AsPlainText) { return [string](Get-AzlSecretPlainText -Reference $Reference -Infrastructure $Infrastructure) }
+    return (Get-AzlSecretValue -Reference $Reference -Infrastructure $Infrastructure)
 }
 
 function Resolve-AzlBmcCredential {
@@ -203,16 +204,16 @@ function Resolve-AzlBmcCredential {
     if ($block) {
         try {
             $user = [string]$block['username']
-            if ($user -like 'keyvault://*') { $user = Get-AzlBmcKeyVaultSecret -Reference $user -AsPlainText }
+            if (Get-AzlSecretProvider -Reference $user) { $user = Get-AzlBmcKeyVaultSecret -Reference $user -Infrastructure $Infrastructure -AsPlainText }
             $userHint = $user
-            $password = Get-AzlBmcKeyVaultSecret -Reference ([string]$block['password'])
+            $password = Get-AzlBmcKeyVaultSecret -Reference ([string]$block['password']) -Infrastructure $Infrastructure
             return [System.Management.Automation.PSCredential]::new($user, $password)
         }
         catch {
-            Write-Warning "The BMC credential could not be read from Key Vault: $($_.Exception.Message)"
+            Write-Warning "The BMC credential could not be read: $($_.Exception.Message)"
         }
     }
-    if ($NoPrompt) { throw 'No BMC credential: pass -Credential, or put hardware.bmc username and password (keyvault:// references) in infrastructure.yml.' }
+    if ($NoPrompt) { throw 'No BMC credential: pass -Credential, or put hardware.bmc username and password (secret references) in infrastructure.yml.' }
     $prompt = @{ Message = 'BMC administrator credentials' }
     if ($userHint) { $prompt.UserName = $userHint }
     return (Get-Credential @prompt)

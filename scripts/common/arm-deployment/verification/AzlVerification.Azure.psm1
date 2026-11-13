@@ -29,7 +29,7 @@
     Azure adapter members (arguments in order)
       Reused from the ARM run's adapter (New-AzlArmAzureAdapter), same behaviour:
         Now, Sleep, GetContext, GetResourceGroup(Subscription, ResourceGroup), GetProviderState(Subscription, Namespace),
-        GetPermission(Subscription, ResourceGroup), TestNameAvailable(Subscription, ResourceGroup, Type, Name), TestSecret(Vault, Secret),
+        GetPermission(Subscription, ResourceGroup), TestNameAvailable(Subscription, ResourceGroup, Type, Name), TestSecret(Vault, Secret, Infrastructure),
         GetArcMachine(Node, ResourceId, ArcMachineName, Subscription, ResourceGroup), GetDeploymentState(Subscription, ResourceGroup, Cluster)
       Defined here:
         GetSubscription(Subscription)                  State, TenantId, DisplayName; $null when not visible
@@ -38,11 +38,11 @@
         ListRoleAssignments(Scope)                     assignments made exactly at Scope (Role, PrincipalId, PrincipalType, DisplayName, Scope)
         GetHciResourceProviderObjectId()               object id of the Azure Local resource provider's service principal; $null when absent
         GetKeyVault(Vault, Subscription, ResourceGroup)  Name, ResourceGroup, VaultUri, EnableRbacAuthorization, PublicNetworkAccess; $null when absent
-        GetKeyVaultSecret(Vault, Secret)               the value; $null when the secret does not exist; throws when it cannot be read
+        GetKeyVaultSecret(Vault, Secret, Infrastructure)  the value, read by the secret resolver; $null when the secret does not exist; throws when it cannot be read
         FindArcMachines(Subscription, Name)            Arc machines of the subscription with that name (Name, ResourceId, ResourceGroup, Status)
         ListArcExtensions(ResourceId)                  Name, Type
         GetArcGateway(Subscription, ResourceGroup, Name)  Name, ProvisioningState; $null when absent
-        GetNodeCredential(Infrastructure)              the nodes' local administrator as a PSCredential (read from Key Vault); throws with the reason
+        GetNodeCredential(Infrastructure)              the nodes' local administrator as a PSCredential (read by the secret resolver); throws with the reason
         TestEndpoint(Address, Target, Credential)      probes TCP from the node at Address: rows of Host, Port, Ok, Error
 
     The registration of a missing resource provider is deliberately not in the adapter: this module never changes Azure.
@@ -53,6 +53,7 @@ $ErrorActionPreference = 'Stop'
 $script:Common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
 Import-Module ([IO.Path]::Combine($script:Common, 'infrastructure', 'AzlInfrastructure.psm1'))
 Import-Module ([IO.Path]::Combine($script:Common, 'azure-local', 'AzlAzure.psm1'))
+Import-Module ([IO.Path]::Combine($script:Common, 'secrets', 'AzlSecret.psm1'))
 Import-Module ([IO.Path]::Combine($script:Common, 'arm-deployment', 'AzlArmDeployment.psm1'))
 Import-Module ([IO.Path]::Combine($script:Common, 'arm-deployment', 'AzlArmDeploymentRun.psm1'))
 Import-Module ([IO.Path]::Combine($PSScriptRoot, 'AzlVerification.Endpoints.psm1'))
@@ -490,7 +491,7 @@ function Test-AzlVerifySecretReadable {
     $bad = @()
     foreach ($r in $refs) {
         if (-not $r.Valid) { $bad += "$($r.Label): '$($r.Reference)' is not a keyvault://<vault>/<secret> reference"; continue }
-        try { $value = Invoke-AzlVerifyAdapter $Context GetKeyVaultSecret @($r.Vault, $r.Secret) }
+        try { $value = Invoke-AzlVerifyAdapter $Context GetKeyVaultSecret @($r.Vault, $r.Secret, (Get-AzlVerifyInfrastructure $Context)) }
         catch {
             if ($_.Exception.Data['AzlSkip']) { throw }
             $bad += "$($r.Label): secret $($r.Secret) in $($r.Vault) could not be read ($($_.Exception.Message))"; continue
@@ -513,17 +514,23 @@ function Test-AzlVerifyLocalAdminUsername {
     $ref = @(Get-AzlVerifySecretReference $Context | Where-Object { $_.Kind -eq 'LocalAdmin' })[0]
     if (-not $fileUser) { return New-AzlVerifyResult Failed 'identity.local_admin.username is empty in the file.' 'Set identity.local_admin.username (not the built-in Administrator).' }
     if (-not $ref -or -not $ref.Valid) { Stop-AzlVerifySkip 'identity.local_admin.password is not a keyvault:// reference, so the vault holding the username secret is unknown (see AZ-012).' }
-    if ($ref.Secret -notmatch '(?i)password$') { Stop-AzlVerifySkip "The secret $($ref.Secret) does not end in 'password', so the name of the matching username secret cannot be derived." "Name the secrets <prefix>-password and <prefix>-username (Add-KeyVaultCredentials.ps1: local-admin-username, local-admin-password)." }
-    $userSecret = $ref.Secret -creplace '(?i)password$', $(if ($ref.Secret -cmatch 'PASSWORD$') { 'USERNAME' } elseif ($ref.Secret -cmatch 'Password$') { 'Username' } else { 'username' })
-    $value = Invoke-AzlVerifyAdapter $Context GetKeyVaultSecret @($ref.Vault, $userSecret)
+    # The file can name the username secret (identity.local_admin.username_secret). When it does not, the name is derived from the password secret.
+    $userVault = $ref.Vault
+    $named = ConvertFrom-AzlKeyVaultRef -Reference ([string](Get-AzlProp $infra 'identity.local_admin.username_secret' ''))
+    if ($named) { $userVault = $named.Vault; $userSecret = $named.Secret }
+    else {
+        if ($ref.Secret -notmatch '(?i)password$') { Stop-AzlVerifySkip "The secret $($ref.Secret) does not end in 'password', so the name of the matching username secret cannot be derived." "Name the secrets <prefix>-password and <prefix>-username (Add-KeyVaultCredentials.ps1: local-admin-username, local-admin-password)." }
+        $userSecret = $ref.Secret -creplace '(?i)password$', $(if ($ref.Secret -cmatch 'PASSWORD$') { 'USERNAME' } elseif ($ref.Secret -cmatch 'Password$') { 'Username' } else { 'username' })
+    }
+    $value = Invoke-AzlVerifyAdapter $Context GetKeyVaultSecret @($userVault, $userSecret, $infra)
     if ($null -eq $value) {
-        return New-AzlVerifyResult Warning "Vault $($ref.Vault) has no secret $userSecret; nothing to compare with identity.local_admin.username ('$fileUser'). Tools that read the username from the vault would not find it." "Set-AzKeyVaultSecret -VaultName '$($ref.Vault)' -Name '$userSecret' -SecretValue (ConvertTo-SecureString '$fileUser' -AsPlainText -Force)" -Evidence 'secret absent'
+        return New-AzlVerifyResult Warning "Vault $userVault has no secret $userSecret; nothing to compare with identity.local_admin.username ('$fileUser'). Tools that read the username from the vault would not find it." "Set-AzKeyVaultSecret -VaultName '$userVault' -Name '$userSecret' -SecretValue (ConvertTo-SecureString '$fileUser' -AsPlainText -Force)" -Evidence 'secret absent'
     }
     $vaultUser = ([string]$value).Trim()
     if ($vaultUser -ine $fileUser) {
-        return New-AzlVerifyResult Failed "The vault says the local administrator is '$vaultUser' (secret $userSecret in $($ref.Vault)); the file says '$fileUser' (identity.local_admin.username), and the nodes are configured with the file's. A mismatch makes the deployment, or any tool that reads the vault, log on with a name that does not exist." "Make them agree: Set-AzKeyVaultSecret -VaultName '$($ref.Vault)' -Name '$userSecret' -SecretValue (ConvertTo-SecureString '$fileUser' -AsPlainText -Force)   (or correct identity.local_admin.username and the nodes)" -Evidence "vault '$vaultUser' vs file '$fileUser'"
+        return New-AzlVerifyResult Failed "The vault says the local administrator is '$vaultUser' (secret $userSecret in $userVault); the file says '$fileUser' (identity.local_admin.username), and the nodes are configured with the file's. A mismatch makes the deployment, or any tool that reads the vault, log on with a name that does not exist." "Make them agree: Set-AzKeyVaultSecret -VaultName '$userVault' -Name '$userSecret' -SecretValue (ConvertTo-SecureString '$fileUser' -AsPlainText -Force)   (or correct identity.local_admin.username and the nodes)" -Evidence "vault '$vaultUser' vs file '$fileUser'"
     }
-    New-AzlVerifyResult Passed "Secret $userSecret in $($ref.Vault) equals identity.local_admin.username ('$fileUser')." -Evidence 'usernames equal'
+    New-AzlVerifyResult Passed "Secret $userSecret in $userVault equals identity.local_admin.username ('$fileUser')." -Evidence 'usernames equal'
 }
 
 function Test-AzlVerifyArcDuplicate {
@@ -847,11 +854,12 @@ function Get-AzlVerificationAdapterDefault {
         }
     }
     $azure['GetKeyVaultSecret'] = {
-        param($Vault, $Secret)
-        # The value; $null when the secret does not exist; anything else (no permission, network) throws.
-        try { $v = Get-AzKeyVaultSecret -VaultName $Vault -Name $Secret -AsPlainText -ErrorAction Stop }
+        param($Vault, $Secret, $Infrastructure)
+        # The value, read by the toolkit's secret resolver; $null when the secret does not exist; anything else (no permission, network) throws.
+        $reference = New-AzlSecretReference -Name $Secret -Vault $Vault -Provider keyvault -Infrastructure $Infrastructure
+        try { $v = Get-AzlSecretPlainText -Reference $reference -Infrastructure $Infrastructure }
         catch {
-            if ($_.Exception.Message -match 'SecretNotFound|was not found|not found') { return $null }
+            if ($_.Exception.Data['AzlSecretError'] -eq 'SecretNotFound') { return $null }
             throw
         }
         if ($null -eq $v) { return $null }
@@ -882,7 +890,7 @@ function Get-AzlVerificationAdapterDefault {
         $user = [string](Get-AzlProp $Infrastructure 'identity.local_admin.username' '')
         $reference = [string](Get-AzlProp $Infrastructure 'identity.local_admin.password' '')
         if (-not $user -or -not $reference) { throw 'identity.local_admin has no username or password reference in the file.' }
-        [pscredential]::new($user, (ConvertTo-SecureString -String (Get-AzlSecret -Reference $reference) -AsPlainText -Force))
+        [pscredential]::new($user, (ConvertTo-SecureString -String (Get-AzlSecret -Reference $reference -Infrastructure $Infrastructure) -AsPlainText -Force))
     }
     $azure['TestEndpoint'] = {
         param($Address, $Target, [pscredential]$Credential)

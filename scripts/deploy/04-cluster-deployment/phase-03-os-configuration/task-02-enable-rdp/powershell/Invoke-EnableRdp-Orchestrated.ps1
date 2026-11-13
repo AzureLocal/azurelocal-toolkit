@@ -47,6 +47,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 
 # ============================================================================
 # FUNCTIONS
@@ -98,39 +99,16 @@ function Resolve-ConfigPath {
 }
 
 function Resolve-KeyVaultRef {
+    # Reads a secret reference through the toolkit's one secret resolver (AzlSecret.psm1): any provider, no Azure CLI.
+    # Returns the text, or $null when it cannot be read; the caller then falls back as before. No value is logged.
     param([string]$KvUri)
-    if ($KvUri -notmatch '^keyvault://([^/]+)/(.+)$') { Write-Log "  Not a Key Vault URI: $KvUri" "WARN"; return $null }
-    $vaultName  = $Matches[1]
-    $secretName = $Matches[2]
-
-    if (Get-Module -Name Az.KeyVault -ListAvailable -ErrorAction SilentlyContinue) {
-        try {
-            Write-Log "  Retrieving '$secretName' from '$vaultName' (Az.KeyVault)..."
-            $secret = Get-AzKeyVaultSecret -VaultName $vaultName -Name $secretName -AsPlainText -ErrorAction Stop
-            if ($secret) { Write-Log "  Secret retrieved." "SUCCESS"; return $secret }
-            Write-Log "  Az.KeyVault returned no secret." "WARN"
-        } catch { Write-Log "  Az.KeyVault failed: $_" "WARN" }
-        Write-Log "  Falling back to Azure CLI..." "WARN"
-    } else {
-        Write-Log "  Az.KeyVault module not found — trying Azure CLI..." "WARN"
-    }
-
+    if (-not (Get-AzlSecretProvider -Reference $KvUri)) { Write-Log "  The value is not a secret reference." "WARN"; return $null }
     try {
-        $azCmd = Get-Command az -ErrorAction SilentlyContinue
-        if (-not $azCmd) { Write-Log "  Azure CLI (az) not found." "WARN"; return $null }
-        Write-Log "  Retrieving '$secretName' from '$vaultName' (az CLI)..."
-        $tmpErr = [System.IO.Path]::GetTempFileName()
-        $val    = (& az keyvault secret show --vault-name $vaultName --name $secretName --query value --output tsv --only-show-errors 2>$tmpErr)
-        $azErr  = (Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue).Trim()
-        Remove-Item $tmpErr -ErrorAction SilentlyContinue
-        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($val)) {
-            $errDetail = if ($azErr) { ": $azErr" } else { " (exit $LASTEXITCODE)" }
-            Write-Log "  az CLI failed$errDetail." "WARN"
-            return $null
-        }
-        Write-Log "  Secret retrieved (az CLI)." "SUCCESS"
-        return $val
-    } catch { Write-Log "  az CLI failed: $_" "WARN"; return $null }
+        $value = Get-AzlSecretPlainText -Reference $KvUri -Infrastructure $script:SecretInfrastructure
+        Write-Log "  Secret retrieved." "SUCCESS"
+        return $value
+    }
+    catch { Write-Log "  The secret could not be read: $($_.Exception.Message)" "WARN"; return $null }
 }
 
 # ============================================================================
@@ -144,6 +122,7 @@ try {
 
     $resolvedConfig = Resolve-ConfigPath -ExplicitPath $ConfigPath
     $config = Get-Content $resolvedConfig -Raw | ConvertFrom-Yaml
+    $script:SecretInfrastructure = $config
 
     # Build node list
     $allNodes = Get-AzlInfrastructureNode -Infrastructure $config | ForEach-Object {

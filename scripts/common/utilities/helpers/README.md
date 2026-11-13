@@ -8,7 +8,7 @@
 | File | Purpose |
 |------|---------|
 | `config-loader.ps1` | Load and parse `infrastructure.yml` configuration files |
-| `keyvault-helper.ps1` | Azure Key Vault secret operations using `keyvault://` URIs |
+| `keyvault-helper.ps1` | Reads secret references through the secret resolver; writes secrets to Azure Key Vault |
 | `logging.ps1` | Standardized logging with console colors and optional file output |
 | `error-handling.ps1` | Retry logic and error detail extraction |
 
@@ -67,13 +67,13 @@ $script:Environment = @{
 
 ### Reading Secrets
 
-```powershell
-# Using keyvault:// URI syntax
-$password = Get-SecretFromUri -Uri "keyvault://azl-platform-kv/local-admin-password" -AsPlainText
+Reading goes through the toolkit's one secret resolver (`scripts/common/secrets/AzlSecret.psm1`). The reference comes from the
+infrastructure file, and the loaded file is passed with it (it lists `key_vaults` and the `secrets` section).
 
-# Or using config reference
-$secretUri = Get-ConfigValue -Config $config -Path 'credentials.local_admin.password'
-$password = Get-SecretFromUri -Uri $secretUri -AsPlainText
+```powershell
+$infra = Import-AzlInfrastructure -Path ./infrastructure.yml
+$secretUri = $infra.identity.local_admin.password   # keyvault://, env://, file:// or command://
+$password = Get-SecretFromUri -Uri $secretUri -Infrastructure $infra -AsPlainText
 ```
 
 ### Writing Secrets

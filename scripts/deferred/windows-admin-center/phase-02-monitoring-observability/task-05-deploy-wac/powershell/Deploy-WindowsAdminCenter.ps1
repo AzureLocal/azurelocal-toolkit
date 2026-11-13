@@ -1,9 +1,9 @@
-#Requires -Modules Az.KeyVault
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Deploy Windows Admin Center (WAC) to the management server via PSRemoting.
 .DESCRIPTION
-    Retrieves domain credentials from Key Vault, connects to the WAC server
+    Reads the domain credentials from the secret reference of identity.active_directory.domain_join_account, connects to the WAC server
     via PowerShell remoting, downloads the WAC installer, runs a silent
     install with auto-generated SSL certificate, and verifies the service started.
 .PARAMETER ConfigPath
@@ -19,6 +19,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
+
 # ── Load config ───────────────────────────────────────────────────────────────
 if (-not (Test-Path $ConfigPath)) {
     throw "Config file not found: $ConfigPath"
@@ -26,15 +28,18 @@ if (-not (Test-Path $ConfigPath)) {
 $config     = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 $wacServer  = $config.management.wac_server_fqdn
 $wacPort    = $config.management.wac_port
-$kvName     = $config.azure.key_vault.name
 
 Write-Host "Deploying Windows Admin Center to: $wacServer" -ForegroundColor Cyan
 
-# ── Retrieve credentials from Key Vault ───────────────────────────────────────
-Write-Host "  Retrieving credentials from Key Vault: $kvName..."
-$adminUser  = Get-AzKeyVaultSecret -VaultName $kvName -Name "domain-admin-username" -AsPlainText
-$adminPass  = Get-AzKeyVaultSecret -VaultName $kvName -Name "domain-admin-password" -AsPlainText |
-              ConvertTo-SecureString -AsPlainText -Force
+# ── Domain credentials: the secret reference in the infrastructure file ───────
+Write-Host "  Reading the domain credentials from the secret reference..."
+$joinAccount = $config.identity.active_directory.domain_join_account
+if (-not $joinAccount -or -not $joinAccount.username -or -not $joinAccount.password) {
+    throw "identity.active_directory.domain_join_account needs a username and a password (a secret reference) in $ConfigPath."
+}
+$adminUser  = [string]$joinAccount.username
+if ($adminUser -notmatch '\\|@') { $adminUser = "$($config.identity.active_directory.netbios_name)\$adminUser" }
+$adminPass  = Get-AzlSecretValue -Reference ([string]$joinAccount.password) -Infrastructure $config
 $adminCreds = New-Object System.Management.Automation.PSCredential($adminUser, $adminPass)
 
 # ── Execute installation via PSRemoting ───────────────────────────────────────

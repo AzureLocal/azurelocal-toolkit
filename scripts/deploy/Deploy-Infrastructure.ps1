@@ -98,6 +98,7 @@ Write-Verbose "Importing required modules..."
 Import-Module Az.Accounts -ErrorAction Stop
 Import-Module Az.Resources -ErrorAction Stop
 Import-Module powershell-yaml -ErrorAction Stop
+Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'common', 'secrets', 'AzlSecret.psm1')) -ErrorAction Stop
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -165,30 +166,27 @@ function Get-InfrastructureConfig {
 function Resolve-KeyVaultSecret {
     <#
     .SYNOPSIS
-        Resolve Key Vault secret reference from configuration
+        Resolve a secret reference from configuration
     .DESCRIPTION
-        Parses keyvault://vault-name/secret-name URIs and retrieves actual secret values
+        Reads the reference (keyvault://, env://, file:// or command://) through the toolkit's one secret resolver and returns the
+        value as text. The loaded infrastructure file is needed for key_vaults and the secrets section. A value that is not a secret
+        reference is refused, never used as a value.
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
-        [string]$SecretUri
+        [string]$SecretUri,
+
+        [Parameter(Mandatory = $true)]
+        [System.Collections.IDictionary]$Infrastructure
     )
 
-    if ($SecretUri -notmatch '^keyvault://([^/]+)/(.+)$') {
-        return $SecretUri  # Not a Key Vault reference, return as-is
-    }
-
-    $vaultName = $Matches[1]
-    $secretName = $Matches[2]
-
     try {
-        Write-Verbose "Retrieving secret '$secretName' from Key Vault '$vaultName'"
-        $secret = Get-AzKeyVaultSecret -VaultName $vaultName -Name $secretName -AsPlainText
-        return $secret
+        Write-Verbose "Reading secret reference $SecretUri"
+        return (Get-AzlSecretPlainText -Reference $SecretUri -Infrastructure $Infrastructure)
     }
     catch {
-        Write-Log "Failed to retrieve secret from Key Vault: $_" -Level Error
+        Write-Log "Failed to read the secret: $($_.Exception.Message)" -Level Error
         throw
     }
 }

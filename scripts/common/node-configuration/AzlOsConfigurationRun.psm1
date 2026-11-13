@@ -582,7 +582,7 @@ function Get-AzlLocalAdminCredential {
     $reference = [string](Get-AzlProp $admin 'password' '')
     if (-not $user -or -not $reference) { return [pscustomobject]@{ Credential = $null; Source = ''; Error = 'identity.local_admin has no username or password reference in the master file.' } }
     try {
-        $secret = Get-AzlSecret -Reference $reference
+        $secret = Get-AzlSecret -Reference $reference -Infrastructure $Infrastructure
         $secure = ConvertTo-SecureString -String $secret -AsPlainText -Force
         return [pscustomobject]@{ Credential = [pscredential]::new($user, $secure); Source = "vault ($reference)"; Error = '' }
     }

@@ -47,7 +47,7 @@ if ($requirement.State -eq 'NotApplicable') {
 $source = Get-AzlSbeSource -Infrastructure $infra
 if (-not $source.Path) { throw 'hardware.sbe.source_path is empty: there is no share to import from. Download the vendor package and set hardware.sbe.source_path (the pre-cluster verification SB-001 says the same).' }
 $password = ''
-if ($source.Username -and $source.PasswordRef) { $password = Get-AzlSecret -Reference $source.PasswordRef }
+if ($source.Username -and $source.PasswordRef) { $password = Get-AzlSecret -Reference $source.PasswordRef -Infrastructure $infra }
 
 $scan = Get-AzlSbeSourceScan -Request @{ Path = $source.Path; Username = $source.Username; Password = $password } -Family $source.Family -Version $source.Version -Publisher $source.Publisher -Model @([string](Get-AzlProp $infra 'hardware.model' ''))
 if ($scan.Stage -ne 'Listed') { throw "The SBE source $($source.Path) could not be read from this host: $($scan.List.Error)" }

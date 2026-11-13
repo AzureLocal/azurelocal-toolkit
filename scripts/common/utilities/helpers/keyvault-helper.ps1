@@ -5,10 +5,11 @@
 .DESCRIPTION
     This module provides functions for working with Azure Key Vault in the context
     of solution configurations. It handles:
-    - Retrieving secrets from Key Vault
+    - Reading secret references (through the toolkit's one secret resolver, scripts/common/secrets/AzlSecret.psm1)
     - Writing secrets to Key Vault
-    - Resolving keyvault:// URI references in configuration
     - Service Principal credential management
+
+    Reading goes through the resolver only: this file never calls Get-AzKeyVaultSecret and never parses a reference.
 
 .NOTES
     Requires:
@@ -18,8 +19,8 @@
 
 .EXAMPLE
     # Load config and resolve secret references
-    $config = Get-SolutionConfig -Solution "azure-local"
-    $password = Get-SecretFromUri -Uri $config.security.credentials.local_admin_password
+    $infra = Import-AzlInfrastructure -Path ./infrastructure.yml
+    $password = Get-SecretFromUri -Uri $infra.identity.local_admin.password -Infrastructure $infra
 
 .EXAMPLE
     # Store a new secret
@@ -35,44 +36,8 @@ if (Test-Path $configLoaderPath) {
     . $configLoaderPath
 }
 
-<#
-.SYNOPSIS
-    Parses a keyvault:// URI into its components.
-
-.DESCRIPTION
-    Parses URIs in the format: keyvault://<vault-name>/<secret-name>[/<version>]
-
-.PARAMETER Uri
-    The keyvault:// URI to parse.
-
-.EXAMPLE
-    $parsed = ConvertFrom-KeyVaultUri -Uri "keyvault://kv-platform-prod/admin-password"
-    # Returns: @{ VaultName = "kv-platform-prod"; SecretName = "admin-password"; Version = $null }
-#>
-function ConvertFrom-KeyVaultUri {
-    [CmdletBinding()]
-    param(
-        [Parameter(Mandatory = $true)]
-        [string]$Uri
-    )
-
-    if (-not $Uri.StartsWith("keyvault://")) {
-        throw "Invalid Key Vault URI. Must start with 'keyvault://'. Got: $Uri"
-    }
-
-    $path = $Uri.Substring(11)  # Remove "keyvault://"
-    $parts = $path -split '/'
-
-    if ($parts.Count -lt 2) {
-        throw "Invalid Key Vault URI format. Expected: keyvault://<vault-name>/<secret-name>[/<version>]. Got: $Uri"
-    }
-
-    return @{
-        VaultName  = $parts[0]
-        SecretName = $parts[1]
-        Version    = if ($parts.Count -gt 2) { $parts[2] } else { $null }
-    }
-}
+# Import the toolkit's one secret resolver
+Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', '..', 'secrets', 'AzlSecret.psm1')) -ErrorAction Stop
 
 <#
 .SYNOPSIS
@@ -115,14 +80,14 @@ function ConvertTo-KeyVaultUri {
 
 <#
 .SYNOPSIS
-    Checks if a value is a Key Vault URI reference.
+    Checks if a value is a secret reference (keyvault://, env://, file:// or command://).
 
 .PARAMETER Value
     The value to check.
 
 .EXAMPLE
     if (Test-KeyVaultUri -Value $config.security.credentials.password) {
-        $password = Get-SecretFromUri -Uri $config.security.credentials.password
+        $password = Get-SecretFromUri -Uri $config.security.credentials.password -Infrastructure $config
     }
 #>
 function Test-KeyVaultUri {
@@ -136,28 +101,32 @@ function Test-KeyVaultUri {
 
     if ($null -eq $Value) { return $false }
     if ($Value -isnot [string]) { return $false }
-    return $Value.StartsWith("keyvault://")
+    return [bool](Get-AzlSecretProvider -Reference $Value)
 }
 
 <#
 .SYNOPSIS
-    Retrieves a secret value from Azure Key Vault using a keyvault:// URI.
+    Reads a secret from a secret reference with the toolkit's one secret resolver.
 
 .DESCRIPTION
-    Parses the URI, connects to Key Vault, and retrieves the secret value.
+    The reference is keyvault://<vault>/<secret>, env://<VARIABLE>, file://<name> or command://<name>.
+    The resolver needs the loaded infrastructure file (key_vaults and the secrets section).
     Returns the secret as a SecureString or plain text based on parameter.
 
 .PARAMETER Uri
-    The keyvault:// URI pointing to the secret.
+    The secret reference.
+
+.PARAMETER Infrastructure
+    The loaded infrastructure file (Import-AzlInfrastructure).
 
 .PARAMETER AsPlainText
     If specified, returns the secret as plain text instead of SecureString.
 
 .EXAMPLE
-    $password = Get-SecretFromUri -Uri "keyvault://kv-platform-prod/admin-password" -AsPlainText
+    $password = Get-SecretFromUri -Uri $infra.identity.local_admin.password -Infrastructure $infra -AsPlainText
 
 .EXAMPLE
-    $securePassword = Get-SecretFromUri -Uri $config.security.credentials.local_admin_password
+    $securePassword = Get-SecretFromUri -Uri $infra.identity.local_admin.password -Infrastructure $infra
 #>
 function Get-SecretFromUri {
     [CmdletBinding()]
@@ -165,46 +134,31 @@ function Get-SecretFromUri {
         [Parameter(Mandatory = $true)]
         [string]$Uri,
 
+        [Parameter(Mandatory = $true)]
+        [AllowNull()]
+        [System.Collections.IDictionary]$Infrastructure,
+
         [Parameter(Mandatory = $false)]
         [switch]$AsPlainText
     )
 
-    # Parse the URI
-    $parsed = ConvertFrom-KeyVaultUri -Uri $Uri
-
-    # Get the secret
-    $getParams = @{
-        VaultName = $parsed.VaultName
-        Name      = $parsed.SecretName
-    }
-    
-    if ($parsed.Version) {
-        $getParams.Version = $parsed.Version
-    }
-
-    $secret = Get-AzKeyVaultSecret @getParams
-
-    if ($null -eq $secret) {
-        throw "Secret not found: $Uri"
-    }
-
     if ($AsPlainText) {
-        return $secret.SecretValue | ConvertFrom-SecureString -AsPlainText
+        return Get-AzlSecretPlainText -Reference $Uri -Infrastructure $Infrastructure
     }
-    
-    return $secret.SecretValue
+
+    return Get-AzlSecretValue -Reference $Uri -Infrastructure $Infrastructure
 }
 
 <#
 .SYNOPSIS
-    Retrieves a secret from the solution's platform Key Vault.
+    Reads a secret of the infrastructure file's Key Vault, by secret name.
 
 .DESCRIPTION
-    Uses the solution configuration to find the platform Key Vault name,
-    then retrieves the specified secret.
+    Builds the reference with New-AzlSecretReference (the vault is the only one listed under key_vaults in the file),
+    then reads it with the toolkit's one secret resolver.
 
 .PARAMETER Config
-    The solution configuration (from Get-SolutionConfig).
+    The loaded infrastructure file (Import-AzlInfrastructure). It lists the vault under key_vaults.
 
 .PARAMETER SecretName
     The name of the secret to retrieve.
@@ -213,8 +167,8 @@ function Get-SecretFromUri {
     If specified, returns the secret as plain text.
 
 .EXAMPLE
-    $config = Get-SolutionConfig -Solution "azure-local"
-    $password = Get-SecretFromConfig -Config $config -SecretName "local-admin-password" -AsPlainText
+    $infra = Import-AzlInfrastructure -Path ./infrastructure.yml
+    $password = Get-SecretFromConfig -Config $infra -SecretName "local-admin-password" -AsPlainText
 #>
 function Get-SecretFromConfig {
     [CmdletBinding()]
@@ -229,12 +183,9 @@ function Get-SecretFromConfig {
         [switch]$AsPlainText
     )
 
-    # Get the platform Key Vault name from config
-    $kvName = Get-PlatformKeyVault -Config $Config
-
-    # Build URI and get secret
-    $uri = ConvertTo-KeyVaultUri -VaultName $kvName -SecretName $SecretName
-    return Get-SecretFromUri -Uri $uri -AsPlainText:$AsPlainText
+    # The reference: the vault comes from key_vaults in the file
+    $reference = New-AzlSecretReference -Name $SecretName -Infrastructure $Config -Provider keyvault
+    return Get-SecretFromUri -Uri $reference -Infrastructure $Config -AsPlainText:$AsPlainText
 }
 
 <#
@@ -335,28 +286,36 @@ function Set-SecretToKeyVault {
 
 <#
 .SYNOPSIS
-    Resolves all keyvault:// references in a credential section.
+    Resolves all secret references in a credential section.
 
 .DESCRIPTION
     Takes a credentials hashtable from configuration and resolves all
-    keyvault:// URIs to their actual values. Useful for preparing
-    credentials for deployment.
+    secret references (keyvault://, env://, file://, command://) to their
+    actual values with the toolkit's one secret resolver. Useful for
+    preparing credentials for deployment.
 
 .PARAMETER Credentials
     The credentials section from configuration.
+
+.PARAMETER Infrastructure
+    The loaded infrastructure file (Import-AzlInfrastructure).
 
 .PARAMETER AsPlainText
     If specified, returns passwords as plain text.
 
 .EXAMPLE
-    $config = Get-SolutionConfig -Solution "azure-local"
-    $creds = Resolve-CredentialReferences -Credentials $config.credentials -AsPlainText
+    $infra = Import-AzlInfrastructure -Path ./infrastructure.yml
+    $creds = Resolve-CredentialReferences -Credentials $infra.identity -Infrastructure $infra -AsPlainText
 #>
 function Resolve-CredentialReferences {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         $Credentials,
+
+        [Parameter(Mandatory = $true)]
+        [AllowNull()]
+        [System.Collections.IDictionary]$Infrastructure,
 
         [Parameter(Mandatory = $false)]
         [switch]$AsPlainText
@@ -369,11 +328,11 @@ function Resolve-CredentialReferences {
         
         if ($value -is [hashtable] -or $value -is [System.Collections.Specialized.OrderedDictionary]) {
             # Recurse into nested hashtables
-            $resolved[$key] = Resolve-CredentialReferences -Credentials $value -AsPlainText:$AsPlainText
+            $resolved[$key] = Resolve-CredentialReferences -Credentials $value -Infrastructure $Infrastructure -AsPlainText:$AsPlainText
         }
         elseif (Test-KeyVaultUri -Value $value) {
-            # Resolve the Key Vault reference
-            $resolved[$key] = Get-SecretFromUri -Uri $value -AsPlainText:$AsPlainText
+            # Resolve the secret reference
+            $resolved[$key] = Get-SecretFromUri -Uri $value -Infrastructure $Infrastructure -AsPlainText:$AsPlainText
         }
         else {
             # Keep the value as-is
@@ -547,7 +506,6 @@ function Connect-AzureFromConfig {
 
 # Export functions
 Export-ModuleMember -Function @(
-    'ConvertFrom-KeyVaultUri',
     'ConvertTo-KeyVaultUri',
     'Test-KeyVaultUri',
     'Get-SecretFromUri',

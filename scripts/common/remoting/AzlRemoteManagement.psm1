@@ -214,7 +214,8 @@ function Get-AzlRemotingSecret {
         reference. Read here, passed as a secret, never printed, written or returned in a report.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][object]$Spec, [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref })
+    param([Parameter(Mandatory)][object]$Spec, [scriptblock]$SecretResolver, [System.Collections.IDictionary]$Infrastructure)
+    if (-not $SecretResolver) { $SecretResolver = New-AzlSecretResolver -Infrastructure $Infrastructure }
     if ($Spec.Certificate.Mode -ne 'keyVault' -or -not $Spec.HttpsListener) { return @{} }
     try { return @{ certificatePfx = [string](& $SecretResolver $Spec.Certificate.Reference) } }
     catch { throw "Can't read the server certificate ($($Spec.Certificate.Reference)): $($_.Exception.Message)" }

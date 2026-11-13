@@ -12,8 +12,10 @@
                              -AllowNotFound). Throws on any other failure, with the error message ARM gave.
     Get-AzlProp              Reads a dotted path from a parsed object or hashtable. $null when any part is missing, so it is
                              safe under strict mode.
-    ConvertFrom-AzlKeyVaultRef  keyvault://<vault>/<secret> into its parts.
-    Get-AzlSecret            The value of a keyvault:// reference (Az.KeyVault).
+    ConvertFrom-AzlKeyVaultRef  keyvault://<vault>/<secret> into its parts (for checks and the ARM Key Vault reference; it reads nothing).
+    Get-AzlSecret            The value of a secret reference, as text. A wrapper over the toolkit's one secret resolver
+                             (scripts/common/secrets/AzlSecret.psm1): any provider; the infrastructure file is needed.
+    New-AzlSecretResolver    A scriptblock { param($Ref) } that reads references with Get-AzlSecret and one infrastructure file.
     Read-AzlHandoff          azurelocal-ztp's handoff file (schema 2): Arc machine resource IDs, the installed build and
                              managementAddressVerified for each node.
     Find-AzlArcMachine       A node's Arc machine: from the handoff, else looked up by name in the instance's resource group.
@@ -23,6 +25,8 @@ $ErrorActionPreference = 'Stop'
 
 # Microsoft.HybridCompute machines GET. The run command resource has its own version, in AzlNodeTransport.
 $script:ArcMachineApiVersion = '2024-07-10'
+
+Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'secrets', 'AzlSecret.psm1'))
 
 function Get-AzlProp {
     <#
@@ -106,21 +110,39 @@ function ConvertFrom-AzlKeyVaultRef {
 function Get-AzlSecret {
     <#
     .SYNOPSIS
-        The plain-text value of a keyvault:// reference. Reads the vault; changes nothing.
+        The plain-text value of a secret reference. Reads the provider; changes nothing.
     .DESCRIPTION
-        The value stays in memory: callers pass it to a protected run-command parameter or a secure ARM parameter and never
-        write it to a file or a log.
+        A thin wrapper over Get-AzlSecretPlainText, the toolkit's one secret resolver. The reference is keyvault://, env://, file:// or
+        command://. The resolver needs the loaded infrastructure file (key_vaults and the secrets section). The value stays in memory:
+        callers pass it to a protected run-command parameter or a secure ARM parameter and never write it to a file or a log.
+    .PARAMETER Reference
+        The secret reference, from the infrastructure file.
+    .PARAMETER Infrastructure
+        The loaded infrastructure file (Import-AzlInfrastructure).
     #>
     [CmdletBinding()]
     [OutputType([string])]
-    param([Parameter(Mandatory)][string]$Reference)
-    $parts = ConvertFrom-AzlKeyVaultRef -Reference $Reference
-    if (-not $parts) { throw "'$Reference' isn't a keyvault://<vault>/<secret> reference." }
-    $arguments = @{ VaultName = $parts.Vault; Name = $parts.Secret; AsPlainText = $true }
-    if ($parts.Version) { $arguments.Version = $parts.Version }
-    $value = Get-AzKeyVaultSecret @arguments
-    if ([string]::IsNullOrEmpty($value)) { throw "Secret $($parts.Secret) in vault $($parts.Vault) is empty or unreadable." }
-    return [string]$value
+    param(
+        [Parameter(Mandatory)][string]$Reference,
+        [Parameter(Mandatory)][AllowNull()][System.Collections.IDictionary]$Infrastructure
+    )
+    [string](Get-AzlSecretPlainText -Reference $Reference -Infrastructure $Infrastructure)
+}
+
+function New-AzlSecretResolver {
+    <#
+    .SYNOPSIS
+        A scriptblock that turns a secret reference into its value, bound to one infrastructure file.
+    .DESCRIPTION
+        For the functions that take a -SecretResolver: { param($Ref) } returns the plain text through Get-AzlSecret. Nothing is read
+        until the scriptblock runs.
+    #>
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds a scriptblock; changes no system state.')]
+    [CmdletBinding()]
+    [OutputType([scriptblock])]
+    param([Parameter(Mandatory)][AllowNull()][System.Collections.IDictionary]$Infrastructure)
+    $infra = $Infrastructure
+    return { param($Ref) Get-AzlSecret -Reference $Ref -Infrastructure $infra }.GetNewClosure()
 }
 
 function Read-AzlHandoff {
@@ -220,4 +242,4 @@ function Find-AzlArcMachine {
     }
 }
 
-Export-ModuleMember -Function Get-AzlProp, Invoke-AzlArm, ConvertFrom-AzlKeyVaultRef, Get-AzlSecret, Read-AzlHandoff, Get-AzlHandoffNode, Find-AzlArcMachine
+Export-ModuleMember -Function Get-AzlProp, Invoke-AzlArm, ConvertFrom-AzlKeyVaultRef, Get-AzlSecret, New-AzlSecretResolver, Read-AzlHandoff, Get-AzlHandoffNode, Find-AzlArcMachine

@@ -745,7 +745,7 @@ function Get-AzlPclAdminSecure {
     $user = [string](Get-AzlProp $local 'username' ''); $ref = [string](Get-AzlProp $local 'password' '')
     if (-not $user -or -not $ref) { throw 'identity.local_admin.username or password is not set: there is no credential for the node.' }
     if (-not $Ctx.Cache.ContainsKey('AdminSecure')) {
-        $plain = [string](Invoke-AzlPclAdapter $Ctx GetSecret @($ref))
+        $plain = [string](Invoke-AzlPclAdapter $Ctx GetSecret @($ref, $Ctx.Infra))
         Register-AzlPclSecret $plain
         $Ctx.Cache['AdminSecure'] = ConvertTo-SecureString -String $plain -AsPlainText -Force
         $plain = $null

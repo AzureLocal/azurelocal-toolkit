@@ -87,6 +87,12 @@ Get-AzlSecretProvider $reference
 
 Errors are exceptions. `$_.Exception.Data['AzlSecretError']` holds the category (`InvalidReference`, `VaultNotListed`, `NotConfigured`, `NotSignedIn`, `VaultNotFound`, `SecretNotFound`, `AccessDenied`, `KeyVaultError`, `NotSet`, `FileNotFound`, `FileUnsafe`, `CommandFailed`, `CommandTimeout`, `EmptySecret`, `TooLarge`, `Unexpected`) and `$_.Exception.Data['AzlExit']` the exit code to use: 2 for a wrong or missing input or setting, 1 for a failed call.
 
+### Every reader uses it
+
+No script reads a secret by itself. A script does not call `Get-AzKeyVaultSecret` or `az keyvault secret show`, does not parse a `keyvault://` text, and does not name a vault or a secret. It reads a reference from the infrastructure file and gives it to the resolver. The scripts of phases 02 to 06 keep a small helper (`Resolve-KeyVaultRef`) that calls the resolver, logs a warning without a value and returns `$null`, so the script can still ask for a credential. Modules use `Get-AzlSecret` (a wrapper of `Get-AzlSecretPlainText` in `AzlAzure.psm1`) or `New-AzlSecretResolver` for the `-SecretResolver` parameters. There is no Azure CLI fallback.
+
+The scripts that write secrets or create vaults (`Add-KeyVaultCredentials.ps1`, `Deploy-KeyVaults.ps1`, `Test-Configuration.ps1` of the Key Vault validation) keep their own Key Vault calls. `tests/secrets/ScriptsUseResolver.Tests.ps1` lists them and fails when any other script reads a secret itself.
+
 ## Rules that hold for every provider
 
 - The value is returned only as a `SecureString`, or as a string from `Get-AzlSecretPlainText` for the few callers that must put it in a request body.

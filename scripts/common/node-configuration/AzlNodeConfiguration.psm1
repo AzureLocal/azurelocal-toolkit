@@ -1208,7 +1208,7 @@ function Invoke-AzlNodeConfiguration {
         A WinRM transport used only to copy the SBE package (hardware.sbe.delivery winrm_copy) when the nodes are otherwise
         reached over Arc Run Command. Default: -Transport when that is WinRM.
     .PARAMETER SecretResolver
-        Scriptblock that turns a keyvault:// reference into its value. Default Get-AzlSecret.
+        Scriptblock that turns a secret reference into its value. Default: Get-AzlSecret with -Infrastructure (the loaded infrastructure file, needed by the secret resolver for key_vaults and the secrets section).
     .PARAMETER EventContext
         The event context of New-AzlGuardEventContext (Path of the event feed file, Sink, SchemaVersion, PayloadVersion, Method, Phase): where the guarded
         change and the DomainJoin step (DomainJoinPlanned, DomainJoinApplying, DomainJoined, DomainJoinFailed, NodeRestarting, NodeReconnected) write
@@ -1231,7 +1231,7 @@ function Invoke-AzlNodeConfiguration {
         [AllowEmptyCollection()][string[]]$ApprovedWipeId,
         [switch]$NoRestart,
         [int]$MaxPasses = 6,
-        [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref },
+        [scriptblock]$SecretResolver, [System.Collections.IDictionary]$Infrastructure,
         [hashtable]$DomainJoinLatch, # DOMAINJOIN HOOK: shared by the nodes of one run; tripped by the first rejected join credential
         [scriptblock]$LdapQuery, # DOMAINJOIN HOOK: test seam of the host-side LDAP lookup of the computer object (default: System.DirectoryServices)
         [hashtable]$GuardSetting,
@@ -1239,6 +1239,7 @@ function Invoke-AzlNodeConfiguration {
         [object]$EventContext,
         [scriptblock]$PortProbe
     )
+    if (-not $SecretResolver) { $SecretResolver = New-AzlSecretResolver -Infrastructure $Infrastructure }
     $node = $Spec.Name
     $readParameters = Get-AzlNodeReadParameter -Spec $Spec
     $secrets = @{}
@@ -1359,7 +1360,7 @@ function Invoke-AzlNodeConfiguration {
         $passes.Add([pscustomobject]@{ Pass = $pass; Changes = $todo.Count + $remotingTodo.Count })
         if (-not $Execute -or ($todo.Count + $remotingTodo.Count) -eq 0 -or $pass -gt $limit) { break }
         if ($remotingTodo.Count) {
-            $applied = Invoke-AzlRemotingApply -Spec $remoting -Transport $Transport -Item $remotingTodo -State (Get-AzlProp $state 'remoting') -Secrets (Get-AzlRemotingSecret -Spec $remoting -SecretResolver $SecretResolver)
+            $applied = Invoke-AzlRemotingApply -Spec $remoting -Transport $Transport -Item $remotingTodo -State (Get-AzlProp $state 'remoting') -Secrets (Get-AzlRemotingSecret -Spec $remoting -SecretResolver $SecretResolver -Infrastructure $Infrastructure)
             foreach ($c in $applied.Changes) { $changes.Add([pscustomobject]@{ Node = $node; Pass = $pass; Id = $c.Id; Status = $c.Status; Detail = $c.Detail }) }
             if ($applied.Status -ne 'committed') { break }
             if ($applied.TransportChanged) { continue }

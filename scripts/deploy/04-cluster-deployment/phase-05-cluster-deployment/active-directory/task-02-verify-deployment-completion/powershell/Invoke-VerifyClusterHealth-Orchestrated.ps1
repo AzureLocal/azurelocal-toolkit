@@ -56,6 +56,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 
 #region LOGGING
 $TaskFolderName = "task-03-verify-deployment-completion"
@@ -83,9 +84,6 @@ function Write-Log {
 #endregion LOGGING
 
 #region CONFIG LOADING
-# Helpers — dot-source from repo root
-. (Join-Path (Get-Location).Path "scripts\common\utilities\helpers\keyvault-helper.ps1")
-
 if (-not $ConfigPath) { $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml" }
 Write-Log "Loading configuration from: $ConfigPath"
 if (-not (Test-Path -LiteralPath $ConfigPath)) { throw "infrastructure.yml not found: $ConfigPath. Use -ConfigPath." }
@@ -114,11 +112,10 @@ Write-Log "Nodes to verify: $($nodes.name -join ', ')"
 if (-not $Credential) {
     $kvPassword = $cfg.identity.local_admin.password  # identity.local_admin.password
     $username   = $cfg.identity.local_admin.username  # identity.local_admin.username
-    if ($kvPassword -match '^keyvault://') {
-        Write-Log "Resolving local admin password from Key Vault..."
-        $kvName  = $cfg.cluster.key_vault.name           # cluster.key_vault.name
-        $secret  = Resolve-KeyVaultRef -Uri $kvPassword -VaultName $kvName
-        $Credential = New-Object PSCredential($username, (ConvertTo-SecureString $secret -AsPlainText -Force))
+    if ($kvPassword -and (Get-AzlSecretProvider -Reference $kvPassword)) {
+        Write-Log "Resolving local admin password from the secret reference..."
+        $secret  = Get-AzlSecretValue -Reference $kvPassword -Infrastructure $cfg
+        $Credential = New-Object PSCredential($username, $secret)
     } else {
         Write-Log "Credential not provided and no KV reference found; prompting..." -Level WARN
         $Credential = Get-Credential -Message "Enter local admin credentials for cluster nodes"

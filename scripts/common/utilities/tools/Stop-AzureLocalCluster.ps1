@@ -28,14 +28,13 @@
 .PARAMETER Credential
     PSCredential object for connecting to the nodes. If not provided, prompts for credentials.
 
-.PARAMETER KeyVaultName
-    Azure Key Vault name to retrieve credentials from. Default: kv-platform
-
-.PARAMETER SecretName
-    Key Vault secret name for credentials. Default: Domain-Admin-Password
+.PARAMETER InfrastructureFile
+    Path to infrastructure.yml. When no -Credential is given, the password is the secret reference
+    identity.active_directory.domain_join_account.password in this file, read by the toolkit's secret resolver
+    (sign in first with Connect-AzAccount when it is a keyvault:// reference).
 
 .PARAMETER DomainUserName
-    Domain username for authentication. Default: hybrid.mgmt\azureadmin
+    Domain username for authentication. Default: identity.active_directory.domain_join_account.username in -InfrastructureFile
 
 .PARAMETER SaveVMState
     If specified, saves VM state instead of shutting down VMs. Default: $false (shutdown VMs)
@@ -48,7 +47,7 @@
 
 .EXAMPLE
     .\Stop-AzureLocalCluster.ps1
-    Shuts down the cluster using default settings and Key Vault credentials.
+    Shuts down the cluster using default settings and the credentials of the infrastructure file.
 
 .EXAMPLE
     .\Stop-AzureLocalCluster.ps1 -SaveVMState -Force
@@ -61,7 +60,7 @@
 .EXAMPLE
     $cred = Get-Credential
     .\Stop-AzureLocalCluster.ps1 -Credential $cred
-    Uses provided credentials instead of Key Vault.
+    Uses provided credentials instead of the secret reference.
 
 .NOTES
     Author: Hybrid Cloud Solutions Team
@@ -96,10 +95,7 @@ param(
     [PSCredential]$Credential,
 
     [Parameter()]
-    [string]$KeyVaultName,
-
-    [Parameter()]
-    [string]$SecretName = "Domain-Admin-Password",
+    [string]$InfrastructureFile,
 
     [Parameter()]
     [string]$DomainUserName,
@@ -115,10 +111,10 @@ param(
 )
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 # Load configuration if Solution specified
 if ($Solution) {
     . (Join-Path $PSScriptRoot (Join-Path ".." (Join-Path "helpers" "config-loader.ps1")))
-    . (Join-Path $PSScriptRoot (Join-Path ".." (Join-Path "helpers" "keyvault-helper.ps1")))
     
     $config = Get-SolutionConfig -Solution $Solution
     
@@ -127,7 +123,6 @@ if ($Solution) {
     $configNodes = @(Get-AzlInfrastructureNode -Infrastructure $config)
     if (-not $Node01 -and $configNodes.Count -ge 1) { $Node01 = $configNodes[0].ManagementIp }
     if (-not $Node02 -and $configNodes.Count -ge 2) { $Node02 = $configNodes[1].ManagementIp }
-    if (-not $KeyVaultName) { $KeyVaultName = $config.security.key_vaults.management.name }
     if (-not $DomainUserName) { $DomainUserName = $config.security.credentials.domain_join_username }
 }
 
@@ -190,33 +185,39 @@ function Write-Step {
     Write-Log -Message $Message -Level $Status
 }
 
-function Get-KeyVaultCredential {
+function Get-ClusterCredential {
+    # The domain account of identity.active_directory.domain_join_account: the password is a secret reference, read by the toolkit's
+    # one secret resolver. The user name is -UserName, else the one in the file (qualified with the NetBIOS name when it is not).
     param(
-        [string]$VaultName,
-        [string]$SecretName,
+        [string]$InfrastructureFile,
         [string]$UserName
     )
-    
-    Write-Step "Retrieving credentials from Key Vault: $VaultName" "INFO"
-    
+
+    if (-not $InfrastructureFile) { throw "Give -InfrastructureFile (the secret reference of the domain account is read from it), or -Credential." }
+
+    Write-Step "Reading the domain credentials from the secret reference in $InfrastructureFile" "INFO"
+
     try {
-        $password = az keyvault secret show --vault-name $VaultName --name $SecretName --query "value" -o tsv 2>&1
-        if ($LASTEXITCODE -ne 0) {
-            throw "Failed to retrieve secret from Key Vault: $password"
+        $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation
+        $reference = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.active_directory.domain_join_account.password'
+        if (-not $UserName) {
+            $UserName = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.active_directory.domain_join_account.username')
+            if ($UserName -and $UserName -notmatch '\\|@') {
+                $UserName = "$([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.active_directory.netbios_name'))\$UserName"
+            }
         }
-        
-        $securePassword = ConvertTo-SecureString $password -AsPlainText -Force
+        if (-not $UserName -or -not $reference) { throw "identity.active_directory.domain_join_account needs a username and a password (a secret reference)." }
+        $securePassword = Get-AzlSecretValue -Reference ([string]$reference) -Infrastructure $infra
         $credential = New-Object PSCredential($UserName, $securePassword)
-        
+
         Write-Step "Credentials retrieved successfully" "SUCCESS"
         return $credential
     }
     catch {
-        Write-Step "Failed to get credentials from Key Vault: $_" "ERROR"
+        Write-Step "Failed to get credentials from the secret reference: $($_.Exception.Message)" "ERROR"
         throw
     }
 }
-
 function Test-NodeConnectivity {
     param([string]$NodeIP, [PSCredential]$Credential)
     
@@ -257,10 +258,10 @@ if (-not $Force -and -not $WhatIfPreference) {
 Write-Step "========== STEP 1: AUTHENTICATION ==========" "STEP"
 if (-not $Credential) {
     try {
-        $Credential = Get-KeyVaultCredential -VaultName $KeyVaultName -SecretName $SecretName -UserName $DomainUserName
+        $Credential = Get-ClusterCredential -InfrastructureFile $InfrastructureFile -UserName $DomainUserName
     }
     catch {
-        Write-Step "Key Vault retrieval failed. Prompting for credentials..." "WARNING"
+        Write-Step "Reading the secret reference failed. Prompting for credentials..." "WARNING"
         $Credential = Get-Credential -Message "Enter domain admin credentials for cluster access"
     }
 }

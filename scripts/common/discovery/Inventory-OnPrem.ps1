@@ -26,10 +26,6 @@
 .PARAMETER DeviceName
     Specific device name(s) from infrastructure.yml to scan.
 
-.PARAMETER KeyVaultName
-    Azure Key Vault name for credential retrieval. 
-    Default: reads from infrastructure.yml
-
 .PARAMETER InfrastructureFile
     Path to infrastructure.yml file. Default: repository root.
 
@@ -105,9 +101,6 @@ param(
     [string[]]$DeviceName,
 
     [Parameter(Mandatory = $false)]
-    [string]$KeyVaultName,
-
-    [Parameter(Mandatory = $false)]
     [string]$InfrastructureFile,
 
     [Parameter(Mandatory = $false)]
@@ -127,6 +120,10 @@ param(
 $ErrorActionPreference = "Stop"
 $ScriptVersion = "1.0.0"
 $ScriptRoot = $PSScriptRoot
+Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'secrets', 'AzlSecret.psm1')) -ErrorAction Stop
+
+# The loaded infrastructure file: the secret resolver needs key_vaults and the secrets section from it.
+$script:SecretInfrastructure = $null
 
 # Determine repository root (2 levels up from scripts/discovery)
 $RepoRoot = Split-Path -Parent (Split-Path -Parent $ScriptRoot)
@@ -256,54 +253,29 @@ function Get-InfrastructureConfig {
     }
 }
 
-function Get-KeyVaultCredential {
+function Get-DeviceSecret {
     <#
     .SYNOPSIS
-        Retrieves a credential from Azure Key Vault.
+        Reads a secret reference through the toolkit's one secret resolver (any provider). Returns the text, or $null.
     #>
     param(
-        [string]$KeyVaultUri,
-        [string]$DefaultVaultName
+        [string]$Reference
     )
-    
-    # Parse keyvault:// URI
-    # Format: keyvault://vault-name/secret-name
-    if ($KeyVaultUri -match '^keyvault://([^/]+)/(.+)$') {
-        $vaultName = $Matches[1]
-        $secretName = $Matches[2]
-    }
-    elseif ($KeyVaultUri -match '^keyvault://(.+)$') {
-        # Just secret name, use default vault
-        $vaultName = $DefaultVaultName
-        $secretName = $Matches[1]
-    }
-    else {
-        # Not a keyvault URI, treat as secret name with default vault
-        $vaultName = $DefaultVaultName
-        $secretName = $KeyVaultUri
-    }
-    
-    if (-not $vaultName) {
-        Write-Warning "No Key Vault name specified for secret: $secretName"
+
+    if (-not (Get-AzlSecretProvider -Reference $Reference)) {
+        Write-Warning "  The credential value is not a secret reference (keyvault://, env://, file:// or command://): it is not used."
         return $null
     }
-    
-    Write-Verbose "  Retrieving secret '$secretName' from Key Vault '$vaultName'"
-    
+
+    Write-Verbose "  Reading secret reference $Reference"
+
     try {
-        $secret = Get-AzKeyVaultSecret -VaultName $vaultName -Name $secretName -ErrorAction Stop
-        if ($secret) {
-            $value = $secret.SecretValue | ConvertFrom-SecureString -AsPlainText
-            Write-Verbose "  Successfully retrieved secret '$secretName'"
-            return $value
-        }
+        return (Get-AzlSecretPlainText -Reference $Reference -Infrastructure $script:SecretInfrastructure)
     }
     catch {
-        Write-Warning "  Failed to retrieve secret '$secretName' from Key Vault '$vaultName': $($_.Exception.Message)"
+        Write-Warning "  Failed to read secret reference ${Reference}: $($_.Exception.Message)"
         return $null
     }
-    
-    return $null
 }
 
 function Get-DeviceCredentials {
@@ -313,8 +285,7 @@ function Get-DeviceCredentials {
     #>
     param(
         [string]$CredentialRef,
-        [string]$InfrastructureFile,
-        [string]$DefaultVaultName
+        [string]$InfrastructureFile
     )
     
     if (-not $CredentialRef) {
@@ -328,9 +299,8 @@ function Get-DeviceCredentials {
     
     # Find the credential entry - look for patterns like:
     # opengear:
-    #   username_secret: "opengear-username"
-    #   password_secret: "opengear-password"
-    #   key_vault: "kv-platform"
+    #   username_secret: <a secret reference>
+    #   password_secret: <a secret reference>
     
     $credSection = $null
     $inCredentials = $false
@@ -365,8 +335,6 @@ function Get-DeviceCredentials {
         return $null
     }
     
-    $vaultName = $credData.key_vault ?? $DefaultVaultName
-    
     $result = @{
         Username = $null
         Password = $null
@@ -374,7 +342,7 @@ function Get-DeviceCredentials {
     
     # Get username
     if ($credData.username_secret) {
-        $result.Username = Get-KeyVaultCredential -KeyVaultUri $credData.username_secret -DefaultVaultName $vaultName
+        $result.Username = Get-DeviceSecret -Reference $credData.username_secret
     }
     elseif ($credData.username) {
         $result.Username = $credData.username
@@ -382,7 +350,7 @@ function Get-DeviceCredentials {
     
     # Get password
     if ($credData.password_secret) {
-        $result.Password = Get-KeyVaultCredential -KeyVaultUri $credData.password_secret -DefaultVaultName $vaultName
+        $result.Password = Get-DeviceSecret -Reference $credData.password_secret
     }
     
     if ($result.Username -and $result.Password) {
@@ -860,6 +828,7 @@ function Start-OnPremDiscovery {
     
     try {
         $config = Get-InfrastructureConfig -Path $InfrastructureFile
+        $script:SecretInfrastructure = $config
         $networkDevices = $config.networking.onprem.network_devices
         
         if (-not $networkDevices -or $networkDevices.Count -eq 0) {
@@ -997,12 +966,12 @@ function Start-OnPremDiscovery {
             # First check for credential_ref (points to credentials section with username/password)
             if ($deviceConfig.credential_ref) {
                 Write-Verbose "  Looking up credential_ref: $($deviceConfig.credential_ref)"
-                $credentialPair = Get-DeviceCredentials -CredentialRef $deviceConfig.credential_ref -InfrastructureFile $InfrastructureFile -DefaultVaultName $KeyVaultName
+                $credentialPair = Get-DeviceCredentials -CredentialRef $deviceConfig.credential_ref -InfrastructureFile $InfrastructureFile
             }
             # Then check for direct api_key
             elseif ($deviceConfig.api_key) {
                 Write-Verbose "  Retrieving API key from Key Vault"
-                $credential = Get-KeyVaultCredential -KeyVaultUri $deviceConfig.api_key -DefaultVaultName $KeyVaultName
+                $credential = Get-DeviceSecret -Reference $deviceConfig.api_key
             }
         }
         

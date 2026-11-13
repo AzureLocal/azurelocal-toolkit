@@ -33,6 +33,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 
 function Write-Log {
     param([string]$Message, [string]$Level = "INFO")
@@ -59,6 +60,7 @@ function Get-Config {
     if (-not (Test-Path $Path)) { throw "infrastructure.yml not found. Use -ConfigPath." }
     Import-Module powershell-yaml -ErrorAction Stop
     $cfg = Get-Content $Path -Raw | ConvertFrom-Yaml
+    $script:SecretInfrastructure = $cfg
     $nodes = Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object {
         [PSCustomObject]@{ hostname = $_.Name; ip = $_.ManagementIp }
     }
@@ -70,19 +72,12 @@ function Get-Config {
 }
 
 function Resolve-KvSecret {
+    # Reads a secret reference through the toolkit's one secret resolver (AzlSecret.psm1): any provider, no Azure CLI.
+    # Returns the text, or $null when it cannot be read. No value is logged.
     param([string]$Uri)
-    if ($Uri -notmatch '^keyvault://([^/]+)/(.+)$') { return $null }
-    $vault = $Matches[1]; $secret = $Matches[2]
-    Write-Log "  Fetching '$secret' from Key Vault '$vault'..."
-    try {
-        $s = Get-AzKeyVaultSecret -VaultName $vault -Name $secret -AsPlainText -ErrorAction Stop
-        if ($s) { return $s }
-    } catch {}
-    try {
-        $s = & az keyvault secret show --vault-name $vault --name $secret --query value -o tsv 2>&1
-        if ($LASTEXITCODE -eq 0 -and $s) { return ($s | Out-String).Trim() }
-    } catch {}
-    return $null
+    if (-not (Get-AzlSecretProvider -Reference $Uri)) { return $null }
+    try { return (Get-AzlSecretPlainText -Reference $Uri -Infrastructure $script:SecretInfrastructure) }
+    catch { Write-Log "  The secret could not be read: $($_.Exception.Message)" WARN; return $null }
 }
 
 # ── scriptblock that runs ON each node ──────────────────────────────────────

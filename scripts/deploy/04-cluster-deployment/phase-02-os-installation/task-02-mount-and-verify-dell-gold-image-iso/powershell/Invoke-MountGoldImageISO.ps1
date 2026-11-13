@@ -1,4 +1,4 @@
-#Requires -Modules Az.KeyVault
+#Requires -Version 7.0
 <#
 .SYNOPSIS
     Mount and verify a Dell gold image ISO via iDRAC Virtual Media (Redfish API).
@@ -19,6 +19,8 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'redfish', 'AzlRedfishCore.psm1'))) -Force
+
 # ── Load config ───────────────────────────────────────────────────────────────
 if (-not (Test-Path $ConfigPath)) {
     throw "Config file not found: $ConfigPath"
@@ -26,14 +28,10 @@ if (-not (Test-Path $ConfigPath)) {
 $config   = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
 $nodes    = $config.cluster.nodes
 $isoPath  = $config.cluster.gold_image_iso_path
-$kvName   = $config.azure.key_vault.name
 
-# ── Get iDRAC credentials from Key Vault ──────────────────────────────────────
-Write-Host "Retrieving iDRAC credentials from Key Vault: $kvName" -ForegroundColor Cyan
-$idracUser = Get-AzKeyVaultSecret -VaultName $kvName -Name "idrac-username" -AsPlainText
-$idracPass = Get-AzKeyVaultSecret -VaultName $kvName -Name "idrac-password" -AsPlainText |
-             ConvertTo-SecureString -AsPlainText -Force
-$idracCred = New-Object System.Management.Automation.PSCredential($idracUser, $idracPass)
+# ── iDRAC credentials: hardware.bmc in the infrastructure file (secret references) ─
+Write-Host "Reading the iDRAC credentials from the secret references..." -ForegroundColor Cyan
+$idracCred = Resolve-AzlBmcCredential -Infrastructure $config -NoPrompt
 
 # ── Helper: Invoke Redfish ────────────────────────────────────────────────────
 function Invoke-Redfish {

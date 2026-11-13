@@ -61,6 +61,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 
 #region LOGGING
 
@@ -132,27 +133,15 @@ function Resolve-ConfigPath {
 }
 
 function Resolve-KeyVaultRef {
+    # Reads a secret reference through the toolkit's one secret resolver (AzlSecret.psm1): any provider, no Azure CLI.
+    # Returns the text, or $null when it cannot be read; the caller then falls back as before. No value is logged.
     param([Parameter(Mandatory)][string]$KvUri)
-    if ($KvUri -notmatch '^keyvault://([^/]+)/(.+)$') { return $null }
-    $vaultName  = $Matches[1]
-    $secretName = $Matches[2]
-    Write-Log "  Fetching secret '$secretName' from Key Vault '$vaultName'..."
-    if (Get-Module -Name Az.KeyVault -ListAvailable -ErrorAction SilentlyContinue) {
-        try {
-            $secret = Get-AzKeyVaultSecret -VaultName $vaultName -Name $secretName -AsPlainText -ErrorAction Stop
-            if ($secret) { return $secret }
-        } catch {
-            Write-Log "  Az.KeyVault failed: $($_.Exception.Message)" 'WARN'
-        }
-    }
+    if (-not (Get-AzlSecretProvider -Reference $KvUri)) { return $null }
     try {
-        $azOut = & az keyvault secret show --vault-name $vaultName --name $secretName --query value -o tsv 2>&1
-        if ($LASTEXITCODE -eq 0 -and $azOut) { return ($azOut | Out-String).Trim() }
-        Write-Log "  az CLI KV lookup failed (exit $LASTEXITCODE): $azOut" 'WARN'
-        return $null
-    } catch {
-        return $null
+        $value = Get-AzlSecretPlainText -Reference $KvUri -Infrastructure $script:SecretInfrastructure
+        return $value
     }
+    catch { Write-Log "  The secret could not be read: $($_.Exception.Message)" 'WARN'; return $null }
 }
 
 #endregion HELPERS
@@ -173,6 +162,7 @@ if (-not (Get-Module -Name powershell-yaml -ListAvailable -ErrorAction SilentlyC
 Import-Module powershell-yaml -ErrorAction Stop
 
 $cfg = Get-Content $configFile -Raw | ConvertFrom-Yaml
+$script:SecretInfrastructure = $cfg
 
 # ── Extract values (param overrides take precedence) ─────────────────────────
 $clusterName     = $cfg.cluster.name                                            # cluster.name

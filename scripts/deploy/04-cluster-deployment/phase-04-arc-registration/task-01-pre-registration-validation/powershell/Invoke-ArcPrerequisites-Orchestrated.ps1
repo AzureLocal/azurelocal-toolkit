@@ -100,6 +100,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 
 # ── Log file initialization ───────────────────────────────────────────────
 # Scripts are always run from the repo root, so ./logs/<task-folder>/ is CWD-relative
@@ -150,6 +151,7 @@ function Get-Config {
 
     Import-Module powershell-yaml -ErrorAction Stop
     $cfg = Get-Content $Path -Raw | ConvertFrom-Yaml
+    $script:SecretInfrastructure = $cfg
 
     # nodes[]
     $nodes = Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object {
@@ -178,39 +180,16 @@ function Get-Config {
 }
 
 function Resolve-KeyVaultRef {
+    # Reads a secret reference through the toolkit's one secret resolver (AzlSecret.psm1): any provider, no Azure CLI.
+    # Returns the text, or $null when it cannot be read; the caller then falls back as before. No value is logged.
     param([string]$KvUri)
-    if ($KvUri -notmatch '^keyvault://([^/]+)/(.+)$') { Write-Log "  Not a Key Vault URI: $KvUri" "WARN"; return $null }
-    $vaultName  = $Matches[1]
-    $secretName = $Matches[2]
-
-    if (Get-Module -Name Az.KeyVault -ListAvailable -ErrorAction SilentlyContinue) {
-        try {
-            Write-Log "  Retrieving '$secretName' from '$vaultName' (Az.KeyVault)..."
-            $secret = Get-AzKeyVaultSecret -VaultName $vaultName -Name $secretName -AsPlainText -ErrorAction Stop
-            if ($secret) { Write-Log "  Secret retrieved." "SUCCESS"; return $secret }
-            Write-Log "  Az.KeyVault returned no secret." "WARN"
-        } catch { Write-Log "  Az.KeyVault failed: $_" "WARN" }
-        Write-Log "  Falling back to Azure CLI..." "WARN"
-    } else {
-        Write-Log "  Az.KeyVault module not found — trying Azure CLI..." "WARN"
-    }
-
+    if (-not (Get-AzlSecretProvider -Reference $KvUri)) { Write-Log "  The value is not a secret reference." "WARN"; return $null }
     try {
-        $azCmd = Get-Command az -ErrorAction SilentlyContinue
-        if (-not $azCmd) { Write-Log "  Azure CLI (az) not found." "WARN"; return $null }
-        Write-Log "  Retrieving '$secretName' from '$vaultName' (az CLI)..."
-        $tmpErr = [System.IO.Path]::GetTempFileName()
-        $val    = (& az keyvault secret show --vault-name $vaultName --name $secretName --query value --output tsv --only-show-errors 2>$tmpErr)
-        $azErr  = (Get-Content $tmpErr -Raw -ErrorAction SilentlyContinue).Trim()
-        Remove-Item $tmpErr -ErrorAction SilentlyContinue
-        if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($val)) {
-            $errDetail = if ($azErr) { ": $azErr" } else { " (exit $LASTEXITCODE)" }
-            Write-Log "  az CLI failed$errDetail." "WARN"
-            return $null
-        }
-        Write-Log "  Secret retrieved (az CLI)." "SUCCESS"
-        return $val
-    } catch { Write-Log "  az CLI failed: $_" "WARN"; return $null }
+        $value = Get-AzlSecretPlainText -Reference $KvUri -Infrastructure $script:SecretInfrastructure
+        Write-Log "  Secret retrieved." "SUCCESS"
+        return $value
+    }
+    catch { Write-Log "  The secret could not be read: $($_.Exception.Message)" "WARN"; return $null }
 }
 
 #endregion HELPERS
@@ -334,8 +313,8 @@ if ($WhatIf) {
         Write-Log "IDENTITY & PERMISSION CHECKS (runs locally):" HEADER
         Write-Log "  WHATIF: Would verify SPN exists in Entra ID (AppId: $($cfg.SpnAppId))" INFO
         Write-Log "  WHATIF: Would check RBAC roles on resource group '$($cfg.ResourceGroup)'" INFO
-        if ($cfg.SpnSecretUri -match '^keyvault://([^/]+)/(.+)$') {
-            Write-Log "  WHATIF: Would verify KV secret '$($Matches[2])' in vault '$($Matches[1])'" INFO
+        if ($cfg.SpnSecretUri -and (Get-AzlSecretProvider -Reference $cfg.SpnSecretUri)) {
+            Write-Log "  WHATIF: Would verify the SPN secret can be read: $($cfg.SpnSecretUri)" INFO
         }
         if ($useArcGateway) {
             Write-Log "  WHATIF: Would verify Arc Gateway exists: $($cfg.ArcGatewayId)" INFO
@@ -458,33 +437,20 @@ if (-not $SkipIdentity) {
             $identityWarned++
         }
 
-        # --- Check 3: Verify Key Vault secret accessible ---
-        Write-Log "--- Check 3: Key Vault Secret ---" HEADER
-        if ($spnSecretUri -match '^keyvault://([^/]+)/(.+)$') {
-            $kvVault  = $Matches[1]
-            $kvSecret = $Matches[2]
-            try {
-                $secret = Get-AzKeyVaultSecret -VaultName $kvVault -Name $kvSecret -ErrorAction Stop
-                if ($secret -and $secret.Enabled) {
-                    Write-Log "  [PASS] KV secret '$kvSecret' accessible in '$kvVault'" PASS
-                    if ($secret.Expires -and $secret.Expires -lt (Get-Date).AddDays(30)) {
-                        Write-Log "  [WARN] Secret expires $($secret.Expires) — renew soon" WARN
-                        $identityWarned++
-                    }
-                    $identityPassed++
-                } elseif ($secret) {
-                    Write-Log "  [WARN] KV secret '$kvSecret' exists but is DISABLED" WARN
-                    $identityWarned++
-                } else {
-                    Write-Log "  [FAIL] KV secret '$kvSecret' not found in '$kvVault'" FAIL
-                    $identityFailed++
-                }
-            } catch {
-                Write-Log "  [FAIL] Cannot access KV secret: $($_.Exception.Message)" FAIL
+        # --- Check 3: Verify the SPN secret can be read ---
+        Write-Log "--- Check 3: SPN Secret ---" HEADER
+        if ($spnSecretUri -and (Get-AzlSecretProvider -Reference $spnSecretUri)) {
+            # The toolkit's secret resolver proves the reference can be read (the value is read into memory and dropped, never logged).
+            $probe = Test-AzlSecretReference -Reference $spnSecretUri -Infrastructure $script:SecretInfrastructure -Detailed
+            if ($probe.Resolvable) {
+                Write-Log "  [PASS] Secret reference $spnSecretUri can be read" PASS
+                $identityPassed++
+            } else {
+                Write-Log "  [FAIL] Cannot read the SPN secret ($($probe.Category)): $($probe.Message)" FAIL
                 $identityFailed++
             }
         } else {
-            Write-Log "  [WARN] No keyvault:// URI configured for SPN secret" WARN
+            Write-Log "  [WARN] No secret reference configured for SPN secret" WARN
             $identityWarned++
         }
 

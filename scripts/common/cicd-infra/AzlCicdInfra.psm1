@@ -25,6 +25,8 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'secrets', 'AzlSecret.psm1'))
+
 $script:Token = $null
 $script:LogPath = ''
 
@@ -133,13 +135,11 @@ function Get-AzlList {
     return $Value
 }
 
-function Get-AzlKeyVaultSecretValue {
-    <# Reads a keyvault://<vault>/<secret> reference with the Azure CLI. The value is returned, never logged. #>
+function Get-AzlCicdSecretValue {
+    <# Reads a secret reference through the toolkit's one secret resolver (any provider). The value is returned, never logged. #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][string]$Reference)
-    if ($Reference -notmatch '^keyvault://([^/]+)/(.+)$') { throw "'$Reference' is not a keyvault://<vault>/<secret> reference." }
-    $result = Invoke-AzlNative -FilePath az -ArgumentList @('keyvault', 'secret', 'show', '--vault-name', $Matches[1], '--name', $Matches[2], '--query', 'value', '-o', 'tsv')
-    return $result.Output
+    param([Parameter(Mandatory)][string]$Reference, [Parameter(Mandatory)][AllowNull()][System.Collections.IDictionary]$Infrastructure)
+    return (Get-AzlSecretPlainText -Reference $Reference -Infrastructure $Infrastructure)
 }
 
 function Format-AzlResult {
@@ -234,6 +234,7 @@ function ConvertTo-AzlCicdSetting {
         Organization         = $organization
         Project              = $project
         ScmUrl               = $scmUrl
+        Infrastructure       = $Infrastructure
         ApiTokenReference    = [string](Get-AzlValue $devops 'api_token')
         TenantId             = [string](Get-AzlValue $Infrastructure 'azure.tenant_id')
         Location             = [string](Get-AzlValue $Infrastructure 'azure.location' 'eastus')
@@ -330,8 +331,8 @@ function Resolve-AzlCicdToken {
         if ($value) { return $value }
     }
     if ($Settings.ApiTokenReference) {
-        $value = Get-AzlKeyVaultSecretValue -Reference $Settings.ApiTokenReference
-        if (-not $value) { throw "The Key Vault secret $($Settings.ApiTokenReference) is empty." }
+        $value = Get-AzlCicdSecretValue -Reference $Settings.ApiTokenReference -Infrastructure $Settings.Infrastructure
+        if (-not $value) { throw "The secret $($Settings.ApiTokenReference) is empty." }
         return $value
     }
     if ($Settings.Platform -eq 'gitlab') { throw 'GitLab needs a token: set GITLAB_TOKEN, or devops.api_token to a keyvault:// reference.' }
@@ -510,8 +511,9 @@ function Invoke-AzlCicdBootstrap {
             $reference = $Settings.Authentication.ClientSecretReference
             if (-not $reference) { throw 'devops.authentication.method is client_secret, so devops.authentication.client_secret must be a keyvault:// reference.' }
             $vault, $secretName = ($reference -replace '^keyvault://', '').Split('/', 2)
-            $present = Invoke-AzlNative -FilePath az -ArgumentList @('keyvault', 'secret', 'show', '--vault-name', $vault, '--name', $secretName, '--query', 'id', '-o', 'tsv') -AllowFailure
-            if ($present.ExitCode -eq 0) {
+            # Is it there? The resolver proves it (the value is read into memory and dropped). Any failure counts as "not there", as before.
+            $present = Test-AzlSecretReference -Reference $reference -Infrastructure $Settings.Infrastructure
+            if ($present) {
                 $results.Add((Format-AzlResult $task 'Client secret' $reference 'Exists' 'Not rotated. Delete the Key Vault secret to issue a new one.'))
             }
             elseif ($appId -and $PSCmdlet.ShouldProcess($reference, 'Create a client secret and store it in Key Vault')) {
@@ -971,7 +973,7 @@ function Get-AzlCicdVariablePlan {
         $plan.Add([pscustomobject]@{ Name = 'ARM_USE_OIDC'; Value = 'true'; Secret = $false; Sensitive = $false })
     }
     elseif ($IncludeSecretValue) {
-        $plan.Add([pscustomobject]@{ Name = 'ARM_CLIENT_SECRET'; Value = (Get-AzlKeyVaultSecretValue -Reference $Settings.Authentication.ClientSecretReference); Secret = $true; Sensitive = $true })
+        $plan.Add([pscustomobject]@{ Name = 'ARM_CLIENT_SECRET'; Value = (Get-AzlCicdSecretValue -Reference $Settings.Authentication.ClientSecretReference -Infrastructure $Settings.Infrastructure); Secret = $true; Sensitive = $true })
     }
     else {
         $plan.Add([pscustomobject]@{ Name = 'ARM_CLIENT_SECRET'; Value = $null; Secret = $true; Sensitive = $true })

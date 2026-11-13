@@ -612,7 +612,8 @@ function Add-AzlDomainJoinOuCheck {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidUsingConvertToSecureStringWithPlainText', '', Justification = 'The secret was just read from Key Vault; it is made a SecureString at once and only ever lives in memory.')]
     [CmdletBinding()]
-    param([Parameter(Mandatory)][object]$Spec, [Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][object]$State, [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref }, [switch]$Execute, [hashtable]$Latch)
+    param([Parameter(Mandatory)][object]$Spec, [Parameter(Mandatory)][object]$Transport, [Parameter(Mandatory)][object]$State, [scriptblock]$SecretResolver, [System.Collections.IDictionary]$Infrastructure, [switch]$Execute, [hashtable]$Latch)
+    if (-not $SecretResolver) { $SecretResolver = New-AzlSecretResolver -Infrastructure $Infrastructure }
     $dj = $Spec.DomainJoin
     $ds = Get-AzlProp $State 'domainJoin'
     if (-not $dj -or -not $dj.Applicable -or -not $ds) { return $State }
@@ -773,11 +774,12 @@ function Get-AzlDomainJoinLdapComputer {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][object]$Spec,
-        [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref },
+        [scriptblock]$SecretResolver, [System.Collections.IDictionary]$Infrastructure,
         [hashtable]$Latch,
         [scriptblock]$LdapQuery,
         [ValidateRange(1, 120)][int]$TimeoutSeconds = 15
     )
+    if (-not $SecretResolver) { $SecretResolver = New-AzlSecretResolver -Infrastructure $Infrastructure }
     $dj = Get-AzlProp $Spec 'DomainJoin'
     $name = [string](Get-AzlProp $Spec 'Name' '')
     $r = [pscustomobject]@{ checked = $false; found = $false; dn = ''; dnsHostName = ''; ou = ''; server = ''; count = 0; authFailed = $false; error = '' }
@@ -858,8 +860,9 @@ function Add-AzlDomainJoinLdapCheck {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][object]$Spec, [Parameter(Mandatory)][AllowNull()][object]$State,
-        [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref }, [hashtable]$Latch, [scriptblock]$LdapQuery, [object]$Cached
+        [scriptblock]$SecretResolver, [System.Collections.IDictionary]$Infrastructure, [hashtable]$Latch, [scriptblock]$LdapQuery, [object]$Cached
     )
+    if (-not $SecretResolver) { $SecretResolver = New-AzlSecretResolver -Infrastructure $Infrastructure }
     $dj = Get-AzlProp $Spec 'DomainJoin'
     $ds = Get-AzlProp $State 'domainJoin'
     if (-not $dj -or -not $dj.Applicable -or -not $ds) { return $null }
@@ -900,7 +903,7 @@ function Invoke-AzlDomainJoinStep {    <#
         [Parameter(Mandatory)][object]$Transport,
         [Parameter(Mandatory)][object]$State,
         [Parameter(Mandatory)][object]$Item,
-        [scriptblock]$SecretResolver = { param($Ref) Get-AzlSecret -Reference $Ref },
+        [scriptblock]$SecretResolver, [System.Collections.IDictionary]$Infrastructure,
         [switch]$NoRestart,
         [scriptblock]$WaitForRestart,
         [object]$WaitContext,
@@ -908,6 +911,7 @@ function Invoke-AzlDomainJoinStep {    <#
         [hashtable]$Latch,
         [scriptblock]$LdapQuery
     )
+    if (-not $SecretResolver) { $SecretResolver = New-AzlSecretResolver -Infrastructure $Infrastructure }
     $node = [string]$Spec.Name
     $dj = $Spec.DomainJoin
     $kind = [string]$Item.Apply.kind

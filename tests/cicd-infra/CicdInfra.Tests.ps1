@@ -178,13 +178,14 @@ Describe 'Task 01: bootstrap' {
     }
     Context 'client secret method' {
         It 'sends the secret to Key Vault from a file, never on a command line, and does not print it' {
+            # The existence check goes through the toolkit's secret resolver: the secret is not there yet.
+            Mock -ModuleName AzlCicdInfra Test-AzlSecretReference { $false }
             Start-Recording {
                 param($file, $a)
                 $line = $a -join ' '
                 switch -Regex ($line) {
                     '^ad app list' { New-Out '["11111111-1111-1111-1111-111111111111"]' }
                     '^ad sp show' { New-Out '22222222-2222-2222-2222-222222222222' }
-                    '^keyvault secret show' { New-Out '' 3 }
                     'credential reset' { New-Out 'SuperSecretValue-12345' }
                     '^role assignment list' { New-Out '["Contributor","User Access Administrator"]' }
                     '^feature show' { New-Out 'Registered' }
@@ -341,10 +342,9 @@ Describe 'Task 05: variables' {
         (Get-Calls 'variable set ARM_USE_OIDC').Count | Should -Be $s.Environments.Count
     }
     It 'GitHub with a client secret: the value goes through stdin and not on a command line' {
-        Start-Recording {
-            param($f, $a)
-            if (($a -join ' ') -match '^keyvault secret show') { New-Out 'TopSecretClientSecret' } else { New-Out '' }
-        }
+        # The client secret is read through the toolkit's secret resolver, not by a command of this module.
+        Mock -ModuleName AzlCicdInfra Get-AzlSecretPlainText { 'TopSecretClientSecret' }
+        Start-Recording { param($f, $a) New-Out '' }
         $s = Get-Settings -Change { param($d) $d.devops.authentication.method = 'client_secret'; $d.devops.authentication.client_secret = 'keyvault://kv-iic-mgmt-01/automation-spn-secret' }
         Set-AzlCicdVariable -Settings $s -ClientId '33333333-3333-3333-3333-333333333333' -Confirm:$false | Out-Null
         $set = Get-Calls 'secret set ARM_CLIENT_SECRET'

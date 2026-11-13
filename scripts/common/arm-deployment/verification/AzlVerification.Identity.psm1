@@ -29,7 +29,7 @@
       Dns.Resolve      { param($Name, $Server) } -> Ok (the server answered), Addresses, Error. $null when this host has no DNS client.
       Remote.Invoke    { param($Request) } -> Ok, Address, Result, Error, AuthFailed. Request: Node, Addresses, Credential, ScriptBlock,
                        ArgumentList, UseSsl, Authentication. One read only WinRM call as the dedicated local administrator.
-      KeyVault.GetSecret  { param($Reference) } -> the secret value (kept in memory only).
+      KeyVault.GetSecret  { param($Reference, $Infrastructure) } -> the secret value (kept in memory only). Default: the toolkit's secret resolver.
       Clock.Now        { } -> [datetime]
 
     Harvested from the azl-toolkit scripts (03-onprem-readiness/phase-01-active-directory Test-ADConfiguration.ps1 and Invoke-ADValidation-Arc.ps1,
@@ -243,14 +243,14 @@ function Test-VfIdPassword {
 }
 
 function Get-VfIdSecret {
-    # A secret from Key Vault, read once per run and kept in memory. The value is registered for scrubbing.
+    # A secret read by the secret resolver, once per run and kept in memory. The value is registered for scrubbing.
     param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)][string]$Reference)
     $cache = Get-VfIdCache $Context
     $key = "Secret:$Reference"
     if (-not $cache.ContainsKey($key)) {
         $get = Get-VfIdAdapter $Context 'KeyVault' 'GetSecret'
-        try { $plain = [string](& $get $Reference) }
-        catch { Stop-VfIdSkip "The secret $Reference could not be read from Key Vault: $(Protect-VfIdText $Context $_.Exception.Message)" 'Sign in to Azure with a principal that can read the secret (Connect-AzAccount) and run the verification again.' }
+        try { $plain = [string](& $get $Reference (Get-VfIdInfra $Context)) }
+        catch { Stop-VfIdSkip "The secret $Reference could not be read: $(Protect-VfIdText $Context $_.Exception.Message)" 'Sign in to Azure with a principal that can read the secret (Connect-AzAccount) and run the verification again.' }
         Register-VfIdSecret $Context $plain
         $cache[$key] = $plain
     }
@@ -1172,7 +1172,7 @@ function Get-AzlVerificationAdapterDefault {
                 [pscustomobject]@{ Ok = $false; Address = ''; Result = $null; Error = $last; AuthFailed = $auth }
             }
         }
-        KeyVault = @{ GetSecret = { param($Reference) Get-AzlSecret -Reference $Reference } }
+        KeyVault = @{ GetSecret = { param($Reference, $Infrastructure) Get-AzlSecret -Reference $Reference -Infrastructure $Infrastructure } }
         Clock    = @{ Now = { Get-Date } }
     }
 }

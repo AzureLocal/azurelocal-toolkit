@@ -94,6 +94,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 
 #region HELPERS
 
@@ -154,41 +155,25 @@ function Resolve-ConfigPath {
 }
 
 function Resolve-KeyVaultRef {
+    # Reads a secret reference through the toolkit's one secret resolver (AzlSecret.psm1): any provider, no Azure CLI.
+    # Returns a SecureString, or $null when it cannot be read. No value is logged.
     param([string]$Uri, [string]$Label = "secret")
 
-    if ($Uri -notmatch '^keyvault://([^/]+)/(.+)$') {
-        Write-Log "Not a Key Vault URI: $Uri" "WARN"
+    if (-not (Get-AzlSecretProvider -Reference $Uri)) {
+        Write-Log "The value for $Label is not a secret reference" "WARN"
         return $null
     }
 
-    $vaultName  = $Matches[1]
-    $secretName = $Matches[2]
-
-    # Try Az.KeyVault module
     try {
-        $secret = Get-AzKeyVaultSecret -VaultName $vaultName -Name $secretName -ErrorAction Stop
-        Write-Log "Resolved $Label from Key Vault ($vaultName/$secretName) via Az.KeyVault" "SUCCESS"
-        return $secret.SecretValue
+        $secure = Get-AzlSecretValue -Reference $Uri -Infrastructure $script:SecretInfrastructure
+        Write-Log "Resolved $Label through the secret resolver" "SUCCESS"
+        return $secure
     }
     catch {
-        Write-Log "Az.KeyVault failed for $Label, trying az CLI..." "WARN"
+        Write-Log "Could not resolve ${Label}: $($_.Exception.Message)" "WARN"
+        return $null
     }
-
-    # Fallback: az CLI
-    try {
-        $value = az keyvault secret show --vault-name $vaultName --name $secretName --query value -o tsv 2>$null
-        if ($LASTEXITCODE -eq 0 -and $value) {
-            $secure = ConvertTo-SecureString $value -AsPlainText -Force
-            Write-Log "Resolved $Label from Key Vault ($vaultName/$secretName) via az CLI" "SUCCESS"
-            return $secure
-        }
-    }
-    catch { }
-
-    Write-Log "Could not resolve $Label from Key Vault ($vaultName/$secretName)" "WARN"
-    return $null
 }
-
 function Get-ClusterConfig {
     param([hashtable]$Yaml)
 
@@ -234,6 +219,7 @@ if (-not (Get-Module -ListAvailable -Name powershell-yaml)) {
 }
 Import-Module powershell-yaml -ErrorAction Stop
 $yaml = Get-Content -Path $configFile -Raw | ConvertFrom-Yaml
+$script:SecretInfrastructure = $yaml
 
 # --- Resolve values (parameter override > YAML) ---
 $domainFqdn = if ($DomainFqdn -ne "") { $DomainFqdn }
@@ -268,13 +254,13 @@ if (-not $Credential) {
     $kvPassword = $yaml.identity.local_admin.password          # identity.local_admin.password
 
     $securePwd = $null
-    if ($kvPassword -match '^keyvault://') {
+    if ($kvPassword -and (Get-AzlSecretProvider -Reference $kvPassword)) {
         $securePwd = Resolve-KeyVaultRef -Uri $kvPassword -Label "local admin password"
     }
 
     if ($securePwd) {
         $Credential = New-Object PSCredential($kvUsername, $securePwd)
-        Write-Log "Credential resolved from Key Vault for: $kvUsername" "SUCCESS"
+        Write-Log "Credential resolved from the secret reference for: $kvUsername" "SUCCESS"
     }
     else {
         Write-Log "Key Vault unavailable — prompting for credentials" "WARN"
