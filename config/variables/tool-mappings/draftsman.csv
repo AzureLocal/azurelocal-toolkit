@@ -1,0 +1,8 @@
+"tool","kind","group","name","registry_path","read_at"
+"draftsman","env_vars","vite.config.ts","VITE_BASE","tools.draftsman.env_vars.vite_config_ts.VITE_BASE","vite.config.ts:11"
+"draftsman","url_parameters","src/lib/urlParams.ts","view","tools.draftsman.url_parameters.src_lib_urlParams_ts.view","src/lib/urlParams.ts:68"
+"draftsman","url_parameters","src/lib/urlParams.ts","wizard","tools.draftsman.url_parameters.src_lib_urlParams_ts.wizard","src/lib/urlParams.ts:69"
+"draftsman","url_parameters","src/lib/urlParams.ts","scenario","tools.draftsman.url_parameters.src_lib_urlParams_ts.scenario","src/lib/urlParams.ts:70"
+"draftsman","url_parameters","src/lib/urlParams.ts","config","tools.draftsman.url_parameters.src_lib_urlParams_ts.config","src/lib/urlParams.ts:71"
+"draftsman","url_parameters","src/lib/urlParams.ts","sources","tools.draftsman.url_parameters.src_lib_urlParams_ts.sources","src/lib/urlParams.ts:72"
+"draftsman","url_parameters","src/lib/urlParams.ts","types","tools.draftsman.url_parameters.src_lib_urlParams_ts.types","src/lib/urlParams.ts:73"

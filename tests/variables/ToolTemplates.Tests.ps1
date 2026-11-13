@@ -107,6 +107,14 @@ Describe 'The list of tools' {
         [string]$script:Catalog[$_]['note'] | Should -Match 'no key'
     }
 
+    It 'every section under tools: of the registry is the tools_section of a tool of the catalog (a tool whose settings are only its own has no template)' {
+        $named = @($script:AllTools | Where-Object { $script:Catalog[$_].Contains('tools_section') } | ForEach-Object { [string]$script:Catalog[$_]['tools_section'] })
+        $orphans = @($script:Registry['tools']['properties'].Keys | Where-Object { $_ -notin $named })
+        $orphans | Should -BeNullOrEmpty -Because "add the tool to _tool_catalog with tools_section: $($orphans -join ', ')"
+        foreach ($id in 'ranger', 'loadtools', 'draftsman') { $script:Catalog[$id]['tools_section'] | Should -Be $id }
+        # loadtools and draftsman read no key of infrastructure.yml: they keep their settings in tools.<tool> and have no template
+        foreach ($id in 'loadtools', 'draftsman') { $id | Should -BeIn $script:ToolsWithoutKeys }
+    }
     It 'the tools_section of a tool is a section under tools: of the registry' {
         $sections = @($script:Registry['tools']['properties'].Keys)
         foreach ($id in $script:AllTools) {
@@ -130,7 +138,7 @@ Describe 'The template of a tool holds exactly the keys the registry gives the t
         $missing | Should -BeNullOrEmpty -Because "used_by names $id but the template lacks: $($missing -join ', ')"
 
         $extra = @(Get-ExtraKey $template $tagged)
-        $extra | Should -BeNullOrEmpty -Because "the template of $id holds keys whose used_by does not name $id: $($extra -join ', ')"
+        $extra | Should -BeNullOrEmpty -Because "the template of $id holds keys whose used_by does not name ${id}: $($extra -join ', ')"
     }
 
     It 'a template that holds a key of another tool is found (the check itself works)' {

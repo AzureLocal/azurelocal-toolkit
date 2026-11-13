@@ -292,6 +292,7 @@ function Get-VariableMapData {
             switch -Regex ($toolKind) {
                 '^(parameters|run_settings|guard_settings|config_keys)$' { $provided.Add('operator (command line or config file)') }
                 '^env_vars$' { $provided.Add('operator (environment)') }
+                '^url_parameters$' { $provided.Add('operator (query string of the link)') }
                 '^secret_names$' { $provided.Add('Key Vault secret') }
                 '^(event_fields|report_fields|state_fields|handoff_fields)$' { $provided.Add("tool output ($ownerTool)") }
                 default { $provided.Add('operator (pipeline or Terraform input)') }

@@ -18,7 +18,7 @@ BeforeAll {
 }
 
 Describe 'The tools section of the registry' {
-    It 'holds variables for <_>' -ForEach 'os_configuration', 'ztp', 'sonar', 'arm_deployment', 'cicd_infra', 'discovery' {
+    It 'holds variables for <_>' -ForEach 'os_configuration', 'ztp', 'sonar', 'arm_deployment', 'cicd_infra', 'discovery', 'ranger', 'loadtools' {
         $tool = $_
                 @($script:Registry | Where-Object { $_.Path -match "^tools\.$tool\.[^.]+\.[^.]+\.[^.]+$" }).Count | Should -BeGreaterThan 10
     }
@@ -66,8 +66,8 @@ Describe 'Script parameters are registered' {
     }
 }
 
-Describe 'Tool mappings (ztp, sonar)' {
-    It '<_>.csv is current and names only registry paths' -ForEach 'ztp', 'sonar' {
+Describe 'Tool mappings (ztp, sonar, ranger, loadtools, draftsman)' {
+    It '<_>.csv is current and names only registry paths' -ForEach 'ztp', 'sonar', 'ranger', 'loadtools', 'draftsman' {
         $file = Join-Path $script:Repo "config\variables\tool-mappings\$_.csv"
         $file | Should -Exist
         $out = Join-Path $TestDrive 'maps'

@@ -26,7 +26,7 @@ config/variables/
     VARIABLES.md                  GENERATED: every key, type, required, default, example, who reads it
     VARIABLE-MAP.md               GENERATED: what variable goes where (by phase, tool, ARM parameter; who provides it, who reads it)
     variables-reference.metadata.psd1   where to get a value (facts the registry does not hold)
-  tool-mappings/                  names of ZTP and Sonar variables mapped to registry paths
+  tool-mappings/                  names of the variables of the other tools mapped to registry paths
   scripts/                        validators, the reader (VariableRegistry.psm1) and the generator
   reports/                        generated reports (variable-map.csv is the machine copy of the variable map)
 ```
@@ -73,10 +73,10 @@ Top-level `_schema_root` (header and the order of the sections), `_schema_defs` 
 
 ## Variables owned by tools (`tools:`)
 
-The registry also registers the variables each tool owns, apart from the keys of `infrastructure.yml`: `tools.<tool>.<kind>.<group>.<name>` for `os_configuration`, `ztp`, `sonar`, `arm_deployment`, `cicd_infra`, `discovery` and `ranger` (only the parameters that name the design file). Kinds: `parameters`, `run_settings`, `guard_settings`, `config_keys`, `event_fields`, `state_fields`, `handoff_fields`, `secret_names`, `env_vars`, `terraform_variables`, `pipeline_variables`, `pipeline_inputs`, `ansible_variables`. The group is the script, file or feed (its `area` says which); each entry has the real `name`, `type`, `default`, `enum`, `required`, `read_at` and `description`.
+The registry also registers the variables each tool owns, apart from the keys of `infrastructure.yml`: `tools.<tool>.<kind>.<group>.<name>` for `os_configuration`, `ztp`, `sonar`, `arm_deployment`, `cicd_infra`, `discovery`, `ranger`, `loadtools` and `draftsman` (see "The own settings of a tool" in [docs/infrastructure-file.md](docs/infrastructure-file.md)). Kinds: `parameters`, `run_settings`, `guard_settings`, `config_keys`, `event_fields`, `state_fields`, `handoff_fields`, `secret_names`, `env_vars`, `terraform_variables`, `pipeline_variables`, `pipeline_inputs`, `ansible_variables`. The group is the script, file or feed (its `area` says which); each entry has the real `name`, `type`, `default`, `enum`, `required`, `read_at` and `description`.
 
 - A script parameter that is not registered fails `tests/variables/ToolRegistry.Tests.ps1` (`Test-ToolParameterRegistration.ps1` reads the `param()` block).
-- ZTP and Sonar live in other repositories: [`tool-mappings/`](tool-mappings/README.md) maps their names to registry paths, and the same check runs on their checkouts with `AZL_CHECK_EXTERNAL_TOOLS=1`.
+- ZTP, Sonar, Ranger, Loadtools and Draftsman live in other repositories: [`tool-mappings/`](tool-mappings/README.md) maps their names to registry paths, and the same check runs on their checkouts with `AZL_CHECK_EXTERNAL_TOOLS=1`.
 - The discovery variables describe the Dell Redfish discovery branch; its scripts are checked once it is merged.
 
 ## The variable map

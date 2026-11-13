@@ -10,16 +10,16 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](diagrams/variable-flow.drawio) ([PNG](diagrams/variable-flow.png)).
 
-Registry version 5.0.41. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
+Registry version 5.0.42. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
 
 ## In numbers
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Keys of infrastructure.yml | 631 | 321 | 144 | 2 | 162 | 2 |
-| Owned by a tool (`tools.*`) | 2470 | 2463 | 0 | 0 | 7 | 0 |
+| Owned by a tool (`tools.*`) | 3252 | 3044 | 0 | 0 | 208 | 0 |
 | Older variables-file sections | 1441 | 39 | 470 | 0 | 926 | 6 |
-| All registry leaves | 4542 | 2823 | 614 | 2 | 1095 | 8 |
+| All registry leaves | 5324 | 3404 | 614 | 2 | 1296 | 8 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -775,10 +775,211 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `compute.clusters.azure_local.vm_switch_name` | `networking.logical_networks[].vm_switch_name` |  |
 | `nodes[].arc_resource_name` | (none named) | infrastructure-helpers; ztp |
 
-### Tool variables the tool documents and does not read yet (7)
+### Tool variables the tool documents and does not read yet (208)
 
 | Variable | Owner | Kind |
 | --- | --- | --- |
+| `tools.loadtools.config_keys.config_variables_variables_yml.cluster_name` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.cluster_domain` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.cluster_nodes` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.csv_path` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.collect_volume_path` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.base_vhd_path` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.vm_count_per_node` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.vm_vcpu_count` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.vm_memory_gb` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.vmfleet_admin_username` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.vmfleet_admin_password` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.warmup_seconds` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.cooldown_seconds` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.test_iterations` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.monitoring_enabled` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.sample_interval_seconds` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.push_to_azure_monitor` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.log_analytics_workspace_id` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.log_analytics_shared_key` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.report_formats` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.report_title` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.report_author` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.include_raw_data` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.credential_source` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.keyvault_name` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.log_level` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.log_retention_days` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_yml.log_max_file_size_mb` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.azure_tenant_id` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.keyvault_name` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.keyvault_auth_method` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.azure_local_cluster_name` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.azure_local_cluster_domain` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.azure_local_nodes_name` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.azure_local_nodes_management_ip` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.azure_local_nodes_storage_ip` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.azure_local_nodes_role` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.storage_csv_path` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.storage_collect_volume_path` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.storage_base_vhd_path` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.networking_management_subnet` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.networking_management_vlan_id` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.networking_storage_subnet` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.networking_storage_vlan_id` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.networking_storage_rdma_enabled` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.networking_compute_subnet` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.networking_compute_vlan_id` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.credentials_cluster_admin_username` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.credentials_cluster_admin_password` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.credentials_vmfleet_admin_username` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.credentials_vmfleet_admin_password` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.credentials_linux_ssh_username` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.credentials_linux_ssh_key_path` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.testing_default_tool` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.testing_default_profile` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.testing_duration_seconds` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.testing_warmup_seconds` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.vmfleet_version` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.vmfleet_diskspd_version` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.vmfleet_vm_count` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.vmfleet_vm_memory_gb` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.vmfleet_vm_processors` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.vmfleet_data_disk_size_gb` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.vmfleet_data_disk_count` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.vmfleet_block_size` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.vmfleet_write_ratio` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.vmfleet_random_ratio` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.vmfleet_outstanding_io` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.vmfleet_threads_per_vm` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.vmfleet_test_duration_seconds` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.vmfleet_warmup_seconds` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.hammerdb_db_server` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.hammerdb_db_type` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.hammerdb_db_name` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.hammerdb_warehouse_count` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.hammerdb_virtual_users` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.monitoring_log_analytics_workspace_id` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.monitoring_log_analytics_shared_key` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.monitoring_enable_real_time` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.monitoring_collection_interval_seconds` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.reporting_output_dir` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.reporting_format` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.reporting_include_charts` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.winrm_port` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.winrm_use_ssl` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.winrm_authentication` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.winrm_operation_timeout_seconds` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.tags_project` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.tags_environment` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.tags_workload` | loadtools | config_keys |
+| `tools.loadtools.config_keys.config_variables_variables_example_yml.tags_solution` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_config_profiles_yml.profile_expected_thresholds_min_iops` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_config_profiles_yml.profile_expected_thresholds_max_lat_p99_ms` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_config_profiles_yml.profile_expected_thresholds_max_lat_mean_ms` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_config_profiles_yml.profile_expected_thresholds_min_throughput_mbps` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_config_profiles_yml.profile_expected_thresholds_max_retransmits_per_pair` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_config_profiles_yml.profile_expected_thresholds_max_throughput_variance_percent` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_config_profiles_yml.profile_expected_thresholds_min_throughput_mbps` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_config_profiles_yml.profile_expected_thresholds_max_jitter_ms` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_config_profiles_yml.profile_expected_thresholds_max_packet_loss_percent` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_config_profiles_yml.profile_expected_thresholds_min_tpm` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_config_profiles_yml.profile_expected_thresholds_min_nopm` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_config_profiles_yml.profile_expected_thresholds_min_cpu_bogo_ops_per_sec` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_config_profiles_yml.profile_expected_thresholds_min_hdd_bogo_ops_per_sec` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_config_profiles_yml.profile_expected_thresholds_min_vm_bogo_ops_per_sec` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_config_profiles_yml.profile_opt_in` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_config_profiles_yml.profile_failure_injection_hold_seconds` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_config_profiles_yml.profile_failure_injection_default_fault` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_config_profiles_yml.profile_failure_injection_allowed_faults` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_config_profiles_yml.profile_failure_injection_inject_after_seconds` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_config_profiles_yml.profile_failure_injection_measure_windows` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_config_profiles_yml.profile_failure_injection_requires_flags` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_config_profiles_yml.profile_expected_thresholds_degraded_max_iops_drop_percent` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_monitoring_alerts_alert_rules_yml.alert_rules_name` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_monitoring_alerts_alert_rules_yml.alert_rules_category` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_monitoring_alerts_alert_rules_yml.alert_rules_counter` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_monitoring_alerts_alert_rules_yml.alert_rules_condition` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_monitoring_alerts_alert_rules_yml.alert_rules_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_monitoring_alerts_alert_rules_yml.alert_rules_severity` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_monitoring_alerts_alert_rules_yml.alert_rules_message` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_monitoring_alerts_alert_rules_yml.alert_rules_cooldown_seconds` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_monitoring_alerts_alert_rules_yml.metadata_version` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_monitoring_alerts_alert_rules_yml.metadata_description` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_monitoring_alerts_alert_rules_yml.rule_fio_high_disk_wait_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_monitoring_alerts_alert_rules_yml.rule_fio_high_disk_latency_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_monitoring_alerts_alert_rules_yml.rule_fio_high_disk_queue_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_monitoring_alerts_alert_rules_yml.rule_fio_high_cpu_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_monitoring_alerts_alert_rules_yml.rule_fio_high_iowait_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_monitoring_alerts_alert_rules_yml.rule_fio_low_memory_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_fio_monitoring_alerts_alert_rules_yml.rule_fio_network_saturation_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_monitoring_alerts_alert_rules_yml.alert_rules_name` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_monitoring_alerts_alert_rules_yml.alert_rules_category` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_monitoring_alerts_alert_rules_yml.alert_rules_counter` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_monitoring_alerts_alert_rules_yml.alert_rules_condition` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_monitoring_alerts_alert_rules_yml.alert_rules_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_monitoring_alerts_alert_rules_yml.alert_rules_severity` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_monitoring_alerts_alert_rules_yml.alert_rules_message` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_monitoring_alerts_alert_rules_yml.alert_rules_cooldown_seconds` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_monitoring_alerts_alert_rules_yml.metadata_version` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_monitoring_alerts_alert_rules_yml.metadata_description` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_monitoring_alerts_alert_rules_yml.rule_iperf_low_throughput_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_monitoring_alerts_alert_rules_yml.rule_iperf_interface_saturation_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_monitoring_alerts_alert_rules_yml.rule_iperf_high_retransmits_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_monitoring_alerts_alert_rules_yml.rule_iperf_high_cpu_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_monitoring_alerts_alert_rules_yml.rule_iperf_interrupt_load_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_iperf_monitoring_alerts_alert_rules_yml.rule_iperf_low_memory_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_monitoring_alerts_alert_rules_yml.alert_rules_name` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_monitoring_alerts_alert_rules_yml.alert_rules_category` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_monitoring_alerts_alert_rules_yml.alert_rules_counter` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_monitoring_alerts_alert_rules_yml.alert_rules_condition` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_monitoring_alerts_alert_rules_yml.alert_rules_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_monitoring_alerts_alert_rules_yml.alert_rules_severity` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_monitoring_alerts_alert_rules_yml.alert_rules_message` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_monitoring_alerts_alert_rules_yml.alert_rules_cooldown_seconds` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_monitoring_alerts_alert_rules_yml.metadata_version` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_monitoring_alerts_alert_rules_yml.metadata_description` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_monitoring_alerts_alert_rules_yml.rule_hammerdb_high_cpu_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_monitoring_alerts_alert_rules_yml.rule_hammerdb_high_cpu_critical_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_monitoring_alerts_alert_rules_yml.rule_hammerdb_low_memory_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_monitoring_alerts_alert_rules_yml.rule_hammerdb_critical_memory_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_monitoring_alerts_alert_rules_yml.rule_hammerdb_db_disk_latency_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_monitoring_alerts_alert_rules_yml.rule_hammerdb_log_disk_saturation_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_hammerdb_monitoring_alerts_alert_rules_yml.rule_hammerdb_network_high_latency_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_monitoring_alerts_alert_rules_yml.alert_rules_name` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_monitoring_alerts_alert_rules_yml.alert_rules_category` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_monitoring_alerts_alert_rules_yml.alert_rules_counter` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_monitoring_alerts_alert_rules_yml.alert_rules_condition` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_monitoring_alerts_alert_rules_yml.alert_rules_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_monitoring_alerts_alert_rules_yml.alert_rules_severity` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_monitoring_alerts_alert_rules_yml.alert_rules_message` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_monitoring_alerts_alert_rules_yml.alert_rules_cooldown_seconds` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_monitoring_alerts_alert_rules_yml.metadata_version` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_monitoring_alerts_alert_rules_yml.metadata_description` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_monitoring_alerts_alert_rules_yml.rule_stressng_cpu_throttling_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_monitoring_alerts_alert_rules_yml.rule_stressng_system_hang_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_monitoring_alerts_alert_rules_yml.rule_stressng_oom_risk_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_monitoring_alerts_alert_rules_yml.rule_stressng_high_pagefile_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_monitoring_alerts_alert_rules_yml.rule_stressng_disk_saturation_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_stress_ng_monitoring_alerts_alert_rules_yml.rule_stressng_disk_error_rate_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.alert_rules_name` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.alert_rules_category` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.alert_rules_counter` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.alert_rules_condition` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.alert_rules_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.alert_rules_severity` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.alert_rules_message` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.alert_rules_cooldown_seconds` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.metadata_version` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.metadata_description` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.rule_high_disk_latency_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.rule_critical_disk_latency_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.rule_high_disk_queue_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.rule_csv_write_latency_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.rule_high_cpu_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.rule_low_memory_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.rule_memory_pressure_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.rule_rdma_errors_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.rule_tcp_retransmits_threshold` | loadtools | config_keys |
+| `tools.loadtools.config_keys.tools_vmfleet_monitoring_alerts_alert_rules_yml.rule_high_network_queue_threshold` | loadtools | config_keys |
+| `tools.ranger.config_keys.Modules_Private_20_Config_ps1.output_diagramFormat` | ranger | config_keys |
+| `tools.ranger.config_keys.Modules_Private_20_Config_ps1.behavior_degradationMode` | ranger | config_keys |
 | `tools.ztp.config_keys.config_oem_vendor_json.displayName` | ztp | config_keys |
 | `tools.ztp.config_keys.config_oem_vendor_json.bmc_managerId` | ztp | config_keys |
 | `tools.ztp.config_keys.config_oem_vendor_json.bmc_systemId` | ztp | config_keys |
@@ -1593,6 +1794,12 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | discovery | env_vars | 1 | 1 | 0 |
 | discovery | parameters | 70 | 70 | 0 |
 | discovery | secret_names | 2 | 2 | 0 |
+| draftsman | env_vars | 1 | 1 | 0 |
+| draftsman | url_parameters | 6 | 6 | 0 |
+| loadtools | ansible_variables | 10 | 10 | 0 |
+| loadtools | config_keys | 301 | 102 | 199 |
+| loadtools | parameters | 253 | 253 | 0 |
+| loadtools | pipeline_inputs | 3 | 3 | 0 |
 | os_configuration | config_keys | 83 | 83 | 0 |
 | os_configuration | env_vars | 1 | 1 | 0 |
 | os_configuration | event_fields | 83 | 83 | 0 |
@@ -1600,7 +1807,9 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | os_configuration | parameters | 49 | 49 | 0 |
 | os_configuration | run_settings | 27 | 27 | 0 |
 | os_configuration | secret_names | 10 | 10 | 0 |
-| ranger | parameters | 4 | 4 | 0 |
+| ranger | config_keys | 97 | 95 | 2 |
+| ranger | env_vars | 2 | 2 | 0 |
+| ranger | parameters | 113 | 113 | 0 |
 | sonar | config_keys | 60 | 60 | 0 |
 | sonar | env_vars | 3 | 3 | 0 |
 | sonar | event_fields | 114 | 114 | 0 |

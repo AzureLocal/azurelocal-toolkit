@@ -49,6 +49,24 @@ The registry is the only master. From it the generator writes **one master file*
 
 The key counts are the keys below the file's own `_metadata` section, which every template keeps. [azurelocal-loadtools](https://github.com/AzureLocal/azurelocal-loadtools), [azurelocal-surveyor](https://github.com/AzureLocal/azurelocal-surveyor) and [azurelocal-draftsman](https://github.com/AzureLocal/azurelocal-draftsman) read no key of `infrastructure.yml`, so they have no template; their entries in `_tool_catalog` give the evidence. `ztp` is azurelocal-ztp and `monitoring` is azurelocal-sonar: the toolkit has no stage of its own for either. A test (`tests/variables/ToolTemplates.Tests.ps1`) fails when a template holds a key whose `used_by` does not name its tool, misses one that does, or when `used_by` names something that is not in `_tool_catalog`.
 
+## The own settings of a tool
+
+The keys above are facts of the environment. A tool also has settings of its own: a key in its configuration file, a command parameter, an environment variable, a link parameter. They are registered too, in the same registry, under `tools.<tool>.<kind>.<group>.<name>` (the `tools_section` of the tool in `_tool_catalog`). The group is the file or command that defines the settings; its `area` says which. A tool whose settings are all of this kind, and that reads no key of `infrastructure.yml`, has no template.
+
+| Tool | Registry section | What is registered |
+| --- | --- | --- |
+| [azurelocal-ranger](https://github.com/AzureLocal/azurelocal-ranger) | `tools.ranger` | The configuration keys (`Get-RangerDefaultConfig`, publishing, credentials, hints), the WAF rule tunables, the parameters of every exported command, two environment variables |
+| [azurelocal-loadtools](https://github.com/AzureLocal/azurelocal-loadtools) | `tools.loadtools` | `variables.yml`, the solution JSON keys the scripts read, the per-cluster file, `keyvault-config.yml`, `variables.example.yml`, the workload profiles, the test thresholds in `alert-rules.yml`, the script parameters, the pipeline inputs, the Bicep parameters, the Ansible inventory variables |
+| [azurelocal-sonar](https://github.com/AzureLocal/azurelocal-sonar) | `tools.sonar` | Its configuration file keys, command parameters, events and environment variables |
+| [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | `tools.ztp` | Script parameters, configuration keys, handoff and state fields, environment variables |
+| [azurelocal-draftsman](https://github.com/AzureLocal/azurelocal-draftsman) | `tools.draftsman` | The URL parameters of the page and `VITE_BASE` |
+| [azurelocal-surveyor](https://github.com/AzureLocal/azurelocal-surveyor) | none | It has no setting outside its page |
+
+An entry has the name as the tool writes it, `type`, the tool's own `default`, `enum` where the code fixes the values, `required`, `read_at` (the file and line, or "not read by code" for a setting that is only documented) and a one-line description. The test thresholds in the load tool's `alert-rules.yml` are the load tool's own limits for a test run, not Azure Monitor alert rules.
+
+**Same fact as an infrastructure key.** When a setting of a tool is the same fact as a key of `infrastructure.yml` (a cluster name, a subscription ID, a node name, a Key Vault name), the entry has `source_key` with that path, for example `azure.subscription_id` or `nodes[].name`. The fact is defined once, in the key; the entry only marks a place where the tool asks again instead of reading the master file. A value that is derived from a key (an FQDN, a workspace ID) has no `source_key`; its description names the key.
+
+**Checks.** [`tests/variables/ToolSettings.Tests.ps1`](../../../tests/variables/ToolSettings.Tests.ps1) compares the registered settings of each tool with its source: a setting in the tool that is not registered fails, and so does a registered one that the tool no longer has. It also checks that every `source_key` is a key of the master file. The comparison needs the repository of the tool (`D:\git\azurelocal\azurelocal-<tool>`, or `AZL_<TOOL>_REPO`); without it the test is skipped with a message. [`tool-mappings/`](../tool-mappings/README.md) lists the names of each tool with their registry paths.
 Two templates come from the same schema. Pick by what runs after the OS is installed.
 
 | Template | `_metadata.scope` | Use it when | What it holds |
