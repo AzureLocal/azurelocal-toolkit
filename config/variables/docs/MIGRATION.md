@@ -381,6 +381,15 @@ New rules AZL-060 to AZL-068 (see README). **Steps for a 5.5 file:** set `_metad
 - **5.6.2: adapters are identified by hardware facts.** `nodes[].network_adapters[].mac_address` is now required. New optional keys: `port_index`, `pci_location` (`bus`, `device`, `function`), `vendor` (written by hardware discovery), `allowed_vlans` (the VLANs the switch port allows) and `os_name_override`. **Steps:** a file whose ports lack the MAC: run `Invoke-HardwareDiscovery.ps1 -UpdateInfrastructure` or add the MAC. Nothing else changes: without `os_name_override` no adapter is renamed and the deployment sends the name the node reports for the MAC. To get one name everywhere, add `os_name_override` per used port and run the OS configuration (step `NicNames`).
 - **5.6.3** adds `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`. Nothing is required. A logical network uses `gateway` and `ip_pool`; the 4.0 names `default_gateway` and `ip_pools` belong to the deprecated `networking.onprem.logical_networks[]`.
 
+## To 5.6.9: storage volumes and storage paths
+
+Schema 5.6.9 adds optional storage keys. Nothing is required: a 5.6.8 file is valid as it is.
+
+- `storage.volumes[]` is now read: `New-StorageVolume.ps1` creates each volume that does not exist yet. New optional keys per volume: `provisioning_type`, `file_system`, `parity_percent`, `media_type` and `deduplication` (`type`, `schedule`). `resiliency` gains `mirror_accelerated_parity` and `nested_mirror_accelerated_parity`.
+- `storage.pool.name`, `storage.pool.thin_provisioning_alert_threshold_percent` and `storage.csv.read_cache_size_mib`: a setting you leave out is not touched.
+- `storage.paths[]` (`name`, `path`): `New-StoragePath.ps1` creates each storage path that does not exist yet.
+
+A file that still has `compute.cluster_shared_volumes` (never a registered key): move each volume to `storage.volumes[]` (`volume_name` becomes `name`, `size_gb` becomes `size_gib`, `filesystem` becomes `file_system` in lower case, `resiliency` Mirror or Parity becomes one of the listed values) and each storage path to `storage.paths[]`. The scripts that read the old block are removed.
 ## To 5.6.8: the security contact of Defender for Cloud
 
 Schema 5.6.8 adds the optional key `security.defender_for_cloud.security_contact_email`. Nothing is required: a 5.6.7 file is valid as it is. `Enable-DefenderForCloud.ps1` sets the address as the security contact of the subscription when the subscription has none; it never replaces a contact that exists. The contact is free.

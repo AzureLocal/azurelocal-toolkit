@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for infrastructure.yml for scenario.outbound_path = proxy with every variable. Schema 5.6.8. Scenario: outbound_path=proxy.
+# Template for infrastructure.yml for scenario.outbound_path = proxy with every variable. Schema 5.6.9. Scenario: outbound_path=proxy.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -934,17 +934,72 @@ storage:
   # ARM configurationMode: express (Express), infra_only (InfraOnly) or keep_storage (KeepStorage).
   # one of: express | infra_only | keep_storage; used by: deployment
   configuration_mode: "express"
-  # The cluster shared volumes to create after deployment.
+  # (since 5.6.9) 
+  # used by: deployment
+  pool:
+    # Name of the storage pool the volumes are created in.
+    # used by: deployment
+    name: "SU1_Pool"
+    # Share of the pool, in percent, at which Azure Local raises the thin provisioning alert (Set-StoragePool -ThinProvisioningAlertThresholds).
+    # used by: deployment
+    thin_provisioning_alert_threshold_percent: 70
+  # (since 5.6.9) 
+  # used by: deployment
+  csv:
+    # Memory per machine, in MiB, for the CSV in-memory read cache (the cluster property BlockCacheSize).
+    # used by: deployment
+    read_cache_size_mib: 1024
+  # The Storage Spaces Direct volumes to create after deployment, in addition to what the deployment itself creates (storage.configuration_mode...
+  # used by: deployment
   volumes:
     # Name of the volume, for example vol-workloads-01.
-    # required
+    # required; used by: deployment
     - name: "vol-workloads-01"
-      # Size of the volume in GiB.
-      # required
+      # Size of the volume in GiB (binary units, as Windows counts).
+      # required; used by: deployment
       size_gib: 4096
-      # Resiliency of the volume: two_way, three_way, four_way, parity or nested_two_way.
-      # one of: two_way | three_way | four_way | parity | nested_two_way
+      # Resiliency of the volume. two_way, three_way and parity (dual parity, 4 or more machines) are the usual ones; four_way is for a rack aware...
+      # one of: two_way | three_way | four_way | parity | nested_two_way | mirror_accelerated_parity | nested_mirror_accelerated_parity; used by: deployment
       resiliency: "two_way"
+      # (since 5.6.9) thin (space is taken from the pool as data is written) or fixed (all space is taken when the volume is created).
+      # one of: thin | fixed; used by: deployment
+      provisioning_type: "thin"
+      # (since 5.6.9) refs (the default; Microsoft recommends it for all volumes, and mirror-accelerated parity and ReFS deduplication need it) or...
+      # one of: refs | ntfs; default: "refs"; used by: deployment
+      file_system: "refs"
+      # (since 5.6.9) 
+      # default: 80; used by: deployment
+      parity_percent: 80
+      # (since 5.6.9) ssd or hdd: the capacity drives the volume goes on, when the machines have both kinds.
+      # one of: ssd | hdd; used by: deployment
+      media_type: "ssd"
+      # (since 5.6.9) 
+      # used by: deployment
+      deduplication:
+        # none (the default: the script does not touch deduplication), dedup, compress or dedup_and_compress (Enable-ReFSDedup -Type).
+        # one of: none | dedup | compress | dedup_and_compress; default: "none"; used by: deployment
+        type: "none"
+        # When the deduplication job runs (Set-ReFSDedupSchedule).
+        # used by: deployment
+        schedule:
+          # Time of day the job starts, as HH:mm in the time of the machines, for example 22:00.
+          # used by: deployment
+          start_time: "22:00"
+          # The days the job runs: Sunday to Saturday, or EveryDay.
+          # used by: deployment
+          days: ["Friday", "Saturday"]
+          # The longest one run may take, in hours.
+          # used by: deployment
+          duration_hours: 4
+  # (since 5.6.9) 
+  # used by: deployment
+  paths:
+    # Name of the storage path resource: 3 to 64 letters, digits or hyphens.
+    # required; used by: deployment
+    - name: "sp-workloads-01"
+      # The folder on a cluster shared volume, for example C:\ClusterStorage\vol-workloads-01\vms for a volume of storage.volumes, or the folder of...
+      # required; used by: deployment
+      path: "C:\\ClusterStorage\\vol-workloads-01\\vms"
   # The external SAN of a disaggregated (san) or hybrid deployment.
   # when scenario.storage_architecture is san or hybrid; used by: os_configuration, deployment
   san:

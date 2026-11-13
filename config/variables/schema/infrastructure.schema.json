@@ -16,7 +16,7 @@
       "additionalProperties": false,
       "properties": {
         "schema_version": {
-          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. The current version is 5.6.8.",
+          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. The current version is 5.6.9.",
           "type": "string",
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
@@ -2166,37 +2166,176 @@
             "keep_storage"
           ]
         },
+        "pool": {
+          "description": "Schema 5.6.9. The Storage Spaces Direct pool of the instance. Read by New-StorageVolume.ps1 (phase 06, task 05).",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "name": {
+              "description": "Name of the storage pool the volumes are created in. Leave it out: the script then uses the one Storage Spaces Direct pool the cluster has (an Azure Local deployment names it SU1_Pool). Needed only when the cluster has more than one pool.",
+              "type": "string"
+            },
+            "thin_provisioning_alert_threshold_percent": {
+              "description": "Share of the pool, in percent, at which Azure Local raises the thin provisioning alert (Set-StoragePool -ThinProvisioningAlertThresholds). Microsoft's default is 70 and Microsoft recommends keeping it. Leave it out and the script does not touch the setting.",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        },
+        "csv": {
+          "description": "Schema 5.6.9. Cluster shared volume settings of the instance. Read by New-StorageVolume.ps1 (phase 06, task 05).",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "read_cache_size_mib": {
+              "description": "Memory per machine, in MiB, for the CSV in-memory read cache (the cluster property BlockCacheSize). Azure Local has it on with 1024 by default; 0 switches it off; up to 80 percent of the memory of a machine can be used. Leave it out and the script does not touch the setting. A change takes effect when the volumes next move or come online.",
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
         "volumes": {
-          "description": "The cluster shared volumes to create after deployment. Not read by the tools yet.",
+          "description": "The Storage Spaces Direct volumes to create after deployment, in addition to what the deployment itself creates (storage.configuration_mode). New-StorageVolume.ps1 (phase 06, task 05) creates each one that does not exist yet with New-Volume and never changes or removes one that exists. Not used with scenario.storage_architecture san.",
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
             "properties": {
               "name": {
-                "description": "Name of the volume, for example vol-workloads-01.",
+                "description": "Name of the volume, for example vol-workloads-01. It becomes the folder C:\\ClusterStorage\\<name>. Not a name the deployment manages (UserStorage_<n>, Infrastructure_<n>).",
                 "type": "string"
               },
               "size_gib": {
-                "description": "Size of the volume in GiB. Not read by the tools yet: a documented placeholder.",
+                "description": "Size of the volume in GiB (binary units, as Windows counts).",
                 "type": "number",
                 "exclusiveMinimum": 0
               },
               "resiliency": {
-                "description": "Resiliency of the volume: two_way, three_way, four_way, parity or nested_two_way.",
+                "description": "Resiliency of the volume. two_way, three_way and parity (dual parity, 4 or more machines) are the usual ones; four_way is for a rack aware cluster; nested_two_way and nested_mirror_accelerated_parity are for a cluster of two machines; mirror_accelerated_parity needs 4 or more machines and ReFS (the two accelerated-parity values are new in 5.6.9). Leave it out and Storage Spaces Direct chooses: two-way mirror with one or two machines, three-way mirror with three or more.",
                 "type": "string",
                 "enum": [
                   "two_way",
                   "three_way",
                   "four_way",
                   "parity",
-                  "nested_two_way"
+                  "nested_two_way",
+                  "mirror_accelerated_parity",
+                  "nested_mirror_accelerated_parity"
                 ]
+              },
+              "provisioning_type": {
+                "description": "Schema 5.6.9. thin (space is taken from the pool as data is written) or fixed (all space is taken when the volume is created). Leave it out and the default of the pool applies. For a volume made of storage tiers (nested or accelerated parity) the script sets this on the tier templates of the pool for the creation, as Microsoft Learn describes, and puts the templates back afterwards.",
+                "type": "string",
+                "enum": [
+                  "thin",
+                  "fixed"
+                ]
+              },
+              "file_system": {
+                "description": "Schema 5.6.9. refs (the default; Microsoft recommends it for all volumes, and mirror-accelerated parity and ReFS deduplication need it) or ntfs.",
+                "type": "string",
+                "default": "refs",
+                "enum": [
+                  "refs",
+                  "ntfs"
+                ]
+              },
+              "parity_percent": {
+                "description": "Schema 5.6.9. Only for mirror_accelerated_parity and nested_mirror_accelerated_parity: the share of the volume, in percent, that is parity; the rest is mirror. The default is 80, the ratio Microsoft recommends for most workloads.",
+                "type": "integer",
+                "default": 80,
+                "minimum": 1,
+                "maximum": 99
+              },
+              "media_type": {
+                "description": "Schema 5.6.9. ssd or hdd: the capacity drives the volume goes on, when the machines have both kinds. NVMe counts as ssd. Leave it out on machines with one kind of capacity drive; for a volume made of storage tiers the script then takes it from hardware.drives.capacity.media.",
+                "type": "string",
+                "enum": [
+                  "ssd",
+                  "hdd"
+                ]
+              },
+              "deduplication": {
+                "description": "Schema 5.6.9. ReFS deduplication and compression of the volume. Off unless type says otherwise.",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "type": {
+                    "description": "none (the default: the script does not touch deduplication), dedup, compress or dedup_and_compress (Enable-ReFSDedup -Type). Needs file_system refs. The script turns it on for a volume that has it off and never changes or turns off what is already set.",
+                    "type": "string",
+                    "default": "none",
+                    "enum": [
+                      "none",
+                      "dedup",
+                      "compress",
+                      "dedup_and_compress"
+                    ]
+                  },
+                  "schedule": {
+                    "description": "When the deduplication job runs (Set-ReFSDedupSchedule). Give all three keys or leave the block out; without a schedule a job runs only when someone starts one.",
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                      "start_time": {
+                        "description": "Time of day the job starts, as HH:mm in the time of the machines, for example 22:00.",
+                        "type": "string",
+                        "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+                      },
+                      "days": {
+                        "description": "The days the job runs: Sunday to Saturday, or EveryDay.",
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "Sunday",
+                            "Monday",
+                            "Tuesday",
+                            "Wednesday",
+                            "Thursday",
+                            "Friday",
+                            "Saturday",
+                            "EveryDay"
+                          ]
+                        }
+                      },
+                      "duration_hours": {
+                        "description": "The longest one run may take, in hours.",
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 24
+                      }
+                    }
+                  }
+                }
               }
             },
             "required": [
               "name",
               "size_gib"
+            ]
+          }
+        },
+        "paths": {
+          "description": "Schema 5.6.9. The Azure Local storage paths to create after deployment: the Azure resources that say where on a cluster shared volume the virtual machine files, images and disks go. New-StoragePath.ps1 (phase 06, task 05) creates each one that does not exist yet in azure.resource_group, on azure.custom_location, with the file-level tags. The storage paths the deployment makes in Express mode are not listed here.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "description": "Name of the storage path resource: 3 to 64 letters, digits or hyphens. It cannot be renamed later.",
+                "type": "string",
+                "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{1,62}[A-Za-z0-9]$"
+              },
+              "path": {
+                "description": "The folder on a cluster shared volume, for example C:\\ClusterStorage\\vol-workloads-01\\vms for a volume of storage.volumes, or the folder of the cluster shared volume of a SAN LUN. Never on the infrastructure volume. It cannot be changed later.",
+                "type": "string"
+              }
+            },
+            "required": [
+              "name",
+              "path"
             ]
           }
         },

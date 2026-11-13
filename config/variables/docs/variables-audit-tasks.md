@@ -55,8 +55,8 @@ Orchestrators (run on the jump server or in a pipeline: must be 7):
 Task scripts that run on a node or on the jump server (decide per script; a node-side script copied to a machine without PowerShell 7 stays 5.1):
 
 - phase-03-os-configuration: `Enable-RDP.ps1`, `Set-StaticIPAddress.ps1`, `Disable-DHCPOnAllAdapters.ps1`, `Set-DnsServers.ps1`
-- phase-06-post-deployment: `Invoke-SSHConnectivity-Standalone.ps1`, `New-StorageCSV-Standalone.ps1`, `New-StoragePaths-Standalone.ps1`,
-  `Set-StorageVolumesConfig.ps1`, `New-MarketplaceImages-Standalone.ps1`, `New-LogicalNetworks-Standalone.ps1`, `Test-PostDeployment-Standalone.ps1`
+- phase-06-post-deployment: `Invoke-SSHConnectivity-Standalone.ps1`,
+  `New-MarketplaceImages-Standalone.ps1`, `New-LogicalNetworks-Standalone.ps1`, `Test-PostDeployment-Standalone.ps1`
 
 ## 5. Tool parameters that are not registered
 
