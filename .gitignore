@@ -3,6 +3,10 @@
 .terraform.lock.hcl
 *.tfstate
 *.tfstate.backup
+# Variable files that config/variables/scripts/New-IacVariableFiles.ps1 writes: they hold IDs and names
+terraform.tfvars.json
+not-written.txt
+src/ansible/inventory/host_vars/
 *.tfvars
 backend.hcl
 !*.tfvars.example

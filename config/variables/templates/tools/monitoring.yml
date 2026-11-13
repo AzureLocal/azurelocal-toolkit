@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that azurelocal-sonar ('monitoring') reads (a strict subset of the master file). Schema 5.6.16.
+# Template for the part of infrastructure.yml that azurelocal-sonar ('monitoring') reads (a strict subset of the master file). Schema 5.6.17.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -34,19 +34,19 @@ scenario:
 # The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
 azure:
   # Azure region, for example eastus.
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
   location: "eastus"
   # Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_i...
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
   subscription_id: "00000000-0000-0000-0000-000000000000"
   # Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses).
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
   resource_group: "rg-iic-azl-01"
 
 # The Azure Local instance (the cluster deployment).
 cluster:
   # Cluster name: a NetBIOS name of up to 15 characters.
-  # required; used by: os_configuration, deployment, monitoring, trailwright
+  # required; used by: os_configuration, deployment, monitoring, trailwright, ansible
   name: "iic-azl-01"
 
 # The machines, one entry each.
@@ -59,7 +59,7 @@ nodes:
     # used by: ztp, os_configuration
     management:
       # Management address.
-      # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
+      # required; used by: ztp, os_configuration, deployment, monitoring, trailwright, ansible
       ip_address: "192.0.2.11"
     # Every physical network port of the machine (schema 5.2): name, MAC, roles and how each gets its host address.
     # used by: ztp, os_configuration
@@ -89,16 +89,16 @@ identity:
   # when scenario.identity is active_directory
   active_directory:
     # Up to 15 letters, digits and hyphens.
-    # used by: os_configuration, deployment, monitoring
+    # used by: os_configuration, deployment, monitoring, ansible
     netbios_name: "IIC"
     # Optional override.
     # used by: os_configuration
     domain_join_account:
       # The join account: a name (svc-azl-join, qualified with netbios_name), NETBIOS\name or name@domain.
-      # required; used by: os_configuration, monitoring
+      # required; used by: os_configuration, monitoring, ansible
       username: "example"
       # A Key Vault secret reference.
-      # required; used by: os_configuration, monitoring
+      # required; used by: os_configuration, monitoring, ansible
       password: "keyvault://kv-example-01/password"
 
 # How the OS gets onto the machines (scenario.os_install), and the OS version.

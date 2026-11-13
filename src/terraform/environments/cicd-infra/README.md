@@ -7,17 +7,21 @@ Root module for task 06 of automation / 01-cicd-infra: the self-hosted runners, 
 | `runners_linux` | Linux | `general` | ARM, Arc, Terraform, Ansible, OS configuration |
 | `runners_ztp` | Windows | `ztp` | azurelocal-ztp Boot, Bootstrap, Vouchers (BMCs connect to it on TCP 445) |
 
-```powershell
-cd src/terraform/environments/cicd-infra
-Copy-Item terraform.tfvars.example ../../../../../cicd-terraform.tfvars   # edit; keep it outside the repository
-Copy-Item backend.hcl.example     ../../../../../cicd-backend.hcl        # edit
+The variables come from the `devops`, `azure`, `key_vaults`, `landing_zone` and `tags` sections of `infrastructure.yml`. Write them, and the backend settings, with the generator (it calls the function that task 06 uses, so the two are the same):
 
-terraform init -backend-config=../../../../../cicd-backend.hcl
+```powershell
+pwsh config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile ./infrastructure.yml -OutputDirectory D:\work\iac -Target CicdInfra
+Copy-Item terraform.tfvars.example D:\work\iac\extra.tfvars   # the settings the file has no key for; optional
+
+cd src/terraform/environments/cicd-infra
+terraform init -backend-config=D:\work\iac\terraform\cicd-infra\backend.hcl
 terraform validate
-terraform plan -var-file=../../../../../cicd-terraform.tfvars -out=cicd.tfplan
+terraform plan -var-file=D:\work\iac\terraform\cicd-infra\terraform.tfvars.json -out=cicd.tfplan
 # review the plan, then:
 terraform apply cicd.tfplan
 ```
+
+The public key of the Linux runners is not in the file. Pass it as `TF_VAR_admin_ssh_public_key` (the generator names it in `not-written.txt`).
 
 Offline check, no Azure sign-in: `terraform init -backend=false; terraform validate`.
 

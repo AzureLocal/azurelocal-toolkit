@@ -104,6 +104,7 @@ azure:
   automation_identity:
     type: managed_identity # managed_identity | service_principal
     name: "id-iic-cicd-01"
+    object_id: "00000000-0000-0000-0000-000000000000" # the principal the Terraform identity module assigns roles to
     subscription_id: "00000000-0000-0000-0000-000000000000"
     resource_group: "rg-iic-devops-01"
 
@@ -312,7 +313,7 @@ identity:
     # local_admin_members: ["sg-iic-azl-01-admins", "lcm-iic-azl-01"]
     domain_controllers: ["192.0.2.4", "192.0.2.5"]
     security_groups:
-      - { name: "sg-iic-azl-01-admins", purpose: "Administrators of the instance" }
+      - { name: "sg-iic-azl-01-admins", purpose: "Administrators of the instance", local_groups: ["Administrators"] }
     service_accounts:
       - { name: "svc-iic-azl-backup", purpose: "Backup agent", password: "keyvault://kv-iic-mgmt-01/svc-backup-password" }
   entra:
@@ -452,8 +453,14 @@ network_devices:
 # -----------------------------------------------------------------------------
 landing_zone:
   management_groups:
-    - { name: "mg-iic", display_name: "IIC" }
-    - { name: "mg-iic-platform", parent: "mg-iic" }
+    # role (5.6.17) names the group of the fixed hierarchy the Terraform landing zone module builds: it is read by New-IacVariableFiles.ps1 only.
+    - { name: "mg-iic", display_name: "IIC", role: root }
+    - { name: "mg-iic-platform", display_name: "IIC Platform", parent: "mg-iic", role: platform }
+    - { name: "mg-iic-identity", parent: "mg-iic-platform", role: identity }
+    - { name: "mg-iic-connectivity", parent: "mg-iic-platform", role: connectivity }
+    - { name: "mg-iic-management", parent: "mg-iic-platform", role: management }
+    - { name: "mg-iic-security", parent: "mg-iic-platform", role: security }
+    - { name: "mg-iic-landing-zones", display_name: "IIC Landing Zones", parent: "mg-iic", role: landing_zones }
   subscriptions:
     - { name: "sub-iic-connectivity", id: "00000000-0000-0000-0000-000000000000", role: connectivity, management_group: "mg-iic-platform" }
     - { name: "sub-iic-identity", id: "00000000-0000-0000-0000-000000000000", role: identity, management_group: "mg-iic-platform" }
@@ -476,6 +483,7 @@ landing_zone:
       subnets:
         - { name: "GatewaySubnet", prefix: "10.20.0.0/27" }
         - { name: "AzureBastionSubnet", prefix: "10.20.0.64/26" }
+        - { name: "snet-iic-hub-mgmt-01", prefix: "10.20.0.128/26" }
     - name: "vnet-iic-mgmt-01"
       subscription: "sub-iic-management"
       resource_group: "rg-iic-mgmt-01"
@@ -507,10 +515,11 @@ landing_zone:
       deploy_target: azure
       subscription: "sub-iic-management"
       resource_group: "rg-iic-mgmt-01"
-      network: "vnet-iic-mgmt-01"
-      subnet: "snet-iic-mgmt-01"
-      private_ip: "10.20.4.10"
+      network: "vnet-iic-hub-01"
+      subnet: "snet-iic-hub-mgmt-01"
+      private_ip: "10.20.0.134"
       size: "Standard_D2s_v5"
+      os: "2025-datacenter-azure-edition" # the Azure Marketplace image SKU, for a machine that Terraform deploys
       admin_username: "iic-vmadmin"
       admin_password: "keyvault://kv-iic-mgmt-01/vm-admin-password"
   log_analytics: { name: "log-iic-azl-01", resource_group: "rg-iic-mgmt-01", retention_days: 90 }

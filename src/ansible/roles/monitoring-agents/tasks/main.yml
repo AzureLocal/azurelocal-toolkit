@@ -2,7 +2,7 @@
 # Role: monitoring-agents
 # =============================================================================
 # Mirrors: scripts/deploy/05-operational-foundations/phase-02-monitoring/
-# Tasks: Azure Monitor Agent, Data Collection Rules, HCI Insights
+# Tasks: Azure Monitor Agent, HCI Insights (no data collection rule: the portal creates the one Insights uses)
 # Target: cluster_nodes group
 # Collections: ansible.windows, azure.azcollection
 # =============================================================================
@@ -39,48 +39,7 @@
   changed_when: "'installed' in ama_result.output[0]"
 
 # ---------------------------------------------------------------
-# Task 2 — Create Data Collection Rule
-# Mirrors: task-02 DCR creation
-# ---------------------------------------------------------------
-- name: Create Data Collection Rule for cluster monitoring
-  azure.azcollection.azure_rm_resource:
-    api_version: "2023-03-11"
-    resource_group: "{{ cluster_resource_group }}"
-    provider: "Insights"
-    resource_type: "dataCollectionRules"
-    resource_name: "dcr-{{ cluster_name }}-monitoring"
-    body:
-      location: "{{ azure_location }}"
-      properties:
-        dataSources:
-          performanceCounters:
-            - name: "performanceCounters"
-              streams:
-                - "Microsoft-Perf"
-              samplingFrequencyInSeconds: 60
-              counterSpecifiers: "{{ dcr_performance_counters | map(attribute='counter_specifier') | list }}"
-          windowsEventLogs:
-            - name: "windowsEventLogs"
-              streams:
-                - "Microsoft-Event"
-              xPathQueries: "{{ dcr_event_logs | map('regex_replace', '^(.*)$', '\\1!*[System[(Level=1 or Level=2 or Level=3)]]') | list }}"
-        destinations:
-          logAnalytics:
-            - name: "logAnalytics"
-              workspaceResourceId: "/subscriptions/{{ azure_subscription_azure_local }}/resourceGroups/{{ cluster_resource_group }}/providers/Microsoft.OperationalInsights/workspaces/{{ log_analytics_workspace_name }}"
-        dataFlows:
-          - streams:
-              - "Microsoft-Perf"
-              - "Microsoft-Event"
-            destinations:
-              - "logAnalytics"
-      tags:
-        environment: "{{ site_code | lower }}"
-        managed_by: "ansible"
-  run_once: true
-
-# ---------------------------------------------------------------
-# Task 3 — Enable HCI Insights
+# Task 2 — Enable HCI Insights
 # ---------------------------------------------------------------
 - name: Enable HCI Insights on cluster
   ansible.windows.win_powershell:

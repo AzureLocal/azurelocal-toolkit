@@ -17,8 +17,8 @@ variable "resource_group_name" {
   type        = string
 }
 
-variable "org_code" {
-  description = "Organization code for naming (e.g., iic)."
+variable "action_group_name" {
+  description = "Name of the Azure Monitor action group (operations.monitoring.action_group)."
   type        = string
 }
 
@@ -35,19 +35,7 @@ variable "retention_days" {
 }
 
 variable "alert_email_addresses" {
-  description = "Email addresses for critical alert notifications."
-  type        = list(string)
-  default     = []
-}
-
-variable "enable_cluster_alerts" {
-  description = "Whether to create Azure Local cluster health alerts."
-  type        = bool
-  default     = false
-}
-
-variable "alert_scopes" {
-  description = "Resource IDs to scope alerts to."
+  description = "Email addresses that receive the notifications of the action group."
   type        = list(string)
   default     = []
 }

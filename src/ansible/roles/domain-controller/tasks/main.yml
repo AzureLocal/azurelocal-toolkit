@@ -114,6 +114,6 @@
 - name: Configure DNS forwarders to Azure DNS
   ansible.windows.win_powershell:
     script: |
-      Set-DnsServerForwarder -IPAddress @('168.63.129.16') -UseRootHint $false
+      Set-DnsServerForwarder -IPAddress @('{{ azure_dns_forwarder_ip }}') -UseRootHint $false
       Write-Output "DNS forwarders configured"
   when: dc_install_dns

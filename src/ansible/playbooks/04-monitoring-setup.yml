@@ -20,7 +20,7 @@
           - azure_subscription_azure_local is defined
           - cluster_resource_group is defined
           - cluster_name is defined
-          - log_analytics_workspace_name is defined
+          - hci_insights_enabled is defined
         fail_msg: "Missing required monitoring variables — check group_vars/all.yml"
 
   roles:

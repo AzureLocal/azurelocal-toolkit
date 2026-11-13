@@ -38,7 +38,7 @@ resource "azurerm_subnet" "subnets" {
 }
 
 # -----------------------------------------------------------------------------
-# Network Security Groups — dynamically generated from variables.yml
+# Network Security Groups
 # -----------------------------------------------------------------------------
 resource "azurerm_network_security_group" "nsgs" {
   for_each = { for nsg in var.nsgs : nsg.name => nsg }
@@ -87,7 +87,8 @@ resource "azurerm_network_security_rule" "rules" {
 
 # NSG to Subnet Associations
 resource "azurerm_subnet_network_security_group_association" "associations" {
-  for_each = var.nsg_subnet_map
+  # A subnet whose NSG is not in var.nsgs gets no association: that NSG is made elsewhere (the PowerShell scripts, for example).
+  for_each = { for subnet_key, nsg_name in var.nsg_subnet_map : subnet_key => nsg_name if contains([for nsg in var.nsgs : nsg.name], nsg_name) }
 
   subnet_id                 = azurerm_subnet.subnets[each.key].id
   network_security_group_id = azurerm_network_security_group.nsgs[each.value].id
@@ -131,7 +132,7 @@ resource "azurerm_nat_gateway_public_ip_association" "main" {
 resource "azurerm_public_ip" "vpn" {
   count = var.enable_vpn_gateway ? 1 : 0
 
-  name                = var.vpn_config.public_ip_name
+  name                = coalesce(var.vpn_config.public_ip_name, "pip-${var.vpn_config.gateway_name}")
   location            = var.location
   resource_group_name = var.resource_group_name
   allocation_method   = "Static"
@@ -196,7 +197,7 @@ resource "azurerm_virtual_network_gateway_connection" "s2s" {
 resource "azurerm_public_ip" "bastion" {
   count = var.enable_bastion ? 1 : 0
 
-  name                = var.bastion_config.public_ip_name
+  name                = coalesce(var.bastion_config.public_ip_name, "pip-${var.bastion_config.name}")
   location            = var.location
   resource_group_name = var.resource_group_name
   allocation_method   = "Static"

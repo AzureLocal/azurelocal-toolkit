@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that azurelocal-trailwright ('trailwright') writes (a strict subset of the master file). Schema 5.6.16.
+# Template for the part of infrastructure.yml that azurelocal-trailwright ('trailwright') writes (a strict subset of the master file). Schema 5.6.17.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -43,7 +43,7 @@ scenario:
   # one of: public | government; used by: os_configuration, deployment, trailwright
   cloud: "public"
   # How the machines reach Azure.
-  # one of: direct | proxy | arc_gateway | proxy_arc_gateway | private_path; used by: os_configuration, trailwright
+  # one of: direct | proxy | arc_gateway | proxy_arc_gateway | private_path; used by: os_configuration, trailwright, ansible
   outbound_path: "direct"
   # iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp...
   # one of: iso | simplified; used by: ztp, os_configuration, monitoring, trailwright
@@ -61,7 +61,7 @@ site:
   # used by: ztp, trailwright
   time_zone: "Central Standard Time"
   # Short site code, 2 to 8 uppercase letters or digits.
-  # required; used by: ztp, trailwright
+  # required; used by: ztp, trailwright, terraform
   code: "RAL"
   # Display name of the site.
   # required; used by: ztp, trailwright
@@ -82,16 +82,16 @@ environment:
 # The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
 azure:
   # Microsoft Entra tenant ID (GUID) of the subscription.
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, trailwright
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, trailwright, ansible, terraform
   tenant_id: "00000000-0000-0000-0000-000000000000"
   # Azure region, for example eastus.
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
   location: "eastus"
   # Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_i...
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
   subscription_id: "00000000-0000-0000-0000-000000000000"
   # Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses).
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
   resource_group: "rg-iic-azl-01"
   # Object ID of the Azure Local resource provider's service principal (application 1412d89f-b8a8-4111-b4fd-e82905cbd85d) in the tenant.
   # used by: ztp, deployment, trailwright
@@ -104,13 +104,13 @@ azure:
 # used by: ztp, cicd_infra
 key_vaults:
   # Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens.
-  # required; used by: ztp, deployment, cicd_infra, trailwright
+  # required; used by: ztp, deployment, cicd_infra, trailwright, ansible, terraform
   - name: "kv-iic-mgmt-01"
     # Subscription (GUID) that holds the vault.
-    # required; used by: ztp, deployment, cicd_infra, trailwright
+    # required; used by: ztp, deployment, cicd_infra, trailwright, terraform
     subscription_id: "00000000-0000-0000-0000-000000000000"
     # Resource group that holds the vault.
-    # required; used by: ztp, deployment, cicd_infra, trailwright
+    # required; used by: ztp, deployment, cicd_infra, trailwright, terraform
     resource_group: "rg-iic-mgmt-01"
     # What the vault holds, for example management, deployment or backup.
     # used by: ztp, cicd_infra, trailwright
@@ -119,7 +119,7 @@ key_vaults:
 # The Azure Local instance (the cluster deployment).
 cluster:
   # Cluster name: a NetBIOS name of up to 15 characters.
-  # required; used by: os_configuration, deployment, monitoring, trailwright
+  # required; used by: os_configuration, deployment, monitoring, trailwright, ansible
   name: "iic-azl-01"
   # Prefix of the Azure resources the deployment creates.
   # used by: deployment, trailwright
@@ -140,7 +140,7 @@ cluster:
   # required; used by: deployment
   key_vault:
     # Name of the Key Vault the deployment creates for the cluster (ARM keyVaultName): 3 to 24 characters, letters, digits and hyphens, starting...
-    # required; used by: deployment, trailwright
+    # required; used by: deployment, trailwright, terraform
     name: "kv-iic-azl-01"
     # ARM createNewKeyVault.
     # used by: deployment, trailwright
@@ -178,7 +178,7 @@ nodes:
     # used by: ztp, os_configuration
     management:
       # Management address.
-      # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
+      # required; used by: ztp, os_configuration, deployment, monitoring, trailwright, ansible
       ip_address: "192.0.2.11"
       # MAC of the management port.
       # when scenario.os_install is simplified; used by: ztp, os_configuration, discovery, trailwright
@@ -292,16 +292,16 @@ networking:
   # required; used by: os_configuration
   management:
     # CIDR.
-    # required; used by: ztp, os_configuration, deployment, trailwright
+    # required; used by: ztp, os_configuration, deployment, trailwright, ansible
     subnet: "192.0.2.0/24"
     # The one default gateway.
-    # required; used by: ztp, os_configuration, deployment, trailwright
+    # required; used by: ztp, os_configuration, deployment, trailwright, ansible
     gateway: "192.0.2.1"
     # 0 means untagged.
-    # used by: ztp, os_configuration, trailwright
+    # used by: ztp, os_configuration, trailwright, ansible
     vlan_id: 0
     # ARM dnsServers.
-    # required; used by: ztp, os_configuration, deployment, trailwright
+    # required; used by: ztp, os_configuration, deployment, trailwright, ansible
     dns_servers: ["192.0.2.4", "192.0.2.5"]
     # ARM useDhcp: the deployment takes the host and cluster addresses from DHCP instead of static addresses and the infrastructure_pool.
     # used by: os_configuration, deployment, trailwright
@@ -454,13 +454,13 @@ networking:
     # when scenario.outbound_path is proxy or proxy_arc_gateway
     proxy:
       # URL of the proxy server, for example http://proxy.example.test:3128.
-      # required; used by: trailwright
+      # required; used by: trailwright, ansible
       url: ""
     # The Arc gateway resource, in the same subscription as the machines.
     # when scenario.outbound_path is arc_gateway or proxy_arc_gateway
     arc_gateway:
       # Name of the Azure Arc gateway resource (Azure public cloud only; not supported with simplified machine provisioning in the preview).
-      # required; used by: os_configuration, trailwright
+      # required; used by: os_configuration, trailwright, ansible
       name: ""
     # Outbound path over a private connection (ExpressRoute or site-to-site VPN) when scenario.outbound_path is private_path.
     # when scenario.outbound_path is private_path
@@ -517,19 +517,19 @@ identity:
   # when scenario.identity is active_directory
   active_directory:
     # ARM domainFqdn.
-    # required; used by: os_configuration, deployment, trailwright
+    # required; used by: os_configuration, deployment, trailwright, ansible
     domain_fqdn: "improbability.cloud"
     # Distinguished name of the dedicated OU.
-    # required; used by: os_configuration, deployment, trailwright
+    # required; used by: os_configuration, deployment, trailwright, ansible
     ou_path: "OU=iic-azl-01,OU=AzureLocal,DC=improbability,DC=cloud"
     # The LCM deployment user, created in the OU by the AD preparation module.
     # required; used by: deployment
     lcm_user:
       # Name only, no domain.
-      # required; used by: os_configuration, deployment, trailwright
+      # required; used by: os_configuration, deployment, trailwright, ansible
       username: "lcm-iic-azl-01"
       # At least 14 characters with lowercase, uppercase, a digit and a special character.
-      # required; used by: os_configuration, deployment, trailwright
+      # required; used by: os_configuration, deployment, trailwright, ansible
       password: "keyvault://kv-iic-mgmt-01/lcm-password"
 
 # Storage of the instance: the deployment's storage mode, the volumes, and the SAN of a disaggregated or hybrid deployment (the san block app...
@@ -646,13 +646,13 @@ operations:
   # Azure Monitor for the instance.
   monitoring:
     # true when Azure Monitor is part of the design.
-    # required; used by: trailwright
+    # required; used by: trailwright, ansible
     enabled: true
     # Name of the Log Analytics workspace.
-    # used by: trailwright
+    # used by: trailwright, terraform
     log_analytics_workspace: "log-iic-azl-01"
     # Resource group of the Log Analytics workspace.
-    # used by: trailwright
+    # used by: trailwright, terraform
     workspace_resource_group: "rg-iic-mgmt-01"
     # Name of the existing data collection rule that Insights for Azure Local uses.
     # used by: trailwright
@@ -661,7 +661,7 @@ operations:
     # used by: trailwright
     data_collection_endpoint: "dce-iic-azl-01"
     # Address that receives the alerts (a team mailbox).
-    # used by: trailwright
+    # used by: trailwright, terraform
     alert_email: ""
 
 # How the OS gets onto the machines (scenario.os_install), and the OS version.
@@ -786,8 +786,8 @@ landing_zone:
     # required; used by: cicd_infra, trailwright
     - name: "sub-iic-connectivity"
       # Subscription id (a GUID).
-      # used by: cicd_infra, trailwright
+      # used by: cicd_infra, trailwright, terraform
       id: "00000000-0000-0000-0000-000000000000"
       # What the subscription is for.
-      # required; one of: connectivity | identity | management | security | devops | workload | azure_local; used by: cicd_infra, trailwright
+      # required; one of: connectivity | identity | management | security | devops | workload | azure_local; used by: cicd_infra, trailwright, terraform
       role: "connectivity"

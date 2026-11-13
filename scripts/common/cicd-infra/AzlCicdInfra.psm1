@@ -1191,6 +1191,8 @@ function ConvertTo-AzlRunnerTerraformVariable {
         admin_ssh_public_key  = $AdminSshPublicKey
     }
     if ($hubSubscriptionId) { $variables.hub_subscription_id = $hubSubscriptionId }
+    # devops.runner_network.reachable_tcp_ports: the Terraform variable keeps its own default when the file sets none.
+    if (@(Get-AzlList (Get-AzlValue $net 'reachable_tcp_ports')).Count -gt 0) { $variables.reachable_tcp_ports = @(Get-AzlList (Get-AzlValue $net 'reachable_tcp_ports') | ForEach-Object { [string]$_ }) }
     if ($Settings.Platform -eq 'github') {
         if ($linux.Count -gt 0 -and $linux[0].Pool) { $variables.github_runner_group = $linux[0].Pool }
     }

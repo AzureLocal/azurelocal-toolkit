@@ -23,7 +23,7 @@
           - cluster_resource_group is defined
           - spn_client_id is defined
           - spn_client_secret is defined
-        fail_msg: "Missing required Arc registration variables — check group_vars/all.yml and vault"
+        fail_msg: "Missing required Arc registration variables: check group_vars/all.yml. spn_client_secret is never in a file: pass it with -e @vault.yml."
 
   roles:
     - role: arc-registration

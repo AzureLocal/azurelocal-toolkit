@@ -384,6 +384,16 @@ New rules AZL-060 to AZL-068 (see README). **Steps for a 5.5 file:** set `_metad
 - **5.6.2: adapters are identified by hardware facts.** `nodes[].network_adapters[].mac_address` is now required. New optional keys: `port_index`, `pci_location` (`bus`, `device`, `function`), `vendor` (written by hardware discovery), `allowed_vlans` (the VLANs the switch port allows) and `os_name_override`. **Steps:** a file whose ports lack the MAC: run `Invoke-HardwareDiscovery.ps1 -UpdateInfrastructure` or add the MAC. Nothing else changes: without `os_name_override` no adapter is renamed and the deployment sends the name the node reports for the MAC. To get one name everywhere, add `os_name_override` per used port and run the OS configuration (step `NicNames`).
 - **5.6.3** adds `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`. Nothing is required. A logical network uses `gateway` and `ip_pool`; the 4.0 names `default_gateway` and `ip_pools` belong to the deprecated `networking.onprem.logical_networks[]`.
 
+## To 5.6.17: the Terraform and Ansible variables come from the file
+
+Schema 5.6.17 adds two optional keys. A 5.6.16 file is valid as it is. You need them only when you use the Terraform route (`src/terraform/environments/azure-local`).
+
+- `landing_zone.management_groups[].role`: which group of the fixed hierarchy the Terraform landing zone module builds (`root`, `platform`, `identity`, `connectivity`, `management`, `security` or `landing_zones`). The generator takes the names from the groups that carry a role.
+- `azure.automation_identity.object_id`: the object ID of the identity's principal. The Terraform identity module assigns the roles of the deployment identity to it.
+- `landing_zone.virtual_machines[].os` is read as the Windows Server image SKU of the Azure Marketplace (for example `2025-datacenter-azure-edition`) for a machine that Terraform deploys.
+- The Terraform and Ansible code no longer has values of its own for these facts. `config/variables/scripts/New-IacVariableFiles.ps1` writes `terraform.tfvars.json` and `backend.hcl` for each Terraform environment, and `group_vars/all.yml` and `host_vars/<node>.yml` for Ansible, from your file. See [Terraform and Ansible variable files](infrastructure-file.md#terraform-and-ansible-variable-files-schema-5617).
+- Removed from the code, not from the file: the Terraform backend names built from `org_code` and `environment` (`devops.state` names them now), the cluster health alert rule of the Terraform monitoring module and the data collection rule of the Ansible monitoring-agents role (Azure Monitor work is the workspace, the data collection endpoint, the Azure Monitor Agent extension and the Azure Local Insights association), and the PowerShell functions `Export-TerraformTfvars` and `Export-AnsibleVars`, which wrote the whole old `variables.yml` to a file.
+
 ## To 5.6.16: SAN volumes, and keys that no tool reads
 
 Schema 5.6.16 adds one optional key and removes one. A 5.6.14 file is valid as it is, except that it must not carry `security.backup_key_vault`.

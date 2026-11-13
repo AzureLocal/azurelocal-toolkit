@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that Pre-cluster verification and ARM deployment ('deployment') reads (a strict subset of the master file). Schema 5.6.16.
+# Template for the part of infrastructure.yml that Pre-cluster verification and ARM deployment ('deployment') reads (a strict subset of the master file). Schema 5.6.17.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -46,16 +46,16 @@ scenario:
 # The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
 azure:
   # Microsoft Entra tenant ID (GUID) of the subscription.
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, trailwright
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, trailwright, ansible, terraform
   tenant_id: "00000000-0000-0000-0000-000000000000"
   # Azure region, for example eastus.
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
   location: "eastus"
   # Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_i...
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
   subscription_id: "00000000-0000-0000-0000-000000000000"
   # Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses).
-  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright
+  # required; used by: ztp, os_configuration, deployment, cicd_infra, monitoring, trailwright, ansible, terraform
   resource_group: "rg-iic-azl-01"
   # Object ID of the Azure Local resource provider's service principal (application 1412d89f-b8a8-4111-b4fd-e82905cbd85d) in the tenant.
   # used by: ztp, deployment, trailwright
@@ -64,20 +64,20 @@ azure:
   # used by: deployment, trailwright
   custom_location: "cl-iic-azl-01"
   # The identity that runs automation with no one signed in (pipelines, ZTP, the ARM deployment).
-  # used by: deployment, cicd_infra
+  # used by: deployment, cicd_infra, terraform
   automation_identity: {}
 
 # Every Key Vault that a keyvault:// reference in this file names, with where it is.
 # used by: ztp, cicd_infra
 key_vaults:
   # Key Vault name, as a keyvault://<name>/<secret> reference uses it: 3 to 24 characters, letters, digits and hyphens.
-  # required; used by: ztp, deployment, cicd_infra, trailwright
+  # required; used by: ztp, deployment, cicd_infra, trailwright, ansible, terraform
   - name: "kv-iic-mgmt-01"
     # Subscription (GUID) that holds the vault.
-    # required; used by: ztp, deployment, cicd_infra, trailwright
+    # required; used by: ztp, deployment, cicd_infra, trailwright, terraform
     subscription_id: "00000000-0000-0000-0000-000000000000"
     # Resource group that holds the vault.
-    # required; used by: ztp, deployment, cicd_infra, trailwright
+    # required; used by: ztp, deployment, cicd_infra, trailwright, terraform
     resource_group: "rg-iic-mgmt-01"
 
 # (since 5.6.13) 
@@ -108,7 +108,7 @@ secrets:
 # The Azure Local instance (the cluster deployment).
 cluster:
   # Cluster name: a NetBIOS name of up to 15 characters.
-  # required; used by: os_configuration, deployment, monitoring, trailwright
+  # required; used by: os_configuration, deployment, monitoring, trailwright, ansible
   name: "iic-azl-01"
   # Prefix of the Azure resources the deployment creates.
   # used by: deployment, trailwright
@@ -129,7 +129,7 @@ cluster:
   # required; used by: deployment
   key_vault:
     # Name of the Key Vault the deployment creates for the cluster (ARM keyVaultName): 3 to 24 characters, letters, digits and hyphens, starting...
-    # required; used by: deployment, trailwright
+    # required; used by: deployment, trailwright, terraform
     name: "kv-iic-azl-01"
     # ARM createNewKeyVault.
     # used by: deployment, trailwright
@@ -224,7 +224,7 @@ nodes:
     # used by: ztp, os_configuration
     management:
       # Management address.
-      # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
+      # required; used by: ztp, os_configuration, deployment, monitoring, trailwright, ansible
       ip_address: "192.0.2.11"
     # Every physical network port of the machine (schema 5.2): name, MAC, roles and how each gets its host address.
     # used by: ztp, os_configuration
@@ -338,13 +338,13 @@ networking:
   # required; used by: os_configuration
   management:
     # CIDR.
-    # required; used by: ztp, os_configuration, deployment, trailwright
+    # required; used by: ztp, os_configuration, deployment, trailwright, ansible
     subnet: "192.0.2.0/24"
     # The one default gateway.
-    # required; used by: ztp, os_configuration, deployment, trailwright
+    # required; used by: ztp, os_configuration, deployment, trailwright, ansible
     gateway: "192.0.2.1"
     # ARM dnsServers.
-    # required; used by: ztp, os_configuration, deployment, trailwright
+    # required; used by: ztp, os_configuration, deployment, trailwright, ansible
     dns_servers: ["192.0.2.4", "192.0.2.5"]
     # Deprecated in 5.2: set each port's ip_assignment in nodes[].network_adapters.
     # one of: static | dhcp | preconfigured; default: "static"; used by: ztp, os_configuration, deployment
@@ -362,7 +362,7 @@ networking:
       # required; used by: os_configuration, deployment, trailwright
       end: "192.0.2.29"
   # Time sources, as host names or addresses.
-  # used by: ztp, os_configuration, deployment
+  # used by: ztp, os_configuration, deployment, ansible
   ntp_servers: ["192.0.2.4", "192.0.2.5"]
   # Network ATC intents.
   # used by: os_configuration, deployment
@@ -575,22 +575,22 @@ identity:
   # when scenario.identity is active_directory
   active_directory:
     # ARM domainFqdn.
-    # required; used by: os_configuration, deployment, trailwright
+    # required; used by: os_configuration, deployment, trailwright, ansible
     domain_fqdn: "improbability.cloud"
     # Up to 15 letters, digits and hyphens.
-    # used by: os_configuration, deployment, monitoring
+    # used by: os_configuration, deployment, monitoring, ansible
     netbios_name: "IIC"
     # Distinguished name of the dedicated OU.
-    # required; used by: os_configuration, deployment, trailwright
+    # required; used by: os_configuration, deployment, trailwright, ansible
     ou_path: "OU=iic-azl-01,OU=AzureLocal,DC=improbability,DC=cloud"
     # The LCM deployment user, created in the OU by the AD preparation module.
     # required; used by: deployment
     lcm_user:
       # Name only, no domain.
-      # required; used by: os_configuration, deployment, trailwright
+      # required; used by: os_configuration, deployment, trailwright, ansible
       username: "lcm-iic-azl-01"
       # At least 14 characters with lowercase, uppercase, a digit and a special character.
-      # required; used by: os_configuration, deployment, trailwright
+      # required; used by: os_configuration, deployment, trailwright, ansible
       password: "keyvault://kv-iic-mgmt-01/lcm-password"
     # Whether the instance uses group managed service accounts.
     # default: false; used by: deployment
@@ -862,8 +862,8 @@ provisioning:
 # used by: cicd_infra
 devops:
   # (since 5.5) 
-  # used by: cicd_infra
+  # used by: cicd_infra, terraform
   runners:
     # general: ARM, Arc, Terraform, Ansible and OS configuration. ztp: the azurelocal-ztp Boot, Bootstrap and Vouchers stages (Windows only).
-    # one of: general | ztp; default: "general"; used by: deployment, cicd_infra
+    # one of: general | ztp; default: "general"; used by: deployment, cicd_infra, ansible, terraform
     - purpose: "general"

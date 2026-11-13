@@ -340,6 +340,37 @@ The pre-cluster verification checks the package (SB-001 to SB-006): source confi
 | (scope) | `_metadata.scope: ztp` requires only ZTP's keys (see [Which template](#which-template)); `full` requires everything |
 Design guidance (which pattern to pick, sizing, best practices) stays in Trailwright, which cites Microsoft Learn for every rule. The toolkit's rules are the ones that stop a deployment.
 
+## Terraform and Ansible variable files (schema 5.6.17)
+
+The Terraform code (`src/terraform`) and the Ansible roles (`src/ansible`) are an alternative route to tasks the PowerShell scripts do. They need the same facts: names, addresses, subscriptions. Those facts are keys of this file, so the code has no values of its own for them. One script writes the variable files the code reads:
+
+```powershell
+./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile ./infrastructure.yml -OutputDirectory <a folder outside the repository> [-Target AzureLocal, Backend, CicdInfra, Ansible] [-WhatIf]
+```
+
+| Written | Read by |
+| --- | --- |
+| `terraform/azure-local/terraform.tfvars.json` and `backend.hcl` | `src/terraform/environments/azure-local` (the landing zone, the hub network, the platform Key Vault, the Log Analytics workspace and action group, the management VMs) |
+| `terraform/backend/terraform.tfvars.json` | `src/terraform/backend` (the state storage account, named by `devops.state`) |
+| `terraform/cicd-infra/terraform.tfvars.json` and `backend.hcl` | `src/terraform/environments/cicd-infra` (the same variables task 06 of the CI/CD set-up builds) |
+| `ansible/inventory/group_vars/all.yml` and `host_vars/<node>.yml` | the roles of `src/ansible` |
+
+The mapping is in the registry, not in the script. Each variable of the code is a registry entry under `tools.terraform.variables`, `tools.ansible.variables` or (for the CI/CD runners) `tools.cicd_infra.terraform_variables`, with these fields:
+
+| Field | Meaning |
+| --- | --- |
+| `class` | `a`: the same fact as a key of this file. `b`: a real choice that has no key yet (`proposed_key` says which). `c`: a setting of the code itself (a module toggle, a tool version, a timeout), with its default in the entry. `d`: belongs to a feature that is out of scope (it says which). |
+| `source` | `infrastructure` (written from the file), `tool` (the default in the code; group_vars also gets the registry default), `secret` (the file holds a reference; never written) or `runtime` (not in the file; supplied when the code runs). |
+| `infrastructure_key` | The key the value comes from: a dotted path, with `[]` (every item), `[role=hub]` (the items whose role is hub) or `[0]` (the first item). A list means several keys feed the value. |
+| `form` | How the value is shaped when it is not a plain copy (`names_map`, `subnets_map`, `present`, `lowercase` and so on; `New-IacVariableFiles.ps1 -ListForm`). |
+| `target` | Where it is written: `tfvars`, `backend_hcl`, `group_vars`, `host_vars`, or `none` (a module input or a role default that the generator does not write). |
+| `passed_from` | A module variable that receives the value of a variable of the root environment. |
+| `same_as` | The same setting in the other tool (Terraform and Ansible install the same tools on a runner); a test checks that the defaults agree. |
+
+A secret is never resolved and never written. The file for a Terraform environment is `terraform.tfvars.json`, which cannot carry a comment, so a variable that is a secret or a run-time value is named in `not-written.txt` next to it, with the environment variable that supplies it (`TF_VAR_vm_admin_password`, for example). In `group_vars/all.yml` the same note is a comment. A secret reference where a value is needed stops the run with exit code 2. The files hold subscription IDs and names: keep the output folder out of git.
+
+The committed `src/ansible/inventory/group_vars/all.yml` is the output for `examples/infrastructure.example.yml`; a test fails when it differs.
+
 ## Use it from a script
 
 ```powershell
@@ -385,7 +416,7 @@ With `scenario.identity: active_directory`, `Invoke-AzureLocalOsConfiguration.ps
 - A **minor** version (5.4.0) adds optional keys. Files written for 5.0 stay valid. One exception: 5.6.2 requires `nodes[].network_adapters[].mac_address` (the identity of the port).
 - A **major** version (6.0.0) can rename or remove keys. It comes with a migration in `MIGRATION.md`, and tools refuse files from a major they don't read.
 
-The current version is 5.6.16. 5.6.1 added `security_groups[].local_groups`; 5.6.2 identifies adapters by hardware facts (`mac_address` required; `port_index`, `pci_location`, `vendor`, `os_name_override`, `allowed_vlans`); 5.6.3 added `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`; 5.6.4 added the SBE package as a requirement (below); 5.6.5 added `landing_zone.policy` (the tag names and the management group of the Tier 1 tag policy); 5.6.6 added `operations.monitoring.action_group` (the name of the alerting action group); 5.6.7 added `security.defender_for_cloud` (the free level of Defender for Cloud); 5.6.8 added `security.defender_for_cloud.security_contact_email`; 5.6.9 added the storage keys `storage.pool`, `storage.csv`, `storage.paths` and the volume options under `storage.volumes`; 5.6.10 added `networking.cluster_network_properties` and the iSCSI deployment keys under `storage.san.iscsi`; 5.6.11 added `networking.network_security_groups`, `networking.logical_networks[].vm_switch_name` and `storage.vm_images`; 5.6.12 added `operations.monitoring.retention_days` and removed `operations.notifications.teams_webhook` and `operations.monitoring.health_alerts`; 5.6.13 added the `secrets` section (`provider`, `file.directory`, `command`) and the `env://`, `file://` and `command://` reference forms; 5.6.14 added `hardware.inventory` (`output_directory`, `file_name_prefix`, `format`, `timeout_seconds`) for `Get-HardwareInventory.ps1`; 5.6.15 added `sdn.acknowledge_maintenance_window` and `sdn.acknowledge_dns_record`, gave `sdn.prefix` and `sdn.dns_records` their rules and a reader (`Enable-ArcSdn.ps1`, SDN enabled by Azure Arc, which cannot be undone) and removed `sdn.default_access_policy`; 5.6.16 added `storage.san.luns[].unique_id` (how `New-SanVolume.ps1` finds the disk of a LUN) and removed `security.backup_key_vault`. Each key's description says which version added it.
+The current version is 5.6.17. 5.6.1 added `security_groups[].local_groups`; 5.6.2 identifies adapters by hardware facts (`mac_address` required; `port_index`, `pci_location`, `vendor`, `os_name_override`, `allowed_vlans`); 5.6.3 added `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`; 5.6.4 added the SBE package as a requirement (below); 5.6.5 added `landing_zone.policy` (the tag names and the management group of the Tier 1 tag policy); 5.6.6 added `operations.monitoring.action_group` (the name of the alerting action group); 5.6.7 added `security.defender_for_cloud` (the free level of Defender for Cloud); 5.6.8 added `security.defender_for_cloud.security_contact_email`; 5.6.9 added the storage keys `storage.pool`, `storage.csv`, `storage.paths` and the volume options under `storage.volumes`; 5.6.10 added `networking.cluster_network_properties` and the iSCSI deployment keys under `storage.san.iscsi`; 5.6.11 added `networking.network_security_groups`, `networking.logical_networks[].vm_switch_name` and `storage.vm_images`; 5.6.12 added `operations.monitoring.retention_days` and removed `operations.notifications.teams_webhook` and `operations.monitoring.health_alerts`; 5.6.13 added the `secrets` section (`provider`, `file.directory`, `command`) and the `env://`, `file://` and `command://` reference forms; 5.6.14 added `hardware.inventory` (`output_directory`, `file_name_prefix`, `format`, `timeout_seconds`) for `Get-HardwareInventory.ps1`; 5.6.15 added `sdn.acknowledge_maintenance_window` and `sdn.acknowledge_dns_record`, gave `sdn.prefix` and `sdn.dns_records` their rules and a reader (`Enable-ArcSdn.ps1`, SDN enabled by Azure Arc, which cannot be undone) and removed `sdn.default_access_policy`; 5.6.16 added `storage.san.luns[].unique_id` (how `New-SanVolume.ps1` finds the disk of a LUN) and removed `security.backup_key_vault`; 5.6.17 added `landing_zone.management_groups[].role` and `azure.automation_identity.object_id` (read by the Terraform generator, `New-IacVariableFiles.ps1`). Each key's description says which version added it.
 
 ## How a variable is added
 

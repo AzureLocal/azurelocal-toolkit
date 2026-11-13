@@ -1,23 +1,21 @@
 # =============================================================================
-# Ansible Inventory - CI/CD runners (example)
+# Ansible Inventory - CI/CD runners (example, neutral values)
 # =============================================================================
 # Copy to cicd-runners.yml and change the values. No secret belongs here: keep
 # the registration credential in Key Vault (read by the host) or in Ansible Vault.
+# cicd_runner_platform, cicd_runner_scm_url, cicd_runner_key_vault_name and
+# cicd_runner_secret_name come from devops and key_vaults of infrastructure.yml:
+# config/variables/scripts/New-IacVariableFiles.ps1 writes them to
+# inventory/group_vars/all.yml, which this inventory shares. Only what differs
+# for a host group is set below.
 # =============================================================================
 ---
 all:
-  vars:
-    cicd_runner_platform: github                  # github | gitlab | azure_devops
-    cicd_runner_scm_url: https://github.com/example-org
-    cicd_runner_token_source: keyvault_managed_identity
-    cicd_runner_key_vault_name: kv-example-platform
-    cicd_runner_secret_name: github-runner-token
-    cicd_runner_token_kind: pat
   children:
     cicd_runners_linux:
       hosts:
-        vm-example-runner-lnx-01:
-          ansible_host: 10.250.10.4
+        vm-iic-runner-lnx-01:
+          ansible_host: 192.0.2.30
       vars:
         ansible_user: runneradmin
         ansible_ssh_private_key_file: ~/.ssh/id_ed25519
@@ -27,8 +25,8 @@ all:
 
     cicd_runners_windows:
       hosts:
-        vm-example-runner-ztp-01:
-          ansible_host: 10.250.10.68
+        vm-iic-runner-ztp-01:
+          ansible_host: 192.0.2.31
       vars:
         ansible_connection: winrm
         ansible_winrm_transport: kerberos           # or ntlm / credssp; use a domain account for Kerberos

@@ -30,23 +30,20 @@ provider "azurerm" {
 # Resource Group for Terraform State
 # -----------------------------------------------------------------------------
 resource "azurerm_resource_group" "tfstate" {
-  name     = "rg-${var.org_code}-tfstate-${var.environment}"
+  name     = var.resource_group_name
   location = var.location
 
-  tags = {
-    Environment = var.environment
-    ManagedBy   = "Terraform"
-    Purpose     = "Terraform Remote State"
-    Owner       = var.owner
-    Project     = "Azure Local Toolkit"
-  }
+  tags = merge(var.tags, {
+    ManagedBy = "Terraform"
+    Purpose   = "Terraform Remote State"
+  })
 }
 
 # -----------------------------------------------------------------------------
 # Storage Account for Terraform State
 # -----------------------------------------------------------------------------
 resource "azurerm_storage_account" "tfstate" {
-  name                          = "st${lower(var.org_code)}tfstate${lower(var.environment)}"
+  name                          = var.storage_account_name
   resource_group_name           = azurerm_resource_group.tfstate.name
   location                      = azurerm_resource_group.tfstate.location
   account_tier                  = "Standard"
@@ -73,7 +70,7 @@ resource "azurerm_storage_account" "tfstate" {
 # Storage Container for State Files
 # -----------------------------------------------------------------------------
 resource "azurerm_storage_container" "tfstate" {
-  name                  = "tfstate"
+  name                  = var.container_name
   storage_account_id    = azurerm_storage_account.tfstate.id
   container_access_type = "private"
 }

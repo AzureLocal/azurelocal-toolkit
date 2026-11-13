@@ -1,98 +1,45 @@
 # =============================================================================
-# CI/CD infrastructure - example values (placeholders only)
+# CI/CD infrastructure - the settings that infrastructure.yml does not hold
 # =============================================================================
-# Copy to terraform.tfvars and keep that file OUTSIDE the repository (*.tfvars is
-# git-ignored). Real subscription and tenant IDs, names and addresses go there.
-# Nothing in this file is a secret. The runners read their registration
-# credential from Key Vault at boot; only the secret NAME is set here.
+# Every fact of the environment (subscriptions, names, networks, runners, the
+# registration secret's vault and name, the access scopes) comes from the devops,
+# azure, key_vaults, landing_zone and tags sections of infrastructure.yml. Write it:
+#
+#   pwsh config/variables/scripts/New-IacVariableFiles.ps1 `
+#       -InfrastructureFile ./infrastructure.yml -OutputDirectory <folder outside the repository>
+#
+# That writes terraform/cicd-infra/terraform.tfvars.json and backend.hcl. Keep the
+# folder out of git (*.tfvars is git-ignored; a .json file is not). Task 06
+# (Deploy-CicdRunners.ps1) builds the same variables from the same keys.
+#
+#   terraform init -backend-config=backend.hcl
+#   terraform plan -var-file=terraform.tfvars.json -var-file=extra.tfvars -out=cicd.tfplan
+#
+# Copy this file to extra.tfvars for the settings below. Each of them is registered in
+# config/variables/schema/master-registry.yaml under tools.terraform.variables
+# (and tools.cicd_infra.terraform_variables). The values here are neutral examples.
+# Nothing in this file is a secret.
 # =============================================================================
 
-tenant_id           = "00000000-0000-0000-0000-000000000000"
-subscription_id     = "11111111-1111-1111-1111-111111111111" # the DevOps subscription (runners)
-hub_subscription_id = "22222222-2222-2222-2222-222222222222" # the connectivity subscription (hub VNet)
+# The public key of the Linux runners. It is not in infrastructure.yml. Pass it in the
+# environment instead of a file:  TF_VAR_admin_ssh_public_key
+# admin_ssh_public_key = "ssh-ed25519 AAAA...replace-with-your-public-key"
 
-location              = "eastus"
-resource_group_name   = "rg-example-runners-eus-01"
-create_resource_group = false
+# TCP ports allowed outbound to the lab networks.
+reachable_tcp_ports = ["22", "443", "445", "3389", "5985", "5986"]
 
-tags = {
-  environment = "lab"
-  project     = "example-cicd-runners"
-  owner       = "platform-team@example.com"
-}
+# Write the generated Windows administrator password to this secret in the registration vault.
+# windows_admin_password_secret_name = "runner-ztp-local-admin"
 
-# --- Platform ----------------------------------------------------------------
-# github | gitlab | azure_devops
-platform = "github"
-scm_url  = "https://github.com/example-org" # gitlab: https://gitlab.com   azure_devops: https://dev.azure.com/example-org
+# Any other role assignment of the runners, by a short name.
+# additional_role_assignments = {
+#   monitoring = {
+#     scope                = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-mgmt-01"
+#     role_definition_name = "Reader"
+#   }
+# }
 
-# github_runner_group   = "azure-runners"
-# azure_devops_pool     = "AzureRunners"
-# azure_devops_ztp_pool = "AzureLocalZtp"
-
-# --- Where the runner reads its registration credential -----------------------
-# github: a PAT or App token that can create runner registration tokens (kind "pat"),
-#         or a registration token (kind "token", which expires after one hour).
-# gitlab: the runner authentication token (glrt-...).
-# azure_devops: a PAT with Agent Pools (read, manage).
-registration_secret = {
-  key_vault_id    = "/subscriptions/33333333-3333-3333-3333-333333333333/resourceGroups/rg-example-mgmt-01/providers/Microsoft.KeyVault/vaults/kv-example-platform"
-  key_vault_name  = "kv-example-platform"
-  secret_name     = "github-runner-token"
-  kind            = "pat"
-  ztp_secret_name = "" # empty: the ZTP runner uses secret_name
-}
-
-# --- Runners -------------------------------------------------------------------
-admin_ssh_public_key = "ssh-ed25519 AAAA...replace-with-your-public-key operator@example.com"
-
-linux_runner = {
-  enabled              = true
-  name_prefix          = "vm-example-runner-lnx"
-  computer_name_prefix = "azlrunlnx"
-  count                = 1
-  vm_size              = "Standard_D2s_v5"
-  private_ip_addresses = ["10.250.10.4"]
-}
-
-ztp_runner = {
-  enabled              = true
-  name_prefix          = "vm-example-runner-ztp"
-  computer_name_prefix = "azlrunztp"
-  vm_size              = "Standard_D4s_v5"
-  data_disk_size_gb    = 512 # ISO, SBE, images and vouchers
-  private_ip_addresses = ["10.250.10.68"]
-}
-
-# --- Network ---------------------------------------------------------------------
-vnet_name          = "vnet-example-devops-eus-01"
-vnet_address_space = ["10.250.10.0/24"]
-linux_subnet       = { name = "snet-runner-lnx-eus-01", address_prefix = "10.250.10.0/26" }
-ztp_subnet         = { name = "snet-runner-ztp-eus-01", address_prefix = "10.250.10.64/26" }
-
-hub_peering = {
-  enabled             = true
-  hub_vnet_id         = "/subscriptions/22222222-2222-2222-2222-222222222222/resourceGroups/rg-example-conn-eus-01/providers/Microsoft.Network/virtualNetworks/vnet-example-hub-eus-01"
-  use_remote_gateways = true
-  create_hub_side     = true # false when the network team owns the hub half
-}
-
-# The lab networks the runners reach over the tunnel: management, BMC, storage.
-reachable_cidrs = ["192.168.10.0/24", "192.168.20.0/24"]
-# The BMC (iDRAC) networks. The ZTP runner accepts inbound TCP 445 from these and nothing else inbound.
-bmc_cidrs = ["192.168.20.0/24"]
-
-# --- Access (least privilege: resource groups, not the subscription) ---------------
-contributor_scopes = [
-  "/subscriptions/44444444-4444-4444-4444-444444444444/resourceGroups/rg-example-azl-cluster-01",
-]
-rbac_administrator_scopes = [
-  "/subscriptions/44444444-4444-4444-4444-444444444444/resourceGroups/rg-example-azl-cluster-01",
-]
-# Limits which roles the runner may hand out. Empty allows any role (Microsoft's prerequisite for
-# simplified machine provisioning grants the role without a limit).
-rbac_administrator_delegable_role_ids = []
-arc_machine_scopes                    = ["/subscriptions/44444444-4444-4444-4444-444444444444/resourceGroups/rg-example-azl-cluster-01"]
-key_vault_reader_ids                  = [] # more vaults: BMC account, provisioning and deployment administrator
-
-# windows_admin_password_secret_name = "runner-ztp-local-admin" # also store the generated password in the vault
+# Tool versions of the runners. An empty object takes the defaults of the module.
+# tool_versions = {
+#   terraform = "1.16.3"
+# }

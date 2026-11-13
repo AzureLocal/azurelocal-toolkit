@@ -1,6 +1,10 @@
 # =============================================================================
 # Backend Bootstrap Variables
 # =============================================================================
+# Every value comes from devops.state, azure, tags and environment of
+# infrastructure.yml: config/variables/scripts/New-IacVariableFiles.ps1 writes
+# terraform.tfvars.json for this folder.
+# =============================================================================
 
 variable "subscription_id" {
   description = "Azure subscription ID for the Terraform state storage account."
@@ -10,35 +14,33 @@ variable "subscription_id" {
 variable "location" {
   description = "Azure region for the state storage resources."
   type        = string
-  default     = "eastus"
 }
 
-variable "org_code" {
-  description = "Organization code used in resource naming (e.g., IIC)."
+variable "resource_group_name" {
+  description = "Resource group that holds the state storage account."
   type        = string
-  default     = "iic"
+}
+
+variable "storage_account_name" {
+  description = "Name of the state storage account (3 to 24 lowercase letters and digits)."
+  type        = string
 
   validation {
-    condition     = can(regex("^[a-zA-Z]{2,10}$", var.org_code))
-    error_message = "org_code must be 2-10 alphabetic characters."
+    condition     = can(regex("^[a-z0-9]{3,24}$", var.storage_account_name))
+    error_message = "storage_account_name must be 3 to 24 lowercase letters and digits."
   }
 }
 
-variable "environment" {
-  description = "Environment name (lab, dev, staging, prod)."
+variable "container_name" {
+  description = "Blob container that holds the state files."
   type        = string
-  default     = "lab"
-
-  validation {
-    condition     = contains(["lab", "dev", "staging", "prod"], var.environment)
-    error_message = "environment must be one of: lab, dev, staging, prod."
-  }
+  default     = "tfstate"
 }
 
-variable "owner" {
-  description = "Owner email for resource tagging."
-  type        = string
-  default     = "admin@contoso.cloud"
+variable "tags" {
+  description = "Tags for the state resources."
+  type        = map(string)
+  default     = {}
 }
 
 variable "allowed_ip_ranges" {

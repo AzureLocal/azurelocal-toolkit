@@ -1,7 +1,8 @@
 # =============================================================================
 # Role: arc-registration — Default Variables
 # =============================================================================
-arc_cloud: "AzureCloud"
+# Empty means not used. New-IacVariableFiles.ps1 writes both from infrastructure.yml
+# (networking.outbound.proxy, networking.outbound.arc_gateway and scenario.outbound_path).
 arc_proxy: ""
 arc_gateway_id: ""
 arc_registration_timeout: 600

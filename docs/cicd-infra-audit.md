@@ -40,8 +40,8 @@ The "After" column says what this branch adds. Paths are relative to the reposit
 | Six modules: landing-zone, networking, identity, monitoring, security, compute | `src/terraform/modules/*` | real | unchanged |
 | Provider requirements `azurerm ~> 4.0`, `azuread ~> 3.0`, `random ~> 3.0` | `src/terraform/environments/azure-local/providers.tf` | real | the new module uses `azurerm ~> 4.0` and `random ~> 3.0` |
 | Backend bootstrap module | `src/terraform/backend` | real (not run) | the new environment uses a partial `backend "azurerm" {}` with `backend.hcl.example` |
-| `environments/azure-local` validates and is formatted (the pipelines run both) | `terraform init -backend=false && terraform validate` fails: `azurerm_security_center_contact.main` needs `name` (`modules/security/main.tf` line 26). `terraform fmt -check` lists `environments/azure-local/main.tf` and `variables.tf` | real but broken | not changed here (out of scope); reported |
-| `Export-TerraformTfvars` generates tfvars from `variables.yml` | `scripts/common/utilities/helpers/config-loader.ps1`; reads the old `variables.yml`, not `infrastructure.yml` | real for the old registry; not wired to schema 5 | task 06 writes its own tfvars from `infrastructure.yml` |
+| `environments/azure-local` validates and is formatted (the pipelines run both) | `terraform init -backend=false && terraform validate` fails: `azurerm_security_center_contact.main` needs `name` (`modules/security/main.tf` line 26). `terraform fmt -check` lists `environments/azure-local/main.tf` and `variables.tf` | real but broken | fixed later (registry 5.0.43): `name = "default"` added to the contact, `terraform fmt` applied, `terraform validate` passes on the azure-local, backend and cicd-infra environments |
+| `Export-TerraformTfvars` generates tfvars from `variables.yml` | `scripts/common/utilities/helpers/config-loader.ps1`; reads the old `variables.yml`, not `infrastructure.yml` | real for the old registry; not wired to schema 5 | removed (registry 5.0.43). `config/variables/scripts/New-IacVariableFiles.ps1` writes the tfvars of every environment from `infrastructure.yml`; task 06 uses the same function for cicd-infra |
 | Environment for the runners | none | missing | `src/terraform/environments/cicd-infra` |
 
 ## Ansible claims
@@ -49,7 +49,7 @@ The "After" column says what this branch adds. Paths are relative to the reposit
 | Page says | Toolkit | Status before | After |
 | --- | --- | --- | --- |
 | Seven roles, six playbooks, collections, inventory with `domain_controllers`, `management`, `cluster_nodes` | `src/ansible/roles/*` (7), `playbooks/01` to `05` and `site.yml`, `collections/requirements.yml`, `inventory/hosts.yml.example` | real (roles not run; no Ansible on this workstation) | unchanged |
-| `Export-AnsibleVars` writes `inventory/group_vars/all.yml` | `config-loader.ps1`; `all.yml` is a hand-edited example | real for the old registry | unchanged |
+| `Export-AnsibleVars` writes `inventory/group_vars/all.yml` | `config-loader.ps1`; `all.yml` is a hand-edited example | real for the old registry | removed (registry 5.0.43). `New-IacVariableFiles.ps1` writes `group_vars/all.yml` and `host_vars/<node>.yml` from `infrastructure.yml` |
 | Configure a runner or registered host | none | missing | role `cicd_runner`, playbook `00-cicd-runner.yml`, inventory example |
 | Windows over WinRM 5986 with Kerberos | `inventory/hosts.yml.example` | real | the new inventory example adds runner groups |
 

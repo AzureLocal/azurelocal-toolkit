@@ -1,8 +1,12 @@
 # =============================================================================
-# Ansible Inventory — IIC Example
+# Ansible Inventory — example (neutral values)
 # =============================================================================
-# Copy to hosts.yml and update with your site-specific values.
-# Variables in group_vars/all.yml are generated from variables.yml.
+# Copy to hosts.yml. The host names of cluster_nodes are the names in nodes[].name of
+# infrastructure.yml: the os-configuration role sets each node's host name from the inventory
+# name, and config/variables/scripts/New-IacVariableFiles.ps1 writes inventory/host_vars/<name>.yml
+# (mgmt_ip, mgmt_nic_name) for each of them. The addresses below are documentation addresses:
+# use the ones of nodes[].management.ip_address and of the management VMs.
+# The variables of group_vars/all.yml come from the same script.
 # =============================================================================
 all:
   children:
@@ -10,31 +14,27 @@ all:
     domain_controllers:
       hosts:
         iic-dc01:
-          ansible_host: 10.20.1.10
+          ansible_host: 192.0.2.4
         iic-dc02:
-          ansible_host: 10.20.1.11
+          ansible_host: 192.0.2.5
 
     # Management servers
     management:
       hosts:
         iic-jumpbox:
-          ansible_host: 10.20.1.20
+          ansible_host: 192.0.2.20
         iic-wac01:
-          ansible_host: 10.20.1.21
+          ansible_host: 192.0.2.21
         iic-syslog01:
-          ansible_host: 10.20.1.50
+          ansible_host: 192.0.2.22
 
     # Azure Local cluster nodes
     cluster_nodes:
       hosts:
-        azl-iic-n01:
-          ansible_host: 10.0.0.11
-          idrac_ip: 10.245.64.11
-          service_tag: ABC1234
-        azl-iic-n02:
-          ansible_host: 10.0.0.12
-          idrac_ip: 10.245.64.12
-          service_tag: ABC1235
+        iic-azl-n01:
+          ansible_host: 192.0.2.11
+        iic-azl-n02:
+          ansible_host: 192.0.2.12
 
     # Windows hosts (all groups combined)
     windows:

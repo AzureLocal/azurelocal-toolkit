@@ -22,6 +22,7 @@ terraform {
 resource "azurerm_security_center_contact" "main" {
   count = var.security_contact_email != "" ? 1 : 0
 
+  name                = "default"
   email               = var.security_contact_email
   alert_notifications = true
   alerts_to_admins    = true

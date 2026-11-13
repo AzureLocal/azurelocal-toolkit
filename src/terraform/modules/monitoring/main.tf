@@ -1,8 +1,12 @@
 # =============================================================================
-# Monitoring Module — Log Analytics, Diagnostic Settings, Alerts
+# Monitoring Module — Log Analytics workspace and action group
 # =============================================================================
-# Mirrors: Implementation Part 2, Phase 4 (Stage 06) — Log Analytics
-#          Implementation Part 5, Phase 2 (Stage 18) — Monitoring
+# Azure Monitor work in this toolkit is the Log Analytics workspace, the data
+# collection endpoint, the Azure Monitor Agent extension and the Azure Local
+# Insights rule association (see scripts/deploy/05-operational-foundations).
+# This module creates the workspace and the action group of the notification
+# addresses. It creates no alert rule, no data collection endpoint and no
+# data collection rule.
 # =============================================================================
 
 terraform {
@@ -27,10 +31,10 @@ resource "azurerm_log_analytics_workspace" "main" {
 }
 
 # -----------------------------------------------------------------------------
-# Action Groups — notification targets for alerts
+# Action Group — notification targets
 # -----------------------------------------------------------------------------
 resource "azurerm_monitor_action_group" "critical" {
-  name                = "ag-${var.org_code}-critical"
+  name                = var.action_group_name
   resource_group_name = var.resource_group_name
   short_name          = "Critical"
   enabled             = true
@@ -41,35 +45,6 @@ resource "azurerm_monitor_action_group" "critical" {
       name          = "email-${email_receiver.key}"
       email_address = email_receiver.value
     }
-  }
-
-  tags = var.tags
-}
-
-# -----------------------------------------------------------------------------
-# Alert Rules — Azure Local cluster health
-# -----------------------------------------------------------------------------
-resource "azurerm_monitor_metric_alert" "cluster_health" {
-  count = var.enable_cluster_alerts ? 1 : 0
-
-  name                = "alert-${var.org_code}-cluster-health"
-  resource_group_name = var.resource_group_name
-  scopes              = var.alert_scopes
-  description         = "Alert when Azure Local cluster health degrades."
-  severity            = 1
-  frequency           = "PT5M"
-  window_size         = "PT15M"
-
-  criteria {
-    metric_namespace = "Microsoft.AzureStackHCI/clusters"
-    metric_name      = "HealthStatus"
-    aggregation      = "Average"
-    operator         = "LessThan"
-    threshold        = 1
-  }
-
-  action {
-    action_group_id = azurerm_monitor_action_group.critical.id
   }
 
   tags = var.tags

@@ -1,85 +1,44 @@
 # =============================================================================
-# Ansible Group Variables — All Hosts
-# =============================================================================
-# This file is generated from config/variables/variables.yml via:
-#   Export-AnsibleVars -Config $config -OutputPath "src/ansible/inventory/group_vars/all.yml"
-# DO NOT EDIT MANUALLY.
+# Ansible group variables, written by config/variables/scripts/New-IacVariableFiles.ps1 from
+# infrastructure.yml. Do not edit: change the file and write this one again.
+# No secret is in this file. The variables named at the end are passed at run time.
 # =============================================================================
 
-# --- Site ---
-site_code: "IIC"
-site_name: "Contoso Example Site"
-site_location: "Dallas, TX"
-
-# --- Azure Platform ---
-azure_tenant_id: "00000000-0000-0000-0000-000000000000"
-azure_location: "eastus"
-azure_subscription_azure_local: "33333333-3333-3333-3333-333333333333"
-
-# --- Identity / Active Directory ---
-ad_domain_fqdn: "contoso.local"
-ad_netbios_name: "IMPROBABLE"
-ad_ou_path: "OU=AzureLocal,OU=Servers,DC=iic,DC=local"
-ad_clusters_ou_path: "OU=Clusters,OU=Servers,DC=iic,DC=local"
-ad_servers_ou_path: "OU=Servers,DC=iic,DC=local"
-ad_dns_servers:
-  - "192.168.10.10"
-  - "192.168.10.11"
-lcm_username: "lcm-iic-azl-clus01"
-domain_admin_username: "IMPROBABLE\\admin.iic"
-
-# --- Service Principal ---
-spn_name: "sp-iic-azurelocal-deploy"
-spn_client_id: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-
-# --- Key Vault ---
-key_vault_name: "kv-iic-platform"
-key_vault_resource_group: "rg-iic-security-01"
-
-# --- Cluster ---
-cluster_name: "azlocal-iic-01"
-cluster_node_count: 2
-cluster_resource_group: "rg-iic-compute-01"
-
-# --- Networking (On-Prem) ---
-onprem_mtu: 9000
+azure_tenant_id: 00000000-0000-0000-0000-000000000000
+azure_location: eastus
+azure_subscription_azure_local: 00000000-0000-0000-0000-000000000000
+cluster_name: iic-azl-01
+cluster_resource_group: rg-iic-azl-01
+ad_domain_fqdn: improbability.cloud
+ad_netbios_name: IIC
+lcm_username: lcm-iic-azl-01
+domain_admin_username: IIC\lcm-iic-azl-01
+key_vault_name: kv-iic-mgmt-01
+onprem_dns_servers:
+- 192.0.2.4
+- 192.0.2.5
+onprem_ntp_servers:
+- 192.0.2.4
+- 192.0.2.5
+onprem_domain_join_ou: OU=iic-azl-01,OU=AzureLocal,DC=improbability,DC=cloud
 onprem_vlans:
   management:
-    id: 2203
-    subnet: "10.0.0.0/24"
-    gateway: "10.0.0.1"
-  storage:
-    id: 2204
-    subnet: "10.0.1.0/24"
-    gateway: "10.0.1.1"
-  workload:
-    id: 2205
-    subnet: "10.0.2.0/24"
-    gateway: "10.0.2.1"
-
-# --- Security Groups (Cluster-Specific) ---
-# The canonical form: identity.active_directory.security_groups of infrastructure.yml (name, purpose, local_groups).
+    id: 0
+    subnet: 192.0.2.0/24
+    gateway: 192.0.2.1
 security_groups:
-  - name: "SG-IIC-azlocal-iic-01-AZL-Administrators"
-    purpose: "Administrators of the instance"
-    local_groups: ["Administrators"]
-  - name: "SG-IIC-azlocal-iic-01-AZL-Operations"
-    purpose: "Operate the instance"
-    local_groups: ["Remote Management Users", "Remote Desktop Users"]
-  - name: "SG-IIC-azlocal-iic-01-AZL-ReadOnly"
-    purpose: "Read-only access"
-    local_groups: ["Event Log Readers", "Performance Monitor Users"]
-  - name: "SG-IIC-azlocal-iic-01-AZL-WAC-Administrators"
-    purpose: "Windows Admin Center administrators (applied on the WAC server only)"
-    local_groups: []
-  - name: "SG-IIC-azlocal-iic-01-AZL-WAC-Users"
-    purpose: "Windows Admin Center users (applied on the WAC server only)"
-    local_groups: []
-  - name: "SG-IIC-azlocal-iic-01-AZL-HyperV-Administrators"
-    purpose: "Hyper-V administrators"
-    local_groups: ["Hyper-V Administrators"]
-  - name: "SG-IIC-azlocal-iic-01-AZL-Storage-Administrators"
-    purpose: "Storage administrators"
-    local_groups: ["Storage Administrators"]
-# --- Monitoring ---
-log_analytics_workspace_name: "law-iic-monitor-01"
+- name: sg-iic-azl-01-admins
+  purpose: Administrators of the instance
+  local_groups:
+  - Administrators
+hci_insights_enabled: true
+azure_dns_forwarder_ip: 168.63.129.16
+arc_proxy: ""
+arc_gateway_id: ""
+cicd_runner_platform: github
+cicd_runner_scm_url: https://github.com/improbability-cloud
+cicd_runner_key_vault_name: kv-iic-mgmt-01
+cicd_runner_secret_name: github-runner-token
+
+# domain_admin_password: not written. The file holds the reference at identity.active_directory.domain_join_account.password or identity.active_directory.lcm_user.password. Pass it with -e @vault.yml (Ansible Vault) at run time.
+# spn_client_secret: not written. The file holds the reference at devops.authentication.client_secret. Pass it with -e @vault.yml (Ansible Vault) at run time.

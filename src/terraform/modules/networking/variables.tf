@@ -42,7 +42,7 @@ variable "subnets" {
 }
 
 variable "nsgs" {
-  description = "List of NSGs with rules, sourced from variables.yml networking.azure.sdn.nsgs."
+  description = "List of NSGs with rules."
   type = list(object({
     name        = string
     description = optional(string, "")
@@ -91,7 +91,7 @@ variable "vpn_config" {
   description = "VPN Gateway configuration."
   type = object({
     gateway_name           = string
-    public_ip_name         = string
+    public_ip_name         = optional(string, "")
     sku                    = optional(string, "VpnGw2AZ")
     generation             = optional(string, "Generation2")
     active_active          = optional(bool, false)
@@ -104,7 +104,6 @@ variable "vpn_config" {
   })
   default = {
     gateway_name           = ""
-    public_ip_name         = ""
     local_gateway_name     = ""
     local_gateway_ip       = ""
     local_address_prefixes = []
@@ -123,19 +122,18 @@ variable "vpn_shared_key" {
 variable "enable_bastion" {
   description = "Whether to deploy Azure Bastion."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "bastion_config" {
   description = "Bastion host configuration."
   type = object({
     name           = string
-    public_ip_name = string
+    public_ip_name = optional(string, "")
     sku            = optional(string, "Standard")
   })
   default = {
-    name           = ""
-    public_ip_name = ""
+    name = ""
   }
 }
 

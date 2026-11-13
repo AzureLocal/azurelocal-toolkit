@@ -18,16 +18,11 @@ output "container_name" {
 }
 
 output "backend_config" {
-  description = "Backend configuration block to copy into environment modules."
-  value = <<-EOT
-    # Copy this into your environment's backend.tf:
-    terraform {
-      backend "azurerm" {
-        resource_group_name  = "${azurerm_resource_group.tfstate.name}"
-        storage_account_name = "${azurerm_storage_account.tfstate.name}"
-        container_name       = "${azurerm_storage_container.tfstate.name}"
-        key                  = "azure-local.tfstate"
-      }
-    }
+  description = "Backend settings for terraform init -backend-config. New-IacVariableFiles.ps1 writes the same values to backend.hcl from devops.state."
+  value       = <<-EOT
+    resource_group_name  = "${azurerm_resource_group.tfstate.name}"
+    storage_account_name = "${azurerm_storage_account.tfstate.name}"
+    container_name       = "${azurerm_storage_container.tfstate.name}"
+    use_azuread_auth     = true
   EOT
 }

@@ -1,14 +1,12 @@
 # =============================================================================
 # Azure Local Environment — Backend Configuration
 # =============================================================================
-# Update values from the output of the backend bootstrap module.
+# The settings are not in this file. New-IacVariableFiles.ps1 writes them to
+# terraform/azure-local/backend.hcl from devops.state of infrastructure.yml:
+#   terraform init -backend-config=backend.hcl
+# No key and no SAS token: sign-in is by Entra ID.
 # =============================================================================
 
 terraform {
-  backend "azurerm" {
-    resource_group_name  = "rg-iic-tfstate-lab"
-    storage_account_name = "stiictfstatelab"
-    container_name       = "tfstate"
-    key                  = "azure-local.tfstate"
-  }
+  backend "azurerm" {}
 }

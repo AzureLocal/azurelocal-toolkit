@@ -5,16 +5,16 @@
 variable "management_groups" {
   description = "Management group hierarchy configuration."
   type = object({
-    parent_id              = optional(string, null)
-    root_name              = string
-    root_display_name      = string
-    platform_name          = string
-    platform_display_name  = string
-    identity_name          = string
-    connectivity_name      = string
-    management_name        = string
-    security_name          = string
-    landing_zones_name     = string
+    parent_id             = optional(string, null)
+    root_name             = string
+    root_display_name     = string
+    platform_name         = string
+    platform_display_name = string
+    identity_name         = string
+    connectivity_name     = string
+    management_name       = string
+    security_name         = string
+    landing_zones_name    = string
   })
 }
 

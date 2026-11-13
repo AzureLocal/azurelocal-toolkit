@@ -4,5 +4,3 @@
 syslog_port: 514
 snmp_port: 161
 snmp_trap_port: 162
-syslog_protocol: "udp"
-syslog_vm_name: "syslog-collector"

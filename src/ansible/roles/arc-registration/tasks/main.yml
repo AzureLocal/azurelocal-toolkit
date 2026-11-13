@@ -59,7 +59,7 @@
           ResourceGroup   = '{{ cluster_resource_group }}'
           TenantID        = '{{ azure_tenant_id }}'
           Region          = '{{ azure_location }}'
-          Cloud           = '{{ arc_cloud }}'
+          Cloud           = 'AzureCloud'
           ArmAccessToken  = $token
           AccountID       = '{{ spn_client_id }}'
       }

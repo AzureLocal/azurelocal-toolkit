@@ -1,11 +1,12 @@
-# Copy to backend.hcl (git-ignored, and best kept outside the repository)
-# and run:  terraform init -backend-config=backend.hcl
+# New-IacVariableFiles.ps1 writes backend.hcl from devops.state of infrastructure.yml
+# (terraform/cicd-infra/backend.hcl). Keep it out of git. Then run:
+#   terraform init -backend-config=backend.hcl
 #
-# The storage account is the one src/terraform/backend creates, or the one in
-# devops.state of infrastructure.yml. No key and no SAS token: sign-in is by
-# Entra ID (az login, OIDC or the runner's managed identity).
-resource_group_name  = "rg-example-tfstate-01"
-storage_account_name = "stexampletfstate01"
+# The storage account is the one src/terraform/backend creates (its names come from the
+# same devops.state keys). No key and no SAS token: sign-in is by Entra ID (az login, OIDC
+# or the runner's managed identity). The values below are neutral examples.
+resource_group_name  = "rg-iic-mgmt-01"
+storage_account_name = "stiictfstate01"
 container_name       = "tfstate"
 key                  = "cicd-infra.tfstate"
 use_azuread_auth     = true

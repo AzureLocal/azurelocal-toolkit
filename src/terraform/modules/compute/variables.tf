@@ -3,7 +3,7 @@
 # =============================================================================
 
 variable "management_vms" {
-  description = "Map of management VMs to deploy. Sourced from compute.vms.management in variables.yml."
+  description = "Map of management VMs to deploy (landing_zone.virtual_machines of infrastructure.yml)."
   type = map(object({
     vm_name           = string
     hostname          = string

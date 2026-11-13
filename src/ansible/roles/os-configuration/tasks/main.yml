@@ -38,7 +38,7 @@
 - name: Configure NTP server
   ansible.windows.win_powershell:
     script: |
-      w32tm /config /manualpeerlist:"{{ onprem_ntp_server }}" /syncfromflags:manual /reliable:YES /update
+      w32tm /config /manualpeerlist:"{{ onprem_ntp_servers | join(' ') }}" /syncfromflags:manual /reliable:YES /update
       Restart-Service w32time -Force
       w32tm /resync /force
       $status = w32tm /query /status
@@ -51,7 +51,7 @@
 - name: Configure management NIC static IP
   ansible.windows.win_powershell:
     script: |
-      $adapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.Name -like '*{{ hostvars[inventory_hostname].mgmt_nic_name | default("Ethernet") }}*' } | Select-Object -First 1
+      $adapter = Get-NetAdapter | Where-Object { $_.Status -eq 'Up' -and $_.Name -like '*{{ hostvars[inventory_hostname].mgmt_nic_name }}*' } | Select-Object -First 1
       if (-not $adapter) {
           Write-Error "Management NIC not found"
           exit 1
@@ -62,12 +62,12 @@
       # Set static IP
       New-NetIPAddress -InterfaceIndex $adapter.ifIndex `
           -IPAddress '{{ hostvars[inventory_hostname].mgmt_ip }}' `
-          -PrefixLength {{ hostvars[inventory_hostname].mgmt_prefix | default(24) }} `
-          -DefaultGateway '{{ hostvars[inventory_hostname].mgmt_gateway | default(onprem_vlans.management.gateway) }}'
+          -PrefixLength {{ onprem_vlans.management.subnet.split('/')[1] }} `
+          -DefaultGateway '{{ onprem_vlans.management.gateway }}'
       # Set DNS
       Set-DnsClientServerAddress -InterfaceIndex $adapter.ifIndex `
           -ServerAddresses @({{ onprem_dns_servers | map('regex_replace', '^(.*)$', "'\\1'") | join(',') }})
-  when: hostvars[inventory_hostname].mgmt_ip is defined
+  when: hostvars[inventory_hostname].mgmt_ip is defined and hostvars[inventory_hostname].mgmt_nic_name is defined
 
 # ---------------------------------------------------------------
 # Task 5 — Configure DNS Client
