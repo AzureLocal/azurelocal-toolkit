@@ -83,19 +83,19 @@
     Number of bootstrap log lines to display per node. Default: 5
 
 .EXAMPLE
-    .\Invoke-BootstrapMonitor-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml
+    .\Invoke-BootstrapMonitor-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml
 
 .EXAMPLE
-    .\Invoke-BootstrapMonitor-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -PollIntervalSeconds 30
+    .\Invoke-BootstrapMonitor-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -PollIntervalSeconds 30
 
 .EXAMPLE
-    .\Invoke-BootstrapMonitor-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -WhatIf
+    .\Invoke-BootstrapMonitor-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -WhatIf
 
 .EXAMPLE
-    .\Invoke-BootstrapMonitor-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -TargetNode azl-lab-01-n01 -TailLines 10
+    .\Invoke-BootstrapMonitor-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -TargetNode iic-azl-n01 -TailLines 10
 
 .EXAMPLE
-    .\Invoke-BootstrapMonitor-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -ContinuousMode
+    .\Invoke-BootstrapMonitor-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -ContinuousMode
 
 .NOTES
     Author:  Azure Local Cloud AzureLocalCloud

@@ -22,7 +22,7 @@ $SdnDnsMode = "dynamic"
 
 # Reserved IP for Network Controller DNS record — 5th IP in your management pool
 # Required only when $SdnDnsMode = "static"
-$SdnNcReservedIp = "192.168.211.14"
+$SdnNcReservedIp = "192.0.2.14"
 
 # WhatIf: report only, do not create records
 $WhatIf = $false

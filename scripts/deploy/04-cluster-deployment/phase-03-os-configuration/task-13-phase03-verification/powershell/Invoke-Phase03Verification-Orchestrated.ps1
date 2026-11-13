@@ -49,22 +49,22 @@
     Override NTP servers from infrastructure.yml. Path: networking.ntp_servers
 
 .EXAMPLE
-    .\Invoke-Phase03Verification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml
+    .\Invoke-Phase03Verification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml
 
 .EXAMPLE
-    .\Invoke-Phase03Verification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -TargetNode azl-lab-01-n02
+    .\Invoke-Phase03Verification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -TargetNode iic-azl-n02
 
 .EXAMPLE
-    .\Invoke-Phase03Verification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -WhatIf
+    .\Invoke-Phase03Verification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -WhatIf
 
 .EXAMPLE
-    .\Invoke-Phase03Verification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -Verbose
+    .\Invoke-Phase03Verification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -Verbose
 
 .EXAMPLE
-    .\Invoke-Phase03Verification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -LogPath C:\logs\verify.log
+    .\Invoke-Phase03Verification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -LogPath C:\logs\verify.log
 
 .EXAMPLE
-    .\Invoke-Phase03Verification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -DnsServers 10.0.0.1,10.0.0.2
+    .\Invoke-Phase03Verification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -DnsServers 10.0.0.1,10.0.0.2
 
 .NOTES
     Author:  Azure Local Cloud AzureLocalCloud

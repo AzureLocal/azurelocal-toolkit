@@ -411,7 +411,7 @@ function Write-ProgressBar {
 $NodeIPs = @($NodeIPs | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
 if ($NodeIPs.Count -eq 0) {
     Write-Host "  [ERROR] -NodeIPs is required and must contain at least one valid IP address." -ForegroundColor Red
-    Write-Host "  Example: -NodeIPs @('192.168.211.11','192.168.211.12')" -ForegroundColor Yellow
+    Write-Host "  Example: -NodeIPs @('192.0.2.11','192.0.2.12')" -ForegroundColor Yellow
     exit 1
 }
 
@@ -688,7 +688,7 @@ while ($true) {
             $expectedNICs = 7
             $nicStatus = if ($ed.NICCount -ge $expectedNICs) { "$($ed.NICCount)/$expectedNICs NICs" } elseif ($ed.NICCount -gt 0) { "$($ed.NICCount)/$expectedNICs NICs" } else { "No NICs" }
             $provState = if ($ed.ProvisioningState) { $ed.ProvisioningState } else { "Pending" }
-            # Build the line:  "  [OK] azl-lab-01-n01   7/7 NICs  │  Provisioned  "
+            # Build the line:  "  [OK] iic-azl-n01   7/7 NICs  │  Provisioned  "
             $lineContent = "  $edIcon $($ed.NodeName.PadRight(18)) $($nicStatus.PadRight(12))│  $provState"
             $padding = $bw - $lineContent.Length
             if ($padding -lt 0) { $padding = 0 }

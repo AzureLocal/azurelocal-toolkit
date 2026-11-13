@@ -33,10 +33,10 @@
     If specified, the Arc run command resource is NOT deleted after execution.
 
 .EXAMPLE
-    .\Invoke-ADValidation-Arc.ps1 -ConfigFile "..\..\..\..\configs\infrastructure-azl-lab.yml"
+    .\Invoke-ADValidation-Arc.ps1 -ConfigFile "..\..\..\..\configs\infrastructure.yml"
 
 .EXAMPLE
-    .\Invoke-ADValidation-Arc.ps1 -ConfigFile ".\infrastructure-azl-lab.yml" -MachineName "azrsdc-eus-01" -ResourceGroupName "rg-azrlmgmt-dev-eus-01" -Location "eastus"
+    .\Invoke-ADValidation-Arc.ps1 -ConfigFile ".\infrastructure.yml" -MachineName "azrsdc-eus-01" -ResourceGroupName "rg-azrlmgmt-dev-eus-01" -Location "eastus"
 
 .NOTES
     Requires: Az.ConnectedMachine module, authenticated Azure session (Connect-AzAccount)

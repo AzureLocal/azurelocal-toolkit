@@ -107,7 +107,7 @@ Write-Host ""
 Write-Host "Target servers for your environment:" -ForegroundColor Cyan
 Write-Host "  - DC01 ($((Get-ADComputer -Identity "vm-dc01" -ErrorAction SilentlyContinue).DNSHostName))" -ForegroundColor Gray
 Write-Host "  - DC02 ($((Get-ADComputer -Identity "vm-dc02" -ErrorAction SilentlyContinue).DNSHostName))" -ForegroundColor Gray
-Write-Host "  - Azure Local nodes (azl-lab-01-n01, azl-lab-01-n02, azl-lab-01-n03)" -ForegroundColor Gray
+Write-Host "  - Azure Local nodes (iic-azl-n01, iic-azl-n02, iic-azl-n03)" -ForegroundColor Gray
 
 # ============================================
 # PHASE 4: Configure WAC for Delegation

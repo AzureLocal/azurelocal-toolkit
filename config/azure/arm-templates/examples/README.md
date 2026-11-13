@@ -32,13 +32,11 @@ examples/
 │   ├── deploy-azurelocal.sh
 │   ├── azure-pipelines.yml
 │   └── github-workflows-deploy.yml
-├── azl-demo/                         # azl-demo environment
-│   ├── deploy-azurelocal-parameters.json
-│   ├── deploy-azurelocal-parameters.generated.json
-│   ├── deploy-azurelocal-parameters.template.json
-│   └── Generate-AzureLocal-Parameters.ps1
-└── azl-lab/                          # azl-lab environment template
-    └── deploy-azurelocal-parameters.template.json
+└── azl-demo/                         # azl-demo environment
+    ├── deploy-azurelocal-parameters.json
+    ├── deploy-azurelocal-parameters.generated.json
+    ├── deploy-azurelocal-parameters.template.json
+    └── Generate-AzureLocal-Parameters.ps1
 ```
 
 ## IIC Examples — Networking Patterns
@@ -56,7 +54,6 @@ All IIC examples use the fictional Contoso (`contoso.cloud`, prefix `iic`). Each
 | Directory | Purpose |
 |-----------|---------|
 | `azl-demo/` | azl-demo environment — includes generated output and generation script |
-| `azl-lab/` | azl-lab environment — template with placeholders |
 | `three-intents-sdn/` | Legacy pre-refactor reference with CI/CD pipeline examples |
 
 ## Adding Examples

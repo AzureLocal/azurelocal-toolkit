@@ -20,10 +20,10 @@
     (azure_vms.dc01.fqdn) or Active Directory.
 
 .EXAMPLE
-    .\Validate-ADConfiguration.ps1 -ConfigFile ".\infrastructure-azl-lab.yml"
+    .\Validate-ADConfiguration.ps1 -ConfigFile ".\infrastructure.yml"
 
 .EXAMPLE
-    .\Validate-ADConfiguration.ps1 -ConfigFile ".\infrastructure-azl-lab.yml" -DomainController "azrsdc-eus-01.azrl.mgmt"
+    .\Validate-ADConfiguration.ps1 -ConfigFile ".\infrastructure.yml" -DomainController "azrsdc-eus-01.azrl.mgmt"
 
 .NOTES
     Requires: ActiveDirectory PowerShell module, powershell-yaml module

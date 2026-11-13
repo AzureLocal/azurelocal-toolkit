@@ -35,11 +35,11 @@
 
 .PARAMETER StaticIP
     Static management IP to assign to the management adapter.
-    Example: "192.168.211.11"
+    Example: "192.0.2.11"
 
 .PARAMETER Gateway
     Default gateway for the management network.
-    Example: "192.168.211.1"
+    Example: "192.0.2.1"
 
 .PARAMETER PrefixLength
     Subnet prefix length (e.g. 24 for /24 or 255.255.255.0).
@@ -57,7 +57,7 @@
 
 .PARAMETER NewHostname
     Target hostname for this node (must comply with NetBIOS naming rules).
-    Example: "azl-lab-01-n01"
+    Example: "iic-azl-n01"
 
 .PARAMETER SkipRestart
     If specified, suppresses the restart prompt at the end.
@@ -65,18 +65,18 @@
 
 .EXAMPLE
     .\Start-Phase03OsConfiguration.ps1 `
-        -StaticIP "192.168.211.11" `
-        -Gateway "192.168.211.1" `
+        -StaticIP "192.0.2.11" `
+        -Gateway "192.0.2.1" `
         -DNSPrimary "10.250.1.36" `
         -DNSSecondary "10.250.1.37" `
-        -NewHostname "azl-lab-01-n01"
+        -NewHostname "iic-azl-n01"
 
 .EXAMPLE
     .\Start-Phase03OsConfiguration.ps1 `
-        -StaticIP "192.168.211.12" -Gateway "192.168.211.1" `
+        -StaticIP "192.0.2.12" -Gateway "192.0.2.1" `
         -DNSPrimary "10.250.1.36" -DNSSecondary "10.250.1.37" `
         -NTPServer "10.250.0.1 time.windows.com" `
-        -NewHostname "azl-lab-01-n02" `
+        -NewHostname "iic-azl-n02" `
         -SkipRestart
 
 .NOTES

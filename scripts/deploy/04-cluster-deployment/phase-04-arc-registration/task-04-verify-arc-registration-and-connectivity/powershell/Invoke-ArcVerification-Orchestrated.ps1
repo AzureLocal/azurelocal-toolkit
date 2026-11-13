@@ -42,16 +42,16 @@
     Skip Azure-side verification (only run local agent checks on nodes).
 
 .EXAMPLE
-    .\Invoke-ArcVerification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml
+    .\Invoke-ArcVerification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml
 
 .EXAMPLE
-    .\Invoke-ArcVerification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -WhatIf
+    .\Invoke-ArcVerification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -WhatIf
 
 .EXAMPLE
-    .\Invoke-ArcVerification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -SkipAzureCheck
+    .\Invoke-ArcVerification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -SkipAzureCheck
 
 .EXAMPLE
-    .\Invoke-ArcVerification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -TargetNode azl-lab-01-n02
+    .\Invoke-ArcVerification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -TargetNode iic-azl-n02
 
 .NOTES
     Author:  Azure Local Cloud AzureLocalCloud

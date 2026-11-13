@@ -67,7 +67,7 @@
       "retry": "after-fix",
       "confidence": "observed",
       "link": "https://learn.microsoft.com/azure/azure-local/deploy/deploy-via-portal",
-      "evidence": "tierpointpoc DECISIONS.md decision 2 (Validate refuses 2609 for new deployments). The exact portal text is not on Microsoft Learn."
+      "evidence": "A proof-of-concept deployment, design decision 2 (Validate refuses 2609 for new deployments). The exact portal text is not on Microsoft Learn."
     },
     {
       "id": "registration-5901",
@@ -83,7 +83,7 @@
       "retry": "resubmit-once",
       "confidence": "observed",
       "link": "https://learn.microsoft.com/azure/azure-local/deploy/deployment-arc-register-server-permissions",
-      "evidence": "tierpointpoc docs/design.md, 'The 5901 on node 1': resubmit passed it."
+      "evidence": "A proof-of-concept deployment, design notes, 'The 5901 on node 1': resubmit passed it."
     },
     {
       "id": "role-assignment-already-exists",

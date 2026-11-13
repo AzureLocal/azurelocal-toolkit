@@ -29,7 +29,7 @@
       3. Existing Connect-AzAccount / Get-AzContext
 
 .PARAMETER ConfigPath
-    Path to the infrastructure YAML config file (e.g. config/infrastructure-azl-lab.yml).
+    Path to the infrastructure YAML config file (e.g. config/infrastructure.yml).
     When supplied, ResourceGroupName, ClusterName, SubscriptionId, TenantId, NodeIPs,
     KeyVaultName, and credentials are all resolved automatically from the config.
     Any explicitly supplied parameters override the config values.
@@ -105,15 +105,15 @@
 
 .EXAMPLE
     # Simplest — supply config path only; everything resolved automatically
-    .\Monitor-Update.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml
+    .\Monitor-Update.ps1 -ConfigPath .\configs\infrastructure.yml
 
 .EXAMPLE
     # Config-driven but override the refresh rate
-    .\Monitor-Update.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -RefreshInterval 60
+    .\Monitor-Update.ps1 -ConfigPath .\configs\infrastructure.yml -RefreshInterval 60
 
 .EXAMPLE
     # Monitor a specific update run by name
-    .\Monitor-Update.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -UpdateRunName "<run-guid>"
+    .\Monitor-Update.ps1 -ConfigPath .\configs\infrastructure.yml -UpdateRunName "<run-guid>"
 
 .EXAMPLE
     # Manual parameter mode (no config file)

@@ -29,7 +29,7 @@
     Seconds between reconnect attempts. Default: 10.
 
 .EXAMPLE
-    .\Invoke-ConfigureHostname-Orchestrated.ps1 -ConfigPath ".\configs\infrastructure-azl-lab.yml"
+    .\Invoke-ConfigureHostname-Orchestrated.ps1 -ConfigPath ".\configs\infrastructure.yml"
     .\Invoke-ConfigureHostname-Orchestrated.ps1
 
 .NOTES

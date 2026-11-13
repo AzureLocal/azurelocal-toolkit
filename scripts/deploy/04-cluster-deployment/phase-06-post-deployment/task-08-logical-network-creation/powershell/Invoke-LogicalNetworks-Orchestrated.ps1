@@ -36,14 +36,14 @@
     <YYYY-MM-DD_HHmmss>_LogicalNetworks.log (relative to CWD).
 
 .EXAMPLE
-    .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-07-logical-network-creation\powershell\Invoke-LogicalNetworks-Orchestrated.ps1 -ConfigPath configs\infrastructure-azl-lab.yml -WhatIf
+    .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-07-logical-network-creation\powershell\Invoke-LogicalNetworks-Orchestrated.ps1 -ConfigPath configs\infrastructure.yml -WhatIf
 
 .EXAMPLE
-    .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-07-logical-network-creation\powershell\Invoke-LogicalNetworks-Orchestrated.ps1 -ConfigPath configs\infrastructure-azl-lab.yml
+    .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-07-logical-network-creation\powershell\Invoke-LogicalNetworks-Orchestrated.ps1 -ConfigPath configs\infrastructure.yml
 
 .EXAMPLE
     # With NSG association (requires SDN enabled + NSGs from Task 07)
-    .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-07-logical-network-creation\powershell\Invoke-LogicalNetworks-Orchestrated.ps1 -ConfigPath configs\infrastructure-azl-lab.yml -AssociateNsg
+    .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-07-logical-network-creation\powershell\Invoke-LogicalNetworks-Orchestrated.ps1 -ConfigPath configs\infrastructure.yml -AssociateNsg
 
 .NOTES
     Requires: powershell-yaml module  (Install-Module powershell-yaml -Scope CurrentUser)

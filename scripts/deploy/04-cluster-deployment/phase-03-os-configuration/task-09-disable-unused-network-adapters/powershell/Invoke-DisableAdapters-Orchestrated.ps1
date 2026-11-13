@@ -21,7 +21,7 @@
     PSCredential for PSRemoting. If omitted, resolved from Key Vault.
 
 .EXAMPLE
-    .\Invoke-DisableAdapters-Orchestrated.ps1 -ConfigPath ".\configs\infrastructure-azl-lab.yml"
+    .\Invoke-DisableAdapters-Orchestrated.ps1 -ConfigPath ".\configs\infrastructure.yml"
     .\Invoke-DisableAdapters-Orchestrated.ps1
 
 .NOTES

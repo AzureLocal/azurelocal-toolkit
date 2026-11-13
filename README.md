@@ -108,7 +108,7 @@ Each task lives in `scripts/deploy/<stage>/<phase>/<task>/`. What a task folder 
 | `powershell/` | The PowerShell scripts of the task. Every task has this folder; PowerShell is the language of the toolkit. |
 | `azurecli/` | Azure CLI scripts, only for tasks that act on Azure (resources, Entra ID, RBAC, policy, Azure Arc, monitoring, the ARM deployment). A task that runs on a node, against on-premises Active Directory or DNS, against hardware or a BMC, or is operating system work has no `azurecli/` folder. |
 
-There is no Bash for tasks. Eight tasks still hold an older real Bash script in a `bash/` folder; Bash is not part of this layout.
+There is no Bash for tasks. Six tasks still hold an older real Bash script in a `bash/` folder; Bash is not part of this layout.
 
 Some scripts are **placeholders**: a short script that only marks where a script will go. A placeholder does not do the task. Running one prints `NOT IMPLEMENTED: <task> has no <PowerShell or Azure CLI> script yet`, changes nothing and ends with **exit code 3** (the OS configuration, ARM deployment and verification entry points use 0, 1 and 2), so a person or a pipeline can tell that the step did not run. Use a real script of the task, or the steps on the guide page.
 

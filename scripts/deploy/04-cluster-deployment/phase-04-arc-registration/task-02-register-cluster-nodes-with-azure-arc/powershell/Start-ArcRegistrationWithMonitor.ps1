@@ -55,19 +55,19 @@
     SPN secret override for registration. Passed directly to registration script.
 
 .EXAMPLE
-    .\Start-ArcRegistrationWithMonitor.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml
+    .\Start-ArcRegistrationWithMonitor.ps1 -ConfigPath .\configs\infrastructure.yml
     # Launches monitor in new window, runs registration in current window
 
 .EXAMPLE
-    .\Start-ArcRegistrationWithMonitor.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -WhatIf
+    .\Start-ArcRegistrationWithMonitor.ps1 -ConfigPath .\configs\infrastructure.yml -WhatIf
     # Dry-run mode — only runs registration WhatIf, no monitor window
 
 .EXAMPLE
-    .\Start-ArcRegistrationWithMonitor.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -TargetNode azl-lab-01-n01
+    .\Start-ArcRegistrationWithMonitor.ps1 -ConfigPath .\configs\infrastructure.yml -TargetNode iic-azl-n01
     # Target specific node — both registration and monitor target only n01
 
 .EXAMPLE
-    .\Start-ArcRegistrationWithMonitor.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -NoMonitor
+    .\Start-ArcRegistrationWithMonitor.ps1 -ConfigPath .\configs\infrastructure.yml -NoMonitor
     # Registration only — no monitor window launched
 
 .NOTES

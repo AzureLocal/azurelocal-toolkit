@@ -24,7 +24,7 @@
     Run after:    Task 07 - NTP configured
 
 .EXAMPLE
-    .\Invoke-EnableICMP-Orchestrated.ps1 -ConfigPath ".\configs\infrastructure-azl-lab.yml"
+    .\Invoke-EnableICMP-Orchestrated.ps1 -ConfigPath ".\configs\infrastructure.yml"
     .\Invoke-EnableICMP-Orchestrated.ps1
 #>
 

@@ -4,7 +4,7 @@ Which task folders under `scripts/deploy` have a script, per kind. **Generated**
 
 The toolkit is PowerShell. Azure CLI scripts exist only for tasks that act on Azure. Bash is not part of the layout and is not in the tables below.
 
-Task folders that still hold an older Bash script: 8. They are listed under "Older Bash scripts" at the end of this page.
+Task folders that still hold an older Bash script: 6. They are listed under "Older Bash scripts" at the end of this page.
 
 | Word | Meaning |
 |---|---|
@@ -194,11 +194,9 @@ Azure CLI may or may not apply. Decide, then set `AzureCli` to `yes` or `no` in 
 
 These task folders still hold a Bash script from before the layout was set. Nothing in the toolkit calls them.
 
-- `01-cicd-infra/phase-01-cicd-setup/task-01-bootstrap`
 - `01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners`
 - `02-azure-foundation/phase-01-landing-zones/full-deployment/task-02-create-subscriptions`
 - `02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-02-pipeline-execution/task-01-commit-and-push`
 - `02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-01-verify-resources`
 - `02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-02-test-connectivity`
 - `02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-03-validate-configuration`
-- `04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-arm-template`

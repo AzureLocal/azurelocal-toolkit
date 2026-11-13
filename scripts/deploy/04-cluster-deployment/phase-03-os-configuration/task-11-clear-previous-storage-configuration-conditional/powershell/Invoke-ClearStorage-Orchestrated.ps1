@@ -14,7 +14,7 @@
     Skip the confirmation prompt.
 
 .EXAMPLE
-    .\Invoke-ClearStorage-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -Force
+    .\Invoke-ClearStorage-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -Force
 
 .NOTES
     Author:  Azure Local Cloud AzureLocalCloud

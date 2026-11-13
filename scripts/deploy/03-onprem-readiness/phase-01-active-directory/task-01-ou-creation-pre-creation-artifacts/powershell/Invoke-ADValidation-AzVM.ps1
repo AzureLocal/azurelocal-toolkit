@@ -24,10 +24,10 @@
     If not specified, reads from config: azure_vms.dc01.name
 
 .EXAMPLE
-    .\Invoke-ADValidation-AzVM.ps1 -ConfigFile "..\..\..\..\configs\infrastructure-azl-lab.yml"
+    .\Invoke-ADValidation-AzVM.ps1 -ConfigFile "..\..\..\..\configs\infrastructure.yml"
 
 .EXAMPLE
-    .\Invoke-ADValidation-AzVM.ps1 -ConfigFile ".\infrastructure-azl-lab.yml" -ResourceGroupName "rg-azrlmgmt-dev-eus-01" -VMName "vm-azrldc-dev-eus-01"
+    .\Invoke-ADValidation-AzVM.ps1 -ConfigFile ".\infrastructure.yml" -ResourceGroupName "rg-azrlmgmt-dev-eus-01" -VMName "vm-azrldc-dev-eus-01"
 
 .NOTES
     Requires: Az.Compute module, authenticated Azure session (Connect-AzAccount)

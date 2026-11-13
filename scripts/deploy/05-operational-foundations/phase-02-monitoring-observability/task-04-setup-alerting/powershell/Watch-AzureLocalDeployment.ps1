@@ -1,13 +1,12 @@
 <#
-    Author:  Kristopher J Turner
+    Author:  Azure Local Toolkit
     Updated:  2025-08-11
-    Enhanced: GitHub Copilot for Azure Local Cloud Product Labs
 
     .DESCRIPTION
     This PowerShell Script will automatically detect and monitor Azure Local (23H2) deployment phases with intelligent connectivity management.
 
     .NOTES
-    This script is designed for Azure Local Cloud Product Labs Azure Local Cluster (azl-lab-clus01) running 23H2. 
+    This script is designed for an Azure Local cluster (example name iic-azl-01) running 23H2. Set the values in $Script:ClusterConfig first.
     
     INTELLIGENT FEATURES:
     - Automatically detects domain join status of target nodes
@@ -23,8 +22,8 @@
     - Enhanced error handling with descriptive messages
     
     DEPLOYMENT PHASES:
-    1. Pre-Domain Join: Automatically uses IP addresses (192.168.211.11-14) with local Administrator credentials
-    2. Post-Domain Join: Automatically uses FQDNs (*.azlocal.mgmt) with domain credentials
+    1. Pre-Domain Join: Automatically uses IP addresses (example 192.0.2.11-14) with local Administrator credentials
+    2. Post-Domain Join: Automatically uses FQDNs (example *.improbability.cloud) with domain credentials
     
     TROUBLESHOOTING:
     - If WinRM connectivity fails, the script attempts to enable it remotely
@@ -68,18 +67,21 @@ param(
 
 # Global configuration
 $Script:ClusterConfig = @{
-    NodeIPs = @("192.168.211.11", "192.168.211.12", "192.168.211.13", "192.168.211.14")
-    NodeFQDNs = @("azl-lab-01-n01.azlocal.mgmt", "azl-lab-01-n02.azlocal.mgmt", "azl-lab-01-n03.azlocal.mgmt", "azl-lab-01-n04.azlocal.mgmt")
-    NodeHostnames = @("azl-lab-01-n01", "azl-lab-01-n02", "azl-lab-01-n03", "azl-lab-01-n04")
+    # The values below are neutral examples. Replace them with your own before running; do not commit the edited file.
+    ClusterName = "iic-azl-01"
+    NodeIPs = @("192.0.2.11", "192.0.2.12", "192.0.2.13", "192.0.2.14")
+    NodeFQDNs = @("iic-azl-n01.improbability.cloud", "iic-azl-n02.improbability.cloud", "iic-azl-n03.improbability.cloud", "iic-azl-n04.improbability.cloud")
+    NodeHostnames = @("iic-azl-n01", "iic-azl-n02", "iic-azl-n03", "iic-azl-n04")
+    TrustedHostPatterns = @("*.improbability.cloud", "192.0.2.*")
     LocalPassword = "REPLACE_LOCAL_PASSWORD"
-    DomainUser = "azlocal\administrator"
+    DomainUser = "IIC\administrator"
     LocalUser = "Administrator"
 }
 if ($Script:ClusterConfig.LocalPassword -like 'REPLACE_*') { throw 'Set the values of $Script:ClusterConfig in Watch-AzureLocalDeployment.ps1 before running it. Never commit the edited file.' }
 
 Write-Host "🚀 Azure Local Cloud Azure Local Deployment Monitor" -ForegroundColor Cyan
 Write-Host "=================================================" -ForegroundColor Cyan
-Write-Host "Cluster: azl-lab-clus01 | Phase: $Phase | Monitor Only: $MonitorOnly" -ForegroundColor Yellow
+Write-Host "Cluster: $($Script:ClusterConfig.ClusterName) | Phase: $Phase | Monitor Only: $MonitorOnly" -ForegroundColor Yellow
 Write-Host ""
 
 # Function to test node connectivity and determine domain status
@@ -158,8 +160,7 @@ function Initialize-WinRMForIPs {
         # Configure TrustedHosts
         $TrustedHosts = @()
         $TrustedHosts += $IPAddresses
-        $TrustedHosts += "*.azlocal.mgmt"
-        $TrustedHosts += "192.168.211.*"
+        $TrustedHosts += $Script:ClusterConfig.TrustedHostPatterns
         
         Set-Item WSMan:\localhost\Client\TrustedHosts -Value $($TrustedHosts -join ',') -Force
         Write-Host "✅ TrustedHosts configured" -ForegroundColor Green

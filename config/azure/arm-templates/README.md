@@ -17,8 +17,7 @@ arm-templates/
 │   ├── two-intent-standard/                 # 2-intent standard (IIC)
 │   ├── three-intent-separated/              # 3-intent separated (IIC)
 │   ├── three-intents-sdn/                   # Legacy 3-intent SDN (pre-refactor)
-│   ├── azl-demo/                             # azl-demo env reference
-│   └── azl-lab/                              # azl-lab env template
+│   └── azl-demo/                             # azl-demo env reference
 └── (future)
     ├── arc-gateway/                         # Arc Gateway ARM templates
     ├── key-vault/                           # Key Vault ARM templates

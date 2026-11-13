@@ -100,16 +100,16 @@
     Azure cloud environment. Default: AzureCloud
 
 .EXAMPLE
-    .\Invoke-ArcRegistration-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml
+    .\Invoke-ArcRegistration-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml
 
 .EXAMPLE
-    .\Invoke-ArcRegistration-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -WhatIf
+    .\Invoke-ArcRegistration-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -WhatIf
 
 .EXAMPLE
-    .\Invoke-ArcRegistration-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -TargetNode azl-lab-01-n01
+    .\Invoke-ArcRegistration-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -TargetNode iic-azl-n01
 
 .EXAMPLE
-    .\Invoke-ArcRegistration-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -SpnSecret "<service-principal-secret>"
+    .\Invoke-ArcRegistration-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -SpnSecret "<service-principal-secret>"
 
 
 .NOTES

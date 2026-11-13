@@ -54,20 +54,20 @@
     Override log file path. Default: ./logs/<task-folder>/<timestamp>_ArcPrerequisites.log
 
 .EXAMPLE
-    .\Invoke-ArcPrerequisites-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml
+    .\Invoke-ArcPrerequisites-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml
 
 .EXAMPLE
-    .\Invoke-ArcPrerequisites-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -WhatIf
+    .\Invoke-ArcPrerequisites-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -WhatIf
 
 .EXAMPLE
-    .\Invoke-ArcPrerequisites-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -TargetNode azl-lab-01-n01
+    .\Invoke-ArcPrerequisites-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -TargetNode iic-azl-n01
 
 .EXAMPLE
-    .\Invoke-ArcPrerequisites-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -SkipConnectivity
+    .\Invoke-ArcPrerequisites-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -SkipConnectivity
     Runs identity and permission checks only (SPN, RBAC, Key Vault secret).
 
 .EXAMPLE
-    .\Invoke-ArcPrerequisites-Orchestrated.ps1 -ConfigPath .\configs\infrastructure-azl-lab.yml -SkipIdentity
+    .\Invoke-ArcPrerequisites-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -SkipIdentity
     Runs connectivity checks on nodes only (Environment Checker).
 
 .NOTES

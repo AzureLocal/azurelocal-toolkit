@@ -19,10 +19,10 @@
     PSCredential for PSRemoting. Prompted if not provided.
 
 .EXAMPLE
-    .\Invoke-EnableRdp-Orchestrated.ps1 -ConfigPath ".\configs\infrastructure-azl-lab.yml"
+    .\Invoke-EnableRdp-Orchestrated.ps1 -ConfigPath ".\configs\infrastructure.yml"
 
 .EXAMPLE
-    .\Invoke-EnableRdp-Orchestrated.ps1 -ConfigPath ".\configs\infrastructure-azl-lab.yml" -NodeNames "node01","node02"
+    .\Invoke-EnableRdp-Orchestrated.ps1 -ConfigPath ".\configs\infrastructure.yml" -NodeNames "node01","node02"
 
 .NOTES
     Author:       Azure Local Cloud AzureLocalCloud

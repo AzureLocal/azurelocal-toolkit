@@ -50,7 +50,7 @@
     .\Invoke-Phase03OsConfiguration-Orchestrated.ps1
 
 .EXAMPLE
-    .\Invoke-Phase03OsConfiguration-Orchestrated.ps1 -ConfigPath "C:\configs\infrastructure-azl-lab.yml"
+    .\Invoke-Phase03OsConfiguration-Orchestrated.ps1 -ConfigPath "C:\configs\infrastructure.yml"
 
 .EXAMPLE
     .\Invoke-Phase03OsConfiguration-Orchestrated.ps1 -NTPServer "10.250.1.1 time.windows.com"
