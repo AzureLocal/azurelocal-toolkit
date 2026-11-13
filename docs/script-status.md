@@ -17,14 +17,14 @@ A **placeholder** is a script that does not do the task. Running it prints `NOT 
 
 ## Summary
 
-Task folders: 118.
+Task folders: 116.
 
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
-| PowerShell | 107 | 11 | 0 |
-| Azure CLI | 10 | 59 | 49 |
+| PowerShell | 105 | 11 | 0 |
+| Azure CLI | 10 | 57 | 49 |
 
-Azure CLI applies to 60 tasks, does not apply to 49, and is not decided for 9.
+Azure CLI applies to 58 tasks, does not apply to 49, and is not decided for 9.
 
 ## 01-cicd-infra
 
@@ -126,14 +126,12 @@ Azure CLI applies to 60 tasks, does not apply to 49, and is not decided for 9.
 | `phase-03-os-configuration/task-13-phase03-verification` | built | not applicable | no |
 | `phase-04-arc-registration/task-01-pre-registration-validation` | built | not built | yes |
 | `phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc` | built | built | yes |
-| `phase-04-arc-registration/task-03-monitor-bootstrap-process` | built | not built | yes |
 | `phase-04-arc-registration/task-04-verify-arc-registration-and-connectivity` | built | not built | yes |
 | `phase-05-cluster-deployment/active-directory/task-01-initiate-deployment-via-arm-template` | built | not built | yes |
 | `phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion` | built | not built | unclear |
 | `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-arm-template` | built | built | yes |
 | `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal` | built | not built | unclear |
 | `phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion` | built | not built | unclear |
-| `phase-05-cluster-deployment/monitoring` | built | not built | yes |
 | `phase-06-post-deployment/task-01-deploy-sdn` | built | not built | unclear |
 | `phase-06-post-deployment/task-02-cluster-quorum-configuration` | built | not built | yes |
 | `phase-06-post-deployment/task-03-security-groups-applied-to-nodes` | built | not applicable | no |

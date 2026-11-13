@@ -41,9 +41,7 @@ reads code, tests and documents.
 
 | Path | Status | Notes |
 | --- | --- | --- |
-| `monitoring/powershell/Monitor-Validation.ps1` (47 KB) | Real, interactive | Full-screen dashboard; reads `deploymentSettings/default` at api-version `2024-04-01`; tails logs from nodes over PSRemoting. Not usable in a pipeline (never exits, needs a console) |
-| `monitoring/powershell/Monitor-Deployment.ps1` (33 KB) | Real, interactive | Same; "does NOT auto-exit, runs until Ctrl+C" |
-| `monitoring/powershell/Invoke-MonitorDeployment-Orchestrated.ps1` | Scaffold | Calls `Invoke-DeploymentOrchestrated`, which only logs that it is a scaffold |
+| `monitoring/powershell/` (`Monitor-Validation.ps1`, `Monitor-Deployment.ps1`, `Invoke-MonitorDeployment-Orchestrated.ps1`) | Removed | Sonar (azurelocal-sonar) shows validation and deployment progress; the toolkit no longer carries progress dashboards |
 
 ### 1.4 Scaffolds and legacy scripts (do not run these for a deployment)
 
@@ -71,7 +69,7 @@ reads code, tests and documents.
 | --- | --- | --- |
 | `docs/os-configuration-and-arm-deployment.md` (toolkit) | Plan, `-Execute -Mode Validate`, then `-Execute -Mode Deploy`, as separate runs; lists prerequisites and who checks each (Code, Azure, You) | Yes for the entry point; the "You" rows are the ones this work turns into checks |
 | azurelocal.cloud implementation guide, Phase 05 (`docs/implementation/04-cluster-deployment/phase-05-cluster-deployment/`) | Portal and ARM template routes per identity and storage; ARM pages tell the reader to run `Invoke-VerifyADPrerequisites-Orchestrated.ps1`, `Get-HciResourceProviderObjectId.ps1` and `Deploy-AzureLocalCluster-Standalone.ps1`, and to generate parameters with `Generate-AzureLocal-Parameters.ps1` | **No.** Two of the four scripts are legacy; the generator does not exist; the schema 5 entry point is not mentioned. Last updated 2026-03-08 |
-| Implementation guide, Phase 05 monitoring pages | Run `Monitor-Validation.ps1` / `Monitor-Deployment.ps1` | Yes, interactive use only |
+| Implementation guide, Phase 05 monitoring pages | Run `Monitor-Validation.ps1` / `Monitor-Deployment.ps1` | No, the scripts are removed; use Sonar |
 | azurelocal.cloud automation guide (`docs/automation/`) | CI/CD pipelines for GitHub Actions, GitLab CI/CD and Azure DevOps; guides for PowerShell, Terraform, Bicep, Ansible | No page for ARM Validate/Deploy automation. Content for it is in `docs/ARM-DEPLOYMENT-GUIDE-SOURCE.md` of this change, to be moved there |
 | Microsoft Learn, "Deploy Azure Local via ARM template" (2610) | Validate creates the Azure resources and validates readiness; **Redeploy** the same parameters with `deploymentMode` Deploy; deployment takes 2.5 to 3 hours; after Validate, do not run Validate again if the system is in Deployment failed (license sync); known issues: role assignment already exists, zombie role assignments | Validate/Deploy flow and the license-sync rule are in the code. The two role-assignment issues are not detected anywhere |
 | Microsoft Learn, "Deploy Azure Local using the Azure portal" | "Resume deployment" on the instance's Deployments page after a failure | Not available from code. The ARM equivalent is submitting the same deployment again with mode Deploy |

@@ -305,7 +305,7 @@ if ($PSCmdlet.ShouldProcess("$resourceGroup/$clusterName", "ARM Template $Deploy
     else {
         Write-Log "" "INFO"
         Write-Log "Deployment initiated. Monitor progress with:" "SUCCESS"
-        Write-Log "  .\Monitor-Deployment.ps1 or check Azure Portal → Deployments" "INFO"
+        Write-Log "  Sonar (azurelocal-sonar) or the Azure portal, Deployments" "INFO"
     }
 }
 else {

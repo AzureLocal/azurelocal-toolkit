@@ -28,8 +28,8 @@ Orchestrators (run on the jump server or in a pipeline: must be 7):
 - phase-03-os-configuration: `Invoke-DisableDHCP-Orchestrated.ps1`, `Invoke-ConfigureDNS-Orchestrated.ps1`, `Invoke-DisableAdapters-Orchestrated.ps1`,
   `Invoke-ConfigureHostname-Orchestrated.ps1`, `Invoke-ClearStorage-Orchestrated.ps1`, `Invoke-Phase03OsConfiguration-Orchestrated.ps1`,
   `Start-Phase03OsConfiguration.ps1`, `Invoke-Phase03Verification-Orchestrated.ps1`
-- phase-04-arc-registration: `Invoke-ArcPrerequisites-Orchestrated.ps1`, `Invoke-ArcRegistration-Orchestrated.ps1`, `Start-ArcRegistrationWithMonitor.ps1`,
-  `Invoke-BootstrapMonitor-Orchestrated.ps1`, `Invoke-ArcVerification-Orchestrated.ps1`
+- phase-04-arc-registration: `Invoke-ArcPrerequisites-Orchestrated.ps1`, `Invoke-ArcRegistration-Orchestrated.ps1`,
+  `Invoke-ArcVerification-Orchestrated.ps1`
 - phase-06-post-deployment: `Invoke-VerifyPostDeployment.ps1`
 
 Task scripts that run on a node or on the jump server (decide per script; a node-side script copied to a machine without PowerShell 7 stays 5.1):

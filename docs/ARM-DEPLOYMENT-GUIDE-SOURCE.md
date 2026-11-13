@@ -119,4 +119,4 @@ identity), add after the manual steps:
 
 and replace the references to `Deploy-AzureLocalCluster-Standalone.ps1`, `Invoke-DeployCluster-Orchestrated.ps1` and
 `Generate-AzureLocal-Parameters.ps1` (which is not in the toolkit) with that link, or mark them legacy. The interactive
-monitoring pages (`Monitor-Validation.ps1`, `Monitor-Deployment.ps1`) stay, since they are for a person watching a console.
+monitoring pages go too: `Monitor-Validation.ps1` and `Monitor-Deployment.ps1` are removed from the toolkit, and Sonar (azurelocal-sonar) shows the progress.

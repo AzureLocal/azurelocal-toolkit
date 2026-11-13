@@ -46,9 +46,7 @@
                      using the cached SPN token (no manual intervention required)
 
     The synchronous Invoke-Command session survives reboots because the cmdlet
-    handles them internally. Run Task 03 (Invoke-BootstrapMonitor-Orchestrated.ps1)
-    in a separate window to track progress, or use
-    Start-ArcRegistrationWithMonitor.ps1 to launch both together.
+    handles them internally. Follow the progress in Sonar (azurelocal-sonar).
 
 .PARAMETER ConfigPath
     Path to infrastructure.yml. Defaults to auto-detect from script location.
@@ -441,7 +439,7 @@ Write-Log "  Credential   : $($Credential.UserName)" INFO
 Write-Log "" INFO
 Write-Log "This process may take 40-90 minutes if OEM updates are required." INFO
 Write-Log "The cmdlet handles reboots internally — do NOT interrupt." WARN
-Write-Log "Run Task 03 (Invoke-BootstrapMonitor) in a separate window to track progress." INFO
+Write-Log "Follow the progress in Sonar (azurelocal-sonar)." INFO
 Write-Log "" INFO
 
 $startTime = Get-Date
@@ -568,7 +566,7 @@ if ($completed -eq $nodes.Count) {
     Write-Log "$completed node(s) completed, $inProgress node(s) still bootstrapping." WARN
     Write-Log "Bootstrap service will complete Arc registration in the background." INFO
     Write-Log "" INFO
-    Write-Log "Run Task 03 (Invoke-BootstrapMonitor-Orchestrated.ps1) to monitor progress." WARN
+    Write-Log "Follow the progress in Sonar (azurelocal-sonar)." WARN
 } elseif ($failCount -gt 0) {
     Write-Log "" INFO
     Write-Log "$failCount node(s) failed registration. Review output above." FAIL
