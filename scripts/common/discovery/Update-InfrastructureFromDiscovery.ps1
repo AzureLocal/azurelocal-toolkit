@@ -228,7 +228,7 @@ if ($iDRAC) {
     }
     else {
         Write-Host "  ⚠ No iDRAC discovery file found" -ForegroundColor Yellow
-        Write-Host "    Run: .\\scripts\\discovery\\Get-DellServerInventory-FromiDRAC.ps1" -ForegroundColor Gray
+        Write-Host "    Run: Get-HardwareInventory.ps1 (Phase 01, Task 02). It writes the hardware-inventory file of the BMCs." -ForegroundColor Gray
     }
 }
 else {

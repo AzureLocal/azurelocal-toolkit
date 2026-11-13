@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for infrastructure.yml for scenario.os_install = iso with every variable. Schema 5.6.13. Scenario: os_install=iso.
+# Template for infrastructure.yml for scenario.os_install = iso with every variable. Schema 5.6.14. Scenario: os_install=iso.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -449,22 +449,27 @@ nodes:
 # What every machine is.
 hardware:
   # OEM, for example Dell, HPE, Lenovo or DataON.
-  # required; used by: ztp, os_configuration, deployment
+  # required; used by: ztp, os_configuration, deployment, discovery
   vendor: "Dell"
   # Model, for example AX-760.
-  # required; used by: ztp, os_configuration
+  # required; used by: ztp, os_configuration, discovery
   model: "AX-760"
   # Physical cores per machine.
+  # used by: discovery
   cpu_cores: 64
   # Memory per machine, GiB.
+  # used by: discovery
   memory_gib: 1024
   # GPUs fitted in every machine.
   gpu:
     # true when the machines carry GPUs.
+    # used by: discovery
     enabled: false
     # GPU model, as the machine reports it.
+    # used by: discovery
     model: ""
     # Number of GPUs in each machine.
+    # used by: discovery
     count_per_node: 0
   # BMC (iDRAC, iLO, XCC) login used for every machine unless a node sets its own.
   # used by: ztp
@@ -481,6 +486,21 @@ hardware:
     # (since 5.4) 
     # default: false; used by: ztp, discovery
     verify_certificate: false
+  # (since 5.6.14) 
+  # used by: discovery
+  inventory:
+    # (since 5.6.14) 
+    # default: "hardware-inventory"; used by: discovery
+    output_directory: "C:\\ProgramData\\iic-hardware-inventory"
+    # (since 5.6.14) 
+    # default: "hardware-inventory"; used by: discovery
+    file_name_prefix: "iic-azl-hardware"
+    # (since 5.6.14) 
+    # one of: json | yaml; default: "json"; used by: discovery
+    format: "json"
+    # (since 5.6.14) 
+    # default: 60; used by: discovery
+    timeout_seconds: 120
   # BIOS attributes for every machine, as they are when the machine is finished (schema 5.2; from 5.3 this is the FINAL state): a node's bios i...
   # used by: ztp
   bios:
@@ -572,20 +592,24 @@ hardware:
     # The capacity drives in each machine (Storage Spaces Direct).
     capacity:
       # Media type of the capacity drives: nvme, ssd or hdd.
-      # one of: nvme | ssd | hdd
+      # one of: nvme | ssd | hdd; used by: discovery
       media: "nvme"
       # Number of capacity drives in each machine.
+      # used by: discovery
       count: 8
-      # Size of one capacity drive in TB.
+      # Size of one capacity drive in TB (decimal terabytes).
+      # used by: discovery
       size_tb: 3.84
     # The cache drives in each machine (Storage Spaces Direct).
     cache:
       # Media type of the cache drives: nvme, ssd or hdd.
-      # one of: nvme | ssd | hdd
+      # one of: nvme | ssd | hdd; used by: discovery
       media: "nvme"
       # Number of cache drives in each machine.
+      # used by: discovery
       count: 0
-      # Size of one cache drive in TB.
+      # Size of one cache drive in TB (decimal terabytes).
+      # used by: discovery
       size_tb: 0
 
 # The on-premises networks.

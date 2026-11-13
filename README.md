@@ -24,7 +24,7 @@ Hardware discovery -> ZTP -> OS configuration -> PRE-CLUSTER VERIFICATION GATE -
 
 | # | Step | Tool | Page |
 |--:|------|------|------|
-| 1 | Hardware discovery (optional; Dell iDRAC only in this phase) | `Invoke-HardwareDiscovery.ps1` | [idrac-management README](scripts/common/idrac-management/README.md) |
+| 1 | Hardware discovery (optional): the inventory of every node from its BMC, any maker; Dell also proposes `nodes[]` | `Get-HardwareInventory.ps1`, `Invoke-HardwareDiscovery.ps1` | [docs/hardware-discovery.md](docs/hardware-discovery.md) |
 | 2 | ZTP: install the OS from Azure and register the machines with Azure Arc | [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | its README |
 | 3 | OS configuration | `Invoke-AzureLocalOsConfiguration.ps1` | [docs/os-configuration-and-arm-deployment.md](docs/os-configuration-and-arm-deployment.md) |
 | 4 | Pre-cluster verification gate: a read-only check that every machine is ready for a cluster | the toolkit, watched by the Sonar Verification monitor | [see the gate note](#the-pre-cluster-verification-gate) |

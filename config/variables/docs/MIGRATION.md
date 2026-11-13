@@ -381,6 +381,14 @@ New rules AZL-060 to AZL-068 (see README). **Steps for a 5.5 file:** set `_metad
 - **5.6.2: adapters are identified by hardware facts.** `nodes[].network_adapters[].mac_address` is now required. New optional keys: `port_index`, `pci_location` (`bus`, `device`, `function`), `vendor` (written by hardware discovery), `allowed_vlans` (the VLANs the switch port allows) and `os_name_override`. **Steps:** a file whose ports lack the MAC: run `Invoke-HardwareDiscovery.ps1 -UpdateInfrastructure` or add the MAC. Nothing else changes: without `os_name_override` no adapter is renamed and the deployment sends the name the node reports for the MAC. To get one name everywhere, add `os_name_override` per used port and run the OS configuration (step `NicNames`).
 - **5.6.3** adds `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`. Nothing is required. A logical network uses `gateway` and `ip_pool`; the 4.0 names `default_gateway` and `ip_pools` belong to the deprecated `networking.onprem.logical_networks[]`.
 
+## To 5.6.14: hardware inventory
+
+Schema 5.6.14 adds one optional block. Nothing is required: a 5.6.13 file is valid as it is.
+
+- `hardware.inventory` (`output_directory`, `file_name_prefix`, `format`, `timeout_seconds`) tells `Get-HardwareInventory.ps1` where to write the hardware inventory, what to call it, which format to use (`json` or `yaml`) and how long to wait for a BMC. Leave the block out to use the defaults (`hardware-inventory`, `hardware-inventory`, `json`, 60 seconds).
+- The script also reads keys that were already in the schema and compares them with what the BMC reports: `hardware.vendor`, `model`, `cpu_cores`, `memory_gib`, `gpu.enabled`, `gpu.model`, `gpu.count_per_node`, `drives.capacity` and `drives.cache` (`media`, `count`, `size_tb`), `nodes[].bmc.type` and `nodes[].serial_number`. These keys were documented placeholders that no tool read. They are still optional.
+- The older scripts `Get-HardwareDiscovery-Standalone.ps1` and `scripts/common/discovery/Get-DellServerInventory-FromiDRAC.ps1` are removed. `Get-HardwareInventory.ps1` replaces them for every maker. `Invoke-HardwareDiscovery.ps1` stays for Dell: it writes the proposal for `nodes[]` and the serial numbers and MAC addresses back to the file.
+
 ## To 5.6.13: secret providers
 
 Schema 5.6.13 adds an optional section and two kinds of secret reference. Nothing is required: a 5.6.10 file is valid as it is, and every `keyvault://` reference keeps working unchanged.

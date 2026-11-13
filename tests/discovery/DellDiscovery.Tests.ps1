@@ -13,13 +13,13 @@ BeforeDiscovery {
     $script:Shipped = @(
         'scripts/common/redfish/AzlRedfishCore.psm1'
         'scripts/common/redfish/AzlRedfishDell.psm1'
+        'scripts/common/redfish/AzlRedfishInventory.psm1'
         'scripts/common/idrac-management/AzlDellRedfish.psm1'
         'scripts/common/infrastructure/AzlInfrastructureEdit.psm1'
-        'scripts/common/discovery/Get-DellServerInventory-FromiDRAC.ps1'
         'scripts/common/idrac-management/Enable-IdracVnc.ps1'
         'scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Invoke-HardwareDiscovery.ps1'
-        'scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Get-HardwareDiscovery-Standalone.ps1'
         'scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Update-InfrastructureYml-FromDiscovery.ps1'
+        'scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/Get-HardwareInventory.ps1'
         'config/oem/dell-endpoints.md'
     ) | ForEach-Object { @{ Relative = $_; Full = (Join-Path $repoRoot $_) } }
 }
@@ -37,9 +37,7 @@ BeforeAll {
     $task = [System.IO.Path]::Combine($repo, 'scripts', 'deploy', '04-cluster-deployment', 'phase-01-hardware-provisioning', 'task-02-hardware-discovery-via-dell-redfish-api', 'powershell')
     $script:InvokeScript = Join-Path $task 'Invoke-HardwareDiscovery.ps1'
     $script:UpdateScript = Join-Path $task 'Update-InfrastructureYml-FromDiscovery.ps1'
-    $script:StandaloneScript = Join-Path $task 'Get-HardwareDiscovery-Standalone.ps1'
     $script:VncScript = [System.IO.Path]::Combine($repo, 'scripts', 'common', 'idrac-management', 'Enable-IdracVnc.ps1')
-    $script:InventoryScript = [System.IO.Path]::Combine($repo, 'scripts', 'common', 'discovery', 'Get-DellServerInventory-FromiDRAC.ps1')
     $script:Cred = [pscredential]::new('admin', (ConvertTo-SecureString 'not-a-real-secret' -AsPlainText -Force))
 
     # Discovery of the synthetic fixture, as the flat view the infrastructure.yml tools read.
@@ -48,39 +46,6 @@ BeforeAll {
         $view = ConvertTo-AzlDiscoveryLegacyView -Report $report
         $view['NodeName'] = 'node-1'
         return $view
-    }
-
-    # The old fake iDRAC (used by the standalone script test only): Redfish path -> response. Dell shapes: a LOM port that reports its MAC, and a slot card whose ports do not
-    # (the MAC is on the network device function). BOSS-S2 with two M.2 drives and no virtual disk.
-    function Get-FakeIdrac([switch]$BossHasVolume) {
-        $o = { param($Id) @{ '@odata.id' = $Id } }
-        $t = @{}
-        $t['/redfish/v1/Systems/System.Embedded.1'] = @{ Id = 'System.Embedded.1'; SKU = 'SVCTAG1'; SerialNumber = 'CHASSIS1'; Model = 'AX-760'; Manufacturer = 'Dell Inc.'; UUID = '00000000-0000-0000-0000-000000000001'; HostName = ''; BiosVersion = '1.2.3'; PowerState = 'On'; ProcessorSummary = @{ Count = 2; Model = 'Test CPU' }; MemorySummary = @{ TotalSystemMemoryGiB = 512 } }
-        $t['/redfish/v1/Managers/iDRAC.Embedded.1/EthernetInterfaces'] = @{ Members = @(& $o '/redfish/v1/Managers/iDRAC.Embedded.1/EthernetInterfaces/NIC.1') }
-        $t['/redfish/v1/Managers/iDRAC.Embedded.1/EthernetInterfaces/NIC.1'] = @{ Id = 'NIC.1'; MACAddress = '00:00:5E:00:53:01'; SpeedMbps = 1000 }
-        $a = '/redfish/v1/Systems/System.Embedded.1/NetworkAdapters'
-        $t[$a] = @{ Members = @((& $o "$a/NIC.Embedded.1"), (& $o "$a/NIC.Slot.3")) }
-        $t["$a/NIC.Embedded.1"] = @{ Id = 'NIC.Embedded.1'; Model = 'Test LOM'; Manufacturer = 'Test Vendor'; NetworkPorts = (& $o "$a/NIC.Embedded.1/NetworkPorts") }
-        $t["$a/NIC.Embedded.1/NetworkPorts"] = @{ Members = @(& $o "$a/NIC.Embedded.1/NetworkPorts/NIC.Embedded.1-1-1") }
-        $t["$a/NIC.Embedded.1/NetworkPorts/NIC.Embedded.1-1-1"] = @{ Id = 'NIC.Embedded.1-1-1'; LinkStatus = 'Up'; CurrentLinkSpeedMbps = 1000; AssociatedNetworkAddresses = @('00:00:5E:00:53:10') }
-        $t["$a/NIC.Slot.3"] = @{ Id = 'NIC.Slot.3'; Model = 'Test 25G Card'; Manufacturer = 'Test Vendor'; NetworkPorts = (& $o "$a/NIC.Slot.3/NetworkPorts"); NetworkDeviceFunctions = (& $o "$a/NIC.Slot.3/NetworkDeviceFunctions") }
-        $t["$a/NIC.Slot.3/NetworkPorts"] = @{ Members = @((& $o "$a/NIC.Slot.3/NetworkPorts/NIC.Slot.3-1"), (& $o "$a/NIC.Slot.3/NetworkPorts/NIC.Slot.3-2")) }
-        $t["$a/NIC.Slot.3/NetworkPorts/NIC.Slot.3-1"] = @{ Id = 'NIC.Slot.3-1'; LinkStatus = 'Up'; CurrentLinkSpeedMbps = 25000; AssociatedNetworkAddresses = @() }
-        $t["$a/NIC.Slot.3/NetworkPorts/NIC.Slot.3-2"] = @{ Id = 'NIC.Slot.3-2'; LinkStatus = 'Down'; CurrentLinkSpeedMbps = 0; AssociatedNetworkAddresses = @() }
-        $t["$a/NIC.Slot.3/NetworkDeviceFunctions"] = @{ Members = @((& $o "$a/NIC.Slot.3/NetworkDeviceFunctions/NIC.Slot.3-1-1"), (& $o "$a/NIC.Slot.3/NetworkDeviceFunctions/NIC.Slot.3-2-1")) }
-        $t["$a/NIC.Slot.3/NetworkDeviceFunctions/NIC.Slot.3-1-1"] = @{ Id = 'NIC.Slot.3-1-1'; Ethernet = @{ MACAddress = '00:00:5E:00:53:21' } }
-        $t["$a/NIC.Slot.3/NetworkDeviceFunctions/NIC.Slot.3-2-1"] = @{ Id = 'NIC.Slot.3-2-1'; Ethernet = @{ PermanentMACAddress = '00-00-5E-00-53-22' } }
-        $s = '/redfish/v1/Systems/System.Embedded.1/Storage'
-        $t[$s] = @{ Members = @((& $o "$s/AHCI.Slot.6-1"), (& $o "$s/RAID.Integrated.1-1")) }
-        $t["$s/AHCI.Slot.6-1"] = @{ Id = 'AHCI.Slot.6-1'; Name = 'BOSS-S2'; StorageControllers = @(@{ Model = 'BOSS-S2'; Manufacturer = 'Dell'; FirmwareVersion = '2.5' }); Drives = @((& $o '/redfish/v1/Drives/M2.0'), (& $o '/redfish/v1/Drives/M2.1')); Volumes = (& $o "$s/AHCI.Slot.6-1/Volumes") }
-        $t["$s/AHCI.Slot.6-1/Volumes"] = @{ Members = $(if ($BossHasVolume) { @(& $o "$s/AHCI.Slot.6-1/Volumes/Disk.Virtual.0") } else { @() }) }
-        $t["$s/AHCI.Slot.6-1/Volumes/Disk.Virtual.0"] = @{ Id = 'Disk.Virtual.0'; Name = 'VD0'; RAIDType = 'RAID1'; VolumeType = 'Mirrored'; CapacityBytes = 480000000000 }
-        $t['/redfish/v1/Drives/M2.0'] = @{ Id = 'M2.0'; Name = 'M.2 0'; Model = 'Test M.2'; SerialNumber = 'M2SERIAL0'; CapacityBytes = 480000000000; MediaType = 'SSD'; Protocol = 'SATA' }
-        $t['/redfish/v1/Drives/M2.1'] = @{ Id = 'M2.1'; Name = 'M.2 1'; Model = 'Test M.2'; SerialNumber = 'M2SERIAL1'; CapacityBytes = 480000000000; MediaType = 'SSD'; Protocol = 'SATA' }
-        $t["$s/RAID.Integrated.1-1"] = @{ Id = 'RAID.Integrated.1-1'; Name = 'Test RAID'; StorageControllers = @(@{ Model = 'Test RAID'; Manufacturer = 'Dell' }); Drives = @() }
-        $table = @{}
-        foreach ($k in $t.Keys) { $table[$k] = ($t[$k] | ConvertTo-Json -Depth 20) }
-        $table
     }
 
     $script:NodeYaml = @'
@@ -425,15 +390,6 @@ Describe 'Scripts end to end (fake iDRAC)' {
         ($doc.nodes[0].network_adapters | Where-Object name -eq 'Slot 3 Port 1').mac_address | Should -Be '00:00:5E:00:53:21'
         @(Get-ChildItem (Split-Path $script:Cfg) -Filter 'infrastructure.yml.bak.*').Count | Should -BeGreaterThan 0
     }
-    It 'Get-DellServerInventory-FromiDRAC keeps one consolidated file keyed by service tag' {
-        $dir = Join-Path $TestDrive 'inventory'
-        & $script:InventoryScript -BmcAddress 'bmc.invalid' -Credential $script:Cred -OutputPath $dir -Detail Summary -InformationAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
-        & $script:InventoryScript -BmcAddress 'bmc.invalid' -Credential $script:Cred -OutputPath $dir -Detail Summary -InformationAction SilentlyContinue -WarningAction SilentlyContinue | Out-Null
-        $inv = Get-Content (Join-Path $dir 'idrac-inventory.json') -Raw | ConvertFrom-Json
-        $inv.Metadata.NodeCount | Should -Be 1
-        $inv.Nodes.DOCTAG1.schemaVersion | Should -Be '2.0'
-        @($inv.Nodes.DOCTAG1.network.adapters).Count | Should -Be 3
-    }
     It 'Invoke-HardwareDiscovery fails (after writing the others) when a node cannot be read' {
         Remove-FakeResource '/redfish/v1/Systems/System.Embedded.1'
         { & $script:InvokeScript -ConfigPath $script:Cfg -OutputPath (Join-Path $TestDrive 'fail') -Credential $script:Cred -Detail Summary -ThrottleLimit 1 -InformationAction SilentlyContinue -ErrorAction SilentlyContinue -WarningAction SilentlyContinue } | Should -Throw '*could not be discovered*'
@@ -446,25 +402,6 @@ Describe 'Scripts end to end (fake iDRAC)' {
         Mock -ModuleName AzlDellRedfish Invoke-AzlRedfish { [pscustomobject]@{ Attributes = [pscustomobject]@{ 'VNCServer.1.Enable' = 'Disabled' } } }
         $r = & $script:VncScript -BmcAddress 'bmc.invalid' -Credential $script:Cred -WhatIf -InformationAction SilentlyContinue
         $r.Status | Should -Be 'WhatIf'
-    }
-}
-Describe 'Standalone script' {
-    It 'prints the MAC of every port and saves the file, with Invoke-RestMethod mocked' {
-        $global:AzlTestIdrac = Get-FakeIdrac
-        $global:AzlTestIdrac['/redfish/v1/Systems/System.Embedded.1/Bios'] = (@{ Attributes = @{ ProcCStates = 'Disabled' } } | ConvertTo-Json -Depth 5)
-        $global:AzlTestIdrac['/redfish/v1/Managers/iDRAC.Embedded.1/Attributes'] = (@{ Attributes = @{ 'IPv4.1.Enable' = 'Enabled' } } | ConvertTo-Json -Depth 5)
-        Mock Invoke-RestMethod {
-            $path = ([uri]$Uri).AbsolutePath
-            if (-not $global:AzlTestIdrac.ContainsKey($path)) { throw "404 $path" }
-            $global:AzlTestIdrac[$path] | ConvertFrom-Json -Depth 20
-        }
-        $out = Join-Path $TestDrive 'standalone'
-        $rows = & $script:StandaloneScript -BmcAddress 'bmc.invalid' -Credential $script:Cred -OutputPath $out -InformationAction SilentlyContinue
-        @($rows).Count | Should -Be 3
-        ($rows | ForEach-Object Mac) | Should -Contain '00:00:5E:00:53:10'
-        ($rows | Select-Object -First 1).ServiceTag | Should -Be 'SVCTAG1'
-        Test-Path (Join-Path $out 'SVCTAG1.json') | Should -BeTrue
-        Remove-Variable -Name AzlTestIdrac -Scope Global -ErrorAction SilentlyContinue
     }
 }
 

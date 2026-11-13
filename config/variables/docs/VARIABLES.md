@@ -1,6 +1,6 @@
 # infrastructure.yml variables reference
 
-Every key of [`infrastructure.yml`](infrastructure-file.md), schema 5.6.13, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](../schema/infrastructure.schema.json) (itself generated from the master registry [`master-registry.yaml`](../schema/master-registry.yaml)), the examples and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don't edit it: change the registry (and the metadata) and run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`, then:
+Every key of [`infrastructure.yml`](infrastructure-file.md), schema 5.6.14, one row each, grouped by section. **This page is generated** from [`infrastructure.schema.json`](../schema/infrastructure.schema.json) (itself generated from the master registry [`master-registry.yaml`](../schema/master-registry.yaml)), the examples and [`variables-reference.metadata.psd1`](variables-reference.metadata.psd1). Don't edit it: change the registry (and the metadata) and run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`, then:
 
 ```powershell
 ./config/variables/scripts/New-InfrastructureVariablesReference.ps1
@@ -298,19 +298,24 @@ What every machine is.
 | Path | What it is | Type | Required: full / ztp | Default | Example | Where to get the value | Read by |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | `hardware` | What every machine is. | object | yes / yes |  |  |  | ZTP, OS configuration, ARM deployment, Trailwright |
-| `hardware.vendor` | OEM, for example Dell, HPE, Lenovo or DataON. | string | yes / yes |  | `Dell` | The hardware you ordered. | ZTP, OS configuration, ARM deployment, Trailwright |
-| `hardware.model` | Model, for example AX-760. | string | yes / yes |  | `AX-760` | The hardware you ordered. | ZTP, OS configuration, Trailwright |
-| `hardware.cpu_cores` | Physical cores per machine. | integer | no / no |  | `64` | The hardware you ordered. | Trailwright |
-| `hardware.memory_gib` | Memory per machine, GiB. | integer | no / no |  | `1024` | The hardware you ordered. | Trailwright |
+| `hardware.vendor` | OEM, for example Dell, HPE, Lenovo or DataON. | string | yes / yes |  | `Dell` | The hardware you ordered. | ZTP, OS configuration, ARM deployment, Discovery, Trailwright |
+| `hardware.model` | Model, for example AX-760. | string | yes / yes |  | `AX-760` | The hardware you ordered. | ZTP, OS configuration, Discovery, Trailwright |
+| `hardware.cpu_cores` | Physical cores per machine. | integer | no / no |  | `64` | The hardware you ordered. | Discovery, Trailwright |
+| `hardware.memory_gib` | Memory per machine, GiB. | integer | no / no |  | `1024` | The hardware you ordered. | Discovery, Trailwright |
 | `hardware.gpu` | GPUs fitted in every machine. | object | no / no |  |  | The hardware you ordered. | Trailwright |
-| `hardware.gpu.enabled` | true when the machines carry GPUs. | boolean | no / no |  | `false` | The hardware you ordered. | Trailwright |
-| `hardware.gpu.model` | GPU model, as the machine reports it. | string | no / no |  |  | The hardware you ordered. | Trailwright |
-| `hardware.gpu.count_per_node` | Number of GPUs in each machine. | integer | no / no |  |  | The hardware you ordered. | Trailwright |
+| `hardware.gpu.enabled` | true when the machines carry GPUs. | boolean | no / no |  | `false` | The hardware you ordered. | Discovery, Trailwright |
+| `hardware.gpu.model` | GPU model, as the machine reports it. | string | no / no |  |  | The hardware you ordered. | Discovery, Trailwright |
+| `hardware.gpu.count_per_node` | Number of GPUs in each machine. | integer | no / no |  |  | The hardware you ordered. | Discovery, Trailwright |
 | `hardware.bmc` | BMC (iDRAC, iLO, XCC) login used for every machine unless a node sets its own. | object | no / yes |  |  | The hardware you ordered. | ZTP, Trailwright |
 | `hardware.bmc.username` | A reference to the secret holding the user name, or the user name itself. | string | if section is set / yes |  | `keyvault://kv-iic-mgmt-01/bmc-username` | A Key Vault secret you create holding the BMC login (see Secrets). | ZTP, Discovery, Trailwright |
 | `hardware.bmc.password` (secret) | Key Vault reference for the password of hardware.bmc. | keyvault:// reference | if section is set / yes |  | `keyvault://kv-iic-mgmt-01/bmc-password` | A Key Vault secret you create holding the BMC login (see Secrets). | ZTP, Discovery, Trailwright |
 | `hardware.bmc.rfs_write_attribute` | Azurelocal-ztp, Boot stage: also set the iDRAC Remote File Share attribute RFS.<n>.WriteProtected to Read Write before it inserts the virtual media.... (since 5.4) | boolean | no / no | `true for Dell (azurelocal-ztp config/oem/dell.json, bmc.rfsWriteAttribute), false for the...` | `true` | Your BMC: the vendor's default is right unless the BMC firmware differs. | ZTP, Discovery, Trailwright |
 | `hardware.bmc.verify_certificate` | Check the BMCs' TLS certificates. (since 5.4) | boolean | no / no | `false` | `false` | Your BMC: the vendor's default is right unless the BMC firmware differs. | ZTP, Discovery, Trailwright |
+| `hardware.inventory` | Where Get-HardwareInventory.ps1 writes the hardware inventory it reads from the BMCs, in which format, and how long it waits for a BMC. (since 5.6.14) | object | no / no |  |  | The hardware you ordered. | Discovery, Trailwright |
+| `hardware.inventory.output_directory` | The folder the inventory file is written to. (since 5.6.14) | string | no / no | `hardware-inventory` |  | The hardware you ordered. | Discovery, Trailwright |
+| `hardware.inventory.file_name_prefix` | The start of the file name. (since 5.6.14) | string | no / no | `hardware-inventory` |  | The hardware you ordered. | Discovery, Trailwright |
+| `hardware.inventory.format` | The format of the inventory file: json or yaml. (since 5.6.14) | one of `json`, `yaml` | no / no | `json` |  | The hardware you ordered. | Discovery, Trailwright |
+| `hardware.inventory.timeout_seconds` | How long the script waits for one answer of a BMC, in seconds. (since 5.6.14) | integer | no / no | `60` |  | The hardware you ordered. | Discovery, Trailwright |
 | `hardware.bios` | BIOS attributes for every machine, as they are when the machine is finished (schema 5.2; from 5.3 this is the FINAL state): a node's bios is merged o... | map of strings | no / no |  |  | The BMC's Redfish Bios resource or the vendor's BIOS attribute registry. | ZTP, Trailwright |
 | `hardware.bios.<attribute>` | The value of the BIOS attribute, as a string. | string | no / no |  | `EmbNic1Nic2: Enabled` | The BMC's Redfish Bios resource or the vendor's BIOS attribute registry. | ZTP, Trailwright |
 | `hardware.bios_during_provisioning` | BIOS attributes that hold for the OS install only: TEMPORARY values. (since 5.3) | map of strings | no / no |  |  | The BMC's Redfish Bios resource or the vendor's BIOS attribute registry. | ZTP, Trailwright |
@@ -343,13 +348,13 @@ What every machine is.
 | `hardware.network_cards[].ports[].role` | unused, intent:<intent name>, cluster:a, cluster:b, iscsi:a or iscsi:b. | string | no / no |  | `intent:management` | The hardware you ordered. | OS configuration, Trailwright |
 | `hardware.drives` | Drives per machine. | object | no / no |  |  | The hardware you ordered. | Trailwright |
 | `hardware.drives.capacity` | The capacity drives in each machine (Storage Spaces Direct). | object | no / no |  |  | The hardware you ordered. | Trailwright |
-| `hardware.drives.capacity.media` | Media type of the capacity drives: nvme, ssd or hdd. | one of `nvme`, `ssd`, `hdd` | no / no |  | `nvme` | The hardware you ordered. | Trailwright |
-| `hardware.drives.capacity.count` | Number of capacity drives in each machine. | integer | no / no |  | `8` | The hardware you ordered. | Trailwright |
-| `hardware.drives.capacity.size_tb` | Size of one capacity drive in TB. | number | no / no |  | `3.84` | The hardware you ordered. | Trailwright |
+| `hardware.drives.capacity.media` | Media type of the capacity drives: nvme, ssd or hdd. | one of `nvme`, `ssd`, `hdd` | no / no |  | `nvme` | The hardware you ordered. | Discovery, Trailwright |
+| `hardware.drives.capacity.count` | Number of capacity drives in each machine. | integer | no / no |  | `8` | The hardware you ordered. | Discovery, Trailwright |
+| `hardware.drives.capacity.size_tb` | Size of one capacity drive in TB (decimal terabytes). | number | no / no |  | `3.84` | The hardware you ordered. | Discovery, Trailwright |
 | `hardware.drives.cache` | The cache drives in each machine (Storage Spaces Direct). | object | no / no |  |  | The hardware you ordered. | Trailwright |
-| `hardware.drives.cache.media` | Media type of the cache drives: nvme, ssd or hdd. | one of `nvme`, `ssd`, `hdd` | no / no |  |  | The hardware you ordered. | Trailwright |
-| `hardware.drives.cache.count` | Number of cache drives in each machine. | integer | no / no |  |  | The hardware you ordered. | Trailwright |
-| `hardware.drives.cache.size_tb` | Size of one cache drive in TB. | number | no / no |  |  | The hardware you ordered. | Trailwright |
+| `hardware.drives.cache.media` | Media type of the cache drives: nvme, ssd or hdd. | one of `nvme`, `ssd`, `hdd` | no / no |  |  | The hardware you ordered. | Discovery, Trailwright |
+| `hardware.drives.cache.count` | Number of cache drives in each machine. | integer | no / no |  |  | The hardware you ordered. | Discovery, Trailwright |
+| `hardware.drives.cache.size_tb` | Size of one cache drive in TB (decimal terabytes). | number | no / no |  |  | The hardware you ordered. | Discovery, Trailwright |
 
 ### networking
 

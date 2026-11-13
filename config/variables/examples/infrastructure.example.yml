@@ -180,6 +180,14 @@ hardware:
     password: "keyvault://kv-iic-mgmt-01/bmc-password"
     rfs_write_attribute: true # default: true for Dell (iDRAC Remote File Share), false for other vendors
     verify_certificate: false # default false: BMCs ship a self-signed certificate
+  # OPTIONAL (schema 5.6.14). Where Get-HardwareInventory.ps1 writes the hardware inventory it reads from the BMCs (any maker, read only).
+  # Every key has the default shown. Uncomment the block and set _metadata.schema_version to 5.6.14 to change one.
+  # The file holds serial numbers and MAC addresses: keep the folder out of git.
+  # inventory:
+  #   output_directory: "hardware-inventory"
+  #   file_name_prefix: "hardware-inventory"
+  #   format: "json"       # json or yaml
+  #   timeout_seconds: 60  # how long to wait for one answer of a BMC (5 to 600)
   # OPTIONAL. Solution Builder Extension (SBE): delete the whole sbe block to deploy without one (the OS keeps the OEM drivers
   # already installed, and nothing is delivered to C:\SBE). Keep it only if your hardware partner supplies an SBE for your solution
   # version. When the block is there it is complete: publisher, family and version (family and version may be empty if bundle_path

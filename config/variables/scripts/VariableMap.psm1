@@ -484,7 +484,7 @@ function ConvertTo-VariableMapMarkdown {
         'Sonar'                    = 'a live view; reads the feeds above'
         'Outside the flow'         = 'CI/CD runners, the validator, shared helpers and the older numbered deploy scripts'
     }
-    $toolOfPhase = @{ 'Design' = 'Trailwright'; 'Discovery' = 'Invoke-HardwareDiscovery.ps1'; 'ZTP' = 'azurelocal-ztp'; 'OS configuration' = 'Set-AzureLocalNodeConfiguration.ps1, Invoke-AzureLocalOsConfiguration.ps1'; 'Pre-cluster verification' = 'AzlPreClusterVerification.psm1'; 'ARM Validate/Deploy' = 'Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet)'; 'Sonar' = 'azurelocal-sonar'; 'Outside the flow' = 'cicd-infra, validator, helpers, legacy scripts' }
+    $toolOfPhase = @{ 'Design' = 'Trailwright'; 'Discovery' = 'Get-HardwareInventory.ps1, Invoke-HardwareDiscovery.ps1'; 'ZTP' = 'azurelocal-ztp'; 'OS configuration' = 'Set-AzureLocalNodeConfiguration.ps1, Invoke-AzureLocalOsConfiguration.ps1'; 'Pre-cluster verification' = 'AzlPreClusterVerification.psm1'; 'ARM Validate/Deploy' = 'Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet)'; 'Sonar' = 'azurelocal-sonar'; 'Outside the flow' = 'cicd-infra, validator, helpers, legacy scripts' }
     foreach ($ph in $script:PhaseOrder.Keys) {
         $set = @(if ($readersByPhase.ContainsKey($ph)) { @($readersByPhase[$ph]) } else { @() })
         if ($ph -eq 'Discovery') { $set = @($set + $discoveryPaths | Select-Object -Unique) }

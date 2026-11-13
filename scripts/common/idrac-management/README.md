@@ -25,9 +25,9 @@ iDRAC addresses (Phase 01 Task 01) -> Discovery (Phase 01 Task 02) -> infrastruc
 | `../redfish/AzlRedfishCore.psm1` | Read-only Redfish client and standard collectors, vendor detection, capability report, `Invoke-AzlRedfishDiscovery` |
 | `../redfish/AzlRedfishDell.psm1` | The Dell adapter: port names from the Port resource, service tag, BOSS boot device, iDRAC attributes, firmware states |
 | `Enable-IdracVnc.ps1` | Enable or disable the iDRAC VNC server (the only tool here that writes to an iDRAC; `-WhatIf` supported) |
-| `../discovery/Get-DellServerInventory-FromiDRAC.ps1` | Full inventory of any iDRAC list into `idrac-inventory.json` |
+| `../redfish/AzlRedfishInventory.psm1` | The vendor-neutral inventory of one node from the standard Redfish resources (no adapter, no OEM path); used by `Get-HardwareInventory.ps1` |
 | `../infrastructure/AzlInfrastructureEdit.psm1` | Comment-preserving edits of `infrastructure.yml` |
-| `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/` | `Invoke-HardwareDiscovery.ps1`, `Update-InfrastructureYml-FromDiscovery.ps1`, `Get-HardwareDiscovery-Standalone.ps1` |
+| `scripts/deploy/04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api/powershell/` | `Get-HardwareInventory.ps1` (any maker, one inventory file per run), `Invoke-HardwareDiscovery.ps1` (Dell: proposal for `nodes[]`), `Update-InfrastructureYml-FromDiscovery.ps1` |
 
 ## Credentials
 

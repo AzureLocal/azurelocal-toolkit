@@ -806,9 +806,16 @@ function Get-AzlRfSystem {
     $tpm = @(foreach ($m in @(Get-RfProp $Sys 'TrustedModules' @())) {
             [ordered]@{ interfaceType = (Get-RfText $m 'InterfaceType'); state = (Get-RfText (Get-RfProp $m 'Status') 'State'); firmwareVersion = (Get-RfText $m 'FirmwareVersion'); source = 'System.TrustedModules' }
         })
+    # TrustedModules is deprecated since ComputerSystem 1.19 in favour of Links.TrustedComponents: read it when TrustedModules lists nothing.
+    if (@($tpm).Count -eq 0 -and $Detail -ne 'Summary') {
+        $tpm = @(foreach ($l in @(Get-RfLinkList (Get-RfProp (Get-RfProp $Sys 'Links') 'TrustedComponents'))) {
+                $c = Read-AzlRedfishResource -Context $Context -Path $l
+                if ($c) { [ordered]@{ interfaceType = $null; state = (Get-RfText (Get-RfProp $c 'Status') 'State'); firmwareVersion = (Get-RfText $c 'FirmwareVersion'); manufacturer = (Get-RfText $c 'Manufacturer'); model = (Get-RfText $c 'Model'); componentType = (Get-RfText $c 'TrustedComponentType'); source = 'Links.TrustedComponents' } }
+            })
+    }
     $secure = [ordered]@{ supported = $false; enabled = $null; currentBoot = $null; mode = $null }
     $sbLink = Get-RfLink $Sys 'SecureBoot'
-    if ($sbLink -and $Detail -eq 'Full') {
+    if ($sbLink -and $Detail -ne 'Summary') {
         $sb = Read-AzlRedfishResource -Context $Context -Path $sbLink
         if ($sb) { $secure = [ordered]@{ supported = $true; enabled = (Get-RfProp $sb 'SecureBootEnable'); currentBoot = (Get-RfText $sb 'SecureBootCurrentBoot'); mode = (Get-RfText $sb 'SecureBootMode') } }
     }
@@ -836,6 +843,7 @@ function Get-AzlRfProcessor {
                 processorType = (Get-RfText $p 'ProcessorType'); architecture = $(if (Get-RfText $p 'ProcessorArchitecture') { Get-RfText $p 'ProcessorArchitecture' } else { Get-RfText $p 'InstructionSet' })
                 cores = (Get-RfProp $p 'TotalCores'); threads = (Get-RfProp $p 'TotalThreads'); maxSpeedMHz = (Get-RfProp $p 'MaxSpeedMHz'); microcodeVersion = (Get-RfText $id 'MicrocodeInfo')
                 serialNumber = (Get-RfText $p 'SerialNumber'); partNumber = (Get-RfText $p 'PartNumber'); health = (Get-RfStatus $p)
+                memoryMiB = $($mem = @(Get-RfProp $p 'ProcessorMemory' @() | ForEach-Object { Get-RfProp $_ 'CapacityMiB' } | Where-Object { $null -ne $_ }); if ($mem.Count -gt 0) { ($mem | Measure-Object -Sum).Sum } else { $null })
             }
         })
 }
@@ -1111,7 +1119,7 @@ function Get-AzlRfStorage {
                     [ordered]@{
                         id = (Get-RfText $detail 'Id'); name = (Get-RfText $detail 'Name'); controllerId = $id; model = (Get-RfText $detail 'Model'); manufacturer = (Get-RfText $detail 'Manufacturer')
                         serialNumber = (Get-RfText $detail 'SerialNumber'); partNumber = (Get-RfText $detail 'PartNumber'); firmwareVersion = (Get-RfText $detail 'Revision')
-                        capacityBytes = $cap; capacityGiB = (ConvertTo-RfGiB $cap); mediaType = (Get-RfText $detail 'MediaType'); protocol = (Get-RfText $detail 'Protocol')
+                        capacityBytes = $cap; capacityGiB = (ConvertTo-RfGiB $cap); mediaType = (Get-RfText $detail 'MediaType'); protocol = (Get-RfText $detail 'Protocol'); blockSizeBytes = (Get-RfProp $detail 'BlockSizeBytes')
                         bay = (Get-RfText $loc 'ServiceLabel'); slot = (Get-RfProp $loc 'LocationOrdinalValue'); health = (Get-RfStatus $detail)
                         predictedLifeLeftPercent = (Get-RfProp $detail 'PredictedMediaLifeLeftPercent'); powerOnHours = $null; isBoot = $false
                     }
@@ -1318,17 +1326,21 @@ function Invoke-AzlRedfishDiscovery {
         system cannot be read, when the credentials are rejected three times in a row, and for a vendor this version has no
         adapter for ("Unsupported vendor in this version").
     .PARAMETER Vendor
-        Auto (detect) or Dell. Dell forces the Dell adapter when detection is wrong or the BMC hides its identity.
+        Auto (detect), Dell or None. Dell forces the Dell adapter when detection is wrong or the BMC hides its identity. None reads the
+        standard resources only: no vendor adapter, no vendor (OEM) path, and no "Unsupported vendor" stop for any BMC. The vendor is
+        still detected and reported.
     .PARAMETER Detail
-        Summary (identity, BMC interfaces, summary values, network, storage and boot device) or Full (everything the BMC offers).
+        Summary (identity, BMC interfaces, summary values, network, storage and boot device), Inventory (Summary plus Secure Boot,
+        TPM, processors, memory, PCIe devices and GPUs, and the firmware inventory; no BIOS attributes, sensors or logs) or Full
+        (everything the BMC offers).
     #>
     [CmdletBinding()]
     [OutputType([System.Collections.Specialized.OrderedDictionary])]
     param(
         [Parameter(Mandatory)][string]$BmcAddress,
         [Parameter(Mandatory)][System.Management.Automation.PSCredential]$Credential,
-        [ValidateSet('Auto', 'Dell')][string]$Vendor = 'Auto',
-        [ValidateSet('Summary', 'Full')][string]$Detail = 'Full',
+        [ValidateSet('Auto', 'Dell', 'None')][string]$Vendor = 'Auto',
+        [ValidateSet('Summary', 'Full', 'Inventory')][string]$Detail = 'Full',
         [switch]$VerifyCertificate,
         [switch]$UseSession,
         [int]$TimeoutSeconds = 60,
@@ -1341,7 +1353,8 @@ function Invoke-AzlRedfishDiscovery {
         -TimeoutSeconds $TimeoutSeconds -RetryDelaySeconds $RetryDelaySeconds -NodeBudgetSeconds $NodeBudgetSeconds -MaxMembers $MaxMembers
     try {
         if ($UseSession) { Open-AzlRedfishSession -Context $ctx }
-        $full = ($Detail -eq 'Full')
+        $full = ($Detail -ne 'Summary')
+        $deep = ($Detail -eq 'Full')
 
         Start-AzlRedfishArea -Context $ctx -Name identity
         $root = Read-AzlRedfishResource -Context $ctx -Path '/redfish/v1'
@@ -1361,23 +1374,24 @@ function Invoke-AzlRedfishDiscovery {
         $detected = Resolve-AzlRedfishVendor -ServiceRoot $root -System $sys -Manager $manager
         $evidence = [System.Collections.Generic.List[string]]::new()
         foreach ($e in $detected.Evidence) { $evidence.Add($e) }
-        if ($Vendor -ne 'Auto') {
+        if ($Vendor -eq 'Dell') {
             $evidence.Add("vendor override: -Vendor $Vendor$(if ($detected.Name -ne $Vendor) { " (detection said $($detected.Name))" })")
         }
-        elseif (-not $detected.Supported) {
+        elseif ($Vendor -eq 'Auto' -and -not $detected.Supported) {
             throw ("Unsupported vendor in this version: detected '$($detected.Name)' (BMC family $($detected.Family), confidence $($detected.Confidence); " +
                 "evidence: $(if ($detected.Evidence.Count -gt 0) { $detected.Evidence -join '; ' } else { 'none' })). " +
                 "This version of hardware discovery supports Dell iDRAC only; nothing was collected from $BmcAddress. Use -Vendor Dell only if this really is a Dell iDRAC.")
         }
-        if (-not $adapter) { $adapter = Get-AzlRedfishAdapter -Vendor $detected.Name }
-        if (-not $adapter) { throw "No adapter is installed for vendor '$($detected.Name)'." }
-        $vendorName = if ($Vendor -ne 'Auto') { $Vendor } else { $detected.Name }
-        $confidence = if ($Vendor -ne 'Auto' -and $detected.Name -ne $Vendor) { 'override' } else { $detected.Confidence }
+        if ($Vendor -eq 'None') { $evidence.Add('standard resources only: no vendor adapter is used') }
+        elseif (-not $adapter) { $adapter = Get-AzlRedfishAdapter -Vendor $detected.Name }
+        if ($Vendor -ne 'None' -and -not $adapter) { throw "No adapter is installed for vendor '$($detected.Name)'." }
+        $vendorName = if ($Vendor -eq 'None') { $detected.Name } elseif ($Vendor -ne 'Auto') { $Vendor } else { $detected.Name }
+        $confidence = if ($Vendor -eq 'None') { $detected.Confidence } elseif ($Vendor -ne 'Auto' -and $detected.Name -ne $Vendor) { 'override' } else { $detected.Confidence }
 
         $report = [ordered]@{
             schemaVersion = $script:SchemaVersion; tool = [ordered]@{ name = 'AzlRedfishCore'; version = $script:ToolVersion }
             collectedAt = $started.ToString('yyyy-MM-ddTHH:mm:ssZ'); durationSeconds = 0; bmcAddress = $BmcAddress; detail = $Detail.ToLowerInvariant()
-            vendor = [ordered]@{ name = $vendorName; family = $detected.Family; generation = $detected.Generation; confidence = $confidence; evidence = @($evidence); adapter = "AzlRedfish$($adapter.Vendor)"; supportedInThisVersion = $true }
+            vendor = [ordered]@{ name = $vendorName; family = $detected.Family; generation = $detected.Generation; confidence = $confidence; evidence = @($evidence); adapter = $(if ($adapter) { "AzlRedfish$($adapter.Vendor)" } else { 'none' }); supportedInThisVersion = ($null -ne $adapter) }
             identity = $null; bmc = $null; system = $null; processors = @(); memory = $null; pcie = @(); gpus = @(); network = $null; storage = $null; firmware = @()
             settings = [ordered]@{ bios = $null; bmc = [ordered]@{ attributes = $null; source = $null } }
             health = [ordered]@{ sensors = @(); power = $null; thermal = $null; leds = $null }
@@ -1391,7 +1405,7 @@ function Invoke-AzlRedfishDiscovery {
         Start-AzlRedfishArea -Context $ctx -Name bmc
         $report.bmc = if ($manager) { Get-AzlRfBmc -Context $ctx -Manager $manager -Detail $Detail } else { $null }
         Invoke-RfHook $ctx $adapter 'OemBmc' $report $paths $Detail
-        if ($manager) { Stop-AzlRedfishArea -Context $ctx -Count @($report.bmc.interfaces).Count -Variant $(if ($full) { 'ManagerNetworkProtocol' } else { 'EthernetInterfaces' }) }
+        if ($manager) { Stop-AzlRedfishArea -Context $ctx -Count @($report.bmc.interfaces).Count -Variant $(if ($deep) { 'ManagerNetworkProtocol' } else { 'EthernetInterfaces' }) }
         else { Stop-AzlRedfishArea -Context $ctx -Status notSupported -Reason 'No manager is linked from the system.' }
 
 
@@ -1453,7 +1467,8 @@ function Invoke-AzlRedfishDiscovery {
             Invoke-RfHook $ctx $adapter 'OemFirmware' $report $paths $Detail
             if ($null -ne $fw) { Stop-AzlRedfishArea -Context $ctx -Variant 'UpdateService.FirmwareInventory' -Count @($report.firmware).Count }
             else { Stop-AzlRedfishArea -Context $ctx -Count 0 -Reason 'UpdateService does not link a FirmwareInventory.' }
-
+        }
+        if ($deep) {
             Start-AzlRedfishArea -Context $ctx -Name bios
             $report.settings.bios = Get-AzlRfBiosSetting -Context $ctx -Sys $sys
             Invoke-RfHook $ctx $adapter 'OemSettings' $report $paths $Detail
@@ -1473,8 +1488,9 @@ function Invoke-AzlRedfishDiscovery {
             else { Stop-AzlRedfishArea -Context $ctx -Count 0 -Reason 'Neither the system nor the manager links LogServices.' }
         }
         else {
-            foreach ($a in 'firmware', 'bios', 'sensors', 'events') { Skip-AzlRedfishArea -Context $ctx -Name $a -Reason "Summary detail: $a is read with -Detail Full." }
+            foreach ($a in 'bios', 'sensors', 'events') { Skip-AzlRedfishArea -Context $ctx -Name $a -Reason "$Detail detail: $a is read with -Detail Full." }
         }
+        if (-not $full) { Skip-AzlRedfishArea -Context $ctx -Name firmware -Reason 'Summary detail: firmware is read with -Detail Inventory or Full.' }
 
         foreach ($a in @($report.network.adapters)) {
             if (-not $a.model) {

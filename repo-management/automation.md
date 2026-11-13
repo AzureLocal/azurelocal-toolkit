@@ -56,7 +56,7 @@ Excluded rules (with reasons):
 | `PSAvoidUsingWriteHost` | `logging.ps1` uses `Write-Host` intentionally for colour-formatted console output |
 | `PSUseShouldProcessForStateChangingFunctions` | Internal helpers are not public entry points |
 | `PSUseOutputTypeCorrectly` | Dynamic config key resolution uses computed hashtable properties |
-| `PSAvoidUsingConvertToSecureStringWithPlainText` | `keyvault-helper.ps1`, `Stop-AzureLocalCluster.ps1`, and `Get-DellServerInventory-FromiDRAC.ps1` accept credentials as runtime parameters — `ConvertTo-SecureString` converts caller-supplied values, it does not embed plaintext secrets |
+| `PSAvoidUsingConvertToSecureStringWithPlainText` | `keyvault-helper.ps1` and `Stop-AzureLocalCluster.ps1` accept credentials as runtime parameters — `ConvertTo-SecureString` converts caller-supplied values, it does not embed plaintext secrets |
 
 ### Modules installed by CI
 
