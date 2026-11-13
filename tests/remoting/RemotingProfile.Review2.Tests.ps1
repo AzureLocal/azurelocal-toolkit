@@ -11,7 +11,7 @@ BeforeAll {
     $repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
     Import-Module (Join-Path (Join-Path (Join-Path (Join-Path $repo 'scripts') 'common') 'remoting') 'AzlRemotingProfile.psm1') -Force
     Import-Module powershell-yaml
-    $script:Example = Join-Path (Join-Path (Join-Path $repo 'config') 'infrastructure') 'infrastructure.example.yml'
+    $script:Example = Join-Path (Join-Path (Join-Path (Join-Path $repo 'config') 'variables') 'examples') 'infrastructure.example.yml'
     $script:Table = Join-Path (Join-Path $repo 'config') 'remoting-profiles.json'
     $script:Choose = { param($d) $d.os_configuration.remoting.bootstrap_transport = 'smb'; $d.os_configuration.remoting.certificate = ('AB' * 20) }
 

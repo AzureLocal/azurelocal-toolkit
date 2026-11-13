@@ -13,7 +13,7 @@ BeforeAll {
     $common = Join-Path (Join-Path $repo 'scripts') 'common'
     foreach ($m in 'AzlRemotingProfile', 'AzlRemotingSession') { Import-Module (Join-Path (Join-Path $common 'remoting') "$m.psm1") -Force }
     Import-Module powershell-yaml
-    $script:Example = Join-Path (Join-Path (Join-Path $repo 'config') 'infrastructure') 'infrastructure.example.yml'
+    $script:Example = Join-Path (Join-Path (Join-Path (Join-Path $repo 'config') 'variables') 'examples') 'infrastructure.example.yml'
 
     function Resolve-For([string]$Class, [scriptblock]$Change, [hashtable]$Override = @{}) {
         $doc = ConvertFrom-Yaml (Get-Content -LiteralPath $script:Example -Raw) -Ordered

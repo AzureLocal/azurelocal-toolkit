@@ -15,7 +15,7 @@ BeforeAll {
     foreach ($m in 'AzlRemotingProfile', 'AzlRemotingSession', 'AzlRemotingBootstrap') { Import-Module (Join-Path (Join-Path $common 'remoting') "$m.psm1") -Force }
     Import-Module (Join-Path (Join-Path $common 'azure-local') 'AzlAzure.psm1') -Force
     Import-Module powershell-yaml
-    $script:Example = Join-Path (Join-Path (Join-Path $repo 'config') 'infrastructure') 'infrastructure.example.yml'
+    $script:Example = Join-Path (Join-Path (Join-Path (Join-Path $repo 'config') 'variables') 'examples') 'infrastructure.example.yml'
     $script:Password = 'Tr0ub4dor&3-test-only'
     $script:Credential = [pscredential]::new('Administrator', (ConvertTo-SecureString $script:Password -AsPlainText -Force))
     Mock -ModuleName AzlAzure Invoke-AzRestMethod { throw 'A test tried to call Azure.' }

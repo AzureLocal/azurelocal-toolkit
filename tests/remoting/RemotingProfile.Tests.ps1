@@ -11,7 +11,7 @@ BeforeAll {
     Import-Module (Join-Path (Join-Path (Join-Path (Join-Path $repo 'scripts') 'common') 'remoting') 'AzlRemotingProfile.psm1') -Force
     Import-Module (Join-Path (Join-Path (Join-Path (Join-Path $repo 'scripts') 'common') 'infrastructure') 'AzlInfrastructure.psm1') -Force
     Import-Module powershell-yaml
-    $script:Example = Join-Path (Join-Path (Join-Path $repo 'config') 'infrastructure') 'infrastructure.example.yml'
+    $script:Example = Join-Path (Join-Path (Join-Path (Join-Path $repo 'config') 'variables') 'examples') 'infrastructure.example.yml'
     $script:Table = Join-Path (Join-Path $repo 'config') 'remoting-profiles.json'
 
     function Get-Infra([scriptblock]$Change) {
