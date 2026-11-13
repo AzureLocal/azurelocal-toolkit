@@ -211,6 +211,7 @@ Describe 'Set-ADGroupMemberships.ps1' {
         }
 
         It 'stops when the ActiveDirectory cmdlets are not installed' {
+            Mock Get-Command { [pscustomobject]@{ Name = "$Name" } }
             Mock Get-Command { $null } -ParameterFilter { $Name -eq 'Add-ADGroupMember' }
             $r = Invoke-Memberships (New-InfraFile)
             $r.ExitCode | Should -Be 1
