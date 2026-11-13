@@ -16,10 +16,10 @@ Registry version 5.0.42. Sources of the scan: toolkit (this repository), sonar 3
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 631 | 321 | 144 | 2 | 162 | 2 |
+| Keys of infrastructure.yml | 631 | 321 | 151 | 2 | 155 | 2 |
 | Owned by a tool (`tools.*`) | 3252 | 3044 | 0 | 0 | 208 | 0 |
-| Older variables-file sections | 1441 | 38 | 470 | 0 | 927 | 6 |
-| All registry leaves | 5324 | 3403 | 614 | 2 | 1297 | 8 |
+| Older variables-file sections | 1441 | 38 | 462 | 0 | 935 | 6 |
+| All registry leaves | 5324 | 3403 | 613 | 2 | 1298 | 8 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -441,7 +441,7 @@ Ranked by how many different tools read the key, then how many places in the cod
 
 Variables the registry documents that no tool in the scan reads by name. Each is either a key a coming phase will read, a key only the validator checks, or a name kept for compatibility. Nothing here is an error; it is the list to look at before you spend time filling a key in that nothing uses yet.
 
-### Placeholder: documented, not read by any tool in the scan (162)
+### Placeholder: documented, not read by any tool in the scan (155)
 
 | Variable | Tools | Provided by | Note |
 | --- | --- | --- | --- |
@@ -533,13 +533,6 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `storage.volumes[].deduplication.schedule.start_time` | deployment | operator by hand | documented in the registry; no tool in the scan reads it |
 | `storage.volumes[].deduplication.schedule.days` | deployment | operator by hand | documented in the registry; no tool in the scan reads it |
 | `storage.volumes[].deduplication.schedule.duration_hours` | deployment | operator by hand | documented in the registry; no tool in the scan reads it |
-| `storage.vm_images[].name` | deployment | operator by hand | documented in the registry; no tool in the scan reads it |
-| `storage.vm_images[].os_type` | deployment | operator by hand | documented in the registry; no tool in the scan reads it |
-| `storage.vm_images[].publisher` | deployment | operator by hand | documented in the registry; no tool in the scan reads it |
-| `storage.vm_images[].offer` | deployment | operator by hand | documented in the registry; no tool in the scan reads it |
-| `storage.vm_images[].sku` | deployment | operator by hand | documented in the registry; no tool in the scan reads it |
-| `storage.vm_images[].version` | deployment | operator by hand; default | documented in the registry; no tool in the scan reads it |
-| `storage.vm_images[].storage_path` | deployment | operator by hand | documented in the registry; no tool in the scan reads it |
 | `provisioning.iso.image_source` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `provisioning.iso.image_version` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `os_configuration.remoting.transport` | os_configuration | operator by hand; default | documented in the registry; no tool in the scan reads it |
@@ -615,7 +608,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `storage.volumes[].name` | deployment; trailwright; ranger | operator by hand | only the validator names it |
 | `storage.volumes[].resiliency` | deployment; trailwright; ranger | operator by hand | only the validator names it |
 
-### Read as part: no tool names the key; a tool reads the section or list that holds it (144)
+### Read as part: no tool names the key; a tool reads the section or list that holds it (151)
 
 | Variable | Tools | Provided by | Note |
 | --- | --- | --- | --- |
@@ -704,6 +697,13 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `hardware.drives.cache.size_tb` | discovery; trailwright | operator by hand | read as part by discovery |
 | `storage.paths[].name` | deployment | operator by hand | read as part by toolkit-legacy-scripts |
 | `storage.paths[].path` | deployment | operator by hand | read as part by toolkit-legacy-scripts |
+| `storage.vm_images[].name` | deployment | operator by hand | read as part by toolkit-legacy-scripts |
+| `storage.vm_images[].os_type` | deployment | operator by hand | read as part by toolkit-legacy-scripts |
+| `storage.vm_images[].publisher` | deployment | operator by hand | read as part by toolkit-legacy-scripts |
+| `storage.vm_images[].offer` | deployment | operator by hand | read as part by toolkit-legacy-scripts |
+| `storage.vm_images[].sku` | deployment | operator by hand | read as part by toolkit-legacy-scripts |
+| `storage.vm_images[].version` | deployment | operator by hand; default | read as part by toolkit-legacy-scripts |
+| `storage.vm_images[].storage_path` | deployment | operator by hand | read as part by toolkit-legacy-scripts |
 | `storage.san.array.name` |  | operator by hand | read as part by toolkit-legacy-scripts |
 | `storage.san.array.management_address` |  | operator by hand | read as part by toolkit-legacy-scripts |
 | `storage.san.fibre_channel.fabrics[].name` | deployment | operator by hand | read as part by toolkit-legacy-scripts |
@@ -1003,7 +1003,7 @@ These registry sections (`compute`, `identity.accounts`, `azure_platform`, ...) 
 | `environment` | 4 | 0 | 4 | 0 |
 | `identity` | 143 | 10 | 133 | 0 |
 | `infrastructure_scenarios` | 1 | 0 | 1 | 0 |
-| `marketplace_images` | 9 | 8 | 1 | 0 |
+| `marketplace_images` | 9 | 0 | 9 | 0 |
 | `networking` | 522 | 50 | 468 | 4 |
 | `operations` | 92 | 2 | 90 | 0 |
 | `security` | 109 | 1 | 108 | 0 |
@@ -1729,13 +1729,13 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `storage.volumes[].deduplication.schedule.duration_hours` | integer | operator | deployment |  |  | placeholder |
 | `storage.paths[].name` | string, required | operator | deployment | (part: toolkit-legacy-scripts) |  | read-as-part |
 | `storage.paths[].path` | string, required | operator | deployment | (part: toolkit-legacy-scripts) |  | read-as-part |
-| `storage.vm_images[].name` | string, required | operator | deployment |  |  | placeholder |
-| `storage.vm_images[].os_type` | string, required, one of `Windows`, `Linux` | operator | deployment |  |  | placeholder |
-| `storage.vm_images[].publisher` | string, required | operator | deployment |  |  | placeholder |
-| `storage.vm_images[].offer` | string, required | operator | deployment |  |  | placeholder |
-| `storage.vm_images[].sku` | string, required | operator | deployment |  |  | placeholder |
-| `storage.vm_images[].version` | string, default `latest` | operator; default | deployment |  |  | placeholder |
-| `storage.vm_images[].storage_path` | string | operator | deployment |  |  | placeholder |
+| `storage.vm_images[].name` | string, required | operator | deployment | (part: toolkit-legacy-scripts) |  | read-as-part |
+| `storage.vm_images[].os_type` | string, required, one of `Windows`, `Linux` | operator | deployment | (part: toolkit-legacy-scripts) |  | read-as-part |
+| `storage.vm_images[].publisher` | string, required | operator | deployment | (part: toolkit-legacy-scripts) |  | read-as-part |
+| `storage.vm_images[].offer` | string, required | operator | deployment | (part: toolkit-legacy-scripts) |  | read-as-part |
+| `storage.vm_images[].sku` | string, required | operator | deployment | (part: toolkit-legacy-scripts) |  | read-as-part |
+| `storage.vm_images[].version` | string, default `latest` | operator; default | deployment | (part: toolkit-legacy-scripts) |  | read-as-part |
+| `storage.vm_images[].storage_path` | string | operator | deployment | (part: toolkit-legacy-scripts) |  | read-as-part |
 | `storage.san.type` | string, required, one of `fibre_channel`, `iscsi` | operator; Trailwright | os_configuration; deployment; trailwright | arm-deployment; os-configuration; pre-cluster-verification | OS Mpio; SanVerify; Gate ST-011 | read |
 | `storage.san.array.name` | string, required | operator |  | (part: toolkit-legacy-scripts) | OS ~Mpio; ~SanVerify | read-as-part |
 | `storage.san.array.vendor` | string, required | operator | os_configuration; deployment | os-configuration; pre-cluster-verification | OS Mpio; SanVerify; Gate ST-004; ST-006; ST-007 | read |

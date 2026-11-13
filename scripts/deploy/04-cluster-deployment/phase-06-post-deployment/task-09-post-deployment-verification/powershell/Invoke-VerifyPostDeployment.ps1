@@ -12,6 +12,9 @@
 
     All checks are idempotent — nothing is created or modified.
 
+    The expected counts come from infrastructure.yml: storage.vm_images[] (VM images, task 06) and
+    networking.logical_networks[] (logical networks, task 07).
+
 .PARAMETER ConfigPath
     Path to infrastructure YAML. Defaults to configs\infrastructure.yml in CWD.
 
@@ -59,7 +62,7 @@
     Read-only: no changes are made to cluster or Azure resources.
 #>
 
-[CmdletBinding(SupportsShouldProcess)]
+[CmdletBinding()]
 param(
     [string]      $ConfigPath  = "",
     [PSCredential]$Credential,
@@ -150,8 +153,9 @@ $subscriptionId = $cfg.azure.subscription_id                          # azure.su
 $resourceGroup  = if ($cfg.azure.resource_group) { $cfg.azure.resource_group } else { $null }   # azure.resource_group
 
 # Expected counts for pass/fail comparison
-$logicalNetworks = if ($cfg.networking.logical_networks) { $cfg.networking.logical_networks } else { @() }  # networking.logical_networks[]
-$marketplace     = if ($cfg.marketplace_images.images)   { $cfg.marketplace_images.images }   else { @() }  # marketplace_images.images[]
+$logicalNetworks = @(if ($cfg.networking.logical_networks) { $cfg.networking.logical_networks })  # networking.logical_networks[]
+$vmImageList     = Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'storage.vm_images'      # storage.vm_images[]
+$marketplace     = @(if ($vmImageList) { $vmImageList })
 
 Write-Log "Cluster:     $ClusterName"
 Write-Log "WAC server:  $(if ($WacServer) { $WacServer } else { '(skipped — not configured)' })"
@@ -299,7 +303,7 @@ if (-not $subscriptionId -or -not $resourceGroup) {
 } else {
     $imagesJson = az stack-hci-vm image list --subscription $subscriptionId --resource-group $resourceGroup --output json 2>$null
     if ($LASTEXITCODE -eq 0 -and $imagesJson) {
-        $images    = $imagesJson | ConvertFrom-Json
+        $images    = @($imagesJson | ConvertFrom-Json)
         $succeeded = @($images | Where-Object { $_.provisioningState -eq "Succeeded" })
         Write-Check -Pass ($images.Count -gt 0) -Check "VM images in $resourceGroup" -Detail "$($images.Count) found"
         if ($marketplace.Count -gt 0) {
@@ -317,7 +321,7 @@ if (-not $subscriptionId -or -not $resourceGroup) {
 } else {
     $lnetsJson = az stack-hci-vm network lnet list --subscription $subscriptionId --resource-group $resourceGroup --output json 2>$null
     if ($LASTEXITCODE -eq 0 -and $lnetsJson) {
-        $lnets     = $lnetsJson | ConvertFrom-Json
+        $lnets     = @($lnetsJson | ConvertFrom-Json)
         $succeeded = @($lnets | Where-Object { $_.provisioningState -eq "Succeeded" })
         Write-Check -Pass ($lnets.Count -gt 0) -Check "Logical networks in $resourceGroup" -Detail "$($lnets.Count) found"
         if ($logicalNetworks.Count -gt 0) {
