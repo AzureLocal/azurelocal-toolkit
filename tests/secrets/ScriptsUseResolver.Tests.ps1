@@ -104,7 +104,7 @@ Describe 'Script text: no script reads a secret without the resolver' {
     It 'no script outside the secrets module hard-codes a vault name in a Key Vault call' {
         $offenders = foreach ($f in Get-ScriptFile) {
             $rel = Get-Rel $f.FullName
-            if ($script:WriteSide.Contains($rel) -or $rel -eq 'scripts/common/service-principals/New-AzureLocalSP.ps1') { continue }
+            if ($script:WriteSide.Contains($rel)) { continue }
             $code = Get-CodeText $f.FullName
             if ($code -match "(?i)-VaultName\s+['""][^'""$]+['""]") { "$rel names a vault in a -VaultName argument" }
             if ($code -match "(?i)--vault-name\s+['""][^'""$]+['""]") { "$rel names a vault in --vault-name" }

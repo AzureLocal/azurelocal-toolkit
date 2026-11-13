@@ -17,10 +17,10 @@
     Path for the generated standalone script. Defaults to <SourceName>-Standalone.ps1.
 
 .EXAMPLE
-    .\Convert-ToStandaloneScript.ps1 -SourceScript .\New-AzureLocalSP.ps1 -ConfigPath .\infrastructure.yml
+    .\Convert-ToStandaloneScript.ps1 -SourceScript .\New-PipelineSP.ps1 -ConfigPath .\infrastructure.yml
 
 .EXAMPLE
-    .\Convert-ToStandaloneScript.ps1 -SourceScript .\New-AzureLocalSP.ps1 -ConfigPath .\infrastructure.yml -OutputPath .\New-AzureLocalSP-Standalone.ps1
+    .\Convert-ToStandaloneScript.ps1 -SourceScript .\New-PipelineSP.ps1 -ConfigPath .\infrastructure.yml -OutputPath .\New-PipelineSP-Standalone.ps1
 
 .NOTES
     Requires: powershell-yaml module

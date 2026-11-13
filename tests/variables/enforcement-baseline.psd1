@@ -5,8 +5,6 @@
 # or, when the value is fixed by Microsoft or a protocol, add a rule-level exception to the test; a reviewed one-off goes to enforcement-allowlist.psd1.
 @{
     Entries = @(
-        @{ File = 'scripts/common/service-principals/New-AzureLocalSP.ps1'; Rule = 'A'; Literal = 'azure.subscriptions'; Count = 2; Reason = 'legacy script, not yet migrated' }
-        @{ File = 'scripts/common/service-principals/New-AzureLocalSP.ps1'; Rule = 'A'; Literal = 'azure.tenant'; Count = 2; Reason = 'legacy script, not yet migrated' }
         @{ File = 'scripts/common/utilities/helpers/config-loader.ps1'; Rule = 'A'; Literal = '_metadata.loaded_at'; Count = 2; Reason = 'legacy script, not yet migrated' }
         @{ File = 'scripts/common/utilities/helpers/config-loader.ps1'; Rule = 'A'; Literal = '_metadata.source_file'; Count = 2; Reason = 'legacy script, not yet migrated' }
         @{ File = 'scripts/common/utilities/helpers/config-loader.ps1'; Rule = 'A'; Literal = 'azure_infrastructure'; Count = 1; Reason = 'legacy script, not yet migrated' }

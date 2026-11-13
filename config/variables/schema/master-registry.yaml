@@ -23302,15 +23302,6 @@ tools:
                 SpNameSuffix: {"name":"SpNameSuffix","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/service-principals/New-ArcOnboardingSP.ps1:52","description":"Optional suffix for the service principal name."}
                 IncludeResourceAdminRole: {"name":"IncludeResourceAdminRole","type":"boolean","declared_type":"switch","default":"false","required":"N","read_at":"scripts/common/service-principals/New-ArcOnboardingSP.ps1:55","description":"If specified, also assigns Azure Connected Machine Resource Administrator role."}
                 CredentialValidityDays: {"name":"CredentialValidityDays","type":"integer","declared_type":"int","default":"365","required":"N","read_at":"scripts/common/service-principals/New-ArcOnboardingSP.ps1:58","description":"Number of days the credential is valid. Defaults to 365."}
-            common_service_principals_New_AzureLocalSP_ps1:
-              type: object
-              area: "common/service-principals/New-AzureLocalSP.ps1"
-              properties:
-                Solution: {"name":"Solution","type":"string","declared_type":"string","default":"\"azure-local\"","enum":["azure-local","failover-clusters-scvmm","scvmm-azure-arc","azure-arc-servers"],"required":"N","read_at":"scripts/common/service-principals/New-AzureLocalSP.ps1:48","description":"The solution name. Defaults to \"azure-local\"."}
-                SpNameSuffix: {"name":"SpNameSuffix","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/service-principals/New-AzureLocalSP.ps1:52","description":"Optional suffix for the service principal name. Full name will be: sp-<solution>-deploy-<suffix>"}
-                RoleAssignmentScope: {"name":"RoleAssignmentScope","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/service-principals/New-AzureLocalSP.ps1:55","description":"Scope for role assignment. Defaults to subscription level."}
-                CredentialValidityDays: {"name":"CredentialValidityDays","type":"integer","declared_type":"int","default":"365","required":"N","read_at":"scripts/common/service-principals/New-AzureLocalSP.ps1:58","description":"Number of days the credential is valid. Defaults to 365."}
-                ConfigPath: {"name":"ConfigPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/common/service-principals/New-AzureLocalSP.ps1:61"}
             common_service_principals_New_PipelineSP_ps1:
               type: object
               area: "common/service-principals/New-PipelineSP.ps1"
