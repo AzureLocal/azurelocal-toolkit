@@ -366,7 +366,7 @@ $(($DocPackage.Sections.ClusterConfig.Nodes | ForEach-Object { "            NODE
 
 | Role | Contact |
 |------|---------|
-| Azure Local Cloud Support | support@Azure Local Cloud.com |
+| Azure Local Cloud Support | support@example.com |
 | Microsoft Support | Azure Portal Support Request |
 
 ---

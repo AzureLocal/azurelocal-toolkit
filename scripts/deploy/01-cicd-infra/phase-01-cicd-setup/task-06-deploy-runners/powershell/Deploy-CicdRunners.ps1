@@ -65,7 +65,7 @@ $configuration = [ordered]@{
     azure  = [ordered]@{
         tenant_id           = ''
         subscription_id     = ''
-        location            = 'eastus'
+        location            = ''
         resource_group      = ''
         automation_identity = [ordered]@{ name = 'azurelocal-cicd'; client_id = '' }
     }

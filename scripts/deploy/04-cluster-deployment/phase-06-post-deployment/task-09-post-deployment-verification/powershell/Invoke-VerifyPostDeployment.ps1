@@ -46,7 +46,7 @@
 
 .EXAMPLE
     # Pass WAC server explicitly:
-    .\...\Invoke-VerifyPostDeployment.ps1 -WacServer "wac.contoso.cloud"
+    .\...\Invoke-VerifyPostDeployment.ps1 -WacServer "wac.improbability.cloud"
 
 .EXAMPLE
     # Limit to one node:

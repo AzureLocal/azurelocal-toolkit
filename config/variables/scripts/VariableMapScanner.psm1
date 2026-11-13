@@ -36,6 +36,8 @@ $script:FilterCommand = @('where-object', 'sort-object', 'select-object', 'group
 # Functions that return the items of a list of the file (the code names them; nothing else tells the scanner).
 $script:ReturnPath = @{ "get-azlnodenetworkadapter" = "nodes[].network_adapters[]"; "get-azlverinfra" = "@"; "get-vfidinfra" = "@"; "get-azlverifyinfrastructure" = "@" }
 $script:ReaderCommandPattern = '^(get|read)-\w*(prop|value|leaf|setting|key)$'
+# Members every list or dictionary has; reading one is not reading a key of the file (only used with -ReportUnknown).
+$script:CollectionMember = @('count', 'length', 'keys', 'values', 'psobject', 'issynchronized', 'isreadonly', 'isfixedsize', 'syncroot', 'comparer', 'capacity', 'psbase', 'psextended', 'pstypenames')
 
 function Get-MapSortedString {
     <#
@@ -141,9 +143,12 @@ function Find-MapReader {
         The .ps1 and .psm1 files to scan.
     .PARAMETER Index
         From Get-MapIndex.
+    .PARAMETER ReportUnknown
+        Also return a record with Mode 'unknown' for each key a chain or a reader command reads from the file that the registry does
+        not have (tests/variables/Enforcement.Tests.ps1). The variable map does not use it; without it the result is unchanged.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][string[]]$File, [Parameter(Mandatory)]$Index)
+    param([Parameter(Mandatory)][string]$Root, [Parameter(Mandatory)][string[]]$File, [Parameter(Mandatory)]$Index, [switch]$ReportUnknown)
 
     $found = [System.Collections.Generic.List[object]]::new()
     $seen = [System.Collections.Generic.HashSet[string]]::new([StringComparer]::Ordinal)
@@ -330,13 +335,29 @@ function Find-MapReader {
             if (-not $changed) { break }
         }
 
+        # The variable a chain starts at ("infra" for $infra.cluster.name); only -ReportUnknown uses it.
+        $rootOf = {
+            param($node)
+            $cur = $node
+            while ($null -ne $cur) {
+                if ($cur -is [System.Management.Automation.Language.VariableExpressionAst]) { return ($cur.VariablePath.UserPath.ToLowerInvariant() -replace '^.*:', '') }
+                if ($cur -is [System.Management.Automation.Language.MemberExpressionAst] -or $cur -is [System.Management.Automation.Language.InvokeMemberExpressionAst]) { $cur = $cur.Expression; continue }
+                if ($cur -is [System.Management.Automation.Language.IndexExpressionAst]) { $cur = $cur.Target; continue }
+                if ($cur -is [System.Management.Automation.Language.ParenExpressionAst]) { $cur = $cur.Pipeline; continue }
+                if ($cur -is [System.Management.Automation.Language.PipelineAst] -and $cur.PipelineElements.Count -ge 1) { $cur = $cur.PipelineElements[0]; continue }
+                if ($cur -is [System.Management.Automation.Language.CommandExpressionAst]) { $cur = $cur.Expression; continue }
+                break
+            }
+            return '(other)'
+        }
+
         $emit = {
-            param([string]$p, $node, [string]$mode)
+            param([string]$p, $node, [string]$mode, [string]$root = '')
             if ([string]::IsNullOrEmpty($p) -or $p -eq $script:RootName) { return }
             if ($p.EndsWith('[]')) { $p = $p.Substring(0, $p.Length - 2) }
             $scope = & $scopeOf $node
             $k = "$relative|$scope|$p|$mode|$($node.Extent.StartLineNumber)"
-            if ($seen.Add($k)) { $found.Add([pscustomobject]@{ Path = $p; File = $relative; Function = $scope; Mode = $mode; Line = $node.Extent.StartLineNumber }) }
+            if ($seen.Add($k)) { $found.Add([pscustomobject]@{ Path = $p; File = $relative; Function = $scope; Mode = $mode; Line = $node.Extent.StartLineNumber; Root = $root }) }
         }
 
         # chains (member, index, and the reader commands)
@@ -364,10 +385,19 @@ function Find-MapReader {
                 if ($n.Static) { continue }
                 $r = & $resolve $n
                 if ($r) { & $emit $r $n 'chain' }
+                elseif ($ReportUnknown) {
+                    $m = Get-ConstantString $n.Member
+                    $b = & $resolve $n.Expression
+                    if ($b -and $m -and $script:CollectionMember -notcontains $m.ToLowerInvariant()) { & $emit ($(if ($b -eq $script:RootName) { $m } else { "$b.$m" })) $n 'unknown' (& $rootOf $n.Expression) }
+                }
                 continue
             }
             if ($n -is [System.Management.Automation.Language.IndexExpressionAst]) {
                 $r = & $resolve $n
+                if ($ReportUnknown -and -not $r -and $n.Index -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+                    $b = & $resolve $n.Target
+                    if ($b) { & $emit ($(if ($b -eq $script:RootName) { $n.Index.Value } else { "$b.$($n.Index.Value)" })) $n 'unknown' (& $rootOf $n.Target) }
+                }
                 if ($r -and $n.Index -is [System.Management.Automation.Language.StringConstantExpressionAst]) { & $emit $r $n 'chain' }
                 elseif ($n.Index -isnot [System.Management.Automation.Language.StringConstantExpressionAst]) {
                     # $item[$k] where $k loops over literals in the enclosing foreach
@@ -388,6 +418,36 @@ function Find-MapReader {
                 if ($name -and $name.ToLowerInvariant() -match $script:ReaderCommandPattern) {
                     $r = & $resolve $n
                     if ($r) { & $emit $r $n 'literal' }
+                    elseif ($ReportUnknown) {
+                        # the same walk as the resolver, up to the first segment the registry does not have
+                        $base = $null; $key = $null
+                        foreach ($a in @($n.CommandElements | Select-Object -Skip 1)) {
+                            if ($a -is [System.Management.Automation.Language.CommandParameterAst]) { continue }
+                            if ($null -eq $base) { $br = & $resolve $a; if ($null -ne $br) { $base = $br; continue } }
+                            if ($null -eq $key -and $a -is [System.Management.Automation.Language.StringConstantExpressionAst]) { $key = $a.Value }
+                        }
+                        if ($null -ne $base -and $null -ne $key) {
+                            $cur = $base
+                            foreach ($seg in $key.Split('.')) {
+                                $next = Join-MapPath -Index $Index -Base $cur -Member $seg
+                                if ($null -eq $next) { & $emit ($(if ($cur -eq $script:RootName) { $seg } else { "$cur.$seg" })) $n 'unknown' '(reader)'; break }
+                                $cur = $next
+                            }
+                        }
+                    }
+                }
+                elseif ($ReportUnknown -and -not $name -and $n.InvocationOperator -eq 'Ampersand' -and $n.CommandElements.Count -ge 2 -and $n.CommandElements[0] -is [System.Management.Automation.Language.VariableExpressionAst] -and $n.CommandElements[1] -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+                    # & $get 'networking.management.gatway': a getter held in a variable, given a path that starts at a top-level key of the file
+                    $key = $n.CommandElements[1].Value
+                    $segments = $key.Split('.')
+                    if ($segments.Count -ge 2 -and $key -cmatch '^[a-z_][a-z0-9_]*(\.[a-z0-9_]+)+$' -and $Index.Top.Contains($segments[0])) {
+                        $cur = $script:RootName
+                        foreach ($seg in $segments) {
+                            $next = Join-MapPath -Index $Index -Base $cur -Member $seg
+                            if ($null -eq $next) { & $emit ($(if ($cur -eq $script:RootName) { $seg } else { "$cur.$seg" })) $n 'unknown' '(getter)'; break }
+                            $cur = $next
+                        }
+                    }
                 }
                 continue
             }

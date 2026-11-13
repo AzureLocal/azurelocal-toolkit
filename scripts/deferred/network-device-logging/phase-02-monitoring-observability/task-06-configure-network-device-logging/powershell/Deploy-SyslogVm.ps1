@@ -167,7 +167,7 @@ az network nsg create `
     --resource-group $resourceGroup `
     --name $nsgName `
     --location $location `
-    --tags "Purpose=Syslog-SNMP-Collector" "ManagedBy=HybridCloudSolutions" "Environment=Production"
+    --tags "Purpose=Syslog-SNMP-Collector" "ManagedBy=azurelocal-toolkit" "Environment=Production"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Failed to create NSG" -ForegroundColor Red
@@ -253,7 +253,7 @@ az network nic create `
     --private-ip-address $privateIP `
     --network-security-group $nsgName `
     --ip-forwarding false `
-    --tags "Purpose=Syslog-SNMP-Collector" "ManagedBy=HybridCloudSolutions"
+    --tags "Purpose=Syslog-SNMP-Collector" "ManagedBy=azurelocal-toolkit"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Failed to create NIC" -ForegroundColor Red
@@ -282,7 +282,7 @@ az vm create `
     --os-disk-size-gb $osDiskSize `
     --os-disk-name "${vmName}-osdisk" `
     --storage-sku Premium_LRS `
-    --tags "Purpose=Syslog-SNMP-Collector" "ManagedBy=HybridCloudSolutions" "Environment=Production" "OS=Ubuntu-24.04-LTS"
+    --tags "Purpose=Syslog-SNMP-Collector" "ManagedBy=azurelocal-toolkit" "Environment=Production" "OS=Ubuntu-24.04-LTS"
 
 if ($LASTEXITCODE -ne 0) {
     Write-Host "ERROR: Failed to create VM" -ForegroundColor Red

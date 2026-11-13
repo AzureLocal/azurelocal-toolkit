@@ -237,7 +237,7 @@ function ConvertTo-AzlCicdSetting {
         Infrastructure       = $Infrastructure
         ApiTokenReference    = [string](Get-AzlValue $devops 'api_token')
         TenantId             = [string](Get-AzlValue $Infrastructure 'azure.tenant_id')
-        Location             = [string](Get-AzlValue $Infrastructure 'azure.location' 'eastus')
+        Location             = [string](Get-AzlValue $Infrastructure 'azure.location')
         AzureSubscriptionId  = $azureSubscription
         AzureResourceGroup   = [string](Get-AzlValue $Infrastructure 'azure.resource_group')
         AppName              = [string](Get-AzlValue $Infrastructure 'azure.automation_identity.name' 'azurelocal-cicd')

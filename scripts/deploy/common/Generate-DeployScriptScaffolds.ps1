@@ -36,7 +36,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$CoverageDocumentPath = 'e:\git\azurelocal.github.io\repo-management\reports\variables\deploy-script-coverage.md',
+    [Parameter(Mandatory)][string]$CoverageDocumentPath,
     [string]$RepositoryRoot = ([System.IO.Path]::GetFullPath([System.IO.Path]::Combine($PSScriptRoot, '..', '..', '..'))),
     [string]$TaskCatalogPath = (Join-Path $PSScriptRoot 'TaskCatalogue.psd1')
 )

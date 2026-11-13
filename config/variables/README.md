@@ -93,6 +93,26 @@ The map is **generated** from the registry and a scan of the code (the registry 
 
 Change a variable or a script that reads one, and the map changes: regenerate it and commit it with the change. `tests/variables/VariableMap.Tests.ps1` fails when the committed map is stale, when a registry variable is missing from it, and when an ARM parameter the builder produces is missing from the by-ARM-parameter table.
 
+## No hard-coded values in scripts
+
+`tests/variables/Enforcement.Tests.ps1` fails the build when a script under `scripts/` carries a value that a deployment chooses, or reads a key that is not in the registry. It uses the PowerShell parser, so comments and help text do not count. The rules:
+
+- **A**: a key path read from the infrastructure file (`Get-AzlInfrastructureValue`, or the property chains and reader commands the variable map recognises) that the registry does not have.
+- **B**: a literal IPv4 address or CIDR, a GUID, a DNS name, an Azure region name, a Key Vault name, an Azure resource name (`rg-`, `kv-`, `vnet-`, `snet-`, `nsg-`, `log-`, `vm-`, `iic-` and similar) or a value given to a subscription, tenant, resource group or vault.
+- **C**: a parameter whose default is such a value.
+- **D**: `Read-Host`, `Get-Credential`, `$Host.UI.Prompt*` or `[Console]::ReadLine` in a script that has `-InfrastructureFile`.
+
+What is not a violation: values Microsoft or a protocol fixes. They are rule-level exceptions in the test, each with its reason: documentation, loopback, link-local, `0.0.0.0` and mask addresses, the Azure platform address `168.63.129.16`, the ranges Azure Local reserves for Arc resource bridge, the public DNS servers Azure Local refuses, `improbability.cloud`, `example.com`, `.net` and `.org`, Microsoft endpoints, the all-zero GUID and the built-in role, policy and application IDs the scripts use (each named). A host under a Microsoft suffix that names a customer resource (`<name>.blob.core.windows.net`, `<name>.vault.azure.net`) is still a violation.
+
+Anything else is in one of two files next to the test:
+
+| File | Holds | Rule |
+|---|---|---|
+| `tests/variables/enforcement-allowlist.psd1` | A reviewed exception: file, rule, literal, one-line reason. | Small. A line that no longer matches fails the test. |
+| `tests/variables/enforcement-baseline.psd1` | Known debt in legacy scripts that are not migrated yet: file, rule, literal, `Count`, reason `legacy script, not yet migrated`. | The test passes with exactly these, prints how many there are, fails on one more (a new violation) and on one fewer (lower `Count` or remove the line). |
+
+Both files write an address masked (`10.x.x.x/24`) and never hold an ID that is not Microsoft-fixed. A new violation is fixed in the script (read the value from the infrastructure file), not added to the baseline. `AZL_ENFORCE_DUMP=<file.csv>` writes every finding, before the two lists, to a file. What the test cannot see: values built at run time, short host names and plain names (`dc01`), values in files that are not PowerShell, and chains from variables it cannot tie to the infrastructure file.
+
 ## Checks
 
 ```powershell

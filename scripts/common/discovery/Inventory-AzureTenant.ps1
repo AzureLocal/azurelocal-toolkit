@@ -184,7 +184,7 @@ if (-not $TenantId) {
                 Write-Host "        tenant:" -ForegroundColor DarkGray
                 Write-Host "          id: `"your-tenant-guid`"" -ForegroundColor DarkGray
                 Write-Host "          name: `"Your Tenant Name`"" -ForegroundColor DarkGray
-                Write-Host "          default_domain: `"yourdomain.com`"" -ForegroundColor DarkGray
+                Write-Host "          default_domain: `"improbability.cloud`"" -ForegroundColor DarkGray
                 Write-Host ""
             }
         }

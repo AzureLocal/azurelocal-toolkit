@@ -123,7 +123,7 @@ if ($PSCmdlet.ShouldProcess($ResourceGroup, "Create Resource Group")) {
             "Environment" = "Production"
             "Purpose" = "Security"
             "ManagedBy" = "PowerShell"
-            "Subscription" = "local-security-001"
+            "Subscription" = "iic-security-01"
         } | Out-Null
         Write-Host "✓ Resource group created: $ResourceGroup" -ForegroundColor Green
     } else {

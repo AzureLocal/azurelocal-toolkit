@@ -193,12 +193,14 @@ Out-Null
             DisplayName = "Microsoft Cloud Security Benchmark"
         },
         @{
-            Id = "5e4e5e7f-4b3c-4b3c-4b3c-4b3c4b3c4b3c"
+            # Placeholder: the real initiative ID was removed from this script; set it from Microsoft Learn before use.
+            Id = "00000000-0000-0000-0000-000000000000"
             Name = "cyber-essentials"
             DisplayName = "Cyber Essentials v3.1"
         },
         @{
-            Id = "1a5bb27d-173f-493e-9568-eb56638dde4d"
+            # Placeholder: the real initiative ID was removed from this script; set it from Microsoft Learn before use.
+            Id = "00000000-0000-0000-0000-000000000000"
             Name = "mcsb-v2-preview"
             DisplayName = "Microsoft Cloud Security Benchmark v2 (Preview)"
         }
