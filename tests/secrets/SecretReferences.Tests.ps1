@@ -249,6 +249,27 @@ Describe 'The ARM deployment and the providers' {
             $c.result | Should -Be 'Failed'
             $c.evidence | Should -Not -Match 'a-literal-password'
         }
+        It 'with secretMode KeyVaultReference fails a secret of another provider with the Azure Resource Manager reason; a keyvault:// reference still passes' {
+            $env:AZL_TEST_LOCAL_ADMIN = $script:Canary
+            $r = Invoke-TestRun -World (Get-FakeWorld) -Infra (Get-EnvInfra) -Mode Plan -Override $script:ResolverMembers -Settings @{ secretMode = 'KeyVaultReference' }
+            $c = Get-Pre $r KeyVaultSecrets
+            $c.result | Should -Be 'Failed'
+            $c.evidence | Should -Match 'localAdminPassword'
+            $c.evidence | Should -Match 'Azure Resource Manager can read only keyvault:// references'
+            $c.evidence | Should -Not -Match $script:Canary
+            $kv = Invoke-TestRun -World (Get-FakeWorld) -Infra (Get-TestInfra) -Mode Plan -Override $script:ResolverMembers -Settings @{ secretMode = 'KeyVaultReference' }
+            (Get-Pre $kv KeyVaultSecrets).result | Should -Be 'Passed'
+        }
+        It 'in the default Placeholder mode the same file passes' {
+            $env:AZL_TEST_LOCAL_ADMIN = $script:Canary
+            $r = Invoke-TestRun -World (Get-FakeWorld) -Infra (Get-EnvInfra) -Mode Plan -Override $script:ResolverMembers -Settings @{ secretMode = 'Placeholder' }
+            (Get-Pre $r KeyVaultSecrets).result | Should -Be 'Passed'
+        }
+        It 'the setting secretMode is Placeholder by default, is case-insensitive, and refuses another value' {
+            (Get-AzlArmRunSetting).secretMode | Should -Be 'Placeholder'
+            (Get-AzlArmRunSetting -Settings @{ secretMode = 'keyvaultreference' }).secretMode | Should -Be 'KeyVaultReference'
+            { Get-AzlArmRunSetting -Settings @{ secretMode = 'Inline' } } | Should -Throw '*secretMode must be Placeholder or KeyVaultReference*'
+        }
         It 'does not read Key Vault for a secret of another provider' {
             $env:AZL_TEST_LOCAL_ADMIN = $script:Canary
             $asked = [System.Collections.Generic.List[string]]::new()

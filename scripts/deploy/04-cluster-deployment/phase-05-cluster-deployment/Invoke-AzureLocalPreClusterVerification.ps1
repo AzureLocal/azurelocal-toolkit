@@ -62,7 +62,7 @@
     Run only these categories: azure, identity, nodes, network, storage, readiness. A partial run never passes the ARM precondition.
 .PARAMETER Settings
     Run settings (see Get-AzlArmRunSetting): preClusterVerificationMaxAgeHours, preClusterVerificationReportDirectory,
-    acknowledgeKnownIssues, solutionVersion, sbeCatalogPath; and remoting = @{ transport; useSsl; authentication } for the node connections.
+    acknowledgeKnownIssues, solutionVersion, sbeCatalogPath, secretMode (Placeholder, or KeyVaultReference when the parameter file is made with -SecretMode KeyVaultReference: then every deployment secret must be a keyvault:// reference); and remoting = @{ transport; useSsl; authentication } for the node connections.
 .PARAMETER ConfigPath
     The same settings as a JSON file.
 .PARAMETER AcknowledgeKnownIssues

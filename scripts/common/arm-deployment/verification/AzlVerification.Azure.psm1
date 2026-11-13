@@ -30,6 +30,7 @@
       Reused from the ARM run's adapter (New-AzlArmAzureAdapter), same behaviour:
         Now, Sleep, GetContext, GetResourceGroup(Subscription, ResourceGroup), GetProviderState(Subscription, Namespace),
         GetPermission(Subscription, ResourceGroup), TestNameAvailable(Subscription, ResourceGroup, Type, Name), TestSecret(Vault, Secret, Infrastructure),
+        TestSecretReference(Reference, Infrastructure)  the secret resolver's probe for a reference of any provider: Resolvable, Category, Message; never a value,
         GetArcMachine(Node, ResourceId, ArcMachineName, Subscription, ResourceGroup), GetDeploymentState(Subscription, ResourceGroup, Cluster)
       Defined here:
         GetSubscription(Subscription)                  State, TenantId, DisplayName; $null when not visible
@@ -275,7 +276,7 @@ function Get-AzlVerifyArmBridge {
     $azure = Get-AzlVerifyAzureAdapter $Context
     if ($azure) { foreach ($k in $azure.Keys) { if ($null -ne $azure[$k]) { $adapter[$k] = $azure[$k] } } }
     $acknowledged = @(Get-AzlVerifyList (Get-AzlProp (Get-AzlProp $Context 'Settings') 'acknowledgeKnownIssues' @()))
-    $settings = Get-AzlArmRunSetting -Infrastructure $infra -Settings @{ acknowledgeKnownIssues = @($acknowledged | ForEach-Object { [string]$_ }) }
+    $settings = Get-AzlArmRunSetting -Infrastructure $infra -Settings @{ acknowledgeKnownIssues = @($acknowledged | ForEach-Object { [string]$_ }); secretMode = [string](Get-AzlProp (Get-AzlProp $Context 'Settings') 'secretMode' 'Placeholder') }
     # The gate reads: it never registers a provider. A failed deployment may be validated again only when the operator said so (-AllowRevalidate): then AZ-018 is a Warning that records it.
     $settings.registerResourceProviders = $false
     $settings.allowRevalidate = [bool](Get-AzlProp (Get-AzlProp $Context 'Settings') 'allowRevalidate' $false)
@@ -441,7 +442,8 @@ function Test-AzlVerifyHciResourceProvider {
 }
 
 function Get-AzlVerifySecretReference {
-    # The Key Vault references of the identities the deployment uses (the local administrator, the LCM user when Active Directory).
+    # The secret references of the identities the deployment uses (the local administrator, the LCM user when Active Directory).
+    # Provider is keyvault, env, file or command; Valid is true for a reference of any of the four. Vault and Secret are set for keyvault only.
     param([Parameter(Mandatory)]$Context)
     $infra = Get-AzlVerifyInfrastructure $Context
     $t = Get-AzlVerifyTarget $Context
@@ -450,23 +452,49 @@ function Get-AzlVerifySecretReference {
     if ($t.Identity -eq 'active_directory') { $keys += @{ Label = 'LCM user password'; Path = 'identity.active_directory.lcm_user.password'; Kind = 'Lcm' } }
     foreach ($k in $keys) {
         $ref = [string](Get-AzlProp $infra $k.Path '')
-        $parts = ConvertFrom-AzlKeyVaultRef -Reference $ref
-        $list.Add([pscustomobject]@{ Label = $k.Label; Path = $k.Path; Kind = $k.Kind; Reference = $ref; Vault = $(if ($parts) { $parts.Vault } else { '' }); Secret = $(if ($parts) { $parts.Secret } else { '' }); Valid = [bool]$parts })
+        $provider = [string](Get-AzlSecretProvider -Reference $ref)
+        $parts = $(if ($provider -eq 'keyvault') { ConvertFrom-AzlKeyVaultRef -Reference $ref } else { $null })
+        $list.Add([pscustomobject]@{
+                Label = $k.Label; Path = $k.Path; Kind = $k.Kind; Reference = $ref; Provider = $provider
+                Vault = $(if ($parts) { $parts.Vault } else { '' }); Secret = $(if ($parts) { $parts.Secret } else { '' }); Valid = [bool]$provider
+            })
     }
     return $list.ToArray()
 }
 
+function Get-AzlVerifySecretModeProblem {
+    # One constraint of Azure, not of the toolkit: with -SecretMode KeyVaultReference Azure Resource Manager reads the secret itself, and it can read
+    # Key Vault only. The mode is the run setting secretMode (default Placeholder: the deployment reads the secret on this machine, any provider).
+    # Returns the reason text for a reference of another provider, else an empty string.
+    param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)]$Secret)
+    $mode = [string](Get-AzlProp (Get-AzlProp $Context 'Settings') 'secretMode' 'Placeholder')
+    if ($mode -ne 'KeyVaultReference' -or -not $Secret.Valid -or $Secret.Provider -eq 'keyvault') { return '' }
+    return "$($Secret.Label) ($($Secret.Path)) is a $($Secret.Provider):// reference, and the deployment runs with -SecretMode KeyVaultReference: Azure Resource Manager can read only keyvault:// references"
+}
+
+function Get-AzlVerifyNotReferenceText([string]$Label, [string]$Reference) {
+    # The text is never repeated: it may be a password written by mistake. Only its length is.
+    return "$($Label): the value ($($Reference.Length) characters) is not a secret reference (keyvault://<vault>/<secret>, env://<VARIABLE>, file://<name> or command://<name>)"
+}
+
 function Test-AzlVerifyKeyVault {
-    # AZ-010. The vaults of the local administrator and the LCM user exist, and are the ones listed under key_vaults.
+    # AZ-010. The secret references of the local administrator and the LCM user are references of a supported provider. For a keyvault:// reference the
+    # vault is listed under key_vaults and exists. env://, file:// and command:// have no vault: nothing here applies to them (AZ-012 reads them).
     param($Context)
     $infra = Get-AzlVerifyInfrastructure $Context
     $t = Get-AzlVerifyTarget $Context
-    $null = Get-AzlVerifyAzureContext $Context
     $refs = @(Get-AzlVerifySecretReference $Context)
     $listed = @(Get-AzlVerifyList $infra['key_vaults'])
     $problems = @(); $seen = @{}
+    $vaultRefs = @($refs | Where-Object { $_.Provider -eq 'keyvault' })
     foreach ($r in $refs) {
-        if (-not $r.Valid) { $problems += "$($r.Path): '$($r.Reference)' is not a keyvault://<vault>/<secret> reference"; continue }
+        if (-not $r.Valid) { $problems += Get-AzlVerifyNotReferenceText $r.Label $r.Reference; continue }
+        $modeProblem = Get-AzlVerifySecretModeProblem $Context $r
+        if ($modeProblem) { $problems += $modeProblem }
+    }
+    # Nothing in Azure is read for a file that holds no keyvault:// reference, so no sign-in is needed to say so.
+    if ($vaultRefs) { $null = Get-AzlVerifyAzureContext $Context }
+    foreach ($r in $vaultRefs) {
         if ($seen.ContainsKey($r.Vault)) { continue }
         $entry = @($listed | Where-Object { [string](Get-AzlProp $_ 'name' '') -ieq $r.Vault }) | Select-Object -First 1
         if (-not $entry) { $problems += "vault $($r.Vault) ($($r.Label)) is not listed under key_vaults in the file"; continue }
@@ -477,21 +505,37 @@ function Test-AzlVerifyKeyVault {
         if (-not $vault) { $problems += "vault $($r.Vault) ($($r.Label)) does not exist$(if ($resourceGroup) { " in resource group $resourceGroup" }) of subscription $(Format-AzlVerifyId $subscription)" }
     }
     if ($problems) {
-        return New-AzlVerifyResult Failed "Key Vault: $($problems -join '; ')." "Create the vault, or fix key_vaults and the keyvault:// references in the file. The vault holds the local administrator and LCM passwords (Add-KeyVaultCredentials.ps1)." -Evidence "$($problems.Count) problem(s)"
+        return New-AzlVerifyResult Failed "Secret references: $($problems -join '; ')." "Use a keyvault:// reference for a secret that Azure Resource Manager reads (-SecretMode KeyVaultReference), or deploy in the default Placeholder mode. Otherwise create the vault, or fix key_vaults and the references in the file. A keyvault:// secret is stored with Add-KeyVaultCredentials.ps1." -Evidence "$($problems.Count) problem(s)"
     }
-    if (-not $refs.Count) { return New-AzlVerifyResult Skipped 'The file names no Key Vault reference for the local administrator.' }
-    New-AzlVerifyResult Passed "Key Vault $(Join-AzlVerifyList @($seen.Keys)) exist." -Evidence "$($seen.Count) vault(s)"
+    if (-not $refs.Count) { return New-AzlVerifyResult Skipped 'The file names no secret reference for the local administrator.' }
+    if (-not $vaultRefs) {
+        return New-AzlVerifyResult NotApplicable "The secret references use $((@($refs | ForEach-Object { $_.Provider } | Select-Object -Unique)) -join ', ') only. There is no Key Vault to check; AZ-012 reads each reference with the secret resolver." -Evidence 'no keyvault:// reference'
+    }
+    New-AzlVerifyResult Passed "Key Vault $(Join-AzlVerifyList @($seen.Keys)) exist.$(if ($vaultRefs.Count -lt $refs.Count) { ' The references of other providers have no vault to check.' })" -Evidence "$($seen.Count) vault(s)"
 }
 
 function Test-AzlVerifySecretReadable {
-    # AZ-012. The password secrets can be READ (not only listed) by this identity and are not empty. The values are never shown.
+    # AZ-012. The password secrets can be READ (not only listed) by this machine and are not empty. The values are never shown.
+    # keyvault://: the adapter's GetKeyVaultSecret (the resolver, Key Vault). Any other provider: the adapter's TestSecretReference (the resolver; no value comes back).
     param($Context)
-    $null = Get-AzlVerifyAzureContext $Context
+    $infra = Get-AzlVerifyInfrastructure $Context
     $refs = @(Get-AzlVerifySecretReference $Context)
+    if ($refs | Where-Object { $_.Provider -eq 'keyvault' }) { $null = Get-AzlVerifyAzureContext $Context }
     $bad = @()
     foreach ($r in $refs) {
-        if (-not $r.Valid) { $bad += "$($r.Label): '$($r.Reference)' is not a keyvault://<vault>/<secret> reference"; continue }
-        try { $value = Invoke-AzlVerifyAdapter $Context GetKeyVaultSecret @($r.Vault, $r.Secret, (Get-AzlVerifyInfrastructure $Context)) }
+        if (-not $r.Valid) { $bad += Get-AzlVerifyNotReferenceText $r.Label $r.Reference; continue }
+        $modeProblem = Get-AzlVerifySecretModeProblem $Context $r
+        if ($modeProblem) { $bad += $modeProblem; continue }
+        if ($r.Provider -ne 'keyvault') {
+            try { $probe = Invoke-AzlVerifyAdapter $Context TestSecretReference @($r.Reference, $infra) }
+            catch {
+                if ($_.Exception.Data['AzlSkip']) { throw }
+                $bad += "$($r.Label): $($r.Reference) could not be read ($($_.Exception.Message))"; continue
+            }
+            if (-not $probe.Resolvable) { $bad += "$($r.Label): $($r.Reference) could not be read: $($probe.Message)" }
+            continue
+        }
+        try { $value = Invoke-AzlVerifyAdapter $Context GetKeyVaultSecret @($r.Vault, $r.Secret, $infra) }
         catch {
             if ($_.Exception.Data['AzlSkip']) { throw }
             $bad += "$($r.Label): secret $($r.Secret) in $($r.Vault) could not be read ($($_.Exception.Message))"; continue
@@ -500,23 +544,27 @@ function Test-AzlVerifySecretReadable {
         if ([string]::IsNullOrWhiteSpace([string]$value)) { $bad += "$($r.Label): secret $($r.Secret) in $($r.Vault) is empty" }
         $value = $null
     }
-    if (-not $refs.Count) { return New-AzlVerifyResult Failed 'The file has no keyvault:// reference for identity.local_admin.password.' 'Store the password in Key Vault and reference it as keyvault://<vault>/local-admin-password.' }
-    if ($bad) { return New-AzlVerifyResult Failed ($bad -join '; ') 'Create the secret (Add-KeyVaultCredentials.ps1), grant this identity Get on secrets (Key Vault Secrets Officer on the vault), or fix the keyvault:// reference.' -Evidence "$($bad.Count) unreadable" }
-    New-AzlVerifyResult Passed "$($refs.Count) password secret(s) are readable by the signed-in identity and not empty (values not shown)." -Evidence "$($refs.Count) read"
+    if (-not $refs.Count) { return New-AzlVerifyResult Failed 'The file has no secret reference for identity.local_admin.password.' 'Store the password where the resolver can read it and reference it: keyvault://<vault>/local-admin-password, env://<VARIABLE>, file://<name> or command://<name>.' }
+    if ($bad) { return New-AzlVerifyResult Failed ($bad -join '; ') 'Create the secret (a keyvault:// secret: Add-KeyVaultCredentials.ps1, and grant this identity Get on secrets with Key Vault Secrets Officer on the vault), set the environment variable, create the file or check the command (secrets section of the file), or fix the reference. With -SecretMode KeyVaultReference every deployment secret must be a keyvault:// reference.' -Evidence "$($bad.Count) unreadable" }
+    New-AzlVerifyResult Passed "$($refs.Count) password secret(s) are readable by the secret resolver and not empty (values not shown)." -Evidence "$($refs.Count) read"
 }
 
 function Test-AzlVerifyLocalAdminUsername {
     # AZ-013. The vault's local-admin username secret must equal identity.local_admin.username (a real mismatch: the vault said Administrator, the nodes use another name).
     param($Context)
     $infra = Get-AzlVerifyInfrastructure $Context
-    $null = Get-AzlVerifyAzureContext $Context
     $fileUser = [string](Get-AzlProp $infra 'identity.local_admin.username' '')
     $ref = @(Get-AzlVerifySecretReference $Context | Where-Object { $_.Kind -eq 'LocalAdmin' })[0]
+    $named = ConvertFrom-AzlKeyVaultRef -Reference ([string](Get-AzlProp $infra 'identity.local_admin.username_secret' ''))
+    # A password from env://, file:// or command:// has no vault, so there is no vault username secret to compare with: not a check that failed or was skipped.
+    if ($ref -and $ref.Valid -and $ref.Provider -ne 'keyvault' -and -not $named) {
+        return New-AzlVerifyResult NotApplicable "identity.local_admin.password is a $($ref.Provider):// reference. It has no vault, so there is no vault username secret to compare with identity.local_admin.username." -Evidence "provider $($ref.Provider)"
+    }
+    $null = Get-AzlVerifyAzureContext $Context
     if (-not $fileUser) { return New-AzlVerifyResult Failed 'identity.local_admin.username is empty in the file.' 'Set identity.local_admin.username (not the built-in Administrator).' }
-    if (-not $ref -or -not $ref.Valid) { Stop-AzlVerifySkip 'identity.local_admin.password is not a keyvault:// reference, so the vault holding the username secret is unknown (see AZ-012).' }
+    if (-not $ref -or -not $ref.Valid) { Stop-AzlVerifySkip 'identity.local_admin.password is not a secret reference, so the vault holding the username secret is unknown (see AZ-012).' }
     # The file can name the username secret (identity.local_admin.username_secret). When it does not, the name is derived from the password secret.
     $userVault = $ref.Vault
-    $named = ConvertFrom-AzlKeyVaultRef -Reference ([string](Get-AzlProp $infra 'identity.local_admin.username_secret' ''))
     if ($named) { $userVault = $named.Vault; $userSecret = $named.Secret }
     else {
         if ($ref.Secret -notmatch '(?i)password$') { Stop-AzlVerifySkip "The secret $($ref.Secret) does not end in 'password', so the name of the matching username secret cannot be derived." "Name the secrets <prefix>-password and <prefix>-username (Add-KeyVaultCredentials.ps1: local-admin-username, local-admin-password)." }
@@ -754,9 +802,9 @@ function Get-AzlVerificationCheckDefinition {
     $d.Add((& $def 'AZ-007' 'The roles Learn lists for the deploying user on the resource group' "$($script:Src.Perm) (Assign Azure permissions for deployment)" $always { param($Context) Invoke-AzlVerifyGuarded -Context $Context -Function Test-AzlVerifyDeployerRole }))
     $d.Add((& $def 'AZ-008' 'The roles Learn lists for registering the machines with Azure Arc (Azure Connected Machine Onboarding and Resource Administrator)' "$($script:Src.Perm) (Verify permissions)" $always { param($Context) Invoke-AzlVerifyGuarded -Context $Context -Function Test-AzlVerifyArcRegistrationRole }))
     $d.Add((& $def 'AZ-009' 'The Azure Local resource provider service principal exists, matches the file and holds its role' "$($script:Learn)/deploy/deployment-azure-resource-manager-template?$($script:View) (Get the object ID for Azure Local Resource Provider); $($script:Src.Avm)" $always { param($Context) Invoke-AzlVerifyGuarded -Context $Context -Function Test-AzlVerifyHciResourceProvider } $false))
-    $d.Add((& $def 'AZ-010' 'The Key Vault of the local administrator and LCM secrets exists and is listed in the file' $script:Src.Prereq $always { param($Context) Invoke-AzlVerifyGuarded -Context $Context -Function Test-AzlVerifyKeyVault }))
+    $d.Add((& $def 'AZ-010' 'The secret references of the local administrator and LCM user are valid; a keyvault:// reference names a listed vault that exists' $script:Src.Prereq $always { param($Context) Invoke-AzlVerifyGuarded -Context $Context -Function Test-AzlVerifyKeyVault }))
     $d.Add((& $def 'AZ-011' 'Every Key Vault secret the deployment parameters reference exists' $script:Src.Prereq $always { param($Context) Invoke-AzlVerifyGuarded -Context $Context -Function Test-AzlVerifyKeyVaultSecret }))
-    $d.Add((& $def 'AZ-012' 'The local administrator and LCM password secrets can be read and are not empty' $script:Src.Prereq $always { param($Context) Invoke-AzlVerifyGuarded -Context $Context -Function Test-AzlVerifySecretReadable }))
+    $d.Add((& $def 'AZ-012' 'The local administrator and LCM password secrets can be read (any provider) and are not empty' $script:Src.Prereq $always { param($Context) Invoke-AzlVerifyGuarded -Context $Context -Function Test-AzlVerifySecretReadable }))
     $d.Add((& $def 'AZ-013' 'The vault''s local-admin username secret equals identity.local_admin.username' "$($script:Src.Prereq); $($script:Src.Known) (built-in Administrator is refused)" $always { param($Context) Invoke-AzlVerifyGuarded -Context $Context -Function Test-AzlVerifyLocalAdminUsername }))
     $d.Add((& $def 'AZ-014' 'Names of the cloud witness storage account, diagnostics storage account and new Key Vault are free' $script:Src.Prereq $always { param($Context) Invoke-AzlVerifyGuarded -Context $Context -Function Test-AzlVerifyNameAvailable }))
     $d.Add((& $def 'AZ-015' 'Arc machines exist, are Connected and are in the resource group of the file' "$($script:Src.Perm); $($script:Src.ArcVerify); $($script:Src.ArcPre)" $always { param($Context) Invoke-AzlVerifyGuarded -Context $Context -Function Test-AzlVerifyArcConnected }))
@@ -809,7 +857,7 @@ function Get-AzlVerificationAdapterDefault {
     param()
     $arm = New-AzlArmAzureAdapter
     $azure = [ordered]@{}
-    foreach ($k in 'Now', 'Sleep', 'GetContext', 'GetResourceGroup', 'GetProviderState', 'GetPermission', 'TestNameAvailable', 'TestSecret', 'GetArcMachine', 'GetDeploymentState') { $azure[$k] = $arm[$k] }
+    foreach ($k in 'Now', 'Sleep', 'GetContext', 'GetResourceGroup', 'GetProviderState', 'GetPermission', 'TestNameAvailable', 'TestSecret', 'TestSecretReference', 'GetArcMachine', 'GetDeploymentState') { $azure[$k] = $arm[$k] }
     $azure['GetSubscription'] = {
         param($Subscription)
         $r = Invoke-AzlArm -Method GET -Path "/subscriptions/$Subscription" -ApiVersion '2022-12-01' -AllowNotFound

@@ -106,7 +106,16 @@ The ARM deployment (`Invoke-AzlArmDeployment`) reads each secret parameter on th
 
 One option is different. `-SecretMode KeyVaultReference` (`New-AzureLocalArmParameters.ps1`, `ConvertTo-AzlArmParameterFile`) writes a parameter file in which Azure Resource Manager itself reads the secret from Key Vault; the value never reaches this machine. Azure Resource Manager can read Key Vault only. So with `env://`, `file://` or `command://` this option **refuses with a message** instead of guessing. Use the default `Placeholder` mode: the file holds `null` for the secrets and the deployment fills them from the resolver.
 
-The pre-cluster check `KeyVaultSecrets` proves each reference with the resolver. It keeps its name.
+The pre-cluster check `KeyVaultSecrets` proves each reference with the resolver. It keeps its name. With the run setting `secretMode` set to `KeyVaultReference` (`-Settings @{ secretMode = 'KeyVaultReference' }`, the same choice as the parameter file option) it fails for a reference that is not `keyvault://`, with the reason "Azure Resource Manager can read only keyvault:// references". The default is `Placeholder`.
+
+### The pre-cluster verification gate
+
+The gate checks (`AZ-010`, `AZ-012`, `AZ-013`) treat a reference of any of the four providers as valid:
+
+- `AZ-010` checks that the vault is listed under `key_vaults` and exists, for a `keyvault://` reference only. A file whose references are all `env://`, `file://` or `command://` has no vault to check; the check is not applicable. A text that is not a reference fails (only its length is shown).
+- `AZ-012` reads each reference with the resolver. A `keyvault://` reference goes through the adapter member `GetKeyVaultSecret`, the others through `TestSecretReference`. No value is returned or shown.
+- `AZ-013` compares the vault's user name secret with `identity.local_admin.username`. It is not applicable when the password is not a `keyvault://` reference (it has no vault) and `identity.local_admin.username_secret` is not set.
+- With `secretMode` `KeyVaultReference`, `AZ-010`, `AZ-011` and `AZ-012` fail for a deployment secret (`identity.local_admin.password`, `identity.active_directory.lcm_user.password`) that is not `keyvault://`. This is a rule of Azure Resource Manager, not of the toolkit.
 
 ## Other tools
 

@@ -39,6 +39,7 @@ BeforeAll {
             GetPermission     = { , @([pscustomobject]@{ Actions = @('*'); NotActions = @() }) }
             TestNameAvailable = { [pscustomobject]@{ Available = $true; ExistsInResourceGroup = $false; Reason = '' } }
             TestSecret        = { $true }
+            TestSecretReference = { param($Reference, $Infrastructure) $log['Probed'] = @(@($log['Probed']) | Where-Object { $_ }) + $Reference; [pscustomobject]@{ Reference = $Reference; Provider = 'env'; Resolvable = $true; Category = ''; Message = '' } }.GetNewClosure()
             GetArcMachine     = {
                 param($Node, $ResourceId, $ArcMachineName, $Subscription, $ResourceGroup)
                 [pscustomobject]@{ Name = $Node; ResourceId = "/subscriptions/$Subscription/resourceGroups/$ResourceGroup/providers/Microsoft.HybridCompute/machines/$Node"; Status = 'Connected'; OsVersion = '10.0.26100.32230'; ComputerName = $Node }
@@ -378,6 +379,108 @@ Describe 'AZ-012 the password secrets can be read' {
         (Invoke-AzCheck 'AZ-012' (New-AzContext -Override @{ GetKeyVaultSecret = { ' ' } }))[0].Status | Should -Be 'Failed'
     }
     It 'is Skipped without the adapter member' { (Invoke-AzCheck 'AZ-012' (New-AzContext -Override @{ GetKeyVaultSecret = $null }))[0].Status | Should -Be 'Skipped' }
+}
+
+Describe 'AZ-010, AZ-011, AZ-012 and AZ-013 with every secret provider' {
+    BeforeAll {
+        function Get-ProviderInfra {
+            # The local administrator from the environment, the LCM user from a file. No vault is named by either.
+            $infra = Get-TestInfra
+            $infra.identity.local_admin.password = 'env://AZL_TEST_LOCAL_ADMIN'
+            $infra.identity.active_directory.lcm_user.password = 'file://lcm-password'
+            $infra
+        }
+        $script:ModeKv = @{ secretMode = 'KeyVaultReference' }
+    }
+    It 'AZ-010 accepts env:// and file:// references: no vault to check, so it is not applicable and reads nothing from Azure' {
+        $log = @{}
+        $r = (Invoke-AzCheck 'AZ-010' (New-AzContext -Infra (Get-ProviderInfra) -Log $log -Override @{ GetKeyVault = { throw 'No vault is named, so none is read.' }; GetContext = { $null } }))[0]
+        $r.Status | Should -Be 'NotApplicable'
+        $r.Message | Should -Match 'env, file'
+    }
+    It 'AZ-010 checks the vault of a keyvault:// reference and says the others have none' {
+        $infra = Get-ProviderInfra
+        $infra.identity.local_admin.password = 'keyvault://kv-iic-mgmt-01/local-admin-password'
+        $r = (Invoke-AzCheck 'AZ-010' (New-AzContext -Infra $infra))[0]
+        $r.Status | Should -Be 'Passed'
+        $r.Message | Should -Match 'kv-iic-mgmt-01'
+        $r.Message | Should -Match 'other providers have no vault'
+    }
+    It 'AZ-010 still fails for a keyvault:// reference whose vault does not exist, and for text that is not a reference (only its length is shown)' {
+        $infra = Get-ProviderInfra
+        $infra.identity.local_admin.password = 'keyvault://kv-iic-mgmt-01/local-admin-password'
+        (Invoke-AzCheck 'AZ-010' (New-AzContext -Infra $infra -Override @{ GetKeyVault = { $null } }))[0].Status | Should -Be 'Failed'
+        $infra = Get-ProviderInfra
+        $infra.identity.local_admin.password = 'My-Pasted-Passw0rd'
+        $r = (Invoke-AzCheck 'AZ-010' (New-AzContext -Infra $infra))[0]
+        $r.Status | Should -Be 'Failed'
+        $r.Message | Should -Match '18 characters'
+        ($r | ConvertTo-Json) | Should -Not -Match 'Pasted'
+    }
+    It 'AZ-010 with -SecretMode KeyVaultReference fails for env:// and names the Azure Resource Manager reason; keyvault:// is fine' {
+        $r = (Invoke-AzCheck 'AZ-010' (New-AzContext -Infra (Get-ProviderInfra) -Settings $script:ModeKv))[0]
+        $r.Status | Should -Be 'Failed'
+        $r.Message | Should -Match 'identity.local_admin.password'
+        $r.Message | Should -Match 'env:// reference'
+        $r.Message | Should -Match 'Azure Resource Manager can read only keyvault:// references'
+        $r.Message | Should -Match 'file:// reference'
+        (Invoke-AzCheck 'AZ-010' (New-AzContext -Settings $script:ModeKv))[0].Status | Should -Be 'Passed'
+    }
+    It 'AZ-012 reads env:// and file:// references through the resolver adapter, never through Key Vault, and shows no value' {
+        $log = @{}
+        $r = (Invoke-AzCheck 'AZ-012' (New-AzContext -Infra (Get-ProviderInfra) -Log $log -Override @{ GetKeyVaultSecret = { throw 'Key Vault is not used for these references.' }; GetContext = { $null } }))[0]
+        $r.Status | Should -Be 'Passed'
+        $log['Probed'] | Should -Contain 'env://AZL_TEST_LOCAL_ADMIN'
+        $log['Probed'] | Should -Contain 'file://lcm-password'
+        ($r | ConvertTo-Json) | Should -Not -Match 'Sup3r'
+    }
+    It 'AZ-012 mixes providers: the Key Vault secret and the file are both read' {
+        $log = @{}
+        $infra = Get-ProviderInfra
+        $infra.identity.local_admin.password = 'keyvault://kv-iic-mgmt-01/local-admin-password'
+        (Invoke-AzCheck 'AZ-012' (New-AzContext -Infra $infra -Log $log))[0].Status | Should -Be 'Passed'
+        $log['Reads'] | Should -Contain 'kv-iic-mgmt-01/local-admin-password'
+        $log['Probed'] | Should -Contain 'file://lcm-password'
+    }
+    It 'AZ-012 fails with the resolver''s reason, without a value, when a reference cannot be read' {
+        $r = (Invoke-AzCheck 'AZ-012' (New-AzContext -Infra (Get-ProviderInfra) -Override @{ TestSecretReference = { param($Reference, $Infrastructure) [pscustomobject]@{ Resolvable = ($Reference -ne 'env://AZL_TEST_LOCAL_ADMIN'); Category = 'NotSet'; Message = "The environment variable AZL_TEST_LOCAL_ADMIN ($Reference) is not set or is empty." } } }))[0]
+        $r.Status | Should -Be 'Failed'
+        $r.Message | Should -Match 'AZL_TEST_LOCAL_ADMIN'
+        $r.Message | Should -Not -Match 'lcm-password'
+    }
+    It 'AZ-012 fails when the adapter throws for a reference, and is Skipped when the adapter has no TestSecretReference' {
+        (Invoke-AzCheck 'AZ-012' (New-AzContext -Infra (Get-ProviderInfra) -Override @{ TestSecretReference = { throw 'Access denied' } }))[0].Status | Should -Be 'Failed'
+        (Invoke-AzCheck 'AZ-012' (New-AzContext -Infra (Get-ProviderInfra) -Override @{ TestSecretReference = $null }))[0].Status | Should -Be 'Skipped'
+    }
+    It 'AZ-012 with -SecretMode KeyVaultReference fails for env:// without reading it' {
+        $log = @{}
+        $r = (Invoke-AzCheck 'AZ-012' (New-AzContext -Infra (Get-ProviderInfra) -Settings $script:ModeKv -Log $log))[0]
+        $r.Status | Should -Be 'Failed'
+        $r.Message | Should -Match 'Azure Resource Manager can read only keyvault:// references'
+        $log.ContainsKey('Probed') | Should -BeFalse
+        (Invoke-AzCheck 'AZ-012' (New-AzContext -Settings $script:ModeKv))[0].Status | Should -Be 'Passed'
+    }
+    It 'AZ-011 (the ARM precondition) with -SecretMode KeyVaultReference fails for a parameter that is not keyvault://, with the same reason' {
+        $r = (Invoke-AzCheck 'AZ-011' (New-AzContext -Infra (Get-ProviderInfra) -Settings $script:ModeKv))[0]
+        $r.Status | Should -Be 'Failed'
+        $r.Message | Should -Match 'Azure Resource Manager can read only keyvault:// references'
+        (Invoke-AzCheck 'AZ-011' (New-AzContext -Infra (Get-ProviderInfra)))[0].Status | Should -Be 'Passed'
+    }
+    It 'AZ-013 is not applicable when the password has no vault, and does not need a sign-in' {
+        $r = (Invoke-AzCheck 'AZ-013' (New-AzContext -Infra (Get-ProviderInfra) -Override @{ GetContext = { $null } }))[0]
+        $r.Status | Should -Be 'NotApplicable'
+        $r.Message | Should -Match 'env:// reference'
+    }
+    It 'AZ-013 still compares when the file names the username secret in a vault' {
+        $infra = Get-ProviderInfra
+        $infra.identity.local_admin.username_secret = 'keyvault://kv-iic-mgmt-01/local-admin-username'
+        (Invoke-AzCheck 'AZ-013' (New-AzContext -Infra $infra))[0].Status | Should -Be 'Passed'
+    }
+    It 'the default adapter carries the resolver probe for any provider' {
+        $a = (Get-AzlVerificationAdapterDefault).Azure
+        $a.Contains('TestSecretReference') | Should -BeTrue
+        $a['TestSecretReference'] | Should -BeOfType [scriptblock]
+    }
 }
 
 Describe 'AZ-013 the vault''s local-admin username equals the file''s' {

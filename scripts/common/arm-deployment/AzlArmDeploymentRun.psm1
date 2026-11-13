@@ -229,6 +229,10 @@ function Get-AzlArmRunSetting {
         requireValidatedParameterHash false, osReportMaxAgeHours 48, staleSkewMinutes 5, knownIssuesFile '', solutionVersion '',
         sbeCatalogPath '', registerResourceProviders false (opt in: register the missing mandatory resource providers). The master file's
         deployment block uses the same names in snake_case.
+        secretMode Placeholder|KeyVaultReference (default Placeholder; set it with -Settings or -ConfigPath, not in the master file): how the
+        parameter file hands the secrets to Azure. Placeholder: this machine reads each secret with the secret resolver, so a reference of any
+        provider works. KeyVaultReference (New-AzureLocalArmParameters.ps1 -SecretMode KeyVaultReference): Azure Resource Manager reads the secret
+        itself and can read Key Vault only, so the precondition KeyVaultSecrets fails for a reference that is not keyvault://.
     #>
     [CmdletBinding()]
     param([System.Collections.IDictionary]$Infrastructure, [string]$ConfigPath, [System.Collections.IDictionary]$Settings)
@@ -238,7 +242,7 @@ function Get-AzlArmRunSetting {
         deploymentSettingsApiVersion = ''; revalidate = $false; allowRevalidate = $false; requireValidatedParameterHash = $false
         osReportMaxAgeHours = 48; staleSkewMinutes = 5; knownIssuesFile = ''; solutionVersion = ''; sbeCatalogPath = ''; registerResourceProviders = $false
         skipPreClusterVerification = $false; preClusterVerificationMaxAgeHours = 4; preClusterVerificationReportDirectory = ''
-        installEnvironmentChecker = $false; keepEnvironmentChecker = $false
+        installEnvironmentChecker = $false; keepEnvironmentChecker = $false; secretMode = 'Placeholder'
         verificationMinMemoryGiB = 32; verificationMinBootDiskGB = 200; verificationMinDataDiskGB = 500; verificationMinLinkGbps = 10; verificationMaxClockSkewSeconds = 300
     }
     $apply = {
@@ -274,6 +278,9 @@ function Get-AzlArmRunSetting {
     if ($s.pollMaxSeconds -lt $s.pollSeconds) { Stop-AzlArmInput 'Setting pollMaxSeconds must not be less than pollSeconds.' }
     if ([string]$s.approvalMode -notin 'stop', 'prompt', 'none') { Stop-AzlArmInput "Setting approval must be stop, prompt or none, not '$($s.approvalMode)'." }
     $s.approvalMode = [string]$s.approvalMode
+    $mode = @('Placeholder', 'KeyVaultReference' | Where-Object { $_ -ieq [string]$s.secretMode })
+    if ($mode.Count -ne 1) { Stop-AzlArmInput "Setting secretMode must be Placeholder or KeyVaultReference, not '$($s.secretMode)'." }
+    $s.secretMode = [string]$mode[0]
     foreach ($k in 'resume', 'requireOsConfigurationReport', 'revalidate', 'allowRevalidate', 'requireValidatedParameterHash', 'registerResourceProviders', 'skipPreClusterVerification', 'installEnvironmentChecker', 'keepEnvironmentChecker') { $s[$k] = [bool]$s[$k] }
     foreach ($k in 'verificationMinMemoryGiB', 'verificationMinBootDiskGB', 'verificationMinDataDiskGB', 'verificationMinLinkGbps', 'verificationMaxClockSkewSeconds') {
         if ([int]$s[$k] -lt 1) { Stop-AzlArmInput "Setting $k must be 1 or more." }
@@ -1334,6 +1341,10 @@ $script:Checks['KeyVaultSecrets'] = {
     $bad = @()
     foreach ($r in $refs) {
         $parts = ConvertFrom-AzlKeyVaultRef -Reference $r.Reference
+        # Azure Resource Manager reads Key Vault only. In this mode it reads the secrets itself, so another provider cannot work.
+        if (-not $parts -and (Get-AzlSecretProvider -Reference $r.Reference) -and [string](Get-AzlProp $Ctx.Settings 'secretMode' 'Placeholder') -eq 'KeyVaultReference') {
+            $bad += "$($r.Parameter): '$($r.Reference)' is a $(Get-AzlSecretProvider -Reference $r.Reference):// reference, and the deployment runs with -SecretMode KeyVaultReference: Azure Resource Manager can read only keyvault:// references"; continue
+        }
         if (-not $parts) {
             # Not Key Vault: env://, file:// or command:// are read by this machine, so the resolver proves them. Anything else is not a reference.
             if (-not (Get-AzlSecretProvider -Reference $r.Reference)) { $bad += "$($r.Parameter): the value is not a secret reference (keyvault://, env://, file:// or command://)"; continue }
@@ -1347,7 +1358,7 @@ $script:Checks['KeyVaultSecrets'] = {
         try { $exists = [bool](Invoke-AzlArmAdapter $Ctx.Run.Adapter TestSecret @($parts.Vault, $parts.Secret, $Ctx.Infra)) } catch { $bad += "$($r.Parameter): secret $($parts.Secret) in $($parts.Vault) could not be read ($($_.Exception.Message))"; continue }
         if (-not $exists) { $bad += "$($r.Parameter): secret $($parts.Secret) is not in vault $($parts.Vault)" }
     }
-    if ($bad) { return New-AzlArmCheckResult KeyVaultSecrets Failed ($bad -join '; ') 'Create the secret (Add-KeyVaultCredentials.ps1), grant this identity Get on secrets, or fix the reference (keyvault://, env://, file:// or command://; the secrets section of the file holds the file directory and the command).' }
+    if ($bad) { return New-AzlArmCheckResult KeyVaultSecrets Failed ($bad -join '; ') 'Create the secret (Add-KeyVaultCredentials.ps1), grant this identity Get on secrets, or fix the reference (keyvault://, env://, file:// or command://; the secrets section of the file holds the file directory and the command). With -SecretMode KeyVaultReference only keyvault:// works; use the default Placeholder mode for the other providers.' }
     New-AzlArmCheckResult KeyVaultSecrets Passed "$($refs.Count) secret reference(s) resolve (no value is logged or returned)."
 }
 
