@@ -10,7 +10,7 @@
     1. Identity & Permissions (runs locally on management server):
        - Verifies the service principal exists in Entra ID
        - Checks RBAC role assignments on the Arc resource group
-       - Verifies the SPN secret is accessible in Key Vault
+       - Verifies the SPN secret (devops.authentication.client_secret) can be read
 
     2. Connectivity (runs on each node via PSRemoting in parallel):
        - Runs AzStackHci.EnvironmentChecker on every cluster node
@@ -171,7 +171,7 @@ function Get-Config {
         TenantId          = $cfg.azure.tenant_id         # azure.tenant_id
         SubscriptionId    = $cfg.azure.subscription_id   # azure.subscription_id
         SpnAppId          = $cfg['azure']?['automation_identity']?['client_id']             # azure.automation_identity.client_id
-        SpnSecretUri      = $cfg['identity']?['service_principal']?['secret']               # identity.service_principal.secret
+        SpnSecretUri      = $cfg['devops']?['authentication']?['client_secret']               # devops.authentication.client_secret
         ResourceGroup     = $cfg.azure.resource_group                            # azure.resource_group
         ArcGatewayEnabled = [bool]$gw.Enabled                                    # scenario.outbound_path is arc_gateway or proxy_arc_gateway
         ArcGatewayId      = $gw.Id                                               # built from azure.subscription_id, the resource group and networking.outbound.arc_gateway.name
@@ -387,7 +387,7 @@ if (-not $SkipIdentity) {
 
         $spnAppId     = $cfg.SpnAppId          # azure.automation_identity.client_id
         $arcRg        = $cfg.ResourceGroup      # azure.resource_group
-        $spnSecretUri = $cfg.SpnSecretUri       # identity.service_principal.secret
+        $spnSecretUri = $cfg.SpnSecretUri       # devops.authentication.client_secret
 
         # --- Check 1: Verify SPN exists in Entra ID ---
         Write-Log "--- Check 1: Service Principal ---" HEADER

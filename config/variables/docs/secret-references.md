@@ -91,6 +91,8 @@ Errors are exceptions. `$_.Exception.Data['AzlSecretError']` holds the category 
 
 No script reads a secret by itself. A script does not call `Get-AzKeyVaultSecret` or `az keyvault secret show`, does not parse a `keyvault://` text, and does not name a vault or a secret. It reads a reference from the infrastructure file and gives it to the resolver. The scripts of phases 02 to 06 keep a small helper (`Resolve-KeyVaultRef`) that calls the resolver, logs a warning without a value and returns `$null`, so the script can still ask for a credential. Modules use `Get-AzlSecret` (a wrapper of `Get-AzlSecretPlainText` in `AzlAzure.psm1`) or `New-AzlSecretResolver` for the `-SecretResolver` parameters. There is no Azure CLI fallback.
 
+The Arc registration scripts (phase 04, tasks 01 and 02) read the secret of the automation identity from `devops.authentication.client_secret`. When the file signs in with OIDC or a managed identity there is no such secret; the registration script then asks for it, and the pre-registration check warns.
+
 The scripts that write secrets or create vaults (`Add-KeyVaultCredentials.ps1`, `Deploy-KeyVaults.ps1`, `Test-Configuration.ps1` of the Key Vault validation) keep their own Key Vault calls. `tests/secrets/ScriptsUseResolver.Tests.ps1` lists them and fails when any other script reads a secret itself.
 
 ## Rules that hold for every provider

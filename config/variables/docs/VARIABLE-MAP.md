@@ -18,8 +18,8 @@ Registry version 5.0.42. Sources of the scan: toolkit (this repository), sonar 3
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Keys of infrastructure.yml | 631 | 321 | 144 | 2 | 162 | 2 |
 | Owned by a tool (`tools.*`) | 3252 | 3044 | 0 | 0 | 208 | 0 |
-| Older variables-file sections | 1441 | 39 | 470 | 0 | 926 | 6 |
-| All registry leaves | 5324 | 3404 | 614 | 2 | 1296 | 8 |
+| Older variables-file sections | 1441 | 38 | 470 | 0 | 927 | 6 |
+| All registry leaves | 5324 | 3403 | 614 | 2 | 1297 | 8 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -99,7 +99,7 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | cicd-infra | Outside the flow | 53 | 0 | 347 |
 | infrastructure-helpers | Outside the flow | 39 | 0 | 0 |
 | validator | Outside the flow | 111 | 0 | 0 |
-| toolkit-legacy-scripts | Outside the flow | 79 | 0 | 0 |
+| toolkit-legacy-scripts | Outside the flow | 80 | 0 | 0 |
 
 ### trailwright
 
@@ -296,8 +296,8 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 
 ### toolkit-legacy-scripts
 
-**Reads (79):**
-`site.code`, `site.location`, `site.name`, `site.owner`, `tags.*`, `identity.active_directory.domain_fqdn`, `identity.active_directory.netbios_name`, `identity.active_directory.ou_path`, `identity.active_directory.lcm_user.username`, `identity.active_directory.lcm_user.password`, `identity.active_directory.domain_join_account.username`, `identity.active_directory.domain_join_account.password`, `identity.active_directory.security_groups[].name`, `identity.active_directory.security_groups[].local_groups`, `identity.local_admin.username`, `identity.local_admin.password`, `identity.local_identity.dns_zone`, `identity.entra.groups[].name`, `identity.entra.groups[].purpose`, `identity.entra.groups[].roles`, `identity.entra.groups[].scope`, `networking.management.infrastructure_pool.start`, `networking.management.infrastructure_pool.end`, `security.defender_for_cloud.enabled`, `security.defender_for_cloud.apply_cloud_security_benchmark`, `operations.monitoring.enabled`, `operations.monitoring.log_analytics_workspace`, `operations.monitoring.workspace_resource_group`, `operations.monitoring.retention_days`, `operations.monitoring.data_collection_rule`, `operations.monitoring.data_collection_endpoint`, `operations.notifications.emails`, `scenario.identity`, `scenario.storage_architecture`, `scenario.storage_connectivity`, `scenario.environment_class`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.custom_location`, `azure.automation_identity.client_id`, `secrets.provider`, `secrets.file.directory`, `secrets.command.executable`, `secrets.command.arguments`, `secrets.command.timeout_seconds`, `cluster.name`, `hardware.vendor`, `hardware.model`, `hardware.sbe.publisher`, `hardware.sbe.family`, `hardware.sbe.version`, `hardware.sbe.bundle_path`, `hardware.sbe.requirement`, `hardware.sbe.not_applicable_reason`, `hardware.sbe.source_path`, `hardware.sbe.source_username`, `hardware.sbe.source_password`, `hardware.sbe.package_sha256`, `hardware.sbe.package_size_bytes`, `hardware.drives.capacity.media`, `storage.pool.thin_provisioning_alert_threshold_percent`, `storage.csv.read_cache_size_mib`, `sdn.enabled`, `sdn.prefix`, `sdn.dns_records`, `sdn.acknowledge_maintenance_window`, `sdn.acknowledge_dns_record`, `landing_zone.management_groups[].name`, `landing_zone.management_groups[].display_name`, `landing_zone.subscriptions[].name`, `landing_zone.subscriptions[].id`, `landing_zone.subscriptions[].management_group`, `landing_zone.policy.required_tags`, `landing_zone.policy.management_group`, `landing_zone.virtual_machines[].admin_username`, `landing_zone.virtual_machines[].admin_password`, `_metadata.schema_version`
+**Reads (80):**
+`site.code`, `site.location`, `site.name`, `site.owner`, `tags.*`, `identity.active_directory.domain_fqdn`, `identity.active_directory.netbios_name`, `identity.active_directory.ou_path`, `identity.active_directory.lcm_user.username`, `identity.active_directory.lcm_user.password`, `identity.active_directory.domain_join_account.username`, `identity.active_directory.domain_join_account.password`, `identity.active_directory.security_groups[].name`, `identity.active_directory.security_groups[].local_groups`, `identity.local_admin.username`, `identity.local_admin.password`, `identity.local_identity.dns_zone`, `identity.entra.groups[].name`, `identity.entra.groups[].purpose`, `identity.entra.groups[].roles`, `identity.entra.groups[].scope`, `networking.management.infrastructure_pool.start`, `networking.management.infrastructure_pool.end`, `security.defender_for_cloud.enabled`, `security.defender_for_cloud.apply_cloud_security_benchmark`, `operations.monitoring.enabled`, `operations.monitoring.log_analytics_workspace`, `operations.monitoring.workspace_resource_group`, `operations.monitoring.retention_days`, `operations.monitoring.data_collection_rule`, `operations.monitoring.data_collection_endpoint`, `operations.notifications.emails`, `devops.authentication.client_secret`, `scenario.identity`, `scenario.storage_architecture`, `scenario.storage_connectivity`, `scenario.environment_class`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.custom_location`, `azure.automation_identity.client_id`, `secrets.provider`, `secrets.file.directory`, `secrets.command.executable`, `secrets.command.arguments`, `secrets.command.timeout_seconds`, `cluster.name`, `hardware.vendor`, `hardware.model`, `hardware.sbe.publisher`, `hardware.sbe.family`, `hardware.sbe.version`, `hardware.sbe.bundle_path`, `hardware.sbe.requirement`, `hardware.sbe.not_applicable_reason`, `hardware.sbe.source_path`, `hardware.sbe.source_username`, `hardware.sbe.source_password`, `hardware.sbe.package_sha256`, `hardware.sbe.package_size_bytes`, `hardware.drives.capacity.media`, `storage.pool.thin_provisioning_alert_threshold_percent`, `storage.csv.read_cache_size_mib`, `sdn.enabled`, `sdn.prefix`, `sdn.dns_records`, `sdn.acknowledge_maintenance_window`, `sdn.acknowledge_dns_record`, `landing_zone.management_groups[].name`, `landing_zone.management_groups[].display_name`, `landing_zone.subscriptions[].name`, `landing_zone.subscriptions[].id`, `landing_zone.subscriptions[].management_group`, `landing_zone.policy.required_tags`, `landing_zone.policy.management_group`, `landing_zone.virtual_machines[].admin_username`, `landing_zone.virtual_machines[].admin_password`, `_metadata.schema_version`
 
 Where in the code (file, function, keys read by name; 88 places, the first 12):
 
@@ -305,15 +305,15 @@ Where in the code (file, function, keys read by name; 88 places, the first 12):
 | --- | --- | ---: |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Enable-ArcSdn.ps1` | `(script)` | 14 |
 | `scripts/common/sbe/AzlSbePackage.psm1` | `Get-AzlSbeSource` | 9 |
+| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/powershell/Invoke-ArcRegistration-Orchestrated.ps1` | `Get-Config` | 8 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-08-logical-network-creation/powershell/New-LogicalNetwork.ps1` | `(script)` | 8 |
 | `scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Deploy-DataCollectionEndpoint.ps1` | `(script)` | 8 |
 | `scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-01-configure-log-analytics-workspace/powershell/Deploy-LogAnalyticsWorkspace.ps1` | `(script)` | 8 |
-| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/powershell/Invoke-ArcRegistration-Orchestrated.ps1` | `Get-Config` | 7 |
+| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation/powershell/Invoke-ArcPrerequisites-Orchestrated.ps1` | `Get-Config` | 7 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-02-cluster-quorum-configuration/powershell/Invoke-ConfigureClusterQuorum-Orchestrated.ps1` | `(script)` | 7 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/powershell/New-NetworkSecurityGroup.ps1` | `(script)` | 7 |
 | `scripts/deploy/05-operational-foundations/phase-02-monitoring-observability/task-03-enable-hci-insights/powershell/Enable-HciInsights.ps1` | `(script)` | 7 |
 | `scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles/powershell/Set-EntraGroupRoleAssignments.ps1` | `(script)` | 6 |
-| `scripts/deploy/04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation/powershell/Invoke-ArcPrerequisites-Orchestrated.ps1` | `Get-Config` | 6 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration/powershell/New-StoragePath.ps1` | `(script)` | 6 |
 
 ## By ARM parameter: the template parameter and the file key it comes from
@@ -1001,7 +1001,7 @@ These registry sections (`compute`, `identity.accounts`, `azure_platform`, ...) 
 | `compute` | 398 | 396 | 0 | 2 |
 | `devops` | 8 | 0 | 8 | 0 |
 | `environment` | 4 | 0 | 4 | 0 |
-| `identity` | 143 | 11 | 132 | 0 |
+| `identity` | 143 | 10 | 133 | 0 |
 | `infrastructure_scenarios` | 1 | 0 | 1 | 0 |
 | `marketplace_images` | 9 | 8 | 1 | 0 |
 | `networking` | 522 | 50 | 468 | 4 |
@@ -1112,7 +1112,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `devops.environments[].wait_minutes` | integer, default `0` | operator; default | cicd_infra | cicd-infra |  | read |
 | `devops.environments[].deployment_branch` | string, default `main` | operator; default | cicd_infra | cicd-infra |  | read |
 | `devops.authentication.method` | string, default `oidc`, one of `oidc`, `client_secret` | operator; default | cicd_infra | cicd-infra |  | read |
-| `devops.authentication.client_secret` | string (kv_ref) | operator; Key Vault ref | cicd_infra | cicd-infra |  | read |
+| `devops.authentication.client_secret` | string (kv_ref) | operator; Key Vault ref | cicd_infra | cicd-infra; toolkit-legacy-scripts |  | read |
 | `devops.authentication.roles` | array | operator | cicd_infra | cicd-infra |  | read |
 | `devops.authentication.grant_graph_role_management` | boolean, default `false` | operator; default | cicd_infra | cicd-infra |  | read |
 | `devops.authentication.register_encryption_at_host` | boolean, default `true` | operator; default | cicd_infra | cicd-infra |  | read |

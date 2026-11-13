@@ -10,7 +10,9 @@
     Invoke-AzStackHciArcInitialization on each cluster node via PSRemoting.
 
     AZURE AUTHENTICATION:
-      - Default: SPN — secret resolved from Key Vault (identity.service_principal.secret)
+      - Default: SPN — secret read through the secret resolver from the reference devops.authentication.client_secret
+        (the client secret of the app registration azure.automation_identity.name, stored by the CI/CD bootstrap; a
+        managed identity or OIDC has none, then the script asks for it)
       - Override: -SpnAppId / -SpnSecret to bypass Key Vault lookup
       - Fallback: secure prompt for SPN secret if Key Vault is unavailable
 
@@ -92,7 +94,7 @@
     Override service principal application (client) ID. YAML path: azure.automation_identity.client_id
 
 .PARAMETER SpnSecret
-    SPN secret (plaintext). If omitted, resolved from Key Vault via identity.service_principal.secret.
+    SPN secret (plaintext). If omitted, read from the secret reference devops.authentication.client_secret.
 
 .PARAMETER Cloud
     Azure cloud environment. Default: AzureCloud
@@ -138,7 +140,7 @@ param(
     [string]$ArcGatewayId   = "",        # networking.outbound.arc_gateway
     [switch]$NoArcGateway,                 # Skip Arc Gateway — not recommended
     [string]$SpnAppId       = "",        # azure.automation_identity.client_id
-    [string]$SpnSecret      = "",        # identity.service_principal.secret (resolved from KV)
+    [string]$SpnSecret      = "",        # devops.authentication.client_secret (read through the secret resolver)
     [string]$Cloud          = ""         # AzureCloud (default)
 )
 
@@ -217,7 +219,7 @@ function Get-Config {
         ResourceGroup  = $cfg.azure.resource_group                   # azure.resource_group
         ArcGatewayId   = $gw.Id                                      # networking.outbound.arc_gateway (empty unless scenario.outbound_path uses a gateway)
         SpnAppId       = $cfg['azure']?['automation_identity']?['client_id']      # azure.automation_identity.client_id
-        SpnSecretUri   = $cfg['identity']?['service_principal']?['secret']      # identity.service_principal.secret
+        SpnSecretUri   = $cfg['devops']?['authentication']?['client_secret']      # devops.authentication.client_secret
         AdminUser      = $cfg.identity.local_admin.username   # identity.local_admin.username
         AdminPassUri   = $cfg.identity.local_admin.password   # identity.local_admin.password
         Cloud          = "AzureCloud"
