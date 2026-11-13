@@ -1029,6 +1029,47 @@ function Invoke-AzlNodeRun {
 # Arc registration (ISO path)
 # ---------------------------------------------------------------------------------------------------------------------
 
+function Get-AzlArcRegistrationSetting {
+    <#
+    .SYNOPSIS
+        What the Arc registration passes besides the subscription: the proxy and its bypass list, and the solution version. Reads the loaded file only.
+    .DESCRIPTION
+        Invoke-AzStackHciArcInitialization takes Proxy, ProxyBypass and TargetSolutionVersion (Learn: Register Azure Local with Azure Arc,
+        the pages with and without Arc gateway, and the private path page). Without TargetSolutionVersion the cmdlet asks which version to use,
+        which an unattended run cannot answer.
+          scenario.outbound_path proxy or proxy_arc_gateway: Proxy is networking.outbound.proxy.url.
+          scenario.outbound_path private_path: Proxy is http://<networking.outbound.private_path.firewall_private_ip>:<firewall_port>, the Azure
+          Firewall explicit proxy. Learn: "The Azure Firewall internal IP and port as the proxy server".
+          ProxyBypass is networking.outbound.proxy.bypass (proxy paths) or networking.outbound.private_path.proxy_bypass (private path), joined with commas (Learn separates the entries with commas).
+          TargetSolutionVersion is deployment.solution_version when it has four numeric parts; else empty and the cmdlet keeps its own choice.
+        Problem is a sentence when the path needs a value the file does not give; empty otherwise.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject])]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Infrastructure)
+    $path = [string](Get-AzlProp $Infrastructure 'scenario.outbound_path' '')
+    $server = ''
+    $problem = ''
+    if ($path -in 'proxy', 'proxy_arc_gateway') {
+        $server = [string](Get-AzlProp $Infrastructure 'networking.outbound.proxy.url' '')
+        if (-not $server) { $problem = "scenario.outbound_path is $path but networking.outbound.proxy.url is empty." }
+    }
+    elseif ($path -eq 'private_path') {
+        $address = [string](Get-AzlProp $Infrastructure 'networking.outbound.private_path.firewall_private_ip' '')
+        $port = [string](Get-AzlProp $Infrastructure 'networking.outbound.private_path.firewall_port' '')
+        if ($address -and $port) { $server = "http://${address}:$port" }
+        else { $problem = 'scenario.outbound_path is private_path but networking.outbound.private_path.firewall_private_ip or firewall_port is empty; the registration uses them as the proxy server.' }
+    }
+    $bypass = ''
+    if ($server) {
+        $entries = if ($path -eq 'private_path') { @(Get-AzlProp $Infrastructure 'networking.outbound.private_path.proxy_bypass' @()) } else { @(Get-AzlProp $Infrastructure 'networking.outbound.proxy.bypass' @()) }
+        $bypass = (@($entries | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })) -join ','
+    }
+    $version = [string](Get-AzlProp $Infrastructure 'deployment.solution_version' '')
+    if ($version -notmatch '^\d+\.\d+\.\d+\.\d+$') { $version = '' }
+    [pscustomobject]@{ Proxy = $server; ProxyBypass = $bypass; TargetSolutionVersion = $version; Problem = $problem }
+}
+
 function Get-AzlArcRegistrationItem {
     <#
     .SYNOPSIS
@@ -1049,7 +1090,12 @@ function Get-AzlArcRegistrationItem {
         if ($arc.Status -eq 'Connected') { $action = 'Ok' } else { $action = 'Change'; $note = 'The Arc machine exists but is not Connected; registration runs again.' }
     }
     elseif (-not $note) { $current = 'not registered'; $action = 'Change'; $note = "Registers the machine into $resourceGroup with Invoke-AzStackHciArcInitialization over WinRM (an ARM token from this run's Azure sign-in)." }
-    [pscustomobject]@{ Node = $Record.name; Step = 'ArcRegistration'; Item = 'Azure Arc registration'; Current = $current; Desired = "Connected in $resourceGroup"; Action = $action; Note = $note }
+    if ($action -eq 'Change') {
+        $setting = Get-AzlArcRegistrationSetting -Infrastructure $infra
+        if ($setting.Problem) { $action = 'Blocked'; $note = $setting.Problem }
+        elseif ($setting.Proxy) { $note = "$note It passes the proxy $($setting.Proxy)$(if ($setting.ProxyBypass) { ' and the bypass list' })." }
+    }
+    [pscustomobject]@{ Node = $Record.name; Step = 'ArcRegistration'; Item = 'Azure Arc registration'; Current = $current; Desired = "Connected in $resourceGroup"; Action = $action; Note = $note.Trim() }
 }
 
 function Resolve-AzlArcRegistrationFailure {
@@ -1113,8 +1159,11 @@ function Invoke-AzlArcRegistration {
     $infra = $Context.Infra
     $subscription = [string](Get-AzlProp $infra 'azure.subscription_id' '')
     $resourceGroup = [string](Get-AzlProp $infra 'azure.resource_group' '')
+    $setting = Get-AzlArcRegistrationSetting -Infrastructure $infra
+    if ($setting.Problem) { throw $setting.Problem }
     $gateway = ''
-    if ((Get-AzlProp $infra 'scenario.outbound_path' '') -in 'arc_gateway', 'proxy_arc_gateway') {
+    # The private path registers with the Arc gateway too (Learn: Register Azure Local with Azure Arc gateway and private path, step 4).
+    if ((Get-AzlProp $infra 'scenario.outbound_path' '') -in 'arc_gateway', 'proxy_arc_gateway', 'private_path') {
         $gw = Get-AzlProp $infra 'networking.outbound.arc_gateway'
         $gwGroup = [string](Get-AzlProp $gw 'resource_group' $resourceGroup)
         if (Get-AzlProp $gw 'name') { $gateway = "/subscriptions/$subscription/resourceGroups/$gwGroup/providers/Microsoft.HybridCompute/gateways/$(Get-AzlProp $gw 'name')" }
@@ -1129,6 +1178,7 @@ function Invoke-AzlArcRegistration {
             region = [string](Get-AzlProp $infra 'azure.location' ''); accountId = $token.AccountId
             cloud = $(if ((Get-AzlProp $infra 'scenario.cloud' 'public') -eq 'government') { 'AzureUSGovernment' } else { 'AzureCloud' })
             arcGatewayId = $gateway
+            proxy = $setting.Proxy; proxyBypass = $setting.ProxyBypass; targetSolutionVersion = $setting.TargetSolutionVersion
         }
         try {
             $null = Invoke-AzlNodeScript -Transport $transport -Node $Record.name -Script (Get-AzlNodePayload -Name ArcRegistration) -Parameters $parameters -Secrets @{ armToken = $token.Token } -TimeoutSeconds 7200 -Tries 1

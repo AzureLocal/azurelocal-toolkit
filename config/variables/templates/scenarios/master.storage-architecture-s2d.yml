@@ -61,7 +61,7 @@ site:
   # used by: trailwright
   customer: "Infinite Improbability Corp"
   # Windows time zone ID of the site, for example UTC or Eastern Standard Time.
-  # used by: ztp, trailwright
+  # used by: ztp, os_configuration, trailwright
   time_zone: "Central Standard Time"
   # Short site code, 2 to 8 uppercase letters or digits.
   # required; used by: ztp, trailwright, terraform
@@ -260,7 +260,7 @@ deployment:
   # used by: deployment
   deployment_settings_api_version: ""
   # The solution version the nodes run (four numeric parts, for example 12.2610.1004.50).
-  # used by: deployment, trailwright
+  # used by: deployment, os_configuration, trailwright
   solution_version: "12.2610.1004.50"
   # The OEM's SBE discovery catalog (SBE_Discovery_Dell.xml) the precondition SbeValidatedWithSolution reads: the file, or a folder that holds...
   # used by: deployment
@@ -891,9 +891,10 @@ networking:
     # when scenario.outbound_path is proxy or proxy_arc_gateway
     proxy:
       # URL of the proxy server, for example http://proxy.example.test:3128.
-      # required; used by: trailwright, ansible
+      # required; used by: os_configuration, trailwright, ansible
       url: ""
       # Addresses and names that go direct, not through the proxy.
+      # used by: os_configuration
       bypass: []
     # The Arc gateway resource, in the same subscription as the machines.
     # when scenario.outbound_path is arc_gateway or proxy_arc_gateway
@@ -919,17 +920,17 @@ networking:
       # Name of the firewall subnet of that virtual network.
       # used by: trailwright
       firewall_subnet: ""
-      # Private address of the firewall on that path.
-      # used by: trailwright
+      # Private address of the Azure Firewall on that path.
+      # used by: os_configuration, trailwright
       firewall_private_ip: "192.0.2.10"
-      # TCP port of the firewall used on that path.
-      # used by: trailwright
+      # TCP port of the Azure Firewall explicit proxy on that path (it proxies HTTP and HTTPS).
+      # used by: os_configuration, trailwright
       firewall_port: 1
       # true when the machines reach Azure Arc through an Azure Arc Private Link Scope on that path.
       # used by: trailwright
       arc_private_link_scope: false
       # Host names and address ranges that bypass the proxy on this path.
-      # used by: trailwright
+      # used by: os_configuration, trailwright
       proxy_bypass: []
 
 # Accounts and the identity provider (scenario.identity).
@@ -971,8 +972,6 @@ identity:
         roles: ["Azure Stack HCI Administrator"]
         # Scope of the role assignments.
         scope: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-azl-01"
-    # User principal names of emergency access accounts, excluded from Conditional Access.
-    break_glass_accounts: ["breakglass01@improbability.cloud"]
   # The Active Directory the instance joins and its accounts.
   # when scenario.identity is active_directory
   active_directory:
@@ -1009,9 +1008,6 @@ identity:
     # How the OS configuration run joins the machines to the domain.
     # used by: os_configuration
     join_options:
-      # Fixed to false: the machine gets its final name before it joins (the Hostname step runs first) and is never renamed after.
-      # default: false; used by: os_configuration
-      rename_after_join: false
       # true: before the deployment, a machine already joined to this domain but sitting in another OU is moved into ou_path. false (default): it i...
       # default: false; used by: os_configuration
       allow_ou_move: false
@@ -1038,15 +1034,6 @@ identity:
         # The local groups of every machine this AD group is added to after the deployment (for example Administrators, Remote Management Users).
         # used by: os_configuration
         local_groups: []
-    # Service and administration accounts, apart from the LCM user.
-    service_accounts:
-      # Name of the service account.
-      # required
-      - name: "svc-iic-azl-backup"
-        # What the account is for, in words.
-        purpose: "Backup agent"
-        # A Key Vault secret reference: keyvault://<vault>/<secret>.
-        password: "keyvault://kv-iic-mgmt-01/svc-backup-password"
 
 # Storage of the instance: the deployment's storage mode, the volumes, and the SAN of a disaggregated or hybrid deployment (the san block app...
 storage:
@@ -1231,6 +1218,15 @@ operations:
   # How updates are applied: portal or powershell.
   # one of: portal | powershell; used by: trailwright
   update_method: "portal"
+  # (since 5.6.20) 
+  # used by: deployment
+  updates:
+    # true: after the deployment, start the solution update (Start-SolutionUpdate) and return.
+    # default: false; used by: deployment
+    install_after_deployment: true
+    # The solution version to install: latest (default; the highest solution update that is ready to install), or four numbers, for example 12.26...
+    # default: "latest"; used by: deployment
+    target_version: "latest"
   # Backup of the instance and its workloads.
   backup:
     # true when backup is part of the design.
@@ -1322,8 +1318,6 @@ provisioning:
     # microsoft (the Azure portal download) or oem (the OEM's image).
     # one of: microsoft | oem
     image_source: "microsoft"
-    # Build of the Azure Local OS image the ISO holds.
-    image_version: ""
     # (since 5.6.19) 
     image_uri: "http://192.0.2.50/images/azure-local.iso"
   # Simplified machine provisioning from Azure, as azurelocal-ztp runs it. https://learn.microsoft.com/azure/azure-local/deploy/simplified-mach...
@@ -1657,8 +1651,6 @@ landing_zone:
       # Display name of the management group.
       # used by: terraform
       display_name: "IIC"
-      # Parent management group name; empty for the tenant root.
-      parent: "mg-iic"
       # Which group of the fixed Azure landing zone hierarchy this is: root, platform, identity, connectivity, management, security or landing_zone...
       # one of: root | platform | identity | connectivity | management | security | landing_zones; used by: terraform
       role: "root"
@@ -1697,8 +1689,6 @@ landing_zone:
       # What the resource group is for, in words.
       # used by: cicd_infra
       purpose: "hub network"
-  # Resource provider namespaces to register, for example Microsoft.AzureStackHCI.
-  resource_providers: ["Microsoft.AzureStackHCI", "Microsoft.HybridCompute", "Microsoft.Edge", "Microsoft.KeyVault"]
   # Azure Policy of the landing zone.
   policy:
     # Tag names that every resource should carry, one audit assignment of the built-in policy 'Require a tag on resources' for each.
@@ -1920,10 +1910,6 @@ landing_zone:
     # Name of the workspace.
     # required
     name: "log-iic-azl-01"
-    # Resource group of the workspace.
-    resource_group: "rg-iic-mgmt-01"
-    # Days the workspace keeps data.
-    retention_days: 90
   # Storage accounts of the landing zone.
   storage_accounts:
     # Name of the storage account (3 to 24 lowercase letters and digits).

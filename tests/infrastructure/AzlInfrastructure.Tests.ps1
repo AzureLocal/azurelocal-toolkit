@@ -1303,16 +1303,15 @@ Describe 'Schema 5.5: the domain join (AZL-050 to AZL-053)' {
         $ad = (Import-AzlInfrastructure -Path $script:Full550).identity.active_directory
         $ad.Contains('domain_join_account') | Should -BeFalse
         $ad.lcm_user.password | Should -Match '^keyvault://'
-        $ad.join_options.rename_after_join | Should -BeFalse
         $ad.join_options.allow_ou_move | Should -BeFalse
         @(Test-AzlInfrastructure -Path $script:Full550) | Should -BeNullOrEmpty
     }
-    It 'the schema: domain_join_account is an optional override, allow_ou_move defaults to false, rename_after_join is fixed to false' {
+    It 'the schema: domain_join_account is an optional override, allow_ou_move defaults to false, rename_after_join is not a key' {
         $schema = Get-Content -LiteralPath (Join-Path $repo 'config\variables\schema\infrastructure.schema.json') -Raw | ConvertFrom-Json -AsHashtable
         $ad = $schema.properties.identity.properties.active_directory
         $ad.required | Should -Not -Contain 'domain_join_account'
         $ad.properties.join_options.properties.allow_ou_move.default | Should -BeFalse
-        $ad.properties.join_options.properties.rename_after_join.const | Should -BeFalse
+        $ad.properties.join_options.properties.Contains('rename_after_join') | Should -BeFalse
         $ad.properties.domain_join_account.required | Should -Be @('username', 'password')
         $ad.properties.local_admin_members.type | Should -Be 'array'
     }

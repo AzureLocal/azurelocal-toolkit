@@ -409,6 +409,54 @@ Schema 5.6.19 adds optional keys. Nothing is required: a 5.6.16 file is valid as
 - Removed scripts that a schema 5 script replaces: `Deploy-ManagementGroup.ps1` and `Deploy-Subscription.ps1` of the simplified deployment (a file with one entry gives the same result), `Test-Connectivity.ps1` and `Test-Configuration.ps1` of the pipeline validation (they read `azure.networking` and `azure.key_vault`, which have no key; the pre-cluster verification checks Key Vault and secrets), `Deploy-ManagementVnet.ps1`, `Deploy-Network.ps1`, `New-VirtualNetwork.ps1`, `Configure-VnetDns.ps1` and `Deploy-VnetPeering.ps1` (`Deploy-VirtualNetworks.ps1` creates networks, subnets and peerings; the DNS forwarders of the domain controllers have no key), `New-VpnGateway.ps1` (`Deploy-VpnGateway.ps1`), `New-LogAnalyticsWorkspace.ps1` and `Deploy-DiagnosticSettings.ps1` (the workspace is `Deploy-LogAnalyticsWorkspace.ps1` of phase 05; diagnostic settings are outside the Azure Monitor scope of the toolkit), `New-KeyVault.ps1` (`Deploy-KeyVaults.ps1`), `Deploy-LighthouseNsg.ps1`, `New-DomainController.ps1`, `Deploy-JumpServer.ps1`, `New-NdmServer.ps1` and `Deploy-Lighthouse.ps1` (the machines come from `Deploy-ManagementVMs.ps1`; the Lighthouse rules for a vendor appliance have no key), `Set-NsgConfiguration.ps1` of the SDN phase (`New-NetworkSecurityGroup.ps1` creates the Azure Local network security groups from `networking.network_security_groups[]`), the two DHCP reservation scripts (no key names the DHCP server, the scope or the BMC MAC address), `Test-DnsClientConfig.ps1` (`Test-DnsConfiguration.ps1`), the two `Register-AzureLocalArc` snippets with REPLACE_ values (`Register-AzureLocalArc-Remote.ps1`), and the four `-Standalone` scripts of phase 06 with an embedded configuration (the Orchestrated script of each task).
 - `hardware.idrac_settings` and `hardware.bios_settings` are gone: `Test-BiosIdracSettings.ps1` and `Set-BiosIdracSettings.ps1` read `hardware.bios` and `nodes[].bios`. The iDRAC attribute baseline (IPMI over LAN enabled) is fixed in the scripts.
 
+
+## To 5.6.20: updates after the deployment, and keys that no tool reads
+
+Schema 5.6.20 adds two optional keys and removes the keys listed below. A 5.6.17 file is valid as it is, unless it holds a removed key: delete that key (the validator names it as an unknown key).
+
+Added. `scripts/lifecycle/updates/powershell/Start-SolutionUpdateAfterDeployment.ps1` reads both keys.
+
+- `operations.updates.install_after_deployment`: `true` starts the solution update after the deployment. Default `false`.
+- `operations.updates.target_version`: `latest` (default) or a solution version such as `12.2610.1004.50`.
+
+The script checks the health of the update environment, starts the update with `Start-SolutionUpdate` and returns. It does not wait: an update takes hours and the machines restart. It reports, and starts nothing, when the switch is off, when the instance runs the target version, or when an update is already running. `-WhatIf` shows the plan. Sonar follows the run. Learn: Update Azure Local by using PowerShell.
+
+Read now (no new key):
+
+- `networking.outbound.proxy.url` and `.bypass`, `networking.outbound.private_path.firewall_private_ip`, `.firewall_port` and `.proxy_bypass`, and `deployment.solution_version`. The OS configuration passes them to `Invoke-AzStackHciArcInitialization` as `-Proxy`, `-ProxyBypass` and `-TargetSolutionVersion`. The private path uses `http://<firewall_private_ip>:<firewall_port>` as the proxy and passes the Arc gateway too. A path that needs a value the file does not give is Blocked in the plan.
+- `site.time_zone`. The Time step sets it with `Set-TimeZone`, only when it differs. An empty key leaves the zone alone.
+
+Checked on Learn and in Microsoft's templates, and not added:
+
+- `security.hvci`, `security.drtm`, `security.side_channel_mitigation`. Microsoft's quickstart templates set `hvciProtection`, `drtmProtection` and `sideChannelMitigationEnforced` to `true` inside the template; they are not template parameters. Learn lists Credential Guard, Application Control, BitLocker, SMB signing and SMB cluster encryption and drift control as the settings you configure during the deployment. HVCI, DRTM and side channel mitigation can only be switched after the deployment (`Enable-AzsSecurity`, `Disable-AzsSecurity`). Every other `securitySettings` property of the template has a registered key that is read.
+- `storage.san.iscsi.chap.mutual_secret`. The `create-cluster-san-iscsi` template takes `chapType` (`None`, `OneWay`, `Mutual`), `chapUsername` and `chapCredential`. Its description says that with `Mutual` the same single credential is used for both directions. `storage.san.iscsi.chap.mutual` stays as it is.
+- A disk witness (`cluster.witness.type: disk` and a witness LUN). No SAN quickstart template takes one: `witnessType` allows `Cloud` and `No Witness`. The ARM reference has `witnessLunId`, and the rack aware SAN article selects a disk witness in the portal and adds the disk after the deployment.
+
+Documentation only (kept; the description says "Documentation only; not read by the tools"):
+
+- A design record that a person fills in: `networking.oob.gateway` and `.vlan_id`, `provisioning.iso.image_source`, `networking.outbound.private_path.transport`, `virtual_network`, `workload_subnet`, `firewall_subnet` and `arc_private_link_scope`, `landing_zone.connectivity.firewall.*`, `nodes[].rack`, `nodes[].network_adapters[].port_index`, `.vendor`, `.rdma` and `.switch_port.description`, `network_devices[].model`, `.serial_number`, `.firmware_version`, `.management.vlan_id`, `.management.protocol`, `.ha.enabled` and `.ha.mode`, `storage.san.fibre_channel.fabrics[].name` and `target_wwpns[].wwpn` and `.fabric`.
+- Keys that Trailwright writes, so they stay: `scenario.deploy_method`, `hardware.network_cards[].*`, `environment.name` and `.type`, `networking.storage.switchless_links`, `.tor_switches` and `.layout`, `landing_zone.log_analytics.name`, `hardware.sbe.allow_unvalidated`, `operations.update_method`.
+
+`hardware.sbe.allow_unvalidated` changes nothing: the deployment gate fails an SBE the OEM has not validated, whatever the key says. The validator (AZL-013) no longer warns about it.
+
+Removed:
+
+| Key | Why, and what to use |
+| --- | --- |
+| `landing_zone.resource_providers` | Microsoft fixes the list of resource providers. `deployment.register_resource_providers` is the choice. |
+| `landing_zone.management_groups[].parent` | Derived from `role`, which places a group in the fixed hierarchy. |
+| `identity.entra.break_glass_accounts`, `identity.break_glass_account_ids` | Emergency access accounts belong to conditional access and PIM, which are out of scope. |
+| `identity.managed_identities.*` (eight keys) | The old layout. The one identity the toolkit uses is `azure.automation_identity.*`. |
+| `landing_zone.log_analytics.resource_group`, `.retention_days` | Use `operations.monitoring.workspace_resource_group` and `.retention_days`. |
+| `compute.vms.management.dc1`, `dc2`, `jumpbox` and `wac`: `azure_vm_<vm>_image_sku`, `azure_vm_<vm>_os_disk_type` | The old layout. The image SKU is `landing_zone.virtual_machines[].os`. |
+| `identity.active_directory.service_accounts[]` (`name`, `purpose`, `password`) | Learn names one account for Azure Local, the deployment user (`identity.active_directory.lcm_user`). |
+| `identity.accounts.account_ad_domain_admin_username`, `_password`, `identity.accounts.idrac_vnc_*` (five keys) | The old layout. Use `identity.active_directory.domain_join_account`. |
+| `provisioning.iso.image_version` | Repeats `provisioning.os_version`. |
+| `identity.active_directory.join_options.rename_after_join` | Fixed: the machine gets its final name before the join and is never renamed after it. |
+
+Kept although no tool reads them: `environment.env_name`, `.env_type`, `.env_owner` and `.env_description` (the schema of the old `variables.yml`, `variables.schema.json`, requires `env_name`), and `identity.active_directory.security_groups_by_role.*` (a deprecated alias that expires on 2027-05-07; `alias-policy.json` and its test hold it until then). Removing them needs the old `variables.yml` layout to go first.
+
+Left for the pass over the scripts under `scripts/deploy`: `provisioning.iso.path`, `nodes[].bmc.mac_address`, `networking.dhcp.server` and `hardware.bmc.settings`. Their readers are there.
 ## To 5.6.17: the Terraform and Ansible variables come from the file
 
 Schema 5.6.17 adds two optional keys. A 5.6.16 file is valid as it is. You need them only when you use the Terraform route (`src/terraform/environments/azure-local`).

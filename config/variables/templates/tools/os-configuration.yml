@@ -43,6 +43,12 @@ scenario:
   # one of: lab | test | dev | production | dmz; default: "production"; used by: os_configuration
   environment_class: "production"
 
+# Where the machines are.
+site:
+  # Windows time zone ID of the site, for example UTC or Eastern Standard Time.
+  # used by: ztp, os_configuration, trailwright
+  time_zone: "Central Standard Time"
+
 # The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
 azure:
   # Microsoft Entra tenant ID (GUID) of the subscription.
@@ -88,6 +94,13 @@ cluster:
   # Cluster name: a NetBIOS name of up to 15 characters.
   # required; used by: os_configuration, deployment, monitoring, trailwright, ansible
   name: "iic-azl-01"
+
+# How the toolkit's ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks for approval and recovers.
+# used by: deployment
+deployment:
+  # The solution version the nodes run (four numeric parts, for example 12.2610.1004.50).
+  # used by: deployment, os_configuration, trailwright
+  solution_version: "12.2610.1004.50"
 
 # The machines, one entry each.
 # used by: deployment, monitoring
@@ -484,6 +497,15 @@ networking:
   # Details of scenario.outbound_path.
   # when scenario.outbound_path is proxy or proxy_arc_gateway
   outbound:
+    # Proxy server for the machines' outbound traffic, for scenario.outbound_path proxy or proxy_arc_gateway.
+    # when scenario.outbound_path is proxy or proxy_arc_gateway
+    proxy:
+      # URL of the proxy server, for example http://proxy.example.test:3128.
+      # required; used by: os_configuration, trailwright, ansible
+      url: ""
+      # Addresses and names that go direct, not through the proxy.
+      # used by: os_configuration
+      bypass: []
     # The Arc gateway resource, in the same subscription as the machines.
     # when scenario.outbound_path is arc_gateway or proxy_arc_gateway
     arc_gateway:
@@ -493,6 +515,18 @@ networking:
       # Resource group of the Azure Arc gateway resource.
       # used by: os_configuration, ansible
       resource_group: ""
+    # Outbound path over a private connection (ExpressRoute or site-to-site VPN) when scenario.outbound_path is private_path.
+    # when scenario.outbound_path is private_path
+    private_path:
+      # Private address of the Azure Firewall on that path.
+      # used by: os_configuration, trailwright
+      firewall_private_ip: "192.0.2.10"
+      # TCP port of the Azure Firewall explicit proxy on that path (it proxies HTTP and HTTPS).
+      # used by: os_configuration, trailwright
+      firewall_port: 1
+      # Host names and address ranges that bypass the proxy on this path.
+      # used by: os_configuration, trailwright
+      proxy_bypass: []
 
 # Accounts and the identity provider (scenario.identity).
 identity:
@@ -541,9 +575,6 @@ identity:
     # How the OS configuration run joins the machines to the domain.
     # used by: os_configuration
     join_options:
-      # Fixed to false: the machine gets its final name before it joins (the Hostname step runs first) and is never renamed after.
-      # default: false; used by: os_configuration
-      rename_after_join: false
       # true: before the deployment, a machine already joined to this domain but sitting in another OU is moved into ou_path. false (default): it i...
       # default: false; used by: os_configuration
       allow_ou_move: false

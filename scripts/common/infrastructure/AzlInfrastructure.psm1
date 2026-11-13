@@ -934,9 +934,6 @@ function Get-SemanticFinding {
         $pinReason = if (Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'hardware.sbe') { 'so every run installs the same OS and the SBE can be checked against it' } else { 'so every run installs the same OS' }
         New-Finding 'AZL-013' warning 'provisioning.os_version' "os_version is '$osVersion'. Pin a version $pinReason."
     }
-    if ((Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'hardware.sbe.allow_unvalidated') -eq $true) {
-        New-Finding 'AZL-013' warning 'hardware.sbe.allow_unvalidated' 'allow_unvalidated is true: the SBE is used even though the OEM has not validated it with os_version. Test only.'
-    }
     # Arc gateway (and the private path, which uses it): not with simplified provisioning, and only in the public cloud.
     if ($scenario['outbound_path'] -in @('arc_gateway', 'proxy_arc_gateway', 'private_path')) {
         if ($scenario['os_install'] -eq 'simplified') {

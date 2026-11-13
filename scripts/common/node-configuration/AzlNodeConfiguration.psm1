@@ -387,6 +387,8 @@ function Get-AzlNodeSpec {
         Management     = [pscustomobject]@{ Mac = ConvertTo-MacKey $mgmt.MacAddress; Name = $mgmt.Name; Ip = $mgmt.IpAddress; Prefix = $mgmt.PrefixLength; Gateway = $mgmt.Gateway; Dns = @($mgmt.DnsServers); Vlan = $mgmt.VlanId; Mode = $mgmt.IpAssignment; ModeLabel = $modeLabel }
         Ports          = @($ports)
         Ntp            = @(ConvertTo-List (Get-AzlProp $Infrastructure 'networking.ntp_servers') | ForEach-Object { [string]$_ })
+        # The Windows time zone ID of the site (site.time_zone). Empty: the step leaves the node's zone alone.
+        TimeZone       = [string](Get-AzlProp $Infrastructure 'site.time_zone' '')
         LocalAdmin     = $(if ($local) { [pscustomobject]@{ Username = [string](Get-AzlProp $local 'username' ''); PasswordRef = [string](Get-AzlProp $local 'password' '') } } else { $null })
         Sbe            = $sbe
         SbeDelivery    = $sbeDelivery # '' unless a person asked for winrm_copy or node_pull
@@ -760,6 +762,16 @@ function Compare-AzlNodeState {
             $ok = ($t.type -like 'NTP*') -and (($have -join ',') -eq ($want -join ','))
             $note = if ($ok -and $t.src -match 'Local CMOS|Free-running') { "Configured, but the source is still '$($t.src)'." } else { '' }
             & $add (New-AzlPlanItem $n 'Time' 'NTP peers' "$($t.type): $($have -join ',') (source $($t.src))" ($want -join ',') $(if ($ok) { 'Ok' } else { 'Change' }) $note $(if (-not $ok) { @{ id = 'Time/ntp'; kind = 'ntp'; servers = @($Spec.Ntp) } }))
+        }
+    }
+
+    # ---- time zone (Learn: the Configurator app sets the time zone together with the time server and the host name)
+    if ('Time' -in $Step -and $Spec.TimeZone) {
+        $t = Get-AzlProp $State 'time'
+        if ($t) {
+            $have = [string](Get-AzlProp $t 'zone' '')
+            $ok = $have -ieq $Spec.TimeZone
+            & $add (New-AzlPlanItem $n 'Time' 'time zone' $(if ($have) { $have } else { 'unknown' }) $Spec.TimeZone $(if ($ok) { 'Ok' } else { 'Change' }) '' $(if (-not $ok) { @{ id = 'Time/zone'; kind = 'timezone'; zone = $Spec.TimeZone } }))
         }
     }
 

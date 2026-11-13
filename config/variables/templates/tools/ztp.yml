@@ -31,7 +31,7 @@ scenario:
 # Where the machines are.
 site:
   # Windows time zone ID of the site, for example UTC or Eastern Standard Time.
-  # used by: ztp, trailwright
+  # used by: ztp, os_configuration, trailwright
   time_zone: "Central Standard Time"
   # Short site code, 2 to 8 uppercase letters or digits.
   # required; used by: ztp, trailwright, terraform

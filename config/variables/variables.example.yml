@@ -115,8 +115,6 @@ identity:
   accounts:
     account_local_admin_username: "Administrator"
     account_local_admin_password: "keyvault://kv-iic-platform/local-admin-password"
-    account_ad_domain_admin_username: "IMPROBABLE\\admin.iic"
-    account_ad_domain_admin_password: "keyvault://kv-iic-platform/domain-admin-password"
     account_lcm_username: "lcm-iic-azl-clus01"
     account_lcm_password: "keyvault://kv-iic-platform/lcm-deployment-password"
   active_directory:
@@ -144,11 +142,6 @@ identity:
     roles:
       subscription: "Contributor"
       resource_group: "Contributor"
-  break_glass_account_ids:
-    - "cccccccc-cccc-cccc-cccc-cccccccccccc"
-  managed_identities:
-    mi_user_assigned: []
-    mi_system_assigned: []
   b2b_configuration: {}
 
 networking:
@@ -345,7 +338,6 @@ compute:
         azure_vm_dc1_vm_size: "Standard_D2s_v3"
         azure_vm_dc1_subnet: "snet-iic-identity"
         azure_vm_dc1_os_disk_size_gb: 128
-        azure_vm_dc1_os_disk_type: "Premium_LRS"
       dc2:
         dc2_hostname: "iic-dc02"
         dc2_ip: "10.20.1.11"
@@ -355,7 +347,6 @@ compute:
         azure_vm_dc2_vm_size: "Standard_D2s_v3"
         azure_vm_dc2_subnet: "snet-iic-identity"
         azure_vm_dc2_os_disk_size_gb: 128
-        azure_vm_dc2_os_disk_type: "Premium_LRS"
       jumpbox:
         jumpbox_hostname: "iic-jumpbox"
         jumpbox_ip: "10.20.1.20"
@@ -365,7 +356,6 @@ compute:
         azure_vm_jumpbox_vm_size: "Standard_D2s_v3"
         azure_vm_jumpbox_subnet: "snet-iic-management"
         azure_vm_jumpbox_os_disk_size_gb: 128
-        azure_vm_jumpbox_os_disk_type: "Premium_LRS"
       wac:
         wac_hostname: "iic-wac01"
         wac_ip: "10.20.1.21"
@@ -376,7 +366,6 @@ compute:
         azure_vm_wac_vm_size: "Standard_D2s_v3"
         azure_vm_wac_subnet: "snet-iic-management"
         azure_vm_wac_os_disk_size_gb: 128
-        azure_vm_wac_os_disk_type: "Premium_LRS"
       syslog:
         syslog_hostname: "iic-syslog01"
         syslog_ip: "10.20.1.50"

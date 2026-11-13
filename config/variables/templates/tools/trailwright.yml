@@ -58,7 +58,7 @@ site:
   # used by: trailwright
   customer: "Infinite Improbability Corp"
   # Windows time zone ID of the site, for example UTC or Eastern Standard Time.
-  # used by: ztp, trailwright
+  # used by: ztp, os_configuration, trailwright
   time_zone: "Central Standard Time"
   # Short site code, 2 to 8 uppercase letters or digits.
   # required; used by: ztp, trailwright, terraform
@@ -165,7 +165,7 @@ cluster:
 # used by: deployment
 deployment:
   # The solution version the nodes run (four numeric parts, for example 12.2610.1004.50).
-  # used by: deployment, trailwright
+  # used by: deployment, os_configuration, trailwright
   solution_version: "12.2610.1004.50"
 
 # The machines, one entry each.
@@ -454,7 +454,7 @@ networking:
     # when scenario.outbound_path is proxy or proxy_arc_gateway
     proxy:
       # URL of the proxy server, for example http://proxy.example.test:3128.
-      # required; used by: trailwright, ansible
+      # required; used by: os_configuration, trailwright, ansible
       url: ""
     # The Arc gateway resource, in the same subscription as the machines.
     # when scenario.outbound_path is arc_gateway or proxy_arc_gateway
@@ -477,17 +477,17 @@ networking:
       # Name of the firewall subnet of that virtual network.
       # used by: trailwright
       firewall_subnet: ""
-      # Private address of the firewall on that path.
-      # used by: trailwright
+      # Private address of the Azure Firewall on that path.
+      # used by: os_configuration, trailwright
       firewall_private_ip: "192.0.2.10"
-      # TCP port of the firewall used on that path.
-      # used by: trailwright
+      # TCP port of the Azure Firewall explicit proxy on that path (it proxies HTTP and HTTPS).
+      # used by: os_configuration, trailwright
       firewall_port: 1
       # true when the machines reach Azure Arc through an Azure Arc Private Link Scope on that path.
       # used by: trailwright
       arc_private_link_scope: false
       # Host names and address ranges that bypass the proxy on this path.
-      # used by: trailwright
+      # used by: os_configuration, trailwright
       proxy_bypass: []
 
 # Accounts and the identity provider (scenario.identity).

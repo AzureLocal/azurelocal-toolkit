@@ -16,7 +16,7 @@
       "additionalProperties": false,
       "properties": {
         "schema_version": {
-          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. 5.6.11 adds what the logical network, network security group and VM image scripts read: networking.network_security_groups (name and rules with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description), networking.logical_networks[].vm_switch_name and storage.vm_images (name, os_type, publisher, offer, sku, version, storage_path). 5.6.12 adds operations.monitoring.retention_days and removes operations.notifications.teams_webhook and operations.monitoring.health_alerts. 5.6.13 adds the secrets section (provider, file directory, command) and lets a secret reference use the env://, file:// and command:// forms besides keyvault://. 5.6.14 adds hardware.inventory (output_directory, file_name_prefix, format, timeout_seconds), which Get-HardwareInventory.ps1 reads. 5.6.15 adds what Enable-ArcSdn.ps1 reads: sdn.acknowledge_maintenance_window and sdn.acknowledge_dns_record, the rules of sdn.prefix, and sdn.dns_records (read now); it removes sdn.default_access_policy. 5.6.16 adds storage.san.luns[].unique_id (how New-SanVolume.ps1 finds the disk of a LUN) and removes security.backup_key_vault. 5.6.17 adds landing_zone.management_groups[].role and azure.automation_identity.object_id (the two keys the Terraform landing zone and identity modules need) and makes the Terraform and Ansible code readers of the file (New-IacVariableFiles.ps1). 5.6.19 adds provisioning.iso.image_uri (the address Invoke-MountGoldImageISO.ps1 gives the BMC virtual media), landing_zone.subscriptions[].billing_scope and workload, point_to_site.protocols, root_certificate_name and root_certificate, bastion.network and the nat_gateway object of landing_zone.connectivity, and a list of values for landing_zone.virtual_machines[].os. 5.6.21 adds landing_zone.network_security_groups[] (the network security groups of the Azure landing zone networks: name and rules, created by New-LandingZoneNsg.ps1) and security.baseline_settings[] (type, name, value and acknowledge_weaker_security of the security baseline settings that Set-SecurityBaselines.ps1 changes with Set-AzsSecurity). The current version is 5.6.21.",
+          "description": "The schema version this file follows. Major 5. A minor version adds optional keys only; a major version can rename or remove keys. Each key's description says which version added it ('since'). Version history, in order: 5.2 adds nodes[].network_adapters, BIOS settings, the site IP range and the maintenance environment's network. 5.3 adds the BIOS phases (bios_during_provisioning), networking.management.static_method and provisioning_dhcp_range, nodes[].maintenance_address, provisioning.simplified.maintenance_password, and the SAN details (storage.san.array, fibre_channel and iscsi, nodes[].san); it also adds _metadata.scope: ztp for a file that holds only what azurelocal-ztp reads. 5.4 puts every azurelocal-ztp setting in this schema, so no tool keeps a key of its own: the BIOS actions ZTP derives from the hardware inventory (provisioning.simplified.isolate_san_adapters and enable_embedded_nics, nodes[].san.hbas[].type), the Azure resource choices, timeouts, retries, the USB image and the maintenance environment of simplified provisioning, and hardware.bmc.rfs_write_attribute and verify_certificate. 5.4.1 adds provisioning.simplified.timeouts.adapters_minutes. 5.4.2 adds hardware.sbe.delivery and node_pull_url (how the SBE package reaches the nodes during OS configuration). 5.4.3 adds os_configuration.clear_storage, the switch that lets the OS configuration run wipe leftover local storage. 5.4.4 adds os_configuration.network (confirm_minutes, stable_seconds: the commit-confirmed window of a guarded network change) and os_configuration.remoting with transport, bootstrap_transport and allowed_source_cidrs. 5.5 puts the CI/CD infrastructure in devops (the project, its settings, the environments, the Azure sign-in, the runners with their network and roles) and adds the domain join (identity.active_directory.domain_join_account, join_options, local_admin_members). 5.6 adds the deployment block (the timeouts, polling, approval and resume of the toolkit's Validate and Deploy run) and the remote management security profile: scenario.environment_class, the profile keys of os_configuration.remoting (allow_any_source, trusted_hosts, use_https, isolation_confirmed, certificate; bootstrap_transport also takes smb and auto) and a purpose marker on networking.logical_networks[] and networking.cluster_networks[] (the values management and oob of networking.vlans[].purpose also count). A missing scenario.environment_class means production. 5.6.1 adds identity.active_directory.security_groups[].local_groups. 5.6.2 identifies the adapters of nodes[].network_adapters[] by hardware facts (mac_address is required; port_index, pci_location, vendor, os_name_override and allowed_vlans are optional). 5.6.3 adds enabled, ip_allocation_method and nsg_name to networking.logical_networks[]. A file written for 5.6.0 stays valid: a minor version adds optional keys only, except that 5.6.2 requires the MAC of every adapter. 5.6.4 adds the SBE package as a requirement: hardware.sbe.requirement and not_applicable_reason (whether the OEM package is required, or not applicable with a reason), source_path (the share or folder where the downloaded package is available to the automation), source_username and source_password (the read credential, a Key Vault reference), and the optional package_sha256 and package_size_bytes. The build-time side-load (delivery) is unchanged and stays off by default. 5.6.5 adds landing_zone.policy (required_tags, management_group): the tag names and the management group of the Tier 1 tag policy, which the Azure Policy task assigns in audit mode. 5.6.6 adds operations.monitoring.action_group: the name of the Azure Monitor action group that the alerting task creates. 5.6.7 adds security.defender_for_cloud: the free level of Microsoft Defender for Cloud that Azure Local needs. 5.6.8 adds security.defender_for_cloud.security_contact_email. 5.6.9 adds the storage keys the volume and storage path scripts read: storage.pool, storage.csv, storage.paths and, on storage.volumes, provisioning_type, file_system, parity_percent, media_type and deduplication. 5.6.10 adds what the SAN deployment needs: networking.cluster_network_properties and, for iSCSI, storage.san.iscsi.networks, jumbo_packet and chap.mutual. 5.6.11 adds what the logical network, network security group and VM image scripts read: networking.network_security_groups (name and rules with name, priority, direction, access, protocol, source and destination address prefixes and port ranges, description), networking.logical_networks[].vm_switch_name and storage.vm_images (name, os_type, publisher, offer, sku, version, storage_path). 5.6.12 adds operations.monitoring.retention_days and removes operations.notifications.teams_webhook and operations.monitoring.health_alerts. 5.6.13 adds the secrets section (provider, file directory, command) and lets a secret reference use the env://, file:// and command:// forms besides keyvault://. 5.6.14 adds hardware.inventory (output_directory, file_name_prefix, format, timeout_seconds), which Get-HardwareInventory.ps1 reads. 5.6.15 adds what Enable-ArcSdn.ps1 reads: sdn.acknowledge_maintenance_window and sdn.acknowledge_dns_record, the rules of sdn.prefix, and sdn.dns_records (read now); it removes sdn.default_access_policy. 5.6.16 adds storage.san.luns[].unique_id (how New-SanVolume.ps1 finds the disk of a LUN) and removes security.backup_key_vault. 5.6.17 adds landing_zone.management_groups[].role and azure.automation_identity.object_id (the two keys the Terraform landing zone and identity modules need) and makes the Terraform and Ansible code readers of the file (New-IacVariableFiles.ps1). 5.6.19 adds provisioning.iso.image_uri (the address Invoke-MountGoldImageISO.ps1 gives the BMC virtual media), landing_zone.subscriptions[].billing_scope and workload, point_to_site.protocols, root_certificate_name and root_certificate, bastion.network and the nat_gateway object of landing_zone.connectivity, and a list of values for landing_zone.virtual_machines[].os. 5.6.20 adds operations.updates.install_after_deployment and operations.updates.target_version (read by Start-SolutionUpdateAfterDeployment.ps1) and removes keys that no tool read (see MIGRATION, To 5.6.20). 5.6.21 adds landing_zone.network_security_groups[] (the network security groups of the Azure landing zone networks: name and rules, created by New-LandingZoneNsg.ps1) and security.baseline_settings[] (type, name, value and acknowledge_weaker_security of the security baseline settings that Set-SecurityBaselines.ps1 changes with Set-AzsSecurity). The current version is 5.6.21.",
           "type": "string",
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
@@ -123,7 +123,7 @@
           ]
         },
         "deploy_method": {
-          "description": "How the cluster is deployed: the Azure portal or an ARM template. Not read by the tools yet: a documented placeholder.",
+          "description": "How the cluster is deployed: the Azure portal or an ARM template. Documentation only; not read by the tools. The toolkit deploys with the ARM template; no tool branches on this key.",
           "type": "string",
           "enum": [
             "portal",
@@ -158,7 +158,7 @@
           "type": "string"
         },
         "time_zone": {
-          "description": "Windows time zone ID of the site, for example UTC or Eastern Standard Time. Simplified provisioning sets it on the site.",
+          "description": "Windows time zone ID of the site, for example UTC or Eastern Standard Time. Simplified provisioning sets it on the site. The OS configuration's Time step sets it on every node (Set-TimeZone, only when it differs) and leaves the zone alone when the key is empty. Learn: the Configurator app sets the time zone with the time server.",
           "type": "string"
         },
         "code": {
@@ -195,12 +195,12 @@
       ],
       "properties": {
         "name": {
-          "description": "Environment identifier: lowercase letters, digits and hyphens.",
+          "description": "Environment identifier: lowercase letters, digits and hyphens. Documentation only; not read by the tools. It repeats site.name for the tools; Trailwright writes it.",
           "type": "string",
           "pattern": "^[a-z0-9][a-z0-9-]{1,40}$"
         },
         "type": {
-          "description": "Class of the environment: lab, demo, poc, dev, test, stg or prd. Documentation and naming; scenario.environment_class is the key that changes what the tools allow.",
+          "description": "Class of the environment: lab, demo, poc, dev, test, stg or prd. Documentation only; not read by the tools: scenario.environment_class is the key that changes what the tools allow.",
           "type": "string",
           "enum": [
             "lab",
@@ -627,7 +627,7 @@
           "type": "string"
         },
         "solution_version": {
-          "description": "The solution version the nodes run (four numeric parts, for example 12.2610.1004.50). The precondition SbeValidatedWithSolution compares it with the solution versions the OEM's SBE discovery catalog lists for the configured SBE. Leave empty to use the ZTP handoff's solution version, else the version derived from the nodes' OS build (reported as derived; only builds that map unambiguously).",
+          "description": "The solution version the nodes run (four numeric parts, for example 12.2610.1004.50). The precondition SbeValidatedWithSolution compares it with the solution versions the OEM's SBE discovery catalog lists for the configured SBE. Leave empty to use the ZTP handoff's solution version, else the version derived from the nodes' OS build (reported as derived; only builds that map unambiguously). The OS configuration also passes it to the Arc registration of a machine installed from an ISO as -TargetSolutionVersion, the version the first deployment uses; without it the registration cmdlet asks which version to use, which an unattended run cannot answer.",
           "type": "string",
           "pattern": "^\\d+\\.\\d+\\.\\d+\\.\\d+$"
         },
@@ -743,7 +743,7 @@
                   "type": "string"
                 },
                 "port_index": {
-                  "description": "The number of the port on its adapter, counted from 1, as the BMC reports it (Redfish PhysicalPortNumber, else the order of the port on the card). With slot and pci_location it says which physical connector the port is. Written by hardware discovery; a record of the hardware, nothing is configured from it.",
+                  "description": "The number of the port on its adapter, counted from 1, as the BMC reports it (Redfish PhysicalPortNumber, else the order of the port on the card). With slot and pci_location it says which physical connector the port is. Written by hardware discovery; a record of the hardware, nothing is configured from it. Documentation only; not read by the tools.",
                   "type": "integer",
                   "minimum": 1
                 },
@@ -773,7 +773,7 @@
                   }
                 },
                 "vendor": {
-                  "description": "The adapter manufacturer as hardware discovery reports it, for example the Manufacturer of the Redfish NetworkAdapter. Informational: no tool behaves differently for a brand; every make is handled through the same keys (mac_address, slot, port_index, model, speed_gbps, rdma).",
+                  "description": "The adapter manufacturer as hardware discovery reports it, for example the Manufacturer of the Redfish NetworkAdapter. Informational: no tool behaves differently for a brand; every make is handled through the same keys (mac_address, slot, port_index, model, speed_gbps, rdma). Documentation only; not read by the tools.",
                   "type": "string"
                 },
                 "os_name_override": {
@@ -793,7 +793,7 @@
                   "minimum": 0
                 },
                 "rdma": {
-                  "description": "RDMA technology the port supports: none, iwarp, roce (RoCE) or roce_v2 (RoCEv2). A record of the hardware; what is sent to Azure is networking.intents[].overrides.adapter.network_direct_technology.",
+                  "description": "RDMA technology the port supports: none, iwarp, roce (RoCE) or roce_v2 (RoCEv2). A record of the hardware; what is sent to Azure is networking.intents[].overrides.adapter.network_direct_technology. Documentation only; not read by the tools.",
                   "type": "string",
                   "enum": [
                     "none",
@@ -888,7 +888,7 @@
                       "type": "string"
                     },
                     "description": {
-                      "description": "Free text about the switch port, for example the cable label.",
+                      "description": "Free text about the switch port, for example the cable label. Documentation only; not read by the tools. A label for the cabling record; the gate reads switch_port.switch and port only.",
                       "type": "string"
                     }
                   }
@@ -944,7 +944,7 @@
             }
           },
           "rack": {
-            "description": "Rack identifier, for the as-built record.",
+            "description": "Rack identifier, for the as-built record. Documentation only; not read by the tools. A location label; the deployment uses nodes[].zone.",
             "type": "string"
           },
           "rack_position": {
@@ -1257,7 +1257,7 @@
               "type": "string"
             },
             "allow_unvalidated": {
-              "description": "Test only. Use the SBE in bundle_path even though the OEM's manifest doesn't list it as validated with provisioning.os_version. The hash is still checked. Default false.",
+              "description": "Test only. Use the SBE in bundle_path even though the OEM's manifest doesn't list it as validated with provisioning.os_version. The hash is still checked. Default false. Documentation only; not read by the tools. The deployment gate fails an SBE the OEM has not validated, whatever this key says.",
               "type": "boolean"
             }
           }
@@ -1270,15 +1270,15 @@
             "additionalProperties": false,
             "properties": {
               "label": {
-                "description": "Where the card sits, as the chassis labels it, for example Slot 6 or Embedded.",
+                "description": "Where the card sits, as the chassis labels it, for example Slot 6 or Embedded. Documentation only; not read by the tools. A planning input that Trailwright expands into nodes[].network_adapters[], which the tools read.",
                 "type": "string"
               },
               "make": {
-                "description": "Manufacturer of the card.",
+                "description": "Manufacturer of the card. Documentation only; not read by the tools. A planning input that Trailwright expands into nodes[].network_adapters[], which the tools read.",
                 "type": "string"
               },
               "model": {
-                "description": "Model of the card, as the machine reports it.",
+                "description": "Model of the card, as the machine reports it. Documentation only; not read by the tools. A planning input that Trailwright expands into nodes[].network_adapters[], which the tools read.",
                 "type": "string"
               },
               "ports": {
@@ -1289,16 +1289,16 @@
                   "additionalProperties": false,
                   "properties": {
                     "name": {
-                      "description": "Adapter name in the OS, as the intents use it.",
+                      "description": "Adapter name in the OS, as the intents use it. Documentation only; not read by the tools. A planning input that Trailwright expands into nodes[].network_adapters[], which the tools read.",
                       "type": "string"
                     },
                     "speed_gbps": {
-                      "description": "Port speed in Gbit/s.",
+                      "description": "Port speed in Gbit/s. Documentation only; not read by the tools. A planning input that Trailwright expands into nodes[].network_adapters[], which the tools read.",
                       "type": "number",
                       "minimum": 0
                     },
                     "rdma": {
-                      "description": "RDMA technology the port supports: none, iwarp, roce (RoCE) or roce_v2 (RoCEv2).",
+                      "description": "RDMA technology the port supports: none, iwarp, roce (RoCE) or roce_v2 (RoCEv2). Documentation only; not read by the tools. A planning input that Trailwright expands into nodes[].network_adapters[], which the tools read.",
                       "type": "string",
                       "enum": [
                         "none",
@@ -1308,7 +1308,7 @@
                       ]
                     },
                     "role": {
-                      "description": "unused, intent:<intent name>, cluster:a, cluster:b, iscsi:a or iscsi:b.",
+                      "description": "unused, intent:<intent name>, cluster:a, cluster:b, iscsi:a or iscsi:b. Documentation only; not read by the tools. A planning input that Trailwright expands into nodes[].network_adapters[], which the tools read.",
                       "type": "string",
                       "pattern": "^(unused|intent:.+|cluster:[ab]|iscsi:[ab])$"
                     }
@@ -1527,10 +1527,10 @@
             },
             "gateway": {
               "$ref": "#/$defs/ipv4",
-              "description": "Default gateway of the out-of-band network. Not read by the tools yet: a documented placeholder."
+              "description": "Default gateway of the out-of-band network. Documentation only; not read by the tools. No tool sets the BMC network; only networking.oob.subnet is read."
             },
             "vlan_id": {
-              "description": "VLAN ID of the out-of-band network; 0 for an untagged port. Not read by the tools yet: a documented placeholder.",
+              "description": "VLAN ID of the out-of-band network; 0 for an untagged port. Documentation only; not read by the tools. No tool sets the BMC network; only networking.oob.subnet is read.",
               "type": "integer",
               "minimum": 0,
               "maximum": 4094
@@ -1673,7 +1673,7 @@
               "type": "boolean"
             },
             "switchless_links": {
-              "description": "Switchless only: one or two links between each pair of machines. Not read by the tools yet: a documented placeholder.",
+              "description": "Switchless only: one or two links between each pair of machines. Documentation only; not read by the tools. Derived from networking.storage.networks[] and nodes[].storage_ips (one subnet per link).",
               "type": "string",
               "enum": [
                 "single",
@@ -1681,13 +1681,13 @@
               ]
             },
             "tor_switches": {
-              "description": "Top-of-rack switches. Not read by the tools yet: a documented placeholder.",
+              "description": "Top-of-rack switches. Documentation only; not read by the tools. Derived from the entries of network_devices[] with type switch.",
               "type": "integer",
               "minimum": 1,
               "maximum": 2
             },
             "layout": {
-              "description": "dedicated: storage on its own ports. converged: storage shares ports with other traffic.",
+              "description": "dedicated: storage on its own ports. converged: storage shares ports with other traffic. Documentation only; not read by the tools. Derived from networking.intents[].traffic: a storage-only intent is dedicated, storage with other traffic is converged.",
               "type": "string",
               "enum": [
                 "dedicated",
@@ -2049,17 +2049,17 @@
           "additionalProperties": false,
           "properties": {
             "proxy": {
-              "description": "Proxy server for the machines' outbound traffic, for scenario.outbound_path proxy or proxy_arc_gateway. The PowerShell tools of this repository do not send it yet.",
+              "description": "Proxy server for the machines' outbound traffic, for scenario.outbound_path proxy or proxy_arc_gateway. The OS configuration passes url and bypass to the Arc registration of a machine installed from an ISO (Invoke-AzStackHciArcInitialization -Proxy and -ProxyBypass).",
               "type": "object",
               "additionalProperties": false,
               "properties": {
                 "url": {
-                  "description": "URL of the proxy server, for example http://proxy.example.test:3128.",
+                  "description": "URL of the proxy server, for example http://proxy.example.test:3128. A plain proxy: no PAC file and no credentials. Passed to the Arc registration as -Proxy.",
                   "type": "string",
                   "pattern": "^https?://"
                 },
                 "bypass": {
-                  "description": "Addresses and names that go direct, not through the proxy.",
+                  "description": "Addresses and names that go direct, not through the proxy. Learn (Register Azure Local with Azure Arc): include the address and the NetBIOS name of each machine and of the cluster, and the infrastructure addresses; use localhost, not <local>; use a wildcard such as 192.168.1.* for a subnet (no CIDR) and *.example.test for a domain. Passed to the Arc registration as -ProxyBypass, joined with commas.",
                   "type": "array",
                   "items": {
                     "type": "string"
@@ -2089,12 +2089,12 @@
               ]
             },
             "private_path": {
-              "description": "Outbound path over a private connection (ExpressRoute or site-to-site VPN) when scenario.outbound_path is private_path. Not read by the tools yet.",
+              "description": "Outbound path over a private connection (ExpressRoute or site-to-site VPN) when scenario.outbound_path is private_path. The Azure Firewall explicit proxy is the machines' proxy server: the OS configuration passes firewall_private_ip and firewall_port, and proxy_bypass, to the Arc registration of a machine installed from an ISO. The Arc gateway of networking.outbound.arc_gateway is passed too. The network side (virtual network, subnets, Private Link Scope, transport) is a record of the design that Trailwright writes.",
               "type": "object",
               "additionalProperties": false,
               "properties": {
                 "transport": {
-                  "description": "The private connection: expressroute or site_to_site_vpn. Not read by the tools yet: a documented placeholder.",
+                  "description": "The private connection: expressroute or site_to_site_vpn. Documentation only; not read by the tools: the connection is built outside the toolkit.",
                   "type": "string",
                   "enum": [
                     "expressroute",
@@ -2102,33 +2102,33 @@
                   ]
                 },
                 "virtual_network": {
-                  "description": "Name of the Azure virtual network of the private path. Not read by the tools yet: a documented placeholder.",
+                  "description": "Name of the Azure virtual network of the private path. Documentation only; not read by the tools: the network is built outside the toolkit.",
                   "type": "string"
                 },
                 "workload_subnet": {
-                  "description": "Name of the workload subnet of that virtual network. Not read by the tools yet: a documented placeholder.",
+                  "description": "Name of the workload subnet of that virtual network. Documentation only; not read by the tools.",
                   "type": "string"
                 },
                 "firewall_subnet": {
-                  "description": "Name of the firewall subnet of that virtual network. Not read by the tools yet: a documented placeholder.",
+                  "description": "Name of the firewall subnet of that virtual network. Documentation only; not read by the tools.",
                   "type": "string"
                 },
                 "firewall_private_ip": {
                   "$ref": "#/$defs/ipv4",
-                  "description": "Private address of the firewall on that path. Not read by the tools yet: a documented placeholder."
+                  "description": "Private address of the Azure Firewall on that path. The OS configuration passes it, with firewall_port, as the proxy server of the Arc registration: http://<address>:<port> (Invoke-AzStackHciArcInitialization -Proxy). Learn: the Azure Firewall internal IP and port as the proxy server."
                 },
                 "firewall_port": {
-                  "description": "TCP port of the firewall used on that path. Not read by the tools yet: a documented placeholder.",
+                  "description": "TCP port of the Azure Firewall explicit proxy on that path (it proxies HTTP and HTTPS). Passed with firewall_private_ip as the proxy server of the Arc registration.",
                   "type": "integer",
                   "minimum": 1,
                   "maximum": 65535
                 },
                 "arc_private_link_scope": {
-                  "description": "true when the machines reach Azure Arc through an Azure Arc Private Link Scope on that path. Not read by the tools yet: a documented placeholder.",
+                  "description": "true when the machines reach Azure Arc through an Azure Arc Private Link Scope on that path. Documentation only; not read by the tools. Learn: Azure Local does not support an Arc Private Link Scope on the virtual network where Azure Firewall runs as explicit proxy.",
                   "type": "boolean"
                 },
                 "proxy_bypass": {
-                  "description": "Host names and address ranges that bypass the proxy on this path. Not read by the tools yet: a documented placeholder.",
+                  "description": "Host names and address ranges that bypass the proxy on this path. Passed to the Arc registration as -ProxyBypass, joined with commas. Same rules as networking.outbound.proxy.bypass: localhost, not <local>; a wildcard for a subnet or a domain, no CIDR; no .svc (the registration script handles it).",
                   "type": "array",
                   "items": {
                     "type": "string"
@@ -2241,13 +2241,6 @@
                   "name"
                 ]
               }
-            },
-            "break_glass_accounts": {
-              "description": "User principal names of emergency access accounts, excluded from Conditional Access. Not read by the tools yet: a documented placeholder.",
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
             }
           }
         },
@@ -2329,12 +2322,6 @@
               "type": "object",
               "additionalProperties": false,
               "properties": {
-                "rename_after_join": {
-                  "description": "Fixed to false: the machine gets its final name before it joins (the Hostname step runs first) and is never renamed after. (since 5.5)",
-                  "type": "boolean",
-                  "default": false,
-                  "const": false
-                },
                 "allow_ou_move": {
                   "description": "true: before the deployment, a machine already joined to this domain but sitting in another OU is moved into ou_path. false (default): it is reported as blocked and left where it is. Microsoft does not support moving the computer objects to another OU after the deployment, so a machine that is already part of a cluster is never moved, whatever this says. (since 5.5)",
                   "type": "boolean",
@@ -2387,31 +2374,6 @@
                       "type": "string",
                       "minLength": 1
                     }
-                  }
-                },
-                "required": [
-                  "name"
-                ]
-              }
-            },
-            "service_accounts": {
-              "description": "Service and administration accounts, apart from the LCM user. Not read by the tools yet: a documented placeholder.",
-              "type": "array",
-              "items": {
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                  "name": {
-                    "description": "Name of the service account.",
-                    "type": "string"
-                  },
-                  "purpose": {
-                    "description": "What the account is for, in words.",
-                    "type": "string"
-                  },
-                  "password": {
-                    "$ref": "#/$defs/kv_ref",
-                    "description": "A Key Vault secret reference: keyvault://<vault>/<secret>. The vault must be listed in key_vaults."
                   }
                 },
                 "required": [
@@ -2719,7 +2681,7 @@
                     "additionalProperties": false,
                     "properties": {
                       "name": {
-                        "description": "For example A or B. Unique.",
+                        "description": "For example A or B. Unique. Documentation only; not read by the tools. Only the validator reads it, to check the fabric references; zoning is done on the SAN switch, not by the toolkit.",
                         "type": "string",
                         "minLength": 1
                       },
@@ -2745,10 +2707,11 @@
                     "additionalProperties": false,
                     "properties": {
                       "wwpn": {
-                        "$ref": "#/$defs/wwpn"
+                        "$ref": "#/$defs/wwpn",
+                        "description": "A Fibre Channel World Wide Port Name: 16 hexadecimal digits, as 8 colon-separated pairs (50:00:09:72:08:12:34:56) or without colons. Documentation only; not read by the tools. A zoning record of the array side; Azure Local takes no target WWPN (it finds the volumes by storage.san.luns[].unique_id)."
                       },
                       "fabric": {
-                        "description": "A name in fabrics.",
+                        "description": "A name in fabrics. Documentation only; not read by the tools. A zoning record of the array side; Azure Local takes no target WWPN.",
                         "type": "string",
                         "minLength": 1
                       }
@@ -2835,7 +2798,7 @@
                     },
                     "secret": {
                       "$ref": "#/$defs/kv_ref",
-                      "description": "A Key Vault secret reference: keyvault://<vault>/<secret>. The vault must be listed in key_vaults. Not read by the tools yet: a documented placeholder."
+                      "description": "A secret reference, for example keyvault://<vault>/<secret> (a keyvault:// vault must be listed in key_vaults). The deployment sends it as the secure parameter chapCredential of the iSCSI template. With chap.mutual true the template uses this one secret for both directions: Microsoft's create-cluster-san-iscsi template has no second (target) secret parameter, so there is no key for one."
                     },
                     "mutual": {
                       "description": "Schema 5.6.10. true: the initiators also authenticate the targets (ARM chapType Mutual); false: one-way CHAP (OneWay). With enabled false the deployment gets chapType None. Microsoft's template uses the one CHAP credential for both directions.",
@@ -3118,12 +3081,30 @@
       "additionalProperties": false,
       "properties": {
         "update_method": {
-          "description": "How updates are applied: portal or powershell. Not read by the tools yet: a documented placeholder.",
+          "description": "How updates are applied: portal or powershell. Documentation only; not read by the tools. operations.updates.install_after_deployment carries the part a script can act on.",
           "type": "string",
           "enum": [
             "portal",
             "powershell"
           ]
+        },
+        "updates": {
+          "description": "Schema 5.6.20. Updates after the deployment. Start-SolutionUpdateAfterDeployment.ps1 (scripts/lifecycle/updates/powershell) reads both keys. Learn: Update Azure Local by using PowerShell.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "install_after_deployment": {
+              "description": "true: after the deployment, start the solution update (Start-SolutionUpdate) and return. The script does not wait: the update takes hours and the machines restart. false (default): no update is started. The script checks that the health of the update environment is not Failure, Error or Warning, and starts nothing when an update is already running or the instance is at the target. Sonar follows the run.",
+              "type": "boolean",
+              "default": false
+            },
+            "target_version": {
+              "description": "The solution version to install: latest (default; the highest solution update that is ready to install), or four numbers, for example 12.2610.1004.50, which the update service must list (Get-SolutionUpdate). Standalone Solution Builder Extension updates are not chosen.",
+              "type": "string",
+              "default": "latest",
+              "pattern": "^(latest|\\d+\\.\\d+\\.\\d+\\.\\d+)$"
+            }
+          }
         },
         "backup": {
           "description": "Backup of the instance and its workloads.",
@@ -3314,16 +3295,12 @@
           "additionalProperties": false,
           "properties": {
             "image_source": {
-              "description": "microsoft (the Azure portal download) or oem (the OEM's image). Not read by the tools yet: a documented placeholder.",
+              "description": "microsoft (the Azure portal download) or oem (the OEM's image). Documentation only; not read by the tools. A record of where the ISO came from.",
               "type": "string",
               "enum": [
                 "microsoft",
                 "oem"
               ]
-            },
-            "image_version": {
-              "description": "Build of the Azure Local OS image the ISO holds. No tool reads it yet; OS configuration reads the OS build from the machine. Not read by the tools yet: a documented placeholder.",
-              "type": "string"
             },
             "image_uri": {
               "description": "Schema 5.6.19. Where each machine's BMC fetches the OS ISO from, as the address you give the virtual media of the BMC (Redfish VirtualMedia.InsertMedia): an http, https, nfs or cifs address of the ISO. Invoke-MountGoldImageISO.ps1 (phase 02, task 02) inserts it as the virtual CD of every machine in nodes[].",
@@ -3952,15 +3929,15 @@
             "type": "string"
           },
           "model": {
-            "description": "Model of the device.",
+            "description": "Model of the device. Written into the cluster document by Generate-ClusterConfigMD.ps1; no deployment step reads it.",
             "type": "string"
           },
           "serial_number": {
-            "description": "Serial number of the device.",
+            "description": "Serial number of the device. Documentation only; not read by the tools. A record of the device.",
             "type": "string"
           },
           "firmware_version": {
-            "description": "Firmware or OS version of the device.",
+            "description": "Firmware or OS version of the device. Documentation only; not read by the tools. A record of the device.",
             "type": "string"
           },
           "management": {
@@ -3980,13 +3957,13 @@
                 ]
               },
               "vlan_id": {
-                "description": "VLAN of the management interface of the device.",
+                "description": "VLAN of the management interface of the device. Documentation only; not read by the tools. A record of the device.",
                 "type": "integer",
                 "minimum": 0,
                 "maximum": 4094
               },
               "protocol": {
-                "description": "Protocol used to manage the device: ssh, https, telnet or snmp.",
+                "description": "Protocol used to manage the device: ssh, https, telnet or snmp. Set-PowerSwitchEndpoint.ps1 and Test-OpengearVerification.ps1 check the management port this protocol uses (ssh 22, https 443, telnet 23; snmp is not checked).",
                 "type": "string",
                 "enum": [
                   "ssh",
@@ -4023,11 +4000,11 @@
             "additionalProperties": false,
             "properties": {
               "enabled": {
-                "description": "true when the device is one half of a high availability pair.",
+                "description": "true when the device is one half of a high availability pair. Documentation only; not read by the tools. A record of the device.",
                 "type": "boolean"
               },
               "mode": {
-                "description": "The high availability mode, as the vendor names it.",
+                "description": "The high availability mode, as the vendor names it. Documentation only; not read by the tools. A record of the device.",
                 "type": "string"
               }
             }
@@ -4053,10 +4030,6 @@
               },
               "display_name": {
                 "description": "Display name of the management group.",
-                "type": "string"
-              },
-              "parent": {
-                "description": "Parent management group name; empty for the tenant root.",
                 "type": "string"
               },
               "role": {
@@ -4157,14 +4130,6 @@
             "required": [
               "name"
             ]
-          }
-        },
-        "resource_providers": {
-          "description": "Resource provider namespaces to register, for example Microsoft.AzureStackHCI. Not read by the tools yet: a documented placeholder.",
-          "type": "array",
-          "items": {
-            "type": "string",
-            "pattern": "^[A-Za-z]+\\.[A-Za-z.]+$"
           }
         },
         "policy": {
@@ -4589,20 +4554,20 @@
               "additionalProperties": false,
               "properties": {
                 "name": {
-                  "description": "Name of the firewall.",
+                  "description": "Name of the firewall. Documentation only; not read by the tools. A record of the landing zone design.",
                   "type": "string"
                 },
                 "resource_group": {
                   "$ref": "#/$defs/resource_group",
-                  "description": "Resource group of the firewall."
+                  "description": "Resource group of the firewall. Documentation only; not read by the tools. A record of the landing zone design."
                 },
                 "sku": {
-                  "description": "SKU of the firewall.",
+                  "description": "SKU of the firewall. Documentation only; not read by the tools. A record of the landing zone design.",
                   "type": "string"
                 },
                 "private_ip": {
                   "$ref": "#/$defs/ipv4",
-                  "description": "Private address of the firewall."
+                  "description": "Private address of the firewall. Documentation only; not read by the tools. A record of the landing zone design."
                 }
               },
               "required": [
@@ -4700,18 +4665,8 @@
           "additionalProperties": false,
           "properties": {
             "name": {
-              "description": "Name of the workspace.",
+              "description": "Name of the workspace. Documentation only; not read by the tools. operations.monitoring.log_analytics_workspace names the workspace the monitoring scripts use.",
               "type": "string"
-            },
-            "resource_group": {
-              "$ref": "#/$defs/resource_group",
-              "description": "Resource group of the workspace."
-            },
-            "retention_days": {
-              "description": "Days the workspace keeps data.",
-              "type": "integer",
-              "minimum": 30,
-              "maximum": 730
             }
           },
           "required": [

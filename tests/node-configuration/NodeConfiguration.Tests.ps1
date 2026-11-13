@@ -1328,3 +1328,75 @@ Describe 'A driver install that returns pnputil 3010 (restart required)' {
         $errors | Should -BeNullOrEmpty
     }
 }
+
+Describe 'The Time step sets the time zone of the site (site.time_zone)' {
+    BeforeEach {
+        $infra = Get-Infra
+        $infra['site']['time_zone'] = 'Central Standard Time'
+        $script:Spec = Get-AzlNodeSpec -Infrastructure $infra -Node $infra.nodes[0]
+        $script:State = New-ConfiguredState $script:Spec
+        $script:State.time | Add-Member -NotePropertyName zone -NotePropertyValue 'UTC'
+    }
+    It 'carries the zone of the file in the node spec, empty when the file has none' {
+        $script:Spec.TimeZone | Should -Be 'Central Standard Time'
+        $plain = Get-Infra
+        (Get-AzlNodeSpec -Infrastructure $plain -Node $plain.nodes[0]).TimeZone | Should -Be ''
+    }
+    It 'plans a change that names the zone when the node has another one' {
+        $c = @(Compare-AzlNodeState -Spec $script:Spec -State $script:State | Where-Object { $_.Action -eq 'Change' })
+        $c.Count | Should -Be 1
+        $c[0].Step | Should -Be 'Time'
+        $c[0].Item | Should -Be 'time zone'
+        $c[0].Current | Should -Be 'UTC'
+        $c[0].Desired | Should -Be 'Central Standard Time'
+        $c[0].Apply.kind | Should -Be 'timezone'
+        $c[0].Apply.zone | Should -Be 'Central Standard Time'
+    }
+    It 'plans nothing when the zone is already set, whatever the case' {
+        $script:State.time.zone = 'central standard time'
+        @(Compare-AzlNodeState -Spec $script:Spec -State $script:State | Where-Object { $_.Action -eq 'Change' }) | Should -BeNullOrEmpty
+        (Compare-AzlNodeState -Spec $script:Spec -State $script:State | Where-Object { $_.Item -eq 'time zone' }).Action | Should -Be 'Ok'
+    }
+    It 'leaves the zone alone when the file sets none' {
+        $plain = Get-Infra
+        $spec = Get-AzlNodeSpec -Infrastructure $plain -Node $plain.nodes[0]
+        $state = New-ConfiguredState $spec
+        $state.time | Add-Member -NotePropertyName zone -NotePropertyValue 'UTC'
+        @(Compare-AzlNodeState -Spec $spec -State $state | Where-Object { $_.Item -eq 'time zone' }) | Should -BeNullOrEmpty
+    }
+    It 'plans the change for a node that does not report its zone' {
+        $c = @(Compare-AzlNodeState -Spec $script:Spec -State (New-ConfiguredState $script:Spec) | Where-Object { $_.Action -eq 'Change' })
+        $c.Count | Should -Be 1
+        $c[0].Current | Should -Be 'unknown'
+    }
+    It 'is a plain inline change: it cannot cut the node off, so it is not a guarded change' {
+        $todo = @(Compare-AzlNodeState -Spec $script:Spec -State $script:State | Where-Object { $_.Action -eq 'Change' })
+        Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', '..', 'scripts', 'common', 'node-configuration', 'AzlGuardedChange.psm1')) -Force
+        $split = Split-AzlGuardedAction -Todo $todo
+        @($split.Inline).Count | Should -Be 1
+        @($split.Services).Count | Should -Be 0
+    }
+    It 'with -Execute sends the zone to the Apply script and converges when the node reports it' {
+        $good = New-ConfiguredState $script:Spec
+        $good.time | Add-Member -NotePropertyName zone -NotePropertyValue 'Central Standard Time'
+        $t = New-FakeTransport @($script:State, $good) { param($p) [pscustomobject]@{ reboot = $false; results = @($p.actions | ForEach-Object { [pscustomobject]@{ id = $_.id; status = 'changed'; detail = 'time zone Central Standard Time' } }) } }
+        $r = Invoke-AzlNodeConfiguration -Spec $script:Spec -Transport $t -Execute -SecretResolver $script:Resolver -Clock $script:FakeClock -PortProbe $script:PortUp
+        $apply = @($t.Log | Where-Object Kind -eq 'Apply')
+        $apply.Count | Should -Be 1
+        @($apply[0].Parameters.actions | ForEach-Object { $_.kind }) | Should -Be @('timezone')
+        $r.Converged | Should -BeTrue
+    }
+    It 'the node scripts read and set the zone in Windows PowerShell 5.1 syntax, and set it only when it differs' {
+        foreach ($name in 'Read', 'Apply') {
+            $text = Get-AzlNodePayload -Name $name
+            $errors = $null
+            [void][System.Management.Automation.Language.Parser]::ParseInput($text, [ref]$null, [ref]$errors)
+            $errors | Should -BeNullOrEmpty
+        }
+        (Get-AzlNodePayload -Name Read) | Should -Match 'Get-TimeZone'
+        $apply = Get-AzlNodePayload -Name Apply
+        $apply | Should -Match "'timezone'"
+        $apply | Should -Match 'Set-TimeZone -Id \$zone'
+        $apply | Should -Match '\(Get-TimeZone\)\.Id -ieq \$zone'
+    }
+}

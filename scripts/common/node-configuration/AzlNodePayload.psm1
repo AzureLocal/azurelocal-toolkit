@@ -181,7 +181,9 @@ Invoke-Section 'remote' {
 Invoke-Section 'time' {
     $w = Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Services\W32Time\Parameters'
     $src = (& w32tm.exe /query /source 2>$null | Select-Object -First 1)
-    $Az.time = [pscustomobject]@{ type = [string](Get-P $w 'Type' ''); peers = [string](Get-P $w 'NtpServer' ''); src = [string]$src }
+    $zone = ''
+    try { $zone = [string](Get-TimeZone).Id } catch { $zone = '' }
+    $Az.time = [pscustomobject]@{ type = [string](Get-P $w 'Type' ''); peers = [string](Get-P $w 'NtpServer' ''); src = [string]$src; zone = $zone }
 }
 
 # ---- the OEM's SBE package in C:\SBE
@@ -512,6 +514,12 @@ function Invoke-Action($a) {
             & w32tm.exe /resync /force 2>&1 | Out-Null
             return ('time source ' + (@($a.servers) -join ','))
         }
+        'timezone' {
+            $zone = [string]$a.zone
+            if ((Get-TimeZone).Id -ieq $zone) { return ('time zone already ' + $zone) }
+            Set-TimeZone -Id $zone
+            return ('time zone ' + $zone)
+        }
         'hostname' {
             Rename-Computer -NewName ([string]$a.name) -Force
             $Az.reboot = $true
@@ -715,6 +723,16 @@ $arguments = @{
 }
 $gateway = [string](Get-P $P 'arcGatewayId' '')
 if ($gateway) { $arguments['ArcGatewayID'] = $gateway }
+# The proxy server and its bypass list (Learn: Register Azure Local with Azure Arc, with a proxy or on the private path), and the solution version
+# (without it the cmdlet asks which one to use). Each is passed only when the file gives it.
+$proxy = [string](Get-P $P 'proxy' '')
+if ($proxy) {
+    $arguments['Proxy'] = $proxy
+    $bypass = [string](Get-P $P 'proxyBypass' '')
+    if ($bypass) { $arguments['ProxyBypass'] = $bypass }
+}
+$solutionVersion = [string](Get-P $P 'targetSolutionVersion' '')
+if ($solutionVersion) { $arguments['TargetSolutionVersion'] = $solutionVersion }
 $null = Invoke-AzStackHciArcInitialization @arguments
 Write-Result ([pscustomobject]@{ v = 1; host = $env:COMPUTERNAME; registered = $true })
 '@
