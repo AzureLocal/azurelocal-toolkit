@@ -64,7 +64,7 @@
     .\Invoke-Phase03Verification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -LogPath C:\logs\verify.log
 
 .EXAMPLE
-    .\Invoke-Phase03Verification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -DnsServers 10.0.0.1,10.0.0.2
+    .\Invoke-Phase03Verification-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -DnsServers 192.0.2.4,192.0.2.5
 
 .NOTES
     Author:  Azure Local Cloud AzureLocalCloud

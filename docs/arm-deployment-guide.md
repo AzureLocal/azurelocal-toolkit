@@ -160,7 +160,7 @@ ARM parameter adouPath (required when scenario.identity is active_directory) nee
 ```
 
 All missing keys are listed at once. The map is data: `config/azure/arm-templates/parameter-sources.json`. A design the generator
-does not support yet (iSCSI SAN, disconnected operations, Azure Government with local identity or a SAN, rack aware with a SAN
+does not support yet (an iSCSI SAN with local identity, disconnected operations, Azure Government with local identity or a SAN, rack aware with a SAN
 or local identity) stops with exit 2 and says so.
 
 ## Re-running, resuming, waiting
