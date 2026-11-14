@@ -63,7 +63,8 @@ Describe 'The replaced scripts are gone and nothing names them' {
     }
     It 'no script, test or document except this file and the CHANGELOG names <Name>' -ForEach $script:Removed {
         $hit = @(Get-ChildItem -LiteralPath $script:Repo -Recurse -File -Include *.ps1, *.psm1, *.md, *.yml, *.yaml, *.psd1, *.json -ErrorAction SilentlyContinue |
-                Where-Object { $_.FullName -notmatch '[\\/](\.git|node_modules)[\\/]' -and $_.Name -ne 'ParameterDefaults.Tests.ps1' -and $_.Name -notin 'CHANGELOG.md', 'master-registry.yaml' } |
+                Where-Object { $_.FullName -notmatch '[\\/](\.git|node_modules)[\\/]' -and $_.Name -ne 'ParameterDefaults.Tests.ps1' -and $_.Name -notin 'CHANGELOG.md', 'master-registry.yaml', 'MIGRATION.md' -and $_.Name -notlike '*.Tests.ps1' } |
+                # MIGRATION.md records removed scripts on purpose, and a test that checks a removal names the script on purpose.
                 Select-String -SimpleMatch $Name -List | ForEach-Object { $_.Path })
         # The README of the phase says which scripts were removed and why; that sentence is the only place that names them.
         $hit | Where-Object { $_ -notmatch 'phase-03-os-configuration[\\/]README\.md$' } | Should -BeNullOrEmpty
@@ -222,10 +223,8 @@ Describe 'Set-InfrastructurePrep.ps1 has no default time source' {
     }
 }
 
-Describe 'New-PipelineSP.ps1 has no default environment name' {
-    It 'gives -EnvironmentName no default' {
-        $p = @(Get-ParameterAst ([IO.Path]::Combine($script:Repo, 'scripts', 'common', 'service-principals', 'New-PipelineSP.ps1'))) | Where-Object { $_.Name.VariablePath.UserPath -eq 'EnvironmentName' }
-        $p | Should -Not -BeNullOrEmpty
-        $p.DefaultValue | Should -BeNullOrEmpty
+Describe 'New-PipelineSP.ps1' {
+    It 'is removed (the CI/CD bootstrap and New-AutomationManagedIdentity.ps1 replace it)' {
+        Test-Path -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts', 'common', 'service-principals', 'New-PipelineSP.ps1')) | Should -BeFalse
     }
 }

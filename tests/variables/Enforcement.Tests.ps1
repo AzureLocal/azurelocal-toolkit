@@ -483,7 +483,7 @@ Describe 'The scan sees what it is meant to see' {
 
     It 'scans the scripts of config/variables/scripts as well as scripts/' {
         @($script:Files | Where-Object { $_ -like (Join-Path $script:VariableScripts '*') }).Count | Should -BeGreaterThan 10
-        @($script:Files | Where-Object { $_ -like (Join-Path $script:ScriptsRoot '*') }).Count | Should -BeGreaterThan 400
+        @($script:Files | Where-Object { $_ -like (Join-Path $script:ScriptsRoot '*') }).Count | Should -BeGreaterThan 350   # leftover scripts were removed; the scan still covers every script
     }
 
     It 'reads the registry' {
