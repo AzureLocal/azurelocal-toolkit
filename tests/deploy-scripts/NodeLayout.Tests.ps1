@@ -40,10 +40,13 @@ Describe 'Node layout of the scripts' {
         $Count | Should -BeGreaterThan 300
     }
 
-    It '<Relative> is left on purpose and still reads the old layout' -ForEach $script:LeftFile -AllowNullOrEmptyForEach {
-        Test-Path -LiteralPath $Path | Should -BeTrue -Because 'the file is on the list of files left on purpose'
-        (Get-Content -LiteralPath $Path -Raw) | Should -Match 'cluster_nodes' -Because 'the file was fixed: remove it from the list'
-        $Reason | Should -Not -BeNullOrEmpty
+    # an empty list skips the test in every Pester version (5.9.1 has no -AllowNullOrEmptyForEach; 6 fails on an empty -ForEach)
+    if (@($script:LeftFile).Count -gt 0) {
+        It '<Relative> is left on purpose and still reads the old layout' -ForEach $script:LeftFile {
+            Test-Path -LiteralPath $Path | Should -BeTrue -Because 'the file is on the list of files left on purpose'
+            (Get-Content -LiteralPath $Path -Raw) | Should -Match 'cluster_nodes' -Because 'the file was fixed: remove it from the list'
+            $Reason | Should -Not -BeNullOrEmpty
+        }
     }
 }
 

@@ -80,15 +80,21 @@ Describe 'Schema 4 keys in the scripts' {
         $Count | Should -BeGreaterThan 300
     }
 
-    It '<File> is left on purpose and still reads <Id>' -ForEach $script:LeftCase -AllowNullOrEmptyForEach {
-        Test-Path -LiteralPath $Path | Should -BeTrue -Because 'the file is on the list of reads left on purpose'
-        [regex]::IsMatch([System.IO.File]::ReadAllText($Path), $Regex) | Should -BeTrue -Because 'the file was fixed: remove it from the list'
-        $Reason | Should -Not -BeNullOrEmpty
+    # an empty list skips the test in every Pester version (5.9.1 has no -AllowNullOrEmptyForEach; 6 fails on an empty -ForEach)
+    if (@($script:LeftCase).Count -gt 0) {
+        It '<File> is left on purpose and still reads <Id>' -ForEach $script:LeftCase {
+            Test-Path -LiteralPath $Path | Should -BeTrue -Because 'the file is on the list of reads left on purpose'
+            [regex]::IsMatch([System.IO.File]::ReadAllText($Path), $Regex) | Should -BeTrue -Because 'the file was fixed: remove it from the list'
+            $Reason | Should -Not -BeNullOrEmpty
+        }
     }
 
-    It '<File> is out of scope and exists' -ForEach $script:OutCase -AllowNullOrEmptyForEach {
-        Test-Path -LiteralPath $Path | Should -BeTrue
-        $Reason | Should -Not -BeNullOrEmpty
+    # an empty list skips the test in every Pester version (5.9.1 has no -AllowNullOrEmptyForEach; 6 fails on an empty -ForEach)
+    if (@($script:OutCase).Count -gt 0) {
+        It '<File> is out of scope and exists' -ForEach $script:OutCase {
+            Test-Path -LiteralPath $Path | Should -BeTrue
+            $Reason | Should -Not -BeNullOrEmpty
+        }
     }
 }
 

@@ -17,9 +17,9 @@ Registry version 5.0.52. Sources of the scan: toolkit (this repository), sonar 3
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Keys of infrastructure.yml | 653 | 459 | 82 | 3 | 107 | 2 |
-| Owned by a tool (`tools.*`) | 4710 | 4502 | 0 | 0 | 208 | 0 |
+| Owned by a tool (`tools.*`) | 4711 | 4503 | 0 | 0 | 208 | 0 |
 | Older variables-file sections | 1417 | 22 | 6 | 0 | 1383 | 6 |
-| All registry leaves | 6780 | 4983 | 88 | 3 | 1698 | 8 |
+| All registry leaves | 6781 | 4984 | 88 | 3 | 1698 | 8 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -94,7 +94,7 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | ztp | ZTP | 89 | 0 | 1089 |
 | os-configuration | OS configuration | 76 | 0 | 274 |
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
-| arm-deployment | ARM Validate/Deploy | 91 | 0 | 1492 |
+| arm-deployment | ARM Validate/Deploy | 91 | 0 | 1493 |
 | sonar | Sonar | 14 | 0 | 266 |
 | cicd-infra | Outside the flow | 53 | 0 | 348 |
 | infrastructure-helpers | Outside the flow | 39 | 0 | 0 |
@@ -1707,7 +1707,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |
-| arm_deployment | parameters | 1392 | 1392 | 0 |
+| arm_deployment | parameters | 1393 | 1393 | 0 |
 | arm_deployment | report_fields | 20 | 20 | 0 |
 | arm_deployment | run_settings | 31 | 31 | 0 |
 | arm_deployment | secret_names | 2 | 2 | 0 |

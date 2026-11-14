@@ -29,6 +29,9 @@
 .PARAMETER VmFleetModuleVersion
     Optional. The version of the VMFleet module to install when it is missing. Without it the latest version is installed.
 
+.PARAMETER FleetAdminCredential
+    The administrator account of the fleet VMs (VMFleet -AdminPass). Required unless -WhatIf. The script never prompts for it.
+
 .PARAMETER OutputPath
     Path to save performance reports. Default: .\logs\validation-reports\
 
@@ -63,7 +66,10 @@ param(
     [int]$CollectVolumeSizeGiB = 50,
 
     [Parameter(Mandatory = $false)]
-    [string]$VmFleetModuleVersion
+    [string]$VmFleetModuleVersion,
+
+    [Parameter(Mandatory = $false)]
+    [pscredential]$FleetAdminCredential
 )
 
 #Requires -Version 7.0
@@ -131,7 +137,7 @@ function Initialize-VMFleetEnvironment {
     $nodes = @((Get-ClusterNode -Cluster $ClusterName).Name)
     Write-Log "  Setting up VMFleet for $($nodes.Count) nodes, $VmCount VMs each..." -Level "INFO"
 
-    Set-Fleet -Cluster $ClusterName -VMs $VmCount -AdminPass (Read-Host "Enter VM admin password" -AsSecureString) -ConnectUser $env:USERNAME
+    Set-Fleet -Cluster $ClusterName -VMs $VmCount -AdminPass $(if ($FleetAdminCredential) { $FleetAdminCredential.Password }) -ConnectUser $env:USERNAME
     Write-Log "  VMFleet initialized with $($nodes.Count * $VmCount) total VMs" -Level "SUCCESS"
 }
 
@@ -185,6 +191,11 @@ if ($ConfigPath) {
 if (-not $ClusterName) {
     Write-Log "ClusterName is required." -Level "ERROR"
     exit 1
+}
+
+if (-not $FleetAdminCredential -and -not $WhatIfPreference) {
+    # never prompt: the account comes from the caller (for example from a secret through scripts/common/secrets)
+    throw [System.ArgumentException]::new('-FleetAdminCredential is required: the administrator account of the fleet VMs. The script never prompts.')
 }
 
 Write-Log "Cluster: $ClusterName" -Level "INFO"

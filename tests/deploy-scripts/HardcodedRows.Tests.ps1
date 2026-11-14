@@ -59,7 +59,7 @@ Describe 'Invoke-VmFleetStorageTest.ps1' {
         Mock Import-Module { }
         Mock Install-Module { }
         Mock New-Volume { }
-        Mock Read-Host { ConvertTo-SecureString 'x' -AsPlainText -Force }
+        $script:FleetCred = [pscredential]::new('fleetadmin', (ConvertTo-SecureString 'x' -AsPlainText -Force))
         Mock Start-Sleep { }
         Mock Start-Fleet { }
         Mock Set-Fleet { }
@@ -71,37 +71,48 @@ Describe 'Invoke-VmFleetStorageTest.ps1' {
     }
 
     It 'creates the Collect volume in the pool of storage.pool.name' {
-        $null = & (Join-Path $script:Repo $script:VmFleet) -ConfigPath (New-InfraFile 'iic-pool') -OutputPath (Join-Path $TestDrive 'o1') 6>&1
+        $null = & (Join-Path $script:Repo $script:VmFleet) -ConfigPath (New-InfraFile 'iic-pool') -OutputPath (Join-Path $TestDrive 'o1') -FleetAdminCredential $script:FleetCred 6>&1
         Should -Invoke New-Volume -Times 1 -Exactly -ParameterFilter { $StoragePoolFriendlyName -eq 'iic-pool' -and $FriendlyName -eq 'Collect' }
     }
 
     It 'finds the one pool of the cluster when the file names none' {
-        $null = & (Join-Path $script:Repo $script:VmFleet) -ConfigPath (New-InfraFile) -OutputPath (Join-Path $TestDrive 'o2') 6>&1
+        $null = & (Join-Path $script:Repo $script:VmFleet) -ConfigPath (New-InfraFile) -OutputPath (Join-Path $TestDrive 'o2') -FleetAdminCredential $script:FleetCred 6>&1
         Should -Invoke New-Volume -Times 1 -Exactly -ParameterFilter { $StoragePoolFriendlyName -eq 'SU1_Pool' }
     }
 
     It 'stops when the cluster has two pools and the file names none' {
         $global:AzlHcPools = @([pscustomobject]@{ IsPrimordial = $false; FriendlyName = 'a' }, [pscustomobject]@{ IsPrimordial = $false; FriendlyName = 'b' })
-        { & (Join-Path $script:Repo $script:VmFleet) -ConfigPath (New-InfraFile) -OutputPath (Join-Path $TestDrive 'o3') 6>&1 } | Should -Throw '*storage.pool.name*'
+        { & (Join-Path $script:Repo $script:VmFleet) -ConfigPath (New-InfraFile) -OutputPath (Join-Path $TestDrive 'o3') -FleetAdminCredential $script:FleetCred 6>&1 } | Should -Throw '*storage.pool.name*'
         Should -Invoke New-Volume -Times 0 -Exactly
     }
 
     It 'sizes the Collect volume from the parameter CollectVolumeSizeGiB' {
-        $null = & (Join-Path $script:Repo $script:VmFleet) -ConfigPath (New-InfraFile 'iic-pool') -CollectVolumeSizeGiB 80 -OutputPath (Join-Path $TestDrive 'o4') 6>&1
+        $null = & (Join-Path $script:Repo $script:VmFleet) -ConfigPath (New-InfraFile 'iic-pool') -CollectVolumeSizeGiB 80 -OutputPath (Join-Path $TestDrive 'o4') -FleetAdminCredential $script:FleetCred 6>&1
         Should -Invoke New-Volume -Times 1 -Exactly -ParameterFilter { $Size -eq 80GB }
     }
 
     It 'installs the version of the parameter VmFleetModuleVersion' {
-        $null = & (Join-Path $script:Repo $script:VmFleet) -ConfigPath (New-InfraFile 'iic-pool') -VmFleetModuleVersion '1.2.3' -OutputPath (Join-Path $TestDrive 'o5') 6>&1
+        $null = & (Join-Path $script:Repo $script:VmFleet) -ConfigPath (New-InfraFile 'iic-pool') -VmFleetModuleVersion '1.2.3' -OutputPath (Join-Path $TestDrive 'o5') -FleetAdminCredential $script:FleetCred 6>&1
         Should -Invoke Install-Module -Times 1 -Exactly -ParameterFilter { $RequiredVersion -eq '1.2.3' }
     }
 
     It 'installs the latest version without the parameter' {
-        $null = & (Join-Path $script:Repo $script:VmFleet) -ConfigPath (New-InfraFile 'iic-pool') -OutputPath (Join-Path $TestDrive 'o6') 6>&1
+        $null = & (Join-Path $script:Repo $script:VmFleet) -ConfigPath (New-InfraFile 'iic-pool') -OutputPath (Join-Path $TestDrive 'o6') -FleetAdminCredential $script:FleetCred 6>&1
         Should -Invoke Install-Module -Times 1 -Exactly -ParameterFilter { $Name -eq 'VMFleet' }
         Should -Invoke Install-Module -Times 0 -Exactly -ParameterFilter { $Name -eq 'VMFleet' -and $RequiredVersion }
     }
 
+    It 'never prompts: without -FleetAdminCredential it stops before it installs or creates anything' {
+        { & (Join-Path $script:Repo $script:VmFleet) -ConfigPath (New-InfraFile 'iic-pool') -OutputPath (Join-Path $TestDrive 'o7') 6>&1 } | Should -Throw '*FleetAdminCredential*'
+        Should -Invoke Install-Module -Times 0 -Exactly -ParameterFilter { $Name -eq 'VMFleet' }
+        Should -Invoke New-Volume -Times 0 -Exactly
+        (Get-RepoText $script:VmFleet) | Should -Not -Match 'Read-Host'
+    }
+
+    It 'gives the fleet the password of -FleetAdminCredential' {
+        $null = & (Join-Path $script:Repo $script:VmFleet) -ConfigPath (New-InfraFile 'iic-pool') -OutputPath (Join-Path $TestDrive 'o8') -FleetAdminCredential $script:FleetCred 6>&1
+        Should -Invoke Set-Fleet -Times 1 -Exactly -ParameterFilter { $AdminPass -is [securestring] }
+    }
     It 'types no pool pattern and no volume size into the call' {
         $text = Get-RepoText $script:VmFleet
         $text | Should -Not -Match 'S2D\*'
