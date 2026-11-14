@@ -8,12 +8,14 @@
 
     It also sets the runner label and the approval environments the pipelines select (devops.pipelines.runner_label and devops.pipelines.environments.*): GitHub repository variables and GitLab project CI/CD variables named AZL_RUNNER_LABEL and AZL_ENVIRONMENT_..., the same for all environments. Azure DevOps reads the agent pool and the environment of a job before any variable exists, so there they are run parameters with no default: the task changes nothing and lists the value to enter for each (devops.runners[].pool of the general runner, and the environments). A label that the general runner does not have, or an environment that devops.environments[] does not list with approval_required true, stops the task.
 
-    Reads the devops (including devops.pipelines and devops.runners[].pool/labels), azure, key_vaults and landing_zone sections of infrastructure.yml (schema 5.6.25). With no file it uses
-    the CONFIGURATION region below. Idempotent: it creates what is missing and leaves the rest. -WhatIf reads what exists and
+    Reads the devops (including devops.pipelines and devops.runners[].pool/labels), azure, key_vaults and landing_zone sections of infrastructure.yml (schema 5).
+    Idempotent: it creates what is missing and leaves the rest. -WhatIf reads what exists and
     lists what it would do.
 
+    Exit codes: 0 done (created, already there, or planned under -WhatIf); 1 a call to the platform, Azure or Terraform failed; 2 the infrastructure file cannot be read or does not validate.
+
 .PARAMETER InfrastructureFile
-    The infrastructure file. Default: $env:AZL_INFRASTRUCTURE_FILE, then .\infrastructure.yml.
+    The infrastructure file (infrastructure.yml, schema 5). Required: there is no default path.
 
 .PARAMETER Platform
     Overrides devops.platform: github, gitlab or azure_devops.
@@ -31,7 +33,7 @@
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [string]$InfrastructureFile = '',
+    [Parameter(Mandatory)][string]$InfrastructureFile,
     [ValidateSet('', 'github', 'gitlab', 'azure_devops')]
     [string]$Platform = '',
     [string]$ClientId = '',
@@ -39,20 +41,6 @@ param(
 )
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-
-#region CONFIGURATION
-# Used only when no infrastructure file is given or found. The same keys as infrastructure.yml; fill in what the task needs.
-$configuration = [ordered]@{
-    azure  = [ordered]@{
-        tenant_id           = ''
-        subscription_id     = ''
-        location            = ''
-        resource_group      = ''
-        automation_identity = [ordered]@{ name = 'azurelocal-cicd'; client_id = '' }
-    }
-    devops = [ordered]@{ platform = ''; url = ''; organization = ''; project = '' }
-}
-#endregion
 
 function Get-CicdModulePath {
     $current = Get-Item -LiteralPath $PSScriptRoot
@@ -64,9 +52,12 @@ function Get-CicdModulePath {
     throw "Unable to locate AzlCicdInfra.psm1 from '$PSScriptRoot'."
 }
 
-Import-Module (Get-CicdModulePath) -Force
+Import-Module (Get-CicdModulePath)
 $null = Initialize-AzlCicdLog -TaskName 'task-05-configure-variables' -LogPath $LogPath
-$settings = Resolve-AzlCicdInput -InfrastructureFile $InfrastructureFile -Platform $Platform -Configuration $configuration
-$results = Set-AzlCicdVariable -Settings $settings -ClientId $ClientId -WhatIf:$WhatIfPreference -Confirm:$false
+try { $settings = Resolve-AzlCicdInput -InfrastructureFile $InfrastructureFile -Platform $Platform }
+catch { Write-Error "The infrastructure file cannot be used: $($_.Exception.Message)" -ErrorAction Continue; exit 2 }
+try { $results = Set-AzlCicdVariable -Settings $settings -ClientId $ClientId -WhatIf:$WhatIfPreference -Confirm:$false }
+catch { Write-Error $_.Exception.Message -ErrorAction Continue; exit 1 }
 $results | Format-Table Action, Target, Status, Detail -AutoSize | Out-Host
 $results
+exit 0

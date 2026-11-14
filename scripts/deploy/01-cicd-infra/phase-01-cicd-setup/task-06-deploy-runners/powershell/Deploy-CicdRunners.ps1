@@ -6,12 +6,14 @@
 .DESCRIPTION
     Runs terraform init, validate and plan for src/terraform/environments/cicd-infra, with the variables built from devops.runners, devops.runner_network and devops.runner_access. Apply happens only with -Apply, from the plan file that was just made. The runners read their registration credential from Key Vault at first boot.
 
-    Reads the devops, azure, key_vaults and landing_zone sections of infrastructure.yml (schema 5.5). With no file it uses
-    the CONFIGURATION region below. Idempotent: it creates what is missing and leaves the rest. -WhatIf reads what exists and
+    Reads the devops, azure, key_vaults and landing_zone sections of infrastructure.yml (schema 5).
+    Idempotent: it creates what is missing and leaves the rest. -WhatIf reads what exists and
     lists what it would do.
 
+    Exit codes: 0 done (created, already there, or planned under -WhatIf); 1 a call to the platform, Azure or Terraform failed; 2 the infrastructure file cannot be read or does not validate.
+
 .PARAMETER InfrastructureFile
-    The infrastructure file. Default: $env:AZL_INFRASTRUCTURE_FILE, then .\infrastructure.yml.
+    The infrastructure file (infrastructure.yml, schema 5). Required: there is no default path.
 
 .PARAMETER Platform
     Overrides devops.platform: github, gitlab or azure_devops.
@@ -43,7 +45,7 @@
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [string]$InfrastructureFile = '',
+    [Parameter(Mandatory)][string]$InfrastructureFile,
     [ValidateSet('', 'github', 'gitlab', 'azure_devops')]
     [string]$Platform = '',
     [string]$VarFile = '',
@@ -59,20 +61,6 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-#region CONFIGURATION
-# Used only when no infrastructure file is given or found. The same keys as infrastructure.yml; fill in what the task needs.
-$configuration = [ordered]@{
-    azure  = [ordered]@{
-        tenant_id           = ''
-        subscription_id     = ''
-        location            = ''
-        resource_group      = ''
-        automation_identity = [ordered]@{ name = 'azurelocal-cicd'; client_id = '' }
-    }
-    devops = [ordered]@{ platform = ''; url = ''; organization = ''; project = '' }
-}
-#endregion
-
 function Get-CicdModulePath {
     $current = Get-Item -LiteralPath $PSScriptRoot
     while ($null -ne $current) {
@@ -83,9 +71,12 @@ function Get-CicdModulePath {
     throw "Unable to locate AzlCicdInfra.psm1 from '$PSScriptRoot'."
 }
 
-Import-Module (Get-CicdModulePath) -Force
+Import-Module (Get-CicdModulePath)
 $null = Initialize-AzlCicdLog -TaskName 'task-06-deploy-runners' -LogPath $LogPath
-$settings = if ($VarFile -and -not $InfrastructureFile) { $null } else { Resolve-AzlCicdInput -InfrastructureFile $InfrastructureFile -Platform $Platform -Configuration $configuration }
-$results = Invoke-AzlCicdRunnerDeployment -Settings $settings -VarFile $VarFile -BackendConfigFile $BackendConfigFile -BackendFalse:$BackendFalse -WorkingDirectory $WorkingDirectory -AdminSshPublicKeyPath $AdminSshPublicKeyPath -NoLock:$NoLock -PlanFile $PlanFile -Apply:$Apply -WhatIf:$WhatIfPreference -Confirm:$false
+try { $settings = Resolve-AzlCicdInput -InfrastructureFile $InfrastructureFile -Platform $Platform }
+catch { Write-Error "The infrastructure file cannot be used: $($_.Exception.Message)" -ErrorAction Continue; exit 2 }
+try { $results = Invoke-AzlCicdRunnerDeployment -Settings $settings -VarFile $VarFile -BackendConfigFile $BackendConfigFile -BackendFalse:$BackendFalse -WorkingDirectory $WorkingDirectory -AdminSshPublicKeyPath $AdminSshPublicKeyPath -NoLock:$NoLock -PlanFile $PlanFile -Apply:$Apply -WhatIf:$WhatIfPreference -Confirm:$false }
+catch { Write-Error $_.Exception.Message -ErrorAction Continue; exit 1 }
 $results | Format-Table Action, Target, Status, Detail -AutoSize | Out-Host
 $results
+exit 0

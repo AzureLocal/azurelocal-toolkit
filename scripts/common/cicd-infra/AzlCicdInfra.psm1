@@ -4,8 +4,7 @@
     The CI/CD infrastructure of automation / 01-cicd-infra (tasks 01 to 06) for GitHub, GitLab and Azure DevOps.
 
 .DESCRIPTION
-    Every task script in scripts/deploy/01-cicd-infra calls one function here, so the three platforms and the standalone and
-    orchestrated variants share one implementation. All inputs come from the devops, azure, key_vaults and landing_zone
+    Every task script in scripts/deploy/01-cicd-infra calls one function here, so the three platforms share one implementation. All inputs come from the devops, azure, key_vaults and landing_zone
     sections of infrastructure.yml (schema 5.5). No secret is a parameter: platform tokens come from the environment
     (GH_TOKEN, GITLAB_TOKEN, AZURE_DEVOPS_EXT_PAT) or from devops.api_token, a keyvault:// reference.
 
@@ -158,7 +157,7 @@ function ConvertTo-AzlCicdSetting {
     .SYNOPSIS
         Converts a loaded infrastructure.yml (a hashtable) to the settings that tasks 01 to 06 read, with defaults applied.
     .PARAMETER Infrastructure
-        The file as a hashtable (Import-AzlInfrastructure, or the CONFIGURATION region of a standalone script).
+        The file as a hashtable (Import-AzlInfrastructure).
     .PARAMETER Platform
         Overrides devops.platform.
     #>
@@ -298,16 +297,13 @@ function Get-AzlCicdSetting {
     <#
     .SYNOPSIS
         Reads infrastructure.yml, validates it (Test-AzlInfrastructure) and returns the CI/CD settings.
+    .PARAMETER InfrastructureFile
+        The infrastructure file. There is no default path: the caller says which file.
     #>
     [CmdletBinding()]
-    param([string]$InfrastructureFile = '', [string]$Platform = '')
+    param([Parameter(Mandatory)][string]$InfrastructureFile, [string]$Platform = '')
     $modulePath = Join-Path $PSScriptRoot '../infrastructure/AzlInfrastructure.psm1'
     Import-Module $modulePath -Force
-    if (-not $InfrastructureFile) {
-        $InfrastructureFile = @($env:AZL_INFRASTRUCTURE_FILE, './infrastructure.yml', './config/infrastructure.yml') |
-            Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -First 1
-        if (-not $InfrastructureFile) { throw 'No infrastructure file given. Pass -InfrastructureFile, or set AZL_INFRASTRUCTURE_FILE.' }
-    }
     $infra = Import-AzlInfrastructure -Path $InfrastructureFile
     return ConvertTo-AzlCicdSetting -Infrastructure $infra -Platform $Platform
 }
@@ -315,25 +311,14 @@ function Get-AzlCicdSetting {
 function Resolve-AzlCicdInput {
     <#
     .SYNOPSIS
-        The settings for a task script: from infrastructure.yml when a file is given or found, else from the script's
-        CONFIGURATION region (same keys as the file).
+        The settings for a task script: read from the infrastructure file the caller names.
+    .PARAMETER InfrastructureFile
+        The infrastructure file (schema 5). There is no default path, no environment variable and no fallback.
     #>
     [CmdletBinding()]
-    param([string]$InfrastructureFile = '', [string]$Platform = '', [System.Collections.IDictionary]$Configuration)
-    $file = $InfrastructureFile
-    if (-not $file) {
-        $file = @($env:AZL_INFRASTRUCTURE_FILE, './infrastructure.yml', './config/infrastructure.yml') |
-            Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -First 1
-    }
-    if ($file) {
-        Write-AzlCicdLog "Reading $file"
-        return Get-AzlCicdSetting -InfrastructureFile $file -Platform $Platform
-    }
-    if ($Configuration -and (Get-AzlValue $Configuration 'devops.platform')) {
-        Write-AzlCicdLog 'No infrastructure file found; using the CONFIGURATION region of the script.'
-        return ConvertTo-AzlCicdSetting -Infrastructure $Configuration -Platform $Platform
-    }
-    throw 'No infrastructure file. Pass -InfrastructureFile, set AZL_INFRASTRUCTURE_FILE, or fill in the CONFIGURATION region of the script.'
+    param([Parameter(Mandatory)][string]$InfrastructureFile, [string]$Platform = '')
+    Write-AzlCicdLog "Reading $InfrastructureFile"
+    return Get-AzlCicdSetting -InfrastructureFile $InfrastructureFile -Platform $Platform
 }
 
 function Resolve-AzlCicdToken {

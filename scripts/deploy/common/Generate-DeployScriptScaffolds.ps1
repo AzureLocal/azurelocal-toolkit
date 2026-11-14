@@ -136,9 +136,7 @@ function Get-PowerShellOrchestratedTemplate {
 # PLACEHOLDER: this script does not do the task. It ends with exit code 3 (NOT IMPLEMENTED) and changes nothing.
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$ConfigPath = '',
-    [System.Management.Automation.PSCredential]$Credential = $null,
-    [string[]]$TargetNode = @(),
+    [Parameter(Mandatory)][string]$InfrastructureFile,
     [string]$LogPath = ''
 )
 
@@ -150,9 +148,6 @@ Invoke-DeploymentOrchestrated `
     -ScriptPath $PSCommandPath `
     -TaskPath '__TASK_PATH__' `
     -ActionName '__ACTION_NAME__' `
-    -ConfigPath $ConfigPath `
-    -Credential $Credential `
-    -TargetNode $TargetNode `
     -LogPath $LogPath `
     -Parameters $PSBoundParameters
 '@
@@ -171,7 +166,7 @@ function Get-AzCliPowerShellTemplate {
 # PLACEHOLDER: this script does not do the task. It ends with exit code 3 (NOT IMPLEMENTED) and changes nothing.
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$ConfigPath = '',
+    [Parameter(Mandatory)][string]$InfrastructureFile,
     [string]$LogPath = ''
 )
 
@@ -183,7 +178,6 @@ Invoke-DeploymentAzCliPowerShell `
     -ScriptPath $PSCommandPath `
     -TaskPath '__TASK_PATH__' `
     -ActionName '__ACTION_NAME__' `
-    -ConfigPath $ConfigPath `
     -LogPath $LogPath `
     -Parameters $PSBoundParameters
 '@

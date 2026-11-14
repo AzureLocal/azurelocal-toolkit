@@ -6,6 +6,8 @@ Status words: **real** = does what the page says; **scaffold** = compiles or par
 
 The "After" column says what this branch adds. Paths are relative to the repository root.
 
+> Later change (registry 5.0.56): each of the six tasks has one script (`New-CicdBootstrap.ps1`, `New-CicdProject.ps1`, `Set-CicdProjectConfiguration.ps1`, `New-CicdEnvironments.ps1`, `Set-CicdVariables.ps1`, `Deploy-CicdRunners.ps1`) that takes a mandatory `-InfrastructureFile`. The `Invoke-Cicd*-Orchestrated.ps1` and `az-*` wrappers named below are removed, and so is the `CONFIGURATION` region. This audit is kept as the record of the state it describes.
+
 ## Result in ten lines
 
 1. `src/terraform/modules/cicd-runner`, which the docs name in the index and in task 06, did **not exist**. It is now there.

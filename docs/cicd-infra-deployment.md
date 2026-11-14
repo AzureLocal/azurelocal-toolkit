@@ -74,40 +74,40 @@ A GitHub registration token expires after one hour, so it is not a good value to
 You need PowerShell 7, the `powershell-yaml` module, the Azure CLI signed in (`az login`), Terraform, and, per platform, `gh` (GitHub). Start from [`config/variables/examples/infrastructure.example.yml`](../config/variables/examples/infrastructure.example.yml): fill in `azure`, `key_vaults`, `landing_zone` and the `devops` section (schema 5.5). Keep your real file outside the repository.
 
 ```powershell
-$env:AZL_INFRASTRUCTURE_FILE = 'D:\env\infrastructure.yml'
-./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path $env:AZL_INFRASTRUCTURE_FILE
+$file = 'D:\env\infrastructure.yml'
+./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path $file
 $task = './scripts/deploy/01-cicd-infra/phase-01-cicd-setup'
 
 # Every script supports -WhatIf: it reads what exists and lists what it would do.
-& "$task/task-01-bootstrap/powershell/Invoke-CicdBootstrap-Orchestrated.ps1"        -WhatIf
-& "$task/task-02-create-project/powershell/Invoke-CicdProject-Orchestrated.ps1"     -WhatIf
-& "$task/task-03-configure-project/powershell/Invoke-CicdProjectConfiguration-Orchestrated.ps1" -WhatIf
-& "$task/task-04-create-environments/powershell/Invoke-CicdEnvironments-Orchestrated.ps1" -WhatIf
-& "$task/task-05-configure-variables/powershell/Invoke-CicdVariables-Orchestrated.ps1" -WhatIf
+& "$task/task-01-bootstrap/powershell/New-CicdBootstrap.ps1"                    -InfrastructureFile $file -WhatIf
+& "$task/task-02-create-project/powershell/New-CicdProject.ps1"                 -InfrastructureFile $file -WhatIf
+& "$task/task-03-configure-project/powershell/Set-CicdProjectConfiguration.ps1" -InfrastructureFile $file -WhatIf
+& "$task/task-04-create-environments/powershell/New-CicdEnvironments.ps1"       -InfrastructureFile $file -WhatIf
+& "$task/task-05-configure-variables/powershell/Set-CicdVariables.ps1"          -InfrastructureFile $file -WhatIf
 
 # Then without -WhatIf, in order. Each is safe to run again.
 ```
 
 | Task | Script | What it does |
 | --- | --- | --- |
-| 01 | `task-01-bootstrap/powershell/Invoke-CicdBootstrap-Orchestrated.ps1` (or `New-CicdBootstrap.ps1`) | App registration, service principal, federated credentials (or a client secret stored only in Key Vault), roles, `Microsoft.Compute` and `EncryptionAtHost`. Prints the client ID: put it in `azure.automation_identity.client_id`. |
+| 01 | `task-01-bootstrap/powershell/New-CicdBootstrap.ps1` | App registration, service principal, federated credentials (or a client secret stored only in Key Vault), roles, `Microsoft.Compute` and `EncryptionAtHost`. Prints the client ID: put it in `azure.automation_identity.client_id`. |
 | 02 | `task-02-create-project/powershell/...` | The private repository or project from the template. |
 | 03 | `task-03-configure-project/powershell/...` | Branch protection, approvals, squash only, secret scanning. |
 | 04 | `task-04-create-environments/powershell/...` | Environments with approvers and a `main`-only branch rule, including `ztp-reinstall`. |
 | 05 | `task-05-configure-variables/powershell/...` | `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `ARM_CLIENT_ID` per environment; the Azure DevOps service connection. |
 | 06 | `task-06-deploy-runners/powershell/...` | Terraform for the runners. Plan only unless `-Apply`. |
 
-Each task has a standalone variant (with a `CONFIGURATION` region for use without the file), an orchestrated variant that reads the file, and an `azurecli` variant that runs the same code.
+Each task has one script. It takes `-InfrastructureFile` (required: there is no default path, no environment variable and no CONFIGURATION region) and ends with exit code 0 (done, already there, or planned under `-WhatIf`), 1 (a call failed) or 2 (the file cannot be read or does not validate). The scripts ask for nothing: platform tokens come from the environment or from `devops.api_token`.
 
 ### Task 06: plan, review, apply
 
 ```powershell
-$t06 = "$task/task-06-deploy-runners/powershell/Invoke-CicdRunners-Orchestrated.ps1"
+$t06 = "$task/task-06-deploy-runners/powershell/Deploy-CicdRunners.ps1"
 $env:AZL_RUNNER_SSH_PUBLIC_KEY = Get-Content ~/.ssh/id_ed25519.pub -Raw   # a public key
 
-& $t06 -WorkingDirectory D:\work\cicd                 # init, validate, plan. Nothing changes in Azure.
+& $t06 -InfrastructureFile $file -WorkingDirectory D:\work\cicd                 # init, validate, plan. Nothing changes in Azure.
 terraform -chdir=src/terraform/environments/cicd-infra show D:\work\cicd\cicd-infra.tfplan   # review
-& $t06 -WorkingDirectory D:\work\cicd -PlanFile D:\work\cicd\cicd-infra.tfplan -Apply        # apply the reviewed plan
+& $t06 -InfrastructureFile $file -WorkingDirectory D:\work\cicd -PlanFile D:\work\cicd\cicd-infra.tfplan -Apply        # apply the reviewed plan
 ```
 
 Or run Terraform yourself, with a tfvars file kept outside the repository:

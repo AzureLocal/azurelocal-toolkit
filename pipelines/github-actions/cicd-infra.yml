@@ -50,7 +50,7 @@ permissions:
 
 env:
   TF_ROOT: src/terraform/environments/cicd-infra
-  TASK06: scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners/powershell/Invoke-CicdRunners-Orchestrated.ps1
+  TASK06: scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners/powershell/Deploy-CicdRunners.ps1
   ARM_USE_OIDC: "true"
   ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
   ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
@@ -110,7 +110,7 @@ jobs:
         shell: pwsh
         run: |
           Install-Module powershell-yaml -Force -Scope CurrentUser
-          & "$env:TASK06" -ConfigPath '${{ inputs.infrastructure_file }}' -WorkingDirectory "$env:RUNNER_TEMP/cicd-infra"
+          & "$env:TASK06" -InfrastructureFile '${{ inputs.infrastructure_file }}' -WorkingDirectory "$env:RUNNER_TEMP/cicd-infra"
 
       - name: Show the plan for the approver
         working-directory: ${{ env.TF_ROOT }}
@@ -166,4 +166,4 @@ jobs:
         shell: pwsh
         run: |
           Install-Module powershell-yaml -Force -Scope CurrentUser
-          & "$env:TASK06" -ConfigPath '${{ inputs.infrastructure_file }}' -PlanFile "$env:RUNNER_TEMP/cicd-infra/cicd-infra.tfplan" -Apply
+          & "$env:TASK06" -InfrastructureFile '${{ inputs.infrastructure_file }}' -PlanFile "$env:RUNNER_TEMP/cicd-infra/cicd-infra.tfplan" -Apply

@@ -2,7 +2,7 @@
 # PLACEHOLDER: this script does not do the task. It ends with exit code 3 (NOT IMPLEMENTED) and changes nothing.
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$ConfigPath = '',
+    [Parameter(Mandatory)][string]$InfrastructureFile,
     [string]$LogPath = ''
 )
 
@@ -29,6 +29,5 @@ Invoke-DeploymentAzCliPowerShell `
     -ScriptPath $PSCommandPath `
     -TaskPath '02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-01-configuration/task-01-configure-core-variables' `
     -ActionName 'az-configure-core-variables' `
-    -ConfigPath $ConfigPath `
     -LogPath $LogPath `
     -Parameters $PSBoundParameters

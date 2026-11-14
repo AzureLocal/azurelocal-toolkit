@@ -159,8 +159,8 @@ Describe 'The generated script parameter registry' {
 
 Describe 'Every script parameter is registered, and every registration is a real parameter' {
     It 'scans the scripts of the repository' {
-        $script:Expected.Count | Should -BeGreaterThan 300
-        @($script:Expected.Keys | Where-Object { $_ -like 'scripts/*' }).Count | Should -BeGreaterThan 300
+        $script:Expected.Count | Should -BeGreaterThan 200
+        @($script:Expected.Keys | Where-Object { $_ -like 'scripts/*' }).Count | Should -BeGreaterThan 200
     }
 
     It 'has no script whose param() block does not parse' {

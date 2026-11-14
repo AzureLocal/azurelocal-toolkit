@@ -478,12 +478,12 @@ BeforeAll {
 Describe 'The scan sees what it is meant to see' {
     It 'scans the scripts of the repository' {
         # A floor, not an exact count: it only shows that the scan finds the tree. Removing a leftover script must not fail it.
-        $script:Files.Count | Should -BeGreaterThan 350
+        $script:Files.Count | Should -BeGreaterThan 250
     }
 
     It 'scans the scripts of config/variables/scripts as well as scripts/' {
         @($script:Files | Where-Object { $_ -like (Join-Path $script:VariableScripts '*') }).Count | Should -BeGreaterThan 10
-        @($script:Files | Where-Object { $_ -like (Join-Path $script:ScriptsRoot '*') }).Count | Should -BeGreaterThan 350   # leftover scripts were removed; the scan still covers every script
+        @($script:Files | Where-Object { $_ -like (Join-Path $script:ScriptsRoot '*') }).Count | Should -BeGreaterThan 250   # superseded scripts and placeholders are removed over time; the scan still covers every script
     }
 
     It 'reads the registry' {

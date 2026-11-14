@@ -24,7 +24,7 @@
     CICD_INFRASTRUCTURE_FILE: "config/infrastructure.yml"
     CICD_TF_ROOT: "${CI_PROJECT_DIR}/src/terraform/environments/cicd-infra"
     CICD_WORK: "${CI_PROJECT_DIR}/.cicd-infra"
-    CICD_TASK06: "scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners/powershell/Invoke-CicdRunners-Orchestrated.ps1"
+    CICD_TASK06: "scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners/powershell/Deploy-CicdRunners.ps1"
     ARM_USE_OIDC: "true"
     TF_IN_AUTOMATION: "true"
   tags:
@@ -59,7 +59,7 @@ cicd-infra:plan:
   timeout: 1h
   script:
     # Nothing changes in Azure: init, validate and plan, with the plan saved.
-    - pwsh -NoProfile -File "${CICD_TASK06}" -ConfigPath "${CICD_INFRASTRUCTURE_FILE}" -WorkingDirectory "${CICD_WORK}"
+    - pwsh -NoProfile -File "${CICD_TASK06}" -InfrastructureFile "${CICD_INFRASTRUCTURE_FILE}" -WorkingDirectory "${CICD_WORK}"
     - (cd "${CICD_TF_ROOT}" && terraform show -no-color "${CICD_WORK}/cicd-infra.tfplan" | tee "${CICD_WORK}/plan.txt")
   artifacts:
     paths:
@@ -77,7 +77,7 @@ cicd-infra:apply:
   timeout: 2h
   script:
     # Applies the plan that was reviewed. It makes no new plan.
-    - pwsh -NoProfile -File "${CICD_TASK06}" -ConfigPath "${CICD_INFRASTRUCTURE_FILE}" -PlanFile "${CICD_WORK}/cicd-infra.tfplan" -Apply
+    - pwsh -NoProfile -File "${CICD_TASK06}" -InfrastructureFile "${CICD_INFRASTRUCTURE_FILE}" -PlanFile "${CICD_WORK}/cicd-infra.tfplan" -Apply
   environment:
     name: ${AZL_ENVIRONMENT_CICD_INFRA}
   rules:

@@ -51,7 +51,7 @@ variables:
   - name: TF_ROOT
     value: src/terraform/environments/cicd-infra
   - name: TASK06
-    value: scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners/powershell/Invoke-CicdRunners-Orchestrated.ps1
+    value: scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners/powershell/Deploy-CicdRunners.ps1
   - name: WORK
     value: $(Pipeline.Workspace)/cicd-infra
 
@@ -112,7 +112,7 @@ stages:
                 $env:ARM_TENANT_ID = $env:tenantId
                 $env:ARM_OIDC_TOKEN = $env:idToken
                 $env:AZL_RUNNER_SSH_PUBLIC_KEY = '$(RUNNER_SSH_PUBLIC_KEY)'
-                & './$(TASK06)' -ConfigPath '${{ parameters.infrastructureFile }}' -WorkingDirectory '$(WORK)'
+                & './$(TASK06)' -InfrastructureFile '${{ parameters.infrastructureFile }}' -WorkingDirectory '$(WORK)'
                 terraform -chdir='$(TF_ROOT)' show -no-color '$(WORK)/cicd-infra.tfplan' | Tee-Object '$(WORK)/plan.txt'
           - publish: $(WORK)
             artifact: cicd-infra-plan
@@ -155,4 +155,4 @@ stages:
                           $env:ARM_CLIENT_ID = $env:servicePrincipalId
                           $env:ARM_TENANT_ID = $env:tenantId
                           $env:ARM_OIDC_TOKEN = $env:idToken
-                          & './$(TASK06)' -ConfigPath '${{ parameters.infrastructureFile }}' -PlanFile '$(Pipeline.Workspace)/cicd-infra-plan/cicd-infra.tfplan' -Apply
+                          & './$(TASK06)' -InfrastructureFile '${{ parameters.infrastructureFile }}' -PlanFile '$(Pipeline.Workspace)/cicd-infra-plan/cicd-infra.tfplan' -Apply

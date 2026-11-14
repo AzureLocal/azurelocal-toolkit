@@ -10,16 +10,16 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](diagrams/variable-flow.drawio) ([PNG](diagrams/variable-flow.png)).
 
-Registry version 5.0.55. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
+Registry version 5.0.56. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
 
 ## In numbers
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Keys of infrastructure.yml | 667 | 470 | 85 | 3 | 107 | 2 |
-| Owned by a tool (`tools.*`) | 4733 | 4525 | 0 | 0 | 208 | 0 |
+| Owned by a tool (`tools.*`) | 4536 | 4328 | 0 | 0 | 208 | 0 |
 | Older variables-file sections | 1417 | 20 | 6 | 0 | 1385 | 6 |
-| All registry leaves | 6817 | 5015 | 91 | 3 | 1700 | 8 |
+| All registry leaves | 6620 | 4818 | 91 | 3 | 1700 | 8 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -94,7 +94,7 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | ztp | ZTP | 89 | 0 | 1091 |
 | os-configuration | OS configuration | 76 | 0 | 282 |
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
-| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1473 |
+| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1276 |
 | sonar | Sonar | 14 | 0 | 266 |
 | cicd-infra | Outside the flow | 59 | 0 | 364 |
 | infrastructure-helpers | Outside the flow | 39 | 0 | 0 |
@@ -243,14 +243,13 @@ Where in the code (file, function, keys read by name; 15 places, the first 12):
 **Reads (59):**
 `devops.platform`, `devops.url`, `devops.organization`, `devops.project`, `devops.api_token`, `devops.subscription`, `devops.resource_group`, `devops.create_resource_group`, `devops.repository.name`, `devops.repository.template`, `devops.repository.visibility`, `devops.repository.default_branch`, `devops.settings.required_approvals`, `devops.settings.reviewers`, `devops.settings.squash_only`, `devops.settings.secret_scanning`, `devops.settings.resolve_conversations`, `devops.settings.required_status_checks`, `devops.environments[].name`, `devops.environments[].approval_required`, `devops.environments[].approvers`, `devops.environments[].wait_minutes`, `devops.environments[].deployment_branch`, `devops.pipelines.runner_label`, `devops.pipelines.environments.os_configuration`, `devops.pipelines.environments.os_configuration_clear_storage`, `devops.pipelines.environments.arm_deployment`, `devops.pipelines.environments.cicd_infra`, `devops.pipelines.environments.terraform_deployment`, `devops.authentication.method`, `devops.authentication.client_secret`, `devops.authentication.roles`, `devops.authentication.grant_graph_role_management`, `devops.authentication.register_encryption_at_host`, `devops.runners[].name`, `devops.runners[].os_type`, `devops.runners[].purpose`, `devops.runners[].count`, `devops.runners[].compute_type`, `devops.runners[].size`, `devops.runners[].labels`, `devops.runners[].registration_secret`, `devops.runners[].pool`, `devops.runners[].private_ips`, `devops.runners[].subnet.name`, `devops.runners[].subnet.prefix`, `devops.runners[].data_disk_gb`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.automation_identity.name`, `azure.automation_identity.client_id`, `key_vaults[].name`, `key_vaults[].subscription_id`, `key_vaults[].resource_group`, `landing_zone.subscriptions[].name`, `landing_zone.subscriptions[].id`, `landing_zone.subscriptions[].role`
 
-Where in the code (file, function, keys read by name; 4 places):
+Where in the code (file, function, keys read by name; 3 places):
 
 | File | Function | Keys |
 | --- | --- | ---: |
 | `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `ConvertTo-AzlCicdSetting` | 59 |
 | `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `(script)` | 6 |
 | `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `Get-AzlCicdPipelineInput` | 1 |
-| `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `Resolve-AzlCicdInput` | 1 |
 
 ### infrastructure-helpers
 
@@ -320,7 +319,7 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 - `storage`: 30 keys
 - `tags`: 1 keys
 
-Where in the code (file, function, keys read by name; 101 places, the first 12):
+Where in the code (file, function, keys read by name; 100 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
@@ -417,8 +416,8 @@ Ranked by how many different tools read the key, then how many places in the cod
 
 | Variable | What it is | Set it by | Read by | Becomes |
 | --- | --- | --- | --- | --- |
-| `azure.subscription_id` | Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_id names another one. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; nodes; OS ArcRegistration; Sonar subscriptionId |
 | `nodes[].name` | Host name: up to 15 characters. | operator by hand; Trailwright questionnaire; Dell/Redfish discovery (proposed) | arm-deployment; discovery; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; nodes; physicalNodesSettings; storageNetworkList; OS Hostname; Network; RemoteManagement; Sonar nodes[].name; Gate ND-001; NW-001; NW-015; SB-005; ST-011 |
+| `azure.subscription_id` | Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_id names another one. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; nodes; OS ArcRegistration; Sonar subscriptionId |
 | `azure.resource_group` | Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses). | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; nodes; OS ArcRegistration; Sonar resourceGroup |
 | `azure.location` | Azure region, for example eastus. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM location; OS ArcRegistration; Gate NW-005 |
 | `azure.tenant_id` | Microsoft Entra tenant ID (GUID) of the subscription. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; os-configuration; pre-cluster-verification; toolkit-legacy-scripts; ztp | ARM tenantId; OS ArcRegistration |
@@ -1726,7 +1725,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |
-| arm_deployment | parameters | 1360 | 1360 | 0 |
+| arm_deployment | parameters | 1163 | 1163 | 0 |
 | arm_deployment | report_fields | 20 | 20 | 0 |
 | arm_deployment | run_settings | 44 | 44 | 0 |
 | arm_deployment | secret_names | 2 | 2 | 0 |

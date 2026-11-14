@@ -15,25 +15,25 @@ A **placeholder** is a script that does not do the task. Running it prints `NOT 
 
 ## Summary
 
-Task folders: 114.
+Task folders: 110.
 
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
-| PowerShell | 86 | 28 | 0 |
-| Azure CLI | 9 | 56 | 49 |
+| PowerShell | 85 | 25 | 0 |
+| Azure CLI | 3 | 54 | 53 |
 
-Azure CLI applies to 57 tasks, does not apply to 49, and is not decided for 8.
+Azure CLI applies to 49 tasks, does not apply to 53, and is not decided for 8.
 
 ## 01-cicd-infra
 
 | Task | PowerShell | Azure CLI | Azure CLI applies |
 |---|---|---|---|
-| `phase-01-cicd-setup/task-01-bootstrap` | built | built | yes |
-| `phase-01-cicd-setup/task-02-create-project` | built | built | yes |
-| `phase-01-cicd-setup/task-03-configure-project` | built | built | yes |
-| `phase-01-cicd-setup/task-04-create-environments` | built | built | yes |
-| `phase-01-cicd-setup/task-05-configure-variables` | built | built | yes |
-| `phase-01-cicd-setup/task-06-deploy-runners` | built | built | yes |
+| `phase-01-cicd-setup/task-01-bootstrap` | built | not built | yes |
+| `phase-01-cicd-setup/task-02-create-project` | built | not applicable | no |
+| `phase-01-cicd-setup/task-03-configure-project` | built | not applicable | no |
+| `phase-01-cicd-setup/task-04-create-environments` | built | not applicable | no |
+| `phase-01-cicd-setup/task-05-configure-variables` | built | not applicable | no |
+| `phase-01-cicd-setup/task-06-deploy-runners` | built | not built | yes |
 
 ## 02-azure-foundation
 
@@ -42,9 +42,6 @@ Azure CLI applies to 57 tasks, does not apply to 49, and is not decided for 8.
 | `phase-01-landing-zones/full-deployment/task-01-configure-management-groups` | built | not built | yes |
 | `phase-01-landing-zones/full-deployment/task-02-create-subscriptions` | built | not built | yes |
 | `phase-01-landing-zones/full-deployment/task-03-create-resource-groups` | built | not built | yes |
-| `phase-01-landing-zones/simplified-deployment/task-01-configure-management-group` | not built | not built | yes |
-| `phase-01-landing-zones/simplified-deployment/task-02-create-subscription` | not built | not built | yes |
-| `phase-01-landing-zones/simplified-deployment/task-03-create-resource-groups` | built | not built | yes |
 | `phase-02-resource-providers/task-01-register-resource-providers` | built | built | yes |
 | `phase-02-resource-providers/task-02-verify-provider-registration` | built | not built | yes |
 | `phase-03-rbac-permissions/task-01-create-azure-local-deployment-spn` | built | not built | yes |
@@ -69,7 +66,6 @@ Azure CLI applies to 57 tasks, does not apply to 49, and is not decided for 8.
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups` | built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-07-nat-gateway` | built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-08-arc-gateway` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-09-log-analytics` | not built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault` | built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-11-deploy-management-vms` | built | not built | yes |
 | `phase-04-azure-management-infrastructure/task-12-configure-adds` | not built | not built | yes |

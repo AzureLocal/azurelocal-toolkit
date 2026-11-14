@@ -57,13 +57,24 @@ Describe 'Settings' {
     It 'refuses a file without a devops section' {
         { ConvertTo-AzlCicdSetting -Infrastructure ([ordered]@{ azure = @{} }) } | Should -Throw '*no devops section*'
     }
-    It 'uses the CONFIGURATION region when no file exists' {
-        $s = Resolve-AzlCicdInput -Configuration ([ordered]@{ azure = @{ tenant_id = 'a' }; devops = @{ platform = 'gitlab'; organization = 'g'; project = 'p' } })
-        $s.Platform | Should -Be 'gitlab'
+    It 'needs the infrastructure file: no default path, no environment variable, no CONFIGURATION region' {
+        foreach ($name in 'Resolve-AzlCicdInput', 'Get-AzlCicdSetting') {
+            $c = Get-Command -Module AzlCicdInfra -Name $name
+            $c.Parameters['InfrastructureFile'].Attributes.Where({ $_ -is [System.Management.Automation.ParameterAttribute] }).Mandatory | Should -BeTrue
+            $c.Parameters.Keys | Should -Not -Contain 'Configuration'
+        }
+        $text = Get-Content -LiteralPath (Join-Path $script:Repo 'scripts\common\cicd-infra\AzlCicdInfra.psm1') -Raw
+        $text | Should -Not -Match 'AZL_INFRASTRUCTURE_FILE|CONFIGURATION region|\./infrastructure\.yml'
     }
-    It 'stops when there is neither a file nor a CONFIGURATION' {
-        Push-Location $TestDrive
-        try { { Resolve-AzlCicdInput -Configuration ([ordered]@{ devops = @{ platform = '' } }) } | Should -Throw '*No infrastructure file*' } finally { Pop-Location }
+    It 'reads the file the caller names' {
+        $doc = ConvertFrom-Yaml (Get-Content -LiteralPath $script:Example -Raw) -Ordered
+        $doc.devops.Remove('api_token')
+        $file = Join-Path $TestDrive 'settings-infra.yml'
+        Set-Content -LiteralPath $file -Value (ConvertTo-Yaml $doc)
+        (Resolve-AzlCicdInput -InfrastructureFile $file).Platform | Should -Be 'github'
+    }
+    It 'stops when the named file is not there' {
+        { Resolve-AzlCicdInput -InfrastructureFile (Join-Path $TestDrive 'no-such-file.yml') } | Should -Throw
     }
 }
 
@@ -445,14 +456,25 @@ Describe 'Task scripts' {
         $names = @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
         @($names | Where-Object { $_ -match '(?i)token|secret|password|pat$' }) | Should -BeNullOrEmpty
     }
-    It 'has an orchestrated, a standalone and an Azure CLI variant for each of the six tasks' {
+    It 'has one script for each of the six tasks, and no Orchestrated wrapper or Azure CLI copy of it' {
         $dirs = Get-ChildItem -Path $script:TaskRoot -Directory
         $dirs.Count | Should -Be 6
         foreach ($d in $dirs) {
-            @(Get-ChildItem (Join-Path $d.FullName 'powershell') -Filter '*-Orchestrated.ps1').Count | Should -Be 1
-            @(Get-ChildItem (Join-Path $d.FullName 'powershell') -Filter '*.ps1').Count | Should -Be 2
-            @(Get-ChildItem (Join-Path $d.FullName 'azurecli') -Filter '*.ps1').Count | Should -Be 1
+            @(Get-ChildItem (Join-Path $d.FullName 'powershell') -Filter '*.ps1').Count | Should -Be 1
+            @(Get-ChildItem (Join-Path $d.FullName 'powershell') -Filter '*-Orchestrated.ps1').Count | Should -Be 0
+            $az = Join-Path $d.FullName 'azurecli'
+            if (Test-Path -LiteralPath $az) { @(Get-ChildItem $az -Filter '*.ps1').Count | Should -Be 0 }
         }
+    }
+    It '<Name> takes a mandatory -InfrastructureFile and no ConfigPath, default path, environment variable, CONFIGURATION region or prompt' -ForEach $script:Scripts {
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$null, [ref]$null)
+        $param = $ast.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'InfrastructureFile' }
+        $param | Should -Not -BeNullOrEmpty
+        @($param.Attributes | Where-Object { $_.TypeName.Name -eq 'Parameter' -and ($_.NamedArguments.ArgumentName -contains 'Mandatory') }).Count | Should -Be 1
+        $param.DefaultValue | Should -BeNullOrEmpty
+        @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath }) | Should -Not -Contain 'ConfigPath'
+        $text = Get-Content -LiteralPath $Path -Raw
+        $text | Should -Not -Match 'ConfigPath|AZL_INFRASTRUCTURE_FILE|#region CONFIGURATION|Get-Credential|Read-Host|PromptForCredential'
     }
     It 'Deploy-CicdRunners.ps1 documents -Apply as the only way to change Azure' {
         $text = Get-Content -LiteralPath (Join-Path $script:TaskRoot 'task-06-deploy-runners\powershell\Deploy-CicdRunners.ps1') -Raw

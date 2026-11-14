@@ -14,18 +14,15 @@
 @{
     SchemaVersion = 1
     Tasks         = @(
-        @{ Path = '01-cicd-infra/phase-01-cicd-setup/task-01-bootstrap'; AzureCli = 'yes'; Reason = 'Creates the CI/CD service principal and its Azure access.' }
-        @{ Path = '01-cicd-infra/phase-01-cicd-setup/task-02-create-project'; AzureCli = 'yes'; Reason = 'A real Azure CLI script exists (it calls the PowerShell implementation), so it is kept. The task itself acts on the CI/CD platform.' }
-        @{ Path = '01-cicd-infra/phase-01-cicd-setup/task-03-configure-project'; AzureCli = 'yes'; Reason = 'A real Azure CLI script exists (it calls the PowerShell implementation), so it is kept. The task itself acts on the CI/CD platform.' }
-        @{ Path = '01-cicd-infra/phase-01-cicd-setup/task-04-create-environments'; AzureCli = 'yes'; Reason = 'A real Azure CLI script exists (it calls the PowerShell implementation), so it is kept. The task itself acts on the CI/CD platform.' }
-        @{ Path = '01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables'; AzureCli = 'yes'; Reason = 'A real Azure CLI script exists (it calls the PowerShell implementation), so it is kept. The task itself acts on the CI/CD platform.' }
-        @{ Path = '01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners'; AzureCli = 'yes'; Reason = 'A real Azure CLI script exists (it calls the PowerShell implementation), so it is kept. The task itself acts on the CI/CD platform.' }
+        @{ Path = '01-cicd-infra/phase-01-cicd-setup/task-01-bootstrap'; AzureCli = 'yes'; Reason = 'Creates the CI/CD service principal and its Azure access. The PowerShell script drives the Azure CLI itself, so there is no second Azure CLI script yet.' }
+        @{ Path = '01-cicd-infra/phase-01-cicd-setup/task-02-create-project'; AzureCli = 'no'; Reason = 'Acts on the CI/CD platform (GitHub, GitLab or Azure DevOps). The PowerShell script is the one script of the task.' }
+        @{ Path = '01-cicd-infra/phase-01-cicd-setup/task-03-configure-project'; AzureCli = 'no'; Reason = 'Acts on the CI/CD platform (GitHub, GitLab or Azure DevOps). The PowerShell script is the one script of the task.' }
+        @{ Path = '01-cicd-infra/phase-01-cicd-setup/task-04-create-environments'; AzureCli = 'no'; Reason = 'Acts on the CI/CD platform (GitHub, GitLab or Azure DevOps). The PowerShell script is the one script of the task.' }
+        @{ Path = '01-cicd-infra/phase-01-cicd-setup/task-05-configure-variables'; AzureCli = 'no'; Reason = 'Acts on the CI/CD platform (GitHub, GitLab or Azure DevOps). The PowerShell script is the one script of the task.' }
+        @{ Path = '01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners'; AzureCli = 'yes'; Reason = 'Deploys the self-hosted runners in Azure with Terraform. The PowerShell script is the one script of the task; there is no second Azure CLI script yet.' }
         @{ Path = '02-azure-foundation/phase-01-landing-zones/full-deployment/task-01-configure-management-groups'; AzureCli = 'yes'; Reason = 'Creates management groups, subscriptions or resource groups.' }
         @{ Path = '02-azure-foundation/phase-01-landing-zones/full-deployment/task-02-create-subscriptions'; AzureCli = 'yes'; Reason = 'Creates management groups, subscriptions or resource groups.' }
         @{ Path = '02-azure-foundation/phase-01-landing-zones/full-deployment/task-03-create-resource-groups'; AzureCli = 'yes'; Reason = 'Creates management groups, subscriptions or resource groups.' }
-        @{ Path = '02-azure-foundation/phase-01-landing-zones/simplified-deployment/task-01-configure-management-group'; AzureCli = 'yes'; Reason = 'Creates management groups, subscriptions or resource groups.' }
-        @{ Path = '02-azure-foundation/phase-01-landing-zones/simplified-deployment/task-02-create-subscription'; AzureCli = 'yes'; Reason = 'Creates management groups, subscriptions or resource groups.' }
-        @{ Path = '02-azure-foundation/phase-01-landing-zones/simplified-deployment/task-03-create-resource-groups'; AzureCli = 'yes'; Reason = 'Creates management groups, subscriptions or resource groups.' }
         @{ Path = '02-azure-foundation/phase-02-resource-providers/task-01-register-resource-providers'; AzureCli = 'yes'; Reason = 'Registers or verifies resource providers on the subscription.' }
         @{ Path = '02-azure-foundation/phase-02-resource-providers/task-02-verify-provider-registration'; AzureCli = 'yes'; Reason = 'Registers or verifies resource providers on the subscription.' }
         @{ Path = '02-azure-foundation/phase-03-rbac-permissions/task-01-create-azure-local-deployment-spn'; AzureCli = 'yes'; Reason = 'Creates the deployment service principal or assigns RBAC roles.' }
@@ -50,7 +47,6 @@
         @{ Path = '02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups'; AzureCli = 'yes'; Reason = 'Deploys an Azure resource.' }
         @{ Path = '02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-07-nat-gateway'; AzureCli = 'yes'; Reason = 'Deploys an Azure resource.' }
         @{ Path = '02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-08-arc-gateway'; AzureCli = 'yes'; Reason = 'Deploys an Azure resource.' }
-        @{ Path = '02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-09-log-analytics'; AzureCli = 'yes'; Reason = 'Deploys an Azure resource.' }
         @{ Path = '02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault'; AzureCli = 'yes'; Reason = 'Deploys an Azure resource.' }
         @{ Path = '02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-11-deploy-management-vms'; AzureCli = 'yes'; Reason = 'Deploys an Azure resource.' }
         @{ Path = '02-azure-foundation/phase-04-azure-management-infrastructure/task-12-configure-adds'; AzureCli = 'yes'; Reason = 'Deploys a virtual machine in Azure.' }
