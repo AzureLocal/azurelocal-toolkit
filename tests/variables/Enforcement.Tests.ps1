@@ -652,7 +652,7 @@ Describe 'Rule C: no parameter defaults to an environment value' {
         @{ Code = "param([string]`$VaultName = 'vault1')"; Literal = 'vault1' }
         @{ Code = "param([string]`$ResourceGroupName = 'rg-iic-01')"; Literal = 'rg-iic-01' }
         @{ Code = "param([string]`$Tenant = '5a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d')"; Literal = '5a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d' }
-        @{ Code = "param([string]`$TrustedHosts = '10.245.64.*')"; Literal = '10.245.64.*' }
+        @{ Code = "param([string]`$TrustedHosts = '192.0.2.*')"; Literal = '192.0.2.*' }
         @{ Code = "param([string]`$Gateway = 'REPLACE_WITH_GATEWAY')"; Literal = 'REPLACE_WITH_GATEWAY' }
         @{ Code = "param([string]`$Description = 'TODO: Add description')"; Literal = 'TODO: Add description' }
         @{ Code = "param([string]`$RegistryPath = 'E:\git\repo\registry.yaml')"; Literal = 'E:\git\repo\registry.yaml' }
@@ -687,7 +687,7 @@ Describe 'Rule C: no parameter defaults to an environment value' {
         @(Get-EnfSnippetFinding $Code).Count | Should -Be 0
     }
     It 'names the kind of the new defaults: <Kind>' -ForEach @(
-        @{ Code = "param([string]`$TrustedHosts = '10.245.64.*')"; Kind = 'ipv4-wildcard' }
+        @{ Code = "param([string]`$TrustedHosts = '192.0.2.*')"; Kind = 'ipv4-wildcard' }
         @{ Code = "param([string]`$StaticIP = 'REPLACE_WITH_STATIC_IP')"; Kind = 'placeholder' }
         @{ Code = "param([string]`$Description = 'TODO: Add description')"; Kind = 'placeholder' }
         @{ Code = "param([string]`$RegistryPath = 'E:\git\repo\registry.yaml')"; Kind = 'drive-path' }
@@ -714,7 +714,7 @@ Describe 'Rule C: no parameter defaults to an environment value' {
             . ([scriptblock]::Create($code))
         }
         It 'agrees on <PName> = <PValue> (flagged: <Flagged>)' -ForEach @(
-            @{ PName = 'TrustedHosts'; PValue = '10.245.64.*'; Flagged = $true }
+            @{ PName = 'TrustedHosts'; PValue = '192.0.2.*'; Flagged = $true }
             @{ PName = 'StaticIP'; PValue = 'REPLACE_WITH_STATIC_IP'; Flagged = $true }
             @{ PName = 'Gateway'; PValue = 'REPLACE_WITH_GATEWAY'; Flagged = $true }
             @{ PName = 'Description'; PValue = 'TODO: Add description'; Flagged = $true }

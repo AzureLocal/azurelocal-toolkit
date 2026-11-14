@@ -24,19 +24,16 @@ https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quicks
 
 ## Usage
 
-### Option A: Config-Driven Generation (Recommended)
+### Option A: Generated from infrastructure.yml (Recommended)
 
-Use the generation script to populate all 54 parameters from `infrastructure.yml`:
+`Invoke-AzureLocalArmDeployment.ps1` generates all parameters from `infrastructure.yml` (Active Directory or local identity, as `scenario.identity` says). Mode Plan with `-Offline` changes nothing and does not touch Azure:
 
 ```powershell
-# AD auth
-.\configs\Generate-AzureLocal-Parameters.ps1 -ConfigPath "config/infrastructure.yml" -AuthType AD
-
-# Local Identity auth
-.\configs\Generate-AzureLocal-Parameters.ps1 -ConfigPath "config/infrastructure.yml" -AuthType LocalIdentity
+./scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1 `
+    -InfrastructureFile ./infrastructure.yml -Mode Plan -Offline -ReportDirectory ./arm-plan
 ```
 
-The script reads the YAML config, maps all values, and writes a deployment-ready JSON. See `config/Generate-AzureLocal-Parameters.ps1` for full documentation.
+The report directory then holds `<cluster>.parameters.json` (secrets are null in it) and `parameter-sources.md`. Modes Validate and Deploy submit the deployment; see the script's help.
 
 ### Option B: Manual Replacement
 
@@ -80,9 +77,9 @@ Use when:
 - Kerberos authentication required
 
 Key AD parameters:
-- `domainFqdn`: AD domain FQDN (e.g., `ad.contoso.cloud`)
+- `domainFqdn`: AD domain FQDN (e.g., `ad.improbability.cloud`)
 - `adouPath`: OU for cluster objects (e.g., `OU=AzureLocal,OU=Servers,DC=ad,DC=improbability,DC=cloud`)
-- `AzureStackLCMAdminUsername`: Domain UPN (e.g., `svc-azlocal-lcm@ad.contoso.cloud`)
+- `AzureStackLCMAdminUsername`: Domain UPN (e.g., `svc-azlocal-lcm@ad.improbability.cloud`)
 
 ### Local Identity (`azuredeploy.parameters.local-identity.json`)
 
@@ -98,13 +95,7 @@ Key differences:
 
 ## Parameter Generation
 
-Instead of manually filling placeholders, use the generation script:
-
-```powershell
-.\configs\Generate-AzureLocal-Parameters.ps1 -ConfigPath "config/infrastructure.yml" -AuthType AD
-```
-
-See `config/Generate-AzureLocal-Parameters.ps1` for full documentation.
+Instead of filling placeholders by hand, let `Invoke-AzureLocalArmDeployment.ps1 -InfrastructureFile ./infrastructure.yml -Mode Plan -Offline` generate the file (Option A).
 
 ## Validated Examples
 

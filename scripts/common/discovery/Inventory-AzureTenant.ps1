@@ -1,288 +1,134 @@
 <#
 .SYNOPSIS
-    Comprehensive Azure tenant inventory.
+    Read-only inventory of the Azure tenant in azure.tenant_id of infrastructure.yml.
 
 .DESCRIPTION
-    Inventories all Azure resources in the tenant including:
-    - Management groups and subscriptions
-    - Resource groups and all resources
-    - Azure Local (Stack HCI) clusters and resources
-    - Networking infrastructure
-    - Compute resources
-    - Storage accounts
-    - Security resources (Key Vaults, Managed Identities)
-    - Monitoring resources
-    - Policy assignments
-    - RBAC role assignments (optional)
-    
-    Output is saved to discovery/ folder as azure-inventory.json
-    for integration with infrastructure.yml updates.
+    Records what the tenant holds, for planning and as a record before a deployment:
+    - management groups and subscriptions (with the registered resource providers)
+    - resource groups and every resource
+    - Azure Local resources (clusters, custom locations, logical networks, images, network interfaces, disks)
+    - networking (virtual networks with subnets and peerings, VPN and local network gateways, connections, route tables,
+      public addresses), compute (virtual machines with sizes, disks and addresses), storage, Key Vaults, managed identities,
+      Log Analytics workspaces, policy assignments, tags, and with -IncludeRBAC the role assignments
 
-.PARAMETER TenantId
-    Azure tenant ID. Defaults to environment variable if not specified.
+    The output is a JSON file and CSV files in -OutputPath. Nothing writes it into infrastructure.yml: enter the values you need
+    there by hand, then check the file with Test-InfrastructureFile.ps1.
+
+    Read only: the script changes nothing in Azure. It does not sign in: run Connect-AzAccount -Tenant <azure.tenant_id> first
+    (Reader on the subscriptions is enough; Management Group Reader at the root to see the management groups). It checks that
+    the signed-in tenant is the one in the file, and it puts the Az context back as it was when it ends.
+
+    Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
+        azure.tenant_id
+
+    Exit codes: 0 the inventory is written and every read succeeded; 1 a precondition failed (Az module missing, not signed in,
+    wrong tenant, no subscription can be listed) or at least one read failed (the files are still written and list the errors);
+    2 azure.tenant_id is missing or not usable, or the file cannot be read (nothing is sent to Azure).
+
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Only azure.tenant_id is read; the whole file is not validated here.
 
 .PARAMETER OutputPath
-    Directory for output files. Defaults to .\discovery
+    Folder for the output files. Default: .\discovery under the current folder. Keep it out of the repository.
 
 .PARAMETER BaseName
-    File name, without extension, of the inventory files in -OutputPath. Defaults to azure-inventory.
+    File name, without extension, of the inventory files in -OutputPath. Default: azure-inventory.
 
 .PARAMETER Format
-    Output format: JSON, CSV, or Both. Defaults to Both.
-
-.PARAMETER IncludeEntraId
-    Include Entra ID (Azure AD) information in inventory.
+    JSON, CSV or Both. Default: Both.
 
 .PARAMETER IncludeRBAC
-    Include RBAC role assignments in inventory.
-
-.PARAMETER IncludeCosts
-    Include cost information in inventory (requires Cost Management access).
+    Also record the role assignments of every subscription.
 
 .PARAMETER IncludeAzureLocal
-    Include Azure Local (Stack HCI) specific resources. Defaults to true.
+    Record the Azure Local resources. On unless -IncludeAzureLocal:$false is given.
 
 .PARAMETER SubscriptionFilter
-    Array of subscription IDs to filter. If not specified, all subscriptions are inventoried.
+    Subscription IDs to limit the inventory to. Default: every subscription of the tenant the sign-in can read.
+
+.PARAMETER LogPath
+    Optional. Also append the progress lines to this file. Keep it out of the repository.
 
 .EXAMPLE
-    .\Inventory-AzureTenant.ps1 -TenantId "33333333-3333-3333-3333-333333333333"
+    Connect-AzAccount -Tenant <tenant-id>
+    ./Inventory-AzureTenant.ps1 -InfrastructureFile ./infrastructure.yml
 
-    Inventory all resources in the tenant.
+    Inventories every subscription of the tenant into .\discovery.
 
 .EXAMPLE
-    .\Inventory-AzureTenant.ps1 -TenantId "33333333-3333-3333-3333-333333333333" -IncludeRBAC -IncludeEntraId
+    ./Inventory-AzureTenant.ps1 -InfrastructureFile ./infrastructure.yml -IncludeRBAC -Format JSON -OutputPath ./out/tenant
 
-    Full inventory including RBAC and Entra ID information.
-
-.NOTES
-    Author: Hybrid Cloud Solutions Team
-    Date: 2025
-    Version: 2.0.0
-
-    INTEGRATION WITH DATA FRAMEWORK:
-    - Outputs to discovery/ folder as azure-inventory.json
-    - A read-only record of the tenant. Nothing writes it into infrastructure.yml: the operator enters the values by hand.
-
-    REQUIREMENTS:
-    - Az PowerShell module
-    - Reader role (minimum) on subscriptions
-    - Azure login (az login or Connect-AzAccount)
-
-    CHANGES IN v2.0.0:
-    - Azure Local (Stack HCI) discovery now ENABLED BY DEFAULT
-    - Fixed subscription enumeration using official Microsoft docs
-    - Added comprehensive authentication diagnostics
-    - Added subscription count validation
-    - Improved resource provider detection
-    - All commands now follow Microsoft Learn documentation patterns
+    Adds the role assignments and writes the JSON file only.
 #>
-
+#Requires -Version 7.0
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $false, HelpMessage = "Solution name for config-driven execution")]
-    [ValidateSet("azure-local", "azure-arc-servers")]
-    [string]$Solution,
+    [Parameter(Mandatory)][string]$InfrastructureFile,
 
-    [Parameter(Mandatory = $false, HelpMessage = "Azure tenant ID")]
-    [string]$TenantId,
-
-    [Parameter(Mandatory = $false)]
     [string]$OutputPath = ".\discovery",
 
-    [Parameter(Mandatory = $false)]
     [string]$BaseName = "azure-inventory",
 
-    [Parameter(Mandatory = $false)]
     [ValidateSet("JSON", "CSV", "Both")]
     [string]$Format = "Both",
 
-    [Parameter(Mandatory = $false)]
-    [switch]$IncludeEntraId,
-
-    [Parameter(Mandatory = $false)]
     [switch]$IncludeRBAC,
 
-    [Parameter(Mandatory = $false)]
-    [switch]$IncludeCosts,
-
-    [Parameter(Mandatory = $false)]
     [switch]$IncludeAzureLocal,
 
-    [Parameter(Mandatory = $false)]
-    [ValidateRange(1, 20)]
-    [int]$MaxParallelJobs = 10,
+    [string[]]$SubscriptionFilter,
 
-    [Parameter(Mandatory = $false)]
-    [string[]]$SubscriptionFilter
+    [string]$LogPath
 )
-
-#region Script Configuration
-
-$ErrorActionPreference = 'Continue'
-$WarningPreference = 'SilentlyContinue'
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$WarningPreference = 'SilentlyContinue'   # the Az modules print notices on every call; the errors are recorded in the inventory
 $ProgressPreference = 'SilentlyContinue'
+$logFile = $LogPath
 
-# Get repository root for proper path resolution
-$ScriptRoot = $PSScriptRoot
-$RepoRoot = (Get-Item $ScriptRoot).Parent.Parent.FullName
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
-# Smart TenantId detection with multiple fallback sources
-$script:TenantDisplayName = $null
-$script:TenantDomain = $null
+$Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 
-if (-not $TenantId) {
-    Write-Host ""
-    Write-Host "┌─────────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
-    Write-Host "│  Detecting Target Tenant                                     │" -ForegroundColor Cyan
-    Write-Host "└─────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
-    Write-Host ""
-    
-    # Source 1: Try infrastructure.yml (preferred - explicit configuration)
-    $infraFile = Join-Path $RepoRoot "infrastructure.yml"
-    if (Test-Path $infraFile) {
-        try {
-            $yamlContent = Get-Content $infraFile -Raw
-            
-            # Try multiple YAML patterns for tenant ID:
-            # Pattern 1: azure.tenant.id: "guid" (nested structure - your format)
-            # Pattern 2: tenant_id: "guid" (flat structure)
-            # Pattern 3: id: "guid" after "tenant:" section
-            
-            $foundTenant = $false
-            
-            # Check for nested azure.tenant.id pattern (matches indented id: under tenant:)
-            if ($yamlContent -match '(?ms)azure:\s*\n\s+tenant:\s*\n\s+id:\s*["'']?([a-f0-9-]+)["'']?') {
-                $TenantId = $matches[1]
-                $foundTenant = $true
-            }
-            # Fallback: flat tenant_id pattern
-            elseif ($yamlContent -match 'tenant_id:\s*["'']?([a-f0-9-]+)["'']?') {
-                $TenantId = $matches[1]
-                $foundTenant = $true
-            }
-            
-            if ($foundTenant) {
-                # Also try to get the friendly tenant name and domain
-                if ($yamlContent -match '(?ms)tenant:\s*\n\s+id:[^\n]+\n\s+name:\s*["'']?([^"''\n]+)["'']?') {
-                    $script:TenantDisplayName = $matches[1].Trim()
-                }
-                if ($yamlContent -match '(?ms)default_domain:\s*["'']?([^"''\n]+)["'']?') {
-                    $script:TenantDomain = $matches[1].Trim()
-                }
-                
-                Write-Host "  ✓ Found tenant in infrastructure.yml" -ForegroundColor Green
-                Write-Host ""
-                Write-Host "    Tenant ID:     $TenantId" -ForegroundColor White
-                if ($script:TenantDisplayName) {
-                    Write-Host "    Tenant Name:   $script:TenantDisplayName" -ForegroundColor Cyan
-                }
-                if ($script:TenantDomain) {
-                    Write-Host "    Domain:        $script:TenantDomain" -ForegroundColor Cyan
-                }
-                Write-Host ""
-            }
-            else {
-                Write-Host "  ⚠ infrastructure.yml exists but no tenant configuration found" -ForegroundColor Yellow
-                Write-Host "    Expected format:" -ForegroundColor DarkGray
-                Write-Host "      azure:" -ForegroundColor DarkGray
-                Write-Host "        tenant:" -ForegroundColor DarkGray
-                Write-Host "          id: `"your-tenant-guid`"" -ForegroundColor DarkGray
-                Write-Host "          name: `"Your Tenant Name`"" -ForegroundColor DarkGray
-                Write-Host "          default_domain: `"improbability.cloud`"" -ForegroundColor DarkGray
-                Write-Host ""
-            }
-        }
-        catch {
-            Write-Host "  ⚠ Could not parse infrastructure.yml: $($_.Exception.Message)" -ForegroundColor Yellow
-        }
-    }
-    else {
-        Write-Host "  ⚠ infrastructure.yml not found at: $infraFile" -ForegroundColor Yellow
-    }
-    
-    # Source 2: Try current Azure context (if already logged in)
-    if (-not $TenantId) {
-        try {
-            $existingContext = Get-AzContext -ErrorAction SilentlyContinue
-            if ($null -ne $existingContext -and $existingContext.Tenant.Id) {
-                Write-Host "  ℹ Checking current Azure context..." -ForegroundColor Yellow
-                Write-Host ""
-                Write-Host "    Tenant ID: $($existingContext.Tenant.Id)" -ForegroundColor White
-                Write-Host "    Account:   $($existingContext.Account.Id)" -ForegroundColor White
-                Write-Host ""
-                
-                # Prompt user to confirm using current context
-                $useContext = Read-Host "  Use this tenant for inventory? (Y/n)"
-                if ($useContext -eq '' -or $useContext -match '^[Yy]') {
-                    $TenantId = $existingContext.Tenant.Id
-                }
-                else {
-                    Write-Host ""
-                    Write-Host "  Please provide tenant ID:" -ForegroundColor Yellow
-                    $TenantId = Read-Host "  Tenant ID"
-                }
-            }
-        }
-        catch {
-            Write-Verbose "Could not check Azure context: $($_.Exception.Message)"
-        }
-    }
-    
-    # Source 3: Environment variable
-    if (-not $TenantId -and $env:AZURE_TENANT_ID) {
-        $TenantId = $env:AZURE_TENANT_ID
-        Write-Host "  ✓ Found in environment variable AZURE_TENANT_ID: $TenantId" -ForegroundColor Green
-    }
-    
-    # Final check - no tenant found anywhere
-    if (-not $TenantId) {
-        Write-Host ""
-        Write-Host "  ❌ Could not determine target tenant" -ForegroundColor Red
-        Write-Host ""
-        Write-Host "  Options to specify tenant:" -ForegroundColor Cyan
-        Write-Host "    1. Add 'tenant_id' to infrastructure.yml" -ForegroundColor White
-        Write-Host "    2. Pass -TenantId parameter" -ForegroundColor White
-        Write-Host "    3. Set AZURE_TENANT_ID environment variable" -ForegroundColor White
-        Write-Host "    4. Login to Azure first: Connect-AzAccount" -ForegroundColor White
-        Write-Host ""
-        throw "TenantId is required. See options above."
-    }
-    
-    Write-Host ""
+function Write-Line([string]$Text) {
+    Write-Information -MessageData $Text -InformationAction Continue
+    if ($logFile) { Add-Content -LiteralPath $logFile -Value ('[{0:yyyy-MM-dd HH:mm:ss}] {1}' -f (Get-Date), $Text) }
+}
+function Exit-InputProblem([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 2 }
+function Exit-Failed([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 1 }
+
+# ---- the values, from infrastructure.yml only
+try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.Message)" }
+
+$TenantId = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.tenant_id')).Trim()
+if ($TenantId -notmatch $Guid -or $TenantId -eq [guid]::Empty.ToString()) {
+    Exit-InputProblem 'azure.tenant_id is missing, not a GUID or the all-zero placeholder. Set it to the tenant to inventory (Get-AzContext shows it after Connect-AzAccount).'
 }
 
-# Resolve output path relative to repo root if relative
-if (-not [System.IO.Path]::IsPathRooted($OutputPath)) {
-    $OutputPath = Join-Path $RepoRoot $OutputPath
-}
+# The output folder is relative to the current folder when it is not a full path.
+$OutputPath = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputPath)
 
-# Default Azure Local discovery to TRUE unless explicitly set to false
-if (-not $PSBoundParameters.ContainsKey('IncludeAzureLocal')) {
-    $IncludeAzureLocal = $true
-    Write-Verbose "Defaulting to comprehensive inventory including Azure Local (Stack HCI) resources"
-}
+# Azure Local resources are recorded unless -IncludeAzureLocal:$false is given.
+if (-not $PSBoundParameters.ContainsKey('IncludeAzureLocal')) { $IncludeAzureLocal = [switch]$true }
 
 $script:StartTime = Get-Date
-$script:Timestamp = $script:StartTime.ToString("yyyyMMdd-HHmmss")
 $script:ProgressCounter = 0
 $script:TotalSteps = 15
 
 # Initialize inventory data structure
 $script:Inventory = [ordered]@{
     Metadata         = [ordered]@{
-        GeneratedAt   = $script:StartTime.ToString("yyyy-MM-dd HH:mm:ss UTC")
+        GeneratedAt   = $script:StartTime.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss UTC")
         GeneratedBy   = $null
-        ScriptVersion = "2.0.0"
+        ScriptVersion = "3.0.0"
         TenantId      = $TenantId
         TenantName    = $null
         OutputPath    = $OutputPath
         Options       = [ordered]@{
-            IncludeEntraId     = $IncludeEntraId.IsPresent
             IncludeRBAC        = $IncludeRBAC.IsPresent
-            IncludeCosts       = $IncludeCosts.IsPresent
-            IncludeAzureLocal  = $IncludeAzureLocal
-            SubscriptionFilter = $SubscriptionFilter
+            IncludeAzureLocal  = [bool]$IncludeAzureLocal
+            SubscriptionFilter = @($SubscriptionFilter | Where-Object { $_ })
         }
     }
     Tenant           = [ordered]@{
@@ -290,7 +136,6 @@ $script:Inventory = [ordered]@{
         DisplayName   = $null
         DefaultDomain = $null
         TenantType    = $null
-        CountryCode   = $null
     }
     ManagementGroups = @()
     Subscriptions    = @()
@@ -365,8 +210,6 @@ $script:Inventory = [ordered]@{
     Errors           = @()
 }
 
-#endregion
-
 #region Helper Functions
 
 function Write-ProgressStep {
@@ -388,11 +231,7 @@ function Write-ProgressStep {
 
     Write-Progress -Activity $Activity -Status $Status -PercentComplete $PercentComplete
 
-    $timestamp = Get-Date -Format "HH:mm:ss"
-    Write-Host "[$timestamp] " -NoNewline -ForegroundColor DarkGray
-    Write-Host "$Activity" -NoNewline -ForegroundColor Cyan
-    Write-Host " - " -NoNewline -ForegroundColor DarkGray
-    Write-Host "$Status" -ForegroundColor White
+    Write-Line "$Activity - $Status"
 }
 
 function Add-InventoryError {
@@ -410,17 +249,20 @@ function Add-InventoryError {
         [string]$ResourceId
     )
 
+    $inner = if ($Exception -is [System.Management.Automation.ErrorRecord]) { $Exception.Exception } elseif ($Exception -is [System.Exception]) { $Exception } else { $null }
+    $exceptionMessage = if ($inner) { $inner.Message } elseif ($null -ne $Exception) { [string]$Exception } else { 'N/A' }
+    $exceptionType = if ($inner) { $inner.GetType().Name } else { 'N/A' }
     $errorEntry = [ordered]@{
         Timestamp        = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
         Component        = $Component
         Message          = $Message
         ResourceId       = $ResourceId
-        ExceptionMessage = $Exception?.Exception?.Message ?? $Exception?.Message ?? "N/A"
-        ExceptionType    = $Exception?.Exception?.GetType()?.Name ?? "N/A"
+        ExceptionMessage = $exceptionMessage
+        ExceptionType    = $exceptionType
     }
 
     $script:Inventory.Errors += $errorEntry
-    Write-Warning "[$Component] $Message"
+    Write-Line "[error] [$Component] $Message$(if ($exceptionMessage -ne 'N/A') { ": $exceptionMessage" })"
 }
 
 function ConvertTo-HashtableDeep {
@@ -460,7 +302,7 @@ function ConvertTo-HashtableDeep {
 function Export-InventoryReport {
     param(
         [Parameter(Mandatory = $true)]
-        [hashtable]$Data,
+        [System.Collections.IDictionary]$Data,
 
         [Parameter(Mandatory = $true)]
         [string]$OutputDirectory,
@@ -480,7 +322,7 @@ function Export-InventoryReport {
             $jsonPath = Join-Path $OutputDirectory "${BaseName}.json"
             $Data | ConvertTo-Json -Depth 100 | Out-File -FilePath $jsonPath -Encoding UTF8 -Force
             $exportedFiles += $jsonPath
-            Write-Host "✓ Exported JSON: $jsonPath" -ForegroundColor Green
+            Write-Line "Exported JSON: $jsonPath"
         }
         catch {
             Add-InventoryError -Component "Export" -Message "Failed to export JSON" -Exception $_
@@ -543,7 +385,7 @@ function Export-InventoryReport {
                 ConvertTo-CsvFriendly -Items $Data.AzureLocal.Clusters | Export-Csv -Path $csvPath -NoTypeInformation -Encoding UTF8 -Force
                 $exportedFiles += $csvPath
             }
-            Write-Host "✓ Exported CSV files" -ForegroundColor Green
+            Write-Line "Exported CSV files"
         }
         catch {
             Add-InventoryError -Component "Export" -Message "Failed to export CSV" -Exception $_
@@ -612,165 +454,28 @@ function Test-AzurePermissions {
     return $permissions
 }
 
-function Initialize-AzureConnection {
-    <#
-    .SYNOPSIS
-        Intelligently initializes Azure connection with smart context detection.
-    .DESCRIPTION
-        1. Checks for existing Azure context
-        2. Validates if context matches target tenant
-        3. Tests permissions before proceeding
-        4. Uses device code authentication if needed (user-friendly for headless/remote)
-        5. Provides clear guidance on permission issues
-    #>
-    
-    Write-ProgressStep -Activity "Authentication" -Status "Checking Azure context..."
-
-    $context = $null
-    $needsLogin = $false
-    $existingContextValid = $false
-
-    # Step 1: Check for existing Azure context
-    try {
-        $context = Get-AzContext -ErrorAction SilentlyContinue
-        
-        if ($null -ne $context) {
-            Write-Host ""
-            Write-Host "┌─────────────────────────────────────────────────────────────┐" -ForegroundColor Cyan
-            Write-Host "│  Existing Azure Context Detected                            │" -ForegroundColor Cyan
-            Write-Host "└─────────────────────────────────────────────────────────────┘" -ForegroundColor Cyan
-            Write-Host "  Account: $($context.Account.Id)" -ForegroundColor White
-            Write-Host "  Tenant:  $($context.Tenant.Id)" -ForegroundColor White
-            Write-Host ""
-            
-            # Step 2: Check if context matches target tenant
-            if ($context.Tenant.Id -eq $TenantId) {
-                Write-Host "✓ Context matches target tenant" -ForegroundColor Green
-                
-                # Step 3: Validate token is still valid
-                try {
-                    $testAccess = Get-AzTenant -TenantId $TenantId -ErrorAction Stop
-                    Write-Host "✓ Token is valid and not expired" -ForegroundColor Green
-                    $existingContextValid = $true
-                }
-                catch {
-                    Write-Host "⚠ Token appears to be expired or invalid" -ForegroundColor Yellow
-                    $needsLogin = $true
-                }
-            }
-            else {
-                Write-Host "⚠ Context is for different tenant: $($context.Tenant.Id)" -ForegroundColor Yellow
-                Write-Host "  Target tenant: $TenantId" -ForegroundColor Yellow
-                $needsLogin = $true
-            }
-        }
-        else {
-            Write-Host ""
-            Write-Host "ℹ No existing Azure context found" -ForegroundColor Yellow
-            $needsLogin = $true
-        }
-    }
-    catch {
-        Write-Host "⚠ Could not check existing context: $($_.Exception.Message)" -ForegroundColor Yellow
-        $needsLogin = $true
-    }
-
-    # Step 4: Login if needed using device code flow
-    if ($needsLogin) {
-        Write-Host ""
-        Write-Host "┌─────────────────────────────────────────────────────────────┐" -ForegroundColor Yellow
-        Write-Host "│  Authentication Required                                     │" -ForegroundColor Yellow
-        Write-Host "└─────────────────────────────────────────────────────────────┘" -ForegroundColor Yellow
-        Write-Host ""
-        Write-Host "Using device code authentication (works in any terminal/remote session)" -ForegroundColor Cyan
-        Write-Host ""
-        
-        try {
-            # Use device code authentication - works everywhere including SSH, containers, etc.
-            Connect-AzAccount -TenantId $TenantId -UseDeviceAuthentication -ErrorAction Stop | Out-Null
-            $context = Get-AzContext -ErrorAction Stop
-            
-            if ($context.Tenant.Id -ne $TenantId) {
-                throw "Authentication succeeded but connected to wrong tenant. Expected: $TenantId, Got: $($context.Tenant.Id)"
-            }
-            
-            Write-Host ""
-            Write-Host "✓ Successfully authenticated" -ForegroundColor Green
-            $existingContextValid = $true
-        }
-        catch {
-            Write-Host ""
-            Write-Host "❌ Authentication failed: $($_.Exception.Message)" -ForegroundColor Red
-            throw "Failed to authenticate to Azure tenant $TenantId"
-        }
-    }
-
-    # Step 5: Validate permissions
-    Write-Host ""
-    Write-Host "Validating permissions..." -ForegroundColor Cyan
-    
-    $permissions = Test-AzurePermissions -TenantId $TenantId
-    
-    if (-not $permissions.CanListSubscriptions) {
-        Write-Host ""
-        Write-Host "┌─────────────────────────────────────────────────────────────┐" -ForegroundColor Red
-        Write-Host "│  ❌ Insufficient Permissions                                 │" -ForegroundColor Red
-        Write-Host "└─────────────────────────────────────────────────────────────┘" -ForegroundColor Red
-        Write-Host ""
-        Write-Host "User: $($context.Account.Id)" -ForegroundColor White
-        Write-Host ""
-        Write-Host "This account cannot list subscriptions in tenant $TenantId." -ForegroundColor Yellow
-        Write-Host ""
-        Write-Host "Required permissions:" -ForegroundColor Cyan
-        Write-Host "  • Reader role on at least one subscription" -ForegroundColor White
-        Write-Host "  • Or: Management Group Reader at tenant root" -ForegroundColor White
-        Write-Host ""
-        Write-Host "Errors:" -ForegroundColor Yellow
-        foreach ($err in $permissions.Errors) {
-            Write-Host "  - $err" -ForegroundColor Red
-        }
-        Write-Host ""
-        Write-Host "Options:" -ForegroundColor Cyan
-        Write-Host "  1. Request Reader role from your Azure administrator" -ForegroundColor White
-        Write-Host "  2. Run this script with a different account that has access" -ForegroundColor White
-        Write-Host "     Disconnect-AzAccount" -ForegroundColor DarkGray
-        Write-Host "     .\Inventory-AzureTenant.ps1 -TenantId '$TenantId'" -ForegroundColor DarkGray
-        Write-Host ""
-        
-        throw "Insufficient permissions to run inventory. See above for details."
-    }
-
-    # Success - show what we can access
-    Write-Host ""
-    Write-Host "┌─────────────────────────────────────────────────────────────┐" -ForegroundColor Green
-    Write-Host "│  ✓ Authentication & Permissions Validated                   │" -ForegroundColor Green
-    Write-Host "└─────────────────────────────────────────────────────────────┘" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "  Account:       $($context.Account.Id)" -ForegroundColor White
-    Write-Host "  Tenant:        $TenantId" -ForegroundColor White
-    Write-Host "  Subscriptions: $($permissions.SubscriptionCount) accessible" -ForegroundColor White
-    Write-Host "  Mgmt Groups:   $(if ($permissions.CanListManagementGroups) { 'Yes' } else { 'No' })" -ForegroundColor White
-    Write-Host "  Resources:     $(if ($permissions.CanListResources) { 'Yes' } else { 'Limited' })" -ForegroundColor White
-    Write-Host ""
-
-    # Update inventory metadata
-    $script:Inventory.Metadata.GeneratedBy = $context.Account.Id
-
-    # Get tenant display name
+function Get-TenantDetail {
+    # The display name, default domain and type of the tenant, for the record.
     try {
         $tenantInfo = Get-AzTenant -TenantId $TenantId -ErrorAction Stop
         $script:Inventory.Tenant.DisplayName = $tenantInfo.Name
         $script:Inventory.Tenant.DefaultDomain = $tenantInfo.DefaultDomain
         $script:Inventory.Tenant.TenantType = $tenantInfo.TenantType
         $script:Inventory.Metadata.TenantName = $tenantInfo.Name
-        Write-Host "  Tenant Name:   $($tenantInfo.Name)" -ForegroundColor White
-        Write-Host ""
+        Write-Line "  Tenant name:   $($tenantInfo.Name)"
     }
     catch {
         Add-InventoryError -Component "TenantInfo" -Message "Failed to get tenant details" -Exception $_
     }
+}
 
-    return $true
+function Invoke-InventoryStep {
+    # Runs one reader. Az objects differ by resource type and module version: a property can be absent or null. The readers record
+    # what Azure returns, so inside them a missing property reads as null (strict mode version 1: variables must still be set)
+    # instead of stopping the step. The rest of the script runs with Set-StrictMode -Version Latest.
+    param([Parameter(Mandatory)][string]$Name, [hashtable]$Arguments = @{})
+    Set-StrictMode -Version 1
+    & $Name @Arguments
 }
 
 #endregion
@@ -804,7 +509,7 @@ function Get-ManagementGroupInventory {
             }
         }
 
-        Write-Host "✓ Found $($script:Inventory.ManagementGroups.Count) management groups" -ForegroundColor Green
+        Write-Line "Found $($script:Inventory.ManagementGroups.Count) management groups"
     }
     catch {
         Add-InventoryError -Component "ManagementGroups" -Message "Failed to retrieve management groups" -Exception $_
@@ -828,7 +533,7 @@ function Get-SubscriptionInventory {
 
         if ($SubscriptionFilter -and $SubscriptionFilter.Count -gt 0) {
             $subscriptions = $allSubscriptions | Where-Object { $_.Id -in $SubscriptionFilter }
-            Write-Host "Filtering to $($subscriptions.Count) subscriptions" -ForegroundColor Yellow
+            Write-Line "Filtering to $($subscriptions.Count) subscriptions"
         }
         else {
             $subscriptions = $allSubscriptions
@@ -866,7 +571,7 @@ function Get-SubscriptionInventory {
             }
         }
 
-        Write-Host "✓ Found $($script:Inventory.Subscriptions.Count) subscriptions" -ForegroundColor Green
+        Write-Line "Found $($script:Inventory.Subscriptions.Count) subscriptions"
     }
     catch {
         Add-InventoryError -Component "Subscriptions" -Message "Failed to retrieve subscriptions" -Exception $_
@@ -905,7 +610,7 @@ function Get-ResourceGroupInventory {
         }
     }
 
-    Write-Host "✓ Found $($script:Inventory.ResourceGroups.Count) resource groups" -ForegroundColor Green
+    Write-Line "Found $($script:Inventory.ResourceGroups.Count) resource groups"
 }
 
 #endregion
@@ -918,7 +623,7 @@ function Get-ResourceInventory {
     foreach ($sub in $script:Inventory.Subscriptions) {
         try {
             Set-AzContext -SubscriptionId $sub.SubscriptionId -TenantId $TenantId -ErrorAction Stop | Out-Null
-            Write-Host "  Scanning: $($sub.Name)..." -ForegroundColor Cyan
+            Write-Line "  Scanning: $($sub.Name)..."
 
             $resources = Get-AzResource -ErrorAction Stop
 
@@ -963,7 +668,7 @@ function Get-ResourceInventory {
         }
     }
 
-    Write-Host "✓ Found $($script:Inventory.Resources.Count) resources" -ForegroundColor Green
+    Write-Line "Found $($script:Inventory.Resources.Count) resources"
 }
 
 #endregion
@@ -1062,10 +767,10 @@ function Get-AzureLocalInventory {
     $script:Inventory.AzureLocal.NetworkInterfaces.Count +
     $script:Inventory.AzureLocal.VirtualHardDisks.Count
 
-    Write-Host "✓ Found $totalAzureLocal Azure Local resources:" -ForegroundColor Green
-    Write-Host "  - Clusters: $($script:Inventory.AzureLocal.Clusters.Count)" -ForegroundColor Gray
-    Write-Host "  - Custom Locations: $($script:Inventory.AzureLocal.CustomLocations.Count)" -ForegroundColor Gray
-    Write-Host "  - Logical Networks: $($script:Inventory.AzureLocal.LogicalNetworks.Count)" -ForegroundColor Gray
+    Write-Line "Found $totalAzureLocal Azure Local resources:"
+    Write-Line "  - Clusters: $($script:Inventory.AzureLocal.Clusters.Count)"
+    Write-Line "  - Custom Locations: $($script:Inventory.AzureLocal.CustomLocations.Count)"
+    Write-Line "  - Logical Networks: $($script:Inventory.AzureLocal.LogicalNetworks.Count)"
 }
 
 #endregion
@@ -1087,7 +792,7 @@ function Get-NetworkingInventory {
     $privateDnsZones = $script:Inventory.Resources | Where-Object { $_.ResourceType -eq 'Microsoft.Network/privateDnsZones' }
 
     # Get detailed VNet information including subnets and peerings
-    Write-Host "  Getting detailed VNet configurations..." -ForegroundColor Cyan
+    Write-Line "  Getting detailed VNet configurations..."
     $detailedVNets = @()
     foreach ($vnet in $vnets) {
         try {
@@ -1168,7 +873,7 @@ function Get-NetworkingInventory {
     $script:Inventory.Networking.PrivateDNSZones = @($privateDnsZones)
 
     # Get detailed VPN Gateway information - must iterate by resource group
-    Write-Host "  Scanning VPN Gateways..." -ForegroundColor Cyan
+    Write-Line "  Scanning VPN Gateways..."
     foreach ($sub in $script:Inventory.Subscriptions) {
         try {
             Set-AzContext -SubscriptionId $sub.SubscriptionId -TenantId $TenantId -ErrorAction Stop | Out-Null
@@ -1331,7 +1036,7 @@ function Get-NetworkingInventory {
     }
 
     # Get detailed public IP info
-    Write-Host "  Scanning Public IP Details..." -ForegroundColor Cyan
+    Write-Line "  Scanning Public IP Details..."
     $publicIpDetails = @()
     foreach ($sub in $script:Inventory.Subscriptions) {
         try {
@@ -1368,7 +1073,7 @@ function Get-NetworkingInventory {
     }
     $script:Inventory.Networking.PublicIPAddresses = $publicIpDetails
 
-    Write-Host "✓ Found networking: VNets=$($vnets.Count), NSGs=$($nsgs.Count), VPNGWs=$($script:Inventory.Networking.VPNGateways.Count), VPNConns=$($script:Inventory.Networking.VPNConnections.Count)" -ForegroundColor Green
+    Write-Line "Found networking: VNets=$($vnets.Count), NSGs=$($nsgs.Count), VPNGWs=$($script:Inventory.Networking.VPNGateways.Count), VPNConns=$($script:Inventory.Networking.VPNConnections.Count)"
 }
 
 function Get-ComputeInventory {
@@ -1385,7 +1090,7 @@ function Get-ComputeInventory {
     $script:Inventory.Compute.VMScaleSets = @($vmss)
 
     # Get detailed VM information including sizes, disks, and IPs
-    Write-Host "  Scanning VM Details (sizes, disks, IPs)..." -ForegroundColor Cyan
+    Write-Line "  Scanning VM Details (sizes, disks, IPs)..."
     foreach ($sub in $script:Inventory.Subscriptions) {
         try {
             Set-AzContext -SubscriptionId $sub.SubscriptionId -TenantId $TenantId -ErrorAction Stop | Out-Null
@@ -1517,7 +1222,7 @@ function Get-ComputeInventory {
         }
     }
 
-    Write-Host "✓ Found compute: VMs=$($vms.Count), Detailed=$($script:Inventory.Compute.VirtualMachineDetails.Count), Disks=$($disks.Count)" -ForegroundColor Green
+    Write-Line "Found compute: VMs=$($vms.Count), Detailed=$($script:Inventory.Compute.VirtualMachineDetails.Count), Disks=$($disks.Count)"
 }
 
 function Get-StorageInventory {
@@ -1526,7 +1231,7 @@ function Get-StorageInventory {
     $storageAccounts = $script:Inventory.Resources | Where-Object { $_.ResourceType -eq 'Microsoft.Storage/storageAccounts' }
     $script:Inventory.Storage.StorageAccounts = @($storageAccounts)
 
-    Write-Host "✓ Found storage: $($storageAccounts.Count) accounts" -ForegroundColor Green
+    Write-Line "Found storage: $($storageAccounts.Count) accounts"
 }
 
 function Get-SecurityInventory {
@@ -1538,7 +1243,7 @@ function Get-SecurityInventory {
     $script:Inventory.Security.KeyVaults = @($keyVaults)
     $script:Inventory.Security.ManagedIdentities = @($managedIdentities)
 
-    Write-Host "✓ Found security: KeyVaults=$($keyVaults.Count), ManagedIdentities=$($managedIdentities.Count)" -ForegroundColor Green
+    Write-Line "Found security: KeyVaults=$($keyVaults.Count), ManagedIdentities=$($managedIdentities.Count)"
 }
 
 function Get-MonitoringInventory {
@@ -1550,7 +1255,7 @@ function Get-MonitoringInventory {
     $script:Inventory.Monitoring.LogAnalyticsWorkspaces = @($logAnalytics)
     $script:Inventory.Monitoring.ApplicationInsights = @($appInsights)
 
-    Write-Host "✓ Found monitoring: LogAnalytics=$($logAnalytics.Count), AppInsights=$($appInsights.Count)" -ForegroundColor Green
+    Write-Line "Found monitoring: LogAnalytics=$($logAnalytics.Count), AppInsights=$($appInsights.Count)"
 }
 
 #endregion
@@ -1585,7 +1290,7 @@ function Get-RBACInventory {
         }
     }
 
-    Write-Host "✓ Found $($script:Inventory.Security.RoleAssignments.Count) role assignments" -ForegroundColor Green
+    Write-Line "Found $($script:Inventory.Security.RoleAssignments.Count) role assignments"
 }
 
 function Get-PolicyInventory {
@@ -1613,7 +1318,7 @@ function Get-PolicyInventory {
         }
     }
 
-    Write-Host "✓ Found $($script:Inventory.Policy.PolicyAssignments.Count) policy assignments" -ForegroundColor Green
+    Write-Line "Found $($script:Inventory.Policy.PolicyAssignments.Count) policy assignments"
 }
 
 #endregion
@@ -1640,112 +1345,78 @@ function Get-TagInventory {
     }
 
     $script:Inventory.Tags.AllTags = $allTags
-    Write-Host "✓ Found $($allTags.Count) unique tags" -ForegroundColor Green
+    Write-Line "Found $($allTags.Count) unique tags"
 }
 
 #endregion
 
 #region Main Execution
 
+# ---- preconditions (read only)
+foreach ($cmd in 'Get-AzContext', 'Set-AzContext', 'Get-AzTenant', 'Get-AzSubscription', 'Get-AzManagementGroup', 'Get-AzResourceGroup', 'Get-AzResource', 'Get-AzResourceProvider') {
+    if (-not (Get-Command -Name $cmd -ErrorAction SilentlyContinue)) { Exit-Failed "$cmd was not found. Install the Az modules: Install-Module Az -Scope CurrentUser." }
+}
+$context = Get-AzContext
+if (-not $context) { Exit-Failed "Not signed in to Azure. Run Connect-AzAccount -Tenant $TenantId first. This script does not sign in." }
+if ([string]$context.Tenant.Id -ne $TenantId) { Exit-Failed "Signed in to tenant $($context.Tenant.Id), but azure.tenant_id is $TenantId. Run Connect-AzAccount -Tenant $TenantId." }
+$originalContext = $context
+$script:Inventory.Metadata.GeneratedBy = [string]$context.Account.Id
+
+$exitCode = 0
+$exportedFiles = @()
 try {
-    Write-Host ""
-    Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
-    Write-Host " Azure Tenant Inventory" -ForegroundColor Cyan
-    Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Cyan
-    Write-Host ""
-    Write-Host "Tenant ID: $TenantId" -ForegroundColor White
-    Write-Host "Output Path: $OutputPath" -ForegroundColor White
-    Write-Host "Format: $Format" -ForegroundColor White
-    Write-Host ""
+    Write-Line "Azure tenant inventory of $TenantId into $OutputPath (format $Format)"
 
-    # Initialize connection
-    Initialize-AzureConnection
-
-    # Scan tenant components
-    Get-ManagementGroupInventory
-    Get-SubscriptionInventory
-    Get-ResourceGroupInventory
-    Get-ResourceInventory
-
-    # Scan specific resource types
-    Get-AzureLocalInventory
-    Get-NetworkingInventory
-    Get-ComputeInventory
-    Get-StorageInventory
-    Get-SecurityInventory
-    Get-MonitoringInventory
-
-    # Scan policies and RBAC
-    Get-PolicyInventory
-    Get-RBACInventory
-
-    # Aggregate tags
-    Get-TagInventory
-
-    # Finalize metadata
-    $script:Inventory.Metadata.CompletedAt = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss UTC")
-    $script:Inventory.Metadata.DurationSeconds = [int]((Get-Date) - $script:StartTime).TotalSeconds
-
-    # Export reports
-    Write-ProgressStep -Activity "Export" -Status "Generating inventory reports"
-
-    $exportedFiles = Export-InventoryReport -Data $script:Inventory -OutputDirectory $OutputPath -BaseName $BaseName
-
-    # Display summary
-    Write-Host ""
-    Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Green
-    Write-Host " Inventory Complete!" -ForegroundColor Green
-    Write-Host "═══════════════════════════════════════════════════════════════" -ForegroundColor Green
-    Write-Host ""
-    Write-Host "Summary Statistics:" -ForegroundColor Cyan
-    Write-Host "  Management Groups: $($script:Inventory.ManagementGroups.Count)" -ForegroundColor White
-    Write-Host "  Subscriptions: $($script:Inventory.Statistics.TotalSubscriptions)" -ForegroundColor White
-    Write-Host "  Resource Groups: $($script:Inventory.Statistics.TotalResourceGroups)" -ForegroundColor White
-    Write-Host "  Total Resources: $($script:Inventory.Statistics.TotalResources)" -ForegroundColor White
-    Write-Host ""
-    Write-Host "Compute Resources:" -ForegroundColor Cyan
-    Write-Host "  Virtual Machines: $($script:Inventory.Compute.VirtualMachineDetails.Count) (with full details)" -ForegroundColor White
-    Write-Host "  Disks: $($script:Inventory.Compute.Disks.Count)" -ForegroundColor White
-    Write-Host ""
-    Write-Host "Networking Resources:" -ForegroundColor Cyan
-    Write-Host "  Virtual Networks: $($script:Inventory.Networking.VirtualNetworks.Count)" -ForegroundColor White
-    Write-Host "  VPN Gateways: $($script:Inventory.Networking.VPNGateways.Count)" -ForegroundColor White
-    Write-Host "  Local Network Gateways: $($script:Inventory.Networking.LocalNetworkGateways.Count)" -ForegroundColor White
-    Write-Host "  VPN Connections: $($script:Inventory.Networking.VPNConnections.Count)" -ForegroundColor White
-    Write-Host "  Route Tables: $($script:Inventory.Networking.RouteTables.Count)" -ForegroundColor White
-    Write-Host "  Public IPs: $($script:Inventory.Networking.PublicIPAddresses.Count)" -ForegroundColor White
-    Write-Host ""
-    Write-Host "Azure Local Resources:" -ForegroundColor Cyan
-    Write-Host "  Clusters: $($script:Inventory.AzureLocal.Clusters.Count)" -ForegroundColor White
-    Write-Host "  Custom Locations: $($script:Inventory.AzureLocal.CustomLocations.Count)" -ForegroundColor White
-    Write-Host "  Logical Networks: $($script:Inventory.AzureLocal.LogicalNetworks.Count)" -ForegroundColor White
-    Write-Host ""
-    Write-Host "Duration: $($script:Inventory.Metadata.DurationSeconds) seconds" -ForegroundColor White
-    Write-Host "Errors: $($script:Inventory.Errors.Count)" -ForegroundColor $(if ($script:Inventory.Errors.Count -gt 0) { "Yellow" } else { "White" })
-    Write-Host ""
-    Write-Host "Exported Files:" -ForegroundColor Cyan
-    foreach ($file in $exportedFiles) {
-        Write-Host "  $file" -ForegroundColor Gray
+    $permissions = Invoke-InventoryStep -Name 'Test-AzurePermissions' -Arguments @{ TenantId = $TenantId }
+    if (-not $permissions.CanListSubscriptions) {
+        $reasons = @($permissions.Errors) -join '; '
+        Write-Error "The account $($context.Account.Id) cannot list the subscriptions of tenant $TenantId. It needs Reader on at least one subscription (or Management Group Reader at the root). $reasons" -ErrorAction Continue
+        $exitCode = 1
     }
-    Write-Host ""
-    Write-Host "Next Steps:" -ForegroundColor Cyan
-    Write-Host "  1. Review inventory JSON in: $OutputPath" -ForegroundColor White
-    Write-Host "  2. Enter the values you need in infrastructure.yml by hand" -ForegroundColor White
-    Write-Host "  3. Validate infrastructure.yml with Test-InfrastructureFile.ps1" -ForegroundColor White
-    Write-Host ""
+    else {
+        Write-Line "  Subscriptions: $($permissions.SubscriptionCount) the account can read; management groups: $(if ($permissions.CanListManagementGroups) { 'yes' } else { 'no' })"
+        foreach ($step in 'Get-TenantDetail', 'Get-ManagementGroupInventory', 'Get-SubscriptionInventory', 'Get-ResourceGroupInventory', 'Get-ResourceInventory',
+            'Get-AzureLocalInventory', 'Get-NetworkingInventory', 'Get-ComputeInventory', 'Get-StorageInventory', 'Get-SecurityInventory',
+            'Get-MonitoringInventory', 'Get-PolicyInventory', 'Get-RBACInventory', 'Get-TagInventory') {
+            $null = Invoke-InventoryStep -Name $step
+        }
 
-    if ($script:Inventory.Errors.Count -gt 0) {
-        Write-Host "⚠ Inventory completed with $($script:Inventory.Errors.Count) errors. Check the JSON output for details." -ForegroundColor Yellow
+        $script:Inventory.Metadata.CompletedAt = (Get-Date).ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss UTC")
+        $script:Inventory.Metadata.DurationSeconds = [int]((Get-Date) - $script:StartTime).TotalSeconds
+
+        Write-ProgressStep -Activity "Export" -Status "Writing the inventory files"
+        $exportedFiles = @(Invoke-InventoryStep -Name 'Export-InventoryReport' -Arguments @{ Data = $script:Inventory; OutputDirectory = $OutputPath; BaseName = $BaseName })
+
+        Write-Line "Inventory complete: $($script:Inventory.Statistics.TotalSubscriptions) subscriptions, $($script:Inventory.Statistics.TotalResourceGroups) resource groups, $($script:Inventory.Statistics.TotalResources) resources, $($script:Inventory.AzureLocal.Clusters.Count) Azure Local clusters, $($script:Inventory.Errors.Count) errors."
+        foreach ($file in $exportedFiles) { Write-Line "  $file" }
+        Write-Line "Enter the values you need in infrastructure.yml by hand, then check it with Test-InfrastructureFile.ps1."
+        if ($script:Inventory.Errors.Count -gt 0) {
+            Write-Warning "The inventory has $($script:Inventory.Errors.Count) read errors; they are listed in the JSON file." -WarningAction Continue
+            $exitCode = 1
+        }
     }
 }
 catch {
-    Write-Host ""
-    Write-Host "❌ Inventory failed with critical error:" -ForegroundColor Red
-    Write-Host $_.Exception.Message -ForegroundColor Red
-    exit 1
+    Write-Error "The inventory stopped: $($_.Exception.Message)" -ErrorAction Continue
+    $exitCode = 1
 }
 finally {
     Write-Progress -Activity "Complete" -Completed
+    # The readers switch subscriptions; the context the operator had is put back.
+    if ($originalContext -and $originalContext.PSObject.Properties['Subscription'] -and $originalContext.Subscription -and $originalContext.Subscription.PSObject.Properties['Id']) {
+        try { $null = Set-AzContext -SubscriptionId $originalContext.Subscription.Id -Tenant $TenantId -ErrorAction Stop }
+        catch { Write-Warning "Could not put the original subscription context back: $($_.Exception.Message)" -WarningAction Continue }
+    }
 }
+
+[pscustomobject]@{
+    TenantId       = $TenantId
+    Subscriptions  = $script:Inventory.Statistics.TotalSubscriptions
+    ResourceGroups = $script:Inventory.Statistics.TotalResourceGroups
+    Resources      = $script:Inventory.Statistics.TotalResources
+    Errors         = $script:Inventory.Errors.Count
+    Files          = @($exportedFiles)
+}
+exit $exitCode
 
 #endregion

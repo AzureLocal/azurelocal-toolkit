@@ -1,6 +1,6 @@
 # Azure ARM Templates
 
-This directory contains ARM template parameter files, a config-driven generation script, and validated examples for Azure Local cluster deployments.
+This directory contains ARM template parameter files and validated examples for Azure Local cluster deployments. The parameter file of a deployment is generated from `infrastructure.yml` by `Invoke-AzureLocalArmDeployment.ps1`.
 
 ## Directory Structure
 
@@ -15,9 +15,7 @@ arm-templates/
 │   ├── README.md
 │   ├── single-intent-converged/             # 1-intent converged (IIC)
 │   ├── two-intent-standard/                 # 2-intent standard (IIC)
-│   ├── three-intent-separated/              # 3-intent separated (IIC)
-│   ├── three-intents-sdn/                   # Legacy 3-intent SDN (pre-refactor)
-│   └── azl-demo/                             # azl-demo env reference
+│   └── three-intent-separated/              # 3-intent separated (IIC)
 └── (future)
     ├── arc-gateway/                         # Arc Gateway ARM templates
     ├── key-vault/                           # Key Vault ARM templates
@@ -38,17 +36,14 @@ arm-templates/
 
 ### Option 1: Automated Generation (Recommended)
 
-Use the config-driven generation script to populate parameters from `infrastructure.yml`:
+`Invoke-AzureLocalArmDeployment.ps1` generates the parameters from `infrastructure.yml` (Active Directory or local identity, as `scenario.identity` says) and checks them against the template. Mode Plan with `-Offline` changes nothing and does not touch Azure:
 
 ```powershell
-# Generate AD parameter file
-.\configs\Generate-AzureLocal-Parameters.ps1 -ConfigPath "config/infrastructure.yml" -AuthType AD
-
-# Generate Local Identity parameter file
-.\configs\Generate-AzureLocal-Parameters.ps1 -ConfigPath "config/infrastructure.yml" -AuthType LocalIdentity
+./scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1 `
+    -InfrastructureFile ./infrastructure.yml -Mode Plan -Offline -ReportDirectory ./arm-plan
 ```
 
-The script reads all 54 parameters from `infrastructure.yml`, resolves Key Vault references, and writes a deployment-ready JSON file. See `config/Generate-AzureLocal-Parameters.ps1` for full documentation.
+The report directory then holds `<cluster>.parameters.json` (secrets are null in it) and `parameter-sources.md` (which key fed which ARM parameter). Modes Validate and Deploy submit the deployment; see the script's help.
 
 ### Option 2: Manual Placeholder Replacement
 

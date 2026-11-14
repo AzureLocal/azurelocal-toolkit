@@ -41,7 +41,6 @@ ansible/.vault_pass
 # Central config (actual values — never commit)
 config/infrastructure-*.yml
 !config/infrastructure.yml
-config/variables.yml
 config/credentials/
 
 # Log files (keep the directory via .gitkeep)

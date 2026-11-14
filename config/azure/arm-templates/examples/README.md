@@ -7,7 +7,7 @@ This directory contains validated parameter files for Azure Local cluster deploy
 - **Reference**: See how all 54 parameters are populated across different networking configurations
 - **Validation**: Compare your parameter file against working examples
 - **Troubleshooting**: Identify differences when deployments fail
-- **Generation**: Use as input to the generation script (`Generate-AzureLocal-Parameters.ps1`)
+- **Generation**: Compare with the file `Invoke-AzureLocalArmDeployment.ps1 -InfrastructureFile ./infrastructure.yml -Mode Plan -Offline` generates from `infrastructure.yml`
 
 ## Structure
 
@@ -22,21 +22,10 @@ examples/
 │   ├── azuredeploy.parameters.ad.json
 │   ├── azuredeploy.parameters.local-identity.json
 │   └── README.md
-├── three-intent-separated/          # IIC: 3-intent separated networking
-│   ├── azuredeploy.parameters.ad.json
-│   ├── azuredeploy.parameters.local-identity.json
-│   └── README.md
-├── three-intents-sdn/               # Legacy 3-intent SDN (pre-refactor reference)
-│   ├── deploy-azurelocal-parameters.json
-│   ├── deploy-azurelocal.ps1
-│   ├── deploy-azurelocal.sh
-│   ├── azure-pipelines.yml
-│   └── github-workflows-deploy.yml
-└── azl-demo/                         # azl-demo environment
-    ├── deploy-azurelocal-parameters.json
-    ├── deploy-azurelocal-parameters.generated.json
-    ├── deploy-azurelocal-parameters.template.json
-    └── Generate-AzureLocal-Parameters.ps1
+└── three-intent-separated/          # IIC: 3-intent separated networking
+    ├── azuredeploy.parameters.ad.json
+    ├── azuredeploy.parameters.local-identity.json
+    └── README.md
 ```
 
 ## IIC Examples — Networking Patterns
@@ -48,13 +37,6 @@ All IIC examples use the fictional Contoso (`contoso.cloud`, prefix `iic`). Each
 | Converged | `single-intent-converged/` | 1 | PoC, small edge, single NIC pair |
 | Standard | `two-intent-standard/` | 2 | Production — compute+management split from storage |
 | Separated | `three-intent-separated/` | 3 | High-performance — dedicated storage, compute, management |
-
-## Environment Templates
-
-| Directory | Purpose |
-|-----------|---------|
-| `azl-demo/` | azl-demo environment — includes generated output and generation script |
-| `three-intents-sdn/` | Legacy pre-refactor reference with CI/CD pipeline examples |
 
 ## Adding Examples
 

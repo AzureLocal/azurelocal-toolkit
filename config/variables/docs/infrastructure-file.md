@@ -394,7 +394,7 @@ Get-AzlManagementStaticMethod -Infrastructure $infra                            
 Get-AzlInfrastructureScope -Infrastructure $infra                                                    # full (default) or ztp
 ```
 
-Without `-Path`, `Import-AzlInfrastructure` looks for `$env:AZL_INFRASTRUCTURE_FILE`, then `./infrastructure.yml`, then `./config/infrastructure.yml`. It needs the `powershell-yaml` module.
+`-Path` is required: `Import-AzlInfrastructure` has no default path, reads no environment variable and does not search for the file. Every script takes the file as `-InfrastructureFile`. It needs the `powershell-yaml` module.
 
 From JavaScript or TypeScript, validate with ajv's draft 2020-12 build. The schema compiles with `strict: true`:
 

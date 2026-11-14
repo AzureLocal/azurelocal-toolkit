@@ -6,7 +6,8 @@
 .DESCRIPTION
     Every toolkit script reads the environment through this module, so no script parses keys its own way.
 
-    Import-AzlInfrastructure  Read the file, check it, and return it as a hashtable. Stops when the file has errors.
+    Import-AzlInfrastructure  Read the file, check it, and return it as a hashtable. Stops when the file has errors. -Path is
+                              required: no default path, no environment variable, no search.
     Test-AzlInfrastructure    Check the file and return every finding: schema errors first, then the checks that a
                               JSON schema can't express (addresses inside subnets, the infrastructure pool, node counts,
                               Key Vault references). Each finding has an ID, a severity, the key path, a message and,
@@ -1863,7 +1864,10 @@ function Import-AzlInfrastructure {
     .SYNOPSIS
         Reads infrastructure.yml, checks it, and returns it as an ordered hashtable. Stops when the file has errors.
     .PARAMETER Path
-        The infrastructure file. When omitted: $env:AZL_INFRASTRUCTURE_FILE, then .\infrastructure.yml, then .\config\infrastructure.yml.
+        The infrastructure file (schema 5). Required. There is no default path, no environment variable and no search: the caller
+        names the file, and every script takes it as -InfrastructureFile.
+    .PARAMETER SchemaPath
+        The JSON schema. Defaults to config/variables/schema/infrastructure.schema.json in this toolkit.
     .PARAMETER SkipValidation
         Return the file without checking it. For tools that only display it.
     .EXAMPLE
@@ -1873,15 +1877,10 @@ function Import-AzlInfrastructure {
     [CmdletBinding()]
     [OutputType([System.Collections.Specialized.OrderedDictionary])]
     param(
-        [string]$Path,
+        [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Path,
         [string]$SchemaPath = $script:DefaultSchemaPath,
         [switch]$SkipValidation
     )
-    if (-not $Path) {
-        $candidates = @($env:AZL_INFRASTRUCTURE_FILE, (Join-Path '.' 'infrastructure.yml'), (Join-Path (Join-Path '.' 'config') 'infrastructure.yml')) | Where-Object { $_ }
-        $Path = $candidates | Where-Object { Test-Path -LiteralPath $_ -PathType Leaf } | Select-Object -First 1
-        if (-not $Path) { throw 'No infrastructure file given, and none found at $env:AZL_INFRASTRUCTURE_FILE, .\infrastructure.yml or .\config\infrastructure.yml.' }
-    }
     if (-not $SkipValidation) {
         $findings = @(Test-AzlInfrastructure -Path $Path -SchemaPath $SchemaPath)
         foreach ($w in ($findings | Where-Object Severity -eq 'warning')) { Write-Warning "$($w.Id) $($w.Path): $($w.Message)" }

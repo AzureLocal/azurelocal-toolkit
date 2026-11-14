@@ -28,7 +28,7 @@ Open an issue for missing, incorrect, or unclear repository documentation.
 ### Submitting Pull Requests
 
 1. Fork the repo and create a branch from `main`
-2. Name branches using conventional types: `feat/new-validation-suite`, `fix/config-loader`, `docs/deployment-guide`
+2. Name branches using conventional types: `feat/new-validation-suite`, `fix/infrastructure-loader`, `docs/deployment-guide`
 3. Keep changes focused — one logical change per PR
 4. Update the README and any file-local documentation if your change affects usage or prerequisites
 5. Add an entry to [CHANGELOG.md](CHANGELOG.md) under `[Unreleased]`

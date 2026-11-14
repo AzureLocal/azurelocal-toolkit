@@ -1029,6 +1029,14 @@ Describe 'Import-AzlInfrastructure' {
         Set-Content -LiteralPath $file -Value (ConvertTo-Yaml $doc)
         { Import-AzlInfrastructure -Path $file } | Should -Throw -ExpectedMessage '*2 error(s)*'
     }
+    It 'takes the file as a mandatory -Path: no default path, no environment variable, no search' {
+        $p = (Get-Command Import-AzlInfrastructure).Parameters['Path']
+        @($p.Attributes | Where-Object { $_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory }).Count | Should -BeGreaterThan 0
+        $text = (Get-Command Import-AzlInfrastructure).ScriptBlock.ToString()
+        $text | Should -Not -Match 'AZL_INFRASTRUCTURE_FILE|\$env:'
+        $text | Should -Not -Match "Join-Path\s+'\.'\s+'infrastructure\.yml'"
+        { Import-AzlInfrastructure -Path '' } | Should -Throw
+    }
     It 'reads a value by path' {
         $infra = Import-AzlInfrastructure -Path $script:ExamplePath -SkipValidation
         Get-AzlInfrastructureValue -Infrastructure $infra -Path 'scenario.os_install' | Should -Be 'simplified'
