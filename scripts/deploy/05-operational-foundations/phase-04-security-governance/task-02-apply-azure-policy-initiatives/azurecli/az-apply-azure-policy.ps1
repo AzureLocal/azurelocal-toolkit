@@ -2,7 +2,7 @@
 # PLACEHOLDER: this script does not do the task. It ends with exit code 3 (NOT IMPLEMENTED) and changes nothing.
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$ConfigPath = '',
+    [Parameter(Mandatory)][string]$InfrastructureFile,
     [string]$LogPath = ''
 )
 
@@ -29,6 +29,5 @@ Invoke-DeploymentAzCliPowerShell `
     -ScriptPath $PSCommandPath `
     -TaskPath '05-operational-foundations/phase-04-security-governance/task-02-apply-azure-policy-initiatives' `
     -ActionName 'az-apply-azure-policy' `
-    -ConfigPath $ConfigPath `
     -LogPath $LogPath `
     -Parameters $PSBoundParameters

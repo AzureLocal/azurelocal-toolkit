@@ -54,9 +54,9 @@ Describe 'No paid security plan is turned on by the automation' {
     It 'Enable-DefenderForCloud.ps1 reads the two registered keys' {
         $path = Join-Path $script:Root 'scripts/deploy/05-operational-foundations/phase-04-security-governance/task-01-enable-defender-for-cloud/powershell/Enable-DefenderForCloud.ps1'
         $text = Get-Content -LiteralPath $path -Raw
-        $text | Should -Match "'security', 'defender_for_cloud', 'enabled'"
-        $text | Should -Match "'security', 'defender_for_cloud', 'apply_cloud_security_benchmark'"
-        $text | Should -Match "'security', 'defender_for_cloud', 'security_contact_email'"
+        $text | Should -Match "'security.defender_for_cloud.enabled'"
+        $text | Should -Match "'security.defender_for_cloud.apply_cloud_security_benchmark'"
+        $text | Should -Match "'security.defender_for_cloud.security_contact_email'"
     }
 
     It 'the paid script is run by nothing outside its own folder' {

@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for infrastructure.yml for scenario.storage_architecture = s2d with every variable. Schema 5.6.25. Scenario: storage_architecture=s2d.
+# Template for infrastructure.yml for scenario.storage_architecture = s2d with every variable. Schema 5.6.26. Scenario: storage_architecture=s2d.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -1297,7 +1297,7 @@ operations:
   licensing:
     # true to activate Azure Hybrid Benefit for Azure Local on the instance: it waives the Azure Local host service fee for an instance whose phy...
     azure_hybrid_benefit: true
-    # true when Windows Server guest licensing through Azure subscription is used.
+    # true to turn on the Windows Server subscription add-on of the Azure Local instance: every Windows Server VM on the instance is then activat...
     windows_server_subscription: false
     # true when Azure Verification for VMs is turned on, so Windows Server 2025 guests get the Azure-only benefits.
     azure_verification_for_vms: false

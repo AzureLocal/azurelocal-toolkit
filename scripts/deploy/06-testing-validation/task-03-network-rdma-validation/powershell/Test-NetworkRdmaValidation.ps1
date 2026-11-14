@@ -11,17 +11,20 @@
     - Network ATC intent validation
     - Generates validation report for customer handover
 
-.PARAMETER ClusterName
-    Name of the Azure Local cluster.
+    Read only: it changes nothing on the cluster. Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
+        cluster.name
+    The script does not sign in and asks nothing. Run it as an account that may read the cluster.
 
-.PARAMETER ConfigPath
-    Path to infrastructure.yml configuration.
+    Exit codes: 0 no RDMA adapter failed; 1 an RDMA adapter check failed; 2 cluster.name is missing or the file cannot be read.
+
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Only the keys listed in the description are read; the whole file is not validated here.
 
 .PARAMETER OutputPath
     Path to save validation report. Default: .\logs\validation-reports\
 
 .EXAMPLE
-    .\Test-NetworkRdmaValidation.ps1 -ClusterName "azl-cluster-01"
+    .\Test-NetworkRdmaValidation.ps1 -InfrastructureFile ./infrastructure.yml
 
 .NOTES
     Author: AzureLocal Cloud Team Team
@@ -32,11 +35,8 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $false)]
-    [string]$ClusterName,
-
-    [Parameter(Mandatory = $false)]
-    [string]$ConfigPath,
+    [Parameter(Mandatory)]
+    [string]$InfrastructureFile,
 
     [Parameter(Mandatory = $false)]
     [string]$OutputPath = ".\logs\validation-reports"
@@ -46,6 +46,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 function Write-Log {
     param([string]$Message, [string]$Level = "INFO")
@@ -53,16 +54,6 @@ function Write-Log {
         "INFO" { "White" }; "WARN" { "Yellow" }; "ERROR" { "Red" }; "SUCCESS" { "Green" }; "HEADER" { "Cyan" }
     }
     Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message" -ForegroundColor $color
-}
-
-function Import-InfrastructureConfig {
-    param([string]$Path)
-    if (-not $Path -or -not (Test-Path $Path)) { return $null }
-    if (-not (Get-Module -Name powershell-yaml -ListAvailable)) {
-        Install-Module -Name powershell-yaml -Force -Scope CurrentUser
-    }
-    Import-Module powershell-yaml
-    return Get-Content -Path $Path -Raw | ConvertFrom-Yaml
 }
 
 #region Validation Functions
@@ -127,7 +118,7 @@ function Test-DcbConfiguration {
                 }
             }
 
-            $results += [PSCustomObject]@{ Node = $node; QosCount = ($dcbSettings.QosPolicy).Count; PfcCount = ($dcbSettings.PFC).Count }
+            $results += [PSCustomObject]@{ Node = $node; QosCount = @($dcbSettings.QosPolicy).Count; PfcCount = @($dcbSettings.PFC).Count }
         }
         catch {
             Write-Log "  ${node}: DCB check failed — $_" -Level "ERROR"
@@ -147,8 +138,8 @@ function Test-SmbDirectStatus {
                 @{
                     SmbClientEnabled     = (Get-SmbClientConfiguration).EnableMultichannel
                     SmbServerEnabled     = (Get-SmbServerConfiguration).EnableMultichannel
-                    RdmaConnections      = (Get-SmbConnection | Where-Object { $_.Dialect -ge '3.0' }).Count
-                    SmbDirectConnections = (Get-SmbConnection -SmbInstance Default -ErrorAction SilentlyContinue | Where-Object { $_.RdmaCapable }).Count
+                    RdmaConnections      = @(Get-SmbConnection | Where-Object { $_.Dialect -ge '3.0' }).Count
+                    SmbDirectConnections = @(Get-SmbConnection -SmbInstance Default -ErrorAction SilentlyContinue | Where-Object { $_.RdmaCapable }).Count
                 }
             }
             Write-Log "  $node - SMB Multichannel Client=$($smbDirect.SmbClientEnabled), Server=$($smbDirect.SmbServerEnabled)" -Level "SUCCESS"
@@ -192,16 +183,15 @@ Write-Log "========================================" -Level "HEADER"
 Write-Log "Network & RDMA Validation" -Level "HEADER"
 Write-Log "========================================" -Level "HEADER"
 
-if ($ConfigPath) {
-    $config = Import-InfrastructureConfig -Path $ConfigPath
-    if (-not $ClusterName -and $config) { $ClusterName = $config.cluster.name }
-}
+# ---- the values, from infrastructure.yml only
+try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Write-Log "Cannot read the infrastructure file: $($_.Exception.Message)" -Level "ERROR"; exit 2 }
+$ClusterName = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')).Trim()
 if (-not $ClusterName) {
-    Write-Log "ClusterName is required." -Level "ERROR"
-    exit 1
+    Write-Log "cluster.name is missing in the infrastructure file. It is the name of the cluster to test." -Level "ERROR"
+    exit 2
 }
-
-$nodes = (Get-ClusterNode -Cluster $ClusterName).Name
+$nodes = @((Get-ClusterNode -Cluster $ClusterName).Name)
 Write-Log "Cluster: $ClusterName ($($nodes.Count) nodes)" -Level "INFO"
 Write-Host ""
 
@@ -231,13 +221,16 @@ $reportFile = Join-Path $OutputPath "03-network-rdma-$(Get-Date -Format 'yyyyMMd
 $report | ConvertTo-Json -Depth 10 | Set-Content -Path $reportFile -Encoding UTF8
 Write-Log "Report saved: $reportFile" -Level "INFO"
 
-$rdmaPass = ($rdmaResults | Where-Object { $_.Status -eq "PASS" }).Count
-$rdmaFail = ($rdmaResults | Where-Object { $_.Status -eq "FAIL" }).Count
+$rdmaPass = @($rdmaResults | Where-Object { $_.Status -eq "PASS" }).Count
+$rdmaFail = @($rdmaResults | Where-Object { $_.Status -eq "FAIL" }).Count
 
 Write-Host ""
 Write-Log "========================================" -Level "HEADER"
 Write-Log "Network & RDMA Summary" -Level "SUCCESS"
 Write-Log "  RDMA adapters: $rdmaPass pass / $rdmaFail fail" -Level "INFO"
-Write-Log "  DCB configured on $($dcbResults.Count) nodes" -Level "INFO"
+Write-Log "  DCB configured on $(@($dcbResults).Count) nodes" -Level "INFO"
+
+if ($rdmaFail -gt 0) { exit 1 }
+exit 0
 
 #endregion Main

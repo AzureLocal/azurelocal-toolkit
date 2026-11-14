@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that azurelocal-ztp ('ztp') reads (a strict subset of the master file). Schema 5.6.25.
+# Template for the part of infrastructure.yml that azurelocal-ztp ('ztp') reads (a strict subset of the master file). Schema 5.6.26.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.

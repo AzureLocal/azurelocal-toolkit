@@ -2,7 +2,7 @@
 # PLACEHOLDER: this script does not do the task. It ends with exit code 3 (NOT IMPLEMENTED) and changes nothing.
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$InfrastructureFile = '',
+    [Parameter(Mandatory)][string]$InfrastructureFile,
     [string]$LogPath = ''
 )
 
@@ -29,6 +29,5 @@ Invoke-DeploymentAzCliPowerShell `
     -ScriptPath $PSCommandPath `
     -TaskPath '04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation' `
     -ActionName 'az-test-arc-prerequisites' `
-    -InfrastructureFile $InfrastructureFile `
     -LogPath $LogPath `
     -Parameters $PSBoundParameters

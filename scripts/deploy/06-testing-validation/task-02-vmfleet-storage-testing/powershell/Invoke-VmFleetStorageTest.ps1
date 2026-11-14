@@ -10,8 +10,13 @@
     - Collects IOPS, throughput, and latency metrics
     - Generates performance baseline report for customer handover
 
-.PARAMETER ClusterName
-    Name of the Azure Local cluster.
+    It creates a Collect volume and a fleet of VMs on the cluster and removes the fleet when the runs are done. Use -WhatIf to see the plan first.
+    Values come only from infrastructure.yml (read through Import-AzlInfrastructure): cluster.name, storage.pool.name.
+    The script does not sign in and never prompts: the administrator account of the fleet VMs is the parameter -FleetAdminCredential, which
+    the caller passes (for example built from a secret with scripts/common/secrets/AzlSecret.psm1).
+
+    Exit codes: 0 the runs finished (or the plan is shown under -WhatIf); 1 a run failed; 2 cluster.name is missing, the file cannot be read, or
+    -FleetAdminCredential is missing.
 
 .PARAMETER VmCount
     Number of VMs per node to deploy. Default: 4.
@@ -19,9 +24,9 @@
 .PARAMETER DurationSeconds
     Duration of each test run in seconds. Default: 300.
 
-.PARAMETER ConfigPath
-    Path to infrastructure.yml configuration. The script reads cluster.name and storage.pool.name (the pool of the Collect volume;
-    without it the one pool of the cluster is used).
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). The script reads cluster.name and storage.pool.name (the pool of the Collect volume; without it the one
+    pool of the cluster is used). Only these keys are read; the whole file is not validated here.
 
 .PARAMETER CollectVolumeSizeGiB
     Size of the Collect volume VMFleet writes its results to, in GiB. Default: 50.
@@ -36,7 +41,7 @@
     Path to save performance reports. Default: .\logs\validation-reports\
 
 .EXAMPLE
-    .\Invoke-VmFleetStorageTest.ps1 -ClusterName "azl-cluster-01" -VmCount 4 -DurationSeconds 300
+    .\Invoke-VmFleetStorageTest.ps1 -InfrastructureFile ./infrastructure.yml -FleetAdminCredential $fleetCredential -VmCount 4 -DurationSeconds 300
 
 .NOTES
     Author: AzureLocal Cloud Team Team
@@ -47,17 +52,14 @@
 
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory = $false)]
-    [string]$ClusterName,
+    [Parameter(Mandatory)]
+    [string]$InfrastructureFile,
 
     [Parameter(Mandatory = $false)]
     [int]$VmCount = 4,
 
     [Parameter(Mandatory = $false)]
     [int]$DurationSeconds = 300,
-
-    [Parameter(Mandatory = $false)]
-    [string]$ConfigPath,
 
     [Parameter(Mandatory = $false)]
     [string]$OutputPath = ".\logs\validation-reports",
@@ -76,7 +78,8 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-$StoragePoolName = $null   # from storage.pool.name when -ConfigPath is given
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+$StoragePoolName = $null   # from storage.pool.name
 
 function Write-Log {
     param([string]$Message, [string]$Level = "INFO")
@@ -84,16 +87,6 @@ function Write-Log {
         "INFO" { "White" }; "WARN" { "Yellow" }; "ERROR" { "Red" }; "SUCCESS" { "Green" }; "HEADER" { "Cyan" }
     }
     Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message" -ForegroundColor $color
-}
-
-function Import-InfrastructureConfig {
-    param([string]$Path)
-    if (-not $Path -or -not (Test-Path $Path)) { return $null }
-    if (-not (Get-Module -Name powershell-yaml -ListAvailable)) {
-        Install-Module -Name powershell-yaml -Force -Scope CurrentUser
-    }
-    Import-Module powershell-yaml
-    return Get-Content -Path $Path -Raw | ConvertFrom-Yaml
 }
 
 #region Functions
@@ -182,20 +175,21 @@ Write-Log "========================================" -Level "HEADER"
 Write-Log "VMFleet Storage Performance Testing" -Level "HEADER"
 Write-Log "========================================" -Level "HEADER"
 
-if ($ConfigPath) {
-    $config = Import-InfrastructureConfig -Path $ConfigPath
-    if (-not $ClusterName -and $config) { $ClusterName = $config.cluster.name }
-    $poolFromFile = ${config}?['storage']?['pool']?['name']   # storage.pool.name
-    if ($poolFromFile) { $StoragePoolName = [string]$poolFromFile }
-}
+# ---- the values, from infrastructure.yml only
+try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Write-Log "Cannot read the infrastructure file: $($_.Exception.Message)" -Level "ERROR"; exit 2 }
+$ClusterName = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')).Trim()
+$poolFromFile = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'storage.pool.name')).Trim()   # storage.pool.name
+if ($poolFromFile) { $StoragePoolName = $poolFromFile }
 if (-not $ClusterName) {
-    Write-Log "ClusterName is required." -Level "ERROR"
-    exit 1
+    Write-Log "cluster.name is missing in the infrastructure file. It is the name of the cluster to test." -Level "ERROR"
+    exit 2
 }
 
 if (-not $FleetAdminCredential -and -not $WhatIfPreference) {
     # never prompt: the account comes from the caller (for example from a secret through scripts/common/secrets)
-    throw [System.ArgumentException]::new('-FleetAdminCredential is required: the administrator account of the fleet VMs. The script never prompts.')
+    Write-Log '-FleetAdminCredential is required: the administrator account of the fleet VMs. Pass it as a [pscredential]. The script never prompts.' -Level 'ERROR'
+    exit 2
 }
 
 Write-Log "Cluster: $ClusterName" -Level "INFO"

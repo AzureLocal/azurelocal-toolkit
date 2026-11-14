@@ -17,11 +17,6 @@
     - Email notifications for all subscriptions
     - Guest Configuration Agent and Azure Monitor Agent for SQL
 
-.PARAMETER Solution
-    The solution name to load configuration from. When specified, loads parameters from the solution's 
-    configuration file. Individual parameters can still override config values.
-    Valid values: "azure-local", "azure-arc-servers"
-
 .PARAMETER TenantId
     The Azure AD tenant ID.
 
@@ -32,23 +27,14 @@
     Additional email address for security notifications.
 
 .EXAMPLE
-    # Using solution configuration
-    .\Deploy-DefenderPaidPlans.ps1 -Solution "azure-local" -NotificationEmail "admin@example.com"
+    .\Deploy-DefenderPaidPlans.ps1 -TenantId "00000000-0000-0000-0000-000000000000" -NotificationEmail "admin@example.com"
 
 .EXAMPLE
-    # Using direct parameters
-    .\Deploy-DefenderPaidPlans.ps1 -TenantId "your-tenant-id" -NotificationEmail "admin@example.com"
-
-.EXAMPLE
-    .\Deploy-DefenderPaidPlans.ps1 -Solution "azure-local" -NotificationEmail "admin@example.com" -WhatIf
+    .\Deploy-DefenderPaidPlans.ps1 -TenantId "00000000-0000-0000-0000-000000000000" -NotificationEmail "admin@example.com" -WhatIf
 #>
 
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory = $false)]
-    [ValidateSet("azure-local", "azure-arc-servers")]
-    [string]$Solution,
-
     [Parameter(Mandatory = $false)]
     [string]$TenantId,
 
@@ -59,29 +45,13 @@ param(
     [string]$NotificationEmail
 )
 
-# ============================================================================
-# CONFIGURATION LOADING
-# ============================================================================
-if ($Solution) {
-    Write-Host "[Config] Loading solution configuration for: $Solution" -ForegroundColor Cyan
-    . "$PSScriptRoot\..\..\..\utilities\helpers\config-loader.ps1"
-    $config = Get-SolutionConfig -Solution $Solution
-    
-    # Map config values to script parameters - only if not explicitly provided
-    if (-not $TenantId) { $TenantId = Get-ConfigValue -Config $config -Path 'azure.tenant.id' }
-    if (-not $ManagementGroupId) { $ManagementGroupId = Get-ConfigValue -Config $config -Path 'azure.management_groups.platform.id' }
-    if (-not $NotificationEmail) { $NotificationEmail = Get-ConfigValue -Config $config -Path 'azure_infrastructure.security.notification_email' }
-    
-    Write-Host "[Config] Configuration loaded successfully" -ForegroundColor Green
-}
-
 # Validate required parameters
 $missingParams = @()
 if (-not $TenantId) { $missingParams += 'TenantId' }
 if (-not $NotificationEmail) { $missingParams += 'NotificationEmail' }
 
 if ($missingParams.Count -gt 0) {
-    throw "Missing required parameters: $($missingParams -join ', '). Provide -Solution or specify parameters directly."
+    throw "Missing required parameters: $($missingParams -join ', '). Give them as parameters."
 }
 
 #region Helper Functions

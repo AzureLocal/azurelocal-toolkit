@@ -2,9 +2,7 @@
 # PLACEHOLDER: this script does not do the task. It ends with exit code 3 (NOT IMPLEMENTED) and changes nothing.
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$ConfigPath = '',
-    [System.Management.Automation.PSCredential]$Credential = $null,
-    [string[]]$TargetNode = @(),
+    [Parameter(Mandatory)][string]$InfrastructureFile,
     [string]$LogPath = ''
 )
 
@@ -31,8 +29,5 @@ Invoke-DeploymentOrchestrated `
     -ScriptPath $PSCommandPath `
     -TaskPath '03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration' `
     -ActionName 'Invoke-PowerSwitchEndpoint-Orchestrated' `
-    -ConfigPath $ConfigPath `
-    -Credential $Credential `
-    -TargetNode $TargetNode `
     -LogPath $LogPath `
     -Parameters $PSBoundParameters

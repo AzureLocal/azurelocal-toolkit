@@ -19,7 +19,7 @@ Task folders: 110.
 
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
-| PowerShell | 64 | 46 | 0 |
+| PowerShell | 58 | 52 | 0 |
 | Azure CLI | 1 | 56 | 53 |
 
 Azure CLI applies to 49 tasks, does not apply to 53, and is not decided for 8.
@@ -82,14 +82,14 @@ Azure CLI applies to 49 tasks, does not apply to 53, and is not decided for 8.
 | `phase-01-active-directory/task-03-dns-node-a-records` | not built | not applicable | no |
 | `phase-01-active-directory/task-04-service-admin-accounts` | built | not applicable | no |
 | `phase-01-active-directory/task-05-group-assignments` | built | not applicable | no |
-| `phase-02-enterprise-readiness/task-01-hardware-inspection` | built | not applicable | no |
-| `phase-02-enterprise-readiness/task-02-network-service-verification` | built | not applicable | no |
+| `phase-02-enterprise-readiness/task-01-hardware-inspection` | not built | not applicable | no |
+| `phase-02-enterprise-readiness/task-02-network-service-verification` | not built | not applicable | no |
 | `phase-02-enterprise-readiness/task-03-opengear-verification` | built | not applicable | no |
 | `phase-02-enterprise-readiness/task-04-validation-signoff` | built | not applicable | no |
 | `phase-03-network-infrastructure/task-01-opengear-console-server` | not built | not applicable | no |
 | `phase-03-network-infrastructure/task-02-dell-powerswitch-configuration` | built | not applicable | no |
-| `phase-03-network-infrastructure/task-03-firewall-endpoint-verification` | built | not applicable | no |
-| `phase-03-network-infrastructure/task-04-network-validation` | built | not applicable | no |
+| `phase-03-network-infrastructure/task-03-firewall-endpoint-verification` | not built | not applicable | no |
+| `phase-03-network-infrastructure/task-04-network-validation` | not built | not applicable | no |
 
 ## 04-cluster-deployment
 
@@ -139,8 +139,8 @@ Azure CLI applies to 49 tasks, does not apply to 53, and is not decided for 8.
 
 | Task | PowerShell | Azure CLI | Azure CLI applies |
 |---|---|---|---|
-| `phase-01-sdn-deployment/task-01-validate-sdn-prerequisites` | built | not applicable | no |
-| `phase-01-sdn-deployment/task-02-configure-network-security-groups` | built | not built | yes |
+| `phase-01-sdn-deployment/task-01-validate-sdn-prerequisites` | not built | not applicable | no |
+| `phase-01-sdn-deployment/task-02-configure-network-security-groups` | not built | not built | yes |
 | `phase-01-sdn-deployment/task-03-configure-network-security-groups` | not built | not built | yes |
 | `phase-02-monitoring-observability/task-01-configure-log-analytics-workspace` | built | not built | yes |
 | `phase-02-monitoring-observability/task-02-configure-azure-monitor-agent` | built | not built | yes |

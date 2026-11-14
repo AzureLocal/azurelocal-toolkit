@@ -674,7 +674,7 @@ Day-2 choices: updates, backup, disaster recovery, notifications, licensing and 
 | `operations.notifications.emails` | Addresses (team mailboxes) that receive the notifications of the operations tools. | list of string | no / no |  | `[noc@improbability.cloud]` | Your operations design. | Trailwright |
 | `operations.licensing` | Licensing benefits the instance uses. | object | no / no |  |  | Your operations design. | Trailwright |
 | `operations.licensing.azure_hybrid_benefit` | true to activate Azure Hybrid Benefit for Azure Local on the instance: it waives the Azure Local host service fee for an instance whose physical core... | boolean | no / no |  | `true` | Your operations design. | Trailwright |
-| `operations.licensing.windows_server_subscription` | true when Windows Server guest licensing through Azure subscription is used. | boolean | no / no |  | `false` | Your operations design. | Trailwright |
+| `operations.licensing.windows_server_subscription` | true to turn on the Windows Server subscription add-on of the Azure Local instance: every Windows Server VM on the instance is then activated through... | boolean | no / no |  | `false` | Your operations design. | Trailwright |
 | `operations.licensing.azure_verification_for_vms` | true when Azure Verification for VMs is turned on, so Windows Server 2025 guests get the Azure-only benefits. | boolean | no / no |  |  | Your operations design. | Trailwright |
 | `operations.monitoring` | Azure Monitor for the instance. | object | no / no |  |  | Your operations design. | Trailwright |
 | `operations.monitoring.enabled` | true when Azure Monitor is part of the design. | boolean | if section is set / if section is set |  | `true` | Your operations design. | Trailwright |

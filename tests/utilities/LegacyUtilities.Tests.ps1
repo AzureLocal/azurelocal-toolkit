@@ -3,7 +3,7 @@
 # The utility and lifecycle scripts that read the master infrastructure.yml (schema 5):
 #   scripts/common/utilities/tools/Stop-AzureLocalCluster.ps1          shuts the cluster down for transport or maintenance
 #   scripts/lifecycle/operations/powershell/Invoke-NodeMaintenanceReboot.ps1   drains, reboots and resumes one node
-#   scripts/common/utilities/helpers/config-loader.ps1 and keyvault-helper.ps1   the helpers that read key_vaults and azure.*
+#   config-loader.ps1 and keyvault-helper.ps1 (scripts/common/utilities/helpers) are retired: Import-AzlInfrastructure and AzlSecret.psm1 replace them
 # Invoke-Command, Test-Connection and Start-Sleep are mocked: no cluster, no machine, no vault and no credential is used.
 # Run: Import-Module Pester -RequiredVersion 5.9.1; Invoke-Pester ./tests/utilities/LegacyUtilities.Tests.ps1
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSAvoidGlobalVars', '', Justification = 'A Pester mock body runs in the scope of the script under test; a global is how the test collects the calls.')]
@@ -16,8 +16,6 @@ BeforeAll {
     $script:Repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
     $script:StopScript = [IO.Path]::Combine($script:Repo, 'scripts', 'common', 'utilities', 'tools', 'Stop-AzureLocalCluster.ps1')
     $script:RebootScript = [IO.Path]::Combine($script:Repo, 'scripts', 'lifecycle', 'operations', 'powershell', 'Invoke-NodeMaintenanceReboot.ps1')
-    $script:ConfigLoader = [IO.Path]::Combine($script:Repo, 'scripts', 'common', 'utilities', 'helpers', 'config-loader.ps1')
-    $script:VaultHelper = [IO.Path]::Combine($script:Repo, 'scripts', 'common', 'utilities', 'helpers', 'keyvault-helper.ps1')
     Import-Module powershell-yaml
     Import-Module ([IO.Path]::Combine($script:Repo, 'config', 'variables', 'scripts', 'VariableRegistry.psm1')) -Force
     $script:Registry = @(Get-RegistryVariable -Path ([IO.Path]::Combine($script:Repo, 'config', 'variables', 'schema', 'master-registry.yaml')))
@@ -238,55 +236,13 @@ Describe 'Invoke-NodeMaintenanceReboot.ps1' {
     }
 }
 
-Describe 'config-loader.ps1 and keyvault-helper.ps1' {
-    BeforeAll {
-        . $script:ConfigLoader
-        # keyvault-helper.ps1 needs the Az modules to load; the one function under test is taken out of the file and defined here.
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:VaultHelper, [ref]$null, [ref]$null)
-        $fn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Connect-AzureFromConfig' }, $true)
-        . ([scriptblock]::Create($fn.Extent.Text))
-        function Get-AzContext { }
-        function Connect-AzAccount { param($TenantId, $SubscriptionId) }
+Describe 'config-loader.ps1 and keyvault-helper.ps1 are retired' {
+    It '<_> is gone' -ForEach 'config-loader.ps1', 'keyvault-helper.ps1' {
+        Test-Path -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts', 'common', 'utilities', 'helpers', $_)) | Should -BeFalse
     }
-
-    Context 'Get-PlatformKeyVault reads key_vaults' {
-        It 'returns the vault when the file lists one' {
-            Get-PlatformKeyVault -Config @{ key_vaults = @(@{ name = 'kv-iic-mgmt-01'; purpose = 'management' }) } | Should -Be 'kv-iic-mgmt-01'
-        }
-        It 'returns the vault with the purpose asked for when the file lists several' {
-            $config = @{ key_vaults = @(@{ name = 'kv-iic-mgmt-01'; purpose = 'management' }, @{ name = 'kv-iic-dep-01'; purpose = 'deployment' }) }
-            Get-PlatformKeyVault -Config $config -Purpose 'deployment' | Should -Be 'kv-iic-dep-01'
-        }
-        It 'asks for a purpose when the file lists several vaults and none is given' {
-            $config = @{ key_vaults = @(@{ name = 'kv-iic-mgmt-01' }, @{ name = 'kv-iic-dep-01' }) }
-            { Get-PlatformKeyVault -Config $config } | Should -Throw '*-Purpose*'
-        }
-        It 'fails when no vault is listed or none has the purpose' {
-            { Get-PlatformKeyVault -Config @{} } | Should -Throw '*No Key Vault*'
-            { Get-PlatformKeyVault -Config @{ key_vaults = @(@{ name = 'kv-iic-mgmt-01'; purpose = 'management' }) } -Purpose 'backup' } | Should -Throw '*backup*'
-        }
+    It 'the infrastructure file is loaded by Import-AzlInfrastructure and secrets are read by AzlSecret.psm1' {
+        Test-Path -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts', 'common', 'infrastructure', 'AzlInfrastructure.psm1')) | Should -BeTrue
+        Test-Path -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts', 'common', 'secrets', 'AzlSecret.psm1')) | Should -BeTrue
     }
-
-    Context 'the keys the helpers read are in the registry' {
-        It 'Connect-AzureFromConfig connects with azure.tenant_id and azure.subscription_id' {
-            Mock Get-AzContext { $null }
-            Mock Connect-AzAccount { }
-            $tenant = [guid]::NewGuid().ToString()
-            $subscription = [guid]::NewGuid().ToString()
-            $null = Connect-AzureFromConfig -Config @{ azure = @{ tenant_id = $tenant; subscription_id = $subscription } } 6>$null
-            Should -Invoke Connect-AzAccount -Times 1 -ParameterFilter { $TenantId -eq $tenant -and $SubscriptionId -eq $subscription }
-        }
-        It 'Connect-AzureFromConfig refuses a file in the old layout (azure.tenant.id)' {
-            { Connect-AzureFromConfig -Config @{ azure = @{ tenant = @{ id = 'x' }; subscription = @{ id = 'y' } } } } | Should -Throw '*must be defined*'
-        }
-        It 'Test-ConfigPaths asks for the registered keys <_>' -ForEach 'azure.tenant_id', 'azure.subscription_id', 'key_vaults' {
-            (Test-ConfigPaths -Config @{}).CheckedPaths | Should -Contain $_
-            @($script:Registry | Where-Object Path -EQ $_).Count | Should -Be 1 -Because $_
-        }
-        It 'config-loader no longer reads the old key vault, tenant and subscription paths or the B2B section' {
-            $text = Get-Content -LiteralPath $script:ConfigLoader -Raw
-            $text | Should -Not -Match "azure_infrastructure\.key_vaults|azure\.tenant\.id|azure\.subscription\.id|b2b_configuration|_metadata\.(source_file|loaded_at)"
-            (Get-Command Get-B2BConfig -ErrorAction SilentlyContinue) | Should -BeNullOrEmpty
-        }
-    }
+    # That no script, pipeline, Ansible file or document names them any more is checked by tests/deploy-scripts/OldLayoutRetired.Tests.ps1.
 }

@@ -27,12 +27,7 @@ ansible:lint:
 config:validate:
   stage: validate
   script:
-    - pwsh -Command "
-        . scripts/common/utilities/helpers/config-loader.ps1;
-        \$config = Get-Config -ConfigPath '${CONFIG_PATH}';
-        if (-not \$config) { throw 'Config validation failed' };
-        Write-Host 'Configuration validated successfully'
-      "
+    - pwsh -NoProfile -File scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path "${INFRASTRUCTURE_FILE}"
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

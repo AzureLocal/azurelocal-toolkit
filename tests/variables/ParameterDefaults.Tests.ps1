@@ -6,7 +6,7 @@
 #     replace them); their task folders, catalogue entries and Orchestrated wrappers stay, and nothing registers or names the old scripts.
 #   * The four scripts of config/variables/scripts that defaulted to E:\git\... take their paths from $PSScriptRoot.
 #   * New-ScriptFromTemplate.ps1 has no placeholder text for -Description: the parameter is mandatory.
-#   * Set-InfrastructurePrep.ps1 has no default time source; New-PipelineSP.ps1 has no default environment name.
+#   * Set-InfrastructurePrep.ps1 and New-PipelineSP.ps1 are removed.
 # Every script that runs here runs in a child process against files in TestDrive. Nothing reaches Azure, a server or a node.
 # Run: Import-Module Pester -RequiredVersion 5.9.1; Invoke-Pester ./tests/variables/ParameterDefaults.Tests.ps1
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseDeclaredVarsMoreThanAssignments', '', Justification = 'Pester scopes.')]
@@ -166,7 +166,8 @@ Describe 'config/variables/scripts: the three report scripts run on files in Tes
     }
     It 'inventory-repo-variables.ps1 reads the repositories under the workspace root and writes the inventory' {
         $workspace = Join-Path $TestDrive 'workspace'
-        $repo = Join-Path $workspace 'azurelocal-toolkit' 'config' 'variables'
+        # The toolkit itself is not in the list: its own variables file of the old layout is retired. A sibling repository's example is read.
+        $repo = Join-Path $workspace 'azurelocal-avd' 'config'
         New-Item -ItemType Directory -Path $repo -Force | Out-Null
         Set-Content -LiteralPath (Join-Path $repo 'variables.example.yml') -Value "azure:`n  location: eastus`n  tenant_id: x"
         $out = Join-Path $TestDrive 'out-inventory'
@@ -208,24 +209,9 @@ Describe 'New-ScriptFromTemplate.ps1 has no placeholder description' {
     }
 }
 
-Describe 'Set-InfrastructurePrep.ps1 has no default time source' {
-    BeforeAll {
-        $script:Prep = [IO.Path]::Combine($script:Repo, 'scripts', 'deploy', '03-onprem-readiness', 'phase-02-enterprise-readiness', 'task-02-network-service-verification', 'powershell', 'Set-InfrastructurePrep.ps1')
-    }
-    It 'gives -NTPServer no default' {
-        $p = @(Get-ParameterAst $script:Prep) | Where-Object { $_.Name.VariablePath.UserPath -eq 'NTPServer' }
-        $p | Should -Not -BeNullOrEmpty
-        $p.DefaultValue | Should -BeNullOrEmpty
-    }
-    It 'does not name a time source in its text' {
-        (Get-Content -LiteralPath $script:Prep -Raw) | Should -Not -Match 'time\.windows\.com'
-    }
-    It 'stops at once, before it reaches any node, when -ConfigureNTP has no -NTPServer' {
-        # The check is the first statement after the parameters: no node name is resolved and nothing is connected.
-        $r = Invoke-Child $script:Prep @('-NodeNames', 'node-that-is-never-contacted', '-ConfigureNTP')
-        $r.ExitCode | Should -Not -Be 0
-        $r.Text | Should -Match 'ConfigureNTP needs -NTPServer'
-        $r.Text | Should -Not -Match 'Infrastructure Preparation'
+Describe 'Set-InfrastructurePrep.ps1' {
+    It 'is removed (Set-AzureLocalNodeConfiguration.ps1 sets the time source from networking.ntp_servers and installs the features; the pre-cluster verification checks them)' {
+        Test-Path -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts', 'deploy', '03-onprem-readiness', 'phase-02-enterprise-readiness', 'task-02-network-service-verification', 'powershell', 'Set-InfrastructurePrep.ps1')) | Should -BeFalse
     }
 }
 

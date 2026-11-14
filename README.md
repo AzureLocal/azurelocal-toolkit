@@ -121,13 +121,13 @@ The repository is designed to be configuration-driven.
 | Path | Purpose |
 |------|---------|
 | `config/variables/` | **The master of every variable** ([README](config/variables/README.md)). `schema/master-registry.yaml` is edited by hand; the `infrastructure.yml` schema, the master file, one template per tool and the variables reference are generated from it (`scripts/New-InfrastructureArtifacts.ps1`). Registry first: a new variable goes in the registry before anything uses it. |
-| `config/variables/schema/` | The registry, the variables schema, the generated `infrastructure.schema.json` and one schema per tool |
+| `config/variables/schema/` | The registry, the generated `infrastructure.schema.json` and one schema per tool |
 | `config/variables/templates/` | Generated: `infrastructure.master.yml` (every variable), scenario templates, one template per tool (ztp, os-configuration, deployment, cicd-infra, monitoring, discovery) |
-| `config/variables/examples/` | Worked `infrastructure.yml` examples (a full file, a ZTP-only file, one per scenario) and `variables.example.yml` |
+| `config/variables/examples/` | Worked `infrastructure.yml` examples (a full file, a ZTP-only file, one per scenario) |
 | `config/variables/docs/` | How to fill in `infrastructure.yml`, the migration guide, the generated variables reference |
 | `config/variables/scripts/` | Validators, the registry reader and the artifact generator |
 | `config/variables/reports/` | Generated validation and drift reports |
-| `scripts/common/utilities/helpers/config-loader.ps1` | PowerShell loader and export helpers for configuration data |
+| `scripts/common/infrastructure/AzlInfrastructure.psm1` | The one loader of `infrastructure.yml`: `Import-AzlInfrastructure` and `Get-AzlInfrastructureValue` |
 
 Where supported, automation should consume variables from the shared variable model rather than hardcoded values.
 

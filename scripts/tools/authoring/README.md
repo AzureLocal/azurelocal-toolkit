@@ -1,28 +1,29 @@
 # Authoring Tools
 
-This folder contains script authoring helpers used to create or transform scripts in this repository.
+This folder contains the script authoring helper used to create scripts in this repository.
 
 ## Files in this folder
 
 | File | Purpose | Key prerequisites |
 |------|---------|-------------------|
-| `New-ScriptFromTemplate.ps1` | Generates a new script from a template aligned with repo conventions | PowerShell 7 |
-| `Convert-ToStandaloneScript.ps1` | Converts a config-driven script into a standalone script with inline values | PowerShell 7, `powershell-yaml` |
+| `New-ScriptFromTemplate.ps1` | Generates a new script from the template of the toolkit (`-InfrastructureFile`, registered keys, exit codes 0, 1 and 2, no prompt) | PowerShell 7 |
 
-## When to use these tools
-
-- Use `New-ScriptFromTemplate.ps1` when you are starting a new script and want a consistent structure.
-- Use `Convert-ToStandaloneScript.ps1` when you already have a config-driven script and need a portable standalone copy.
+`Convert-ToStandaloneScript.ps1` is retired. It baked the values of a file into a copy of a script as inline variables, which is the opposite of the rule that
+the registry is the only master and that no script carries a value a deployment chooses. A script that has to run where the repository is not available
+takes its values as parameters from the caller.
 
 ## New-ScriptFromTemplate.ps1
 
 Creates a new script skeleton for one of the supported script types:
 
 - `PowerShell`
-- `AzurePowerShell`
-- `AzureCliPowerShell`
-- `AzureCliBash`
+- `AzurePowerShell` (checks the sign-in and the tenant of `azure.tenant_id`; never signs in)
+- `AzureCliPowerShell` (checks that `az` is signed in to that tenant; never signs in)
 - `InvokeScript`
+
+The skeleton has `-InfrastructureFile` (mandatory) and `-LogPath`, `SupportsShouldProcess`, the standard header lines, and loads the file with
+`Import-AzlInfrastructure`. It has no value of a deployment. Add the keys the script reads to `config/variables/schema/master-registry.yaml` first, then
+read them with `Get-AzlInfrastructureValue`.
 
 ### Common parameters
 
@@ -30,7 +31,6 @@ Creates a new script skeleton for one of the supported script types:
 - `-Name` sets the generated script name.
 - `-Description` sets the help text. It is required: the tool has no default text.
 - `-OutputPath` chooses where the file is written.
-- `-Standalone` generates a standalone PowerShell variant with inline configuration.
 
 ### Example
 
@@ -42,26 +42,6 @@ pwsh -File .\scripts\tools\authoring\New-ScriptFromTemplate.ps1 `
   -OutputPath .\scratch
 ```
 
-## Convert-ToStandaloneScript.ps1
-
-Reads a config-driven PowerShell script, inspects its `$config` references, and writes a standalone script with inline variables.
-
-### Common parameters
-
-- `-SourceScript` points to the original script.
-- `-ConfigPath` points to the YAML config file to read.
-- `-OutputPath` optionally overrides the generated output path.
-
-### Example
-
-```powershell
-pwsh -File .\scripts\tools\authoring\Convert-ToStandaloneScript.ps1 `
-  -SourceScript .\scripts\deploy\example.ps1 `
-  -ConfigPath .\config\variables\variables.example.yml `
-  -OutputPath .\scratch\example-standalone.ps1
-```
-
 ## Notes
 
-- `Convert-ToStandaloneScript.ps1` requires the `powershell-yaml` module to be installed.
-- These scripts are authoring helpers only. They do not replace the manual QA tools in `..\qa\`.
+- This script is an authoring helper only. It does not replace the manual QA tools in `..\qa\`.

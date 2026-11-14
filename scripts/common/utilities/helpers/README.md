@@ -1,98 +1,57 @@
 # Helper Utilities
 
-> **Purpose**: Shared helper functions for all PowerShell scripts in the toolkit  
+> **Purpose**: Small helpers that scripts of the toolkit dot-source or run  
 > **Standard**: [Scripting Standards](https://azurelocal.cloud/standards/scripting/scripting-standards)
 
 ## Files
 
 | File | Purpose |
 |------|---------|
-| `config-loader.ps1` | Load and parse `infrastructure.yml` configuration files |
-| `keyvault-helper.ps1` | Reads secret references through the secret resolver |
 | `logging.ps1` | Standardized logging with console colors and optional file output |
 | `error-handling.ps1` | Retry logic and error detail extraction |
+| `Connect-AzureSession.ps1` | Signs in to Azure with Azure PowerShell. Takes `-TenantId` and `-SubscriptionId`, or reads them from the infrastructure file (`-InfrastructureFile`). Never asks |
+| `Connect-AzureCliSession.ps1` | The same for the Azure CLI |
 
-## Usage
+## Where the old helpers went
 
-All scripts should dot-source these helpers:
+`config-loader.ps1` and `keyvault-helper.ps1` are retired. Nothing dot-sources them.
 
-```powershell
-# At the top of every script
-$ErrorActionPreference = "Stop"
-$scriptRoot = $PSScriptRoot
-
-# Import helpers
-. "$scriptRoot/../../common/utilities/helpers/config-loader.ps1"
-. "$scriptRoot/../../common/utilities/helpers/logging.ps1"
-. "$scriptRoot/../../common/utilities/helpers/keyvault-helper.ps1"
-. "$scriptRoot/../../common/utilities/helpers/error-handling.ps1"
-```
-
-## Configuration Loading
-
-### Option A: Load from infrastructure.yml (Recommended)
-
-```powershell
-# Load environment configuration
-$config = Get-SolutionConfig -Solution "azure-local"
-
-# Access values using the Variable Path Contract
-$tenantId = Get-ConfigValue -Config $config -Path 'azure.tenant_id'
-$subscriptionId = Get-ConfigValue -Config $config -Path 'azure.subscription_id'
-$kvName = Get-PlatformKeyVault -Config $config   # the vault listed under key_vaults
-
-# Get tags for Azure resources
-$tags = Get-ConfigTags -Config $config
-```
-
-### Option B: Environment Script (For Node Execution)
-
-When running scripts directly on nodes without access to the full config structure, generate an environment script:
-
-```powershell
-# Generated env-variables.ps1 for node execution
-$script:Environment = @{
-    TenantId = "00000000-0000-0000-0000-000000000000"
-    SubscriptionId = "00000000-0000-0000-0000-000000000000"
-    KeyVaultName = "kv-iic-mgmt-01"
-    Location = "westeurope"
-    Tags = @{
-        Environment = "Production"
-        ManagedBy = "AzureLocal Cloud Team"
-    }
-}
-```
-
-## Key Vault Operations
-
-### Reading Secrets
-
-Reading goes through the toolkit's one secret resolver (`scripts/common/secrets/AzlSecret.psm1`). The reference comes from the
-infrastructure file, and the loaded file is passed with it (it lists `key_vaults` and the `secrets` section).
-
-```powershell
-$infra = Import-AzlInfrastructure -Path ./infrastructure.yml
-$secretUri = $infra.identity.local_admin.password   # keyvault://, env://, file:// or command://
-$password = Get-SecretFromUri -Uri $secretUri -Infrastructure $infra -AsPlainText
-```
-
-### Writing Secrets
+| Need | Use |
+|------|-----|
+| Load the infrastructure file | `Import-AzlInfrastructure` in `scripts/common/infrastructure/AzlInfrastructure.psm1` |
+| Read a value | `Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.subscription_id'` (registered keys only) |
+| Check a file | `scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path ./infrastructure.yml` |
+| Read a secret | `Get-AzlSecretValue` (SecureString) and `Get-AzlSecretPlainText` in `scripts/common/secrets/AzlSecret.psm1` |
+| Build or test a secret reference | `New-AzlSecretReference` and `Test-AzlSecretReference` in the same module |
 
 No helper writes a secret. Set the value with `Set-AzKeyVaultSecret` (or the portal) as someone who may write it.
 `Deploy-KeyVaults.ps1` lists the references of the file whose secret is still missing.
 
+## Usage
+
+A script of the toolkit takes `-InfrastructureFile`, loads it once and reads values from it:
+
+```powershell
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
+
+$infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation
+$subscriptionId = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.subscription_id'
+$reference = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.local_admin.password'
+$password = Get-AzlSecretValue -Reference $reference -Infrastructure $infra
+```
+
 ## Logging
 
 ```powershell
-# Standard log levels
+. "$PSScriptRoot/../../common/utilities/helpers/logging.ps1"
+
 Write-Log -Level Info -Message "Starting deployment"
 Write-Log -Level Warning -Message "Resource already exists"
 Write-Log -Level Error -Message "Deployment failed"
 
-# Section headers
-Write-LogSection -Title "Stage 6: Security Configuration"
+Write-LogSection -Title "Security configuration"
 
-# File logging
 Start-LogFile -Path "C:\logs\deployment.log"
 # ... operations ...
 Stop-LogFile
@@ -101,28 +60,9 @@ Stop-LogFile
 ## Error Handling
 
 ```powershell
-# Retry pattern
+. "$PSScriptRoot/../../common/utilities/helpers/error-handling.ps1"
+
 $result = Invoke-WithRetry -ScriptBlock {
-    Connect-AzAccount -Tenant $tenantId
+    Get-AzContext
 } -MaxRetries 3 -ExponentialBackoff
-
-# Operation wrapper
-Invoke-Operation -Operation "Create Key Vault" -ScriptBlock {
-    New-AzKeyVault -Name $kvName -ResourceGroupName $rgName -Location $location
-}
 ```
-
-## Variable Path Contract
-
-All scripts use consistent paths to access configuration values. These paths are guaranteed to exist:
-
-| Path | Description |
-|------|-------------|
-| `azure.tenant_id` | Azure AD tenant ID |
-| `azure.subscription_id` | Subscription ID |
-| `key_vaults[].name` | Key Vault name (`Get-PlatformKeyVault`: the only vault listed, or the one whose `purpose` is given with `-Purpose`) |
-| `azure_infrastructure.resource_groups.<name>.name` | Resource group name |
-| `tags.*` | Standard Azure resource tags |
-| `credentials.<name>.password` | Credential secret URI |
-
-See [Scripting Standards - Variable Path Contract](https://azurelocal.cloud/standards/scripting/scripting-standards#variable-path-contract) for the complete list.

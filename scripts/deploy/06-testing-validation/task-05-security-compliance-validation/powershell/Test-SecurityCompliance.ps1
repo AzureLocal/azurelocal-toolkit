@@ -12,19 +12,16 @@
     - Azure Policy compliance state
     - Generates validation report for customer handover
 
-.PARAMETER ClusterName
-    Name of the Azure Local cluster.
+    Read only: it changes nothing on the cluster or in Azure. Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
+        cluster.name, azure.subscription_id, azure.resource_group
+        security.defender_for_cloud.enabled and security.defender_for_cloud.apply_cloud_security_benchmark: when the design turns the free
+        Defender for Cloud level (or the benchmark assignment) off, that check is not run. Both are true when the key is absent (the registry default).
+    The script does not sign in and asks nothing: run Connect-AzAccount first, and run it as an account that may read the cluster.
 
-.PARAMETER SubscriptionId
-    Azure subscription ID containing the cluster resource.
+    Exit codes: 0 no check failed; 1 a Defender for Cloud or encryption check failed; 2 a value of the file is missing or the file cannot be read.
 
-.PARAMETER ResourceGroupName
-    Resource group containing the Arc-enabled cluster.
-
-.PARAMETER ConfigPath
-    Path to infrastructure.yml configuration. The script reads cluster.name, azure.subscription_id, azure.resource_group,
-    security.defender_for_cloud.enabled and security.defender_for_cloud.apply_cloud_security_benchmark: when the design turns the
-    free Defender for Cloud level (or the benchmark assignment) off, that check is not run.
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Only the keys listed in the description are read; the whole file is not validated here.
 
 .PARAMETER OutputPath
     Path to save validation report. Default: .\logs\validation-reports\
@@ -37,7 +34,7 @@
     The oldest Microsoft Defender Antivirus signature, in days, that counts as current on a node. Default: 7.
 
 .EXAMPLE
-    .\Test-SecurityCompliance.ps1 -ClusterName "azl-cluster-01" -SubscriptionId "00000000-0000-0000-0000-000000000000" -ResourceGroupName "rg-azurelocal-01"
+    .\Test-SecurityCompliance.ps1 -InfrastructureFile ./infrastructure.yml
 
 .NOTES
     Author: AzureLocal Cloud Team Team
@@ -48,17 +45,8 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $false)]
-    [string]$ClusterName,
-
-    [Parameter(Mandatory = $false)]
-    [string]$SubscriptionId,
-
-    [Parameter(Mandatory = $false)]
-    [string]$ResourceGroupName,
-
-    [Parameter(Mandatory = $false)]
-    [string]$ConfigPath,
+    [Parameter(Mandatory)]
+    [string]$InfrastructureFile,
 
     [Parameter(Mandatory = $false)]
     [string]$OutputPath = ".\logs\validation-reports",
@@ -76,6 +64,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 # Built-in initiative "Microsoft cloud security benchmark". Fixed by Microsoft: the ID is the same in every tenant (Microsoft Learn, Azure Policy built-in initiatives).
 $BenchmarkDefinitionId = '/providers/Microsoft.Authorization/policySetDefinitions/1f3afdf9-d0c9-4c3d-847f-89da613e70a8'
@@ -86,16 +75,6 @@ function Write-Log {
         "INFO" { "White" }; "WARN" { "Yellow" }; "ERROR" { "Red" }; "SUCCESS" { "Green" }; "HEADER" { "Cyan" }
     }
     Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message" -ForegroundColor $color
-}
-
-function Import-InfrastructureConfig {
-    param([string]$Path)
-    if (-not $Path -or -not (Test-Path $Path)) { return $null }
-    if (-not (Get-Module -Name powershell-yaml -ListAvailable)) {
-        Install-Module -Name powershell-yaml -Force -Scope CurrentUser
-    }
-    Import-Module powershell-yaml
-    return Get-Content -Path $Path -Raw | ConvertFrom-Yaml
 }
 
 #region Validation Functions
@@ -157,7 +136,7 @@ function Test-RbacAssignments {
                 Write-Log "  $($group.Name): $($group.Count) assignment(s)" -Level "INFO"
             }
 
-            $ownerCount = ($assignments | Where-Object { $_.RoleDefinitionName -eq "Owner" }).Count
+            $ownerCount = @($assignments | Where-Object { $_.RoleDefinitionName -eq "Owner" }).Count
             if ($ownerCount -gt $MaxOwners) {
                 Write-Log "  WARNING: $ownerCount Owner assignments (recommend <= $MaxOwners)" -Level "WARN"
             }
@@ -167,8 +146,8 @@ function Test-RbacAssignments {
         }
 
         return [PSCustomObject]@{
-            TotalAssignments = $assignments.Count
-            OwnerCount       = ($assignments | Where-Object { $_.RoleDefinitionName -eq "Owner" }).Count
+            TotalAssignments = @($assignments).Count
+            OwnerCount       = @($assignments | Where-Object { $_.RoleDefinitionName -eq "Owner" }).Count
         }
     }
     catch {
@@ -243,7 +222,7 @@ function Test-AuditPolicies {
         try {
             $auditInfo = Invoke-Command -ComputerName $node -ScriptBlock {
                 $output = auditpol /get /category:* 2>&1
-                $enabledPolicies = ($output | Select-String "Success|Failure" | Where-Object { $_ -notmatch "No Auditing" }).Count
+                $enabledPolicies = @($output | Select-String "Success|Failure" | Where-Object { $_ -notmatch "No Auditing" }).Count
                 return @{ EnabledPolicies = $enabledPolicies }
             }
             Write-Log "  ${node}: $($auditInfo.EnabledPolicies) audit policy categories enabled" -Level $(if ($auditInfo.EnabledPolicies -gt 0) { "SUCCESS" } else { "WARN" })
@@ -289,20 +268,20 @@ Write-Log "========================================" -Level "HEADER"
 
 $defenderEnabled = $true
 $checkBenchmark = $true
-if ($ConfigPath) {
-    $config = Import-InfrastructureConfig -Path $ConfigPath
-    # security.defender_for_cloud.enabled and apply_cloud_security_benchmark: both true when the key is absent (the registry default).
-    $enabledValue = ${config}?['security']?['defender_for_cloud']?['enabled']                          # security.defender_for_cloud.enabled
-    $benchmarkValue = ${config}?['security']?['defender_for_cloud']?['apply_cloud_security_benchmark']     # security.defender_for_cloud.apply_cloud_security_benchmark
-    if ($enabledValue -is [bool]) { $defenderEnabled = $enabledValue }
-    if ($benchmarkValue -is [bool]) { $checkBenchmark = $benchmarkValue }
-    if (-not $ClusterName -and $config) { $ClusterName = $config.cluster.name }
-    if (-not $SubscriptionId -and $config) { $SubscriptionId = $config.azure.subscription_id }
-    if (-not $ResourceGroupName -and $config) { $ResourceGroupName = $config.azure.resource_group }
-}
+# ---- the values, from infrastructure.yml only
+try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Write-Log "Cannot read the infrastructure file: $($_.Exception.Message)" -Level "ERROR"; exit 2 }
+# security.defender_for_cloud.enabled and apply_cloud_security_benchmark: both true when the key is absent (the registry default).
+$enabledValue = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'security.defender_for_cloud.enabled'
+$benchmarkValue = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'security.defender_for_cloud.apply_cloud_security_benchmark'
+if ($enabledValue -is [bool]) { $defenderEnabled = $enabledValue }
+if ($benchmarkValue -is [bool]) { $checkBenchmark = $benchmarkValue }
+$ClusterName = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')).Trim()
+$SubscriptionId = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.subscription_id')).Trim()
+$ResourceGroupName = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.resource_group')).Trim()
 if (-not $ClusterName -or -not $SubscriptionId -or -not $ResourceGroupName) {
-    Write-Log "ClusterName, SubscriptionId, and ResourceGroupName are required." -Level "ERROR"
-    exit 1
+    Write-Log "cluster.name, azure.subscription_id and azure.resource_group are required in the infrastructure file." -Level "ERROR"
+    exit 2
 }
 
 $nodes = @((Get-ClusterNode -Cluster $ClusterName).Name)
@@ -359,5 +338,9 @@ Write-Log "========================================" -Level "HEADER"
 Write-Log "Security & Compliance Summary" -Level "SUCCESS"
 Write-Log "  Defender for Cloud free level checks passed: $defenderPass / $($defenderResults.Count)" -Level "INFO"
 Write-Log "  Encrypted volumes: $encPass / $($encryptionResults.Count)" -Level "INFO"
+
+$failedChecks = @($defenderResults | Where-Object { $_.Status -eq 'FAIL' }).Count + @($encryptionResults | Where-Object { $_.Status -eq 'FAIL' }).Count
+if ($failedChecks -gt 0) { exit 1 }
+exit 0
 
 #endregion Main

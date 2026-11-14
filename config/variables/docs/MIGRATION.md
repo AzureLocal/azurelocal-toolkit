@@ -384,6 +384,44 @@ New rules AZL-060 to AZL-068 (see README). **Steps for a 5.5 file:** set `_metad
 - **5.6.2: adapters are identified by hardware facts.** `nodes[].network_adapters[].mac_address` is now required. New optional keys: `port_index`, `pci_location` (`bus`, `device`, `function`), `vendor` (written by hardware discovery), `allowed_vlans` (the VLANs the switch port allows) and `os_name_override`. **Steps:** a file whose ports lack the MAC: run `Invoke-HardwareDiscovery.ps1 -UpdateInfrastructure` or add the MAC. Nothing else changes: without `os_name_override` no adapter is renamed and the deployment sends the name the node reports for the MAC. To get one name everywhere, add `os_name_override` per used port and run the OS configuration (step `NicNames`).
 - **5.6.3** adds `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`. Nothing is required. A logical network uses `gateway` and `ip_pool`; the 4.0 names `default_gateway` and `ip_pools` belong to the deprecated `networking.onprem.logical_networks[]`.
 
+## To 5.6.26: the old variables.yml layout is retired
+
+Schema 5.6.26 adds no key and removes no key that an `infrastructure.yml` ever accepted: a file of any 5.6 version is valid as it is. The registry loses the entries that only the old `variables.yml` layout (registry 4.0) had, and the files that checked that layout go with them.
+
+| Removed from the registry | Use instead |
+| --- | --- |
+| `environment.env_name`, `environment.env_type`, `environment.env_owner`, `environment.env_description` | `environment.name`, `environment.type`, `environment.owner`, `environment.description`. The infrastructure schema never had the `env_*` names. |
+| `site.env_name` | `site.name`. |
+| `identity.active_directory.security_groups_by_role` and every key under it (`org_prefix`, `cluster_id`, `azure_local_admins`, `operations`, `read_only`, `wac_admins`, `wac_users`, `hyperv_admins`, `storage_admins`) | `identity.active_directory.security_groups[]` (`name`, `purpose`, `members`, `local_groups`). The alias, which was to expire on 2027-05-07, is gone from `schema/alias-policy.json`. |
+
+Files removed with them, and what each reader uses now:
+
+| Removed | Readers it had | What they use now |
+| --- | --- | --- |
+| `config/variables/variables.example.yml` | `Test-VariablesFile.ps1`, `validate-variables.ps1`, `Test-VariableConfig.ps1`, `tests/variables/RegistryFirst.Tests.ps1`, `inventory-repo-variables.ps1` (the toolkit entry) and the documents | `config/variables/examples/infrastructure.example.yml`, the one example of the file. `scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path <file>` checks a file against the schema and the rules; `RegistryFirst.Tests.ps1` runs it on the example. |
+| `config/variables/schema/variables.schema.json` | the same three scripts | `config/variables/schema/infrastructure.schema.json` (generated from the registry). |
+| `config/variables/scripts/validate-variables.ps1`, `Test-VariablesFile.ps1`, `Test-VariableConfig.ps1` | `config/variables/README.md`, `scripts/tools/qa/README.md` | `Test-InfrastructureFile.ps1` and `validate-registry.ps1`. |
+| `scripts/common/utilities/helpers/config-loader.ps1` (`Get-SolutionConfig` read a folder that does not exist) | `Invoke-PostTerraformConfiguration.ps1` (removed), `Deploy-DefenderPaidPlans.ps1` (its `-Solution` mode is gone), the GitLab stages `validate.yml` and `validate-deployment.yml` (they called `Get-Config`, which it did not have) | `Import-AzlInfrastructure` and `Get-AzlInfrastructureValue` (`scripts/common/infrastructure/AzlInfrastructure.psm1`). The GitLab stages run `Test-InfrastructureFile.ps1`. |
+| `scripts/common/utilities/helpers/keyvault-helper.ps1` | none (every function wrapped `AzlSecret.psm1`) | `scripts/common/secrets/AzlSecret.psm1`: `Get-AzlSecretValue`, `Get-AzlSecretPlainText`, `New-AzlSecretReference`, `Test-AzlSecretReference`. |
+
+The three pipeline files `pipelines/azure-devops/azure-local-deploy.yml`, `pipelines/github-actions/azure-local-deploy.yml` and `pipelines/gitlab/.gitlab-ci.yml` named `CONFIG_PATH: config/variables/variables.yml`. They now name `INFRASTRUCTURE_FILE`.
+
+Scripts: none of the scripts of `scripts/deploy` stages 03, 05 and 06, `scripts/deploy/common`, `scripts/tools`, `scripts/lifecycle` and `scripts/common/utilities` takes `-ConfigPath` or `-ConfigFile` (or an alias of them) or prompts any more. `tests/deploy-scripts/OldLayoutRetired.Tests.ps1` checks it. The scripts that a schema 5 script replaces are removed:
+
+| Removed script | Replaced by |
+| --- | --- |
+| `Invoke-ADValidation-Arc.ps1`, `Invoke-ADValidation-AzVM.ps1`, `Test-ADConfiguration.ps1` | checks `ID-AD-003`, `ID-AD-004` and `ID-AD-012` of `Invoke-AzureLocalPreClusterVerification.ps1` (OU, LCM user, KDS root key) |
+| `Test-HardwareInspection.ps1` | `Get-HardwareInventory.ps1` (Redfish inventory) and `ND-008`, `ND-011` |
+| `Set-InfrastructurePrep.ps1` | `Set-AzureLocalNodeConfiguration.ps1` / `Invoke-AzureLocalOsConfiguration.ps1` (features, time source); checks `ND-001` to `ND-012` |
+| `Set-FirewallEndpoint.ps1` | `AZ-023` and `NW-005` (the endpoints Learn lists, probed from each node) |
+| `Test-NetworkReadiness.ps1` | `NW-001` to `NW-015` |
+| `Test-SdnPrerequisites.ps1`, `Set-SdnIntegration.ps1` | `Enable-ArcSdn.ps1` (checks the prerequisites Learn lists and plans under `-WhatIf`; SDN enabled by Azure Arc has no load balancer or gateway to configure) |
+| `Invoke-PostTerraformConfiguration.ps1` | `Invoke-AzureLocalOsConfiguration.ps1` and the other schema 5 entry scripts (it only called placeholders) |
+| `Convert-ToStandaloneScript.ps1` | none: it baked the values of a file into a script, which the registry-first rule forbids |
+| `Invoke-ClusterUpdates.ps1` | `Start-SolutionUpdateAfterDeployment.ps1` and Azure Update Manager. Learn lists manual runs of Cluster-Aware Updating, SConfig and the updates pane of the machine resource as unsupported ways to update Azure Local, and the script ran Windows Update on the machines. |
+
+`operations.licensing.windows_server_subscription` is read now: `Enable-WindowsServerSubscription.ps1` turns the add-on on when it is `true`. Nothing else about the key changed.
+
 ## To 5.6.25: the runner label and the approval environments of the pipelines
 
 Schema 5.6.25 adds one optional object under `devops`. Nothing is required for a file that does not run the toolkit's pipelines: a 5.6.24 file is valid as it is.
@@ -492,7 +530,7 @@ Removed:
 | `provisioning.iso.image_version` | Repeats `provisioning.os_version`. |
 | `identity.active_directory.join_options.rename_after_join` | Fixed: the machine gets its final name before the join and is never renamed after it. |
 
-Kept although no tool reads them: `environment.env_name`, `.env_type`, `.env_owner` and `.env_description` (the schema of the old `variables.yml`, `variables.schema.json`, requires `env_name`), and `identity.active_directory.security_groups_by_role.*` (a deprecated alias that expires on 2027-05-07; `alias-policy.json` and its test hold it until then). Removing them needs the old `variables.yml` layout to go first.
+Kept in 5.6.20 although no tool read them: `environment.env_name`, `.env_type`, `.env_owner` and `.env_description`, and `identity.active_directory.security_groups_by_role.*`. They went with the old `variables.yml` layout in 5.6.26 (see [To 5.6.26](#to-5628-the-old-variablesyml-layout-is-retired)).
 
 Left for the pass over the scripts under `scripts/deploy`: `provisioning.iso.path`, `nodes[].bmc.mac_address`, `networking.dhcp.server` and `hardware.bmc.settings`. Their readers are there.
 ## To 5.6.17: the Terraform and Ansible variables come from the file

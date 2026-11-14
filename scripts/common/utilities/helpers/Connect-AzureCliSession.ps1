@@ -4,44 +4,28 @@
 
 .DESCRIPTION
     Connects to Azure using Azure CLI (az login) and sets the subscription context.
-    This is a standalone authentication helper — no Key Vault or infrastructure.yml dependencies.
+    The tenant and the subscription come only from the infrastructure file: azure.tenant_id and azure.subscription_id.
+    The script asks for nothing. When a value of the file is missing or not a GUID it ends with exit code 2 and signs in to nothing.
 
-    Supports three modes:
-    1. Interactive login (default) — Opens browser for authentication
-    2. Device code login — For headless/remote sessions (use -UseDeviceCode)
-    3. Config-based login — Reads TenantId/SubscriptionId from infrastructure.yml (use -ConfigPath)
+    Two ways to sign in:
+    1. Browser login (default).
+    2. Device code login, for headless or remote sessions (use -UseDeviceCode).
 
-    All parameters are prompted for interactively if not provided at invocation.
+    Exit codes: 0 signed in and the subscription is set; 1 az login or az account set failed, or Azure CLI is missing; 2 the file
+    cannot be read or a value of it is missing.
 
-.PARAMETER TenantId
-    Microsoft Entra ID tenant ID. Prompted if not provided and -ConfigPath is not used.
-
-.PARAMETER SubscriptionId
-    Azure subscription ID. Prompted if not provided and -ConfigPath is not used.
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Only azure.tenant_id and azure.subscription_id are read.
 
 .PARAMETER UseDeviceCode
     Use device code flow instead of browser-based login. Useful for headless/SSH sessions.
 
-.PARAMETER ConfigPath
-    Optional path to an infrastructure.yml config file. If provided, TenantId and SubscriptionId
-    are read from azure.tenant_id and azure.subscription_id in the YAML config.
-    Requires the powershell-yaml module.
-
 .EXAMPLE
-    # Interactive — prompts for TenantId and SubscriptionId
-    .\Connect-AzureCliSession.ps1
-
-.EXAMPLE
-    # Pass parameters directly
-    .\Connect-AzureCliSession.ps1 -TenantId "00000000-0000-0000-0000-000000000000" -SubscriptionId "11111111-1111-1111-1111-111111111111"
+    .\Connect-AzureCliSession.ps1 -InfrastructureFile ./infrastructure.yml
 
 .EXAMPLE
     # Device code flow for headless sessions
-    .\Connect-AzureCliSession.ps1 -TenantId "00000000-..." -SubscriptionId "11111111-..." -UseDeviceCode
-
-.EXAMPLE
-    # Read values from infrastructure.yml
-    .\Connect-AzureCliSession.ps1 -ConfigPath "../../config/infrastructure.yml"
+    .\Connect-AzureCliSession.ps1 -InfrastructureFile ./infrastructure.yml -UseDeviceCode
 
 .NOTES
     File Name      : Connect-AzureCliSession.ps1
@@ -60,20 +44,11 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $false, HelpMessage = "Microsoft Entra ID tenant ID")]
-    [ValidatePattern('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')]
-    [string]$TenantId,
-
-    [Parameter(Mandatory = $false, HelpMessage = "Azure subscription ID")]
-    [ValidatePattern('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')]
-    [string]$SubscriptionId,
+    [Parameter(Mandatory)]
+    [string]$InfrastructureFile,
 
     [Parameter(Mandatory = $false, HelpMessage = "Use device code flow for headless/remote sessions")]
-    [switch]$UseDeviceCode,
-
-    [Parameter(Mandatory = $false, HelpMessage = "Path to infrastructure.yml config file")]
-    [ValidateScript({ Test-Path $_ -PathType Leaf })]
-    [string]$ConfigPath
+    [switch]$UseDeviceCode
 )
 
 #Requires -Version 7.0
@@ -113,7 +88,7 @@ Write-Log "[$script:ScriptName v$script:ScriptVersion] Starting Azure CLI sessio
 $azCmd = Get-Command az -ErrorAction SilentlyContinue
 if (-not $azCmd) {
     Write-Log "Azure CLI (az) not found. Install from: https://learn.microsoft.com/en-us/cli/azure/install-azure-cli" -Level Error
-    throw "Azure CLI is not installed or not in PATH."
+    exit 1
 }
 
 $azVersion = (az version 2>$null | ConvertFrom-Json).'azure-cli'
@@ -123,40 +98,17 @@ Write-Log "Azure CLI version: $azVersion"
 # CONFIGURATION RESOLUTION
 # =============================================================================
 
-# If ConfigPath is provided, read TenantId and SubscriptionId from YAML
-if ($ConfigPath) {
-    Write-Log "Loading configuration from: $ConfigPath"
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
-    if (-not (Get-Module -ListAvailable -Name powershell-yaml)) {
-        throw "powershell-yaml module required for -ConfigPath. Install with: Install-Module powershell-yaml -Scope CurrentUser"
-    }
-
-    Import-Module powershell-yaml -ErrorAction Stop
-    $yamlContent = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Yaml
-
-    if (-not $TenantId -and $yamlContent.azure.tenant_id) {
-        $TenantId = $yamlContent.azure.tenant_id
-        Write-Log "TenantId loaded from config: $TenantId"
-    }
-
-    if (-not $SubscriptionId -and $yamlContent.azure.subscription_id) {
-        $SubscriptionId = $yamlContent.azure.subscription_id
-        Write-Log "SubscriptionId loaded from config: $SubscriptionId"
-    }
-}
-
-# Prompt for any values still missing
-if (-not $TenantId) {
-    $TenantId = Read-Host -Prompt "Enter Microsoft Entra ID Tenant ID"
-    if ($TenantId -notmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') {
-        throw "Invalid Tenant ID format. Expected a GUID."
-    }
-}
-
-if (-not $SubscriptionId) {
-    $SubscriptionId = Read-Host -Prompt "Enter Azure Subscription ID"
-    if ($SubscriptionId -notmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$') {
-        throw "Invalid Subscription ID format. Expected a GUID."
+Write-Log "Loading the sign-in values from: $InfrastructureFile"
+try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Write-Error "Cannot read the infrastructure file: $($_.Exception.Message)" -ErrorAction Continue; exit 2 }
+$TenantId = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.tenant_id')
+$SubscriptionId = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.subscription_id')
+foreach ($pair in @(@('azure.tenant_id', $TenantId), @('azure.subscription_id', $SubscriptionId))) {
+    if ($pair[1] -notmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' -or $pair[1] -eq [guid]::Empty.ToString()) {
+        Write-Error "$($pair[0]) is missing, is not a GUID or is the all-zero placeholder. Set it in the infrastructure file." -ErrorAction Continue
+        exit 2
     }
 }
 

@@ -20,7 +20,7 @@
     or no credential could be built.
 
 .PARAMETER InfrastructureFile
-    Path to infrastructure.yml (schema 5). The old name -ConfigPath still works.
+    Path to infrastructure.yml (schema 5).
 
 .PARAMETER Credential
     Use this account instead of the ones in the file.
@@ -57,7 +57,7 @@
 #Requires -Version 7.0
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory)][Alias('ConfigPath')][string]$InfrastructureFile,   # Path to infrastructure.yml
+    [Parameter(Mandatory)][string]$InfrastructureFile,   # Path to infrastructure.yml
     [PSCredential]$Credential,                 # Override credential resolution
     [Parameter(Mandatory)][string]$TargetNode, # Required — hostname or management IP of node to reboot
     [string]$LogPath           = "",           # Override log file path

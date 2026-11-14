@@ -2,9 +2,7 @@
 # PLACEHOLDER: this script does not do the task. It ends with exit code 3 (NOT IMPLEMENTED) and changes nothing.
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$ConfigPath = '',
-    [System.Management.Automation.PSCredential]$Credential = $null,
-    [string[]]$TargetNode = @(),
+    [Parameter(Mandatory)][string]$InfrastructureFile,
     [string]$LogPath = ''
 )
 
@@ -31,8 +29,5 @@ Invoke-DeploymentOrchestrated `
     -ScriptPath $PSCommandPath `
     -TaskPath '03-onprem-readiness/phase-02-enterprise-readiness/task-02-network-service-verification' `
     -ActionName 'Invoke-InfrastructurePrep-Orchestrated' `
-    -ConfigPath $ConfigPath `
-    -Credential $Credential `
-    -TargetNode $TargetNode `
     -LogPath $LogPath `
     -Parameters $PSBoundParameters

@@ -14,8 +14,12 @@ BeforeAll {
     $script:Text = Get-Content -LiteralPath $script:Source -Raw
     Import-Module powershell-yaml
     # The script asks for the Az modules with #Requires; the test runs a copy without those two lines, because every Az call is a stub.
+    # The copy is in TestDrive, so the relative path of the infrastructure module is replaced by the real one.
+    $moduleLine = 'Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, ''..'', ''..'', ''..'', ''..'', ''common'', ''infrastructure'', ''AzlInfrastructure.psm1''))) -Force'
+    $script:Text | Should -Match ([regex]::Escape($moduleLine))
+    $realModule = "Import-Module '$([IO.Path]::Combine($repo, 'scripts', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))' -Force"
     $script:Copy = Join-Path $TestDrive 'Test-SecurityCompliance.ps1'
-    Set-Content -LiteralPath $script:Copy -Value (($script:Text -split "`r?`n" | Where-Object { $_ -notmatch '^#Requires -Module' }) -join "`n")
+    Set-Content -LiteralPath $script:Copy -Value ((($script:Text.Replace($moduleLine, $realModule)) -split "`r?`n" | Where-Object { $_ -notmatch '^#Requires -Module' }) -join "`n")
 
     function Set-AzContext { param($SubscriptionId, $ErrorAction) $null }
     function Get-AzResourceProvider { param($ProviderNamespace, $ErrorAction) [pscustomobject]@{ RegistrationState = 'Registered' } }
@@ -41,7 +45,7 @@ BeforeAll {
     function Invoke-Compliance {
         param([string]$File, [hashtable]$Extra = @{})
         $out = Join-Path $TestDrive "out-$([guid]::NewGuid().ToString('N').Substring(0, 6))"
-        $text = (& $script:Copy -ConfigPath $File -OutputPath $out @Extra 6>&1 | Out-String)
+        $text = (& $script:Copy -InfrastructureFile $File -OutputPath $out @Extra 6>&1 | Out-String)
         $report = Get-ChildItem -LiteralPath $out -Filter '*.json' | Select-Object -First 1
         [pscustomobject]@{ Text = $text; Report = (Get-Content -LiteralPath $report.FullName -Raw | ConvertFrom-Json) }
     }
@@ -84,6 +88,32 @@ Describe 'Test-SecurityCompliance.ps1' {
         $global:AzlScSignatureAge = 10
         (Invoke-Compliance (New-Infra)).Text | Should -Match '\[WARN\].*SigAge=10d'
         (Invoke-Compliance (New-Infra) @{ MaximumSignatureAgeDays = 14 }).Text | Should -Match '\[SUCCESS\].*SigAge=10d'
+    }
+
+    Context 'the infrastructure file' {
+        It 'takes -InfrastructureFile, mandatory, and no -ConfigPath, -ClusterName, -SubscriptionId or -ResourceGroupName' {
+            $ast = [System.Management.Automation.Language.Parser]::ParseFile($script:Source, [ref]$null, [ref]$null)
+            $names = @($ast.ParamBlock.Parameters | ForEach-Object { $_.Name.VariablePath.UserPath })
+            $names | Should -Contain 'InfrastructureFile'
+            foreach ($old in 'ConfigPath', 'ClusterName', 'SubscriptionId', 'ResourceGroupName') { $names | Should -Not -Contain $old }
+            $parameter = $ast.ParamBlock.Parameters | Where-Object { $_.Name.VariablePath.UserPath -eq 'InfrastructureFile' }
+            $parameter.Attributes.NamedArguments.ArgumentName | Should -Contain 'Mandatory'
+        }
+        It 'ends with exit code 2 when cluster.name is missing, and checks nothing' {
+            $file = Join-Path $TestDrive 'no-cluster.yml'
+            Set-Content -LiteralPath $file -Value (ConvertTo-Yaml ([ordered]@{ azure = [ordered]@{ subscription_id = '00000000-0000-0000-0000-000000000000'; resource_group = 'rg-iic-azl-01' } }))
+            $text = (& $script:Copy -InfrastructureFile $file -OutputPath (Join-Path $TestDrive 'out-none') 6>&1 | Out-String)
+            $LASTEXITCODE | Should -Be 2
+            $text | Should -Match 'cluster.name, azure.subscription_id and azure.resource_group are required'
+        }
+        It 'ends with exit code 2 when the file cannot be read' {
+            $null = & $script:Copy -InfrastructureFile (Join-Path $TestDrive 'missing.yml') -OutputPath (Join-Path $TestDrive 'out-none2') 6>&1
+            $LASTEXITCODE | Should -Be 2
+        }
+        It 'ends with exit code 0 when no check failed' {
+            $null = Invoke-Compliance (New-Infra)
+            $LASTEXITCODE | Should -Be 0
+        }
     }
 
     Context 'the script text' {

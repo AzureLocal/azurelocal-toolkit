@@ -118,10 +118,10 @@ Describe 'The combined phase 03 scripts are removed' {
 }
 
 Describe 'Values that Microsoft fixes are named with their source' {
-    It 'the firewall endpoint lists say that Learn fixes them' {
+    It 'the firewall endpoint list says that Learn fixes it (the two older scripts with their own lists are removed)' {
         $net = [IO.Path]::Combine($script:Deploy, '..', '03-onprem-readiness', 'phase-03-network-infrastructure')
-        (Get-Content -LiteralPath ([IO.Path]::Combine($net, 'task-03-firewall-endpoint-verification', 'powershell', 'Set-FirewallEndpoint.ps1')) -Raw) | Should -Match 'Fixed by Microsoft, not a choice of the deployment'
-        (Get-Content -LiteralPath ([IO.Path]::Combine($net, 'task-04-network-validation', 'powershell', 'Test-NetworkReadiness.ps1')) -Raw) | Should -Match 'fixed by Microsoft \(Learn: Firewall requirements for Azure Local\)'
+        Test-Path -LiteralPath ([IO.Path]::Combine($net, 'task-03-firewall-endpoint-verification', 'powershell', 'Set-FirewallEndpoint.ps1')) | Should -BeFalse
+        Test-Path -LiteralPath ([IO.Path]::Combine($net, 'task-04-network-validation', 'powershell', 'Test-NetworkReadiness.ps1')) | Should -BeFalse
         (Get-Content -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts', 'common', 'arm-deployment', 'verification', 'AzlVerification.Endpoints.psm1')) -Raw) | Should -Match 'The list is fixed by Microsoft, not a choice of the deployment'
     }
 }

@@ -7,15 +7,19 @@
     - Cluster quorum configuration and witness health
     - Cluster Shared Volume availability
     - Live migration settings and test migration
-    - Simulated node drain and recovery
+    - Node drain readiness (read only)
     - Cluster-Aware Updating readiness
     - Generates validation report for customer handover
 
-.PARAMETER ClusterName
-    Name of the Azure Local cluster.
+    It reads the cluster and changes nothing in it: the live migration check reads the settings of each node and the drain check reads the
+    state of the cluster; no VM is moved and no node is drained. Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
+        cluster.name
+    The script does not sign in and asks nothing. Run it as an account that may read the cluster.
 
-.PARAMETER ConfigPath
-    Path to infrastructure.yml configuration.
+    Exit codes: 0 the quorum is healthy and no CSV failed; 1 the quorum check or a CSV check failed; 2 cluster.name is missing or the file cannot be read.
+
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Only the keys listed in the description are read; the whole file is not validated here.
 
 .PARAMETER OutputPath
     Path to save validation report. Default: .\logs\validation-reports\
@@ -24,10 +28,10 @@
     Skip live migration test if no test VMs are available.
 
 .EXAMPLE
-    .\Test-HighAvailability.ps1 -ClusterName "azl-cluster-01"
+    .\Test-HighAvailability.ps1 -InfrastructureFile ./infrastructure.yml
 
 .EXAMPLE
-    .\Test-HighAvailability.ps1 -ClusterName "azl-cluster-01" -SkipMigrationTest
+    .\Test-HighAvailability.ps1 -InfrastructureFile ./infrastructure.yml -SkipMigrationTest
 
 .NOTES
     Author: AzureLocal Cloud Team Team
@@ -38,11 +42,8 @@
 
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory = $false)]
-    [string]$ClusterName,
-
-    [Parameter(Mandatory = $false)]
-    [string]$ConfigPath,
+    [Parameter(Mandatory)]
+    [string]$InfrastructureFile,
 
     [Parameter(Mandatory = $false)]
     [string]$OutputPath = ".\logs\validation-reports",
@@ -55,6 +56,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 function Write-Log {
     param([string]$Message, [string]$Level = "INFO")
@@ -62,16 +64,6 @@ function Write-Log {
         "INFO" { "White" }; "WARN" { "Yellow" }; "ERROR" { "Red" }; "SUCCESS" { "Green" }; "HEADER" { "Cyan" }
     }
     Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message" -ForegroundColor $color
-}
-
-function Import-InfrastructureConfig {
-    param([string]$Path)
-    if (-not $Path -or -not (Test-Path $Path)) { return $null }
-    if (-not (Get-Module -Name powershell-yaml -ListAvailable)) {
-        Install-Module -Name powershell-yaml -Force -Scope CurrentUser
-    }
-    Import-Module powershell-yaml
-    return Get-Content -Path $Path -Raw | ConvertFrom-Yaml
 }
 
 #region Validation Functions
@@ -214,7 +206,7 @@ function Test-ClusterAwareUpdating {
             try { Get-CauPlugin -ErrorAction SilentlyContinue } catch { $null }
         }
         if ($cauPlugin) {
-            Write-Log "  CAU plugins available: $($cauPlugin.Count)" -Level "INFO"
+            Write-Log "  CAU plugins available: $(@($cauPlugin).Count)" -Level "INFO"
         }
     }
     catch {
@@ -247,16 +239,15 @@ Write-Log "========================================" -Level "HEADER"
 Write-Log "High Availability Validation" -Level "HEADER"
 Write-Log "========================================" -Level "HEADER"
 
-if ($ConfigPath) {
-    $config = Import-InfrastructureConfig -Path $ConfigPath
-    if (-not $ClusterName -and $config) { $ClusterName = $config.cluster.name }
-}
+# ---- the values, from infrastructure.yml only
+try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Write-Log "Cannot read the infrastructure file: $($_.Exception.Message)" -Level "ERROR"; exit 2 }
+$ClusterName = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')).Trim()
 if (-not $ClusterName) {
-    Write-Log "ClusterName is required." -Level "ERROR"
-    exit 1
+    Write-Log "cluster.name is missing in the infrastructure file. It is the name of the cluster to test." -Level "ERROR"
+    exit 2
 }
-
-$nodes = (Get-ClusterNode -Cluster $ClusterName).Name
+$nodes = @((Get-ClusterNode -Cluster $ClusterName).Name)
 Write-Log "Cluster: $ClusterName ($($nodes.Count) nodes)" -Level "INFO"
 Write-Host ""
 
@@ -291,14 +282,17 @@ $reportFile = Join-Path $OutputPath "04-high-availability-$(Get-Date -Format 'yy
 $report | ConvertTo-Json -Depth 10 | Set-Content -Path $reportFile -Encoding UTF8
 Write-Log "Report saved: $reportFile" -Level "INFO"
 
-$csvPass = ($csvResults | Where-Object { $_.Status -eq "PASS" }).Count
-$csvFail = ($csvResults | Where-Object { $_.Status -eq "FAIL" }).Count
+$csvPass = @($csvResults | Where-Object { $_.Status -eq "PASS" }).Count
+$csvFail = @($csvResults | Where-Object { $_.Status -eq "FAIL" }).Count
 
 Write-Host ""
 Write-Log "========================================" -Level "HEADER"
 Write-Log "High Availability Summary" -Level "SUCCESS"
 Write-Log "  Quorum: $($quorumResult.Status)" -Level "INFO"
 Write-Log "  CSVs: $csvPass pass / $csvFail fail" -Level "INFO"
-Write-Log "  Migration enabled on $(($migrationResults | Where-Object { $_.Status -eq 'PASS' }).Count) / $($nodes.Count) nodes" -Level "INFO"
+Write-Log "  Migration enabled on $(@($migrationResults | Where-Object { $_.Status -eq 'PASS' }).Count) / $($nodes.Count) nodes" -Level "INFO"
+
+if ($csvFail -gt 0 -or $quorumResult.Status -eq 'FAIL') { exit 1 }
+exit 0
 
 #endregion Main

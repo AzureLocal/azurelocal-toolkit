@@ -39,7 +39,7 @@ on:
 env:
   TF_ROOT: src/terraform/environments/azure-local
   ANSIBLE_ROOT: src/ansible
-  CONFIG_PATH: config/variables/variables.yml
+  INFRASTRUCTURE_FILE: config/infrastructure.yml
   TERRAFORM_VERSION: '1.6'
 
 permissions:

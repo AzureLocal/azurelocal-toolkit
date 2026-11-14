@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
 # identity.active_directory.security_groups is the list-of-groups form (name, purpose, members, local_groups). The 4.0 object-by-role
-# form is security_groups_by_role (deprecated). The Ansible AD preparation role and the phase-06 task read the canonical form.
+# form security_groups_by_role is removed (registry 5.0.58). The Ansible AD preparation role and the phase-06 task read the canonical form.
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Pester blocks.')]
 param()
@@ -29,13 +29,13 @@ Describe 'security_groups, the canonical list form' {
         $role | Should -Not -Match 'item\.scope'
     }
 
-    It 'the registry has the canonical list and keeps the 4.0 form as a deprecated alias' {
+    It 'the registry has the canonical list and no longer has the 4.0 form (removed in registry 5.0.58)' {
         Import-Module (Join-Path $script:Repo 'config\variables\scripts\VariableRegistry.psm1') -Force
         $reg = @(Get-RegistryVariable -Path (Join-Path $script:Repo 'config\variables\schema\master-registry.yaml'))
         $paths = $reg.Path
         $paths | Should -Contain 'identity.active_directory.security_groups[].local_groups'
-        $paths | Should -Contain 'identity.active_directory.security_groups_by_role'
-        ($reg | Where-Object Path -eq 'identity.active_directory.security_groups_by_role').Deprecated | Should -BeTrue
+        @($paths | Where-Object { $_ -like 'identity.active_directory.security_groups_by_role*' }) | Should -BeNullOrEmpty
+        (Get-Content (Join-Path $script:Repo 'config\variables\schema\alias-policy.json') -Raw) | Should -Not -Match 'security_groups_by_role'
     }
 
     It 'the phase-06 task builds its assignments from the list (WhatIf, nothing remote)' {

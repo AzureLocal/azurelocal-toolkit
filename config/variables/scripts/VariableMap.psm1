@@ -97,7 +97,7 @@ function Get-MapAncestor {
 function Get-MapToolOfFile {
     # The tool a toolkit script or module belongs to.
     param([string]$File, [string]$Function)
-    if ($File -match '/(Test-InfrastructureFile|Test-VariablesFile|validate-variables|validate-registry|Compare-InfrastructureSchemaToRegistry|Test-ToolParameterRegistration)\.ps1$') { return 'validator' }
+    if ($File -match '/(Test-InfrastructureFile|validate-registry|Compare-InfrastructureSchemaToRegistry|Test-ToolParameterRegistration)\.ps1$') { return 'validator' }
     if ($File -match '/AzlInfrastructure\.psm1$' -and $Function -match 'Finding|^Test-AzlInfrastructure$|^Get-SchemaFinding|^Read-InfrastructureFile') { return 'validator' }
     if ($File -match '/(node-configuration|remoting)/' -or $File -match 'phase-03-os-configuration') { return 'os-configuration' }
     if ($File -match 'arm-deployment/verification/' -or $File -match '/AzlPreCluster') { return 'pre-cluster-verification' }

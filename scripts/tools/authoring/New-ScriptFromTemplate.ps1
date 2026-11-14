@@ -1,19 +1,25 @@
 <#
 .SYNOPSIS
-    Creates a new script from a template following Azure Local Cloud scripting standards.
+    Creates a new script from the template of the toolkit: one that takes -InfrastructureFile and reads registered keys.
 
 .DESCRIPTION
-    Generates a new script file with proper structure, comment-based help,
-    parameter validation, and config loading. Supports both config-driven
-    and standalone script types.
+    Writes a PowerShell 7 script with the structure every script of scripts/deploy follows:
+      - comment-based help with the keys the script reads and the exit codes (0 done, 1 a call failed, 2 a value is missing);
+      - -InfrastructureFile (mandatory) and -LogPath, SupportsShouldProcess;
+      - Set-StrictMode, $ErrorActionPreference = 'Stop';
+      - the file is loaded with Import-AzlInfrastructure and read with Get-AzlInfrastructureValue, never by a path of its own;
+      - no prompt: a script never asks for a value or a credential.
+
+    The template has no value of a deployment. Add the keys the script reads to config/variables/schema/master-registry.yaml first (the registry
+    is the only master), then read them in the script, and register the script parameters with config/variables/scripts/New-ScriptParameterRegistry.ps1.
+    A script that needs a secret reads it through scripts/common/secrets/AzlSecret.psm1.
 
 .PARAMETER ScriptType
     Type of script to generate:
-    - PowerShell: PowerShell Core script (Verb-Noun.ps1)
-    - AzurePowerShell: Azure PowerShell script (Verb-AzResource.ps1)
-    - AzureCliPowerShell: Azure CLI for PowerShell (az-verb-resource.ps1)
-    - AzureCliBash: Azure CLI Bash script (az-verb-resource.sh)
-    - InvokeScript: Remote/management-box script (Invoke-Action.ps1)
+    - PowerShell: PowerShell 7 script (Verb-Noun.ps1)
+    - AzurePowerShell: Azure PowerShell script (Verb-AzResource.ps1). It checks the sign-in and the tenant of azure.tenant_id; it does not sign in.
+    - AzureCliPowerShell: Azure CLI called from PowerShell (az-verb-resource.ps1). It checks that az is signed in; it does not sign in.
+    - InvokeScript: Remote or management-box script (Invoke-Action.ps1)
 
 .PARAMETER Name
     Name for the script (will be formatted according to type).
@@ -24,25 +30,19 @@
 .PARAMETER OutputPath
     Directory to create the script in. Defaults to current directory.
 
-.PARAMETER Standalone
-    Generate a standalone script with inline variables instead of config-driven.
-
 .EXAMPLE
     .\New-ScriptFromTemplate.ps1 -ScriptType AzurePowerShell -Name "New-AzKeyVault" -Description "Creates a Key Vault"
 
-.EXAMPLE
-    .\New-ScriptFromTemplate.ps1 -ScriptType AzurePowerShell -Name "New-AzKeyVault" -Description "Creates a Key Vault" -Standalone
-
 .NOTES
     Author: AzureLocal Cloud Team Team
-    Version: 1.0.0
+    Version: 2.0.0
 #>
 
 #Requires -Version 7.0
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [ValidateSet("PowerShell", "AzurePowerShell", "AzureCliPowerShell", "AzureCliBash", "InvokeScript")]
+    [ValidateSet("PowerShell", "AzurePowerShell", "AzureCliPowerShell", "InvokeScript")]
     [string]$ScriptType,
 
     [Parameter(Mandatory = $true)]
@@ -53,10 +53,7 @@ param(
     [string]$Description,
 
     [Parameter(Mandatory = $false)]
-    [string]$OutputPath = ".",
-
-    [Parameter(Mandatory = $false)]
-    [switch]$Standalone
+    [string]$OutputPath = "."
 )
 
 Set-StrictMode -Version Latest
@@ -64,352 +61,132 @@ $ErrorActionPreference = "Stop"
 
 # Determine file name based on type
 switch ($ScriptType) {
-    "PowerShell" {
-        $fileName = "$Name.ps1"
-        $extension = "ps1"
-    }
-    "AzurePowerShell" {
-        $fileName = "$Name.ps1"
-        if ($Standalone) { $fileName = "$Name-Standalone.ps1" }
-        $extension = "ps1"
-    }
-    "AzureCliPowerShell" {
-        $fileName = "az-$($Name.ToLower()).ps1"
-        $extension = "ps1"
-    }
-    "AzureCliBash" {
-        $fileName = "az-$($Name.ToLower()).sh"
-        $extension = "sh"
-    }
-    "InvokeScript" {
-        $fileName = "Invoke-$Name.ps1"
-        $extension = "ps1"
-    }
+    "PowerShell" { $fileName = "$Name.ps1" }
+    "AzurePowerShell" { $fileName = "$Name.ps1" }
+    "AzureCliPowerShell" { $fileName = "az-$($Name.ToLower()).ps1" }
+    "InvokeScript" { $fileName = "Invoke-$Name.ps1" }
 }
 
 $fullPath = Join-Path $OutputPath $fileName
 
-# Generate PowerShell template
-if ($extension -eq "ps1") {
-    if ($Standalone) {
-        $template = @"
-<#
-.SYNOPSIS
-    $Description
+# The block of the script that checks the sign-in. Only the Azure types have one.
+$azureCheck = switch ($ScriptType) {
+    "AzurePowerShell" {
+        @'
 
-.DESCRIPTION
-    $Description
-    
-    This is a STANDALONE script with all configuration inline.
-    No external dependencies required - can be run anywhere.
+# ---- preconditions (read only): the script does not sign in. Run Connect-AzAccount to the tenant of the file first.
+$tenantId = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.tenant_id')).Trim()
+if (-not $tenantId) { Exit-InputProblem 'azure.tenant_id is missing in the infrastructure file.' }
+$context = Get-AzContext
+if (-not $context) { Exit-Failed 'Not signed in to Azure. Run Connect-AzAccount -Tenant <azure.tenant_id>.' }
+if ([string]$context.Tenant.Id -ne $tenantId) { Exit-Failed "Signed in to tenant $($context.Tenant.Id), but azure.tenant_id is $tenantId. Sign in to the right tenant." }
+'@
+    }
+    "AzureCliPowerShell" {
+        @'
 
-.PARAMETER WhatIf
-    Shows what would happen without making changes.
-
-.EXAMPLE
-    .\$fileName
-    
-    Runs the script with the configured values.
-
-.EXAMPLE
-    .\$fileName -WhatIf
-    
-    Shows what would be done without making changes.
-
-.NOTES
-    Type: Standalone (Option 5)
-    Author: AzureLocal Cloud Team Team
-    Date: $(Get-Date -Format 'yyyy-MM-dd')
-    Version: 1.0.0
-#>
-
-[CmdletBinding(SupportsShouldProcess)]
-param()
-
-#Requires -Modules Az.Accounts
-
-`$ErrorActionPreference = "Stop"
-
-#region CONFIGURATION
-# ============================================================================
-# STANDALONE SCRIPT CONFIGURATION
-# All variables below map to infrastructure.yml paths
-# Update these values for your environment
-# ============================================================================
-
-# Azure tenant and subscription
-# infrastructure.yml path: azure.tenant_id
-`$azure_tenant_id = "00000000-0000-0000-0000-000000000000"
-
-# infrastructure.yml path: azure.subscription_id
-`$azure_subscription_id = "00000000-0000-0000-0000-000000000000"
-
-# Key Vault of the file (the first entry of key_vaults)
-# infrastructure.yml path: key_vaults[0].name
-`$key_vault_name = "<key-vault-name>"
-
-# infrastructure.yml path: key_vaults[0].resource_group
-`$key_vault_resource_group = "<resource-group-name>"
-
-# Cluster configuration
-# infrastructure.yml path: cluster.name
-`$cluster_name = "<cluster-name>"
-
-# Add additional variables as needed...
-
-#endregion CONFIGURATION
-
-# ============================================================================
-# MAIN LOGIC
-# ============================================================================
-
-Write-Host "Starting $Name..." -ForegroundColor Cyan
-
-# TODO: Add your script logic here
-# Use the variables defined above, e.g.:
-# `$tenantId = `$azure_tenant_id
-# `$subscriptionId = `$azure_subscription_id
-
-if (`$PSCmdlet.ShouldProcess("Target", "Action")) {
-    # Perform action
-    Write-Host "Action completed successfully." -ForegroundColor Green
+# ---- preconditions (read only): the script does not sign in. Run az login to the tenant of the file first.
+$tenantId = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.tenant_id')).Trim()
+if (-not $tenantId) { Exit-InputProblem 'azure.tenant_id is missing in the infrastructure file.' }
+if (-not (Get-Command -Name az -ErrorAction SilentlyContinue)) { Exit-Failed 'The Azure CLI (az) was not found.' }
+$account = az account show --output json 2>$null | ConvertFrom-Json
+if (-not $account) { Exit-Failed 'Not signed in to the Azure CLI. Run az login --tenant <azure.tenant_id>.' }
+if ([string]$account.tenantId -ne $tenantId) { Exit-Failed "Signed in to tenant $($account.tenantId), but azure.tenant_id is $tenantId. Sign in to the right tenant." }
+'@
+    }
+    default { '' }
 }
+$keysRead = if ($ScriptType -in 'AzurePowerShell', 'AzureCliPowerShell') { "        azure.tenant_id" } else { "        (list every key the script reads here, as a dotted path)" }
 
-# ============================================================================
-# OUTPUT
-# ============================================================================
-
-Write-Host "`nScript completed." -ForegroundColor Green
-"@
-    } else {
-        $template = @"
+$template = @"
 <#
 .SYNOPSIS
     $Description
 
 .DESCRIPTION
     $Description
-    
-    Reads configuration from infrastructure.yml.
 
-.PARAMETER ConfigPath
-    Path to infrastructure.yml. Defaults to relative path from script location.
+    Idempotent: an item that is already in place is reported and left alone. -WhatIf shows what would change and changes nothing.
+    The script asks for nothing and does not sign in.
 
-.PARAMETER WhatIf
-    Shows what would happen without making changes.
+    Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
+$keysRead
+
+    Exit codes: 0 done, already there, or planned under -WhatIf; 1 a call or a precondition failed; 2 a value in the file is missing or not usable
+    (nothing was sent anywhere).
+
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here.
+
+.PARAMETER LogPath
+    Optional. Also append the progress lines to this file. Keep it out of the repository.
 
 .EXAMPLE
-    .\$fileName -ConfigPath .\configs\infrastructure.yml
-    
-    Runs the script with the specified config file.
+    ./$fileName -InfrastructureFile ./infrastructure.yml -WhatIf
+
+    Shows what would happen. Changes nothing.
 
 .NOTES
-    Type: Config-Driven (Option 2)
-    Author: AzureLocal Cloud Team Team
+    Type: schema 5 script (see scripts/tools/authoring/README.md)
     Date: $(Get-Date -Format 'yyyy-MM-dd')
-    Version: 1.0.0
 #>
-
+#Requires -Version 7.0
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory = `$false)]
-    [string]`$ConfigPath
+    [Parameter(Mandatory)][string]`$InfrastructureFile,
+    [string]`$LogPath
 )
+Set-StrictMode -Version Latest
+`$ErrorActionPreference = 'Stop'
+`$logFile = `$LogPath
 
-#Requires -Modules Az.Accounts, powershell-yaml
-
-`$ErrorActionPreference = "Stop"
-`$scriptRoot = `$PSScriptRoot
-
-# ============================================================================
-# CONFIGURATION LOADING
-# ============================================================================
-
-Write-Host "[1/N] Loading infrastructure configuration..." -ForegroundColor Cyan
-
-if (`$ConfigPath) {
-    `$infraConfigPath = `$ConfigPath
-} else {
-    `$infraConfigPath = Join-Path `$scriptRoot "..\..\..\..\configs\infrastructure.yml"
-}
-
-if (!(Test-Path `$infraConfigPath)) {
-    throw "infrastructure.yml not found at `$infraConfigPath"
-}
-
-Import-Module powershell-yaml -ErrorAction Stop
-`$content = Get-Content -Path `$infraConfigPath -Raw
-`$config = ConvertFrom-Yaml `$content -Ordered
-
-# Extract required values from config
-`$tenantId = `$config["azure"]["tenant_id"]
-`$subscriptionId = `$config["azure"]["subscription_id"]
-`$kvName = `$config["key_vaults"][0]["name"]
-
-Write-Host "  Tenant ID: `$tenantId" -ForegroundColor Gray
-Write-Host "  Subscription ID: `$subscriptionId" -ForegroundColor Gray
-
-# ============================================================================
-# MAIN LOGIC
-# ============================================================================
-
-Write-Host "`n[2/N] Performing action..." -ForegroundColor Cyan
-
-# TODO: Add your script logic here
-
-if (`$PSCmdlet.ShouldProcess("Target", "Action")) {
-    # Perform action
-    Write-Host "  Action completed successfully." -ForegroundColor Green
-}
-
-# ============================================================================
-# OUTPUT
-# ============================================================================
-
-Write-Host "`nScript completed." -ForegroundColor Green
-"@
+function Find-AzlModule([string]`$RelativePath) {
+    # Walk up from this script to the repository root that holds scripts/common.
+    `$current = Get-Item -LiteralPath `$PSScriptRoot
+    while (`$null -ne `$current) {
+        `$candidate = [IO.Path]::Combine(`$current.FullName, 'scripts', 'common', `$RelativePath)
+        if (Test-Path -LiteralPath `$candidate) { return `$candidate }
+        `$current = `$current.Parent
     }
-} else {
-    # Bash template
-    $template = @"
-#!/bin/bash
-#===============================================================================
-# Script Name: $fileName
-# Description: $Description
-# Author: Azure Local Cloud AzureLocalCloud Team
-# Created: $(Get-Date -Format 'yyyy-MM-dd')
-# Version: 1.0.0
-#
-# Dependencies:
-#   - Azure CLI (az) version 2.50.0+
-#   - jq for JSON processing
-#   - yq for YAML processing
-#
-# Usage:
-#   ./$fileName -c <config-path>
-#
-# Parameters:
-#   -c, --config    Path to infrastructure.yml (required)
-#   -v, --verbose   Enable verbose output
-#   -h, --help      Show this help message
-#
-# Exit Codes:
-#   0 - Success
-#   1 - General error
-#   2 - Invalid arguments
-#   3 - Azure CLI error
-#   4 - Configuration error
-#===============================================================================
-
-set -euo pipefail
-IFS=`$'\n\t'
-
-# Script directory
-SCRIPT_DIR="`$(cd "`$(dirname "`${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT_NAME="`$(basename "`${BASH_SOURCE[0]}")"
-
-# Default values
-VERBOSE=false
-CONFIG_FILE=""
-
-#===============================================================================
-# LOGGING FUNCTIONS
-#===============================================================================
-log_info() {
-    echo "[INFO] `$(date '+%Y-%m-%d %H:%M:%S') - `$*"
+    throw "Unable to find scripts/common/`$RelativePath above '`$PSScriptRoot'."
 }
+Import-Module (Find-AzlModule 'infrastructure/AzlInfrastructure.psm1') -Force
 
-log_warn() {
-    echo "[WARN] `$(date '+%Y-%m-%d %H:%M:%S') - `$*" >&2
+function Write-Line([string]`$Text) {
+    Write-Information -MessageData `$Text -InformationAction Continue
+    if (`$logFile) { Add-Content -LiteralPath `$logFile -Value ('[{0:yyyy-MM-dd HH:mm:ss}] {1}' -f (Get-Date), `$Text) -WhatIf:`$false }
 }
+function Exit-InputProblem([string]`$Message) { Write-Error `$Message -ErrorAction Continue; exit 2 }
+function Exit-Failed([string]`$Message) { Write-Error `$Message -ErrorAction Continue; exit 1 }
 
-log_error() {
-    echo "[ERROR] `$(date '+%Y-%m-%d %H:%M:%S') - `$*" >&2
-}
+# ---- the values, from infrastructure.yml only. Register a key in config/variables/schema/master-registry.yaml before the script reads it.
+try { `$infra = Import-AzlInfrastructure -Path `$InfrastructureFile -SkipValidation }
+catch { Exit-InputProblem "Cannot read the infrastructure file: `$(`$_.Exception.Message)" }
+$azureCheck
 
-log_success() {
-    echo "[SUCCESS] `$(date '+%Y-%m-%d %H:%M:%S') - `$*"
-}
+# ---- the work: one result row per item
+`$rows = [System.Collections.Generic.List[object]]::new()
+# Add the items of the script here. For each item: read it, report [exists] and leave it alone when it is in place, otherwise
+# act behind `$PSCmdlet.ShouldProcess(...) and report [done], or [plan] under -WhatIf.
 
-#===============================================================================
-# ARGUMENT PARSING
-#===============================================================================
-show_help() {
-    head -30 "`$0" | tail -20
-    exit 0
-}
-
-while [[ `$# -gt 0 ]]; do
-    case `$1 in
-        -c|--config)
-            CONFIG_FILE="`$2"
-            shift 2
-            ;;
-        -v|--verbose)
-            VERBOSE=true
-            shift
-            ;;
-        -h|--help)
-            show_help
-            ;;
-        *)
-            log_error "Unknown option: `$1"
-            exit 2
-            ;;
-    esac
-done
-
-#===============================================================================
-# VALIDATION
-#===============================================================================
-if [[ -z "`$CONFIG_FILE" ]]; then
-    log_error "Configuration file is required. Use -c or --config."
-    exit 2
-fi
-
-if [[ ! -f "`$CONFIG_FILE" ]]; then
-    log_error "Configuration file not found: `$CONFIG_FILE"
-    exit 4
-fi
-
-#===============================================================================
-# CONFIGURATION LOADING
-#===============================================================================
-log_info "Loading configuration from: `$CONFIG_FILE"
-
-# Extract values using yq
-TENANT_ID=`$(yq -r '.azure.tenant_id' "`$CONFIG_FILE")
-SUBSCRIPTION_ID=`$(yq -r '.azure.subscription_id' "`$CONFIG_FILE")
-KV_NAME=`$(yq -r '.key_vaults[0].name' "`$CONFIG_FILE")
-
-log_info "Tenant ID: `$TENANT_ID"
-log_info "Subscription ID: `$SUBSCRIPTION_ID"
-
-#===============================================================================
-# MAIN LOGIC
-#===============================================================================
-log_info "Starting $Name..."
-
-# TODO: Add your script logic here
-
-log_success "Script completed."
+`$rows
+if (@(`$rows | Where-Object Action -EQ 'Failed').Count -gt 0) { exit 1 }
+exit 0
 "@
-}
 
 # Write the template
 $template | Out-File -FilePath $fullPath -Encoding utf8
 
 Write-Host "Script created: $fullPath" -ForegroundColor Green
-Write-Host "Type: $ScriptType$(if ($Standalone) { ' (Standalone)' })" -ForegroundColor Gray
+Write-Host "Type: $ScriptType" -ForegroundColor Gray
 Write-Host ""
 Write-Host "Next steps:" -ForegroundColor Cyan
-Write-Host "  1. Open the script and update the TODO sections"
-Write-Host "  2. Add your script logic"
-Write-Host "  3. Test with -WhatIf if applicable"
-Write-Host "  4. Run PSScriptAnalyzer or ShellCheck for linting"
+Write-Host "  1. Register the keys the script reads in config/variables/schema/master-registry.yaml"
+Write-Host "  2. Read them with Get-AzlInfrastructureValue and write the work of the script"
+Write-Host "  3. Test with -WhatIf, and write a Pester test with the cmdlets mocked"
+Write-Host "  4. Run config/variables/scripts/New-ScriptParameterRegistry.ps1 and New-VariableMap.ps1"
 
 return [PSCustomObject]@{
     ScriptPath = $fullPath
     ScriptType = $ScriptType
-    Standalone = $Standalone.IsPresent
 }

@@ -9,6 +9,6 @@ settings in the Azure portal: Foundational CSPM and the Microsoft cloud security
 
 | Folder | What it turns on | State |
 |---|---|---|
-| `defender-paid-plans` | Defender CSPM with its add-ons, Defender for Servers Plan 2, Defender for SQL on machines, on every subscription of the tenant | Not working: `Deploy-DefenderPaidPlans.ps1` has parse errors and loads a helper that is not in the repository. Kept as a starting point only |
+| `defender-paid-plans` | Defender CSPM with its add-ons, Defender for Servers Plan 2, Defender for SQL on machines, on every subscription of the tenant | Not working: `Deploy-DefenderPaidPlans.ps1` has parse errors. Its `-Solution` mode, which loaded the retired `config-loader.ps1`, is removed. Kept as a starting point only |
 
 Not in the toolkit: Microsoft Sentinel and third-party agents (for example Datadog). There is no script for either.

@@ -58,23 +58,10 @@ Describe 'Scripts that a schema 5 script replaces are removed' {
     }
 }
 
-Describe 'keyvault-helper.ps1 writes no secret and names no secret' {
-    It 'has no Key Vault call of its own, no sp-<name> convention and no literal provider' {
-        $code = Get-CodeText 'scripts/common/utilities/helpers/keyvault-helper.ps1'
-        $code | Should -Not -Match 'Set-AzKeyVaultSecret|Get-AzKeyVaultSecret|az\s+keyvault'
-        $code | Should -Not -Match '"sp-|''sp-|-appid|-secret"'
-        $code | Should -Not -Match '-Provider\s+keyvault'
-    }
-    It 'Get-SecretFromConfig builds the reference in the provider the file selects (no -Provider)' {
-        $ast = [System.Management.Automation.Language.Parser]::ParseFile([IO.Path]::Combine($script:Repo, 'scripts', 'common', 'utilities', 'helpers', 'keyvault-helper.ps1'), [ref]$null, [ref]$null)
-        $fn = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-SecretFromConfig' }, $true) | Select-Object -First 1
-        . ([scriptblock]::Create($fn.Extent.Text))
-        function New-AzlSecretReference { [CmdletBinding()] param([string]$Name, [object]$Infrastructure, [string]$Provider, [string]$Vault) 'env://TEST_ONLY' }
-        function Get-SecretFromUri { [CmdletBinding()] param([string]$Uri, [object]$Infrastructure, [switch]$AsPlainText) "read:$Uri" }
-        Mock New-AzlSecretReference { 'env://TEST_ONLY' }
-        Mock Get-SecretFromUri { "read:$Uri" }
-        Get-SecretFromConfig -Config @{} -SecretName 'any-name' | Should -Be 'read:env://TEST_ONLY'
-        Should -Invoke New-AzlSecretReference -Times 1 -Exactly -ParameterFilter { $Name -eq 'any-name' -and -not $Provider }
+Describe 'keyvault-helper.ps1 is retired' {
+    It 'is gone: the toolkit''s one secret resolver is scripts/common/secrets/AzlSecret.psm1' {
+        Test-Path -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts', 'common', 'utilities', 'helpers', 'keyvault-helper.ps1')) | Should -BeFalse
+        Test-Path -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts', 'common', 'secrets', 'AzlSecret.psm1')) | Should -BeTrue
     }
 }
 
@@ -106,7 +93,8 @@ Describe 'The authoring template generates scripts that read registered keys' {
     It 'has no vault name, no platform.kv_platform key and no old-layout key path' {
         $text = Get-RepoText 'scripts/tools/authoring/New-ScriptFromTemplate.ps1'
         $text | Should -Not -Match 'kv-yourplatform|kv_platform|azure\.tenant\.id|azure\.subscriptions\.demo|\["subscriptions"\]\["demo"\]'
-        $text | Should -Match 'key_vaults\[0\]\.name'
+        $text | Should -Match 'Import-AzlInfrastructure'
+        $text | Should -Match 'Get-AzlInfrastructureValue'
     }
 }
 

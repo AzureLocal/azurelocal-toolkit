@@ -67,15 +67,23 @@ Describe 'Registry validators' {
         ($out -join "`n") | Should -Match 'PASS: Registry structure validation passed'
     }
 
-    It 'variables.example.yml is valid and every path in it is a registry variable (strict)' {
-        { & (Join-Path $script:Scripts 'Test-VariablesFile.ps1') -StrictUnknown -UnknownReportCsv (Join-Path $TestDrive 'unknown.csv') 6>$null } | Should -Not -Throw
+    It 'has no file of the old variables.yml layout: the infrastructure example is the only example' {
+        foreach ($old in 'config\variables\variables.example.yml', 'config\variables\schema\variables.schema.json', 'config\variables\scripts\validate-variables.ps1', 'config\variables\scripts\Test-VariablesFile.ps1', 'config\variables\scripts\Test-VariableConfig.ps1') {
+            Test-Path -LiteralPath (Join-Path $repo $old) | Should -BeFalse -Because "$old belongs to the old layout and is retired"
+        }
+        Test-Path -LiteralPath (Join-Path $repo 'config\variables\examples\infrastructure.example.yml') | Should -BeTrue
+    }
+
+    It 'the infrastructure example is valid against the schema and the rules' {
+        $out = & pwsh -NoProfile -File (Join-Path $repo 'scripts\common\infrastructure\Test-InfrastructureFile.ps1') -Path (Join-Path $repo 'config\variables\examples\infrastructure.example.yml') 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 0 -Because $out
     }
 
     It 'every alias added since registry 4.1.0 has an expiry inside the policy limit and a registry entry' {
         $policy = Get-Content (Join-Path $repo 'config\variables\schema\alias-policy.json') -Raw | ConvertFrom-Json
         $byPath = @{}; foreach ($r in $script:Registry) { $byPath[$r.Path] = $r }
         $new = @($policy.active_aliases | Where-Object { $_.PSObject.Properties.Name -contains 'expires_on' })
-        $new | Should -Not -BeNullOrEmpty
+        # The 4.0 form security_groups_by_role was the one alias with an expiry; it is removed (registry 5.0.58), so the list can be empty.
         foreach ($a in $new) {
             $span = ([datetime]$a.expires_on - [datetime]$a.created).Days
             $span | Should -BeLessOrEqual $policy.rules.max_alias_age_days -Because "$($a.alias_path) lives longer than the policy allows"

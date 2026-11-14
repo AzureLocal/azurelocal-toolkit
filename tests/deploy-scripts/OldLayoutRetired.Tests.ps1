@@ -137,7 +137,7 @@ Describe 'A task folder whose script a schema 5 script replaces keeps a placehol
         Test-Path -LiteralPath $Path | Should -BeTrue
         $text = Get-Content -LiteralPath $Path -Raw
         $text | Should -Match '# PLACEHOLDER: this script does not do the task'
-        $text | Should -Match "\[string\]\`$InfrastructureFile = ''"
+        $text | Should -Match '\[Parameter\(Mandatory\)\]\[string\]\$InfrastructureFile'
         $text | Should -Not -Match 'ConfigPath'
         $r = Invoke-Child $Path @('-InfrastructureFile', (Join-Path ([IO.Path]::GetTempPath()) 'does-not-exist.yml'))
         $r.Code | Should -Be 3 -Because $r.Output

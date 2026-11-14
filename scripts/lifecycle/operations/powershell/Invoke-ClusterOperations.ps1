@@ -11,8 +11,16 @@
     - Capacity monitoring
     - Alert management
 
-.PARAMETER ClusterName
-    Name of the Azure Local cluster.
+    HealthCheck, Capacity and Alerts only read. MaintenanceMode, LiveMigrate and Rebalance change the cluster; each change is behind -WhatIf and -Confirm.
+    The script does not sign in and asks nothing. Run it as an account that may manage the cluster.
+
+    Values come only from infrastructure.yml (read through Import-AzlInfrastructure): cluster.name.
+
+    Exit codes: 0 the action finished (or is planned under -WhatIf); 1 the action failed; 2 cluster.name is missing, the file cannot be read, or an
+    action that needs -NodeName has none.
+
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Only cluster.name is read; the whole file is not validated here.
 
 .PARAMETER Action
     Action to perform: HealthCheck, MaintenanceMode, LiveMigrate, Rebalance, Capacity, Alerts
@@ -27,10 +35,10 @@
     Path to save operation reports.
 
 .EXAMPLE
-    .\Invoke-ClusterOperations.ps1 -ClusterName "azl-cluster-01" -Action HealthCheck
+    .\Invoke-ClusterOperations.ps1 -InfrastructureFile ./infrastructure.yml -Action HealthCheck
 
 .EXAMPLE
-    .\Invoke-ClusterOperations.ps1 -ClusterName "azl-cluster-01" -Action MaintenanceMode -NodeName "node-01" -Enable
+    .\Invoke-ClusterOperations.ps1 -InfrastructureFile ./infrastructure.yml -Action MaintenanceMode -NodeName iic-01-n01 -Enable
 
 .NOTES
     Author: Azure Local Cloud AzureLocalCloud Team
@@ -38,10 +46,11 @@
     Created: 2026-02-01
 #>
 
-[CmdletBinding()]
+#Requires -Version 7.0
+[CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$ClusterName,
+    [Parameter(Mandatory)]
+    [string]$InfrastructureFile,
 
     [Parameter(Mandatory = $true)]
     [ValidateSet("HealthCheck", "MaintenanceMode", "LiveMigrate", "Rebalance", "Capacity", "Alerts")]
@@ -56,6 +65,25 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$OutputPath
 )
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+
+Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+
+# ---- the values, from infrastructure.yml only
+try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Write-Error "Cannot read the infrastructure file: $($_.Exception.Message)" -ErrorAction Continue; exit 2 }
+$ClusterName = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')).Trim()
+if (-not $ClusterName) {
+    Write-Error 'cluster.name is missing in the infrastructure file. It is the name of the cluster to operate on.' -ErrorAction Continue
+    exit 2
+}
+if ($Action -in 'MaintenanceMode', 'LiveMigrate' -and -not $NodeName) {
+    Write-Error "The action $Action needs -NodeName." -ErrorAction Continue
+    exit 2
+}
+$script:OperationFailed = $false
 
 # Import helpers
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -113,7 +141,7 @@ function Invoke-HealthCheck {
         }
     }
     catch {
-        Write-Log -Message "  Failed to check cluster: $_" -Level "ERROR"
+        Write-Log -Message "  Failed to check cluster: $_" -Level "ERROR"; $script:OperationFailed = $true
         $healthReport.OverallHealth = "Critical"
     }
     
@@ -146,7 +174,7 @@ function Invoke-HealthCheck {
         }
     }
     catch {
-        Write-Log -Message "  Failed to check storage: $_" -Level "ERROR"
+        Write-Log -Message "  Failed to check storage: $_" -Level "ERROR"; $script:OperationFailed = $true
     }
     
     Write-Host ""
@@ -171,7 +199,7 @@ function Invoke-HealthCheck {
         }
     }
     catch {
-        Write-Log -Message "  Failed to check networks: $_" -Level "ERROR"
+        Write-Log -Message "  Failed to check networks: $_" -Level "ERROR"; $script:OperationFailed = $true
     }
     
     Write-Host ""
@@ -202,7 +230,7 @@ function Invoke-HealthCheck {
         }
     }
     catch {
-        Write-Log -Message "  Failed to check Arc: $_" -Level "ERROR"
+        Write-Log -Message "  Failed to check Arc: $_" -Level "ERROR"; $script:OperationFailed = $true
     }
     
     Write-Host ""
@@ -228,7 +256,10 @@ function Set-MaintenanceMode {
         try {
             # Drain roles from node
             Write-Log -Message "  Draining cluster roles..." -Level "INFO"
-            Suspend-ClusterNode -Name $NodeName -Cluster $ClusterName -Drain -Wait -ErrorAction Stop
+            if ($PSCmdlet.ShouldProcess($NodeName, 'Drain the node and enter maintenance mode')) {
+                Suspend-ClusterNode -Name $NodeName -Cluster $ClusterName -Drain -Wait -ErrorAction Stop
+            }
+            else { return }
             
             # Pause storage repair
             Write-Log -Message "  Pausing storage repair jobs..." -Level "INFO"
@@ -242,7 +273,7 @@ function Set-MaintenanceMode {
             Write-Log -Message "  - Node can be safely updated/rebooted" -Level "INFO"
         }
         catch {
-            Write-Log -Message "Failed to enter maintenance mode: $_" -Level "ERROR"
+            Write-Log -Message "Failed to enter maintenance mode: $_" -Level "ERROR"; $script:OperationFailed = $true
         }
     }
     else {
@@ -251,7 +282,10 @@ function Set-MaintenanceMode {
         try {
             # Resume node
             Write-Log -Message "  Resuming cluster node..." -Level "INFO"
-            Resume-ClusterNode -Name $NodeName -Cluster $ClusterName -Failback Immediate -ErrorAction Stop
+            if ($PSCmdlet.ShouldProcess($NodeName, 'Resume the node and fail back its roles')) {
+                Resume-ClusterNode -Name $NodeName -Cluster $ClusterName -Failback Immediate -ErrorAction Stop
+            }
+            else { return }
             
             # Re-enable storage repair
             Write-Log -Message "  Enabling storage repair..." -Level "INFO"
@@ -262,7 +296,7 @@ function Set-MaintenanceMode {
             Write-Log -Message "Node $NodeName has exited maintenance mode" -Level "SUCCESS"
         }
         catch {
-            Write-Log -Message "Failed to exit maintenance mode: $_" -Level "ERROR"
+            Write-Log -Message "Failed to exit maintenance mode: $_" -Level "ERROR"; $script:OperationFailed = $true
         }
     }
 }
@@ -304,7 +338,9 @@ function Invoke-LiveMigration {
             
             Write-Log -Message "  Migrating $($vm.Name) to $($targetNode.Name)..." -Level "INFO"
             
-            Move-VM -Name $vm.Name -ComputerName $NodeName -DestinationHost $targetNode.Name -ErrorAction Stop
+            if ($PSCmdlet.ShouldProcess($vm.Name, "Live migrate from $NodeName to $($targetNode.Name)")) {
+                Move-VM -Name $vm.Name -ComputerName $NodeName -DestinationHost $targetNode.Name -ErrorAction Stop
+            }
             
             Write-Log -Message "    Migration complete" -Level "SUCCESS"
         }
@@ -312,7 +348,7 @@ function Invoke-LiveMigration {
         Write-Log -Message "All VMs migrated from $NodeName" -Level "SUCCESS"
     }
     catch {
-        Write-Log -Message "Live migration failed: $_" -Level "ERROR"
+        Write-Log -Message "Live migration failed: $_" -Level "ERROR"; $script:OperationFailed = $true
     }
 }
 
@@ -362,7 +398,9 @@ function Invoke-StorageRebalance {
                 
                 if ($target) {
                     Write-Log -Message "  Moving $($csv.Name) from $($over.Key) to $target" -Level "INFO"
-                    Move-ClusterSharedVolume -Name $csv.Name -Node $target -ErrorAction SilentlyContinue
+                    if ($PSCmdlet.ShouldProcess($csv.Name, "Move the CSV to $target")) {
+                        Move-ClusterSharedVolume -Name $csv.Name -Node $target -ErrorAction SilentlyContinue
+                    }
                 }
             }
         }
@@ -370,7 +408,7 @@ function Invoke-StorageRebalance {
         Write-Log -Message "Storage rebalance complete" -Level "SUCCESS"
     }
     catch {
-        Write-Log -Message "Storage rebalance failed: $_" -Level "ERROR"
+        Write-Log -Message "Storage rebalance failed: $_" -Level "ERROR"; $script:OperationFailed = $true
     }
 }
 
@@ -428,7 +466,7 @@ function Get-CapacityReport {
         }
     }
     catch {
-        Write-Log -Message "Capacity report failed: $_" -Level "ERROR"
+        Write-Log -Message "Capacity report failed: $_" -Level "ERROR"; $script:OperationFailed = $true
     }
 }
 
@@ -474,7 +512,7 @@ function Get-ClusterAlerts {
         }
     }
     catch {
-        Write-Log -Message "Failed to get alerts: $_" -Level "ERROR"
+        Write-Log -Message "Failed to get alerts: $_" -Level "ERROR"; $script:OperationFailed = $true
     }
 }
 
@@ -509,9 +547,11 @@ try {
     }
     
     Write-Host ""
+    if ($script:OperationFailed) { Write-Log -Message "Operation finished with errors" -Level "ERROR"; exit 1 }
     Write-Log -Message "Operation complete" -Level "SUCCESS"
+    exit 0
 }
 catch {
-    Write-Log -Message "Operation failed: $_" -Level "ERROR"
+    Write-Log -Message "Operation failed: $_" -Level "ERROR"; $script:OperationFailed = $true
     exit 1
 }

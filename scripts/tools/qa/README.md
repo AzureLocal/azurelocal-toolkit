@@ -24,7 +24,7 @@ The QA scripts target the main automation surfaces in this repo:
 | `Test-AnsibleCode.ps1` | Runs full Ansible QA when available, or a Basic YAML/import validation fallback | Supports `Native`, `WSL`, or `Basic` execution modes |
 | `Test-BicepCode.ps1` | Runs `az bicep build` and `az bicep lint` | Skips cleanly if no `.bicep` files exist |
 | `Test-ArmTemplates.ps1` | Runs ARM TTK validation against ARM template JSON files | Skips cleanly if no ARM templates exist |
-| `config/variables/scripts/Test-VariableConfig.ps1` | Lives with the variable files, not in this folder. Wraps the variable validation scripts into one QA entrypoint | Uses the existing `validate-registry.ps1` and `validate-variables.ps1` scripts |
+| `config/variables/scripts/validate-registry.ps1` | Lives with the variable files, not in this folder. Checks the structure of the master registry | Pair it with `scripts/common/infrastructure/Test-InfrastructureFile.ps1` for an infrastructure file |
 
 ## Recommended start point
 

@@ -10,7 +10,6 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoFiles = @{
-    "azurelocal-toolkit"              = @("config/variables/variables.example.yml")
     "azurelocal-avd"                  = @("config/variables.example.yml")
     "azurelocal-sofs-fslogix"         = @("config/variables.example.yml")
     "azurelocal-loadtools"            = @("config/variables.example.yml", "config/variables/variables.yml")

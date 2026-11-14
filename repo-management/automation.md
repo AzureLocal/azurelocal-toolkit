@@ -26,7 +26,7 @@
 
 Runs in two sequential steps:
 
-1. **Unit tests** — Pester 5 tests in `tests/Unit/` covering `logging.ps1`, `error-handling.ps1`, and `config-loader.ps1`
+1. **Unit tests** — Pester 5 tests in `tests/Unit/` covering `logging.ps1` and `error-handling.ps1`
 2. **Quality tests** — PSScriptAnalyzer tests in `tests/Quality/` running static analysis against every `.ps1` file under `scripts/`
 
 Both steps produce NUnit XML test result artifacts uploaded to the run summary.
@@ -56,7 +56,7 @@ Excluded rules (with reasons):
 | `PSAvoidUsingWriteHost` | `logging.ps1` uses `Write-Host` intentionally for colour-formatted console output |
 | `PSUseShouldProcessForStateChangingFunctions` | Internal helpers are not public entry points |
 | `PSUseOutputTypeCorrectly` | Dynamic config key resolution uses computed hashtable properties |
-| `PSAvoidUsingConvertToSecureStringWithPlainText` | `keyvault-helper.ps1` and `Stop-AzureLocalCluster.ps1` accept credentials as runtime parameters — `ConvertTo-SecureString` converts caller-supplied values, it does not embed plaintext secrets |
+| `PSAvoidUsingConvertToSecureStringWithPlainText` | `Stop-AzureLocalCluster.ps1` accepts credentials as runtime parameters — `ConvertTo-SecureString` converts caller-supplied values, it does not embed plaintext secrets |
 
 ### Modules installed by CI
 
@@ -138,10 +138,9 @@ When adding this workflow to a new repo:
 
 Validates the `config/` directory:
 
-1. Checks `config/variables/variables.example.yml` is valid YAML
-2. Runs `config/variables/scripts/validate-registry.ps1` — verifies the master variable registry structure
-3. Runs `config/variables/scripts/validate-variables.ps1 -StrictUnknown` — checks variable definitions against schema, rejects unknown keys
-4. Runs `config/variables/scripts/check-alias-expiry.ps1` — flags alias variables past their expiry date
+1. Runs `config/variables/scripts/validate-registry.ps1` — verifies the master variable registry structure
+2. Runs `scripts/common/infrastructure/Test-InfrastructureFile.ps1` on `config/variables/examples/infrastructure.example.yml` — checks the example against the schema and the rules
+3. Runs `config/variables/scripts/check-alias-expiry.ps1` — flags alias variables past their expiry date
 
 ### When it triggers
 
@@ -176,7 +175,7 @@ On every PR to `main`, verifies the repository has the minimum required structur
 - **Required root files:** `README.md`, `CONTRIBUTING.md`, `LICENSE`, `CHANGELOG.md`, `.gitignore`
 - **Required directories:** `.github/`
 - **PR template:** `.github/PULL_REQUEST_TEMPLATE.md`
-- **Config structure (if `config/` exists):** `config/variables.example.yml` and `config/schema/variables.schema.json`
+- **Config structure (if `config/` exists):** `config/variables/schema/master-registry.yaml` and `config/variables/examples/infrastructure.example.yml`
 
 ### When it triggers
 

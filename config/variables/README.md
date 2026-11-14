@@ -8,7 +8,6 @@
 config/variables/
   schema/
     master-registry.yaml          THE MASTER. Edit this.
-    variables.schema.json         schema of a variables file (hand-maintained, accepts the infrastructure.yml sections)
     infrastructure.schema.json    GENERATED: the schema of infrastructure.yml (the validator reads this one)
     tools/<tool>.schema.json        GENERATED: the part of the schema one tool reads (one per tool that has keys)
     alias-policy.json, canonical-drift-allowlist.json, legacy-compatible-roots.json
@@ -38,7 +37,7 @@ config/variables/
 1. Add the entry to `schema/master-registry.yaml` (see [Entry format](#entry-format)). Bump `_metadata.version`, add a `_metadata.change_log` entry and a line to the change log in the file header.
 2. Run `./config/variables/scripts/New-InfrastructureArtifacts.ps1`. It rewrites the schema, the templates and `docs/VARIABLES.md` (the "Read by" column of that page is the `used_by` of the registry; nothing else lists readers). If a tool variable changed, also run `./config/variables/scripts/New-ToolMapping.ps1 -Tool ztp` and `-Tool sonar`. Commit the result with the registry change.
    Rules for the entry: the `example` is a documentation placeholder (RFC 5737 addresses `192.0.2.x`, `198.51.100.x`, `203.0.113.x`; the zero GUID; MACs `00:00:5E:00:53:xx`; `example.com`), never a value from a real environment. `used_by` lists only the tools whose code reads the key (Trailwright: writes it); the ids are in `_tool_catalog`. A key no tool reads yet is kept as a documented placeholder and its description says "Not read by the tools yet". An entry that replaces another is marked `deprecated` with `replaced_by`.
-3. Update `schema/variables.schema.json` and `variables.example.yml` if the variable is part of a variables file, and a worked example if it belongs in one.
+3. Update a worked example under `examples/` if the variable belongs in one. There is no other hand-written file: the old `variables.yml` layout (`variables.example.yml` and `variables.schema.json`) is gone, and `examples/infrastructure.example.yml` is the one example of the file.
 4. Run the checks below. All must pass.
 
 Never edit a generated file: it carries a `GENERATED from master-registry.yaml` header, and `tests/variables/InfrastructureArtifacts.Tests.ps1` regenerates it and fails when it differs.
@@ -145,14 +144,14 @@ Both files write an address masked (`10.x.x.x/24`) and never hold an ID that is 
 
 ```powershell
 ./config/variables/scripts/validate-registry.ps1                      # structure
-./config/variables/scripts/validate-variables.ps1 -StrictUnknown     # variables.example.yml: schema + every path in the registry
+./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path ./config/variables/examples/infrastructure.example.yml   # the example against the schema and the rules
 ./config/variables/scripts/Compare-InfrastructureSchemaToRegistry.ps1 -FailOnGap   # generated schema vs registry (always clean; kept as a guard)
 ./config/variables/scripts/New-InfrastructureArtifacts.ps1 -Check
 ./config/variables/scripts/New-ScriptParameterRegistry.ps1 -Check    # every script parameter is registered
 Invoke-Pester ./tests/variables, ./tests/infrastructure
 ```
 
-`validate-variables.ps1` uses Python with PyYAML and jsonschema when they are installed, and otherwise runs the same two checks in PowerShell (`Test-VariablesFile.ps1`). `VariableRegistry.psm1` is the one reader of the registry structure; `InfrastructureArtifacts.psm1` builds the generated files.
+`VariableRegistry.psm1` is the one reader of the registry structure; `InfrastructureArtifacts.psm1` builds the generated files.
 
 ## Reports
 

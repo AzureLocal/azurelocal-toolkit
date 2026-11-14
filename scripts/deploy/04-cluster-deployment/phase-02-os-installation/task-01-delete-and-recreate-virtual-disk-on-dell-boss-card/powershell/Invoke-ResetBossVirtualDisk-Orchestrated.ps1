@@ -2,9 +2,7 @@
 # PLACEHOLDER: this script does not do the task. It ends with exit code 3 (NOT IMPLEMENTED) and changes nothing.
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$InfrastructureFile = '',
-    [System.Management.Automation.PSCredential]$Credential = $null,
-    [string[]]$TargetNode = @(),
+    [Parameter(Mandatory)][string]$InfrastructureFile,
     [string]$LogPath = ''
 )
 
@@ -31,8 +29,5 @@ Invoke-DeploymentOrchestrated `
     -ScriptPath $PSCommandPath `
     -TaskPath '04-cluster-deployment/phase-02-os-installation/task-01-delete-and-recreate-virtual-disk-on-dell-boss-card' `
     -ActionName 'Invoke-ResetBossVirtualDisk-Orchestrated' `
-    -InfrastructureFile $InfrastructureFile `
-    -Credential $Credential `
-    -TargetNode $TargetNode `
     -LogPath $LogPath `
     -Parameters $PSBoundParameters

@@ -8,14 +8,14 @@ transform, and validate the scripts and automation code that live elsewhere in t
 
 | Folder | Purpose | Use it when |
 |--------|---------|-------------|
-| `authoring/` | Script creation and script transformation helpers | You are creating a new script or converting an existing config-driven script into a standalone variant |
+| `authoring/` | Script creation helper | You are creating a new script from the template of the toolkit |
 | `qa/` | Manual QA and validation tools for repo code | You want to validate PowerShell, Terraform, Ansible, Bicep, ARM, or variable config changes |
 
 ## Navigation guide
 
 Start in this folder when your task is about the tooling around the repo, not about running a deployment.
 
-- Go to `authoring/` if you need to scaffold a new script or generate a standalone copy of an existing script.
+- Go to `authoring/` if you need to scaffold a new script.
 - Go to `qa/` if you need to run manual validation before committing or reviewing changes.
 
 ## Typical workflow

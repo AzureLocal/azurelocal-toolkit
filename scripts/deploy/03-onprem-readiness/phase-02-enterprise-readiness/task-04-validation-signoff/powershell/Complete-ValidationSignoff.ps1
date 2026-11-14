@@ -1,181 +1,143 @@
 <#
 .SYNOPSIS
-    Performs validation signoff checks for enterprise readiness.
+    Writes the validation sign-off document of the on-premises readiness phase, from infrastructure.yml and the pre-cluster verification report.
 
 .DESCRIPTION
-    This script performs final validation checks before deployment:
-    - Validates all prerequisite checks have passed
-    - Generates signoff documentation
-    - Creates deployment readiness checklist
+    Phase 02 (enterprise readiness), Task 04. The script writes one Markdown page that the engineers and the customer sign before the deployment:
+      - the customer, the project (when -ProjectName is given), the cluster name, the Azure region, the subscription and the number of machines,
+        all from the infrastructure file;
+      - the result of the pre-cluster verification (Invoke-AzureLocalPreClusterVerification.ps1 -Mode Verify), when -VerificationReport names its
+        report.json (or the folder that holds it): the verdict, the counts of the results, when the report expires, and whether the report was
+        made for this very infrastructure file (the SHA-256 of the file against the fileHash of the report);
+      - a checklist of what is confirmed by a person, and the signature tables.
 
-.PARAMETER ConfigPath
-    Path to infrastructure.yml configuration file.
+    The page says what the report says. Nothing in the script judges the readiness: a verdict other than Pass is written as it is, with the line that the
+    deployment must not start. The script reads files and writes one file. It changes nothing else, signs in to nothing and asks nothing.
+    Under -WhatIf it writes no file and prints the path it would write.
 
-.PARAMETER ValidationResultsPath
-    Path to previous validation results.
+    Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
+        site.customer (required), cluster.name, azure.location, azure.subscription_id, nodes[].name
+
+    Exit codes: 0 the document is written (or planned under -WhatIf); 1 the report cannot be read or the document cannot be written; 2 site.customer
+    is missing or the file cannot be read.
+
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here.
+
+.PARAMETER VerificationReport
+    Optional. The report.json of a pre-cluster verification run, or the folder that holds it. Without it the page says that no report was given.
 
 .PARAMETER OutputPath
-    Path for signoff documentation output.
+    The folder for the sign-off page. It is created when it does not exist. Default: .\output\signoff
+
+.PARAMETER ProjectName
+    Optional. The project name to print on the page. Without it the page prints no project line.
+
+.PARAMETER LogPath
+    Optional. Also append the progress lines to this file. Keep it out of the repository.
 
 .EXAMPLE
-    .\Complete-ValidationSignoff.ps1 -OutputPath ".\output\signoff"
+    ./Complete-ValidationSignoff.ps1 -InfrastructureFile ./infrastructure.yml -VerificationReport ./arm-report/verification/live -OutputPath ./signoff
 
-.NOTES
-    Author: Azure Local Cloud AzureLocalCloud
-    Version: 1.0.0
-    Stage: 04-onprem-readiness
-    Step: stage-09-enterprise-readiness/step-04-validation-signoff
+    Writes ./signoff/validation-signoff-<date>.md.
 #>
-
-[CmdletBinding()]
-param(
-    [Parameter(Mandatory = $false)]
-    [string]$ConfigPath = ".\configs\infrastructure.yml",
-
-    [Parameter(Mandatory = $false)]
-    [string]$ValidationResultsPath = ".\output",
-
-    [Parameter(Mandatory = $false)]
-    [string]$OutputPath = ".\output\signoff",
-
-    [Parameter(Mandatory = $false)]
-    [string]$CustomerName,
-
-    [Parameter(Mandatory = $false)]
-    [string]$ProjectName
-)
-
 #Requires -Version 7.0
-
+[CmdletBinding(SupportsShouldProcess)]
+param(
+    [Parameter(Mandatory)][string]$InfrastructureFile,
+    [string]$VerificationReport,
+    [string]$OutputPath = '.\output\signoff',
+    [string]$ProjectName,
+    [string]$LogPath
+)
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$logFile = $LogPath
+
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
-#region Functions
+# The name of the report file the pre-cluster verification writes. Fixed by Invoke-AzureLocalPreClusterVerification.ps1.
+$ReportFileName = 'report.json'
 
-function Write-LogMessage {
-    param(
-        [string]$Message,
-        [ValidateSet('Info', 'Warning', 'Error', 'Success')]
-        [string]$Level = 'Info'
-    )
-    
-    $timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $color = switch ($Level) {
-        'Info'    { 'Cyan' }
-        'Warning' { 'Yellow' }
-        'Error'   { 'Red' }
-        'Success' { 'Green' }
-    }
-    Write-Host "[$timestamp] [$Level] $Message" -ForegroundColor $color
+function Write-Line([string]$Text) {
+    Write-Information -MessageData $Text -InformationAction Continue
+    if ($logFile) { Add-Content -LiteralPath $logFile -Value ('[{0:yyyy-MM-dd HH:mm:ss}] {1}' -f (Get-Date), $Text) -WhatIf:$false }
 }
+function Exit-InputProblem([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 2 }
+function Exit-Failed([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 1 }
+function Get-Text([string]$Path) { ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path $Path)).Trim() }
+function Get-Cell([string]$Text) { if ($Text) { $Text.Replace('|', '/') } else { 'not given' } }
 
-function Import-InfrastructureConfig {
-    [CmdletBinding()]
-    param([string]$Path)
+# ---- the values, from infrastructure.yml only
+try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.Message)" }
+$customer = Get-Text 'site.customer'
+if (-not $customer) { Exit-InputProblem 'site.customer is missing in the infrastructure file. It is the customer name the page is written for.' }
+$clusterName = Get-Text 'cluster.name'
+$location = Get-Text 'azure.location'
+$subscriptionId = Get-Text 'azure.subscription_id'
+$nodeCount = @(Get-AzlInfrastructureNode -Infrastructure $infra).Count
 
-    if (-not (Test-Path $Path)) { return $null }
-
-    if (-not (Get-Module -Name powershell-yaml -ListAvailable)) {
-        Install-Module -Name powershell-yaml -Force -Scope CurrentUser
+# ---- the report of the pre-cluster verification (read only)
+$verification = [ordered]@{ Given = $false; Verdict = ''; Counts = ''; Expires = ''; SameFile = $null; Path = '' }
+if ($VerificationReport) {
+    $reportPath = $VerificationReport
+    if (Test-Path -LiteralPath $reportPath -PathType Container) { $reportPath = Join-Path $reportPath $ReportFileName }
+    if (-not (Test-Path -LiteralPath $reportPath -PathType Leaf)) { Exit-Failed "The verification report was not found: $reportPath" }
+    try { $report = Get-Content -LiteralPath $reportPath -Raw | ConvertFrom-Json }
+    catch { Exit-Failed "The verification report cannot be read as JSON: $reportPath" }
+    $verification.Given = $true
+    $verification.Path = $reportPath
+    $verification.Verdict = if ($report.PSObject.Properties['verdict']) { [string]$report.verdict } else { '' }
+    if ($report.PSObject.Properties['counts'] -and $report.counts) {
+        $verification.Counts = (($report.counts.PSObject.Properties | Where-Object { $_.Value } | ForEach-Object { "$($_.Name) $($_.Value)" }) -join ', ')
     }
-    Import-Module powershell-yaml
-
-    $configContent = Get-Content -Path $Path -Raw
-    return ConvertFrom-Yaml $configContent
+    if ($report.PSObject.Properties['expiresUtc'] -and $report.expiresUtc) {
+        # ConvertFrom-Json turns an ISO date into a [datetime]; write it back in one fixed form.
+        $verification.Expires = if ($report.expiresUtc -is [datetime]) { $report.expiresUtc.ToUniversalTime().ToString('yyyy-MM-dd HH:mm', [cultureinfo]::InvariantCulture) + ' UTC' } else { [string]$report.expiresUtc }
+    }
+    if ($report.PSObject.Properties['fileHash'] -and $report.fileHash) {
+        $hash = (Get-FileHash -LiteralPath $InfrastructureFile -Algorithm SHA256).Hash
+        $verification.SameFile = ($hash -ieq [string]$report.fileHash)
+    }
 }
+$passed = $verification.Given -and $verification.Verdict -eq 'Pass' -and $verification.SameFile -eq $true
 
-function Get-ValidationResults {
-    <#
-    .SYNOPSIS
-        Collects all validation results from previous checks.
-    #>
-    [CmdletBinding()]
-    param([string]$Path)
-
-    $results = @{
-        HardwareInspection  = $null
-        NetworkReadiness    = $null
-        OpengearVerification = $null
-        AzureValidation     = $null
-    }
-
-    # Look for hardware inspection reports
-    $hardwareReports = Get-ChildItem -Path $Path -Filter "hardware-inspection*.md" -Recurse -ErrorAction SilentlyContinue
-    if ($hardwareReports) {
-        $results.HardwareInspection = @{
-            Found     = $true
-            LatestReport = $hardwareReports | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-        }
-    }
-
-    # Look for network readiness reports
-    $networkReports = Get-ChildItem -Path $Path -Filter "*network*.json" -Recurse -ErrorAction SilentlyContinue
-    if ($networkReports) {
-        $results.NetworkReadiness = @{
-            Found     = $true
-            LatestReport = $networkReports | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-        }
-    }
-
-    # Look for Opengear verification
-    $opengearReports = Get-ChildItem -Path $Path -Filter "*opengear*.json" -Recurse -ErrorAction SilentlyContinue
-    if ($opengearReports) {
-        $results.OpengearVerification = @{
-            Found     = $true
-            LatestReport = $opengearReports | Sort-Object LastWriteTime -Descending | Select-Object -First 1
-        }
-    }
-
-    return $results
+# ---- the page
+$date = Get-Date -Format 'yyyy-MM-dd HH:mm:ss'
+$fileDate = Get-Date -Format 'yyyyMMdd'
+$signoffFile = Join-Path $OutputPath "validation-signoff-$fileDate.md"
+$projectLine = if ($ProjectName) { "**Project:** $ProjectName  `n" } else { '' }
+if ($verification.Given) {
+    $sameFileText = switch ($verification.SameFile) { $true { 'yes' } $false { 'NO: the infrastructure file changed after the report was made' } default { 'the report holds no file hash' } }
+    $verificationRow = "| Pre-cluster verification | $(Get-Cell $verification.Verdict) | Counts: $(Get-Cell $verification.Counts). Report for this file: $sameFileText. Expires: $(Get-Cell $verification.Expires). Report: $(Get-Cell $verification.Path) |"
 }
+else {
+    $verificationRow = '| Pre-cluster verification | No report given | Run Invoke-AzureLocalPreClusterVerification.ps1 -Mode Verify and give its report with -VerificationReport |'
+}
+$readiness = if ($passed) { 'The verification verdict is Pass for this infrastructure file.' } else { 'The verification verdict is not a Pass for this infrastructure file. The deployment must not start until it is.' }
 
-function New-SignoffDocument {
-    <#
-    .SYNOPSIS
-        Creates the validation signoff document.
-    #>
-    [CmdletBinding()]
-    param(
-        [string]$OutputPath,
-        [string]$CustomerName,
-        [string]$ProjectName,
-        [hashtable]$ValidationResults,
-        [hashtable]$Config
-    )
+$document = @"
+# Azure Local Deployment - Validation Sign-off
 
-    $signoffDate = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $signoffFile = Join-Path $OutputPath "validation-signoff-$(Get-Date -Format 'yyyyMMdd').md"
-
-    $document = @"
-# Azure Local Deployment - Validation Signoff
-
-**Customer:** $CustomerName  
-**Project:** $ProjectName  
-**Date:** $signoffDate  
-**Document Version:** 1.0
+**Customer:** $customer
+$projectLine**Date:** $date
 
 ---
 
-## Executive Summary
+## Summary
 
-This document certifies that all pre-deployment validation checks have been completed for the Azure Local deployment.
+$readiness
 
----
-
-## Validation Status
-
-### Infrastructure Validation
+## Validation status
 
 | Check | Status | Notes |
 |-------|--------|-------|
-| Hardware Inspection | $(if($ValidationResults.HardwareInspection.Found){'✅ Complete'}else{'⚠️ Not Found'}) | $(if($ValidationResults.HardwareInspection.LatestReport){"Report: $($ValidationResults.HardwareInspection.LatestReport.Name)"}else{'Manual verification required'}) |
-| Network Readiness | $(if($ValidationResults.NetworkReadiness.Found){'✅ Complete'}else{'⚠️ Not Found'}) | $(if($ValidationResults.NetworkReadiness.LatestReport){"Report: $($ValidationResults.NetworkReadiness.LatestReport.Name)"}else{'Manual verification required'}) |
-| Opengear Verification | $(if($ValidationResults.OpengearVerification.Found){'✅ Complete'}else{'⚠️ Not Found'}) | $(if($ValidationResults.OpengearVerification.LatestReport){"Report: $($ValidationResults.OpengearVerification.LatestReport.Name)"}else{'Manual verification required'}) |
+$verificationRow
 
-### Pre-Deployment Checklist
+## Pre-deployment checklist (confirmed by a person)
 
-#### Azure Resources
+### Azure resources
 - [ ] Subscription access verified
 - [ ] Resource providers registered
 - [ ] RBAC permissions assigned
@@ -183,7 +145,7 @@ This document certifies that all pre-deployment validation checks have been comp
 - [ ] Key Vault configured
 - [ ] Log Analytics workspace created
 
-#### On-Premises Infrastructure
+### On-premises infrastructure
 - [ ] Active Directory configured
 - [ ] OUs and groups created
 - [ ] DNS records configured
@@ -191,47 +153,46 @@ This document certifies that all pre-deployment validation checks have been comp
 - [ ] Network connectivity verified
 - [ ] Firewall rules configured
 
-#### Hardware
+### Hardware
 - [ ] All nodes physically inspected
 - [ ] Firmware versions validated
 - [ ] BIOS settings configured
-- [ ] iDRAC access confirmed
+- [ ] BMC access confirmed
 - [ ] Network cabling verified
 - [ ] Power connections verified
 
-#### Network Devices
-- [ ] Opengear console server configured
-- [ ] PowerSwitch ONIE installation complete
+### Network devices
+- [ ] Console server configured
 - [ ] Switch port configuration complete
 - [ ] VLAN configuration verified
 
 ---
 
-## Configuration Summary
+## Configuration summary
 
-**Cluster Name:** $($config.cluster.name ?? 'Not configured')  
-**Node Count:** $(if ($config.nodes) { @(Get-AzlInfrastructureNode -Infrastructure $config).Count } else { 'Not configured' })  
-**Azure Region:** $($config.azure.location ?? 'Not configured')  
-**Subscription:** $($config.azure.subscription_id ?? 'Not configured')
+**Cluster name:** $(Get-Cell $clusterName)
+**Machines in the file:** $nodeCount
+**Azure region:** $(Get-Cell $location)
+**Subscription:** $(Get-Cell $subscriptionId)
 
 ---
 
-## Signoff
+## Sign-off
 
-### Azure Local Cloud Engineering
+### Engineering
 
 | Role | Name | Signature | Date |
 |------|------|-----------|------|
-| Lead Engineer | _________________ | _________________ | __________ |
-| Network Engineer | _________________ | _________________ | __________ |
-| Project Manager | _________________ | _________________ | __________ |
+| Lead engineer | _________________ | _________________ | __________ |
+| Network engineer | _________________ | _________________ | __________ |
+| Project manager | _________________ | _________________ | __________ |
 
 ### Customer
 
 | Role | Name | Signature | Date |
 |------|------|-----------|------|
-| Technical Contact | _________________ | _________________ | __________ |
-| Project Sponsor | _________________ | _________________ | __________ |
+| Technical contact | _________________ | _________________ | __________ |
+| Project sponsor | _________________ | _________________ | __________ |
 
 ---
 
@@ -239,95 +200,29 @@ This document certifies that all pre-deployment validation checks have been comp
 
 By signing above, all parties acknowledge that:
 
-1. All pre-deployment validation checks have been completed
-2. The infrastructure meets the requirements for Azure Local deployment
-3. Any noted exceptions or deviations have been documented and accepted
-4. The project is approved to proceed to the deployment phase
+1. The pre-deployment validation checks are complete and their result is the one written on this page
+2. The infrastructure meets the requirements for the Azure Local deployment
+3. Any exception or deviation is documented and accepted
+4. The project may go on to the deployment phase
 
 ---
 
-*Document generated by Azure Local Cloud AzureLocalCloud Automation*  
-*Generated: $signoffDate*
+*Generated: $date*
 "@
 
-    # Ensure output directory exists
-    if (-not (Test-Path $OutputPath)) {
-        New-Item -Path $OutputPath -ItemType Directory -Force | Out-Null
+if ($PSCmdlet.ShouldProcess($signoffFile, 'Write the validation sign-off document')) {
+    try {
+        if (-not (Test-Path -LiteralPath $OutputPath)) { $null = New-Item -Path $OutputPath -ItemType Directory -Force }
+        Set-Content -LiteralPath $signoffFile -Value $document -Encoding utf8
     }
-
-    Set-Content -Path $signoffFile -Value $document
-    return $signoffFile
+    catch { Exit-Failed "The sign-off document cannot be written: $($_.Exception.Message)" }
+    Write-Line "[done]    The sign-off document is written: $signoffFile"
+    $action = 'Written'
+}
+else {
+    Write-Line "[plan]    The sign-off document would be written: $signoffFile"
+    $action = 'WouldWrite'
 }
 
-#endregion Functions
-
-#region Main
-
-try {
-    Write-LogMessage "=" * 60 -Level Info
-    Write-LogMessage "Validation Signoff Generation" -Level Info
-    Write-LogMessage "=" * 60 -Level Info
-
-    # Load configuration
-    $config = @{}
-    if (Test-Path $ConfigPath) {
-        $config = Import-InfrastructureConfig -Path $ConfigPath
-        Write-LogMessage "Configuration loaded" -Level Info
-    }
-
-    # Get customer/project names
-    if (-not $CustomerName) {
-        $CustomerName = $config.site.customer_name ?? "TBD"
-    }
-    if (-not $ProjectName) {
-        $ProjectName = $config.project.name ?? "Azure Local Deployment"
-    }
-
-    Write-LogMessage "Customer: $CustomerName" -Level Info
-    Write-LogMessage "Project: $ProjectName" -Level Info
-
-    # Collect validation results
-    Write-LogMessage "Collecting validation results..." -Level Info
-    $validationResults = Get-ValidationResults -Path $ValidationResultsPath
-
-    $foundChecks = ($validationResults.Values | Where-Object { $_.Found }).Count
-    $totalChecks = $validationResults.Count
-
-    Write-LogMessage "  Found $foundChecks of $totalChecks validation reports" -Level Info
-
-    # Generate signoff document
-    Write-LogMessage "Generating signoff document..." -Level Info
-    $signoffPath = New-SignoffDocument `
-        -OutputPath $OutputPath `
-        -CustomerName $CustomerName `
-        -ProjectName $ProjectName `
-        -ValidationResults $validationResults `
-        -Config $config
-
-    Write-LogMessage "  Signoff document: $signoffPath" -Level Success
-
-    # Summary
-    Write-LogMessage "=" * 60 -Level Info
-    Write-LogMessage "Validation Signoff Complete" -Level Success
-    Write-LogMessage "=" * 60 -Level Info
-    Write-LogMessage "  Document: $signoffPath" -Level Info
-    Write-LogMessage "  Validation checks found: $foundChecks / $totalChecks" -Level Info
-    Write-LogMessage "" -Level Info
-    Write-LogMessage "NEXT STEPS:" -Level Warning
-    Write-LogMessage "  1. Review the signoff document" -Level Info
-    Write-LogMessage "  2. Complete any missing validation checks" -Level Info
-    Write-LogMessage "  3. Obtain required signatures" -Level Info
-    Write-LogMessage "  4. Proceed to deployment phase" -Level Info
-
-    return @{
-        SignoffPath       = $signoffPath
-        ValidationResults = $validationResults
-        ReadyForDeployment = ($foundChecks -eq $totalChecks)
-    }
-
-} catch {
-    Write-LogMessage "Signoff generation failed: $_" -Level Error
-    throw
-}
-
-#endregion Main
+[pscustomobject]@{ Action = $action; SignoffPath = $signoffFile; Verdict = $verification.Verdict; ReadyForDeployment = $passed }
+exit 0

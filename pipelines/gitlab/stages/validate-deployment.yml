@@ -5,14 +5,8 @@
 validate:connectivity:
   stage: validate-deployment
   script:
-    - pwsh -Command "
-        . scripts/common/utilities/helpers/config-loader.ps1;
-        \$config = Get-Config -ConfigPath '${CONFIG_PATH}';
-        Write-Host 'Running post-deployment connectivity validation...';
-        Write-Host 'Checking Azure Arc agent status on all nodes...';
-        Write-Host 'Checking cluster health...';
-        Write-Host 'Checking monitoring data flow...'
-      "
+    - pwsh -NoProfile -File scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path "${INFRASTRUCTURE_FILE}"
+    - echo "The post-deployment checks are Invoke-VerifyPostDeployment.ps1 and the scripts of scripts/deploy/06-testing-validation; run them from a jump server that reaches the cluster."
   when: manual
   allow_failure: true
   rules:

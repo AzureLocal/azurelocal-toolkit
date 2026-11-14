@@ -37,8 +37,8 @@ variables:
     value: 'src/terraform/environments/azure-local'
   - name: ANSIBLE_ROOT
     value: 'src/ansible'
-  - name: CONFIG_PATH
-    value: 'config/variables/variables.yml'
+  - name: INFRASTRUCTURE_FILE
+    value: 'config/infrastructure.yml'
 
 stages:
   # =========================================================================

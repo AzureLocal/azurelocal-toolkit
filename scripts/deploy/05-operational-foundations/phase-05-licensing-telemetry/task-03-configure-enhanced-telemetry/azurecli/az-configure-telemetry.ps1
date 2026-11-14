@@ -2,7 +2,7 @@
 # PLACEHOLDER: this script does not do the task. It ends with exit code 3 (NOT IMPLEMENTED) and changes nothing.
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$ConfigPath = '',
+    [Parameter(Mandatory)][string]$InfrastructureFile,
     [string]$LogPath = ''
 )
 
@@ -29,6 +29,5 @@ Invoke-DeploymentAzCliPowerShell `
     -ScriptPath $PSCommandPath `
     -TaskPath '05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry' `
     -ActionName 'az-configure-telemetry' `
-    -ConfigPath $ConfigPath `
     -LogPath $LogPath `
     -Parameters $PSBoundParameters

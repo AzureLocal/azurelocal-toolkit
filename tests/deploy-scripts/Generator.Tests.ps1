@@ -162,6 +162,8 @@ Describe 'What the generator writes is what is committed' {
         $committed = Get-ChildItem -LiteralPath $script:Deploy -Recurse -File -Filter '*.ps1' |
             Where-Object { -not $_.FullName.StartsWith($common) -and $_.Directory.Name -eq $Folder } |
             Where-Object { (Get-Content -LiteralPath $_.FullName -Raw) -match $Pattern } |
+            # A placeholder that still passes the retired -ConfigPath is not the form the generator writes; those are regenerated with their task folder.
+            Where-Object { (Get-Content -LiteralPath $_.FullName -Raw) -notmatch '-ConfigPath' } |
             Select-Object -First 1
         $committed | Should -Not -BeNullOrEmpty
         $task = $committed.Directory.Parent.FullName.Substring($script:Deploy.Length).TrimStart('\', '/').Replace('\', '/')
