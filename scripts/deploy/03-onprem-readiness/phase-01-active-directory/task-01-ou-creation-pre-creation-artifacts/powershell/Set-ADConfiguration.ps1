@@ -1,417 +1,206 @@
 <#
 .SYNOPSIS
-    Validates and configures Active Directory prerequisites for Azure Local deployment.
+    Prepares Active Directory for Azure Local from infrastructure.yml: the dedicated OU and the LCM deployment user, and, when the file asks,
+    the computer objects of the machines and the cluster.
 
 .DESCRIPTION
-    This script handles AD configuration including:
-    - Domain connectivity validation
-    - OU structure creation for cluster objects
-    - Computer account pre-staging
-    - Service account creation
-    - GPO baseline configuration
-    - DNS record validation
+    Phase 01 (Active Directory), Task 01. Azure Local needs a dedicated organizational unit (OU) with group policy inheritance blocked, and a
+    deployment (LCM) user that has the rights on that OU (Microsoft Learn: Prepare Active Directory for Azure Local deployment). Microsoft's
+    own module does this: New-HciAdObjectsPreCreation of AsHciADArtifactsPreCreationTool (Install-Module AsHciADArtifactsPreCreationTool
+    -Repository PSGallery). This script calls that cmdlet with the OU and the LCM user of the file, so the toolkit builds nothing of its own.
 
-.PARAMETER DomainController
-    Target domain controller FQDN.
+    The LCM user name and the OU are the keys of the file; the password is read through the secret resolver
+    (scripts/common/secrets/AzlSecret.psm1) from the reference in identity.active_directory.lcm_user.password, in memory only.
 
-.PARAMETER ClusterName
-    Name of the Azure Local cluster.
+    When identity.active_directory.precreate_computer_objects is true, the script also creates a computer object for each machine (nodes[].name)
+    and the cluster (cluster.name) in the OU, as Microsoft Learn allows instead of letting the deployment create them (Custom Active Directory
+    configuration for your Azure Local instance; Prestage cluster computer objects). The cluster object is created disabled, as that page says.
+    Without the key, or with false, the objects are created by the OS configuration (the domain join) and the deployment.
 
-.PARAMETER NodeNames
-    Array of cluster node names.
+    Idempotent. When the OU and the LCM user both exist, nothing is sent to the preparation module. When only one of the two exists, the
+    script stops and says so: the module creates both, and a half-made preparation has to be looked at by a person. A computer object that
+    exists is reported and left alone. -WhatIf changes nothing. The script never deletes anything.
 
-.PARAMETER OUPath
-    Organizational Unit path for cluster objects.
+    With scenario.identity local_identity the instance has no Active Directory: the script does nothing and exits 0.
 
-.PARAMETER ServiceAccountName
-    Name for the cluster service account.
+    The script asks nothing and signs in nowhere. It uses the account that runs it, or -Credential, and needs the ActiveDirectory module
+    (Remote Server Administration Tools or a domain controller), the AsHciADArtifactsPreCreationTool module, and the right to create an OU
+    and a user in the domain.
 
-.PARAMETER ConfigFile
-    Path to infrastructure.yml configuration.
+    Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
+        scenario.identity
+        identity.active_directory.domain_fqdn, .ou_path, .lcm_user.username, .lcm_user.password, .precreate_computer_objects
+        cluster.name, nodes[].name                  (only with precreate_computer_objects)
+
+    Exit codes: 0 the OU, the user (and the objects) are in place (created now, already there, or planned under -WhatIf); 1 a precondition or a
+    call failed (module missing, domain not reachable, a half-made preparation, the secret could not be read); 2 a value in the file is missing
+    or not usable (no domain, an OU that is not in the domain, a user name Microsoft does not allow, no password reference).
+
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here.
+
+.PARAMETER Credential
+    Optional. The account that creates the objects. Without it the account that runs the script is used.
+
+.PARAMETER LogPath
+    Optional. Also append the progress lines to this file. Keep it out of the repository.
 
 .EXAMPLE
-    .\Set-ADConfiguration.ps1 -DomainController "dc01.Contoso.com" -ClusterName "azl-cluster-01" -NodeNames @("node-01","node-02")
+    ./Set-ADConfiguration.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 
-.NOTES
-    Author: Azure Local Cloud AzureLocalCloud Team
-    Version: 1.0.0
-    Created: 2026-02-01
-    
-    Requires ActiveDirectory PowerShell module and Domain Admin privileges.
+    Shows what would be created, and creates nothing.
+
+.EXAMPLE
+    ./Set-ADConfiguration.ps1 -InfrastructureFile ./infrastructure.yml
+
+    Creates the OU and the LCM user. Run it again: both are reported as AlreadyExists.
 #>
-
-[CmdletBinding()]
+#Requires -Version 7.0
+[CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$DomainController,
-
-    [Parameter(Mandatory = $true)]
-    [string]$ClusterName,
-
-    [Parameter(Mandatory = $true)]
-    [string[]]$NodeNames,
-
-    [Parameter(Mandatory = $false)]
-    [string]$OUPath,
-
-    [Parameter(Mandatory = $false)]
-    [string]$ServiceAccountName,
-
-    [Parameter(Mandatory = $false)]
-    [string]$ConfigFile
+    [Parameter(Mandatory)][string]$InfrastructureFile,
+    [pscredential]$Credential,
+    [string]$LogPath
 )
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
+$logFile = $LogPath
 
-# Import helpers
-$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$HelpersPath = Join-Path $ScriptRoot "..\..\..\common\utilities\helpers"
+$common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common'))
+Import-Module ([IO.Path]::Combine($common, 'infrastructure', 'AzlInfrastructure.psm1')) -Force
+Import-Module ([IO.Path]::Combine($common, 'secrets', 'AzlSecret.psm1')) -Force
 
-if (Test-Path (Join-Path $HelpersPath "logging.ps1")) {
-    . (Join-Path $HelpersPath "logging.ps1")
+function Write-Line([string]$Text) {
+    Write-Information -MessageData $Text -InformationAction Continue
+    if ($logFile) { Add-Content -LiteralPath $logFile -Value ('[{0:yyyy-MM-dd HH:mm:ss}] {1}' -f (Get-Date), $Text) -WhatIf:$false }
+}
+function Exit-InputProblem([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 2 }
+function Exit-Failed([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 1 }
+function Get-Field($Map, [string]$Key, $Default = $null) {
+    if ($Map -is [System.Collections.IDictionary] -and $Map.Contains($Key) -and $null -ne $Map[$Key] -and "$($Map[$Key])" -ne '') { return $Map[$Key] }
+    $Default
+}
+# Escapes a value for an LDAP filter (RFC 4515).
+function ConvertTo-LdapValue([string]$Value) {
+    $Value.Replace('\', '\5c').Replace('*', '\2a').Replace('(', '\28').Replace(')', '\29').Replace([string][char]0, '\00')
+}
+
+# ---- the values, from infrastructure.yml only
+try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.Message)" }
+
+if (([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'scenario.identity')).Trim().ToLowerInvariant() -eq 'local_identity') {
+    Write-Line 'scenario.identity is local_identity: the instance has no Active Directory, so there is nothing to prepare.'
+    exit 0
+}
+$directory = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.active_directory'
+$domain = ([string](Get-Field $directory 'domain_fqdn' '')).Trim()
+$ouPath = ([string](Get-Field $directory 'ou_path' '')).Trim()
+$lcm = Get-Field $directory 'lcm_user'
+$lcmName = ([string](Get-Field $lcm 'username' '')).Trim()
+$lcmReference = ([string](Get-Field $lcm 'password' '')).Trim()
+$precreate = [string](Get-Field $directory 'precreate_computer_objects' 'false')
+
+if (-not $domain) { Exit-InputProblem 'identity.active_directory.domain_fqdn is missing. It is the domain that is prepared.' }
+if (-not $ouPath) { Exit-InputProblem 'identity.active_directory.ou_path is missing. It is the distinguished name of the dedicated OU.' }
+if ($ouPath -notmatch '^OU=') { Exit-InputProblem "identity.active_directory.ou_path '$ouPath' is not the distinguished name of an OU (it has to start with OU=)." }
+if ($ouPath -match '[&"''<>]') { Exit-InputProblem "identity.active_directory.ou_path '$ouPath' has a character Microsoft does not support in the path: & `" ' < >." }
+$expectedSuffix = (@($domain.Split('.') | ForEach-Object { "DC=$_" }) -join ',')
+if (-not $ouPath.EndsWith($expectedSuffix, [StringComparison]::OrdinalIgnoreCase)) { Exit-InputProblem "identity.active_directory.ou_path '$ouPath' is not in the domain $domain (it has to end with $expectedSuffix)." }
+if (-not $lcmName) { Exit-InputProblem 'identity.active_directory.lcm_user.username is missing. It is the deployment user the preparation creates.' }
+# Microsoft Learn: 1 to 20 characters, letters, numbers, hyphens and underscores, not starting with a hyphen or a number; not "admin"; no domain.
+if ($lcmName -notmatch '^[A-Za-z_][A-Za-z0-9_-]{0,19}$') { Exit-InputProblem "identity.active_directory.lcm_user.username '$lcmName' is not allowed: 1 to 20 letters, numbers, hyphens and underscores, not starting with a hyphen or a number, and no domain name." }
+if ($lcmName -ieq 'admin') { Exit-InputProblem "identity.active_directory.lcm_user.username can't be 'admin'." }
+if (-not $lcmReference) { Exit-InputProblem 'identity.active_directory.lcm_user.password is missing. It is the secret reference of the deployment user''s password.' }
+if ($precreate.Trim().ToLowerInvariant() -notin 'true', 'false') { Exit-InputProblem "identity.active_directory.precreate_computer_objects '$precreate' is not true or false." }
+$precreateObjects = $precreate.Trim().ToLowerInvariant() -eq 'true'
+
+$objectNames = [System.Collections.Generic.List[object]]::new()
+if ($precreateObjects) {
+    $clusterName = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')).Trim()
+    if (-not $clusterName) { Exit-InputProblem 'cluster.name is missing. It is the name of the cluster object that is pre-created.' }
+    $rawNodes = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'nodes'
+    $nodeNames = @(@($rawNodes) | Where-Object { $_ -is [System.Collections.IDictionary] } | ForEach-Object { ([string](Get-Field $_ 'name' '')).Trim() } | Where-Object { $_ })
+    if ($nodeNames.Count -eq 0) { Exit-InputProblem 'nodes[].name is empty. The machines whose objects are pre-created are listed there.' }
+    foreach ($n in $nodeNames) { $objectNames.Add([pscustomobject]@{ Name = $n; Kind = 'machine'; Enabled = $true }) }
+    $objectNames.Add([pscustomobject]@{ Name = $clusterName; Kind = 'cluster'; Enabled = $false })
+}
+
+# ---- preconditions (read only)
+$needed = @('Get-ADOrganizationalUnit', 'Get-ADUser', 'New-HciAdObjectsPreCreation')
+if ($precreateObjects) { $needed += 'Get-ADComputer', 'New-ADComputer' }
+foreach ($cmd in $needed) {
+    if (-not (Get-Command -Name $cmd -ErrorAction SilentlyContinue)) {
+        $hint = if ($cmd -eq 'New-HciAdObjectsPreCreation') { 'Install the module: Install-Module AsHciADArtifactsPreCreationTool -Repository PSGallery.' } else { 'Install the ActiveDirectory module (Remote Server Administration Tools) or run the script on a domain controller.' }
+        Exit-Failed "$cmd was not found. $hint"
+    }
+}
+$adCommon = @{ Server = $domain; ErrorAction = 'Stop' }
+if ($Credential) { $adCommon.Credential = $Credential }
+
+$rows = [System.Collections.Generic.List[object]]::new()
+function Add-Row([string]$Item, [string]$Action, [string]$Detail = '') {
+    $rows.Add([pscustomobject][ordered]@{ Item = $Item; Action = $Action; Detail = $Detail })
+    $tag = switch ($Action) { 'Failed' { '[failed]  ' } 'AlreadyExists' { '[exists]  ' } { $_ -like 'Would*' } { '[plan]    ' } default { '[created] ' } }
+    Write-Line ("{0}{1}{2}" -f $tag, $Item, $(if ($Detail) { " ($Detail)" } else { '' }))
+}
+
+# ---- the OU and the LCM user
+$ouFilter = "DistinguishedName -eq '$($ouPath.Replace("'", "''"))'"
+$userFilter = "SamAccountName -eq '$lcmName'"
+try {
+    $ouExists = [bool](Get-ADOrganizationalUnit -Filter $ouFilter @adCommon)
+    $userExists = [bool](Get-ADUser -Filter $userFilter @adCommon)
+}
+catch { Exit-Failed "The domain $domain could not be read: $($_.Exception.Message)" }
+
+if ($ouExists -and $userExists) {
+    Add-Row "OU $ouPath" 'AlreadyExists'
+    Add-Row "LCM user $lcmName" 'AlreadyExists'
+}
+elseif ($ouExists -or $userExists) {
+    $what = if ($ouExists) { "The OU '$ouPath' exists and the user '$lcmName' does not" } else { "The user '$lcmName' exists and the OU '$ouPath' does not" }
+    Add-Row "OU $ouPath / LCM user $lcmName" 'Failed' "$what. New-HciAdObjectsPreCreation creates both, so the script stops: finish or undo the earlier preparation by hand, then run it again."
+}
+elseif ($PSCmdlet.ShouldProcess("domain $domain", "Create the OU '$ouPath' and the LCM user '$lcmName' (New-HciAdObjectsPreCreation)")) {
+    $secure = $null
+    try { $secure = Get-AzlSecretValue -Reference $lcmReference -Infrastructure $infra }
+    catch {
+        $code = if ($_.Exception.Data.Contains('AzlExit')) { [int]$_.Exception.Data['AzlExit'] } else { 1 }
+        if ($code -eq 2) { Exit-InputProblem "identity.active_directory.lcm_user.password: $($_.Exception.Message)" }
+        Exit-Failed "The password of the LCM user could not be read: $($_.Exception.Message)"
+    }
+    try {
+        $lcmCredential = [pscredential]::new($lcmName, $secure)
+        New-HciAdObjectsPreCreation -AzureStackLCMUserCredential $lcmCredential -AsHciOUName $ouPath
+        Add-Row "OU $ouPath" 'Created'
+        Add-Row "LCM user $lcmName" 'Created'
+    }
+    catch { Add-Row "OU $ouPath / LCM user $lcmName" 'Failed' $_.Exception.Message }
 }
 else {
-    function Write-Log {
-        param([string]$Message, [string]$Level = "INFO")
-        $color = switch ($Level) {
-            "INFO" { "White" }; "WARN" { "Yellow" }; "ERROR" { "Red" }; "SUCCESS" { "Green" }
-        }
-        Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message" -ForegroundColor $color
-    }
+    Add-Row "OU $ouPath" 'WouldCreate'
+    Add-Row "LCM user $lcmName" 'WouldCreate'
 }
 
-# Load config if provided
-if ($ConfigFile -and (Test-Path $ConfigFile)) {
-    if (Test-Path (Join-Path $HelpersPath "config-loader.ps1")) {
-        . (Join-Path $HelpersPath "config-loader.ps1")
-        $Config = Get-Config -ConfigPath $ConfigFile
-    }
-}
-
-function Test-DomainConnectivity {
-    Write-Log -Message "Testing domain connectivity..." -Level "INFO"
-    
+# ---- the computer objects, when the file asks for them
+$ready = @($rows | Where-Object Action -EQ 'Failed').Count -eq 0
+foreach ($object in $objectNames) {
+    $item = "computer $($object.Name) ($($object.Kind))"
+    if (-not $ready) { Add-Row $item 'Skipped' 'the OU or the user is not in place'; continue }
     try {
-        $dcTest = Test-Connection -ComputerName $DomainController -Count 2 -Quiet
-        
-        if ($dcTest) {
-            Write-Log -Message "  Domain controller reachable: $DomainController" -Level "SUCCESS"
+        if (Get-ADComputer -Filter "Name -eq '$(ConvertTo-LdapValue $object.Name)'" @adCommon) { Add-Row $item 'AlreadyExists'; continue }
+        if ($PSCmdlet.ShouldProcess("OU $ouPath", "Create the computer object '$($object.Name)' (enabled: $($object.Enabled))")) {
+            New-ADComputer -Name $object.Name -Path $ouPath -Enabled $object.Enabled @adCommon
+            Add-Row $item 'Created'
         }
-        else {
-            Write-Log -Message "  Cannot reach domain controller: $DomainController" -Level "ERROR"
-            return $false
-        }
-        
-        # Test LDAP connectivity
-        $ldapTest = Test-NetConnection -ComputerName $DomainController -Port 389 -WarningAction SilentlyContinue
-        
-        if ($ldapTest.TcpTestSucceeded) {
-            Write-Log -Message "  LDAP connectivity: OK" -Level "SUCCESS"
-        }
-        else {
-            Write-Log -Message "  LDAP connectivity: FAILED" -Level "ERROR"
-            return $false
-        }
-        
-        # Test Kerberos
-        $kerbTest = Test-NetConnection -ComputerName $DomainController -Port 88 -WarningAction SilentlyContinue
-        
-        if ($kerbTest.TcpTestSucceeded) {
-            Write-Log -Message "  Kerberos connectivity: OK" -Level "SUCCESS"
-        }
-        else {
-            Write-Log -Message "  Kerberos connectivity: FAILED" -Level "WARN"
-        }
-        
-        return $true
+        else { Add-Row $item 'WouldCreate' }
     }
-    catch {
-        Write-Log -Message "Domain connectivity test failed: $_" -Level "ERROR"
-        return $false
-    }
+    catch { Add-Row $item 'Failed' $_.Exception.Message }
 }
 
-function New-ClusterOUStructure {
-    Write-Log -Message "Creating OU structure for cluster objects..." -Level "INFO"
-    
-    try {
-        Import-Module ActiveDirectory -ErrorAction Stop
-        
-        # Get domain DN
-        $domain = Get-ADDomain -Server $DomainController
-        $domainDN = $domain.DistinguishedName
-        
-        # Define OU structure
-        if (-not $OUPath) {
-            $OUPath = "OU=AzureLocal,OU=Servers,$domainDN"
-        }
-        
-        # Parse OU path and create hierarchy
-        $ouParts = $OUPath -split "," | Where-Object { $_ -match "^OU=" }
-        [array]::Reverse($ouParts)
-        
-        $currentPath = $domainDN
-        
-        foreach ($ouPart in $ouParts) {
-            $ouName = $ouPart -replace "OU=", ""
-            $fullPath = "$ouPart,$currentPath"
-            
-            $exists = Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '$fullPath'" -Server $DomainController -ErrorAction SilentlyContinue
-            
-            if (-not $exists) {
-                Write-Log -Message "  Creating OU: $ouName" -Level "INFO"
-                New-ADOrganizationalUnit -Name $ouName -Path $currentPath -Server $DomainController -ErrorAction Stop
-                Write-Log -Message "    Created: $fullPath" -Level "SUCCESS"
-            }
-            else {
-                Write-Log -Message "  OU exists: $ouName" -Level "INFO"
-            }
-            
-            $currentPath = $fullPath
-        }
-        
-        # Create sub-OUs for organization
-        $subOUs = @("Computers", "ServiceAccounts", "Groups")
-        
-        foreach ($subOU in $subOUs) {
-            $subPath = "OU=$subOU,$OUPath"
-            $exists = Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '$subPath'" -Server $DomainController -ErrorAction SilentlyContinue
-            
-            if (-not $exists) {
-                New-ADOrganizationalUnit -Name $subOU -Path $OUPath -Server $DomainController
-                Write-Log -Message "  Created sub-OU: $subOU" -Level "SUCCESS"
-            }
-        }
-        
-        return $OUPath
-    }
-    catch {
-        Write-Log -Message "Failed to create OU structure: $_" -Level "ERROR"
-        throw
-    }
-}
-
-function New-ClusterComputerAccounts {
-    param([string]$TargetOU)
-    
-    Write-Log -Message "Pre-staging computer accounts..." -Level "INFO"
-    
-    try {
-        $computersOU = "OU=Computers,$TargetOU"
-        
-        # Create cluster computer account
-        $clusterAccount = Get-ADComputer -Filter "Name -eq '$ClusterName'" -Server $DomainController -ErrorAction SilentlyContinue
-        
-        if (-not $clusterAccount) {
-            Write-Log -Message "  Creating cluster account: $ClusterName" -Level "INFO"
-            New-ADComputer -Name $ClusterName -Path $computersOU -Server $DomainController -Enabled $false -Description "Azure Local Cluster"
-            
-            # Set permissions for cluster account
-            $acl = Get-Acl "AD:$computersOU"
-            # Note: In production, would set specific permissions for cluster creation
-            
-            Write-Log -Message "    Created and configured: $ClusterName" -Level "SUCCESS"
-        }
-        else {
-            Write-Log -Message "  Cluster account exists: $ClusterName" -Level "INFO"
-        }
-        
-        # Create node computer accounts
-        foreach ($node in $NodeNames) {
-            $nodeAccount = Get-ADComputer -Filter "Name -eq '$node'" -Server $DomainController -ErrorAction SilentlyContinue
-            
-            if (-not $nodeAccount) {
-                Write-Log -Message "  Creating node account: $node" -Level "INFO"
-                New-ADComputer -Name $node -Path $computersOU -Server $DomainController -Enabled $true -Description "Azure Local Node"
-                Write-Log -Message "    Created: $node" -Level "SUCCESS"
-            }
-            else {
-                Write-Log -Message "  Node account exists: $node" -Level "INFO"
-            }
-        }
-    }
-    catch {
-        Write-Log -Message "Failed to create computer accounts: $_" -Level "ERROR"
-        throw
-    }
-}
-
-function New-ClusterServiceAccount {
-    param([string]$TargetOU)
-    
-    if (-not $ServiceAccountName) {
-        $ServiceAccountName = "svc-$ClusterName"
-    }
-    
-    Write-Log -Message "Creating service account: $ServiceAccountName" -Level "INFO"
-    
-    try {
-        $serviceOU = "OU=ServiceAccounts,$TargetOU"
-        
-        # Check if account exists
-        $existing = Get-ADUser -Filter "SamAccountName -eq '$ServiceAccountName'" -Server $DomainController -ErrorAction SilentlyContinue
-        
-        if (-not $existing) {
-            # Generate secure password
-            $password = [System.Web.Security.Membership]::GeneratePassword(24, 4)
-            $securePassword = ConvertTo-SecureString $password -AsPlainText -Force
-            
-            New-ADUser -Name $ServiceAccountName `
-                       -SamAccountName $ServiceAccountName `
-                       -UserPrincipalName "$ServiceAccountName@$($domain.DNSRoot)" `
-                       -Path $serviceOU `
-                       -AccountPassword $securePassword `
-                       -Enabled $true `
-                       -PasswordNeverExpires $true `
-                       -CannotChangePassword $true `
-                       -Description "Azure Local Cluster Service Account" `
-                       -Server $DomainController
-            
-            Write-Log -Message "  Service account created: $ServiceAccountName" -Level "SUCCESS"
-            Write-Log -Message "  NOTE: Store password securely in Key Vault" -Level "WARN"
-            
-            return @{
-                AccountName = $ServiceAccountName
-                Password = $password
-            }
-        }
-        else {
-            Write-Log -Message "  Service account exists: $ServiceAccountName" -Level "INFO"
-            return @{
-                AccountName = $ServiceAccountName
-                Password = $null
-            }
-        }
-    }
-    catch {
-        Write-Log -Message "Failed to create service account: $_" -Level "ERROR"
-        throw
-    }
-}
-
-function New-ClusterSecurityGroup {
-    param([string]$TargetOU)
-    
-    Write-Log -Message "Creating security groups..." -Level "INFO"
-    
-    try {
-        $groupsOU = "OU=Groups,$TargetOU"
-        $groups = @(
-            @{ Name = "GRP-$ClusterName-Admins"; Description = "Azure Local Cluster Administrators" }
-            @{ Name = "GRP-$ClusterName-Operators"; Description = "Azure Local Cluster Operators" }
-        )
-        
-        foreach ($group in $groups) {
-            $existing = Get-ADGroup -Filter "Name -eq '$($group.Name)'" -Server $DomainController -ErrorAction SilentlyContinue
-            
-            if (-not $existing) {
-                New-ADGroup -Name $group.Name `
-                            -GroupScope Global `
-                            -GroupCategory Security `
-                            -Path $groupsOU `
-                            -Description $group.Description `
-                            -Server $DomainController
-                
-                Write-Log -Message "  Created group: $($group.Name)" -Level "SUCCESS"
-            }
-            else {
-                Write-Log -Message "  Group exists: $($group.Name)" -Level "INFO"
-            }
-        }
-    }
-    catch {
-        Write-Log -Message "Failed to create security groups: $_" -Level "ERROR"
-        throw
-    }
-}
-
-function Test-DNSConfiguration {
-    Write-Log -Message "Validating DNS configuration..." -Level "INFO"
-    
-    try {
-        $domain = Get-ADDomain -Server $DomainController
-        $dnsZone = $domain.DNSRoot
-        
-        # Check for existing DNS records
-        foreach ($node in $NodeNames) {
-            $fqdn = "$node.$dnsZone"
-            
-            try {
-                $dnsResult = Resolve-DnsName -Name $fqdn -Server $DomainController -ErrorAction Stop
-                Write-Log -Message "  $node : Resolved to $($dnsResult.IPAddress)" -Level "SUCCESS"
-            }
-            catch {
-                Write-Log -Message "  $node : No DNS record (will be created at domain join)" -Level "INFO"
-            }
-        }
-        
-        # Check cluster name
-        try {
-            $clusterFqdn = "$ClusterName.$dnsZone"
-            $clusterDns = Resolve-DnsName -Name $clusterFqdn -Server $DomainController -ErrorAction SilentlyContinue
-            
-            if ($clusterDns) {
-                Write-Log -Message "  $ClusterName : Already exists ($($clusterDns.IPAddress))" -Level "WARN"
-            }
-            else {
-                Write-Log -Message "  $ClusterName : Available (will be created at cluster formation)" -Level "SUCCESS"
-            }
-        }
-        catch {
-            Write-Log -Message "  $ClusterName : Available" -Level "SUCCESS"
-        }
-    }
-    catch {
-        Write-Log -Message "DNS validation failed: $_" -Level "ERROR"
-    }
-}
-
-# Main execution
-try {
-    Write-Log -Message "========================================" -Level "INFO"
-    Write-Log -Message "Active Directory Configuration" -Level "INFO"
-    Write-Log -Message "Domain Controller: $DomainController" -Level "INFO"
-    Write-Log -Message "Cluster Name: $ClusterName" -Level "INFO"
-    Write-Log -Message "Nodes: $($NodeNames -join ', ')" -Level "INFO"
-    Write-Log -Message "========================================" -Level "INFO"
-    Write-Host ""
-    
-    # Import AD module
-    Import-Module ActiveDirectory -ErrorAction Stop
-    
-    # Test connectivity first
-    if (-not (Test-DomainConnectivity)) {
-        throw "Domain connectivity check failed"
-    }
-    Write-Host ""
-    
-    # Create OU structure
-    $targetOU = New-ClusterOUStructure
-    Write-Host ""
-    
-    # Pre-stage computer accounts
-    New-ClusterComputerAccounts -TargetOU $targetOU
-    Write-Host ""
-    
-    # Create service account
-    $svcAccount = New-ClusterServiceAccount -TargetOU $targetOU
-    Write-Host ""
-    
-    # Create security groups
-    New-ClusterSecurityGroup -TargetOU $targetOU
-    Write-Host ""
-    
-    # Validate DNS
-    Test-DNSConfiguration
-    Write-Host ""
-    
-    Write-Log -Message "========================================" -Level "INFO"
-    Write-Log -Message "AD Configuration Complete" -Level "SUCCESS"
-    Write-Log -Message "Target OU: $targetOU" -Level "INFO"
-    
-    if ($svcAccount.Password) {
-        Write-Log -Message "IMPORTANT: Store service account password in Key Vault" -Level "WARN"
-    }
-}
-catch {
-    Write-Log -Message "AD configuration failed: $_" -Level "ERROR"
-    exit 1
-}
+$failed = @($rows | Where-Object Action -EQ 'Failed').Count
+Write-Line "Summary: $(@($rows | Where-Object Action -EQ 'Created').Count) created, $(@($rows | Where-Object Action -EQ 'AlreadyExists').Count) already existed, $(@($rows | Where-Object Action -Like 'Would*').Count) planned, $failed failed."
+$rows
+if ($failed -gt 0) { exit 1 }
+exit 0

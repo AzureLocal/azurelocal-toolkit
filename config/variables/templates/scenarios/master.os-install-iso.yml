@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for infrastructure.yml for scenario.os_install = iso with every variable. Schema 5.6.21. Scenario: os_install=iso.
+# Template for infrastructure.yml for scenario.os_install = iso with every variable. Schema 5.6.23. Scenario: os_install=iso.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -1032,6 +1032,9 @@ identity:
     # Whether the DNS servers of the management network support secure dynamic updates (Microsoft DNS integrated with Active Directory). true: th...
     # used by: deployment
     dns_secure_dynamic_updates: false
+    # (since 5.6.23) 
+    # default: false; used by: deployment
+    precreate_computer_objects: false
     # Groups created in the OU for administration of the instance.
     # used by: ansible
     security_groups:
@@ -1682,6 +1685,15 @@ landing_zone:
           route_table: ""
       # Names of networks this one peers with.
       peer_with: ["vnet-iic-hub-01"]
+      # (since 5.6.23) 
+      # default: true; used by: cicd_infra
+      allow_forwarded_traffic: true
+      # (since 5.6.23) 
+      # default: false; used by: cicd_infra
+      allow_gateway_transit: false
+      # (since 5.6.23) 
+      # default: false; used by: cicd_infra
+      use_remote_gateways: false
   # (since 5.6.21) 
   # used by: terraform
   network_security_groups:
@@ -1788,6 +1800,7 @@ landing_zone:
       # (since 5.6.19) 
       network: "vnet-iic-hub-01"
     # (since 5.6.19) 
+    # used by: terraform
     nat_gateway:
       # Name of the NAT gateway.
       # required
@@ -1799,6 +1812,7 @@ landing_zone:
       # Names of the subnets of that network that use the NAT gateway for outbound traffic.
       subnets: ["snet-iic-mgmt-01", "snet-iic-mgmt-02"]
       # Minutes a TCP connection may stay idle before the NAT gateway drops it: 4 to 120 (Microsoft Learn, Azure NAT Gateway).
+      # used by: terraform
       idle_timeout_minutes: 10
     # Azure Firewall of the hub.
     firewall:

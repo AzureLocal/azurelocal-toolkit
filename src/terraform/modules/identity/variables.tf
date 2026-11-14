@@ -54,12 +54,7 @@ variable "azure_local_subscription_id" {
 variable "spn_subscription_roles" {
   description = "Subscription-level RBAC roles for the deployment SPN."
   type        = list(string)
-  default = [
-    "Contributor",
-    "User Access Administrator",
-    "Azure Stack HCI Administrator",
-    "Reader"
-  ]
+  default     = []
 }
 
 variable "spn_resource_group_roles" {

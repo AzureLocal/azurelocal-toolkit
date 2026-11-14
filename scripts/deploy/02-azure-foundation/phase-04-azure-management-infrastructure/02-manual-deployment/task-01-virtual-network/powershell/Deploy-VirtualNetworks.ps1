@@ -16,8 +16,10 @@
     A subnet's network_security_group and route_table are names of resources in the same resource group as the network. If the resource does
     not exist yet the subnet is created without it and the script says so. Run task 06 (New-LandingZoneNsg.ps1, which creates the groups of
     landing_zone.network_security_groups) before this script; if you did not, run this script again
-    after the security groups exist and it attaches them. Peerings are created with virtual network access and forwarded traffic allowed and
-    with no gateway transit: add transit with the gateway once the VPN gateway task has run.
+    after the security groups exist and it attaches them. A peering is made with virtual network access allowed and with the options of the
+    network it starts in: allow_forwarded_traffic (default true), allow_gateway_transit (default false) and use_remote_gateways (default
+    false). A hub that has the VPN gateway sets allow_gateway_transit; the spokes that use it set use_remote_gateways, and the gateway must
+    exist before a peering that uses it is created (the VPN gateway task, task 02).
 
     The script reads Azure (read only) and writes only with New-AzVirtualNetwork, Add-AzVirtualNetworkSubnetConfig,
     Set-AzVirtualNetworkSubnetConfig, Set-AzVirtualNetwork and Add-AzVirtualNetworkPeering, behind -WhatIf. It does not sign in: run
@@ -28,7 +30,8 @@
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
         azure.tenant_id, azure.location, tags
         landing_zone.subscriptions[].name, .id                                 the subscription of each network
-        landing_zone.networks[].name, .subscription, .resource_group, .location, .address_space, .dns_servers, .peer_with
+        landing_zone.networks[].name, .subscription, .resource_group, .location, .address_space, .dns_servers, .peer_with,
+                                                                               .allow_forwarded_traffic, .allow_gateway_transit, .use_remote_gateways
         landing_zone.networks[].subnets[].name, .prefix, .network_security_group, .route_table
 
     Exit codes: 0 every network and peering is in place (created now, already there, planned under -WhatIf, or reported as different and left
@@ -88,6 +91,14 @@ function Exit-Failed([string]$Message) {
 function Get-Entry([object]$Entry, [string]$Key) {
     if ($Entry -is [System.Collections.IDictionary] -and $Entry.Contains($Key) -and $null -ne $Entry[$Key]) { return ([string]$Entry[$Key]).Trim() }
     ''
+}
+
+# A true or false key of an entry: the default when the key is absent; $null when it holds anything else.
+function Get-EntryFlag([object]$Entry, [string]$Key, [bool]$Default) {
+    $text = Get-Entry $Entry $Key
+    if (-not $text) { return $Default }
+    if ($text -in 'true', 'false') { return ($text -eq 'true') }
+    $null
 }
 
 function Get-EntryList([object]$Entry, [string]$Key) {
@@ -170,9 +181,18 @@ $plan = foreach ($entry in $networkEntries) {
             }
         }
     }
+    # The options of the peerings that start in this network (Microsoft Learn: Virtual network peering). The defaults are the registry's.
+    $forwarded = Get-EntryFlag $entry 'allow_forwarded_traffic' $true
+    $transit = Get-EntryFlag $entry 'allow_gateway_transit' $false
+    $remoteGateways = Get-EntryFlag $entry 'use_remote_gateways' $false
+    foreach ($flag in @(@('allow_forwarded_traffic', $forwarded), @('allow_gateway_transit', $transit), @('use_remote_gateways', $remoteGateways))) {
+        if ($null -eq $flag[1]) { Exit-InputProblem "landing_zone.networks '$name': $($flag[0]) is '$(Get-Entry $entry $flag[0])'. It has to be true or false." }
+    }
+    if ($transit -and $remoteGateways) { Exit-InputProblem "landing_zone.networks '$name': allow_gateway_transit and use_remote_gateways cannot both be true on one network (a network either offers its gateway or uses a remote one)." }
     [pscustomobject]@{
         Name = $name; Subscription = $subscriptionName; SubscriptionId = $subscriptionId; ResourceGroup = $group; Location = $location
         AddressSpace = $space; DnsServers = $dns; Subnets = $subnets; PeerWith = @(Get-EntryList $entry 'peer_with')
+        AllowForwardedTraffic = [bool]$forwarded; AllowGatewayTransit = [bool]$transit; UseRemoteGateways = [bool]$remoteGateways
     }
 }
 $plan = @($plan)
@@ -182,6 +202,9 @@ foreach ($network in $plan) {
     foreach ($peer in $network.PeerWith) {
         if ($peer -ieq $network.Name) { Exit-InputProblem "landing_zone.networks '$($network.Name)': peer_with names the network itself." }
         if (-not @($plan | Where-Object { $_.Name -ieq $peer })) { Exit-InputProblem "landing_zone.networks '$($network.Name)': peer_with names '$peer', which is not an entry of landing_zone.networks." }
+        # A network that uses the gateway of its peer needs that peer to offer it (Microsoft Learn: Virtual network peering, gateway transit).
+        $remote = @($plan | Where-Object { $_.Name -ieq $peer }) | Select-Object -First 1
+        if ($network.UseRemoteGateways -and -not $remote.AllowGatewayTransit) { Exit-InputProblem "landing_zone.networks '$($network.Name)': use_remote_gateways is true, but its peer '$peer' does not set allow_gateway_transit to true." }
     }
 }
 
@@ -391,7 +414,11 @@ try {
                     Write-Line "[exists]  ${peeringName}: already there$(if ($state) { " ($state)" }), nothing changed."
                 }
                 elseif ($PSCmdlet.ShouldProcess("virtual network '$localName'", "Peer with '$remoteName' ($peeringName)")) {
-                    $null = Add-AzVirtualNetworkPeering -Name $peeringName -VirtualNetwork $networkObject[$localName.ToLowerInvariant()] -RemoteVirtualNetworkId $networkId[$remoteName.ToLowerInvariant()] -AllowForwardedTraffic -ErrorAction Stop
+                    $peeringArguments = @{ Name = $peeringName; VirtualNetwork = $networkObject[$localName.ToLowerInvariant()]; RemoteVirtualNetworkId = $networkId[$remoteName.ToLowerInvariant()]; ErrorAction = 'Stop' }
+                    if ($pair.Local.AllowForwardedTraffic) { $peeringArguments.AllowForwardedTraffic = $true }
+                    if ($pair.Local.AllowGatewayTransit) { $peeringArguments.AllowGatewayTransit = $true }
+                    if ($pair.Local.UseRemoteGateways) { $peeringArguments.UseRemoteGateways = $true }
+                    $null = Add-AzVirtualNetworkPeering @peeringArguments
                     $row.Action = 'Created'
                     Write-Line "[created] ${peeringName}."
                 }

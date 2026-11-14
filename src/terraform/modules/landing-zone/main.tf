@@ -31,31 +31,31 @@ resource "azurerm_management_group" "platform" {
 }
 
 resource "azurerm_management_group" "identity" {
-  display_name               = "Identity"
+  display_name               = var.management_groups.identity_display_name
   name                       = var.management_groups.identity_name
   parent_management_group_id = azurerm_management_group.platform.id
 }
 
 resource "azurerm_management_group" "connectivity" {
-  display_name               = "Connectivity"
+  display_name               = var.management_groups.connectivity_display_name
   name                       = var.management_groups.connectivity_name
   parent_management_group_id = azurerm_management_group.platform.id
 }
 
 resource "azurerm_management_group" "management" {
-  display_name               = "Management"
+  display_name               = var.management_groups.management_display_name
   name                       = var.management_groups.management_name
   parent_management_group_id = azurerm_management_group.platform.id
 }
 
 resource "azurerm_management_group" "security" {
-  display_name               = "Security"
+  display_name               = var.management_groups.security_display_name
   name                       = var.management_groups.security_name
   parent_management_group_id = azurerm_management_group.platform.id
 }
 
 resource "azurerm_management_group" "landing_zones" {
-  display_name               = "Landing Zones"
+  display_name               = var.management_groups.landing_zones_display_name
   name                       = var.management_groups.landing_zones_name
   parent_management_group_id = azurerm_management_group.root.id
 }

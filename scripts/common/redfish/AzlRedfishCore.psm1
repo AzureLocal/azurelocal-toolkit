@@ -1345,13 +1345,16 @@ function Invoke-AzlRedfishDiscovery {
         [switch]$VerifyCertificate,
         [switch]$UseSession,
         [int]$TimeoutSeconds = 60,
+        [int]$ConnectTimeoutSeconds = 10,
+        [int]$MaxRetries = 1,
         [int]$RetryDelaySeconds = 2,
         [int]$NodeBudgetSeconds = 900,
         [int]$MaxMembers = 1000
     )
     $started = [datetime]::UtcNow
     $ctx = New-AzlRedfishContext -BmcAddress $BmcAddress -Credential $Credential -VerifyCertificate:$VerifyCertificate -UseSession:$UseSession `
-        -TimeoutSeconds $TimeoutSeconds -RetryDelaySeconds $RetryDelaySeconds -NodeBudgetSeconds $NodeBudgetSeconds -MaxMembers $MaxMembers
+        -TimeoutSeconds $TimeoutSeconds -ConnectTimeoutSeconds $ConnectTimeoutSeconds -MaxRetries $MaxRetries -RetryDelaySeconds $RetryDelaySeconds `
+        -NodeBudgetSeconds $NodeBudgetSeconds -MaxMembers $MaxMembers
     try {
         if ($UseSession) { Open-AzlRedfishSession -Context $ctx }
         $full = ($Detail -ne 'Summary')

@@ -20,6 +20,12 @@ terraform {
 
 data "azurerm_client_config" "current" {}
 
+locals {
+  # The vaults hold secrets only, so the standard SKU is enough: premium adds keys protected by a hardware security module
+  # (Microsoft Learn: Azure Key Vault service tiers). Not a choice of a deployment.
+  key_vault_sku = "standard"
+}
+
 # -----------------------------------------------------------------------------
 # Key Vault — Platform secrets store
 # -----------------------------------------------------------------------------
@@ -28,16 +34,20 @@ resource "azurerm_key_vault" "platform" {
   location                   = var.location
   resource_group_name        = var.resource_group_name
   tenant_id                  = data.azurerm_client_config.current.tenant_id
-  sku_name                   = "standard"
+  sku_name                   = local.key_vault_sku
   purge_protection_enabled   = true
   soft_delete_retention_days = 90
 
   enable_rbac_authorization = true
 
-  network_acls {
-    bypass         = "AzureServices"
-    default_action = "Deny"
-    ip_rules       = var.key_vault_allowed_ips
+  # With ranges listed (key_vault_allowed_ips) the vault is closed to every other address; without them it keeps the Azure default (all networks).
+  dynamic "network_acls" {
+    for_each = length(var.key_vault_allowed_ips) > 0 ? [1] : []
+    content {
+      bypass         = "AzureServices"
+      default_action = "Deny"
+      ip_rules       = var.key_vault_allowed_ips
+    }
   }
 
   tags = var.tags
@@ -70,17 +80,14 @@ resource "azurerm_key_vault" "azure_local" {
   location                   = var.location
   resource_group_name        = var.azl_key_vault_resource_group
   tenant_id                  = data.azurerm_client_config.current.tenant_id
-  sku_name                   = "standard"
+  sku_name                   = local.key_vault_sku
   purge_protection_enabled   = true
   soft_delete_retention_days = 90
 
   enable_rbac_authorization = true
 
-  network_acls {
-    bypass         = "AzureServices"
-    default_action = "Deny"
-    ip_rules       = var.key_vault_allowed_ips
-  }
+  # No network rules: the cluster Key Vault keeps the Azure default (all networks), because Azure Local needs to reach it
+  # (Microsoft Learn: Azure Local system requirements, Key Vault).
 
   tags = var.tags
 }
@@ -120,13 +127,14 @@ resource "azurerm_role_assignment" "spn_resource_group" {
   principal_id         = var.deployment_spn_object_id
 }
 
-# Key Vault RBAC for deployment SPN
+# Key Vault RBAC for deployment SPN. These three roles are not a choice of a deployment: Microsoft Learn (Assign required permissions for
+# Azure Local deployment) lists them for the identity that deploys, on the resource group of the cluster Key Vault.
+locals {
+  deployment_key_vault_roles = ["Key Vault Data Access Administrator", "Key Vault Secrets Officer", "Key Vault Contributor"]
+}
+
 resource "azurerm_role_assignment" "spn_keyvault" {
-  for_each = toset([
-    "Key Vault Data Access Administrator",
-    "Key Vault Secrets Officer",
-    "Key Vault Contributor"
-  ])
+  for_each = toset(local.deployment_key_vault_roles)
 
   scope                = azurerm_key_vault.platform.id
   role_definition_name = each.value

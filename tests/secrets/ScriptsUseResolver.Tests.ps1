@@ -65,9 +65,8 @@ BeforeAll {
     }
     function Get-Rel([string]$Full) { $Full.Substring($script:Repo.Length + 1).Replace('\', '/') }
 
-    # The scripts that WRITE secrets or create vaults. They may keep their own Key Vault calls; each still has to write.
+    # The scripts that create vaults (and list the secret names of the vaults they create). They may keep their own Key Vault calls; each still has to write.
     $script:WriteSide = [ordered]@{
-        'scripts/common/utilities/tools/Add-KeyVaultCredentials.ps1'                                                                                                    = 'secret set'
         'scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault/powershell/Deploy-KeyVaults.ps1'              = 'New-AzKeyVault'
     }
 }
@@ -92,7 +91,6 @@ Describe 'Script text: no script reads a secret without the resolver' {
         (Get-CodeText ([IO.Path]::Combine($script:ScriptsRoot, 'common', 'secrets', 'AzlSecret.psm1'))) | Should -Match 'Get-AzKeyVaultSecret'
     }
     It 'every write-side exception exists and still writes (<_>)' -ForEach @(
-        'scripts/common/utilities/tools/Add-KeyVaultCredentials.ps1'
         'scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault/powershell/Deploy-KeyVaults.ps1'
     ) {
         $path = [IO.Path]::Combine($script:Repo, $_.Replace('/', [IO.Path]::DirectorySeparatorChar))

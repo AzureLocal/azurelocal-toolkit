@@ -329,6 +329,16 @@ Describe 'Scripts end to end (fake iDRAC)' {
         (Get-Content (Join-Path $script:Out 'infrastructure.discovered.yml') -Raw) | Should -Match 'serial_number: "DOCTAG1"'
         (Get-Content $script:Cfg -Raw) | Should -Be $before
     }
+    It 'Invoke-HardwareDiscovery names its summary and proposal file by parameter, and takes the Redfish limits as parameters' {
+        $out = Join-Path $TestDrive 'discovery-named'
+        & $script:InvokeScript -ConfigPath $script:Cfg -OutputPath $out -Credential $script:Cred -TargetNode 'node-1' -Detail Summary -ManagementPort 'Embedded NIC 1' -ThrottleLimit 1 `
+            -SummaryFileName 'summary-run1.json' -ProposalFileName 'proposal-run1.yml' -TimeoutSeconds 30 -ConnectTimeoutSeconds 5 -MaxRetries 0 -RetryDelaySeconds 1 -NodeBudgetSeconds 600 -MaxMembers 500 `
+            -InformationAction SilentlyContinue -WarningAction SilentlyContinue
+        Test-Path (Join-Path $out 'summary-run1.json') | Should -BeTrue
+        Test-Path (Join-Path $out 'proposal-run1.yml') | Should -BeTrue
+        Test-Path (Join-Path $out 'discovery-summary.json') | Should -BeFalse
+        (Get-Content -LiteralPath $script:InvokeScript -Raw) | Should -Not -Match "Join-Path \`$OutputPath '(discovery-summary\.json|infrastructure\.discovered\.yml)'"
+    }
     It 'the node file is a schema 2.0 report with the capability report, and holds no password' {
         $text = Get-Content (Join-Path $script:Out 'DOCTAG1.json') -Raw
         $text | Should -Not -Match 'not-a-real-secret'

@@ -184,10 +184,11 @@ if ($biosOverride) {
     }
 }
 
-$desiredIdrac = @{
-    "IPMILan.1#Enable"  = "Enabled"
-}
-# The iDRAC baseline above is fixed in this script: infrastructure.yml has no key for iDRAC attributes.
+# The iDRAC baseline is one attribute and it is not a choice of a deployment: IPMI over LAN must be on (Dell iDRAC attribute
+# registry, attribute IPMILan.1#Enable). config/variables/docs/MIGRATION.md (To 5.6.21, Not keys) records why there is no key.
+$IdracIpmiLanAttribute = 'IPMILan.1#Enable'
+$IdracIpmiLanValue = 'Enabled'
+$desiredIdrac = @{ $IdracIpmiLanAttribute = $IdracIpmiLanValue }
 
 $report = @()
 $totalPass = 0

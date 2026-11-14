@@ -27,7 +27,7 @@ BeforeAll {
     function Get-AzNetworkSecurityGroup { [CmdletBinding()] param([string]$ResourceGroupName, [string]$Name) }
     function Get-AzRouteTable { [CmdletBinding()] param([string]$ResourceGroupName, [string]$Name) }
     function Get-AzVirtualNetworkPeering { [CmdletBinding()] param([string]$ResourceGroupName, [string]$VirtualNetworkName, [string]$Name) }
-    function Add-AzVirtualNetworkPeering { [CmdletBinding()] param([string]$Name, [object]$VirtualNetwork, [string]$RemoteVirtualNetworkId, [switch]$AllowForwardedTraffic) }
+    function Add-AzVirtualNetworkPeering { [CmdletBinding()] param([string]$Name, [object]$VirtualNetwork, [string]$RemoteVirtualNetworkId, [switch]$AllowForwardedTraffic, [switch]$AllowGatewayTransit, [switch]$UseRemoteGateways) }
 
     $global:AzlVnetTestTenant = [guid]::NewGuid().ToString()
     $global:AzlVnetTestSubHub = [guid]::NewGuid().ToString()
@@ -171,12 +171,33 @@ Describe 'Deploy-VirtualNetworks.ps1' {
             Should -Invoke New-AzVirtualNetwork -Times 1 -Exactly -ParameterFilter { -not $Subnet }
         }
 
-        It 'peers the networks that list each other, in both directions, with forwarded traffic allowed and no gateway transit' {
+        It 'peers the networks that list each other, in both directions, with forwarded traffic allowed and no gateway transit by default' {
             $r = Invoke-Vnet (New-InfraFile)
             $r.Result.PeeringsCreated | Should -Be 2
-            Should -Invoke Add-AzVirtualNetworkPeering -Times 1 -Exactly -ParameterFilter { $Name -eq 'peer-vnet-mgmt-01-to-vnet-hub-01' -and $RemoteVirtualNetworkId -eq '/vnets/vnet-hub-01' -and $AllowForwardedTraffic }
-            Should -Invoke Add-AzVirtualNetworkPeering -Times 1 -Exactly -ParameterFilter { $Name -eq 'peer-vnet-hub-01-to-vnet-mgmt-01' -and $RemoteVirtualNetworkId -eq '/vnets/vnet-mgmt-01' }
-            (Get-Content -LiteralPath $script:Script -Raw) | Should -Not -Match 'AllowGatewayTransit|UseRemoteGateways'
+            Should -Invoke Add-AzVirtualNetworkPeering -Times 1 -Exactly -ParameterFilter { $Name -eq 'peer-vnet-mgmt-01-to-vnet-hub-01' -and $RemoteVirtualNetworkId -eq '/vnets/vnet-hub-01' -and $AllowForwardedTraffic -and -not $AllowGatewayTransit -and -not $UseRemoteGateways }
+            Should -Invoke Add-AzVirtualNetworkPeering -Times 1 -Exactly -ParameterFilter { $Name -eq 'peer-vnet-hub-01-to-vnet-mgmt-01' -and $RemoteVirtualNetworkId -eq '/vnets/vnet-mgmt-01' -and -not $AllowGatewayTransit -and -not $UseRemoteGateways }
+        }
+
+        It 'gives each direction the options of the network it starts in: gateway transit on the hub, remote gateways on the spoke' {
+            $file = New-InfraFile @((New-Hub @{ allow_gateway_transit = $true }), (New-Spoke @{ use_remote_gateways = $true; allow_forwarded_traffic = $false }))
+            $r = Invoke-Vnet $file
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            Should -Invoke Add-AzVirtualNetworkPeering -Times 1 -Exactly -ParameterFilter { $Name -eq 'peer-vnet-hub-01-to-vnet-mgmt-01' -and $AllowGatewayTransit -and -not $UseRemoteGateways -and $AllowForwardedTraffic }
+            Should -Invoke Add-AzVirtualNetworkPeering -Times 1 -Exactly -ParameterFilter { $Name -eq 'peer-vnet-mgmt-01-to-vnet-hub-01' -and $UseRemoteGateways -and -not $AllowGatewayTransit -and -not $AllowForwardedTraffic }
+        }
+
+        It 'stops with exit code 2 and creates nothing when use_remote_gateways has no peer that offers its gateway' {
+            $r = Invoke-Vnet (New-InfraFile @((New-Hub), (New-Spoke @{ use_remote_gateways = $true })))
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match 'allow_gateway_transit'
+            Should -Invoke New-AzVirtualNetwork -Times 0 -Exactly
+        }
+
+        It 'stops with exit code 2 when a network both offers and uses a gateway, or an option is not true or false' {
+            (Invoke-Vnet (New-InfraFile @((New-Hub @{ allow_gateway_transit = $true; use_remote_gateways = $true }), (New-Spoke)))).ExitCode | Should -Be 2
+            $r = Invoke-Vnet (New-InfraFile @((New-Hub), (New-Spoke @{ allow_forwarded_traffic = 'maybe' })))
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match 'allow_forwarded_traffic'
         }
 
         It 'makes one pair of peerings when both networks list each other' {

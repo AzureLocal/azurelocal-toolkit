@@ -311,6 +311,7 @@ identity:
     # Added to the local Administrators group of every machine after the join. Default: the security group below that administers the instance, and the LCM user.
     # local_admin_members: ["sg-iic-azl-01-admins", "lcm-iic-azl-01"]
     domain_controllers: ["192.0.2.4", "192.0.2.5"]
+    precreate_computer_objects: false # true: Set-ADConfiguration.ps1 creates the computer objects of the machines and the cluster in ou_path before the deployment
     security_groups:
       - { name: "sg-iic-azl-01-admins", purpose: "Administrators of the instance", local_groups: ["Administrators"] }
   entra:
@@ -474,6 +475,7 @@ landing_zone:
       resource_group: "rg-iic-conn-01"
       location: "eastus"
       role: hub
+      allow_gateway_transit: true # the spokes that peer with this network may use its VPN gateway (peering option, default false)
       address_space: ["10.20.0.0/22"]
       subnets:
         - { name: "GatewaySubnet", prefix: "10.20.0.0/27" }
@@ -489,6 +491,8 @@ landing_zone:
       subnets:
         - { name: "snet-iic-mgmt-01", prefix: "10.20.4.0/26" }
       peer_with: ["vnet-iic-hub-01"]
+      allow_forwarded_traffic: true # peering option, default true
+      use_remote_gateways: true # use the VPN gateway of the hub (the hub sets allow_gateway_transit; default false)
   connectivity:
     vpn_gateway:
       name: "vpng-iic-hub-01"

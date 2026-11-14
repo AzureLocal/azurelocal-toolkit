@@ -44,15 +44,20 @@ variable "subscriptions" {
 variable "management_groups" {
   description = "Management group hierarchy names."
   type = object({
-    root_name             = string
-    root_display_name     = string
-    platform_name         = string
-    platform_display_name = string
-    identity_name         = string
-    connectivity_name     = string
-    management_name       = string
-    security_name         = string
-    landing_zones_name    = string
+    root_name                  = string
+    root_display_name          = string
+    platform_name              = string
+    platform_display_name      = string
+    identity_name              = string
+    identity_display_name      = string
+    connectivity_name          = string
+    connectivity_display_name  = string
+    management_name            = string
+    management_display_name    = string
+    security_name              = string
+    security_display_name      = string
+    landing_zones_name         = string
+    landing_zones_display_name = string
   })
 }
 
@@ -139,15 +144,15 @@ variable "nsg_subnet_map" {
 }
 
 variable "enable_nat_gateway" {
-  description = "Whether to deploy a NAT Gateway."
+  description = "Whether to deploy a NAT Gateway (landing_zone.connectivity.nat_gateway)."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "nat_gateway_idle_timeout" {
-  description = "NAT Gateway idle timeout in minutes."
+  description = "NAT Gateway idle timeout in minutes, 4 to 120 (landing_zone.connectivity.nat_gateway.idle_timeout_minutes). Not set: the Azure default of 4 minutes."
   type        = number
-  default     = 4
+  default     = null
 }
 
 variable "enable_vpn_gateway" {
@@ -161,8 +166,7 @@ variable "vpn_config" {
   type = object({
     gateway_name           = string
     public_ip_name         = optional(string, "")
-    sku                    = optional(string, "VpnGw2AZ")
-    generation             = optional(string, "Generation2")
+    sku                    = optional(string)
     active_active          = optional(bool, false)
     bgp_enabled            = optional(bool, false)
     local_gateway_name     = string
@@ -198,7 +202,7 @@ variable "bastion_config" {
   type = object({
     name           = string
     public_ip_name = optional(string, "")
-    sku            = optional(string, "Standard")
+    sku            = optional(string)
   })
   default = {
     name = ""
@@ -231,7 +235,7 @@ variable "deployment_spn_object_id" {
 variable "spn_subscription_roles" {
   description = "Subscription-level roles of the deployment service principal."
   type        = list(string)
-  default     = ["Contributor", "User Access Administrator", "Azure Stack HCI Administrator", "Reader"]
+  default     = []
 }
 
 variable "spn_resource_group_roles" {
@@ -330,9 +334,8 @@ variable "management_vms" {
 }
 
 variable "vm_admin_username" {
-  description = "Local administrator of the management VMs."
+  description = "Local administrator of the management VMs (landing_zone.virtual_machines[0].admin_username)."
   type        = string
-  default     = "azlocaladmin"
 }
 
 variable "vm_admin_password" {
@@ -342,7 +345,6 @@ variable "vm_admin_password" {
 }
 
 variable "windows_server_sku" {
-  description = "Windows Server image SKU of the management VMs."
+  description = "Windows Server image SKU of the management VMs (the SKU Microsoft publishes for landing_zone.virtual_machines[0].os)."
   type        = string
-  default     = "2025-datacenter-azure-edition"
 }

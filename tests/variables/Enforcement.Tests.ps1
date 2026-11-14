@@ -443,7 +443,8 @@ BeforeAll {
 
 Describe 'The scan sees what it is meant to see' {
     It 'scans the scripts of the repository' {
-        $script:Files.Count | Should -BeGreaterThan 400
+        # A floor, not an exact count: it only shows that the scan finds the tree. Removing a leftover script must not fail it.
+        $script:Files.Count | Should -BeGreaterThan 350
     }
 
     It 'reads the registry' {

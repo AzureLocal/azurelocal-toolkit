@@ -23,9 +23,8 @@
 #   TF_VAR_vpn_shared_key      the reference is landing_zone.connectivity.vpn_gateway.site_to_site[].shared_key
 # =============================================================================
 
-# --- Networking (settings of this Terraform code) ---------------------------------
-enable_nat_gateway       = false
-nat_gateway_idle_timeout = 4
+# --- Networking --------------------------------------------------------------------
+# The NAT gateway (enable_nat_gateway, nat_gateway_idle_timeout) comes from landing_zone.connectivity.nat_gateway.
 
 # NSGs with rules. infrastructure.yml names the NSG of a subnet; it has no key for the rules yet.
 nsgs = [

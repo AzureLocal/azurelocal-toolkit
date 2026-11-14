@@ -129,24 +129,15 @@ if ($ConfigPath) {
     Import-Module powershell-yaml -ErrorAction Stop
     $yamlContent = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Yaml
 
-    # Support both flat (azure.tenant_id) and nested (azure.tenant.id) YAML structures
-    if (-not $TenantId) {
-        $TenantId = if ($yamlContent.azure.tenant.id) { $yamlContent.azure.tenant.id }
-                    elseif ($yamlContent.azure.tenant_id) { $yamlContent.azure.tenant_id }
-                    else { $null }
-        if ($TenantId) { Write-Log "TenantId loaded from config: $TenantId" }
+    # The registered keys azure.tenant_id and azure.subscription_id of the schema 5 file
+    if (-not $TenantId -and $yamlContent.azure.tenant_id) {
+        $TenantId = $yamlContent.azure.tenant_id
+        Write-Log "TenantId loaded from config: $TenantId"
     }
 
-    # Support both flat (azure.subscription_id) and nested (azure.subscriptions.*.id) structures
-    if (-not $SubscriptionId) {
-        if ($yamlContent.azure.subscription_id) {
-            $SubscriptionId = $yamlContent.azure.subscription_id
-        } elseif ($yamlContent.azure.subscriptions) {
-            # Take the first subscription found
-            $firstSub = $yamlContent.azure.subscriptions.GetEnumerator() | Select-Object -First 1
-            $SubscriptionId = $firstSub.Value.id
-        }
-        if ($SubscriptionId) { Write-Log "SubscriptionId loaded from config: $SubscriptionId" }
+    if (-not $SubscriptionId -and $yamlContent.azure.subscription_id) {
+        $SubscriptionId = $yamlContent.azure.subscription_id
+        Write-Log "SubscriptionId loaded from config: $SubscriptionId"
     }
 }
 

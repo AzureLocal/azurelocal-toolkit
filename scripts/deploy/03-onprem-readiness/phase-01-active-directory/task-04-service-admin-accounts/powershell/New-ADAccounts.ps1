@@ -1,243 +1,148 @@
 <#
 .SYNOPSIS
-    Creates Active Directory computer and service accounts for Azure Local deployment.
+    Creates the optional domain join account of infrastructure.yml in Active Directory.
 
 .DESCRIPTION
-    This script creates the required AD accounts:
-    - Pre-stages cluster computer account (disabled)
-    - Pre-stages node computer accounts
-    - Creates cluster service account (gMSA or standard)
-    - Configures SPNs for cluster services
-    - Sets appropriate permissions on computer objects
+    Phase 01 (Active Directory), Task 04. The LCM deployment user is created by task 01 (Set-ADConfiguration.ps1), as Microsoft's preparation
+    does it. This task creates the other account the file can name: identity.active_directory.domain_join_account, the account the OS
+    configuration joins the machines with when it is not the LCM user (Microsoft Learn: the join needs the right to create and delete
+    computer objects in the dedicated OU).
 
-.PARAMETER DomainController
-    Target domain controller FQDN.
+    The account is created in the dedicated OU (identity.active_directory.ou_path), enabled, with the user principal name <name>@<domain>.
+    The password is read through the secret resolver (scripts/common/secrets/AzlSecret.psm1) from the reference in
+    identity.active_directory.domain_join_account.password, in memory only; it is never generated, shown or stored here. The domain's own
+    password policy applies: the script sets no "never expires" flag.
 
-.PARAMETER ClusterName
-    Name of the Azure Local cluster.
+    The script creates the account only. It does not give it rights on the OU: delegate "create and delete computer objects" on the OU to it
+    (Microsoft Learn: Custom Active Directory configuration for your Azure Local instance, Required permissions).
 
-.PARAMETER NodeNames
-    Array of cluster node names.
+    Idempotent. An account of that name is reported as AlreadyExists and left alone. A file without a domain_join_account does nothing and
+    exits 0. -WhatIf changes nothing. The script never deletes an account.
 
-.PARAMETER OUPath
-    Organizational Unit path for cluster objects.
+    With scenario.identity local_identity the instance has no Active Directory: the script does nothing and exits 0.
 
-.PARAMETER ServiceAccountName
-    Name for the cluster service account. Defaults to svc-<ClusterName>.
+    The script asks nothing and signs in nowhere. It uses the account that runs it, or -Credential, and needs the ActiveDirectory module and
+    the right to create users in the OU.
 
-.PARAMETER ConfigFile
-    Path to infrastructure.yml configuration.
+    Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
+        scenario.identity
+        identity.active_directory.domain_fqdn, .ou_path
+        identity.active_directory.domain_join_account.username, .password
+
+    Exit codes: 0 the account exists (created now, already there, or planned under -WhatIf) or the file names none; 1 the domain or the OU
+    could not be reached, the module is missing, the secret could not be read or the account could not be created; 2 a value in the file is
+    missing or not usable.
+
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Only the keys above are read; the whole file is not validated here.
+
+.PARAMETER Credential
+    Optional. The account that creates the user. Without it the account that runs the script is used.
+
+.PARAMETER LogPath
+    Optional. Also append the progress lines to this file. Keep it out of the repository.
 
 .EXAMPLE
-    .\New-ADAccounts.ps1 -DomainController "dc01.contoso.com" -ClusterName "azl-cluster-01" -NodeNames @("node-01","node-02")
+    ./New-ADAccounts.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 
-.NOTES
-    Author: AzureLocal Cloud Team Team
-    Version: 1.0.0
-    Stage: 03-onprem-readiness
-    Phase: phase-01-active-directory
-    Task: task-04-create-ad-accounts
+    Shows whether the account would be created, and creates nothing.
 #>
-
+#Requires -Version 7.0
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$DomainController,
-
-    [Parameter(Mandatory = $true)]
-    [string]$ClusterName,
-
-    [Parameter(Mandatory = $true)]
-    [string[]]$NodeNames,
-
-    [Parameter(Mandatory = $false)]
-    [string]$OUPath,
-
-    [Parameter(Mandatory = $false)]
-    [string]$ServiceAccountName,
-
-    [Parameter(Mandatory = $false)]
-    [string]$ConfigFile
+    [Parameter(Mandatory)][string]$InfrastructureFile,
+    [pscredential]$Credential,
+    [string]$LogPath
 )
-
-#Requires -Version 7.0
-#Requires -Modules ActiveDirectory
-
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$logFile = $LogPath
 
-# Import helpers
-$ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$HelpersPath = Join-Path $ScriptRoot "..\..\..\..\common\utilities\helpers"
+$common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common'))
+Import-Module ([IO.Path]::Combine($common, 'infrastructure', 'AzlInfrastructure.psm1')) -Force
+Import-Module ([IO.Path]::Combine($common, 'secrets', 'AzlSecret.psm1')) -Force
 
-if (Test-Path (Join-Path $HelpersPath "logging.ps1")) {
-    . (Join-Path $HelpersPath "logging.ps1")
+function Write-Line([string]$Text) {
+    Write-Information -MessageData $Text -InformationAction Continue
+    if ($logFile) { Add-Content -LiteralPath $logFile -Value ('[{0:yyyy-MM-dd HH:mm:ss}] {1}' -f (Get-Date), $Text) -WhatIf:$false }
 }
-else {
-    function Write-Log {
-        param([string]$Message, [string]$Level = "INFO")
-        $color = switch ($Level) {
-            "INFO" { "White" }; "WARN" { "Yellow" }; "ERROR" { "Red" }; "SUCCESS" { "Green" }
-        }
-        Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message" -ForegroundColor $color
-    }
-}
-
-#region Functions
-
-function Get-TargetOUPaths {
-    if ($OUPath) {
-        return @{
-            Computers       = "OU=Computers,$OUPath"
-            ServiceAccounts = "OU=ServiceAccounts,$OUPath"
-        }
-    }
-    $domain = Get-ADDomain -Server $DomainController
-    $base = "OU=AzureLocal,OU=Servers,$($domain.DistinguishedName)"
-    return @{
-        Computers       = "OU=Computers,$base"
-        ServiceAccounts = "OU=ServiceAccounts,$base"
-    }
+function Exit-InputProblem([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 2 }
+function Exit-Failed([string]$Message) { Write-Error $Message -ErrorAction Continue; exit 1 }
+function Get-Field($Map, [string]$Key, $Default = $null) {
+    if ($Map -is [System.Collections.IDictionary] -and $Map.Contains($Key) -and $null -ne $Map[$Key] -and "$($Map[$Key])" -ne '') { return $Map[$Key] }
+    $Default
 }
 
-function New-ClusterComputerAccount {
-    param([string]$ComputersOU)
+# ---- the values, from infrastructure.yml only
+try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.Message)" }
 
-    Write-Log -Message "Pre-staging cluster computer account..." -Level "INFO"
-
-    $existing = Get-ADComputer -Filter "Name -eq '$ClusterName'" -Server $DomainController -ErrorAction SilentlyContinue
-
-    if ($existing) {
-        Write-Log -Message "  Cluster account exists: $ClusterName" -Level "INFO"
-        return $false
-    }
-
-    if ($PSCmdlet.ShouldProcess($ClusterName, "Create cluster computer account")) {
-        New-ADComputer -Name $ClusterName `
-            -Path $ComputersOU `
-            -Server $DomainController `
-            -Enabled $false `
-            -Description "Azure Local Cluster — pre-staged for deployment"
-        Write-Log -Message "  Created cluster account: $ClusterName (disabled)" -Level "SUCCESS"
-        return $true
-    }
-    return $false
+if (([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'scenario.identity')).Trim().ToLowerInvariant() -eq 'local_identity') {
+    Write-Line 'scenario.identity is local_identity: the instance has no Active Directory, so there is no account to create.'
+    exit 0
 }
-
-function New-NodeComputerAccounts {
-    param([string]$ComputersOU)
-
-    Write-Log -Message "Pre-staging node computer accounts..." -Level "INFO"
-    $created = 0
-
-    foreach ($node in $NodeNames) {
-        $existing = Get-ADComputer -Filter "Name -eq '$node'" -Server $DomainController -ErrorAction SilentlyContinue
-
-        if ($existing) {
-            Write-Log -Message "  Node exists: $node" -Level "INFO"
-        }
-        else {
-            if ($PSCmdlet.ShouldProcess($node, "Create node computer account")) {
-                New-ADComputer -Name $node `
-                    -Path $ComputersOU `
-                    -Server $DomainController `
-                    -Enabled $true `
-                    -Description "Azure Local Node"
-                Write-Log -Message "  Created node: $node" -Level "SUCCESS"
-                $created++
-            }
-        }
-    }
-    return $created
+$directory = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.active_directory'
+$join = Get-Field $directory 'domain_join_account'
+$joinUser = ([string](Get-Field $join 'username' '')).Trim()
+if (-not $joinUser) {
+    Write-Line 'The file has no identity.active_directory.domain_join_account: the LCM user joins the machines, and task 01 creates it. Nothing to do.'
+    exit 0
 }
+$reference = ([string](Get-Field $join 'password' '')).Trim()
+$domain = ([string](Get-Field $directory 'domain_fqdn' '')).Trim()
+$ouPath = ([string](Get-Field $directory 'ou_path' '')).Trim()
+$netbios = ([string](Get-Field $directory 'netbios_name' '')).Trim()
+if (-not $domain) { Exit-InputProblem 'identity.active_directory.domain_fqdn is missing. It is the domain the account is created in.' }
+if (-not $ouPath) { Exit-InputProblem 'identity.active_directory.ou_path is missing. It is the OU the account is created in.' }
+if (-not $reference) { Exit-InputProblem 'identity.active_directory.domain_join_account.password is missing. It is the secret reference of the account''s password.' }
 
-function New-ClusterServiceAccount {
-    param([string]$ServiceOU)
-
-    if (-not $ServiceAccountName) {
-        $ServiceAccountName = "svc-$ClusterName"
-    }
-
-    Write-Log -Message "Creating service account: $ServiceAccountName" -Level "INFO"
-
-    $existing = Get-ADUser -Filter "SamAccountName -eq '$ServiceAccountName'" -Server $DomainController -ErrorAction SilentlyContinue
-
-    if ($existing) {
-        Write-Log -Message "  Service account exists: $ServiceAccountName" -Level "INFO"
-        return $null
-    }
-
-    if ($PSCmdlet.ShouldProcess($ServiceAccountName, "Create service account")) {
-        $domain = Get-ADDomain -Server $DomainController
-        $password = [System.Web.Security.Membership]::GeneratePassword(24, 4)
-        $securePassword = ConvertTo-SecureString $password -AsPlainText -Force
-
-        New-ADUser -Name $ServiceAccountName `
-            -SamAccountName $ServiceAccountName `
-            -UserPrincipalName "$ServiceAccountName@$($domain.DNSRoot)" `
-            -Path $ServiceOU `
-            -AccountPassword $securePassword `
-            -Enabled $true `
-            -PasswordNeverExpires $true `
-            -CannotChangePassword $true `
-            -Description "Azure Local Cluster Service Account" `
-            -Server $DomainController
-
-        Write-Log -Message "  Created service account: $ServiceAccountName" -Level "SUCCESS"
-        Write-Log -Message "  IMPORTANT: Store password securely in Key Vault" -Level "WARN"
-        return $ServiceAccountName
-    }
-    return $null
+# The account name: a name, NETBIOS\name or name@domain (the forms the registry allows). Only the name part is created.
+$sam = $joinUser
+if ($joinUser -match '^(?<d>[^\\@]+)\\(?<n>[^\\@]+)$') {
+    if ($netbios -and $Matches['d'] -ine $netbios) { Exit-InputProblem "identity.active_directory.domain_join_account.username '$joinUser' names the domain '$($Matches['d'])', not '$netbios'." }
+    $sam = $Matches['n']
 }
+elseif ($joinUser -match '^(?<n>[^\\@]+)@(?<d>[^\\@]+)$') {
+    if ($Matches['d'] -ine $domain) { Exit-InputProblem "identity.active_directory.domain_join_account.username '$joinUser' names the domain '$($Matches['d'])', not '$domain'." }
+    $sam = $Matches['n']
+}
+# sAMAccountName: at most 20 characters, none of the characters Microsoft lists (Microsoft Learn: Naming conventions in Active Directory).
+if ($sam.Length -gt 20 -or $sam -match '["/\\\[\]:;|=,+*?<>@\s]') { Exit-InputProblem "The account name '$sam' is not valid: at most 20 characters, no space and none of the characters  / \ [ ] : ; | = , + * ? < > @." }
 
-#endregion Functions
+# ---- preconditions (read only)
+foreach ($cmd in 'Get-ADUser', 'New-ADUser', 'Get-ADOrganizationalUnit') {
+    if (-not (Get-Command -Name $cmd -ErrorAction SilentlyContinue)) { Exit-Failed "$cmd was not found. Install the ActiveDirectory module (Remote Server Administration Tools) or run the script on a domain controller." }
+}
+$adCommon = @{ Server = $domain; ErrorAction = 'Stop' }
+if ($Credential) { $adCommon.Credential = $Credential }
 
-#region Main
+$rows = [System.Collections.Generic.List[object]]::new()
+function Add-Row([string]$Account, [string]$Action, [string]$Detail = '') {
+    $rows.Add([pscustomobject][ordered]@{ Account = $Account; Action = $Action; Detail = $Detail })
+    $tag = switch ($Action) { 'Failed' { '[failed]  ' } 'AlreadyExists' { '[exists]  ' } 'WouldCreate' { '[plan]    ' } default { '[created] ' } }
+    Write-Line ("{0}{1}{2}" -f $tag, $Account, $(if ($Detail) { " ($Detail)" } else { '' }))
+}
 
 try {
-    Write-Log -Message "========================================" -Level "INFO"
-    Write-Log -Message "Create AD Accounts" -Level "INFO"
-    Write-Log -Message "Domain Controller: $DomainController" -Level "INFO"
-    Write-Log -Message "Cluster: $ClusterName" -Level "INFO"
-    Write-Log -Message "Nodes: $($NodeNames -join ', ')" -Level "INFO"
-    Write-Log -Message "========================================" -Level "INFO"
-    Write-Host ""
-
-    Import-Module ActiveDirectory -ErrorAction Stop
-
-    $ouPaths = Get-TargetOUPaths
-
-    # Verify OUs exist
-    foreach ($ou in $ouPaths.Values) {
-        $exists = Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '$ou'" -Server $DomainController -ErrorAction SilentlyContinue
-        if (-not $exists) {
-            Write-Log -Message "OU does not exist: $ou" -Level "ERROR"
-            Write-Log -Message "Run task-01 (Set-ADConfiguration.ps1) first." -Level "ERROR"
-            exit 1
+    $ouFound = [bool](Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '$($ouPath.Replace("'", "''"))'" @adCommon)
+    if (Get-ADUser -Filter "SamAccountName -eq '$($sam.Replace("'", "''"))'" @adCommon) { Add-Row $sam 'AlreadyExists' }
+    elseif (-not $ouFound -and -not $WhatIfPreference) { Add-Row $sam 'Failed' "The OU '$ouPath' does not exist. Run task 01 (Set-ADConfiguration.ps1) first." }
+    elseif ($PSCmdlet.ShouldProcess("OU $ouPath", "Create the account '$sam'")) {
+        $secure = $null
+        try { $secure = Get-AzlSecretValue -Reference $reference -Infrastructure $infra }
+        catch {
+            $code = if ($_.Exception.Data.Contains('AzlExit')) { [int]$_.Exception.Data['AzlExit'] } else { 1 }
+            if ($code -eq 2) { Exit-InputProblem "identity.active_directory.domain_join_account.password: $($_.Exception.Message)" }
+            Exit-Failed "The password of the account could not be read: $($_.Exception.Message)"
         }
+        New-ADUser -Name $sam -SamAccountName $sam -UserPrincipalName "$sam@$domain" -Path $ouPath -AccountPassword $secure -Enabled $true @adCommon
+        Add-Row $sam 'Created'
     }
-
-    # Create cluster computer account
-    $clusterCreated = New-ClusterComputerAccount -ComputersOU $ouPaths.Computers
-    Write-Host ""
-
-    # Create node computer accounts
-    $nodesCreated = New-NodeComputerAccounts -ComputersOU $ouPaths.Computers
-    Write-Host ""
-
-    # Create service account
-    $svcCreated = New-ClusterServiceAccount -ServiceOU $ouPaths.ServiceAccounts
-    Write-Host ""
-
-    Write-Log -Message "========================================" -Level "INFO"
-    Write-Log -Message "AD Accounts Summary" -Level "SUCCESS"
-    Write-Log -Message "  Cluster account created: $clusterCreated" -Level "INFO"
-    Write-Log -Message "  Node accounts created: $nodesCreated" -Level "INFO"
-    Write-Log -Message "  Service account created: $(if ($svcCreated) { $svcCreated } else { 'Already existed' })" -Level "INFO"
+    else { Add-Row $sam 'WouldCreate' }
 }
-catch {
-    Write-Log -Message "Failed to create AD accounts: $_" -Level "ERROR"
-    exit 1
-}
+catch { Add-Row $sam 'Failed' $_.Exception.Message }
 
-#endregion Main
+$failed = @($rows | Where-Object Action -EQ 'Failed').Count
+$rows
+if ($failed -gt 0) { exit 1 }
+exit 0

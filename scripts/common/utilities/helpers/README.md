@@ -8,7 +8,7 @@
 | File | Purpose |
 |------|---------|
 | `config-loader.ps1` | Load and parse `infrastructure.yml` configuration files |
-| `keyvault-helper.ps1` | Reads secret references through the secret resolver; writes secrets to Azure Key Vault |
+| `keyvault-helper.ps1` | Reads secret references through the secret resolver |
 | `logging.ps1` | Standardized logging with console colors and optional file output |
 | `error-handling.ps1` | Retry logic and error detail extraction |
 
@@ -37,9 +37,9 @@ $scriptRoot = $PSScriptRoot
 $config = Get-SolutionConfig -Solution "azure-local"
 
 # Access values using the Variable Path Contract
-$tenantId = Get-ConfigValue -Config $config -Path 'azure.tenant.id'
-$subscriptionId = Get-ConfigValue -Config $config -Path 'azure.subscriptions.management.id'
-$kvName = Get-ConfigValue -Config $config -Path 'azure_infrastructure.key_vaults.platform.name'
+$tenantId = Get-ConfigValue -Config $config -Path 'azure.tenant_id'
+$subscriptionId = Get-ConfigValue -Config $config -Path 'azure.subscription_id'
+$kvName = Get-PlatformKeyVault -Config $config   # the vault listed under key_vaults
 
 # Get tags for Azure resources
 $tags = Get-ConfigTags -Config $config
@@ -52,10 +52,10 @@ When running scripts directly on nodes without access to the full config structu
 ```powershell
 # Generated env-variables.ps1 for node execution
 $script:Environment = @{
-    TenantId = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-    SubscriptionId = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-    KeyVaultName = "azl-platform-kv"
-    Location = "eastus"
+    TenantId = "00000000-0000-0000-0000-000000000000"
+    SubscriptionId = "00000000-0000-0000-0000-000000000000"
+    KeyVaultName = "kv-iic-mgmt-01"
+    Location = "westeurope"
     Tags = @{
         Environment = "Production"
         ManagedBy = "AzureLocal Cloud Team"
@@ -78,10 +78,8 @@ $password = Get-SecretFromUri -Uri $secretUri -Infrastructure $infra -AsPlainTex
 
 ### Writing Secrets
 
-```powershell
-# Write to platform Key Vault
-Set-SecretToKeyVault -Config $config -SecretName "my-secret" -SecretValue "secret-value"
-```
+No helper writes a secret. Set the value with `Set-AzKeyVaultSecret` (or the portal) as someone who may write it.
+`Deploy-KeyVaults.ps1` lists the references of the file whose secret is still missing.
 
 ## Logging
 

@@ -248,6 +248,7 @@
 "ztp","parameters","common/discovery/Inventory-AzureTenant.ps1","IncludeAzureLocal","tools.ztp.parameters.common_discovery_Inventory_AzureTenant_ps1.IncludeAzureLocal","scripts/common/discovery/Inventory-AzureTenant.ps1:105"
 "ztp","parameters","common/discovery/Inventory-AzureTenant.ps1","MaxParallelJobs","tools.ztp.parameters.common_discovery_Inventory_AzureTenant_ps1.MaxParallelJobs","scripts/common/discovery/Inventory-AzureTenant.ps1:108"
 "ztp","parameters","common/discovery/Inventory-AzureTenant.ps1","SubscriptionFilter","tools.ztp.parameters.common_discovery_Inventory_AzureTenant_ps1.SubscriptionFilter","scripts/common/discovery/Inventory-AzureTenant.ps1:112"
+"ztp","parameters","common/discovery/Inventory-AzureTenant.ps1","BaseName","tools.ztp.parameters.common_discovery_Inventory_AzureTenant_ps1.BaseName","scripts/common/discovery/Inventory-AzureTenant.ps1"
 "ztp","parameters","common/RedfishUtils.psm1::Get-NetworkAdapters","Session","tools.ztp.parameters.common_RedfishUtils_psm1_Get_NetworkAdapters.Session","scripts/common/RedfishUtils.psm1:243"
 "ztp","parameters","common/RedfishUtils.psm1::Get-StorageInfo","Session","tools.ztp.parameters.common_RedfishUtils_psm1_Get_StorageInfo.Session","scripts/common/RedfishUtils.psm1:219"
 "ztp","parameters","common/RedfishUtils.psm1::Get-StorageVolumes","Session","tools.ztp.parameters.common_RedfishUtils_psm1_Get_StorageVolumes.Session","scripts/common/RedfishUtils.psm1:387"

@@ -69,15 +69,20 @@ variable "nsg_subnet_map" {
 
 # --- NAT Gateway ---
 variable "enable_nat_gateway" {
-  description = "Whether to deploy a NAT Gateway."
+  description = "Whether to deploy a NAT Gateway (landing_zone.connectivity.nat_gateway)."
   type        = bool
-  default     = true
+  default     = false
 }
 
 variable "nat_gateway_idle_timeout" {
-  description = "NAT Gateway idle timeout in minutes."
+  description = "NAT Gateway idle timeout in minutes, 4 to 120 (landing_zone.connectivity.nat_gateway.idle_timeout_minutes). Not set: the Azure default of 4 minutes."
   type        = number
-  default     = 4
+  default     = null
+
+  validation {
+    condition     = var.nat_gateway_idle_timeout == null || (var.nat_gateway_idle_timeout >= 4 && var.nat_gateway_idle_timeout <= 120)
+    error_message = "The idle timeout is 4 to 120 minutes."
+  }
 }
 
 # --- VPN Gateway ---
@@ -92,8 +97,7 @@ variable "vpn_config" {
   type = object({
     gateway_name           = string
     public_ip_name         = optional(string, "")
-    sku                    = optional(string, "VpnGw2AZ")
-    generation             = optional(string, "Generation2")
+    sku                    = optional(string)
     active_active          = optional(bool, false)
     bgp_enabled            = optional(bool, false)
     local_gateway_name     = string
@@ -130,7 +134,7 @@ variable "bastion_config" {
   type = object({
     name           = string
     public_ip_name = optional(string, "")
-    sku            = optional(string, "Standard")
+    sku            = optional(string)
   })
   default = {
     name = ""

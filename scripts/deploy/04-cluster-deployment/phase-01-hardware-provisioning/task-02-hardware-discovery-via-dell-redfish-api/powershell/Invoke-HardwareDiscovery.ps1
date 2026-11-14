@@ -26,8 +26,9 @@
 
     Output, in -OutputPath (default .\discovery; keep it out of git, it holds serials and MACs):
       <ServiceTag>.json             one file per node
-      discovery-summary.json        one line per node, with the suggested management port and why
-      infrastructure.discovered.yml the nodes: fragment to review and copy into infrastructure.yml (roles are yours to set)
+      <SummaryFileName>             one line per node, with the suggested management port and why (default discovery-summary.json)
+      <ProposalFileName>            the nodes: fragment to review and copy into infrastructure.yml (roles are yours to set;
+                                    default infrastructure.discovered.yml)
 
     With -UpdateInfrastructure it then runs Update-InfrastructureYml-FromDiscovery.ps1 -Apply, which edits only the
     serial_number and MAC lines (with a backup and a confirmation). ZTP then finds the maintenance environment by the
@@ -43,6 +44,30 @@
 
 .PARAMETER OutputPath
     Folder for the output. Default: .\discovery
+
+.PARAMETER SummaryFileName
+    Name of the summary file in -OutputPath. Default: discovery-summary.json
+
+.PARAMETER ProposalFileName
+    Name of the proposal file in -OutputPath. Default: infrastructure.discovered.yml
+
+.PARAMETER TimeoutSeconds
+    Seconds one request to a BMC may take (1 to 600). Default: 60
+
+.PARAMETER ConnectTimeoutSeconds
+    Seconds the connection to a BMC may take (1 to 120). Default: 10
+
+.PARAMETER MaxRetries
+    How often a failed request is repeated (0 to 5). Default: 1
+
+.PARAMETER RetryDelaySeconds
+    Seconds between two attempts (0 to 60). Default: 2
+
+.PARAMETER NodeBudgetSeconds
+    Seconds one node may take in all before its reading stops (10 to 7200). Default: 900
+
+.PARAMETER MaxMembers
+    The most members of one Redfish collection that are read (1 to 5000). Default: 1000
 
 .PARAMETER Credential
     The BMC login.
@@ -89,10 +114,19 @@
 param(
     [string]$ConfigPath,
     [string]$OutputPath = (Join-Path '.' 'discovery'),
+    [string]$SummaryFileName = 'discovery-summary.json',
+    [string]$ProposalFileName = 'infrastructure.discovered.yml',
+    [ValidateRange(1, 600)][int]$TimeoutSeconds = 60,
+    [ValidateRange(1, 120)][int]$ConnectTimeoutSeconds = 10,
+    [ValidateRange(0, 5)][int]$MaxRetries = 1,
+    [ValidateRange(0, 60)][int]$RetryDelaySeconds = 2,
+    [ValidateRange(10, 7200)][int]$NodeBudgetSeconds = 900,
+    [ValidateRange(1, 5000)][int]$MaxMembers = 1000,
     [System.Management.Automation.PSCredential]$Credential,
     [string[]]$TargetNode = @(),
     [string]$ManagementPort,
     [ValidateSet('Summary', 'Full')][string]$Detail = 'Full',
+    # The values are the vendor adapters that exist in scripts/common/redfish (AzlRedfishDell.psm1 is the only one); not a deployment choice.
     [ValidateSet('Auto', 'Dell')][string]$Vendor = 'Auto',
     [ValidateRange(1, 16)][int]$ThrottleLimit = 4,
     [switch]$UseSession,
@@ -150,12 +184,18 @@ $work = foreach ($node in $nodes) {
 }
 
 Write-Information "Reading $(@($work).Count) BMC(s), $ThrottleLimit at a time ($Detail, vendor $Vendor)."
-$options = [pscustomobject]@{ Detail = $Detail; Vendor = $Vendor; UseSession = $UseSession.IsPresent; VerifyCertificate = $VerifyCertificate.IsPresent; CorePath = $corePath; DellPath = $dellPath }
+$options = [pscustomobject]@{
+    Detail = $Detail; Vendor = $Vendor; UseSession = $UseSession.IsPresent; VerifyCertificate = $VerifyCertificate.IsPresent; CorePath = $corePath; DellPath = $dellPath
+    TimeoutSeconds = $TimeoutSeconds; ConnectTimeoutSeconds = $ConnectTimeoutSeconds; MaxRetries = $MaxRetries; RetryDelaySeconds = $RetryDelaySeconds
+    NodeBudgetSeconds = $NodeBudgetSeconds; MaxMembers = $MaxMembers
+}
 $scan = {
     param($Item, $Shared)
     Import-Module $Shared.CorePath
     Import-Module $Shared.DellPath
-    Invoke-AzlRedfishDiscovery -BmcAddress $Item.Address -Credential $Item.Credential -Vendor $Shared.Vendor -Detail $Shared.Detail -UseSession:$Shared.UseSession -VerifyCertificate:$Shared.VerifyCertificate
+    Invoke-AzlRedfishDiscovery -BmcAddress $Item.Address -Credential $Item.Credential -Vendor $Shared.Vendor -Detail $Shared.Detail -UseSession:$Shared.UseSession -VerifyCertificate:$Shared.VerifyCertificate `
+        -TimeoutSeconds $Shared.TimeoutSeconds -ConnectTimeoutSeconds $Shared.ConnectTimeoutSeconds -MaxRetries $Shared.MaxRetries -RetryDelaySeconds $Shared.RetryDelaySeconds `
+        -NodeBudgetSeconds $Shared.NodeBudgetSeconds -MaxMembers $Shared.MaxMembers
 }
 $results = Invoke-AzlRedfishBatch -Item @($work) -ScriptBlock $scan -Shared $options -ThrottleLimit $ThrottleLimit
 
@@ -200,8 +240,8 @@ if ($items.Count -gt 0) {
             Warnings = @($d.Warnings).Count
         }
     }
-    @($summary) | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $OutputPath 'discovery-summary.json') -Encoding utf8
-    $proposalPath = Join-Path $OutputPath 'infrastructure.discovered.yml'
+    @($summary) | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath (Join-Path $OutputPath $SummaryFileName) -Encoding utf8
+    $proposalPath = Join-Path $OutputPath $ProposalFileName
     ConvertTo-AzlDiscoveryProposal -Item @($items | ForEach-Object { [pscustomobject]@{ NodeName = $_.NodeName; Discovery = $_.Discovery; ManagementPort = $_.ManagementPort; ExistingManagementMac = $_.ExistingManagementMac } }) | Set-Content -LiteralPath $proposalPath -Encoding utf8
     Write-Information "Proposal: $proposalPath (review it; roles and ip_assignment are yours to set)."
     foreach ($s in $summary) {

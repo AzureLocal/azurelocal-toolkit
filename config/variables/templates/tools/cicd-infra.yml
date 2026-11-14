@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that CI/CD infrastructure ('cicd_infra') reads (a strict subset of the master file). Schema 5.6.21.
+# Template for the part of infrastructure.yml that CI/CD infrastructure ('cicd_infra') reads (a strict subset of the master file). Schema 5.6.23.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -172,6 +172,15 @@ landing_zone:
           # Name of the route table on the subnet.
           # used by: cicd_infra
           route_table: ""
+      # (since 5.6.23) 
+      # default: true; used by: cicd_infra
+      allow_forwarded_traffic: true
+      # (since 5.6.23) 
+      # default: false; used by: cicd_infra
+      allow_gateway_transit: false
+      # (since 5.6.23) 
+      # default: false; used by: cicd_infra
+      use_remote_gateways: false
 
 # Part 1 of the implementation steps: the pipeline platform, the project and its settings, the environments, the sign-in to Azure and the sel...
 # used by: cicd_infra

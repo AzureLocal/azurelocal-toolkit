@@ -135,22 +135,22 @@ param()
 # ============================================================================
 
 # Azure tenant and subscription
-# infrastructure.yml path: azure.tenant.id
+# infrastructure.yml path: azure.tenant_id
 `$azure_tenant_id = "00000000-0000-0000-0000-000000000000"
 
-# infrastructure.yml path: azure.subscriptions.demo.id
-`$azure_subscriptions_demo_id = "00000000-0000-0000-0000-000000000000"
+# infrastructure.yml path: azure.subscription_id
+`$azure_subscription_id = "00000000-0000-0000-0000-000000000000"
 
-# Platform Key Vault
-# infrastructure.yml path: platform.kv_platform_name
-`$platform_kv_platform_name = "kv-yourplatform"
+# Key Vault of the file (the first entry of key_vaults)
+# infrastructure.yml path: key_vaults[0].name
+`$key_vault_name = "<key-vault-name>"
 
-# infrastructure.yml path: platform.kv_platform_resource_group
-`$platform_kv_platform_resource_group = "rg-yourplatform"
+# infrastructure.yml path: key_vaults[0].resource_group
+`$key_vault_resource_group = "<resource-group-name>"
 
 # Cluster configuration
-# infrastructure.yml path: cluster.arm_deployment.cluster_name
-`$cluster_arm_deployment_cluster_name = "your-cluster"
+# infrastructure.yml path: cluster.name
+`$cluster_name = "<cluster-name>"
 
 # Add additional variables as needed...
 
@@ -165,7 +165,7 @@ Write-Host "Starting $Name..." -ForegroundColor Cyan
 # TODO: Add your script logic here
 # Use the variables defined above, e.g.:
 # `$tenantId = `$azure_tenant_id
-# `$subscriptionId = `$azure_subscriptions_demo_id
+# `$subscriptionId = `$azure_subscription_id
 
 if (`$PSCmdlet.ShouldProcess("Target", "Action")) {
     # Perform action
@@ -239,9 +239,9 @@ Import-Module powershell-yaml -ErrorAction Stop
 `$config = ConvertFrom-Yaml `$content -Ordered
 
 # Extract required values from config
-`$tenantId = `$config["azure"]["tenant"]["id"]
-`$subscriptionId = `$config["azure"]["subscriptions"]["demo"]["id"]
-`$kvName = `$config["platform"]["kv_platform_name"]
+`$tenantId = `$config["azure"]["tenant_id"]
+`$subscriptionId = `$config["azure"]["subscription_id"]
+`$kvName = `$config["key_vaults"][0]["name"]
 
 Write-Host "  Tenant ID: `$tenantId" -ForegroundColor Gray
 Write-Host "  Subscription ID: `$subscriptionId" -ForegroundColor Gray
@@ -375,9 +375,9 @@ fi
 log_info "Loading configuration from: `$CONFIG_FILE"
 
 # Extract values using yq
-TENANT_ID=`$(yq -r '.azure.tenant.id' "`$CONFIG_FILE")
-SUBSCRIPTION_ID=`$(yq -r '.azure.subscriptions.demo.id' "`$CONFIG_FILE")
-KV_NAME=`$(yq -r '.platform.kv_platform_name' "`$CONFIG_FILE")
+TENANT_ID=`$(yq -r '.azure.tenant_id' "`$CONFIG_FILE")
+SUBSCRIPTION_ID=`$(yq -r '.azure.subscription_id' "`$CONFIG_FILE")
+KV_NAME=`$(yq -r '.key_vaults[0].name' "`$CONFIG_FILE")
 
 log_info "Tenant ID: `$TENANT_ID"
 log_info "Subscription ID: `$SUBSCRIPTION_ID"

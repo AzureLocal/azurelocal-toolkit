@@ -15,14 +15,14 @@ A **placeholder** is a script that does not do the task. Running it prints `NOT 
 
 ## Summary
 
-Task folders: 116.
+Task folders: 115.
 
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
-| PowerShell | 90 | 26 | 0 |
-| Azure CLI | 9 | 57 | 50 |
+| PowerShell | 88 | 27 | 0 |
+| Azure CLI | 9 | 56 | 50 |
 
-Azure CLI applies to 58 tasks, does not apply to 50, and is not decided for 8.
+Azure CLI applies to 57 tasks, does not apply to 50, and is not decided for 8.
 
 ## 01-cicd-infra
 
@@ -47,7 +47,6 @@ Azure CLI applies to 58 tasks, does not apply to 50, and is not decided for 8.
 | `phase-01-landing-zones/simplified-deployment/task-03-create-resource-groups` | built | not built | yes |
 | `phase-02-resource-providers/task-01-register-resource-providers` | built | built | yes |
 | `phase-02-resource-providers/task-02-verify-provider-registration` | built | not built | yes |
-| `phase-03-rbac-permissions` | built | not built | yes |
 | `phase-03-rbac-permissions/task-01-create-azure-local-deployment-spn` | built | not built | yes |
 | `phase-03-rbac-permissions/task-02-assign-rbac-roles` | built | not built | yes |
 | `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-01-configuration/task-01-configure-core-variables` | not built | not built | unclear |
@@ -84,7 +83,7 @@ Azure CLI applies to 58 tasks, does not apply to 50, and is not decided for 8.
 |---|---|---|---|
 | `phase-01-active-directory/task-01-ou-creation-pre-creation-artifacts` | built | not applicable | no |
 | `phase-01-active-directory/task-02-security-groups` | built | not applicable | no |
-| `phase-01-active-directory/task-03-dns-node-a-records` | built | not applicable | no |
+| `phase-01-active-directory/task-03-dns-node-a-records` | not built | not applicable | no |
 | `phase-01-active-directory/task-04-service-admin-accounts` | built | not applicable | no |
 | `phase-01-active-directory/task-05-group-assignments` | built | not applicable | no |
 | `phase-02-enterprise-readiness/task-01-hardware-inspection` | built | not applicable | no |

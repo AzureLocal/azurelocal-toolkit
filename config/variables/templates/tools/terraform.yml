@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that Terraform ('terraform') reads (a strict subset of the master file). Schema 5.6.21.
+# Template for the part of infrastructure.yml that Terraform ('terraform') reads (a strict subset of the master file). Schema 5.6.23.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -240,6 +240,12 @@ landing_zone:
       # SKU of the Bastion host: Basic, Standard or Premium (New-AzBastion -Sku).
       # used by: terraform
       sku: "Standard"
+    # (since 5.6.19) 
+    # used by: terraform
+    nat_gateway:
+      # Minutes a TCP connection may stay idle before the NAT gateway drops it: 4 to 120 (Microsoft Learn, Azure NAT Gateway).
+      # used by: terraform
+      idle_timeout_minutes: 10
   # Management VMs: domain controllers, jump box, Windows Admin Center, syslog.
   # used by: terraform, ansible
   virtual_machines:

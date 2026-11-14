@@ -24,6 +24,9 @@
 .PARAMETER OutputPath
     Directory for output files. Defaults to .\discovery
 
+.PARAMETER BaseName
+    File name, without extension, of the inventory files in -OutputPath. Defaults to azure-inventory.
+
 .PARAMETER Format
     Output format: JSON, CSV, or Both. Defaults to Both.
 
@@ -86,6 +89,9 @@ param(
 
     [Parameter(Mandatory = $false)]
     [string]$OutputPath = ".\discovery",
+
+    [Parameter(Mandatory = $false)]
+    [string]$BaseName = "azure-inventory",
 
     [Parameter(Mandatory = $false)]
     [ValidateSet("JSON", "CSV", "Both")]
@@ -1683,8 +1689,7 @@ try {
     # Export reports
     Write-ProgressStep -Activity "Export" -Status "Generating inventory reports"
 
-    $baseName = "azure-inventory"
-    $exportedFiles = Export-InventoryReport -Data $script:Inventory -OutputDirectory $OutputPath -BaseName $baseName
+    $exportedFiles = Export-InventoryReport -Data $script:Inventory -OutputDirectory $OutputPath -BaseName $BaseName
 
     # Display summary
     Write-Host ""

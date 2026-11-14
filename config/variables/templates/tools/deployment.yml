@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that Pre-cluster verification and ARM deployment ('deployment') reads (a strict subset of the master file). Schema 5.6.21.
+# Template for the part of infrastructure.yml that Pre-cluster verification and ARM deployment ('deployment') reads (a strict subset of the master file). Schema 5.6.23.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -598,6 +598,9 @@ identity:
     # Whether the DNS servers of the management network support secure dynamic updates (Microsoft DNS integrated with Active Directory). true: th...
     # used by: deployment
     dns_secure_dynamic_updates: false
+    # (since 5.6.23) 
+    # default: false; used by: deployment
+    precreate_computer_objects: false
 
 # Storage of the instance: the deployment's storage mode, the volumes, and the SAN of a disaggregated or hybrid deployment (the san block app...
 storage:

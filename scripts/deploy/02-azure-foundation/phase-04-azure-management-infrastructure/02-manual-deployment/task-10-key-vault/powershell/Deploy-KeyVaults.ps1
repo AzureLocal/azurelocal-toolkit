@@ -71,7 +71,12 @@ $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'NotFound|could not be found|does not exist|\b404\b'
 $GroupNotFound = 'ResourceGroupNotFound|Resource group ''[^'']*'' could not be found'
 $Forbidden = 'Forbidden|403|not authorized|does not have (secrets )?(list|get)|AuthorizationFailed|Unauthorized'
+# Not choices of a deployment. The environment classes are the values of scenario.environment_class (the registry lists them): a vault of
+# these classes has to be removable, so purge protection is left off (Microsoft Learn: Key Vault soft delete and purge protection).
 $RemovableClasses = 'lab', 'test', 'dev'
+# The vaults hold secrets only, so the Standard SKU is enough: the higher tier adds keys protected by a hardware security module
+# (Microsoft Learn: Azure Key Vault service tiers). Azure RBAC is the permission model Microsoft recommends and the one Azure Local uses.
+$VaultSku = 'Standard'
 
 function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
@@ -170,7 +175,7 @@ $vaultRows = foreach ($item in $plan) {
             }
         }
         elseif ($PSCmdlet.ShouldProcess("Key Vault '$($item.Name)' in '$($item.ResourceGroup)'", "Create (Standard, Azure RBAC, soft delete, purge protection $(if ($purgeProtection) { 'on' } else { 'off' }))")) {
-            $arguments = @{ Name = $item.Name; ResourceGroupName = $item.ResourceGroup; Location = $location; SubscriptionId = $item.SubscriptionId; Sku = 'Standard'; ErrorAction = 'Stop' }
+            $arguments = @{ Name = $item.Name; ResourceGroupName = $item.ResourceGroup; Location = $location; SubscriptionId = $item.SubscriptionId; Sku = $VaultSku; ErrorAction = 'Stop' }
             if ($purgeProtection) { $arguments.EnablePurgeProtection = $true }
             if ($tags.Count) { $arguments.Tag = $tags }
             $null = New-AzKeyVault @arguments

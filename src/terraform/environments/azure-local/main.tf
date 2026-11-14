@@ -14,16 +14,21 @@ module "landing_zone" {
   source = "../../modules/landing-zone"
 
   management_groups = {
-    parent_id             = null
-    root_name             = var.management_groups.root_name
-    root_display_name     = var.management_groups.root_display_name
-    platform_name         = var.management_groups.platform_name
-    platform_display_name = var.management_groups.platform_display_name
-    identity_name         = var.management_groups.identity_name
-    connectivity_name     = var.management_groups.connectivity_name
-    management_name       = var.management_groups.management_name
-    security_name         = var.management_groups.security_name
-    landing_zones_name    = var.management_groups.landing_zones_name
+    parent_id                  = null
+    root_name                  = var.management_groups.root_name
+    root_display_name          = var.management_groups.root_display_name
+    platform_name              = var.management_groups.platform_name
+    platform_display_name      = var.management_groups.platform_display_name
+    identity_name              = var.management_groups.identity_name
+    identity_display_name      = var.management_groups.identity_display_name
+    connectivity_name          = var.management_groups.connectivity_name
+    connectivity_display_name  = var.management_groups.connectivity_display_name
+    management_name            = var.management_groups.management_name
+    management_display_name    = var.management_groups.management_display_name
+    security_name              = var.management_groups.security_name
+    security_display_name      = var.management_groups.security_display_name
+    landing_zones_name         = var.management_groups.landing_zones_name
+    landing_zones_display_name = var.management_groups.landing_zones_display_name
   }
 
   subscriptions = {

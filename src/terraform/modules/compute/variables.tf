@@ -28,9 +28,8 @@ variable "resource_group_name" {
 }
 
 variable "admin_username" {
-  description = "Local admin username for VMs."
+  description = "Local admin username for VMs (landing_zone.virtual_machines[].admin_username)."
   type        = string
-  default     = "azlocaladmin"
 }
 
 variable "admin_password" {
@@ -40,9 +39,8 @@ variable "admin_password" {
 }
 
 variable "windows_server_sku" {
-  description = "Windows Server image SKU."
+  description = "Windows Server image SKU (the SKU Microsoft publishes for landing_zone.virtual_machines[].os)."
   type        = string
-  default     = "2025-datacenter-azure-edition"
 }
 
 variable "key_vault_id" {

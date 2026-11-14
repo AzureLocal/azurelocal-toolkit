@@ -28,7 +28,6 @@
         @{ Path = '02-azure-foundation/phase-01-landing-zones/simplified-deployment/task-03-create-resource-groups'; AzureCli = 'yes'; Reason = 'Creates management groups, subscriptions or resource groups.' }
         @{ Path = '02-azure-foundation/phase-02-resource-providers/task-01-register-resource-providers'; AzureCli = 'yes'; Reason = 'Registers or verifies resource providers on the subscription.' }
         @{ Path = '02-azure-foundation/phase-02-resource-providers/task-02-verify-provider-registration'; AzureCli = 'yes'; Reason = 'Registers or verifies resource providers on the subscription.' }
-        @{ Path = '02-azure-foundation/phase-03-rbac-permissions'; AzureCli = 'yes'; Reason = 'Creates the deployment service principal or assigns RBAC roles.' }
         @{ Path = '02-azure-foundation/phase-03-rbac-permissions/task-01-create-azure-local-deployment-spn'; AzureCli = 'yes'; Reason = 'Creates the deployment service principal or assigns RBAC roles.' }
         @{ Path = '02-azure-foundation/phase-03-rbac-permissions/task-02-assign-rbac-roles'; AzureCli = 'yes'; Reason = 'Creates the deployment service principal or assigns RBAC roles.' }
         @{ Path = '02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-01-configuration/task-01-configure-core-variables'; AzureCli = 'unclear'; Reason = 'Edits the deployment configuration; there is no real script yet that shows whether it touches Azure.' }

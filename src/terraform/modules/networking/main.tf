@@ -140,6 +140,7 @@ resource "azurerm_public_ip" "vpn" {
   tags                = var.tags
 }
 
+# The generation follows the SKU (Microsoft Learn: VPN Gateway SKUs): VpnGw1AZ is Generation1, VpnGw2AZ and above are Generation2.
 resource "azurerm_virtual_network_gateway" "vpn" {
   count = var.enable_vpn_gateway ? 1 : 0
 
@@ -149,7 +150,7 @@ resource "azurerm_virtual_network_gateway" "vpn" {
   type                = "Vpn"
   vpn_type            = "RouteBased"
   sku                 = var.vpn_config.sku
-  generation          = var.vpn_config.generation
+  generation          = var.vpn_config.sku == "VpnGw1AZ" ? "Generation1" : "Generation2"
   active_active       = var.vpn_config.active_active
   enable_bgp          = var.vpn_config.bgp_enabled
 

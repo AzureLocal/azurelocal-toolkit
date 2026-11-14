@@ -71,7 +71,13 @@ Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '.
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
 $NotFound = 'NotFound|could not be found|does not exist|\b404\b'
+# Constants Microsoft fixes, not choices of a deployment (Microsoft Learn: VPN Gateway SKU consolidation and migration; VPN Gateway settings):
+# a new gateway needs an AZ SKU; a gateway for Azure Local connectivity is a route-based VPN gateway (policy-based gateways have no BGP).
 $AllowedSku = 'VpnGw1AZ', 'VpnGw2AZ', 'VpnGw3AZ', 'VpnGw4AZ', 'VpnGw5AZ'
+$GatewayType = 'Vpn'
+$VpnType = 'RouteBased'
+# The generation follows the SKU (Microsoft Learn: VPN Gateway SKUs): VpnGw1AZ is Generation1, VpnGw2AZ and above are Generation2.
+$Generation1Sku = 'VpnGw1AZ'
 # Reserved by Azure (8074, 8075, 12076, 65517 to 65520) or by IANA (23456, 64496 to 64511, 65535 to 65551, 4294967295). 65515 is the Azure default and allowed.
 $ReservedAsn = @(8074, 8075, 12076, 23456, 4294967295) + 65517..65520 + 64496..64511 + 65535..65551
 
@@ -137,7 +143,7 @@ $gatewayGroup = if (Get-Entry $gateway 'resource_group') { Get-Entry $gateway 'r
 if (-not $networkGroup) { Exit-InputProblem "The network '$networkName' has no resource_group in landing_zone.networks." }
 $location = if (Get-Entry $network 'location') { Get-Entry $network 'location' } else { $defaultLocation }
 if (-not $location) { Exit-InputProblem "No region: the network '$networkName' has no location and azure.location is empty." }
-$generation = if ($sku -eq 'VpnGw1AZ') { 'Generation1' } else { 'Generation2' }
+$generation = if ($sku -eq $Generation1Sku) { 'Generation1' } else { 'Generation2' }
 $publicIpName = "$gatewayName-pip"
 
 # ---- preconditions (read only)
@@ -212,7 +218,7 @@ try {
             $ipConfig = New-AzVirtualNetworkGatewayIpConfig -Name 'default' -SubnetId $subnet.Id -PublicIpAddressId $pip.Id
             $gwArgs = @{
                 ResourceGroupName = $gatewayGroup; Name = $gatewayName; Location = $location; IpConfigurations = $ipConfig
-                GatewayType = 'Vpn'; VpnType = 'RouteBased'; GatewaySku = $sku; VpnGatewayGeneration = $generation
+                GatewayType = $GatewayType; VpnType = $VpnType; GatewaySku = $sku; VpnGatewayGeneration = $generation
                 EnableBgp = $true; Asn = [uint32]$asn; ErrorAction = 'Stop'
             }
             if ($tags.Count) { $gwArgs.Tag = $tags }
