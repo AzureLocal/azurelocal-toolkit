@@ -10,16 +10,16 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](diagrams/variable-flow.drawio) ([PNG](diagrams/variable-flow.png)).
 
-Registry version 5.0.59. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
+Registry version 5.0.60. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
 
 ## In numbers
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 667 | 472 | 85 | 3 | 105 | 2 |
-| Owned by a tool (`tools.*`) | 4241 | 4033 | 0 | 0 | 208 | 0 |
-| Older variables-file sections | 1389 | 8 | 6 | 0 | 1369 | 6 |
-| All registry leaves | 6297 | 4513 | 91 | 3 | 1682 | 8 |
+| Keys of infrastructure.yml | 669 | 474 | 85 | 3 | 105 | 2 |
+| Owned by a tool (`tools.*`) | 4262 | 4055 | 0 | 0 | 207 | 0 |
+| Older variables-file sections | 1373 | 8 | 6 | 0 | 1353 | 6 |
+| All registry leaves | 6304 | 4537 | 91 | 3 | 1665 | 8 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -45,7 +45,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 65 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
 | ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 95 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 14 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
-| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 307 | _metadata, azure, cluster, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
+| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 309 | _metadata, azure, cluster, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
 
 ### Which section is read in which phase (number of keys)
 
@@ -58,7 +58,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `networking` | 22 |  | 7 | 10 | 24 | 20 |  | 37 |
 | `security` | 1 |  |  |  |  | 11 |  | 7 |
 | `operations` | 13 |  |  |  |  |  |  | 13 |
-| `devops` | 4 |  |  |  |  |  |  | 47 |
+| `devops` | 4 |  |  |  |  |  |  | 49 |
 | `scenario` | 9 | 1 | 1 | 6 | 5 | 6 | 2 | 6 |
 | `azure` | 8 | 1 | 5 | 4 | 5 | 6 | 3 | 10 |
 | `key_vaults` |  |  | 1 |  | 3 | 3 |  | 4 |
@@ -96,7 +96,7 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
 | arm-deployment | ARM Validate/Deploy | 95 | 0 | 987 |
 | sonar | Sonar | 14 | 0 | 266 |
-| cicd-infra | Outside the flow | 59 | 0 | 362 |
+| cicd-infra | Outside the flow | 61 | 0 | 363 |
 | infrastructure-helpers | Outside the flow | 39 | 0 | 0 |
 | validator | Outside the flow | 111 | 0 | 0 |
 | toolkit-legacy-scripts | Outside the flow | 223 | 0 | 0 |
@@ -241,15 +241,16 @@ Where in the code (file, function, keys read by name; 15 places, the first 12):
 
 ### cicd-infra
 
-**Reads (59):**
-`devops.platform`, `devops.url`, `devops.organization`, `devops.project`, `devops.api_token`, `devops.subscription`, `devops.resource_group`, `devops.create_resource_group`, `devops.repository.name`, `devops.repository.template`, `devops.repository.visibility`, `devops.repository.default_branch`, `devops.settings.required_approvals`, `devops.settings.reviewers`, `devops.settings.squash_only`, `devops.settings.secret_scanning`, `devops.settings.resolve_conversations`, `devops.settings.required_status_checks`, `devops.environments[].name`, `devops.environments[].approval_required`, `devops.environments[].approvers`, `devops.environments[].wait_minutes`, `devops.environments[].deployment_branch`, `devops.pipelines.runner_label`, `devops.pipelines.environments.os_configuration`, `devops.pipelines.environments.os_configuration_clear_storage`, `devops.pipelines.environments.arm_deployment`, `devops.pipelines.environments.cicd_infra`, `devops.pipelines.environments.terraform_deployment`, `devops.authentication.method`, `devops.authentication.client_secret`, `devops.authentication.roles`, `devops.authentication.grant_graph_role_management`, `devops.authentication.register_encryption_at_host`, `devops.runners[].name`, `devops.runners[].os_type`, `devops.runners[].purpose`, `devops.runners[].count`, `devops.runners[].compute_type`, `devops.runners[].size`, `devops.runners[].labels`, `devops.runners[].registration_secret`, `devops.runners[].pool`, `devops.runners[].private_ips`, `devops.runners[].subnet.name`, `devops.runners[].subnet.prefix`, `devops.runners[].data_disk_gb`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.automation_identity.name`, `azure.automation_identity.client_id`, `key_vaults[].name`, `key_vaults[].subscription_id`, `key_vaults[].resource_group`, `landing_zone.subscriptions[].name`, `landing_zone.subscriptions[].id`, `landing_zone.subscriptions[].role`
+**Reads (61):**
+`devops.platform`, `devops.url`, `devops.organization`, `devops.project`, `devops.api_token`, `devops.subscription`, `devops.resource_group`, `devops.create_resource_group`, `devops.repository.name`, `devops.repository.template`, `devops.repository.visibility`, `devops.repository.default_branch`, `devops.settings.required_approvals`, `devops.settings.reviewers`, `devops.settings.squash_only`, `devops.settings.secret_scanning`, `devops.settings.resolve_conversations`, `devops.settings.required_status_checks`, `devops.environments[].name`, `devops.environments[].approval_required`, `devops.environments[].approvers`, `devops.environments[].wait_minutes`, `devops.environments[].deployment_branch`, `devops.pipelines.runner_label`, `devops.pipelines.environments.os_configuration`, `devops.pipelines.environments.os_configuration_clear_storage`, `devops.pipelines.environments.arm_deployment`, `devops.pipelines.environments.cicd_infra`, `devops.pipelines.environments.terraform_deployment`, `devops.pipelines.service_connection`, `devops.pipelines.variable_group`, `devops.authentication.method`, `devops.authentication.client_secret`, `devops.authentication.roles`, `devops.authentication.grant_graph_role_management`, `devops.authentication.register_encryption_at_host`, `devops.runners[].name`, `devops.runners[].os_type`, `devops.runners[].purpose`, `devops.runners[].count`, `devops.runners[].compute_type`, `devops.runners[].size`, `devops.runners[].labels`, `devops.runners[].registration_secret`, `devops.runners[].pool`, `devops.runners[].private_ips`, `devops.runners[].subnet.name`, `devops.runners[].subnet.prefix`, `devops.runners[].data_disk_gb`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.automation_identity.name`, `azure.automation_identity.client_id`, `key_vaults[].name`, `key_vaults[].subscription_id`, `key_vaults[].resource_group`, `landing_zone.subscriptions[].name`, `landing_zone.subscriptions[].id`, `landing_zone.subscriptions[].role`
 
-Where in the code (file, function, keys read by name; 3 places):
+Where in the code (file, function, keys read by name; 4 places):
 
 | File | Function | Keys |
 | --- | --- | ---: |
-| `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `ConvertTo-AzlCicdSetting` | 59 |
-| `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `(script)` | 6 |
+| `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `ConvertTo-AzlCicdSetting` | 61 |
+| `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `(script)` | 8 |
+| `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `Get-AzlCicdPipelineName` | 2 |
 | `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `Get-AzlCicdPipelineInput` | 1 |
 
 ### infrastructure-helpers
@@ -585,10 +586,10 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | --- | --- | --- | --- |
 | `networking.management.provisioning_dhcp_range.start` | ztp; os_configuration | operator by hand | read as part by ztp |
 | `networking.management.provisioning_dhcp_range.end` | ztp; os_configuration | operator by hand | read as part by ztp |
-| `networking.intents[].overrides.qos.cluster_priority` | os_configuration; deployment; trailwright | operator by hand | read as part by arm-deployment |
-| `networking.intents[].overrides.qos.smb_priority` | os_configuration; deployment; trailwright | operator by hand | read as part by arm-deployment |
-| `networking.intents[].overrides.qos.smb_bandwidth_percent` | os_configuration; deployment; trailwright | operator by hand | read as part by arm-deployment |
-| `networking.intents[].overrides.adapter.network_direct_technology` | os_configuration; deployment; trailwright | operator by hand | read as part by arm-deployment |
+| `networking.intents[].overrides.qos.cluster_priority` | os_configuration; deployment; trailwright | operator by hand; default | read as part by arm-deployment |
+| `networking.intents[].overrides.qos.smb_priority` | os_configuration; deployment; trailwright | operator by hand; default | read as part by arm-deployment |
+| `networking.intents[].overrides.qos.smb_bandwidth_percent` | os_configuration; deployment; trailwright | operator by hand; default | read as part by arm-deployment |
+| `networking.intents[].overrides.adapter.network_direct_technology` | os_configuration; deployment; trailwright | operator by hand; default | read as part by arm-deployment |
 | `networking.intents[].overrides.virtual_switch.enable_iov` | os_configuration; deployment; trailwright | operator by hand | read as part by arm-deployment |
 | `networking.intents[].overrides.virtual_switch.load_balancing_algorithm` | os_configuration; deployment; trailwright | operator by hand | read as part by arm-deployment |
 | `networking.cluster_networks[].purpose` | os_configuration | operator by hand | read as part by os-configuration; pre-cluster-verification |
@@ -682,7 +683,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `compute.clusters.azure_local.vm_switch_name` | `networking.logical_networks[].vm_switch_name` |  |
 | `nodes[].arc_resource_name` | (none named) | infrastructure-helpers; ztp |
 
-### Tool variables the tool documents and does not read yet (208)
+### Tool variables the tool documents and does not read yet (207)
 
 | Variable | Owner | Kind |
 | --- | --- | --- |
@@ -703,7 +704,6 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `tools.loadtools.config_keys.config_variables_variables_yml.monitoring_enabled` | loadtools | config_keys |
 | `tools.loadtools.config_keys.config_variables_variables_yml.sample_interval_seconds` | loadtools | config_keys |
 | `tools.loadtools.config_keys.config_variables_variables_yml.push_to_azure_monitor` | loadtools | config_keys |
-| `tools.loadtools.config_keys.config_variables_variables_yml.log_analytics_workspace_id` | loadtools | config_keys |
 | `tools.loadtools.config_keys.config_variables_variables_yml.log_analytics_shared_key` | loadtools | config_keys |
 | `tools.loadtools.config_keys.config_variables_variables_yml.report_formats` | loadtools | config_keys |
 | `tools.loadtools.config_keys.config_variables_variables_yml.report_title` | loadtools | config_keys |
@@ -895,7 +895,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `tools.ztp.config_keys.config_oem_vendor_json.bios_status` | ztp | config_keys |
 | `tools.ztp.config_keys.config_oem_vendor_json.models_validatedBySimplifiedProvisioning` | ztp | config_keys |
 
-### Older variables-file sections (1389 variables)
+### Older variables-file sections (1373 variables)
 
 These registry sections (`compute`, `identity.accounts`, `azure_platform`, ...) describe the earlier variables file, not `infrastructure.yml`. The numbered deploy scripts under `scripts/deploy` read some of them. They are in the CSV (`kind` = `variables-file`).
 
@@ -910,7 +910,7 @@ These registry sections (`compute`, `identity.accounts`, `azure_platform`, ...) 
 | `marketplace_images` | 9 | 0 | 9 | 0 |
 | `networking` | 522 | 0 | 518 | 4 |
 | `operations` | 92 | 2 | 90 | 0 |
-| `security` | 109 | 0 | 109 | 0 |
+| `security` | 93 | 0 | 93 | 0 |
 | `site` | 22 | 1 | 21 | 0 |
 | `storage_accounts` | 33 | 0 | 33 | 0 |
 | `tags` | 11 | 11 | 0 | 0 |
@@ -959,7 +959,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `cluster.witness.path` | string | operator; Trailwright | trailwright | infrastructure-helpers |  | read |
 | `cluster.key_vault.name` | string (key_vault_name), required | operator; Trailwright | deployment; trailwright; terraform | arm-deployment | ARM keyVaultName | read |
 | `cluster.key_vault.create_new` | boolean, default `true` | operator; Trailwright; default | deployment; trailwright | arm-deployment | ARM createNewKeyVault | read |
-| `cluster.key_vault.soft_delete_retention_days` | integer, default `30` | operator; default | deployment; trailwright | arm-deployment | ARM softDeleteRetentionDays | read |
+| `cluster.key_vault.soft_delete_retention_days` | integer, default `30` | operator; default | deployment; trailwright; terraform | arm-deployment | ARM softDeleteRetentionDays | read |
 | `cluster.diagnostics.storage_account` | string (storage_account_name) | operator; Trailwright | deployment; trailwright | arm-deployment | ARM diagnosticStorageAccountName | read |
 | `cluster.diagnostics.logs_retention_days` | integer, default `30` | operator; default | deployment; trailwright | arm-deployment | ARM logsRetentionInDays | read |
 | `cluster.diagnostics.storage_account_type` | string, default `Standard_LRS` | operator; default | deployment; trailwright | arm-deployment | ARM storageAccountType | read |
@@ -1022,6 +1022,8 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `devops.pipelines.environments.arm_deployment` | string | operator | cicd_infra | cicd-infra |  | read |
 | `devops.pipelines.environments.cicd_infra` | string | operator | cicd_infra | cicd-infra |  | read |
 | `devops.pipelines.environments.terraform_deployment` | string | operator | cicd_infra | cicd-infra |  | read |
+| `devops.pipelines.service_connection` | string | operator | cicd_infra | cicd-infra |  | read |
+| `devops.pipelines.variable_group` | string | operator | cicd_infra | cicd-infra |  | read |
 | `devops.authentication.method` | string, default `oidc`, one of `oidc`, `client_secret` | operator; default | cicd_infra | cicd-infra |  | read |
 | `devops.authentication.client_secret` | string (kv_ref) | operator; Key Vault ref | cicd_infra; ansible | cicd-infra |  | read |
 | `devops.authentication.roles` | array | operator | cicd_infra; terraform | cicd-infra |  | read |
@@ -1348,12 +1350,12 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `networking.intents[].name` | string, required | operator | os_configuration; deployment; trailwright; ranger | pre-cluster-verification; toolkit-legacy-scripts | ARM ~intentList; ~networkingPattern; Gate NW-001; NW-002; NW-003; NW-009; NW-010; NW-011; NW-012; NW-013; NW-014 | read |
 | `networking.intents[].traffic` | array, required, one of `management`, `compute`, `storage` | operator | os_configuration; deployment; trailwright; ranger | pre-cluster-verification; toolkit-legacy-scripts | ARM ~intentList; ~networkingPattern; Gate NW-001; NW-002; NW-003; NW-009; NW-010; NW-011; NW-012; NW-013; NW-014 | read |
 | `networking.intents[].adapters` | array, required | operator | os_configuration; deployment; trailwright; ranger | pre-cluster-verification | ARM ~intentList; ~networkingPattern; Gate NW-001; NW-002; NW-003; NW-009; NW-010; NW-011; NW-012; NW-013; NW-014 | read |
-| `networking.intents[].overrides.qos.cluster_priority` | integer | operator | os_configuration; deployment; trailwright | (part: arm-deployment) | ARM ~intentList; ~networkingPattern | read-as-part |
-| `networking.intents[].overrides.qos.smb_priority` | integer | operator | os_configuration; deployment; trailwright | (part: arm-deployment) | ARM ~intentList; ~networkingPattern | read-as-part |
-| `networking.intents[].overrides.qos.smb_bandwidth_percent` | integer | operator | os_configuration; deployment; trailwright | (part: arm-deployment) | ARM ~intentList; ~networkingPattern | read-as-part |
+| `networking.intents[].overrides.qos.cluster_priority` | integer, default `7` | operator; default | os_configuration; deployment; trailwright | (part: arm-deployment) | ARM ~intentList; ~networkingPattern | read-as-part |
+| `networking.intents[].overrides.qos.smb_priority` | integer, default `3` | operator; default | os_configuration; deployment; trailwright | (part: arm-deployment) | ARM ~intentList; ~networkingPattern | read-as-part |
+| `networking.intents[].overrides.qos.smb_bandwidth_percent` | integer, default `50` | operator; default | os_configuration; deployment; trailwright | (part: arm-deployment) | ARM ~intentList; ~networkingPattern | read-as-part |
 | `networking.intents[].overrides.adapter.jumbo_packet` | integer, one of `1514`, `4088`, `9014` | operator | os_configuration; deployment; trailwright | pre-cluster-verification | ARM ~intentList; ~networkingPattern; Gate NW-001; NW-002; NW-003; NW-009; NW-010; NW-011; NW-012; NW-013; NW-014 | read |
 | `networking.intents[].overrides.adapter.network_direct` | boolean | operator | os_configuration; deployment; trailwright | pre-cluster-verification | ARM ~intentList; ~networkingPattern; Gate NW-001; NW-002; NW-003; NW-009; NW-010; NW-011; NW-012; NW-013; NW-014 | read |
-| `networking.intents[].overrides.adapter.network_direct_technology` | string, one of `iwarp`, `roce`, `roce_v2` | operator | os_configuration; deployment; trailwright | (part: arm-deployment) | ARM ~intentList; ~networkingPattern | read-as-part |
+| `networking.intents[].overrides.adapter.network_direct_technology` | string, default `roce_v2`, one of `iwarp`, `roce`, `roce_v2` | operator; default | os_configuration; deployment; trailwright | (part: arm-deployment) | ARM ~intentList; ~networkingPattern | read-as-part |
 | `networking.intents[].overrides.virtual_switch.enable_iov` | boolean | operator | os_configuration; deployment; trailwright | (part: arm-deployment) | ARM ~intentList; ~networkingPattern | read-as-part |
 | `networking.intents[].overrides.virtual_switch.load_balancing_algorithm` | string, one of `dynamic`, `hyper_v_port` | operator | os_configuration; deployment; trailwright | (part: arm-deployment) | ARM ~intentList; ~networkingPattern | read-as-part |
 | `networking.storage.auto_ip` | boolean, default `true` | operator; Trailwright; default | os_configuration; deployment; trailwright | arm-deployment | ARM enableStorageAutoIp; storageNetworkList | read |
@@ -1591,7 +1593,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `scenario.outbound_path` | string, one of `direct`, `proxy`, `arc_gateway`, `proxy_arc_gateway`, `private_path` | operator; Trailwright | os_configuration; trailwright; ansible; ztp | infrastructure-helpers; os-configuration; pre-cluster-verification | OS ArcRegistration; Gate NW-006 | read |
 | `scenario.os_install` | string, one of `iso`, `simplified` | operator; Trailwright | ztp; os_configuration; monitoring; trailwright | os-configuration; sonar; ztp | Sonar provisioningRoute | read |
 | `scenario.deploy_method` | string, one of `portal`, `arm` | operator; Trailwright | trailwright |  |  | placeholder |
-| `scenario.environment_class` | string, default `production`, one of `lab`, `test`, `dev`, `production`, `dmz` | operator; default | os_configuration | os-configuration; toolkit-legacy-scripts | OS DomainJoin; RemoteManagement | read |
+| `scenario.environment_class` | string, default `production`, one of `lab`, `test`, `dev`, `production`, `dmz` | operator; default | os_configuration; terraform | os-configuration; toolkit-legacy-scripts | OS DomainJoin; RemoteManagement | read |
 
 ### sdn
 
@@ -1730,8 +1732,8 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | cicd_infra | config_keys | 5 | 5 | 0 |
 | cicd_infra | env_vars | 52 | 52 | 0 |
 | cicd_infra | parameters | 31 | 31 | 0 |
-| cicd_infra | pipeline_inputs | 63 | 63 | 0 |
-| cicd_infra | pipeline_variables | 79 | 79 | 0 |
+| cicd_infra | pipeline_inputs | 66 | 66 | 0 |
+| cicd_infra | pipeline_variables | 77 | 77 | 0 |
 | cicd_infra | secret_names | 15 | 15 | 0 |
 | cicd_infra | terraform_variables | 90 | 90 | 0 |
 | discovery | config_keys | 77 | 77 | 0 |
@@ -1740,15 +1742,16 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | draftsman | env_vars | 1 | 1 | 0 |
 | draftsman | url_parameters | 6 | 6 | 0 |
 | loadtools | ansible_variables | 10 | 10 | 0 |
-| loadtools | config_keys | 301 | 102 | 199 |
-| loadtools | parameters | 253 | 253 | 0 |
-| loadtools | pipeline_inputs | 4 | 4 | 0 |
+| loadtools | config_keys | 306 | 108 | 198 |
+| loadtools | env_vars | 4 | 4 | 0 |
+| loadtools | parameters | 258 | 258 | 0 |
+| loadtools | pipeline_inputs | 6 | 6 | 0 |
 | os_configuration | config_keys | 83 | 83 | 0 |
 | os_configuration | env_vars | 1 | 1 | 0 |
 | os_configuration | event_fields | 83 | 83 | 0 |
-| os_configuration | guard_settings | 29 | 29 | 0 |
+| os_configuration | guard_settings | 27 | 27 | 0 |
 | os_configuration | parameters | 49 | 49 | 0 |
-| os_configuration | run_settings | 27 | 27 | 0 |
+| os_configuration | run_settings | 29 | 29 | 0 |
 | os_configuration | secret_names | 10 | 10 | 0 |
 | ranger | config_keys | 97 | 95 | 2 |
 | ranger | env_vars | 2 | 2 | 0 |
@@ -1759,7 +1762,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | sonar | parameters | 72 | 72 | 0 |
 | sonar | secret_names | 9 | 9 | 0 |
 | sonar | state_fields | 8 | 8 | 0 |
-| terraform | variables | 205 | 205 | 0 |
+| terraform | variables | 209 | 209 | 0 |
 | trailwright | parameters | 3 | 3 | 0 |
 | ztp | config_keys | 179 | 172 | 7 |
 | ztp | env_vars | 12 | 12 | 0 |

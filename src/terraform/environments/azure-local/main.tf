@@ -111,6 +111,11 @@ module "identity" {
   azl_key_vault_name           = var.azl_key_vault_name
   azl_key_vault_resource_group = var.azl_key_vault_resource_group_name == "" ? "" : module.landing_zone.resource_group_names[var.azl_key_vault_resource_group_name]
 
+  # Purge protection follows scenario.environment_class and the cluster vault's retention cluster.key_vault.soft_delete_retention_days,
+  # so these vaults are made like the ones Deploy-KeyVaults.ps1 and the ARM deployment make.
+  environment_class                        = var.environment_class
+  azl_key_vault_soft_delete_retention_days = var.azl_key_vault_soft_delete_retention_days
+
   deployment_spn_object_id    = var.deployment_spn_object_id
   azure_local_subscription_id = var.subscriptions.azure_local_id
   spn_subscription_roles      = var.spn_subscription_roles

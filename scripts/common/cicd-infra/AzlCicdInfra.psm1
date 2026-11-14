@@ -228,10 +228,13 @@ function ConvertTo-AzlCicdSetting {
             }
         })
 
-    # devops.pipelines (schema 5.6.25): the runner label and the approval environment of each toolkit pipeline.
+    # devops.pipelines (schema 5.6.25): the runner label and the approval environment of each toolkit pipeline. Schema 5.6.27: on Azure DevOps the name of
+    # the service connection task 05 creates and the name of the variable group it writes the sign-in values to.
     $pipelineEnvironments = Get-AzlValue $devops 'pipelines.environments' @{}
     $pipelines = [pscustomobject]@{
-        RunnerLabel  = [string](Get-AzlValue $devops 'pipelines.runner_label')
+        RunnerLabel       = [string](Get-AzlValue $devops 'pipelines.runner_label')
+        ServiceConnection = [string](Get-AzlValue $devops 'pipelines.service_connection')
+        VariableGroup     = [string](Get-AzlValue $devops 'pipelines.variable_group')
         Environments = [ordered]@{
             os_configuration               = [string](Get-AzlValue $pipelineEnvironments 'os_configuration')
             os_configuration_clear_storage = [string](Get-AzlValue $pipelineEnvironments 'os_configuration_clear_storage')
@@ -429,9 +432,23 @@ function Get-AzlFederatedCredentialPlan {
         'azure_devops' {
             $orgId = Get-AzlAdoOrganizationId -Settings $Settings
             $orgName = ($Settings.ScmUrl -split '/')[-1]
-            @([pscustomobject]@{ Name = 'azuredevops-service-connection'; Issuer = "https://vstoken.dev.azure.com/$orgId"; Subject = "sc://$orgName/$($Settings.Project)/AzureLocal-ServiceConnection" })
+            $connection = Get-AzlCicdPipelineName -Settings $Settings -Name ServiceConnection
+            @([pscustomobject]@{ Name = 'azuredevops-service-connection'; Issuer = "https://vstoken.dev.azure.com/$orgId"; Subject = "sc://$orgName/$($Settings.Project)/$connection" })
         }
     }
+}
+
+function Get-AzlCicdPipelineName {
+    <#
+    .SYNOPSIS
+        Azure DevOps: the name of the service connection (devops.pipelines.service_connection) or of the variable group (devops.pipelines.variable_group).
+        Task 05 creates both with these names and the Azure DevOps pipelines take them as run parameters, so there is no default name: a missing key stops.
+    #>
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Settings, [Parameter(Mandatory)][ValidateSet('ServiceConnection', 'VariableGroup')][string]$Name)
+    $key = if ($Name -eq 'ServiceConnection') { 'devops.pipelines.service_connection' } else { 'devops.pipelines.variable_group' }
+    $value = [string]$Settings.Pipelines.$Name
+    if (-not $value) { throw "$key is not set. On Azure DevOps task 05 creates the $(if ($Name -eq 'ServiceConnection') { 'service connection' } else { 'variable group' }) with this name and the pipelines take it as a run parameter; there is no default name." }
+    return $value
 }
 
 function Invoke-AzlCicdBootstrap {
@@ -996,7 +1013,21 @@ $script:AzlPipelineVariable = @(
     [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_ARM_DEPLOYMENT'; Role = 'ARM deployment approval environment'; Key = 'devops.pipelines.environments.arm_deployment'; Platforms = @('github', 'gitlab', 'azure_devops') }
     [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_CICD_INFRA'; Role = 'CI/CD infrastructure approval environment'; Key = 'devops.pipelines.environments.cicd_infra'; Platforms = @('github', 'gitlab', 'azure_devops') }
     [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT'; Role = 'Terraform deployment approval environment'; Key = 'devops.pipelines.environments.terraform_deployment'; Platforms = @('github', 'gitlab', 'azure_devops') }
+    # Azure DevOps only (schema 5.6.27): the names of the service connection and the variable group that task 05 creates. GitHub and GitLab sign in
+    # with the repository's or project's own variables and have neither.
+    [pscustomobject]@{ Name = 'AZL_SERVICE_CONNECTION'; Role = 'service connection'; Key = 'devops.pipelines.service_connection'; Platforms = @('azure_devops') }
+    [pscustomobject]@{ Name = 'AZL_VARIABLE_GROUP'; Role = 'variable group'; Key = 'devops.pipelines.variable_group'; Platforms = @('azure_devops') }
 )
+
+# The variable groups task 05 writes the sign-in values to on Azure DevOps: one per entry of devops.environments[], named <variable_group>-<environment>,
+# or one named <variable_group> when the file lists no environment.
+function Get-AzlCicdVariableGroupName {
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Settings)
+    $base = Get-AzlCicdPipelineName -Settings $Settings -Name VariableGroup
+    $scopes = @($Settings.Environments | ForEach-Object { $_.Name } | Where-Object { $_ })
+    if ($scopes.Count -eq 0) { return @($base) }
+    return @($scopes | ForEach-Object { "$base-$_" })
+}
 
 function Get-AzlCicdPipelineInput {
     <#
@@ -1016,6 +1047,9 @@ function Get-AzlCicdPipelineInput {
     foreach ($variable in $script:AzlPipelineVariable) {
         if ($Settings.Platform -notin $variable.Platforms) { continue }
         $role = $variable.Key -replace '^devops\.pipelines\.(environments\.)?', ''
+        # The service connection and the variable group have no default name on Azure DevOps: a missing key stops here (Get-AzlCicdPipelineName).
+        if ($role -eq 'service_connection') { $found.Add([pscustomobject]@{ Name = $variable.Name; Role = $variable.Role; Key = $variable.Key; Value = (Get-AzlCicdPipelineName -Settings $Settings -Name ServiceConnection) }); continue }
+        if ($role -eq 'variable_group') { $found.Add([pscustomobject]@{ Name = $variable.Name; Role = $variable.Role; Key = $variable.Key; Value = (@(Get-AzlCicdVariableGroupName -Settings $Settings) -join "' or '") }); continue }
         $value = if ($role -eq 'runner_label') { $pipelines.RunnerLabel } else { $pipelines.Environments[$role] }
         if (-not $value) { continue }
         if ($role -eq 'runner_label') {
@@ -1103,7 +1137,9 @@ function Set-AzlCicdVariable {
             }
             if ($Settings.Platform -eq 'azure_devops') {
                 $base = "$($Settings.ScmUrl)/$([uri]::EscapeDataString($Settings.Project))/_apis"
-                $groupName = if ($scope) { "azure-credentials-$scope" } else { 'azure-credentials' }
+                # devops.pipelines.variable_group (schema 5.6.27), one group per environment: <name>-<environment>, or <name> without environments.
+                $groupBase = Get-AzlCicdPipelineName -Settings $Settings -Name VariableGroup
+                $groupName = if ($scope) { "$groupBase-$scope" } else { $groupBase }
                 $projectInfo = Invoke-AzlAdo -Method GET -Uri "$($Settings.ScmUrl)/_apis/projects/$([uri]::EscapeDataString($Settings.Project))?api-version=7.1"
                 $values = [ordered]@{}
                 foreach ($variable in $variables) {
@@ -1156,9 +1192,10 @@ function Set-AzlCicdVariable {
         }
 
         if ($Settings.Platform -eq 'azure_devops' -and $Settings.Authentication.Method -eq 'oidc') {
-            $connection = 'AzureLocal-ServiceConnection'
+            # devops.pipelines.service_connection (schema 5.6.27): the name the Azure DevOps pipelines take as their run parameter.
+            $connection = Get-AzlCicdPipelineName -Settings $Settings -Name ServiceConnection
             $base = "$($Settings.ScmUrl)/$([uri]::EscapeDataString($Settings.Project))/_apis"
-            $existing = @((Invoke-AzlAdo -Method GET -Uri "$base/serviceendpoint/endpoints?endpointNames=$connection&api-version=7.1").value) | Select-Object -First 1
+            $existing = @((Invoke-AzlAdo -Method GET -Uri "$base/serviceendpoint/endpoints?endpointNames=$([uri]::EscapeDataString($connection))&api-version=7.1").value) | Select-Object -First 1
             if ($existing) { $results.Add((Format-AzlResult $task 'Service connection' $connection 'Exists')) }
             elseif ($PSCmdlet.ShouldProcess($connection, 'Create the workload identity federation service connection')) {
                 $projectInfo = Invoke-AzlAdo -Method GET -Uri "$($Settings.ScmUrl)/_apis/projects/$([uri]::EscapeDataString($Settings.Project))?api-version=7.1"

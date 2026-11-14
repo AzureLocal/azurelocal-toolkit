@@ -40,6 +40,8 @@ $script:AbandonedJobs = [System.Collections.Generic.List[object]]::new()
 # limit nor the node's MaxEnvelopeSizekb: 8 MiB raw arrived as 10.5 MB and the first chunk failed. 4 MiB raw is about 5.6 MB encoded.
 $script:SbeChunkBytes = 4194304
 Import-Module (Join-Path (Join-Path $PSScriptRoot '..') (Join-Path 'azure-local' 'AzlAzure.psm1'))
+# The node state folder has one definition (AzlNodePayload.psm1); the WinRM call passes it to the node as an argument.
+Import-Module (Join-Path $PSScriptRoot 'AzlNodePayload.psm1')
 
 function ConvertTo-AzlNodeResult {
     <#
@@ -390,9 +392,10 @@ function New-AzlWinRmTransport {
                 # A hard cap: the call runs as a job and is abandoned after $TimeoutSeconds plus a 15 second grace, so one stalled WinRM call (a network change under
                 # an open session does it) can never hang the whole run. The session is dropped so the next call opens a new one.
                 $cap = Get-AzlNodeCallCap -TimeoutSeconds $TimeoutSeconds
+                # The file goes into the node state folder, passed from its one definition (Get-AzlNodeStateDirectory).
+                $stateFolder = Get-AzlNodeStateDirectory
                 $job = Invoke-Command -Session $session -AsJob -ScriptBlock {
-                    param($Text, $ParamsB64, $SecretsB64)
-                    $folder = 'C:\ProgramData\AzureLocal\osconfig'
+                    param($Text, $ParamsB64, $SecretsB64, $folder)
                     $null = New-Item -ItemType Directory -Force -Path $folder
                     try { & icacls.exe $folder /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null } catch { $null = $_ }
                     $file = Join-Path $folder ('run-' + [guid]::NewGuid().ToString('N') + '.ps1')
@@ -402,7 +405,7 @@ function New-AzlWinRmTransport {
                         & $file -ParamsB64 $ParamsB64 -SecretsB64 $SecretsB64
                     }
                     finally { Remove-Item -LiteralPath $file -Force -ErrorAction SilentlyContinue }
-                } -ArgumentList $Script, $p, $q
+                } -ArgumentList $Script, $p, $q, $stateFolder
                 if (-not (Wait-AzlNodeJob -Job $job -CapSeconds $cap -Transport $Self -Node $Node)) {
                     # What the script had already written is kept (Receive-Job -Keep, before the job is stopped): a node script that emitted its AZLRESULT line and then stalled
                     # still answered, and Invoke-AzlNodeScript decodes that line. Failed stays true: the call did not finish.

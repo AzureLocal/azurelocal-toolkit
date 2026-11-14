@@ -384,6 +384,15 @@ New rules AZL-060 to AZL-068 (see README). **Steps for a 5.5 file:** set `_metad
 - **5.6.2: adapters are identified by hardware facts.** `nodes[].network_adapters[].mac_address` is now required. New optional keys: `port_index`, `pci_location` (`bus`, `device`, `function`), `vendor` (written by hardware discovery), `allowed_vlans` (the VLANs the switch port allows) and `os_name_override`. **Steps:** a file whose ports lack the MAC: run `Invoke-HardwareDiscovery.ps1 -UpdateInfrastructure` or add the MAC. Nothing else changes: without `os_name_override` no adapter is renamed and the deployment sends the name the node reports for the MAC. To get one name everywhere, add `os_name_override` per used port and run the OS configuration (step `NicNames`).
 - **5.6.3** adds `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`. Nothing is required. A logical network uses `gateway` and `ip_pool`; the 4.0 names `default_gateway` and `ip_pools` belong to the deprecated `networking.onprem.logical_networks[]`.
 
+## To 5.6.27: the service connection and the variable group of the Azure DevOps pipelines
+
+Schema 5.6.27 adds two optional keys under `devops.pipelines`. A file that does not run the toolkit's pipelines on Azure DevOps needs neither: a 5.6.26 file is valid as it is.
+
+- `devops.pipelines.service_connection`: the name of the Azure Resource Manager service connection (workload identity federation). Task 05 creates it with this name, task 01 puts it in the subject of the federated credential, and the four Azure DevOps pipelines take it as a run parameter (`serviceConnection`, `azureServiceConnection` or `service_connection`) with no default.
+- `devops.pipelines.variable_group`: the name of the variable group task 05 writes the sign-in values (`ARM_*`) and the state settings (`TF_BACKEND_*`) to. With entries in `devops.environments[]` there is one group per environment, `<name>-<environment>`. `azure-local-deploy.yml` (`variableGroup`) and `os-configuration.yml` (`variable_group`) take it as a run parameter.
+
+Before this version the names were fixed: the service connection `AzureLocal-ServiceConnection` and the groups `azure-credentials` (`azure-credentials-<environment>`), `azurelocal-secrets` and `azurelocal-os-configuration`. To keep what task 05 already created, set `service_connection: "AzureLocal-ServiceConnection"` and `variable_group: "azure-credentials"`. On Azure DevOps both keys are required: task 01 and task 05 stop with a message when one is missing.
+
 ## To 5.6.26: the old variables.yml layout is retired
 
 Schema 5.6.26 adds no key and removes no key that an `infrastructure.yml` ever accepted: a file of any 5.6 version is valid as it is. The registry loses the entries that only the old `variables.yml` layout (registry 4.0) had, and the files that checked that layout go with them.

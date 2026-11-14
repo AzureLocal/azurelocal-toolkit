@@ -44,6 +44,24 @@ Describe 'The node folders have one definition' {
         }
         (Get-ModuleText 'AzlNodeConfiguration.psm1') | Should -Not -Match "'C:\\SBE'"
     }
+    It 'the WinRM transport, the guarded change and the remote management payload hold no copy of the state folder (pass H)' {
+        foreach ($name in 'AzlNodeTransport.psm1', 'AzlGuardedChange.psm1') {
+            (Get-ModuleText $name) | Should -Not -Match 'ProgramData\\AzureLocal\\osconfig' -Because $name
+        }
+        $remoting = Get-Content -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts', 'common', 'remoting', 'AzlRemotingPayload.psm1')) -Raw
+        $remoting | Should -Not -Match 'ProgramData\\AzureLocal\\osconfig'
+        $remoting | Should -Match ([regex]::Escape("`$stateRoot = '#AZL-CONST:StateDirectory\remoting'"))
+        (Get-ModuleText 'AzlNodeTransport.psm1') | Should -Match ([regex]::Escape('-ArgumentList $Script, $p, $q, $stateFolder'))
+        (Get-ModuleText 'AzlGuardedChange.psm1') | Should -Match ([regex]::Escape('$log = "$(Get-AzlNodeStateDirectory)\net-$ChangeId\$ChangeId.log"'))
+    }
+    It 'the remote management node scripts get the state folder from its one definition, with no token left' {
+        Import-Module ([IO.Path]::Combine($script:Repo, 'scripts', 'common', 'remoting', 'AzlRemotingPayload.psm1')) -Force
+        foreach ($n in 'Read', 'Change') {
+            $text = Get-AzlRemotingPayload -Name $n
+            $text | Should -Not -Match '#AZL-CONST'
+            $text | Should -Match ([regex]::Escape("`$stateRoot = '$(Get-AzlNodeStateDirectory)\remoting'"))
+        }
+    }
 }
 
 Describe 'The iSCSI settings that Learn fixes are constants with their source' {
@@ -105,5 +123,26 @@ Describe 'Constants are named with what fixes them' {
         (Get-AzlGuardSetting -Setting @{ reconnectWaitMinutes = 20 }).reconnectWaitMinutes | Should -Be 20
         (Get-AzlGuardSetting -Setting @{ staleRunCommandMinutes = 30 }).staleRunCommandMinutes | Should -Be 30
         (Get-AzlGuardSetting).networkRollbackMinutes | Should -Be 10
+    }
+    It 'the timings of the node guard engine are in the same table, each with its reason, and the config of a change takes them from it (pass H)' {
+        $text = Get-ModuleText 'AzlGuardedChange.psm1'
+        $expected = [ordered]@{ startDelaySeconds = 20; checkSeconds = 300; repairSeconds = 45; vlanLinkDownSeconds = 120; hostnameConfirmExtraMinutes = 10 }
+        $s = Get-AzlGuardSetting
+        foreach ($k in $expected.Keys) {
+            $s[$k] | Should -Be $expected[$k] -Because $k
+            # the comment above the value says why it is what it is
+            $text | Should -Match "(?m)^#\s+$k\s+\S.*\r?\n(#.*\r?\n)*\`$script:GuardDefaults\.$k = $($expected[$k])\r?$"
+        }
+        $text | Should -Match 'startDelaySeconds = \[int\]\$cfgSetting\.startDelaySeconds; checkSeconds = \[int\]\$cfgSetting\.checkSeconds; repairSeconds = \[int\]\$cfgSetting\.repairSeconds'
+        $text | Should -Match 'vlanLinkDownSeconds = \[int\]\$cfgSetting\.vlanLinkDownSeconds'
+        $text | Should -Match 'if \(\$restart\) \{ \[int\]\$cfgSetting\.hostnameConfirmExtraMinutes \}'
+        (Get-AzlGuardSetting -Setting @{ checkSeconds = 600 }).checkSeconds | Should -Be 600
+        { Get-AzlGuardSetting -Setting @{ startDelaySeconds = 0 } } | Should -Throw '*startDelaySeconds must be a whole number of seconds, 1 or more*'
+        { Get-AzlGuardSetting -Setting @{ networkStableSeconds = -1 } } | Should -Throw '*0 or more*'
+    }
+    It 'the node engine falls back to the same values when a config lacks them' {
+        $engine = Get-ModuleText 'AzlNodeGuard.psm1'
+        $s = Get-AzlGuardSetting
+        foreach ($k in 'startDelaySeconds', 'checkSeconds', 'repairSeconds', 'vlanLinkDownSeconds') { $engine | Should -Match "Get-GuardProp \`$cfg '$k' $($s[$k])\)" -Because $k }
     }
 }

@@ -20,10 +20,10 @@
 # What to configure in the organization (names only; no value of any ID, password or key is in this file):
 #   Agent pool      a self-hosted pool (parameter agent_pool: devops.runners[].pool of the general runner) with PowerShell 7 (pwsh), Az.Accounts and Az.KeyVault, and a route to
 #                   the nodes' management subnet. For WinRM from a Linux agent, the PSWSMan module (Negotiate authentication).
-#   Service conn.   an Azure Resource Manager service connection (parameter service_connection), ideally workload identity
+#   Service conn.   the Azure Resource Manager service connection of the parameter service_connection (devops.pipelines.service_connection; task 05 creates it), workload identity
 #                   federation, with Azure Connected Machine Resource Administrator and Reader on the Arc machines' resource group,
 #                   and Key Vault Secrets User on the vault named by identity.local_admin.password in the master file.
-#   Variable group  azurelocal-os-configuration (Pipelines > Library). It holds nothing this file needs as a secret: the nodes'
+#   Variable group  parameter variable_group (Pipelines > Library; devops.pipelines.variable_group, the group task 05 writes). It holds nothing this file needs as a secret: the nodes'
 #                   local administrator password is read from the Key Vault by the script. Put any site setting there, or link the
 #                   group to a Key Vault (secrets then arrive as secret variables, never in this file).
 #   Environments    approval_environment                      (devops.pipelines.environments.os_configuration) Approvals and checks: Approvals (required
@@ -111,12 +111,14 @@ parameters:
     displayName: 'Environment of the storage wipe approval. Enter devops.pipelines.environments.os_configuration_clear_storage'
     type: string
   - name: service_connection
-    displayName: 'Azure Resource Manager service connection (name only)'
+    displayName: 'Azure Resource Manager service connection. Enter devops.pipelines.service_connection'
     type: string
-    default: AzureLocal-ServiceConnection
+  - name: variable_group
+    displayName: 'Variable group of the pipeline (Pipelines > Library). Enter devops.pipelines.variable_group (with environments, <name>-<environment>)'
+    type: string
 
 variables:
-  - group: azurelocal-os-configuration
+  - group: ${{ parameters.variable_group }}
   - name: OSCONFIG_SCRIPT
     value: scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1
 

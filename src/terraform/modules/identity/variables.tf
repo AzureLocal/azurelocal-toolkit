@@ -80,3 +80,25 @@ variable "tags" {
   type        = map(string)
   default     = {}
 }
+
+variable "environment_class" {
+  description = "scenario.environment_class: lab, test, dev, production or dmz. Purge protection is on for both vaults except in lab, test and dev (the rule of Deploy-KeyVaults.ps1)."
+  type        = string
+  default     = "production"
+
+  validation {
+    condition     = contains(["lab", "test", "dev", "production", "dmz"], lower(trimspace(var.environment_class)))
+    error_message = "environment_class must be lab, test, dev, production or dmz (scenario.environment_class)."
+  }
+}
+
+variable "azl_key_vault_soft_delete_retention_days" {
+  description = "cluster.key_vault.soft_delete_retention_days: days a deleted secret or the cluster Key Vault stays recoverable, 7 to 90 (ARM softDeleteRetentionDays)."
+  type        = number
+  default     = 30
+
+  validation {
+    condition     = var.azl_key_vault_soft_delete_retention_days >= 7 && var.azl_key_vault_soft_delete_retention_days <= 90
+    error_message = "azl_key_vault_soft_delete_retention_days must be 7 to 90 (cluster.key_vault.soft_delete_retention_days)."
+  }
+}

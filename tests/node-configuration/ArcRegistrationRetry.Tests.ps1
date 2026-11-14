@@ -153,13 +153,29 @@ Describe 'Invoke-AzlArcRegistration' {
         $fn = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-AzlArcRegistration' }, $true) | Select-Object -First 1
         $defaults = @{}
         foreach ($param in $fn.Body.ParamBlock.Parameters) { if ($param.DefaultValue) { $defaults[$param.Name.VariablePath.UserPath] = [string]$param.DefaultValue.Extent.Text } }
-        $defaults['WaitMinutes'] | Should -Be '20'
-        $defaults['MaxTries'] | Should -Be '3'
-        $defaults['StaleResourceWaitSeconds'] | Should -Be '15'
-        $defaults['NodeBackMinutes'] | Should -Be '10'
-        $defaults['NodeProbeSeconds'] | Should -Be '20'
-        $defaults['ArcPollSeconds'] | Should -Be '30'
-        $defaults['ScriptTimeoutSeconds'] | Should -Be '7200'
+        # Pass H: the defaults are named constants of the module (tries and wait are the defaults of the run settings), not literals in the param block.
+        $defaults['WaitMinutes'] | Should -Be '$script:ArcRegistrationDefaults.WaitMinutes'
+        $defaults['MaxTries'] | Should -Be '$script:ArcRegistrationDefaults.Tries'
+        $defaults['StaleResourceWaitSeconds'] | Should -Be '$script:ArcStaleResourceWaitSeconds'
+        $defaults['NodeBackMinutes'] | Should -Be '$script:ArcNodeBackMinutes'
+        $defaults['NodeProbeSeconds'] | Should -Be '$script:ArcNodeProbeSeconds'
+        $defaults['ArcPollSeconds'] | Should -Be '$script:ArcPollSeconds'
+        $defaults['ScriptTimeoutSeconds'] | Should -Be '$script:ArcScriptTimeoutSeconds'
+        $values = InModuleScope AzlOsConfigurationRun { @($script:ArcRegistrationDefaults.WaitMinutes, $script:ArcRegistrationDefaults.Tries, $script:ArcStaleResourceWaitSeconds, $script:ArcNodeBackMinutes, $script:ArcNodeProbeSeconds, $script:ArcPollSeconds, $script:ArcScriptTimeoutSeconds) }
+        $values | Should -Be @(20, 3, 15, 10, 20, 30, 7200)
+    }
+    It 'the tries and the wait are the run settings arcRegistrationTries and arcRegistrationWaitMinutes, checked like the other run settings' {
+        $s = InModuleScope AzlOsConfigurationRun { Get-AzlRunSetting -Settings @{ arcRegistrationTries = 5; arcRegistrationWaitMinutes = '30' } }
+        $s.arcRegistrationTries | Should -Be 5
+        $s.arcRegistrationWaitMinutes | Should -Be 30
+        { InModuleScope AzlOsConfigurationRun { Get-AzlRunSetting -Settings @{ arcRegistrationTries = 0 } } } | Should -Throw '*arcRegistrationTries must be a whole number of tries, 1 or more*'
+        { InModuleScope AzlOsConfigurationRun { Get-AzlRunSetting -Settings @{ arcRegistrationWaitMinutes = $true } } } | Should -Throw '*arcRegistrationWaitMinutes*'
+    }
+    It 'the only caller passes the run settings from the context (no literal)' {
+        $text = Get-Content -LiteralPath ([IO.Path]::Combine($PSScriptRoot, '..', '..', 'scripts', 'common', 'node-configuration', 'AzlOsConfigurationRun.psm1')) -Raw
+        $text | Should -Match ([regex]::Escape("Invoke-AzlArcRegistration -Context `$Context -Record `$Record -Node `$Node -MaxTries ([int](Get-AzlProp `$Context 'ArcRegistrationTries'"))
+        $text | Should -Match ([regex]::Escape("-WaitMinutes ([int](Get-AzlProp `$Context 'ArcRegistrationWaitMinutes'"))
+        $text | Should -Match ([regex]::Escape("ArcRegistrationTries = `$(if (`$run.ContainsKey('arcRegistrationTries'))"))
     }
 }
 

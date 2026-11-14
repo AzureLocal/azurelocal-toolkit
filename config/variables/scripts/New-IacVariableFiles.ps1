@@ -33,7 +33,7 @@
     The files hold subscription IDs and names: keep OutputDirectory out of git (a warning says so when it is inside a repository).
 
     Keys read (the keys the registry entries name; print them with -ListKey): azure.*, tags, site.code, key_vaults[], cluster.key_vault.name,
-    landing_zone.* (management_groups[], subscriptions[], resource_groups[], networks[], connectivity, virtual_machines[]),
+    cluster.key_vault.soft_delete_retention_days, scenario.environment_class, landing_zone.* (management_groups[], subscriptions[], resource_groups[], networks[], connectivity, virtual_machines[]),
     operations.monitoring.*, operations.notifications.emails, security.defender_for_cloud.security_contact_email, devops.*,
     identity.active_directory.*, networking.management.*, networking.ntp_servers, networking.outbound.*, scenario.outbound_path,
     cluster.name, nodes[].name, nodes[].management.ip_address, nodes[].management.adapter_name, landing_zone.virtual_machines[] (name, hostname,

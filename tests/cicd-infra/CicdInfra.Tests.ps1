@@ -567,6 +567,29 @@ Describe 'Task 05: the runner label and approval environments of the pipelines (
         { Get-AzlCicdPipelineInput -Settings (Get-Settings 'azure_devops') } | Should -Throw '*devops.runners[[]].pool is not set*'
         { ConvertTo-AzlRunnerTerraformVariable -Settings (Get-Settings 'azure_devops') } | Should -Throw '*Azure DevOps needs the agent pool*'
     }
+    It 'Azure DevOps: the service connection and the variable groups are named by devops.pipelines (5.6.27), and the run parameters list them' {
+        Start-Recording {
+            param($f, $a)
+            if ($f -eq 'az') { return New-Out 'x' }
+            return [pscustomobject]@{ id = 'x'; value = @() }
+        }
+        $s = Get-Settings 'azure_devops' { param($d) $d.devops.runners[0].pool = 'pool-lnx' }
+        $r = Set-AzlCicdVariable -Settings $s -ClientId $script:Client -Confirm:$false
+        $groups = @($r | Where-Object Action -eq 'Variable group' | ForEach-Object Target)
+        $groups.Count | Should -BeGreaterThan 0
+        $groups | ForEach-Object { $_ | Should -BeLike 'iic-azure-credentials*' }
+        @($r | Where-Object Action -eq 'Service connection').Target | Should -Be 'iic-azure-local'
+        $rows = @($r | Where-Object Action -eq 'Pipeline run parameter')
+        ($rows | Where-Object Target -eq 'devops.pipelines.service_connection').Detail | Should -Match "Enter 'iic-azure-local' as the service connection parameter"
+        ($rows | Where-Object Target -eq 'devops.pipelines.variable_group').Detail | Should -Match "Enter 'iic-azure-credentials-"
+        (Get-Calls 'AzureLocal-ServiceConnection|(?<!iic-)azure-credentials').Count | Should -Be 0
+    }
+    It 'Azure DevOps: there is no default service connection or variable group name, so a file without them is refused' {
+        $none = Get-Settings 'azure_devops' { param($d) $d.devops.runners[0].pool = 'pool-lnx'; $d.devops.pipelines.Remove('service_connection') }
+        { Get-AzlCicdPipelineInput -Settings $none } | Should -Throw '*devops.pipelines.service_connection is not set*'
+        $none = Get-Settings 'azure_devops' { param($d) $d.devops.runners[0].pool = 'pool-lnx'; $d.devops.pipelines.Remove('variable_group') }
+        { Get-AzlCicdPipelineInput -Settings $none } | Should -Throw '*devops.pipelines.variable_group is not set*'
+    }
     It 'Azure DevOps: task 06 passes the pool of each runner on, and the ztp runner needs its own' {
         $s = Get-Settings 'azure_devops' { param($d) $d.devops.runners[0].pool = 'pool-lnx' }
         $v = ConvertTo-AzlRunnerTerraformVariable -Settings $s -AdminSshPublicKey 'k'

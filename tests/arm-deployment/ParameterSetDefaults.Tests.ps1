@@ -1,6 +1,7 @@
 #Requires -Version 7.0
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
 # Research row g4 413: New-AzlArmParameterSet (AzlArmDeployment.psm1) falls back to a value when an optional key is not in the infrastructure file.
+# ConvertTo-AzlArmIntent does the same for the Network ATC overrides of an intent (pass H): its QoS and RDMA technology fallbacks are read the same way.
 # Those values must be the registry default of the key (config/variables/schema/master-registry.yaml), so the two can never differ, and they must be
 # what Microsoft's template uses as the parameter default. Four groups of tests:
 #   1. The code is read with the PowerShell parser: every literal fallback of `& $g '<key>' <value>` and of `Get-AzlProp $<object> '<key>' <value>`
@@ -53,22 +54,36 @@ BeforeDiscovery {
 
     $cases = [System.Collections.Generic.List[hashtable]]::new()
     $unknownBase = [System.Collections.Generic.List[string]]::new()
-    foreach ($c in $fn.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true)) {
-        $e = @($c.CommandElements)
-        $first = $e[0].Extent.Text
-        if ($first -eq '$g' -and $c.InvocationOperator -eq 'Ampersand' -and $e.Count -eq 3 -and $e[1] -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
-            $lit = Get-Literal $e[2]
-            $cases.Add(@{ Key = $e[1].Value; Kind = $lit.Kind; Value = $lit.Value; Line = $c.Extent.StartLineNumber })
-        }
-        elseif ($first -eq 'Get-AzlProp' -and $e.Count -eq 4 -and $e[2] -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
-            $b = $e[1].Extent.Text
-            if ($base.ContainsKey($b)) {
-                $lit = Get-Literal $e[3]
-                $cases.Add(@{ Key = $base[$b] + '.' + $e[2].Value; Kind = $lit.Kind; Value = $lit.Value; Line = $c.Extent.StartLineNumber })
+    # ConvertTo-AzlArmIntent (one networking.intents[] entry as the template's intentList) is read the same way: its objects are the overrides blocks of the intent.
+    $intentFn = $ast.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'ConvertTo-AzlArmIntent' }, $true)
+    $intentBase = @{
+        '$qos'     = 'networking.intents[].overrides.qos'
+        '$adapter' = 'networking.intents[].overrides.adapter'
+    }
+    $intentSkip = @('$overrides', '$vswitch', '$Intent')
+    $readCall = @(
+        @{ Fn = $fn; Base = $base; Skip = $skip }
+        @{ Fn = $intentFn; Base = $intentBase; Skip = $intentSkip }
+    )
+    foreach ($r in $readCall) {
+        foreach ($c in $r.Fn.FindAll({ param($n) $n -is [System.Management.Automation.Language.CommandAst] }, $true)) {
+            $e = @($c.CommandElements)
+            $first = $e[0].Extent.Text
+            if ($first -eq '$g' -and $c.InvocationOperator -eq 'Ampersand' -and $e.Count -eq 3 -and $e[1] -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+                $lit = Get-Literal $e[2]
+                $cases.Add(@{ Key = $e[1].Value; Kind = $lit.Kind; Value = $lit.Value; Line = $c.Extent.StartLineNumber })
             }
-            elseif ($b -notin $skip) { $unknownBase.Add("line $($c.Extent.StartLineNumber): $($c.Extent.Text)") }
+            elseif ($first -eq 'Get-AzlProp' -and $e.Count -eq 4 -and $e[2] -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+                $b = $e[1].Extent.Text
+                if ($r.Base.ContainsKey($b)) {
+                    $lit = Get-Literal $e[3]
+                    $cases.Add(@{ Key = $r.Base[$b] + '.' + $e[2].Value; Kind = $lit.Kind; Value = $lit.Value; Line = $c.Extent.StartLineNumber })
+                }
+                elseif ($b -notin $r.Skip) { $unknownBase.Add("line $($c.Extent.StartLineNumber): $($c.Extent.Text)") }
+            }
         }
     }
+    $intentCase = @($cases | Where-Object { $_.Key -like 'networking.intents*' })
     # The security switches: foreach ($m in @(@('<parameter>', '<key under security>', <bool>), ...)) { ... & $g "security.$($m[1])" $m[2] }
     foreach ($arr in $fn.FindAll({ param($n) $n -is [System.Management.Automation.Language.ArrayExpressionAst] }, $true)) {
         $inner = @($arr.SubExpression.Statements | ForEach-Object { $_.PipelineElements } | ForEach-Object { $_.Expression } | Where-Object { $_ })
@@ -80,7 +95,7 @@ BeforeDiscovery {
     $literalCase = @($cases | Where-Object { $_.Kind -in 'string', 'number', 'bool' -and -not ($_.Kind -eq 'string' -and $_.Value -eq '') } | Sort-Object { $_.Key } -Unique)
     $emptyCase = @($cases | Where-Object { $_.Kind -in 'null', 'empty-list' -or ($_.Kind -eq 'string' -and $_.Value -eq '') } | Sort-Object { $_.Key } -Unique)
     $expressionCase = @($cases | Where-Object { $_.Kind -eq 'expression' })
-    $countCase = @(@{ Literal = $literalCase.Count; Empty = $emptyCase.Count; UnknownBase = @($unknownBase) })
+    $countCase = @(@{ Literal = $literalCase.Count; Empty = $emptyCase.Count; UnknownBase = @($unknownBase); Intent = $intentCase.Count })
     $configurationModeCase = @($expressionCase | Where-Object { $_.Key -eq 'storage.configuration_mode' })
 
     # The parameter the template takes for each key, and how the registry value reads in the template.
@@ -161,6 +176,37 @@ Describe 'The literal fallbacks of New-AzlArmParameterSet read from the code' {
     It 'knows where every Get-AzlProp object reads from (a new one needs an entry in this test)' -ForEach $countCase {
         $UnknownBase | Should -BeNullOrEmpty
     }
+    It 'finds the fallbacks of ConvertTo-AzlArmIntent too (the QoS overrides, the adapter properties)' -ForEach $countCase {
+        $Intent | Should -BeGreaterThan 4
+    }
+}
+
+Describe 'The intent fallbacks are Network ATC''s defaults, from the registry' {
+    BeforeAll {
+        $script:Intent = InModuleScope AzlArmDeployment {
+            ConvertTo-AzlArmIntent -Intent ([ordered]@{ name = 'storage'; traffic = @('storage'); adapters = @('Port2', 'Port3') }) -Resolve { param($a) $a }
+        }
+    }
+    It 'an intent without overrides sends the registry default of each QoS key and of the RDMA technology' {
+        $script:Intent.qosPolicyOverrides.priorityValue8021Action_Cluster | Should -Be ([string](Get-RegistryDefault 'networking.intents[].overrides.qos.cluster_priority').Value)
+        $script:Intent.qosPolicyOverrides.priorityValue8021Action_SMB | Should -Be ([string](Get-RegistryDefault 'networking.intents[].overrides.qos.smb_priority').Value)
+        $script:Intent.qosPolicyOverrides.bandwidthPercentage_SMB | Should -Be ([string](Get-RegistryDefault 'networking.intents[].overrides.qos.smb_bandwidth_percent').Value)
+        (Get-RegistryDefault 'networking.intents[].overrides.adapter.network_direct_technology').Value | Should -Be 'roce_v2'
+        $script:Intent.adapterPropertyOverrides.networkDirectTechnology | Should -Be 'RoCEv2'
+    }
+    It 'the registry defaults are the values Learn gives (Deploy host networking with Network ATC: cluster 7, SMB Direct 3 with 50 percent)' {
+        (Get-RegistryDefault 'networking.intents[].overrides.qos.cluster_priority').Value | Should -Be 7
+        (Get-RegistryDefault 'networking.intents[].overrides.qos.smb_priority').Value | Should -Be 3
+        (Get-RegistryDefault 'networking.intents[].overrides.qos.smb_bandwidth_percent').Value | Should -Be 50
+    }
+    It 'the registry defaults are the values of Microsoft''s quickstart parameters file' {
+        $p = Get-Content -LiteralPath ([IO.Path]::Combine($script:Repo, 'config', 'azure', 'arm-templates', 'cluster-deployment', 'azuredeploy.parameters.json')) -Raw | ConvertFrom-Json -AsHashtable
+        $storage = @($p.parameters.intentList.value | Where-Object { $_.trafficType -contains 'Storage' })[0]
+        $storage.qosPolicyOverrides.priorityValue8021Action_Cluster | Should -Be ([string](Get-RegistryDefault 'networking.intents[].overrides.qos.cluster_priority').Value)
+        $storage.qosPolicyOverrides.priorityValue8021Action_SMB | Should -Be ([string](Get-RegistryDefault 'networking.intents[].overrides.qos.smb_priority').Value)
+        $storage.qosPolicyOverrides.bandwidthPercentage_SMB | Should -Be ([string](Get-RegistryDefault 'networking.intents[].overrides.qos.smb_bandwidth_percent').Value)
+        $storage.adapterPropertyOverrides.networkDirectTechnology | Should -Be 'RoCEv2'
+    }
 }
 
 Describe 'A literal fallback is the registry default of its key' {
@@ -194,8 +240,15 @@ Describe 'An empty fallback means the key has no default' {
 }
 
 Describe 'The fallbacks that are expressions are named here, with the reason' {
-    It 'every expression fallback is one of the two known (found: <Key>)' -ForEach @($expressionCase) {
-        $Key | Should -BeIn 'storage.configuration_mode', 'azure.custom_location'
+    It 'every expression fallback is one of the three known (found: <Key>)' -ForEach @($expressionCase) {
+        $Key | Should -BeIn 'storage.configuration_mode', 'azure.custom_location', 'networking.intents[].overrides.adapter.jumbo_packet'
+    }
+    It 'networking.intents[].overrides.adapter.jumbo_packet: the fallback depends on the traffic of the intent (9014 with storage, 1514 without), so the key has no default' {
+        (Get-RegistryDefault 'networking.intents[].overrides.adapter.jumbo_packet').Has | Should -BeFalse
+        $both = InModuleScope AzlArmDeployment {
+            foreach ($t in @(@('storage'), @('management', 'compute'))) { (ConvertTo-AzlArmIntent -Intent ([ordered]@{ name = 'x'; traffic = $t; adapters = @('A') }) -Resolve { param($a) $a }).adapterPropertyOverrides.jumboPacket }
+        }
+        $both | Should -Be @('9014', '1514')
     }
     It 'storage.configuration_mode: the Storage Spaces Direct value is the registry default and the SAN value is one of its allowed values' -ForEach $configurationModeCase {
         # $(if ($storage -eq 'san') { 'infra_only' } else { 'express' }): the quoted words are 'san', the SAN value, the Storage Spaces Direct value

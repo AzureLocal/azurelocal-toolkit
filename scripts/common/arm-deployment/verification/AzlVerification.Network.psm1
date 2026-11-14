@@ -23,6 +23,10 @@ Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', '..', 'azure-local', 'Azl
 Import-Module ([IO.Path]::Combine($PSScriptRoot, 'AzlVerification.NodeCommon.psm1'))
 
 $script:Src = Get-AzlVerConstant Source
+# A port that runs below 0.9 of the speed the file gives it (nodes[].network_adapters[].speed_gbps) is reported as a warning. Not a choice of a deployment:
+# the Ethernet rates of IEEE 802.3 that sit next to each other differ by 20 percent or more (40 and 50, 25 and 10 Gb/s), so a port under 90 percent of its
+# rate has come up at a lower rate, while the 10 percent left free takes the rounding of the measured speed to 0.1 Gbps.
+$script:LinkSpeedToleranceFraction = 0.9
 
 function ConvertTo-AzlVerMacKey {
     # A MAC address as 12 lower case hex digits, whatever separator the file or the node uses.
@@ -571,7 +575,7 @@ function Get-AzlVerificationCheckDefinition {
                             $need = if (('storage' -in $mine.Traffic) -or ('compute' -in $mine.Traffic)) { $min } else { 1 }
                             if ($g -lt $need) { $failed.Add("file port '$($p.Name)' ('$os') runs at $g Gbps; intent $($mine.Name) ($($mine.Traffic -join '+')) needs at least $need Gbps") }
                         }
-                        if ($up -and $p.SpeedGbps -gt 0 -and $g -gt 0 -and $g -lt ($p.SpeedGbps * 0.9)) { $warn.Add("file port '$($p.Name)' ('$os') runs at $g Gbps, the file says $($p.SpeedGbps) Gbps") }
+                        if ($up -and $p.SpeedGbps -gt 0 -and $g -gt 0 -and $g -lt ($p.SpeedGbps * $script:LinkSpeedToleranceFraction)) { $warn.Add("file port '$($p.Name)' ('$os') runs at $g Gbps, the file says $($p.SpeedGbps) Gbps") }
                         $vlan = Get-AzlProp $nic 'vlan' $null
                         $rows.Add("file '$($p.Name)' | MAC $(Format-AzlVerMac $p.Mac) | OS '$os' | $($nic.st) | ${g}G | roles $($p.Roles -join '+') | intent $(if ($mine) { $mine.Name } else { '-' })$(if ($null -ne $vlan -and "$vlan" -ne '') { " | VLAN $vlan" })")
                     }

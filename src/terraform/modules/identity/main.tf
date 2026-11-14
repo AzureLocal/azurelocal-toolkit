@@ -24,6 +24,17 @@ locals {
   # The vaults hold secrets only, so the standard SKU is enough: premium adds keys protected by a hardware security module
   # (Microsoft Learn: Azure Key Vault service tiers). Not a choice of a deployment.
   key_vault_sku = "standard"
+
+  # Purge protection, the rule of Deploy-KeyVaults.ps1 (phase 04, task 10): it cannot be switched off once it is on, and it keeps a deleted
+  # vault's name reserved for the retention period (Microsoft Learn: Azure Key Vault soft-delete overview, Purge protection). So it is on for
+  # every vault, except when scenario.environment_class (var.environment_class) is lab, test or dev, where a vault has to be removable.
+  removable_environment_classes = ["lab", "test", "dev"]
+  purge_protection_enabled      = !contains(local.removable_environment_classes, lower(trimspace(var.environment_class)))
+
+  # The platform vault (key_vaults[purpose=management]) keeps deleted items for the Azure default, 90 days, as Deploy-KeyVaults.ps1 creates it:
+  # "If no configuration is specified, the default recovery period is set to 90 days" (Microsoft Learn: Azure Key Vault soft-delete overview).
+  # key_vaults[] has no retention key, so this is not a choice of a deployment. The cluster vault takes cluster.key_vault.soft_delete_retention_days.
+  platform_soft_delete_retention_days = 90
 }
 
 # -----------------------------------------------------------------------------
@@ -35,8 +46,8 @@ resource "azurerm_key_vault" "platform" {
   resource_group_name        = var.resource_group_name
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = local.key_vault_sku
-  purge_protection_enabled   = true
-  soft_delete_retention_days = 90
+  purge_protection_enabled   = local.purge_protection_enabled
+  soft_delete_retention_days = local.platform_soft_delete_retention_days
 
   enable_rbac_authorization = true
 
@@ -81,8 +92,8 @@ resource "azurerm_key_vault" "azure_local" {
   resource_group_name        = var.azl_key_vault_resource_group
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = local.key_vault_sku
-  purge_protection_enabled   = true
-  soft_delete_retention_days = 90
+  purge_protection_enabled   = local.purge_protection_enabled
+  soft_delete_retention_days = var.azl_key_vault_soft_delete_retention_days
 
   enable_rbac_authorization = true
 

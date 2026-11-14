@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for infrastructure.yml for scenario.outbound_path = proxy_arc_gateway with every variable. Schema 5.6.26. Scenario: outbound_path=proxy_arc_gateway.
+# Template for infrastructure.yml for scenario.outbound_path = proxy_arc_gateway with every variable. Schema 5.6.27. Scenario: outbound_path=proxy_arc_gateway.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -52,7 +52,7 @@ scenario:
   # one of: portal | arm; used by: trailwright
   deploy_method: "arm"
   # What kind of environment this is.
-  # one of: lab | test | dev | production | dmz; default: "production"; used by: os_configuration
+  # one of: lab | test | dev | production | dmz; default: "production"; used by: os_configuration, terraform
   environment_class: "production"
 
 # Where the machines are.
@@ -210,8 +210,8 @@ cluster:
     # ARM createNewKeyVault.
     # default: true; used by: deployment, trailwright
     create_new: true
-    # Days a deleted secret or vault stays recoverable, 7 to 90.
-    # default: 30; used by: deployment, trailwright
+    # Days a deleted secret or vault stays recoverable, 7 to 90 (ARM softDeleteRetentionDays).
+    # default: 30; used by: deployment, trailwright, terraform
     soft_delete_retention_days: 30
   # Key Vault audit logs.
   # used by: deployment
@@ -747,14 +747,14 @@ networking:
         # used by: os_configuration, deployment
         qos:
           # 802.1p priority value of the cluster heartbeat traffic, 0 to 7 (ARM priorityValue8021Action_Cluster).
-          # used by: os_configuration, deployment, trailwright
-          cluster_priority: 0
+          # default: 7; used by: os_configuration, deployment, trailwright
+          cluster_priority: 7
           # 802.1p priority value of the SMB Direct (RDMA storage) traffic, 0 to 7 (ARM priorityValue8021Action_SMB).
-          # used by: os_configuration, deployment, trailwright
-          smb_priority: 0
+          # default: 3; used by: os_configuration, deployment, trailwright
+          smb_priority: 3
           # Share of the link reserved for SMB Direct storage traffic, 1 to 100 percent (ARM bandwidthPercentage_SMB).
-          # used by: os_configuration, deployment, trailwright
-          smb_bandwidth_percent: 1
+          # default: 50; used by: os_configuration, deployment, trailwright
+          smb_bandwidth_percent: 50
         # Physical adapter property overrides (ARM adapterPropertyOverrides: jumboPacket, networkDirect, networkDirectTechnology).
         # used by: os_configuration, deployment
         adapter:
@@ -765,8 +765,8 @@ networking:
           # used by: os_configuration, deployment, trailwright
           network_direct: false
           # RDMA technology of the adapters: iwarp, roce_v2 (RoCEv2) or roce (RoCE, version 1).
-          # one of: iwarp | roce | roce_v2; used by: os_configuration, deployment, trailwright
-          network_direct_technology: "iwarp"
+          # one of: iwarp | roce | roce_v2; default: "roce_v2"; used by: os_configuration, deployment, trailwright
+          network_direct_technology: "roce_v2"
         # Virtual switch overrides of the intent's switch-embedded team (ARM virtualSwitchConfigurationOverrides).
         # used by: os_configuration, deployment
         virtual_switch:
@@ -2178,6 +2178,12 @@ devops:
       # (since 5.6.25) 
       # used by: cicd_infra
       terraform_deployment: "azr-prod-us"
+    # (since 5.6.27) 
+    # used by: cicd_infra
+    service_connection: "iic-azure-local"
+    # (since 5.6.27) 
+    # used by: cicd_infra
+    variable_group: "iic-azure-credentials"
   # (since 5.5) 
   # used by: cicd_infra
   authentication:

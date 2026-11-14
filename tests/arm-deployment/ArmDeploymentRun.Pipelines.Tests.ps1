@@ -147,7 +147,11 @@ Describe 'Azure DevOps' {
         $script:Text['ado'] | Should -Match 'AzurePowerShell@5'
         $script:Text['ado'] | Should -Match 'azureSubscription: \$\{\{ parameters.azureServiceConnection \}\}'
         $script:Text['ado'] | Should -Match 'workload identity federation'
-        $script:A.parameters | Where-Object name -eq 'azureServiceConnection' | ForEach-Object { $_.default } | Should -Match '^<.*>$'
+        # Pass H: the name is devops.pipelines.service_connection, entered at run time; the parameter has no default (not even a placeholder).
+        $p = @($script:A.parameters | Where-Object name -eq 'azureServiceConnection')
+        $p.Count | Should -Be 1
+        $p[0].Contains('default') | Should -BeFalse
+        $script:Text['ado'] | Should -Match 'devops\.pipelines\.service_connection'
     }
     It 'the stage with the long deploy has a timeout over 3 hours' {
         $script:Text['ado'] | Should -Match 'timeoutInMinutes: 480'

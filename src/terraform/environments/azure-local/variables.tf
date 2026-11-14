@@ -227,6 +227,18 @@ variable "azl_key_vault_name" {
   default     = ""
 }
 
+variable "azl_key_vault_soft_delete_retention_days" {
+  description = "Days a deleted secret or the cluster Key Vault stays recoverable, 7 to 90 (cluster.key_vault.soft_delete_retention_days)."
+  type        = number
+  default     = 30
+}
+
+variable "environment_class" {
+  description = "The class of the environment (scenario.environment_class). Purge protection of the Key Vaults is off in lab, test and dev."
+  type        = string
+  default     = "production"
+}
+
 variable "deployment_spn_object_id" {
   description = "Object ID of the deployment service principal."
   type        = string

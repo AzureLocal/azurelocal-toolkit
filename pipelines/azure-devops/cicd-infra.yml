@@ -4,8 +4,8 @@
 # Task 06 of automation / 01-cicd-infra as a pipeline: validate, terraform plan,
 # manual approval (environment check), terraform apply of the reviewed plan.
 #
-# Sign-in: the workload identity federation service connection AzureLocal-ServiceConnection
-# (made by task 05). No client secret. The identity needs Storage Blob Data Contributor on
+# Sign-in: the workload identity federation service connection of the parameter serviceConnection (devops.pipelines.service_connection;
+# made by task 05). No client secret. The identity needs Storage Blob Data Contributor on
 # the state account, and the roles in docs/cicd-infra-deployment.md.
 # Environment:  the parameter approvalEnvironment (devops.pipelines.environments.cicd_infra), with an Approvals check (the manual approval)
 # Variable:     RUNNER_SSH_PUBLIC_KEY (the public key for the Linux runners)
@@ -39,9 +39,8 @@ parameters:
     type: string
     default: ''
   - name: serviceConnection
-    displayName: Azure service connection (workload identity federation)
+    displayName: Azure service connection (workload identity federation). Enter devops.pipelines.service_connection
     type: string
-    default: AzureLocal-ServiceConnection
   - name: apply
     displayName: Also run the apply stage (it waits for approval)
     type: boolean

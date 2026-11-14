@@ -31,6 +31,10 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+# The node state folder has one definition (AzlNodePayload.psm1, Get-AzlNodeStateDirectory). The node text below carries the token
+# #AZL-CONST:StateDirectory, and Get-AzlRemotingPayload puts the folder in its place, as AzlNodePayload does for its own node scripts.
+Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'node-configuration', 'AzlNodePayload.psm1'))
+
 $script:Prologue = @'
 param([string]$ParamsB64, [string]$SecretsB64)
 Set-StrictMode -Version Latest
@@ -55,7 +59,7 @@ function Write-Result($o) {
 }
 $P = ConvertFrom-B64Json $ParamsB64
 $S = ConvertFrom-B64Json $SecretsB64
-$stateRoot = 'C:\ProgramData\AzureLocal\osconfig\remoting'
+$stateRoot = '#AZL-CONST:StateDirectory\remoting'
 '@
 
 # Read helpers shared by Read and Change.
@@ -584,9 +588,10 @@ function Get-AzlRemotingPayload {
     [OutputType([string])]
     param([Parameter(Mandatory)][ValidateSet('Read', 'Change')][string]$Name)
     $nl = "`n"
+    $prologue = $script:Prologue.Replace('#AZL-CONST:StateDirectory', (Get-AzlNodeStateDirectory))
     switch ($Name) {
-        'Read' { return ($script:Prologue + $nl + $script:CoreBase + $nl + $script:ReadBody) }
-        'Change' { return ($script:Prologue + $nl + $script:CoreBase + $nl + $script:CoreApply + $nl + $script:SnapshotCore + $nl + $script:ChangeBody) }
+        'Read' { return ($prologue + $nl + $script:CoreBase + $nl + $script:ReadBody) }
+        'Change' { return ($prologue + $nl + $script:CoreBase + $nl + $script:CoreApply + $nl + $script:SnapshotCore + $nl + $script:ChangeBody) }
     }
 }
 

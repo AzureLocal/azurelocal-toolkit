@@ -4,22 +4,23 @@
 # Mirrors the GitLab CI/CD pipeline with Azure Pipelines syntax.
 #
 # Requirements:
-#   - Service Connection: "AzureLocal-ServiceConnection" (SPN)
+#   - Service Connection: the parameter serviceConnection (devops.pipelines.service_connection; task 05 creates it, workload identity federation)
 #   - Agent Pool: the parameter agentPool (devops.runners[].pool of the general runner; self-hosted with on-prem access)
-#   - Variable Group: "azurelocal-secrets" (ARM_CLIENT_ID, etc.)
+#   - Variable Group: the parameter variableGroup (devops.pipelines.variable_group, <name>-<environment> per environment; task 05 writes ARM_* and TF_BACKEND_* to it)
 #   - Environment: the parameter approvalEnvironment (devops.pipelines.environments.terraform_deployment; with approval checks)
 #
 # Why parameters: the pool and the environment of a job are not task inputs. Learn says a macro variable $(name) is expanded only in task
 # inputs, and that other keywords take template expressions or runtime parameters
 # (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
 # ${{ variables.name }} does not see variables stored on the pipeline or in a library
-# (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So both are runtime parameters
-# (${{ parameters.name }}) with no default, and a run that nobody started cannot supply them: this pipeline is started by hand.
+# (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So both are runtime parameters, and so are the names of the
+# service connection and the variable group that task 05 creates from the file (${{ parameters.name }}, no default). A run that nobody started
+# cannot supply them: this pipeline is started by hand.
 # =============================================================================
 # Hosted image: ubuntu-latest is the vendor's label of its hosted Linux image. The jobs that use it only validate and plan and read nothing that
 # belongs to one deployment, so the label is not a setting of a deployment.
 # Started by hand, like the schema 5 pipelines (arm-deployment, os-configuration, cicd-infra): a run started by a push or a pull request
-# cannot supply the two parameters below, which have no default.
+# cannot supply the parameters below, which have no default.
 trigger: none
 pr: none
 
@@ -30,9 +31,15 @@ parameters:
   - name: approvalEnvironment
     displayName: Environment of the approvals. Enter devops.pipelines.environments.terraform_deployment
     type: string
+  - name: serviceConnection
+    displayName: Azure Resource Manager service connection. Enter devops.pipelines.service_connection
+    type: string
+  - name: variableGroup
+    displayName: Variable group with ARM_* and TF_BACKEND_*. Enter devops.pipelines.variable_group (with environments, <name>-<environment>)
+    type: string
 
 variables:
-  - group: azurelocal-secrets
+  - group: ${{ parameters.variableGroup }}
   - name: TF_ROOT
     value: 'src/terraform/environments/azure-local'
   - name: ANSIBLE_ROOT
@@ -104,7 +111,7 @@ stages:
               provider: 'azurerm'
               command: 'init'
               workingDirectory: '$(TF_ROOT)'
-              backendServiceArm: 'AzureLocal-ServiceConnection'
+              backendServiceArm: ${{ parameters.serviceConnection }}
               backendAzureRmResourceGroupName: '$(TF_BACKEND_RG)'
               backendAzureRmStorageAccountName: '$(TF_BACKEND_SA)'
               backendAzureRmContainerName: 'tfstate'
@@ -117,7 +124,7 @@ stages:
               command: 'plan'
               workingDirectory: '$(TF_ROOT)'
               commandOptions: '-out=tfplan -input=false'
-              environmentServiceNameAzureRM: 'AzureLocal-ServiceConnection'
+              environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
 
           - publish: '$(TF_ROOT)/tfplan'
             artifact: tfplan
@@ -154,7 +161,7 @@ stages:
                     provider: 'azurerm'
                     command: 'init'
                     workingDirectory: '$(TF_ROOT)'
-                    backendServiceArm: 'AzureLocal-ServiceConnection'
+                    backendServiceArm: ${{ parameters.serviceConnection }}
                     backendAzureRmResourceGroupName: '$(TF_BACKEND_RG)'
                     backendAzureRmStorageAccountName: '$(TF_BACKEND_SA)'
                     backendAzureRmContainerName: 'tfstate'
@@ -167,7 +174,7 @@ stages:
                     command: 'apply'
                     workingDirectory: '$(TF_ROOT)'
                     commandOptions: '-auto-approve -input=false $(Pipeline.Workspace)/tfplan/tfplan'
-                    environmentServiceNameAzureRM: 'AzureLocal-ServiceConnection'
+                    environmentServiceNameAzureRM: ${{ parameters.serviceConnection }}
 
   # =========================================================================
   # Stage: Configure On-Prem (self-hosted agent)

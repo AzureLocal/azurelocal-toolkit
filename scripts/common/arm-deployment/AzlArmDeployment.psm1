@@ -271,7 +271,11 @@ function ConvertTo-AzlArmIntent {
     $directFromFile = Get-AzlProp $adapter 'network_direct'
     $networkDirect = if ($null -ne $directFromFile) { $(if ([bool]$directFromFile) { 'Enabled' } else { 'Disabled' }) } else { $defaultDirect }
     $directTech = ''
-    if ($networkDirect -eq 'Enabled') { $directTech = if (Get-AzlProp $adapter 'network_direct_technology') { $tech[[string](Get-AzlProp $adapter 'network_direct_technology')] } else { 'RoCEv2' } }
+    # The fallbacks below are the registry defaults of their keys (tests/arm-deployment/ParameterSetDefaults.Tests.ps1 compares them). They are Network ATC's
+    # defaults: SMB Direct priority 3 with 50 percent of the bandwidth and cluster heartbeat priority 7 (Microsoft Learn: Deploy host networking with Network ATC,
+    # Default Data Center Bridging (DCB) configuration), and RoCEv2, the technology of Microsoft's quickstart parameters file and one of the two Learn names
+    # (Network considerations for cloud deployments of Azure Local, Decision 6).
+    if ($networkDirect -eq 'Enabled') { $directTech = $tech[[string](Get-AzlProp $adapter 'network_direct_technology' 'roce_v2')] }
     [ordered]@{
         name                               = [string]$Intent['name']
         trafficType                        = @(ConvertTo-List $Intent['traffic'] | ForEach-Object { (Get-Culture).TextInfo.ToTitleCase([string]$_) })

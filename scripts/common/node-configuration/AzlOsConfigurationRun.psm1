@@ -71,6 +71,25 @@ $script:PayloadVersion = '1'
 # (OS version 25398.xxxx is the first Azure Local build; the later 26100.xxxx is higher).
 $script:MinimumBuild = 25398
 
+# The Arc registration of an ISO-installed machine (Invoke-AzlArcRegistration). How many tries and how long the run waits for the Arc machine to be
+# Connected are run settings (arcRegistrationTries, arcRegistrationWaitMinutes; registered with the other run settings in
+# config/variables/schema/master-registry.yaml); these are their defaults.
+$script:ArcRegistrationDefaults = [ordered]@{ Tries = 3; WaitMinutes = 20 }
+# The other waits of the registration pace the toolkit's own loop, not the site, so they are named constants (the toolkit's choice; Microsoft gives no value):
+#   ArcStaleResourceWaitSeconds  after the stale, not Connected Arc resource of AZCM0044 is deleted, the pause before the next try, so the delete in
+#                                Azure Resource Manager has finished before the agent creates the resource again.
+#   ArcNodeBackMinutes           how long a node that restarts in the middle of the bootstrap gets to answer on WinRM again: one restart of a server,
+#                                firmware start included.
+#   ArcNodeProbeSeconds          the pause between two TCP probes of that node's WinRM port.
+#   ArcPollSeconds               the pause between two reads of the Arc machine in Azure while the run waits for it to be Connected.
+#   ArcScriptTimeoutSeconds      the cap on one run of the initialization script on the node (Invoke-AzStackHciArcInitialization installs the agent
+#                                and the extensions); a cap that only a stalled call reaches, not the time a registration takes.
+$script:ArcStaleResourceWaitSeconds = 15
+$script:ArcNodeBackMinutes = 10
+$script:ArcNodeProbeSeconds = 20
+$script:ArcPollSeconds = 30
+$script:ArcScriptTimeoutSeconds = 7200
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Small helpers
 # ---------------------------------------------------------------------------------------------------------------------
@@ -872,8 +891,12 @@ function Get-AzlRunSetting {
     .SYNOPSIS
         Optional run settings: from a JSON file (-SettingsFile), over which a hashtable (-Settings) wins. Keys: retryTries,
         retryDelaySeconds, maxPasses, noRestart, failOnPendingChanges, nodeAddress, networkRollbackMinutes (the confirmation window, 10),
-        networkStableSeconds (60), reconnectWaitMinutes (15), staleRunCommandMinutes (15), addressProbe (true), restartWaitMinutes (15: how long the run waits for a node it\n        restarted before the final verify; registered in config/variables/schema/master-registry.yaml), remoting (a hashtable: transport,
-        bootstrapTransport, allowedSourceCidrs, useSsl, authentication).
+        networkStableSeconds (60), reconnectWaitMinutes (15), staleRunCommandMinutes (15), addressProbe (true), the timings of the node's guard
+        engine (startDelaySeconds 20, checkSeconds 300, repairSeconds 45, vlanLinkDownSeconds 120, hostnameConfirmExtraMinutes 10; see
+        AzlGuardedChange.psm1), restartWaitMinutes (15: how long the run waits for a node it restarted before the final verify),
+        arcRegistrationTries (3) and arcRegistrationWaitMinutes (20: the tries of the Arc registration of an ISO-installed machine and the wait
+        for its Arc machine to be Connected), remoting (a hashtable: transport, bootstrapTransport, allowedSourceCidrs, useSsl, authentication).
+        Every key is registered in config/variables/schema/master-registry.yaml.
     #>
     [CmdletBinding()]
     param([string]$SettingsFile, [hashtable]$Settings)
@@ -884,12 +907,15 @@ function Get-AzlRunSetting {
         foreach ($k in $file.Keys) { $result[$k] = $file[$k] }
     }
     if ($Settings) { foreach ($k in $Settings.Keys) { $result[$k] = $Settings[$k] } }
-    $known = @('retryTries', 'retryDelaySeconds', 'maxPasses', 'noRestart', 'failOnPendingChanges', 'nodeAddress', 'networkRollbackMinutes', 'networkStableSeconds', 'reconnectWaitMinutes', 'staleRunCommandMinutes', 'addressProbe', 'remoting', 'approvedBootstrap', 'bootstrapArcWaitSeconds', 'addressResolution', 'restartWaitMinutes') # HOOK address-resolution: addressResolution = @{ sweep; allowWideSubnet; pingTimeoutMilliseconds }
+    # The guard settings are the keys of Get-AzlGuardSetting (one table in AzlGuardedChange.psm1), so a new guard setting is known here too.
+    $known = @('retryTries', 'retryDelaySeconds', 'maxPasses', 'noRestart', 'failOnPendingChanges', 'nodeAddress', 'remoting', 'approvedBootstrap', 'bootstrapArcWaitSeconds', 'addressResolution', 'restartWaitMinutes', 'arcRegistrationTries', 'arcRegistrationWaitMinutes') + @((Get-AzlGuardSetting).Keys) # HOOK address-resolution: addressResolution = @{ sweep; allowWideSubnet; pingTimeoutMilliseconds }
     foreach ($k in $result.Keys) { if ($k -notin $known) { throw (Get-AzlInputError "Unknown run setting '$k'. Known: $($known -join ', ').") } }
-    if ($result.ContainsKey('restartWaitMinutes')) {
-        $minutes = 0
-        if ($result['restartWaitMinutes'] -is [bool] -or -not [int]::TryParse([string]$result['restartWaitMinutes'], [ref]$minutes) -or $minutes -lt 1) { throw (Get-AzlInputError "Run setting restartWaitMinutes must be a whole number of minutes, 1 or more, not '$($result['restartWaitMinutes'])'.") }
-        $result['restartWaitMinutes'] = $minutes
+    foreach ($k in 'restartWaitMinutes', 'arcRegistrationTries', 'arcRegistrationWaitMinutes') {
+        if (-not $result.ContainsKey($k)) { continue }
+        $number = 0
+        $unit = if ($k -eq 'arcRegistrationTries') { 'tries' } else { 'minutes' }
+        if ($result[$k] -is [bool] -or -not [int]::TryParse([string]$result[$k], [ref]$number) -or $number -lt 1) { throw (Get-AzlInputError "Run setting $k must be a whole number of $unit, 1 or more, not '$($result[$k])'.") }
+        $result[$k] = $number
     }
     try { $null = Get-AzlGuardSetting -Setting $result; $null = Get-AzlRemotingSetting -Setting $result } catch { throw (Get-AzlInputError $_.Exception.Message) }
     return $result
@@ -1157,24 +1183,28 @@ function Invoke-AzlArcRegistration {
         The authentication is always the ARM token of this run's Azure sign-in: Invoke-AzStackHciArcInitialization takes an ARM access token (Learn: Register your
         machines with Azure Arc and assign deployment permissions), and the toolkit never sends a password or a service principal secret for it.
     .PARAMETER WaitMinutes
-        How long to wait for the Arc machine to be Connected after the initialization (default 20).
+        How long to wait for the Arc machine to be Connected after the initialization. The run passes the run setting arcRegistrationWaitMinutes
+        (default 20, $script:ArcRegistrationDefaults).
     .PARAMETER MaxTries
-        How many times the registration runs when a failure is one that a new try can fix (default 3).
+        How many times the registration runs when a failure is one that a new try can fix. The run passes the run setting arcRegistrationTries
+        (default 3, $script:ArcRegistrationDefaults).
     .PARAMETER StaleResourceWaitSeconds
-        The wait after the stale Arc resource of AZCM0044 is deleted, before the next try (default 15).
+        The wait after the stale Arc resource of AZCM0044 is deleted, before the next try (default $script:ArcStaleResourceWaitSeconds, 15).
     .PARAMETER NodeBackMinutes
-        How long to wait for a node that restarts in the middle of the bootstrap to answer on WinRM again (default 10).
+        How long to wait for a node that restarts in the middle of the bootstrap to answer on WinRM again (default $script:ArcNodeBackMinutes, 10).
     .PARAMETER NodeProbeSeconds
-        The seconds between two probes of that node (default 20).
+        The seconds between two probes of that node (default $script:ArcNodeProbeSeconds, 20).
     .PARAMETER ArcPollSeconds
-        The seconds between two looks for the Arc machine to be Connected (default 30).
+        The seconds between two looks for the Arc machine to be Connected (default $script:ArcPollSeconds, 30).
     .PARAMETER ScriptTimeoutSeconds
-        The longest the initialization script may run on the node (default 7200).
+        The longest the initialization script may run on the node (default $script:ArcScriptTimeoutSeconds, 7200).
     #>
     [CmdletBinding()]
     param(
         [Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][System.Collections.IDictionary]$Record, [Parameter(Mandatory)][System.Collections.IDictionary]$Node,
-        [int]$WaitMinutes = 20, [int]$MaxTries = 3, [int]$StaleResourceWaitSeconds = 15, [int]$NodeBackMinutes = 10, [int]$NodeProbeSeconds = 20, [int]$ArcPollSeconds = 30, [int]$ScriptTimeoutSeconds = 7200
+        [int]$WaitMinutes = $script:ArcRegistrationDefaults.WaitMinutes, [int]$MaxTries = $script:ArcRegistrationDefaults.Tries,
+        [int]$StaleResourceWaitSeconds = $script:ArcStaleResourceWaitSeconds, [int]$NodeBackMinutes = $script:ArcNodeBackMinutes, [int]$NodeProbeSeconds = $script:ArcNodeProbeSeconds,
+        [int]$ArcPollSeconds = $script:ArcPollSeconds, [int]$ScriptTimeoutSeconds = $script:ArcScriptTimeoutSeconds
     )
     $infra = $Context.Infra
     $subscription = [string](Get-AzlProp $infra 'azure.subscription_id' '')
@@ -1542,7 +1572,8 @@ function Invoke-AzlApplyPhase {
         Send-AzlStepApplyingEvent -Context $Context -Record $Record -ArcRegistration
         try {
             Resolve-AzlWinRmAddress -Context $Context -Record $Record -Node $Node
-            $arc = Invoke-AzlArcRegistration -Context $Context -Record $Record -Node $Node
+            # The tries and the wait are the run settings arcRegistrationTries and arcRegistrationWaitMinutes (or their defaults).
+            $arc = Invoke-AzlArcRegistration -Context $Context -Record $Record -Node $Node -MaxTries ([int](Get-AzlProp $Context 'ArcRegistrationTries' $script:ArcRegistrationDefaults.Tries)) -WaitMinutes ([int](Get-AzlProp $Context 'ArcRegistrationWaitMinutes' $script:ArcRegistrationDefaults.WaitMinutes))
             $Record.changes += [ordered]@{ pass = 1; id = 'ArcRegistration'; status = 'changed'; detail = "registered as $($arc.Name) ($($arc.Status))" }
             $Record.evidence.ArcFound = $true; $Record.evidence.ArcStatus = 'Connected'; $Record.evidence.ArcResourceId = $arc.ResourceId
         }
@@ -2011,12 +2042,14 @@ function Invoke-AzlOsConfiguration {
             Remoting = $null; ApprovedBootstrap = $false; BootstrapWindow = @{}; Bootstraps = [System.Collections.Generic.List[object]]::new(); TrustedHosts = $null
             BootstrapArcWaitSeconds = $(if ($run.ContainsKey('bootstrapArcWaitSeconds')) { [int]$run.bootstrapArcWaitSeconds } else { 180 })
             RestartWaitMinutes = $(if ($run.ContainsKey('restartWaitMinutes')) { [int]$run.restartWaitMinutes } else { 15 })
+            ArcRegistrationTries = $(if ($run.ContainsKey('arcRegistrationTries')) { [int]$run.arcRegistrationTries } else { $script:ArcRegistrationDefaults.Tries })
+            ArcRegistrationWaitMinutes = $(if ($run.ContainsKey('arcRegistrationWaitMinutes')) { [int]$run.arcRegistrationWaitMinutes } else { $script:ArcRegistrationDefaults.WaitMinutes })
         }
         # HOOK address-resolution: the sweep settings for the MAC lookup (sweep, allowWideSubnet, pingTimeoutMilliseconds).
         $addressSetting = if ($run.ContainsKey('addressResolution') -and $run.addressResolution -is [System.Collections.IDictionary]) { $run.addressResolution } else { @{} }
         $context | Add-Member -NotePropertyName AddressResolution -NotePropertyValue $addressSetting
         $context.TransportSetting = Get-AzlRemotingSetting -Infrastructure $infra -Setting $run -Transport $Transport
-        foreach ($k in 'networkRollbackMinutes', 'networkStableSeconds', 'reconnectWaitMinutes', 'staleRunCommandMinutes', 'addressProbe', 'remoting') { if ($run.ContainsKey($k)) { $context.GuardSettings[$k] = $run[$k] } }
+        foreach ($k in @(@((Get-AzlGuardSetting).Keys) + 'remoting')) { if ($run.ContainsKey($k)) { $context.GuardSettings[$k] = $run[$k] } }
         if (-not $context.GuardSettings.ContainsKey('networkRollbackMinutes') -and (Get-AzlProp $infra 'os_configuration.network.confirm_minutes')) { $context.GuardSettings.networkRollbackMinutes = [int](Get-AzlProp $infra 'os_configuration.network.confirm_minutes') }
         if (-not $context.GuardSettings.ContainsKey('networkStableSeconds') -and (Get-AzlProp $infra 'os_configuration.network.stable_seconds')) { $context.GuardSettings.networkStableSeconds = [int](Get-AzlProp $infra 'os_configuration.network.stable_seconds') }
         $context.EventContext = New-AzlGuardEventContext -Path $context.EventLogPath -SchemaVersion $context.SchemaVersion

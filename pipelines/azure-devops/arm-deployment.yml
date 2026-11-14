@@ -16,7 +16,7 @@
 #
 # Setup (names only, no value is in this file)
 #   Service connection  an Azure Resource Manager service connection with workload identity federation (no client secret),
-#                       named in the parameter `azureServiceConnection`.
+#                       named in the parameter `azureServiceConnection` (devops.pipelines.service_connection; task 05 creates it).
 #   Variable group      none needed. The local administrator and LCM passwords are read from the Key Vaults named by the
 #                       keyvault:// references in the master file; the identity needs Get on those secrets and the rights in
 #                       the design (section 12).
@@ -61,9 +61,8 @@ parameters:
     type: string
     default: ''
   - name: azureServiceConnection
-    displayName: Azure Resource Manager service connection (workload identity federation)
+    displayName: Azure Resource Manager service connection (workload identity federation). Enter devops.pipelines.service_connection
     type: string
-    default: '<azure-service-connection-name>'
   - name: agentPool
     displayName: Self-hosted agent pool. Enter devops.runners[].pool of the general runner
     type: string

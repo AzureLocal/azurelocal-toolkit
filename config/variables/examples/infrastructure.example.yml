@@ -584,6 +584,10 @@ devops:
       arm_deployment: "azr-prod-us"
       cicd_infra: "azr-prod-us"
       terraform_deployment: "azr-prod-us"
+    # Azure DevOps only (5.6.27): task 05 creates the service connection and the variable group (one per environment, <name>-<environment>)
+    # with these names; the Azure DevOps pipelines take them as run parameters. GitHub and GitLab ignore both.
+    service_connection: "iic-azure-local"
+    variable_group: "iic-azure-credentials"
 
   # Tasks 01 and 05. The app registration is azure.automation_identity.name.
   authentication:

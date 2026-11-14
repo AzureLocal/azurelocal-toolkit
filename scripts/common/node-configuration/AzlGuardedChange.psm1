@@ -33,6 +33,22 @@ Import-Module (Join-Path $PSScriptRoot 'AzlOsConfigurationEvents.psm1')
 # and networkStableSeconds from os_configuration.network.confirm_minutes and stable_seconds); each is registered under tools.os_configuration.guard_settings.
 # A setting of the tool's own behaviour, not a choice about the deployment, so none of them is an infrastructure key.
 $script:GuardDefaults = [ordered]@{ networkRollbackMinutes = 10; networkStableSeconds = 60; reconnectWaitMinutes = 15; staleRunCommandMinutes = 15; addressProbe = $true }
+# The timings of the node's guard engine (AzlNodeGuard.psm1), sent to the node in the config of each change. Run settings like the ones above, in the same
+# table. Each is the toolkit's choice for a step of its own engine (Microsoft gives no value); none depends on the site:
+#   startDelaySeconds            the pause between staging and the first change, so the call that staged the change has returned and its session is
+#                                closed before the node touches its network (a change under an open session can cut that call's answer).
+$script:GuardDefaults.startDelaySeconds = 20
+#   checkSeconds                 the longest the node waits in Verifying for its checks to stay green for networkStableSeconds (the engine takes at
+#                                least networkStableSeconds + 120): time for a new address, gateway or DNS server to answer before the change is judged.
+$script:GuardDefaults.checkSeconds = 300
+#   repairSeconds                after each rung of the repair ladder, how long the checks get to pass before the next rung runs.
+$script:GuardDefaults.repairSeconds = 45
+#   vlanLinkDownSeconds          added to the node's own deadline when a VLAN changes: the adapter restarts with the new VLAN ID, its link goes down
+#                                and up, and the switch port has to forward the new VLAN before the checks can pass.
+$script:GuardDefaults.vlanLinkDownSeconds = 120
+#   hostnameConfirmExtraMinutes  added to the confirmation window (networkRollbackMinutes) when the computer name changes with a restart: the node
+#                                restarts before this host can confirm, so the window has to hold one restart.
+$script:GuardDefaults.hostnameConfirmExtraMinutes = 10
 # The name the node resolves through the management DNS during a guarded change when the file gives no domain. The Azure Resource Manager endpoint: Azure Local must
 # resolve it anyway (Learn, Azure Local firewall requirements), so a management DNS that cannot answer it is a real problem.
 $script:DefaultProbeHost = 'management.azure.com'
@@ -56,7 +72,9 @@ function Get-AzlGuardSetting {
             }
             else {
                 $n = 0
-                if (-not [int]::TryParse([string]$v, [ref]$n) -or $n -lt 0 -or ($k -ne 'networkStableSeconds' -and $n -lt 1)) { throw "Setting $k must be a whole number of $(if ($k -like '*Seconds') { 'seconds, 0 or more' } else { 'minutes, 1 or more' }), not '$v'." }
+                # networkStableSeconds may be 0 (no wait for the checks to stay green); every other timing is 1 or more.
+                $min = if ($k -eq 'networkStableSeconds') { 0 } else { 1 }
+                if ($v -is [bool] -or -not [int]::TryParse([string]$v, [ref]$n) -or $n -lt $min) { throw "Setting $k must be a whole number of $(if ($k -like '*Seconds') { 'seconds' } else { 'minutes' }), $min or more, not '$v'." }
                 $result[$k] = $n
             }
         }
@@ -293,7 +311,8 @@ function New-AzlChangeId {
 
 function Get-AzlGuardNextAction {
     param([string]$State, [string]$Node, [string]$ChangeId, [int]$ConfirmMinutes, [string]$Verdict = '')
-    $log = "C:\ProgramData\AzureLocal\osconfig\net-$ChangeId\$ChangeId.log"
+    # The change's log on the node, in the node state folder (one definition: AzlNodePayload.psm1).
+    $log = "$(Get-AzlNodeStateDirectory)\net-$ChangeId\$ChangeId.log"
     switch ($State) {
         'RolledBack' { return "The node was put back as it was$(if ($Verdict) { " ($Verdict)" }). Read $log on $Node, fix the cause (address in use, wrong gateway, VLAN, a firewall between this host and the new address) and run again. A rolled back change is not retried automatically." }
         'Refused' { return "Nothing was changed on $Node. Fix what the reason names and run again." }
@@ -521,8 +540,9 @@ function Invoke-AzlGuardedChange {
     $probeHost = if ($Spec.PSObject.Properties['DomainFqdn'] -and [string]$Spec.DomainFqdn) { [string]$Spec.DomainFqdn } else { $script:DefaultProbeHost }
     $remote = $State.PSObject.Properties['remote'] -and $State.remote -and [string]$State.remote.winrm -eq 'Running' -and [int]$State.remote.listeners -gt 0
     $config = [ordered]@{
-        changeId = $changeId; group = $Group; confirmMinutes = $confirmMinutes + $(if ($restart) { 10 } else { 0 }); stableSeconds = [int]$cfgSetting.networkStableSeconds; startDelaySeconds = 20; checkSeconds = 300; repairSeconds = 45
-        probe = [bool]$cfgSetting.addressProbe; restartAfter = $restart; probeHosts = @($probeHost); probeTargets = @(); vlanLinkDownSeconds = 120
+        changeId = $changeId; group = $Group; confirmMinutes = $confirmMinutes + $(if ($restart) { [int]$cfgSetting.hostnameConfirmExtraMinutes } else { 0 }); stableSeconds = [int]$cfgSetting.networkStableSeconds
+        startDelaySeconds = [int]$cfgSetting.startDelaySeconds; checkSeconds = [int]$cfgSetting.checkSeconds; repairSeconds = [int]$cfgSetting.repairSeconds
+        probe = [bool]$cfgSetting.addressProbe; restartAfter = $restart; probeHosts = @($probeHost); probeTargets = @(); vlanLinkDownSeconds = [int]$cfgSetting.vlanLinkDownSeconds
         expect = [ordered]@{ mac = [string]$Spec.Management.Mac; ip = $(if ($isManagement) { $newAddress } else { '' }); prefix = $(if ($isManagement) { [int]$Spec.Management.Prefix } else { 0 }); currentIp = $oldAddress; requireGateway = ($mgmtNic.Count -gt 0 -and @($mgmtNic[0].gw | Where-Object { $_ }).Count -gt 0); winrm = [bool]$remote; vlan = 0 }
         items = $items
     }
