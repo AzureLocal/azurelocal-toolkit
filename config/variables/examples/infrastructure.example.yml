@@ -210,15 +210,19 @@ hardware:
     node_pull_url: 'https://sbe.iic.example/sbe/dell' # or a UNC folder, \\files.iic.example\sbe\dell
     allow_unvalidated: false # test only
     # Schema 5.6.24. OPTIONAL, and only when the hardware vendor's SBE documentation names them (sent only with a version above): properties as
-    # name and value pairs, and the names of Key Vault secrets (in cluster.key_vault) that the SBE needs while the deployment runs.
+    # name and value pairs, and secrets that the SBE needs while the deployment runs. For a secret, secret_name is the name it gets in the cluster's Key Vault
+    # (cluster.key_vault; the deployment template writes it there) and secret is a reference to the value (keyvault://, env://, file:// or command://), never the value.
+    # The value passes through the template parameter partnerCredentiallist, a plain array, so it shows in the deployment's input parameters in Azure.
     # partner_properties:
     #   - name: iic-example-property
     #     value: iic-example-value
     #   - name: iic-example-second-property
     #     value: iic-example-second-value
     # partner_credentials:
-    #   - secret_name: iic-sbe-download-login
-    #   - secret_name: iic-sbe-second-login
+    #   - secret_name: sbe-iic-partner-01
+    #     secret: keyvault://kv-iic-mgmt-01/sbe-partner-01
+    #   - secret_name: sbe-iic-partner-02
+    #     secret: env://IIC_SBE_PARTNER_02
   # BIOS: from 5.4 azurelocal-ztp derives the SAN-adapter slots (nodes[].san.hbas[].slot) and the embedded NICs
   # (a port with slot Embedded) itself, per vendor; the raw maps are explicit overrides that win over the derived values.
   bios: # optional; the FINAL state, set by azurelocal-ztp at its Boot stage. Vendor attribute names (Dell here).

@@ -183,10 +183,12 @@ function Get-AzlArmParameterHash {
     [CmdletBinding()]
     [OutputType([string])]
     param([Parameter(Mandatory)][object]$ParameterSet)
+    # Get-AzlArmDisplayParameter: a secret that holds a value (it should not) is masked, so a value never reaches the hash input.
+    $safe = Get-AzlArmDisplayParameter -Parameters $ParameterSet.Parameters
     $canonical = [ordered]@{}
-    foreach ($k in ($ParameterSet.Parameters.Keys | Sort-Object)) {
+    foreach ($k in ($safe.Keys | Sort-Object)) {
         if ($k -eq 'deploymentMode') { continue }
-        $canonical[$k] = $ParameterSet.Parameters[$k]
+        $canonical[$k] = $safe[$k]
     }
     $json = ConvertTo-Json -InputObject $canonical -Depth 30 -Compress
     $bytes = [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($json))
@@ -879,7 +881,9 @@ function Format-AzlArmParameterSource {
         $keys = if ($e.Contains('keys') -and @($e['keys']).Count) { (@($e['keys']) | ForEach-Object { "``$_``" }) -join ', ' } else { '' }
         $other = if ($e.Contains('source')) { [string]$e['source'] } else { '' }
         $v = $ParameterSet.Parameters[$name]
-        $kind = if ($v -is [System.Collections.IDictionary] -and $v.Contains('KeyVault')) { 'secret (Key Vault reference)' } else { 'value' }
+        $kind = if ($v -is [System.Collections.IDictionary] -and $v.Contains('KeyVault')) { 'secret (Key Vault reference)' }
+        elseif (@(Get-AzlArmNestedSecret -Parameters ([ordered]@{ $name = $v })).Count) { 'list; each secretValue is a secret reference' }
+        else { 'value' }
         $lines += "| $name | $keys | $other | $kind |"
     }
     # The Solution Builder Extension is opt-in: its parameters are left out of the set when none is configured. Say so, per parameter.
@@ -1384,8 +1388,14 @@ $script:Checks['KeyVaultSecrets'] = {
         $v = $Ctx.Set.Parameters[$k]
         if ($v -is [System.Collections.IDictionary] -and $v.Contains('KeyVault')) { $refs += [pscustomobject]@{ Parameter = $k; Reference = [string]$v.KeyVault } }
     }
-    $listed = @(ConvertTo-AzlArmArray $Ctx.Infra['key_vaults'] | ForEach-Object { [string]$_['name'] })
     $bad = @()
+    # The SBE partner credentials carry a secret reference in each entry. ARM cannot read a reference inside an array, so with -SecretMode KeyVaultReference they cannot work at all.
+    foreach ($slot in @(Get-AzlArmNestedSecret -Parameters $Ctx.Set.Parameters)) {
+        if (-not $slot.IsReference) { $refs += [pscustomobject]@{ Parameter = $slot.Label; Reference = '' }; continue }
+        if ([string](Get-AzlProp $Ctx.Settings 'secretMode' 'Placeholder') -eq 'KeyVaultReference') { $bad += "$($slot.Label): partner credentials cannot be handed to ARM as a Key Vault reference (it cannot read a reference inside an array); use secretMode Placeholder, the toolkit then reads the value on this machine"; continue }
+        $refs += [pscustomobject]@{ Parameter = $slot.Label; Reference = [string]$slot.Value.KeyVault }
+    }
+    $listed = @(ConvertTo-AzlArmArray $Ctx.Infra['key_vaults'] | ForEach-Object { [string]$_['name'] })
     foreach ($r in $refs) {
         $parts = ConvertFrom-AzlKeyVaultRef -Reference $r.Reference
         # Azure Resource Manager reads Key Vault only. In this mode it reads the secrets itself, so another provider cannot work.
@@ -2407,9 +2417,11 @@ function Invoke-AzlArmDeploymentRun {
         if ($report.cluster) { (Hide-AzlArmSecret (Format-AzlArmSummary -Report $report)) | Set-Content -LiteralPath $summaryPath -Encoding utf8NoBOM }
         Send-AzlArmEvent -Run $run -State RunCompleted -Evidence "Run finished in state $($run.State.Current), exit code $exit." -Level $(if ($exit -eq 0) { 'Info' } else { 'Error' }) -NextAction $report.nextAction -Data @{ exitCode = $exit; state = $run.State.Current }
     }
+    # The object the run hands back is masked like the files: a secret value this run read never appears in it, even inside the text of an Azure error.
+    $shown = Hide-AzlArmSecretDeep $report
     [pscustomobject]@{
         ExitCode = $exit; State = $run.State.Current; Mode = $Mode; Message = $report.message; NextAction = $report.nextAction; ReportDirectory = $reportDir
-        ReportPath = $reportPath; EventPath = $run.EventPath; SummaryPath = $summaryPath; Preconditions = @($report.preconditions); KnownIssue = $report.knownIssue; Report = $report
+        ReportPath = $reportPath; EventPath = $run.EventPath; SummaryPath = $summaryPath; Preconditions = @($shown.preconditions); KnownIssue = $shown.knownIssue; Report = $shown
     }
 }
 

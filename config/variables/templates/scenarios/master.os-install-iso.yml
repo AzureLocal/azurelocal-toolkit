@@ -580,9 +580,12 @@ hardware:
     # Optional (schema 5.6.24).
     # used by: deployment
     partner_credentials:
-      # The name of the secret in the cluster's Key Vault.
+      # The name the secret gets in the cluster's Key Vault, and the name the vendor's SBE looks for.
       # required; used by: deployment
-      - secret_name: "iic-sbe-download-login"
+      - secret_name: "sbe-iic-partner-01"
+        # A secret reference to the value: keyvault://<vault>/<secret> (the vault must be listed in key_vaults), env://<name>, file://<name> or comma...
+        # required; used by: deployment
+        secret: "keyvault://kv-iic-mgmt-01/sbe-partner-01"
   # The physical network cards in every machine, and what each port is for.
   # used by: os_configuration
   network_cards:

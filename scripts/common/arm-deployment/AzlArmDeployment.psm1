@@ -39,11 +39,78 @@ $script:DeploymentsApiVersion = '2024-03-01'
 # clusters/deploymentSettings, 2026-10-01 is in the 2610 view). The version of the template's own deploymentSettings resource is the run setting deploymentSettingsApiVersion.
 $script:HciApiVersion = '2026-10-01'
 $script:SecretParameters = @('localAdminPassword', 'AzureStackLCMAdminPassword', 'chapCredential')
+# Parameters that are lists of objects with a secret inside each entry: the ARM parameter -> the field that holds the secret. Microsoft's template
+# takes the SBE partner credentials as a plain array of { secretName, secretValue } and writes secretValue into the cluster's Key Vault under
+# secretName (azuredeploy.json: variable answerfileSBESecrets and the resource of type Microsoft.KeyVault/vaults/secrets). In the parameter set the
+# field holds a secret reference ({ KeyVault = <reference> }), like a top-level secret; the value is read only when the deployment is submitted.
+$script:NestedSecretFields = @{ partnerCredentiallist = 'secretValue' }
+$script:SecretMask = '***'
 
 function ConvertTo-List([AllowNull()][object]$Value) {
     if ($null -eq $Value) { return @() }
     if ($Value -is [System.Collections.IEnumerable] -and $Value -isnot [string] -and $Value -isnot [System.Collections.IDictionary]) { return @($Value) }
     return @($Value)
+}
+
+function Get-AzlArmNestedSecret {
+    <#
+    .SYNOPSIS
+        The secret slots inside list parameters (the SBE partner credentials): one object per entry with Parameter, Index, Field, Label
+        (for example partnerCredentiallist[0].secretValue), SecretName, Value and IsReference. Value is whatever the entry holds;
+        it is never written anywhere by this function.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Parameters)
+    foreach ($name in @($script:NestedSecretFields.Keys)) {
+        if (-not $Parameters.Contains($name)) { continue }
+        $field = [string]$script:NestedSecretFields[$name]
+        $index = 0
+        foreach ($entry in @(ConvertTo-List $Parameters[$name])) {
+            $isEntry = $entry -is [System.Collections.IDictionary]
+            $value = if ($isEntry -and $entry.Contains($field)) { $entry[$field] } else { $null }
+            [pscustomobject]@{
+                Parameter   = $name
+                Index       = $index
+                Field       = $field
+                Label       = "$name[$index].$field"
+                SecretName  = $(if ($isEntry -and $entry.Contains('secretName')) { [string]$entry['secretName'] } else { '' })
+                Value       = $value
+                IsReference = [bool]($value -is [System.Collections.IDictionary] -and $value.Contains('KeyVault'))
+            }
+            $index++
+        }
+    }
+}
+
+function Get-AzlArmDisplayParameter {
+    <#
+    .SYNOPSIS
+        A copy of the parameters that is safe to print, hash or log: a secret that is a reference stays the reference; a secret that holds a
+        value (a top-level secret parameter, or the field inside a list entry) is replaced by ***. Nothing else changes.
+    #>
+    [CmdletBinding()]
+    param([Parameter(Mandatory)][System.Collections.IDictionary]$Parameters)
+    $copy = [ordered]@{}
+    foreach ($k in $Parameters.Keys) {
+        $v = $Parameters[$k]
+        if ($k -in $script:SecretParameters -and $v -is [string] -and $v) { $copy[$k] = $script:SecretMask }
+        elseif ($script:NestedSecretFields.ContainsKey($k) -and $null -ne $v) {
+            $field = [string]$script:NestedSecretFields[$k]
+            $entries = [System.Collections.Generic.List[object]]::new()
+            foreach ($entry in @(ConvertTo-List $v)) {
+                if ($entry -isnot [System.Collections.IDictionary]) { $entries.Add($script:SecretMask); continue }
+                $item = [ordered]@{}
+                foreach ($f in $entry.Keys) {
+                    $held = $entry[$f]
+                    $item[$f] = if ($f -eq $field -and $null -ne $held -and -not ($held -is [System.Collections.IDictionary] -and $held.Contains('KeyVault'))) { $script:SecretMask } else { $held }
+                }
+                $entries.Add($item)
+            }
+            $copy[$k] = $entries.ToArray()
+        }
+        else { $copy[$k] = $v }
+    }
+    return $copy
 }
 
 function ConvertTo-MacKey([AllowNull()][object]$Mac) {
@@ -421,8 +488,9 @@ function New-AzlArmParameterSet {
     $p.customLocation = [string](& $g 'azure.custom_location' "$clusterName-cl")
     if ($sbeConfigured) {
         foreach ($k in $sbe.Keys) { $p[$k] = $sbe[$k] }
-        # Properties and Key Vault secret names that the hardware vendor's SBE asks for (hardware.sbe.partner_properties and partner_credentials); empty lists when the file names none.
-        # The template builds the secret's address from the cluster's Key Vault (cluster.key_vault.name) and the secret name.
+        # Properties and secrets that the hardware vendor's SBE asks for (hardware.sbe.partner_properties and partner_credentials); empty lists when the file names none.
+        # Microsoft's template takes each credential as { secretName, secretValue }, writes the value into the cluster's Key Vault (cluster.key_vault.name) under secretName
+        # and gives the SBE the address. The file holds a secret reference; here it stays a reference (like localAdminPassword) and is read when the deployment is submitted.
         $partnerProperties = [System.Collections.Generic.List[object]]::new()
         foreach ($property in @(ConvertTo-List (& $g 'hardware.sbe.partner_properties' @()))) {
             $propertyName = ([string](Get-AzlProp $property 'name' '')).Trim()
@@ -433,7 +501,10 @@ function New-AzlArmParameterSet {
         foreach ($credential in @(ConvertTo-List (& $g 'hardware.sbe.partner_credentials' @()))) {
             $secretName = ([string](Get-AzlProp $credential 'secret_name' '')).Trim()
             if (-not $secretName) { throw 'hardware.sbe.partner_credentials has an entry with no secret_name.' }
-            $partnerCredentials.Add([ordered]@{ secretName = $secretName })
+            $secretReference = ([string](Get-AzlProp $credential 'secret' '')).Trim()
+            if (-not $secretReference) { throw "hardware.sbe.partner_credentials entry '$secretName' has no secret. Give a secret reference (keyvault://, env://, file:// or command://): the deployment template writes its value into the cluster Key Vault as '$secretName'." }
+            if (-not (Get-AzlSecretProvider -Reference $secretReference)) { throw "hardware.sbe.partner_credentials entry '$secretName' holds a value ($($secretReference.Length) characters), not a secret reference. Use keyvault://<vault>/<secret>, env://<name>, file://<name> or command://<name>; a secret value is never written in the file." }
+            $partnerCredentials.Add([ordered]@{ secretName = $secretName; secretValue = (& $kvRef $secretReference) })
         }
         $p.partnerProperties = $partnerProperties.ToArray()
         $p.partnerCredentiallist = $partnerCredentials.ToArray()
@@ -600,6 +671,13 @@ function Test-AzlArmParameterSet {
         if ($def.Contains('allowed') -and $v -is [string] -and $v -and @($def['allowed'] | Where-Object { $_ -ieq $v }).Count -eq 0) { $problems.Add("$k is '$v'; the template allows $($def['allowed'] -join ', ').") }
     }
     foreach ($s in $script:SecretParameters) { if ($values.Contains($s) -and $values[$s] -is [string]) { $problems.Add("$s holds a value; a secret must be a secret reference (keyvault://, env://, file:// or command://).") } }
+    # The secrets inside list parameters (the SBE partner credentials): each must be a reference, never a value. The message does not repeat the value.
+    foreach ($slot in @(Get-AzlArmNestedSecret -Parameters $values)) {
+        if (-not $slot.SecretName.Trim()) { $problems.Add("$($slot.Parameter)[$($slot.Index)] has no secretName; the template needs the name the secret gets in the cluster Key Vault.") }
+        if ($slot.IsReference) { continue }
+        if ($slot.Value -is [string] -and $slot.Value) { $problems.Add("$($slot.Label) holds a value ($($slot.Value.Length) characters); a secret must be a secret reference (keyvault://, env://, file:// or command://).") }
+        else { $problems.Add("$($slot.Label) has no secret reference; the template writes the value into the cluster Key Vault, so every partner credential needs one.") }
+    }
     return $problems.ToArray()
 }
 
@@ -613,6 +691,9 @@ function ConvertTo-AzlArmParameterFile {
         "Azure Resource Manager for template deployment" access enabled. Only a keyvault:// reference can be handed to ARM
         like this. With env://, file:// or command:// this mode refuses, because ARM cannot read those providers; use
         Placeholder and let Invoke-AzlArmDeployment read the value on this machine.
+        The SBE partner credentials (partnerCredentiallist) are a list of { secretName, secretValue }; ARM cannot read a reference
+        inside an array. Placeholder writes secretValue as null (the deployment reads it on this machine and sends it); KeyVaultReference
+        refuses when the list has an entry. No value is ever written.
     #>
     [CmdletBinding()]
     [OutputType([string])]
@@ -621,9 +702,26 @@ function ConvertTo-AzlArmParameterFile {
         [System.Collections.IDictionary]$Infrastructure,
         [ValidateSet('Placeholder', 'KeyVaultReference')][string]$SecretMode = 'Placeholder'
     )
+    if ($SecretMode -eq 'KeyVaultReference') {
+        $first = @(Get-AzlArmNestedSecret -Parameters $ParameterSet.Parameters) | Select-Object -First 1
+        if ($first) { throw "Parameter $($first.Parameter) holds partner credentials (hardware.sbe.partner_credentials), and ARM cannot read a Key Vault reference inside an array, so -SecretMode KeyVaultReference refuses it. Use -SecretMode Placeholder and run the deployment from the toolkit, which reads the value on this machine." }
+    }
     $out = [ordered]@{}
     foreach ($k in $ParameterSet.Parameters.Keys) {
         $v = $ParameterSet.Parameters[$k]
+        if ($script:NestedSecretFields.ContainsKey($k) -and $null -ne $v) {
+            # The secret field of every entry is null in the file, whatever it holds.
+            $field = [string]$script:NestedSecretFields[$k]
+            $entries = [System.Collections.Generic.List[object]]::new()
+            foreach ($entry in @(ConvertTo-List $v)) {
+                if ($entry -isnot [System.Collections.IDictionary]) { throw "Parameter $k should be a list of entries with a secretName and a $field." }
+                $item = [ordered]@{}
+                foreach ($f in $entry.Keys) { $item[$f] = if ($f -eq $field) { $null } else { $entry[$f] } }
+                $entries.Add($item)
+            }
+            $out[$k] = [ordered]@{ value = $entries.ToArray() }
+            continue
+        }
         if ($v -is [System.Collections.IDictionary] -and $v.Contains('KeyVault')) {
             if ($SecretMode -eq 'Placeholder' -or -not $Infrastructure) { $out[$k] = [ordered]@{ value = $null }; continue }
             $ref = ConvertFrom-AzlKeyVaultRef -Reference $v.KeyVault
@@ -793,6 +891,25 @@ function Invoke-AzlArmDeployment {
     foreach ($k in $ParameterSet.Parameters.Keys) {
         $v = $ParameterSet.Parameters[$k]
         if ($v -is [System.Collections.IDictionary] -and $v.Contains('KeyVault')) { $parameters[$k] = @{ value = [string](& $SecretResolver $v.KeyVault) } }
+        elseif ($script:NestedSecretFields.ContainsKey($k) -and $null -ne $v) {
+            # The SBE partner credentials: the secret inside each entry is read now and sent as the plain array Microsoft's template declares (the template writes it
+            # into the cluster's Key Vault). It is in the request body only; the message of a refusal does not repeat it.
+            $field = [string]$script:NestedSecretFields[$k]
+            $entries = [System.Collections.Generic.List[object]]::new()
+            $index = 0
+            foreach ($entry in @(ConvertTo-List $v)) {
+                if ($entry -isnot [System.Collections.IDictionary]) { throw "Parameter $k[$index] is not an entry with a secretName and a $field. Nothing was sent." }
+                $held = if ($entry.Contains($field)) { $entry[$field] } else { $null }
+                if (-not ($held -is [System.Collections.IDictionary] -and $held.Contains('KeyVault'))) { throw "$k[$index].$field is not a secret reference. Nothing was sent." }
+                $resolved = [string](& $SecretResolver $held.KeyVault)
+                if (-not $resolved) { throw "$k[$index].$field resolved to an empty value (secret name $($entry['secretName'])); the template cannot write an empty secret to the cluster Key Vault. Nothing was sent." }
+                $item = [ordered]@{}
+                foreach ($f in $entry.Keys) { $item[$f] = if ($f -eq $field) { $resolved } else { $entry[$f] } }
+                $entries.Add($item)
+                $index++
+            }
+            $parameters[$k] = @{ value = $entries.ToArray() }
+        }
         else { $parameters[$k] = @{ value = $v } }
     }
     $parameters['deploymentMode'] = @{ value = $Mode }
@@ -837,4 +954,4 @@ function Invoke-AzlArmDeployment {
     }
 }
 
-Export-ModuleMember -Function Get-AzlArmTemplateCatalog, Select-AzlArmTemplate, Resolve-AzlAdapterName, Get-AzlNetworkingPattern, Resolve-AzlSanLunId, New-AzlArmParameterSet, Test-AzlArmParameterSet, ConvertTo-AzlArmParameterFile, Get-AzlAdapterMapFromReport, Get-AzlTemplateParameterDefinition, Get-AzlHciResourceProviderObjectId, Get-AzlDeploymentState, Invoke-AzlArmDeployment
+Export-ModuleMember -Function Get-AzlArmNestedSecret, Get-AzlArmDisplayParameter, Get-AzlArmTemplateCatalog, Select-AzlArmTemplate, Resolve-AzlAdapterName, Get-AzlNetworkingPattern, Resolve-AzlSanLunId, New-AzlArmParameterSet, Test-AzlArmParameterSet, ConvertTo-AzlArmParameterFile, Get-AzlAdapterMapFromReport, Get-AzlTemplateParameterDefinition, Get-AzlHciResourceProviderObjectId, Get-AzlDeploymentState, Invoke-AzlArmDeployment

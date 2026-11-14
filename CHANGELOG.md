@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
+- SBE partner credentials (registry 5.0.53, infrastructure schema stays 5.6.24, the key is not released): `hardware.sbe.partner_credentials[]` carries a `secret` reference next to `secret_name`, and the ARM deployment sends `secretName` and `secretValue` for each entry, as Microsoft's template needs (it writes the value into the cluster Key Vault itself; a list with names only fails template evaluation). The value is read with the toolkit resolver in memory, is never held in the parameter set, the parameter file (`null` in Placeholder mode; KeyVaultReference mode refuses), the parameter hash or any log. The value passes through the plain array parameter `partnerCredentiallist`, so it is visible in the deployment's input parameters in Azure.
 - The verification after a node restart: the identity check tells a refused credential (Access is denied, 0x80070005, HTTP 401) from a node that did not answer (timeout, connection reset or closed, restarting) and retries the latter; the run waits for a node it restarted (port, then session, run setting `restartWaitMinutes`, default 15) before the final verify, with a `NodeWaiting` heartbeat and an honest 'did not come back within N minutes'; a driver install that returns pnputil 3010 is recorded as restart required and the node is restarted once, at the end of the apply.
 
 ### Changed

@@ -32,13 +32,14 @@ Describe 'hardware.sbe.partner_properties and partner_credentials reach the ARM 
     It 'sends the properties as name and value pairs and the credentials as secret names' {
         $i = Get-InfraWithSbe
         $i.hardware.sbe['partner_properties'] = @([ordered]@{ name = 'iic-example-property'; value = 'iic-example-value' }, [ordered]@{ name = 'iic-second-property'; value = 'two' })
-        $i.hardware.sbe['partner_credentials'] = @([ordered]@{ secret_name = 'iic-sbe-download-login' }, [ordered]@{ secret_name = 'iic-sbe-second-login' })
+        $i.hardware.sbe['partner_credentials'] = @([ordered]@{ secret_name = 'iic-sbe-download-login'; secret = 'keyvault://kv-iic-mgmt-01/sbe-download' }, [ordered]@{ secret_name = 'iic-sbe-second-login'; secret = 'env://IIC_SBE_SECOND' })
         $set = New-AzlArmParameterSet -Infrastructure $i -AllowUnresolvedSanLun -Catalog $script:Catalog
         @($set.Parameters.partnerProperties).Count | Should -Be 2
         $set.Parameters.partnerProperties[0].name | Should -Be 'iic-example-property'
         $set.Parameters.partnerProperties[0].value | Should -Be 'iic-example-value'
         @($set.Parameters.partnerCredentiallist).Count | Should -Be 2
         $set.Parameters.partnerCredentiallist[1].secretName | Should -Be 'iic-sbe-second-login'
+        $set.Parameters.partnerCredentiallist[1].secretValue.KeyVault | Should -Be 'env://IIC_SBE_SECOND'
         @(Test-AzlArmParameterSet -ParameterSet $set -TemplateParameters $script:Catalog.templates[$set.Template.Name].parameters) | Should -BeNullOrEmpty
     }
     It 'sends empty lists when the file names none (as before the keys existed)' {
@@ -58,7 +59,7 @@ Describe 'hardware.sbe.partner_properties and partner_credentials reach the ARM 
         $i.hardware.sbe['partner_properties'] = @([ordered]@{ name = ''; value = 'x' }, [ordered]@{ name = 'b'; value = 'y' })
         { New-AzlArmParameterSet -Infrastructure $i -AllowUnresolvedSanLun -Catalog $script:Catalog } | Should -Throw '*partner_properties has an entry with no name*'
         $j = Get-InfraWithSbe
-        $j.hardware.sbe['partner_credentials'] = @([ordered]@{ secret_name = ' ' }, [ordered]@{ secret_name = 'b' })
+        $j.hardware.sbe['partner_credentials'] = @([ordered]@{ secret_name = ' '; secret = 'env://IIC_X' }, [ordered]@{ secret_name = 'b'; secret = 'env://IIC_Y' })
         { New-AzlArmParameterSet -Infrastructure $j -AllowUnresolvedSanLun -Catalog $script:Catalog } | Should -Throw '*partner_credentials has an entry with no secret_name*'
     }
     It 'the parameter sources name both keys' {

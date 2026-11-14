@@ -117,8 +117,10 @@ Write-Line "Template:   $($set.Template.Name) ($($set.Template.Uri))"
 Write-Line "Mode:       $Mode$(if ($Execute) { '  EXECUTE: this submits to Azure' } else { '  (plan: nothing is submitted)' })"
 Write-Line "Parameters: $($set.Parameters.Count), written to $parameterFile (secrets are null in the file)"
 Write-Line "deploymentSettings api-version in the template: $($set.DeploymentSettingsApiVersion)$(if ($DeploymentSettingsApiVersion) { " -> patched to $DeploymentSettingsApiVersion" })"
-$summary = foreach ($k in $set.Parameters.Keys) {
-    $v = $set.Parameters[$k]
+# Get-AzlArmDisplayParameter: a secret that is a reference shows as the reference; one that holds a value (it should not) shows as ***.
+$shown = Get-AzlArmDisplayParameter -Parameters $set.Parameters
+$summary = foreach ($k in $shown.Keys) {
+    $v = $shown[$k]
     [pscustomobject]@{ Parameter = $k; Value = $(if ($v -is [System.Collections.IDictionary] -and $v.Contains('KeyVault')) { "secret $($v.KeyVault)" } elseif ($v -is [string]) { $v } else { ($v | ConvertTo-Json -Depth 6 -Compress) }) }
 }
 Write-Line (($summary | Format-Table -Wrap -AutoSize | Out-String -Width 200))
