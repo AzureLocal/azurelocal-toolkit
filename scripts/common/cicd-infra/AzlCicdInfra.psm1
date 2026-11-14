@@ -31,6 +31,14 @@ Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'secrets', 'AzlSecret.psm
 $script:Token = $null
 $script:LogPath = ''
 
+# The Terraform state names the pipelines and task 06 use when the file does not set them. Each is the default the master registry gives:
+# devops.state.container (tfstate) and devops.state.key (cicd-infra.tfstate, the CI/CD runners' state), and backend.key of the azure-local
+# environment (azure-local.tfstate, tools.terraform.variables.src_terraform_environments_azure_local_backend_hcl.backend_key, the name
+# New-IacVariableFiles.ps1 writes to backend.hcl). tests/pipelines/PipelineSettings.Tests.ps1 compares them with the registry.
+$script:AzlStateContainerDefault = 'tfstate'
+$script:AzlCicdStateKeyDefault = 'cicd-infra.tfstate'
+$script:AzlAzureLocalStateKey = 'azure-local.tfstate'
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Plumbing
 # ---------------------------------------------------------------------------------------------------------------------
@@ -996,9 +1004,15 @@ function Get-AzlCicdVariablePlan {
         $plan.Add([pscustomobject]@{ Name = 'ARM_CLIENT_SECRET'; Value = $null; Secret = $true; Sensitive = $true })
     }
     $state = $Settings.State
-    foreach ($pair in @(@('TF_BACKEND_RG', 'resource_group'), @('TF_BACKEND_SA', 'storage_account'), @('TF_BACKEND_CONTAINER', 'container'))) {
+    foreach ($pair in @(@('TF_BACKEND_RG', 'resource_group'), @('TF_BACKEND_SA', 'storage_account'))) {
         $value = [string](Get-AzlValue $state $pair[1])
         if ($value) { $plan.Add([pscustomobject]@{ Name = $pair[0]; Value = $value; Secret = $false; Sensitive = $false }) }
+    }
+    # With a state storage account the pipelines also need the container and the state file of the azure-local environment (the four
+    # TF_BACKEND_* variables the Azure DevOps, GitHub and GitLab pipelines pass to terraform init).
+    if ([string](Get-AzlValue $state 'storage_account')) {
+        $plan.Add([pscustomobject]@{ Name = 'TF_BACKEND_CONTAINER'; Value = [string](Get-AzlValue $state 'container' $script:AzlStateContainerDefault); Secret = $false; Sensitive = $false })
+        $plan.Add([pscustomobject]@{ Name = 'TF_BACKEND_KEY'; Value = $script:AzlAzureLocalStateKey; Secret = $false; Sensitive = $false })
     }
     return $plan.ToArray()
 }
@@ -1350,8 +1364,8 @@ function Get-AzlTerraformBackendArgument {
     $pairs = [ordered]@{
         resource_group_name  = [string](Get-AzlValue $state 'resource_group')
         storage_account_name = $account
-        container_name       = [string](Get-AzlValue $state 'container' 'tfstate')
-        key                  = [string](Get-AzlValue $state 'key' 'cicd-infra.tfstate')
+        container_name       = [string](Get-AzlValue $state 'container' $script:AzlStateContainerDefault)
+        key                  = [string](Get-AzlValue $state 'key' $script:AzlCicdStateKeyDefault)
         use_azuread_auth     = 'true'
     }
     if (Get-AzlValue $state 'subscription_id') { $pairs.subscription_id = [string](Get-AzlValue $state 'subscription_id') }

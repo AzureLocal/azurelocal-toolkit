@@ -11,6 +11,8 @@
 #     task 05 of the CI/CD setup sets AZL_RUNNER_LABEL and AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT from infrastructure.yml as project variables.
 #   - CI/CD variables: ARM_CLIENT_ID, ARM_CLIENT_SECRET, ARM_TENANT_ID,
 #     ARM_SUBSCRIPTION_ID, DOMAIN_ADMIN_PASSWORD
+#   - Terraform state (task 05 sets them from devops.state): TF_BACKEND_RG, TF_BACKEND_SA, TF_BACKEND_CONTAINER (default tfstate) and
+#     TF_BACKEND_KEY (azure-local.tfstate, the name New-IacVariableFiles.ps1 writes to backend.hcl), the same four the Azure DevOps and GitHub pipelines use.
 #   - Terraform >= 1.6, Ansible >= 2.15, PowerShell >= 7.0
 # =============================================================================
 
@@ -27,7 +29,6 @@ variables:
   TF_ROOT: "${CI_PROJECT_DIR}/src/terraform/environments/azure-local"
   ANSIBLE_ROOT: "${CI_PROJECT_DIR}/src/ansible"
   INFRASTRUCTURE_FILE: "${CI_PROJECT_DIR}/config/infrastructure.yml"
-  TF_STATE_NAME: "${CI_ENVIRONMENT_NAME}"
   ANSIBLE_HOST_KEY_CHECKING: "False"
 
 # Global defaults

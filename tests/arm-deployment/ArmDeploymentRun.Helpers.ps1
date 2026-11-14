@@ -135,7 +135,6 @@ function Get-FakeAdapter {
         ResolveDns = { $true }
         TestActiveDirectory = { [pscustomobject]@{ OuExists = $true; LcmUserExists = $true } }
         ProbeOsConfiguration = $null
-        Prompt = { $true }
     }
     foreach ($k in $Override.Keys) { $a[$k] = $Override[$k] }
     $a

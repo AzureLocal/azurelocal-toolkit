@@ -210,10 +210,11 @@ Describe 'Every ARM parameter the builder produces is in the by-ARM-parameter ta
 }
 
 Describe 'The map says who provides, who reads and what a key becomes' {
-    It 'cluster.name is read by the ARM run, the OS configuration, ZTP and Sonar' {
+    It 'cluster.name is read by the ARM run, the OS configuration and Sonar, and not by ZTP (it ends at the Handoff, azurelocal-ztp 5b75c9a)' {
         $row = $script:Rows | Where-Object path -eq 'cluster.name'
         $row.status | Should -Be 'read'
-        foreach ($tool in 'arm-deployment', 'os-configuration', 'ztp', 'sonar') { @($row.read_by_tools -split '; ') | Should -Contain $tool }
+        foreach ($tool in 'arm-deployment', 'os-configuration', 'sonar') { @($row.read_by_tools -split '; ') | Should -Contain $tool }
+        @($row.read_by_tools -split '; ') | Should -Not -Contain 'ztp'
         $row.sonar_config_key | Should -Be 'clusterName'
     }
 

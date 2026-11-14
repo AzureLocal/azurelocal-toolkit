@@ -73,7 +73,7 @@ key_vaults:
     # required; used by: ztp, deployment, cicd_infra, trailwright, terraform
     resource_group: "rg-iic-mgmt-01"
     # What the vault holds, for example management, deployment or backup.
-    # used by: ztp, cicd_infra, trailwright
+    # used by: cicd_infra, trailwright
     purpose: "management"
 
 # (since 5.6.13) 
@@ -83,22 +83,22 @@ secrets:
   # one of: keyvault | env | file | command; default: "keyvault"; used by: os_configuration, deployment, discovery, cicd_infra
   provider: "keyvault"
   # (since 5.6.13) 
-  # used by: os_configuration, deployment, discovery, cicd_infra
+  # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   file:
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, discovery, cicd_infra
+    # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     directory: "C:\\ProgramData\\iic-secrets"
   # (since 5.6.13) 
-  # used by: os_configuration, deployment, discovery, cicd_infra
+  # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   command:
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, discovery, cicd_infra
+    # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     executable: "iic-secret-tool"
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, discovery, cicd_infra
+    # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     arguments: ["get", "{name}"]
     # (since 5.6.13) 
-    # default: 30; used by: os_configuration, deployment, discovery, cicd_infra
+    # default: 30; used by: ztp, os_configuration, deployment, discovery, cicd_infra
     timeout_seconds: 30
 
 # Part 2 of the implementation steps: the Azure foundation the instance depends on.
@@ -462,7 +462,7 @@ devops:
     # used by: cicd_infra, terraform
     storage_account: "stiictfstate01"
     # Blob container that holds the state.
-    # used by: cicd_infra, terraform
+    # default: "tfstate"; used by: cicd_infra, terraform
     container: "tfstate"
     # Resource group of the state storage account.
     # used by: cicd_infra, terraform

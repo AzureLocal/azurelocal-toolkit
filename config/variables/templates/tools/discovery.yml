@@ -29,22 +29,22 @@ secrets:
   # one of: keyvault | env | file | command; default: "keyvault"; used by: os_configuration, deployment, discovery, cicd_infra
   provider: "keyvault"
   # (since 5.6.13) 
-  # used by: os_configuration, deployment, discovery, cicd_infra
+  # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   file:
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, discovery, cicd_infra
+    # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     directory: "C:\\ProgramData\\iic-secrets"
   # (since 5.6.13) 
-  # used by: os_configuration, deployment, discovery, cicd_infra
+  # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   command:
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, discovery, cicd_infra
+    # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     executable: "iic-secret-tool"
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, discovery, cicd_infra
+    # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     arguments: ["get", "{name}"]
     # (since 5.6.13) 
-    # default: 30; used by: os_configuration, deployment, discovery, cicd_infra
+    # default: 30; used by: ztp, os_configuration, deployment, discovery, cicd_infra
     timeout_seconds: 30
 
 # The machines, one entry each.
@@ -108,18 +108,18 @@ nodes:
       # when scenario.os_install is simplified; used by: ztp, discovery, trailwright
       ip_address: "198.51.100.11"
       # Kind of BMC: idrac (Dell), ilo (HPE), xcc (Lenovo) or other.
-      # one of: idrac | ilo | xcc | other; used by: ztp, discovery
+      # one of: idrac | ilo | xcc | other; used by: discovery
       type: "idrac"
-      # BMC account name.
+      # BMC account name of this machine: a secret reference (keyvault://, env://, file:// or command://) or the plain name. azurelocal-ztp uses on...
       # used by: ztp, discovery
       username: "example"
-      # A Key Vault secret reference: keyvault://<vault>/<secret>.
+      # A secret reference: keyvault://<vault>/<secret> (the vault listed in key_vaults), env://, file:// or command://, read through the toolkit's...
       # used by: ztp, discovery
       password: "keyvault://kv-example-01/password"
 
 # What every machine is.
 hardware:
-  # OEM, for example Dell, HPE, Lenovo or DataON.
+  # OEM, for example Dell, HPE, Lenovo or DataON. azurelocal-ztp picks config/oem/<vendor>.json from it (the BMC log services and signals of it...
   # required; used by: ztp, os_configuration, deployment, discovery, trailwright
   vendor: "Dell"
   # Model, for example AX-760.
@@ -145,10 +145,10 @@ hardware:
   # BMC (iDRAC, iLO, XCC) login used for every machine unless a node sets its own.
   # used by: ztp
   bmc:
-    # A reference to the secret holding the user name, or the user name itself.
+    # The BMC user name of every machine: a secret reference (keyvault://, env://, file:// or command://) or the user name itself. azurelocal-ztp...
     # required; used by: ztp, discovery
     username: "keyvault://kv-iic-mgmt-01/bmc-username"
-    # A Key Vault secret reference: keyvault://<vault>/<secret>.
+    # The BMC password of every machine: a secret reference, keyvault://<vault>/<secret> (the vault listed in key_vaults), env://<VARIABLE>, file...
     # required; used by: ztp, discovery
     password: "keyvault://kv-iic-mgmt-01/bmc-password"
     # (since 5.4) azurelocal-ztp, Boot stage: also set the iDRAC Remote File Share attribute RFS.<n>.WriteProtected to Read Write before it inser...

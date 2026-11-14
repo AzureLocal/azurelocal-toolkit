@@ -234,7 +234,7 @@ variable "azl_key_vault_soft_delete_retention_days" {
 }
 
 variable "environment_class" {
-  description = "The class of the environment (scenario.environment_class). Purge protection of the Key Vaults is off in lab, test and dev."
+  description = "The class of the environment (scenario.environment_class). Purge protection of the platform Key Vault is off in lab, test and dev; the cluster Key Vault has none, as Microsoft's deployment template creates it."
   type        = string
   default     = "production"
 }

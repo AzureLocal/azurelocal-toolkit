@@ -18,7 +18,7 @@
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
         "scope": {
-          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity beyond local_admin) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key).",
+          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key).",
           "default": "full",
           "enum": [
             "full",
@@ -879,8 +879,9 @@
               "description": "Storage account that holds the state."
             },
             "container": {
-              "description": "Blob container that holds the state.",
-              "type": "string"
+              "description": "Blob container that holds the state. Default tfstate (task 05 sets TF_BACKEND_CONTAINER for the pipelines, task 06 and New-IacVariableFiles.ps1 write it to the backend settings).",
+              "type": "string",
+              "default": "tfstate"
             },
             "resource_group": {
               "$ref": "#/$defs/resource_group",

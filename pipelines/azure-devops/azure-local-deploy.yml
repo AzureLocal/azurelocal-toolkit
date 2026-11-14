@@ -6,7 +6,7 @@
 # Requirements:
 #   - Service Connection: the parameter serviceConnection (devops.pipelines.service_connection; task 05 creates it, workload identity federation)
 #   - Agent Pool: the parameter agentPool (devops.runners[].pool of the general runner; self-hosted with on-prem access)
-#   - Variable Group: the parameter variableGroup (devops.pipelines.variable_group, <name>-<environment> per environment; task 05 writes ARM_* and TF_BACKEND_* to it)
+#   - Variable Group: the parameter variableGroup (devops.pipelines.variable_group, <name>-<environment> per environment; task 05 writes ARM_* and TF_BACKEND_RG, _SA, _CONTAINER and _KEY to it)
 #   - Environment: the parameter approvalEnvironment (devops.pipelines.environments.terraform_deployment; with approval checks)
 #
 # Why parameters: the pool and the environment of a job are not task inputs. Learn says a macro variable $(name) is expanded only in task
@@ -114,8 +114,8 @@ stages:
               backendServiceArm: ${{ parameters.serviceConnection }}
               backendAzureRmResourceGroupName: '$(TF_BACKEND_RG)'
               backendAzureRmStorageAccountName: '$(TF_BACKEND_SA)'
-              backendAzureRmContainerName: 'tfstate'
-              backendAzureRmKey: 'azurelocal.tfstate'
+              backendAzureRmContainerName: '$(TF_BACKEND_CONTAINER)'
+              backendAzureRmKey: '$(TF_BACKEND_KEY)'
 
           - task: TerraformTaskV4@4
             displayName: 'Terraform Plan'
@@ -164,8 +164,8 @@ stages:
                     backendServiceArm: ${{ parameters.serviceConnection }}
                     backendAzureRmResourceGroupName: '$(TF_BACKEND_RG)'
                     backendAzureRmStorageAccountName: '$(TF_BACKEND_SA)'
-                    backendAzureRmContainerName: 'tfstate'
-                    backendAzureRmKey: 'azurelocal.tfstate'
+                    backendAzureRmContainerName: '$(TF_BACKEND_CONTAINER)'
+                    backendAzureRmKey: '$(TF_BACKEND_KEY)'
 
                 - task: TerraformTaskV4@4
                   displayName: 'Terraform Apply'

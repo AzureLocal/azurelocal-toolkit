@@ -8,12 +8,6 @@
 @{
     Entries = @(
         @{
-            File    = 'scripts/common/arm-deployment/AzlArmDeploymentRun.psm1'
-            Rule    = 'D'
-            Literal = '$Host.UI.PromptForChoice'
-            Reason  = 'the approval gate chosen by deployment.approval: it asks yes or no before a deployment starts, never for a value, and is skipped when input is redirected'
-        }
-        @{
             File    = 'scripts/common/arm-deployment/verification/AzlVerification.Network.psm1'
             Rule    = 'B'
             Literal = 'proxy.example.test'

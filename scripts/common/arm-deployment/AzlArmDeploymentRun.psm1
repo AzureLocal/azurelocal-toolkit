@@ -225,7 +225,7 @@ function Get-AzlArmRunSetting {
         The run's settings: defaults, then the master file's deployment block, then -SettingsFile (JSON), then -Settings.
     .DESCRIPTION
         Keys (camel case): validateTimeoutMinutes 90, deployTimeoutMinutes 360, pollSeconds 15, pollMaxSeconds 120,
-        pollFactor 1.5, transientErrorLimit 5, approvalMode stop|prompt|none, resume false, requireOsConfigurationReport false,
+        pollFactor 1.5, transientErrorLimit 5, approvalMode stop|none, resume false, requireOsConfigurationReport false,
         skipPreconditions [], acknowledgeKnownIssues [], deploymentSettingsApiVersion '', revalidate false, allowRevalidate false,
         requireValidatedParameterHash false, osReportMaxAgeHours 48, staleSkewMinutes 5, knownIssuesFile '', solutionVersion '',
         sbeCatalogPath '', registerResourceProviders false (opt in: register the missing mandatory resource providers),
@@ -290,7 +290,8 @@ function Get-AzlArmRunSetting {
     if ([double]$s.pollFactor -lt 1) { Stop-AzlArmInput 'Setting pollFactor must be 1 or more.' }
     $s.pollFactor = [double]$s.pollFactor
     if ($s.pollMaxSeconds -lt $s.pollSeconds) { Stop-AzlArmInput 'Setting pollMaxSeconds must not be less than pollSeconds.' }
-    if ([string]$s.approvalMode -notin 'stop', 'prompt', 'none') { Stop-AzlArmInput "Setting approval must be stop, prompt or none, not '$($s.approvalMode)'." }
+    # No script prompts: stop ends the run for a later Mode Deploy (a pipeline gates that job with its approval environment), none goes on.
+    if ([string]$s.approvalMode -notin 'stop', 'none') { Stop-AzlArmInput "Setting approval must be stop or none, not '$($s.approvalMode)'. The toolkit never asks on the console: use stop and run Mode Deploy after the approval." }
     $s.approvalMode = [string]$s.approvalMode
     $mode = @('Placeholder', 'KeyVaultReference' | Where-Object { $_ -ieq [string]$s.secretMode })
     if ($mode.Count -ne 1) { Stop-AzlArmInput "Setting secretMode must be Placeholder or KeyVaultReference, not '$($s.secretMode)'." }
@@ -909,7 +910,7 @@ function New-AzlArmAzureAdapter {
         Reads only, except Submit and RegisterProvider (used only with -RegisterResourceProviders). Members: Now, Sleep, GetContext,
         GetResourceGroup, GetProviderState, RegisterProvider, GetPermission,
         TestNameAvailable, TestSecret, GetSecret, GetArcMachine, GetDeploymentState, GetArmDeployment, GetTemplate, Submit,
-        ResolveDns, TestActiveDirectory, ProbeOsConfiguration, Prompt. A member that is $null is "not available here"; the
+        ResolveDns, TestActiveDirectory, ProbeOsConfiguration. A member that is $null is "not available here"; the
         check that needs it is Skipped with that reason.
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds an in-memory object or throws; changes no system state.')]
@@ -1019,14 +1020,7 @@ function New-AzlArmAzureAdapter {
             $report = Join-Path $dir 'plan-report.json'
             if (Test-Path -LiteralPath $report) { Get-Content -LiteralPath $report -Raw | ConvertFrom-Json -Depth 20 }
         }
-        Prompt = {
-            param($Caption, $Message)
-            if (-not [Environment]::UserInteractive -or [Console]::IsInputRedirected) { return $null }
-            $choices = [System.Collections.ObjectModel.Collection[System.Management.Automation.Host.ChoiceDescription]]@(
-                [System.Management.Automation.Host.ChoiceDescription]::new('&Yes', 'Continue with the deployment'),
-                [System.Management.Automation.Host.ChoiceDescription]::new('&No', 'Stop here'))
-            $Host.UI.PromptForChoice($Caption, $Message, $choices, 1) -eq 0
-        }
+
     }
 }
 
@@ -2093,10 +2087,6 @@ function Request-AzlArmApproval {
     Send-AzlArmEvent -Run $Run -State ApprovalRequested -Evidence "Validation passed for $($Run.Cluster). Approval mode: $mode." -Data @{ approvalMode = $mode }
     $result = 'Stopped'
     if ($mode -eq 'none') { $result = 'Granted' }
-    elseif ($mode -eq 'prompt' -and (Test-AzlArmAdapterHas $Run.Adapter Prompt)) {
-        $answer = Invoke-AzlArmAdapter $Run.Adapter Prompt @("Deploy $($Run.Cluster)?", "The validation passed. The deployment takes 2.5 to 3 hours. Deploy now?")
-        if ($answer -eq $true) { $result = 'Granted' }
-    }
     $Run.Report.approval = [ordered]@{ mode = $mode; result = $result }
     if ($result -eq 'Granted') { Send-AzlArmEvent -Run $Run -State ApprovalGranted -Evidence 'Approved.' -Data @{ approvalMode = $mode } }
     return $result

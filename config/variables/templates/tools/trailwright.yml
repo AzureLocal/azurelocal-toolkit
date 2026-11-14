@@ -113,7 +113,7 @@ key_vaults:
     # required; used by: ztp, deployment, cicd_infra, trailwright, terraform
     resource_group: "rg-iic-mgmt-01"
     # What the vault holds, for example management, deployment or backup.
-    # used by: ztp, cicd_infra, trailwright
+    # used by: cicd_infra, trailwright
     purpose: "management"
 
 # The Azure Local instance (the cluster deployment).
@@ -201,7 +201,7 @@ nodes:
 
 # What every machine is.
 hardware:
-  # OEM, for example Dell, HPE, Lenovo or DataON.
+  # OEM, for example Dell, HPE, Lenovo or DataON. azurelocal-ztp picks config/oem/<vendor>.json from it (the BMC log services and signals of it...
   # required; used by: ztp, os_configuration, deployment, discovery, trailwright
   vendor: "Dell"
   # Model, for example AX-760.
@@ -214,7 +214,7 @@ hardware:
   # used by: discovery, trailwright
   memory_gib: 1024
   # The hardware vendor's Solution Builder Extension (SBE) package, its driver and firmware update, is a REQUIREMENT (schema 5.6.4): the packag...
-  # used by: ztp, deployment
+  # used by: deployment
   sbe:
     # Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster...
     # one of: required | not_applicable; used by: os_configuration, deployment, trailwright
@@ -493,13 +493,13 @@ networking:
 # Accounts and the identity provider (scenario.identity).
 identity:
   # The deployment's local administrator on every machine.
-  # required; used by: ztp, os_configuration, deployment
+  # required; used by: os_configuration, deployment
   local_admin:
     # User name of the deployment local administrator on every machine (ARM localAdminUserName).
-    # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
+    # required; used by: os_configuration, deployment, monitoring, trailwright
     username: "azl-admin"
     # At least 14 characters with lowercase, uppercase, a digit and a special character.
-    # required; used by: ztp, os_configuration, deployment, trailwright
+    # required; used by: os_configuration, deployment, trailwright
     password: "keyvault://kv-iic-mgmt-01/local-admin-password"
   # Local identity with Key Vault.
   # when scenario.identity is local_identity
@@ -677,12 +677,12 @@ provisioning:
     # required; used by: ztp, monitoring, trailwright
     site_name: "iic-site-01"
     # Resource group of the site and edge machines, when it isn't azure.resource_group.
-    # used by: ztp, trailwright
+    # used by: ztp, trailwright, deployment
     resource_group: ""
     # The provisioning (maintenance environment) ISO: latest, a train such as 2610, a build such as 10.2610.0.3063, or a Microsoft download URL.
     # required; used by: ztp, trailwright
     maintenance_iso: "latest"
-    # The local administrator that the provisioned OS gets.
+    # The local administrator that the provisioned OS gets (Learn: simplified machine provisioning, step 3, provision machines from Azure).
     # required; used by: ztp
     admin:
       # Name of the local administrator the OS install creates on each machine (Learn: step 3, provision machines from Azure).

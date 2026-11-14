@@ -96,7 +96,7 @@ networking:
     # required; used by: ztp, os_configuration, deployment, trailwright, ansible
     dns_servers: ["192.0.2.4", "192.0.2.5"]
   # Time sources, as host names or addresses.
-  # used by: ztp, os_configuration, deployment, ansible
+  # used by: os_configuration, deployment, ansible
   ntp_servers: ["192.0.2.4", "192.0.2.5"]
   # Details of scenario.outbound_path.
   # when scenario.outbound_path is proxy or proxy_arc_gateway

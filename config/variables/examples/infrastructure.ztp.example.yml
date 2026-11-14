@@ -4,11 +4,11 @@
 # Use this when you install the OS and register the machines with azurelocal-ztp
 # (simplified machine provisioning) and run no automation after it: no cluster
 # deployment, no OS configuration. It holds only what ZTP reads, and nothing for
-# clusters, network intents, storage or identity beyond the local administrator.
+# clusters, network intents, storage, identity, the SBE or the host time.
 #
 # _metadata.scope: ztp tells the validator to require only these keys. The cluster
-# deployment's sections (cluster, environment, networking.intents, storage, the
-# rest of identity, and the scenario choices) are not required, and not checked.
+# deployment's sections (cluster, environment, networking.intents, storage,
+# identity, and the scenario choices) are not required, and not checked.
 #
 # To grow it into the full file: these are the same keys the full template
 # (infrastructure.example.yml) uses. Add the sections you need (cluster, intents,
@@ -23,8 +23,10 @@
 #
 # Rules:
 #   - Keys are snake_case. Sections reject unknown keys; use extensions.
-#   - Secrets are never values. Use keyvault://<vault>/<secret> and list the
-#     vault in key_vaults. ZTP reads all its secrets from vaults in one subscription.
+#   - Secrets are never values. Use a reference: keyvault://<vault>/<secret> (list the
+#     vault in key_vaults), env://, file:// or command://. The provisioning admin
+#     password must be keyvault://: Azure reads it from the vault itself. ZTP keeps
+#     every keyvault:// secret in that vault's subscription.
 #   - Values here are placeholders (the IIC example customer and documentation
 #     address ranges). Replace every one.
 # =============================================================================
@@ -109,11 +111,7 @@ hardware:
     password: "keyvault://kv-iic-mgmt-01/bmc-password"
     # rfs_write_attribute: true  # default: true for Dell (iDRAC Remote File Share), false for other vendors
     # verify_certificate: false  # default false: BMCs ship a self-signed certificate
-  # OPTIONAL: delete the sbe block to deploy without a Solution Builder Extension. Keep it only if your hardware partner supplies one.
-  sbe:
-    bundle_path: 'D:\sbe\dell' # folder on the management host with the OEM's SBE files, as downloaded
-    # delivery: skip # 5.4.2, OS configuration only (ZTP ignores it): winrm_copy, node_pull (with node_pull_url) or skip (default)
-    allow_unvalidated: false # test only
+  # No sbe block: ZTP carries no SBE. The OS install discovers its own; staging one is OS configuration (full file).
   # BIOS. You do not need to write vendor attribute names: ZTP derives them from the inventory above and its
   # config/oem/<vendor>.json (Dell today):
   #   - nodes[].san.hbas[].slot "Slot 2"          -> Slot2 Disabled for the OS install, Enabled again in Restore
@@ -145,19 +143,15 @@ networking:
     provisioning_dhcp_range: { start: "192.0.2.100", end: "192.0.2.199" }
     provisioning_network: dhcp # how the maintenance environment reaches Azure: dhcp (default)
     # site_ip_range: { start: "192.0.2.11", end: "192.0.2.12" } # only with static_method: site
-  ntp_servers: ["192.0.2.30", "192.0.2.31"]
-
-identity:
-  local_admin: # the OS's local administrator after the install; not Administrator
-    username: "azl-admin"
-    password: "keyvault://kv-iic-mgmt-01/local-admin-password"
+  # No ntp_servers and no identity: ZTP ends at the Handoff. The host time and the deployment admin belong to OS
+  # configuration and the deployment (full file); the site's time setting is provisioning.simplified.ntp.
 
 provisioning:
   os_version: "12.2610.1004.50" # pin a version
   simplified:
     site_name: "iic-site-01" # resource name of the Microsoft.Edge site
     maintenance_iso: "2610" # latest | a train (2610) | a build (10.2610.0.3063) | a Microsoft URL
-    admin: # the OS's local administrator that Prepare signs in as after the install
+    admin: # the local administrator the OS install creates
       username: "administrator"
       password: "keyvault://kv-iic-mgmt-01/provisioning-admin-password"
     # maintenance_password: "keyvault://kv-iic-mgmt-01/maintenance-password" # optional; the maintenance

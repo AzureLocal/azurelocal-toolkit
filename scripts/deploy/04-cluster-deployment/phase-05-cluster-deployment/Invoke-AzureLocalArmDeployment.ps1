@@ -65,7 +65,7 @@
 .PARAMETER AutoApprove
     ValidateAndDeploy: continue to Deploy without asking (same as -ApprovalMode none).
 .PARAMETER ApprovalMode
-    stop (default: ends after a good Validate), prompt (asks on the console) or none.
+    stop (default: ends after a good Validate; run Mode Deploy after the approval) or none (continues at once). Nothing asks on the console.
 .PARAMETER ProbeOsConfiguration
     Without -OsConfigurationReport, run the OS configuration in Plan mode (read only) to learn whether the nodes converged.
 .PARAMETER Offline
@@ -100,7 +100,7 @@ param(
     [switch]$RegisterResourceProviders,
     [switch]$SkipPreClusterVerification,
     [switch]$AutoApprove,
-    [ValidateSet('', 'stop', 'prompt', 'none')][string]$ApprovalMode = '',
+    [ValidateSet('', 'stop', 'none')][string]$ApprovalMode = '',
     [switch]$ProbeOsConfiguration,
     [switch]$Offline,
     [string[]]$AcknowledgeKnownIssues,

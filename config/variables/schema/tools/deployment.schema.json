@@ -18,7 +18,7 @@
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
         "scope": {
-          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity beyond local_admin) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key).",
+          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key).",
           "default": "full",
           "enum": [
             "full",
@@ -344,12 +344,11 @@
           "maximum": 600
         },
         "approval": {
-          "description": "Mode ValidateAndDeploy: what happens between a good Validate and the Deploy. stop (default): the run ends in state AwaitingApproval and a later run with Mode Deploy continues. prompt: asks on the console, and stops without a console. none: continues at once (a lab). Pipelines run Validate and Deploy as two jobs with the platform's approval between them and do not use this. (since 5.6)",
+          "description": "Mode ValidateAndDeploy: what happens between a good Validate and the Deploy. stop (default): the run ends in state AwaitingApproval and a later run with Mode Deploy continues. none: continues at once (a lab). No script asks on the console (the value prompt is gone since registry 5.0.61). Pipelines run Validate and Deploy as two jobs with the platform's approval between them and do not use this. (since 5.6)",
           "type": "string",
           "default": "stop",
           "enum": [
             "stop",
-            "prompt",
             "none"
           ]
         },
@@ -612,7 +611,7 @@
       "additionalProperties": false,
       "properties": {
         "vendor": {
-          "description": "OEM, for example Dell, HPE, Lenovo or DataON. ZTP picks config/oem/<vendor>.json from it.",
+          "description": "OEM, for example Dell, HPE, Lenovo or DataON. azurelocal-ztp picks config/oem/<vendor>.json from it (the BMC log services and signals of its Bootstrap watch, the BIOS slot mapping and the one-time USB boot of its Boot stage): it has no built-in vendor, so its Boot and Bootstrap stages stop without it (azurelocal-ztp 091ebb3).",
           "type": "string",
           "minLength": 1
         },
@@ -1216,7 +1215,7 @@
             },
             "username_secret": {
               "$ref": "#/$defs/kv_ref",
-              "description": "Optional. The Key Vault secret that holds this user name, as a keyvault://<vault>/<secret> reference, for the tools that read the user name from the vault (azurelocal-ztp's Add-KeyVaultCredentials.ps1 stores it as local-admin-username next to the password). The pre-cluster verification (IDN-016) reads it and fails when it differs from username. Default: the secret local-admin-username in the vault of the password reference; a default secret that does not exist is a warning, a secret named here that does not exist is a failure. (since 5.6)"
+              "description": "Optional. The Key Vault secret that holds this user name, as a keyvault://<vault>/<secret> reference, for the tools that read the user name from the vault. The pre-cluster verification (IDN-016) reads it and fails when it differs from username. Default: the secret local-admin-username in the vault of the password reference; a default secret that does not exist is a warning, a secret named here that does not exist is a failure. (since 5.6)"
             },
             "password": {
               "$ref": "#/$defs/kv_ref",
@@ -1882,6 +1881,19 @@
           "type": "object",
           "additionalProperties": false,
           "properties": {
+            "subscription_id": {
+              "$ref": "#/$defs/guid",
+              "description": "Subscription of the site and edge machines, when it isn't azure.subscription_id. Set-AzlDeploymentPolicyExemption.ps1 exempts the site's resource groups there."
+            },
+            "resource_group": {
+              "$ref": "#/$defs/resource_group",
+              "description": "Resource group of the site and edge machines, when it isn't azure.resource_group."
+            },
+            "managed_resource_group_name": {
+              "description": "Schema 5.4. Name for the managed resource group of the site configuration, which holds the Arc machines. Default: empty, the service chooses the name.",
+              "type": "string",
+              "pattern": "^$|^[A-Za-z0-9._()-]{1,89}[A-Za-z0-9_()-]$"
+            },
             "deployment_name": {
               "description": "Schema 5.4. Name of the ARM deployment. Default: ztp-<site_name>.",
               "type": "string",

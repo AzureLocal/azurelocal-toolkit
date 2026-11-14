@@ -45,7 +45,7 @@ $common = @{ InfrastructureFile = './infrastructure.yml'; OsConfigurationReport 
 & $arm @common -Mode Deploy   -ReportDirectory ./arm-deploy      # 2.5 to 3 hours, only after a Validate of these parameters
 ```
 
-`-Mode ValidateAndDeploy` does the last two in one run with a gate between them (`-ApprovalMode stop|prompt|none`). The default,
+`-Mode ValidateAndDeploy` does the last two in one run with a gate between them (`-ApprovalMode stop|none`; nothing asks on the console). The default,
 `stop`, ends after a good Validate in state `AwaitingApproval` with exit code 0; run `-Mode Deploy` to continue. `-WhatIf` does
 everything except submit.
 

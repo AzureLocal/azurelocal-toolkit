@@ -33,6 +33,8 @@ Describe 'Scripts that a schema 5 script replaces are removed' {
         'scripts/deploy/02-azure-foundation/phase-03-rbac-permissions/task-01-create-azure-local-deployment-spn/powershell/New-DeploymentServicePrincipal.ps1'
         'scripts/common/service-principals/New-PipelineSP.ps1'
         'scripts/common/service-principals/New-ArcOnboardingSP.ps1'
+        # Set-EntraGroupRoleAssignments.ps1 (roles of identity.entra.groups) and CI/CD task 01 (roles of the automation identity) do its job.
+        'scripts/common/service-principals/Assign-AzureLocalRBAC.ps1'
         'scripts/common/utilities/tools/Add-KeyVaultCredentials.ps1'
         'scripts/deploy/03-onprem-readiness/phase-01-active-directory/task-03-dns-node-a-records/powershell/Set-DnsForwarding.ps1'
     ) {
@@ -47,7 +49,7 @@ Describe 'Scripts that a schema 5 script replaces are removed' {
     It 'no live script or task catalogue entry names a removed script' {
         $offenders = foreach ($f in Get-ChildItem -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts')) -Recurse -File -Include '*.ps1', '*.psm1', '*.psd1' | Where-Object { $_.FullName -notmatch '[\\/]deferred[\\/]' }) {
             $code = Get-CodeText ($f.FullName.Substring($script:Repo.Length + 1).Replace('\', '/'))
-            foreach ($name in 'New-PipelineSP', 'New-ArcOnboardingSP', 'New-DeploymentServicePrincipal', 'Set-DnsForwarding', 'Set-SecretToKeyVault', 'Set-ServicePrincipalToKeyVault', 'Get-ServicePrincipalFromKeyVault') {
+            foreach ($name in 'New-PipelineSP', 'New-ArcOnboardingSP', 'Assign-AzureLocalRBAC', 'New-DeploymentServicePrincipal', 'Set-DnsForwarding', 'Set-SecretToKeyVault', 'Set-ServicePrincipalToKeyVault', 'Get-ServicePrincipalFromKeyVault') {
                 if ($code -match [regex]::Escape($name)) { "$($f.Name) names $name" }
             }
         }

@@ -71,22 +71,22 @@ secrets:
   # one of: keyvault | env | file | command; default: "keyvault"; used by: os_configuration, deployment, discovery, cicd_infra
   provider: "keyvault"
   # (since 5.6.13) 
-  # used by: os_configuration, deployment, discovery, cicd_infra
+  # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   file:
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, discovery, cicd_infra
+    # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     directory: "C:\\ProgramData\\iic-secrets"
   # (since 5.6.13) 
-  # used by: os_configuration, deployment, discovery, cicd_infra
+  # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   command:
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, discovery, cicd_infra
+    # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     executable: "iic-secret-tool"
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, discovery, cicd_infra
+    # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     arguments: ["get", "{name}"]
     # (since 5.6.13) 
-    # default: 30; used by: os_configuration, deployment, discovery, cicd_infra
+    # default: 30; used by: ztp, os_configuration, deployment, discovery, cicd_infra
     timeout_seconds: 30
 
 # The Azure Local instance (the cluster deployment).
@@ -239,14 +239,14 @@ nodes:
 
 # What every machine is.
 hardware:
-  # OEM, for example Dell, HPE, Lenovo or DataON.
+  # OEM, for example Dell, HPE, Lenovo or DataON. azurelocal-ztp picks config/oem/<vendor>.json from it (the BMC log services and signals of it...
   # required; used by: ztp, os_configuration, deployment, discovery, trailwright
   vendor: "Dell"
   # Model, for example AX-760.
   # required; used by: ztp, os_configuration, discovery, trailwright
   model: "AX-760"
   # The hardware vendor's Solution Builder Extension (SBE) package, its driver and firmware update, is a REQUIREMENT (schema 5.6.4): the packag...
-  # used by: ztp, deployment
+  # used by: deployment
   sbe:
     # Required when hardware.sbe is present and bundle_path is not (nor source_path or requirement; with a package it is read from it).
     # used by: os_configuration, deployment
@@ -258,7 +258,7 @@ hardware:
     # used by: os_configuration, deployment
     version: ""
     # Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml.
-    # used by: ztp, os_configuration, deployment
+    # used by: os_configuration, deployment
     bundle_path: "D:\\sbe\\dell"
     # Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster...
     # one of: required | not_applicable; used by: os_configuration, deployment, trailwright
@@ -378,7 +378,7 @@ networking:
     # used by: os_configuration
     subnet: "198.51.100.0/24"
   # Time sources, as host names or addresses.
-  # used by: ztp, os_configuration, deployment, ansible
+  # used by: os_configuration, deployment, ansible
   ntp_servers: ["192.0.2.4", "192.0.2.5"]
   # Network ATC intents.
   # used by: os_configuration, deployment
@@ -531,13 +531,13 @@ networking:
 # Accounts and the identity provider (scenario.identity).
 identity:
   # The deployment's local administrator on every machine.
-  # required; used by: ztp, os_configuration, deployment
+  # required; used by: os_configuration, deployment
   local_admin:
     # User name of the deployment local administrator on every machine (ARM localAdminUserName).
-    # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
+    # required; used by: os_configuration, deployment, monitoring, trailwright
     username: "azl-admin"
     # At least 14 characters with lowercase, uppercase, a digit and a special character.
-    # required; used by: ztp, os_configuration, deployment, trailwright
+    # required; used by: os_configuration, deployment, trailwright
     password: "keyvault://kv-iic-mgmt-01/local-admin-password"
   # The Active Directory the instance joins and its accounts.
   # when scenario.identity is active_directory

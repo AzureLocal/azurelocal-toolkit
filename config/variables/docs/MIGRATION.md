@@ -16,7 +16,13 @@ Three things changed throughout:
 
 Not carried over: `cluster_ip` (the deployment takes it from the infrastructure pool), `cluster_node_count` (it's the number of `nodes`), the `nested` topology, `disk_witness`, and generated ARM parameters (tools generate them from the file).
 
-## One template per tool (registry 5.0.41)
+## What azurelocal-ztp reads, and no approval prompt (registry 5.0.61)
+
+No key was added, removed or renamed; the infrastructure schema version stays 5.6.27. Two values and two rules changed:
+
+- `deployment.approval` (and `-ApprovalMode` of `Invoke-AzureLocalArmDeployment.ps1`) take `stop` or `none`. `prompt` asked on the console and is gone, because no script prompts: use `stop` and run Mode Deploy after the approval (pipelines gate that job with an approval environment). A file that says `prompt` fails validation; change it to `stop`.
+- A file with `_metadata.scope: ztp` no longer needs `identity`, and its `hardware.sbe` is not checked: azurelocal-ztp (5b75c9a) ends at the Handoff and reads neither. `used_by` lost `ztp` on `identity.local_admin` (and its keys), `networking.ntp_servers`, `key_vaults[].purpose`, `nodes[].bmc.type` and `hardware.sbe` (with `bundle_path` and `allow_unvalidated`), and gained it on `secrets.file` and `secrets.command`, which ZTP's secret references now go through. The ZTP-only template drops those keys. A ZTP file that has them stays valid.
+- `devops.state.container` has the default `tfstate` that task 05, task 06 and `New-IacVariableFiles.ps1` already used.
 
 The generated folders `config/variables/templates/purposes` and `config/variables/schema/purposes` are now `config/variables/templates/tools` and `config/variables/schema/tools`, and the generator writes a template and a schema for every tool that has keys, not only for the six earlier ones: `trailwright` and `ranger` are new. The file names of the six are unchanged. The generator parameter `-Cut <tool>` takes the same ids; the module functions `Get-PurposePath` and `Select-InfrastructurePurpose` are now `Get-ToolPath` and `Select-InfrastructureTool` (parameter `-Tool`). No key was added, removed or renamed, and the infrastructure schema version is unchanged (5.6.14). In the registry, `used_by` lost `monitoring` on `identity.active_directory.lcm_user` (and its two keys) and on the `secrets` section, which Sonar does not read.
 ## From the azurelocal-ztp environment file
@@ -353,7 +359,7 @@ Schema 5.6 adds one optional section, `deployment`, for the toolkit's ARM Valida
 | `deployment.validate_timeout_minutes` | 90 | How long the run waits for a Validate |
 | `deployment.deploy_timeout_minutes` | 360 | How long the run waits for a Deploy |
 | `deployment.poll_seconds`, `poll_max_seconds` | 15, 120 | First and longest delay between status reads (the delay grows by half each read) |
-| `deployment.approval` | `stop` | `ValidateAndDeploy`: `stop` ends after a good Validate, `prompt` asks, `none` continues |
+| `deployment.approval` | `stop` | `ValidateAndDeploy`: `stop` ends after a good Validate, `none` continues (`prompt` asked until registry 5.0.61) |
 | `deployment.resume` | `false` | Allow a failed Deploy to be resubmitted |
 | `deployment.require_os_configuration_report` | `false` | A missing OS configuration report fails a precondition instead of being skipped |
 | `deployment.skip_preconditions` | none | Preconditions to skip on purpose (reported as Skipped) |

@@ -82,7 +82,7 @@ variable "tags" {
 }
 
 variable "environment_class" {
-  description = "scenario.environment_class: lab, test, dev, production or dmz. Purge protection is on for both vaults except in lab, test and dev (the rule of Deploy-KeyVaults.ps1)."
+  description = "scenario.environment_class: lab, test, dev, production or dmz. Purge protection of the platform vault is on except in lab, test and dev (the rule of Deploy-KeyVaults.ps1). The cluster vault has none, as Microsoft's deployment template creates it."
   type        = string
   default     = "production"
 

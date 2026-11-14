@@ -87,22 +87,22 @@ secrets:
   # one of: keyvault | env | file | command; default: "keyvault"; used by: os_configuration, deployment, discovery, cicd_infra
   provider: "keyvault"
   # (since 5.6.13) 
-  # used by: os_configuration, deployment, discovery, cicd_infra
+  # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   file:
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, discovery, cicd_infra
+    # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     directory: "C:\\ProgramData\\iic-secrets"
   # (since 5.6.13) 
-  # used by: os_configuration, deployment, discovery, cicd_infra
+  # used by: ztp, os_configuration, deployment, discovery, cicd_infra
   command:
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, discovery, cicd_infra
+    # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     executable: "iic-secret-tool"
     # (since 5.6.13) 
-    # used by: os_configuration, deployment, discovery, cicd_infra
+    # used by: ztp, os_configuration, deployment, discovery, cicd_infra
     arguments: ["get", "{name}"]
     # (since 5.6.13) 
-    # default: 30; used by: os_configuration, deployment, discovery, cicd_infra
+    # default: 30; used by: ztp, os_configuration, deployment, discovery, cicd_infra
     timeout_seconds: 30
 
 # The Azure Local instance (the cluster deployment).
@@ -166,7 +166,7 @@ deployment:
   # default: 120; used by: deployment
   poll_max_seconds: 120
   # Mode ValidateAndDeploy: what happens between a good Validate and the Deploy. stop (default): the run ends in state AwaitingApproval and a l...
-  # one of: stop | prompt | none; default: "stop"; used by: deployment
+  # one of: stop | none; default: "stop"; used by: deployment
   approval: "stop"
   # Allow the run to resubmit a failed Deploy (and attach to a running one).
   # default: false; used by: deployment
@@ -286,11 +286,11 @@ nodes:
 
 # What every machine is.
 hardware:
-  # OEM, for example Dell, HPE, Lenovo or DataON.
+  # OEM, for example Dell, HPE, Lenovo or DataON. azurelocal-ztp picks config/oem/<vendor>.json from it (the BMC log services and signals of it...
   # required; used by: ztp, os_configuration, deployment, discovery, trailwright
   vendor: "Dell"
   # The hardware vendor's Solution Builder Extension (SBE) package, its driver and firmware update, is a REQUIREMENT (schema 5.6.4): the packag...
-  # used by: ztp, deployment
+  # used by: deployment
   sbe:
     # Required when hardware.sbe is present and bundle_path is not (nor source_path or requirement; with a package it is read from it).
     # used by: os_configuration, deployment
@@ -308,7 +308,7 @@ hardware:
     # used by: deployment
     manifest_creation_date: ""
     # Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml.
-    # used by: ztp, os_configuration, deployment
+    # used by: os_configuration, deployment
     bundle_path: "D:\\sbe\\dell"
     # Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster...
     # one of: required | not_applicable; used by: os_configuration, deployment, trailwright
@@ -380,7 +380,7 @@ networking:
       # required; used by: os_configuration, deployment, trailwright
       end: "192.0.2.29"
   # Time sources, as host names or addresses.
-  # used by: ztp, os_configuration, deployment, ansible
+  # used by: os_configuration, deployment, ansible
   ntp_servers: ["192.0.2.4", "192.0.2.5"]
   # Network ATC intents.
   # used by: os_configuration, deployment
@@ -566,16 +566,16 @@ networking:
 # Accounts and the identity provider (scenario.identity).
 identity:
   # The deployment's local administrator on every machine.
-  # required; used by: ztp, os_configuration, deployment
+  # required; used by: os_configuration, deployment
   local_admin:
     # User name of the deployment local administrator on every machine (ARM localAdminUserName).
-    # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
+    # required; used by: os_configuration, deployment, monitoring, trailwright
     username: "azl-admin"
     # Optional.
     # used by: deployment
     username_secret: "keyvault://kv-iic-mgmt-01/local-admin-username"
     # At least 14 characters with lowercase, uppercase, a digit and a special character.
-    # required; used by: ztp, os_configuration, deployment, trailwright
+    # required; used by: os_configuration, deployment, trailwright
     password: "keyvault://kv-iic-mgmt-01/local-admin-password"
   # Local identity with Key Vault.
   # when scenario.identity is local_identity
@@ -893,6 +893,15 @@ provisioning:
   # Simplified machine provisioning from Azure, as azurelocal-ztp runs it. https://learn.microsoft.com/azure/azure-local/deploy/simplified-mach...
   # when scenario.os_install is simplified; used by: ztp
   simplified:
+    # Subscription of the site and edge machines, when it isn't azure.subscription_id.
+    # used by: ztp, deployment
+    subscription_id: "00000000-0000-0000-0000-000000000000"
+    # Resource group of the site and edge machines, when it isn't azure.resource_group.
+    # used by: ztp, trailwright, deployment
+    resource_group: ""
+    # (since 5.4) 
+    # used by: ztp, deployment
+    managed_resource_group_name: ""
     # (since 5.4) 
     # used by: ztp, deployment
     deployment_name: ""

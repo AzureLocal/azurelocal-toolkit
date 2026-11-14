@@ -163,8 +163,8 @@ Describe 'No script of the area takes -ConfigPath or asks for a value' {
                 $name = $c.GetCommandName()
                 if ($name -in 'Read-Host', 'Get-Credential') { "$($f.FullName.Substring($script:Repo.Length)): $name at line $($c.Extent.StartLineNumber)" }
             }
-            # The approval gate of the ARM run (deployment.approval) asks yes or no before a deployment starts, never for a value: tests/variables/enforcement-allowlist.psd1 records it.
-            $prompt = @($p.Ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and $n.Member.Value -match '^(Prompt|ReadLine|PromptForCredential)' -and -not ($f.Name -eq 'AzlArmDeploymentRun.psm1' -and $n.Member.Value -eq 'PromptForChoice') }, $true))
+            # No exception: the approval gate of the ARM run (deployment.approval) has no prompt value any more (registry 5.0.61).
+            $prompt = @($p.Ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.InvokeMemberExpressionAst] -and $n.Member.Value -match '^(Prompt|ReadLine|PromptForCredential)' }, $true))
             if ($prompt.Count -gt 0) { "$($f.FullName.Substring($script:Repo.Length)): host prompt at line $($prompt[0].Extent.StartLineNumber)" }
         }
         @($bad) | Should -BeNullOrEmpty

@@ -401,19 +401,19 @@ foreach ($entry in $seenSecret.Values) {
     Out-Line ('| `{0}` | `{1}` | `{2}` | {3} | {4} |' -f $r.Path, $r.Vault, $r.Secret, (ConvertTo-Cell $entry.Meaning), (($entry.In | Select-Object -Unique) -join ', '))
 }
 Out-Line
-Out-Line 'ZTP reads all its secrets from vaults in one subscription (the provisioning admin''s vault decides which). `hardware.bmc.username` may be a reference or the user name itself.'
+Out-Line 'Every reference may also use the other providers of the toolkit''s resolver (`env://`, `file://`, `command://`), except `provisioning.simplified.admin.password`: Azure reads that secret from the vault itself, so it is a `keyvault://` reference. azurelocal-ztp reads every other secret through the same resolver (`AzlSecret.psm1`) and keeps every `keyvault://` secret in the subscription of the provisioning admin''s vault. `hardware.bmc.username` may be a reference or the user name itself.'
 Out-Line
 
 # Folders
 Out-Line '## Folders on the management host'
 Out-Line
-Out-Line 'Three keys name folders on the machine that runs azurelocal-ztp. **Keep every one outside every git working tree**: they hold ISOs, per-machine images, ownership vouchers, run state and logs, none of which belongs in a repository. azurelocal-ztp refuses `media_path` and `evidence_path` inside a git working tree, and creates them when they are missing. The disk figures are planning estimates; check them against your OEM''s bundle.'
+Out-Line 'Three keys name folders on the management host (two of azurelocal-ztp, one of OS configuration). **Keep every one outside every git working tree**: they hold ISOs, per-machine images, ownership vouchers, run state and logs, none of which belongs in a repository. azurelocal-ztp refuses `media_path` and `evidence_path` inside a git working tree, and creates them when they are missing. The disk figures are planning estimates; check them against your OEM''s bundle.'
 Out-Line
 Out-Line '| Path | What it holds | Disk space | Default |'
 Out-Line '| --- | --- | --- | --- |'
-Out-Line '| `provisioning.simplified.media_path` | The maintenance ISO cache, the copy of the SBE and its unpacked drivers, the per-machine USB images, the ownership vouchers and the run state. | About 4 GB per machine for the images, plus the maintenance ISO and the SBE copy (twice the bundle''s size, as downloaded and unpacked). Plan 30 GB free for a small cluster, on a fast local disk. | `%ProgramData%\AzureLocalZtp\<site_name>\media` |'
+Out-Line '| `provisioning.simplified.media_path` | The maintenance ISO cache, the per-machine USB images, the ownership vouchers and the run state. | About 4 GB per machine for the images, plus the maintenance ISO. Plan 30 GB free for a small cluster, on a fast local disk. | `%ProgramData%\AzureLocalZtp\<site_name>\media` |'
 Out-Line '| `provisioning.simplified.evidence_path` | The event log the monitors follow (`ztp-events.jsonl`), the BIOS and other Redfish change logs, and run logs. | Small: 1 GB is ample for many runs. Put it where it survives the run, for audit. | `%ProgramData%\AzureLocalZtp\<site_name>\evidence` |'
-Out-Line '| `hardware.sbe.bundle_path` | The OEM''s Solution Builder Extension files, as downloaded. Required with simplified provisioning: ZTP prepares each machine with the SBE before validation. | The size of the OEM bundle (a few GB, varies by OEM). ZTP copies it under `media_path`. | none |'
+Out-Line '| `hardware.sbe.bundle_path` | The OEM''s Solution Builder Extension files, as downloaded, for OS configuration and the deployment (azurelocal-ztp carries no SBE: the OS install discovers its own). | The size of the OEM bundle (a few GB, varies by OEM). | none |'
 Out-Line
 
 # Sections

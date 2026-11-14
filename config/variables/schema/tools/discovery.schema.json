@@ -18,7 +18,7 @@
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
         "scope": {
-          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity beyond local_admin) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key).",
+          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key).",
           "default": "full",
           "enum": [
             "full",
@@ -237,13 +237,13 @@
                 ]
               },
               "username": {
-                "description": "BMC account name. The plain name, or a keyvault:// reference.",
+                "description": "BMC account name of this machine: a secret reference (keyvault://, env://, file:// or command://) or the plain name. azurelocal-ztp uses one login for every machine (hardware.bmc) and stops when a node sets another.",
                 "type": "string",
                 "minLength": 1
               },
               "password": {
                 "$ref": "#/$defs/kv_ref",
-                "description": "A Key Vault secret reference: keyvault://<vault>/<secret>. The vault must be listed in key_vaults."
+                "description": "A secret reference: keyvault://<vault>/<secret> (the vault listed in key_vaults), env://, file:// or command://, read through the toolkit's resolver (scripts/common/secrets/AzlSecret.psm1), never the password itself. azurelocal-ztp uses one login for every machine (hardware.bmc) and stops when a node sets another."
               }
             }
           }
@@ -256,7 +256,7 @@
       "additionalProperties": false,
       "properties": {
         "vendor": {
-          "description": "OEM, for example Dell, HPE, Lenovo or DataON. ZTP picks config/oem/<vendor>.json from it.",
+          "description": "OEM, for example Dell, HPE, Lenovo or DataON. azurelocal-ztp picks config/oem/<vendor>.json from it (the BMC log services and signals of its Bootstrap watch, the BIOS slot mapping and the one-time USB boot of its Boot stage): it has no built-in vendor, so its Boot and Bootstrap stages stop without it (azurelocal-ztp 091ebb3).",
           "type": "string",
           "minLength": 1
         },
@@ -300,13 +300,13 @@
           "description": "BMC (iDRAC, iLO, XCC) login used for every machine unless a node sets its own.",
           "properties": {
             "username": {
-              "description": "A reference to the secret holding the user name, or the user name itself.",
+              "description": "The BMC user name of every machine: a secret reference (keyvault://, env://, file:// or command://) or the user name itself. azurelocal-ztp and hardware discovery read a reference through the toolkit's resolver (scripts/common/secrets/AzlSecret.psm1).",
               "type": "string",
               "minLength": 1
             },
             "password": {
               "$ref": "#/$defs/kv_ref",
-              "description": "A Key Vault secret reference: keyvault://<vault>/<secret>. The vault must be listed in key_vaults."
+              "description": "The BMC password of every machine: a secret reference, keyvault://<vault>/<secret> (the vault listed in key_vaults), env://<VARIABLE>, file://<name> or command://<name>, never the password itself. azurelocal-ztp (since 5b75c9a) and hardware discovery read it through the toolkit's resolver (scripts/common/secrets/AzlSecret.psm1)."
             },
             "rfs_write_attribute": {
               "description": "Schema 5.4. azurelocal-ztp, Boot stage: also set the iDRAC Remote File Share attribute RFS.<n>.WriteProtected to Read Write before it inserts the virtual media. iDRAC 7.30 rejects WriteProtected=false in InsertMedia, and the maintenance environment cannot write its voucher to a read-only drive. Default: true for Dell (azurelocal-ztp config/oem/dell.json, bmc.rfsWriteAttribute), false for the other vendors, whose BMCs have no such attribute. Set it when your BMC differs from its vendor's usual behaviour.",

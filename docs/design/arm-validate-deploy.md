@@ -72,7 +72,7 @@ the portal's step numbers, so one reader can follow all three.
         |
    [3 Validate]  attach / skip / submit  -> poll with backoff -> ValidationPassed | Failed | TimedOut
         |
-   [4 Approval]  stop | prompt | none     (ValidateAndDeploy; pipelines use a separate job)
+   [4 Approval]  stop | none              (ValidateAndDeploy; pipelines use a separate job)
         |
    [5 Deploy]    attach / resume / submit -> poll with backoff -> Succeeded | Failed | TimedOut
         |
@@ -167,7 +167,7 @@ checks it against the template's own parameter list. The run adds:
 | `ValidationPassed` | `validationStatus` Succeeded, fresh, for these parameters | AwaitingApproval, Deploying, end (mode Validate) |
 | `ValidationFailed` | The validation failed; the failing step and the known issue are in the report | end |
 | `ValidationTimedOut` | The wait limit passed while Azure was still working. Azure keeps going; run again to attach | end |
-| `AwaitingApproval` | The gate. `stop`: the run ends here with exit 0 and says how to continue. `prompt`: asks the operator. `none`: passes at once | Deploying, end |
+| `AwaitingApproval` | The gate. `stop`: the run ends here with exit 0 and says how to continue. `none`: passes at once. Nothing asks on the console | Deploying, end |
 | `Deploying` | A Deploy deployment is running and the tool is polling | DeploymentSucceeded, DeploymentFailed, DeploymentTimedOut |
 | `Resumed` | The run started from an existing Azure deployment instead of from nothing: a failed Deploy being resubmitted, a deployment still running (attached to), or one that already succeeded (nothing to do) | Deploying, DeploymentSucceeded |
 | `DeploymentSucceeded` | `deploymentStatus` Succeeded | end |
@@ -258,7 +258,6 @@ and have not been seen in one of our runs.
 | Mode | ValidateAndDeploy behaviour |
 | --- | --- |
 | `stop` (default) | Ends after a good Validate: state `AwaitingApproval`, event `ApprovalRequested`, exit 0, `nextAction` says to run Mode Deploy. Safe default for every unattended run |
-| `prompt` | Asks on the console (`yes` to continue). Without an interactive console it behaves as `stop` |
 | `none` | Continues at once (`-AutoApprove`); for a lab |
 
 **Pipelines** do not use `ValidateAndDeploy`. They run `Validate` in one job, publish its report, and run `Deploy` in a second

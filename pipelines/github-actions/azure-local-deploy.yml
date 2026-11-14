@@ -10,6 +10,10 @@
 # name read the vars context, https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability):
 #   AZL_RUNNER_LABEL                      the label of the self-hosted runner (devops.pipelines.runner_label)
 #   AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT  the approval environment, with required reviewers (devops.pipelines.environments.terraform_deployment)
+#   TF_BACKEND_RG, TF_BACKEND_SA          the resource group and storage account of the Terraform state (devops.state.resource_group,
+#                                         devops.state.storage_account)
+#   TF_BACKEND_CONTAINER, TF_BACKEND_KEY  the blob container (devops.state.container, default tfstate) and the state file of this
+#                                         environment (the default of backend.key, the name New-IacVariableFiles.ps1 writes to backend.hcl)
 # =============================================================================
 # Hosted image: ubuntu-latest is the vendor's label of its hosted Linux image. The jobs that use it only validate and plan and read nothing that
 # belongs to one deployment, so the label is not a setting of a deployment.
@@ -120,7 +124,14 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.TF_ROOT }}
-        run: terraform init
+        # The backend settings task 05 sets from devops.state; the same four the Azure DevOps and GitLab pipelines pass.
+        run: >-
+          terraform init -input=false
+          -backend-config="resource_group_name=${{ vars.TF_BACKEND_RG }}"
+          -backend-config="storage_account_name=${{ vars.TF_BACKEND_SA }}"
+          -backend-config="container_name=${{ vars.TF_BACKEND_CONTAINER }}"
+          -backend-config="key=${{ vars.TF_BACKEND_KEY }}"
+          -backend-config="use_azuread_auth=true"
 
       - name: Terraform Plan
         working-directory: ${{ env.TF_ROOT }}
@@ -162,7 +173,14 @@ jobs:
 
       - name: Terraform Init
         working-directory: ${{ env.TF_ROOT }}
-        run: terraform init
+        # The backend settings task 05 sets from devops.state; the same four the Azure DevOps and GitLab pipelines pass.
+        run: >-
+          terraform init -input=false
+          -backend-config="resource_group_name=${{ vars.TF_BACKEND_RG }}"
+          -backend-config="storage_account_name=${{ vars.TF_BACKEND_SA }}"
+          -backend-config="container_name=${{ vars.TF_BACKEND_CONTAINER }}"
+          -backend-config="key=${{ vars.TF_BACKEND_KEY }}"
+          -backend-config="use_azuread_auth=true"
 
       - name: Terraform Apply
         working-directory: ${{ env.TF_ROOT }}

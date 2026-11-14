@@ -437,7 +437,7 @@ devops:
     # used by: cicd_infra, terraform
     storage_account: "stiictfstate01"
     # Blob container that holds the state.
-    # used by: cicd_infra, terraform
+    # default: "tfstate"; used by: cicd_infra, terraform
     container: "tfstate"
     # Resource group of the state storage account.
     # used by: cicd_infra, terraform

@@ -18,7 +18,7 @@
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
         "scope": {
-          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity beyond local_admin) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key).",
+          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key).",
           "default": "full",
           "enum": [
             "full",
@@ -494,7 +494,7 @@
       "additionalProperties": false,
       "properties": {
         "vendor": {
-          "description": "OEM, for example Dell, HPE, Lenovo or DataON. ZTP picks config/oem/<vendor>.json from it.",
+          "description": "OEM, for example Dell, HPE, Lenovo or DataON. azurelocal-ztp picks config/oem/<vendor>.json from it (the BMC log services and signals of its Bootstrap watch, the BIOS slot mapping and the one-time USB boot of its Boot stage): it has no built-in vendor, so its Boot and Bootstrap stages stop without it (azurelocal-ztp 091ebb3).",
           "type": "string",
           "minLength": 1
         },

@@ -80,10 +80,10 @@ nodes:
 # Accounts and the identity provider (scenario.identity).
 identity:
   # The deployment's local administrator on every machine.
-  # required; used by: ztp, os_configuration, deployment
+  # required; used by: os_configuration, deployment
   local_admin:
     # User name of the deployment local administrator on every machine (ARM localAdminUserName).
-    # required; used by: ztp, os_configuration, deployment, monitoring, trailwright
+    # required; used by: os_configuration, deployment, monitoring, trailwright
     username: "azl-admin"
   # The Active Directory the instance joins and its accounts.
   # when scenario.identity is active_directory

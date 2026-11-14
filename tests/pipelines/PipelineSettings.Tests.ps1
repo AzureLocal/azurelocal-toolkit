@@ -282,3 +282,42 @@ Describe 'Job timeouts and artifact retention stay in the files, each with a com
         [int][regex]::Match((Get-Text 'pipelines/azure-devops/arm-deployment.yml'), 'timeoutInMinutes: (4\d\d)').Groups[1].Value | Should -BeGreaterThan $default
     }
 }
+
+Describe 'The Terraform state of the azure-local pipelines (registry 5.0.61)' {
+    It '<_> passes the four TF_BACKEND_* values to terraform init and names no container or state file itself' -ForEach @(
+        'pipelines/azure-devops/azure-local-deploy.yml', 'pipelines/github-actions/azure-local-deploy.yml',
+        'pipelines/gitlab/templates/terraform-plan-apply.yml', 'pipelines/gitlab/stages/validate.yml', 'pipelines/gitlab/stages/deploy-foundation.yml') {
+        $text = Get-Text $_
+        foreach ($name in 'TF_BACKEND_RG', 'TF_BACKEND_SA', 'TF_BACKEND_CONTAINER', 'TF_BACKEND_KEY') { $text | Should -Match $name -Because "$_ reads $name" }
+        $text | Should -Not -Match "(?m)(ContainerName|container_name)[:=]\s*'?tfstate"
+        $text | Should -Not -Match '\.tfstate'
+        $text | Should -Not -Match 'TF_STATE_NAME'
+    }
+    It 'every terraform init of the azure-local pipelines either skips the backend or passes the state key' {
+        foreach ($file in 'pipelines/github-actions/azure-local-deploy.yml', 'pipelines/gitlab/stages/validate.yml', 'pipelines/gitlab/stages/deploy-foundation.yml', 'pipelines/gitlab/templates/terraform-plan-apply.yml') {
+            $lines = (Get-Text $file) -split '\r?\n'
+            for ($i = 0; $i -lt $lines.Count; $i++) {
+                if ($lines[$i] -cmatch 'terraform init' -and $lines[$i] -notmatch '-backend=false') {
+                    (($lines[$i..([Math]::Min($i + 7, $lines.Count - 1))]) -join "`n") | Should -Match 'key=\$\{\{ vars\.TF_BACKEND_KEY \}\}|key=\$\{TF_BACKEND_KEY\}' -Because "$file line $($i + 1)"
+                }
+            }
+        }
+    }
+    It 'task 05 sets TF_BACKEND_CONTAINER and TF_BACKEND_KEY with the registry defaults' {
+        $settings = @{ State = @{ resource_group = 'rg-iic-tfstate'; storage_account = 'stiictfstate01' }; Authentication = @{ Method = 'oidc' }; TenantId = [guid]::Empty.ToString(); AzureSubscriptionId = [guid]::Empty.ToString() }
+        $plan = @(& $script:Module { param($s) Get-AzlCicdVariablePlan -Settings $s -ClientId 'x' } $settings)
+        $container = @($script:Registry | Where-Object Path -EQ 'devops.state.container')[0].Node['default']
+        $key = @($script:Registry | Where-Object Path -EQ 'tools.terraform.variables.src_terraform_environments_azure_local_backend_hcl.backend_key')[0].Node['default']
+        $container | Should -Be 'tfstate'
+        $key | Should -Be 'azure-local.tfstate'
+        ($plan | Where-Object Name -EQ 'TF_BACKEND_CONTAINER').Value | Should -Be $container
+        ($plan | Where-Object Name -EQ 'TF_BACKEND_KEY').Value | Should -Be $key
+        $settings.State.container = 'state-iic'
+        $plan = @(& $script:Module { param($s) Get-AzlCicdVariablePlan -Settings $s -ClientId 'x' } $settings)
+        ($plan | Where-Object Name -EQ 'TF_BACKEND_CONTAINER').Value | Should -Be 'state-iic'
+    }
+    It 'task 05 sets no state variable when the file names no state storage account' {
+        $settings = @{ State = @{}; Authentication = @{ Method = 'oidc' }; TenantId = [guid]::Empty.ToString(); AzureSubscriptionId = [guid]::Empty.ToString() }
+        @(& $script:Module { param($s) Get-AzlCicdVariablePlan -Settings $s -ClientId 'x' } $settings | Where-Object Name -Like 'TF_BACKEND_*') | Should -BeNullOrEmpty
+    }
+}

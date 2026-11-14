@@ -579,12 +579,14 @@ provisioning service and with OS configuration's Arc Run Command. Exempt the dep
 policies until the cluster is deployed, then remove the exemptions:
 
 ```powershell
+# The groups come from the file: azure.resource_group, provisioning.simplified.resource_group and
+# provisioning.simplified.managed_resource_group_name. Add a group Azure named itself with -ManagedResourceGroupName.
 # List what reaches the groups and what would be exempted (only deployIfNotExists and modify; audit and deny stay on)
-./scripts/common/utilities/tools/Set-AzlDeploymentPolicyExemption.ps1 -SubscriptionId <sub> -ResourceGroupName <cluster-rg>,<AzLocal-ManagedResources-rg>
+./scripts/common/utilities/tools/Set-AzlDeploymentPolicyExemption.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 # Before provisioning: create the exemptions (category Waiver, expire after 7 days by default)
-./scripts/common/utilities/tools/Set-AzlDeploymentPolicyExemption.ps1 -SubscriptionId <sub> -ResourceGroupName <cluster-rg>,<AzLocal-ManagedResources-rg> -Execute
+./scripts/common/utilities/tools/Set-AzlDeploymentPolicyExemption.ps1 -InfrastructureFile ./infrastructure.yml
 # After the deployment succeeds: remove them
-./scripts/common/utilities/tools/Set-AzlDeploymentPolicyExemption.ps1 -SubscriptionId <sub> -ResourceGroupName <cluster-rg>,<AzLocal-ManagedResources-rg> -Remove -Execute
+./scripts/common/utilities/tools/Set-AzlDeploymentPolicyExemption.ps1 -InfrastructureFile ./infrastructure.yml -Remove
 ```
 
 - **Who can run it:** exempting an assignment needs `Microsoft.Authorization/policyAssignments/exempt/action` at the

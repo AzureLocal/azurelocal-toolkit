@@ -25,11 +25,21 @@ locals {
   # (Microsoft Learn: Azure Key Vault service tiers). Not a choice of a deployment.
   key_vault_sku = "standard"
 
-  # Purge protection, the rule of Deploy-KeyVaults.ps1 (phase 04, task 10): it cannot be switched off once it is on, and it keeps a deleted
-  # vault's name reserved for the retention period (Microsoft Learn: Azure Key Vault soft-delete overview, Purge protection). So it is on for
-  # every vault, except when scenario.environment_class (var.environment_class) is lab, test or dev, where a vault has to be removable.
-  removable_environment_classes = ["lab", "test", "dev"]
-  purge_protection_enabled      = !contains(local.removable_environment_classes, lower(trimspace(var.environment_class)))
+  # Purge protection of the platform vault, the rule of Deploy-KeyVaults.ps1 (phase 04, task 10): it cannot be switched off once it is on,
+  # and it keeps a deleted vault's name reserved for the retention period (Microsoft Learn: Azure Key Vault soft-delete overview, Purge
+  # protection). So it is on, except when scenario.environment_class (var.environment_class) is lab, test or dev, where a vault has to be
+  # removable.
+  removable_environment_classes     = ["lab", "test", "dev"]
+  platform_purge_protection_enabled = !contains(local.removable_environment_classes, lower(trimspace(var.environment_class)))
+
+  # The cluster vault (it stands in for cluster.key_vault) is created the way Microsoft's deployment template creates it: the template's
+  # Microsoft.KeyVault/vaults resource takes softDeleteRetentionInDays from the parameter softDeleteRetentionDays and does not set
+  # enablePurgeProtection, so purge protection stays off. Microsoft Learn: "Deploy Azure Local via Azure Resource Manager deployment
+  # template", ARM template parameters reference (softDeleteRetentionDays, 7 to 90 days; no purge protection parameter),
+  # https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template; and "Purge protection is an optional
+  # Key Vault behavior and is not enabled by default" (Azure Key Vault soft-delete overview,
+  # https://learn.microsoft.com/azure/key-vault/general/soft-delete-overview). The template copy: config/azure/arm-templates/cluster-deployment/azuredeploy.json.
+  cluster_purge_protection_enabled = false
 
   # The platform vault (key_vaults[purpose=management]) keeps deleted items for the Azure default, 90 days, as Deploy-KeyVaults.ps1 creates it:
   # "If no configuration is specified, the default recovery period is set to 90 days" (Microsoft Learn: Azure Key Vault soft-delete overview).
@@ -46,7 +56,7 @@ resource "azurerm_key_vault" "platform" {
   resource_group_name        = var.resource_group_name
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = local.key_vault_sku
-  purge_protection_enabled   = local.purge_protection_enabled
+  purge_protection_enabled   = local.platform_purge_protection_enabled
   soft_delete_retention_days = local.platform_soft_delete_retention_days
 
   enable_rbac_authorization = true
@@ -92,7 +102,7 @@ resource "azurerm_key_vault" "azure_local" {
   resource_group_name        = var.azl_key_vault_resource_group
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = local.key_vault_sku
-  purge_protection_enabled   = local.purge_protection_enabled
+  purge_protection_enabled   = local.cluster_purge_protection_enabled
   soft_delete_retention_days = var.azl_key_vault_soft_delete_retention_days
 
   enable_rbac_authorization = true
@@ -101,6 +111,14 @@ resource "azurerm_key_vault" "azure_local" {
   # (Microsoft Learn: Azure Local system requirements, Key Vault).
 
   tags = var.tags
+
+  # A cluster vault created by an earlier version of this module has purge protection on, and Azure never turns it off: the
+  # provider stops the plan if the value goes from true to false. Ignoring the attribute leaves such a vault as it is, while a
+  # new vault is created without purge protection, as Microsoft's template creates it. Remove this rule before managing the
+  # attribute on an existing vault on purpose.
+  lifecycle {
+    ignore_changes = [purge_protection_enabled]
+  }
 }
 
 # -----------------------------------------------------------------------------

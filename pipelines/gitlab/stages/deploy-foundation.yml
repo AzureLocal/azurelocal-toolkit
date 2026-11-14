@@ -6,16 +6,20 @@ terraform:apply:
   stage: deploy-foundation
   script:
     - cd "${TF_ROOT}"
-    - terraform init
+    - terraform init -input=false
+      -backend-config="resource_group_name=${TF_BACKEND_RG}"
+      -backend-config="storage_account_name=${TF_BACKEND_SA}"
+      -backend-config="container_name=${TF_BACKEND_CONTAINER}"
+      -backend-config="key=${TF_BACKEND_KEY}"
+      -backend-config="use_azuread_auth=true"
     - terraform apply -auto-approve -input=false tfplan
   dependencies:
     - terraform:plan
   environment:
     name: ${AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT} # a project CI/CD variable set by task 05 (devops.pipelines.environments.terraform_deployment)
     action: start
+  # No state file as an artifact: the state is in the azurerm backend (TF_BACKEND_*), and a state file holds secrets.
   artifacts:
-    paths:
-      - "${TF_ROOT}/terraform.tfstate"
     reports:
       terraform: "${TF_ROOT}/tfplan.json"
   when: manual
@@ -27,7 +31,12 @@ terraform:outputs:
   stage: deploy-foundation
   script:
     - cd "${TF_ROOT}"
-    - terraform init
+    - terraform init -input=false
+      -backend-config="resource_group_name=${TF_BACKEND_RG}"
+      -backend-config="storage_account_name=${TF_BACKEND_SA}"
+      -backend-config="container_name=${TF_BACKEND_CONTAINER}"
+      -backend-config="key=${TF_BACKEND_KEY}"
+      -backend-config="use_azuread_auth=true"
     - terraform output -json > terraform-outputs.json
   dependencies:
     - terraform:apply

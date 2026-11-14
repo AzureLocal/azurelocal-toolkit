@@ -18,7 +18,7 @@
           "pattern": "^5\\.[0-9]+\\.[0-9]+$"
         },
         "scope": {
-          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity beyond local_admin) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key).",
+          "description": "Schema 5.3. full (default): the whole instance, so every design section is required (scenario, environment, cluster, networking.intents, identity and the sections a scenario choice makes required). ztp: a file for azurelocal-ztp on its own, with no automation after it. It holds only what ZTP reads, so the cluster deployment's sections (cluster, intents, storage, identity) are not required. Use infrastructure.ztp.example.yml to start one. To grow it into the full file, add the rest and set scope to full (or remove the key).",
           "default": "full",
           "enum": [
             "full",
@@ -143,10 +143,6 @@
           "resource_group": {
             "$ref": "#/$defs/resource_group",
             "description": "Resource group that holds the vault."
-          },
-          "purpose": {
-            "description": "What the vault holds, for example management, deployment or backup.",
-            "type": "string"
           }
         }
       }
@@ -154,7 +150,48 @@
     "secrets": {
       "description": "Schema 5.6.13. Where the toolkit reads secrets from. Every secret in this file is a reference, never a value; a reference names its own provider in its scheme: keyvault://<vault>/<secret> (Azure Key Vault, the default), env://<VARIABLE_NAME>, file://<name> or command://<name>. One file can mix providers. A file or command reference holds a NAME only: the directory of the secret files and the command are set here, so a reference in a shared file cannot point a machine at an arbitrary path or run an arbitrary command. Optional; every key has a default. See docs/secret-references.md.",
       "type": "object",
-      "additionalProperties": false
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "description": "Schema 5.6.13. Settings of the file provider (file://<name>). Needed only when a reference uses it.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "directory": {
+              "description": "Schema 5.6.13. The absolute path of the directory that holds the secret files. file://<name> reads the file <name> in it: one secret per file, UTF-8, the trailing line break removed. A name cannot hold a path, so no reference can leave this directory. Links are refused. A warning is written when Everyone, Users or Authenticated Users (Windows), or group or other (Linux, macOS), can read the file.",
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "command": {
+          "description": "Schema 5.6.13. Settings of the command provider (command://<name>). Needed only when a reference uses it. The toolkit starts the executable directly with the argument list, with no shell, closes its standard input and reads its standard output as the secret (the trailing line break removed). A command that exits with a code other than 0 fails, and its standard error is reported without the secret.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "executable": {
+              "description": "Schema 5.6.13. The program to start: a command name found on the path, or an absolute path. Not a command line: the arguments are in command.arguments.",
+              "type": "string",
+              "minLength": 1
+            },
+            "arguments": {
+              "description": "Schema 5.6.13. The arguments, one list item each. The text {name} in an item is replaced by the name in the reference (command://<name>). At least one item must hold {name}. Each item is passed as one argument; nothing is split or quoted by a shell.",
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "timeout_seconds": {
+              "description": "Schema 5.6.13. How long the command may run before it is stopped and the read fails. Default 30.",
+              "type": "integer",
+              "default": 30,
+              "minimum": 1,
+              "maximum": 300
+            }
+          }
+        }
+      }
     },
     "nodes": {
       "description": "The machines, one entry each. ARM physicalNodesSettings and arcNodeResourceIds. Up to 16 with Storage Spaces Direct, up to 64 disaggregated (the validator checks which applies).",
@@ -274,24 +311,14 @@
                 "$ref": "#/$defs/ipv4",
                 "description": "IPv4 address of the BMC (iDRAC, iLO, XCC). It must answer HTTPS (TCP 443) from the host that runs ZTP or discovery."
               },
-              "type": {
-                "description": "Kind of BMC: idrac (Dell), ilo (HPE), xcc (Lenovo) or other. Only Dell iDRAC is proven end to end in this phase; BMC kinds other than idrac are planned. Hardware inventory (Get-HardwareInventory.ps1) compares it with the vendor it detects from the Redfish answers; other is not compared.",
-                "type": "string",
-                "enum": [
-                  "idrac",
-                  "ilo",
-                  "xcc",
-                  "other"
-                ]
-              },
               "username": {
-                "description": "BMC account name. The plain name, or a keyvault:// reference.",
+                "description": "BMC account name of this machine: a secret reference (keyvault://, env://, file:// or command://) or the plain name. azurelocal-ztp uses one login for every machine (hardware.bmc) and stops when a node sets another.",
                 "type": "string",
                 "minLength": 1
               },
               "password": {
                 "$ref": "#/$defs/kv_ref",
-                "description": "A Key Vault secret reference: keyvault://<vault>/<secret>. The vault must be listed in key_vaults."
+                "description": "A secret reference: keyvault://<vault>/<secret> (the vault listed in key_vaults), env://, file:// or command://, read through the toolkit's resolver (scripts/common/secrets/AzlSecret.psm1), never the password itself. azurelocal-ztp uses one login for every machine (hardware.bmc) and stops when a node sets another."
               }
             }
           },
@@ -380,7 +407,7 @@
       "additionalProperties": false,
       "properties": {
         "vendor": {
-          "description": "OEM, for example Dell, HPE, Lenovo or DataON. ZTP picks config/oem/<vendor>.json from it.",
+          "description": "OEM, for example Dell, HPE, Lenovo or DataON. azurelocal-ztp picks config/oem/<vendor>.json from it (the BMC log services and signals of its Bootstrap watch, the BIOS slot mapping and the one-time USB boot of its Boot stage): it has no built-in vendor, so its Boot and Bootstrap stages stop without it (azurelocal-ztp 091ebb3).",
           "type": "string",
           "minLength": 1
         },
@@ -394,13 +421,13 @@
           "description": "BMC (iDRAC, iLO, XCC) login used for every machine unless a node sets its own.",
           "properties": {
             "username": {
-              "description": "A reference to the secret holding the user name, or the user name itself.",
+              "description": "The BMC user name of every machine: a secret reference (keyvault://, env://, file:// or command://) or the user name itself. azurelocal-ztp and hardware discovery read a reference through the toolkit's resolver (scripts/common/secrets/AzlSecret.psm1).",
               "type": "string",
               "minLength": 1
             },
             "password": {
               "$ref": "#/$defs/kv_ref",
-              "description": "A Key Vault secret reference: keyvault://<vault>/<secret>. The vault must be listed in key_vaults."
+              "description": "The BMC password of every machine: a secret reference, keyvault://<vault>/<secret> (the vault listed in key_vaults), env://<VARIABLE>, file://<name> or command://<name>, never the password itself. azurelocal-ztp (since 5b75c9a) and hardware discovery read it through the toolkit's resolver (scripts/common/secrets/AzlSecret.psm1)."
             },
             "rfs_write_attribute": {
               "description": "Schema 5.4. azurelocal-ztp, Boot stage: also set the iDRAC Remote File Share attribute RFS.<n>.WriteProtected to Read Write before it inserts the virtual media. iDRAC 7.30 rejects WriteProtected=false in InsertMedia, and the maintenance environment cannot write its voucher to a read-only drive. Default: true for Dell (azurelocal-ztp config/oem/dell.json, bmc.rfsWriteAttribute), false for the other vendors, whose BMCs have no such attribute. Set it when your BMC differs from its vendor's usual behaviour.",
@@ -420,21 +447,6 @@
         "bios_during_provisioning": {
           "$ref": "#/$defs/bios_settings",
           "description": "Schema 5.3. BIOS attributes that hold for the OS install only: TEMPORARY values. A node's bios_during_provisioning is merged over this one, and during-provisioning values win over bios. azurelocal-ztp applies them at its Boot stage. In its Restore stage, after the OS install and before Handoff, it sets each key back to its bios value (or, when bios doesn't name the key, to the original value it saved), restarts the node and waits for Arc to reconnect. From 5.4 azurelocal-ztp derives the SAN-adapter case itself from nodes[].san.hbas[].slot (provisioning.simplified.isolate_san_adapters); the raw keys remain as explicit overrides and win. Example: bios { Slot2: Enabled } with bios_during_provisioning { Slot2: Disabled } turns off a Fibre Channel HBA in slot 2 while the maintenance environment installs the OS (it would otherwise install onto the SAN LUN), and turns it on again afterwards. On Dell, a slot can also be BootDriverDisabled: visible to the OS but never a boot device. A key here should also be in bios, so the final state is explicit. See $defs/bios_settings."
-        },
-        "sbe": {
-          "description": "The hardware vendor's Solution Builder Extension (SBE) package, its driver and firmware update, is a REQUIREMENT (schema 5.6.4): the package is downloaded and available on a share the automation can read (source_path), for the build and for the first cluster update, which needs it anyway (a vendor whose SBE has no download connector for your cluster reports AdditionalContentRequired; Dell's download is behind a support login). Whether it is required comes from requirement; when that key is absent the vendor catalog (config/oem/<vendor>.json) decides: required for a vendor whose package is a manual download (Dell, HPE, DataON), not required by default where the cluster downloads it itself. Say not_applicable, with not_applicable_reason, for hardware that has no SBE or a cluster that downloads it with the vendor credential. What stays opt-in is only the build-time side-load: nothing is copied to a node unless you set delivery to winrm_copy or node_pull (default skip), and nothing in the toolkit adds a delivery setting or an SBE value to a file. The pre-cluster verification (SB-001 to SB-006) checks that the package on the share is complete, consistent, for the hardware model of every node and validated for the target solution version. The version is the one validated with provisioning.os_version. ARM sbeVersion, sbeFamily, sbePublisher, sbeManifestSource and sbeManifestCreationDate; without a package the ARM deployment passes none of them (nor partnerProperties and partnerCredentiallist), and the template's own empty defaults apply.",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "bundle_path": {
-              "description": "Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml. Used to prepare machines before Validate. Required when hardware.sbe is present, unless requirement is not_applicable, source_path is set, or publisher, family and version name an SBE you placed in C:\\SBE yourself (and needed for any delivery). Same meaning as source_path; when source_path is set it is the one read.",
-              "type": "string"
-            },
-            "allow_unvalidated": {
-              "description": "Test only. Use the SBE in bundle_path even though the OEM's manifest doesn't list it as validated with provisioning.os_version. The hash is still checked. Default false. Documentation only; not read by the tools. The deployment gate fails an SBE the OEM has not validated, whatever this key says.",
-              "type": "boolean"
-            }
-          }
         }
       }
     },
@@ -531,14 +543,6 @@
             }
           }
         },
-        "ntp_servers": {
-          "description": "Time sources, as host names or addresses.",
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
         "outbound": {
           "description": "Details of scenario.outbound_path.",
           "type": "object",
@@ -567,29 +571,6 @@
         }
       }
     },
-    "identity": {
-      "description": "Accounts and the identity provider (scenario.identity).",
-      "type": "object",
-      "additionalProperties": false,
-      "properties": {
-        "local_admin": {
-          "description": "The deployment's local administrator on every machine. Not the built-in Administrator: the deployment renames it. ARM localAdminUserName and localAdminPassword.",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "username": {
-              "description": "User name of the deployment local administrator on every machine (ARM localAdminUserName). Not Administrator or Guest: the deployment renames the built-in account.",
-              "type": "string",
-              "minLength": 1
-            },
-            "password": {
-              "$ref": "#/$defs/kv_ref",
-              "description": "At least 14 characters with lowercase, uppercase, a digit and a special character."
-            }
-          }
-        }
-      }
-    },
     "provisioning": {
       "description": "How the OS gets onto the machines (scenario.os_install), and the OS version.",
       "type": "object",
@@ -612,7 +593,7 @@
             },
             "subscription_id": {
               "$ref": "#/$defs/guid",
-              "description": "Subscription of the site and edge machines, when it isn't azure.subscription_id."
+              "description": "Subscription of the site and edge machines, when it isn't azure.subscription_id. Set-AzlDeploymentPolicyExemption.ps1 exempts the site's resource groups there."
             },
             "resource_group": {
               "$ref": "#/$defs/resource_group",
@@ -624,7 +605,7 @@
               "pattern": "^(latest|[0-9]{4}|10\\.[0-9]{4}\\.[0-9]+\\.[0-9]+|https://.+)$"
             },
             "admin": {
-              "description": "The local administrator that the provisioned OS gets. Prepare signs in as <node>\\<username>.",
+              "description": "The local administrator that the provisioned OS gets (Learn: simplified machine provisioning, step 3, provision machines from Azure).",
               "type": "object",
               "additionalProperties": false,
               "properties": {
@@ -635,13 +616,13 @@
                 },
                 "password": {
                   "$ref": "#/$defs/kv_ref",
-                  "description": "At least 12 characters with lowercase, uppercase, a digit and a special character. Create the secret before the run."
+                  "description": "At least 12 characters with lowercase, uppercase, a digit and a special character. Create the secret before the run. azurelocal-ztp needs a keyvault://<vault>/<secret> reference here: Azure reads this secret from the vault itself when it provisions the machines (the template passes the vault and the secret name, never a value)."
                 }
               }
             },
             "maintenance_password": {
               "$ref": "#/$defs/kv_ref",
-              "description": "Schema 5.3. The password of the maintenance environment's local user (edgeuser), which azurelocal-ztp's Device stage signs in with to reach the Configurator service before the machine is claimed. A Key Vault reference. Default: the maintenance environment's out-of-box password that Microsoft Learn documents (Configurator App article). Set a secret when the images carry another one."
+              "description": "Schema 5.3. The password of the maintenance environment's local user (edgeuser), which azurelocal-ztp's Device stage signs in with to reach the Configurator service before the machine is claimed. A secret reference (keyvault://, env://, file:// or command://), read through the toolkit's resolver (scripts/common/secrets/AzlSecret.psm1) only when the run makes changes. Default: the maintenance environment's out-of-box password that Microsoft Learn documents (Configurator App article). Set a secret when the images carry another one."
             },
             "media_share": {
               "description": "The SMB share the BMCs mount the images from.",

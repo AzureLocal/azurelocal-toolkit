@@ -29,7 +29,7 @@ Describe 'Settings' {
         $s.resume | Should -BeFalse
     }
     It 'takes the master file block, in snake_case, then the settings hashtable over it' {
-        $infra = @{ deployment = @{ validate_timeout_minutes = 45; approval = 'prompt'; resume = $true; acknowledge_known_issues = @('arc-device-id-name') } }
+        $infra = @{ deployment = @{ validate_timeout_minutes = 45; approval = 'stop'; resume = $true; acknowledge_known_issues = @('arc-device-id-name') } }
         $s = Get-AzlArmRunSetting -Infrastructure $infra -Settings @{ approvalMode = 'none'; pollSeconds = 5 }
         $s.validateTimeoutMinutes | Should -Be 45
         $s.approvalMode | Should -Be 'none'
@@ -518,17 +518,19 @@ Describe 'Run: ValidateAndDeploy and the approval gate' {
         @($r.Report.stateHistory.to) | Should -Be @('Prepared', 'Validating', 'ValidationPassed', 'AwaitingApproval', 'Deploying', 'DeploymentSucceeded')
         @((Read-TestEvent $r.EventPath).state) | Should -Contain 'ApprovalGranted'
     }
-    It 'approval prompt: yes deploys, no stops' {
+    It 'approval stop ends after a good Validate and submits nothing more' {
         $w = Get-VdWorld
-        (Invoke-TestRun -World $w -Mode ValidateAndDeploy -Settings @{ approvalMode = 'prompt' } -Override @{ Prompt = { $true } }).State | Should -Be 'DeploymentSucceeded'
-        $w2 = Get-VdWorld
-        $r = Invoke-TestRun -World $w2 -Mode ValidateAndDeploy -Settings @{ approvalMode = 'prompt' } -Override @{ Prompt = { $false } }
+        $r = Invoke-TestRun -World $w -Mode ValidateAndDeploy -Settings @{ approvalMode = 'stop' }
         $r.State | Should -Be 'AwaitingApproval'
-        $w2.SubmitCalls.Count | Should -Be 1
+        $r.ExitCode | Should -Be 0
+        $w.SubmitCalls.Count | Should -Be 1
     }
-    It 'approval prompt without a console behaves as stop' {
-        $w = Get-VdWorld
-        (Invoke-TestRun -World $w -Mode ValidateAndDeploy -Settings @{ approvalMode = 'prompt' } -Override @{ Prompt = { $null } }).State | Should -Be 'AwaitingApproval'
+    It 'the approval mode prompt is gone: the setting is refused, and nothing in the run asks on the console' {
+        { Get-AzlArmRunSetting -Settings @{ approvalMode = 'prompt' } } | Should -Throw -ExpectedMessage '*stop or none*'
+        { Get-AzlArmRunSetting -Infrastructure @{ deployment = @{ approval = 'prompt' } } } | Should -Throw -ExpectedMessage '*stop or none*'
+        (New-AzlArmAzureAdapter).Contains('Prompt') | Should -BeFalse
+        $text = Get-Content -LiteralPath ([IO.Path]::Combine($PSScriptRoot, '..', '..', 'scripts', 'common', 'arm-deployment', 'AzlArmDeploymentRun.psm1')) -Raw
+        $text | Should -Not -Match 'PromptForChoice|ReadLine\(|Read-Host'
     }
     It 'a failed validation never reaches the gate' {
         $w = Get-FakeWorld

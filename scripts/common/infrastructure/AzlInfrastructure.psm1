@@ -1566,10 +1566,12 @@ function Get-ZtpActionFinding {
 
 # AZL-015 (SBE part) and AZL-032: the Solution Builder Extension is optional and opt-in. No hardware.sbe = deploy without one (the OS keeps
 # the OEM drivers already installed): an Info, never a warning or an error. A hardware.sbe that is there is complete: bundle_path (publisher,
-# family and version are then read from the package), or publisher, family and version for an SBE placed in C:\SBE by hand. In a file with
-# scope ztp, which only prepares the machines from the package, bundle_path is the one key needed.
+# family and version are then read from the package), or publisher, family and version for an SBE placed in C:\SBE by hand. A file with
+# scope ztp gets none of these findings: azurelocal-ztp carries no SBE (the OS install discovers its own; staging it is OS configuration).
 function Get-SbePresenceFinding {
     param($Infra)
+    # A file with scope ztp is for azurelocal-ztp alone, which carries no SBE: neither the SBE notice nor the SBE rules apply.
+    if ((Get-AzlInfrastructureScope -Infrastructure $Infra) -eq 'ztp') { return }
     $sbe = Get-AzlInfrastructureValue -Infrastructure $Infra -Path 'hardware.sbe'
     if ($null -eq $sbe) {
         New-Finding 'AZL-032' info 'hardware.sbe' 'no hardware.sbe block: no package source is configured and nothing is side-loaded at build time. The vendor catalog decides whether the SBE package is required (pre-cluster verification SB-001); for a vendor whose package is a manual download it is, so set hardware.sbe.source_path, or hardware.sbe.requirement not_applicable with a reason.' 'https://learn.microsoft.com/azure/azure-local/update/solution-builder-extension'
@@ -1591,10 +1593,6 @@ function Get-SbePresenceFinding {
     }
     if ($source -and $source -match '[?#]') {
         New-Finding 'AZL-033' error 'hardware.sbe.source_path' 'The path carries a query string or fragment. infrastructure.yml holds no credential: use source_username and source_password (a Key Vault reference) for a share that needs one.'
-    }
-    if ((Get-AzlInfrastructureScope -Infrastructure $Infra) -eq 'ztp') {
-        if (-not $bundle -and -not $requirement) { New-Finding 'AZL-015' error 'hardware.sbe.bundle_path' 'hardware.sbe is set, so ZTP needs the folder holding the SBE files (bundle_path), or requirement (required, or not_applicable with a reason).' }
-        return
     }
     $remove = 'To state that no package is needed, set requirement to not_applicable with not_applicable_reason.'
     if (-not $source -and -not $requirement) {

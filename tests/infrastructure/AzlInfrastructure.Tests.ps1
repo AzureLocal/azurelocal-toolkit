@@ -892,7 +892,8 @@ Describe 'Schema 5.3: file scope (full and ztp templates)' {
         $doc = ConvertFrom-Yaml (Get-Content -LiteralPath $script:Ztp -Raw) -Ordered
         foreach ($k in 'cluster', 'environment', 'storage', 'sdn', 'security') { $doc.Keys | Should -Not -Contain $k }
         $doc.networking.Keys | Should -Not -Contain 'intents'
-        $doc.identity.Keys | Should -Be @('local_admin')
+        $doc.Keys | Should -Not -Contain 'identity' -Because 'azurelocal-ztp reads no identity key (it ends at the Handoff)'
+        $doc.hardware.Keys | Should -Not -Contain 'sbe' -Because 'azurelocal-ztp carries no SBE'
         @($doc.scenario.Keys) | Should -Be @('os_install')
     }
     It 'rejects a full-scope file without the cluster keys: <Case>' -ForEach @(
@@ -922,7 +923,7 @@ Describe 'Schema 5.3: file scope (full and ztp templates)' {
         @{ Case = 'the management port MAC'; Change = { param($d) $d.nodes[0].network_adapters[0].Remove('mac_address') }; Path = 'nodes[0].network_adapters[0]' }
         @{ Case = 'the provisioning port'; Change = { param($d) $d.nodes[1].network_adapters.RemoveAt(2) }; Path = 'nodes[1].network_adapters' }
         @{ Case = 'networking.management.gateway'; Change = { param($d) $d.networking.management.Remove('gateway') }; Path = 'networking.management' }
-        @{ Case = 'identity.local_admin'; Change = { param($d) $d.identity.Remove('local_admin') }; Path = 'identity' }
+        @{ Case = 'hardware.vendor'; Change = { param($d) $d.hardware.Remove('vendor') }; Path = 'hardware' }
         @{ Case = 'provisioning.simplified'; Change = { param($d) $d.provisioning.Remove('simplified') }; Path = 'provisioning' }
         @{ Case = 'provisioning.simplified.site_name'; Change = { param($d) $d.provisioning.simplified.Remove('site_name') }; Path = 'provisioning.simplified' }
         @{ Case = 'scenario.os_install'; Change = { param($d) $d.scenario.Remove('os_install') }; Path = 'scenario' }
@@ -945,6 +946,12 @@ Describe 'Schema 5.3: file scope (full and ztp templates)' {
     }
     It 'rejects an unknown scope' {
         (Get-ZtpFinding { param($d) $d._metadata.scope = 'cluster' }) | Where-Object { $_.Id -eq 'SCHEMA' -and $_.Path -eq '_metadata.scope' } | Should -Not -BeNullOrEmpty
+    }
+    It 'requires nothing azurelocal-ztp does not read: identity, the host time and an SBE package (azurelocal-ztp 5b75c9a)' {
+        $f = Get-ZtpFinding { param($d) $d.hardware['sbe'] = [ordered]@{ publisher = 'Dell' } }
+        @($f | Where-Object { $_.Severity -eq 'error' }) | Should -BeNullOrEmpty
+        $f = Get-ZtpFinding { param($d) $d['identity'] = [ordered]@{ local_admin = [ordered]@{ username = 'azl-admin'; password = 'keyvault://kv-iic-mgmt-01/local-admin-password' } } }
+        @($f | Where-Object { $_.Severity -eq 'error' }) | Should -BeNullOrEmpty
     }
 }
 
