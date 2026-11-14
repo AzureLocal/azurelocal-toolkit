@@ -10,7 +10,7 @@ The route has four tools, run in this order:
 
 1. **ZTP** ([azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp)): provisions the machines from their BMCs and ends at the Handoff.
 2. **OS configuration** (`Set-AzureLocalNodeConfiguration.ps1`, Phase 03): configures each node's OS.
-3. **ARM Validate, then Deploy** (`Invoke-AzureLocalClusterDeployment.ps1`, Phase 05): deploys the cluster.
+3. **ARM Validate, then Deploy** (`Invoke-AzureLocalArmDeployment.ps1`, Phase 05): deploys the cluster.
 4. **Sonar** ([azurelocal-sonar](https://github.com/AzureLocal/azurelocal-sonar)): read-only monitor, run beside any of the above.
 
 A fifth row, **the pipeline runner**, is not a tool: it is the host that runs the others when you automate the route. See [Running from a pipeline runner in Azure](#running-from-a-pipeline-runner-in-azure).
