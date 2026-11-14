@@ -16,8 +16,8 @@
     existing parent; a parent that is missing is reported, never created. Roles, IP assignment and addresses are never written:
     discovery cannot read them from hardware. Ports the file does not list are shown as notes; the proposal file lists them.
 
-.PARAMETER ConfigPath
-    infrastructure.yml. Default: $env:AZL_INFRASTRUCTURE_FILE, then .\infrastructure.yml, then .\config\infrastructure.yml.
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Required. The file is edited in place when -Apply is given.
 
 .PARAMETER DiscoveryPath
     Folder with the discovery JSON files. Default: .\discovery
@@ -32,10 +32,10 @@
     With -Apply: no confirmation prompt.
 
 .EXAMPLE
-    .\Update-InfrastructureYml-FromDiscovery.ps1 -ConfigPath .\infrastructure.yml
+    .\Update-InfrastructureYml-FromDiscovery.ps1 -InfrastructureFile .\infrastructure.yml
 
 .EXAMPLE
-    .\Update-InfrastructureYml-FromDiscovery.ps1 -ConfigPath .\infrastructure.yml -ManagementPort 'Slot 3 Port 1' -Apply
+    .\Update-InfrastructureYml-FromDiscovery.ps1 -InfrastructureFile .\infrastructure.yml -ManagementPort 'Slot 3 Port 1' -Apply
 
 .NOTES
     Phase: 04-cluster-deployment / phase-01-hardware-provisioning / task-02-hardware-discovery-via-dell-redfish-api
@@ -43,7 +43,7 @@
 #>
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
 param(
-    [string]$ConfigPath,
+    [Parameter(Mandatory)][string]$InfrastructureFile,
     [string]$DiscoveryPath = (Join-Path '.' 'discovery'),
     [string]$ManagementPort,
     [switch]$Apply,
@@ -67,13 +67,9 @@ Import-Module ([System.IO.Path]::Combine($root, 'scripts', 'common', 'redfish', 
 Import-Module ([System.IO.Path]::Combine($root, 'scripts', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))
 Import-Module ([System.IO.Path]::Combine($root, 'scripts', 'common', 'infrastructure', 'AzlInfrastructureEdit.psm1'))
 
-$resolved = $ConfigPath
-if (-not $resolved) {
-    $resolved = @($env:AZL_INFRASTRUCTURE_FILE, (Join-Path '.' 'infrastructure.yml'), (Join-Path (Join-Path '.' 'config') 'infrastructure.yml')) |
-        Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -First 1
-    if (-not $resolved) { throw 'No infrastructure file found: pass -ConfigPath.' }
-}
-$infrastructure = Import-AzlInfrastructure -Path $resolved -SkipValidation
+$resolved = $InfrastructureFile
+try { $infrastructure = Import-AzlInfrastructure -Path $resolved -SkipValidation }
+catch { Write-Error "Cannot read the infrastructure file: $($_.Exception.Message)" -ErrorAction Continue; exit 2 }
 
 $files = @(Get-ChildItem -LiteralPath $DiscoveryPath -Filter '*.json' -File -ErrorAction SilentlyContinue | Where-Object Name -NotIn @('discovery-summary.json', 'idrac-inventory.json'))
 if ($files.Count -eq 0) { throw "No discovery files in $DiscoveryPath. Run Invoke-HardwareDiscovery.ps1 first." }

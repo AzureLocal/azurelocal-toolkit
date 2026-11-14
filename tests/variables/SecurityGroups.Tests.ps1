@@ -55,10 +55,30 @@ nodes:
     management:
       ip_address: 192.0.2.11
 '@ | Set-Content $cfg
-        $out = & pwsh -NoProfile -File $script:Task -ConfigPath $cfg -WhatIf -LogPath (Join-Path $TestDrive 'sg.log') 2>&1 | Out-String
+        $out = & pwsh -NoProfile -File $script:Task -InfrastructureFile $cfg -WhatIf -LogPath (Join-Path $TestDrive 'sg.log') 2>&1 | Out-String
         $out | Should -Match ([regex]::Escape('Will assign: IIC\sg-admins'))
         $out | Should -Match "Skipping 'sg-wac'"
         $out | Should -Match "Skipping 'sg-none'"
         $out | Should -Match 'WhatIf complete'
+    }
+
+    It 'stops with exit code 2, before any remote call, when the file has no LCM user name and no -Credential is passed' {
+        $cfg = Join-Path $TestDrive 'infra-nouser.yml'
+        @'
+identity:
+  active_directory:
+    netbios_name: IIC
+    security_groups:
+      - name: sg-admins
+        local_groups: [Administrators]
+nodes:
+  - name: n1
+    management:
+      ip_address: 192.0.2.11
+'@ | Set-Content $cfg
+        $out = & pwsh -NoProfile -File $script:Task -InfrastructureFile $cfg -LogPath (Join-Path $TestDrive 'sg2.log') 2>&1 | Out-String
+        $LASTEXITCODE | Should -Be 2
+        $out | Should -Match 'lcm_user\.username'
+        $out | Should -Not -Match 'Credentials resolved'
     }
 }

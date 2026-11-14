@@ -2,7 +2,7 @@
 # PLACEHOLDER: this script does not do the task. It ends with exit code 3 (NOT IMPLEMENTED) and changes nothing.
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$ConfigPath = '',
+    [string]$InfrastructureFile = '',
     [string]$LogPath = ''
 )
 
@@ -29,6 +29,6 @@ Invoke-DeploymentAzCliPowerShell `
     -ScriptPath $PSCommandPath `
     -TaskPath '04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-01-initiate-deployment-via-arm-template' `
     -ActionName 'az-deploy-cluster-ad' `
-    -ConfigPath $ConfigPath `
+    -InfrastructureFile $InfrastructureFile `
     -LogPath $LogPath `
     -Parameters $PSBoundParameters

@@ -6,14 +6,18 @@
     For each node, ejects any currently-mounted virtual media and mounts the
     gold image ISO from provisioning.iso.image_uri of infrastructure.yml. The iDRAC addresses are nodes[].bmc.ip_address.
     Verifies the media is inserted before proceeding.
-.PARAMETER ConfigPath
-    Path to the infrastructure.yml (schema 5). Defaults to ./configs/infrastructure.yml.
+    Exit codes: 0 done (or planned under -WhatIf); 2 the file, the ISO address or the login is missing or not usable (nothing was sent to any iDRAC).
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Required. Only nodes[].name, nodes[].bmc.ip_address, provisioning.iso.image_uri and the hardware.bmc secret references are read.
+.PARAMETER Credential
+    Optional. The iDRAC login for every node. Without it the login is the secret reference in hardware.bmc. The script never asks.
 .PARAMETER WhatIf
     Preview changes without making them.
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [string]$ConfigPath = "./configs/infrastructure.yml"
+    [Parameter(Mandatory)][string]$InfrastructureFile,
+    [System.Management.Automation.PSCredential]$Credential
 )
 
 Set-StrictMode -Version Latest
@@ -27,17 +31,16 @@ Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '.
 $VirtualMediaPath = "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
 
 # ── Load config ───────────────────────────────────────────────────────────────
-if (-not (Test-Path $ConfigPath)) {
-    throw "Config file not found: $ConfigPath"
-}
-$config   = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+try { $config = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Write-Error "Cannot read the infrastructure file: $($_.Exception.Message)" -ErrorAction Continue; exit 2 }
 $nodes    = Get-AzlInfrastructureValue -Infrastructure $config -Path 'nodes'
 $isoPath  = [string](Get-AzlInfrastructureValue -Infrastructure $config -Path 'provisioning.iso.image_uri')
-if (-not $isoPath) { throw "provisioning.iso.image_uri is missing in $ConfigPath. It is the address the iDRAC fetches the ISO from." }
+if (-not $isoPath) { Write-Error "provisioning.iso.image_uri is missing in $InfrastructureFile. It is the address the iDRAC fetches the ISO from." -ErrorAction Continue; exit 2 }
 
 # ── iDRAC credentials: hardware.bmc in the infrastructure file (secret references) ─
 Write-Host "Reading the iDRAC credentials from the secret references..." -ForegroundColor Cyan
-$idracCred = Resolve-AzlBmcCredential -Infrastructure $config -NoPrompt
+try { $idracCred = Resolve-AzlBmcCredential -Credential $Credential -Infrastructure $config }
+catch { Write-Error "$($_.Exception.Message)" -ErrorAction Continue; exit 2 }
 
 # ── Helper: the BMC address of a node (nodes[].bmc.ip_address) ────────────────
 function Get-NodeBmcAddress {

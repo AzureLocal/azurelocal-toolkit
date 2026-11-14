@@ -2,7 +2,7 @@
 # PLACEHOLDER: this script does not do the task. It ends with exit code 3 (NOT IMPLEMENTED) and changes nothing.
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$ConfigPath = '',
+    [string]$InfrastructureFile = '',
     [System.Management.Automation.PSCredential]$Credential = $null,
     [string[]]$TargetNode = @(),
     [string]$LogPath = ''
@@ -31,7 +31,7 @@ Invoke-DeploymentOrchestrated `
     -ScriptPath $PSCommandPath `
     -TaskPath '04-cluster-deployment/phase-01-hardware-provisioning/task-02-hardware-discovery-via-dell-redfish-api' `
     -ActionName 'Invoke-HardwareDiscovery-Orchestrated' `
-    -ConfigPath $ConfigPath `
+    -InfrastructureFile $InfrastructureFile `
     -Credential $Credential `
     -TargetNode $TargetNode `
     -LogPath $LogPath `

@@ -870,17 +870,17 @@ function Get-AzlNodeStepList {
 function Get-AzlRunSetting {
     <#
     .SYNOPSIS
-        Optional run settings: from a JSON file (-ConfigPath), over which a hashtable (-Settings) wins. Keys: retryTries,
+        Optional run settings: from a JSON file (-SettingsFile), over which a hashtable (-Settings) wins. Keys: retryTries,
         retryDelaySeconds, maxPasses, noRestart, failOnPendingChanges, nodeAddress, networkRollbackMinutes (the confirmation window, 10),
         networkStableSeconds (60), reconnectWaitMinutes (15), staleRunCommandMinutes (15), addressProbe (true), restartWaitMinutes (15: how long the run waits for a node it\n        restarted before the final verify; registered in config/variables/schema/master-registry.yaml), remoting (a hashtable: transport,
         bootstrapTransport, allowedSourceCidrs, useSsl, authentication).
     #>
     [CmdletBinding()]
-    param([string]$ConfigPath, [hashtable]$Settings)
+    param([string]$SettingsFile, [hashtable]$Settings)
     $result = @{}
-    if ($ConfigPath) {
-        if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) { throw (Get-AzlInputError "Settings file not found: $ConfigPath") }
-        try { $file = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json -AsHashtable } catch { throw (Get-AzlInputError "Settings file $ConfigPath isn't valid JSON: $($_.Exception.Message)") }
+    if ($SettingsFile) {
+        if (-not (Test-Path -LiteralPath $SettingsFile -PathType Leaf)) { throw (Get-AzlInputError "Settings file not found: $SettingsFile") }
+        try { $file = Get-Content -LiteralPath $SettingsFile -Raw | ConvertFrom-Json -AsHashtable } catch { throw (Get-AzlInputError "Settings file $SettingsFile isn't valid JSON: $($_.Exception.Message)") }
         foreach ($k in $file.Keys) { $result[$k] = $file[$k] }
     }
     if ($Settings) { foreach ($k in $Settings.Keys) { $result[$k] = $Settings[$k] } }
@@ -1943,7 +1943,7 @@ function Invoke-AzlOsConfiguration {
         [ValidateSet('Plan', 'Apply')][string]$Mode = 'Plan',
         [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'NicNames', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'ArcRegistration')][string[]]$Step,
         [string]$ReportDirectory,
-        [string]$ConfigPath,
+        [string]$SettingsFile,
         [hashtable]$Settings,
         [bool]$ContinueOnNodeFailure = $true,
         [ValidateSet('Auto', 'ArcRunCommand', 'WinRM')][string]$Transport = 'Auto',
@@ -1970,7 +1970,7 @@ function Invoke-AzlOsConfiguration {
     try {
         # ---- 1. validate the inputs
         if (-not (Test-Path -LiteralPath $InfrastructureFile -PathType Leaf)) { throw (Get-AzlInputError "Infrastructure file not found: $InfrastructureFile") }
-        $run = Get-AzlRunSetting -ConfigPath $ConfigPath -Settings $Settings
+        $run = Get-AzlRunSetting -SettingsFile $SettingsFile -Settings $Settings
         try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation:$SkipValidation }
         catch { throw (Get-AzlInputError $_.Exception.Message) }
         $infraNodes = @($infra.nodes)

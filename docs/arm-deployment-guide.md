@@ -58,7 +58,7 @@ everything except submit.
 | `-ReportDirectory` | Where the events, report, summary and parameter files go. Not for a repository. |
 | `-Resume` | Resubmit a failed Deploy (and attach to a running one). |
 | `-AcknowledgeKnownIssues` | Known issue ids you accept, for example `arc-device-id-name`. |
-| `-Settings`, `-ConfigPath` | Run settings as a hashtable or JSON file; they win over the master file's `deployment` block. |
+| `-Settings`, `-SettingsFile` | Run settings as a hashtable or JSON file; they win over the master file's `deployment` block. |
 | `-AllowRevalidate` | Validate an instance in a failed deployment state. Microsoft says not to; support-guided recovery only. |
 | `-SkipPreClusterVerification` | The only bypass of the precondition `PreClusterVerification`: the run goes ahead without a passing, current result of the pre-cluster verification gate. Warned loudly and recorded in the report (`preClusterVerification.status` `Bypassed`). There is no file key for it. |
 | `-RegisterResourceProviders` | Opt in: register the mandatory resource providers that are not registered and wait until they are Registered (Validate and Deploy only). Without it the run never changes Azure. Same as `deployment.register_resource_providers`. |

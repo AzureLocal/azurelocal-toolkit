@@ -8,12 +8,15 @@
 # Run    : From management server — reads infrastructure.yml, uses PSRemoting
 # Prereqs: PSRemoting enabled on all nodes, infrastructure.yml accessible,
 #          powershell-yaml module installed
+# Login  : -Credential, else the LCM account of the file (identity.active_directory.lcm_user, the password a secret reference read
+#          through AzlSecret). The script never asks. With neither it stops with exit code 2.
+# Exit   : 0 done (or planned under -WhatIf); 1 a node failed; 2 the file or the login is missing or not usable (nothing was changed).
 # ==============================================================================
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][string]$ConfigPath,   # Path to infrastructure.yml (no default location: the file is where the operator keeps it)
-    [PSCredential]$Credential,     # Override credential resolution
+    [Parameter(Mandatory)][string]$InfrastructureFile,   # The master infrastructure.yml (schema 5)
+    [PSCredential]$Credential,     # The account for PSRemoting; without it the LCM account of the file is used
     [string[]]$TargetNode = @(),   # Limit to specific nodes; empty = all nodes from config
     [switch]$WhatIf,               # Dry-run — validate only, no changes
     [string]$LogPath      = ""     # Override log file path
@@ -51,20 +54,16 @@ Write-Log "Invoke-ApplySecurityGroups-Orchestrated started"
 Write-Log "Log: $logFile"
 
 # ── Config loading ────────────────────────────────────────────────────────────
-if (-not (Test-Path $ConfigPath)) {
-    Write-Log "Config file not found: $ConfigPath" 'FAIL'
-    throw "Config file not found: $ConfigPath"
-}
-
-Import-Module powershell-yaml -ErrorAction Stop
-Write-Log "Loading config: $ConfigPath"
-$cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+try { $cfg = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Write-Log "Cannot read the infrastructure file: $($_.Exception.Message)" 'FAIL'; exit 2 }
+Write-Log "Loaded the infrastructure file: $InfrastructureFile"
 $script:SecretInfrastructure = $cfg
 
 # ── Build the AD group -> local groups list ────────────────────────────────────
 # identity.active_directory.security_groups[] of infrastructure.yml: name, purpose, local_groups (registry 4.1.0).
-$domainNetbios = $cfg['identity']?['active_directory']?['netbios_name']                  # identity.active_directory.netbios_name
-$sgConfig      = @($cfg.identity.active_directory.security_groups)            # identity.active_directory.security_groups[]
+$domainNetbios = Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'identity.active_directory.netbios_name'
+$sgValue       = Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'identity.active_directory.security_groups'
+$sgConfig      = @(@($sgValue) | Where-Object { $null -ne $_ })
 
 # Build assignment list: [ { AdGroup, LocalGroups } ... ] — skip where local_groups is empty
 $assignments = @()
@@ -72,7 +71,7 @@ foreach ($group in $sgConfig) {
     $key         = [string]$group['name']                                     # identity.active_directory.security_groups[].name
     $localGroups = @($group['local_groups'] | Where-Object { $_ })            # identity.active_directory.security_groups[].local_groups
     if ($localGroups.Count -eq 0) {
-        Write-Log "Skipping '$key' — local_groups is empty (WAC server only)" 'WARN'
+        Write-Log "Skipping '$key' — local_groups is empty" 'WARN'
         continue
     }
     $adGroupFqdn = "$domainNetbios\$key"
@@ -84,8 +83,8 @@ foreach ($group in $sgConfig) {
     Write-Log "Will assign: $adGroupFqdn → [$($localGroups -join ', ')]"
 }
 if ($assignments.Count -eq 0) {
-    Write-Log "No groups with local_groups assignments found — check configuration" 'WARN'
-    return
+    Write-Log "No groups with local_groups assignments found — nothing to do" 'WARN'
+    exit 0
 }
 
 # ── Determine target nodes ────────────────────────────────────────────────────
@@ -105,17 +104,17 @@ if ($WhatIf) {
         Write-Log "[WhatIf] Would add '$($a.AdGroup)' to [$($a.LocalGroups -join ', ')] on: $($nodes -join ', ')" 'WARN'
     }
     Write-Log "WhatIf complete — no changes made" 'WARN'
-    return
+    exit 0
 }
 
 # ── Credential resolution ─────────────────────────────────────────────────────
 function Resolve-KeyVaultRef {
     # Reads a secret reference through the toolkit's one secret resolver (AzlSecret.psm1): any provider, no Azure CLI.
-    # Returns the text, or $null when it cannot be read; the caller then falls back as before. No value is logged.
+    # Returns a SecureString, or $null when it cannot be read; the caller then stops with exit code 2. No value is logged.
     param([string]$KvUri)
     if (-not (Get-AzlSecretProvider -Reference $KvUri)) { Write-Log "  The value is not a secret reference." "WARN"; return $null }
     try {
-        $value = Get-AzlSecretPlainText -Reference $KvUri -Infrastructure $script:SecretInfrastructure
+        $value = Get-AzlSecretValue -Reference $KvUri -Infrastructure $script:SecretInfrastructure
         Write-Log "  Secret retrieved." "PASS"
         return $value
     }
@@ -124,26 +123,26 @@ function Resolve-KeyVaultRef {
 
 # CREDENTIAL RESOLUTION ORDER:
 # 1. -Credential parameter (passed directly)
-# 2. Key Vault — LCM account (domain account for PSRemoting to domain-joined nodes)
-# 3. Interactive Get-Credential prompt
+# 2. The LCM account of the file (domain account for PSRemoting to domain-joined nodes); the password is a secret reference
+# Nothing is asked: with neither the script stops with exit code 2.
 if (-not $Credential) {
-    $netBios    = $cfg['identity']?['active_directory']?['netbios_name']            # identity.active_directory.netbios_name
-    $lcmUser    = $cfg['identity']?['active_directory']?['lcm_user']?['username']              # identity.active_directory.lcm_user.username
-    $lcmPassUri = $cfg['identity']?['active_directory']?['lcm_user']?['password']              # identity.active_directory.lcm_user.password
+    $netBios    = Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'identity.active_directory.netbios_name'
+    $lcmUser    = Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'identity.active_directory.lcm_user.username'
+    $lcmPassUri = Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'identity.active_directory.lcm_user.password'
     # Prefix with DOMAIN\ so NTLM resolves correctly when connecting via IP from a non-domain machine
     $lcmUserFqn = "${netBios}\${lcmUser}"
-    Write-Log "Resolving LCM credentials from Key Vault..."
-    $lcmPass = Resolve-KeyVaultRef -KvUri $lcmPassUri
-    if ($lcmPass) {
-        $Credential = New-Object PSCredential(
-            $lcmUserFqn,
-            (ConvertTo-SecureString $lcmPass -AsPlainText -Force)
-        )
-        Write-Log "Credentials resolved for '$lcmUserFqn'." "PASS"
-    } else {
-        Write-Log "Key Vault unavailable — prompting for credentials." "WARN"
-        $Credential = Get-Credential -Message "Enter LCM credentials for PSRemoting to cluster nodes" -UserName $lcmUserFqn
+    Write-Log "Resolving LCM credentials from the secret reference..."
+    if ([string]::IsNullOrWhiteSpace([string]$netBios) -or [string]::IsNullOrWhiteSpace([string]$lcmUser)) {
+        Write-Log "No login: pass -Credential, or set identity.active_directory.netbios_name and identity.active_directory.lcm_user.username in the file." 'FAIL'
+        exit 2
     }
+    $lcmPass = if ($lcmPassUri) { Resolve-KeyVaultRef -KvUri $lcmPassUri } else { $null }
+    if (-not $lcmPass) {
+        Write-Log "No login: pass -Credential, or set identity.active_directory.lcm_user.username and password (a secret reference) in the file." 'FAIL'
+        exit 2
+    }
+    $Credential = [pscredential]::new($lcmUserFqn, $lcmPass)
+    Write-Log "Credentials resolved for '$lcmUserFqn'." "PASS"
 }
 
 $credParam = @{ Credential = $Credential }
@@ -238,10 +237,12 @@ foreach ($node in $nodes) {
 Write-Log "Security group application complete"
 $results | Format-Table Node, Status, Errors -AutoSize
 
-$failed = $results | Where-Object Status -eq 'Failed'
-if ($failed) {
-    Write-Log "$($failed.Count) node(s) failed — review log: $logFile" 'WARN'
-}
+$failed = @($results | Where-Object Status -eq 'Failed')
 
 Write-Log "Invoke-ApplySecurityGroups-Orchestrated complete"
-return $results
+$results
+if ($failed.Count -gt 0) {
+    Write-Log "$($failed.Count) node(s) failed — review log: $logFile" 'WARN'
+    exit 1
+}
+exit 0

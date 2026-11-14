@@ -40,7 +40,7 @@ Describe 'Settings' {
     It 'reads a settings file' {
         $f = Join-Path $TestDrive 'settings.json'
         '{ "deployTimeoutMinutes": 200 }' | Set-Content -LiteralPath $f
-        (Get-AzlArmRunSetting -ConfigPath $f).deployTimeoutMinutes | Should -Be 200
+        (Get-AzlArmRunSetting -SettingsFile $f).deployTimeoutMinutes | Should -Be 200
     }
     It 'rejects an unknown key, a bad approval mode and a zero timeout as bad input (exit 2)' {
         foreach ($bad in @(@{ nonsense = 1 }, @{ approvalMode = 'maybe' }, @{ validateTimeoutMinutes = 0 })) {

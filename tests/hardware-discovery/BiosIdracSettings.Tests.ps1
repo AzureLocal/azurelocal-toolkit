@@ -72,7 +72,7 @@ Describe 'The BIOS and iDRAC scripts read the BMC login from the infrastructure 
             param([string]$File, [hashtable]$Extra = @{})
             $global:BiosTest.Calls = [System.Collections.Generic.List[object]]::new()
             $output = Join-Path $TestDrive "report-$([guid]::NewGuid().ToString('N').Substring(0, 6)).json"
-            $arguments = @{ ConfigPath = $File } + $Extra
+            $arguments = @{ InfrastructureFile = $File } + $Extra
             if ($script:Kind -eq 'test') { $arguments.OutputPath = $output }
             $streams = & $script:Path @arguments 6>&1 3>&1 2>&1
             [pscustomobject]@{
@@ -179,7 +179,7 @@ Describe 'Test-BiosIdracSettings.ps1 still tests what it tested' {
             [pscustomobject]@{ Attributes = [pscustomobject]@{ 'IPMILan.1#Enable' = 'Enabled' } }
         }
         $output = Join-Path $TestDrive 'validation.json'
-        $null = & $script:TestScript -ConfigPath (New-InfraFile) -OutputPath $output 6>&1 3>&1
+        $null = & $script:TestScript -InfrastructureFile (New-InfraFile) -OutputPath $output 6>&1 3>&1
         $report = Get-Content -LiteralPath $output -Raw | ConvertFrom-Json
         @($report).Count | Should -Be 2
         foreach ($node in $report) {
@@ -201,7 +201,7 @@ Describe 'Set-BiosIdracSettings.ps1 still changes what it changed' {
         }
     }
     It 'sends the one BIOS change and the configuration job to every node, and nothing else' {
-        $null = & $script:SetScript -ConfigPath (New-InfraFile) 6>&1 3>&1
+        $null = & $script:SetScript -InfrastructureFile (New-InfraFile) 6>&1 3>&1
         $writes = @($global:BiosTest.Calls | Where-Object { $_.Method -ne 'Get' })
         @($writes | Where-Object { $_.Method -eq 'Patch' }).Count | Should -Be 2
         @($writes | Where-Object { $_.Method -eq 'Patch' -and $_.Uri -like '*/Bios/Settings' -and $_.Body -match '"SysProfile":\s*"PerfOptimized"' }).Count | Should -Be 2
@@ -209,7 +209,7 @@ Describe 'Set-BiosIdracSettings.ps1 still changes what it changed' {
         $writes.Count | Should -Be 4
     }
     It 'sends nothing under -WhatIf' {
-        $null = & $script:SetScript -ConfigPath (New-InfraFile) -WhatIf 6>&1 3>&1
+        $null = & $script:SetScript -InfrastructureFile (New-InfraFile) -WhatIf 6>&1 3>&1
         @($global:BiosTest.Calls | Where-Object { $_.Method -ne 'Get' }).Count | Should -Be 0
     }
 }

@@ -28,10 +28,22 @@ hardware partner provides an SBE: `winrm_copy` (copied over WinRM from the host 
 `hardware.sbe.node_pull_url` and checks the SHA-256); it is delivered last. Azure Arc Run Command cannot carry a file and there is no storage account route.
 
 The modules are in `scripts/common/node-configuration` (spec, comparison, transports, the node scripts) and
-`scripts/common/azure-local`. The `task-NN-*` folders below are the earlier per-task scripts, which read the older
-`variables.yml`; they stay for reference.
+`scripts/common/azure-local`. The `task-NN-*` folders below hold one placeholder each (a script that ends with exit code 3, NOT IMPLEMENTED, and
+changes nothing): the two scripts above do the work of tasks 01 to 11 and 13, from the one schema 5 `infrastructure.yml`.
 
-Two per-task scripts are removed because the schema 5 path replaces them and they carried defaults that a deployment chooses:
+| Earlier task | Done now by |
+|---|---|
+| 01 WinRM, 02 RDP, 08 ICMP | the RemoteManagement step |
+| 03 static address, 04 DHCP off | the Network step |
+| 05 DNS, 06 DNS check | the Dns step, and the Plan pass that verifies every node |
+| 07 time | the Time step |
+| 09 unused adapters | the UnusedAdapters step |
+| 10 host name | the Hostname step |
+| 11 clear storage | the ClearStorage step (`os_configuration.clear_storage`) |
+| 13 verification | the verify pass of `Invoke-AzureLocalOsConfiguration.ps1` |
+
+The per-task scripts were removed because the schema 5 path replaces them, and several carried values a deployment chooses or a prompt for a login:
+the task scripts of tasks 02, 04, 06, 08, 09 and 11, and the `Invoke-*-Orchestrated.ps1` wrappers (now placeholders). Earlier removals:
 
 - `Enable-WinRmConfiguration.ps1` (task 01) set the TrustedHosts of the node it ran on to a management subnet that it assumed. The RemoteManagement step of
   `Set-AzureLocalNodeConfiguration.ps1` opens WinRM, RDP and ICMP on the node, and the one-time bootstrap (`remoting.bootstrapTransport`: `arc`, `smb` or `auto`)
@@ -39,9 +51,8 @@ Two per-task scripts are removed because the schema 5 path replaces them and the
 - `Start-Phase03OsConfiguration.ps1` (task 12) took the static address, gateway, DNS servers and host name as parameters with placeholder defaults.
   `Set-AzureLocalNodeConfiguration.ps1` does the same work (tasks 02 to 10: RDP, address, DHCP off, DNS, NTP, ICMP, unused adapters, host name) and reads every
   value from `infrastructure.yml`.
+- `Set-StaticIPAddress.ps1` (task 03), `Set-DnsServers.ps1` (task 05), `Set-NTPConfiguration.ps1` (task 07) and `Set-NodeHostname.ps1` (task 10) held
+  `REPLACE_WITH_...` text that a person had to type into the script (Network, Dns, Time and Hostname steps of `Set-AzureLocalNodeConfiguration.ps1` read every value from
+  `infrastructure.yml`).
 
-Four node-local scripts are removed because they held `REPLACE_WITH_...` text that a person had to type into the script, and the schema 5 path replaces them
-(Network, Dns, Time and Hostname steps of `Set-AzureLocalNodeConfiguration.ps1`, which read every value from `infrastructure.yml`):
-`Set-StaticIPAddress.ps1` (task 03), `Set-DnsServers.ps1` (task 05), `Set-NTPConfiguration.ps1` (task 07) and `Set-NodeHostname.ps1` (task 10).
-
-The `Invoke-*-Orchestrated.ps1` wrappers of both task folders stay.
+The run settings file of `Invoke-AzureLocalOsConfiguration.ps1` is `-SettingsFile` (JSON); `-Settings` is the same keys as a hashtable.

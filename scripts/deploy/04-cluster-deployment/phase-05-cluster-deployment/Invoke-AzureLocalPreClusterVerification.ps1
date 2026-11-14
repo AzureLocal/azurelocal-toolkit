@@ -63,7 +63,7 @@
 .PARAMETER Settings
     Run settings (see Get-AzlArmRunSetting): preClusterVerificationMaxAgeHours, preClusterVerificationReportDirectory,
     acknowledgeKnownIssues, solutionVersion, sbeCatalogPath, secretMode (Placeholder, or KeyVaultReference when the parameter file is made with -SecretMode KeyVaultReference: then every deployment secret must be a keyvault:// reference); and remoting = @{ transport; useSsl; authentication } for the node connections.
-.PARAMETER ConfigPath
+.PARAMETER SettingsFile
     The same settings as a JSON file.
 .PARAMETER AcknowledgeKnownIssues
     Known issue ids (config/known-issues/arm-deployment.json) to proceed past, for example arc-device-id-name.
@@ -93,7 +93,7 @@ param(
     [switch]$AllowRevalidate,
     [ValidateSet('azure', 'identity', 'nodes', 'network', 'storage', 'readiness')][string[]]$Category,
     [hashtable]$Settings,
-    [string]$ConfigPath,
+    [string]$SettingsFile,
     [string[]]$AcknowledgeKnownIssues,
     [switch]$PassThru
 )

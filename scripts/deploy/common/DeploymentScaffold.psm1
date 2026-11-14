@@ -26,8 +26,10 @@
     script uses 3. A pipeline that treats every non-zero code as a failure stops on it; one that reads the codes can tell a
     placeholder (3) from a failed run (1) and from bad input (2).
 
-    Parameters that the placeholder scripts pass (-ScriptPath, -ConfigPath, -Credential, -TargetNode, -Configuration,
-    -Parameters, -LogPath) are accepted so the scripts bind, and are not used.
+    Parameters that the placeholder scripts pass (-ScriptPath, -InfrastructureFile, -ConfigPath, -Credential, -TargetNode,
+    -Configuration, -Parameters, -LogPath) are accepted so the scripts bind, and are not used. A placeholder takes
+    -InfrastructureFile, like every script of the toolkit; -ConfigPath is kept here only so that a placeholder that has not been
+    changed yet still binds, and goes when the last one passes -InfrastructureFile.
 #>
 
 Set-StrictMode -Version Latest
@@ -160,6 +162,8 @@ function Invoke-DeploymentOrchestrated {
 
         [string]$ActionName = '',
 
+        [string]$InfrastructureFile = '',
+
         [string]$ConfigPath = '',
 
         [System.Management.Automation.PSCredential]$Credential,
@@ -188,6 +192,8 @@ function Invoke-DeploymentAzCliPowerShell {
         [string]$TaskPath,
 
         [string]$ActionName = '',
+
+        [string]$InfrastructureFile = '',
 
         [string]$ConfigPath = '',
 

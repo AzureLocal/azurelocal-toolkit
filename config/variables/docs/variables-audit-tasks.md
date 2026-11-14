@@ -8,8 +8,8 @@ this page lists what the scripts must change to follow it. Nothing below is a re
 `Get-AzlArmRunSetting` (`scripts/common/arm-deployment/AzlArmDeploymentRun.psm1`) applies **every** key of the `deployment` block of the file
 (snake_case turned into camelCase), so `poll_factor`, `transient_error_limit`, `revalidate`, `allow_revalidate`, `install_environment_checker`,
 `keep_environment_checker`, `require_validated_parameter_hash`, `os_report_max_age_hours`, `stale_skew_minutes` and `known_issues_file` are accepted
-by the code. The registry (and so the schema, which has `additionalProperties: false` on `deployment`) lists them as `-Settings` / `-ConfigPath`
-only. Change the function to apply only the keys the registry lists for the file (20), and keep the rest for `-Settings` and `-ConfigPath`.
+by the code. The registry (and so the schema, which has `additionalProperties: false` on `deployment`) lists them as `-Settings` / `-SettingsFile`
+only. Change the function to apply only the keys the registry lists for the file (20), and keep the rest for `-Settings` and `-SettingsFile`.
 (`skip_pre_cluster_verification` is already refused from a file.)
 
 ## 2. `Invoke-HardwareDiscovery.ps1`: certificate switch is never passed on
@@ -25,15 +25,12 @@ with its task, and keep a payload (a script copied to a node and run there) sepa
 
 Orchestrators (run on the jump server or in a pipeline: must be 7):
 
-- phase-03-os-configuration: `Invoke-DisableDHCP-Orchestrated.ps1`, `Invoke-ConfigureDNS-Orchestrated.ps1`, `Invoke-DisableAdapters-Orchestrated.ps1`,
-  `Invoke-ConfigureHostname-Orchestrated.ps1`, `Invoke-ClearStorage-Orchestrated.ps1`, `Invoke-Phase03Verification-Orchestrated.ps1`
-- phase-04-arc-registration: `Invoke-ArcPrerequisites-Orchestrated.ps1`, `Invoke-ArcRegistration-Orchestrated.ps1`,
-  `Invoke-ArcVerification-Orchestrated.ps1`
-- phase-06-post-deployment: `Invoke-VerifyPostDeployment.ps1`
+- phase-03-os-configuration and phase-04-arc-registration: done in registry 5.0.57. The `Invoke-*-Orchestrated.ps1` scripts of both phases are placeholders now (PowerShell 7, exit code 3) and their work is done by `Set-AzureLocalNodeConfiguration.ps1` and `Invoke-AzureLocalOsConfiguration.ps1`.
+- phase-06-post-deployment: none left (`Invoke-VerifyPostDeployment.ps1` is PowerShell 7)
 
 Task scripts that run on a node or on the jump server (decide per script; a node-side script copied to a machine without PowerShell 7 stays 5.1):
 
-- phase-03-os-configuration: `Enable-RDP.ps1`, `Disable-DHCPOnAllAdapters.ps1`
+- phase-03-os-configuration: none left (the node scripts are removed; the RemoteManagement and Network steps of `Set-AzureLocalNodeConfiguration.ps1` do their work).
 - phase-06-post-deployment: none left (the Standalone scripts are removed)
 
 ## 4. Tool parameters that are not registered

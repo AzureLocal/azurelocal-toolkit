@@ -103,7 +103,7 @@ Each role variable passes one wrapper parameter. Empty values are left out, so t
 | `-ApprovedBootstrap` | `azurelocal_os_configuration_approved_bootstrap` (Apply phase only) | `false` |
 | `-EventLogPath` | `azurelocal_os_configuration_event_log_path` | empty (`os-configuration-events.jsonl` in the report folder of the phase) |
 | `-FailOnPendingChanges` | `azurelocal_os_configuration_fail_on_pending_changes` (Plan phase only) | `false` |
-| `-ConfigPath` | `azurelocal_os_configuration_config_path` | empty |
+| `-SettingsFile` | `azurelocal_os_configuration_settings_file` | empty |
 | `-Settings` | `azurelocal_os_configuration_settings` | `{}` |
 | `-NodeAddress` | `azurelocal_os_configuration_node_address` | `{}` |
 | `-SkipValidation` | `azurelocal_os_configuration_skip_validation` | `false` |

@@ -2,7 +2,7 @@
 # PLACEHOLDER: this script does not do the task. It ends with exit code 3 (NOT IMPLEMENTED) and changes nothing.
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$ConfigPath = '',
+    [string]$InfrastructureFile = '',
     [string]$LogPath = ''
 )
 
@@ -29,6 +29,6 @@ Invoke-DeploymentAzCliPowerShell `
     -ScriptPath $PSCommandPath `
     -TaskPath '04-cluster-deployment/phase-06-post-deployment/task-09-post-deployment-verification' `
     -ActionName 'az-verify-post-deployment' `
-    -ConfigPath $ConfigPath `
+    -InfrastructureFile $InfrastructureFile `
     -LogPath $LogPath `
     -Parameters $PSBoundParameters

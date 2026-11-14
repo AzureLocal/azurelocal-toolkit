@@ -26,11 +26,8 @@
         azure.subscription_id, azure.resource_group, azure.location
         nodes[].name, nodes[].arc_machine_name
 
-.PARAMETER ConfigPath
-    Path to infrastructure.yml (schema 5). Defaults to configs\infrastructure.yml relative to the current folder.
-
-.PARAMETER Credential
-    Not used. The script uses the Azure CLI sign-in.
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Required. Only the keys named above are read.
 
 .PARAMETER TargetNode
     Limit to specific node names (nodes[].name). Empty = all nodes in the file.
@@ -51,8 +48,7 @@
 
 [CmdletBinding()]
 param(
-    [string]      $ConfigPath  = "",
-    [PSCredential]$Credential  = $null,
+    [Parameter(Mandatory)][string]$InfrastructureFile,
     [string[]]    $TargetNode  = @(),
     [switch]      $WhatIf,
     [string]      $LogPath     = "",
@@ -89,15 +85,12 @@ function Write-Log {
 #endregion
 
 #region CONFIG LOADING ----------------------------------------------------------
-if ([string]::IsNullOrEmpty($ConfigPath)) {
-    $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml"
+if (-not (Test-Path -LiteralPath $InfrastructureFile)) {
+    Write-Log "Infrastructure file not found: $InfrastructureFile" "FAIL"; throw "Infrastructure file not found: $InfrastructureFile"
 }
-if (-not (Test-Path $ConfigPath)) {
-    Write-Log "Config not found: $ConfigPath" "FAIL"; throw "Config not found: $ConfigPath"
-}
-Write-Log "Loading config: $ConfigPath"
+Write-Log "Loading the infrastructure file: $InfrastructureFile"
 
-$cfg = Import-AzlInfrastructure -Path $ConfigPath -SkipValidation
+$cfg = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation
 #endregion
 
 #region AZ CLI CHECK ------------------------------------------------------------
@@ -129,7 +122,7 @@ $subId   = ([string](Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'azur
 $nodeRg0 = ([string](Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'azure.resource_group')).Trim()
 if (-not $subId -or -not $nodeRg0) {
     Write-Log "azure.subscription_id and azure.resource_group are needed: the Arc machines of the nodes are there." "FAIL"
-    throw "azure.subscription_id or azure.resource_group is missing in $ConfigPath"
+    throw "azure.subscription_id or azure.resource_group is missing in $InfrastructureFile"
 }
 
 Write-Log "Checking HybridConnectivity RP on subscription: $subId"
@@ -329,3 +322,7 @@ $failed | ForEach-Object {
 }
 Write-Log "Log: $logFile"
 #endregion
+
+# Exit codes: 0 every machine is done (or planned under -WhatIf); 1 a machine failed. A missing file or a missing value stops the script before this.
+if ($failed.Count -gt 0) { exit 1 }
+exit 0

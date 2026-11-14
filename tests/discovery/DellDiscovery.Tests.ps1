@@ -160,7 +160,7 @@ Describe 'Resolve-AzlBmcCredential' {
             if ($PesterBoundParameters.ContainsKey('AsPlainText')) { return "user-of-$($Reference.Split('/')[-1])" }
             return (ConvertTo-SecureString "pw-of-$($Reference.Split('/')[-1])" -AsPlainText -Force)
         }
-        Mock -ModuleName AzlRedfishCore Get-Credential { [pscredential]::new('prompted', (ConvertTo-SecureString 'x' -AsPlainText -Force)) }
+        Mock -ModuleName AzlRedfishCore Get-Credential { throw 'A prompt must never be shown.' }
     }
     It 'prefers the credential parameter and never calls Key Vault' {
         (Resolve-AzlBmcCredential -Credential $script:Cred -Infrastructure $script:Infra).UserName | Should -Be 'admin'
@@ -178,16 +178,16 @@ Describe 'Resolve-AzlBmcCredential' {
         $c.UserName | Should -Be 'plainuser'
         $c.GetNetworkCredential().Password | Should -Be 'pw-of-node-pass'
     }
-    It 'prompts when the file has no reference' {
-        (Resolve-AzlBmcCredential -Infrastructure ([ordered]@{})).UserName | Should -Be 'prompted'
+    It 'never prompts: it stops when the file has no reference' {
+        { Resolve-AzlBmcCredential -Infrastructure ([ordered]@{}) } | Should -Throw '*No BMC credential*'
+        Should -Invoke -ModuleName AzlRedfishCore Get-Credential -Times 0
     }
-    It 'warns and prompts when Key Vault fails, without printing a secret' {
+    It 'stops with the reason and what to pass when the secret cannot be read, without prompting' {
         Mock -ModuleName AzlRedfishCore Get-AzlBmcKeyVaultSecret { throw 'vault unreachable' }
-        $c = Resolve-AzlBmcCredential -Infrastructure $script:Infra -WarningVariable w -WarningAction SilentlyContinue
-        $c.UserName | Should -Be 'prompted'
-        ($w -join ' ') | Should -Match 'vault unreachable'
+        { Resolve-AzlBmcCredential -Infrastructure $script:Infra } | Should -Throw '*No BMC credential*could not be read: vault unreachable*Pass -Credential*'
+        Should -Invoke -ModuleName AzlRedfishCore Get-Credential -Times 0
     }
-    It 'throws instead of prompting with -NoPrompt' { { Resolve-AzlBmcCredential -Infrastructure ([ordered]@{}) -NoPrompt } | Should -Throw '*No BMC credential*' }
+    It 'has no -NoPrompt switch any more (it never prompts)' { (Get-Command Resolve-AzlBmcCredential).Parameters.Keys | Should -Not -Contain 'NoPrompt' }
 }
 
 Describe 'Set-AzlDellIdracVnc' {
@@ -318,7 +318,7 @@ Describe 'Scripts end to end (fake iDRAC)' {
 
     It 'Invoke-HardwareDiscovery writes the node file, the summary and the proposal, and leaves infrastructure.yml alone' {
         $before = Get-Content $script:Cfg -Raw
-        & $script:InvokeScript -ConfigPath $script:Cfg -OutputPath $script:Out -Credential $script:Cred -TargetNode 'node-1' -Detail Summary -ManagementPort 'Embedded NIC 1' -ThrottleLimit 1 -InformationAction SilentlyContinue -WarningAction SilentlyContinue
+        & $script:InvokeScript -InfrastructureFile $script:Cfg -OutputPath $script:Out -Credential $script:Cred -TargetNode 'node-1' -Detail Summary -ManagementPort 'Embedded NIC 1' -ThrottleLimit 1 -InformationAction SilentlyContinue -WarningAction SilentlyContinue
         Test-Path (Join-Path $script:Out 'DOCTAG1.json') | Should -BeTrue
         $summary = Get-Content (Join-Path $script:Out 'discovery-summary.json') -Raw | ConvertFrom-Json
         $summary[0].ServiceTag | Should -Be 'DOCTAG1'
@@ -331,7 +331,7 @@ Describe 'Scripts end to end (fake iDRAC)' {
     }
     It 'Invoke-HardwareDiscovery names its summary and proposal file by parameter, and takes the Redfish limits as parameters' {
         $out = Join-Path $TestDrive 'discovery-named'
-        & $script:InvokeScript -ConfigPath $script:Cfg -OutputPath $out -Credential $script:Cred -TargetNode 'node-1' -Detail Summary -ManagementPort 'Embedded NIC 1' -ThrottleLimit 1 `
+        & $script:InvokeScript -InfrastructureFile $script:Cfg -OutputPath $out -Credential $script:Cred -TargetNode 'node-1' -Detail Summary -ManagementPort 'Embedded NIC 1' -ThrottleLimit 1 `
             -SummaryFileName 'summary-run1.json' -ProposalFileName 'proposal-run1.yml' -TimeoutSeconds 30 -ConnectTimeoutSeconds 5 -MaxRetries 0 -RetryDelaySeconds 1 -NodeBudgetSeconds 600 -MaxMembers 500 `
             -InformationAction SilentlyContinue -WarningAction SilentlyContinue
         Test-Path (Join-Path $out 'summary-run1.json') | Should -BeTrue
@@ -351,7 +351,7 @@ Describe 'Scripts end to end (fake iDRAC)' {
     }
     It 'Invoke-HardwareDiscovery -Detail Full writes the full detail for every node it reads' {
         $out = Join-Path $TestDrive 'full'
-        & $script:InvokeScript -ConfigPath $script:Cfg -OutputPath $out -Credential $script:Cred -TargetNode 'node-1' -Detail Full -ThrottleLimit 1 -InformationAction SilentlyContinue -WarningAction SilentlyContinue
+        & $script:InvokeScript -InfrastructureFile $script:Cfg -OutputPath $out -Credential $script:Cred -TargetNode 'node-1' -Detail Full -ThrottleLimit 1 -InformationAction SilentlyContinue -WarningAction SilentlyContinue
         $r = Get-Content (Join-Path $out 'DOCTAG1.json') -Raw | ConvertFrom-Json
         @($r.firmware).Count | Should -BeGreaterThan 5
         @($r.pcie).Count | Should -Be 3
@@ -368,7 +368,7 @@ Describe 'Scripts end to end (fake iDRAC)' {
         $mgr.Oem = @{ Hpe = @{} }; $mgr.Model = 'iLO 5'
         Set-FakeResource '/redfish/v1/Managers/iDRAC.Embedded.1' $mgr
         $err = $null
-        try { & $script:InvokeScript -ConfigPath $script:Cfg -OutputPath (Join-Path $TestDrive 'hpe') -Credential $script:Cred -Detail Summary -ThrottleLimit 1 -InformationAction SilentlyContinue -ErrorVariable ev -ErrorAction SilentlyContinue } catch { $err = $_.Exception.Message }
+        try { & $script:InvokeScript -InfrastructureFile $script:Cfg -OutputPath (Join-Path $TestDrive 'hpe') -Credential $script:Cred -Detail Summary -ThrottleLimit 1 -InformationAction SilentlyContinue -ErrorVariable ev -ErrorAction SilentlyContinue } catch { $err = $_.Exception.Message }
         $err | Should -Match 'could not be discovered'
         ($ev | ForEach-Object { $_.ToString() }) -join ' ' | Should -Match 'Unsupported vendor in this version'
         Use-FakeBmc
@@ -384,17 +384,17 @@ Describe 'Scripts end to end (fake iDRAC)' {
         $mgr.Remove('Oem'); $mgr.Model = 'BMC'
         Set-FakeResource '/redfish/v1/Managers/iDRAC.Embedded.1' $mgr
         $out = Join-Path $TestDrive 'forced'
-        & $script:InvokeScript -ConfigPath $script:Cfg -OutputPath $out -Credential $script:Cred -Detail Summary -Vendor Dell -ThrottleLimit 1 -InformationAction SilentlyContinue -WarningAction SilentlyContinue
+        & $script:InvokeScript -InfrastructureFile $script:Cfg -OutputPath $out -Credential $script:Cred -Detail Summary -Vendor Dell -ThrottleLimit 1 -InformationAction SilentlyContinue -WarningAction SilentlyContinue
         (Get-Content (Join-Path $out 'DOCTAG1.json') -Raw | ConvertFrom-Json).vendor.confidence | Should -Be 'override'
         Use-FakeBmc
     }
     It 'Update-InfrastructureYml-FromDiscovery previews without -Apply' {
         $before = Get-Content $script:Cfg -Raw
-        & $script:UpdateScript -ConfigPath $script:Cfg -DiscoveryPath $script:Out -InformationAction SilentlyContinue -WarningAction SilentlyContinue
+        & $script:UpdateScript -InfrastructureFile $script:Cfg -DiscoveryPath $script:Out -InformationAction SilentlyContinue -WarningAction SilentlyContinue
         (Get-Content $script:Cfg -Raw) | Should -Be $before
     }
     It 'Update-InfrastructureYml-FromDiscovery -Apply -Force writes serial and MACs from a schema 2.0 file' {
-        & $script:UpdateScript -ConfigPath $script:Cfg -DiscoveryPath $script:Out -Apply -Force -InformationAction SilentlyContinue -WarningAction SilentlyContinue
+        & $script:UpdateScript -InfrastructureFile $script:Cfg -DiscoveryPath $script:Out -Apply -Force -InformationAction SilentlyContinue -WarningAction SilentlyContinue
         $doc = ConvertFrom-Yaml (Get-Content $script:Cfg -Raw) -Ordered
         $doc.nodes[0].serial_number | Should -Be 'DOCTAG1'
         ($doc.nodes[0].network_adapters | Where-Object name -eq 'Slot 3 Port 1').mac_address | Should -Be '00:00:5E:00:53:21'
@@ -402,7 +402,7 @@ Describe 'Scripts end to end (fake iDRAC)' {
     }
     It 'Invoke-HardwareDiscovery fails (after writing the others) when a node cannot be read' {
         Remove-FakeResource '/redfish/v1/Systems/System.Embedded.1'
-        { & $script:InvokeScript -ConfigPath $script:Cfg -OutputPath (Join-Path $TestDrive 'fail') -Credential $script:Cred -Detail Summary -ThrottleLimit 1 -InformationAction SilentlyContinue -ErrorAction SilentlyContinue -WarningAction SilentlyContinue } | Should -Throw '*could not be discovered*'
+        { & $script:InvokeScript -InfrastructureFile $script:Cfg -OutputPath (Join-Path $TestDrive 'fail') -Credential $script:Cred -Detail Summary -ThrottleLimit 1 -InformationAction SilentlyContinue -ErrorAction SilentlyContinue -WarningAction SilentlyContinue } | Should -Throw '*could not be discovered*'
         Use-FakeBmc
     }
     It 'sends only GET requests during the whole scripted run' {
@@ -410,7 +410,7 @@ Describe 'Scripts end to end (fake iDRAC)' {
     }
     It 'Enable-IdracVnc -WhatIf touches no iDRAC' {
         Mock -ModuleName AzlDellRedfish Invoke-AzlRedfish { [pscustomobject]@{ Attributes = [pscustomobject]@{ 'VNCServer.1.Enable' = 'Disabled' } } }
-        $r = & $script:VncScript -BmcAddress 'bmc.invalid' -Credential $script:Cred -WhatIf -InformationAction SilentlyContinue
+        $r = & $script:VncScript -InfrastructureFile $script:Cfg -TargetNode 'node-1' -Credential $script:Cred -WhatIf -InformationAction SilentlyContinue
         $r.Status | Should -Be 'WhatIf'
     }
 }

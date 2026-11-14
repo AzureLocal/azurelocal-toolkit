@@ -1,349 +1,300 @@
 #Requires -Version 7.0
 <#
 .SYNOPSIS
-    Orchestrated: verifies all Phase 06 post-deployment tasks against infrastructure.yml.
+    Verifies a deployed Azure Local instance against the infrastructure file. Read only.
 
 .DESCRIPTION
-    Phase 06 — Post-Deployment | Task 08 — Post-Deployment Verification
+    Phase 06 (post-deployment), Task 09. It is also the verification of the deployment itself (Phase 05, task "verify deployment
+    completion"): the cluster health checks and the identity checks that the earlier per-identity scripts did are the first two parts here.
 
-    Runs read-only checks against the cluster to confirm all Phase 06 tasks completed
-    successfully. Checks: Task 01 (WAC), 02 (quorum), 03 (security groups), 04 (SSH),
-    05 (storage), 06 (VM images via az CLI), 07 (logical networks via az CLI).
+    Checks, in this order. Nothing is created, changed or deleted.
 
-    All checks are idempotent — nothing is created or modified.
+      1. Cluster: every node of nodes[] is a cluster node and its state is Up.
+      2. Identity: with scenario.identity active_directory every node is joined to identity.active_directory.domain_fqdn and its secure channel
+         works. With local_identity every node is in a workgroup and the cluster name resource has ADAware 2 (no Active Directory).
+      3. Quorum: a quorum type is set and the quorum state is Normal. (The witness is created by the deployment from cluster.witness.)
+      4. Security groups: each node has at least one group in Administrators and in Remote Management Users (the groups
+         identity.active_directory.security_groups[].local_groups put there). Active Directory only.
+      5. SSH: sshd runs on each node and TCP 22 answers (the WindowsOpenSSH extension of Phase 06 task 04 puts it there).
+      6. Storage: a non-primordial storage pool is healthy, at least one cluster shared volume exists and every one is Online.
+      7. VM images in Azure: the number of images that Succeeded is not below the number in storage.vm_images[].
+      8. Logical networks in Azure: the number that Succeeded is not below the number in networking.logical_networks[].
 
-    The expected counts come from infrastructure.yml: storage.vm_images[] (VM images, task 06) and
-    networking.logical_networks[] (logical networks, task 07).
+    -WhatIf lists the checks and runs none.
 
-.PARAMETER ConfigPath
-    Path to the master infrastructure.yml. Required: the script has no default location for it.
+    The login is -Credential, else the account the file names for the identity: the LCM account (identity.active_directory.lcm_user, as
+    <netbios name>\<user>) for active_directory, the local administrator (identity.local_admin, as .\<user>) for local_identity. The password is a
+    secret reference read through scripts/common/secrets/AzlSecret.psm1. The script never asks. With neither it stops with exit code 2.
+
+    Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
+        cluster.name, nodes[].name, nodes[].management.ip_address
+        scenario.identity, identity.active_directory.domain_fqdn, .netbios_name, .lcm_user (username, password)
+        identity.local_admin (username, password)
+        azure.subscription_id, azure.resource_group
+        storage.vm_images[], networking.logical_networks[]
+
+    Exit codes: 0 every check passed (or planned under -WhatIf); 1 a check failed; 2 a value in the file is missing or unusable, or there is no
+    login (nothing was checked).
+
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Required. Only the keys above are read.
 
 .PARAMETER Credential
-    Credential for PSRemoting to cluster nodes. If omitted, resolved via Key Vault
-    (Resolve-KeyVaultRef) then interactive Get-Credential prompt.
+    Optional. The account for the remoting to the nodes. Without it the account of the file is used (see above).
 
 .PARAMETER TargetNode
-    Limit node checks to specific node(s). Empty = all nodes in the nodes list.
-
-.PARAMETER WhatIf
-    Log all planned checks without executing — validates config before a live run.
+    Limit the node checks to these nodes (node names or management addresses). Default: every node of the file.
 
 .PARAMETER LogPath
-    Override log file path. Default: logs\task-08-post-deployment-verification\
-    <YYYY-MM-DD_HHmmss>_VerifyPostDeployment.log (relative to CWD).
-
-.PARAMETER WacServer
-    FQDN or IP of the Windows Admin Center server. Override at the command line or set
-    management.wac.server_fqdn in infrastructure.yml. If empty, WAC checks are skipped.
-
-.PARAMETER ClusterName
-    Override cluster name. Defaults to cluster.name from YAML.
+    Optional. The log file. Default: logs\task-09-post-deployment-verification\<time>_VerifyPostDeployment.log in the current folder.
 
 .EXAMPLE
-    # Run against the infrastructure file:
-    .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-09-post-deployment-verification\powershell\Invoke-VerifyPostDeployment.ps1 -ConfigPath .\infrastructure.yml
+    ./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -WhatIf
 
 .EXAMPLE
-    # Dry-run (logs planned checks, no execution):
-    .\...\Invoke-VerifyPostDeployment.ps1 -ConfigPath .\infrastructure.yml -WhatIf
-
-.EXAMPLE
-    # Pass WAC server explicitly:
-    .\...\Invoke-VerifyPostDeployment.ps1 -ConfigPath .\infrastructure.yml -WacServer "wac.improbability.cloud"
-
-.EXAMPLE
-    # Limit to one node:
-    .\...\Invoke-VerifyPostDeployment.ps1 -ConfigPath .\infrastructure.yml -TargetNode iic-01-n01
+    ./Invoke-VerifyPostDeployment.ps1 -InfrastructureFile ./infrastructure.yml -TargetNode iic-azl-n01
 
 .NOTES
-    Requires: powershell-yaml module  (Install-Module powershell-yaml -Scope CurrentUser)
-    Requires: FailoverClusters module on management server
-    Requires: az CLI authenticated    (az login) for Tasks 06-07
-    Read-only: no changes are made to cluster or Azure resources.
+    Needs the FailoverClusters and Storage modules and az (signed in) for checks 7 and 8.
 #>
-
-[CmdletBinding()]
+[CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory)][string]$ConfigPath,
-    [PSCredential]$Credential,
-    [string[]]    $TargetNode  = @(),
-    [switch]      $WhatIf,
-    [string]      $LogPath     = "",
-
-    # YAML-overridable
-    [string]      $WacServer   = "",   # management.wac.server_fqdn — leave empty to skip WAC check
-    [string]      $ClusterName = ""    # cluster.name
+    [Parameter(Mandatory)][string]$InfrastructureFile,
+    [pscredential]$Credential,
+    [string[]]$TargetNode = @(),
+    [string]$LogPath
 )
 
 Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
+$ErrorActionPreference = 'Stop'
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
 
-# The pass rules of the checks. They define the check, not a deployment: each task has to leave at least one object behind.
-# Task 03 applies at least one AD group to the local Administrators and Remote Management Users groups of a node; task 05 leaves at least one CSV volume.
+# What makes a check pass. They define the check, not a deployment: each task has to leave at least one object behind.
+# Security groups apply at least one AD group to the local Administrators and Remote Management Users groups of a node; storage leaves at least one CSV volume.
 $MinimumAdGroupsPerLocalGroup = 1
 $MinimumCsvVolumes = 1
-# Any failed check ends the run with an error (the summary below), so a failure is never passed over.
+# The cluster name resource of a cluster without Active Directory has ADAware 2 (Microsoft Learn, Deploy Azure Local with local identity and Azure Key Vault).
+$LocalIdentityAdAware = 2
+# TCP port of the SSH service of the node. Fixed by the SSH protocol.
+$SshPort = 22
 
-#region LOGGING -----------------------------------------------------------------
-$taskFolderName = "task-08-post-deployment-verification"
-$timestamp      = Get-Date -Format "yyyy-MM-dd_HHmmss"
-
-if ([string]::IsNullOrEmpty($LogPath)) {
-    $logDir  = Join-Path (Get-Location).Path "logs\$taskFolderName"
-    $LogPath = Join-Path $logDir "${timestamp}_VerifyPostDeployment.log"
-}
-
-$logDir = Split-Path $LogPath -Parent
-if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
+$logFile = $LogPath
+if (-not $logFile) { $logFile = Join-Path (Join-Path (Join-Path (Get-Location).Path 'logs') 'task-09-post-deployment-verification') ('{0:yyyy-MM-dd_HHmmss}_VerifyPostDeployment.log' -f (Get-Date)) }
+$logDir = Split-Path -Parent $logFile
+if ($logDir -and -not (Test-Path -LiteralPath $logDir)) { New-Item -ItemType Directory -Path $logDir -Force -WhatIf:$false | Out-Null }
 
 function Write-Log {
-    param([string]$Message, [string]$Level = "INFO")
-    $ts    = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    $entry = "[{0}] [{1,-5}] {2}" -f $ts, $Level, $Message
-    $entry | Out-File -FilePath $LogPath -Append -Encoding utf8
-    $color = switch ($Level) {
-        "FAIL"  { "Red"    }
-        "WARN"  { "Yellow" }
-        "PASS"  { "Green"  }
-        default { "Cyan"   }
+    param([string]$Message, [string]$Level = 'INFO')
+    $line = '[{0:yyyy-MM-dd HH:mm:ss}] [{1,-5}] {2}' -f (Get-Date), $Level, $Message
+    Add-Content -LiteralPath $script:logFile -Value $line -Encoding utf8 -WhatIf:$false
+    $color = switch ($Level) { 'FAIL' { 'Red' } 'WARN' { 'Yellow' } 'PASS' { 'Green' } default { 'Cyan' } }
+    Write-Host $line -ForegroundColor $color
+}
+function Exit-InputProblem([string]$Message) { Write-Log $Message 'FAIL'; exit 2 }
+
+Write-Log 'Post-deployment verification'
+Write-Log "Log: $logFile"
+
+# ---- the values, from the infrastructure file only
+try { $infra = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.Message)" }
+
+$clusterName = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'cluster.name')).Trim()
+if (-not $clusterName) { Exit-InputProblem 'cluster.name is missing in the infrastructure file.' }
+$identityMode = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'scenario.identity')).Trim().ToLowerInvariant()
+if ($identityMode -notin 'active_directory', 'local_identity') { Exit-InputProblem "scenario.identity must be active_directory or local_identity; found '$identityMode'." }
+$domainFqdn = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.active_directory.domain_fqdn')).Trim()
+if ($identityMode -eq 'active_directory' -and -not $domainFqdn) { Exit-InputProblem 'identity.active_directory.domain_fqdn is missing in the infrastructure file.' }
+$subscriptionId = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.subscription_id')).Trim()
+$resourceGroup = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.resource_group')).Trim()
+
+$allNodes = @(@(Get-AzlInfrastructureNode -Infrastructure $infra) | ForEach-Object { [pscustomobject]@{ Hostname = [string]$_.Name; Ip = [string]$_.ManagementIp } })
+$nodesToCheck = if ($TargetNode.Count -gt 0) { @($allNodes | Where-Object { $_.Hostname -in $TargetNode -or $_.Ip -in $TargetNode }) } else { $allNodes }
+if ($nodesToCheck.Count -eq 0) { Exit-InputProblem 'No node to check: nodes[] is empty or -TargetNode matches none.' }
+
+$logicalNetworkValue = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'networking.logical_networks'
+$logicalNetworks = @(@($logicalNetworkValue) | Where-Object { $null -ne $_ })
+$vmImageValue = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'storage.vm_images'
+$vmImages = @(@($vmImageValue) | Where-Object { $null -ne $_ })
+
+Write-Log "Cluster:  $clusterName ($identityMode)"
+Write-Log "Nodes:    $(($nodesToCheck | ForEach-Object { "$($_.Hostname)($($_.Ip))" }) -join ', ')"
+
+# ---- the login: -Credential, else the account of the file. Nothing is asked.
+if (-not $Credential -and -not $WhatIfPreference) {
+    if ($identityMode -eq 'active_directory') {
+        $netbios = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.active_directory.netbios_name')).Trim()
+        $user = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.active_directory.lcm_user.username')).Trim()
+        $reference = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.active_directory.lcm_user.password')).Trim()
+        $account = if ($netbios) { "$netbios\$user" } else { $user }
+        $what = 'identity.active_directory.lcm_user'
     }
-    Write-Host $entry -ForegroundColor $color
-}
-
-Write-Log "======================================================="
-Write-Log " Task 08 — Post-Deployment Verification (Orchestrated)"
-Write-Log " Log: $LogPath"
-if ($WhatIf) { Write-Log " [WhatIf] Dry-run mode — no checks will be executed" "WARN" }
-Write-Log "======================================================="
-#endregion
-
-#region CONFIG LOADING ----------------------------------------------------------
-if (-not (Test-Path $ConfigPath)) {
-    Write-Log "Config not found: $ConfigPath" "FAIL"; throw "Config not found"
-}
-
-Write-Log "Loading config: $ConfigPath"
-Import-Module powershell-yaml -ErrorAction Stop
-$cfg = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
-$script:SecretInfrastructure = $cfg
-
-# Cluster name — YAML-overridable
-if ([string]::IsNullOrEmpty($ClusterName)) {
-    $ClusterName = $cfg.cluster.name              # cluster.name
-}
-if ([string]::IsNullOrEmpty($ClusterName)) { throw "Cannot resolve cluster_name from config or -ClusterName" }
-
-# WAC server — YAML-overridable, optional (empty = skip WAC check)
-if ([string]::IsNullOrEmpty($WacServer) -and $cfg.management.wac.server_fqdn) {
-    $WacServer = $cfg.management.wac.server_fqdn                      # management.wac.server_fqdn
-}
-
-# Cluster nodes: objects with Hostname (display) and Ip (PSRemoting connection target)
-$allNodes = @()
-if ($cfg.nodes) {
-    $allNodes = @(Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object {
-        [PSCustomObject]@{ Hostname = $_.Name; Ip = $_.ManagementIp }  # nodes[].name / nodes[].management.ip_address
-    })
-}
-$nodesToCheck = if ($TargetNode.Count -gt 0) {
-    @($allNodes | Where-Object { $_.Hostname -in $TargetNode -or $_.Ip -in $TargetNode })
-} elseif ($allNodes.Count -gt 0) { $allNodes } else { @() }
-
-# Subscription / resource group for Azure CLI checks
-$subscriptionId = $cfg.azure.subscription_id                          # azure.subscription_id
-$resourceGroup  = if ($cfg.azure.resource_group) { $cfg.azure.resource_group } else { $null }   # azure.resource_group
-
-# Expected counts for pass/fail comparison
-$logicalNetworks = @(if ($cfg.networking.logical_networks) { $cfg.networking.logical_networks })  # networking.logical_networks[]
-$vmImageList     = Get-AzlInfrastructureValue -Infrastructure $cfg -Path 'storage.vm_images'      # storage.vm_images[]
-$marketplace     = @(if ($vmImageList) { $vmImageList })
-
-Write-Log "Cluster:     $ClusterName"
-Write-Log "WAC server:  $(if ($WacServer) { $WacServer } else { '(skipped — not configured)' })"
-Write-Log "Nodes:       $(($nodesToCheck | ForEach-Object { "$($_.Hostname)($($_.Ip))" }) -join ', ')"
-Write-Log "Config:      $ConfigPath"
-#endregion
-
-#region CREDENTIAL RESOLUTION ---------------------------------------------------
-function Resolve-KeyVaultRef {
-    # Reads a secret reference through the toolkit's one secret resolver (AzlSecret.psm1): any provider, no Azure CLI.
-    # Returns the text, or $null when it cannot be read; the caller then falls back as before. No value is logged.
-    param([string]$KvUri)
-    if (-not (Get-AzlSecretProvider -Reference $KvUri)) { Write-Log "  The value is not a secret reference." "WARN"; return $null }
-    try {
-        $value = Get-AzlSecretPlainText -Reference $KvUri -Infrastructure $script:SecretInfrastructure
-        Write-Log "  Secret retrieved." "PASS"
-        return $value
+    else {
+        $user = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.local_admin.username')).Trim()
+        $reference = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.local_admin.password')).Trim()
+        $account = ".\$user"
+        $what = 'identity.local_admin'
     }
-    catch { Write-Log "  The secret could not be read: $($_.Exception.Message)" "WARN"; return $null }
+    if (-not $user -or -not $reference) { Exit-InputProblem "No login: pass -Credential, or set $what username and password (a secret reference) in the infrastructure file." }
+    try { $secret = Get-AzlSecretValue -Reference $reference -Infrastructure $infra }
+    catch { Exit-InputProblem "The password of $what could not be read: $($_.Exception.Message)" }
+    $Credential = [pscredential]::new($account, $secret)
+    Write-Log "Login: $account (from $what)"
 }
-
-if (-not $Credential) {
-    # Post-deployment: nodes are domain-joined and local admin is renamed by Azure Local.
-    # Use the LCM domain account for PSRemoting.
-    $lcmUser       = $cfg['identity']?['active_directory']?['lcm_user']?['username']         # identity.active_directory.lcm_user.username
-    $lcmPassUri    = $cfg['identity']?['active_directory']?['lcm_user']?['password']          # identity.active_directory.lcm_user.password
-    $domainNetbios = $cfg['identity']?['active_directory']?['netbios_name']       # identity.active_directory.netbios_name
-    $lcmFqUser     = if ($domainNetbios) { "$domainNetbios\$lcmUser" } else { $lcmUser }
-    Write-Log "Resolving LCM credentials from Key Vault..."
-    $lcmPass = Resolve-KeyVaultRef -KvUri $lcmPassUri
-    if ($lcmPass) {
-        $Credential = New-Object PSCredential($lcmFqUser, (ConvertTo-SecureString $lcmPass -AsPlainText -Force))
-        Write-Log "Credentials resolved for '$lcmFqUser'." "PASS"
-    } else {
-        Write-Log "Key Vault unavailable — prompting for credentials." "WARN"
-        $Credential = Get-Credential -Message "Enter LCM account credentials for cluster nodes" -UserName $lcmFqUser
-    }
-}
-
 $credParam = if ($Credential) { @{ Credential = $Credential } } else { @{} }
-#endregion
 
-#region VERIFICATION ------------------------------------------------------------
+# ---- the checks
 $passCount = 0; $failCount = 0; $skipCount = 0
-
 function Write-Check {
-    param([bool]$Pass, [string]$Check, [string]$Detail = "")
-    $level = if ($Pass) { "PASS" } else { "FAIL" }
-    Write-Log "  [$level] $Check$(if ($Detail) { " — $Detail" })" $level
+    param([bool]$Pass, [string]$Check, [string]$Detail = '')
+    $level = if ($Pass) { 'PASS' } else { 'FAIL' }
+    Write-Log "  [$level] $Check$(if ($Detail) { " - $Detail" })" $level
     if ($Pass) { $script:passCount++ } else { $script:failCount++ }
 }
+function Write-Skip([string]$Check, [string]$Reason = '') { Write-Log "  [SKIP] $Check$(if ($Reason) { " - $Reason" })" 'WARN'; $script:skipCount++ }
+function Write-Failure([string]$Text) { Write-Log "  [FAIL] $Text" 'FAIL'; $script:failCount++ }
+function Write-Plan([string]$Text) { Write-Log "  [WhatIf] $Text" 'WARN' }
 
-function Write-Skip {
-    param([string]$Check, [string]$Reason = "")
-    Write-Log "  [SKIP] $Check$(if ($Reason) { " — $Reason" })" "WARN"
-    $script:skipCount++
-}
-
-# ── Task 01: Windows Admin Center ───────────────────────────────────────────
-Write-Log ""; Write-Log "Task 01 — Windows Admin Center"
-if ([string]::IsNullOrEmpty($WacServer)) {
-    Write-Skip "WAC checks" "WacServer not configured — pass -WacServer or set management.wac.server_fqdn"
-} elseif ($WhatIf) {
-    Write-Log "  [WhatIf] Would test WAC port 443 and gateway service on $WacServer" "WARN"
-} else {
-    $wacPort = Test-NetConnection -ComputerName $WacServer -Port 443 -WarningAction SilentlyContinue
-    Write-Check -Pass $wacPort.TcpTestSucceeded -Check "WAC port 443 reachable" -Detail $WacServer
+# 1. Cluster nodes
+Write-Log ''; Write-Log 'Check 1 - Cluster nodes'
+if ($WhatIfPreference) { Write-Plan "Would read the nodes of $clusterName and check that each node of the file is Up" }
+else {
     try {
-        $wacSvc = Invoke-Command -ComputerName $WacServer @credParam -ScriptBlock {
-            Get-Service ServerManagementGateway -ErrorAction SilentlyContinue
+        $clusterNodes = @(Get-ClusterNode -Cluster $clusterName -ErrorAction Stop)
+        foreach ($node in $nodesToCheck) {
+            $member = $clusterNodes | Where-Object { [string]$_.Name -eq $node.Hostname } | Select-Object -First 1
+            if (-not $member) { Write-Check -Pass $false -Check "$($node.Hostname) is a cluster node" -Detail 'not found in the cluster'; continue }
+            Write-Check -Pass ([string]$member.State -eq 'Up') -Check "$($node.Hostname) cluster node state" -Detail ([string]$member.State)
         }
-        Write-Check -Pass ($wacSvc.Status -eq "Running") -Check "WAC gateway service" -Detail $wacSvc.Status
-    } catch { Write-Log "  [FAIL] WAC gateway check failed: $_" "FAIL"; $failCount++ }
+    }
+    catch { Write-Failure "Cluster node query failed: $($_.Exception.Message)" }
 }
 
-# ── Task 02: Cluster Quorum ──────────────────────────────────────────────────
-Write-Log ""; Write-Log "Task 02 — Cluster Quorum"
-if ($WhatIf) {
-    Write-Log "  [WhatIf] Would query cluster quorum on $ClusterName" "WARN"
-} else {
-    try {
-        $quorum      = Get-ClusterQuorum -Cluster $ClusterName -ErrorAction Stop
-        $quorumState = (Get-Cluster -Name $ClusterName).QuorumState
-        Write-Check -Pass ($null -ne $quorum.QuorumType) -Check "Quorum type configured"  -Detail $quorum.QuorumType
-        Write-Check -Pass ($quorumState -eq "Normal")    -Check "Quorum state Normal"     -Detail $quorumState
-    } catch { Write-Log "  [FAIL] Cluster quorum query failed: $_" "FAIL"; $failCount++ }
-}
-
-# ── Task 03: Security Groups ─────────────────────────────────────────────────
-Write-Log ""; Write-Log "Task 03 — Security Groups"
+# 2. Identity
+Write-Log ''; Write-Log "Check 2 - Identity ($identityMode)"
 foreach ($node in $nodesToCheck) {
-    if ($WhatIf) { Write-Log "  [WhatIf] Would check local group membership on $($node.Hostname) ($($node.Ip))" "WARN"; continue }
+    if ($WhatIfPreference) { Write-Plan "Would read the domain membership of $($node.Hostname) ($($node.Ip))"; continue }
     try {
-        $groups = Invoke-Command -ComputerName $node.Ip @credParam -ErrorAction Stop -ScriptBlock {
-            @{
-                AdminGroups = (Get-LocalGroupMember -Group "Administrators"          | Where-Object ObjectClass -eq "Group").Count
-                RmGroups    = (Get-LocalGroupMember -Group "Remote Management Users" | Where-Object ObjectClass -eq "Group").Count
+        $state = Invoke-Command -ComputerName $node.Ip @credParam -ErrorAction Stop -ScriptBlock {
+            $system = Get-CimInstance -ClassName Win32_ComputerSystem
+            $channel = $null
+            if ($system.PartOfDomain) { $channel = [bool](Test-ComputerSecureChannel -ErrorAction SilentlyContinue) }
+            [pscustomobject]@{ Domain = [string]$system.Domain; PartOfDomain = [bool]$system.PartOfDomain; SecureChannel = $channel }
+        }
+        if ($identityMode -eq 'active_directory') {
+            Write-Check -Pass ($state.PartOfDomain -and $state.Domain -ieq $domainFqdn) -Check "$($node.Hostname) joined to $domainFqdn" -Detail $state.Domain
+            Write-Check -Pass ($state.SecureChannel -eq $true) -Check "$($node.Hostname) secure channel to the domain"
+        }
+        else { Write-Check -Pass (-not $state.PartOfDomain) -Check "$($node.Hostname) is in a workgroup" -Detail $state.Domain }
+    }
+    catch { Write-Failure "$($node.Hostname) identity check failed: $($_.Exception.Message)" }
+}
+if ($identityMode -eq 'local_identity') {
+    if ($WhatIfPreference) { Write-Plan "Would read ADAware of the cluster name resource of $clusterName" }
+    else {
+        try {
+            $adAware = Get-ClusterResource -Cluster $clusterName -Name 'Cluster Name' -ErrorAction Stop | Get-ClusterParameter -Name ADAware -ErrorAction Stop
+            Write-Check -Pass ([int]$adAware.Value -eq $LocalIdentityAdAware) -Check "Cluster name ADAware is $LocalIdentityAdAware (no Active Directory)" -Detail ([string]$adAware.Value)
+        }
+        catch { Write-Failure "ADAware could not be read: $($_.Exception.Message)" }
+    }
+}
+
+# 3. Quorum
+Write-Log ''; Write-Log 'Check 3 - Cluster quorum'
+if ($WhatIfPreference) { Write-Plan "Would query the quorum of $clusterName" }
+else {
+    try {
+        $quorum = Get-ClusterQuorum -Cluster $clusterName -ErrorAction Stop
+        $quorumState = [string](Get-Cluster -Name $clusterName).QuorumState
+        Write-Check -Pass ($null -ne $quorum.QuorumType) -Check 'Quorum type configured' -Detail ([string]$quorum.QuorumType)
+        Write-Check -Pass ($quorumState -eq 'Normal') -Check 'Quorum state Normal' -Detail $quorumState
+    }
+    catch { Write-Failure "Cluster quorum query failed: $($_.Exception.Message)" }
+}
+
+# 4. Security groups
+Write-Log ''; Write-Log 'Check 4 - Security groups'
+if ($identityMode -ne 'active_directory') { Write-Skip 'Security groups' 'the instance has no Active Directory' }
+else {
+    foreach ($node in $nodesToCheck) {
+        if ($WhatIfPreference) { Write-Plan "Would check the local group membership on $($node.Hostname) ($($node.Ip))"; continue }
+        try {
+            $groups = Invoke-Command -ComputerName $node.Ip @credParam -ErrorAction Stop -ScriptBlock {
+                @{
+                    AdminGroups = @(Get-LocalGroupMember -Group 'Administrators' | Where-Object ObjectClass -EQ 'Group').Count
+                    RmGroups    = @(Get-LocalGroupMember -Group 'Remote Management Users' | Where-Object ObjectClass -EQ 'Group').Count
+                }
             }
+            Write-Check -Pass ($groups.AdminGroups -ge $MinimumAdGroupsPerLocalGroup) -Check "$($node.Hostname) - Administrators AD group(s)" -Detail "$($groups.AdminGroups)"
+            Write-Check -Pass ($groups.RmGroups -ge $MinimumAdGroupsPerLocalGroup) -Check "$($node.Hostname) - Remote Management Users AD group(s)" -Detail "$($groups.RmGroups)"
         }
-        Write-Check -Pass ($groups.AdminGroups -ge $MinimumAdGroupsPerLocalGroup) -Check "$($node.Hostname) — Administrators AD group(s)"          -Detail "$($groups.AdminGroups)"
-        Write-Check -Pass ($groups.RmGroups    -ge $MinimumAdGroupsPerLocalGroup) -Check "$($node.Hostname) — Remote Management Users AD group(s)" -Detail "$($groups.RmGroups)"
-    } catch { Write-Log "  [FAIL] $($node.Hostname) — group check failed: $_" "FAIL"; $failCount++ }
+        catch { Write-Failure "$($node.Hostname) group check failed: $($_.Exception.Message)" }
+    }
 }
 
-# ── Task 04: SSH Connectivity ────────────────────────────────────────────────
-Write-Log ""; Write-Log "Task 04 — SSH Connectivity"
+# 5. SSH
+Write-Log ''; Write-Log 'Check 5 - SSH'
 foreach ($node in $nodesToCheck) {
-    if ($WhatIf) { Write-Log "  [WhatIf] Would check sshd service and port 22 on $($node.Hostname) ($($node.Ip))" "WARN"; continue }
+    if ($WhatIfPreference) { Write-Plan "Would check the sshd service and port $SshPort on $($node.Hostname) ($($node.Ip))"; continue }
     try {
-        $sshSvc = Invoke-Command -ComputerName $node.Ip @credParam -ErrorAction Stop -ScriptBlock {
-            Get-Service sshd -ErrorAction SilentlyContinue
-        }
-        Write-Check -Pass ($sshSvc.Status -eq "Running") -Check "$($node.Hostname) — sshd service" -Detail $sshSvc.Status
-    } catch { Write-Log "  [FAIL] $($node.Hostname) — sshd check failed: $_" "FAIL"; $failCount++ }
-    $sshPort = Test-NetConnection -ComputerName $node.Ip -Port 22 -WarningAction SilentlyContinue
-    Write-Check -Pass $sshPort.TcpTestSucceeded -Check "$($node.Hostname) — port 22 reachable"
+        $sshd = Invoke-Command -ComputerName $node.Ip @credParam -ErrorAction Stop -ScriptBlock { Get-Service sshd -ErrorAction SilentlyContinue }
+        Write-Check -Pass ($null -ne $sshd -and [string]$sshd.Status -eq 'Running') -Check "$($node.Hostname) - sshd service" -Detail $(if ($sshd) { [string]$sshd.Status } else { 'not installed' })
+    }
+    catch { Write-Failure "$($node.Hostname) sshd check failed: $($_.Exception.Message)" }
+    $port = Test-NetConnection -ComputerName $node.Ip -Port $SshPort -WarningAction SilentlyContinue
+    Write-Check -Pass ([bool]$port.TcpTestSucceeded) -Check "$($node.Hostname) - port $SshPort reachable"
 }
 
-# ── Task 05: Storage ─────────────────────────────────────────────────────────
-Write-Log ""; Write-Log "Task 05 — Storage"
-if ($WhatIf) {
-    Write-Log "  [WhatIf] Would query storage pool and CSV volumes on $ClusterName" "WARN"
-} else {
+# 6. Storage
+Write-Log ''; Write-Log 'Check 6 - Storage'
+if ($WhatIfPreference) { Write-Plan "Would query the storage pool and the cluster shared volumes of $clusterName" }
+else {
     try {
-        $pool = Get-StoragePool -CimSession $ClusterName | Where-Object IsPrimordial -eq $false
-        if ($pool) {
-            Write-Check -Pass ($pool.HealthStatus -eq "Healthy") -Check "Storage pool health" -Detail $pool.HealthStatus
-        } else {
-            Write-Log "  [FAIL] No storage pool found on $ClusterName" "FAIL"; $failCount++
-        }
-        $csvVolumes = Get-ClusterSharedVolume -Cluster $ClusterName
-        Write-Check -Pass ($csvVolumes.Count -ge $MinimumCsvVolumes) -Check "CSV volumes mounted" -Detail "$($csvVolumes.Count) volume(s)"
-        foreach ($csv in $csvVolumes) {
-            Write-Check -Pass ($csv.State -eq "Online") -Check "  $($csv.Name)" -Detail $csv.State
-        }
-    } catch { Write-Log "  [FAIL] Storage check failed: $_" "FAIL"; $failCount++ }
+        $pool = @(Get-StoragePool -CimSession $clusterName | Where-Object IsPrimordial -EQ $false)
+        if ($pool.Count -gt 0) { Write-Check -Pass (@($pool | Where-Object { [string]$_.HealthStatus -ne 'Healthy' }).Count -eq 0) -Check 'Storage pool health' -Detail (($pool | ForEach-Object { [string]$_.HealthStatus }) -join ', ') }
+        else { Write-Failure "No storage pool found on $clusterName" }
+        $csvVolumes = @(Get-ClusterSharedVolume -Cluster $clusterName)
+        Write-Check -Pass ($csvVolumes.Count -ge $MinimumCsvVolumes) -Check 'CSV volumes mounted' -Detail "$($csvVolumes.Count) volume(s)"
+        foreach ($csv in $csvVolumes) { Write-Check -Pass ([string]$csv.State -eq 'Online') -Check "  $($csv.Name)" -Detail ([string]$csv.State) }
+    }
+    catch { Write-Failure "Storage check failed: $($_.Exception.Message)" }
 }
 
-# ── Task 06: VM Images (Azure) ───────────────────────────────────────────────
-Write-Log ""; Write-Log "Task 06 — VM Images (Azure)"
-if (-not $subscriptionId -or -not $resourceGroup) {
-    Write-Skip "VM images" "Cannot resolve subscription/resource group — verify manually in Azure Portal"
-} elseif ($WhatIf) {
-    Write-Log "  [WhatIf] Would run: az stack-hci-vm image list --resource-group $resourceGroup" "WARN"
-} else {
+# 7. VM images in Azure
+Write-Log ''; Write-Log 'Check 7 - VM images (Azure)'
+if (-not $subscriptionId -or -not $resourceGroup) { Write-Skip 'VM images' 'azure.subscription_id or azure.resource_group is not in the file' }
+elseif ($WhatIfPreference) { Write-Plan "Would run: az stack-hci-vm image list --resource-group $resourceGroup" }
+else {
     $imagesJson = az stack-hci-vm image list --subscription $subscriptionId --resource-group $resourceGroup --output json 2>$null
     if ($LASTEXITCODE -eq 0 -and $imagesJson) {
-        $images    = @($imagesJson | ConvertFrom-Json)
-        $succeeded = @($images | Where-Object { $_.provisioningState -eq "Succeeded" })
+        $images = @($imagesJson | ConvertFrom-Json)
+        $succeeded = @($images | Where-Object { $_.provisioningState -eq 'Succeeded' })
         Write-Check -Pass ($images.Count -gt 0) -Check "VM images in $resourceGroup" -Detail "$($images.Count) found"
-        if ($marketplace.Count -gt 0) {
-            Write-Check -Pass ($succeeded.Count -ge $marketplace.Count) -Check "All expected images Succeeded" -Detail "$($succeeded.Count)/$($marketplace.Count)"
-        }
-    } else { Write-Log "  [FAIL] Could not query VM images — check az CLI auth" "FAIL"; $failCount++ }
+        if ($vmImages.Count -gt 0) { Write-Check -Pass ($succeeded.Count -ge $vmImages.Count) -Check 'All expected images Succeeded' -Detail "$($succeeded.Count)/$($vmImages.Count)" }
+    }
+    else { Write-Failure 'Could not query VM images: check the az sign-in' }
 }
 
-# ── Task 07: Logical Networks (Azure) ────────────────────────────────────────
-Write-Log ""; Write-Log "Task 07 — Logical Networks (Azure)"
-if (-not $subscriptionId -or -not $resourceGroup) {
-    Write-Skip "Logical networks" "Cannot resolve subscription/resource group — verify manually in Azure Portal"
-} elseif ($WhatIf) {
-    Write-Log "  [WhatIf] Would run: az stack-hci-vm network lnet list --resource-group $resourceGroup" "WARN"
-} else {
+# 8. Logical networks in Azure
+Write-Log ''; Write-Log 'Check 8 - Logical networks (Azure)'
+if (-not $subscriptionId -or -not $resourceGroup) { Write-Skip 'Logical networks' 'azure.subscription_id or azure.resource_group is not in the file' }
+elseif ($WhatIfPreference) { Write-Plan "Would run: az stack-hci-vm network lnet list --resource-group $resourceGroup" }
+else {
     $lnetsJson = az stack-hci-vm network lnet list --subscription $subscriptionId --resource-group $resourceGroup --output json 2>$null
     if ($LASTEXITCODE -eq 0 -and $lnetsJson) {
-        $lnets     = @($lnetsJson | ConvertFrom-Json)
-        $succeeded = @($lnets | Where-Object { $_.provisioningState -eq "Succeeded" })
+        $lnets = @($lnetsJson | ConvertFrom-Json)
+        $succeeded = @($lnets | Where-Object { $_.provisioningState -eq 'Succeeded' })
         Write-Check -Pass ($lnets.Count -gt 0) -Check "Logical networks in $resourceGroup" -Detail "$($lnets.Count) found"
-        if ($logicalNetworks.Count -gt 0) {
-            Write-Check -Pass ($succeeded.Count -ge $logicalNetworks.Count) -Check "All expected networks Succeeded" -Detail "$($succeeded.Count)/$($logicalNetworks.Count)"
-        }
-    } else { Write-Log "  [FAIL] Could not query logical networks — check az CLI auth" "FAIL"; $failCount++ }
+        if ($logicalNetworks.Count -gt 0) { Write-Check -Pass ($succeeded.Count -ge $logicalNetworks.Count) -Check 'All expected networks Succeeded' -Detail "$($succeeded.Count)/$($logicalNetworks.Count)" }
+    }
+    else { Write-Failure 'Could not query logical networks: check the az sign-in' }
 }
-#endregion
 
-#region SUMMARY -----------------------------------------------------------------
-Write-Log ""
-Write-Log "======================================================="
-Write-Log " Summary"
-Write-Log "   Passed  : $passCount"
-Write-Log "   Failed  : $failCount"
-Write-Log "   Skipped : $skipCount"
-Write-Log " Log: $LogPath"
-Write-Log "======================================================="
-
-if ($WhatIf) { Write-Log "Dry-run complete. Re-run without -WhatIf to execute checks." "WARN" }
-if ($failCount -gt 0) { throw "$failCount check(s) failed. Review log: $LogPath" }
-#endregion
+# ---- summary
+Write-Log ''
+Write-Log "Summary: $passCount passed, $failCount failed, $skipCount skipped"
+if ($WhatIfPreference) { Write-Log 'Planned only: re-run without -WhatIf to run the checks.' 'WARN'; exit 0 }
+if ($failCount -gt 0) { Write-Log "$failCount check(s) failed. Log: $logFile" 'FAIL'; exit 1 }
+exit 0

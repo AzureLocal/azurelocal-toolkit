@@ -74,10 +74,10 @@ argument_specs:
         type: bool
         default: false
         description: Wrapper -FailOnPendingChanges (Plan phase only).
-      azurelocal_os_configuration_config_path:
+      azurelocal_os_configuration_settings_file:
         type: str
         default: ""
-        description: Wrapper -ConfigPath.
+        description: Wrapper -SettingsFile.
       azurelocal_os_configuration_settings:
         type: dict
         default: {}

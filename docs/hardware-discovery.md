@@ -7,7 +7,7 @@ There are two scripts in Phase 01, Task 02. Use `Get-HardwareInventory.ps1` for 
 | Makers | Any BMC that offers the DMTF Redfish standard (Dell, DataON, Lenovo, HPE and others) | Dell iDRAC only |
 | Reads | Standard Redfish resources only. No vendor (OEM) path. | Standard resources and the Dell adapter (OEM paths) |
 | Writes | One inventory file per run (JSON or YAML) | One JSON file per node, a summary and a proposal for `nodes[]` |
-| Input | `-InfrastructureFile` only. The BMC password is a secret reference. | `-ConfigPath`, a credential or a prompt |
+| Input | `-InfrastructureFile` only. The BMC password is a secret reference. | `-InfrastructureFile`, and `-Credential` or the secret reference in the file. It never asks. |
 
 ## The hardware inventory (any maker)
 
@@ -109,10 +109,10 @@ adapter's well-known paths are used only when `-Vendor Dell` is given and the se
 
 ```powershell
 # every node with nodes[].bmc.ip_address, full detail, 4 at a time; writes .\discovery\<ServiceTag>.json
-.\Invoke-HardwareDiscovery.ps1 -ConfigPath .\infrastructure.yml
+.\Invoke-HardwareDiscovery.ps1 -InfrastructureFile .\infrastructure.yml
 
-.\Invoke-HardwareDiscovery.ps1 -ConfigPath .\infrastructure.yml -Detail Summary -ThrottleLimit 2
-.\Invoke-HardwareDiscovery.ps1 -ConfigPath .\infrastructure.yml -Vendor Dell -UseSession
+.\Invoke-HardwareDiscovery.ps1 -InfrastructureFile .\infrastructure.yml -Detail Summary -ThrottleLimit 2
+.\Invoke-HardwareDiscovery.ps1 -InfrastructureFile .\infrastructure.yml -Vendor Dell -UseSession
 ```
 
 Then review `discovery\infrastructure.discovered.yml` and run `Update-InfrastructureYml-FromDiscovery.ps1` (preview, then `-Apply`).

@@ -225,18 +225,18 @@ Describe 'The shared helpers read through the resolver' {
             $env:AZL_TEST_SCRIPT_BMCUSER = 'bmc-admin'
             $infra = New-Infra
             $infra.hardware = [ordered]@{ bmc = [ordered]@{ username = 'env://AZL_TEST_SCRIPT_BMCUSER'; password = 'env://AZL_TEST_SCRIPT_CANARY' } }
-            $c = Resolve-AzlBmcCredential -Infrastructure $infra -NoPrompt
+            $c = Resolve-AzlBmcCredential -Infrastructure $infra
             $c.UserName | Should -Be 'bmc-admin'
             $c.GetNetworkCredential().Password | Should -Be $script:Canary
             $infra.hardware.bmc.username = 'plain-user'
-            (Resolve-AzlBmcCredential -Infrastructure $infra -NoPrompt).UserName | Should -Be 'plain-user'
+            (Resolve-AzlBmcCredential -Infrastructure $infra).UserName | Should -Be 'plain-user'
             Remove-Item Env:AZL_TEST_SCRIPT_BMCUSER -ErrorAction SilentlyContinue
         }
-        It 'warns without the secret and refuses with -NoPrompt when the reference cannot be read' {
+        It 'warns without the secret and refuses (it never prompts) when the reference cannot be read' {
             $infra = New-Infra
             $infra.hardware = [ordered]@{ bmc = [ordered]@{ username = 'plain-user'; password = 'env://AZL_TEST_SCRIPT_UNSET' } }
             Remove-Item Env:AZL_TEST_SCRIPT_UNSET -ErrorAction SilentlyContinue
-            { Resolve-AzlBmcCredential -Infrastructure $infra -NoPrompt -WarningAction SilentlyContinue } | Should -Throw '*No BMC credential*'
+            { Resolve-AzlBmcCredential -Infrastructure $infra -WarningAction SilentlyContinue } | Should -Throw '*No BMC credential*'
         }
     }
 

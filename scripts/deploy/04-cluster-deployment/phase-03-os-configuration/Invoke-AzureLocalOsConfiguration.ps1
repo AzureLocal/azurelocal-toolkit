@@ -52,11 +52,11 @@
     the NetworkChange* states (the guarded change of the management address and the other changes that can cut a node off). Contract: pmo/azure-local/os-configuration-design.md section 6. Writing it never fails the run.
 .PARAMETER ReportDirectory
     Where plan-report.json, report.json, summary.md, wipe-list.txt and node-reports/ go. Default: a folder in the temp directory.
-.PARAMETER ConfigPath
+.PARAMETER SettingsFile
     Optional JSON file of run settings: retryTries, retryDelaySeconds, maxPasses (default 6), noRestart, failOnPendingChanges, nodeAddress,
     networkRollbackMinutes, networkStableSeconds, reconnectWaitMinutes, staleRunCommandMinutes, addressProbe, remoting.
 .PARAMETER Settings
-    The same keys as a hashtable; wins over -ConfigPath.
+    The same keys as a hashtable; wins over -SettingsFile.
 .PARAMETER ContinueOnNodeFailure
     Keep going with the other nodes when one fails (default $true). Pass -ContinueOnNodeFailure:$false to stop at the first failure.
 .PARAMETER Transport
@@ -95,7 +95,7 @@ param(
     [ValidateSet('Plan', 'Apply')][string]$Mode = 'Plan',
     [ValidateSet('RemoteManagement', 'Sbe', 'Drivers', 'NicNames', 'Network', 'Dns', 'Time', 'Hostname', 'UnusedAdapters', 'DomainJoin', 'LocalAdmin', 'Mpio', 'SanVerify', 'ClearStorage', 'ArcRegistration')][string[]]$Step,
     [string]$ReportDirectory,
-    [string]$ConfigPath,
+    [string]$SettingsFile,
     [hashtable]$Settings,
     [bool]$ContinueOnNodeFailure = $true,
     [ValidateSet('Auto', 'ArcRunCommand', 'WinRM')][string]$Transport = 'Auto',

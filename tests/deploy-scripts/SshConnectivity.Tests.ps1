@@ -28,7 +28,7 @@ BeforeAll {
     }
     function Invoke-Ssh([string]$File, [string[]]$TargetNode = @()) {
         $log = Join-Path $TestDrive 'logs' ("ssh-$([guid]::NewGuid().ToString('N').Substring(0, 6)).log")
-        $arguments = @{ ConfigPath = $File; LogPath = $log; WhatIf = $true }
+        $arguments = @{ InfrastructureFile = $File; LogPath = $log; WhatIf = $true }
         if ($TargetNode.Count) { $arguments.TargetNode = $TargetNode }
         $failure = $null
         $all = try { & $script:Script @arguments 6>&1 3>&1 2>&1 } catch { $failure = $_.Exception.Message; @() }
@@ -90,7 +90,7 @@ Describe 'Invoke-SSHConnectivity-Orchestrated.ps1' {
 
         It 'has every parameter in the master registry (tools.arm_deployment.parameters)' {
             $own = @($script:Registry | Where-Object { $_.Path -match '^tools\.arm_deployment\.parameters\.[^.]+\.[^.]+$' -and $_.Path -match 'Invoke_SSHConnectivity_Orchestrated_ps1' })
-            @($own | ForEach-Object { $_.Node['name'] }) | Should -Contain 'ConfigPath'
+            @($own | ForEach-Object { $_.Node['name'] }) | Should -Contain 'InfrastructureFile'
             @(& (Join-Path $repo 'config/variables/scripts/Test-ToolParameterRegistration.ps1') -Tool arm_deployment -Root (Split-Path -Parent $script:Script) -Registry $script:Registry) | Should -BeNullOrEmpty
         }
     }

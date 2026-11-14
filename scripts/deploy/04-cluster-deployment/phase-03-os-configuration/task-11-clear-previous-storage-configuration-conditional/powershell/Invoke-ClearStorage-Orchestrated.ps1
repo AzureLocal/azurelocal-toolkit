@@ -1,166 +1,38 @@
 #Requires -Version 7.0
-<#
-.SYNOPSIS
-    Invoke-ClearStorage-Orchestrated.ps1
-    Runs Clear-StorageConfiguration on each node via PSRemoting from the management server.
-
-.PARAMETER ConfigPath
-    Path to infrastructure.yml.
-
-.PARAMETER Credential
-    PSCredential for PSRemoting. If omitted, resolved from Key Vault.
-
-.PARAMETER Force
-    Skip the confirmation prompt.
-
-.EXAMPLE
-    .\Invoke-ClearStorage-Orchestrated.ps1 -ConfigPath .\configs\infrastructure.yml -Force
-
-.NOTES
-    Author:  Azure Local Cloud AzureLocalCloud
-    Phase:   03-os-configuration
-    Task:    11 - Clear Previous Storage Configuration (Conditional)
-    WARNING: DESTRUCTIVE. Wipes all non-boot disks on every node.
-#>
-
-[CmdletBinding()]
+# PLACEHOLDER: this script does not do the task. It ends with exit code 3 (NOT IMPLEMENTED) and changes nothing.
+[CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$ConfigPath = "",
-    [PSCredential]$Credential,
-    [switch]$Force
+    [string]$InfrastructureFile = '',
+    [System.Management.Automation.PSCredential]$Credential = $null,
+    [string[]]$TargetNode = @(),
+    [string]$LogPath = ''
 )
 
 Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
-Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
+$ErrorActionPreference = 'Stop'
 
-function Write-Log {
-    param([string]$Message, [string]$Level = "INFO")
-    $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
-    switch ($Level) {
-        "SUCCESS" { Write-Host "[$ts] [PASS] $Message" -ForegroundColor Green }
-        "ERROR"   { Write-Host "[$ts] [FAIL] $Message" -ForegroundColor Red }
-        "WARN"    { Write-Host "[$ts] [WARN] $Message" -ForegroundColor Yellow }
-        "HEADER"  { Write-Host "[$ts] [----] $Message" -ForegroundColor Cyan }
-        default   { Write-Host "[$ts] [INFO] $Message" }
+function Get-DeploymentCommonModulePath {
+    $current = Get-Item -LiteralPath $PSScriptRoot
+    while ($null -ne $current) {
+        $candidate = [System.IO.Path]::Combine($current.FullName, 'scripts', 'deploy', 'common', 'DeploymentScaffold.psm1')
+        if (Test-Path -LiteralPath $candidate) {
+            return $candidate
+        }
+
+        $current = $current.Parent
     }
+
+    throw "Unable to locate DeploymentScaffold.psm1 from '$PSScriptRoot'."
 }
 
-function Get-Config {
-    param([string]$Path)
-    if ($Path -eq "" -or -not (Test-Path $Path)) {
-        foreach ($c in @(
-            (Join-Path $PSScriptRoot "..\..\..\..\configs\infrastructure.yml"),
-            (Join-Path $PSScriptRoot "..\..\..\..\..\configs\infrastructure.yml")
-        )) { if (Test-Path $c) { $Path = (Resolve-Path $c).Path; break } }
-    } else {
-        $Path = (Resolve-Path $Path).Path
-    }
-    if (-not (Test-Path $Path)) { throw "infrastructure.yml not found. Use -ConfigPath." }
-    Import-Module powershell-yaml -ErrorAction Stop
-    $cfg = Get-Content $Path -Raw | ConvertFrom-Yaml
-    $script:SecretInfrastructure = $cfg
-    $nodes = Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object {
-        [PSCustomObject]@{ hostname = $_.Name; ip = $_.ManagementIp }
-    }
-    return [PSCustomObject]@{
-        Nodes        = @($nodes)
-        AdminUser    = $cfg.identity.local_admin.username
-        AdminPassUri = $cfg.identity.local_admin.password
-    }
-}
+Import-Module (Get-DeploymentCommonModulePath) -Force
 
-function Resolve-KvSecret {
-    # Reads a secret reference through the toolkit's one secret resolver (AzlSecret.psm1): any provider, no Azure CLI.
-    # Returns the text, or $null when it cannot be read. No value is logged.
-    param([string]$Uri)
-    if (-not (Get-AzlSecretProvider -Reference $Uri)) { return $null }
-    try { return (Get-AzlSecretPlainText -Reference $Uri -Infrastructure $script:SecretInfrastructure) }
-    catch { Write-Log "  The secret could not be read: $($_.Exception.Message)" WARN; return $null }
-}
-
-# ── scriptblock that runs ON each node ──────────────────────────────────────
-
-$NodeScript = {
-    Update-StorageProviderCache -ErrorAction SilentlyContinue
-    Get-StoragePool | Where-Object IsPrimordial -eq $false |
-        Set-StoragePool -IsReadOnly:$false -ErrorAction SilentlyContinue
-    Get-StoragePool | Where-Object IsPrimordial -eq $false |
-        Get-VirtualDisk |
-        Remove-VirtualDisk -Confirm:$false -ErrorAction SilentlyContinue
-    Get-StoragePool | Where-Object IsPrimordial -eq $false |
-        Remove-StoragePool -Confirm:$false -ErrorAction SilentlyContinue
-    Get-PhysicalDisk | Reset-PhysicalDisk -ErrorAction SilentlyContinue
-    Get-Disk | Where-Object Number -ne $null |
-               Where-Object IsBoot -ne $true |
-               Where-Object IsSystem -ne $true |
-               Where-Object PartitionStyle -ne RAW |
-               Where-Object BusType -ne USB | ForEach-Object {
-        $_ | Set-Disk -IsOffline:$false  -ErrorAction SilentlyContinue
-        $_ | Set-Disk -IsReadOnly:$false -ErrorAction SilentlyContinue
-        $_ | Clear-Disk -RemoveData -RemoveOEM -Confirm:$false -ErrorAction SilentlyContinue
-        $_ | Set-Disk -IsReadOnly:$true  -ErrorAction SilentlyContinue
-        $_ | Set-Disk -IsOffline:$true   -ErrorAction SilentlyContinue
-    }
-    $raw = Get-Disk | Where-Object Number -ne $null |
-                      Where-Object IsBoot -ne $true |
-                      Where-Object IsSystem -ne $true |
-                      Where-Object PartitionStyle -eq RAW |
-                      Group-Object -NoElement -Property FriendlyName |
-                      Select-Object -ExpandProperty Name
-    "DONE. RAW disks remaining: $(if ($raw) { $raw -join ', ' } else { 'none' })"
-}
-
-# ── main ─────────────────────────────────────────────────────────────────────
-
-Write-Log "=== Task 11 - Clear Previous Storage Configuration ===" HEADER
-Write-Log "WARNING: Wipes all non-boot disks on all nodes." WARN
-
-$cfg = Get-Config -Path $ConfigPath
-Write-Log "Nodes: $($cfg.Nodes.Count)"
-$cfg.Nodes | ForEach-Object { Write-Log "  $($_.hostname)  ($($_.ip))" }
-
-if (-not $Force) {
-    Write-Host ""
-    Write-Host "DESTRUCTIVE: All non-boot disk data will be erased." -ForegroundColor Red
-    Write-Host -NoNewline "Type YES to continue: "
-    if ((Read-Host) -ne "YES") { Write-Log "Cancelled." WARN; exit 0 }
-}
-
-if (-not $Credential) {
-    $pass = Resolve-KvSecret -Uri $cfg.AdminPassUri
-    if ($pass) {
-        $Credential = New-Object PSCredential(
-            $cfg.AdminUser.Trim(),
-            (ConvertTo-SecureString $pass -AsPlainText -Force)
-        )
-        Write-Log "Credential resolved for '$($cfg.AdminUser.Trim())'." SUCCESS
-    } else {
-        Write-Log "Key Vault unavailable - prompting." WARN
-        $Credential = Get-Credential -Message "Local admin on nodes" -UserName $cfg.AdminUser.Trim()
-    }
-}
-
-$results = @()
-foreach ($node in $cfg.Nodes) {
-    Write-Log "[$($node.hostname)] Connecting to $($node.ip)..." HEADER
-    try {
-        $out = Invoke-Command -ComputerName $node.ip -Credential $Credential -ScriptBlock $NodeScript
-        Write-Log "[$($node.hostname)] $out" SUCCESS
-        $results += [PSCustomObject]@{ Node = $node.hostname; Status = "OK"; Detail = $out }
-    } catch {
-        Write-Log "[$($node.hostname)] FAILED: $_" ERROR
-        $results += [PSCustomObject]@{ Node = $node.hostname; Status = "FAIL"; Detail = $_.ToString() }
-    }
-}
-
-Write-Log "=== Summary ===" HEADER
-$results | Format-Table -AutoSize
-
-$failed = @($results | Where-Object Status -ne "OK")
-if ($failed.Count -gt 0) {
-    Write-Log "$($failed.Count) node(s) failed." ERROR
-    exit 1
-}
-Write-Log "All nodes completed." SUCCESS
+Invoke-DeploymentOrchestrated `
+    -ScriptPath $PSCommandPath `
+    -TaskPath '04-cluster-deployment/phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional' `
+    -ActionName 'Invoke-ClearStorage-Orchestrated' `
+    -InfrastructureFile $InfrastructureFile `
+    -Credential $Credential `
+    -TargetNode $TargetNode `
+    -LogPath $LogPath `
+    -Parameters $PSBoundParameters

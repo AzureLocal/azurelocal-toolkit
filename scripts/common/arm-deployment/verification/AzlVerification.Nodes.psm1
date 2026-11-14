@@ -6,10 +6,10 @@
 
 .DESCRIPTION
     Harvested, not written from scratch. Sources, per check, are in the check definitions; in short:
-      azl-toolkit 04-cluster-deployment/phase-02-os-installation Test-OsDeployment.ps1 (OS, domain, features),
-      phase-03-os-configuration task-06 Test-DnsClientConfig / Test-DnsConfiguration, task-07 NTP, task-10 hostname,
-      task-13 Invoke-Phase03Verification-Orchestrated.ps1 (the per node verification block), phase-04-arc-registration
-      Invoke-ArcPrerequisites-Orchestrated.ps1 (Environment Checker run), the node payload of the OS configuration
+      azl-toolkit 04-cluster-deployment/phase-02-os-installation Test-OsDeployment.ps1 (removed) (OS, domain, features),
+      phase-03-os-configuration task-06 Test-DnsClientConfig / Test-DnsConfiguration (removed), task-07 NTP, task-10 hostname,
+      task-13 Invoke-Phase03Verification-Orchestrated.ps1 (removed) (the per node verification block), phase-04-arc-registration
+      Invoke-ArcPrerequisites-Orchestrated.ps1 (removed) (Environment Checker run), the node payload of the OS configuration
       (AzlNodePayload.psm1) for the shape of the reads, Microsoft Learn (azloc-2610) deployment-prerequisites,
       system-requirements-23h2, deployment-install-os and manage/use-environment-checker.
 
@@ -47,7 +47,7 @@ function Get-AzlVerificationCheckDefinition {
     $defs = [System.Collections.Generic.List[object]]::new()
 
     $defs.Add((New-AzlVerDefinition -Id 'ND-001' -Category nodes -Title 'Every node answers over WinRM and the read of it is complete' `
-                -Source "$($script:Src.Install); azl-toolkit phase-02-os-installation Test-OsDeployment.ps1 (reachable)" -Run {
+                -Source "$($script:Src.Install); azl-toolkit phase-02-os-installation Test-OsDeployment.ps1 (removed) (reachable)" -Run {
                 param($Context)
                 $nodes = @(Get-AzlVerNodeList $Context)
                 if (-not $nodes.Count) { return New-AzlVerResult Skipped 'The file lists no nodes (nodes[].name).' 'Fill nodes[] in the infrastructure file.' }
@@ -232,7 +232,7 @@ function Get-AzlVerificationCheckDefinition {
             }))
 
     $defs.Add((New-AzlVerDefinition -Id 'ND-010' -Category nodes -Title 'Required Windows features are installed before the deployment (Hyper-V, Failover Clustering, Data Center Bridging, BitLocker); the deployment installs Network ATC itself' `
-                -Source "$($script:Src.SysReq); azl-toolkit phase-02-os-installation Test-OsDeployment.ps1 (Get-RequiredWindowsFeatures)" -Run {
+                -Source "$($script:Src.SysReq); azl-toolkit phase-02-os-installation Test-OsDeployment.ps1 (removed) (Get-RequiredWindowsFeatures)" -Run {
                 param($Context)
                 $required = Get-AzlVerConstant RequiredFeature
                 $advised = Get-AzlVerAdvisedFeature $Context
@@ -275,7 +275,7 @@ function Get-AzlVerificationCheckDefinition {
             }))
 
     $defs.Add((New-AzlVerDefinition -Id 'ND-012' -Category nodes -Title 'No node is already a member of a cluster' `
-                -Source "$($script:Src.Install) (clean the machines before the deployment); azl-toolkit phase-03-os-configuration task-11 Clear-StorageConfiguration" -Run {
+                -Source "$($script:Src.Install) (clean the machines before the deployment); azl-toolkit phase-03-os-configuration task-11 Clear-StorageConfiguration (removed)" -Run {
                 param($Context)
                 Invoke-AzlVerPerNode -Context $Context -Section 'GetDisks' -Body {
                     param($Name, $D, $N)

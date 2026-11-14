@@ -1,41 +1,34 @@
 #Requires -Version 7.0
-# Task 02 - Register Nodes with Azure Arc via Azure CLI (orchestrated)
-# infrastructure.yml variables:
-#   azure.tenant_id                        -> $TenantId
-#   azure.subscription_id                  -> $SubscriptionId
-#   azure.resource_group                   -> $ResourceGroup
-#   azure.location                         -> $Region
-#   scenario.outbound_path and networking.outbound.arc_gateway (name, resource_group) -> $ArcGatewayId
-#   azure.automation_identity.client_id    -> $SpnId
-#   nodes[].name            -> $NodeNames
+# PLACEHOLDER: this script does not do the task. It ends with exit code 3 (NOT IMPLEMENTED) and changes nothing.
+[CmdletBinding(SupportsShouldProcess = $true)]
+param(
+    [string]$InfrastructureFile = '',
+    [string]$LogPath = ''
+)
 
-$ConfigPath = ".\configs\infrastructure.yml"
-Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
-$cfg        = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
-$gateway    = Get-AzlArcGateway -Infrastructure $cfg
+Set-StrictMode -Version Latest
+$ErrorActionPreference = 'Stop'
 
-$TenantId       = $cfg.azure.tenant_id
-$SubscriptionId = $cfg.azure.subscription_id
-$ResourceGroup  = $cfg.azure.resource_group
-$Region         = $cfg.azure.location
-$ArcGatewayId   = $gateway.Id
-$SpnId          = $cfg['azure']?['automation_identity']?['client_id']
-$NodeNames      = @(Get-AzlInfrastructureNode -Infrastructure $cfg | ForEach-Object { $_.Name })
+function Get-DeploymentCommonModulePath {
+    $current = Get-Item -LiteralPath $PSScriptRoot
+    while ($null -ne $current) {
+        $candidate = [System.IO.Path]::Combine($current.FullName, 'scripts', 'deploy', 'common', 'DeploymentScaffold.psm1')
+        if (Test-Path -LiteralPath $candidate) {
+            return $candidate
+        }
 
-$SpnSecret = Read-Host "Enter SPN secret" -AsPlainText
+        $current = $current.Parent
+    }
 
-az login --service-principal --username $SpnId --password $SpnSecret --tenant $TenantId
-az account set --subscription $SubscriptionId
-
-foreach ($Node in $NodeNames) {
-    az connectedmachine connect `
-        --name $Node `
-        --resource-group $ResourceGroup `
-        --location $Region `
-        --subscription $SubscriptionId `
-        --cloud "AzureCloud" `
-        --correlation-id ([guid]::NewGuid().ToString()) `
-        --gateway-id $ArcGatewayId
+    throw "Unable to locate DeploymentScaffold.psm1 from '$PSScriptRoot'."
 }
 
-az connectedmachine list --resource-group $ResourceGroup --output table
+Import-Module (Get-DeploymentCommonModulePath) -Force
+
+Invoke-DeploymentAzCliPowerShell `
+    -ScriptPath $PSCommandPath `
+    -TaskPath '04-cluster-deployment/phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc' `
+    -ActionName 'Register-AzureLocalArc' `
+    -InfrastructureFile $InfrastructureFile `
+    -LogPath $LogPath `
+    -Parameters $PSBoundParameters

@@ -43,7 +43,7 @@
     Run settings, winning over the master file's deployment block: validateTimeoutMinutes, deployTimeoutMinutes, pollSeconds,
     pollMaxSeconds, approvalMode, resume, skipPreconditions, acknowledgeKnownIssues, requireOsConfigurationReport, revalidate,
     deploymentSettingsApiVersion and the others in Get-AzlArmRunSetting.
-.PARAMETER ConfigPath
+.PARAMETER SettingsFile
     The same settings as a JSON file.
 .PARAMETER TemplateFile
     A local copy of the quickstart template, instead of downloading it from GitHub.
@@ -93,7 +93,7 @@ param(
     [ValidateSet('Plan', 'Validate', 'Deploy', 'ValidateAndDeploy')][string]$Mode = 'Plan',
     [string]$ReportDirectory,
     [hashtable]$Settings,
-    [string]$ConfigPath,
+    [string]$SettingsFile,
     [string]$TemplateFile,
     [switch]$Resume,
     [switch]$AllowRevalidate,

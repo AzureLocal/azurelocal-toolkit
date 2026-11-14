@@ -965,7 +965,7 @@ function Invoke-AzlPreClusterVerification {
         [switch]$Fix,
         [string[]]$Category,
         [System.Collections.IDictionary]$Settings,
-        [string]$ConfigPath,
+        [string]$SettingsFile,
         [string[]]$AcknowledgeKnownIssues,
         [System.Collections.IDictionary]$Adapter,
         [string]$ExtensionFolder = (Get-AzlPclExtensionFolder),
@@ -1007,7 +1007,7 @@ function Invoke-AzlPreClusterVerification {
         if ($KeepEnvironmentChecker) { $armSettings['keepEnvironmentChecker'] = $true }
         if ($AllowRevalidate) { $armSettings['allowRevalidate'] = $true }
         if ($AcknowledgeKnownIssues) { $armSettings['acknowledgeKnownIssues'] = @($AcknowledgeKnownIssues | ForEach-Object { ([string]$_).Split(',') } | ForEach-Object { $_.Trim() } | Where-Object { $_ }) }
-        $run = Get-AzlArmRunSetting -Infrastructure $infra -ConfigPath $ConfigPath -Settings $armSettings
+        $run = Get-AzlArmRunSetting -Infrastructure $infra -SettingsFile $SettingsFile -Settings $armSettings
         $remoting = try { Get-AzlRemotingSetting -Infrastructure $infra -Setting $(if ($remotingRaw) { @{ remoting = $remotingRaw } } else { @{} }) } catch { Stop-AzlPclInput $_.Exception.Message }
         $reportDir = if ($ReportDirectory) { $ReportDirectory } else { Resolve-AzlPclReportDirectory -InfrastructureFile $InfrastructureFile -Configured ([string]$run.preClusterVerificationReportDirectory) -Infrastructure $infra }
         $out.ReportDirectory = $reportDir

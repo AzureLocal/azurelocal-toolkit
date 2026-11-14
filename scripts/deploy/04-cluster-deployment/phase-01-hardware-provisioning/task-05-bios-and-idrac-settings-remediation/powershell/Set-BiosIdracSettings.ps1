@@ -19,8 +19,8 @@
     Keys read: nodes[].name, nodes[].bmc (ip_address, username, password), hardware.bmc (username, password, verify_certificate),
     hardware.bios and nodes[].bios (overrides of the desired BIOS values), secrets and key_vaults (for the references).
 
-.PARAMETER ConfigPath
-    Path to infrastructure.yml configuration.
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Required. Only the keys named above are read; the file is not validated here.
 
 .PARAMETER Credential
     Optional. Use this BMC login for every node instead of the one in infrastructure.yml.
@@ -29,7 +29,7 @@
     Automatically reboot nodes after BIOS changes. Default: false (manual reboot required).
 
 .EXAMPLE
-    .\Set-BiosIdracSettings.ps1 -ConfigPath ".\configs\infrastructure.yml" -RebootAfterBios
+    .\Set-BiosIdracSettings.ps1 -InfrastructureFile ".\infrastructure.yml" -RebootAfterBios
 
 .NOTES
     Author: AzureLocal Cloud Team Team
@@ -41,8 +41,8 @@
 
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [Parameter(Mandatory = $false)]
-    [string]$ConfigPath,
+    [Parameter(Mandatory)]
+    [string]$InfrastructureFile,
 
     [Parameter(Mandatory = $false)]
     [PSCredential]$Credential,
@@ -74,18 +74,6 @@ function Write-Log {
     Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message" -ForegroundColor $color
 }
 
-function Resolve-ConfigPath {
-    param([string]$ExplicitPath)
-    if ($ExplicitPath -and (Test-Path $ExplicitPath)) { return $ExplicitPath }
-    $candidates = Get-ChildItem -Path ".\configs\" -Filter "infrastructure*.yml" -ErrorAction SilentlyContinue | Sort-Object Name
-    if ($candidates.Count -ge 1) { return $candidates[0].FullName }
-    throw "No infrastructure*.yml found. Specify -ConfigPath."
-}
-
-function Import-InfrastructureConfig {
-    param([string]$Path)
-    return Import-AzlInfrastructure -Path $Path -SkipValidation
-}
 
 # The BMC's own certificate is accepted unless hardware.bmc.verify_certificate is true.
 function Get-RedfishTlsArgument {
@@ -136,13 +124,13 @@ function Invoke-GracefulReboot {
 
 Write-Log "=== BIOS and iDRAC Settings Remediation ===" -Level "HEADER"
 
-$configFile = Resolve-ConfigPath -ExplicitPath $ConfigPath
-$config = Import-InfrastructureConfig -Path $configFile
+try { $config = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Write-Log "Cannot read the infrastructure file: $($_.Exception.Message)" -Level "ERROR"; exit 2 }
 
 $nodes = Get-AzlInfrastructureValue -Infrastructure $config -Path 'nodes'
 if (-not $nodes -or $nodes.Count -eq 0) {
-    Write-Log "No nodes found in configuration." -Level "ERROR"
-    exit 1
+    Write-Log "No nodes found in the infrastructure file." -Level "ERROR"
+    exit 2
 }
 
 $verifyValue = Get-AzlInfrastructureValue -Infrastructure $config -Path 'hardware.bmc.verify_certificate'
@@ -173,6 +161,7 @@ $desiredIdrac = @{ $IdracIpmiLanAttribute = $IdracIpmiLanValue }
 
 $nodesRemediated = 0
 $nodesRequireReboot = @()
+$nodesFailed = @()
 
 foreach ($node in $nodes) {
     $nodeName = [string]$node['name']
@@ -193,8 +182,8 @@ foreach ($node in $nodes) {
     Write-Log "  Processing $nodeName ($iDRACIp)..." -Level "INFO"
 
     try {
-        # -Credential, else nodes[].bmc, else hardware.bmc (secret references read by the resolver). Never a prompt.
-        $bmcCredential = Resolve-AzlBmcCredential -Credential $Credential -Infrastructure $config -Node $node -NoPrompt
+        # -Credential, else nodes[].bmc, else hardware.bmc (secret references read by the resolver). Never a prompt; with neither the node fails with the message that says what to pass.
+        $bmcCredential = Resolve-AzlBmcCredential -Credential $Credential -Infrastructure $config -Node $node
 
         # Check current BIOS settings
         $currentBios = (Get-RedfishData -BaseUri $baseUri -Endpoint "$($script:IdracSystemPath)/Bios" -Credential $bmcCredential).Attributes
@@ -252,6 +241,7 @@ foreach ($node in $nodes) {
     }
     catch {
         Write-Log "    $nodeName : Remediation failed — $_" -Level "ERROR"
+        $nodesFailed += $nodeName
     }
 }
 
@@ -269,5 +259,9 @@ if ($nodesRequireReboot.Count -gt 0) {
 else {
     Write-Log "  No reboots required." -Level "SUCCESS"
 }
+
+# Exit codes: 0 every node is done (or planned under -WhatIf); 1 a node failed; 2 the file is not usable.
+if ($nodesFailed.Count -gt 0) { Write-Log "  Nodes that failed: $($nodesFailed -join ', ')" -Level "ERROR"; exit 1 }
+exit 0
 
 #endregion Main

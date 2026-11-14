@@ -1,192 +1,38 @@
 #Requires -Version 7.0
-<#
-.SYNOPSIS
-    Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1
-    Orchestrated Local Identity configuration verification for Azure Local deployments.
-
-.DESCRIPTION
-    Reads cluster configuration from infrastructure.yml and verifies Local Identity
-    state on all cluster nodes (or specific nodes via -TargetNode) via PSRemoting.
-
-    Verifies per node:
-      1. Node Domain = WORKGROUP (not domain-joined)
-      2. Cluster ADAware parameter = 2 (AD-less / Local Identity mode)
-
-    Credentials are resolved in priority order:
-      1. -Credential parameter
-      2. Key Vault reference in infrastructure.yml (keyvault://<vault>/<secret>)
-      3. Interactive Get-Credential prompt
-
-    Source: https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault
-
-.PARAMETER ConfigPath
-    Path to infrastructure.yml. Defaults to 'config/infrastructure.yml' relative
-    to the working directory.
-
-.PARAMETER Credential
-    Override credential for PSRemoting. If omitted, resolved from Key Vault or prompt.
-
-.PARAMETER TargetNode
-    Limit verification to specific node(s). Empty = all cluster nodes.
-
-.PARAMETER WhatIf
-    Dry-run mode. Resolves config and credentials, shows what would be checked,
-    but performs no PSRemoting connections.
-
-.PARAMETER LogPath
-    Override log file path. Default: logs/task-03-verify-deployment-completion/<date>_<time>_VerifyLocalIdentityConfig.log
-
-.NOTES
-    Author:       Azure Local Cloud AzureLocalCloud
-    Version:      1.0.0
-    Phase:        05-cluster-deployment
-    Task:         task-03-verify-deployment-completion
-    Execution:    Run from management server with access to infrastructure.yml
-
-.EXAMPLE
-    .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath config/infrastructure.yml
-    .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath config/infrastructure.yml -TargetNode iic-01-n01,iic-01-n02
-    .\Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1 -ConfigPath config/infrastructure.yml -WhatIf
-#>
-
-[CmdletBinding(SupportsShouldProcess)]
+# PLACEHOLDER: this script does not do the task. It ends with exit code 3 (NOT IMPLEMENTED) and changes nothing.
+[CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$ConfigPath  = "",
-    [PSCredential]$Credential,
+    [string]$InfrastructureFile = '',
+    [System.Management.Automation.PSCredential]$Credential = $null,
     [string[]]$TargetNode = @(),
-    [switch]$WhatIf,
-    [string]$LogPath = ""
+    [string]$LogPath = ''
 )
 
 Set-StrictMode -Version Latest
-$ErrorActionPreference = "Stop"
-Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
-Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
+$ErrorActionPreference = 'Stop'
 
-#region LOGGING
-$TaskFolderName = "task-03-verify-deployment-completion"
-$ShortName      = "VerifyLocalIdentityConfig"
-
-if (-not $LogPath) {
-    $LogDir  = Join-Path (Get-Location).Path "logs\$TaskFolderName"
-    $LogPath = Join-Path $LogDir ("{0}_{1}_{2}.log" -f (Get-Date -f 'yyyy-MM-dd'), (Get-Date -f 'HHmmss'), $ShortName)
-}
-
-if (-not (Test-Path (Split-Path $LogPath -Parent))) {
-    New-Item -ItemType Directory -Path (Split-Path $LogPath -Parent) -Force | Out-Null
-}
-
-function Write-Log {
-    param([string]$Message, [ValidateSet('INFO','WARN','ERROR','DEBUG')][string]$Level = 'INFO')
-    $entry = "{0} [{1}] {2}" -f (Get-Date -f 'yyyy-MM-dd HH:mm:ss'), $Level, $Message
-    Add-Content -Path $LogPath -Value $entry
-    switch ($Level) {
-        'WARN'  { Write-Host $entry -ForegroundColor Yellow }
-        'ERROR' { Write-Host $entry -ForegroundColor Red }
-        default { Write-Host $entry }
-    }
-}
-#endregion LOGGING
-
-#region CONFIG LOADING
-if (-not $ConfigPath) { $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml" }
-Write-Log "Loading configuration from: $ConfigPath"
-if (-not (Test-Path -LiteralPath $ConfigPath)) { throw "infrastructure.yml not found: $ConfigPath. Use -ConfigPath." }
-if (-not (Get-Module -ListAvailable -Name powershell-yaml)) {
-    Install-Module -Name powershell-yaml -Force -Scope CurrentUser -ErrorAction Stop
-}
-Import-Module powershell-yaml -ErrorAction Stop
-$cfg = Get-Content -Path $ConfigPath -Raw | ConvertFrom-Yaml
-#endregion CONFIG LOADING
-
-#region RESOLVE NODES
-$allNodes = @(Get-AzlInfrastructureNode -Infrastructure $cfg)  # nodes[]
-if ($TargetNode.Count -gt 0) {
-    $nodes = @($allNodes | Where-Object { $_.name -in $TargetNode })
-    if ($nodes.Count -eq 0) {
-        Write-Log "No matching nodes found for: $($TargetNode -join ', ')" -Level ERROR
-        exit 1
-    }
-} else {
-    $nodes = @($allNodes)
-}
-Write-Log "Nodes to verify: $($nodes.name -join ', ')"
-#endregion RESOLVE NODES
-
-#region RESOLVE CREDENTIAL
-if (-not $Credential) {
-    $kvPassword = $cfg.identity.local_admin.password  # identity.local_admin.password
-    $username   = $cfg.identity.local_admin.username  # identity.local_admin.username
-    if ($kvPassword -and (Get-AzlSecretProvider -Reference $kvPassword)) {
-        Write-Log "Resolving local admin password from the secret reference..."
-        $secret  = Get-AzlSecretValue -Reference $kvPassword -Infrastructure $cfg
-        $Credential = New-Object PSCredential($username, $secret)
-    } else {
-        Write-Log "Credential not provided and no KV reference found; prompting..." -Level WARN
-        $Credential = Get-Credential -Message "Enter local admin credentials for cluster nodes"
-    }
-}
-#endregion RESOLVE CREDENTIAL
-
-#region WHATIF
-if ($WhatIf) {
-    Write-Log "[WhatIf] Would verify Local Identity config on: $($nodes | ForEach-Object { $_.ManagementIp } | Join-String ', ')"
-    Write-Log "[WhatIf] Checks: Domain = WORKGROUP, ADAware = 2"
-    exit 0
-}
-#endregion WHATIF
-
-#region MAIN
-Write-Log "=== Local Identity Configuration Verification ==="
-
-$failCount = 0
-$results   = [System.Collections.Generic.List[PSCustomObject]]::new()
-
-foreach ($node in $nodes) {
-    $ip = $node.ManagementIp  # nodes[].management.ip_address
-    Write-Log "Connecting to $($node.name) ($ip)..."
-
-    try {
-        $nodeResult = Invoke-Command -ComputerName $ip -Credential $Credential -ScriptBlock {
-            $r = [PSCustomObject]@{
-                NodeName    = $env:COMPUTERNAME
-                Domain      = (Get-WmiObject Win32_ComputerSystem).Domain
-                ADAware     = $null
-                Errors      = @()
-            }
-            try {
-                $adAware = Get-ClusterResource "Cluster Name" | Get-ClusterParameter ADAware
-                $r.ADAware = $adAware.Value
-            } catch {
-                $r.Errors += "ADAware check failed: $_"
-            }
-            $r
+function Get-DeploymentCommonModulePath {
+    $current = Get-Item -LiteralPath $PSScriptRoot
+    while ($null -ne $current) {
+        $candidate = [System.IO.Path]::Combine($current.FullName, 'scripts', 'deploy', 'common', 'DeploymentScaffold.psm1')
+        if (Test-Path -LiteralPath $candidate) {
+            return $candidate
         }
 
-        $domainPass  = $nodeResult.Domain   -eq 'WORKGROUP'
-        $adAwarePass = $nodeResult.ADAware  -eq 2
-
-        Write-Log "  Domain  : $($nodeResult.Domain)  — $(if ($domainPass) { 'PASS' } else { 'FAIL' })"
-        Write-Log "  ADAware : $($nodeResult.ADAware) — $(if ($adAwarePass) { 'PASS' } else { 'FAIL' })"
-        foreach ($err in $nodeResult.Errors) { Write-Log "  $err" -Level WARN }
-
-        if (-not $domainPass -or -not $adAwarePass) { $failCount++ }
-        $results.Add($nodeResult)
-
-    } catch {
-        Write-Log "Failed to connect to $ip : $_" -Level ERROR
-        $failCount++
+        $current = $current.Parent
     }
+
+    throw "Unable to locate DeploymentScaffold.psm1 from '$PSScriptRoot'."
 }
 
-# ── Summary table ─────────────────────────────────────────────────────────────
-Write-Log "=== Summary: $($nodes.Count) node(s) checked, $failCount failure(s) ==="
-$results | Format-Table NodeName, Domain, ADAware -AutoSize | Out-String | ForEach-Object { Write-Log $_ }
+Import-Module (Get-DeploymentCommonModulePath) -Force
 
-if ($failCount -gt 0) {
-    Write-Log "Local Identity verification completed with failures — review log: $LogPath" -Level ERROR
-    exit 1
-} else {
-    Write-Log "Local Identity configuration verified on all nodes."
-}
-#endregion MAIN
+Invoke-DeploymentOrchestrated `
+    -ScriptPath $PSCommandPath `
+    -TaskPath '04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion' `
+    -ActionName 'Invoke-VerifyLocalIdentityConfig-Orchestrated' `
+    -InfrastructureFile $InfrastructureFile `
+    -Credential $Credential `
+    -TargetNode $TargetNode `
+    -LogPath $LogPath `
+    -Parameters $PSBoundParameters

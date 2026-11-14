@@ -18,8 +18,8 @@
     Keys read: nodes[].name, nodes[].bmc (ip_address, username, password), hardware.bmc (username, password, verify_certificate),
     hardware.bios and nodes[].bios (overrides of the desired BIOS values), secrets and key_vaults (for the references).
 
-.PARAMETER ConfigPath
-    Path to infrastructure.yml configuration.
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Required. Only the keys named above are read; the file is not validated here.
 
 .PARAMETER Credential
     Optional. Use this BMC login for every node instead of the one in infrastructure.yml.
@@ -28,7 +28,7 @@
     Path to save validation report. Default: .\logs\bios-validation-report.json
 
 .EXAMPLE
-    .\Test-BiosIdracSettings.ps1 -ConfigPath ".\configs\infrastructure.yml"
+    .\Test-BiosIdracSettings.ps1 -InfrastructureFile ".\infrastructure.yml"
 
 .NOTES
     Author: AzureLocal Cloud Team Team
@@ -40,8 +40,8 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $false)]
-    [string]$ConfigPath,
+    [Parameter(Mandatory)]
+    [string]$InfrastructureFile,
 
     [Parameter(Mandatory = $false)]
     [PSCredential]$Credential,
@@ -73,18 +73,6 @@ function Write-Log {
     Write-Host "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] [$Level] $Message" -ForegroundColor $color
 }
 
-function Resolve-ConfigPath {
-    param([string]$ExplicitPath)
-    if ($ExplicitPath -and (Test-Path $ExplicitPath)) { return $ExplicitPath }
-    $candidates = Get-ChildItem -Path ".\configs\" -Filter "infrastructure*.yml" -ErrorAction SilentlyContinue | Sort-Object Name
-    if ($candidates.Count -ge 1) { return $candidates[0].FullName }
-    throw "No infrastructure*.yml found. Specify -ConfigPath."
-}
-
-function Import-InfrastructureConfig {
-    param([string]$Path)
-    return Import-AzlInfrastructure -Path $Path -SkipValidation
-}
 
 function Get-RedfishData {
     param(
@@ -158,13 +146,13 @@ function Test-IdracSettings {
 
 Write-Log "=== BIOS and iDRAC Settings Validation ===" -Level "HEADER"
 
-$configFile = Resolve-ConfigPath -ExplicitPath $ConfigPath
-$config = Import-InfrastructureConfig -Path $configFile
+try { $config = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Write-Log "Cannot read the infrastructure file: $($_.Exception.Message)" -Level "ERROR"; exit 2 }
 
 $nodes = Get-AzlInfrastructureValue -Infrastructure $config -Path 'nodes'
 if (-not $nodes -or $nodes.Count -eq 0) {
-    Write-Log "No nodes found in configuration." -Level "ERROR"
-    exit 1
+    Write-Log "No nodes found in the infrastructure file." -Level "ERROR"
+    exit 2
 }
 
 $verifyValue = Get-AzlInfrastructureValue -Infrastructure $config -Path 'hardware.bmc.verify_certificate'
@@ -217,8 +205,8 @@ foreach ($node in $nodes) {
     Write-Log "  Validating $nodeName ($iDRACIp)..." -Level "INFO"
 
     try {
-        # -Credential, else nodes[].bmc, else hardware.bmc (secret references read by the resolver). Never a prompt.
-        $bmcCredential = Resolve-AzlBmcCredential -Credential $Credential -Infrastructure $config -Node $node -NoPrompt
+        # -Credential, else nodes[].bmc, else hardware.bmc (secret references read by the resolver). Never a prompt; with neither the node fails with the message that says what to pass.
+        $bmcCredential = Resolve-AzlBmcCredential -Credential $Credential -Infrastructure $config -Node $node
         $biosResults = Test-BiosSettings -iDRACIp $iDRACIp -Credential $bmcCredential -DesiredSettings $nodeBios
         $idracResults = Test-IdracSettings -iDRACIp $iDRACIp -Credential $bmcCredential -DesiredSettings $desiredIdrac
 
@@ -274,5 +262,9 @@ if ($totalFail -gt 0) {
 else {
     Write-Log "All settings compliant." -Level "SUCCESS"
 }
+
+# Exit codes: 0 every setting of every node is compliant; 1 a setting is not compliant or a node could not be read; 2 the file is not usable.
+if ($totalFail -gt 0 -or @($report | Where-Object { $_.PSObject.Properties['Error'] }).Count -gt 0) { exit 1 }
+exit 0
 
 #endregion Main

@@ -5,9 +5,12 @@
 .DESCRIPTION
     Connects to each node's iDRAC, locates the BOSS storage controller,
     deletes existing virtual disks, and creates a new RAID-1 volume across
-    the two BOSS M.2 physical drives.
-.PARAMETER ConfigPath
-    Path to the infrastructure.yml (schema 5). Defaults to ./configs/infrastructure.yml.
+    the two BOSS M.2 physical drives. A reset is destructive by design: run it only before the operating system is installed.
+    Exit codes: 0 done (or planned under -WhatIf); 2 the file or the login is missing or not usable (nothing was sent to any iDRAC).
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Required. Only nodes[].name, nodes[].bmc.ip_address and the hardware.bmc secret references are read.
+.PARAMETER Credential
+    Optional. The iDRAC login for every node. Without it the login is the secret reference in hardware.bmc. The script never asks.
 .PARAMETER VolumeName
     The label the new virtual disk gets (default BOSS-RAID1). A label on the mirror; nothing in the deployment reads it.
 .PARAMETER WhatIf
@@ -15,7 +18,8 @@
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [string]$ConfigPath = "./configs/infrastructure.yml",
+    [Parameter(Mandatory)][string]$InfrastructureFile,
+    [System.Management.Automation.PSCredential]$Credential,
     [ValidateNotNullOrEmpty()][string]$VolumeName = "BOSS-RAID1"
 )
 
@@ -30,15 +34,14 @@ Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '.
 $StorageCollectionPath = "/redfish/v1/Systems/System.Embedded.1/Storage"
 
 # ── Load config ───────────────────────────────────────────────────────────────
-if (-not (Test-Path $ConfigPath)) {
-    throw "Config file not found: $ConfigPath"
-}
-$config  = Get-Content $ConfigPath -Raw | ConvertFrom-Yaml
+try { $config = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Write-Error "Cannot read the infrastructure file: $($_.Exception.Message)" -ErrorAction Continue; exit 2 }
 $nodes   = Get-AzlInfrastructureValue -Infrastructure $config -Path 'nodes'
 
 # ── iDRAC credentials: hardware.bmc in the infrastructure file (secret references) ─
 Write-Host "Reading the iDRAC credentials from the secret references..." -ForegroundColor Cyan
-$idracCred = Resolve-AzlBmcCredential -Infrastructure $config -NoPrompt
+try { $idracCred = Resolve-AzlBmcCredential -Credential $Credential -Infrastructure $config }
+catch { Write-Error "$($_.Exception.Message)" -ErrorAction Continue; exit 2 }
 
 # ── Helper: the BMC address of a node (nodes[].bmc.ip_address) ────────────────
 function Get-NodeBmcAddress {

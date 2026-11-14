@@ -2,7 +2,7 @@
 # PLACEHOLDER: this script does not do the task. It ends with exit code 3 (NOT IMPLEMENTED) and changes nothing.
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-    [string]$ConfigPath = '',
+    [string]$InfrastructureFile = '',
     [System.Management.Automation.PSCredential]$Credential = $null,
     [string[]]$TargetNode = @(),
     [string]$LogPath = ''
@@ -31,7 +31,7 @@ Invoke-DeploymentOrchestrated `
     -ScriptPath $PSCommandPath `
     -TaskPath '04-cluster-deployment/phase-02-os-installation/task-02-mount-and-verify-dell-gold-image-iso' `
     -ActionName 'Invoke-MountGoldImageISO-Orchestrated' `
-    -ConfigPath $ConfigPath `
+    -InfrastructureFile $InfrastructureFile `
     -Credential $Credential `
     -TargetNode $TargetNode `
     -LogPath $LogPath `

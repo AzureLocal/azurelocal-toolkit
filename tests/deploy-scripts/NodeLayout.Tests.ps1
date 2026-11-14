@@ -37,7 +37,7 @@ Describe 'Node layout of the scripts' {
     }
 
     It 'there are scripts to check' -ForEach @(@{ Count = $script:CodeFile.Count }) {
-        $Count | Should -BeGreaterThan 300
+        $Count | Should -BeGreaterThan 200   # a guard that the scan found the scripts; the old-layout work removes scripts on purpose
     }
 
     # an empty list skips the test in every Pester version (5.9.1 has no -AllowNullOrEmptyForEach; 6 fails on an empty -ForEach)

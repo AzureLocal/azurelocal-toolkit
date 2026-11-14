@@ -31,11 +31,12 @@ iDRAC addresses (Phase 01 Task 01) -> Discovery (Phase 01 Task 02) -> infrastruc
 
 ## Credentials
 
-In this order, never from a plain-text file:
+In this order, never from a plain-text file, and never by a prompt:
 
 1. `-Credential`.
-2. The Key Vault references in `infrastructure.yml` (`nodes[].bmc` or `hardware.bmc`, `username` and `password` as `keyvault://<vault>/<secret>`), read with `Get-AzKeyVaultSecret` (needs `Az.KeyVault` and a signed-in Az session).
-3. An interactive `Get-Credential` prompt.
+2. The secret references in `infrastructure.yml` (`nodes[].bmc` or `hardware.bmc`, `username` and `password` as `keyvault://<vault>/<secret>`, `env://`, `file://` or `command://`), read by the toolkit secret resolver (`scripts/common/secrets/AzlSecret.psm1`; a `keyvault://` reference needs `Az.KeyVault` and a signed-in Az session).
+
+With neither, a script stops with exit code 2 and says what to pass.
 
 The iDRAC certificate is self-signed by default, so it is not checked unless `-VerifyCertificate` is set (matching `hardware.bmc.verify_certificate`).
 
@@ -43,13 +44,13 @@ The iDRAC certificate is self-signed by default, so it is not checked unless `-V
 
 ```powershell
 # 1. Read every node (read only), write the proposal
-.\Invoke-HardwareDiscovery.ps1 -ConfigPath .\infrastructure.yml
+.\Invoke-HardwareDiscovery.ps1 -InfrastructureFile .\infrastructure.yml
 
 # 2. Review .\discovery\infrastructure.discovered.yml, then preview what would change in the file
-.\Update-InfrastructureYml-FromDiscovery.ps1 -ConfigPath .\infrastructure.yml -ManagementPort 'Slot 3 Port 1'
+.\Update-InfrastructureYml-FromDiscovery.ps1 -InfrastructureFile .\infrastructure.yml -ManagementPort 'Slot 3 Port 1'
 
 # 3. Write serial numbers and MACs (backup first, confirmation unless -Force)
-.\Update-InfrastructureYml-FromDiscovery.ps1 -ConfigPath .\infrastructure.yml -ManagementPort 'Slot 3 Port 1' -Apply
+.\Update-InfrastructureYml-FromDiscovery.ps1 -InfrastructureFile .\infrastructure.yml -ManagementPort 'Slot 3 Port 1' -Apply
 ```
 
 Roles and IP assignment are never written: discovery cannot read them from hardware. Ports are named `Slot 3 Port 1`,
@@ -60,9 +61,9 @@ The output folder (`discovery/`, git-ignored) holds serial numbers and MACs. Do 
 ## Enable-IdracVnc.ps1
 
 ```powershell
-.\Enable-IdracVnc.ps1 -ConfigPath .\infrastructure.yml -WhatIf          # every node with bmc.ip_address
-.\Enable-IdracVnc.ps1 -ConfigPath .\infrastructure.yml -TargetNode node-1
-.\Enable-IdracVnc.ps1 -BmcAddress '<idrac-address>' -Port 5901 -TimeoutSeconds 3600
+.\Enable-IdracVnc.ps1 -InfrastructureFile .\infrastructure.yml -WhatIf          # every node with bmc.ip_address
+.\Enable-IdracVnc.ps1 -InfrastructureFile .\infrastructure.yml -TargetNode node-1   # one node, so one iDRAC
+.\Enable-IdracVnc.ps1 -InfrastructureFile .\infrastructure.yml -TargetNode node-1 -Port 5901 -TimeoutSeconds 3600
 ```
 
 The VNC password is a `SecureString` (`-VncPassword`) or a Key Vault reference (`-VncSecretReference`), 4 to 8 characters (an iDRAC limit).

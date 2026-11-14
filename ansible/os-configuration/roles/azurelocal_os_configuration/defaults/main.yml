@@ -42,8 +42,8 @@ azurelocal_os_configuration_approved_bootstrap: false
 azurelocal_os_configuration_event_log_path: ""
 # -FailOnPendingChanges: Plan phase only; drift detection.
 azurelocal_os_configuration_fail_on_pending_changes: false
-# -ConfigPath, -Settings, -NodeAddress, -SkipValidation
-azurelocal_os_configuration_config_path: ""
+# -SettingsFile, -Settings, -NodeAddress, -SkipValidation
+azurelocal_os_configuration_settings_file: ""
 azurelocal_os_configuration_settings: {}
 azurelocal_os_configuration_node_address: {}
 azurelocal_os_configuration_skip_validation: false

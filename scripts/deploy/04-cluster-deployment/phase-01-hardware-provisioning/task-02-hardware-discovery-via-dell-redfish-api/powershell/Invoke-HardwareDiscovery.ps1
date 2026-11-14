@@ -35,12 +35,12 @@
     management MAC; the OS configuration finds every port by MAC. New infrastructure.yml fields are added through the master
     variable registry first, so nothing else is written.
 
-    The BMC login: -Credential, then the Key Vault references in infrastructure.yml (nodes[].bmc or hardware.bmc), then a
-    prompt. No password is read from a file or logged. Only GET requests are sent (with -UseSession also one session POST and
+    The BMC login: -Credential, then the secret references in infrastructure.yml (nodes[].bmc or hardware.bmc). Nothing is asked: with
+    neither, the script stops with exit code 2. No password is read from a file or logged. Only GET requests are sent (with -UseSession also one session POST and
     its DELETE).
 
-.PARAMETER ConfigPath
-    infrastructure.yml. Default: $env:AZL_INFRASTRUCTURE_FILE, then .\infrastructure.yml, then .\config\infrastructure.yml.
+.PARAMETER InfrastructureFile
+    The master infrastructure.yml (schema 5). Required. Only the keys named in the description are read; the file is not validated here.
 
 .PARAMETER OutputPath
     Folder for the output. Default: .\discovery
@@ -101,10 +101,10 @@
     Check the BMC TLS certificate. Default: not checked (self-signed).
 
 .EXAMPLE
-    .\Invoke-HardwareDiscovery.ps1 -ConfigPath .\infrastructure.yml
+    .\Invoke-HardwareDiscovery.ps1 -InfrastructureFile .\infrastructure.yml
 
 .EXAMPLE
-    .\Invoke-HardwareDiscovery.ps1 -ConfigPath .\infrastructure.yml -ManagementPort 'Slot 3 Port 1' -UpdateInfrastructure
+    .\Invoke-HardwareDiscovery.ps1 -InfrastructureFile .\infrastructure.yml -ManagementPort 'Slot 3 Port 1' -UpdateInfrastructure
 
 .NOTES
     Phase: 04-cluster-deployment / phase-01-hardware-provisioning / task-02-hardware-discovery-via-dell-redfish-api
@@ -112,7 +112,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string]$ConfigPath,
+    [Parameter(Mandatory)][string]$InfrastructureFile,
     [string]$OutputPath = (Join-Path '.' 'discovery'),
     [string]$SummaryFileName = 'discovery-summary.json',
     [string]$ProposalFileName = 'infrastructure.discovered.yml',
@@ -164,24 +164,29 @@ function Get-ExistingManagementMac([System.Collections.IDictionary]$Node) {
     return ''
 }
 
-$infrastructure = if ($ConfigPath) { Import-AzlInfrastructure -Path $ConfigPath -SkipValidation } else { Import-AzlInfrastructure -SkipValidation }
+try { $infrastructure = Import-AzlInfrastructure -Path $InfrastructureFile -SkipValidation }
+catch { Write-Error "Cannot read the infrastructure file: $($_.Exception.Message)" -ErrorAction Continue; exit 2 }
 $nodes = @(@($infrastructure['nodes']) | Where-Object { $_ -is [System.Collections.IDictionary] -and $_['bmc'] -is [System.Collections.IDictionary] -and $_['bmc']['ip_address'] })
 if ($TargetNode.Count -gt 0) { $nodes = @($nodes | Where-Object { [string]$_['name'] -in $TargetNode }) }
 if ($nodes.Count -eq 0) { throw 'No node with a bmc.ip_address to discover. Check nodes[].bmc.ip_address and -TargetNode.' }
 
 New-Item -ItemType Directory -Path $OutputPath -Force | Out-Null
 
-# Credentials are resolved here, one node at a time, because a prompt cannot happen inside a parallel runspace.
+# The logins are resolved here, one node at a time, before the parallel runspaces start. Nothing is asked: without -Credential and without a
+# secret reference in the file the script stops with exit code 2 and says what to pass.
 $shared = $Credential
-$work = foreach ($node in $nodes) {
-    $hasOwnLogin = $node['bmc'].Contains('username') -and $node['bmc'].Contains('password')
-    $cred = if ($hasOwnLogin) { Resolve-AzlBmcCredential -Credential $Credential -Infrastructure $infrastructure -Node $node }
-    else {
-        if (-not $shared) { $shared = Resolve-AzlBmcCredential -Infrastructure $infrastructure }
-        $shared
+try {
+    $work = foreach ($node in $nodes) {
+        $hasOwnLogin = $node['bmc'].Contains('username') -and $node['bmc'].Contains('password')
+        $cred = if ($hasOwnLogin) { Resolve-AzlBmcCredential -Credential $Credential -Infrastructure $infrastructure -Node $node }
+        else {
+            if (-not $shared) { $shared = Resolve-AzlBmcCredential -Infrastructure $infrastructure }
+            $shared
+        }
+        [pscustomobject]@{ Name = [string]$node['name']; Address = [string]$node['bmc']['ip_address']; Credential = $cred; ExistingManagementMac = (Get-ExistingManagementMac $node) }
     }
-    [pscustomobject]@{ Name = [string]$node['name']; Address = [string]$node['bmc']['ip_address']; Credential = $cred; ExistingManagementMac = (Get-ExistingManagementMac $node) }
 }
+catch { Write-Error "$($_.Exception.Message)" -ErrorAction Continue; exit 2 }
 
 Write-Information "Reading $(@($work).Count) BMC(s), $ThrottleLimit at a time ($Detail, vendor $Vendor)."
 $options = [pscustomobject]@{
@@ -253,7 +258,7 @@ if ($items.Count -gt 0) {
 if ($UpdateInfrastructure -and $items.Count -gt 0) {
     $updater = Join-Path $PSScriptRoot 'Update-InfrastructureYml-FromDiscovery.ps1'
     $arguments = @{ DiscoveryPath = $OutputPath; Apply = $true }
-    if ($ConfigPath) { $arguments.ConfigPath = $ConfigPath }
+    $arguments.InfrastructureFile = $InfrastructureFile
     if ($ManagementPort) { $arguments.ManagementPort = $ManagementPort }
     if ($Force) { $arguments.Force = $true }
     & $updater @arguments

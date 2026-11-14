@@ -92,7 +92,7 @@ BeforeAll {
         Set-GuardOps $ops
     }
     function Get-FinalState($w) { $w.Files[$script:StatePath] | ConvertFrom-Json }
-    function Invoke-World($w) { Invoke-GuardedChange -ConfigPath $script:CfgPath -ScriptPath 'C:\fake\net-abc123def456.ps1' }
+    function Invoke-World($w) { Invoke-GuardedChange -ChangeFile $script:CfgPath -ScriptPath 'C:\fake\net-abc123def456.ps1' }
 }
 
 Describe 'Guarded change engine: commit confirmed' {

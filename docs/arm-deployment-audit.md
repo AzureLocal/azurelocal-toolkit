@@ -43,18 +43,16 @@ reads code, tests and documents.
 | --- | --- | --- |
 | `monitoring/powershell/` (`Monitor-Validation.ps1`, `Monitor-Deployment.ps1`, `Invoke-MonitorDeployment-Orchestrated.ps1`) | Removed | Sonar (azurelocal-sonar) shows validation and deployment progress; the toolkit no longer carries progress dashboards |
 
-### 1.4 Scaffolds and legacy scripts (do not run these for a deployment)
+### 1.4 Scaffolds and legacy scripts (removed)
 
-| Path | Status | Why |
-| --- | --- | --- |
-| `active-directory/task-01-.../powershell/Deploy-AzureLocalCluster.ps1` and the `local-identity` copy | Legacy | Calls `Generate-AzureLocal-Parameters.ps1`, which is not in the repository (`find` finds none). Reads `cluster_arm_deployment.*` of the old layout |
-| `.../Deploy-AzureLocalCluster-Standalone.ps1` (both identities) | Legacy | Needs a hand-made `azuredeploy.parameters.*.json` with `{{VARIABLE}}` placeholders |
-| `.../Invoke-VerifyADPrerequisites-Orchestrated.ps1` (the `-Standalone` copy is removed) | Partly real, legacy config | Documented as the AD prerequisite check; reads the old layout |
-| `.../Invoke-DeployCluster-Orchestrated.ps1` (local identity), `Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1` | Scaffold / legacy | The first is a 1 KB wrapper over the scaffold module; the second reads the old layout |
-| `azurecli/az-deploy-cluster*.ps1` (the Bash variant has since been removed) | Scaffold | `Invoke-DeploymentAzCliPowerShell` logs "standards-compliant scaffold. Add task-specific az commands" |
-| `Get-HciResourceProviderObjectId*.ps1` | Real, small | Same lookup the module does (`Get-AzlHciResourceProviderObjectId`) |
-| `active-directory/task-02-verify-.../Test-ClusterHealth.ps1`, `Test-ADDomainStatus.ps1`, local-identity `Test-LocalIdentityConfig.ps1` (their `-Standalone` copies are removed) | Real, legacy config | Post-deployment verification over PSRemoting |
+Registry 5.0.57 removed the legacy scripts that this table listed. The scripts below are removed, and the replacing script is named on each line.
 
+- `Deploy-AzureLocalCluster.ps1` and `Deploy-AzureLocalCluster-Standalone.ps1` (both identities): removed, replaced by `Invoke-AzureLocalArmDeployment.ps1`.
+- `Get-HciResourceProviderObjectId.ps1` and its `-Standalone` copy (both identities): removed, replaced by the object id lookup of the ARM run.
+- `Deploy-CreateLocalAdmin.ps1`: removed, replaced by the LocalAdmin step of `Set-AzureLocalNodeConfiguration.ps1`.
+- The cluster health, domain status and local identity checks of the task "verify deployment completion": removed, replaced by checks 1 and 2 of `Invoke-VerifyPostDeployment.ps1`.
+- The scaffolds of these task folders are placeholders that end with exit code 3 and change nothing: `Invoke-VerifyADPrerequisites-Orchestrated.ps1`,
+  `Invoke-DeployCluster-Orchestrated.ps1`, `Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1` and `azurecli/az-deploy-cluster*.ps1`.
 ### 1.5 Pipelines today
 
 | File | Status | Notes |
@@ -68,7 +66,7 @@ reads code, tests and documents.
 | Document | Says | Matches the code? |
 | --- | --- | --- |
 | `docs/os-configuration-and-arm-deployment.md` (toolkit) | Plan, `-Execute -Mode Validate`, then `-Execute -Mode Deploy`, as separate runs; lists prerequisites and who checks each (Code, Azure, You) | Yes for the entry point; the "You" rows are the ones this work turns into checks |
-| azurelocal.cloud implementation guide, Phase 05 (`docs/implementation/04-cluster-deployment/phase-05-cluster-deployment/`) | Portal and ARM template routes per identity and storage; ARM pages tell the reader to run `Invoke-VerifyADPrerequisites-Orchestrated.ps1`, `Get-HciResourceProviderObjectId.ps1` and `Deploy-AzureLocalCluster-Standalone.ps1`, and to generate parameters with `Generate-AzureLocal-Parameters.ps1` | **No.** Two of the four scripts are legacy; the generator does not exist; the schema 5 entry point is not mentioned. Last updated 2026-03-08 |
+| azurelocal.cloud implementation guide, Phase 05 (`docs/implementation/04-cluster-deployment/phase-05-cluster-deployment/`) | Portal and ARM template routes per identity and storage; ARM pages told the reader to run four scripts (three of them since removed from the toolkit) and to generate parameters with `Generate-AzureLocal-Parameters.ps1` | **No.** The scripts the pages name are gone or placeholders; the generator does not exist; the schema 5 entry point is not mentioned. Last updated 2026-03-08 |
 | Implementation guide, Phase 05 monitoring pages | Run `Monitor-Validation.ps1` / `Monitor-Deployment.ps1` | No, the scripts are removed; use Sonar |
 | azurelocal.cloud automation guide (`docs/automation/`) | CI/CD pipelines for GitHub Actions, GitLab CI/CD and Azure DevOps; guides for PowerShell, Terraform, Bicep, Ansible | No page for ARM Validate/Deploy automation. Content for it is in `docs/ARM-DEPLOYMENT-GUIDE-SOURCE.md` of this change, to be moved there |
 | Microsoft Learn, "Deploy Azure Local via ARM template" (2610) | Validate creates the Azure resources and validates readiness; **Redeploy** the same parameters with `deploymentMode` Deploy; deployment takes 2.5 to 3 hours; after Validate, do not run Validate again if the system is in Deployment failed (license sync); known issues: role assignment already exists, zombie role assignments | Validate/Deploy flow and the license-sync rule are in the code. The two role-assignment issues are not detected anywhere |

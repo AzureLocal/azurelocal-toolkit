@@ -19,8 +19,8 @@ Task folders: 110.
 
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
-| PowerShell | 85 | 25 | 0 |
-| Azure CLI | 3 | 54 | 53 |
+| PowerShell | 64 | 46 | 0 |
+| Azure CLI | 1 | 56 | 53 |
 
 Azure CLI applies to 49 tasks, does not apply to 53, and is not decided for 8.
 
@@ -103,29 +103,29 @@ Azure CLI applies to 49 tasks, does not apply to 53, and is not decided for 8.
 | `phase-02-os-installation/task-01-delete-and-recreate-virtual-disk-on-dell-boss-card` | built | not applicable | no |
 | `phase-02-os-installation/task-02-mount-and-verify-dell-gold-image-iso` | built | not applicable | no |
 | `phase-02-os-installation/task-03-manual-os-installation` | not built | not applicable | no |
-| `phase-02-os-installation/task-04-verify-os-deployment` | built | not applicable | no |
+| `phase-02-os-installation/task-04-verify-os-deployment` | not built | not applicable | no |
 | `phase-03-os-configuration/task-01-enable-winrm-for-remote-management` | not built | not applicable | no |
-| `phase-03-os-configuration/task-02-enable-rdp` | built | not applicable | no |
-| `phase-03-os-configuration/task-03-configure-static-ip-address` | built | not applicable | no |
-| `phase-03-os-configuration/task-04-disable-dhcp-on-management-adapter` | built | not applicable | no |
-| `phase-03-os-configuration/task-05-configure-dns-servers` | built | not applicable | no |
-| `phase-03-os-configuration/task-06-verify-dns-client-configuration` | built | not applicable | no |
-| `phase-03-os-configuration/task-07-configure-time-synchronization-ntp` | built | not applicable | no |
-| `phase-03-os-configuration/task-08-enable-icmp-ping` | built | not applicable | no |
-| `phase-03-os-configuration/task-09-disable-unused-network-adapters` | built | not applicable | no |
-| `phase-03-os-configuration/task-10-configure-hostname` | built | not applicable | no |
-| `phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional` | built | not applicable | no |
-| `phase-03-os-configuration/task-13-phase03-verification` | built | not applicable | no |
-| `phase-04-arc-registration/task-01-pre-registration-validation` | built | not built | yes |
-| `phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc` | built | built | yes |
-| `phase-04-arc-registration/task-04-verify-arc-registration-and-connectivity` | built | not built | yes |
-| `phase-05-cluster-deployment/active-directory/task-01-initiate-deployment-via-arm-template` | built | not built | yes |
-| `phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion` | built | not built | unclear |
-| `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-arm-template` | built | built | yes |
-| `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal` | built | not built | unclear |
-| `phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion` | built | not built | unclear |
+| `phase-03-os-configuration/task-02-enable-rdp` | not built | not applicable | no |
+| `phase-03-os-configuration/task-03-configure-static-ip-address` | not built | not applicable | no |
+| `phase-03-os-configuration/task-04-disable-dhcp-on-management-adapter` | not built | not applicable | no |
+| `phase-03-os-configuration/task-05-configure-dns-servers` | not built | not applicable | no |
+| `phase-03-os-configuration/task-06-verify-dns-client-configuration` | not built | not applicable | no |
+| `phase-03-os-configuration/task-07-configure-time-synchronization-ntp` | not built | not applicable | no |
+| `phase-03-os-configuration/task-08-enable-icmp-ping` | not built | not applicable | no |
+| `phase-03-os-configuration/task-09-disable-unused-network-adapters` | not built | not applicable | no |
+| `phase-03-os-configuration/task-10-configure-hostname` | not built | not applicable | no |
+| `phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional` | not built | not applicable | no |
+| `phase-03-os-configuration/task-13-phase03-verification` | not built | not applicable | no |
+| `phase-04-arc-registration/task-01-pre-registration-validation` | not built | not built | yes |
+| `phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc` | not built | not built | yes |
+| `phase-04-arc-registration/task-04-verify-arc-registration-and-connectivity` | not built | not built | yes |
+| `phase-05-cluster-deployment/active-directory/task-01-initiate-deployment-via-arm-template` | not built | not built | yes |
+| `phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion` | not built | not built | unclear |
+| `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-arm-template` | not built | not built | yes |
+| `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal` | not built | not built | unclear |
+| `phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion` | not built | not built | unclear |
 | `phase-06-post-deployment/task-01-deploy-sdn` | built | not applicable | no |
-| `phase-06-post-deployment/task-02-cluster-quorum-configuration` | built | not built | yes |
+| `phase-06-post-deployment/task-02-cluster-quorum-configuration` | not built | not built | yes |
 | `phase-06-post-deployment/task-03-security-groups-applied-to-nodes` | built | not applicable | no |
 | `phase-06-post-deployment/task-04-ssh-connectivity-to-nodes` | built | not built | yes |
 | `phase-06-post-deployment/task-05-storage-configuration` | built | not built | yes |

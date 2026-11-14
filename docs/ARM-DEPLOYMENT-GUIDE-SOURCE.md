@@ -116,6 +116,6 @@ identity), add after the manual steps:
 > Validate, the Deploy and the monitoring described on this page from the one `infrastructure.yml`, on a jump server or in a
 > pipeline. See [ARM Validate and Deploy automation](/automation/arm-validate-deploy) in the automation guide.
 
-and replace the references to `Deploy-AzureLocalCluster-Standalone.ps1`, `Invoke-DeployCluster-Orchestrated.ps1` and
+and replace the references to the removed `Deploy-AzureLocalCluster-Standalone.ps1`, the placeholder `Invoke-DeployCluster-Orchestrated.ps1` and
 `Generate-AzureLocal-Parameters.ps1` (which is not in the toolkit) with that link, or mark them legacy. The interactive
 monitoring pages go too: `Monitor-Validation.ps1` and `Monitor-Deployment.ps1` are removed from the toolkit, and Sonar (azurelocal-sonar) shows the progress.

@@ -5,7 +5,7 @@
     or iSCSI) LUNs the nodes see with Multipath I/O.
 
 .DESCRIPTION
-    Harvested, not written from scratch: azl-toolkit 04-cluster-deployment phase-03-os-configuration task-11 Clear-StorageConfiguration.ps1
+    Harvested, not written from scratch: azl-toolkit 04-cluster-deployment phase-03-os-configuration task-11 Clear-StorageConfiguration.ps1 (removed)
     and task-13 Task11_Storage (S2D readiness: pools, virtual disks, RAW disks), tasks 12-14 (MPIO and SAN LUN), the node payload of the
     OS configuration (the san read), the toolkit's scripts/validation/storage-tests, config/san/msdsm-vendors.json, and Microsoft Learn
     (azloc-2610) enable-external-storage, deployment-install-os-disaggregated and system-requirements-23h2.
@@ -114,7 +114,7 @@ function Get-AzlVerificationCheckDefinition {
             }))
 
     $defs.Add((New-AzlVerDefinition -Id 'ST-002' -Category storage -Title 'Local data disks are eligible for Storage Spaces Direct: clean, poolable, no partitions (the boot device is excluded)' `
-                -Source "$($script:Src.Install) (Clean all the non-OS drives); azl-toolkit phase-03-os-configuration task-11 Clear-StorageConfiguration.ps1 / task-13 Task11_Storage; $($script:Src.EnvChecker) (hardware validator)" -Applies $isS2d -Run {
+                -Source "$($script:Src.Install) (Clean all the non-OS drives); azl-toolkit phase-03-os-configuration task-11 Clear-StorageConfiguration.ps1 (removed) / task-13 Task11_Storage; $($script:Src.EnvChecker) (hardware validator)" -Applies $isS2d -Run {
                 param($Context)
                 Invoke-AzlVerPerNode -Context $Context -Section 'GetDisks' -Body {
                     param($Name, $D, $N)

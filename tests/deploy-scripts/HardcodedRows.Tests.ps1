@@ -132,8 +132,8 @@ Describe 'scripts the Azure Local security baseline replaces' {
 }
 
 Describe 'a path to the infrastructure file is never guessed' {
-    It 'makes ConfigPath of <Name> mandatory' -ForEach $script:MandatoryCase {
-        $p = Get-ParamAst $Path | Where-Object { $_.Name.VariablePath.UserPath -eq 'ConfigPath' }
+    It 'makes InfrastructureFile of <Name> mandatory' -ForEach $script:MandatoryCase {
+        $p = Get-ParamAst $Path | Where-Object { $_.Name.VariablePath.UserPath -eq 'InfrastructureFile' }
         $p | Should -Not -BeNullOrEmpty
         $p.DefaultValue | Should -BeNullOrEmpty
         ($p.Attributes | Where-Object { $_.TypeName.Name -eq 'Parameter' }).NamedArguments.ArgumentName | Should -Contain 'Mandatory'

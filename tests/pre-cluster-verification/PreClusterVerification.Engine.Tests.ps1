@@ -261,7 +261,7 @@ Describe 'Partial runs and bad input' {
     It 'refuses to read a bypass key from the settings file' {
         $cfg = Join-Path $TestDrive 'cfg.json'
         '{ "skipPreClusterVerification": true }' | Set-Content $cfg
-        { Get-AzlArmRunSetting -Infrastructure @{} -ConfigPath $cfg } | Should -Throw '*explicit switch*'
+        { Get-AzlArmRunSetting -Infrastructure @{} -SettingsFile $cfg } | Should -Throw '*explicit switch*'
     }
 }
 

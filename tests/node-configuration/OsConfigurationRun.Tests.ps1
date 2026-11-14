@@ -629,7 +629,7 @@ Describe 'Storage wipe (os_configuration.clear_storage)' {
         { Get-AzlRunSetting -Settings @{ confirmWipeDeployedCluster = $true } } | Should -Throw '*Unknown run setting*'
         $file = Join-Path $TestDrive 'confirm.json'
         '{ "confirmWipeDeployedCluster": true }' | Set-Content -LiteralPath $file
-        { Get-AzlRunSetting -ConfigPath $file } | Should -Throw '*Unknown run setting*'
+        { Get-AzlRunSetting -SettingsFile $file } | Should -Throw '*Unknown run setting*'
     }
     It 'the entry script takes -ConfirmWipeDeployedCluster, and so does the node script' {
         (Get-Command $script:EntryScript).Parameters.ContainsKey('ConfirmWipeDeployedCluster') | Should -BeTrue
@@ -761,7 +761,7 @@ Describe 'Run settings' {
     It 'reads a JSON file and lets -Settings win' {
         $file = Join-Path $TestDrive 'settings.json'
         '{ "retryTries": 5, "maxPasses": 2 }' | Set-Content -LiteralPath $file
-        $s = Get-AzlRunSetting -ConfigPath $file -Settings @{ retryTries = 4 }
+        $s = Get-AzlRunSetting -SettingsFile $file -Settings @{ retryTries = 4 }
         $s.retryTries | Should -Be 4
         $s.maxPasses | Should -Be 2
     }

@@ -16,7 +16,7 @@
     ConvertTo-AzlMacAddress, Resolve-AzlBmcCredential and Get-AzlBmcKeyVaultSecret now live in the core and are re-exported here,
     so existing callers keep working.
 
-    Nothing here stores or logs a password. Secrets come from Key Vault (keyvault://vault/secret) or a prompt.
+    Nothing here stores or logs a password. Secrets come from a secret reference (keyvault://, env://, file:// or command://) or the caller (-Credential); nothing is asked.
 #>
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'

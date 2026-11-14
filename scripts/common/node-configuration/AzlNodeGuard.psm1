@@ -501,11 +501,11 @@ function Start-GuardApply($cfg, $st) {
 
 # ---- the entry point: one controller owns every mutation (machine-wide mutex); the scheduled task is the backstop that calls it again after a reboot or a crash
 function Invoke-GuardedChange {
-    param([Parameter(Mandatory)][string]$ConfigPath, [string]$ScriptPath)
-    $cfg = (Invoke-GuardOp ReadText $ConfigPath) | ConvertFrom-Json
+    param([Parameter(Mandatory)][string]$ChangeFile, [string]$ScriptPath)
+    $cfg = (Invoke-GuardOp ReadText $ChangeFile) | ConvertFrom-Json
     if (-not (Invoke-GuardOp AcquireMutex 'Global\AzureLocalOsConfig')) { return 'Busy' }
     # The first line is written before anything else is read, so a failure at any later point leaves a trace.
-    Write-GuardLog $cfg ('start ' + $script:GuardInstance + ' ' + $ConfigPath)
+    Write-GuardLog $cfg ('start ' + $script:GuardInstance + ' ' + $ChangeFile)
     $st = $null
     try {
         $st = Read-GuardState $cfg
@@ -1070,7 +1070,7 @@ function Get-AzlGuardScriptText {
     param([Parameter(Mandatory)][ValidatePattern('^[A-Za-z0-9]{6,32}$')][string]$ChangeId)
     $nl = "`n"
     $header = '# Azure Local OS configuration: guarded change ' + $ChangeId + $nl + 'param([string]$Mode = ''Auto'')' + $nl + '$ErrorActionPreference = ''Stop''' + $nl
-    $call = $nl + 'Invoke-GuardedChange -ConfigPath ($PSScriptRoot + ''\net-' + $ChangeId + '.json'') -ScriptPath $PSCommandPath' + $nl
+    $call = $nl + 'Invoke-GuardedChange -ChangeFile ($PSScriptRoot + ''\net-' + $ChangeId + '.json'') -ScriptPath $PSCommandPath' + $nl
     return ($header + ($script:EngineBody -replace "`r`n", $nl) + $call)
 }
 

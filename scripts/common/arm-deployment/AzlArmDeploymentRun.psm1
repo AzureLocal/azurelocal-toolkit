@@ -222,7 +222,7 @@ function ConvertTo-AzlArmStepStatus {
 function Get-AzlArmRunSetting {
     <#
     .SYNOPSIS
-        The run's settings: defaults, then the master file's deployment block, then -ConfigPath (JSON), then -Settings.
+        The run's settings: defaults, then the master file's deployment block, then -SettingsFile (JSON), then -Settings.
     .DESCRIPTION
         Keys (camel case): validateTimeoutMinutes 90, deployTimeoutMinutes 360, pollSeconds 15, pollMaxSeconds 120,
         pollFactor 1.5, transientErrorLimit 5, approvalMode stop|prompt|none, resume false, requireOsConfigurationReport false,
@@ -239,13 +239,13 @@ function Get-AzlArmRunSetting {
         verificationResultFutureToleranceMinutes 5 (how far ahead of this clock a gate result may be dated) and verificationAdvisedFeatures (the Windows features the
         node check advises; a missing one is a warning). The master file's
         deployment block uses the same names in snake_case.
-        secretMode Placeholder|KeyVaultReference (default Placeholder; set it with -Settings or -ConfigPath, not in the master file): how the
+        secretMode Placeholder|KeyVaultReference (default Placeholder; set it with -Settings or -SettingsFile, not in the master file): how the
         parameter file hands the secrets to Azure. Placeholder: this machine reads each secret with the secret resolver, so a reference of any
         provider works. KeyVaultReference (New-AzureLocalArmParameters.ps1 -SecretMode KeyVaultReference): Azure Resource Manager reads the secret
         itself and can read Key Vault only, so the precondition KeyVaultSecrets fails for a reference that is not keyvault://.
     #>
     [CmdletBinding()]
-    param([System.Collections.IDictionary]$Infrastructure, [string]$ConfigPath, [System.Collections.IDictionary]$Settings)
+    param([System.Collections.IDictionary]$Infrastructure, [string]$SettingsFile, [System.Collections.IDictionary]$Settings)
     $s = [ordered]@{
         validateTimeoutMinutes = 90; deployTimeoutMinutes = 360; pollSeconds = 15; pollMaxSeconds = 120; pollFactor = 1.5; transientErrorLimit = 5
         approvalMode = 'stop'; resume = $false; requireOsConfigurationReport = $false; skipPreconditions = @(); acknowledgeKnownIssues = @()
@@ -276,9 +276,9 @@ function Get-AzlArmRunSetting {
     }
     $block = Get-AzlProp $Infrastructure 'deployment'
     if ($block -is [System.Collections.IDictionary]) { & $refuseBypass $block 'the master file'; & $apply $block }
-    if ($ConfigPath) {
-        if (-not (Test-Path -LiteralPath $ConfigPath -PathType Leaf)) { Stop-AzlArmInput "Settings file not found: $ConfigPath" }
-        $fromConfig = Get-Content -LiteralPath $ConfigPath -Raw | ConvertFrom-Json -AsHashtable -Depth 10
+    if ($SettingsFile) {
+        if (-not (Test-Path -LiteralPath $SettingsFile -PathType Leaf)) { Stop-AzlArmInput "Settings file not found: $SettingsFile" }
+        $fromConfig = Get-Content -LiteralPath $SettingsFile -Raw | ConvertFrom-Json -AsHashtable -Depth 10
         & $refuseBypass $fromConfig 'a settings file'
         & $apply $fromConfig
     }
@@ -2197,7 +2197,7 @@ function Invoke-AzlArmDeploymentRun {
         they are Registered. Only in Mode Validate, Deploy or ValidateAndDeploy, never in Plan or with -WhatIf. Without it nothing in
         Azure is changed and a missing provider fails the precondition.
     .PARAMETER Settings
-        Run settings (see Get-AzlArmRunSetting); they win over the master file's deployment block and -ConfigPath.
+        Run settings (see Get-AzlArmRunSetting); they win over the master file's deployment block and -SettingsFile.
     .PARAMETER Adapter
         New-AzlArmAzureAdapter, or a table with the members a test replaces.
     .OUTPUTS
@@ -2213,7 +2213,7 @@ function Invoke-AzlArmDeploymentRun {
         [ValidateSet('Plan', 'Validate', 'Deploy', 'ValidateAndDeploy')][string]$Mode = 'Plan',
         [string]$ReportDirectory,
         [System.Collections.IDictionary]$Settings,
-        [string]$ConfigPath,
+        [string]$SettingsFile,
         [string]$TemplateFile,
         [switch]$Resume,
         [switch]$AllowRevalidate,
@@ -2273,7 +2273,7 @@ function Invoke-AzlArmDeploymentRun {
         if ($RegisterResourceProviders) { $settingsOverride['registerResourceProviders'] = $true }
         if ($SkipPreClusterVerification) { $settingsOverride['skipPreClusterVerification'] = $true }
         if ($AutoApprove) { $settingsOverride['approvalMode'] = 'none' }
-        $run.Settings = Get-AzlArmRunSetting -Infrastructure $infra -ConfigPath $ConfigPath -Settings $settingsOverride
+        $run.Settings = Get-AzlArmRunSetting -Infrastructure $infra -SettingsFile $SettingsFile -Settings $settingsOverride
         $report.settings = $run.Settings
         $run.KnownIssues = if ($run.Settings.knownIssuesFile) { Get-AzlArmKnownIssue -Path $run.Settings.knownIssuesFile } else { Get-AzlArmKnownIssue }
         $deviceIdIssue = $run.KnownIssues | Where-Object { $_['id'] -eq 'arc-device-id-name' } | Select-Object -First 1

@@ -71,7 +71,7 @@ The full cross-tool matrix is in the toolkit's [access-and-connectivity page](ac
 | `-Method` | `Auto` (default) works the method out per node; force `Ztp` or `Iso` for all nodes. |
 | `-Credential`, `-NodeAddress` | The local administrator for WinRM (default: `identity.local_admin`, password from the Key Vault, never printed) and the address to reach a node on when the installer's address is not in the file. On a node reached over Arc (only `-Transport ArcRunCommand`) the credential is used to copy the SBE package when `hardware.sbe.delivery` is `winrm_copy`. |
 | `-ClearStorage` | Forces the storage wipe on (see below). |
-| `-ConfigPath`, `-Settings` | Optional run settings (JSON file, then a hashtable that wins): `retryTries`, `retryDelaySeconds`, `maxPasses`, `noRestart`, `failOnPendingChanges`, `nodeAddress`, `networkRollbackMinutes`, `networkStableSeconds`, `reconnectWaitMinutes`, `staleRunCommandMinutes`, `addressProbe`, `restartWaitMinutes`, `remoting`, `addressResolution`. The guarded-change keys are in [Changing the management address safely](#changing-the-management-address-safely); `remoting` is in [Choosing the transport](#choosing-the-transport). |
+| `-SettingsFile`, `-Settings` | Optional run settings (JSON file, then a hashtable that wins): `retryTries`, `retryDelaySeconds`, `maxPasses`, `noRestart`, `failOnPendingChanges`, `nodeAddress`, `networkRollbackMinutes`, `networkStableSeconds`, `reconnectWaitMinutes`, `staleRunCommandMinutes`, `addressProbe`, `restartWaitMinutes`, `remoting`, `addressResolution`. The guarded-change keys are in [Changing the management address safely](#changing-the-management-address-safely); `remoting` is in [Choosing the transport](#choosing-the-transport). |
 | `-EventLogPath` | The event feed (JSON Lines), default `os-configuration-events.jsonl` in the report directory. |
 | `-FailOnPendingChanges` | Plan mode: exit 1 when any change is pending (drift detection). |
 
@@ -194,7 +194,7 @@ A read that cannot reach the node is **PendingReconciliation**, never a failed c
 
 **Management address modes.** A (`dhcp_reservation`): never changed, only verified. B (static with DHCP at provisioning) and C (static, no management DHCP): the guarded change; a node that already holds the wanted address through DHCP is converted in place. `dhcp` without a reservation and `preconfigured`: left alone.
 
-**Settings** (`-Settings`, or the JSON `-ConfigPath`)
+**Settings** (`-Settings`, or the JSON `-SettingsFile`)
 
 | Key | Default | Meaning |
 | --- | --- | --- |

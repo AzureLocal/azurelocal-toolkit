@@ -167,7 +167,7 @@ Describe 'Plan, approval, Apply and check mode' {
 
 Describe 'The parameters match Invoke-AzureLocalOsConfiguration.ps1' {
     It 'the wrapper has the parameters the role is built on' {
-        foreach ($p in 'InfrastructureFile', 'HandoffPath', 'Node', 'Step', 'Mode', 'ReportDirectory', 'Transport', 'Method', 'Credential', 'ClearStorage', 'ContinueOnNodeFailure', 'FailOnPendingChanges', 'ConfigPath', 'Settings', 'NodeAddress', 'SkipValidation') {
+        foreach ($p in 'InfrastructureFile', 'HandoffPath', 'Node', 'Step', 'Mode', 'ReportDirectory', 'Transport', 'Method', 'Credential', 'ClearStorage', 'ContinueOnNodeFailure', 'FailOnPendingChanges', 'SettingsFile', 'Settings', 'NodeAddress', 'SkipValidation') {
             $script:WrapperParameters | Should -Contain $p
         }
     }

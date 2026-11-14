@@ -23,7 +23,7 @@
     KeyVaultSecrets, NamesAvailable, ArcMachinesConnected, ArcMachineNaming, NoLeftoverFailedDeployment in AzlArmDeploymentRun.psm1),
     called through Invoke-AzlArmPrecondition with only that one precondition enabled. They read through the same adapter members the ARM
     run uses (same names and arguments), so a fix to a precondition is a fix to the gate. The other checks are harvested from the
-    azl-toolkit scripts (Test-ResourceProviders, Test-RbacRoleAssignments, Test-UserAccess, Test-ArcPrerequisites), the toolkit's
+    azl-toolkit scripts (Test-ResourceProviders, Test-RbacRoleAssignments, Test-UserAccess, Test-ArcPrerequisites (removed)), the toolkit's
     Test-ArcConnectivity and the failures this project met (config/known-issues/arm-deployment.json).
 
     Azure adapter members (arguments in order)

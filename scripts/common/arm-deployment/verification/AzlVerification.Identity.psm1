@@ -33,7 +33,7 @@
       Clock.Now        { } -> [datetime]
 
     Harvested from the azl-toolkit scripts (03-onprem-readiness/phase-01-active-directory Test-ADConfiguration.ps1 and Invoke-ADValidation-Arc.ps1,
-    04-cluster-deployment/phase-05 Invoke-VerifyADPrerequisites-Orchestrated.ps1 and Test-LocalIdentityConfig.ps1, phase-03 task-06 Test-DnsClientConfig.ps1)
+    04-cluster-deployment/phase-05 Invoke-VerifyADPrerequisites-Orchestrated.ps1 (removed) and Test-LocalIdentityConfig.ps1 (removed), phase-03 task-06 Test-DnsClientConfig.ps1)
     and checked against Learn view=azloc-2610.
 #>
 Set-StrictMode -Version Latest
@@ -861,7 +861,7 @@ Add-VfIdCheck -Id 'ID-AD-009' -Title 'Nodes resolve the domain and its domain co
     }
 }
 
-Add-VfIdCheck -Id 'ID-AD-010' -Title 'Domain join state of the nodes: workgroup, or joined to the file''s domain (supported from 2604) with the deployment user in local Administrators' -Source "$($script:Src.InstallOs) (Domain join before deployment); azl-toolkit Invoke-VerifyADPrerequisites-Orchestrated.ps1 (secure channel)" -Applies $script:IsAd -Run {
+Add-VfIdCheck -Id 'ID-AD-010' -Title 'Domain join state of the nodes: workgroup, or joined to the file''s domain (supported from 2604) with the deployment user in local Administrators' -Source "$($script:Src.InstallOs) (Domain join before deployment); azl-toolkit Invoke-VerifyADPrerequisites-Orchestrated.ps1 (removed) (secure channel)" -Applies $script:IsAd -Run {
     param($Context)
     Invoke-VfIdCheck $Context {
         $lcm = Get-VfIdLcm $Context
@@ -980,7 +980,7 @@ Add-VfIdCheck -Id 'ID-LI-003' -Title 'Local identity: A records for every node a
     }
 }
 
-Add-VfIdCheck -Id 'ID-LI-004' -Title 'Local identity: nodes are in a workgroup and resolve the node names of the zone with the file''s DNS servers' -Source "$($script:Src.Local) (Prerequisites 5; Configure DNS server, steps 3 and 6); azl-toolkit Test-LocalIdentityConfig.ps1 (WORKGROUP)" -Applies $script:IsLocal -Run {
+Add-VfIdCheck -Id 'ID-LI-004' -Title 'Local identity: nodes are in a workgroup and resolve the node names of the zone with the file''s DNS servers' -Source "$($script:Src.Local) (Prerequisites 5; Configure DNS server, steps 3 and 6); azl-toolkit Test-LocalIdentityConfig.ps1 (removed) (WORKGROUP)" -Applies $script:IsLocal -Run {
     param($Context)
     Invoke-VfIdCheck $Context {
         $zone = Get-VfIdZone $Context
@@ -1056,7 +1056,7 @@ Add-VfIdCheck -Id 'ID-LA-003' -Title 'The Key Vault password opens a WinRM sessi
     }
 }
 
-Add-VfIdCheck -Id 'ID-LA-004' -Title 'On every node the dedicated local administrator exists, is enabled, is in local Administrators and is not the built-in Administrator' -Source "$($script:Src.Local) (Prerequisites 2.1); azl-toolkit Deploy-CreateLocalAdmin.ps1, Test-LocalIdentityConfig.ps1" -Run {
+Add-VfIdCheck -Id 'ID-LA-004' -Title 'On every node the dedicated local administrator exists, is enabled, is in local Administrators and is not the built-in Administrator' -Source "$($script:Src.Local) (Prerequisites 2.1); azl-toolkit Deploy-CreateLocalAdmin.ps1 (removed), Test-LocalIdentityConfig.ps1 (removed)" -Run {
     param($Context)
     Invoke-VfIdCheck $Context {
         $user = [string](Get-AzlProp (Get-VfIdInfra $Context) 'identity.local_admin.username' '')
@@ -1072,7 +1072,7 @@ Add-VfIdCheck -Id 'ID-LA-004' -Title 'On every node the dedicated local administ
                 $members = @(ConvertTo-VfIdList (Get-AzlProp $D 'admins' @()) | ForEach-Object { [string]$_ })
                 if (-not (@($members | Where-Object { $_ -ieq $user -or $_ -ieq "$Name\$user" }).Count)) { $problems += "$user is not in the local Administrators group" }
             }
-            if ($problems) { New-VfIdResult Failed "${Name}: $($problems -join '; ')." "On the node: New-LocalUser -Name $user -Password (Read-Host -AsSecureString); Add-LocalGroupMember -Group Administrators -Member $user   (SConfig option 3 does the same); same name and password on every node." -Node $Name -Evidence "problems=$($problems.Count)" }
+            if ($problems) { New-VfIdResult Failed "${Name}: $($problems -join '; ')." "On the node: New-LocalUser -Name $user -Password <the local administrator password as a SecureString>; Add-LocalGroupMember -Group Administrators -Member $user   (SConfig option 3 does the same); same name and password on every node." -Node $Name -Evidence "problems=$($problems.Count)" }
             else { New-VfIdResult Passed "$user exists on $Name, is enabled, is a local administrator and is not the built-in account." -Node $Name -Evidence "sid=$([string](Get-AzlProp $adm 'sid' ''))" }
         }
     }

@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
 # Phase 04 (cluster deployment) scripts that read the schema 5 infrastructure.yml and no old-layout key: the iDRAC virtual media and BOSS scripts
-# (phase 02), the BIOS and iDRAC scripts (phase 01), the Phase 03 verification and the SSH orchestrator. The Redfish calls are mocked
+# (phase 02), the BIOS and iDRAC scripts (phase 01) and the SSH orchestrator. The Redfish calls are mocked
 # (Invoke-RestMethod); nothing reaches a BMC, a node or Azure. The scripts that were removed because a schema 5 script does the job are listed
 # with the one that replaces them. Ids and addresses are examples (192.0.2.x, 00000000-...).
 # Run: Import-Module Pester -RequiredVersion 5.9.1; Invoke-Pester ./tests/deploy-scripts/ClusterLegacyScripts.Tests.ps1
@@ -19,9 +19,9 @@ BeforeDiscovery {
         @{ Gone = 'phase-06-post-deployment/task-03-security-groups-applied-to-nodes/powershell/Invoke-ApplySecurityGroups-Standalone.ps1'; Instead = 'phase-06-post-deployment/task-03-security-groups-applied-to-nodes/powershell/Invoke-ApplySecurityGroups-Orchestrated.ps1' }
         @{ Gone = 'phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Standalone.ps1'; Instead = 'phase-06-post-deployment/task-04-ssh-connectivity-to-nodes/powershell/Invoke-SSHConnectivity-Orchestrated.ps1' }
         @{ Gone = 'phase-06-post-deployment/task-09-post-deployment-verification/powershell/Test-PostDeployment-Standalone.ps1'; Instead = 'phase-06-post-deployment/task-09-post-deployment-verification/powershell/Invoke-VerifyPostDeployment.ps1' }
-        @{ Gone = 'phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/powershell/Register-AzureLocalArc-Interactive.ps1'; Instead = 'phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/powershell/Register-AzureLocalArc-Remote.ps1' }
-        @{ Gone = 'phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/powershell/Register-AzureLocalArc-ServicePrincipal.ps1'; Instead = 'phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/powershell/Register-AzureLocalArc-Remote.ps1' }
-        @{ Gone = 'phase-03-os-configuration/task-06-verify-dns-client-configuration/powershell/Test-DnsClientConfig.ps1'; Instead = 'phase-03-os-configuration/task-06-verify-dns-client-configuration/powershell/Test-DnsConfiguration.ps1' }
+        @{ Gone = 'phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/powershell/Register-AzureLocalArc-Interactive.ps1'; Instead = 'phase-03-os-configuration/Set-AzureLocalNodeConfiguration.ps1' }
+        @{ Gone = 'phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc/powershell/Register-AzureLocalArc-ServicePrincipal.ps1'; Instead = 'phase-03-os-configuration/Set-AzureLocalNodeConfiguration.ps1' }
+        @{ Gone = 'phase-03-os-configuration/task-06-verify-dns-client-configuration/powershell/Test-DnsClientConfig.ps1'; Instead = 'phase-03-os-configuration/Set-AzureLocalNodeConfiguration.ps1' }
     )
     $script:RemovedCase = @($script:Removed | ForEach-Object { @{ Gone = [IO.Path]::Combine($deploy, $_.Gone); Instead = [IO.Path]::Combine($deploy, $_.Instead); Name = [IO.Path]::GetFileName($_.Gone) } })
 }
@@ -33,7 +33,6 @@ BeforeAll {
     $script:Iso = [IO.Path]::Combine($script:Deploy, 'phase-02-os-installation', 'task-02-mount-and-verify-dell-gold-image-iso', 'powershell', 'Invoke-MountGoldImageISO.ps1')
     $script:BiosTest = [IO.Path]::Combine($script:Deploy, 'phase-01-hardware-provisioning', 'task-04-bios-and-idrac-settings-validation', 'powershell', 'Test-BiosIdracSettings.ps1')
     $script:BiosSet = [IO.Path]::Combine($script:Deploy, 'phase-01-hardware-provisioning', 'task-05-bios-and-idrac-settings-remediation', 'powershell', 'Set-BiosIdracSettings.ps1')
-    $script:Phase03 = [IO.Path]::Combine($script:Deploy, 'phase-03-os-configuration', 'task-13-phase03-verification', 'powershell', 'Invoke-Phase03Verification-Orchestrated.ps1')
     $script:Ssh = [IO.Path]::Combine($script:Deploy, 'phase-06-post-deployment', 'task-04-ssh-connectivity-to-nodes', 'powershell', 'Invoke-SSHConnectivity-Orchestrated.ps1')
     Import-Module powershell-yaml
     Import-Module ([IO.Path]::Combine($script:Repo, 'config', 'variables', 'scripts', 'VariableRegistry.psm1')) -Force
@@ -88,18 +87,18 @@ Describe 'Invoke-ResetBossVirtualDisk.ps1' {
     }
 
     It 'reads nodes[] and nodes[].bmc.ip_address, finds the BOSS controller and recreates the mirror on every node' {
-        $null = & $script:Boss -ConfigPath (New-InfraFile) 6>&1
+        $null = & $script:Boss -InfrastructureFile (New-InfraFile) 6>&1
         Should -Invoke Invoke-RestMethod -Times 2 -Exactly -ParameterFilter { $Method -eq 'DELETE' -and $Uri -like 'https://192.0.2.2*/redfish/v1/old-volume' }
         Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter { $Method -eq 'POST' -and $Uri -like 'https://192.0.2.21/*BOSS-S1.Modular.1/Volumes' -and $Body -match 'Mirrored' }
         Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter { $Method -eq 'POST' -and $Uri -like 'https://192.0.2.22/*BOSS-S1.Modular.1/Volumes' }
     }
     It 'changes nothing under -WhatIf' {
-        $null = & $script:Boss -ConfigPath (New-InfraFile) -WhatIf 6>&1
+        $null = & $script:Boss -InfrastructureFile (New-InfraFile) -WhatIf 6>&1
         Should -Invoke Invoke-RestMethod -Times 0 -Exactly
     }
     It 'skips a node that has no BMC address and says so' {
         $file = New-InfraFile -Nodes @([ordered]@{ name = 'iic-azl-n01' }, [ordered]@{ name = 'iic-azl-n02'; bmc = [ordered]@{ ip_address = '192.0.2.22' } })
-        $out = & $script:Boss -ConfigPath $file 3>&1 6>&1
+        $out = & $script:Boss -InfrastructureFile $file 3>&1 6>&1
         ($out | Where-Object { $_ -is [Management.Automation.WarningRecord] } | ForEach-Object { "$_" }) -join "`n" | Should -Match 'iic-azl-n01 has no nodes\[\]\.bmc\.ip_address'
         Should -Invoke Invoke-RestMethod -Times 0 -Exactly -ParameterFilter { $Uri -like 'https://192.0.2.21/*' }
     }
@@ -121,17 +120,20 @@ Describe 'Invoke-MountGoldImageISO.ps1' {
 
     It 'mounts provisioning.iso.image_uri on the iDRAC of every node' {
         $file = New-InfraFile -Extra @{ provisioning = [ordered]@{ iso = [ordered]@{ image_uri = 'http://192.0.2.50/images/azure-local.iso' } } }
-        $null = & $script:Iso -ConfigPath $file 6>&1
+        $null = & $script:Iso -InfrastructureFile $file 6>&1
         Should -Invoke Invoke-RestMethod -Times 2 -Exactly -ParameterFilter { $Uri -like '*InsertMedia' -and $Body -match 'http://192\.0\.2\.50/images/azure-local\.iso' }
         Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter { $Uri -like 'https://192.0.2.21/*InsertMedia' }
     }
     It 'stops when the file has no provisioning.iso.image_uri' {
-        { & $script:Iso -ConfigPath (New-InfraFile) 6>&1 } | Should -Throw '*provisioning.iso.image_uri is missing*'
+        $global:LASTEXITCODE = $null
+        $out = & $script:Iso -InfrastructureFile (New-InfraFile) 2>&1 6>&1 | Out-String
+        $global:LASTEXITCODE | Should -Be 2
+        $out | Should -Match 'provisioning\.iso\.image_uri is missing'
         Should -Invoke Invoke-RestMethod -Times 0 -Exactly
     }
     It 'changes nothing under -WhatIf' {
         $file = New-InfraFile -Extra @{ provisioning = [ordered]@{ iso = [ordered]@{ image_uri = 'http://192.0.2.50/images/azure-local.iso' } } }
-        $null = & $script:Iso -ConfigPath $file -WhatIf 6>&1
+        $null = & $script:Iso -InfrastructureFile $file -WhatIf 6>&1
         Should -Invoke Invoke-RestMethod -Times 0 -Exactly -ParameterFilter { $Uri -like '*InsertMedia' }
     }
     It 'reads no old-layout key, and the key it reads is in the registry' {
@@ -156,7 +158,7 @@ Describe 'The BIOS and iDRAC scripts read hardware.bios and nodes[].bios' {
 
     It 'the validation applies hardware.bios to every machine and nodes[].bios over it' {
         $report = Join-Path $TestDrive 'bios-report.json'
-        $null = & $script:BiosTest -ConfigPath $script:File -OutputPath $report 6>&1
+        $null = & $script:BiosTest -InfrastructureFile $script:File -OutputPath $report 6>&1
         $rows = Get-Content -LiteralPath $report -Raw | ConvertFrom-Json
         $n1 = @($rows | Where-Object Node -EQ 'iic-azl-n01').Results
         $n2 = @($rows | Where-Object Node -EQ 'iic-azl-n02').Results
@@ -166,12 +168,12 @@ Describe 'The BIOS and iDRAC scripts read hardware.bios and nodes[].bios' {
         ($n2 | Where-Object Setting -EQ 'SriovGlobalEnable').Desired | Should -Be 'Disabled'
     }
     It 'the remediation sends the attributes of each machine: hardware.bios for one, nodes[].bios over it for the other' {
-        $null = & $script:BiosSet -ConfigPath $script:File 6>&1
+        $null = & $script:BiosSet -InfrastructureFile $script:File 6>&1
         Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter { $Method -eq 'Patch' -and $Uri -like 'https://192.0.2.21/*Bios/Settings' -and $Body -match 'SysProfile' -and $Body -notmatch 'SriovGlobalEnable' }
         Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter { $Method -eq 'Patch' -and $Uri -like 'https://192.0.2.22/*Bios/Settings' -and $Body -match 'SriovGlobalEnable' -and $Body -notmatch 'SysProfile' }
     }
     It 'the remediation changes nothing under -WhatIf' {
-        $null = & $script:BiosSet -ConfigPath $script:File -WhatIf 6>&1
+        $null = & $script:BiosSet -InfrastructureFile $script:File -WhatIf 6>&1
         Should -Invoke Invoke-RestMethod -Times 0 -Exactly -ParameterFilter { $Method -ne 'Get' }
     }
     It 'neither script reads hardware.bios_settings or hardware.idrac_settings, and every key they read is in the registry: <_>' -ForEach 'hardware.bios', 'nodes[].bios', 'nodes[].bmc.ip_address', 'hardware.bmc.verify_certificate' {
@@ -180,12 +182,7 @@ Describe 'The BIOS and iDRAC scripts read hardware.bios and nodes[].bios' {
     }
 }
 
-Describe 'The Phase 03 verification and the SSH orchestrator' {
-    It 'the DNS check resolves an Azure endpoint, not a public search site' {
-        $code = Get-CodeText $script:Phase03
-        $code | Should -Match 'management\.azure\.com'
-        $code | Should -Not -Match 'google\.com'
-    }
+Describe 'The SSH orchestrator' {
     It 'the SSH orchestrator falls back to azure.location, not azure_platform.region' {
         $code = Get-CodeText $script:Ssh
         $code | Should -Match '\$cfg\s*\.\s*azure\s*\.\s*location'

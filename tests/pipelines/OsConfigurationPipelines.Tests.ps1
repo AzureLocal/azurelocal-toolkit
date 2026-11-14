@@ -32,7 +32,7 @@ BeforeAll {
 Describe 'The entry point the pipelines call' {
     It 'exists with the parameters the pipelines pass' {
         Test-Path -LiteralPath $script:EntryScript | Should -BeTrue
-        foreach ($p in 'InfrastructureFile', 'HandoffPath', 'Mode', 'ReportDirectory', 'Node', 'Step', 'ContinueOnNodeFailure', 'Transport', 'ClearStorage', 'ConfigPath', 'Settings') {
+        foreach ($p in 'InfrastructureFile', 'HandoffPath', 'Mode', 'ReportDirectory', 'Node', 'Step', 'ContinueOnNodeFailure', 'Transport', 'ClearStorage', 'SettingsFile', 'Settings') {
             $script:EntryParameters | Should -Contain $p
         }
     }

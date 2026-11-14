@@ -174,11 +174,11 @@ function Get-AzlBmcKeyVaultSecret {
 function Resolve-AzlBmcCredential {
     <#
     .SYNOPSIS
-        The BMC login. Order: -Credential, then Key Vault references in infrastructure.yml, then a prompt.
+        The BMC login. Order: -Credential, then the secret references in infrastructure.yml. It never asks: with neither it stops.
     .DESCRIPTION
         The file holds references only (schema 5: hardware.bmc, or nodes[].bmc, username and password as keyvault://vault/secret;
-        a username may also be the plain user name). A node's bmc block wins over hardware.bmc. When Key Vault cannot be read,
-        it warns (without the secret) and prompts, unless -NoPrompt.
+        a username may also be the plain user name). A node's bmc block wins over hardware.bmc. When the secret cannot be read,
+        it stops with the reason (never the secret) and what to pass.
     .PARAMETER Infrastructure
         The parsed infrastructure.yml (ordered dictionary), optional.
     .PARAMETER Node
@@ -189,8 +189,7 @@ function Resolve-AzlBmcCredential {
     param(
         [System.Management.Automation.PSCredential]$Credential,
         [System.Collections.IDictionary]$Infrastructure,
-        [System.Collections.IDictionary]$Node,
-        [switch]$NoPrompt
+        [System.Collections.IDictionary]$Node
     )
     if ($Credential) { return $Credential }
     $block = $null
@@ -200,23 +199,19 @@ function Resolve-AzlBmcCredential {
         $hardwareBmc = Get-RfProp (Get-RfProp $Infrastructure 'hardware') 'bmc'
         if ($hardwareBmc -is [System.Collections.IDictionary] -and $hardwareBmc.Contains('username') -and $hardwareBmc.Contains('password')) { $block = $hardwareBmc }
     }
-    $userHint = $null
     if ($block) {
         try {
             $user = [string]$block['username']
             if (Get-AzlSecretProvider -Reference $user) { $user = Get-AzlBmcKeyVaultSecret -Reference $user -Infrastructure $Infrastructure -AsPlainText }
-            $userHint = $user
             $password = Get-AzlBmcKeyVaultSecret -Reference ([string]$block['password']) -Infrastructure $Infrastructure
             return [System.Management.Automation.PSCredential]::new($user, $password)
         }
         catch {
-            Write-Warning "The BMC credential could not be read: $($_.Exception.Message)"
+            # The resolver's messages name the reference, never the value.
+            throw "No BMC credential: the secret could not be read: $($_.Exception.Message) Pass -Credential, or fix the username and password secret references of hardware.bmc (or nodes[].bmc) in infrastructure.yml."
         }
     }
-    if ($NoPrompt) { throw 'No BMC credential: pass -Credential, or put hardware.bmc username and password (secret references) in infrastructure.yml.' }
-    $prompt = @{ Message = 'BMC administrator credentials' }
-    if ($userHint) { $prompt.UserName = $userHint }
-    return (Get-Credential @prompt)
+    throw 'No BMC credential: pass -Credential, or put hardware.bmc username and password (secret references) in infrastructure.yml.'
 }
 
 #endregion

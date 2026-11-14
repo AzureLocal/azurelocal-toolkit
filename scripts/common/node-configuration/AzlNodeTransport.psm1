@@ -350,7 +350,7 @@ function New-AzlWinRmTransport {
     .PARAMETER Credential
         The node's local administrator (<node>\<user> or a domain account).
     .EXAMPLE
-        New-AzlWinRmTransport -Address @{ 'node-01' = '192.0.2.11' } -Credential (Get-Credential)
+        New-AzlWinRmTransport -Address @{ 'node-01' = '192.0.2.11' } -Credential $localAdmin   # a [pscredential] the caller built from identity.local_admin
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseUsingScopeModifierInNewRunspaces', '', Justification = 'The inner script block declares its own param() and receives values through -ArgumentList.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds an in-memory transport object; changes no system state.')]

@@ -55,7 +55,7 @@
       HandoffPath: "{{ azurelocal_os_configuration_handoff_path }}"
       Node: "{{ azurelocal_os_configuration_nodes }}"
       Step: "{{ azurelocal_os_configuration_steps }}"
-      ConfigPath: "{{ azurelocal_os_configuration_config_path }}"
+      SettingsFile: "{{ azurelocal_os_configuration_settings_file }}"
       ApprovedWipeList: "{{ azurelocal_os_configuration_approved_wipe_list if azurelocal_os_configuration_approved_wipe_list else ((azurelocal_os_configuration__run_dir ~ '/plan/wipe-list.json') if (azurelocal_os_configuration__phase == 'Apply' and azurelocal_os_configuration_phase == 'both') else '') }}"
       Settings: "{{ azurelocal_os_configuration_settings }}"
       NodeAddress: "{{ azurelocal_os_configuration_node_address }}"

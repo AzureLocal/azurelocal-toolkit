@@ -429,7 +429,7 @@ function Get-AzlVerificationCheckDefinition {
             }))
 
     $defs.Add((New-AzlVerDefinition -Id 'NW-008' -Category network -Title 'Remote NDIS device (BMC USB NIC) is noted and kept out of the way of the management network' `
-                -Source "azl-toolkit phase-03-os-configuration task-04 Disable-DHCPOnAllAdapters.ps1 (Remote NDIS keeps DHCP); lab finding" -Blocking $false -Run {
+                -Source "azl-toolkit phase-03-os-configuration task-04 Disable-DHCPOnAllAdapters.ps1 (removed) (Remote NDIS keeps DHCP); lab finding" -Blocking $false -Run {
                 param($Context)
                 Invoke-AzlVerPerNode -Context $Context -Section 'GetAdapters' -Body {
                     param($Name, $D, $N)
@@ -477,7 +477,7 @@ function Get-AzlVerificationCheckDefinition {
             }))
 
     $defs.Add((New-AzlVerDefinition -Id 'NW-011' -Category network -Title 'Unused adapters that are disconnected are disabled' `
-                -Source "azl-toolkit phase-03-os-configuration task-09 Disable-UnusedAdapters.ps1 / task-13 Task09_Adapters" -Blocking $false -Run {
+                -Source "azl-toolkit phase-03-os-configuration task-09 Disable-UnusedAdapters.ps1 (removed) / task-13 Task09_Adapters" -Blocking $false -Run {
                 param($Context)
                 $mine = @(Get-AzlVerIntentAdapter @(Get-AzlVerIntent $Context))
                 Invoke-AzlVerPerNode -Context $Context -Section 'GetAdapters' -Body {
