@@ -659,7 +659,7 @@ extensions: {}
 #   deploy_timeout_minutes: 360
 #   poll_seconds: 15
 #   poll_max_seconds: 120
-#   approval: stop                # stop | prompt | none (ValidateAndDeploy; pipelines use an environment approval instead)
+#   approval: stop                # stop | none (ValidateAndDeploy; pipelines use an environment approval instead)
 #   resume: false                 # true: a failed Deploy is resubmitted
 #   require_os_configuration_report: false
 #   skip_preconditions: []
