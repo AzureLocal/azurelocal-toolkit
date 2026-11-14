@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for infrastructure.yml for scenario.storage_architecture = s2d with every variable. Schema 5.6.23. Scenario: storage_architecture=s2d.
+# Template for infrastructure.yml for scenario.storage_architecture = s2d with every variable. Schema 5.6.24. Scenario: storage_architecture=s2d.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -589,6 +589,21 @@ hardware:
     # Test only.
     # used by: ztp
     allow_unvalidated: false
+    # Optional (schema 5.6.24).
+    # used by: deployment
+    partner_properties:
+      # The property name, as the hardware vendor gives it.
+      # required; used by: deployment
+      - name: "iic-sbe-region"
+        # The property value, as the hardware vendor gives it.
+        # used by: deployment
+        value: "emea"
+    # Optional (schema 5.6.24).
+    # used by: deployment
+    partner_credentials:
+      # The name of the secret in the cluster's Key Vault.
+      # required; used by: deployment
+      - secret_name: "iic-sbe-download-login"
   # The physical network cards in every machine, and what each port is for.
   # used by: os_configuration
   network_cards:
@@ -1528,7 +1543,7 @@ os_configuration:
     # true: you confirm the network of the nodes has no route to production.
     # used by: os_configuration
     isolation_confirmed: false
-    # The server certificate for the HTTPS listener: the 40-hex thumbprint of a certificate already in the node's LocalMachine\My store, or keyva...
+    # The server certificate for the HTTPS listener: the 40-hex thumbprint of a certificate already in the node's LocalMachine\My store, or a sec...
     # used by: os_configuration
     certificate: ""
 

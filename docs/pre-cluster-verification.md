@@ -125,6 +125,17 @@ summary and in the ARM event feed. There is no infrastructure.yml key for it, a 
 | `verificationMinDataDiskGB` | `deployment.verification_min_data_disk_gb` | 500 (Learn) |
 | `verificationMinLinkGbps` | `deployment.verification_min_link_gbps` | 10 (Learn, storage) |
 | `verificationMaxClockSkewSeconds` | `deployment.verification_max_clock_skew_seconds` | 300 (Kerberos) |
+| `verificationLdapTimeoutSeconds` | none, on purpose (a limit of the tool, not a property of the site) | 20 seconds for one directory query; raise it for a slow directory |
+| `verificationEndpointTimeoutSeconds` | none, on purpose | 5 seconds for one TCP connect from a node to an endpoint |
+| `verificationRemoteCallSeconds` | none, on purpose | 180 seconds for one read only call to a node |
+| `verificationSessionOpenSeconds`, `verificationSessionOperationSeconds` | none, on purpose | 20 and 60 seconds for the default WinRM session of the identity checks |
+| `verificationPortTimeoutSeconds` | none, on purpose | 3 seconds for one TCP connect to a domain controller port |
+| `verificationWebTimeoutSeconds` | none, on purpose | 6 seconds for one web request from a node |
+| `verificationResultFutureToleranceMinutes` | none, on purpose | 5 minutes: how far ahead of this clock a gate result may be dated |
+| `verificationAdvisedFeatures` | none, on purpose | `FS-Data-Deduplication`, `RSAT-AD-PowerShell`, `RSAT-Clustering-PowerShell`: the features the node check only advises (a warning) |
+| `providerRegistrationTimeoutMinutes`, `providerRegistrationPollSeconds` | none, on purpose | 15 minutes and 10 seconds: the wait of `-RegisterResourceProviders` and of the gate's `-Fix` |
+| `reportDirectoryPrefix` | none, on purpose | `azl-arm`: without `-ReportDirectory` the report folder is `<temp folder>/<prefix>-<cluster name>` |
+| `deploymentNamePrefix` | none, on purpose | `azl`: the ARM deployments are named `<prefix>-validate-<hash>` and `<prefix>-deploy-<hash>` |
 | `allowRevalidate` | `deployment.allow_revalidate` | false (switch `-AllowRevalidate`, also on the ARM Validate) |
 | `secretMode` | none, on purpose (how the parameter file is made, not a property of the site) | `Placeholder`. Give `-Settings @{ secretMode = KeyVaultReference }` when the parameter file is made with `New-AzureLocalArmParameters.ps1 -SecretMode KeyVaultReference`: Azure Resource Manager then reads the secrets and can read only `keyvault://` references, so AZ-010, AZ-011 and AZ-012 fail for an `env://`, `file://` or `command://` reference. In `Placeholder` mode every provider is fine. |
 | user name secret | `identity.local_admin.username_secret` (optional) | `local-admin-username` in the vault of the password |

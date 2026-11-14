@@ -24,6 +24,14 @@
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
+function Get-RpSecretProvider {
+    # The provider of a secret reference (keyvault, env, file or command), $null when the text is not one. The one resolver decides what a reference is (AzlSecret.psm1). It is loaded
+    # when this runs, not at the top of the file: the resolver imports the infrastructure module, which imports this one.
+    param([AllowNull()][AllowEmptyString()][string]$Text)
+    if (-not (Get-Command Get-AzlSecretProvider -ErrorAction SilentlyContinue)) { Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'secrets', 'AzlSecret.psm1')) }
+    return (Get-AzlSecretProvider -Reference $Text)
+}
+
 $script:DefaultDataPath = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'config', 'remoting-profiles.json'))
 $script:AllowedClasses = @('lab', 'test', 'dev', 'production', 'dmz')
 $script:RelaxedClasses = @('lab', 'test')
@@ -531,13 +539,15 @@ function Resolve-AzlRemotingProfile {
     if ($certText) {
         $compact = $certText -replace '[\s:]', ''
         if ($compact -match '^[0-9A-Fa-f]{40}$') { $certMode = 'thumbprint'; $certThumbprint = $compact.ToUpperInvariant() }
-        elseif ($certText -match '^keyvault://[^/\s]+/[^/\s]+$') { $certMode = 'keyVault'; $certReference = $certText }
-        else { & $issue 'AZL-067' 'error' 'os_configuration.remoting.certificate' "certificate must be the 40-hex thumbprint of a certificate in the node's LocalMachine\My store, or keyvault://<vault>/<secret>." }
+        # A reference of any provider of the resolver (the mode keeps its name keyVault): the secret holds the certificate as a base64 PFX without a password, which a Key Vault secret,
+        # an environment variable, a file or a command can hand over alike.
+        elseif (Get-RpSecretProvider $certText) { $certMode = 'keyVault'; $certReference = $certText }
+        else { & $issue 'AZL-067' 'error' 'os_configuration.remoting.certificate' "certificate must be the 40-hex thumbprint of a certificate in the node's LocalMachine\My store, or a secret reference (keyvault://<vault>/<secret>, env://<VARIABLE>, file://<name> or command://<name>) of a secret that holds the certificate as a base64 PFX." }
     }
     if ($certMode -eq 'none' -and -not $certText) {
         if ($httpsEnabled) {
             if ([bool]$row.certificate.allowSelfSigned) { $certMode = 'selfSigned' }
-            else { & $issue 'AZL-067' 'error' 'os_configuration.remoting.certificate' "The class $class needs an enterprise certificate for the HTTPS listener (os_configuration.remoting.certificate: a thumbprint or a keyvault:// PFX reference). A self-signed per-node certificate isn't accepted." }
+            else { & $issue 'AZL-067' 'error' 'os_configuration.remoting.certificate' "The class $class needs an enterprise certificate for the HTTPS listener (os_configuration.remoting.certificate: a thumbprint or a secret reference (keyvault://, env://, file:// or command://) to a base64 PFX). A self-signed per-node certificate isn't accepted." }
         }
     }
     elseif ($certText -and -not $httpsEnabled) { & $issue 'AZL-067' 'warning' 'os_configuration.remoting.certificate' 'certificate is set but WinRM does not use HTTPS in this profile, so it is not used.' }
@@ -691,7 +701,7 @@ function ConvertTo-AzlRemotingReport {
     <#
     .SYNOPSIS
         The profile as an ordered hashtable for report.json: class, posture, the firewall scope, the TrustedHosts mode, transport,
-        bootstrap and the warnings. Holds no secret (a certificate is a thumbprint or a keyvault:// reference).
+        bootstrap and the warnings. Holds no secret (a certificate is a thumbprint or a secret reference).
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][object]$RemotingProfile)

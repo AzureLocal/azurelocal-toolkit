@@ -137,6 +137,8 @@ function Test-AzlPclGateResult {
         more than 168 hours after it was made is refused. Every other case is Passed false with the reason and the exact command to run.
     .PARAMETER ExpectedFileHash
         The SHA-256 of the bytes the caller parsed (computed before it read the file). The report and the file now must both have it.
+    .PARAMETER FutureToleranceMinutes
+        How many minutes ahead of this machine's clock a result may be dated (default 5). A result further ahead is refused.
     .PARAMETER MaxAgeHours
         The caller's own maximum age of a result (deployment.pre_cluster_verification_max_age_hours); 0 uses only the report's expiry.
     .OUTPUTS
@@ -150,7 +152,9 @@ function Test-AzlPclGateResult {
         [string]$HandoffFile,
         [string]$OsConfigurationReport,
         [string]$ExpectedFileHash,
-        [int]$MaxAgeHours = 0
+        [int]$MaxAgeHours = 0,
+        # How far ahead of this machine's clock a result may be dated before it is refused (the run setting verificationResultFutureToleranceMinutes).
+        [ValidateRange(1, 1440)][int]$FutureToleranceMinutes = 5
     )
     $command = Get-AzlPclCommand -InfrastructureFile $InfrastructureFile -ReportDirectory $Directory -HandoffFile $HandoffFile -OsConfigurationReport $OsConfigurationReport
     $get = { param($Object, [string]$Name) if ($null -ne $Object -and $Object.PSObject.Properties[$Name]) { $Object.PSObject.Properties[$Name].Value } else { $null } }
@@ -207,7 +211,7 @@ function Test-AzlPclGateResult {
     $completed = ConvertTo-AzlPclUtc $report.completedUtc
     if ($null -eq $expires) { return (& $make $false "The result in $Directory has an expiresUtc that is not a date ($($report.expiresUtc))." $report) }
     if ($null -eq $completed) { return (& $make $false "The result in $Directory has a completedUtc that is not a date ($($report.completedUtc))." $report) }
-    if ($completed -gt $nowUtc.AddMinutes(5)) { return (& $make $false "The result in $Directory was completed at $($completed.ToString('o')), which is in the future." $report) }
+    if ($completed -gt $nowUtc.AddMinutes($FutureToleranceMinutes)) { return (& $make $false "The result in $Directory was completed at $($completed.ToString('o')), which is in the future." $report) }
     if (($expires - $completed) -gt [TimeSpan]::FromHours(168).Add([TimeSpan]::FromMinutes(1))) { return (& $make $false "The result in $Directory expires more than 168 hours after it was made." $report) }
     $effective = $expires
     if ($MaxAgeHours -gt 0 -and $completed.AddHours($MaxAgeHours) -lt $effective) { $effective = $completed.AddHours($MaxAgeHours) }

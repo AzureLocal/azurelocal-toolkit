@@ -119,6 +119,7 @@ function Get-AzlVerificationCheckDefinition {
                 param($Context)
                 $expected = @(ConvertTo-AzlVerList (Get-AzlProp (Get-AzlVerInfra $Context) 'networking.ntp_servers' @()) | ForEach-Object { ([string]$_).ToLowerInvariant() })
                 $maxSkew = [double](Get-AzlVerSetting $Context 'verificationMaxClockSkewSeconds')
+                $clockWarning = [double](Get-AzlVerConstant ClockWarningSeconds)
                 $now = Get-AzlVerNow $Context
                 $peerSets = [ordered]@{}
                 Invoke-AzlVerPerNode -Context $Context -Section 'GetTime' -Body {
@@ -133,7 +134,7 @@ function Get-AzlVerificationCheckDefinition {
                     if ([datetime]::TryParse([string](Get-AzlProp $D 'utc' ''), [cultureinfo]::InvariantCulture, [System.Globalization.DateTimeStyles]::AdjustToUniversal -bor [System.Globalization.DateTimeStyles]::AssumeUniversal, [ref]$utc)) {
                         $skew = [math]::Abs(($utc - $now).TotalSeconds)
                         if ($skew -gt $maxSkew) { $problems += "its clock differs from this host by $([math]::Round($skew)) seconds (Kerberos allows 300)" }
-                        elseif ($skew -gt 60) { $warnings += "its clock differs from this host by $([math]::Round($skew)) seconds" }
+                        elseif ($skew -gt $clockWarning) { $warnings += "its clock differs from this host by $([math]::Round($skew)) seconds" }
                     }
                     if ($expected.Count -and $peers.Count -and @($expected | Where-Object { $_ -notin $peers }).Count) { $warnings += "its NTP peers ($($peers -join ', ')) do not include all of networking.ntp_servers ($($expected -join ', ')); a domain-joined node syncs from the domain hierarchy instead" }
                     if ($rawPeers -and $rawPeers -notmatch '0x8' -and $src -notmatch 'Local CMOS') { $warnings += 'the NTP peers carry no ,0x8 flag (Learn: w32tm /config /manualpeerlist:"server,0x8" /syncfromflags:manual /update)' }
@@ -187,6 +188,8 @@ function Get-AzlVerificationCheckDefinition {
                 -Source "$($script:Src.SysReq) (Machine and storage requirements); Learn hardware validator (Processor, Memory)" -Run {
                 param($Context)
                 $minGib = [double](Get-AzlVerSetting $Context 'verificationMinMemoryGiB')
+                $reservedGiB = [double](Get-AzlVerConstant MemoryReservedGiB)
+                $declaredFraction = [double](Get-AzlVerConstant DeclaredMemoryFraction)
                 $wantCores = [int](Get-AzlProp (Get-AzlVerInfra $Context) 'hardware.cpu_cores' 0)
                 $wantGib = [int](Get-AzlProp (Get-AzlVerInfra $Context) 'hardware.memory_gib' 0)
                 $sigs = [ordered]@{}; $mems = [ordered]@{}
@@ -198,12 +201,12 @@ function Get-AzlVerificationCheckDefinition {
                     $mems[$Name] = (@(ConvertTo-AzlVerList (Get-AzlProp $D 'mem' @())) | Measure-Object -Sum).Sum
                     $gib = [math]::Round($memBytes / 1GB, 1)
                     $problems = @(); $warnings = @()
-                    if ($gib -lt ($minGib - 2)) { $problems += "it has $gib GiB memory (Learn: at least $minGib GB per machine)" }
+                    if ($gib -lt ($minGib - $reservedGiB)) { $problems += "it has $gib GiB memory (Learn: at least $minGib GB per machine)" }
                     if ($cpu.Count -eq 0) { $problems += 'no processor was reported' }
                     elseif (@($cpu | Where-Object { -not [bool](Get-AzlProp $_ 'vt' $false) }).Count -and -not [bool](Get-AzlProp $D 'cs.hypervisor' $false)) { $problems += 'hardware virtualization (Intel VT or AMD-V) is not enabled in the BIOS' }
                     $logical = (@($cpu | ForEach-Object { [int](Get-AzlProp $_ 'logical' 0) }) | Measure-Object -Sum).Sum
                     if ($wantCores -gt 0 -and $logical -gt 0 -and $logical -lt $wantCores) { $warnings += "it has $logical logical processors, the file declares hardware.cpu_cores $wantCores" }
-                    if ($wantGib -gt 0 -and $gib -lt ($wantGib * 0.9)) { $warnings += "it has $gib GiB memory, the file declares hardware.memory_gib $wantGib" }
+                    if ($wantGib -gt 0 -and $gib -lt ($wantGib * $declaredFraction)) { $warnings += "it has $gib GiB memory, the file declares hardware.memory_gib $wantGib" }
                     if ($problems) { New-AzlVerResult Failed "${Name}: $($problems -join '; ')." 'Fix the hardware or the BIOS setting (Learn: System requirements, Machine and storage requirements).' -Node $Name -Evidence "mem=${gib}GiB logical=$logical" }
                     elseif ($warnings) { New-AzlVerResult Warning "${Name}: $($warnings -join '; ')." 'Check hardware.cpu_cores and hardware.memory_gib in the file against the node.' -Node $Name -Evidence "mem=${gib}GiB logical=$logical" }
                     else { New-AzlVerResult Passed "$Name has $gib GiB memory, $logical logical processors and virtualization enabled." -Node $Name -Evidence "mem=${gib}GiB logical=$logical" }
@@ -216,13 +219,14 @@ function Get-AzlVerificationCheckDefinition {
                 -Source "$($script:Src.SysReq) (Boot drive: at least 200 GB)" -Run {
                 param($Context)
                 $minGb = [double](Get-AzlVerSetting $Context 'verificationMinBootDiskGB')
+                $sizeTolerance = [double](Get-AzlVerConstant SizeToleranceFraction)
                 Invoke-AzlVerPerNode -Context $Context -Section 'GetDisks' -Body {
                     param($Name, $D, $N)
                     $boot = @(Get-AzlVerBootDisk (Get-AzlProp $D 'disks' @()))
                     if (-not $boot.Count) { return New-AzlVerResult Failed "$Name reports no boot disk (Get-Disk IsBoot)." 'Check the node: Get-Disk | Where-Object IsBoot' -Node $Name }
                     $size = [int64](Get-AzlProp $boot[0] 'size' 0)
                     $gb = [math]::Round($size / 1e9)
-                    if ($size -lt ($minGb * 1e9 * 0.95)) { New-AzlVerResult Failed "The boot disk of $Name ($(Get-AzlProp $boot[0] 'name' 'disk')) is $gb GB. Learn: a minimum of $minGb GB." "Use a boot drive of at least $minGb GB (BOSS virtual disk)." -Node $Name -Evidence "boot=${gb}GB" }
+                    if ($size -lt ($minGb * 1e9 * $sizeTolerance)) { New-AzlVerResult Failed "The boot disk of $Name ($(Get-AzlProp $boot[0] 'name' 'disk')) is $gb GB. Learn: a minimum of $minGb GB." "Use a boot drive of at least $minGb GB (BOSS virtual disk)." -Node $Name -Evidence "boot=${gb}GB" }
                     else { New-AzlVerResult Passed "The boot disk of $Name is $gb GB." -Node $Name -Evidence "boot=${gb}GB" }
                 }
             }))
@@ -231,7 +235,7 @@ function Get-AzlVerificationCheckDefinition {
                 -Source "$($script:Src.SysReq); azl-toolkit phase-02-os-installation Test-OsDeployment.ps1 (Get-RequiredWindowsFeatures)" -Run {
                 param($Context)
                 $required = Get-AzlVerConstant RequiredFeature
-                $advised = Get-AzlVerConstant AdvisedFeature
+                $advised = Get-AzlVerAdvisedFeature $Context
                 Invoke-AzlVerPerNode -Context $Context -Section 'GetFeatures' -Body {
                     param($Name, $D, $N)
                     $rows = @(ConvertTo-AzlVerList (Get-AzlProp $D 'features' @()))

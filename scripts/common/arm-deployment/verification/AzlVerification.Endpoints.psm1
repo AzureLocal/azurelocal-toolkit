@@ -41,6 +41,8 @@ $script:Region = @{
 }
 
 # Host (with {region}, {his}, {appliances}), Port, Group, Tier, Note.
+# The list is fixed by Microsoft, not a choice of the deployment: it is the consolidated list Learn publishes (see the description above), so it is a constant of this
+# module. The only deployment value in it is the Azure region (azure.location), which fills {region}, {his} and {appliances}.
 $script:Entry = @(
     # Arc agent (Azure Local Arc agent in the lists; the Connected Machine agent page)
     ,@('download.microsoft.com', 443, 'Arc', 'Required', 'Windows installation package of the Arc agent')

@@ -16,10 +16,10 @@ Registry version 5.0.52. Sources of the scan: toolkit (this repository), sonar 3
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 657 | 460 | 85 | 3 | 107 | 2 |
-| Owned by a tool (`tools.*`) | 4693 | 4485 | 0 | 0 | 208 | 0 |
+| Keys of infrastructure.yml | 660 | 463 | 85 | 3 | 107 | 2 |
+| Owned by a tool (`tools.*`) | 4710 | 4502 | 0 | 0 | 208 | 0 |
 | Older variables-file sections | 1417 | 20 | 6 | 0 | 1385 | 6 |
-| All registry leaves | 6767 | 4965 | 91 | 3 | 1700 | 8 |
+| All registry leaves | 6787 | 4985 | 91 | 3 | 1700 | 8 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -43,7 +43,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | ZTP | azurelocal-ztp | 89 | _metadata, azure, cluster, hardware, key_vaults, network_devices, networking, nodes, provisioning, scenario, site, tags | ztp | ztp-handoff.json (Arc machine IDs, installed build, management address verified), ztp-events.jsonl |
 | OS configuration | Set-AzureLocalNodeConfiguration.ps1, Invoke-AzureLocalOsConfiguration.ps1 | 76 | _metadata, azure, cluster, deployment, hardware, identity, networking, nodes, os_configuration, provisioning, scenario, site, storage | os_configuration | the OS configuration report (ports and OS adapter names by MAC, SAN disks), os-configuration-events.jsonl |
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 65 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
-| ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 91 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
+| ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 94 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 14 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
 | Outside the flow | cicd-infra, validator, helpers, legacy scripts | 299 | _metadata, azure, cluster, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
 
@@ -66,7 +66,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `cluster` | 9 |  | 1 | 1 | 1 | 11 | 1 | 4 |
 | `deployment` |  |  |  | 1 |  |  |  |  |
 | `nodes` | 10 | 18 | 27 | 15 | 5 | 6 | 1 | 18 |
-| `hardware` | 11 | 15 | 6 | 4 | 4 | 3 |  | 14 |
+| `hardware` | 11 | 15 | 6 | 4 | 4 | 6 |  | 14 |
 | `storage` | 4 |  |  | 9 | 3 | 15 |  | 30 |
 | `sdn` | 1 |  |  |  |  |  |  | 5 |
 | `provisioning` | 9 |  | 31 | 1 | 1 |  | 2 | 1 |
@@ -92,9 +92,9 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | trailwright | Design | 0 | 130 | 0 |
 | discovery | Discovery | 25 | 13 | 158 |
 | ztp | ZTP | 89 | 0 | 1090 |
-| os-configuration | OS configuration | 76 | 0 | 274 |
+| os-configuration | OS configuration | 76 | 0 | 282 |
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
-| arm-deployment | ARM Validate/Deploy | 91 | 0 | 1462 |
+| arm-deployment | ARM Validate/Deploy | 94 | 0 | 1471 |
 | sonar | Sonar | 14 | 0 | 266 |
 | cicd-infra | Outside the flow | 53 | 0 | 348 |
 | infrastructure-helpers | Outside the flow | 39 | 0 | 0 |
@@ -155,7 +155,7 @@ Where in the code (file, function, keys read by name; 22 places, the first 12):
 **Reads (76):**
 `site.time_zone`, `identity.active_directory.domain_fqdn`, `identity.active_directory.netbios_name`, `identity.active_directory.ou_path`, `identity.active_directory.lcm_user.username`, `identity.active_directory.domain_join_account.username`, `identity.active_directory.domain_join_account.password`, `identity.active_directory.local_admin_members`, `identity.active_directory.join_options.allow_ou_move`, `identity.active_directory.domain_controllers`, `identity.active_directory.security_groups[].name`, `identity.active_directory.security_groups[].purpose`, `identity.local_admin.username`, `identity.local_admin.password`, `networking.management.subnet`, `networking.oob.subnet`, `networking.ntp_servers`, `networking.outbound.proxy.url`, `networking.outbound.proxy.bypass`, `networking.outbound.arc_gateway.name`, `networking.outbound.arc_gateway.resource_group`, `networking.outbound.private_path.firewall_private_ip`, `networking.outbound.private_path.firewall_port`, `networking.outbound.private_path.proxy_bypass`, `scenario.identity`, `scenario.storage_architecture`, `scenario.cloud`, `scenario.outbound_path`, `scenario.os_install`, `scenario.environment_class`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `cluster.name`, `deployment.solution_version`, `nodes[].name`, `nodes[].management.ip_address`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].mac_address`, `nodes[].network_adapters[].pci_location.bus`, `nodes[].network_adapters[].pci_location.device`, `nodes[].network_adapters[].pci_location.function`, `nodes[].network_adapters[].os_name_override`, `nodes[].network_adapters[].roles`, `nodes[].network_adapters[].ip_assignment`, `nodes[].network_adapters[].ip_address`, `nodes[].network_adapters[].prefix_length`, `nodes[].maintenance_address`, `nodes[].san.hbas[].ports[].wwpn`, `nodes[].san.initiator_iqn`, `hardware.vendor`, `hardware.sbe.bundle_path`, `hardware.sbe.delivery`, `hardware.sbe.node_pull_url`, `storage.san.type`, `storage.san.array.vendor`, `storage.san.array.model`, `storage.san.iscsi.targets[].iqn`, `storage.san.iscsi.targets[].portals`, `storage.san.iscsi.targets[].fabric`, `storage.san.iscsi.chap.enabled`, `storage.san.infra_volume_lun_id`, `storage.san.performance_history_lun_id`, `provisioning.os_version`, `os_configuration.clear_storage`, `os_configuration.network.confirm_minutes`, `os_configuration.network.stable_seconds`, `os_configuration.remoting.bootstrap_transport`, `os_configuration.remoting.allowed_source_cidrs`, `os_configuration.remoting.allow_any_source`, `os_configuration.remoting.trusted_hosts`, `os_configuration.remoting.use_https`, `os_configuration.remoting.isolation_confirmed`, `os_configuration.remoting.certificate`, `_metadata.schema_version`
 
-Where in the code (file, function, keys read by name; 36 places, the first 12):
+Where in the code (file, function, keys read by name; 35 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
@@ -170,7 +170,7 @@ Where in the code (file, function, keys read by name; 36 places, the first 12):
 | `scripts/common/node-configuration/AzlOsConfigurationRun.psm1` | `Get-AzlNodeAddressCandidate` | 3 |
 | `scripts/common/node-configuration/AzlOsConfigurationRun.psm1` | `Get-AzlNodeEvidence` | 3 |
 | `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-07-configure-time-synchronization-ntp/powershell/Invoke-ConfigureNTP-Orchestrated.ps1` | `Get-ClusterConfig` | 3 |
-| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-12-complete-combined-script-all-steps/powershell/Invoke-Phase03OsConfiguration-Orchestrated.ps1` | `Get-ClusterConfig` | 3 |
+| `scripts/deploy/04-cluster-deployment/phase-03-os-configuration/task-13-phase03-verification/powershell/Invoke-Phase03Verification-Orchestrated.ps1` | `Get-Config` | 3 |
 
 ### pre-cluster-verification
 
@@ -196,14 +196,14 @@ Where in the code (file, function, keys read by name; 36 places, the first 12):
 
 ### arm-deployment
 
-**Reads (91):**
-`identity.active_directory.domain_fqdn`, `identity.active_directory.ou_path`, `identity.active_directory.lcm_user.username`, `identity.active_directory.lcm_user.password`, `identity.local_admin.username`, `identity.local_admin.password`, `identity.local_identity.dns_server_config`, `identity.local_identity.dns_zone`, `identity.local_identity.dns_forwarders`, `networking.management.subnet`, `networking.management.gateway`, `networking.management.dns_servers`, `networking.management.use_dhcp`, `networking.management.infrastructure_pool.start`, `networking.management.infrastructure_pool.end`, `networking.ntp_servers`, `networking.storage.auto_ip`, `networking.storage.networks[].name`, `networking.storage.networks[].adapter`, `networking.storage.networks[].vlan_id`, `networking.storage.networks[].subnet`, `networking.cluster_network_properties.bandwidth_percentage_smb`, `networking.cluster_network_properties.jumbo_packet`, `networking.cluster_network_properties.priority_cluster`, `networking.cluster_network_properties.priority_smb`, `networking.cluster_networks[].name`, `networking.cluster_networks[].adapter`, `networking.cluster_networks[].vlan_id`, `networking.cluster_networks[].subnet`, `security.level`, `security.drift_control`, `security.credential_guard`, `security.smb_signing`, `security.smb_cluster_encryption`, `security.bitlocker_boot_volume`, `security.bitlocker_data_volumes`, `security.wdac`, `security.telemetry.streaming_data`, `security.telemetry.episodic_data_upload`, `security.telemetry.eu_location`, `scenario.identity`, `scenario.storage_architecture`, `scenario.storage_connectivity`, `scenario.topology`, `scenario.connectivity`, `scenario.cloud`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.hci_resource_provider_object_id`, `azure.custom_location`, `key_vaults[].name`, `key_vaults[].subscription_id`, `key_vaults[].resource_group`, `cluster.name`, `cluster.naming_prefix`, `cluster.deployment_mode`, `cluster.witness.type`, `cluster.witness.storage_account`, `cluster.key_vault.name`, `cluster.key_vault.create_new`, `cluster.key_vault.soft_delete_retention_days`, `cluster.diagnostics.storage_account`, `cluster.diagnostics.logs_retention_days`, `cluster.diagnostics.storage_account_type`, `nodes[].name`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].roles`, `nodes[].zone`, `nodes[].storage_ips`, `nodes[].san.initiator_iqn`, `hardware.vendor`, `hardware.sbe.bundle_path`, `hardware.sbe.source_path`, `storage.configuration_mode`, `storage.san.type`, `storage.san.iscsi.targets[].portals`, `storage.san.iscsi.targets[].fabric`, `storage.san.iscsi.chap.enabled`, `storage.san.iscsi.chap.username`, `storage.san.iscsi.chap.secret`, `storage.san.iscsi.chap.mutual`, `storage.san.iscsi.jumbo_packet`, `storage.san.iscsi.networks[].fabric`, `storage.san.iscsi.networks[].vlan_id`, `storage.san.iscsi.networks[].subnet`, `storage.san.iscsi.networks[].next_hop`, `storage.san.infra_volume_lun_id`, `storage.san.performance_history_lun_id`, `_metadata.schema_version`
+**Reads (94):**
+`identity.active_directory.domain_fqdn`, `identity.active_directory.ou_path`, `identity.active_directory.lcm_user.username`, `identity.active_directory.lcm_user.password`, `identity.local_admin.username`, `identity.local_admin.password`, `identity.local_identity.dns_server_config`, `identity.local_identity.dns_zone`, `identity.local_identity.dns_forwarders`, `networking.management.subnet`, `networking.management.gateway`, `networking.management.dns_servers`, `networking.management.use_dhcp`, `networking.management.infrastructure_pool.start`, `networking.management.infrastructure_pool.end`, `networking.ntp_servers`, `networking.storage.auto_ip`, `networking.storage.networks[].name`, `networking.storage.networks[].adapter`, `networking.storage.networks[].vlan_id`, `networking.storage.networks[].subnet`, `networking.cluster_network_properties.bandwidth_percentage_smb`, `networking.cluster_network_properties.jumbo_packet`, `networking.cluster_network_properties.priority_cluster`, `networking.cluster_network_properties.priority_smb`, `networking.cluster_networks[].name`, `networking.cluster_networks[].adapter`, `networking.cluster_networks[].vlan_id`, `networking.cluster_networks[].subnet`, `security.level`, `security.drift_control`, `security.credential_guard`, `security.smb_signing`, `security.smb_cluster_encryption`, `security.bitlocker_boot_volume`, `security.bitlocker_data_volumes`, `security.wdac`, `security.telemetry.streaming_data`, `security.telemetry.episodic_data_upload`, `security.telemetry.eu_location`, `scenario.identity`, `scenario.storage_architecture`, `scenario.storage_connectivity`, `scenario.topology`, `scenario.connectivity`, `scenario.cloud`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.hci_resource_provider_object_id`, `azure.custom_location`, `key_vaults[].name`, `key_vaults[].subscription_id`, `key_vaults[].resource_group`, `cluster.name`, `cluster.naming_prefix`, `cluster.deployment_mode`, `cluster.witness.type`, `cluster.witness.storage_account`, `cluster.key_vault.name`, `cluster.key_vault.create_new`, `cluster.key_vault.soft_delete_retention_days`, `cluster.diagnostics.storage_account`, `cluster.diagnostics.logs_retention_days`, `cluster.diagnostics.storage_account_type`, `nodes[].name`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].roles`, `nodes[].zone`, `nodes[].storage_ips`, `nodes[].san.initiator_iqn`, `hardware.vendor`, `hardware.sbe.bundle_path`, `hardware.sbe.source_path`, `hardware.sbe.partner_properties[].name`, `hardware.sbe.partner_properties[].value`, `hardware.sbe.partner_credentials[].secret_name`, `storage.configuration_mode`, `storage.san.type`, `storage.san.iscsi.targets[].portals`, `storage.san.iscsi.targets[].fabric`, `storage.san.iscsi.chap.enabled`, `storage.san.iscsi.chap.username`, `storage.san.iscsi.chap.secret`, `storage.san.iscsi.chap.mutual`, `storage.san.iscsi.jumbo_packet`, `storage.san.iscsi.networks[].fabric`, `storage.san.iscsi.networks[].vlan_id`, `storage.san.iscsi.networks[].subnet`, `storage.san.iscsi.networks[].next_hop`, `storage.san.infra_volume_lun_id`, `storage.san.performance_history_lun_id`, `_metadata.schema_version`
 
 Where in the code (file, function, keys read by name; 19 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
-| `scripts/common/arm-deployment/AzlArmDeployment.psm1` | `New-AzlArmParameterSet` | 79 |
+| `scripts/common/arm-deployment/AzlArmDeployment.psm1` | `New-AzlArmParameterSet` | 82 |
 | `scripts/common/arm-deployment/AzlArmDeployment.psm1` | `Select-AzlArmTemplate` | 6 |
 | `scripts/common/arm-deployment/AzlArmDeploymentRun.psm1` | `(script)` | 6 |
 | `scripts/common/arm-deployment/AzlArmDeploymentRun.psm1` | `Invoke-AzlArmDeploymentRun` | 6 |
@@ -1146,6 +1146,9 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `hardware.sbe.delivery` | string, default `skip`, one of `winrm_copy`, `node_pull`, `skip` | operator; default | os_configuration; trailwright | os-configuration | OS Drivers; Sbe | read |
 | `hardware.sbe.node_pull_url` | string | operator | os_configuration | os-configuration | OS Drivers; Sbe | read |
 | `hardware.sbe.allow_unvalidated` | boolean | operator; Trailwright | ztp | (part: ztp) |  | read-as-part |
+| `hardware.sbe.partner_properties[].name` | string, required | operator | deployment | arm-deployment |  | read |
+| `hardware.sbe.partner_properties[].value` | string | operator | deployment | arm-deployment |  | read |
+| `hardware.sbe.partner_credentials[].secret_name` | string, required | operator | deployment | arm-deployment |  | read |
 | `hardware.network_cards[].label` | string | operator | os_configuration; trailwright |  |  | placeholder |
 | `hardware.network_cards[].make` | string | operator | os_configuration; trailwright |  |  | placeholder |
 | `hardware.network_cards[].model` | string | operator | os_configuration; trailwright |  |  | placeholder |
@@ -1714,9 +1717,9 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |
-| arm_deployment | parameters | 1362 | 1362 | 0 |
+| arm_deployment | parameters | 1358 | 1358 | 0 |
 | arm_deployment | report_fields | 20 | 20 | 0 |
-| arm_deployment | run_settings | 31 | 31 | 0 |
+| arm_deployment | run_settings | 44 | 44 | 0 |
 | arm_deployment | secret_names | 2 | 2 | 0 |
 | cicd_infra | ansible_variables | 27 | 27 | 0 |
 | cicd_infra | config_keys | 5 | 5 | 0 |
@@ -1739,7 +1742,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | os_configuration | config_keys | 83 | 83 | 0 |
 | os_configuration | env_vars | 1 | 1 | 0 |
 | os_configuration | event_fields | 83 | 83 | 0 |
-| os_configuration | guard_settings | 21 | 21 | 0 |
+| os_configuration | guard_settings | 29 | 29 | 0 |
 | os_configuration | parameters | 49 | 49 | 0 |
 | os_configuration | run_settings | 27 | 27 | 0 |
 | os_configuration | secret_names | 10 | 10 | 0 |

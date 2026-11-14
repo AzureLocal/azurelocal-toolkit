@@ -66,7 +66,8 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module (Join-Path $PSScriptRoot 'AzlNodePayload.psm1')
 
-$script:StateDirectory = 'C:\ProgramData\AzureLocal\osconfig'
+# The one definition of the node's state folder is in AzlNodePayload.psm1 (a payload takes another through its parameter dir).
+$script:StateDirectory = Get-AzlNodeStateDirectory
 
 $script:EngineBody = @'
 # AZL-GUARD-ENGINE
@@ -884,8 +885,10 @@ function New-GuardRealOps {
                 if (@(Get-ChildItem WSMan:\localhost\Listener -ErrorAction SilentlyContinue).Count -eq 0) { Enable-PSRemoting -Force -SkipNetworkProfileCheck -ErrorAction Stop | Out-Null }
             }
             'rdp' { Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections -Value 0 -ErrorAction Stop; Enable-NetFirewallRule -DisplayGroup 'Remote Desktop' -ErrorAction Stop }
+            # The built-in File and Printer Sharing echo request rules of Windows Defender Firewall: fixed rule names of the operating system.
             'icmp' { foreach ($n in 'FPS-ICMP4-ERQ-In', 'FPS-ICMP6-ERQ-In') { Enable-NetFirewallRule -Name $n -ErrorAction SilentlyContinue } }
             'ntp' {
+                # Fixed by Microsoft (Learn: Windows Time service tools and settings): peer flag 0x8 = NTP client mode, /reliable:no = not announced as a reliable source.
                 $peers = (@($i.servers) | ForEach-Object { $_ + ',0x8' }) -join ' '
                 Invoke-GuardNative 'w32tm.exe' @('/config', ('/manualpeerlist:' + $peers), '/syncfromflags:manual', '/reliable:no', '/update') | Out-Null
                 Restart-Service w32time -ErrorAction Stop

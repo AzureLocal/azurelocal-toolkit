@@ -93,9 +93,8 @@ function Get-AzlArmRequiredAction {
     param()
     return [string[]]@($script:RequiredActions)
 }
-# Registering a provider takes seconds to a few minutes; the opt-in registration waits this long, reading every 10 seconds.
-$script:ProviderRegistrationTimeoutMinutes = 15
-$script:ProviderRegistrationPollSeconds = 10
+# Registering a provider takes seconds to a few minutes; the opt-in registration waits for it and reads the state at an interval. How long and how often are the run
+# settings providerRegistrationTimeoutMinutes and providerRegistrationPollSeconds (Get-AzlArmRunSetting).
 $script:RequiredActions = @('Microsoft.Resources/deployments/write', 'Microsoft.AzureStackHCI/clusters/write', 'Microsoft.AzureStackHCI/clusters/deploymentSettings/write', 'Microsoft.KeyVault/vaults/write', 'Microsoft.Storage/storageAccounts/write', 'Microsoft.Authorization/roleAssignments/write')
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -227,7 +226,16 @@ function Get-AzlArmRunSetting {
         pollFactor 1.5, transientErrorLimit 5, approvalMode stop|prompt|none, resume false, requireOsConfigurationReport false,
         skipPreconditions [], acknowledgeKnownIssues [], deploymentSettingsApiVersion '', revalidate false, allowRevalidate false,
         requireValidatedParameterHash false, osReportMaxAgeHours 48, staleSkewMinutes 5, knownIssuesFile '', solutionVersion '',
-        sbeCatalogPath '', registerResourceProviders false (opt in: register the missing mandatory resource providers). The master file's
+        sbeCatalogPath '', registerResourceProviders false (opt in: register the missing mandatory resource providers),
+        providerRegistrationTimeoutMinutes 15 and providerRegistrationPollSeconds 10 (how long the opt-in registration waits for the providers to be Registered, and how often
+        it reads them; the gate's -Fix uses the same two), deploymentNamePrefix azl (the first part of the ARM deployment names <prefix>-validate-<hash> and
+        <prefix>-deploy-<hash>; letters, digits and hyphens, starting with a letter, at most 30 characters), reportDirectoryPrefix azl-arm (when -ReportDirectory is not given,
+        the report folder is <temp folder>/<prefix>-<cluster name>; letters, digits, hyphens, underscores and dots, at most 40 characters), and the limits of the pre-cluster verification:
+        verificationLdapTimeoutSeconds 20 (one directory query), verificationEndpointTimeoutSeconds 5 (one TCP connect to an endpoint), verificationRemoteCallSeconds 180
+        (one read only call to a node), verificationSessionOpenSeconds 20 and verificationSessionOperationSeconds 60 (the default WinRM session of the identity checks),
+        verificationPortTimeoutSeconds 3 (one TCP connect to a domain controller port), verificationWebTimeoutSeconds 6 (one web request from a node),
+        verificationResultFutureToleranceMinutes 5 (how far ahead of this clock a gate result may be dated) and verificationAdvisedFeatures (the Windows features the
+        node check advises; a missing one is a warning). The master file's
         deployment block uses the same names in snake_case.
         secretMode Placeholder|KeyVaultReference (default Placeholder; set it with -Settings or -ConfigPath, not in the master file): how the
         parameter file hands the secrets to Azure. Placeholder: this machine reads each secret with the secret resolver, so a reference of any
@@ -244,6 +252,10 @@ function Get-AzlArmRunSetting {
         skipPreClusterVerification = $false; preClusterVerificationMaxAgeHours = 4; preClusterVerificationReportDirectory = ''
         installEnvironmentChecker = $false; keepEnvironmentChecker = $false; secretMode = 'Placeholder'
         verificationMinMemoryGiB = 32; verificationMinBootDiskGB = 200; verificationMinDataDiskGB = 500; verificationMinLinkGbps = 10; verificationMaxClockSkewSeconds = 300
+        providerRegistrationTimeoutMinutes = 15; providerRegistrationPollSeconds = 10; deploymentNamePrefix = 'azl'; reportDirectoryPrefix = 'azl-arm'
+        verificationLdapTimeoutSeconds = 20; verificationEndpointTimeoutSeconds = 5; verificationRemoteCallSeconds = 180; verificationSessionOpenSeconds = 20; verificationSessionOperationSeconds = 60
+        verificationPortTimeoutSeconds = 3; verificationWebTimeoutSeconds = 6; verificationResultFutureToleranceMinutes = 5
+        verificationAdvisedFeatures = @('FS-Data-Deduplication', 'RSAT-AD-PowerShell', 'RSAT-Clustering-PowerShell')
     }
     $apply = {
         param($source)
@@ -282,7 +294,7 @@ function Get-AzlArmRunSetting {
     if ($mode.Count -ne 1) { Stop-AzlArmInput "Setting secretMode must be Placeholder or KeyVaultReference, not '$($s.secretMode)'." }
     $s.secretMode = [string]$mode[0]
     foreach ($k in 'resume', 'requireOsConfigurationReport', 'revalidate', 'allowRevalidate', 'requireValidatedParameterHash', 'registerResourceProviders', 'skipPreClusterVerification', 'installEnvironmentChecker', 'keepEnvironmentChecker') { $s[$k] = [bool]$s[$k] }
-    foreach ($k in 'verificationMinMemoryGiB', 'verificationMinBootDiskGB', 'verificationMinDataDiskGB', 'verificationMinLinkGbps', 'verificationMaxClockSkewSeconds') {
+    foreach ($k in 'verificationMinMemoryGiB', 'verificationMinBootDiskGB', 'verificationMinDataDiskGB', 'verificationMinLinkGbps', 'verificationMaxClockSkewSeconds', 'providerRegistrationTimeoutMinutes', 'providerRegistrationPollSeconds', 'verificationLdapTimeoutSeconds', 'verificationEndpointTimeoutSeconds', 'verificationRemoteCallSeconds', 'verificationSessionOpenSeconds', 'verificationSessionOperationSeconds', 'verificationPortTimeoutSeconds', 'verificationWebTimeoutSeconds', 'verificationResultFutureToleranceMinutes') {
         if ([int]$s[$k] -lt 1) { Stop-AzlArmInput "Setting $k must be 1 or more." }
         $s[$k] = [int]$s[$k]
     }
@@ -292,9 +304,29 @@ function Get-AzlArmRunSetting {
     $s.solutionVersion = ([string]$s.solutionVersion).Trim()
     if ($s.solutionVersion -and $s.solutionVersion -notmatch '^\d+\.\d+\.\d+\.\d+$') { Stop-AzlArmInput "Setting solutionVersion must be four numeric parts, for example 12.2610.1004.50, not '$($s.solutionVersion)'." }
     $s.sbeCatalogPath = ([string]$s.sbeCatalogPath).Trim()
+    $s.deploymentNamePrefix = ([string]$s.deploymentNamePrefix).Trim().ToLowerInvariant()
+    if ($s.deploymentNamePrefix -notmatch '^[a-z][a-z0-9-]{0,29}$') { Stop-AzlArmInput "Setting deploymentNamePrefix must start with a letter and hold only letters, digits and hyphens (at most 30 characters), not '$($s.deploymentNamePrefix)'." }
+    $s.reportDirectoryPrefix = ([string]$s.reportDirectoryPrefix).Trim()
+    if ($s.reportDirectoryPrefix -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]{0,39}$') { Stop-AzlArmInput "Setting reportDirectoryPrefix must be a folder name part (letters, digits, hyphens, underscores and dots, at most 40 characters, no path), not '$($s.reportDirectoryPrefix)'." }
+    $s.verificationAdvisedFeatures = @(ConvertTo-AzlArmArray $s.verificationAdvisedFeatures | ForEach-Object { ([string]$_).Trim() } | Where-Object { $_ })
     $s.skipPreconditions = @(ConvertTo-AzlArmArray $s.skipPreconditions | ForEach-Object { [string]$_ })
     $s.acknowledgeKnownIssues = @(ConvertTo-AzlArmArray $s.acknowledgeKnownIssues | ForEach-Object { [string]$_ })
     return $s
+}
+
+function Get-AzlArmRunSettingValue {
+    <#
+    .SYNOPSIS
+        One run setting: the value in -Settings when it is there, else the default of Get-AzlArmRunSetting. For a module that gets a settings object from a caller
+        (a test, or a context built by hand) that may not carry every key. The one place the defaults are written is the table of Get-AzlArmRunSetting.
+    #>
+    [CmdletBinding()]
+    param([AllowNull()][object]$Settings, [Parameter(Mandatory)][string]$Name)
+    $value = if ($null -ne $Settings) { Get-AzlProp $Settings $Name $null } else { $null }
+    if ($null -ne $value -and -not ($value -is [string] -and [string]::IsNullOrWhiteSpace($value))) { return , $value }
+    $defaults = Get-AzlArmRunSetting
+    if (-not $defaults.Contains($Name)) { throw "Unknown run setting '$Name'." }
+    return , $defaults[$Name]
 }
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -671,7 +703,7 @@ function Select-AzlArmCurrentStep {
         on the run that is now waiting.
     .DESCRIPTION
         A step is from an earlier run when (1) -Since is given and the latest of its StartTime and EndTime is older than -Since minus
-        -SkewMinutes, or (2) it names a deployment (a DeploymentName member, or an azl-validate-<hash> / azl-deploy-<hash> name in its
+        -SkewMinutes, or (2) it names a deployment (a DeploymentName member, or a <prefix>-validate-<hash> / <prefix>-deploy-<hash> name (deploymentNamePrefix, azl by default) in its
         text) whose hash is not the hash of -DeploymentName. A step with no time and no name is kept: nothing says it is old.
     .OUTPUTS
         Current (steps), Ignored (FullStepIndex, Name, Status, Reason).
@@ -696,7 +728,7 @@ function Select-AzlArmCurrentStep {
             $named = [string](Get-AzlProp $s 'DeploymentName' '')
             $texts = @($named, [string](Get-AzlProp $s 'Description' '')) + @(Get-AzlProp $s 'Errors' @() | ForEach-Object { [string]$_ })
             foreach ($t in $texts) {
-                foreach ($m in [regex]::Matches($t, 'azl-(?:validate|deploy)-(?<h>[0-9a-fA-F]{12})')) {
+                foreach ($m in [regex]::Matches($t, '[a-z][a-z0-9-]*-(?:validate|deploy)-(?<h>[0-9a-fA-F]{12})')) {
                     if ($m.Groups['h'].Value.ToLowerInvariant() -ne $hash) { $reason = "It belongs to deployment $($m.Value), not $DeploymentName."; break }
                 }
                 if ($reason) { break }
@@ -1075,9 +1107,22 @@ function Get-AzlArmArcMachineCached {
 
 # OS build -> the solution line it ships with (first three parts of the solution version; the last part is the build of the
 # solution package and is not known from the OS build). Add a row only when both were seen together on a real deployment.
+# This is the one table: the node checks of the pre-cluster verification read it through Get-AzlArmSolutionOsBuild (they used to keep a copy).
 $script:SolutionOsBuilds = @(
     [pscustomobject]@{ OsBuild = '10.0.26100.33650'; Solution = '12.2610.1004'; Evidence = 'lab run 2026-11-08: nodes on 10.0.26100.33650, Azure reported Solution version 12.2610.1004.50' }
 )
+
+function Get-AzlArmSolutionOsBuild {
+    <#
+    .SYNOPSIS
+        The table of OS builds seen with a solution version (OsBuild, Solution, Evidence). Microsoft decides which build ships with which solution (Learn: Azure Local
+        release information); a row is added here when both were seen together on a real deployment.
+    #>
+    [CmdletBinding()]
+    [OutputType([pscustomobject[]])]
+    param()
+    return @($script:SolutionOsBuilds)
+}
 
 function Read-AzlArmSbeCatalog {
     <#
@@ -1285,15 +1330,17 @@ $script:Checks['ResourceProviders'] = {
         catch { return New-AzlArmCheckResult ResourceProviders Failed "Registering $ns failed: $($_.Exception.Message)" "Owner or Contributor on the subscription is needed. Register it yourself: Register-AzResourceProvider -ProviderNamespace $ns" }
         $requested.Add($ns)
     }
-    $deadline = (& $adapter.Now).AddMinutes($script:ProviderRegistrationTimeoutMinutes)
+    $waitMinutes = [int](Get-AzlArmRunSettingValue -Settings $Ctx.Settings -Name providerRegistrationTimeoutMinutes)
+    $pollSeconds = [int](Get-AzlArmRunSettingValue -Settings $Ctx.Settings -Name providerRegistrationPollSeconds)
+    $deadline = (& $adapter.Now).AddMinutes($waitMinutes)
     $pending = @($missing)
     while ($true) {
         $pending = @($pending | Where-Object { (Invoke-AzlArmAdapter $adapter GetProviderState @($Ctx.Subscription, $_)) -ne 'Registered' })
         if (-not $pending) { break }
         if ((& $adapter.Now) -ge $deadline) {
-            return New-AzlArmCheckResult ResourceProviders Failed "Registration was requested ($($requested -join ', ')) but these are not Registered after $($script:ProviderRegistrationTimeoutMinutes) minutes: $($pending -join ', ')." 'Wait for them (Get-AzResourceProvider -ProviderNamespace <name> shows RegistrationState), then run again.'
+            return New-AzlArmCheckResult ResourceProviders Failed "Registration was requested ($($requested -join ', ')) but these are not Registered after $waitMinutes minutes: $($pending -join ', ')." 'Wait for them (Get-AzResourceProvider -ProviderNamespace <name> shows RegistrationState), then run again.'
         }
-        $null = Invoke-AzlArmAdapter $adapter Sleep @($script:ProviderRegistrationPollSeconds)
+        $null = Invoke-AzlArmAdapter $adapter Sleep @($pollSeconds)
     }
     New-AzlArmCheckResult ResourceProviders Passed "Registered by this run (-RegisterResourceProviders), now Registered: $($missing -join ', '). The other mandatory providers already were.$warn"
 }
@@ -1358,7 +1405,7 @@ $script:Checks['KeyVaultSecrets'] = {
         try { $exists = [bool](Invoke-AzlArmAdapter $Ctx.Run.Adapter TestSecret @($parts.Vault, $parts.Secret, $Ctx.Infra)) } catch { $bad += "$($r.Parameter): secret $($parts.Secret) in $($parts.Vault) could not be read ($($_.Exception.Message))"; continue }
         if (-not $exists) { $bad += "$($r.Parameter): secret $($parts.Secret) is not in vault $($parts.Vault)" }
     }
-    if ($bad) { return New-AzlArmCheckResult KeyVaultSecrets Failed ($bad -join '; ') 'Create the secret (Add-KeyVaultCredentials.ps1), grant this identity Get on secrets, or fix the reference (keyvault://, env://, file:// or command://; the secrets section of the file holds the file directory and the command). With -SecretMode KeyVaultReference only keyvault:// works; use the default Placeholder mode for the other providers.' }
+    if ($bad) { return New-AzlArmCheckResult KeyVaultSecrets Failed ($bad -join '; ') 'Put the secret in the store the reference names (Key Vault, environment variable, file or command) and run again; for a Key Vault secret, grant this identity Get on secrets. Or fix the reference (keyvault://, env://, file:// or command://; the secrets section of the file holds the file directory and the command). With -SecretMode KeyVaultReference only keyvault:// works; use the default Placeholder mode for the other providers.' }
     New-AzlArmCheckResult KeyVaultSecrets Passed "$($refs.Count) secret reference(s) resolve (no value is logged or returned)."
 }
 
@@ -1642,7 +1689,7 @@ function Test-AzlArmPreClusterVerification {
         $Run.Report.preClusterVerification = [ordered]@{ status = 'Bypassed'; bypassed = $true; directory = $directory; reason = 'The operator passed the explicit switch -SkipPreClusterVerification (a setting in a file or in -Settings cannot do this).'; command = $command; runId = ''; verdict = ''; fileHash = ''; expiresUtc = '' }
         return New-AzlArmCheckResult PreClusterVerification Warning $text "Run the gate to get a real result: $command"
     }
-    $t = Test-AzlPclGateResult -InfrastructureFile $InfrastructureFile -Directory $directory -Now (& $Run.Adapter.Now) -HandoffFile $HandoffFile -OsConfigurationReport $OsConfigurationReport -ExpectedFileHash ([string]$Run.FileHash) -MaxAgeHours ([int]$s.preClusterVerificationMaxAgeHours)
+    $t = Test-AzlPclGateResult -InfrastructureFile $InfrastructureFile -Directory $directory -Now (& $Run.Adapter.Now) -HandoffFile $HandoffFile -OsConfigurationReport $OsConfigurationReport -ExpectedFileHash ([string]$Run.FileHash) -MaxAgeHours ([int]$s.preClusterVerificationMaxAgeHours) -FutureToleranceMinutes ([int]$s.verificationResultFutureToleranceMinutes)
     $Run.Report.preClusterVerification = [ordered]@{ status = $(if ($t.Passed) { 'Passed' } else { 'Failed' }); bypassed = $false; directory = $directory; reason = $t.Reason; command = $t.Command; runId = $t.RunId; verdict = $t.Verdict; fileHash = $t.FileHash; expiresUtc = $t.ExpiresUtc; acceptedSkipped = @($t.AcceptedSkipped) }
     if ($t.Passed) { return New-AzlArmCheckResult PreClusterVerification Passed $t.Reason }
     $result = if ($Run.Mode -eq 'Plan') { 'Warning' } else { 'Failed' }
@@ -2220,7 +2267,7 @@ function Invoke-AzlArmDeploymentRun {
         $report.settings = $run.Settings
         $run.KnownIssues = if ($run.Settings.knownIssuesFile) { Get-AzlArmKnownIssue -Path $run.Settings.knownIssuesFile } else { Get-AzlArmKnownIssue }
         $deviceIdIssue = $run.KnownIssues | Where-Object { $_['id'] -eq 'arc-device-id-name' } | Select-Object -First 1
-        $reportDir = if ($ReportDirectory) { $ReportDirectory } else { Join-Path ([IO.Path]::GetTempPath()) "azl-arm-$cluster" }
+        $reportDir = if ($ReportDirectory) { $ReportDirectory } else { Join-Path ([IO.Path]::GetTempPath()) "$($run.Settings.reportDirectoryPrefix)-$cluster" }
         $null = New-Item -ItemType Directory -Force -Path $reportDir
         $run.EventPath = Join-Path $reportDir 'arm-deployment-events.jsonl'
         $run.ReportPath = Join-Path $reportDir 'report.json'
@@ -2260,7 +2307,7 @@ function Invoke-AzlArmDeploymentRun {
         if ($problems) { Stop-AzlArmInput ("$($problems.Count) problem(s) in the parameter set:`n" + ($problems -join "`n")) }
         $run.ParameterSet = $set
         $hash = Get-AzlArmParameterHash -ParameterSet $set
-        $run.ValidateName = "azl-validate-$hash"; $run.DeployName = "azl-deploy-$hash"
+        $run.ValidateName = "$($run.Settings.deploymentNamePrefix)-validate-$hash"; $run.DeployName = "$($run.Settings.deploymentNamePrefix)-deploy-$hash"
         $report.parameterHash = $hash; $report.deploymentSettingsApiVersion = $set.DeploymentSettingsApiVersion
         $report.warnings = @($set.Warnings)
         $parameterFile = Join-Path $reportDir "$cluster.parameters.json"
@@ -2367,4 +2414,4 @@ function Invoke-AzlArmDeploymentRun {
 }
 
             if (-not (Get-Command Resolve-DnsName -ErrorAction SilentlyContinue)) { return $null } # not on Linux: unknown, not false
-Export-ModuleMember -Function Test-AzlArmPreClusterVerification, Get-AzlArmMandatoryProvider, Get-AzlArmRequiredAction, Resolve-AzlArmSbeCatalogFile, Get-AzlArmRunSetting, Read-AzlArmSbeCatalog, Test-AzlArmSolutionVersionMatch, ConvertFrom-AzlArmOsBuild, Test-AzlArmSbeSolution, Write-AzlArmEvent, Test-AzlArmRunTransition, New-AzlArmRunState, Set-AzlArmRunState, Get-AzlArmFailedStep, Get-AzlArmFailureDetail, Get-AzlArmClusterCheck, Get-AzlArmTestClusterReportPath, Get-AzlArmEmbeddedJson, Get-AzlArmValidatorResult, Format-AzlArmFailureLine, Select-AzlArmCurrentStep, Get-AzlArmKnownIssue, Find-AzlArmKnownIssue, Get-AzlArmParameterSource, Test-AzlArmRequiredKey, Format-AzlArmParameterSource, New-AzlArmAzureAdapter, Read-AzlArmOsReport, Get-AzlArmPreconditionName, Invoke-AzlArmPrecondition, Test-AzlArmSnapshotFresh, Get-AzlArmPhaseOutcome, Wait-AzlArmPhase, Resolve-AzlArmValidateAction, Resolve-AzlArmDeployAction, Get-AzlArmParameterHash, ConvertTo-AzlArmStepStatus, Hide-AzlArmSecret, Invoke-AzlArmDeploymentRun
+Export-ModuleMember -Function Get-AzlArmRunSettingValue, Get-AzlArmSolutionOsBuild, Test-AzlArmPreClusterVerification, Get-AzlArmMandatoryProvider, Get-AzlArmRequiredAction, Resolve-AzlArmSbeCatalogFile, Get-AzlArmRunSetting, Read-AzlArmSbeCatalog, Test-AzlArmSolutionVersionMatch, ConvertFrom-AzlArmOsBuild, Test-AzlArmSbeSolution, Write-AzlArmEvent, Test-AzlArmRunTransition, New-AzlArmRunState, Set-AzlArmRunState, Get-AzlArmFailedStep, Get-AzlArmFailureDetail, Get-AzlArmClusterCheck, Get-AzlArmTestClusterReportPath, Get-AzlArmEmbeddedJson, Get-AzlArmValidatorResult, Format-AzlArmFailureLine, Select-AzlArmCurrentStep, Get-AzlArmKnownIssue, Find-AzlArmKnownIssue, Get-AzlArmParameterSource, Test-AzlArmRequiredKey, Format-AzlArmParameterSource, New-AzlArmAzureAdapter, Read-AzlArmOsReport, Get-AzlArmPreconditionName, Invoke-AzlArmPrecondition, Test-AzlArmSnapshotFresh, Get-AzlArmPhaseOutcome, Wait-AzlArmPhase, Resolve-AzlArmValidateAction, Resolve-AzlArmDeployAction, Get-AzlArmParameterHash, ConvertTo-AzlArmStepStatus, Hide-AzlArmSecret, Invoke-AzlArmDeploymentRun

@@ -61,6 +61,11 @@ Import-Module ([IO.Path]::Combine($common, 'infrastructure', 'AzlInfrastructure.
 Import-Module ([IO.Path]::Combine($common, 'secrets', 'AzlSecret.psm1'))
 Import-Module ([IO.Path]::Combine($common, 'redfish', 'AzlRedfishCore.psm1'))
 
+# Redfish resource paths of a Dell iDRAC. Fixed by Dell's iDRAC Redfish API: the manager is always iDRAC.Embedded.1 and the system is always System.Embedded.1.
+# This script is for Dell iDRAC only.
+$script:IdracManagerPath = '/redfish/v1/Managers/iDRAC.Embedded.1'
+$script:IdracSystemPath = '/redfish/v1/Systems/System.Embedded.1'
+
 function Write-Log {
     param([string]$Message, [string]$Level = "INFO")
     $color = switch ($Level) {
@@ -111,9 +116,9 @@ function Set-RedfishAttribute {
 
 function New-BiosConfigJob {
     param([string]$BaseUri, [PSCredential]$Credential)
-    $uri = "$BaseUri/redfish/v1/Managers/iDRAC.Embedded.1/Jobs"
+    $uri = "$BaseUri$($script:IdracManagerPath)/Jobs"
     $body = @{
-        TargetSettingsURI = "/redfish/v1/Systems/System.Embedded.1/Bios/Settings"
+        TargetSettingsURI = "$($script:IdracSystemPath)/Bios/Settings"
     } | ConvertTo-Json
     $tls = Get-RedfishTlsArgument
     return Invoke-RestMethod -Uri $uri -Credential $Credential -Method Post -Body $body -ContentType 'application/json' @tls
@@ -121,7 +126,7 @@ function New-BiosConfigJob {
 
 function Invoke-GracefulReboot {
     param([string]$BaseUri, [PSCredential]$Credential)
-    $uri = "$BaseUri/redfish/v1/Systems/System.Embedded.1/Actions/ComputerSystem.Reset"
+    $uri = "$BaseUri$($script:IdracSystemPath)/Actions/ComputerSystem.Reset"
     $body = @{ ResetType = "GracefulRestart" } | ConvertTo-Json
     $tls = Get-RedfishTlsArgument
     return Invoke-RestMethod -Uri $uri -Credential $Credential -Method Post -Body $body -ContentType 'application/json' @tls
@@ -192,7 +197,7 @@ foreach ($node in $nodes) {
         $bmcCredential = Resolve-AzlBmcCredential -Credential $Credential -Infrastructure $config -Node $node -NoPrompt
 
         # Check current BIOS settings
-        $currentBios = (Get-RedfishData -BaseUri $baseUri -Endpoint "/redfish/v1/Systems/System.Embedded.1/Bios" -Credential $bmcCredential).Attributes
+        $currentBios = (Get-RedfishData -BaseUri $baseUri -Endpoint "$($script:IdracSystemPath)/Bios" -Credential $bmcCredential).Attributes
         $biosChanges = @{}
 
         foreach ($key in $nodeBios.Keys) {
@@ -203,7 +208,7 @@ foreach ($node in $nodes) {
         }
 
         # Check current iDRAC settings
-        $currentIdrac = (Get-RedfishData -BaseUri $baseUri -Endpoint "/redfish/v1/Managers/iDRAC.Embedded.1/Attributes" -Credential $bmcCredential).Attributes
+        $currentIdrac = (Get-RedfishData -BaseUri $baseUri -Endpoint "$($script:IdracManagerPath)/Attributes" -Credential $bmcCredential).Attributes
         $idracChanges = @{}
 
         foreach ($key in $desiredIdrac.Keys) {
@@ -216,7 +221,7 @@ foreach ($node in $nodes) {
         # Apply iDRAC changes (immediate, no reboot needed)
         if ($idracChanges.Count -gt 0) {
             if ($PSCmdlet.ShouldProcess("$nodeName iDRAC", "Apply $($idracChanges.Count) setting changes")) {
-                Set-RedfishAttribute -BaseUri $baseUri -Endpoint "/redfish/v1/Managers/iDRAC.Embedded.1/Attributes" `
+                Set-RedfishAttribute -BaseUri $baseUri -Endpoint "$($script:IdracManagerPath)/Attributes" `
                     -Credential $bmcCredential -Attributes $idracChanges
                 Write-Log "    Applied $($idracChanges.Count) iDRAC changes" -Level "SUCCESS"
             }
@@ -225,7 +230,7 @@ foreach ($node in $nodes) {
         # Apply BIOS changes (requires config job + reboot)
         if ($biosChanges.Count -gt 0) {
             if ($PSCmdlet.ShouldProcess("$nodeName BIOS", "Apply $($biosChanges.Count) setting changes")) {
-                Set-RedfishAttribute -BaseUri $baseUri -Endpoint "/redfish/v1/Systems/System.Embedded.1/Bios/Settings" `
+                Set-RedfishAttribute -BaseUri $baseUri -Endpoint "$($script:IdracSystemPath)/Bios/Settings" `
                     -Credential $bmcCredential -Attributes $biosChanges
                 New-BiosConfigJob -BaseUri $baseUri -Credential $bmcCredential
                 Write-Log "    Queued $($biosChanges.Count) BIOS changes (reboot required)" -Level "SUCCESS"

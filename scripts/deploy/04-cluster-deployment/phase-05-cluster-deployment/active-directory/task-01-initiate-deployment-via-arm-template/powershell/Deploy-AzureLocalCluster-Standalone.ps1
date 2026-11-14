@@ -42,6 +42,7 @@ $ErrorActionPreference = "Stop"
 $subscriptionId = "<SUBSCRIPTION_ID>"                              # azure.subscription_id
 $resourceGroup  = "<RESOURCE_GROUP>"                               # azure.resource_group
 $parametersFile = ".\azuredeploy.parameters.local-identity.json"   # Path to your parameters file
+# Fixed by Microsoft: the create-cluster quickstart template that Learn names (Deploy Azure Local via Azure Resource Manager deployment template) at the place Microsoft publishes it.
 $templateUri    = "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-cluster/azuredeploy.json"
 
 #endregion CONFIGURATION

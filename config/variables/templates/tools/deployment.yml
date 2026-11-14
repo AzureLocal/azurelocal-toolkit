@@ -1,6 +1,6 @@
 # GENERATED from config/variables/schema/master-registry.yaml by config/variables/scripts/New-InfrastructureArtifacts.ps1. Do not edit.
 # Change the registry, then run the generator. A test regenerates this file and fails when it differs.
-# Template for the part of infrastructure.yml that Pre-cluster verification and ARM deployment ('deployment') reads (a strict subset of the master file). Schema 5.6.23.
+# Template for the part of infrastructure.yml that Pre-cluster verification and ARM deployment ('deployment') reads (a strict subset of the master file). Schema 5.6.24.
 # Values are placeholders (RFC 5737 addresses, keyvault:// references). Secrets are never values.
 
 # About this file.
@@ -331,6 +331,21 @@ hardware:
     # Optional.
     # used by: os_configuration, deployment
     package_size_bytes: 1048576
+    # Optional (schema 5.6.24).
+    # used by: deployment
+    partner_properties:
+      # The property name, as the hardware vendor gives it.
+      # required; used by: deployment
+      - name: "iic-sbe-region"
+        # The property value, as the hardware vendor gives it.
+        # used by: deployment
+        value: "emea"
+    # Optional (schema 5.6.24).
+    # used by: deployment
+    partner_credentials:
+      # The name of the secret in the cluster's Key Vault.
+      # required; used by: deployment
+      - secret_name: "iic-sbe-download-login"
 
 # The on-premises networks.
 networking:

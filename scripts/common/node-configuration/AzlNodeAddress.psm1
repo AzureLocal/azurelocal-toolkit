@@ -51,6 +51,7 @@ Import-Module (Join-Path $PSScriptRoot 'AzlNodeTransport.psm1')
 
 # A subnet wider than this is not swept unless addressResolution.allowWideSubnet is set (a /22 is 1022 addresses).
 $script:MaxSweepPrefixLength = 22
+# The WinRM ports probed on a candidate address: HTTP 5985, then HTTPS 5986. Fixed by the protocol (WS-Management default listeners).
 $script:WinRmPort = @(5985, 5986)
 
 # ---------------------------------------------------------------------------------------------------------------------

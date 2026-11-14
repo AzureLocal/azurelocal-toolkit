@@ -384,6 +384,17 @@ New rules AZL-060 to AZL-068 (see README). **Steps for a 5.5 file:** set `_metad
 - **5.6.2: adapters are identified by hardware facts.** `nodes[].network_adapters[].mac_address` is now required. New optional keys: `port_index`, `pci_location` (`bus`, `device`, `function`), `vendor` (written by hardware discovery), `allowed_vlans` (the VLANs the switch port allows) and `os_name_override`. **Steps:** a file whose ports lack the MAC: run `Invoke-HardwareDiscovery.ps1 -UpdateInfrastructure` or add the MAC. Nothing else changes: without `os_name_override` no adapter is renamed and the deployment sends the name the node reports for the MAC. To get one name everywhere, add `os_name_override` per used port and run the OS configuration (step `NicNames`).
 - **5.6.3** adds `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`. Nothing is required. A logical network uses `gateway` and `ip_pool`; the 4.0 names `default_gateway` and `ip_pools` belong to the deprecated `networking.onprem.logical_networks[]`.
 
+## To 5.6.24: the partner properties and credentials of the SBE
+
+Schema 5.6.24 adds two optional keys under `hardware.sbe`. Nothing is required: a 5.6.21 file is valid as it is.
+
+- `hardware.sbe.partner_properties[]` (`name`, `value`): properties that the hardware vendor's Solution Builder Extension asks for. The ARM deployment passes them as `partnerProperties` (Microsoft Learn lists the parameter in every deployment template: a list of partner-specific properties, each a name and a value). Until now the deployment always sent an empty list, so a vendor that needs a property could not be served.
+- `hardware.sbe.partner_credentials[]` (`secret_name`): the names of Key Vault secrets that the vendor's SBE needs while the deployment runs, for example the login of its download connector (`partnerCredentiallist`). The template reads each secret from the cluster's own Key Vault (`cluster.key_vault.name`), so create the secret there with the name the vendor gives before Deploy. The file holds the name, never the value.
+
+Both are sent only when an SBE is configured (`hardware.sbe.version`); with none the deployment sends empty lists, as before. Leave both out unless the vendor's SBE documentation names a property or a credential.
+
+Not keys, by decision (the values stay in the code with the source that fixes them, or are settings of the tool): the Redfish paths and the IPMI attribute of the Dell iDRAC scripts (Dell's iDRAC Redfish API), the BOSS volume label (`-VolumeName` of `Invoke-ResetBossVirtualDisk.ps1`), the WinRM ports, the NTP peer flag (`0x8`), the Kerberos clock limit, the folder `C:\SBE` and the node state folder, the firewall endpoint lists (Learn), the Azure API versions, the address of Microsoft's quickstart templates, and the waits and limits of the ARM run and its pre-cluster verification (the run settings `providerRegistrationTimeoutMinutes`, `providerRegistrationPollSeconds`, `deploymentNamePrefix` and the `verification*` limits, set with `-Settings` or `-ConfigPath`, not in the infrastructure file). `hardware.vendor` has no default any more: it is required, and an empty value stops the SBE and OEM steps with a message.
+
 ## To 5.6.23: hard-coded values of the discovery, Azure foundation and identity scripts
 
 Schema 5.6.23 adds optional keys. Nothing is required: a 5.6.21 file is valid as it is.

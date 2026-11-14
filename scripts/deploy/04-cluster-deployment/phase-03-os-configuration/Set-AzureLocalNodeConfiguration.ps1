@@ -204,7 +204,7 @@ $bundlePath = $sbeSource.Path
 $sbePassword = ''
 if ($sbeSource.Path -and $sbeSource.Username -and $sbeSource.PasswordRef -and -not $SpecOnly -and ('Sbe' -in $steps -or 'Drivers' -in $steps)) { $sbePassword = Get-AzlSecret -Reference $sbeSource.PasswordRef -Infrastructure $infra }
 if ($sbeDelivery -and $bundlePath -and -not $SpecOnly -and ('Sbe' -in $steps -or 'Drivers' -in $steps)) {
-    $oem = Get-AzlOemConfig -Vendor ([string](Get-AzlProp $infra 'hardware.vendor' 'Dell'))
+    $oem = Get-AzlOemConfig -Vendor ([string](Get-AzlProp $infra 'hardware.vendor' ''))
     # The share can hold more than one package: the one for the file's family and version, else the one whose SupportedModels list the hardware model.
     $share = Get-AzlSbeShareInfo -Infrastructure $infra -Password $sbePassword
     if ($share -and -not $share.Available) { throw "hardware.sbe.delivery is $sbeDelivery but the SBE package on $($share.Path) is not available from this host: $($share.Reason). Run the pre-cluster verification (SB-001 to SB-006) for the full finding." }

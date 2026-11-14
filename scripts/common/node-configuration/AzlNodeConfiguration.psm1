@@ -73,8 +73,10 @@ function Get-AzlOemConfig {
         config/oem/<vendor>.json: the discovery manifest URL and the folders inside the SBE zip that hold network drivers.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][string]$Vendor, [string]$ConfigRoot = $script:ConfigRoot)
-    $path = Join-Path (Join-Path $ConfigRoot 'oem') "$($Vendor.ToLowerInvariant()).json"
+    param([Parameter(Mandatory)][AllowEmptyString()][string]$Vendor, [string]$ConfigRoot = $script:ConfigRoot)
+    # No vendor is assumed: hardware.vendor is a required key of the file, and it names the file in config/oem.
+    if ([string]::IsNullOrWhiteSpace($Vendor)) { throw 'hardware.vendor is empty. It names the OEM definition (config/oem/<vendor>.json); set it in the infrastructure file.' }
+    $path = Join-Path (Join-Path $ConfigRoot 'oem') "$($Vendor.Trim().ToLowerInvariant()).json"
     if (-not (Test-Path -LiteralPath $path)) {
         $known = @(Get-ChildItem -LiteralPath (Join-Path $ConfigRoot 'oem') -Filter '*.json' -ErrorAction SilentlyContinue | ForEach-Object BaseName)
         throw "No OEM definition $path. Known: $($known -join ', '). Copy config/oem/dell.json to add one."
@@ -371,9 +373,9 @@ function Get-AzlNodeSpec {
     $sbeDelivery = Get-AzlSbeDeliveryRoute -Value (Get-AzlProp $Infrastructure 'hardware.sbe.delivery')
     $sbe = $null
     if ($SbeBundle -and $sbeDelivery) {
-        $oem = Get-AzlOemConfig -Vendor ([string](Get-AzlProp $Infrastructure 'hardware.vendor' 'Dell')) -ConfigRoot $ConfigRoot
+        $oem = Get-AzlOemConfig -Vendor ([string](Get-AzlProp $Infrastructure 'hardware.vendor' '')) -ConfigRoot $ConfigRoot
         $bundleDeployment = Get-AzlProp $SbeBundle 'Deployment' $null
-        $sbe = [pscustomobject]@{ Name = $SbeBundle.Name; ZipName = $SbeBundle.ZipName; Dir = 'C:\SBE'; Files = @($SbeBundle.Files); DriverPaths = @($oem.sbe.driverPaths)
+        $sbe = [pscustomobject]@{ Name = $SbeBundle.Name; ZipName = $SbeBundle.ZipName; Dir = (Get-AzlNodeSbeDirectory); Files = @($SbeBundle.Files); DriverPaths = @($oem.sbe.driverPaths)
             Delivery = $sbeDelivery; PullUrl = [string](Get-AzlProp $Infrastructure 'hardware.sbe.node_pull_url' '')
             Source = [string](Get-AzlProp $SbeBundle 'Source' ''); Family = [string](Get-AzlProp $bundleDeployment 'sbeFamily' ''); Version = [string](Get-AzlProp $bundleDeployment 'sbeVersion' ''); Publisher = [string](Get-AzlProp $bundleDeployment 'sbePublisher' '') }
     }
@@ -604,7 +606,7 @@ function Compare-AzlNodeState {
                 }
             }            # Files an earlier delivery left in C:\SBE are only named (the Read lists the folder, read only). Removing them is a separate, explicit operator action.
             $held = @(Get-AzlProp $State 'sbeHeld' @() | Where-Object { $_ } | ForEach-Object { [string]$_ })
-            if ($held.Count) { $sbeItems.Add((New-AzlPlanItem $n 'Sbe' 'C:\SBE' ($held -join ', ') 'left as it is' Info "C:\SBE holds SBE files that this run did not request: $($held -join ', '); it does not remove them")) }
+            if ($held.Count) { $sbeItems.Add((New-AzlPlanItem $n 'Sbe' (Get-AzlNodeSbeDirectory) ($held -join ', ') 'left as it is' Info "$(Get-AzlNodeSbeDirectory) holds SBE files that this run did not request: $($held -join ', '); it does not remove them")) }
         }
     }
 
@@ -1450,7 +1452,7 @@ function Invoke-AzlNodeConfiguration {
             if (@($actions | Where-Object { $_.kind -eq 'mpio-claim-restart' }).Count) { $mpioClaimTried = $true }
             # 300 s; 900 s when the call wipes storage.
             $applySeconds = if (@($actions | Where-Object { $_.kind -eq 'storage-clear' }).Count) { 900 } else { 300 }
-            try { $result = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Apply) -Parameters @{ actions = $actions; sbeDir = $(if ($Spec.Sbe) { $Spec.Sbe.Dir } else { 'C:\SBE' }) } -Secrets $secrets -TimeoutSeconds $applySeconds -Kind Apply }
+            try { $result = Invoke-AzlNodeScript -Transport $Transport -Node $node -Script (Get-AzlNodePayload -Name Apply) -Parameters @{ actions = $actions; sbeDir = $(if ($Spec.Sbe) { $Spec.Sbe.Dir } else { Get-AzlNodeSbeDirectory }) } -Secrets $secrets -TimeoutSeconds $applySeconds -Kind Apply }
             catch {
                 # The run ended in state Unknown after every retry: we don't know what happened. Read the node again and decide from that.
                 if ($_.Exception.Data['AzlState'] -ne 'Unknown') { throw }

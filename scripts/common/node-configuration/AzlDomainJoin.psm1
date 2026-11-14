@@ -38,7 +38,9 @@ Import-Module (Join-Path $here 'AzlNodeTransport.psm1')
 $script:EventsModule = Join-Path $here 'AzlOsConfigurationEvents.psm1'
 if (Test-Path -LiteralPath $script:EventsModule -PathType Leaf) { Import-Module $script:EventsModule }
 
-# Kerberos allows 5 minutes of clock difference between the node and a domain controller.
+# Kerberos allows 5 minutes (300 seconds) of clock difference between the node and a domain controller. Fixed by Microsoft: the default of the Kerberos policy
+# setting "Maximum tolerance for computer clock synchronization". A domain that changed it is not
+# a case the join can know about; the join stops at 5 minutes either way, which is the safe side.
 $script:SkewLimitSeconds = 300
 $script:PayloadVersion = '1'
 $script:PendingMarkerStates = @('RebootExpected', 'Restarting')

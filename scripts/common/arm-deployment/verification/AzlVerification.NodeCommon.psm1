@@ -25,6 +25,7 @@ $ErrorActionPreference = 'Stop'
 
 Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', '..', 'azure-local', 'AzlAzure.psm1'))
 Import-Module ([IO.Path]::Combine($PSScriptRoot, 'AzlVerification.Endpoints.psm1'))
+Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'AzlArmDeploymentRun.psm1'))
 
 $script:ConfigRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'config'))
 
@@ -58,14 +59,23 @@ $script:Default = @{
 # The Windows features the Azure Local OS carries before the deployment. Required are Failed when off; Advised are a Warning.
 # Network ATC is NOT here: the deployment installs it (on the lab it is 'Available', not installed, until the deployment runs, and the ARM network configuration step passes).
 $script:RequiredFeature = @('Hyper-V', 'Failover-Clustering', 'Data-Center-Bridging', 'BitLocker')
-$script:AdvisedFeature = @('FS-Data-Deduplication', 'RSAT-AD-PowerShell', 'RSAT-Clustering-PowerShell')
+# The management features the check only advises (a missing one is a warning, not a failure): a toolkit preference, not a Microsoft requirement. The default is the run
+# setting verificationAdvisedFeatures (Get-AzlArmRunSetting), which a run can change; Get-AzlVerAdvisedFeature gives the list of one run.
+$script:AdvisedFeature = @((Get-AzlArmRunSetting).verificationAdvisedFeatures)
+# The public DNS resolvers Azure Local does not support as a DNS server (Learn: Network considerations for cloud deployments of Azure Local, "public DNS such as 8.8.8.8
+# isn't supported"). The list is how the checks recognise them: Google, Cloudflare, Quad9 and OpenDNS. It is not a choice of the deployment.
 $script:PublicDns = @('8.8.8.8', '8.8.4.4', '1.1.1.1', '1.0.0.1', '9.9.9.9', '149.112.112.112', '208.67.222.222', '208.67.220.220')
 
-# OS build -> the solution line it ships with. Keep in step with $script:SolutionOsBuilds in AzlArmDeploymentRun.psm1 (same evidence).
+# The tolerances of the node checks. Fixed by how a machine reports a size, not a choice of the deployment: Learn gives a minimum as a nominal size (32 GB of memory,
+# a 200 GB boot drive), and a machine reports a little less (memory the firmware keeps back; disk sizes sold in decimal gigabytes, shown in binary). A node that
+# is within the tolerance of the minimum passes.
+$script:MemoryReservedGiB = 2             # memory the firmware and the OS keep back from the installed memory
+$script:DeclaredMemoryFraction = 0.9      # a node with less than this part of hardware.memory_gib is reported (a warning)
+$script:SizeToleranceFraction = 0.95      # a disk with at least this part of the nominal minimum size counts as that size
+$script:ClockWarningSeconds = 60          # a clock this far from this host is a warning, before the Kerberos limit (verificationMaxClockSkewSeconds) is a failure
+
+# OS build -> the solution line it ships with: the one table is in AzlArmDeploymentRun.psm1 (Get-AzlArmSolutionOsBuild), the pre-cluster verification reads that one.
 $script:RunTable = @{}
-$script:SolutionOsBuild = @(
-    [pscustomobject]@{ OsBuild = '10.0.26100.33650'; Solution = '12.2610.1004'; Evidence = 'lab 2026-11-08: nodes on 10.0.26100.33650, Azure reported solution 12.2610.1004.50' }
-)
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Small helpers
@@ -288,7 +298,7 @@ function ConvertFrom-AzlVerOsBuild {
     if (-not $OsBuild) { return $null }
     $b = $OsBuild.Trim()
     if ($b -match '^\d+\.\d+$') { $b = "10.0.$b" }
-    $row = $script:SolutionOsBuild | Where-Object { $_.OsBuild -eq $b } | Select-Object -First 1
+    $row = Get-AzlArmSolutionOsBuild | Where-Object { $_.OsBuild -eq $b } | Select-Object -First 1
     if (-not $row) { return $null }
     [pscustomobject]@{ Version = $row.Solution; OsBuild = $row.OsBuild; Evidence = $row.Evidence }
 }
@@ -641,7 +651,7 @@ Invoke-Section 'https' {
     $Az.https = @(foreach ($u in @(Get-P $P 'https' @())) {
             $ok = $false; $status = ''; $err = ''
             try {
-                $a = @{ Uri = [string]$u; UseBasicParsing = $true; TimeoutSec = 6; ErrorAction = 'Stop' }
+                $a = @{ Uri = [string]$u; UseBasicParsing = $true; TimeoutSec = [int](Get-P $P 'webTimeoutSeconds'); ErrorAction = 'Stop' }
                 if ($proxy) { $a.Proxy = $proxy }
                 $r = Invoke-WebRequest @a
                 $ok = $true; $status = [string][int]$r.StatusCode
@@ -683,7 +693,8 @@ function Get-AzlVerProbeParameter {
     $gateway = [string](Get-AzlProp $infra 'networking.management.gateway' '')
     $proxy = [string](Get-AzlProp $infra 'networking.outbound.proxy.url' '')
     [ordered]@{
-        features = @($script:RequiredFeature + $script:AdvisedFeature + 'Multipath-IO')
+        features = @($script:RequiredFeature + (Get-AzlVerAdvisedFeature $Context) + 'Multipath-IO')
+        webTimeoutSeconds = [int](Get-AzlArmRunSettingValue -Settings (Get-AzlVerContextValue $Context 'Settings') -Name verificationWebTimeoutSeconds)
         tcp      = @(@($dns | ForEach-Object { @{ h = $_; p = 53 } }) + @(Get-AzlVerEndpointList $Context | Where-Object { $_.Port -ne 443 } | ForEach-Object { @{ h = $_.Host; p = $_.Port } }))
         ping     = @($(if ($gateway) { $gateway }))
         https    = @(Get-AzlVerEndpointList $Context | Where-Object { $_.Port -eq 443 } | ForEach-Object { "https://$($_.Host)" })
@@ -830,13 +841,29 @@ function Get-AzlVerConstant {
         A constant the category modules share: Source (the Learn and docs URLs by key), RequiredFeature, AdvisedFeature, PublicDns.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][ValidateSet('Source', 'RequiredFeature', 'AdvisedFeature', 'PublicDns')][string]$Name)
+    param([Parameter(Mandatory)][ValidateSet('Source', 'RequiredFeature', 'AdvisedFeature', 'PublicDns', 'MemoryReservedGiB', 'DeclaredMemoryFraction', 'SizeToleranceFraction', 'ClockWarningSeconds')][string]$Name)
     switch ($Name) {
         'Source' { return $script:Src }
         'RequiredFeature' { return $script:RequiredFeature }
         'AdvisedFeature' { return $script:AdvisedFeature }
         'PublicDns' { return $script:PublicDns }
+        'MemoryReservedGiB' { return $script:MemoryReservedGiB }
+        'DeclaredMemoryFraction' { return $script:DeclaredMemoryFraction }
+        'SizeToleranceFraction' { return $script:SizeToleranceFraction }
+        'ClockWarningSeconds' { return $script:ClockWarningSeconds }
     }
+}
+
+function Get-AzlVerAdvisedFeature {
+    <#
+    .SYNOPSIS
+        The Windows features the node check advises, for one run: the run setting verificationAdvisedFeatures, else its default.
+    #>
+    [CmdletBinding()]
+    [OutputType([string[]])]
+    param([Parameter(Mandatory)]$Context)
+    $list = Get-AzlArmRunSettingValue -Settings (Get-AzlVerContextValue $Context 'Settings') -Name verificationAdvisedFeatures
+    return [string[]]@($list)
 }
 
 function Get-AzlVerAllNodeData {
@@ -867,4 +894,4 @@ function Get-AzlVerNow {
     return [datetime]::UtcNow
 }
 
-Export-ModuleMember -Function Invoke-AzlVerRegisteredRun, Get-AzlVerNodeSection, Get-AzlVerConstant, Get-AzlVerAllNodeData, Get-AzlVerNow, ConvertTo-AzlVerList, Join-AzlVerList, New-AzlVerResult, New-AzlVerDefinition, Get-AzlVerSetting, Get-AzlVerContextValue, Get-AzlVerInfra, Get-AzlVerArchitecture, Test-AzlVerSanDeclared, Get-AzlVerNodeList, Get-AzlVerIntent, Test-AzlVerNetworkDirect, Get-AzlVerTargetSolution, ConvertFrom-AzlVerOsBuild, Get-AzlVerSanVendor, Format-AzlVerMsdsmId, Get-AzlVerAdapterMember, Stop-AzlVerSkip, Invoke-AzlVerNodeAdapter, Get-AzlVerNodeData, Get-AzlVerCache, Invoke-AzlVerPerNode, Invoke-AzlVerCheckBody, Get-AzlVerSnapshotScript, Get-AzlVerProbeParameter, Get-AzlVerEndpointList, New-AzlVerRemoteDefault, ConvertFrom-AzlVerSnapshot, New-AzlVerNodeAdapterDefault
+Export-ModuleMember -Function Invoke-AzlVerRegisteredRun, Get-AzlVerNodeSection, Get-AzlVerConstant, Get-AzlVerAdvisedFeature, Get-AzlVerAllNodeData, Get-AzlVerNow, ConvertTo-AzlVerList, Join-AzlVerList, New-AzlVerResult, New-AzlVerDefinition, Get-AzlVerSetting, Get-AzlVerContextValue, Get-AzlVerInfra, Get-AzlVerArchitecture, Test-AzlVerSanDeclared, Get-AzlVerNodeList, Get-AzlVerIntent, Test-AzlVerNetworkDirect, Get-AzlVerTargetSolution, ConvertFrom-AzlVerOsBuild, Get-AzlVerSanVendor, Format-AzlVerMsdsmId, Get-AzlVerAdapterMember, Stop-AzlVerSkip, Invoke-AzlVerNodeAdapter, Get-AzlVerNodeData, Get-AzlVerCache, Invoke-AzlVerPerNode, Invoke-AzlVerCheckBody, Get-AzlVerSnapshotScript, Get-AzlVerProbeParameter, Get-AzlVerEndpointList, New-AzlVerRemoteDefault, ConvertFrom-AzlVerSnapshot, New-AzlVerNodeAdapterDefault

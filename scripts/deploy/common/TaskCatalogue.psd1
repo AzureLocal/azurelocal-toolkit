@@ -90,7 +90,6 @@
         @{ Path = '04-cluster-deployment/phase-03-os-configuration/task-09-disable-unused-network-adapters'; AzureCli = 'no'; Reason = 'Runs on the nodes (operating system configuration).' }
         @{ Path = '04-cluster-deployment/phase-03-os-configuration/task-10-configure-hostname'; AzureCli = 'no'; Reason = 'Runs on the nodes (operating system configuration).' }
         @{ Path = '04-cluster-deployment/phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional'; AzureCli = 'no'; Reason = 'Runs on the nodes (operating system configuration).' }
-        @{ Path = '04-cluster-deployment/phase-03-os-configuration/task-12-complete-combined-script-all-steps'; AzureCli = 'no'; Reason = 'Runs on the nodes (operating system configuration).' }
         @{ Path = '04-cluster-deployment/phase-03-os-configuration/task-13-phase03-verification'; AzureCli = 'no'; Reason = 'Runs on the nodes (operating system configuration).' }
         @{ Path = '04-cluster-deployment/phase-04-arc-registration/task-01-pre-registration-validation'; AzureCli = 'yes'; Reason = 'Checks the Azure side of Arc registration (resource providers, service principal, roles) as well as the node.' }
         @{ Path = '04-cluster-deployment/phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc'; AzureCli = 'yes'; Reason = 'Registers the nodes with Azure Arc; a real Azure CLI script exists.' }

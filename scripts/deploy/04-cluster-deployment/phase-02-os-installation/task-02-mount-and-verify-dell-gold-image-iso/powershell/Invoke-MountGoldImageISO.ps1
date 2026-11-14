@@ -22,6 +22,10 @@ $ErrorActionPreference = "Stop"
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'redfish', 'AzlRedfishCore.psm1'))) -Force
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
+# The Redfish path of the virtual CD of a Dell iDRAC. Fixed by Dell's iDRAC Redfish API (the manager is always iDRAC.Embedded.1 and its virtual CD is VirtualMedia/CD).
+# This script is for Dell iDRAC only.
+$VirtualMediaPath = "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
+
 # ── Load config ───────────────────────────────────────────────────────────────
 if (-not (Test-Path $ConfigPath)) {
     throw "Config file not found: $ConfigPath"
@@ -70,7 +74,7 @@ foreach ($node in $nodes) {
     $bmcIp = Get-NodeBmcAddress -Node $node
     if (-not $bmcIp) { Write-Warning "  [SKIP] $($node.name) has no nodes[].bmc.ip_address"; continue }
     $baseUri     = "https://$($bmcIp)"
-    $vmMediaPath = "/redfish/v1/Managers/iDRAC.Embedded.1/VirtualMedia/CD"
+    $vmMediaPath = $VirtualMediaPath
 
     Write-Host ""
     Write-Host "================================================"

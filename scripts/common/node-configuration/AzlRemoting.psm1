@@ -26,6 +26,10 @@ Import-Module (Join-Path $PSScriptRoot 'AzlNodePayload.psm1')
 Import-Module (Join-Path $PSScriptRoot 'AzlNodeTransport.psm1')
 
 $script:RemotingKeys = @('transport', 'bootstrapTransport', 'allowedSourceCidrs', 'useSsl', 'authentication')
+# The ports of WinRM (WS-Management): 5985 for HTTP and 5986 for HTTPS. Fixed by the protocol and by the Windows Remote Management default listeners
+# (Learn: Installation and configuration for Windows Remote Management); the scheme chooses the port, nothing else does.
+$script:WinRmHttpPort = 5985
+$script:WinRmHttpsPort = 5986
 
 function ConvertTo-AzlRemotingProfileOverride {
     <#
@@ -87,7 +91,7 @@ function Get-AzlRemotingSetting {
         default { 'default (WinRM)' }
     }
     [pscustomobject]@{
-        Transport = $transportName; Kind = $(if ($transportName -eq 'arc') { 'ArcRunCommand' } else { 'WinRM' }); UseSsl = [bool]$ssl; Authentication = $auth; Port = $(if ($ssl) { 5986 } else { 5985 })
+        Transport = $transportName; Kind = $(if ($transportName -eq 'arc') { 'ArcRunCommand' } else { 'WinRM' }); UseSsl = [bool]$ssl; Authentication = $auth; Port = $(if ($ssl) { $script:WinRmHttpsPort } else { $script:WinRmHttpPort })
         BootstrapTransport = $bootstrap; AllowedSourceCidrs = @($cidrs | ForEach-Object { [string]$_ })
         TransportSource = $source; TransportSourceLabel = $sourceLabel
     }

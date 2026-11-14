@@ -76,7 +76,8 @@ else {
     }
 }
 
-# Azure endpoints to test
+# Azure endpoints to test. A short list of well-known hosts of the Azure Local firewall requirements, fixed by Microsoft (Learn: Firewall requirements for Azure Local). The
+# full list, per region, is the one the pre-cluster verification tests (scripts/common/arm-deployment/verification/AzlVerification.Endpoints.psm1).
 $AzureEndpoints = @(
     @{ Name = "Azure Resource Manager"; Host = "management.azure.com"; Port = 443 }
     @{ Name = "Azure Active Directory"; Host = "login.microsoftonline.com"; Port = 443 }
@@ -85,7 +86,8 @@ $AzureEndpoints = @(
     @{ Name = "Windows Update"; Host = "windowsupdate.microsoft.com"; Port = 443 }
 )
 
-# Required ports for cluster
+# Required ports for cluster. Fixed by the protocols: WinRM 5985 and 5986, SMB 445, RPC 135, the cluster service UDP 3343 (Learn: Firewall requirements for Azure Local, and
+# Failover Clustering network requirements).
 $RequiredPorts = @(
     @{ Name = "WinRM"; Port = 5985; Protocol = "TCP" }
     @{ Name = "WinRM-SSL"; Port = 5986; Protocol = "TCP" }

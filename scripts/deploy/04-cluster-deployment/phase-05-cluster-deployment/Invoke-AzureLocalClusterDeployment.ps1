@@ -84,7 +84,7 @@ $clusterName = [string](Get-AzlProp $infra 'cluster.name')
 $sbe = $null
 $bundlePath = Get-AzlProp $infra 'hardware.sbe.bundle_path'
 if ($bundlePath -and (Test-Path -LiteralPath $bundlePath -PathType Container)) {
-    $oem = Get-AzlOemConfig -Vendor ([string](Get-AzlProp $infra 'hardware.vendor' 'Dell'))
+    $oem = Get-AzlOemConfig -Vendor ([string](Get-AzlProp $infra 'hardware.vendor' ''))
     $sbe = (Get-AzlSbeBundle -Path $bundlePath -ManifestUrl ([string]$oem.sbe.discoveryManifestUrl) -OfflineManifest:$OfflineManifest).Deployment
 }
 

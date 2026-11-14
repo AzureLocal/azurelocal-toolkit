@@ -44,6 +44,7 @@ Import-Module ([IO.Path]::Combine($script:Common, 'azure-local', 'AzlAzure.psm1'
 Import-Module ([IO.Path]::Combine($script:Common, 'infrastructure', 'AzlInfrastructure.psm1')) -ErrorAction Stop
 Import-Module ([IO.Path]::Combine($script:Common, 'node-configuration', 'AzlDomainJoin.psm1')) -ErrorAction Stop
 Import-Module ([IO.Path]::Combine($PSScriptRoot, 'AzlVerification.Endpoints.psm1')) -ErrorAction Stop
+Import-Module ([IO.Path]::Combine($script:Common, 'arm-deployment', 'AzlArmDeploymentRun.psm1')) -ErrorAction Stop
 
 $script:Learn = 'https://learn.microsoft.com/en-us/azure/azure-local'
 $script:View = 'view=azloc-2610'
@@ -287,7 +288,7 @@ function Invoke-VfIdLdap {
     $secure = ConvertTo-SecureString -String $plain -AsPlainText -Force
     $servers = if ($lcm.DomainControllers.Count) { $lcm.DomainControllers } else { @($lcm.Domain) }
     $root = if ($SearchRoot) { $SearchRoot } else { Get-VfIdDomainDn $lcm.Domain }
-    $options = @{ Servers = $servers; Credential = [pscredential]::new($user, $secure); Properties = @($Property); Scope = $Scope; SecurityMasks = $SecurityMasks; TimeoutSeconds = 20 }
+    $options = @{ Servers = $servers; Credential = [pscredential]::new($user, $secure); Properties = @($Property); Scope = $Scope; SecurityMasks = $SecurityMasks; TimeoutSeconds = [int](Get-AzlArmRunSettingValue -Settings (Get-AzlProp $Context 'Settings') -Name verificationLdapTimeoutSeconds) }
     $answer = & $search $Filter $root $options
     if ([bool](Get-AzlProp $answer 'AuthFailed' $false)) {
         $cache.Latch['Tripped'] = $true
@@ -472,7 +473,7 @@ $script:NodeProbe = {
     foreach ($t in @($Spec.Tcp)) {
         $ok = $false
         $c = New-Object System.Net.Sockets.TcpClient
-        try { $task = $c.ConnectAsync([string]$t.host, [int]$t.port); $ok = ($task.Wait(3000) -and $c.Connected) } catch { $ok = $false } finally { $c.Dispose() }
+        try { $task = $c.ConnectAsync([string]$t.host, [int]$t.port); $ok = ($task.Wait([int]$Spec.TcpTimeoutSeconds * 1000) -and $c.Connected) } catch { $ok = $false } finally { $c.Dispose() }
         $tcpResults += [ordered]@{ host = [string]$t.host; port = [int]$t.port; ok = $ok }
     }
     $out.tcp = @($tcpResults)
@@ -501,7 +502,7 @@ function Get-VfIdProbeSpec {
     if ($identity -eq 'active_directory') {
         foreach ($dc in (Get-VfIdLcm $Context).DomainControllers) { foreach ($p in $script:DcPort) { $tcp.Add(@{ host = $dc; port = $p }) } }
     }
-    return @{ LocalAdmin = [string](Get-AzlProp $i 'identity.local_admin.username' ''); Queries = $queries.ToArray(); Tcp = $tcp.ToArray() }
+    return @{ LocalAdmin = [string](Get-AzlProp $i 'identity.local_admin.username' ''); Queries = $queries.ToArray(); Tcp = $tcp.ToArray(); TcpTimeoutSeconds = [int](Get-AzlArmRunSettingValue -Settings (Get-AzlProp $Context 'Settings') -Name verificationPortTimeoutSeconds) }
 }
 
 function Get-VfIdProbe {
@@ -529,6 +530,8 @@ function Get-VfIdProbe {
             Node = $name; Addresses = $addresses; Credential = [pscredential]::new("$name\$user", (ConvertTo-SecureString -String $plain -AsPlainText -Force))
             ScriptBlock = $script:NodeProbe; ArgumentList = @((Get-VfIdProbeSpec $Context))
             UseSsl = [bool](Get-AzlProp $remoting 'UseSsl' $false); Authentication = [string](Get-AzlProp $remoting 'Authentication' 'Negotiate')
+            verificationSessionOpenSeconds = [int](Get-AzlArmRunSettingValue -Settings (Get-AzlProp $Context 'Settings') -Name verificationSessionOpenSeconds)
+            verificationSessionOperationSeconds = [int](Get-AzlArmRunSettingValue -Settings (Get-AzlProp $Context 'Settings') -Name verificationSessionOperationSeconds)
         }
         $answer = & $invoke $request
         $r.Address = [string](Get-AzlProp $answer 'Address' '')
@@ -1153,7 +1156,7 @@ function Get-AzlVerificationAdapterDefault {
                 param($Request)
                 $last = ''
                 $auth = $false
-                $option = New-PSSessionOption -OpenTimeout 20000 -OperationTimeout 60000 -SkipCACheck -SkipCNCheck
+                $option = New-PSSessionOption -OpenTimeout ([int](Get-AzlArmRunSettingValue -Settings $Request -Name verificationSessionOpenSeconds) * 1000) -OperationTimeout ([int](Get-AzlArmRunSettingValue -Settings $Request -Name verificationSessionOperationSeconds) * 1000) -SkipCACheck -SkipCNCheck
                 foreach ($address in @($Request.Addresses)) {
                     try {
                         $arguments = @{

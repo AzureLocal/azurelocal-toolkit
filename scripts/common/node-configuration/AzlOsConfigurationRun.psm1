@@ -67,7 +67,8 @@ $script:IsoSteps = $script:AllSteps
 $script:WrapperVersion = '1.0.0'
 # The result format of the node payloads (the v of their answer); part of every event.
 $script:PayloadVersion = '1'
-# Azure Local OS 23H2 is build 25398; anything older cannot be an Azure Local node.
+# Azure Local OS 23H2 is build 25398; anything older cannot be an Azure Local node. Fixed by Microsoft: Learn, Azure Local release information
+# (OS version 25398.xxxx is the first Azure Local build; the later 26100.xxxx is higher).
 $script:MinimumBuild = 25398
 
 # ---------------------------------------------------------------------------------------------------------------------
@@ -1153,9 +1154,28 @@ function Invoke-AzlArcRegistration {
         Up to three tries. A failure is classified (Resolve-AzlArcRegistrationFailure): AZCM0044 deletes the stale, not Connected Arc resource and tries again,
         AZCM0042 or 401 takes a new token, 0x8009030e opens a new session, and "I/O operation aborted" (the node restarts mid-bootstrap) is never registered
         again: the run waits for the node to answer and for the Arc machine instead. Every retry is written as a warning and a NodeRetry event.
+        The authentication is always the ARM token of this run's Azure sign-in: Invoke-AzStackHciArcInitialization takes an ARM access token (Learn: Register your
+        machines with Azure Arc and assign deployment permissions), and the toolkit never sends a password or a service principal secret for it.
+    .PARAMETER WaitMinutes
+        How long to wait for the Arc machine to be Connected after the initialization (default 20).
+    .PARAMETER MaxTries
+        How many times the registration runs when a failure is one that a new try can fix (default 3).
+    .PARAMETER StaleResourceWaitSeconds
+        The wait after the stale Arc resource of AZCM0044 is deleted, before the next try (default 15).
+    .PARAMETER NodeBackMinutes
+        How long to wait for a node that restarts in the middle of the bootstrap to answer on WinRM again (default 10).
+    .PARAMETER NodeProbeSeconds
+        The seconds between two probes of that node (default 20).
+    .PARAMETER ArcPollSeconds
+        The seconds between two looks for the Arc machine to be Connected (default 30).
+    .PARAMETER ScriptTimeoutSeconds
+        The longest the initialization script may run on the node (default 7200).
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][System.Collections.IDictionary]$Record, [Parameter(Mandatory)][System.Collections.IDictionary]$Node, [int]$WaitMinutes = 20, [int]$MaxTries = 3)
+    param(
+        [Parameter(Mandatory)][object]$Context, [Parameter(Mandatory)][System.Collections.IDictionary]$Record, [Parameter(Mandatory)][System.Collections.IDictionary]$Node,
+        [int]$WaitMinutes = 20, [int]$MaxTries = 3, [int]$StaleResourceWaitSeconds = 15, [int]$NodeBackMinutes = 10, [int]$NodeProbeSeconds = 20, [int]$ArcPollSeconds = 30, [int]$ScriptTimeoutSeconds = 7200
+    )
     $infra = $Context.Infra
     $subscription = [string](Get-AzlProp $infra 'azure.subscription_id' '')
     $resourceGroup = [string](Get-AzlProp $infra 'azure.resource_group' '')
@@ -1181,7 +1201,7 @@ function Invoke-AzlArcRegistration {
             proxy = $setting.Proxy; proxyBypass = $setting.ProxyBypass; targetSolutionVersion = $setting.TargetSolutionVersion
         }
         try {
-            $null = Invoke-AzlNodeScript -Transport $transport -Node $Record.name -Script (Get-AzlNodePayload -Name ArcRegistration) -Parameters $parameters -Secrets @{ armToken = $token.Token } -TimeoutSeconds 7200 -Tries 1
+            $null = Invoke-AzlNodeScript -Transport $transport -Node $Record.name -Script (Get-AzlNodePayload -Name ArcRegistration) -Parameters $parameters -Secrets @{ armToken = $token.Token } -TimeoutSeconds $ScriptTimeoutSeconds -Tries 1
             break
         }
         catch {
@@ -1197,7 +1217,7 @@ function Invoke-AzlArcRegistration {
                     if (-not $existing) { throw }
                     if ($existing.Status -eq 'Connected') { return $existing }
                     if (-not (Remove-AzlStaleArcMachine -ResourceId ([string]$existing.ResourceId) -Status ([string]$existing.Status) -Confirm:$false)) { throw }
-                    Start-Sleep -Seconds 15
+                    Start-Sleep -Seconds $StaleResourceWaitSeconds
                 }
                 'AuthFailed' { $token = Get-AzlArmToken }
                 'LogonSession' { $transport = New-AzlWinRmTransport -Address @{ $Record.name = $Record.address } -Credential $Context.CredentialInfo.Credential }
@@ -1206,10 +1226,10 @@ function Invoke-AzlArcRegistration {
     }
     if ($waitForNode) {
         # The node is restarting: wait for it to answer again (the registration is not run a second time), then for the Arc machine.
-        $back = (Get-Date).AddMinutes(10)
+        $back = (Get-Date).AddMinutes($NodeBackMinutes)
         while ((Get-Date) -lt $back) {
             if (Test-AzlWinRmPort -Address $Record.address) { break }
-            Start-Sleep -Seconds 20
+            Start-Sleep -Seconds $NodeProbeSeconds
         }
     }
     $deadline = (Get-Date).AddMinutes($WaitMinutes)
@@ -1217,7 +1237,7 @@ function Invoke-AzlArcRegistration {
         $arc = $null
         try { $arc = Find-AzlArcMachine -ArcMachineName $arcName -SubscriptionId $subscription -ResourceGroup $resourceGroup -HostName $Record.name } catch { Write-Verbose "Arc lookup: $($_.Exception.Message)" }
         if ($arc -and $arc.Status -eq 'Connected') { return $arc }
-        Start-Sleep -Seconds 30
+        Start-Sleep -Seconds $ArcPollSeconds
     } while ((Get-Date) -lt $deadline)
     throw "$($Record.name) ran the Arc initialization but its Arc machine is not Connected in $resourceGroup after $WaitMinutes minutes."
 }

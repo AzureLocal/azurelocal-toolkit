@@ -26,6 +26,14 @@ $ErrorActionPreference = 'Stop'
 # DOMAINJOIN HOOK (feat/os-config-domain-join): the DomainJoin step's node scripts live in their own module.
 Import-Module (Join-Path $PSScriptRoot 'AzlNodeDomainJoinPayload.psm1')
 
+# The folder on the node where OS configuration keeps its state: last-apply.json, the guarded-change state and the domain-join marker. A payload takes
+# another folder through its parameter stateDir (the guard engine through dir); this is the default every node script starts from. Not an infrastructure
+# key: it is where the toolkit keeps its own files, not a choice about the deployment.
+$script:NodeStateDirectory = 'C:\ProgramData\AzureLocal\osconfig'
+# The folder on the node that holds the OEM's SBE package. Fixed by Microsoft: Learn (Azure Local, Solution Builder Extension updates, "Import and rediscover
+# updates") tells the operator to copy the SBE files to C:\SBE. A payload takes another folder through its parameter sbeDir (used by tests).
+$script:NodeSbeDirectory = 'C:\SBE'
+
 # Shared by every payload: parameter decoding and the result line.
 $script:Prologue = @'
 param([string]$ParamsB64, [string]$SecretsB64)
@@ -52,7 +60,7 @@ function Write-Result($o) {
 function Get-MacKey([string]$m) { return (($m -replace '[-:\.]', '')).ToLowerInvariant() }
 $P = ConvertFrom-B64Json $ParamsB64
 $S = ConvertFrom-B64Json $SecretsB64
-$stateDir = 'C:\ProgramData\AzureLocal\osconfig'
+$stateDir = [string](Get-P $P 'stateDir' '#AZL-CONST:StateDirectory')
 '@
 
 # Shared by the Read and the Apply script (put in place of #AZL-HOOK:StorageHelper): the disks a storage clear may touch, and whether the node belongs to a cluster.
@@ -187,7 +195,7 @@ Invoke-Section 'time' {
 }
 
 # ---- the OEM's SBE package in C:\SBE
-$sbeDir = [string](Get-P $P 'sbeDir' 'C:\SBE')
+$sbeDir = [string](Get-P $P 'sbeDir' '#AZL-CONST:SbeDirectory')
 Invoke-Section 'sbe' {
     $Az.sbe = @(foreach ($f in @(Get-P $P 'sbeFiles' @())) {
             $path = Join-Path $sbeDir $f.name
@@ -360,7 +368,7 @@ Write-Result ([pscustomobject]@{
 
 $script:ApplyBody = @'
 #AZL-HOOK:StorageHelper
-$sbeDir =[string](Get-P $P 'sbeDir' 'C:\SBE')
+$sbeDir = [string](Get-P $P 'sbeDir' '#AZL-CONST:SbeDirectory')
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 $results = New-Object System.Collections.ArrayList
 $Az = @{ reboot = $false; restartRequired = $false }
@@ -384,6 +392,7 @@ function Invoke-Action($a) {
             return 'RDP allowed, firewall group enabled'
         }
         'icmp' {
+            # The built-in File and Printer Sharing echo request rules of Windows Defender Firewall (IPv4 and IPv6): fixed rule names of the operating system.
             foreach ($n in 'FPS-ICMP4-ERQ-In', 'FPS-ICMP6-ERQ-In') { Enable-NetFirewallRule -Name $n -ErrorAction SilentlyContinue }
             return 'ICMP echo rules enabled'
         }
@@ -507,6 +516,9 @@ function Invoke-Action($a) {
             return ($nic.Name + ': disabled')
         }
         'ntp' {
+            # Fixed by Microsoft (Learn: Install the Azure Stack HCI operating system, Configure the operating system using SConfig; Windows Time service tools and
+            # settings): the peer flag 0x8 sends the requests as an NTP client, /syncfromflags:manual takes the peers named here, and /reliable:no keeps this
+            # machine from announcing itself as a reliable time source (that setting only matters on a domain controller).
             $peers = (@($a.servers) | ForEach-Object { $_ + ',0x8' }) -join ' '
             & w32tm.exe /config /manualpeerlist:"$peers" /syncfromflags:manual /reliable:no /update | Out-Null
             Restart-Service w32time
@@ -593,11 +605,13 @@ function Invoke-Action($a) {
             return ('MPIO settings ' + (($args2.Keys | Sort-Object | ForEach-Object { $_ + '=' + $args2[$_] }) -join ', '))
         }
         'iscsi-service' {
+            # Fixed by Microsoft (Learn: Connect an external storage array to Azure Local, step 1.2): the iSCSI Initiator service is set to Automatic and started.
             Set-Service -Name MSiSCSI -StartupType Automatic
             Start-Service -Name MSiSCSI
             return 'MSiSCSI automatic and running'
         }
         'iscsi-claim' {
+            # Fixed by Microsoft (Learn: Connect an external storage array to Azure Local, step 2.5): MSDSM claims iSCSI disks automatically (restart if LUNs are already visible).
             Enable-MSDSMAutomaticClaim -BusType iSCSI
             # Learn step 2.5: LUNs that are already visible are claimed only after a restart.
             if ([bool](Get-P $a 'restart' $false)) { $Az.reboot = $true; return 'MSDSM claims iSCSI disks automatically (restart so the visible LUNs are claimed)' }
@@ -618,6 +632,7 @@ function Invoke-Action($a) {
                 if ($conn -and [string]$sess.TargetNodeAddress -eq [string]$a.iqn -and [string]$conn.TargetAddress -eq [string]$a.portal -and [string]$conn.InitiatorAddress -eq [string]$a.initiator) { $exists = $true }
             }
             if ($exists) { return ('iSCSI session ' + $a.iqn + ' via ' + $a.initiator + ' already connected') }
+            # Fixed by Microsoft (Learn: Connect an external storage array to Azure Local, step 5): connect to each target "with persistence and multipath enabled".
             $args4 = @{ NodeAddress = [string]$a.iqn; TargetPortalAddress = [string]$a.portal; InitiatorPortalAddress = [string]$a.initiator; IsPersistent = $true; IsMultipathEnabled = $true }
             if ([int](Get-P $a 'port' 3260) -ne 3260) { $args4['TargetPortalPortNumber'] = [int]$a.port }
             Connect-IscsiTarget @args4 | Out-Null
@@ -761,7 +776,38 @@ function Get-AzlNodePayload {
         'DomainJoinRestart' { Get-AzlDomainJoinPayloadBody -Name Restart }
         'DomainJoinResume' { Get-AzlDomainJoinPayloadBody -Name Resume }
     }
-    return ($script:Prologue + [Environment]::NewLine + $body)
+    return (Set-AzlNodePayloadConstant -Text ($script:Prologue + [Environment]::NewLine + $body))
+}
+
+function Set-AzlNodePayloadConstant {
+    # Puts the module's folders into the node script text in place of the #AZL-CONST: tokens (the node scripts are plain strings, so one definition serves them all).
+    [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Changes text in memory only.')]
+    [CmdletBinding()]
+    [OutputType([string])]
+    param([Parameter(Mandatory)][string]$Text)
+    return $Text.Replace('#AZL-CONST:StateDirectory', $script:NodeStateDirectory).Replace('#AZL-CONST:SbeDirectory', $script:NodeSbeDirectory)
+}
+
+function Get-AzlNodeStateDirectory {
+    <#
+    .SYNOPSIS
+        The default folder on a node where OS configuration keeps its state (a payload can be given another with its parameter stateDir).
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+    return $script:NodeStateDirectory
+}
+
+function Get-AzlNodeSbeDirectory {
+    <#
+    .SYNOPSIS
+        The folder on a node that holds the OEM's SBE package. Fixed by Microsoft: C:\SBE.
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+    return $script:NodeSbeDirectory
 }
 
 function Get-AzlNodePrologue {
@@ -772,7 +818,7 @@ function Get-AzlNodePrologue {
     [CmdletBinding()]
     [OutputType([string])]
     param()
-    return $script:Prologue
+    return (Set-AzlNodePayloadConstant -Text $script:Prologue)
 }
 
-Export-ModuleMember -Function Get-AzlNodePayload, Get-AzlNodePrologue
+Export-ModuleMember -Function Get-AzlNodePayload, Get-AzlNodePrologue, Get-AzlNodeStateDirectory, Get-AzlNodeSbeDirectory

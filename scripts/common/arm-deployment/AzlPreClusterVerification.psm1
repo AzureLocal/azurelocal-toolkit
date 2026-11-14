@@ -460,7 +460,9 @@ function Invoke-AzlPclRemote {
         Ok, Address, Result, Error, AuthFailed.
     #>
     [CmdletBinding()]
-    param([Parameter(Mandatory)]$Request, [int]$TimeoutSeconds = 180)
+    param([Parameter(Mandatory)]$Request, [int]$TimeoutSeconds = 0)
+    # 0 means the run setting verificationRemoteCallSeconds (the request carries it); a caller may name its own limit.
+    if ($TimeoutSeconds -lt 1) { $TimeoutSeconds = [int](Get-AzlArmRunSettingValue -Settings $Request -Name verificationRemoteCallSeconds) }
     $last = ''; $auth = $false
     foreach ($address in @($Request.Addresses)) {
         $session = $null
@@ -713,6 +715,7 @@ function New-AzlPclRemoteRequest {
     $short = ($Node -split '\.')[0]
     [pscustomobject]@{
         Node = $Node; Addresses = $addresses; Credential = [pscredential]::new("$short\$user", $Ctx.Cache['AdminSecure']); ScriptBlock = $ScriptBlock; ArgumentList = @($ArgumentList)
+        verificationRemoteCallSeconds = [int](Get-AzlArmRunSettingValue -Settings $Ctx.Settings -Name verificationRemoteCallSeconds)
         UseSsl = [bool]$(if ($Ctx.Remoting) { $Ctx.Remoting.UseSsl } else { $false }); Authentication = [string]$(if ($Ctx.Remoting) { $Ctx.Remoting.Authentication } else { 'Negotiate' })
     }
 }
@@ -826,15 +829,15 @@ function New-AzlPclEndpointProbe {
     #>
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'The parameters are read inside the returned script block.')]
     [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSUseShouldProcessForStateChangingFunctions', '', Justification = 'Builds a script block; changes no system state.')]
-    param([Parameter(Mandatory)]$Adapter, $Remoting)
+    param([Parameter(Mandatory)]$Adapter, $Remoting, [Parameter(Mandatory)][int]$TimeoutSeconds)
     $probe = {
-        param($List)
+        param($List, $Seconds)
         foreach ($t in $List) {
             $tcp = [System.Net.Sockets.TcpClient]::new()
             try {
                 $task = $tcp.ConnectAsync([string]$t.Host, [int]$t.Port)
-                $ok = $task.Wait(5000) -and $tcp.Connected
-                [pscustomobject]@{ Host = [string]$t.Host; Port = [int]$t.Port; Ok = [bool]$ok; Error = $(if ($ok) { '' } else { 'no answer in 5 seconds' }) }
+                $ok = $task.Wait($Seconds * 1000) -and $tcp.Connected
+                [pscustomobject]@{ Host = [string]$t.Host; Port = [int]$t.Port; Ok = [bool]$ok; Error = $(if ($ok) { '' } else { "no answer in $Seconds seconds" }) }
             }
             catch { [pscustomobject]@{ Host = [string]$t.Host; Port = [int]$t.Port; Ok = $false; Error = $_.Exception.GetBaseException().Message } }
             finally { $tcp.Dispose() }
@@ -843,8 +846,8 @@ function New-AzlPclEndpointProbe {
     $ssl = [bool]$(if ($Remoting) { $Remoting.UseSsl } else { $false })
     $authentication = [string]$(if ($Remoting) { $Remoting.Authentication } else { 'Negotiate' })
     {
-        param($Address, $Target, [pscredential]$Credential)
-        $request = [pscustomobject]@{ Node = [string]$Address; Addresses = @([string]$Address); Credential = $Credential; ScriptBlock = $probe; ArgumentList = @(, @($Target)); UseSsl = $ssl; Authentication = $authentication }
+        param($Address, $Target, [pscredential]$Credential, $Seconds = $TimeoutSeconds)
+        $request = [pscustomobject]@{ Node = [string]$Address; Addresses = @([string]$Address); Credential = $Credential; ScriptBlock = $probe; ArgumentList = @(@($Target), [int]$Seconds); UseSsl = $ssl; Authentication = $authentication }
         $answer = & $Adapter['Remote']['Invoke'] $request
         if (-not $answer.Ok) { throw "the probe from $Address did not run: $($answer.Error)" }
         @($answer.Result | ForEach-Object { [pscustomobject]@{ Host = $_.Host; Port = $_.Port; Ok = $_.Ok; Error = $_.Error } })
@@ -874,13 +877,15 @@ function Invoke-AzlPclFix {
         catch { return New-AzlPclResult Failed "Registering $ns failed: $($_.Exception.Message)" "Owner or Contributor on the subscription is needed. Register it yourself: Register-AzResourceProvider -ProviderNamespace $ns" }
         $requested.Add($ns)
     }
-    $deadline = (& $Ctx.Adapter.Now).AddMinutes(15)
+    $waitMinutes = [int](Get-AzlArmRunSettingValue -Settings $Ctx.Settings -Name providerRegistrationTimeoutMinutes)
+    $pollSeconds = [int](Get-AzlArmRunSettingValue -Settings $Ctx.Settings -Name providerRegistrationPollSeconds)
+    $deadline = (& $Ctx.Adapter.Now).AddMinutes($waitMinutes)
     $pending = @($missing)
     while ($true) {
         $pending = @($pending | Where-Object { [string](& $read $_) -ne 'Registered' })
         if (-not $pending) { break }
-        if ((& $Ctx.Adapter.Now) -ge $deadline) { return New-AzlPclResult Failed "Registration was requested ($($requested -join ', ')) but these are not Registered after 15 minutes: $($pending -join ', ')." 'Wait for them (Get-AzResourceProvider -ProviderNamespace <name> shows RegistrationState), then run the verification again.' }
-        $null = Invoke-AzlPclAdapter $Ctx Sleep @(10)
+        if ((& $Ctx.Adapter.Now) -ge $deadline) { return New-AzlPclResult Failed "Registration was requested ($($requested -join ', ')) but these are not Registered after $waitMinutes minutes: $($pending -join ', ')." 'Wait for them (Get-AzResourceProvider -ProviderNamespace <name> shows RegistrationState), then run the verification again.' }
+        $null = Invoke-AzlPclAdapter $Ctx Sleep @($pollSeconds)
     }
     New-AzlPclResult Fixed "Registered by -Fix: $($missing -join ', '). The other $($providers.Count - $missing.Count) mandatory providers already were Registered."
 }
@@ -1039,7 +1044,7 @@ function Invoke-AzlPreClusterVerification {
         # The nodes are probed from the node itself over the engine's WinRM call (Adapters.Remote.Invoke), so a workgroup node reached by IP is not Skipped.
         if (-not $callerHasTestEndpoint -and $Adapter['Remote'] -is [System.Collections.IDictionary] -and $Adapter['Remote'].Contains('Invoke')) {
             if (-not ($Adapter['Azure'] -is [System.Collections.IDictionary])) { $Adapter['Azure'] = [ordered]@{} }
-            $Adapter['Azure']['TestEndpoint'] = New-AzlPclEndpointProbe -Adapter $Adapter -Remoting $remoting
+            $Adapter['Azure']['TestEndpoint'] = New-AzlPclEndpointProbe -Adapter $Adapter -Remoting $remoting -TimeoutSeconds ([int]$run.verificationEndpointTimeoutSeconds)
         }
         $null = New-Item -ItemType Directory -Force -Path $reportDir
         $reportPath = Join-Path $reportDir $contract.ReportFile

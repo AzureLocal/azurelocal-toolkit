@@ -28,8 +28,15 @@ Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'infrastructure', 'AzlInf
 Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'azure-local', 'AzlAzure.psm1'))
 Import-Module ([IO.Path]::Combine($PSScriptRoot, '..', 'secrets', 'AzlSecret.psm1'))
 
+# The catalog of Microsoft's quickstart templates (name, address and parameters of each). Fixed by Microsoft, not a choice of the deployment: the templates are
+# Microsoft's (Learn: Deploy Azure Local via Azure Resource Manager deployment template and its siblings). The file is regenerated from them; -TemplateFile of the run
+# uses a local copy of one template instead.
 $script:CatalogPath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'config', 'azure', 'arm-templates', 'template-parameters.json')
+# The api-version of the Azure Resource Manager deployments call (Microsoft.Resources/deployments), where this module submits the template. Fixed by the Azure API
+# (a version Microsoft publishes at Learn: Microsoft.Resources deployments); it changes with a release of the toolkit, not with a site.
 $script:DeploymentsApiVersion = '2024-03-01'
+# The api-version of the Microsoft.AzureStackHCI resources this module reads (clusters, deploymentSettings). Fixed by the Azure API (Learn: Microsoft.AzureStackHCI
+# clusters/deploymentSettings, 2026-10-01 is in the 2610 view). The version of the template's own deploymentSettings resource is the run setting deploymentSettingsApiVersion.
 $script:HciApiVersion = '2026-10-01'
 $script:SecretParameters = @('localAdminPassword', 'AzureStackLCMAdminPassword', 'chapCredential')
 
@@ -187,6 +194,9 @@ function ConvertTo-AzlArmIntent {
     # storage traffic (the LOM management intent, a compute intent) gets RDMA off and the default 1514 packet. The deployment
     # is told so explicitly (overrideAdapterProperty true), because Azure's network validation checks RDMA on every adapter
     # whose intent says networkDirect Enabled. The file's overrides.adapter values win over these defaults.
+    # overrideAdapterProperty is always true: Microsoft's quickstart parameters file sets it true on every intent and sends the adapter values with it (jumboPacket,
+    # networkDirect, networkDirectTechnology). overrideVirtualSwitchConfiguration and overrideQosPolicy are not a choice: they are true exactly when the file gives that
+    # block (overrides.virtual_switch, overrides.qos), so the file's blocks decide them.
     $traffic = @(ConvertTo-List $Intent['traffic'] | ForEach-Object { ([string]$_).ToLowerInvariant() })
     $hasStorage = $traffic -contains 'storage'
     $defaultDirect = if ($hasStorage) { 'Enabled' } else { 'Disabled' }
@@ -411,8 +421,22 @@ function New-AzlArmParameterSet {
     $p.customLocation = [string](& $g 'azure.custom_location' "$clusterName-cl")
     if ($sbeConfigured) {
         foreach ($k in $sbe.Keys) { $p[$k] = $sbe[$k] }
-        $p.partnerProperties = @()
-        $p.partnerCredentiallist = @()
+        # Properties and Key Vault secret names that the hardware vendor's SBE asks for (hardware.sbe.partner_properties and partner_credentials); empty lists when the file names none.
+        # The template builds the secret's address from the cluster's Key Vault (cluster.key_vault.name) and the secret name.
+        $partnerProperties = [System.Collections.Generic.List[object]]::new()
+        foreach ($property in @(ConvertTo-List (& $g 'hardware.sbe.partner_properties' @()))) {
+            $propertyName = ([string](Get-AzlProp $property 'name' '')).Trim()
+            if (-not $propertyName) { throw 'hardware.sbe.partner_properties has an entry with no name.' }
+            $partnerProperties.Add([ordered]@{ name = $propertyName; value = [string](Get-AzlProp $property 'value' '') })
+        }
+        $partnerCredentials = [System.Collections.Generic.List[object]]::new()
+        foreach ($credential in @(ConvertTo-List (& $g 'hardware.sbe.partner_credentials' @()))) {
+            $secretName = ([string](Get-AzlProp $credential 'secret_name' '')).Trim()
+            if (-not $secretName) { throw 'hardware.sbe.partner_credentials has an entry with no secret_name.' }
+            $partnerCredentials.Add([ordered]@{ secretName = $secretName })
+        }
+        $p.partnerProperties = $partnerProperties.ToArray()
+        $p.partnerCredentiallist = $partnerCredentials.ToArray()
     }
 
     # ---- Active Directory or local identity
@@ -740,9 +764,11 @@ function Invoke-AzlArmDeployment {
         [string]$DeploymentSettingsApiVersion,
         [int]$TimeoutMinutes,
         [int]$PollSeconds = 30,
-        # The ARM deployment's name. Default: azl-<mode>-<time stamp>. AzlArmDeploymentRun passes azl-<mode>-<parameter hash>,
+        # The ARM deployment's name. Default: <prefix>-<mode>-<time stamp>. AzlArmDeploymentRun passes <prefix>-<mode>-<parameter hash>,
         # so the same parameters are the same deployment and a re-run can attach to it.
         [string]$DeploymentName,
+        # The first part of the default name (the run setting deploymentNamePrefix, azl by default, is what the run uses).
+        [ValidatePattern('^[a-z][a-z0-9-]{0,29}$')][string]$DeploymentNamePrefix = 'azl',
         [switch]$NoWait,
         [switch]$AllowRevalidate,
         [switch]$SkipValidationCheck,
@@ -778,7 +804,7 @@ function Invoke-AzlArmDeployment {
         foreach ($r in $list) { if ([string]$r['type'] -ieq 'microsoft.azurestackhci/clusters/deploymentSettings') { $r['apiVersion'] = $DeploymentSettingsApiVersion; $patched++ } }
         if (-not $patched) { Write-Warning 'No deploymentSettings resource found to patch the api-version on.' }
     }
-    $name = if ($DeploymentName) { $DeploymentName } else { 'azl-{0}-{1:yyyyMMddHHmmss}' -f $Mode.ToLowerInvariant(), (Get-Date) }
+    $name = if ($DeploymentName) { $DeploymentName } else { '{0}-{1}-{2:yyyyMMddHHmmss}' -f $DeploymentNamePrefix, $Mode.ToLowerInvariant(), (Get-Date) }
     $path = "/subscriptions/$SubscriptionId/resourcegroups/$ResourceGroup/providers/Microsoft.Resources/deployments/$name"
     $null = Invoke-AzlArm -Method PUT -Path $path -ApiVersion $script:DeploymentsApiVersion -Body @{ properties = @{ mode = 'Incremental'; template = $templateBody; parameters = $parameters } }
     if ($NoWait) { return [pscustomobject]@{ Mode = $Mode; DeploymentName = $name; ProvisioningState = 'Submitted'; ValidationStatus = ''; ValidationSteps = @(); FailedSteps = @(); Error = '' } }

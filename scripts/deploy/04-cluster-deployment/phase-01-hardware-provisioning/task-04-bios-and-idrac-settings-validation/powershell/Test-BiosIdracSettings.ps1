@@ -60,6 +60,11 @@ Import-Module ([IO.Path]::Combine($common, 'infrastructure', 'AzlInfrastructure.
 Import-Module ([IO.Path]::Combine($common, 'secrets', 'AzlSecret.psm1'))
 Import-Module ([IO.Path]::Combine($common, 'redfish', 'AzlRedfishCore.psm1'))
 
+# Redfish resource paths of a Dell iDRAC. Fixed by Dell's iDRAC Redfish API: the manager is always iDRAC.Embedded.1 and the system is always System.Embedded.1.
+# This script is for Dell iDRAC only.
+$script:IdracManagerPath = '/redfish/v1/Managers/iDRAC.Embedded.1'
+$script:IdracSystemPath = '/redfish/v1/Systems/System.Embedded.1'
+
 function Write-Log {
     param([string]$Message, [string]$Level = "INFO")
     $color = switch ($Level) {
@@ -105,7 +110,7 @@ function Test-BiosSettings {
     )
 
     $baseUri = "https://$iDRACIp"
-    $biosAttributes = (Get-RedfishData -BaseUri $baseUri -Endpoint "/redfish/v1/Systems/System.Embedded.1/Bios" -Credential $Credential).Attributes
+    $biosAttributes = (Get-RedfishData -BaseUri $baseUri -Endpoint "$($script:IdracSystemPath)/Bios" -Credential $Credential).Attributes
 
     $results = @()
     foreach ($key in $DesiredSettings.Keys) {
@@ -131,7 +136,7 @@ function Test-IdracSettings {
     )
 
     $baseUri = "https://$iDRACIp"
-    $idracAttributes = (Get-RedfishData -BaseUri $baseUri -Endpoint "/redfish/v1/Managers/iDRAC.Embedded.1/Attributes" -Credential $Credential).Attributes
+    $idracAttributes = (Get-RedfishData -BaseUri $baseUri -Endpoint "$($script:IdracManagerPath)/Attributes" -Credential $Credential).Attributes
 
     $results = @()
     foreach ($key in $DesiredSettings.Keys) {

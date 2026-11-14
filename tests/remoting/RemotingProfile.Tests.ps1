@@ -289,6 +289,16 @@ Describe 'Resolve-AzlRemotingProfile: every override and key' {
         @((Resolve-For 'production' { param($d) $d.os_configuration.remoting.certificate = 'not a cert' }).Issues | Where-Object { $_.Id -eq 'AZL-067' -and $_.Severity -eq 'error' }).Count | Should -Be 1
         @((Resolve-For 'lab' { param($d) $d.os_configuration.remoting.certificate = ('AB' * 20) }).Issues | Where-Object { $_.Id -eq 'AZL-067' -and $_.Severity -eq 'warning' }).Count | Should -Be 1
     }
+    It 'certificate: a reference of any provider of the resolver is accepted, the PFX is read through it' -ForEach @(
+        @{ Ref = 'env://AZL_NODE_CERT_PFX' }, @{ Ref = 'file://node-cert-pfx' }, @{ Ref = 'command://node-cert-pfx' }, @{ Ref = 'keyvault://kv-example/node-cert' }) {
+        $c = (Resolve-For 'production' { param($d) $d.os_configuration.remoting.certificate = $Ref }).Certificate
+        $c.Mode | Should -Be 'keyVault'
+        $c.Reference | Should -Be $Ref
+        @((Resolve-For 'production' { param($d) $d.os_configuration.remoting.certificate = $Ref }).Issues | Where-Object { $_.Id -eq 'AZL-067' }).Count | Should -Be 0
+    }
+    It 'certificate: a reference with a missing part is still an error' {
+        @((Resolve-For 'production' { param($d) $d.os_configuration.remoting.certificate = 'keyvault://kv-only' }).Issues | Where-Object { $_.Id -eq 'AZL-067' -and $_.Severity -eq 'error' }).Count | Should -Be 1
+    }
     It 'bootstrap routes: smb, arc, auto (smb then arc), none' {
         foreach ($case in @{ t = 'smb'; r = @('smb') }, @{ t = 'arc'; r = @('arc') }, @{ t = 'auto'; r = @('smb', 'arc') }, @{ t = 'none'; r = @() }) {
             $script:bt = $case.t

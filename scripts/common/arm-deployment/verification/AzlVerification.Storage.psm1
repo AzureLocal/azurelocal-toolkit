@@ -102,7 +102,7 @@ function Get-AzlVerificationCheckDefinition {
                 Invoke-AzlVerPerNode -Context $Context -Section 'GetDisks' -Body {
                     param($Name, $D, $N)
                     $data = @(Get-AzlVerLocalDataDisk (Get-AzlProp $D 'physical' @()))
-                    $big = @($data | Where-Object { [int64]$_.size -ge ($minGb * 1e9 * 0.95) })
+                    $big = @($data | Where-Object { [int64]$_.size -ge ($minGb * 1e9 * (Get-AzlVerConstant SizeToleranceFraction)) })
                     $raid = @($data | Where-Object { [string]$_.bus -eq 'RAID' })
                     $summary[$Name] = "$($data.Count) disks: " + ((@($data | ForEach-Object { "$([math]::Round([int64]$_.size / 1e9))GB $($_.media)/$($_.bus)" } | Sort-Object)) -join ', ')
                     if ($raid) { New-AzlVerResult Failed "$Name presents $($raid.Count) disk(s) through a RAID controller (bus type RAID). Learn: RAID controllers are not supported, the drives must be in HBA / pass-through mode." 'Put the storage controller (PERC) in HBA mode and expose the drives directly.' -Node $Name -Evidence (($raid | ForEach-Object { $_.name }) -join ',') }
@@ -276,7 +276,7 @@ function Get-AzlVerificationCheckDefinition {
                         $g = @($groups | Where-Object { $d0 = $_.Group[0]; if ($id -match '^\d{1,4}$') { [string](Get-AzlProp $d0 'lun' '') -eq $id } else { [string](Get-AzlProp $d0 'uid' '') -ieq $id -or [string](Get-AzlProp $d0 'serial' '') -ieq $id } }) | Select-Object -First 1
                         if (-not $g) { $problems += "the $($w.Label) LUN $id is not visible"; continue }
                         $disk = $g.Group[0]
-                        if ([double]$disk.size * 1.0 / 1e9 * 1.073741824 -lt ($w.MinGb * 0.95)) { $problems += "the $($w.Label) LUN $id is $([math]::Round([double]$disk.size / 1e9)) GB, smaller than the $($w.MinGb) GB Learn asks for" }
+                        if ([double]$disk.size * 1.0 / 1e9 * 1.073741824 -lt ($w.MinGb * (Get-AzlVerConstant SizeToleranceFraction))) { $problems += "the $($w.Label) LUN $id is $([math]::Round([double]$disk.size / 1e9)) GB, smaller than the $($w.MinGb) GB Learn asks for" }
                         if ([string]$disk.style -ne 'RAW') { $problems += "the $($w.Label) LUN $id has partition style $($disk.style): it was initialized. Learn: don't initialize the drives, the deployment expects RAW" }
                     }
                     if ($problems) { New-AzlVerResult Failed "${Name}: $($problems -join '; ')." 'Present the two LUNs to every node (infrastructure 250 GB, performance history 20 GB), leave them RAW (a wrongly initialized LUN: Clear-Disk -Number <n> -RemoveData on ONE node after checking it is not in use), rescan with Update-HostStorageCache.' -Node $Name -Evidence ($problems -join ' | ') }

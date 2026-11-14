@@ -8,12 +8,15 @@
     the two BOSS M.2 physical drives.
 .PARAMETER ConfigPath
     Path to the infrastructure.yml (schema 5). Defaults to ./configs/infrastructure.yml.
+.PARAMETER VolumeName
+    The label the new virtual disk gets (default BOSS-RAID1). A label on the mirror; nothing in the deployment reads it.
 .PARAMETER WhatIf
     Preview changes without making them.
 #>
 [CmdletBinding(SupportsShouldProcess)]
 param(
-    [string]$ConfigPath = "./configs/infrastructure.yml"
+    [string]$ConfigPath = "./configs/infrastructure.yml",
+    [ValidateNotNullOrEmpty()][string]$VolumeName = "BOSS-RAID1"
 )
 
 Set-StrictMode -Version Latest
@@ -21,6 +24,10 @@ $ErrorActionPreference = "Stop"
 
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'redfish', 'AzlRedfishCore.psm1'))) -Force
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+
+# The Redfish path of the system's storage controllers on a Dell iDRAC. Fixed by the DMTF Redfish schema and by Dell's iDRAC Redfish API: the system resource of an
+# iDRAC is always System.Embedded.1. This script is for Dell BOSS cards only.
+$StorageCollectionPath = "/redfish/v1/Systems/System.Embedded.1/Storage"
 
 # ── Load config ───────────────────────────────────────────────────────────────
 if (-not (Test-Path $ConfigPath)) {
@@ -78,7 +85,7 @@ foreach ($node in $nodes) {
     # Find BOSS controller
     Write-Host "  Discovering BOSS controller..."
     $storage = Invoke-Redfish -BaseUri $baseUri `
-        -Path "/redfish/v1/Systems/System.Embedded.1/Storage" `
+        -Path $StorageCollectionPath `
         -Credential $idracCred
     $bossController = $storage.Members | Where-Object {
         $_.'@odata.id' -match "BOSS"
@@ -123,7 +130,7 @@ foreach ($node in $nodes) {
     $newVol = @{
         VolumeType = "Mirrored"
         Drives     = @($driveRefs)
-        Name       = "BOSS-RAID1"
+        Name       = $VolumeName
     }
     $result = Invoke-Redfish -BaseUri $baseUri `
         -Path "$controllerPath/Volumes" `

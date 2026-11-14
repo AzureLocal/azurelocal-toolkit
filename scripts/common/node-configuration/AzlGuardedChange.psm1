@@ -29,7 +29,13 @@ Import-Module (Join-Path $PSScriptRoot 'AzlNodeTransport.psm1')
 Import-Module (Join-Path $PSScriptRoot 'AzlNodeGuard.psm1')
 Import-Module (Join-Path $PSScriptRoot 'AzlOsConfigurationEvents.psm1')
 
+# The settings object of the guarded change. Every key can be changed by the run settings (Get-AzlGuardSetting -Setting; the wrapper scripts pass networkRollbackMinutes
+# and networkStableSeconds from os_configuration.network.confirm_minutes and stable_seconds); each is registered under tools.os_configuration.guard_settings.
+# A setting of the tool's own behaviour, not a choice about the deployment, so none of them is an infrastructure key.
 $script:GuardDefaults = [ordered]@{ networkRollbackMinutes = 10; networkStableSeconds = 60; reconnectWaitMinutes = 15; staleRunCommandMinutes = 15; addressProbe = $true }
+# The name the node resolves through the management DNS during a guarded change when the file gives no domain. The Azure Resource Manager endpoint: Azure Local must
+# resolve it anyway (Learn, Azure Local firewall requirements), so a management DNS that cannot answer it is a real problem.
+$script:DefaultProbeHost = 'management.azure.com'
 
 function Get-AzlGuardSetting {
     <#
@@ -512,7 +518,7 @@ function Invoke-AzlGuardedChange {
     $newAddress = if ($isManagement) { [string]$Spec.Management.Ip } else { $oldAddress }
     $items = @($Item | ForEach-Object { $copy = @{} + $_; if ($copy.kind -eq 'nic-static' -and $copy.ContainsKey('management')) { $copy.Remove('vlan') }; $copy })
     # The DNS check on the node asks the management port's DNS servers for this name; the AD domain is what the internal servers answer for.
-    $probeHost = if ($Spec.PSObject.Properties['DomainFqdn'] -and [string]$Spec.DomainFqdn) { [string]$Spec.DomainFqdn } else { 'management.azure.com' }
+    $probeHost = if ($Spec.PSObject.Properties['DomainFqdn'] -and [string]$Spec.DomainFqdn) { [string]$Spec.DomainFqdn } else { $script:DefaultProbeHost }
     $remote = $State.PSObject.Properties['remote'] -and $State.remote -and [string]$State.remote.winrm -eq 'Running' -and [int]$State.remote.listeners -gt 0
     $config = [ordered]@{
         changeId = $changeId; group = $Group; confirmMinutes = $confirmMinutes + $(if ($restart) { 10 } else { 0 }); stableSeconds = [int]$cfgSetting.networkStableSeconds; startDelaySeconds = 20; checkSeconds = 300; repairSeconds = 45

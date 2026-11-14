@@ -88,6 +88,8 @@ param(
     [Parameter(Mandatory = $false)]
     [string]$ParametersFile = "",
 
+    # Fixed by Microsoft: the create-cluster quickstart template that Learn names (Deploy Azure Local via Azure Resource Manager deployment template) at the place Microsoft publishes it.
+    # -TemplateUri takes another address (a copy of the template, or a pinned commit).
     [Parameter(Mandatory = $false)]
     [string]$TemplateUri = "https://raw.githubusercontent.com/Azure/azure-quickstart-templates/master/quickstarts/microsoft.azurestackhci/create-cluster/azuredeploy.json",
 

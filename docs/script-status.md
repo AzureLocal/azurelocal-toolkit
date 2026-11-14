@@ -15,14 +15,14 @@ A **placeholder** is a script that does not do the task. Running it prints `NOT 
 
 ## Summary
 
-Task folders: 115.
+Task folders: 114.
 
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
-| PowerShell | 87 | 28 | 0 |
-| Azure CLI | 9 | 56 | 50 |
+| PowerShell | 86 | 28 | 0 |
+| Azure CLI | 9 | 56 | 49 |
 
-Azure CLI applies to 57 tasks, does not apply to 50, and is not decided for 8.
+Azure CLI applies to 57 tasks, does not apply to 49, and is not decided for 8.
 
 ## 01-cicd-infra
 
@@ -119,7 +119,6 @@ Azure CLI applies to 57 tasks, does not apply to 50, and is not decided for 8.
 | `phase-03-os-configuration/task-09-disable-unused-network-adapters` | built | not applicable | no |
 | `phase-03-os-configuration/task-10-configure-hostname` | built | not applicable | no |
 | `phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional` | built | not applicable | no |
-| `phase-03-os-configuration/task-12-complete-combined-script-all-steps` | built | not applicable | no |
 | `phase-03-os-configuration/task-13-phase03-verification` | built | not applicable | no |
 | `phase-04-arc-registration/task-01-pre-registration-validation` | built | not built | yes |
 | `phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc` | built | built | yes |

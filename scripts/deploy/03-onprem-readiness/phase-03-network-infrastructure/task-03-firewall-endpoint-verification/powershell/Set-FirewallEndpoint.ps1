@@ -97,7 +97,8 @@ function Get-AzureLocalRequiredEndpoints {
         Returns the list of required Azure endpoints for Azure Local.
     #>
 
-    # Based on Microsoft documentation for Azure Local firewall requirements
+    # Fixed by Microsoft, not a choice of the deployment: the list is the one Learn publishes (Firewall requirements for Azure Local, "Required firewall URLs"). The
+    # per-region lists the pre-cluster verification tests are in scripts/common/arm-deployment/verification/AzlVerification.Endpoints.psm1.
     return @(
         # Azure Arc endpoints
         @{ Url = "aka.ms"; Port = 443; Category = "Azure Arc"; Required = $true }

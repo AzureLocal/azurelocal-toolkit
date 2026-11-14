@@ -127,6 +127,40 @@ Describe 'Invoke-AzlArcRegistration' {
         { InModuleScope AzlOsConfigurationRun -Parameters @{ C = $script:Context; R = $script:Record; N = $script:Node } { Invoke-AzlArcRegistration -Context $C -Record $R -Node $N } } | Should -Throw '*0x8009030e*'
         @($global:ArcRegCalls | Where-Object { $_ -eq 'register' }).Count | Should -Be 3
     }
+    It 'the waits and limits are parameters: -MaxTries 2 gives up after two tries' {
+        $global:ArcRegScript = { $global:ArcRegCalls.Add('register'); throw 'Exception 0x8009030e' }
+        { InModuleScope AzlOsConfigurationRun -Parameters @{ C = $script:Context; R = $script:Record; N = $script:Node } { Invoke-AzlArcRegistration -Context $C -Record $R -Node $N -MaxTries 2 } } | Should -Throw '*0x8009030e*'
+        @($global:ArcRegCalls | Where-Object { $_ -eq 'register' }).Count | Should -Be 2
+    }
+    It 'the wait after the stale Arc resource is deleted is -StaleResourceWaitSeconds' {
+        $global:ArcRegScript = { $global:ArcRegCalls.Add('register'); if (@($global:ArcRegCalls | Where-Object { $_ -eq 'register' }).Count -eq 1) { throw 'AZCM0044: the resource already exists' } }
+        $global:ArcRegArc = @($script:Stale, $script:Connected)
+        $null = InModuleScope AzlOsConfigurationRun -Parameters @{ C = $script:Context; R = $script:Record; N = $script:Node } { Invoke-AzlArcRegistration -Context $C -Record $R -Node $N -StaleResourceWaitSeconds 7 }
+        Should -Invoke -ModuleName AzlOsConfigurationRun Start-Sleep -Times 1 -Exactly -ParameterFilter { $Seconds -eq 7 }
+    }
+    It 'the wait between two looks for the Arc machine is -ArcPollSeconds' {
+        $global:ArcRegArc = @('none', 'none', $script:Connected)
+        $null = InModuleScope AzlOsConfigurationRun -Parameters @{ C = $script:Context; R = $script:Record; N = $script:Node } { Invoke-AzlArcRegistration -Context $C -Record $R -Node $N -ArcPollSeconds 9 }
+        Should -Invoke -ModuleName AzlOsConfigurationRun Start-Sleep -Times 2 -Exactly -ParameterFilter { $Seconds -eq 9 }
+    }
+    It 'the time limit of the initialization script on the node is -ScriptTimeoutSeconds' {
+        $global:ArcRegArc = @($script:Connected)
+        $null = InModuleScope AzlOsConfigurationRun -Parameters @{ C = $script:Context; R = $script:Record; N = $script:Node } { Invoke-AzlArcRegistration -Context $C -Record $R -Node $N -ScriptTimeoutSeconds 123 }
+        Should -Invoke -ModuleName AzlOsConfigurationRun Invoke-AzlNodeScript -Times 1 -Exactly -ParameterFilter { $TimeoutSeconds -eq 123 }
+    }
+    It 'the defaults are the ones the registry documents (3 tries, 20 minutes, 15, 10, 20 and 30 seconds, 7200 seconds)' {
+        $ast = [System.Management.Automation.Language.Parser]::ParseFile((Join-Path ([IO.Path]::Combine($PSScriptRoot, '..', '..', 'scripts', 'common', 'node-configuration')) 'AzlOsConfigurationRun.psm1'), [ref]$null, [ref]$null)
+        $fn = $ast.FindAll({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Invoke-AzlArcRegistration' }, $true) | Select-Object -First 1
+        $defaults = @{}
+        foreach ($param in $fn.Body.ParamBlock.Parameters) { if ($param.DefaultValue) { $defaults[$param.Name.VariablePath.UserPath] = [string]$param.DefaultValue.Extent.Text } }
+        $defaults['WaitMinutes'] | Should -Be '20'
+        $defaults['MaxTries'] | Should -Be '3'
+        $defaults['StaleResourceWaitSeconds'] | Should -Be '15'
+        $defaults['NodeBackMinutes'] | Should -Be '10'
+        $defaults['NodeProbeSeconds'] | Should -Be '20'
+        $defaults['ArcPollSeconds'] | Should -Be '30'
+        $defaults['ScriptTimeoutSeconds'] | Should -Be '7200'
+    }
 }
 
 Describe 'Remove-AzlStaleArcMachine' {

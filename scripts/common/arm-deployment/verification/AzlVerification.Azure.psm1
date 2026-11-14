@@ -44,7 +44,7 @@
         ListArcExtensions(ResourceId)                  Name, Type
         GetArcGateway(Subscription, ResourceGroup, Name)  Name, ProvisioningState; $null when absent
         GetNodeCredential(Infrastructure)              the nodes' local administrator as a PSCredential (read by the secret resolver); throws with the reason
-        TestEndpoint(Address, Target, Credential)      probes TCP from the node at Address: rows of Host, Port, Ok, Error
+        TestEndpoint(Address, Target, Credential, TimeoutSeconds)      probes TCP from the node at Address, TimeoutSeconds each (verificationEndpointTimeoutSeconds): rows of Host, Port, Ok, Error
 
     The registration of a missing resource provider is deliberately not in the adapter: this module never changes Azure.
 #>
@@ -468,6 +468,8 @@ function Get-AzlVerifySecretModeProblem {
     # Returns the reason text for a reference of another provider, else an empty string.
     param([Parameter(Mandatory)]$Context, [Parameter(Mandatory)]$Secret)
     $mode = [string](Get-AzlProp (Get-AzlProp $Context 'Settings') 'secretMode' 'Placeholder')
+    # Fixed by Microsoft, not a choice: in -SecretMode KeyVaultReference the parameter file hands Azure Resource Manager a Key Vault reference and Azure Resource Manager reads the
+    # secret itself, so only a Key Vault secret can be named. In the default Placeholder mode this machine reads the secret with the resolver and every provider works.
     if ($mode -ne 'KeyVaultReference' -or -not $Secret.Valid -or $Secret.Provider -eq 'keyvault') { return '' }
     return "$($Secret.Label) ($($Secret.Path)) is a $($Secret.Provider):// reference, and the deployment runs with -SecretMode KeyVaultReference: Azure Resource Manager can read only keyvault:// references"
 }
@@ -505,7 +507,7 @@ function Test-AzlVerifyKeyVault {
         if (-not $vault) { $problems += "vault $($r.Vault) ($($r.Label)) does not exist$(if ($resourceGroup) { " in resource group $resourceGroup" }) of subscription $(Format-AzlVerifyId $subscription)" }
     }
     if ($problems) {
-        return New-AzlVerifyResult Failed "Secret references: $($problems -join '; ')." "Use a keyvault:// reference for a secret that Azure Resource Manager reads (-SecretMode KeyVaultReference), or deploy in the default Placeholder mode. Otherwise create the vault, or fix key_vaults and the references in the file. A keyvault:// secret is stored with Add-KeyVaultCredentials.ps1." -Evidence "$($problems.Count) problem(s)"
+        return New-AzlVerifyResult Failed "Secret references: $($problems -join '; ')." "Use a keyvault:// reference for a secret that Azure Resource Manager reads (-SecretMode KeyVaultReference), or deploy in the default Placeholder mode. Otherwise create the vault, or fix key_vaults and the references in the file. Put each secret in the store its reference names (Key Vault, environment variable, file or command), then run again." -Evidence "$($problems.Count) problem(s)"
     }
     if (-not $refs.Count) { return New-AzlVerifyResult Skipped 'The file names no secret reference for the local administrator.' }
     if (-not $vaultRefs) {
@@ -545,7 +547,7 @@ function Test-AzlVerifySecretReadable {
         $value = $null
     }
     if (-not $refs.Count) { return New-AzlVerifyResult Failed 'The file has no secret reference for identity.local_admin.password.' 'Store the password where the resolver can read it and reference it: keyvault://<vault>/local-admin-password, env://<VARIABLE>, file://<name> or command://<name>.' }
-    if ($bad) { return New-AzlVerifyResult Failed ($bad -join '; ') 'Create the secret (a keyvault:// secret: Add-KeyVaultCredentials.ps1, and grant this identity Get on secrets with Key Vault Secrets Officer on the vault), set the environment variable, create the file or check the command (secrets section of the file), or fix the reference. With -SecretMode KeyVaultReference every deployment secret must be a keyvault:// reference.' -Evidence "$($bad.Count) unreadable" }
+    if ($bad) { return New-AzlVerifyResult Failed ($bad -join '; ') 'Put the secret in the store the reference names (a Key Vault secret, an environment variable, a file or a command; for Key Vault grant this identity Get on secrets with Key Vault Secrets Officer on the vault), then run again. Or fix the reference (the secrets section of the file holds the file directory and the command). With -SecretMode KeyVaultReference every deployment secret must be a keyvault:// reference.' -Evidence "$($bad.Count) unreadable" }
     New-AzlVerifyResult Passed "$($refs.Count) password secret(s) are readable by the secret resolver and not empty (values not shown)." -Evidence "$($refs.Count) read"
 }
 
@@ -567,7 +569,7 @@ function Test-AzlVerifyLocalAdminUsername {
     $userVault = $ref.Vault
     if ($named) { $userVault = $named.Vault; $userSecret = $named.Secret }
     else {
-        if ($ref.Secret -notmatch '(?i)password$') { Stop-AzlVerifySkip "The secret $($ref.Secret) does not end in 'password', so the name of the matching username secret cannot be derived." "Name the secrets <prefix>-password and <prefix>-username (Add-KeyVaultCredentials.ps1: local-admin-username, local-admin-password)." }
+        if ($ref.Secret -notmatch '(?i)password$') { Stop-AzlVerifySkip "The secret $($ref.Secret) does not end in 'password', so the name of the matching username secret cannot be derived." "Name the secrets <prefix>-password and <prefix>-username (for example local-admin-password and local-admin-username)." }
         $userSecret = $ref.Secret -creplace '(?i)password$', $(if ($ref.Secret -cmatch 'PASSWORD$') { 'USERNAME' } elseif ($ref.Secret -cmatch 'Password$') { 'Username' } else { 'username' })
     }
     $value = Invoke-AzlVerifyAdapter $Context GetKeyVaultSecret @($userVault, $userSecret, $infra)
@@ -757,7 +759,7 @@ function Test-AzlVerifyArcEndpoint {
         $mgmt = Get-AzlManagementAdapter -Infrastructure $infra -Node $n
         $address = if ($mgmt) { [string]$mgmt.IpAddress } else { '' }
         if (-not $address) { New-AzlVerifyResult Skipped "$name has no management address in the file, so it could not be probed." -Node $name; continue }
-        try { $rows = @(Invoke-AzlVerifyAdapter $Context TestEndpoint @($address, $targets, $credential)) }
+        try { $rows = @(Invoke-AzlVerifyAdapter $Context TestEndpoint @($address, $targets, $credential, [int](Get-AzlArmRunSettingValue -Settings (Get-AzlProp $Context 'Settings') -Name verificationEndpointTimeoutSeconds))) }
         catch {
             if ($_.Exception.Data['AzlSkip']) { throw }
             New-AzlVerifyResult Skipped "$name could not run the probe ($($_.Exception.Message)); the endpoints were not tested from the node." 'Open WinRM to the node from this host, or run Test-ArcConnectivity.ps1 on the node.' -Node $name; continue
@@ -904,6 +906,8 @@ function Get-AzlVerificationAdapterDefault {
     $azure['GetKeyVaultSecret'] = {
         param($Vault, $Secret, $Infrastructure)
         # The value, read by the toolkit's secret resolver; $null when the secret does not exist; anything else (no permission, network) throws.
+        # Only called for a keyvault:// reference (the check passes its vault and secret name); env://, file:// and command:// references go through TestSecretReference, which
+        # the same resolver answers, so no provider is left out and keyvault here is the provider of the reference the check holds.
         $reference = New-AzlSecretReference -Name $Secret -Vault $Vault -Provider keyvault -Infrastructure $Infrastructure
         try { $v = Get-AzlSecretPlainText -Reference $reference -Infrastructure $Infrastructure }
         catch {
@@ -941,22 +945,22 @@ function Get-AzlVerificationAdapterDefault {
         [pscredential]::new($user, (ConvertTo-SecureString -String (Get-AzlSecret -Reference $reference -Infrastructure $Infrastructure) -AsPlainText -Force))
     }
     $azure['TestEndpoint'] = {
-        param($Address, $Target, [pscredential]$Credential)
-        # Runs on the node (WinRM): a TCP connect to each endpoint, five seconds at most. Nothing is changed on the node.
+        param($Address, $Target, [pscredential]$Credential, [int]$TimeoutSeconds)
+        # Runs on the node (WinRM): a TCP connect to each endpoint, $TimeoutSeconds at most. Nothing is changed on the node.
         $probe = {
-            param($List)
+            param($List, $Seconds)
             foreach ($t in $List) {
                 $tcp = [System.Net.Sockets.TcpClient]::new()
                 try {
                     $task = $tcp.ConnectAsync([string]$t.Host, [int]$t.Port)
-                    $ok = $task.Wait(5000) -and $tcp.Connected
-                    [pscustomobject]@{ Host = [string]$t.Host; Port = [int]$t.Port; Ok = [bool]$ok; Error = $(if ($ok) { '' } else { 'no answer in 5 seconds' }) }
+                    $ok = $task.Wait($Seconds * 1000) -and $tcp.Connected
+                    [pscustomobject]@{ Host = [string]$t.Host; Port = [int]$t.Port; Ok = [bool]$ok; Error = $(if ($ok) { '' } else { "no answer in $Seconds seconds" }) }
                 }
                 catch { [pscustomobject]@{ Host = [string]$t.Host; Port = [int]$t.Port; Ok = $false; Error = $_.Exception.GetBaseException().Message } }
                 finally { $tcp.Dispose() }
             }
         }
-        $arguments = @{ ComputerName = $Address; ScriptBlock = $probe; ArgumentList = (, @($Target)); ErrorAction = 'Stop'; Authentication = 'Negotiate' }
+        $arguments = @{ ComputerName = $Address; ScriptBlock = $probe; ArgumentList = @(@($Target), $TimeoutSeconds); ErrorAction = 'Stop'; Authentication = 'Negotiate' }
         if ($Credential) { $arguments.Credential = $Credential }
         @(Invoke-Command @arguments | ForEach-Object { [pscustomobject]@{ Host = $_.Host; Port = $_.Port; Ok = $_.Ok; Error = $_.Error } })
     }

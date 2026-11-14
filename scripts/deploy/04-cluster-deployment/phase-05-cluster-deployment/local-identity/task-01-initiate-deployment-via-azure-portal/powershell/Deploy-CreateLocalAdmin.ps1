@@ -6,14 +6,22 @@
 .DESCRIPTION
     Run this script directly ON each cluster node (via RDP or console session).
     Creates a non-built-in local administrator account required for Local Identity
-    authentication. All variables are defined inline — no infrastructure.yml or
-    toolkit helpers needed.
+    authentication. The user name and the password are parameters — no infrastructure.yml or
+    toolkit helpers needed. Nothing is written in the script.
 
     Microsoft requirements:
       - Account must NOT be the built-in Administrator account
       - Username and password must be IDENTICAL on every cluster node
       - Password must be at least 14 characters
     Ref: https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault
+
+.PARAMETER Username
+    The name of the local administrator account to create (identity.local_admin.username of the
+    infrastructure file). It must be the same on every node and must not be Administrator.
+
+.PARAMETER Password
+    The password of the account, as a secure string (identity.local_admin.password of the
+    infrastructure file holds the reference to it). At least 14 characters; the same on every node.
 
 .NOTES
     Author:       Azure Local Cloud AzureLocalCloud
@@ -25,29 +33,22 @@
 
 .EXAMPLE
     # Run on each cluster node via RDP or console
-    .\Deploy-CreateLocalAdmin.ps1
+    .\Deploy-CreateLocalAdmin.ps1 -Username <account> -Password (Read-Host -AsSecureString 'Password')
 #>
 
-#region CONFIGURATION
-$Username = "REPLACE_LOCAL_ADMIN_USERNAME"   # identity.local_admin.username — must be identical on all nodes
-$Password = "REPLACE_LOCAL_ADMIN_PASSWORD"   # identity.local_admin.password — minimum 14 characters
-#endregion CONFIGURATION
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Username,
+    [Parameter(Mandatory)][securestring]$Password
+)
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 #region VALIDATION
 
-if ($Username -match '^REPLACE_') {
-    throw "Edit the REPLACE_ variables in #region CONFIGURATION before running."
-}
-
 if ($Username -ieq 'Administrator') {
     throw "Do NOT use the built-in 'Administrator' account. Create a custom non-default local account. See: https://learn.microsoft.com/en-us/azure/azure-local/deploy/deployment-local-identity-with-key-vault"
-}
-
-if ($Password -match '^REPLACE_') {
-    throw "Edit the REPLACE_ variables in #region CONFIGURATION before running."
 }
 
 if ($Password.Length -lt 14) {
@@ -63,7 +64,7 @@ Write-Host "  Node     : $env:COMPUTERNAME"
 Write-Host "  Account  : $Username"
 Write-Host ""
 
-$secPwd   = ConvertTo-SecureString $Password -AsPlainText -Force
+$secPwd   = $Password
 $existing = Get-LocalUser -Name $Username -ErrorAction SilentlyContinue
 
 if (-not $existing) {
