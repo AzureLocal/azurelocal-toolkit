@@ -12,7 +12,7 @@
 
 [CmdletBinding()]
 param(
-    [string]$ConfigPath   = "",    # Path to infrastructure.yml; defaults to .\configs\infrastructure.yml
+    [Parameter(Mandatory)][string]$ConfigPath,   # Path to infrastructure.yml (no default location: the file is where the operator keeps it)
     [PSCredential]$Credential,     # Override credential resolution
     [string[]]$TargetNode = @(),   # Limit to specific nodes; empty = all nodes from config
     [switch]$WhatIf,               # Dry-run — validate only, no changes
@@ -51,9 +51,6 @@ Write-Log "Invoke-ApplySecurityGroups-Orchestrated started"
 Write-Log "Log: $logFile"
 
 # ── Config loading ────────────────────────────────────────────────────────────
-if (-not $ConfigPath) {
-    $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml"
-}
 if (-not (Test-Path $ConfigPath)) {
     Write-Log "Config file not found: $ConfigPath" 'FAIL'
     throw "Config file not found: $ConfigPath"

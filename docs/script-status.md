@@ -19,7 +19,7 @@ Task folders: 116.
 
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
-| PowerShell | 92 | 24 | 0 |
+| PowerShell | 90 | 26 | 0 |
 | Azure CLI | 9 | 57 | 50 |
 
 Azure CLI applies to 58 tasks, does not apply to 50, and is not decided for 8.
@@ -155,10 +155,10 @@ Azure CLI applies to 58 tasks, does not apply to 50, and is not decided for 8.
 | `phase-04-security-governance/task-01-enable-defender-for-cloud` | built | not built | yes |
 | `phase-04-security-governance/task-02-apply-azure-policy-initiatives` | built | not built | yes |
 | `phase-04-security-governance/task-03-configure-security-baselines` | built | not applicable | no |
-| `phase-04-security-governance/task-04-enable-security-logging` | built | not built | unclear |
+| `phase-04-security-governance/task-04-enable-security-logging` | not built | not built | unclear |
 | `phase-05-licensing-telemetry/task-01-enable-azure-hybrid-benefit` | built | not built | yes |
 | `phase-05-licensing-telemetry/task-02-activate-windows-server-subscription` | built | not built | yes |
-| `phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry` | built | not built | unclear |
+| `phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry` | not built | not built | unclear |
 
 ## 06-testing-validation
 
@@ -182,5 +182,5 @@ Azure CLI may or may not apply. Decide, then set `AzureCli` to `yes` or `no` in 
 | `04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion` | Verifies the deployment, but the real scripts only check Active Directory and cluster health on premises. |
 | `04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal` | Named for the Azure portal, but the real scripts create local accounts on the nodes. |
 | `04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion` | Verifies the deployment, but the real scripts only check the local identity set-up and cluster health on premises. |
-| `05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging` | Security logging and audit policy can be on the nodes or in Azure; the real script uses no Azure command. |
-| `05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry` | Telemetry can be set on the nodes or in Azure; the real script uses no Azure command. |
+| `05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging` | No script. Audit policy and the Security log size are part of the security baseline, which drift control holds; the supported way to change them is Set-AzsSecurity (task-03, security.baseline_settings). Not decided whether Azure is involved. |
+| `05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry` | No script. Microsoft Learn documents no way to set the Windows telemetry level of an Azure Local machine; diagnostic data is collected by the telemetry and diagnostics extension. Not decided whether Azure is involved. |

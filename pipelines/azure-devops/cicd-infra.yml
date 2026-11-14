@@ -13,6 +13,8 @@
 # Where it runs: the first time on Microsoft-hosted agents (there are no agents yet);
 # set the agentPool parameter to AzureRunners after the agents exist.
 # =============================================================================
+# Hosted image: ubuntu-latest is the vendor's label of its hosted Linux image. The jobs that use it only validate and plan and read nothing that
+# belongs to one deployment, so the label is not a setting of a deployment.
 name: cicd-infra-$(Date:yyyyMMdd)$(Rev:.r)
 
 trigger: none

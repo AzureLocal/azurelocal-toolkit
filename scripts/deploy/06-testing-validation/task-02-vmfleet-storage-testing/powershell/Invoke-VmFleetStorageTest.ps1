@@ -20,7 +20,14 @@
     Duration of each test run in seconds. Default: 300.
 
 .PARAMETER ConfigPath
-    Path to infrastructure.yml configuration.
+    Path to infrastructure.yml configuration. The script reads cluster.name and storage.pool.name (the pool of the Collect volume;
+    without it the one pool of the cluster is used).
+
+.PARAMETER CollectVolumeSizeGiB
+    Size of the Collect volume VMFleet writes its results to, in GiB. Default: 50.
+
+.PARAMETER VmFleetModuleVersion
+    Optional. The version of the VMFleet module to install when it is missing. Without it the latest version is installed.
 
 .PARAMETER OutputPath
     Path to save performance reports. Default: .\logs\validation-reports\
@@ -50,13 +57,20 @@ param(
     [string]$ConfigPath,
 
     [Parameter(Mandatory = $false)]
-    [string]$OutputPath = ".\logs\validation-reports"
+    [string]$OutputPath = ".\logs\validation-reports",
+
+    [Parameter(Mandatory = $false)]
+    [int]$CollectVolumeSizeGiB = 50,
+
+    [Parameter(Mandatory = $false)]
+    [string]$VmFleetModuleVersion
 )
 
 #Requires -Version 7.0
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+$StoragePoolName = $null   # from storage.pool.name when -ConfigPath is given
 
 function Write-Log {
     param([string]$Message, [string]$Level = "INFO")
@@ -84,7 +98,9 @@ function Install-VMFleetModule {
     $installed = Get-Module -Name VMFleet -ListAvailable
     if (-not $installed) {
         if ($PSCmdlet.ShouldProcess("VMFleet", "Install module")) {
-            Install-Module -Name VMFleet -Force -Scope CurrentUser
+            $installArguments = @{ Name = 'VMFleet'; Force = $true; Scope = 'CurrentUser' }
+            if ($VmFleetModuleVersion) { $installArguments.RequiredVersion = $VmFleetModuleVersion }
+            Install-Module @installArguments
             Write-Log "  VMFleet module installed" -Level "SUCCESS"
         }
     }
@@ -101,12 +117,18 @@ function Initialize-VMFleetEnvironment {
     $collectVolume = Get-ClusterSharedVolume -Cluster $ClusterName | Where-Object { $_.Name -match 'Collect' }
     if (-not $collectVolume) {
         Write-Log "  Creating Collect volume for VMFleet..." -Level "INFO"
-        New-Volume -CimSession $ClusterName -FriendlyName "Collect" -Size 50GB -StoragePoolFriendlyName "S2D*" -FileSystem CSVFS_ReFS
+        $poolName = $StoragePoolName
+        if (-not $poolName) {
+            $pools = @(Get-StoragePool -CimSession $ClusterName | Where-Object IsPrimordial -eq $false)
+            if ($pools.Count -ne 1) { throw "The cluster has $($pools.Count) storage pools. Set storage.pool.name in the infrastructure file." }
+            $poolName = $pools[0].FriendlyName
+        }
+        New-Volume -CimSession $ClusterName -FriendlyName "Collect" -Size ($CollectVolumeSizeGiB * 1GB) -StoragePoolFriendlyName $poolName -FileSystem CSVFS_ReFS
         Write-Log "  Collect volume created" -Level "SUCCESS"
     }
 
     # Initialize VMFleet
-    $nodes = (Get-ClusterNode -Cluster $ClusterName).Name
+    $nodes = @((Get-ClusterNode -Cluster $ClusterName).Name)
     Write-Log "  Setting up VMFleet for $($nodes.Count) nodes, $VmCount VMs each..." -Level "INFO"
 
     Set-Fleet -Cluster $ClusterName -VMs $VmCount -AdminPass (Read-Host "Enter VM admin password" -AsSecureString) -ConnectUser $env:USERNAME
@@ -157,6 +179,8 @@ Write-Log "========================================" -Level "HEADER"
 if ($ConfigPath) {
     $config = Import-InfrastructureConfig -Path $ConfigPath
     if (-not $ClusterName -and $config) { $ClusterName = $config.cluster.name }
+    $poolFromFile = ${config}?['storage']?['pool']?['name']   # storage.pool.name
+    if ($poolFromFile) { $StoragePoolName = [string]$poolFromFile }
 }
 if (-not $ClusterName) {
     Write-Log "ClusterName is required." -Level "ERROR"
@@ -173,7 +197,8 @@ Install-VMFleetModule
 Initialize-VMFleetEnvironment
 Write-Host ""
 
-# Define workload profiles
+# The three predefined workload profiles (DiskSpd settings of Start-Fleet): a small-block random read, a large-block sequential write and a
+# mixed workload, the usual set for a storage baseline. They define this test; they are not a choice of the deployment.
 $workloads = @(
     @{
         ProfileName  = "RandomRead4K"

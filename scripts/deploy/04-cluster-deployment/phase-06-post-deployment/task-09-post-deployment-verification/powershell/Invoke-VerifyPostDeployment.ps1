@@ -16,7 +16,7 @@
     networking.logical_networks[] (logical networks, task 07).
 
 .PARAMETER ConfigPath
-    Path to infrastructure YAML. Defaults to configs\infrastructure.yml in CWD.
+    Path to the master infrastructure.yml. Required: the script has no default location for it.
 
 .PARAMETER Credential
     Credential for PSRemoting to cluster nodes. If omitted, resolved via Key Vault
@@ -40,20 +40,20 @@
     Override cluster name. Defaults to cluster.name from YAML.
 
 .EXAMPLE
-    # Run from repo root with default config:
-    .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-08-post-deployment-verification\powershell\Invoke-VerifyPostDeployment.ps1
+    # Run against the infrastructure file:
+    .\scripts\deploy\04-cluster-deployment\phase-06-post-deployment\task-09-post-deployment-verification\powershell\Invoke-VerifyPostDeployment.ps1 -ConfigPath .\infrastructure.yml
 
 .EXAMPLE
     # Dry-run (logs planned checks, no execution):
-    .\...\Invoke-VerifyPostDeployment.ps1 -WhatIf
+    .\...\Invoke-VerifyPostDeployment.ps1 -ConfigPath .\infrastructure.yml -WhatIf
 
 .EXAMPLE
     # Pass WAC server explicitly:
-    .\...\Invoke-VerifyPostDeployment.ps1 -WacServer "wac.improbability.cloud"
+    .\...\Invoke-VerifyPostDeployment.ps1 -ConfigPath .\infrastructure.yml -WacServer "wac.improbability.cloud"
 
 .EXAMPLE
     # Limit to one node:
-    .\...\Invoke-VerifyPostDeployment.ps1 -TargetNode iic-01-n01
+    .\...\Invoke-VerifyPostDeployment.ps1 -ConfigPath .\infrastructure.yml -TargetNode iic-01-n01
 
 .NOTES
     Requires: powershell-yaml module  (Install-Module powershell-yaml -Scope CurrentUser)
@@ -64,7 +64,7 @@
 
 [CmdletBinding()]
 param(
-    [string]      $ConfigPath  = "",
+    [Parameter(Mandatory)][string]$ConfigPath,
     [PSCredential]$Credential,
     [string[]]    $TargetNode  = @(),
     [switch]      $WhatIf,
@@ -79,6 +79,12 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', '..', 'common', 'secrets', 'AzlSecret.psm1'))) -Force
+
+# The pass rules of the checks. They define the check, not a deployment: each task has to leave at least one object behind.
+# Task 03 applies at least one AD group to the local Administrators and Remote Management Users groups of a node; task 05 leaves at least one CSV volume.
+$MinimumAdGroupsPerLocalGroup = 1
+$MinimumCsvVolumes = 1
+# Any failed check ends the run with an error (the summary below), so a failure is never passed over.
 
 #region LOGGING -----------------------------------------------------------------
 $taskFolderName = "task-08-post-deployment-verification"
@@ -114,9 +120,6 @@ Write-Log "======================================================="
 #endregion
 
 #region CONFIG LOADING ----------------------------------------------------------
-if ([string]::IsNullOrEmpty($ConfigPath)) {
-    $ConfigPath = Join-Path (Get-Location).Path "configs\infrastructure.yml"
-}
 if (-not (Test-Path $ConfigPath)) {
     Write-Log "Config not found: $ConfigPath" "FAIL"; throw "Config not found"
 }
@@ -255,8 +258,8 @@ foreach ($node in $nodesToCheck) {
                 RmGroups    = (Get-LocalGroupMember -Group "Remote Management Users" | Where-Object ObjectClass -eq "Group").Count
             }
         }
-        Write-Check -Pass ($groups.AdminGroups -gt 0) -Check "$($node.Hostname) — Administrators AD group(s)"          -Detail "$($groups.AdminGroups)"
-        Write-Check -Pass ($groups.RmGroups    -gt 0) -Check "$($node.Hostname) — Remote Management Users AD group(s)" -Detail "$($groups.RmGroups)"
+        Write-Check -Pass ($groups.AdminGroups -ge $MinimumAdGroupsPerLocalGroup) -Check "$($node.Hostname) — Administrators AD group(s)"          -Detail "$($groups.AdminGroups)"
+        Write-Check -Pass ($groups.RmGroups    -ge $MinimumAdGroupsPerLocalGroup) -Check "$($node.Hostname) — Remote Management Users AD group(s)" -Detail "$($groups.RmGroups)"
     } catch { Write-Log "  [FAIL] $($node.Hostname) — group check failed: $_" "FAIL"; $failCount++ }
 }
 
@@ -287,7 +290,7 @@ if ($WhatIf) {
             Write-Log "  [FAIL] No storage pool found on $ClusterName" "FAIL"; $failCount++
         }
         $csvVolumes = Get-ClusterSharedVolume -Cluster $ClusterName
-        Write-Check -Pass ($csvVolumes.Count -gt 0) -Check "CSV volumes mounted" -Detail "$($csvVolumes.Count) volume(s)"
+        Write-Check -Pass ($csvVolumes.Count -ge $MinimumCsvVolumes) -Check "CSV volumes mounted" -Detail "$($csvVolumes.Count) volume(s)"
         foreach ($csv in $csvVolumes) {
             Write-Check -Pass ($csv.State -eq "Online") -Check "  $($csv.Name)" -Detail $csv.State
         }

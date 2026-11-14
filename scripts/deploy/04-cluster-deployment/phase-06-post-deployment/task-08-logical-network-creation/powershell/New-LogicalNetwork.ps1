@@ -87,6 +87,8 @@ $ResourceName = '^[A-Za-z0-9]([A-Za-z0-9._-]{0,78}[A-Za-z0-9_])?$'
 $Octet = '(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])'
 $Ipv4 = "^($Octet\.){3}$Octet$"
 $Cidr = "^($Octet\.){3}$Octet/([0-9]|[12][0-9]|3[0-2])$"
+# The registry default of networking.logical_networks[].ip_allocation_method (the key is optional); Microsoft Learn: Static or Dynamic.
+$DefaultAllocationMethod = 'Static'
 # The Azure CLI is started through a command file on Windows. These characters would be read as commands there, so no value that holds one is sent.
 $UnsafeArgument = '[&|<>^%"`\r\n]'
 
@@ -195,7 +197,7 @@ foreach ($entry in $networkList) {
     if ($enabled -isnot [bool]) { Exit-InputProblem "$at.enabled must be true or false; found '$enabled'." }
     if (-not $enabled) { $plans.Add([pscustomobject]@{ Name = $name; Enabled = $false }); continue }
 
-    $method = ([string](Get-Field $entry 'ip_allocation_method' 'Static')).Trim()
+    $method = ([string](Get-Field $entry 'ip_allocation_method' $DefaultAllocationMethod)).Trim()
     $methodName = switch ($method.ToLowerInvariant()) { 'static' { 'Static' } 'dynamic' { 'Dynamic' } default { '' } }
     if (-not $methodName) { Exit-InputProblem "$at.ip_allocation_method must be Static or Dynamic; found '$method'." }
 

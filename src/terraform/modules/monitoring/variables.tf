@@ -23,15 +23,15 @@ variable "action_group_name" {
 }
 
 variable "sku" {
-  description = "Log Analytics workspace SKU."
+  description = "Log Analytics workspace SKU. PerGB2018 is the pay-as-you-go tier, the only one Azure offers for a new workspace (Microsoft Learn: Log Analytics workspace pricing tiers); not a choice of the deployment."
   type        = string
   default     = "PerGB2018"
 }
 
 variable "retention_days" {
-  description = "Log retention period in days."
+  description = "Log retention period in days (operations.monitoring.retention_days). Null leaves the Azure default, which is the registry default of the key."
   type        = number
-  default     = 90
+  default     = null
 }
 
 variable "alert_email_addresses" {

@@ -309,6 +309,7 @@ foreach ($plan in $plans) {
             if (-not $groupReady) { Add-Row $ruleItem 'WouldCreate' "$($rule.Direction) $($rule.Access) priority $($rule.Priority)"; continue }
 
             if ($PSCmdlet.ShouldProcess("rule '$($rule.Name)' of '$($plan.Name)'", "Create ($($rule.Direction) $($rule.Access), priority $($rule.Priority))")) {
+                # The argument names are fixed by the Azure CLI reference of az stack-hci-vm network nsg rule create; nothing here is a deployment choice.
                 $arguments = @('stack-hci-vm', 'network', 'nsg', 'rule', 'create') + $common + @(
                     '--nsg-name', $plan.Name, '--name', $rule.Name, '--priority', [string]$rule.Priority, '--custom-location', $customLocationId, '--location', $location
                     '--access', $rule.Access, '--direction', $rule.Direction, '--protocol', $rule.Protocol)

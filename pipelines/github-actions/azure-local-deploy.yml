@@ -9,6 +9,10 @@
 # Required environments (with protection rules):
 #   production — requires manual approval
 # =============================================================================
+# Hosted image: ubuntu-latest is the vendor's label of its hosted Linux image. The jobs that use it only validate and plan and read nothing that
+# belongs to one deployment, so the label is not a setting of a deployment.
+# Trigger branches: the trigger filter is read before any parameter or file exists, so it cannot come from the infrastructure file. The
+# schema 5 pipelines (arm-deployment, os-configuration, cicd-infra) are started by hand only.
 name: Azure Local Deployment
 
 on:

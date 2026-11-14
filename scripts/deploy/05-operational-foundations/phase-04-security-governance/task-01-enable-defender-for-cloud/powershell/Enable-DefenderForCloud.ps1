@@ -57,9 +57,9 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-# Built-in initiative "Microsoft cloud security benchmark". The ID is the same in every tenant.
+# Built-in initiative "Microsoft cloud security benchmark". Fixed by Microsoft: the ID is the same in every tenant (Microsoft Learn, Azure Policy built-in initiatives).
 $script:BenchmarkDefinitionId = '/providers/Microsoft.Authorization/policySetDefinitions/1f3afdf9-d0c9-4c3d-847f-89da613e70a8'
-# Name Defender for Cloud itself gives the assignment, so the portal toggle shows it as on.
+# Name Defender for Cloud itself gives the assignment, so the portal toggle shows it as on. Fixed by Defender for Cloud, not a choice.
 $script:BenchmarkAssignmentName = 'SecurityCenterBuiltIn'
 # API version of the security contact resource (Microsoft.Security/securityContacts).
 $script:SecurityContactApiVersion = '2023-12-01-preview'

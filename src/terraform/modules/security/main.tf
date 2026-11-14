@@ -24,6 +24,8 @@ resource "azurerm_security_center_contact" "main" {
 
   name                = "default"
   email               = var.security_contact_email
+  # The provider requires both arguments. Alerts exist only with a paid Defender plan, which the toolkit never turns on, so they
+  # are not a choice of the deployment: the contact is told about the alerts that may come, and the subscription owners too.
   alert_notifications = true
   alerts_to_admins    = true
 }

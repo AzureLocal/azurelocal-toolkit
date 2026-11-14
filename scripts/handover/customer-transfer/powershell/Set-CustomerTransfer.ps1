@@ -70,7 +70,9 @@ $logFile = $LogPath
 Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
-# The two roles of the transfer: the customer administrator manages the resource group and can read the subscription.
+# The two roles of the transfer: the customer administrator manages the resource group and can read the subscription. They are the
+# definition of the handover (Azure built-in role names, Microsoft Learn: Azure built-in roles), not a setting of a deployment: access
+# beyond these two roles is the customer's own decision after the transfer.
 $ResourceGroupRole = 'Contributor'
 $SubscriptionRole = 'Reader'
 

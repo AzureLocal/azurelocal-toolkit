@@ -11,6 +11,8 @@
 #       PLAYBOOK: playbooks/01-ad-preparation.yml
 # =============================================================================
 
+# The inventory path inventory/hosts.yml (relative to ANSIBLE_ROOT) is where New-IacVariableFiles.ps1 writes the inventory from
+# infrastructure.yml. The layout is fixed by that script, so the path is not a setting of a deployment.
 .ansible:playbook:
   before_script:
     - cd "${ANSIBLE_ROOT}"

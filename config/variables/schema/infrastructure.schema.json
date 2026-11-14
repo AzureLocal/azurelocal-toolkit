@@ -154,7 +154,7 @@
       ],
       "properties": {
         "customer": {
-          "description": "Name of the customer or organization the site belongs to. Documentation only; not read by the tools.",
+          "description": "Name of the customer or organization the site belongs to. Read by Set-CustomerTransfer.ps1 (it names the customer in the transfer record) and by New-DeploymentDocumentation.ps1 (it puts the customer name in the deployment document).",
           "type": "string"
         },
         "time_zone": {

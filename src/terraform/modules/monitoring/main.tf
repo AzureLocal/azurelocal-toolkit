@@ -36,7 +36,9 @@ resource "azurerm_log_analytics_workspace" "main" {
 resource "azurerm_monitor_action_group" "critical" {
   name                = var.action_group_name
   resource_group_name = var.resource_group_name
-  short_name          = "Critical"
+  # Same rule as Deploy-ActionGroup.ps1: the letters and digits of the name, at most 12 characters (the Azure limit of an action group
+  # short name), so the Terraform route and the script route make the same group.
+  short_name          = substr(replace(var.action_group_name, "/[^A-Za-z0-9]/", ""), 0, 12)
   enabled             = true
 
   dynamic "email_receiver" {

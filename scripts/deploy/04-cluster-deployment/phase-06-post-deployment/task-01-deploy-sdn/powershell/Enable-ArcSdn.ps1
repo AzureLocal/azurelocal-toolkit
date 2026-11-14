@@ -105,6 +105,8 @@ Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '.
 # Microsoft Learn: SDN enabled by Arc needs OS build 26100 or later; the Network Controller record is the fifth address of the infrastructure range.
 $MinimumBuild = 26100
 $RecordOffset = 4   # the fifth address: the first address plus four
+# Microsoft Learn (Enable SDN): Add-EceFeature -Name accepts only NC, the Network Controller; the DNS record of the feature is named <prefix>-NC.
+$FeatureName = 'NC'
 
 function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
@@ -178,8 +180,8 @@ $Remote = @{
         }
     }
     Enable    = {
-        param($Step, $Prefix, $AcknowledgeDns)
-        $parameters = @{ Name = 'NC'; SDNPrefix = $Prefix; AcknowledgeMaintenanceWindow = $true }
+        param($Step, $Prefix, $AcknowledgeDns, $FeatureName)
+        $parameters = @{ Name = $FeatureName; SDNPrefix = $Prefix; AcknowledgeMaintenanceWindow = $true }
         if ($AcknowledgeDns) { $parameters.AcknowledgeDNSRecordCreation = $true }
         $null = Add-EceFeature @parameters
     }
@@ -224,7 +226,7 @@ $reservedAddress = ConvertFrom-Number $recordNumber
 
 $identityKind = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'scenario.identity')).Trim().ToLowerInvariant()
 $domain = if ($identityKind -eq 'local_identity') { ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.local_identity.dns_zone')).Trim() } else { ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.active_directory.domain_fqdn')).Trim() }
-$fqdn = if ($domain) { "$prefix-NC.$domain" } else { '' }
+$fqdn = if ($domain) { "$prefix-$FeatureName.$domain" } else { '' }
 if (-not $domain -and $dnsMode -eq 'static') { Exit-InputProblem 'sdn.dns_records is static, so the record must be checked, but the domain is missing (identity.active_directory.domain_fqdn, or identity.local_identity.dns_zone with local identity).' }
 
 $architecture = ([string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'scenario.storage_architecture')).Trim().ToLowerInvariant()
@@ -300,7 +302,7 @@ if ($answersMissing -and -not $WhatIfPreference) {
 if ($PSCmdlet.ShouldProcess("the instance of '$target'", "Enable SDN enabled by Azure Arc (Add-EceFeature -Name NC -SDNPrefix $prefix); this cannot be undone")) {
     try {
         Write-Line 'Running the action plan. This takes up to 20 minutes.'
-        Invoke-Machine 'Enable' @($prefix, ($dnsMode -eq 'static' -and $ackDns))
+        Invoke-Machine 'Enable' @($prefix, ($dnsMode -eq 'static' -and $ackDns), $FeatureName)
         $after = Invoke-Machine 'ReadState' @('')
         if (@($after.NcGroups).Count -gt 0) { Add-Row 'Enabled' "cluster group '$(@($after.NcGroups)[0])' exists" }
         else {

@@ -16,6 +16,8 @@
 # The runners read their own registration credential from Key Vault at boot; this
 # workflow never sees it.
 # =============================================================================
+# Hosted image: ubuntu-latest is the vendor's label of its hosted Linux image. The jobs that use it only validate and plan and read nothing that
+# belongs to one deployment, so the label is not a setting of a deployment.
 name: CI/CD infrastructure
 
 on:

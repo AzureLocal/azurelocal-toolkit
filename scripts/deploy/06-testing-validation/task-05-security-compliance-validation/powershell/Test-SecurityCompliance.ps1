@@ -22,10 +22,19 @@
     Resource group containing the Arc-enabled cluster.
 
 .PARAMETER ConfigPath
-    Path to infrastructure.yml configuration.
+    Path to infrastructure.yml configuration. The script reads cluster.name, azure.subscription_id, azure.resource_group,
+    security.defender_for_cloud.enabled and security.defender_for_cloud.apply_cloud_security_benchmark: when the design turns the
+    free Defender for Cloud level (or the benchmark assignment) off, that check is not run.
 
 .PARAMETER OutputPath
     Path to save validation report. Default: .\logs\validation-reports\
+
+.PARAMETER MaximumOwnerAssignments
+    The most Owner role assignments on the resource group before the script warns. Default: 3 (the Azure RBAC best practice:
+    fewer than three owners).
+
+.PARAMETER MaximumSignatureAgeDays
+    The oldest Microsoft Defender Antivirus signature, in days, that counts as current on a node. Default: 7.
 
 .EXAMPLE
     .\Test-SecurityCompliance.ps1 -ClusterName "azl-cluster-01" -SubscriptionId "00000000-0000-0000-0000-000000000000" -ResourceGroupName "rg-azurelocal-01"
@@ -52,7 +61,13 @@ param(
     [string]$ConfigPath,
 
     [Parameter(Mandatory = $false)]
-    [string]$OutputPath = ".\logs\validation-reports"
+    [string]$OutputPath = ".\logs\validation-reports",
+
+    [Parameter(Mandatory = $false)]
+    [int]$MaximumOwnerAssignments = 3,
+
+    [Parameter(Mandatory = $false)]
+    [int]$MaximumSignatureAgeDays = 7
 )
 
 #Requires -Version 7.0
@@ -61,6 +76,9 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+
+# Built-in initiative "Microsoft cloud security benchmark". Fixed by Microsoft: the ID is the same in every tenant (Microsoft Learn, Azure Policy built-in initiatives).
+$BenchmarkDefinitionId = '/providers/Microsoft.Authorization/policySetDefinitions/1f3afdf9-d0c9-4c3d-847f-89da613e70a8'
 
 function Write-Log {
     param([string]$Message, [string]$Level = "INFO")
@@ -83,7 +101,7 @@ function Import-InfrastructureConfig {
 #region Validation Functions
 
 function Test-DefenderForCloudStatus {
-    param([string]$SubId, [string]$RgName)
+    param([string]$SubId, [string]$RgName, [bool]$CheckBenchmark = $true)
 
     Write-Log "Validating Microsoft Defender for Cloud..." -Level "HEADER"
     $results = @()
@@ -101,13 +119,16 @@ function Test-DefenderForCloudStatus {
         Write-Log "  Foundational CSPM (Microsoft.Security provider): $state" -Level $(if ($ok) { "SUCCESS" } else { "WARN" })
         $results += [PSCustomObject]@{ Plan = 'FoundationalCspm'; Tier = $state; Status = if ($ok) { "PASS" } else { "WARN" } }
 
-        $benchmarkId = '/providers/Microsoft.Authorization/policySetDefinitions/1f3afdf9-d0c9-4c3d-847f-89da613e70a8'
+        if (-not $CheckBenchmark) {
+            Write-Log "  Microsoft cloud security benchmark: not checked (security.defender_for_cloud.apply_cloud_security_benchmark is false)" -Level "INFO"
+            return $results
+        }
         $assigned = @(Get-AzPolicyAssignment -Scope "/subscriptions/$SubId" -ErrorAction SilentlyContinue | Where-Object {
                 $names = $_.PSObject.Properties.Name
                 $id = if ($names -contains 'PolicyDefinitionId') { $_.PolicyDefinitionId }
                 elseif ($names -contains 'Properties' -and $_.Properties) { $_.Properties.PolicyDefinitionId }
                 else { '' }
-                $id -eq $benchmarkId
+                $id -eq $BenchmarkDefinitionId
             })
         $ok = $assigned.Count -gt 0
         $state = if ($ok) { 'Assigned' } else { 'NotAssigned' }
@@ -122,7 +143,7 @@ function Test-DefenderForCloudStatus {
 }
 
 function Test-RbacAssignments {
-    param([string]$SubId, [string]$RgName)
+    param([string]$SubId, [string]$RgName, [int]$MaxOwners)
 
     Write-Log "Validating RBAC role assignments..." -Level "HEADER"
 
@@ -137,8 +158,8 @@ function Test-RbacAssignments {
             }
 
             $ownerCount = ($assignments | Where-Object { $_.RoleDefinitionName -eq "Owner" }).Count
-            if ($ownerCount -gt 3) {
-                Write-Log "  WARNING: $ownerCount Owner assignments (recommend <= 3)" -Level "WARN"
+            if ($ownerCount -gt $MaxOwners) {
+                Write-Log "  WARNING: $ownerCount Owner assignments (recommend <= $MaxOwners)" -Level "WARN"
             }
         }
         else {
@@ -188,7 +209,7 @@ function Test-EncryptionStatus {
 }
 
 function Test-WindowsDefenderStatus {
-    param([string[]]$NodeNames)
+    param([string[]]$NodeNames, [int]$MaxSignatureAgeDays)
 
     Write-Log "Validating Windows Defender Antivirus..." -Level "HEADER"
 
@@ -204,7 +225,7 @@ function Test-WindowsDefenderStatus {
                 }
             }
             $rtOk = $defender.RealTimeProtection
-            $sigOk = $defender.SignatureAge -le 7
+            $sigOk = $defender.SignatureAge -le $MaxSignatureAgeDays
             Write-Log "  $node - RealTime=$($defender.RealTimeProtection), AV=$($defender.AntivirusEnabled), SigAge=$($defender.SignatureAge)d" -Level $(if ($rtOk -and $sigOk) { "SUCCESS" } else { "WARN" })
         }
         catch {
@@ -266,8 +287,15 @@ Write-Log "========================================" -Level "HEADER"
 Write-Log "Security & Compliance Validation" -Level "HEADER"
 Write-Log "========================================" -Level "HEADER"
 
+$defenderEnabled = $true
+$checkBenchmark = $true
 if ($ConfigPath) {
     $config = Import-InfrastructureConfig -Path $ConfigPath
+    # security.defender_for_cloud.enabled and apply_cloud_security_benchmark: both true when the key is absent (the registry default).
+    $enabledValue = ${config}?['security']?['defender_for_cloud']?['enabled']                          # security.defender_for_cloud.enabled
+    $benchmarkValue = ${config}?['security']?['defender_for_cloud']?['apply_cloud_security_benchmark']     # security.defender_for_cloud.apply_cloud_security_benchmark
+    if ($enabledValue -is [bool]) { $defenderEnabled = $enabledValue }
+    if ($benchmarkValue -is [bool]) { $checkBenchmark = $benchmarkValue }
     if (-not $ClusterName -and $config) { $ClusterName = $config.cluster.name }
     if (-not $SubscriptionId -and $config) { $SubscriptionId = $config.azure.subscription_id }
     if (-not $ResourceGroupName -and $config) { $ResourceGroupName = $config.azure.resource_group }
@@ -277,7 +305,7 @@ if (-not $ClusterName -or -not $SubscriptionId -or -not $ResourceGroupName) {
     exit 1
 }
 
-$nodes = (Get-ClusterNode -Cluster $ClusterName).Name
+$nodes = @((Get-ClusterNode -Cluster $ClusterName).Name)
 Write-Log "Cluster: $ClusterName ($($nodes.Count) nodes)" -Level "INFO"
 Write-Log "Subscription: $SubscriptionId" -Level "INFO"
 Write-Host ""
@@ -285,12 +313,18 @@ Write-Host ""
 $report = @{ Timestamp = Get-Date -Format "yyyy-MM-dd HH:mm:ss"; ClusterName = $ClusterName; Sections = @{} }
 
 # 1. Defender for Cloud
-$defenderResults = Test-DefenderForCloudStatus -SubId $SubscriptionId -RgName $ResourceGroupName
+if ($defenderEnabled) {
+    $defenderResults = Test-DefenderForCloudStatus -SubId $SubscriptionId -RgName $ResourceGroupName -CheckBenchmark $checkBenchmark
+}
+else {
+    Write-Log "Defender for Cloud: not checked (security.defender_for_cloud.enabled is false)" -Level "INFO"
+    $defenderResults = @()
+}
 $report.Sections["DefenderForCloud"] = $defenderResults
 Write-Host ""
 
 # 2. RBAC
-$rbacResult = Test-RbacAssignments -SubId $SubscriptionId -RgName $ResourceGroupName
+$rbacResult = Test-RbacAssignments -SubId $SubscriptionId -RgName $ResourceGroupName -MaxOwners $MaximumOwnerAssignments
 $report.Sections["RBAC"] = $rbacResult
 Write-Host ""
 
@@ -300,7 +334,7 @@ $report.Sections["Encryption"] = $encryptionResults
 Write-Host ""
 
 # 4. Windows Defender AV
-Test-WindowsDefenderStatus -NodeNames $nodes
+Test-WindowsDefenderStatus -NodeNames $nodes -MaxSignatureAgeDays $MaximumSignatureAgeDays
 Write-Host ""
 
 # 5. Audit Policies
@@ -317,8 +351,8 @@ $reportFile = Join-Path $OutputPath "05-security-compliance-$(Get-Date -Format '
 $report | ConvertTo-Json -Depth 10 | Set-Content -Path $reportFile -Encoding UTF8
 Write-Log "Report saved: $reportFile" -Level "INFO"
 
-$defenderPass = ($defenderResults | Where-Object { $_.Status -eq "PASS" }).Count
-$encPass = ($encryptionResults | Where-Object { $_.Status -eq "PASS" }).Count
+$defenderPass = @($defenderResults | Where-Object { $_.Status -eq "PASS" }).Count
+$encPass = @($encryptionResults | Where-Object { $_.Status -eq "PASS" }).Count
 
 Write-Host ""
 Write-Log "========================================" -Level "HEADER"
