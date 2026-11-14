@@ -24,7 +24,8 @@
     Switch to configure NTP time sync.
 
 .PARAMETER NTPServer
-    NTP server address. Default: time.windows.com
+    NTP server address or addresses. Required with -ConfigureNTP: there is no default. Use the time sources of the site,
+    networking.ntp_servers of infrastructure.yml.
 
 .EXAMPLE
     .\Set-InfrastructurePrep.ps1 -NodeNames @("node-01","node-02") -InstallFeatures
@@ -52,8 +53,12 @@ param(
     [switch]$ConfigureNTP,
 
     [Parameter(Mandatory = $false)]
-    [string]$NTPServer = "time.windows.com"
+    [string]$NTPServer
 )
+
+if ($ConfigureNTP -and [string]::IsNullOrWhiteSpace($NTPServer)) {
+    throw "-ConfigureNTP needs -NTPServer. There is no default time source: give the one in networking.ntp_servers of infrastructure.yml."
+}
 
 # Import helpers
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path

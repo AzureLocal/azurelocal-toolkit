@@ -2,10 +2,11 @@
 
 [CmdletBinding()]
 param(
-    [string]$WorkspaceRoot = "E:\git",
-    [string]$OutputRoot = "E:\git\azurelocal-toolkit\config\variables\reports"
+    [string]$WorkspaceRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..')),
+    [string]$OutputRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', 'reports'))
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 $repoFiles = @{
@@ -94,8 +95,8 @@ $repoSummary = $inventory | Group-Object repo | ForEach-Object {
     }
 }
 
-$totalKeys = $inventory.Count
-$uniqueKeyPaths = ($inventory | Select-Object -ExpandProperty key_path -Unique).Count
+$totalKeys = @($inventory).Count
+$uniqueKeyPaths = @($inventory | Select-Object -ExpandProperty key_path -Unique).Count
 
 $lines = @()
 $lines += "Variable Inventory Summary"

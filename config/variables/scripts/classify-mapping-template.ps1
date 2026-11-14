@@ -2,12 +2,13 @@
 
 [CmdletBinding()]
 param(
-    [string]$TemplateCsv = "E:\git\azurelocal-toolkit\config\variables\reports\canonical-mapping-template.csv",
-    [string]$LegacyRootsPath = "E:\git\azurelocal-toolkit\config\variables\schema\legacy-compatible-roots.json",
-    [string]$OutputCsv = "E:\git\azurelocal-toolkit\config\variables\reports\canonical-mapping-template-classified.csv",
-    [string]$SummaryFile = "E:\git\azurelocal-toolkit\config\variables\reports\classification-summary.txt"
+    [string]$TemplateCsv = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', 'reports', 'canonical-mapping-template.csv')),
+    [string]$LegacyRootsPath = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', 'schema', 'legacy-compatible-roots.json')),
+    [string]$OutputCsv = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', 'reports', 'canonical-mapping-template-classified.csv')),
+    [string]$SummaryFile = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', 'reports', 'classification-summary.txt'))
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 foreach ($path in @($TemplateCsv, $LegacyRootsPath)) {

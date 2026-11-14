@@ -2,10 +2,11 @@
 
 [CmdletBinding()]
 param(
-    [string]$InventoryCsv = "E:\git\azurelocal-toolkit\config\variables\reports\variable-inventory.csv",
-    [string]$OutputRoot = "E:\git\azurelocal-toolkit\config\variables\reports"
+    [string]$InventoryCsv = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', 'reports', 'variable-inventory.csv')),
+    [string]$OutputRoot = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', 'reports'))
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 if (-not (Test-Path $InventoryCsv)) {
@@ -20,11 +21,11 @@ $rows = Import-Csv -Path $InventoryCsv
 
 $sharedPaths = $rows |
     Group-Object key_path |
-    Where-Object { ($_.Group.repo | Select-Object -Unique).Count -gt 1 } |
+    Where-Object { @($_.Group.repo | Select-Object -Unique).Count -gt 1 } |
     ForEach-Object {
         [PSCustomObject]@{
             key_path = $_.Name
-            repo_count = ($_.Group.repo | Select-Object -Unique).Count
+            repo_count = @($_.Group.repo | Select-Object -Unique).Count
             repos = (($_.Group.repo | Select-Object -Unique) -join ',')
         }
     } |
@@ -43,14 +44,14 @@ $leafRows = $rows | ForEach-Object {
 $leafCollisions = $leafRows |
     Group-Object leaf |
     Where-Object {
-        ($_.Group.key_path | Select-Object -Unique).Count -gt 1 -and
-        ($_.Group.repo | Select-Object -Unique).Count -gt 1
+        @($_.Group.key_path | Select-Object -Unique).Count -gt 1 -and
+        @($_.Group.repo | Select-Object -Unique).Count -gt 1
     } |
     ForEach-Object {
         [PSCustomObject]@{
             leaf = $_.Name
-            path_count = ($_.Group.key_path | Select-Object -Unique).Count
-            repo_count = ($_.Group.repo | Select-Object -Unique).Count
+            path_count = @($_.Group.key_path | Select-Object -Unique).Count
+            repo_count = @($_.Group.repo | Select-Object -Unique).Count
             key_paths = (($_.Group.key_path | Select-Object -Unique) -join ';')
             repos = (($_.Group.repo | Select-Object -Unique) -join ',')
         }
@@ -77,9 +78,9 @@ $lines += "Mapping Report Summary"
 $lines += "Generated: $(Get-Date -Format s)"
 $lines += "Source inventory: $InventoryCsv"
 $lines += ""
-$lines += "Total inventory rows: $($rows.Count)"
-$lines += "Shared key paths across repos: $($sharedPaths.Count)"
-$lines += "Leaf collisions across repos: $($leafCollisions.Count)"
+$lines += "Total inventory rows: $(@($rows).Count)"
+$lines += "Shared key paths across repos: $(@($sharedPaths).Count)"
+$lines += "Leaf collisions across repos: $(@($leafCollisions).Count)"
 $lines += ""
 $lines += "Outputs:"
 $lines += "- $sharedPathFile"
@@ -92,5 +93,5 @@ Write-Host "Wrote: $sharedPathFile"
 Write-Host "Wrote: $leafCollisionFile"
 Write-Host "Wrote: $mappingTemplateFile"
 Write-Host "Wrote: $summaryFile"
-Write-Host "Shared key paths: $($sharedPaths.Count)"
-Write-Host "Leaf collisions: $($leafCollisions.Count)"
+Write-Host "Shared key paths: $(@($sharedPaths).Count)"
+Write-Host "Leaf collisions: $(@($leafCollisions).Count)"

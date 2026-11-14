@@ -30,3 +30,14 @@ hardware partner provides an SBE: `winrm_copy` (copied over WinRM from the host 
 The modules are in `scripts/common/node-configuration` (spec, comparison, transports, the node scripts) and
 `scripts/common/azure-local`. The `task-NN-*` folders below are the earlier per-task scripts, which read the older
 `variables.yml`; they stay for reference.
+
+Two per-task scripts are removed because the schema 5 path replaces them and they carried defaults that a deployment chooses:
+
+- `Enable-WinRmConfiguration.ps1` (task 01) set the TrustedHosts of the node it ran on to a management subnet that it assumed. The RemoteManagement step of
+  `Set-AzureLocalNodeConfiguration.ps1` opens WinRM, RDP and ICMP on the node, and the one-time bootstrap (`remoting.bootstrapTransport`: `arc`, `smb` or `auto`)
+  reaches a node whose WinRM is closed. TrustedHosts of the host that runs the automation is managed by `Invoke-AzureLocalOsConfiguration.ps1`.
+- `Start-Phase03OsConfiguration.ps1` (task 12) took the static address, gateway, DNS servers and host name as parameters with placeholder defaults.
+  `Set-AzureLocalNodeConfiguration.ps1` does the same work (tasks 02 to 10: RDP, address, DHCP off, DNS, NTP, ICMP, unused adapters, host name) and reads every
+  value from `infrastructure.yml`.
+
+The `Invoke-*-Orchestrated.ps1` wrappers of both task folders stay.

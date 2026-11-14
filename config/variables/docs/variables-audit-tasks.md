@@ -20,14 +20,14 @@ this reads a property that does not exist. Use `$Shared.VerifyCertificate`.
 ## 3. Scripts that still declare `#Requires -Version 5.1`
 
 HCS scripting standard: PowerShell 7. Node-side payload strings legitimately run in Windows PowerShell 5.1 and are not in this list (no `.psm1`
-payload declares a version in its here-string). These 25 files declare 5.1 on line 1. Do **not** edit them in a mass change: move each to 7 together
+payload declares a version in its here-string). These 24 files declare 5.1 on line 1. Do **not** edit them in a mass change: move each to 7 together
 with its task, and keep a payload (a script copied to a node and run there) separate.
 
 Orchestrators (run on the jump server or in a pipeline: must be 7):
 
 - phase-03-os-configuration: `Invoke-DisableDHCP-Orchestrated.ps1`, `Invoke-ConfigureDNS-Orchestrated.ps1`, `Invoke-DisableAdapters-Orchestrated.ps1`,
   `Invoke-ConfigureHostname-Orchestrated.ps1`, `Invoke-ClearStorage-Orchestrated.ps1`, `Invoke-Phase03OsConfiguration-Orchestrated.ps1`,
-  `Start-Phase03OsConfiguration.ps1`, `Invoke-Phase03Verification-Orchestrated.ps1`
+  `Invoke-Phase03Verification-Orchestrated.ps1`
 - phase-04-arc-registration: `Invoke-ArcPrerequisites-Orchestrated.ps1`, `Invoke-ArcRegistration-Orchestrated.ps1`,
   `Invoke-ArcVerification-Orchestrated.ps1`
 - phase-06-post-deployment: `Invoke-VerifyPostDeployment.ps1`

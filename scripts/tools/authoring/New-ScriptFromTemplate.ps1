@@ -19,7 +19,7 @@
     Name for the script (will be formatted according to type).
 
 .PARAMETER Description
-    Brief description of what the script does.
+    Brief description of what the script does. Required: the tool has no default text, so a script is never written with a placeholder.
 
 .PARAMETER OutputPath
     Directory to create the script in. Defaults to current directory.
@@ -31,13 +31,14 @@
     .\New-ScriptFromTemplate.ps1 -ScriptType AzurePowerShell -Name "New-AzKeyVault" -Description "Creates a Key Vault"
 
 .EXAMPLE
-    .\New-ScriptFromTemplate.ps1 -ScriptType AzurePowerShell -Name "New-AzKeyVault" -Standalone
+    .\New-ScriptFromTemplate.ps1 -ScriptType AzurePowerShell -Name "New-AzKeyVault" -Description "Creates a Key Vault" -Standalone
 
 .NOTES
     Author: AzureLocal Cloud Team Team
     Version: 1.0.0
 #>
 
+#Requires -Version 7.0
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
@@ -47,8 +48,9 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$Name,
 
-    [Parameter(Mandatory = $false)]
-    [string]$Description = "TODO: Add description",
+    [Parameter(Mandatory = $true)]
+    [ValidateNotNullOrEmpty()]
+    [string]$Description,
 
     [Parameter(Mandatory = $false)]
     [string]$OutputPath = ".",
@@ -57,6 +59,7 @@ param(
     [switch]$Standalone
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 # Determine file name based on type

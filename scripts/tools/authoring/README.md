@@ -28,7 +28,7 @@ Creates a new script skeleton for one of the supported script types:
 
 - `-ScriptType` chooses the template family.
 - `-Name` sets the generated script name.
-- `-Description` sets the help text.
+- `-Description` sets the help text. It is required: the tool has no default text.
 - `-OutputPath` chooses where the file is written.
 - `-Standalone` generates a standalone PowerShell variant with inline configuration.
 

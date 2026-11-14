@@ -11,10 +11,10 @@
     - Retired aliases that still exist in registry
 
 .PARAMETER RegistryPath
-    Path to master-registry.yaml.
+    Path to master-registry.yaml. Default: config/variables/schema/master-registry.yaml of this repository.
 
 .PARAMETER PolicyPath
-    Path to alias-policy.json.
+    Path to alias-policy.json. Default: config/variables/schema/alias-policy.json of this repository.
 
 .PARAMETER Strict
     Fail on any policy violation.
@@ -24,11 +24,12 @@
 
 [CmdletBinding()]
 param(
-    [string]$RegistryPath = "E:\git\azurelocal-toolkit\config\variables\schema\master-registry.yaml",
-    [string]$PolicyPath = "E:\git\azurelocal-toolkit\config\variables\schema\alias-policy.json",
+    [string]$RegistryPath = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', 'schema', 'master-registry.yaml')),
+    [string]$PolicyPath = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', 'schema', 'alias-policy.json')),
     [switch]$Strict
 )
 
+Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 foreach ($p in @($RegistryPath, $PolicyPath)) {

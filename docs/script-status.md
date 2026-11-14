@@ -19,7 +19,7 @@ Task folders: 115.
 
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
-| PowerShell | 88 | 27 | 0 |
+| PowerShell | 87 | 28 | 0 |
 | Azure CLI | 9 | 56 | 50 |
 
 Azure CLI applies to 57 tasks, does not apply to 50, and is not decided for 8.
@@ -108,7 +108,7 @@ Azure CLI applies to 57 tasks, does not apply to 50, and is not decided for 8.
 | `phase-02-os-installation/task-02-mount-and-verify-dell-gold-image-iso` | built | not applicable | no |
 | `phase-02-os-installation/task-03-manual-os-installation` | not built | not applicable | no |
 | `phase-02-os-installation/task-04-verify-os-deployment` | built | not applicable | no |
-| `phase-03-os-configuration/task-01-enable-winrm-for-remote-management` | built | not applicable | no |
+| `phase-03-os-configuration/task-01-enable-winrm-for-remote-management` | not built | not applicable | no |
 | `phase-03-os-configuration/task-02-enable-rdp` | built | not applicable | no |
 | `phase-03-os-configuration/task-03-configure-static-ip-address` | built | not applicable | no |
 | `phase-03-os-configuration/task-04-disable-dhcp-on-management-adapter` | built | not applicable | no |

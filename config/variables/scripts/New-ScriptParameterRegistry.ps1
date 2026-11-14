@@ -25,8 +25,10 @@
     A placeholder script (it ends with exit code 3, NOT IMPLEMENTED) is registered like any other; the group and each description say so.
 
     A default that looks like an environment value (an address, a name, an ID, a region) is a hard-coded value. The enforcement test
-    (tests/variables/Enforcement.Tests.ps1, rule C) fails on those in scripts/. This script lists the ones it finds as a warning too, so
-    one in config/variables/scripts, ansible/ or tools/ (which that test does not scan) shows up. Such a default is not copied into the
+    (tests/variables/Enforcement.Tests.ps1, rule C) fails on those in scripts/ and config/variables/scripts/ (an address with a wildcard,
+    placeholder text, a path on a drive, a name given to a resource, policy, account, vault, workspace, subscription, tenant, host or address
+    parameter, and the kinds of rule B). This script lists the ones it finds as a warning too, so one in ansible/ or tools/ (which that test
+    does not scan) shows up. A test makes sure the two agree. Such a default is not copied into the
     registry (the description says so). Fix it in the script.
 
     -Check writes nothing and exits 1 when the registry on disk differs from what the scripts say.
@@ -279,8 +281,8 @@ function Get-EnvironmentLikeKind {
     }
     if ($v -match '(?<![\w.])(?:\d{1,3}\.){3}\*') { return 'IPv4 address with a wildcard' }
     if ($v -cmatch '^[A-Za-z]:[\\/]' -and $v -notmatch '^[Cc]:[\\/](Program Files|Windows|Temp|ProgramData|ClusterStorage)') { return 'absolute path on a drive of this machine' }
-    if ($Name -match '^(ServicePrincipalName|\w*(Policy|Account|Vault|Workspace|Subscription|Tenant)(Name|Id)|\w*ResourceGroup(Name)?|Region|Location|Hostname|NewHostname|\w*IP)$' -and $v -cmatch '^[A-Za-z0-9][A-Za-z0-9_.-]*$') { return 'name or ID of a resource, a subscription, a tenant or a host' }
-    if ($v -match '^REPLACE_WITH_|^TODO') { return 'placeholder text instead of a value' }
+    if ($v -match '^(REPLACE_|TODO)') { return 'placeholder text instead of a value' }
+    if ($Name -match '^(ServicePrincipalName|\w*(Policy|Account|Vault|Workspace|Subscription|Tenant)(Name|Id)|\w*ResourceGroup(Name)?|Region|Location|Hostname|NewHostname|\w*(?-i:IP))$' -and $v -cmatch '^[A-Za-z0-9][A-Za-z0-9_.-]*$') { return 'name or ID of a resource, a subscription, a tenant or a host' }
     if ($Name -match '^(subscription(_?id)?|tenant(_?id)?|resource_?group(_?name)?|(key_?)?vault(_?name)?)$' -and $v -cmatch '^[A-Za-z0-9][A-Za-z0-9_.-]*$' -and $v -notmatch '^[<$@%{]') { return 'value given to a subscription, tenant, resource group or vault parameter' }
     $null
 }

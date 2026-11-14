@@ -6,8 +6,12 @@
 #      indexer chains and reader commands the variable map recognises: config/variables/scripts/VariableMapScanner.psm1).
 #   B  a hard-coded value of a kind a deployment chooses: an IPv4 address or CIDR, a GUID, a DNS domain or host name, an Azure region name,
 #      a Key Vault name, an Azure resource name, a subscription, tenant or resource group literal.
-#   C  a parameter whose non-empty default is such a value (the same kinds, plus a default for a parameter named like one of them).
+#   C  a parameter whose non-empty default is such a value (the same kinds, plus a default for a parameter named like one of them, an address with
+#      a wildcard (10.1.2.*), placeholder text (REPLACE_..., TODO...), an absolute path on a drive of the machine (E:\git\...) and a name or ID
+#      given to a parameter that names a resource, policy, account, vault, workspace, subscription, tenant, host or address). The generator
+#      config/variables/scripts/New-ScriptParameterRegistry.ps1 flags the same kinds; the tests below make sure the two agree.
 #   D  a prompt (Read-Host, Get-Credential, $Host.UI.Prompt*, [Console]::ReadLine) in a script that has -InfrastructureFile.
+# The scan covers scripts/ and config/variables/scripts/.
 # What is not a violation is written down twice over:
 #   * values Microsoft or the protocol fixes are rule-level exceptions in this file, each with its reason (documentation, loopback,
 #     link-local and mask addresses, the Azure platform address, Microsoft endpoints, built-in role IDs ...);
@@ -122,6 +126,14 @@ BeforeAll {
     $script:ResourceNamePattern = '^(?:rg|kv|vnet|snet|nsg|log|law|st|vm|nic|pip|lb|vgw|lgw|nat|agw|bas|fw|rt|afw|dcr|dce|acr|aks|appi|iic)-[a-z0-9][a-z0-9-]*$'
     # Parameters, variables and keys that hold a subscription, tenant, resource group or vault: a literal given to one is a value.
     $script:EnvironmentName = '^(subscription(_?id)?|tenant(_?id)?|resource_?group(_?name)?|(key_?)?vault(_?name)?)$'
+    # What a parameter default must not be (rule C only). The same kinds as Get-EnvironmentLikeKind of New-ScriptParameterRegistry.ps1.
+    $script:WildcardAddressPattern = '(?<![\w.])(?:\d{1,3}\.){3}\*'
+    $script:PlaceholderPattern = '^(REPLACE_|TODO)'
+    # Drives and folders that exist on every Windows machine and that Microsoft fixes. Any other path on a drive is the path of one machine.
+    $script:FixedDrivePath = '^[Cc]:[\\/](Program Files|Windows|Temp|ProgramData|ClusterStorage)'
+    # Parameters that carry the name or ID of a resource, policy, account, vault, workspace, subscription, tenant, host or address. A default for
+    # one of them is a value a deployment chooses. IP is matched in capitals only (StaticIP, not Skip).
+    $script:ParameterNamePattern = '^(ServicePrincipalName|\w*(Policy|Account|Vault|Workspace|Subscription|Tenant)(Name|Id)|\w*ResourceGroup(Name)?|Region|Location|Hostname|NewHostname|\w*(?-i:IP))$'
     # Names of change kinds in the node configuration plan. They look like resource names (nic-*) and are not.
     $script:ResourceNameException = @{ 'nic-static' = 1; 'nic-vlan' = 1; 'nic-dns' = 1; 'nic-clean' = 1; 'nic-disable' = 1; 'nic-rename' = 1 }
     # Variables that hold the whole infrastructure file in the scripts; a chain from one of them is certainly a read of the file.
@@ -250,6 +262,19 @@ BeforeAll {
         return $false
     }
 
+    function Get-EnfDefaultKind {
+        # The kind of a parameter default that is a value a deployment chooses and that the address, GUID, DNS, region and resource-name checks
+        # do not see; $null when it is none. Only for defaults (rule C).
+        param([string]$Name, [string]$Value)
+        if ([string]::IsNullOrWhiteSpace($Value)) { return $null }
+        $v = $Value.Trim()
+        if ($v -match $script:WildcardAddressPattern) { return 'ipv4-wildcard' }
+        if ($v -cmatch '^[A-Za-z]:[\\/]' -and $v -notmatch $script:FixedDrivePath) { return 'drive-path' }
+        if ($v -match $script:PlaceholderPattern) { return 'placeholder' }
+        if ($Name -and $Name -match $script:ParameterNamePattern -and $v -cmatch '^[A-Za-z0-9][A-Za-z0-9_.-]*$') { return 'environment-name' }
+        return $null
+    }
+
     function Add-EnfFinding {
         param($List, [string]$File, [string]$Rule, [string]$Kind, [string]$Literal, [int]$Line)
         $List.Add([pscustomobject]@{ File = $File; Rule = $Rule; Kind = $Kind; Literal = $Literal; Line = $Line })
@@ -293,6 +318,12 @@ BeforeAll {
         if (-not $found -and $slot.Name -and $slot.Name -match $script:EnvironmentName -and $Node -is [System.Management.Automation.Language.StringConstantExpressionAst] -and $trim -notmatch '^[<$@%{]' -and $trim -cmatch '^[A-Za-z0-9][A-Za-z0-9_.-]*$' -and $trim -cnotmatch '^[a-z_][a-z0-9_]*(\.[a-z0-9_]+)+$') {
             $kind = if ($slot.Name -match 'vault') { 'key-vault-name' } elseif ($slot.Name -match 'resource') { 'resource-group-name' } else { 'subscription-or-tenant' }
             Add-EnfFinding $List $File $rule $kind $trim $line
+            $found = $true
+        }
+        # Rule C only: the kinds of default that the checks above do not see (a wildcard address, a placeholder, a drive path, a name).
+        if (-not $found -and $slot.Kind -eq 'Default' -and $Node -is [System.Management.Automation.Language.StringConstantExpressionAst]) {
+            $kind = Get-EnfDefaultKind $slot.Name $trim
+            if ($kind) { Add-EnfFinding $List $File $rule $kind $trim $line }
         }
     }
 
@@ -390,6 +421,9 @@ BeforeAll {
             if (-not $evidence[$r.File]) { continue }                      # the file never loads the infrastructure file: $config is something else
             if ($r.Path.EndsWith('.') -or $r.Path -cmatch '[A-Z]') { continue }   # built at run time, or a property of another object (registry keys are lower case)
             if (($r.Path.Split('.') | Where-Object { $_.StartsWith('_') -and $_ -ne '_metadata' })) { continue }   # a field the script adds itself
+            # A selector that picks one element of a list (networks[role=hub]) names the list (networks) for the registry.
+            $unselected = [regex]::Replace($r.Path, '\[[A-Za-z_]\w*=[^\]]*\]', '')
+            if ($unselected -ne $r.Path -and -not (Get-EnfUnregisteredPath $unselected)) { continue }
             # A variable named like the file (infra, infrastructure ...) or a reader command is certain. Another name ($config, $data, $node)
             # is trusted only when the path starts at a registered top-level key and is at least two keys deep and is not a node of nodes[].
             $certain = $r.Root -in $script:FileVariable -or $r.Root -in '(reader)', '(getter)'
@@ -414,7 +448,7 @@ BeforeAll {
     # ------------------------------------------------------------------------------------------------------------------------------
     # The repository
     # ------------------------------------------------------------------------------------------------------------------------------
-    $script:Files = @(Get-ChildItem -LiteralPath $script:ScriptsRoot -Recurse -File | Where-Object { $_.Extension -in '.ps1', '.psm1' } | Sort-Object FullName | ForEach-Object FullName)
+    $script:Files = @(Get-ChildItem -LiteralPath $script:ScriptsRoot, $script:VariableScripts -Recurse -File | Where-Object { $_.Extension -in '.ps1', '.psm1' } | Sort-Object FullName | ForEach-Object FullName)
     $script:Found = @(Get-EnfFinding -Path $script:Files -Root $script:Repo)
     $script:Allow = @(Read-EnfList 'enforcement-allowlist.psd1')
     $script:Baseline = @(Read-EnfList 'enforcement-baseline.psd1')
@@ -447,6 +481,11 @@ Describe 'The scan sees what it is meant to see' {
         $script:Files.Count | Should -BeGreaterThan 350
     }
 
+    It 'scans the scripts of config/variables/scripts as well as scripts/' {
+        @($script:Files | Where-Object { $_ -like (Join-Path $script:VariableScripts '*') }).Count | Should -BeGreaterThan 10
+        @($script:Files | Where-Object { $_ -like (Join-Path $script:ScriptsRoot '*') }).Count | Should -BeGreaterThan 400
+    }
+
     It 'reads the registry' {
         $script:Registry.Count | Should -BeGreaterThan 1000
         Get-EnfUnregisteredPath 'networking.management.gateway' | Should -BeNullOrEmpty
@@ -476,6 +515,9 @@ Describe 'Rule A: a script reads only keys of the infrastructure file that the r
     }
     It 'does not count an unknown property of a file that never loads the infrastructure file' {
         @(Get-EnfSnippetFinding "`$config = Get-Content x | ConvertFrom-Json`n`$config.cluster.nme" 'A').Count | Should -Be 0
+    }
+    It 'accepts a list element picked by a selector, networks[role=hub], as the list' {
+        @(Get-EnfSnippetFinding "`$infra = Import-AzlInfrastructure -Path 'x.yml'`n`$v = Get-KeyValue `$infra 'landing_zone.networks[role=hub].subnets[]'" 'A').Count | Should -Be 0
     }
     It 'accepts a registered path built with a variable' {
         @(Get-EnfSnippetFinding "`$k = 'name'`nGet-AzlInfrastructureValue -Infrastructure `$infra -Path `"cluster.`$k`"" 'A').Count | Should -Be 0
@@ -610,6 +652,16 @@ Describe 'Rule C: no parameter defaults to an environment value' {
         @{ Code = "param([string]`$VaultName = 'vault1')"; Literal = 'vault1' }
         @{ Code = "param([string]`$ResourceGroupName = 'rg-iic-01')"; Literal = 'rg-iic-01' }
         @{ Code = "param([string]`$Tenant = '5a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d')"; Literal = '5a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d' }
+        @{ Code = "param([string]`$TrustedHosts = '10.245.64.*')"; Literal = '10.245.64.*' }
+        @{ Code = "param([string]`$Gateway = 'REPLACE_WITH_GATEWAY')"; Literal = 'REPLACE_WITH_GATEWAY' }
+        @{ Code = "param([string]`$Description = 'TODO: Add description')"; Literal = 'TODO: Add description' }
+        @{ Code = "param([string]`$RegistryPath = 'E:\git\repo\registry.yaml')"; Literal = 'E:\git\repo\registry.yaml' }
+        @{ Code = "param([string]`$Root = 'D:/git')"; Literal = 'D:/git' }
+        @{ Code = "param([string]`$ServicePrincipalName = 'sp-azurelocal-deploy')"; Literal = 'sp-azurelocal-deploy' }
+        @{ Code = "param([string]`$BackupPolicyName = 'DefaultVMBackupPolicy')"; Literal = 'DefaultVMBackupPolicy' }
+        @{ Code = "param([string]`$StaticIP = 'somehost')"; Literal = 'somehost' }
+        @{ Code = "param([string]`$NewHostname = 'node01')"; Literal = 'node01' }
+        @{ Code = "param([string[]]`$Servers = @('dc1.corp.local', 'x'))"; Literal = 'dc1.corp.local' }
     ) {
         $f = @(Get-EnfSnippetFinding $Code)
         $f[0].Rule | Should -Be 'C'
@@ -623,8 +675,73 @@ Describe 'Rule C: no parameter defaults to an environment value' {
         @{ Code = "param([string]`$Server = '192.0.2.10')" }
         @{ Code = "param([string]`$SubscriptionId = `$env:AZL_SUB)" }
         @{ Code = "param([ValidateSet('eastus', 'westus')][string]`$Location)" }
+        @{ Code = "param([string]`$Path = 'C:\ProgramData\Azure Local')" }
+        @{ Code = "param([string]`$Path = 'C:\ClusterStorage\Volume1')" }
+        @{ Code = "param([string]`$Path = '.\logs')" }
+        @{ Code = "param([string]`$Skip = 'abc')" }
+        @{ Code = "param([string]`$Description = 'Creates a Key Vault')" }
+        @{ Code = "param([string]`$Mode = 'Plan')" }
+        @{ Code = "param([string]`$Version = '7.*')" }
+        @{ Code = "param([string]`$NtpServer = 'time.windows.com')" }
     ) {
         @(Get-EnfSnippetFinding $Code).Count | Should -Be 0
+    }
+    It 'names the kind of the new defaults: <Kind>' -ForEach @(
+        @{ Code = "param([string]`$TrustedHosts = '10.245.64.*')"; Kind = 'ipv4-wildcard' }
+        @{ Code = "param([string]`$StaticIP = 'REPLACE_WITH_STATIC_IP')"; Kind = 'placeholder' }
+        @{ Code = "param([string]`$Description = 'TODO: Add description')"; Kind = 'placeholder' }
+        @{ Code = "param([string]`$RegistryPath = 'E:\git\repo\registry.yaml')"; Kind = 'drive-path' }
+        @{ Code = "param([string]`$ServicePrincipalName = 'sp-azurelocal-deploy')"; Kind = 'environment-name' }
+        @{ Code = "param([string]`$BackupPolicyName = 'DefaultVMBackupPolicy')"; Kind = 'environment-name' }
+    ) {
+        $f = @(Get-EnfSnippetFinding $Code 'C')
+        $f.Count | Should -Be 1
+        $f[0].Kind | Should -Be $Kind
+    }
+    It 'does not apply the new kinds to a value that is not a parameter default (rule B stays as it was)' {
+        @(Get-EnfSnippetFinding "`$a = 'E:\git\repo'; `$b = '10.1.2.*'; `$c = 'TODO: later'").Count | Should -Be 0
+    }
+
+    Context 'the generator flags the same defaults' {
+        # New-ScriptParameterRegistry.ps1 warns about a default that looks like an environment value and leaves it out of the registry.
+        # Rule C fails on the same defaults. The generator is a script, so its function is cut out of it and run on the same samples.
+        BeforeAll {
+            $tokens = $null; $errors = $null
+            $generator = [System.Management.Automation.Language.Parser]::ParseFile([IO.Path]::Combine($script:VariableScripts, 'New-ScriptParameterRegistry.ps1'), [ref]$tokens, [ref]$errors)
+            $function = $generator.Find({ param($n) $n -is [System.Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Get-EnvironmentLikeKind' }, $true)
+            $regions = @($generator.EndBlock.Statements | Where-Object { $_.Extent.Text -match 'script:RegionName' } | ForEach-Object { $_.Extent.Text })
+            $code = (($regions + $function.Extent.Text) -join "`n").Replace('$script:RegionName', '$script:GeneratorRegionName').Replace('Get-EnvironmentLikeKind', 'Get-GeneratorKind')
+            . ([scriptblock]::Create($code))
+        }
+        It 'agrees on <PName> = <PValue> (flagged: <Flagged>)' -ForEach @(
+            @{ PName = 'TrustedHosts'; PValue = '10.245.64.*'; Flagged = $true }
+            @{ PName = 'StaticIP'; PValue = 'REPLACE_WITH_STATIC_IP'; Flagged = $true }
+            @{ PName = 'Gateway'; PValue = 'REPLACE_WITH_GATEWAY'; Flagged = $true }
+            @{ PName = 'Description'; PValue = 'TODO: Add description'; Flagged = $true }
+            @{ PName = 'RegistryPath'; PValue = 'E:\git\azurelocal-toolkit\x.yaml'; Flagged = $true }
+            @{ PName = 'WorkspaceRoot'; PValue = 'D:/git'; Flagged = $true }
+            @{ PName = 'ServicePrincipalName'; PValue = 'sp-azurelocal-deploy'; Flagged = $true }
+            @{ PName = 'BackupPolicyName'; PValue = 'DefaultVMBackupPolicy'; Flagged = $true }
+            @{ PName = 'NewHostname'; PValue = 'node01'; Flagged = $true }
+            @{ PName = 'Gateway'; PValue = '10.20.30.1'; Flagged = $true }
+            @{ PName = 'Location'; PValue = 'eastus'; Flagged = $true }
+            @{ PName = 'Server'; PValue = 'dc1.corp.local'; Flagged = $true }
+            @{ PName = 'Name'; PValue = 'rg-iic-01'; Flagged = $true }
+            @{ PName = 'Path'; PValue = 'C:\ProgramData\Azure Local'; Flagged = $false }
+            @{ PName = 'Path'; PValue = 'C:\ClusterStorage\Volume1'; Flagged = $false }
+            @{ PName = 'Path'; PValue = '.\logs'; Flagged = $false }
+            @{ PName = 'Skip'; PValue = 'abc'; Flagged = $false }
+            @{ PName = 'Description'; PValue = 'Creates a Key Vault'; Flagged = $false }
+            @{ PName = 'Mode'; PValue = 'Plan'; Flagged = $false }
+            @{ PName = 'Server'; PValue = '192.0.2.10'; Flagged = $false }
+            @{ PName = 'NtpServer'; PValue = 'time.windows.com'; Flagged = $false }
+            @{ PName = 'Format'; PValue = 'json'; Flagged = $false }
+        ) {
+            $rule = @(Get-EnfSnippetFinding ("param([string]`${0} = '{1}')" -f $PName, $PValue) 'C').Count -gt 0
+            $generated = [bool](Get-GeneratorKind -Name $PName -Value $PValue)
+            $rule | Should -Be $Flagged -Because 'rule C of the enforcement test'
+            $generated | Should -Be $Flagged -Because 'the generator New-ScriptParameterRegistry.ps1'
+        }
     }
 }
 
