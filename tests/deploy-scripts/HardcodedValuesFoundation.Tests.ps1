@@ -116,14 +116,14 @@ Describe 'Terraform variables that the generator feeds from the file have no lit
         @{ Name = 'vm_admin_username' }
         @{ Name = 'windows_server_sku' }
     ) {
-        (Get-TfVariable 'src/terraform/environments/azure-local/variables.tf' $Name) | Should -Not -Match '(?m)^\s*default\s*='
+        (Get-TfVariable 'src/terraform/environments/azure-local/variables.tf' $Name) | Should -Not -Match '(?m)^\s*default\s*=(?!\s*null\s*$)'   # default = null means not set (Azure decides); a literal value is not allowed
     }
     It 'the modules: <File> <Name>' -ForEach @(
         @{ File = 'src/terraform/modules/monitoring/variables.tf'; Name = 'retention_days' }
         @{ File = 'src/terraform/modules/compute/variables.tf'; Name = 'admin_username' }
         @{ File = 'src/terraform/modules/compute/variables.tf'; Name = 'windows_server_sku' }
     ) {
-        (Get-TfVariable $File $Name) | Should -Not -Match '(?m)^\s*default\s*='
+        (Get-TfVariable $File $Name) | Should -Not -Match '(?m)^\s*default\s*=(?!\s*null\s*$)'   # default = null means not set (Azure decides); a literal value is not allowed
     }
     It 'the deployment principal roles, the NAT gateway and the gateway SKUs carry no deployment value' {
         foreach ($file in 'src/terraform/environments/azure-local/variables.tf', 'src/terraform/modules/networking/variables.tf', 'src/terraform/modules/identity/variables.tf') {

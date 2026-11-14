@@ -50,10 +50,16 @@ Describe 'The replaced scripts are gone and nothing names them' {
     It '<Name> is removed' -ForEach $script:Removed {
         Test-Path -LiteralPath ([IO.Path]::Combine($Folder, $Name)) | Should -BeFalse
     }
-    It 'the task folder of <Name> keeps its Orchestrated wrapper and its catalogue entry' -ForEach $script:Removed {
-        @(Get-ChildItem -LiteralPath $Folder -Filter '*-Orchestrated.ps1').Count | Should -BeGreaterThan 0
+    It 'the task folder of <Name> keeps its Orchestrated wrapper and its catalogue entry, or the whole task is gone' -ForEach $script:Removed {
         $catalogue = Import-PowerShellDataFile -LiteralPath ([IO.Path]::Combine($script:Repo, 'scripts', 'deploy', 'common', 'TaskCatalogue.psd1'))
-        @($catalogue.Tasks | Where-Object { $_.Path -eq $Task }).Count | Should -Be 1
+        if (Test-Path -LiteralPath $Folder) {
+            @(Get-ChildItem -LiteralPath $Folder -Filter '*-Orchestrated.ps1').Count | Should -BeGreaterThan 0
+            @($catalogue.Tasks | Where-Object { $_.Path -eq $Task }).Count | Should -Be 1
+        }
+        else {
+            # the whole task went (its wrapper was replaced too): then the catalogue must not list it either
+            @($catalogue.Tasks | Where-Object { $_.Path -eq $Task }).Count | Should -Be 0
+        }
     }
     It 'the registry has no parameter group for <Name>' -ForEach $script:Removed {
         $registry = Get-Content -LiteralPath ([IO.Path]::Combine($script:Repo, 'config', 'variables', 'schema', 'master-registry.yaml')) -Raw
