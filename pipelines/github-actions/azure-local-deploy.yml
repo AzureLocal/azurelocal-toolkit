@@ -6,8 +6,10 @@
 # Required secrets:
 #   ARM_CLIENT_ID, ARM_CLIENT_SECRET, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID
 #
-# Required environments (with protection rules):
-#   production — requires manual approval
+# Required variables (task 05 of the CI/CD setup sets them from infrastructure.yml as repository variables; runs-on and the environment
+# name read the vars context, https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability):
+#   AZL_RUNNER_LABEL                      the label of the self-hosted runner (devops.pipelines.runner_label)
+#   AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT  the approval environment, with required reviewers (devops.pipelines.environments.terraform_deployment)
 # =============================================================================
 # Hosted image: ubuntu-latest is the vendor's label of its hosted Linux image. The jobs that use it only validate and plan and read nothing that
 # belongs to one deployment, so the label is not a setting of a deployment.
@@ -33,15 +35,6 @@ on:
         description: 'Comma-separated steps to skip'
         required: false
         default: ''
-      deploy_target:
-        description: 'Deployment target environment'
-        required: true
-        default: 'lab'
-        type: choice
-        options:
-          - lab
-          - staging
-          - production
 
 env:
   TF_ROOT: src/terraform/environments/azure-local
@@ -138,6 +131,7 @@ jobs:
         with:
           name: tfplan
           path: ${{ env.TF_ROOT }}/tfplan
+          # The plan is read by the apply job of this run and is stale after a day: the toolkit's limit.
           retention-days: 1
 
   # =========================================================================
@@ -147,7 +141,7 @@ jobs:
     name: Terraform Apply
     needs: [terraform-plan]
     runs-on: ubuntu-latest
-    environment: production
+    environment: ${{ vars.AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT }}
     env:
       ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
       ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
@@ -190,8 +184,8 @@ jobs:
   configure-onprem:
     name: Configure On-Premises
     needs: [terraform-apply]
-    runs-on: [self-hosted, azurelocal]
-    environment: production
+    runs-on: [self-hosted, linux, "${{ vars.AZL_RUNNER_LABEL }}"]
+    environment: ${{ vars.AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT }}
     steps:
       - uses: actions/checkout@v4
 
@@ -224,8 +218,8 @@ jobs:
   configure-operations:
     name: Configure Operations
     needs: [configure-onprem]
-    runs-on: [self-hosted, azurelocal]
-    environment: production
+    runs-on: [self-hosted, linux, "${{ vars.AZL_RUNNER_LABEL }}"]
+    environment: ${{ vars.AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT }}
     steps:
       - uses: actions/checkout@v4
 

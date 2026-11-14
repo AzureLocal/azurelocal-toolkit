@@ -64,7 +64,7 @@ The pipeline identity (the app registration of task 01) needs Contributor and Us
 | The runner registration credential | A Key Vault secret named in `devops.runners[].registration_secret` | A person with rights on the platform and the vault |
 | GitHub: a PAT or GitHub App token that can create self-hosted runner registration tokens (organization administration: self-hosted runners) | Same secret, `kind = "pat"` (default) | Organization owner |
 | GitLab: a runner authentication token (`glrt-...`), created for the project or group with the tags you want (GitLab fixes tags at creation) | Same secret | Project maintainer |
-| Azure DevOps: a PAT with Agent Pools (read, manage), and the agent pools (`AzureRunners`, `AzureLocalZtp`) | Same secret | Pool administrator |
+| Azure DevOps: a PAT with Agent Pools (read, manage), and the agent pools named by `devops.runners[].pool` (one for the general runner, its own for the ztp runner; there is no default pool) | Same secret | Pool administrator |
 | A platform token with administrator rights for tasks 02 to 05 | `GH_TOKEN`, `GITLAB_TOKEN`, `AZURE_DEVOPS_EXT_PAT`, or `devops.api_token` (a `keyvault://` reference) | The person who runs the tasks |
 
 A GitHub registration token expires after one hour, so it is not a good value to leave in the vault; use a PAT or App token and let the machine mint the registration token at boot.
@@ -142,9 +142,9 @@ Role `cicd_runner` does the same work with the same variables (`cicd_runner_plat
 
 | Platform | File | Approval | Sign-in |
 | --- | --- | --- | --- |
-| GitHub Actions | [`pipelines/github-actions/cicd-infra.yml`](../pipelines/github-actions/cicd-infra.yml), copy to `.github/workflows/` | Environment `cicd-infra-apply` with required reviewers | OIDC (`azure/login`) |
-| GitLab CI/CD | [`pipelines/gitlab/stages/deploy-cicd-infra.yml`](../pipelines/gitlab/stages/deploy-cicd-infra.yml), included by one line in `.gitlab-ci.yml`; runs with `CICD_INFRA=true` | Manual job on the protected environment `cicd-infra` | GitLab ID token (OIDC) |
-| Azure DevOps | [`pipelines/azure-devops/cicd-infra.yml`](../pipelines/azure-devops/cicd-infra.yml) | Approvals check on environment `cicd-infra-apply` | Service connection `AzureLocal-ServiceConnection` (workload identity federation) |
+| GitHub Actions | [`pipelines/github-actions/cicd-infra.yml`](../pipelines/github-actions/cicd-infra.yml), copy to `.github/workflows/` | The environment named by `devops.pipelines.environments.cicd_infra` (repository variable `AZL_ENVIRONMENT_CICD_INFRA`), with required reviewers | OIDC (`azure/login`) |
+| GitLab CI/CD | [`pipelines/gitlab/stages/deploy-cicd-infra.yml`](../pipelines/gitlab/stages/deploy-cicd-infra.yml), included by one line in `.gitlab-ci.yml`; runs with `CICD_INFRA=true` | Manual job on the protected environment named by `devops.pipelines.environments.cicd_infra` (project variable `AZL_ENVIRONMENT_CICD_INFRA`) | GitLab ID token (OIDC) |
+| Azure DevOps | [`pipelines/azure-devops/cicd-infra.yml`](../pipelines/azure-devops/cicd-infra.yml) | Approvals check on the environment you enter as the parameter `approvalEnvironment` (`devops.pipelines.environments.cicd_infra`) | Service connection `AzureLocal-ServiceConnection` (workload identity federation) |
 
 All three do the same: validate (format, `terraform validate`, the module tests, the infrastructure file), plan (saved, shown to the approver), a manual approval, and apply of **the plan file that was reviewed** (no new plan). They call task 06, so a pipeline and a workstation run the same code. The first run uses hosted runners, because the self-hosted ones do not exist yet; afterwards choose the self-hosted pool.
 
@@ -154,9 +154,11 @@ Job routing:
 
 | Platform | Linux Azure runner | ZTP runner |
 | --- | --- | --- |
-| GitHub | `runs-on: [self-hosted, linux, azure]` | `runs-on: [self-hosted, windows, ztp]` |
-| GitLab | `tags: [azure, linux]` (set when the runner token is created) | `tags: [ztp, windows]` |
-| Azure DevOps | `pool: AzureRunners` | `pool: AzureLocalZtp` (demands `ztp`) |
+| GitHub | `runs-on: [self-hosted, linux, "${{ vars.AZL_RUNNER_LABEL }}"]` | `runs-on: [self-hosted, windows, ztp]` |
+| GitLab | `tags: [$AZL_RUNNER_LABEL]` (the tag is set when the runner token is created) | `tags: [ztp, windows]` |
+| Azure DevOps | `pool: name: ${{ parameters.agentPool }}` (`devops.runners[].pool`) | the pool of the ztp runner (demands `ztp`) |
+
+`AZL_RUNNER_LABEL` is `devops.pipelines.runner_label`: one entry of `devops.runners[].labels` of the general runner. Task 05 sets it, and the approval environment variables, from the file as GitHub repository variables or GitLab project variables. Azure DevOps reads the pool and the environment of a job before any variable exists, so there they are run parameters with no default; task 05 prints the values to enter. The pipelines under `pipelines/` hold no runner label, pool or environment name.
 
 ## Verify
 

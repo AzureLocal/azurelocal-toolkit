@@ -12,7 +12,7 @@
 #   arm-validate       stage arm-validate  Mode Validate. Runs when ARM_MODE is Validate or ValidateAndDeploy. A Validate that
 #                                          already passed with the same parameters is not submitted again.
 #   arm-deploy         stage arm-deploy    Mode Deploy (2.5 to 3 hours). A MANUAL job: someone allowed to run jobs in the
-#                                          protected environment azure-local-deploy reads the arm-validate job's summary and
+#                                          protected environment named by AZL_ENVIRONMENT_ARM_DEPLOYMENT reads the arm-validate job's summary and
 #                                          plays it. It checks every precondition and that these parameters validated.
 #                                          ARM_RESUME=true resubmits a failed Deploy.
 #
@@ -25,10 +25,14 @@
 #                          `needs: [{ pipeline: ..., job: ..., artifacts: true }]` or `dependencies` to the jobs below)
 #   HANDOFF_FILE           optional ZTP handoff file
 #   ARM_ACKNOWLEDGE        optional known issue ids to proceed past, comma-separated (for example arc-device-id-name)
+#   AZL_RUNNER_LABEL       the tag of the self-hosted runner (devops.pipelines.runner_label)
+#   AZL_ENVIRONMENT_ARM_DEPLOYMENT  the protected environment of the deploy job (devops.pipelines.environments.arm_deployment)
+#                          Task 05 of the CI/CD setup sets these two from infrastructure.yml as project variables. tags: and environment:name
+#                          expand CI/CD variables (https://docs.gitlab.com/ci/variables/where_variables_can_be_used/).
 # No secret is stored here. The local administrator and LCM passwords are read from the Key Vaults named by the keyvault://
-# references in the master file. Runner: a Linux runner tagged azure-local with pwsh 7. The Active Directory check needs a
+# references in the master file. Runner: a Linux runner with the tag AZL_RUNNER_LABEL and pwsh 7. The Active Directory check needs a
 # domain-joined runner; elsewhere it is Skipped, not failed.
-# Protected environment: Settings > CI/CD > Protected environments > azure-local-deploy (approval rules on Premium and above).
+# Protected environment: task 04 creates it; Settings > CI/CD > Protected environments holds its approval rules (Premium and above).
 
 stages:
   - arm-plan
@@ -53,7 +57,7 @@ variables:
   REPORT_DIRECTORY: arm-deployment-report
 
 .arm-deployment:
-  tags: [azure-local, linux]
+  tags: [$AZL_RUNNER_LABEL]
   # OIDC: GitLab issues a token the Azure app registration trusts (federated credential, audience api://AzureADTokenExchange).
   id_tokens:
     AZURE_ID_TOKEN:
@@ -85,6 +89,7 @@ arm-preconditions:
   extends: .arm-deployment
   stage: arm-plan
   resource_group: azure-local-arm-deployment
+  # Read-only checks that make no long wait: the toolkit's limit for them, not a figure from Microsoft.
   timeout: 30 minutes
   script:
     - pwsh -NoProfile -File "$ARM_SCRIPT" $ARM_ARGS -Mode Plan -ReportDirectory "$REPORT_DIRECTORY/plan"
@@ -92,6 +97,7 @@ arm-preconditions:
     - 'if [ -f "$REPORT_DIRECTORY/plan/summary.md" ]; then cat "$REPORT_DIRECTORY/plan/summary.md"; fi'
   artifacts:
     when: always
+    # The plan report: 30 days is the toolkit's retention for it.
     expire_in: 30 days
     name: arm-deployment-plan
     paths:
@@ -102,6 +108,8 @@ arm-validate:
   stage: arm-validate
   needs: [arm-preconditions]
   resource_group: azure-local-arm-deployment
+  # Microsoft Learn: the validation takes about 10 minutes (https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template-disaggregated).
+  # The script waits at most deployment.validate_timeout_minutes (default 90); 2 hours 30 minutes is the toolkit's limit above that wait.
   timeout: 2 hours 30 minutes
   rules:
     - if: '$ARM_MODE == "Validate" || $ARM_MODE == "ValidateAndDeploy"'
@@ -111,6 +119,7 @@ arm-validate:
     - 'if [ -f "$REPORT_DIRECTORY/validate/summary.md" ]; then cat "$REPORT_DIRECTORY/validate/summary.md"; fi'
   artifacts:
     when: always
+    # The validate and deploy reports (the approver reads the first; the second is the record of the deployment): 90 days is the toolkit's retention for them.
     expire_in: 90 days
     name: arm-deployment-validate
     paths:
@@ -124,10 +133,12 @@ arm-deploy:
     - job: arm-validate
       optional: true
   resource_group: azure-local-arm-deployment
-  # 2.5 to 3 hours of deployment; the script's own wait limit is 6 hours.
+  # Microsoft Learn: the deployment takes between 2.5 and 3 hours (https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template).
+  # The script waits at most deployment.deploy_timeout_minutes (default 360, 6 hours); 7 hours is that wait plus an hour for the checks and the report.
+  # If you raise deployment.deploy_timeout_minutes above 360, raise this limit in your copy too.
   timeout: 7 hours
   environment:
-    name: azure-local-deploy
+    name: $AZL_ENVIRONMENT_ARM_DEPLOYMENT
   rules:
     # The approval gate: the job waits until someone plays it, after reading the arm-validate job's summary.
     - if: '$ARM_MODE == "ValidateAndDeploy" || $ARM_MODE == "Deploy"'
@@ -143,6 +154,7 @@ arm-deploy:
     - 'if [ -f "$REPORT_DIRECTORY/deploy/summary.md" ]; then cat "$REPORT_DIRECTORY/deploy/summary.md"; fi'
   artifacts:
     when: always
+    # The validate and deploy reports (the approver reads the first; the second is the record of the deployment): 90 days is the toolkit's retention for them.
     expire_in: 90 days
     name: arm-deployment-deploy
     paths:

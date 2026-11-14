@@ -9,8 +9,8 @@
 #   Preconditions   Read only. Parameters and every precondition. Always runs.
 #   Validate        Mode Validate. Runs for mode Validate and ValidateAndDeploy. A Validate that already passed with the same
 #                   parameters is not submitted again.
-#   Deploy          Mode Deploy (2.5 to 3 hours). A deployment job in the environment `azure-local-deploy`: add an Approvals
-#                   check to that environment (Pipelines > Environments > azure-local-deploy > Approvals and checks). The
+#   Deploy          Mode Deploy (2.5 to 3 hours). A deployment job in the environment of the parameter `approvalEnvironment`: add an Approvals
+#                   check to that environment (Pipelines > Environments > <that environment> > Approvals and checks). The
 #                   approver reads the Validate stage's summary. The stage checks every precondition and that these parameters
 #                   validated. `resume` resubmits a failed Deploy.
 #
@@ -20,7 +20,16 @@
 #   Variable group      none needed. The local administrator and LCM passwords are read from the Key Vaults named by the
 #                       keyvault:// references in the master file; the identity needs Get on those secrets and the rights in
 #                       the design (section 12).
-#   Agent pool          a self-hosted pool with pwsh 7 (the AzurePowerShell task supplies Az.Accounts), parameter `agentPool`.
+#   Agent pool          a self-hosted pool with pwsh 7 (the AzurePowerShell task supplies Az.Accounts), parameter `agentPool`: enter
+#                       devops.runners[].pool of the general runner.
+#   Environment         parameter `approvalEnvironment`: enter devops.pipelines.environments.arm_deployment. Task 04 of the CI/CD setup creates
+#                       it from devops.environments; task 05 lists the values to enter.
+#   Why parameters     the pool and the environment of a job are not task inputs. Learn says a macro variable $(name) is expanded only in task
+#                       inputs, and that other keywords take template expressions or runtime parameters
+#                       (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
+#                       ${{ variables.name }} does not see variables stored on the pipeline or in a library
+#                       (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So both are runtime parameters
+#                       (${{ parameters.name }}) with no default: the run form asks for them.
 #                       The Active Directory check needs a domain-joined agent; elsewhere it is Skipped, not failed.
 trigger: none
 pr: none
@@ -56,9 +65,11 @@ parameters:
     type: string
     default: '<azure-service-connection-name>'
   - name: agentPool
-    displayName: Self-hosted agent pool
+    displayName: Self-hosted agent pool. Enter devops.runners[].pool of the general runner
     type: string
-    default: '<self-hosted-agent-pool>'
+  - name: approvalEnvironment
+    displayName: Environment of the Deploy approval. Enter devops.pipelines.environments.arm_deployment
+    type: string
 
 variables:
   armScript: scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1
@@ -70,6 +81,7 @@ stages:
       - job: Plan
         pool:
           name: ${{ parameters.agentPool }}
+        # Read-only checks that make no long wait: the toolkit's limit for them, not a figure from Microsoft.
         timeoutInMinutes: 30
         steps:
           - checkout: self
@@ -105,6 +117,8 @@ stages:
           - job: Validate
             pool:
               name: ${{ parameters.agentPool }}
+            # Microsoft Learn: the validation takes about 10 minutes (https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template-disaggregated).
+            # The script waits at most deployment.validate_timeout_minutes (default 90); 150 minutes is the toolkit's limit above that wait.
             timeoutInMinutes: 150
             steps:
               - checkout: self
@@ -142,10 +156,12 @@ stages:
         jobs:
           # A deployment job: the environment's Approvals check is the gate.
           - deployment: Deploy
-            environment: azure-local-deploy
+            environment: ${{ parameters.approvalEnvironment }}
             pool:
               name: ${{ parameters.agentPool }}
-            # 2.5 to 3 hours of deployment; the script's own wait limit is 6 hours.
+            # Microsoft Learn: the deployment takes between 2.5 and 3 hours (https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template).
+            # The script waits at most deployment.deploy_timeout_minutes (default 360, 6 hours); 480 minutes is that wait plus two hours for the checks and the report.
+            # If you raise deployment.deploy_timeout_minutes above 360, raise this limit in your copy too.
             timeoutInMinutes: 480
             strategy:
               runOnce:

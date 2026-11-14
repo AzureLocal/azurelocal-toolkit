@@ -10,6 +10,10 @@
 # jobs reads the plan job's log and artifacts, then plays it. `resource_group` keeps two runs from working on the cluster at once.
 #
 # CI/CD variables (Settings > CI/CD > Variables; the values below are placeholders, set the real ones there):
+#   AZL_RUNNER_LABEL        the tag of the self-hosted runner (devops.pipelines.runner_label)
+#   AZL_ENVIRONMENT_OS_CONFIGURATION  the approval environment of the apply job (devops.pipelines.environments.os_configuration)
+#                           Task 05 of the CI/CD setup sets these two from infrastructure.yml as project variables. tags: and environment:name
+#                           expand CI/CD variables (https://docs.gitlab.com/ci/variables/where_variables_can_be_used/).
 #   AZURE_AUTH              managed-identity (the runner's managed identity) or oidc (a federated app registration)
 #   AZURE_CLIENT_ID         client ID of the user-assigned managed identity, or of the app registration with a federated credential
 #                           for this project; leave empty for a system-assigned managed identity
@@ -19,7 +23,7 @@
 #                           (add `needs: [{ pipeline: ..., job: ..., artifacts: true }]` or a `dependencies` entry below)
 # No secret is stored here. The nodes' local administrator password is read from the Key Vault named by identity.local_admin.password.
 # Runner: PowerShell remoting (WinRM) is the transport, so the runner needs a ROUTE to the nodes' management network: a Windows runner on it, or a Linux runner
-# tagged azure-local with pwsh 7 and the PSWSMan module (Negotiate/Kerberos), or WinRM over HTTPS (5986, a certificate on the nodes; remoting.useSsl). A node whose
+# tagged with AZL_RUNNER_LABEL, with pwsh 7 and the PSWSMan module (Negotiate/Kerberos), or WinRM over HTTPS (5986, a certificate on the nodes; remoting.useSsl). A node whose
 # firewall still limits WinRM to its own subnet needs remoting.bootstrapTransport = arc once, or WinRM-In opened for the runner's CIDR. A runner with no route can
 # pass -Transport ArcRunCommand, which is not recommended for network changes.
 
@@ -41,7 +45,7 @@ variables:
   APPROVED_BOOTSTRAP: 'false'
 
 .os-configuration:
-  tags: [azure-local, linux]
+  tags: [$AZL_RUNNER_LABEL]
   # OIDC: GitLab issues a token the Azure app registration trusts (federated credential, audience api://AzureADTokenExchange).
   id_tokens:
     AZURE_ID_TOKEN:
@@ -74,6 +78,7 @@ os-configuration-plan:
     - 'if [ -f "$REPORT_DIRECTORY/plan/summary.md" ]; then cat "$REPORT_DIRECTORY/plan/summary.md"; fi'
   artifacts:
     when: always
+    # The plan report and the wipe list the approver read: 30 days is the toolkit's retention for them, long enough to check later what was approved.
     expire_in: 30 days
     name: os-configuration-plan
     paths:
@@ -89,7 +94,7 @@ os-configuration-apply:
   allow_failure: false
   resource_group: azure-local-os-configuration
   environment:
-    name: azure-local-os-configuration
+    name: $AZL_ENVIRONMENT_OS_CONFIGURATION
   script:
     - approval=''; if [ "$APPROVED_BOOTSTRAP" = 'true' ]; then approval='-ApprovedBootstrap'; fi
     - pwsh -NoProfile -File "$OSCONFIG_SCRIPT" -InfrastructureFile "$INFRASTRUCTURE_FILE" -HandoffPath "$HANDOFF_PATH" -Mode Apply -ReportDirectory "$REPORT_DIRECTORY/apply" -ApprovedWipeList "$REPORT_DIRECTORY/plan/wipe-list.json" $approval
@@ -97,6 +102,7 @@ os-configuration-apply:
     - 'if [ -f "$REPORT_DIRECTORY/apply/summary.md" ]; then cat "$REPORT_DIRECTORY/apply/summary.md"; fi'
   artifacts:
     when: always
+    # The report of what the apply changed: 90 days is the toolkit's retention for it.
     expire_in: 90 days
     name: os-configuration-report
     paths:

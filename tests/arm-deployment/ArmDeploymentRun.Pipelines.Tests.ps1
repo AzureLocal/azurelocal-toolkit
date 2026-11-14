@@ -41,8 +41,9 @@ Describe 'All three pipelines' {
         $script:Text[$Name] | Should -Match '-Mode Deploy|Mode = .Deploy.'
         $script:Text[$Name] | Should -Match 'summary\.md'
     }
-    It '<Name> names the approval environment azure-local-deploy' -ForEach @(@{ Name = 'github' }, @{ Name = 'gitlab' }, @{ Name = 'ado' }) {
-        $script:Text[$Name] | Should -Match 'azure-local-deploy'
+    It '<Name> takes the approval environment from devops.pipelines.environments.arm_deployment, and names none itself' -ForEach @(@{ Name = 'github'; Pattern = 'vars\.AZL_ENVIRONMENT_ARM_DEPLOYMENT' }, @{ Name = 'gitlab'; Pattern = '\$AZL_ENVIRONMENT_ARM_DEPLOYMENT' }, @{ Name = 'ado'; Pattern = 'parameters\.approvalEnvironment' }) {
+        $script:Text[$Name] | Should -Match $Pattern
+        $script:Text[$Name] | Should -Not -Match '(?m)^\s+(environment|name): azure-local-deploy'
     }
 }
 
@@ -57,7 +58,7 @@ Describe 'GitHub Actions' {
         @($script:G.jobs.deploy.needs) | Should -Contain 'preconditions'
     }
     It 'the Deploy job is in an environment (the approval gate); Plan and Validate are not' {
-        $script:G.jobs.deploy.environment | Should -Be 'azure-local-deploy'
+        $script:G.jobs.deploy.environment | Should -Be '${{ vars.AZL_ENVIRONMENT_ARM_DEPLOYMENT }}'
         $script:G.jobs.preconditions.Contains('environment') | Should -BeFalse
         $script:G.jobs.validate.Contains('environment') | Should -BeFalse
     }
@@ -104,7 +105,7 @@ Describe 'GitLab CI' {
         $rule = @($script:L['arm-deploy'].rules)[0]
         $rule.when | Should -Be 'manual'
         $rule.allow_failure | Should -BeFalse
-        $script:L['arm-deploy'].environment.name | Should -Be 'azure-local-deploy'
+        $script:L['arm-deploy'].environment.name | Should -Be '$AZL_ENVIRONMENT_ARM_DEPLOYMENT'
     }
     It 'serialises runs with a resource group and has OIDC id_tokens' {
         foreach ($j in 'arm-preconditions', 'arm-validate', 'arm-deploy') { $script:L[$j].resource_group | Should -Be 'azure-local-arm-deployment' }
@@ -140,7 +141,7 @@ Describe 'Azure DevOps' {
     }
     It 'Deploy is a deployment job in the approval environment' {
         $script:Text['ado'] | Should -Match '(?m)^\s+- deployment: Deploy'
-        $script:Text['ado'] | Should -Match '(?m)^\s+environment: azure-local-deploy'
+        $script:Text['ado'] | Should -Match '(?m)^\s+environment: \$\{\{ parameters\.approvalEnvironment \}\}'
     }
     It 'signs in through a workload identity service connection and the AzurePowerShell task, not with a secret' {
         $script:Text['ado'] | Should -Match 'AzurePowerShell@5'

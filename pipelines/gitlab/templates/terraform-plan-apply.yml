@@ -23,6 +23,7 @@
   artifacts:
     paths:
       - "${TF_ROOT}/tfplan"
+    # The plan is applied by the next stage of this pipeline and is stale after a day: the toolkit's retention.
     expire_in: 1 day
 
 .terraform:apply:

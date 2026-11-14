@@ -98,10 +98,10 @@ Describe 'Azure DevOps OS configuration pipeline: approval gates' {
         $plan['jobs'][0].Contains('deployment') | Should -BeFalse
         $plan['jobs'][0].Contains('environment') | Should -BeFalse
     }
-    It 'Apply is a deployment job in the environment azure-local-os-configuration, so its approval checks gate it' {
+    It 'Apply is a deployment job in the environment of the parameter approval_environment, so its approval checks gate it' {
         $apply = $script:Ado['stages'] | Where-Object { $_['stage'] -eq 'Apply' }
         $apply['jobs'][0].Contains('deployment') | Should -BeTrue
-        $apply['jobs'][0]['environment'] | Should -Be 'azure-local-os-configuration'
+        $apply['jobs'][0]['environment'] | Should -Be '${{ parameters.approval_environment }}'
         @($apply['dependsOn']) | Should -Contain 'Plan'
         $apply['condition'] | Should -Match "parameters\.mode.*'Apply'"
     }
@@ -109,7 +109,7 @@ Describe 'Azure DevOps OS configuration pipeline: approval gates' {
         $confirm = $script:Ado['stages'] | Where-Object { $_['stage'] -eq 'ConfirmStorageWipe' }
         $apply = $script:Ado['stages'] | Where-Object { $_['stage'] -eq 'Apply' }
         $confirm['jobs'][0].Contains('deployment') | Should -BeTrue
-        $confirm['jobs'][0]['environment'] | Should -Be 'azure-local-os-configuration-clear-storage'
+        $confirm['jobs'][0]['environment'] | Should -Be '${{ parameters.clear_storage_approval_environment }}'
         $confirm['jobs'][0]['environment'] | Should -Not -Be $apply['jobs'][0]['environment']
         $confirm['condition'] | Should -Match "parameters\.mode.*'Apply'"
         $confirm['condition'] | Should -Match "parameters\.clear_storage.*'true'"

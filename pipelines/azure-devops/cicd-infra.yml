@@ -7,11 +7,16 @@
 # Sign-in: the workload identity federation service connection AzureLocal-ServiceConnection
 # (made by task 05). No client secret. The identity needs Storage Blob Data Contributor on
 # the state account, and the roles in docs/cicd-infra-deployment.md.
-# Environment:  cicd-infra-apply, with an Approvals check (the manual approval)
+# Environment:  the parameter approvalEnvironment (devops.pipelines.environments.cicd_infra), with an Approvals check (the manual approval)
 # Variable:     RUNNER_SSH_PUBLIC_KEY (the public key for the Linux runners)
 #
 # Where it runs: the first time on Microsoft-hosted agents (there are no agents yet);
-# set the agentPool parameter to AzureRunners after the agents exist.
+# set the agentPool parameter to the pool of the agents (devops.runners[].pool of the general runner) after the agents exist.
+# Why parameters: the pool and the environment of a job are not task inputs. Learn says a macro variable $(name) is expanded only in task
+# inputs, and that other keywords take template expressions or runtime parameters
+# (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
+# ${{ variables.name }} does not see variables stored on the pipeline or in a library
+# (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So both are runtime parameters (${{ parameters.name }}).
 # =============================================================================
 # Hosted image: ubuntu-latest is the vendor's label of its hosted Linux image. The jobs that use it only validate and plan and read nothing that
 # belongs to one deployment, so the label is not a setting of a deployment.
@@ -26,12 +31,13 @@ parameters:
     type: string
     default: config/infrastructure.yml
   - name: agentPool
-    displayName: Agent pool (hosted for the first run)
+    displayName: Agent pool. hosted for the first run (Microsoft-hosted ubuntu-latest), then devops.runners[].pool of the general runner
     type: string
     default: hosted
-    values:
-      - hosted
-      - AzureRunners
+  - name: approvalEnvironment
+    displayName: Environment of the Apply approval (only when apply is on). Enter devops.pipelines.environments.cicd_infra
+    type: string
+    default: ''
   - name: serviceConnection
     displayName: Azure service connection (workload identity federation)
     type: string
@@ -88,6 +94,7 @@ stages:
           - terraform
     jobs:
       - job: plan
+        # terraform init, validate and plan of the runner VMs and their network: the toolkit's limit, not a figure from Microsoft.
         timeoutInMinutes: 60
         steps:
           - checkout: self
@@ -125,8 +132,9 @@ stages:
               - terraform
         jobs:
           - deployment: apply
+            # terraform apply of the runner VMs, their network and role assignments: the toolkit's limit, not a figure from Microsoft.
             timeoutInMinutes: 120
-            environment: cicd-infra-apply # the Approvals check holds the job until a reviewer approves
+            environment: ${{ parameters.approvalEnvironment }} # the Approvals check holds the job until a reviewer approves
             strategy:
               runOnce:
                 deploy:

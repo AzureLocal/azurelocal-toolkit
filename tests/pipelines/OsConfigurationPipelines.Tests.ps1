@@ -77,8 +77,8 @@ Describe 'GitHub Actions workflow' {
         $script:GitHub['jobs'].Keys | Should -Contain 'apply'
         @($script:GitHub['jobs']['apply']['needs']) | Should -Contain 'plan'
     }
-    It 'gates the apply job with the environment azure-local-os-configuration, and not the plan job' {
-        $script:GitHub['jobs']['apply']['environment'] | Should -Be 'azure-local-os-configuration'
+    It 'gates the apply job with the environment of the variable AZL_ENVIRONMENT_OS_CONFIGURATION, and not the plan job' {
+        $script:GitHub['jobs']['apply']['environment'] | Should -Be '${{ vars.AZL_ENVIRONMENT_OS_CONFIGURATION }}'
         $script:GitHub['jobs']['plan'].Contains('environment') | Should -BeFalse
     }
     It 'plan runs -Mode Plan, apply runs -Mode Apply, both through the one script' {

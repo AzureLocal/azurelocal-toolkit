@@ -78,8 +78,7 @@ $arm = './scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invok
 
 ## Run it from a pipeline
 
-Use the file for your platform, set the project variables (names only in the files), create the environment
-`azure-local-deploy`, and add the approval to it.
+Use the file for your platform, set the project variables (names only in the files; task 05 of the CI/CD setup sets the runner label and the approval environment from `devops.pipelines`), and add the approval to the environment named by `devops.pipelines.environments.arm_deployment`.
 
 - **GitHub Actions.** Required reviewers on the environment; OIDC through `azure/login`; the jobs are `preconditions`, `validate`, `deploy`.
 - **GitLab CI.** The `arm-deploy` job is manual in a protected environment; OIDC through `id_tokens`. The file declares its own stages; include it from a pipeline of its own.

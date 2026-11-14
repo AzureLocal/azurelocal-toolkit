@@ -5,7 +5,10 @@
 # Stages execute sequentially with manual approval gates between phases.
 #
 # Requirements:
-#   - Self-hosted GitLab Runner with network access to on-premises nodes
+#   - Self-hosted GitLab Runner with network access to on-premises nodes, with the tag in the CI/CD variable AZL_RUNNER_LABEL
+#     (devops.pipelines.runner_label). tags: and environment:name expand CI/CD variables
+#     (https://docs.gitlab.com/ci/variables/where_variables_can_be_used/);
+#     task 05 of the CI/CD setup sets AZL_RUNNER_LABEL and AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT from infrastructure.yml as project variables.
 #   - CI/CD variables: ARM_CLIENT_ID, ARM_CLIENT_SECRET, ARM_TENANT_ID,
 #     ARM_SUBSCRIPTION_ID, DOMAIN_ADMIN_PASSWORD
 #   - Terraform >= 1.6, Ansible >= 2.15, PowerShell >= 7.0
@@ -30,8 +33,7 @@ variables:
 # Global defaults
 default:
   tags:
-    - azurelocal
-    - self-hosted
+    - ${AZL_RUNNER_LABEL}
   before_script:
     - export ARM_CLIENT_ID="${ARM_CLIENT_ID}"
     - export ARM_CLIENT_SECRET="${ARM_CLIENT_SECRET}"

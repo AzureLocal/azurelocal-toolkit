@@ -384,8 +384,23 @@ New rules AZL-060 to AZL-068 (see README). **Steps for a 5.5 file:** set `_metad
 - **5.6.2: adapters are identified by hardware facts.** `nodes[].network_adapters[].mac_address` is now required. New optional keys: `port_index`, `pci_location` (`bus`, `device`, `function`), `vendor` (written by hardware discovery), `allowed_vlans` (the VLANs the switch port allows) and `os_name_override`. **Steps:** a file whose ports lack the MAC: run `Invoke-HardwareDiscovery.ps1 -UpdateInfrastructure` or add the MAC. Nothing else changes: without `os_name_override` no adapter is renamed and the deployment sends the name the node reports for the MAC. To get one name everywhere, add `os_name_override` per used port and run the OS configuration (step `NicNames`).
 - **5.6.3** adds `enabled`, `ip_allocation_method` and `nsg_name` to `networking.logical_networks[]`. Nothing is required. A logical network uses `gateway` and `ip_pool`; the 4.0 names `default_gateway` and `ip_pools` belong to the deprecated `networking.onprem.logical_networks[]`.
 
-## To 5.6.24: the partner properties and credentials of the SBE
+## To 5.6.25: the runner label and the approval environments of the pipelines
 
+Schema 5.6.25 adds one optional object under `devops`. Nothing is required for a file that does not run the toolkit's pipelines: a 5.6.24 file is valid as it is.
+
+- `devops.pipelines.runner_label`: one entry of `devops.runners[].labels` of the general (Linux) runner. The GitHub and GitLab pipelines choose the runner by it (`runs-on` after `self-hosted` and `linux`; `tags`). Azure DevOps chooses by pool and ignores it.
+- `devops.pipelines.environments.os_configuration`, `os_configuration_clear_storage`, `arm_deployment`, `cicd_infra`, `terraform_deployment`: the approval environment of each pipeline. Each is the name of an entry of `devops.environments[]` with `approval_required: true`.
+
+Task 05 of the CI/CD setup (`Set-CicdVariables.ps1`) sets them from the file: GitHub repository variables and GitLab project variables named `AZL_RUNNER_LABEL` and `AZL_ENVIRONMENT_...`. Azure DevOps reads the pool and the environment of a job before any variable exists, so there they are run parameters with no default; the task prints the values to enter. The pipeline files under `pipelines/` no longer carry a runner label, a pool name or an environment name, and the Azure DevOps sample `azure-local-deploy.yml` is started by hand.
+
+What changes for an existing environment:
+
+- If you copied a pipeline file, copy the new version. Create the repository variables (or run task 05) before the first run: with `AZL_RUNNER_LABEL` empty the job has no label to select a runner by.
+- `devops.runners[].pool` is required on Azure DevOps. Task 06, the Terraform module and the Ansible role used to fall back to the pools `AzureRunners` and `AzureLocalZtp`; they no longer do, so name the pools in the file (the Terraform module and the Ansible role stop without one).
+- The environments the pipelines used to name in their files (`azure-local-os-configuration`, `azure-local-os-configuration-clear-storage`, `azure-local-deploy`, `cicd-infra-apply`, `cicd-infra`, `production`) are gone. Add the names you use to `devops.environments[]` and to `devops.pipelines.environments`.
+- GitLab: `CICD_RUNNER_TAG` of the CI/CD infrastructure stage is replaced by `AZL_RUNNER_LABEL`. For the first run, before the runners exist, give `AZL_RUNNER_LABEL` a shared runner tag when you run the pipeline.
+
+## To 5.6.24: the partner properties and credentials of the SBE
 Schema 5.6.24 adds two optional keys under `hardware.sbe`. Nothing is required: a 5.6.21 file is valid as it is.
 
 - `hardware.sbe.partner_properties[]` (`name`, `value`): properties that the hardware vendor's Solution Builder Extension asks for. The ARM deployment passes them as `partnerProperties` (Microsoft Learn lists the parameter in every deployment template: a list of partner-specific properties, each a name and a value). Until now the deployment always sent an empty list, so a vendor that needs a property could not be served.

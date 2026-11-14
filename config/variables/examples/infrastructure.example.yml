@@ -573,6 +573,18 @@ devops:
     - { name: "azr-dev-us", approval_required: false }
     - { name: "ztp-reinstall", approval_required: true, approvers: ["platform-lead"], deployment_branch: main }
 
+  # Task 05. What the toolkit's pipelines select. GitHub and GitLab: task 05 sets these as repository or project variables, so the pipeline
+  # files hold no name. Azure DevOps: you enter the same values as run parameters (the pool is devops.runners[].pool).
+  # runner_label is one of the labels of the general runner below. Each environment is an entry of environments above that needs approval.
+  pipelines:
+    runner_label: "azure-local"
+    environments:
+      os_configuration: "azr-prod-us"
+      os_configuration_clear_storage: "azr-prod-us"
+      arm_deployment: "azr-prod-us"
+      cicd_infra: "azr-prod-us"
+      terraform_deployment: "azr-prod-us"
+
   # Tasks 01 and 05. The app registration is azure.automation_identity.name.
   authentication:
     method: oidc # oidc | client_secret
@@ -587,6 +599,7 @@ devops:
       purpose: general
       count: 1
       size: "Standard_D2s_v5"
+      labels: ["azure-local"] # added to the defaults; devops.pipelines.runner_label is one of them
       registration_secret: "keyvault://kv-iic-mgmt-01/github-runner-token"
       subnet: { name: "snet-iic-runner-lnx-01", prefix: "10.20.10.0/26" }
       private_ips: ["10.20.10.4"]

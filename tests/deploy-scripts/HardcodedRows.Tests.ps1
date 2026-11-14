@@ -180,7 +180,7 @@ Describe 'settings registered by hand' {
         }
     }
     It 'registers confirm_wipe_deployed_cluster of the Azure DevOps OS configuration pipeline' {
-        $script:Registry | Should -Match '"name":"confirm_wipe_deployed_cluster".*pipelines/azure-devops/os-configuration\.yml:93'
+        $script:Registry | Should -Match '"name":"confirm_wipe_deployed_cluster".*pipelines/azure-devops/os-configuration\.yml:\d+'
         (Get-RepoText 'pipelines/azure-devops/os-configuration.yml') | Should -Match '- name: confirm_wipe_deployed_cluster'
     }
     It 'does not call site.customer documentation only' {

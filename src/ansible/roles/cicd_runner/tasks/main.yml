@@ -19,9 +19,11 @@
       - cicd_runner_token_source != 'keyvault_managed_identity' or (cicd_runner_key_vault_name | length > 0 and cicd_runner_secret_name | length > 0)
       - cicd_runner_token_source != 'variable' or cicd_runner_registration_token | length > 0
       - cicd_runner_is_windows | bool or ansible_os_family == 'Debian'
+      - cicd_runner_platform != 'azure_devops' or cicd_runner_azure_devops_pool | length > 0
     fail_msg: >-
       Set cicd_runner_platform, cicd_runner_scm_url and a credential source. The ztp purpose needs a Windows host.
-      Linux hosts must be Debian family (Ubuntu 22.04 or 24.04).
+      Linux hosts must be Debian family (Ubuntu 22.04 or 24.04). Azure DevOps needs cicd_runner_azure_devops_pool
+      (devops.runners[].pool in infrastructure.yml); there is no default pool.
     quiet: true
 
 - name: Configure a Linux runner

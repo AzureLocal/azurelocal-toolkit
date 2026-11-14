@@ -7,9 +7,9 @@
 #
 # Stage Plan is read only. It publishes the plan report and the wipe list (which disks on which node would be wiped when
 # clear_storage is on) as the build artifact os-configuration-plan, and attaches summary.md to the run summary.
-# Stage ConfirmStorageWipe exists only when mode is Apply AND clear_storage is true: a second, separate approval (environment
-# azure-local-os-configuration-clear-storage) that the reviewer gives after reading the wipe list. Otherwise it is skipped.
-# Stage Apply runs only for mode Apply, and only after a reviewer of the environment azure-local-os-configuration approved it.
+# Stage ConfirmStorageWipe exists only when mode is Apply AND clear_storage is true: a second, separate approval (the environment of the
+# parameter clear_storage_approval_environment) that the reviewer gives after reading the wipe list. Otherwise it is skipped.
+# Stage Apply runs only for mode Apply, and only after a reviewer of the environment of the parameter approval_environment approved it.
 #
 # Transport. WinRM is the default: the agent must have line of sight to the nodes' management network (TCP 5985, or 5986 with HTTPS).
 # Azure Arc Run Command is used only when transport is set to ArcRunCommand (for sites with no route to the nodes), never as a
@@ -18,7 +18,7 @@
 # WinRM firewall rule. The route itself (arc, smb or auto) is chosen in the master file (os_configuration.remoting.bootstrap_transport).
 #
 # What to configure in the organization (names only; no value of any ID, password or key is in this file):
-#   Agent pool      a self-hosted pool (parameter agent_pool) with PowerShell 7 (pwsh), Az.Accounts and Az.KeyVault, and a route to
+#   Agent pool      a self-hosted pool (parameter agent_pool: devops.runners[].pool of the general runner) with PowerShell 7 (pwsh), Az.Accounts and Az.KeyVault, and a route to
 #                   the nodes' management subnet. For WinRM from a Linux agent, the PSWSMan module (Negotiate authentication).
 #   Service conn.   an Azure Resource Manager service connection (parameter service_connection), ideally workload identity
 #                   federation, with Azure Connected Machine Resource Administrator and Reader on the Arc machines' resource group,
@@ -26,11 +26,18 @@
 #   Variable group  azurelocal-os-configuration (Pipelines > Library). It holds nothing this file needs as a secret: the nodes'
 #                   local administrator password is read from the Key Vault by the script. Put any site setting there, or link the
 #                   group to a Key Vault (secrets then arrive as secret variables, never in this file).
-#   Environments    azure-local-os-configuration              Approvals and checks: Approvals (required reviewers), and an
-#                                                              Exclusive lock so two runs never work on the cluster at once.
-#                   azure-local-os-configuration-clear-storage Approvals: the people allowed to approve a storage wipe. Use
-#                                                              different people than the first environment where you can.
-#                   A deployment job to an environment with no approval check runs without one, so add the checks before use.
+#   Environments    approval_environment                      (devops.pipelines.environments.os_configuration) Approvals and checks: Approvals (required
+#                                                              reviewers), and an Exclusive lock so two runs never work on the cluster at once.
+#                   clear_storage_approval_environment        (devops.pipelines.environments.os_configuration_clear_storage) Approvals: the people allowed to
+#                                                              approve a storage wipe. Use different people than the first environment where you can.
+#                   Task 04 of the CI/CD setup creates both from devops.environments; task 05 lists the values to enter. A deployment job to an environment
+#                   with no approval check runs without one, so add the checks before use.
+#   Why parameters: the pool and the environment of a job are not task inputs. Learn says a macro variable $(name) is expanded only in task
+#                   inputs, and that other keywords take template expressions or runtime parameters
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
+#                   ${{ variables.name }} does not see variables stored on the pipeline or in a library
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool and the environment names are runtime
+#                   parameters (${{ parameters.name }}) with no default: the run form asks for them.
 #
 # Where the files come from: the master file is a path in this repository (parameter infrastructure_file). The handoff files
 # (<node>.ztp-handoff.json) are a repository path (handoff_path) or the artifact ztp-handoff of a ZTP pipeline run
@@ -95,9 +102,14 @@ parameters:
     type: boolean
     default: false
   - name: agent_pool
-    displayName: 'Self-hosted agent pool (PowerShell 7, route to the nodes)'
+    displayName: 'Self-hosted agent pool (PowerShell 7, route to the nodes). Enter devops.runners[].pool of the general runner'
     type: string
-    default: AzureLocal-SelfHosted
+  - name: approval_environment
+    displayName: 'Environment of the Apply approval. Enter devops.pipelines.environments.os_configuration'
+    type: string
+  - name: clear_storage_approval_environment
+    displayName: 'Environment of the storage wipe approval. Enter devops.pipelines.environments.os_configuration_clear_storage'
+    type: string
   - name: service_connection
     displayName: 'Azure Resource Manager service connection (name only)'
     type: string
@@ -217,7 +229,7 @@ stages:
           demands:
             - pwsh
         # Required reviewers on this environment are the second approval gate.
-        environment: azure-local-os-configuration-clear-storage
+        environment: ${{ parameters.clear_storage_approval_environment }}
         strategy:
           runOnce:
             deploy:
@@ -249,7 +261,7 @@ stages:
           demands:
             - pwsh
         # Required reviewers on this environment are the approval gate.
-        environment: azure-local-os-configuration
+        environment: ${{ parameters.approval_environment }}
         strategy:
           runOnce:
             deploy:

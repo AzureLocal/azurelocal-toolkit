@@ -107,9 +107,9 @@ variable "github_runner_group" {
 }
 
 variable "azure_devops_pool" {
-  description = "Azure Pipelines agent pool the agent joins. It must exist. A ztp agent should have its own pool."
+  description = "Azure Pipelines agent pool the agent joins (devops.runners[].pool). It must exist. A ztp agent should have its own pool. Needed when platform is azure_devops; there is no default pool."
   type        = string
-  default     = "AzureRunners"
+  default     = ""
 }
 
 variable "registration_secret" {

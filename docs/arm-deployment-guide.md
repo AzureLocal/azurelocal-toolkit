@@ -72,9 +72,9 @@ platform's approval, publishing `report.json`, `summary.md` and the event feed o
 
 | Platform | File | Approval | Sign-in |
 | --- | --- | --- | --- |
-| GitHub Actions | `pipelines/github-actions/arm-deployment.yml` | Environment `azure-local-deploy` with required reviewers | `azure/login@v2`, OIDC |
-| GitLab CI | `pipelines/gitlab/stages/arm-deployment.yml` | Manual job in the protected environment `azure-local-deploy` | `id_tokens` and `Connect-AzAccount -FederatedToken` (or a managed identity) |
-| Azure DevOps | `pipelines/azure-devops/arm-deployment.yml` | Approvals check on the environment `azure-local-deploy` | A service connection with workload identity federation |
+| GitHub Actions | `pipelines/github-actions/arm-deployment.yml` | The environment of `devops.pipelines.environments.arm_deployment` (repository variable `AZL_ENVIRONMENT_ARM_DEPLOYMENT`) with required reviewers | `azure/login@v2`, OIDC |
+| GitLab CI | `pipelines/gitlab/stages/arm-deployment.yml` | Manual job in the protected environment of the project variable `AZL_ENVIRONMENT_ARM_DEPLOYMENT` | `id_tokens` and `Connect-AzAccount -FederatedToken` (or a managed identity) |
+| Azure DevOps | `pipelines/azure-devops/arm-deployment.yml` | Approvals check on the environment you enter as the parameter `approvalEnvironment` | A service connection with workload identity federation |
 
 No client secret is stored anywhere. The files hold placeholders only; set the real values as variables of the project. Use a
 self-hosted runner that reaches Azure over HTTPS. The Active Directory check also needs a domain-joined runner with the

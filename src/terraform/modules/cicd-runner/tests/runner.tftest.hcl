@@ -233,12 +233,24 @@ run "azdo_alias" {
   command = plan
 
   variables {
-    platform = "azdo"
-    scm_url  = "https://dev.azure.com/example-org"
+    platform          = "azdo"
+    scm_url           = "https://dev.azure.com/example-org"
+    azure_devops_pool = "pool-test"
   }
 
   assert {
     condition     = output.platform == "azure_devops"
     error_message = "azdo is an alias of azure_devops."
   }
+}
+
+run "azdo_needs_a_pool" {
+  command = plan
+
+  variables {
+    platform = "azure_devops"
+    scm_url  = "https://dev.azure.com/example-org"
+  }
+
+  expect_failures = [azurerm_user_assigned_identity.this]
 }

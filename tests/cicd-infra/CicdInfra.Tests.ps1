@@ -470,3 +470,104 @@ Describe 'Runner bootstrap templates carry no secret' {
         if ($Name -like 'bootstrap-*') { $text | Should -Match '169\.254\.169\.254' }
     }
 }
+
+Describe 'Task 05: the runner label and approval environments of the pipelines (devops.pipelines)' {
+    BeforeAll {
+        Mock -ModuleName AzlCicdInfra Invoke-AzlNative {
+            $global:AzlCalls.Add([pscustomobject]@{ Line = "$FilePath $($ArgumentList -join ' ')"; Input = $InputText })
+            & $global:AzlResponder $FilePath @($ArgumentList)
+        }
+        Mock -ModuleName AzlCicdInfra Invoke-AzlRest {
+            $global:AzlCalls.Add([pscustomobject]@{ Line = "REST $Method $Uri"; Body = $Body })
+            & $global:AzlResponder 'REST' @($Method, $Uri)
+        }
+        $script:Client = '33333333-3333-3333-3333-333333333333'
+    }
+    It 'reads the example: the label and one approval environment per pipeline, each with its key' {
+        $v = Get-AzlCicdPipelineInput -Settings (Get-Settings)
+        ($v | Where-Object Name -eq 'AZL_RUNNER_LABEL').Value | Should -Be 'azure-local'
+        ($v | Where-Object Name -eq 'AZL_RUNNER_LABEL').Key | Should -Be 'devops.pipelines.runner_label'
+        ($v | Where-Object Name -eq 'AZL_ENVIRONMENT_ARM_DEPLOYMENT').Value | Should -Be 'azr-prod-us'
+        ($v | Where-Object Name -eq 'AZL_ENVIRONMENT_ARM_DEPLOYMENT').Key | Should -Be 'devops.pipelines.environments.arm_deployment'
+        # the storage wipe approval is read by the Azure DevOps pipeline only
+        @($v | Where-Object Name -eq 'AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE').Count | Should -Be 0
+    }
+    It 'GitHub: sets each one as a repository variable (no --env), from the file' {
+        Start-Recording { param($f, $a) New-Out '' }
+        $s = Get-Settings
+        Set-AzlCicdVariable -Settings $s -ClientId $script:Client -Confirm:$false | Out-Null
+        $set = @(Get-Calls 'variable set AZL_')
+        $set.Count | Should -Be 5
+        $set | ForEach-Object { $_.Line | Should -Not -Match '--env' }
+        (Get-Calls 'variable set AZL_RUNNER_LABEL .*--body azure-local$').Count | Should -Be 1
+        (Get-Calls 'variable set AZL_ENVIRONMENT_OS_CONFIGURATION .*--body azr-prod-us$').Count | Should -Be 1
+        (Get-Calls 'variable set AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT .*--body azr-prod-us$').Count | Should -Be 1
+    }
+    It 'GitHub: -WhatIf sets none of them' {
+        Start-Recording { param($f, $a) New-Out '' }
+        $r = Set-AzlCicdVariable -Settings (Get-Settings) -ClientId $script:Client -WhatIf
+        (Get-Calls 'variable set AZL_').Count | Should -Be 0
+        @($r | Where-Object { $_.Action -eq 'Pipeline variable' -and $_.Status -eq 'Planned' }).Count | Should -Be 5
+    }
+    It 'GitLab: creates project variables for all environments (scope *), not per environment' {
+        $env:GITLAB_TOKEN = 'glpat-test-value'
+        try {
+            Start-Recording {
+                param($f, $a)
+                if ($a[0] -eq 'GET' -and $a[1] -match 'projects/improbability') { return [pscustomobject]@{ id = 55 } }
+                if ($a[0] -eq 'GET') { return $null }
+                return [pscustomobject]@{ id = 1 }
+            }
+            $r = Set-AzlCicdVariable -Settings (Get-Settings 'gitlab') -ClientId $script:Client -Confirm:$false
+            $posts = @(Get-Calls '^REST POST .*/projects/55/variables$' | Where-Object { $_.Body.key -like 'AZL_*' })
+            $posts.Count | Should -Be 5
+            $posts | ForEach-Object { $_.Body.environment_scope | Should -Be '*'; $_.Body.masked | Should -BeFalse }
+            ($posts | Where-Object { $_.Body.key -eq 'AZL_RUNNER_LABEL' }).Body.value | Should -Be 'azure-local'
+            @($r | Where-Object Action -eq 'Pipeline variable').Count | Should -Be 5
+        }
+        finally { $env:GITLAB_TOKEN = $null }
+    }
+    It 'Azure DevOps: sets no variable; it lists the pool and each environment to enter as run parameters' {
+        Start-Recording {
+            param($f, $a)
+            if ($f -eq 'az') { return New-Out 'x' }
+            return [pscustomobject]@{ id = 'x'; value = @() }
+        }
+        $s = Get-Settings 'azure_devops' { param($d) $d.devops.runners[0].pool = 'pool-lnx' }
+        $r = Set-AzlCicdVariable -Settings $s -ClientId $script:Client -Confirm:$false
+        (Get-Calls 'AZL_').Count | Should -Be 0
+        $rows = @($r | Where-Object Action -eq 'Pipeline run parameter')
+        ($rows | Where-Object Target -eq 'devops.runners[].pool').Detail | Should -Match "Enter 'pool-lnx' as the agent pool parameter"
+        ($rows | Where-Object Target -eq 'devops.pipelines.environments.os_configuration_clear_storage').Detail | Should -Match "Enter 'azr-prod-us'"
+        $rows | ForEach-Object { $_.Status | Should -Be 'Skipped' }
+    }
+    It 'Azure DevOps: there is no default pool, so a general runner without one is refused' {
+        { Get-AzlCicdPipelineInput -Settings (Get-Settings 'azure_devops') } | Should -Throw '*devops.runners[[]].pool is not set*'
+        { ConvertTo-AzlRunnerTerraformVariable -Settings (Get-Settings 'azure_devops') } | Should -Throw '*Azure DevOps needs the agent pool*'
+    }
+    It 'Azure DevOps: task 06 passes the pool of each runner on, and the ztp runner needs its own' {
+        $s = Get-Settings 'azure_devops' { param($d) $d.devops.runners[0].pool = 'pool-lnx' }
+        $v = ConvertTo-AzlRunnerTerraformVariable -Settings $s -AdminSshPublicKey 'k'
+        $v.azure_devops_pool | Should -Be 'pool-lnx'
+        $v.azure_devops_ztp_pool | Should -Be 'azurelocal-ztp'
+        $none = Get-Settings 'azure_devops' { param($d) $d.devops.runners[0].pool = 'pool-lnx'; $d.devops.runners[1].Remove('pool') }
+        { ConvertTo-AzlRunnerTerraformVariable -Settings $none } | Should -Throw '*ztp runner*pool*'
+    }
+    It 'refuses a runner label that the general runner does not have' {
+        $s = Get-Settings -Change { param($d) $d.devops.pipelines.runner_label = 'not-a-label' }
+        { Get-AzlCicdPipelineInput -Settings $s } | Should -Throw '*not an entry of devops.runners[[]].labels*'
+    }
+    It 'refuses an environment that devops.environments does not list, or one without an approval' {
+        $s = Get-Settings -Change { param($d) $d.devops.pipelines.environments.arm_deployment = 'no-such-environment' }
+        { Get-AzlCicdPipelineInput -Settings $s } | Should -Throw "*'no-such-environment' is not the name of an entry*"
+        $t = Get-Settings -Change { param($d) $d.devops.pipelines.environments.arm_deployment = 'azr-dev-us' }
+        { Get-AzlCicdPipelineInput -Settings $t } | Should -Throw '*without approval_required*'
+    }
+    It 'a file without devops.pipelines sets nothing and says so' {
+        Start-Recording { param($f, $a) New-Out '' }
+        $s = Get-Settings -Change { param($d) $d.devops.Remove('pipelines') }
+        $r = Set-AzlCicdVariable -Settings $s -ClientId $script:Client -Confirm:$false
+        (Get-Calls 'variable set AZL_').Count | Should -Be 0
+        ($r | Where-Object Action -eq 'Pipeline variable').Status | Should -Be 'Skipped'
+    }
+}

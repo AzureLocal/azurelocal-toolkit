@@ -5,32 +5,31 @@
 #
 # Requirements:
 #   - Service Connection: "AzureLocal-ServiceConnection" (SPN)
-#   - Agent Pool: "AzureLocal-SelfHosted" (self-hosted with on-prem access)
+#   - Agent Pool: the parameter agentPool (devops.runners[].pool of the general runner; self-hosted with on-prem access)
 #   - Variable Group: "azurelocal-secrets" (ARM_CLIENT_ID, etc.)
-#   - Environment: "production" (with approval checks)
+#   - Environment: the parameter approvalEnvironment (devops.pipelines.environments.terraform_deployment; with approval checks)
+#
+# Why parameters: the pool and the environment of a job are not task inputs. Learn says a macro variable $(name) is expanded only in task
+# inputs, and that other keywords take template expressions or runtime parameters
+# (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
+# ${{ variables.name }} does not see variables stored on the pipeline or in a library
+# (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So both are runtime parameters
+# (${{ parameters.name }}) with no default, and a run that nobody started cannot supply them: this pipeline is started by hand.
 # =============================================================================
 # Hosted image: ubuntu-latest is the vendor's label of its hosted Linux image. The jobs that use it only validate and plan and read nothing that
 # belongs to one deployment, so the label is not a setting of a deployment.
-# Trigger branches: the trigger filter is read before any parameter or file exists, so it cannot come from the infrastructure file. The
-# schema 5 pipelines (arm-deployment, os-configuration, cicd-infra) are started by hand only.
-trigger:
-  branches:
-    include:
-      - main
-  paths:
-    include:
-      - src/terraform/**
-      - src/ansible/**
-      - config/variables/**
+# Started by hand, like the schema 5 pipelines (arm-deployment, os-configuration, cicd-infra): a run started by a push or a pull request
+# cannot supply the two parameters below, which have no default.
+trigger: none
+pr: none
 
-pr:
-  branches:
-    include:
-      - main
-  paths:
-    include:
-      - src/terraform/**
-      - src/ansible/**
+parameters:
+  - name: agentPool
+    displayName: Self-hosted agent pool. Enter devops.runners[].pool of the general runner
+    type: string
+  - name: approvalEnvironment
+    displayName: Environment of the approvals. Enter devops.pipelines.environments.terraform_deployment
+    type: string
 
 variables:
   - group: azurelocal-secrets
@@ -135,7 +134,7 @@ stages:
         displayName: 'Terraform Apply'
         pool:
           vmImage: 'ubuntu-latest'
-        environment: 'production'
+        environment: ${{ parameters.approvalEnvironment }}
         strategy:
           runOnce:
             deploy:
@@ -180,8 +179,8 @@ stages:
       - deployment: OnPremConfig
         displayName: 'Ansible Configuration'
         pool:
-          name: 'AzureLocal-SelfHosted'
-        environment: 'production'
+          name: ${{ parameters.agentPool }}
+        environment: ${{ parameters.approvalEnvironment }}
         strategy:
           runOnce:
             deploy:
@@ -204,8 +203,8 @@ stages:
       - deployment: Operations
         displayName: 'Monitoring & Management'
         pool:
-          name: 'AzureLocal-SelfHosted'
-        environment: 'production'
+          name: ${{ parameters.agentPool }}
+        environment: ${{ parameters.approvalEnvironment }}
         strategy:
           runOnce:
             deploy:

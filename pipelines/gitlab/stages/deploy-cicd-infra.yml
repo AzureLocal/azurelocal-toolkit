@@ -10,24 +10,25 @@
 # Pipeline variables:
 #   CICD_INFRA=true            run these jobs
 #   CICD_INFRASTRUCTURE_FILE   path of infrastructure.yml (default config/infrastructure.yml)
-#   CICD_RUNNER_TAG            runner tag. Default "azure". For the very first run, before
-#                              the runners exist, set it to a shared runner tag.
+#   AZL_RUNNER_LABEL           the runner tag (devops.pipelines.runner_label), a project variable set by task 05. For the very first run,
+#                              before the runners exist, give AZL_RUNNER_LABEL a shared runner tag when you run the pipeline.
+#   AZL_ENVIRONMENT_CICD_INFRA the protected environment of the apply job (devops.pipelines.environments.cicd_infra), set by task 05.
+#                              tags: and environment:name expand CI/CD variables (https://docs.gitlab.com/ci/variables/where_variables_can_be_used/).
 #   RUNNER_SSH_PUBLIC_KEY      the public key for the Linux runners (a public key)
-# Protect the "cicd-infra" environment with an approval rule, so the apply waits for a reviewer.
+# Protect the approval environment with an approval rule (task 04 creates it), so the apply waits for a reviewer.
 # Reuses the stages of .gitlab-ci.yml: validate, plan and deploy-foundation.
 # =============================================================================
 
 .cicd-infra:base:
   variables:
     CICD_INFRASTRUCTURE_FILE: "config/infrastructure.yml"
-    CICD_RUNNER_TAG: "azure"
     CICD_TF_ROOT: "${CI_PROJECT_DIR}/src/terraform/environments/cicd-infra"
     CICD_WORK: "${CI_PROJECT_DIR}/.cicd-infra"
     CICD_TASK06: "scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners/powershell/Invoke-CicdRunners-Orchestrated.ps1"
     ARM_USE_OIDC: "true"
     TF_IN_AUTOMATION: "true"
   tags:
-    - ${CICD_RUNNER_TAG}
+    - ${AZL_RUNNER_LABEL}
   rules:
     - if: '$CICD_INFRA == "true"'
   id_tokens:
@@ -54,6 +55,7 @@ cicd-infra:plan:
   extends: .cicd-infra:base
   stage: plan
   needs: ["cicd-infra:validate"]
+  # terraform init, validate and plan of the runner VMs and their network: the toolkit's limit, not a figure from Microsoft.
   timeout: 1h
   script:
     # Nothing changes in Azure: init, validate and plan, with the plan saved.
@@ -64,18 +66,20 @@ cicd-infra:plan:
       - .cicd-infra/cicd-infra.tfplan
       - .cicd-infra/.terraform.lock.hcl
       - .cicd-infra/plan.txt
+    # The plan is applied by the apply job of this pipeline and is stale after a day: the toolkit's retention.
     expire_in: 1 day
 
 cicd-infra:apply:
   extends: .cicd-infra:base
   stage: deploy-foundation
   needs: ["cicd-infra:plan"]
+  # terraform apply of the runner VMs, their network and role assignments: the toolkit's limit, not a figure from Microsoft.
   timeout: 2h
   script:
     # Applies the plan that was reviewed. It makes no new plan.
     - pwsh -NoProfile -File "${CICD_TASK06}" -ConfigPath "${CICD_INFRASTRUCTURE_FILE}" -PlanFile "${CICD_WORK}/cicd-infra.tfplan" -Apply
   environment:
-    name: cicd-infra
+    name: ${AZL_ENVIRONMENT_CICD_INFRA}
   rules:
     - if: '$CICD_INFRA == "true" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
       when: manual

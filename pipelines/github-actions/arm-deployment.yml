@@ -12,17 +12,21 @@
 #   validate        Mode Validate. Runs for mode Validate and ValidateAndDeploy. A Validate that already passed with the same
 #                   parameters is not submitted again; one that is running is attached to.
 #   deploy          Mode Deploy (2.5 to 3 hours). Runs for mode ValidateAndDeploy and Deploy, and only after a reviewer of the
-#                   GitHub environment `azure-local-deploy` approved it. The reviewer reads the validate job's summary. The job
+#                   GitHub environment named by the repository variable AZL_ENVIRONMENT_ARM_DEPLOYMENT approved it. The reviewer reads the validate job's summary. The job
 #                   checks every precondition and that THESE parameters validated, so an approval cannot start a Deploy of
 #                   parameters that were never validated. `resume` resubmits a failed Deploy.
 #
 # Settings (Settings > Secrets and variables > Actions; names only, no value is in this file)
 #   variables  AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID   an app registration (or user-assigned managed identity)
-#              with a federated credential for this repository and for the environment azure-local-deploy. No client secret.
+#              with a federated credential for this repository and for the approval environment. No client secret.
+#              AZL_RUNNER_LABEL                 the label of the self-hosted runner (devops.pipelines.runner_label)
+#              AZL_ENVIRONMENT_ARM_DEPLOYMENT   the approval environment (devops.pipelines.environments.arm_deployment)
+#              Task 05 of the CI/CD setup (Set-CicdVariables.ps1) sets both from infrastructure.yml as repository variables. GitHub reads
+#              runs-on and the environment name from the vars context (https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability), so no name is here.
 #   secrets    none. The local administrator and LCM passwords are read from the Key Vaults named by the keyvault:// references
 #              in the master file; the identity needs Get on those secrets and the rights listed in the design (section 12).
-# Environment `azure-local-deploy`: add required reviewers (Settings > Environments). That is the approval gate.
-# Runner: a self-hosted Linux runner with pwsh 7, labelled azure-local. It needs only HTTPS to Azure. The Active Directory
+# The approval environment: task 04 creates it with its required reviewers (Settings > Environments). That is the approval gate.
+# Runner: a self-hosted Linux runner with pwsh 7, labelled with devops.pipelines.runner_label. It needs only HTTPS to Azure. The Active Directory
 # check needs a domain-joined runner with the ActiveDirectory module; on another runner that check is Skipped, not failed.
 #
 # Where the files come from: the master file is a path in this repository (infrastructure_file). The OS configuration report is
@@ -87,7 +91,8 @@ env:
 jobs:
   preconditions:
     name: Preconditions (read only)
-    runs-on: [self-hosted, linux, azure-local]
+    runs-on: [self-hosted, linux, "${{ vars.AZL_RUNNER_LABEL }}"]
+    # Read-only checks that make no long wait: the toolkit's limit for them, not a figure from Microsoft.
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
@@ -147,7 +152,9 @@ jobs:
     name: Validate
     needs: preconditions
     if: ${{ inputs.mode == 'Validate' || inputs.mode == 'ValidateAndDeploy' }}
-    runs-on: [self-hosted, linux, azure-local]
+    runs-on: [self-hosted, linux, "${{ vars.AZL_RUNNER_LABEL }}"]
+    # Microsoft Learn: the validation takes about 10 minutes (https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template-disaggregated).
+    # The script waits at most deployment.validate_timeout_minutes (default 90); 150 minutes is the toolkit's limit above that wait.
     timeout-minutes: 150
     steps:
       - uses: actions/checkout@v4
@@ -208,10 +215,12 @@ jobs:
     needs: [preconditions, validate]
     # validate is skipped for mode Deploy; always() lets the job run then, but only when nothing before it failed.
     if: ${{ always() && !cancelled() && needs.preconditions.result == 'success' && (needs.validate.result == 'success' || needs.validate.result == 'skipped') && (inputs.mode == 'ValidateAndDeploy' || inputs.mode == 'Deploy') }}
-    runs-on: [self-hosted, linux, azure-local]
+    runs-on: [self-hosted, linux, "${{ vars.AZL_RUNNER_LABEL }}"]
     # Required reviewers on this environment are the approval gate.
-    environment: azure-local-deploy
-    # 2.5 to 3 hours of deployment, the wait limit is 6 hours.
+    environment: ${{ vars.AZL_ENVIRONMENT_ARM_DEPLOYMENT }}
+    # Microsoft Learn: the deployment takes between 2.5 and 3 hours (https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template).
+    # The script waits at most deployment.deploy_timeout_minutes (default 360, 6 hours); 420 minutes is that wait plus an hour for the checks and the report.
+    # If you raise deployment.deploy_timeout_minutes above 360, raise this limit in your copy too.
     timeout-minutes: 420
     steps:
       - uses: actions/checkout@v4

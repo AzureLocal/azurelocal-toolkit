@@ -65,15 +65,15 @@ variable "github_runner_group" {
 }
 
 variable "azure_devops_pool" {
-  description = "Azure Pipelines pool of the general (Linux) agents."
+  description = "Azure Pipelines pool of the general (Linux) agents (devops.runners[].pool). Needed when platform is azure_devops; there is no default pool."
   type        = string
-  default     = "AzureRunners"
+  default     = ""
 }
 
 variable "azure_devops_ztp_pool" {
-  description = "Azure Pipelines pool of the ZTP (Windows) agent. Its own pool: the agent has administrator rights and reaches the BMC network."
+  description = "Azure Pipelines pool of the ZTP (Windows) agent (devops.runners[].pool of the ztp runner). Its own pool: the agent has administrator rights and reaches the BMC network. Needed when platform is azure_devops; there is no default pool."
   type        = string
-  default     = "AzureLocalZtp"
+  default     = ""
 }
 
 variable "registration_secret" {

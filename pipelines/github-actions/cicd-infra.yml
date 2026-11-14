@@ -9,10 +9,13 @@
 # Sign-in: OIDC (federated credential made by task 01). No client secret.
 # Secrets (task 05):   ARM_TENANT_ID, ARM_SUBSCRIPTION_ID, ARM_CLIENT_ID
 # Variable (optional): RUNNER_SSH_PUBLIC_KEY, the public key for the Linux runners
-# Environment:         cicd-infra-apply with required reviewers (the approval gate)
+# Variables (task 05 sets them from infrastructure.yml as repository variables; the vars context is read by runs-on and by the environment name,
+# https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability):
+#   AZL_RUNNER_LABEL            the label of the self-hosted runner (devops.pipelines.runner_label)
+#   AZL_ENVIRONMENT_CICD_INFRA  the approval environment with required reviewers, the approval gate (devops.pipelines.environments.cicd_infra)
 #
 # Where it runs: the first time, on GitHub-hosted runners (there are no runners yet).
-# After the runners exist, choose "self-hosted" to run on [self-hosted, linux, azure].
+# After the runners exist, choose "self-hosted" to run on [self-hosted, linux, <AZL_RUNNER_LABEL>].
 # The runners read their own registration credential from Key Vault at boot; this
 # workflow never sees it.
 # =============================================================================
@@ -87,7 +90,8 @@ jobs:
   plan:
     name: Plan
     needs: validate
-    runs-on: ${{ inputs.runner == 'self-hosted' && fromJSON('["self-hosted","linux","azure"]') || 'ubuntu-latest' }}
+    runs-on: ${{ inputs.runner == 'self-hosted' && fromJSON(format('["self-hosted","linux","{0}"]', vars.AZL_RUNNER_LABEL)) || 'ubuntu-latest' }}
+    # terraform init, validate and plan of the runner VMs and their network: the toolkit's limit, not a figure from Microsoft.
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
@@ -128,14 +132,16 @@ jobs:
             ${{ runner.temp }}/cicd-infra/.terraform.lock.hcl
             ${{ runner.temp }}/cicd-infra/plan.txt
           include-hidden-files: true
+          # The plan is read by the apply job of this run and is stale after a day: the toolkit's limit.
           retention-days: 1
 
   apply:
     name: Apply (needs approval)
     needs: plan
     if: ${{ inputs.apply }}
-    runs-on: ${{ inputs.runner == 'self-hosted' && fromJSON('["self-hosted","linux","azure"]') || 'ubuntu-latest' }}
-    environment: cicd-infra-apply # required reviewers: the manual approval
+    runs-on: ${{ inputs.runner == 'self-hosted' && fromJSON(format('["self-hosted","linux","{0}"]', vars.AZL_RUNNER_LABEL)) || 'ubuntu-latest' }}
+    environment: ${{ vars.AZL_ENVIRONMENT_CICD_INFRA }} # required reviewers: the manual approval
+    # terraform apply of the runner VMs, their network and role assignments: the toolkit's limit, not a figure from Microsoft.
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@v4

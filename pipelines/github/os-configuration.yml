@@ -6,17 +6,21 @@
 #
 # Job 1 `plan` is read only. It publishes the plan report and the wipe list (which disks on which node would be wiped, when
 # os_configuration.clear_storage is true) as an artifact and in the job summary.
-# Job 2 `apply` runs only for mode Apply, and only after a reviewer of the GitHub environment `azure-local-os-configuration`
-# approved it. The reviewer reads the plan job's summary, the wipe list included.
+# Job 2 `apply` runs only for mode Apply, and only after a reviewer of the GitHub environment named by the repository variable
+# AZL_ENVIRONMENT_OS_CONFIGURATION approved it. The reviewer reads the plan job's summary, the wipe list included.
 #
 # Settings (Settings > Secrets and variables > Actions; names only, no value is in this file):
 #   variables  AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID   the app registration (or user-assigned managed identity)
-#              with a federated credential for this repository and the environment azure-local-os-configuration
+#              with a federated credential for this repository and the approval environment
+#              AZL_RUNNER_LABEL                  the label of the self-hosted runner (devops.pipelines.runner_label)
+#              AZL_ENVIRONMENT_OS_CONFIGURATION  the approval environment (devops.pipelines.environments.os_configuration)
+#              Task 05 of the CI/CD setup (Set-CicdVariables.ps1) sets both from infrastructure.yml as repository variables. GitHub reads
+#              runs-on and the environment name from the vars context (https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability), so no name is here.
 #   secrets    none needed. Nothing secret is stored here: the nodes' local administrator password is read from the Key Vault
 #              named by identity.local_admin.password in the master file.
-# Environment `azure-local-os-configuration`: add required reviewers (Settings > Environments). That is the approval gate.
+# The approval environment: task 04 creates it with its required reviewers (Settings > Environments). That is the approval gate.
 # Runner: PowerShell remoting (WinRM) is the transport, so the runner needs a ROUTE to the nodes' management network: a self-hosted Windows runner on it
-# (labelled ztp), or a Linux runner labelled azure-local with pwsh 7 and the PSWSMan module (Negotiate/Kerberos), or WinRM over HTTPS (5986, a certificate on
+# (labelled ztp), or a Linux runner labelled with devops.pipelines.runner_label, with pwsh 7 and the PSWSMan module (Negotiate/Kerberos), or WinRM over HTTPS (5986, a certificate on
 # the nodes; set remoting.useSsl in the settings file). A node whose firewall still limits WinRM to its own subnet needs remoting.bootstrapTransport = arc
 # once (Azure sign-in with Azure Connected Machine Resource Administrator), or WinRM-In opened for the runner's CIDR. A runner with no route can pass
 # -Transport ArcRunCommand, which is not recommended for network changes. The pre-check fails fast with one table of unreachable nodes.
@@ -71,7 +75,7 @@ env:
 jobs:
   plan:
     name: Plan (read only)
-    runs-on: [self-hosted, linux, azure-local]
+    runs-on: [self-hosted, linux, "${{ vars.AZL_RUNNER_LABEL }}"]
     steps:
       - uses: actions/checkout@v4
 
@@ -129,9 +133,9 @@ jobs:
     name: Apply (needs approval)
     needs: plan
     if: ${{ inputs.mode == 'Apply' }}
-    runs-on: [self-hosted, linux, azure-local]
+    runs-on: [self-hosted, linux, "${{ vars.AZL_RUNNER_LABEL }}"]
     # Required reviewers on this environment are the approval gate.
-    environment: azure-local-os-configuration
+    environment: ${{ vars.AZL_ENVIRONMENT_OS_CONFIGURATION }}
     steps:
       - uses: actions/checkout@v4
 

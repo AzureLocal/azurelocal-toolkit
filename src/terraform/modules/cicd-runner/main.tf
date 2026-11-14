@@ -133,6 +133,10 @@ resource "azurerm_user_assigned_identity" "this" {
       condition     = local.use_vm || var.data_disk_size_gb == 0
       error_message = "data_disk_size_gb is supported for compute_type = \"vm\" only."
     }
+    precondition {
+      condition     = local.platform != "azure_devops" || var.azure_devops_pool != ""
+      error_message = "azure_devops_pool is needed when platform is azure_devops (devops.runners[].pool in infrastructure.yml). There is no default pool."
+    }
   }
 }
 

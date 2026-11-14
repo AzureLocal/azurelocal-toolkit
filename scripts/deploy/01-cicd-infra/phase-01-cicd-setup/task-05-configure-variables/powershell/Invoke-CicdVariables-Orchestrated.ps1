@@ -6,6 +6,8 @@
 .DESCRIPTION
     Writes the Azure sign-in values to each environment: GitHub secrets, GitLab masked variables, an Azure DevOps variable group and, for Azure DevOps with OIDC, the workload identity federation service connection AzureLocal-ServiceConnection. With OIDC there is no client secret. With devops.authentication.method client_secret the secret is read from Key Vault and set as a masked value.
 
+    It also sets the runner label and the approval environments the pipelines select (devops.pipelines.runner_label and devops.pipelines.environments.*): GitHub repository variables and GitLab project CI/CD variables named AZL_RUNNER_LABEL and AZL_ENVIRONMENT_..., the same for all environments. Azure DevOps reads the agent pool and the environment of a job before any variable exists, so there they are run parameters with no default: the task changes nothing and lists the value to enter for each (devops.runners[].pool of the general runner, and the environments). A label that the general runner does not have, or an environment that devops.environments[] does not list with approval_required true, stops the task.
+
     The orchestrated variant takes the infrastructure file as -ConfigPath and has no CONFIGURATION region. It is what the
     pipelines and the Deploy-Infrastructure.ps1 driver call. Idempotent; -WhatIf lists what it would do.
 

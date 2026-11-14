@@ -11,7 +11,7 @@ terraform:apply:
   dependencies:
     - terraform:plan
   environment:
-    name: ${CI_ENVIRONMENT_NAME}
+    name: ${AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT} # a project CI/CD variable set by task 05 (devops.pipelines.environments.terraform_deployment)
     action: start
   artifacts:
     paths:
@@ -34,6 +34,7 @@ terraform:outputs:
   artifacts:
     paths:
       - "${TF_ROOT}/terraform-outputs.json"
+    # The Terraform outputs of this run, kept for a week: the toolkit's retention for them, not a deployment setting.
     expire_in: 1 week
   rules:
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

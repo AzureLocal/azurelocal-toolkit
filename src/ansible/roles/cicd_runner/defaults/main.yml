@@ -25,7 +25,7 @@ cicd_runner_purpose: general
 cicd_runner_extra_labels: []
 
 cicd_runner_github_runner_group: ""
-cicd_runner_azure_devops_pool: AzureRunners
+cicd_runner_azure_devops_pool: "" # Azure DevOps only (devops.runners[].pool); there is no default pool, the role stops without it
 
 # keyvault_managed_identity | variable
 cicd_runner_token_source: keyvault_managed_identity
