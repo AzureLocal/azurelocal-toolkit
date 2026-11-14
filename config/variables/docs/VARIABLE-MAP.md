@@ -10,16 +10,16 @@
 
 The machine-readable copy, one row per variable with every column, is [`reports/variable-map.csv`](../reports/variable-map.csv). This page shows the variables of `infrastructure.yml` in full; the variables owned by a tool and the older variables-file sections are summarised (their rows are in the CSV). The diagram of the same flow is [`variable-flow.drawio`](diagrams/variable-flow.drawio) ([PNG](diagrams/variable-flow.png)).
 
-Registry version 5.0.54. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
+Registry version 5.0.55. Sources of the scan: toolkit (this repository), sonar 39e26b9, trailwright 3c7aa5a, ztp 302b4c2.
 
 ## In numbers
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Keys of infrastructure.yml | 667 | 470 | 85 | 3 | 107 | 2 |
-| Owned by a tool (`tools.*`) | 4726 | 4518 | 0 | 0 | 208 | 0 |
+| Owned by a tool (`tools.*`) | 4733 | 4525 | 0 | 0 | 208 | 0 |
 | Older variables-file sections | 1417 | 20 | 6 | 0 | 1385 | 6 |
-| All registry leaves | 6810 | 5008 | 91 | 3 | 1700 | 8 |
+| All registry leaves | 6817 | 5015 | 91 | 3 | 1700 | 8 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -91,10 +91,10 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | --- | --- | ---: | ---: | ---: |
 | trailwright | Design | 0 | 130 | 0 |
 | discovery | Discovery | 25 | 13 | 158 |
-| ztp | ZTP | 89 | 0 | 1090 |
+| ztp | ZTP | 89 | 0 | 1091 |
 | os-configuration | OS configuration | 76 | 0 | 282 |
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
-| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1471 |
+| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1473 |
 | sonar | Sonar | 14 | 0 | 266 |
 | cicd-infra | Outside the flow | 59 | 0 | 364 |
 | infrastructure-helpers | Outside the flow | 39 | 0 | 0 |
@@ -433,7 +433,7 @@ Ranked by how many different tools read the key, then how many places in the cod
 | `identity.active_directory.domain_fqdn` | ARM domainFqdn. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM domainFqdn; OS DomainJoin |
 | `identity.active_directory.lcm_user.username` | Name only, no domain. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM AzureStackLCMAdminUsername; OS DomainJoin |
 | `identity.active_directory.ou_path` | Distinguished name of the dedicated OU. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM adouPath; OS DomainJoin |
-| `scenario.storage_architecture` | s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both (S2D plus a SAN). san and hybrid TELL THE... | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM configurationMode; OS ClearStorage; Mpio; SanVerify; Gate NW-013; ST-004; ST-008 |
+| `scenario.storage_architecture` | s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both (S2D plus a SAN). san and hybrid TELL THE... | operator by hand; Trailwright questionnaire; default | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM configurationMode; OS ClearStorage; Mpio; SanVerify; Gate NW-013; ST-004; ST-008 |
 | `networking.management.dns_servers` | ARM dnsServers. | operator by hand; Trailwright questionnaire | arm-deployment; infrastructure-helpers; pre-cluster-verification; ztp | ARM dnsServers; OS Dns; Network; NicNames; UnusedAdapters; Gate ND-006; NW-015 |
 | `nodes[].bmc.ip_address` | IPv4 address of the BMC (iDRAC, iLO, XCC). | operator by hand; Trailwright questionnaire | discovery; infrastructure-helpers; toolkit-legacy-scripts; ztp |  |
 | `identity.active_directory.netbios_name` | Up to 15 letters, digits and hyphens. | operator by hand; Trailwright questionnaire | os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | OS DomainJoin |
@@ -956,17 +956,17 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | Path | Type, default, allowed | Provided by | Tools | Read by | Becomes | Status |
 | --- | --- | --- | --- | --- | --- | --- |
 | `cluster.name` | string (netbios_name), required | operator; Trailwright | os_configuration; deployment; monitoring; trailwright; ansible | arm-deployment; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM clusterName; customLocation; Sonar clusterName | read |
-| `cluster.naming_prefix` | string | operator; Trailwright | deployment; trailwright | arm-deployment | ARM namingPrefix | read |
-| `cluster.deployment_mode` | string, one of `validate`, `deploy` | operator; Trailwright | deployment | arm-deployment | ARM deploymentMode | read |
+| `cluster.naming_prefix` | string, default `hci` | operator; Trailwright; default | deployment; trailwright | arm-deployment | ARM namingPrefix | read |
+| `cluster.deployment_mode` | string, default `validate`, one of `validate`, `deploy` | operator; Trailwright; default | deployment | arm-deployment | ARM deploymentMode | read |
 | `cluster.witness.type` | string, required, one of `cloud`, `file_share`, `none` | operator; Trailwright | deployment; trailwright | arm-deployment; infrastructure-helpers | ARM clusterWitnessStorageAccountName; witnessType | read |
 | `cluster.witness.storage_account` | string (storage_account_name) | operator; Trailwright | deployment; trailwright | arm-deployment; infrastructure-helpers | ARM clusterWitnessStorageAccountName | read |
 | `cluster.witness.path` | string | operator; Trailwright | trailwright | infrastructure-helpers |  | read |
 | `cluster.key_vault.name` | string (key_vault_name), required | operator; Trailwright | deployment; trailwright; terraform | arm-deployment | ARM keyVaultName | read |
-| `cluster.key_vault.create_new` | boolean | operator; Trailwright | deployment; trailwright | arm-deployment | ARM createNewKeyVault | read |
-| `cluster.key_vault.soft_delete_retention_days` | integer | operator | deployment; trailwright | arm-deployment | ARM softDeleteRetentionDays | read |
+| `cluster.key_vault.create_new` | boolean, default `true` | operator; Trailwright; default | deployment; trailwright | arm-deployment | ARM createNewKeyVault | read |
+| `cluster.key_vault.soft_delete_retention_days` | integer, default `30` | operator; default | deployment; trailwright | arm-deployment | ARM softDeleteRetentionDays | read |
 | `cluster.diagnostics.storage_account` | string (storage_account_name) | operator; Trailwright | deployment; trailwright | arm-deployment | ARM diagnosticStorageAccountName | read |
-| `cluster.diagnostics.logs_retention_days` | integer | operator | deployment; trailwright | arm-deployment | ARM logsRetentionInDays | read |
-| `cluster.diagnostics.storage_account_type` | string | operator | deployment; trailwright | arm-deployment | ARM storageAccountType | read |
+| `cluster.diagnostics.logs_retention_days` | integer, default `30` | operator; default | deployment; trailwright | arm-deployment | ARM logsRetentionInDays | read |
+| `cluster.diagnostics.storage_account_type` | string, default `Standard_LRS` | operator; default | deployment; trailwright | arm-deployment | ARM storageAccountType | read |
 
 ### deployment
 
@@ -1336,7 +1336,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `networking.management.vlan_id` | integer | operator; Trailwright | ztp; os_configuration; trailwright; ansible | infrastructure-helpers; pre-cluster-verification; ztp | OS Dns; Network; NicNames; UnusedAdapters; Gate NW-013; NW-015 | read |
 | `networking.management.dns_servers` | array, required | operator; Trailwright | ztp; os_configuration; deployment; trailwright; ansible | arm-deployment; infrastructure-helpers; pre-cluster-verification; ztp | ARM dnsServers; OS Dns; Network; NicNames; UnusedAdapters; Gate ND-006; NW-015 | read |
 | `networking.management.ip_assignment` | string, default `static`, one of `static`, `dhcp`, `preconfigured` | operator; Trailwright; default | ztp; os_configuration; deployment | infrastructure-helpers; ztp | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~Dns | deprecated |
-| `networking.management.use_dhcp` | boolean | operator; Trailwright | os_configuration; deployment; trailwright | arm-deployment; pre-cluster-verification | ARM useDhcp; OS ~Dns; ~Network; ~NicNames; ~UnusedAdapters | read |
+| `networking.management.use_dhcp` | boolean, default `false` | operator; Trailwright; default | os_configuration; deployment; trailwright | arm-deployment; pre-cluster-verification | ARM useDhcp; OS ~Dns; ~Network; ~NicNames; ~UnusedAdapters | read |
 | `networking.management.site_ip_range.start` | string (ipv4), required | operator | ztp; os_configuration | infrastructure-helpers | OS ~Dns; ~Network; ~NicNames; ~UnusedAdapters | read |
 | `networking.management.site_ip_range.end` | string (ipv4), required | operator | ztp; os_configuration | infrastructure-helpers | OS ~Dns; ~Network; ~NicNames; ~UnusedAdapters | read |
 | `networking.management.provisioning_network` | string, default `dhcp`, one of `dhcp`, `static` | operator; default | ztp; os_configuration | infrastructure-helpers; ztp | OS Dns; Network; UnusedAdapters; ~NicNames | read |
@@ -1360,7 +1360,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `networking.intents[].overrides.adapter.network_direct_technology` | string, one of `iwarp`, `roce`, `roce_v2` | operator | os_configuration; deployment; trailwright | (part: arm-deployment) | ARM ~intentList; ~networkingPattern | read-as-part |
 | `networking.intents[].overrides.virtual_switch.enable_iov` | boolean | operator | os_configuration; deployment; trailwright | (part: arm-deployment) | ARM ~intentList; ~networkingPattern | read-as-part |
 | `networking.intents[].overrides.virtual_switch.load_balancing_algorithm` | string, one of `dynamic`, `hyper_v_port` | operator | os_configuration; deployment; trailwright | (part: arm-deployment) | ARM ~intentList; ~networkingPattern | read-as-part |
-| `networking.storage.auto_ip` | boolean | operator; Trailwright | os_configuration; deployment; trailwright | arm-deployment | ARM enableStorageAutoIp; storageNetworkList | read |
+| `networking.storage.auto_ip` | boolean, default `true` | operator; Trailwright; default | os_configuration; deployment; trailwright | arm-deployment | ARM enableStorageAutoIp; storageNetworkList | read |
 | `networking.storage.switchless_links` | string, one of `single`, `dual` | operator; Trailwright | trailwright |  |  | placeholder |
 | `networking.storage.tor_switches` | integer | operator; Trailwright | trailwright |  |  | placeholder |
 | `networking.storage.layout` | string, one of `dedicated`, `converged` | operator; Trailwright | os_configuration; trailwright |  |  | placeholder |
@@ -1404,8 +1404,8 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `networking.network_security_groups[].rules[].source_port_ranges` | array | operator | deployment | toolkit-legacy-scripts |  | read |
 | `networking.network_security_groups[].rules[].destination_port_ranges` | array, required | operator | deployment | toolkit-legacy-scripts |  | read |
 | `networking.network_security_groups[].rules[].description` | string | operator | deployment | toolkit-legacy-scripts |  | read |
-| `networking.outbound.proxy.url` | string, required | operator; Trailwright | os_configuration; trailwright; ansible | os-configuration; pre-cluster-verification | OS ArcRegistration; Gate NW-006 | read |
-| `networking.outbound.proxy.bypass` | array | operator; Trailwright | os_configuration | os-configuration | OS ArcRegistration | read |
+| `networking.outbound.proxy.url` | string, required | operator; Trailwright | os_configuration; trailwright; ansible; ztp | os-configuration; pre-cluster-verification | OS ArcRegistration; Gate NW-006 | read |
+| `networking.outbound.proxy.bypass` | array | operator; Trailwright | os_configuration; ztp | os-configuration | OS ArcRegistration | read |
 | `networking.outbound.arc_gateway.name` | string, required | operator; Trailwright | os_configuration; trailwright; ansible | infrastructure-helpers; os-configuration; pre-cluster-verification | OS ArcRegistration | read |
 | `networking.outbound.arc_gateway.resource_group` | string (resource_group) | operator | os_configuration; ansible | infrastructure-helpers; os-configuration; pre-cluster-verification | OS ArcRegistration | read |
 | `networking.outbound.private_path.transport` | string, one of `expressroute`, `site_to_site_vpn` | operator; Trailwright | trailwright |  |  | placeholder |
@@ -1587,12 +1587,12 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | Path | Type, default, allowed | Provided by | Tools | Read by | Becomes | Status |
 | --- | --- | --- | --- | --- | --- | --- |
 | `scenario.identity` | string, one of `active_directory`, `local_identity` | operator; Trailwright | os_configuration; deployment; monitoring; trailwright | arm-deployment; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | OS DomainJoin; Sonar identityModel; Gate RD-006 | read |
-| `scenario.storage_architecture` | string, one of `s2d`, `san`, `hybrid` | operator; Trailwright | os_configuration; deployment; trailwright | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM configurationMode; OS ClearStorage; Mpio; SanVerify; Gate NW-013; ST-004; ST-008 | read |
-| `scenario.storage_connectivity` | string, one of `switched`, `switchless` | operator; Trailwright | deployment; trailwright | arm-deployment; toolkit-legacy-scripts | ARM networkingType; storageConnectivitySwitchless | read |
+| `scenario.storage_architecture` | string, default `s2d`, one of `s2d`, `san`, `hybrid` | operator; Trailwright; default | os_configuration; deployment; trailwright | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM configurationMode; OS ClearStorage; Mpio; SanVerify; Gate NW-013; ST-004; ST-008 | read |
+| `scenario.storage_connectivity` | string, default `switched`, one of `switched`, `switchless` | operator; Trailwright; default | deployment; trailwright | arm-deployment; toolkit-legacy-scripts | ARM networkingType; storageConnectivitySwitchless | read |
 | `scenario.topology` | string, one of `standard`, `rack_aware` | operator; Trailwright | deployment; trailwright | arm-deployment |  | read |
 | `scenario.connectivity` | string, one of `connected`, `disconnected` | operator; Trailwright | deployment; trailwright | arm-deployment; pre-cluster-verification; toolkit-legacy-scripts | Gate NW-005 | read |
 | `scenario.cloud` | string, one of `public`, `government` | operator; Trailwright | os_configuration; deployment; trailwright | arm-deployment; os-configuration; pre-cluster-verification | OS ArcRegistration; Gate NW-005 | read |
-| `scenario.outbound_path` | string, one of `direct`, `proxy`, `arc_gateway`, `proxy_arc_gateway`, `private_path` | operator; Trailwright | os_configuration; trailwright; ansible | infrastructure-helpers; os-configuration; pre-cluster-verification | OS ArcRegistration; Gate NW-006 | read |
+| `scenario.outbound_path` | string, one of `direct`, `proxy`, `arc_gateway`, `proxy_arc_gateway`, `private_path` | operator; Trailwright | os_configuration; trailwright; ansible; ztp | infrastructure-helpers; os-configuration; pre-cluster-verification | OS ArcRegistration; Gate NW-006 | read |
 | `scenario.os_install` | string, one of `iso`, `simplified` | operator; Trailwright | ztp; os_configuration; monitoring; trailwright | os-configuration; sonar; ztp | Sonar provisioningRoute | read |
 | `scenario.deploy_method` | string, one of `portal`, `arm` | operator; Trailwright | trailwright |  |  | placeholder |
 | `scenario.environment_class` | string, default `production`, one of `lab`, `test`, `dev`, `production`, `dmz` | operator; default | os_configuration | os-configuration; toolkit-legacy-scripts | OS DomainJoin; RemoteManagement | read |
@@ -1621,14 +1621,14 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 
 | Path | Type, default, allowed | Provided by | Tools | Read by | Becomes | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| `security.level` | string, one of `recommended`, `customized` | operator; Trailwright | deployment; trailwright | arm-deployment | ARM securityLevel | read |
-| `security.drift_control` | boolean | operator | deployment; trailwright | arm-deployment | ARM driftControlEnforced | read |
-| `security.credential_guard` | boolean | operator | deployment; trailwright | arm-deployment | ARM credentialGuardEnforced | read |
-| `security.smb_signing` | boolean | operator | deployment; trailwright | arm-deployment | ARM smbSigningEnforced | read |
-| `security.smb_cluster_encryption` | boolean | operator | deployment; trailwright | arm-deployment | ARM smbClusterEncryption | read |
-| `security.bitlocker_boot_volume` | boolean | operator | deployment; trailwright | arm-deployment | ARM bitlockerBootVolume | read |
-| `security.bitlocker_data_volumes` | boolean | operator | deployment; trailwright | arm-deployment | ARM bitlockerDataVolumes | read |
-| `security.wdac` | boolean | operator | deployment; trailwright | arm-deployment | ARM wdacEnforced | read |
+| `security.level` | string, default `recommended`, one of `recommended`, `customized` | operator; Trailwright; default | deployment; trailwright | arm-deployment | ARM securityLevel | read |
+| `security.drift_control` | boolean, default `true` | operator; default | deployment; trailwright | arm-deployment | ARM driftControlEnforced | read |
+| `security.credential_guard` | boolean, default `true` | operator; default | deployment; trailwright | arm-deployment | ARM credentialGuardEnforced | read |
+| `security.smb_signing` | boolean, default `true` | operator; default | deployment; trailwright | arm-deployment | ARM smbSigningEnforced | read |
+| `security.smb_cluster_encryption` | boolean, default `false` | operator; default | deployment; trailwright | arm-deployment | ARM smbClusterEncryption | read |
+| `security.bitlocker_boot_volume` | boolean, default `true` | operator; default | deployment; trailwright | arm-deployment | ARM bitlockerBootVolume | read |
+| `security.bitlocker_data_volumes` | boolean, default `true` | operator; default | deployment; trailwright | arm-deployment | ARM bitlockerDataVolumes | read |
+| `security.wdac` | boolean, default `true` | operator; default | deployment; trailwright | arm-deployment | ARM wdacEnforced | read |
 | `security.baseline_settings[].type` | string, required, one of `SecuritySettings`, `SecuredCore`, `DefenderAntivirus` | operator |  | toolkit-legacy-scripts |  | read |
 | `security.baseline_settings[].name` | string, required | operator |  | toolkit-legacy-scripts |  | read |
 | `security.baseline_settings[].value` | required | operator |  | toolkit-legacy-scripts |  | read |
@@ -1636,9 +1636,9 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `security.defender_for_cloud.enabled` | boolean, default `true` | operator; default |  | toolkit-legacy-scripts |  | read |
 | `security.defender_for_cloud.apply_cloud_security_benchmark` | boolean, default `true` | operator; default |  | toolkit-legacy-scripts |  | read |
 | `security.defender_for_cloud.security_contact_email` | string | operator | terraform |  |  | placeholder |
-| `security.telemetry.streaming_data` | boolean | operator | deployment; trailwright | arm-deployment | ARM streamingDataClient | read |
-| `security.telemetry.episodic_data_upload` | boolean | operator | deployment; trailwright | arm-deployment | ARM episodicDataUpload | read |
-| `security.telemetry.eu_location` | boolean | operator | deployment; trailwright | arm-deployment | ARM euLocation | read |
+| `security.telemetry.streaming_data` | boolean, default `true` | operator; default | deployment; trailwright | arm-deployment | ARM streamingDataClient | read |
+| `security.telemetry.episodic_data_upload` | boolean, default `true` | operator; default | deployment; trailwright | arm-deployment | ARM episodicDataUpload | read |
+| `security.telemetry.eu_location` | boolean, default `false` | operator; default | deployment; trailwright | arm-deployment | ARM euLocation | read |
 
 ### site
 
@@ -1656,7 +1656,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 
 | Path | Type, default, allowed | Provided by | Tools | Read by | Becomes | Status |
 | --- | --- | --- | --- | --- | --- | --- |
-| `storage.configuration_mode` | string, one of `express`, `infra_only`, `keep_storage` | operator; Trailwright | deployment; trailwright | arm-deployment | ARM configurationMode | read |
+| `storage.configuration_mode` | string, default `express`, one of `express`, `infra_only`, `keep_storage` | operator; Trailwright; default | deployment; trailwright | arm-deployment | ARM configurationMode | read |
 | `storage.pool.name` | string | operator | deployment | toolkit-legacy-scripts |  | read |
 | `storage.pool.thin_provisioning_alert_threshold_percent` | integer | operator | deployment | toolkit-legacy-scripts |  | read |
 | `storage.csv.read_cache_size_mib` | integer | operator | deployment | toolkit-legacy-scripts |  | read |
@@ -1693,7 +1693,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `storage.san.iscsi.targets[].iqn` | string (iscsi_name), required | operator | os_configuration; deployment | os-configuration | OS Mpio; SanVerify | read |
 | `storage.san.iscsi.targets[].portals` | array, required | operator | os_configuration; deployment | arm-deployment; os-configuration | ARM nodes; OS Mpio; SanVerify | read |
 | `storage.san.iscsi.targets[].fabric` | string | operator | os_configuration; deployment | arm-deployment; os-configuration | ARM nodes; OS Mpio; SanVerify | read |
-| `storage.san.iscsi.chap.enabled` | boolean, required | operator | os_configuration; deployment | arm-deployment; os-configuration | ARM chapType; OS Mpio; SanVerify | read |
+| `storage.san.iscsi.chap.enabled` | boolean, required, default `false` | operator; default | os_configuration; deployment | arm-deployment; os-configuration | ARM chapType; OS Mpio; SanVerify | read |
 | `storage.san.iscsi.chap.username` | string | operator | deployment | arm-deployment | ARM chapUsername; OS ~Mpio; ~SanVerify | read |
 | `storage.san.iscsi.chap.secret` | string (kv_ref) | operator; Key Vault ref | deployment | arm-deployment | ARM chapCredential; OS ~Mpio; ~SanVerify | read |
 | `storage.san.iscsi.chap.mutual` | boolean, default `false` | operator; default | deployment | arm-deployment | ARM chapType; OS ~Mpio; ~SanVerify | read |
@@ -1726,7 +1726,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |
-| arm_deployment | parameters | 1358 | 1358 | 0 |
+| arm_deployment | parameters | 1360 | 1360 | 0 |
 | arm_deployment | report_fields | 20 | 20 | 0 |
 | arm_deployment | run_settings | 44 | 44 | 0 |
 | arm_deployment | secret_names | 2 | 2 | 0 |
@@ -1747,7 +1747,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | loadtools | ansible_variables | 10 | 10 | 0 |
 | loadtools | config_keys | 301 | 102 | 199 |
 | loadtools | parameters | 253 | 253 | 0 |
-| loadtools | pipeline_inputs | 3 | 3 | 0 |
+| loadtools | pipeline_inputs | 4 | 4 | 0 |
 | os_configuration | config_keys | 83 | 83 | 0 |
 | os_configuration | env_vars | 1 | 1 | 0 |
 | os_configuration | event_fields | 83 | 83 | 0 |
@@ -1765,7 +1765,8 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | sonar | secret_names | 9 | 9 | 0 |
 | sonar | state_fields | 8 | 8 | 0 |
 | terraform | variables | 205 | 205 | 0 |
-| ztp | config_keys | 178 | 171 | 7 |
+| trailwright | parameters | 3 | 3 | 0 |
+| ztp | config_keys | 179 | 172 | 7 |
 | ztp | env_vars | 12 | 12 | 0 |
 | ztp | handoff_fields | 39 | 39 | 0 |
 | ztp | parameters | 817 | 817 | 0 |

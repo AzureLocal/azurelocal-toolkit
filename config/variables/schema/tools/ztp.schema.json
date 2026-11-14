@@ -48,6 +48,17 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "outbound_path": {
+          "description": "How the machines reach Azure. Paths with a proxy need networking.outbound.proxy; paths with Arc gateway need networking.outbound.arc_gateway; private_path needs networking.outbound.private_path.",
+          "type": "string",
+          "enum": [
+            "direct",
+            "proxy",
+            "arc_gateway",
+            "proxy_arc_gateway",
+            "private_path"
+          ]
+        },
         "os_install": {
           "description": "iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp automates (needs provisioning.simplified, and on every node a serial number, a BMC address and the management MAC: management.mac_address, or from 5.2 a mac_address on every network_adapters port with role management and at least one port with role provisioning).",
           "type": "string",
@@ -526,6 +537,32 @@
           "items": {
             "type": "string",
             "minLength": 1
+          }
+        },
+        "outbound": {
+          "description": "Details of scenario.outbound_path.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "proxy": {
+              "description": "Proxy server for the machines' outbound traffic, for scenario.outbound_path proxy or proxy_arc_gateway. The OS configuration passes url and bypass to the Arc registration of a machine installed from an ISO (Invoke-AzStackHciArcInitialization -Proxy and -ProxyBypass).",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "url": {
+                  "description": "URL of the proxy server, for example http://proxy.example.test:3128. A plain proxy: no PAC file and no credentials. Passed to the Arc registration as -Proxy.",
+                  "type": "string",
+                  "pattern": "^https?://"
+                },
+                "bypass": {
+                  "description": "Addresses and names that go direct, not through the proxy. Learn (Register Azure Local with Azure Arc): include the address and the NetBIOS name of each machine and of the cluster, and the infrastructure addresses; use localhost, not <local>; use a wildcard such as 192.168.1.* for a subnet (no CIDR) and *.example.test for a domain. Passed to the Arc registration as -ProxyBypass, joined with commas.",
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
           }
         }
       }

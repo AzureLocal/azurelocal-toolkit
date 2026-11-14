@@ -33,7 +33,7 @@
       Clock.Now        { } -> [datetime]
 
     Harvested from the azl-toolkit scripts (03-onprem-readiness/phase-01-active-directory Test-ADConfiguration.ps1 and Invoke-ADValidation-Arc.ps1,
-    04-cluster-deployment/phase-05 Test-ADPrerequisites-Standalone.ps1 and Test-LocalIdentityConfig.ps1, phase-03 task-06 Test-DnsClientConfig.ps1)
+    04-cluster-deployment/phase-05 Invoke-VerifyADPrerequisites-Orchestrated.ps1 and Test-LocalIdentityConfig.ps1, phase-03 task-06 Test-DnsClientConfig.ps1)
     and checked against Learn view=azloc-2610.
 #>
 Set-StrictMode -Version Latest
@@ -861,7 +861,7 @@ Add-VfIdCheck -Id 'ID-AD-009' -Title 'Nodes resolve the domain and its domain co
     }
 }
 
-Add-VfIdCheck -Id 'ID-AD-010' -Title 'Domain join state of the nodes: workgroup, or joined to the file''s domain (supported from 2604) with the deployment user in local Administrators' -Source "$($script:Src.InstallOs) (Domain join before deployment); azl-toolkit Test-ADPrerequisites-Standalone.ps1 (secure channel)" -Applies $script:IsAd -Run {
+Add-VfIdCheck -Id 'ID-AD-010' -Title 'Domain join state of the nodes: workgroup, or joined to the file''s domain (supported from 2604) with the deployment user in local Administrators' -Source "$($script:Src.InstallOs) (Domain join before deployment); azl-toolkit Invoke-VerifyADPrerequisites-Orchestrated.ps1 (secure channel)" -Applies $script:IsAd -Run {
     param($Context)
     Invoke-VfIdCheck $Context {
         $lcm = Get-VfIdLcm $Context

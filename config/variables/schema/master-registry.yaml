@@ -39,6 +39,8 @@
 # Registry is MASTER — scripts, infra files, schema, docs all conform to it.
 #
 # Change Log (newest first; every bump has one entry here and one in _metadata.change_log below):
+#   v5.0.55 (2026-11-13):
+#     - The leftovers of the hard-coded work are settled (no infrastructure key added or removed; infrastructure schema unchanged). (A) Scripts removed because a script that reads infrastructure.yml does the work and they held REPLACE_ or <PLACEHOLDER> text a person had to type into the script: Test-ADPrerequisites-Standalone.ps1 (the pre-cluster verification checks ID-AD-003, ID-AD-007 and ID-AD-010 and Invoke-VerifyADPrerequisites-Orchestrated.ps1 do it), Test-ADDomainStatus-Standalone.ps1, Test-ClusterHealth-Standalone.ps1 (active-directory and local-identity) and Test-LocalIdentityConfig-Standalone.ps1 (the Invoke-Verify...-Orchestrated.ps1 of the same task folders do it from the file), and Set-StaticIPAddress.ps1, Set-DnsServers.ps1, Set-NTPConfiguration.ps1 and Set-NodeHostname.ps1 of phase 03 (the Network, Dns, Time and Hostname steps of Set-AzureLocalNodeConfiguration.ps1 do it); the parameter group of Test-ADDomainStatus-Standalone.ps1 is gone. (B) scripts/validation/storage-tests/powershell/Test-StoragePerformance.ps1 had a syntax error (a variable followed by a colon in a string) and its logging helper rejected the levels it used; it parses, has the standard header, and its limits are the parameters CsvUsageWarningPercent (85), MaxAvgWriteLatencyMs (10) and MaxAvgReadLatencyMs (5). (C) New-AzlArmParameterSet falls back to the registry default of a key: 23 keys got the default the code already used, which is the default of Microsoft's template (scenario.storage_architecture s2d, scenario.storage_connectivity switched, networking.management.use_dhcp false, networking.storage.auto_ip true, cluster.deployment_mode validate, cluster.naming_prefix hci, cluster.key_vault.create_new true, cluster.key_vault.soft_delete_retention_days 30, cluster.diagnostics.logs_retention_days 30, cluster.diagnostics.storage_account_type Standard_LRS, storage.configuration_mode express, security.level recommended, the seven security switches, the three security.telemetry keys, storage.san.iscsi.chap.enabled false); the fallbacks of cluster.witness.type and identity.local_identity.dns_server_config (required keys) are now empty with the same result, and a test reads the code with the parser and fails when a literal fallback differs from the registry default. (D) New section tools.trailwright: the three parameters of docs/examples/ConvertTo-AsBuiltSnapshot.ps1 of azurelocal-trailwright (ManifestPath, OutPath, Release with source_key deployment.solution_version), tools_section in the tool catalog, tool-mappings/trailwright.csv, and the tool checks (New-ToolMapping.ps1, Test-ToolParameterRegistration.ps1, ToolSettings.Tests.ps1) cover it. (E) Follows the ZTP and Loadtools repositories: ztp is in used_by of scenario.outbound_path, networking.outbound.proxy.url and networking.outbound.proxy.bypass (azurelocal-ztp e297a3e), new tools.ztp entry nodes[].web_proxy, connectivity_type says how it follows scenario.outbound_path, and the Loadtools pipeline parameter variableGroup (azurelocal-loadtools 9fdfc88).
 #   v5.0.54 (2026-11-13):
 #     - The runner labels, agent pools and approval environment names of the pipelines come from infrastructure.yml, and the job timeouts and artifact retention of the pipeline files are documented (infrastructure schema 5.6.25). New keys devops.pipelines.runner_label (one entry of devops.runners[].labels of the general runner) and devops.pipelines.environments.os_configuration, os_configuration_clear_storage, arm_deployment, cicd_infra and terraform_deployment (each an entry of devops.environments[] with approval_required true). Task 05 (Set-AzlCicdVariable) sets AZL_RUNNER_LABEL and the AZL_ENVIRONMENT_* variables from them, as GitHub repository variables or GitLab project CI/CD variables, and for Azure DevOps lists the values to enter. GitHub: runs-on and environment read the vars context (Contexts, Context availability). GitLab: tags and environment:name expand CI/CD variables (Where variables can be used). Azure DevOps: the pool and the environment of a job are runtime parameters with no default, because Learn says a macro variable is expanded only in task inputs and ${{ variables }} does not see pipeline or library variables. devops.runners[].pool is required for Azure DevOps: task 06, the Terraform module and environment and the Ansible role have no default pool (AzureRunners and AzureLocalZtp are gone; Terraform checks it with a precondition, Ansible with an assertion). The sample pipelines azure-local-deploy take their runner and environment from the same keys; the Azure DevOps sample is started by hand because its parameters have no default; the unused deploy_target input (lab, staging, production) of the GitHub sample is removed. Job timeouts and artifact retention stay in the pipeline files, each with a one-line comment (Microsoft Learn: an Azure Local deployment takes 2.5 to 3 hours; the other limits are the toolkit's own). The pipeline inputs are registered with source_key; the pipeline_variables entries that registered literal environment names and CICD_RUNNER_TAG are removed.
 #   v5.0.53 (2026-11-13):
@@ -223,7 +225,7 @@
 # 1. METADATA
 # =============================================================================
 _metadata:
-  version: "5.0.54"
+  version: "5.0.55"
   schema_version: "5.0.0"
   infrastructure_schema_version: "5.6.25"
   last_updated: "2026-11-13"
@@ -232,6 +234,10 @@ _metadata:
     - name: "AzureLocal Cloud Team Team"
       email: "AzureLocalCloud@Azure Local Cloud.com"
   change_log:
+    - date: "2026-11-13"
+      version: "5.0.55"
+      change: "The leftovers of the hard-coded work are settled (no infrastructure key added or removed; infrastructure schema unchanged). (A) Scripts removed because a script that reads infrastructure.yml does the work and they held REPLACE_ or <PLACEHOLDER> text a person had to type into the script: Test-ADPrerequisites-Standalone.ps1 (the pre-cluster verification checks ID-AD-003, ID-AD-007 and ID-AD-010 and Invoke-VerifyADPrerequisites-Orchestrated.ps1 do it), Test-ADDomainStatus-Standalone.ps1, Test-ClusterHealth-Standalone.ps1 (active-directory and local-identity) and Test-LocalIdentityConfig-Standalone.ps1 (the Invoke-Verify...-Orchestrated.ps1 of the same task folders do it from the file), and Set-StaticIPAddress.ps1, Set-DnsServers.ps1, Set-NTPConfiguration.ps1 and Set-NodeHostname.ps1 of phase 03 (the Network, Dns, Time and Hostname steps of Set-AzureLocalNodeConfiguration.ps1 do it); the parameter group of Test-ADDomainStatus-Standalone.ps1 is gone. (B) scripts/validation/storage-tests/powershell/Test-StoragePerformance.ps1 had a syntax error (a variable followed by a colon in a string) and its logging helper rejected the levels it used; it parses, has the standard header, and its limits are the parameters CsvUsageWarningPercent (85), MaxAvgWriteLatencyMs (10) and MaxAvgReadLatencyMs (5). (C) New-AzlArmParameterSet falls back to the registry default of a key: 23 keys got the default the code already used, which is the default of Microsoft's template (scenario.storage_architecture s2d, scenario.storage_connectivity switched, networking.management.use_dhcp false, networking.storage.auto_ip true, cluster.deployment_mode validate, cluster.naming_prefix hci, cluster.key_vault.create_new true, cluster.key_vault.soft_delete_retention_days 30, cluster.diagnostics.logs_retention_days 30, cluster.diagnostics.storage_account_type Standard_LRS, storage.configuration_mode express, security.level recommended, the seven security switches, the three security.telemetry keys, storage.san.iscsi.chap.enabled false); the fallbacks of cluster.witness.type and identity.local_identity.dns_server_config (required keys) are now empty with the same result, and a test reads the code with the parser and fails when a literal fallback differs from the registry default. (D) New section tools.trailwright: the three parameters of docs/examples/ConvertTo-AsBuiltSnapshot.ps1 of azurelocal-trailwright (ManifestPath, OutPath, Release with source_key deployment.solution_version), tools_section in the tool catalog, tool-mappings/trailwright.csv, and the tool checks (New-ToolMapping.ps1, Test-ToolParameterRegistration.ps1, ToolSettings.Tests.ps1) cover it. (E) Follows the ZTP and Loadtools repositories: ztp is in used_by of scenario.outbound_path, networking.outbound.proxy.url and networking.outbound.proxy.bypass (azurelocal-ztp e297a3e), new tools.ztp entry nodes[].web_proxy, connectivity_type says how it follows scenario.outbound_path, and the Loadtools pipeline parameter variableGroup (azurelocal-loadtools 9fdfc88)."
+      reason: "Owner requirement: every value a deployment chooses is a registered variable and no script carries one. The research rows g4 413 (literal fallbacks of New-AzlArmParameterSet), g7 1053 (no tools.trailwright section) and the open REPLACE_ placeholders and the parse error of Test-StoragePerformance.ps1 were the last items of the work order. A default added to a key changes only the generated templates and schema (a comment and, for a key with allowed values, the example); no deployed value changes."
     - date: "2026-11-13"
       version: "5.0.54"
       change: "The runner labels, agent pools and approval environment names of the pipelines come from infrastructure.yml, and the job timeouts and artifact retention of the pipeline files are documented (infrastructure schema 5.6.25). New keys devops.pipelines.runner_label (one entry of devops.runners[].labels of the general runner) and devops.pipelines.environments.os_configuration, os_configuration_clear_storage, arm_deployment, cicd_infra and terraform_deployment (each an entry of devops.environments[] with approval_required true). Task 05 (Set-AzlCicdVariable) sets AZL_RUNNER_LABEL and the AZL_ENVIRONMENT_* variables from them, as GitHub repository variables or GitLab project CI/CD variables, and for Azure DevOps lists the values to enter. GitHub: runs-on and environment read the vars context (Contexts, Context availability). GitLab: tags and environment:name expand CI/CD variables (Where variables can be used). Azure DevOps: the pool and the environment of a job are runtime parameters with no default, because Learn says a macro variable is expanded only in task inputs and ${{ variables }} does not see pipeline or library variables. devops.runners[].pool is required for Azure DevOps: task 06, the Terraform module and environment and the Ansible role have no default pool (AzureRunners and AzureLocalZtp are gone; Terraform checks it with a precondition, Ansible with an assertion). The sample pipelines azure-local-deploy take their runner and environment from the same keys; the Azure DevOps sample is started by hand because its parameters have no default; the unused deploy_target input (lab, staging, production) of the GitHub sample is removed. Job timeouts and artifact retention stay in the pipeline files, each with a one-line comment (Microsoft Learn: an Azure Local deployment takes 2.5 to 3 hours; the other limits are the toolkit's own). The pipeline inputs are registered with source_key; the pipeline_variables entries that registered literal environment names and CICD_RUNNER_TAG are removed."
@@ -7232,6 +7238,7 @@ networking:
           description: "ARM useDhcp: the deployment takes the host and cluster addresses from DHCP instead of static addresses and the infrastructure_pool. Default false. A deployment setting, not how each machine's management port gets its address before deployment: that is ip_assignment."
           type: boolean
           required: false
+          default: false
           example: false
           used_by: [os_configuration, deployment, trailwright]
         site_ip_range:
@@ -7482,6 +7489,7 @@ networking:
           description: "Network ATC assigns the storage addresses. When false, each node lists its storage_ips. Default true."
           type: boolean
           required: false
+          default: true
           example: true
           used_by: [os_configuration, deployment, trailwright]
         switchless_links:
@@ -7907,13 +7915,13 @@ networking:
             url:
               description: "URL of the proxy server, for example http://proxy.example.test:3128. A plain proxy: no PAC file and no credentials. Passed to the Arc registration as -Proxy."
               type: string
-              used_by: [os_configuration, trailwright, ansible]
+              used_by: [os_configuration, trailwright, ansible, ztp]
               required: true
               pattern: "^https?://"
             bypass:
               description: "Addresses and names that go direct, not through the proxy. Learn (Register Azure Local with Azure Arc): include the address and the NetBIOS name of each machine and of the cluster, and the infrastructure addresses; use localhost, not <local>; use a wildcard such as 192.168.1.* for a subnet (no CIDR) and *.example.test for a domain. Passed to the Arc registration as -ProxyBypass, joined with commas."
               type: array
-              used_by: [os_configuration]
+              used_by: [os_configuration, ztp]
               required: false
               items:
                 {"type":"string"}
@@ -12908,6 +12916,7 @@ security:
       description: "ARM securityLevel: recommended (Recommended) or customized (Customized)."
       required: false
       enum: ["recommended", "customized"]
+      default: "recommended"
       example: "recommended"
       used_by: [deployment, trailwright]
     drift_control:
@@ -12915,42 +12924,49 @@ security:
       used_by: [deployment, trailwright]
       type: boolean
       required: false
+      default: true
       example: true
     credential_guard:
       description: "true turns Credential Guard on in the security settings of the deployment."
       used_by: [deployment, trailwright]
       type: boolean
       required: false
+      default: true
       example: true
     smb_signing:
       description: "true turns SMB signing on in the security settings of the deployment."
       used_by: [deployment, trailwright]
       type: boolean
       required: false
+      default: true
       example: true
     smb_cluster_encryption:
       description: "true encrypts SMB traffic between the cluster nodes (not the storage traffic)."
       used_by: [deployment, trailwright]
       type: boolean
       required: false
+      default: false
       example: false
     bitlocker_boot_volume:
       description: "true turns BitLocker on for the boot volume."
       used_by: [deployment, trailwright]
       type: boolean
       required: false
+      default: true
       example: true
     bitlocker_data_volumes:
       description: "true turns BitLocker on for the data volumes."
       used_by: [deployment, trailwright]
       type: boolean
       required: false
+      default: true
       example: true
     wdac:
       description: "true turns Windows Defender Application Control on."
       used_by: [deployment, trailwright]
       type: boolean
       required: false
+      default: true
       example: true
 
     baseline_settings:
@@ -13029,18 +13045,21 @@ security:
           used_by: [deployment, trailwright]
           type: boolean
           required: false
+          default: true
           example: true
         episodic_data_upload:
           description: "true sends the episodic diagnostic data."
           used_by: [deployment, trailwright]
           type: boolean
           required: false
+          default: true
           example: true
         eu_location:
           description: "true keeps the diagnostic data in the EU data boundary."
           used_by: [deployment, trailwright]
           type: boolean
           required: false
+          default: false
           example: false
 
 
@@ -14740,6 +14759,7 @@ scenario:
       description: "s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both (S2D plus a SAN). san and hybrid TELL THE SOLUTION THERE IS A SAN: the OS configuration then does the host-side SAN work itself (the Mpio step: MPIO, MSDSM hardware ID, the MPIO claim of the device (mpclaim -n -i -d), load balance policy, vendor MPIO settings; for iSCSI the initiator service, auto-claim, portals and sessions, except for a san design on Azure Local 2610 or later, where the deployment configures iSCSI and Microsoft Learn says not to enable it before) and checks each LUN is seen once (SanVerify). storage.san.type says whether the SAN is fibre_channel or iscsi. On every node the OS configuration also looks, read only, for FC or iSCSI LUNs that are visible while the file declares no SAN, and reports them. https://learn.microsoft.com/azure/azure-local/deploy/enable-external-storage"
       required: false
       enum: ["s2d", "san", "hybrid"]
+      default: "s2d"
       example: "s2d"
     storage_connectivity:
       type: string
@@ -14747,6 +14767,7 @@ scenario:
       description: "switched: storage traffic goes through top-of-rack switches. switchless: machines are cabled directly to each other for storage. A single machine uses switched."
       required: false
       enum: ["switched", "switchless"]
+      default: "switched"
       example: "switched"
     topology:
       type: string
@@ -14771,7 +14792,7 @@ scenario:
       example: "public"
     outbound_path:
       type: string
-      used_by: [os_configuration, trailwright, ansible]
+      used_by: [os_configuration, trailwright, ansible, ztp]
       description: "How the machines reach Azure. Paths with a proxy need networking.outbound.proxy; paths with Arc gateway need networking.outbound.arc_gateway; private_path needs networking.outbound.private_path."
       required: false
       enum: ["direct", "proxy", "arc_gateway", "proxy_arc_gateway", "private_path"]
@@ -15032,6 +15053,7 @@ cluster:
       type: string
       required: false
       pattern: "^[A-Za-z0-9-]{1,16}$"
+      default: "hci"
       example: "iicazl01"
       used_by: [deployment, trailwright]
     deployment_mode:
@@ -15039,6 +15061,7 @@ cluster:
       description: "ARM deploymentMode: validate runs the checks only; deploy deploys."
       required: false
       enum: ["validate", "deploy"]
+      default: "validate"
       example: "validate"
       used_by: [deployment]
     witness:
@@ -15087,6 +15110,7 @@ cluster:
           description: "ARM createNewKeyVault."
           type: boolean
           required: false
+          default: true
           example: true
           used_by: [deployment, trailwright]
         soft_delete_retention_days:
@@ -15096,6 +15120,7 @@ cluster:
           required: false
           minimum: 7
           maximum: 90
+          default: 30
           example: 30
     diagnostics:
       description: "Key Vault audit logs. ARM diagnosticStorageAccountName, logsRetentionInDays and storageAccountType."
@@ -15118,12 +15143,14 @@ cluster:
           type: integer
           required: false
           minimum: 0
+          default: 30
           example: 30
         storage_account_type:
           description: "SKU of the diagnostic storage account, for example Standard_LRS."
           used_by: [deployment, trailwright]
           type: string
           required: false
+          default: "Standard_LRS"
           example: "Standard_LRS"
           schema_extra: {"examples":["Standard_LRS"]}
 
@@ -16192,9 +16219,10 @@ storage:
   properties:
     configuration_mode:
       type: string
-      description: "ARM configurationMode: express (Express), infra_only (InfraOnly) or keep_storage (KeepStorage)."
+      description: "ARM configurationMode: express (Express), infra_only (InfraOnly) or keep_storage (KeepStorage). Unset: express (the default of Microsoft's template), or infra_only when scenario.storage_architecture is san."
       required: false
       enum: ["express", "infra_only", "keep_storage"]
+      default: "express"
       example: "express"
       used_by: [deployment, trailwright]
     pool:
@@ -16590,6 +16618,7 @@ storage:
                   description: "true when the iSCSI targets require CHAP. The OS configuration then makes the target portals but not the sessions (CHAP sessions need the secret, which no tool reads yet) and says so in its plan."
                   type: boolean
                   required: true
+                  default: false
                   used_by: [os_configuration, deployment]
                 username:
                   description: "CHAP user name for the iSCSI targets. ARM chapUsername of the iSCSI deployment."
@@ -19603,8 +19632,9 @@ _tool_catalog:
       kind: external
       relation: writes
       repository: "AzureLocal/azurelocal-trailwright"
-      evidence: ["apps/trailwright/src/exports/infrastructureYml.ts (buildInfrastructure)", "apps/trailwright/src/exports/index.ts"]
-      note: "Writes the file from a guided design. Its template holds the keys its export can write, so a design that is not finished leaves keys out. It writes operations.monitoring.health_alerts, which this registry no longer has (removed in 5.0.36); that key is not in the template."
+      tools_section: trailwright
+      evidence: ["apps/trailwright/src/exports/infrastructureYml.ts (buildInfrastructure)", "apps/trailwright/src/exports/index.ts", "docs/examples/ConvertTo-AsBuiltSnapshot.ps1"]
+      note: "Writes the file from a guided design. Its template holds the keys its export can write, so a design that is not finished leaves keys out. It writes operations.monitoring.health_alerts, which this registry no longer has (removed in 5.0.36); that key is not in the template. Its own script docs/examples/ConvertTo-AsBuiltSnapshot.ps1 turns a Ranger audit manifest into an as-built snapshot; its parameters are in tools.trailwright.parameters."
     ranger:
       title: "azurelocal-ranger"
       kind: external
@@ -20437,7 +20467,7 @@ tools:
               type: object
               area: "config/variables/scripts/New-ToolMapping.ps1"
               properties:
-                Tool: {"name":"Tool","type":"array","declared_type":"string[]","default":"@('ztp', 'sonar', 'ranger', 'loadtools', 'draftsman')","enum":["os_configuration","ztp","sonar","arm_deployment","cicd_infra","discovery","ranger","loadtools","draftsman"],"required":"N","read_at":"config/variables/scripts/New-ToolMapping.ps1","description":"New-ToolMapping.ps1. Tool (no help text for this parameter)."}
+                Tool: {"name":"Tool","type":"array","declared_type":"string[]","default":"@('ztp', 'sonar', 'ranger', 'loadtools', 'draftsman', 'trailwright')","enum":["os_configuration","ztp","sonar","arm_deployment","cicd_infra","discovery","ranger","loadtools","draftsman","trailwright"],"required":"N","read_at":"config/variables/scripts/New-ToolMapping.ps1","description":"New-ToolMapping.ps1. Tool (no help text for this parameter)."}
                 RegistryPath: {"name":"RegistryPath","type":"string","declared_type":"string","default":"(Join-Path $PSScriptRoot '../schema/master-registry.yaml')","required":"N","read_at":"config/variables/scripts/New-ToolMapping.ps1","description":"New-ToolMapping.ps1. Registry path (no help text for this parameter)."}
                 OutputDirectory: {"name":"OutputDirectory","type":"string","declared_type":"string","default":"(Join-Path $PSScriptRoot '../tool-mappings')","required":"N","read_at":"config/variables/scripts/New-ToolMapping.ps1","description":"New-ToolMapping.ps1. Output directory (no help text for this parameter)."}
                 Registry: {"name":"Registry","type":"array","declared_type":"object[]","required":"N","read_at":"config/variables/scripts/New-ToolMapping.ps1","description":"New-ToolMapping.ps1. Registry (no help text for this parameter)."}
@@ -20456,7 +20486,7 @@ tools:
               type: object
               area: "config/variables/scripts/Test-ToolParameterRegistration.ps1"
               properties:
-                Tool: {"name":"Tool","type":"string","declared_type":"string","enum":["os_configuration","ztp","sonar","arm_deployment","cicd_infra","discovery","ranger","loadtools","draftsman"],"required":"Y","read_at":"config/variables/scripts/Test-ToolParameterRegistration.ps1","description":"Test-ToolParameterRegistration.ps1. Tool (no help text for this parameter)."}
+                Tool: {"name":"Tool","type":"string","declared_type":"string","enum":["os_configuration","ztp","sonar","arm_deployment","cicd_infra","discovery","ranger","loadtools","draftsman","trailwright"],"required":"Y","read_at":"config/variables/scripts/Test-ToolParameterRegistration.ps1","description":"Test-ToolParameterRegistration.ps1. Tool (no help text for this parameter)."}
                 Root: {"name":"Root","type":"string","declared_type":"string","required":"Y","read_at":"config/variables/scripts/Test-ToolParameterRegistration.ps1","description":"Test-ToolParameterRegistration.ps1. Root (no help text for this parameter)."}
                 RegistryPath: {"name":"RegistryPath","type":"string","declared_type":"string","default":"(Join-Path $PSScriptRoot '../schema/master-registry.yaml')","required":"N","read_at":"config/variables/scripts/Test-ToolParameterRegistration.ps1","description":"Test-ToolParameterRegistration.ps1. Registry path (no help text for this parameter)."}
                 Registry: {"name":"Registry","type":"array","declared_type":"object[]","required":"N","read_at":"config/variables/scripts/Test-ToolParameterRegistration.ps1","description":"Test-ToolParameterRegistration.ps1. Registry (no help text for this parameter)."}
@@ -22081,11 +22111,6 @@ tools:
                 TargetNode: {"name":"TargetNode","type":"array","declared_type":"string[]","default":"@()","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion/powershell/Invoke-VerifyClusterHealth-Orchestrated.ps1","description":"Invoke-VerifyClusterHealth-Orchestrated.ps1. Target node (no help text for this parameter)."}
                 WhatIf: {"name":"WhatIf","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion/powershell/Invoke-VerifyClusterHealth-Orchestrated.ps1","description":"Invoke-VerifyClusterHealth-Orchestrated.ps1. What if switch (no help text for this parameter)."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion/powershell/Invoke-VerifyClusterHealth-Orchestrated.ps1","description":"Invoke-VerifyClusterHealth-Orchestrated.ps1. Log path (no help text for this parameter)."}
-            scripts_deploy_04_cluster_deployment_phase_05_cluster_deployment_active_directory_task_02_verify_deployment_completion_powershell_Test_ADDomainStatus_Standalone_ps1_generated:
-              type: object
-              area: "scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion/powershell/Test-ADDomainStatus-Standalone.ps1"
-              properties:
-                Credential: {"name":"Credential","type":"string","declared_type":"PSCredential","required":"N","read_at":"scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion/powershell/Test-ADDomainStatus-Standalone.ps1","description":"Test-ADDomainStatus-Standalone.ps1. Credential (no help text for this parameter)."}
             scripts_deploy_04_cluster_deployment_phase_05_cluster_deployment_active_directory_task_02_verify_deployment_completion_powershell_Test_ADDomainStatus_ps1_generated:
               type: object
               area: "scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion/powershell/Test-ADDomainStatus.ps1"
@@ -22744,11 +22769,14 @@ tools:
               type: object
               area: "scripts/validation/storage-tests/powershell/Test-StoragePerformance.ps1"
               properties:
-                ClusterName: {"name":"ClusterName","type":"string","declared_type":"string","required":"Y","read_at":"scripts/validation/storage-tests/powershell/Test-StoragePerformance.ps1","description":"Test-StoragePerformance.ps1. Name of the Azure Local cluster."}
-                VolumeNames: {"name":"VolumeNames","type":"array","declared_type":"string[]","required":"N","read_at":"scripts/validation/storage-tests/powershell/Test-StoragePerformance.ps1","description":"Test-StoragePerformance.ps1. Optional. Specific CSV volume names to test. If not specified, tests all CSVs."}
-                RunPerformanceTest: {"name":"RunPerformanceTest","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/validation/storage-tests/powershell/Test-StoragePerformance.ps1","description":"Test-StoragePerformance.ps1. Switch to run disk performance tests (I/O benchmark)."}
-                DurationSeconds: {"name":"DurationSeconds","type":"integer","declared_type":"int","default":"60","required":"N","read_at":"scripts/validation/storage-tests/powershell/Test-StoragePerformance.ps1","description":"Test-StoragePerformance.ps1. Duration of performance test in seconds. Default: 60"}
-                OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/validation/storage-tests/powershell/Test-StoragePerformance.ps1","description":"Test-StoragePerformance.ps1. Path to save test results."}
+                ClusterName: {"name":"ClusterName","type":"string","declared_type":"string","required":"Y","read_at":"scripts/validation/storage-tests/powershell/Test-StoragePerformance.ps1","description":"Test-StoragePerformance.ps1. Cluster name (no help text for this parameter)."}
+                VolumeNames: {"name":"VolumeNames","type":"array","declared_type":"string[]","required":"N","read_at":"scripts/validation/storage-tests/powershell/Test-StoragePerformance.ps1","description":"Test-StoragePerformance.ps1. Volume names (no help text for this parameter)."}
+                RunPerformanceTest: {"name":"RunPerformanceTest","type":"boolean","declared_type":"switch","required":"N","read_at":"scripts/validation/storage-tests/powershell/Test-StoragePerformance.ps1","description":"Test-StoragePerformance.ps1. Run performance test switch (no help text for this parameter)."}
+                DurationSeconds: {"name":"DurationSeconds","type":"integer","declared_type":"int","default":"60","required":"N","read_at":"scripts/validation/storage-tests/powershell/Test-StoragePerformance.ps1","description":"Test-StoragePerformance.ps1. Duration seconds (no help text for this parameter)."}
+                CsvUsageWarningPercent: {"name":"CsvUsageWarningPercent","type":"integer","declared_type":"int","default":"85","required":"N","read_at":"scripts/validation/storage-tests/powershell/Test-StoragePerformance.ps1","description":"Test-StoragePerformance.ps1. Csv usage warning percent (no help text for this parameter)."}
+                MaxAvgWriteLatencyMs: {"name":"MaxAvgWriteLatencyMs","type":"integer","declared_type":"int","default":"10","required":"N","read_at":"scripts/validation/storage-tests/powershell/Test-StoragePerformance.ps1","description":"Test-StoragePerformance.ps1. Max avg write latency ms (no help text for this parameter)."}
+                MaxAvgReadLatencyMs: {"name":"MaxAvgReadLatencyMs","type":"integer","declared_type":"int","default":"5","required":"N","read_at":"scripts/validation/storage-tests/powershell/Test-StoragePerformance.ps1","description":"Test-StoragePerformance.ps1. Max avg read latency ms (no help text for this parameter)."}
+                OutputPath: {"name":"OutputPath","type":"string","declared_type":"string","required":"N","read_at":"scripts/validation/storage-tests/powershell/Test-StoragePerformance.ps1","description":"Test-StoragePerformance.ps1. Output path (no help text for this parameter)."}
             # END script-parameters
         event_fields:
           type: object
@@ -24494,6 +24522,7 @@ tools:
                 clusterConfig: {"name":"clusterConfig","type":"string","declared_type":"string","default":"example-cluster.yml","required":"N","read_at":".azuredevops/azure-pipelines-vmfleet.yml:11","description":"Cluster config file name under config/clusters/. The file example-cluster.yml is not committed; copy your own."}
                 profile: {"name":"profile","type":"string","declared_type":"string","default":"general.yml","required":"N","read_at":".azuredevops/azure-pipelines-vmfleet.yml:15","description":"VMFleet workload profile file name."}
                 skipCleanup: {"name":"skipCleanup","type":"boolean","declared_type":"boolean","default":"false","required":"N","read_at":".azuredevops/azure-pipelines-vmfleet.yml:19","description":"Leave the fleet in place after the test."}
+                variableGroup: {"name":"variableGroup","type":"string","declared_type":"string","default":"azurelocal-loadtest-secrets","required":"N","read_at":".azuredevops/azure-pipelines-vmfleet.yml:26","description":"Azure DevOps variable group that holds CLUSTER_ADMIN_USERNAME and CLUSTER_ADMIN_PASSWORD. Its name is chosen per Azure DevOps project; resolved at compile time (- group: ${{ parameters.variableGroup }})."}
     os_configuration:
       type: object
       properties:
@@ -25798,6 +25827,19 @@ tools:
                 backend_container_name: {"name":"backend.container_name","type":"string","declared_type":"string","default":"tfstate","required":"N","read_at":"src/terraform/environments/azure-local/backend.hcl (written by config/variables/scripts/New-IacVariableFiles.ps1)","description":"Blob container of the state files. Written to backend.hcl.","class":"a","source":"infrastructure","infrastructure_key":"devops.state.container","target":"backend_hcl"}
                 backend_key: {"name":"backend.key","type":"string","declared_type":"string","default":"azure-local.tfstate","required":"N","read_at":"src/terraform/environments/azure-local/backend.hcl (written by config/variables/scripts/New-IacVariableFiles.ps1)","description":"Name of the state file of this environment. Written to backend.hcl.","class":"c","source":"tool","target":"backend_hcl"}
                 backend_use_azuread_auth: {"name":"backend.use_azuread_auth","type":"boolean","declared_type":"bool","default":"true","required":"N","read_at":"src/terraform/environments/azure-local/backend.hcl (written by config/variables/scripts/New-IacVariableFiles.ps1)","description":"Sign in to the state storage with Microsoft Entra ID. Written to backend.hcl.","class":"c","source":"tool","target":"backend_hcl"}
+    trailwright:
+      type: object
+      properties:
+        parameters:
+          type: object
+          properties:
+            docs_examples_ConvertTo_AsBuiltSnapshot_ps1:
+              type: object
+              area: "docs/examples/ConvertTo-AsBuiltSnapshot.ps1"
+              properties:
+                ManifestPath: {"name":"ManifestPath","type":"string","declared_type":"string","required":"Y","read_at":"docs/examples/ConvertTo-AsBuiltSnapshot.ps1:18","description":"Path of the Ranger audit manifest (JSON). The script only reads it."}
+                OutPath: {"name":"OutPath","type":"string","declared_type":"string","required":"Y","read_at":"docs/examples/ConvertTo-AsBuiltSnapshot.ps1:19","description":"Where to write the as-built snapshot (as-built-snapshot.v1, JSON)."}
+                Release: {"name":"Release","type":"string","declared_type":"string","required":"N","read_at":"docs/examples/ConvertTo-AsBuiltSnapshot.ps1:20","source_key":"deployment.solution_version","description":"The deployed release build, for example 12.2610.1004.50. The Ranger manifest does not carry the Azure Local release, so give it when known. Without it the snapshot has no release."}
     ztp:
       type: object
       properties:
@@ -25848,6 +25890,7 @@ tools:
                 nodes_management_ip_assignment: {"name":"nodes[].management_ip_assignment","type":"string","declared_type":"string","required":"N","read_at":"scripts/simplified-provisioning/New-ZtpHandoff.ps1:155","description":"Management mode of the node (static, dhcp_reservation, dhcp, preconfigured), written by Invoke-ZtpEnvironment.ps1 (not in nodes.schema.json). [registry check: schema: nodes[].network_adapters[].ip_assignment; not in master-registry.yaml (v4.0.0)]"}
                 nodes_management_dhcp: {"name":"nodes[].management_dhcp","type":"boolean","declared_type":"boolean","required":"N","read_at":"scripts/simplified-provisioning/Set-ZtpManagementAddress.ps1:296","description":"Whether the management port takes DHCP while provisioned (Mode B true, Mode C false), written by Invoke-ZtpEnvironment.ps1 (not in nodes.schema.json)."}
                 nodes_network_adapters: {"name":"nodes[].network_adapters","type":"array","declared_type":"array","required":"N","read_at":"scripts/simplified-provisioning/New-ZtpHandoff.ps1:97","description":"The node's ports (name, mac_address, roles, ip_assignment, ip_address, slot, model), written by Invoke-ZtpEnvironment.ps1 (not in nodes.schema.json); for the handoff's per-port detail. [registry check: schema: nodes[].network_adapters; not in master-registry.yaml (v4.0.0)]"}
+                nodes_web_proxy: {"name":"nodes[].web_proxy","type":"object","declared_type":"object","required":"N","read_at":"scripts/simplified-provisioning/Set-ZtpDeviceConfiguration.ps1:228","description":"Optional proxy the Device stage sets in the maintenance environment (SetArcBootstrapDeviceConfiguration WebProxy: ConnectionUri, BypassList), written by Invoke-ZtpEnvironment.ps1 from networking.outbound.proxy.url and .bypass when scenario.outbound_path is proxy."}
             config_simplified_provisioning_ztp_provisioning_json:
               type: object
               area: "config/simplified-provisioning/ztp-provisioning.json"
@@ -25983,7 +26026,7 @@ tools:
                 ntp_configuration_choice: {"name":"ntp_configuration_choice","type":"string","declared_type":"string","default":"'Automatic'","required":"N","read_at":"scripts/simplified-provisioning/bicep/main.bicep:72","description":"Time settings: Automatic or Manual NTP. [registry check: schema: provisioning.simplified.ntp.configuration; not in master-registry.yaml (v4.0.0)]"}
                 ntp_server: {"name":"ntp_server","type":"string","declared_type":"string","default":"''","required":"N","read_at":"scripts/simplified-provisioning/bicep/main.bicep:74","description":"Time settings: primary NTP server (Manual). [registry check: schema: provisioning.simplified.ntp.server; not in master-registry.yaml (v4.0.0)]"}
                 alternate_ntp_server: {"name":"alternate_ntp_server","type":"string","declared_type":"string","default":"''","required":"N","read_at":"scripts/simplified-provisioning/bicep/main.bicep:76","description":"Time settings: alternate NTP server (Manual). [registry check: schema: provisioning.simplified.ntp.alternate_server; not in master-registry.yaml (v4.0.0)]"}
-                connectivity_type: {"name":"connectivity_type","type":"string","declared_type":"string","default":"'Public'","required":"N","read_at":"scripts/simplified-provisioning/bicep/main.bicep:78","description":"Connectivity settings: Public or Proxy."}
+                connectivity_type: {"name":"connectivity_type","type":"string","declared_type":"string","default":"'Public'","required":"N","read_at":"scripts/simplified-provisioning/bicep/main.bicep:78","description":"Connectivity settings: Public or Proxy. From scenario.outbound_path: direct gives Public, proxy gives Proxy."}
                 ownership_vouchers: {"name":"ownership_vouchers","type":"object","declared_type":"object","default":"{}","required":"N","read_at":"scripts/simplified-provisioning/bicep/main.bicep:83","description":"Node name -> ownership voucher: base64 of the voucher .pem file bytes (portal format; API: \"Ownership voucher in base64 encoded format\")."}
                 os_version: {"name":"os_version","type":"string","declared_type":"string","required":"Y","read_at":"scripts/simplified-provisioning/bicep/main.bicep:85","description":"Validated solution recipe version (osImages?solution-type=HCI validatedSolutionRecipeVersion) resolved by Get-ZtpOsImage.ps1, for example 12.2609.1003.7. [registry check: schema: provisioning.os_version; not in master-registry.yaml (v4.0.0)]"}
                 create_site: {"name":"create_site","type":"boolean","declared_type":"bool","default":"true","required":"N","read_at":"scripts/simplified-provisioning/bicep/main.bicep:87","description":"Create the Microsoft.Edge site. false = reuse the existing site (the script decides from a GET)."}

@@ -59,6 +59,7 @@
         "storage_architecture": {
           "description": "s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both (S2D plus a SAN). san and hybrid TELL THE SOLUTION THERE IS A SAN: the OS configuration then does the host-side SAN work itself (the Mpio step: MPIO, MSDSM hardware ID, the MPIO claim of the device (mpclaim -n -i -d), load balance policy, vendor MPIO settings; for iSCSI the initiator service, auto-claim, portals and sessions, except for a san design on Azure Local 2610 or later, where the deployment configures iSCSI and Microsoft Learn says not to enable it before) and checks each LUN is seen once (SanVerify). storage.san.type says whether the SAN is fibre_channel or iscsi. On every node the OS configuration also looks, read only, for FC or iSCSI LUNs that are visible while the file declares no SAN, and reports them. https://learn.microsoft.com/azure/azure-local/deploy/enable-external-storage",
           "type": "string",
+          "default": "s2d",
           "enum": [
             "s2d",
             "san",
@@ -68,6 +69,7 @@
         "storage_connectivity": {
           "description": "switched: storage traffic goes through top-of-rack switches. switchless: machines are cabled directly to each other for storage. A single machine uses switched.",
           "type": "string",
+          "default": "switched",
           "enum": [
             "switched",
             "switchless"
@@ -226,11 +228,13 @@
         "naming_prefix": {
           "description": "Prefix of the Azure resources the deployment creates. ARM parameter namingPrefix.",
           "type": "string",
+          "default": "hci",
           "pattern": "^[A-Za-z0-9-]{1,16}$"
         },
         "deployment_mode": {
           "description": "ARM deploymentMode: validate runs the checks only; deploy deploys.",
           "type": "string",
+          "default": "validate",
           "enum": [
             "validate",
             "deploy"
@@ -267,11 +271,13 @@
             },
             "create_new": {
               "description": "ARM createNewKeyVault.",
-              "type": "boolean"
+              "type": "boolean",
+              "default": true
             },
             "soft_delete_retention_days": {
               "description": "Days a deleted secret or vault stays recoverable, 7 to 90.",
               "type": "integer",
+              "default": 30,
               "minimum": 7,
               "maximum": 90
             }
@@ -289,11 +295,13 @@
             "logs_retention_days": {
               "description": "Days the diagnostic logs are kept.",
               "type": "integer",
+              "default": 30,
               "minimum": 0
             },
             "storage_account_type": {
               "description": "SKU of the diagnostic storage account, for example Standard_LRS.",
               "type": "string",
+              "default": "Standard_LRS",
               "examples": [
                 "Standard_LRS"
               ]
@@ -750,7 +758,8 @@
             },
             "use_dhcp": {
               "description": "ARM useDhcp: the deployment takes the host and cluster addresses from DHCP instead of static addresses and the infrastructure_pool. Default false. A deployment setting, not how each machine's management port gets its address before deployment: that is ip_assignment.",
-              "type": "boolean"
+              "type": "boolean",
+              "default": false
             },
             "infrastructure_pool": {
               "description": "At least six contiguous addresses in the management subnet, outside the machines' addresses. ARM startingIPAddress and endingIPAddress.",
@@ -902,7 +911,8 @@
           "properties": {
             "auto_ip": {
               "description": "Network ATC assigns the storage addresses. When false, each node lists its storage_ips. Default true.",
-              "type": "boolean"
+              "type": "boolean",
+              "default": true
             },
             "networks": {
               "description": "The storage networks (SMB), one per storage adapter. The adapter is named by the key nodes[].network_adapters[].name, the same on every machine.",
@@ -1296,8 +1306,9 @@
       "additionalProperties": false,
       "properties": {
         "configuration_mode": {
-          "description": "ARM configurationMode: express (Express), infra_only (InfraOnly) or keep_storage (KeepStorage).",
+          "description": "ARM configurationMode: express (Express), infra_only (InfraOnly) or keep_storage (KeepStorage). Unset: express (the default of Microsoft's template), or infra_only when scenario.storage_architecture is san.",
           "type": "string",
+          "default": "express",
           "enum": [
             "express",
             "infra_only",
@@ -1624,7 +1635,8 @@
                   "properties": {
                     "enabled": {
                       "description": "true when the iSCSI targets require CHAP. The OS configuration then makes the target portals but not the sessions (CHAP sessions need the secret, which no tool reads yet) and says so in its plan.",
-                      "type": "boolean"
+                      "type": "boolean",
+                      "default": false
                     },
                     "username": {
                       "description": "CHAP user name for the iSCSI targets. ARM chapUsername of the iSCSI deployment.",
@@ -1730,6 +1742,7 @@
         "level": {
           "description": "ARM securityLevel: recommended (Recommended) or customized (Customized).",
           "type": "string",
+          "default": "recommended",
           "enum": [
             "recommended",
             "customized"
@@ -1737,31 +1750,38 @@
         },
         "drift_control": {
           "description": "true turns drift control on: Azure Local resets the security settings to the baseline after drift. Part of the cluster security settings of the deployment.",
-          "type": "boolean"
+          "type": "boolean",
+          "default": true
         },
         "credential_guard": {
           "description": "true turns Credential Guard on in the security settings of the deployment.",
-          "type": "boolean"
+          "type": "boolean",
+          "default": true
         },
         "smb_signing": {
           "description": "true turns SMB signing on in the security settings of the deployment.",
-          "type": "boolean"
+          "type": "boolean",
+          "default": true
         },
         "smb_cluster_encryption": {
           "description": "true encrypts SMB traffic between the cluster nodes (not the storage traffic).",
-          "type": "boolean"
+          "type": "boolean",
+          "default": false
         },
         "bitlocker_boot_volume": {
           "description": "true turns BitLocker on for the boot volume.",
-          "type": "boolean"
+          "type": "boolean",
+          "default": true
         },
         "bitlocker_data_volumes": {
           "description": "true turns BitLocker on for the data volumes.",
-          "type": "boolean"
+          "type": "boolean",
+          "default": true
         },
         "wdac": {
           "description": "true turns Windows Defender Application Control on.",
-          "type": "boolean"
+          "type": "boolean",
+          "default": true
         },
         "telemetry": {
           "description": "What the cluster sends to Microsoft as telemetry. Not read by the tools yet.",
@@ -1770,15 +1790,18 @@
           "properties": {
             "streaming_data": {
               "description": "true sends the streaming diagnostic data.",
-              "type": "boolean"
+              "type": "boolean",
+              "default": true
             },
             "episodic_data_upload": {
               "description": "true sends the episodic diagnostic data.",
-              "type": "boolean"
+              "type": "boolean",
+              "default": true
             },
             "eu_location": {
               "description": "true keeps the diagnostic data in the EU data boundary.",
-              "type": "boolean"
+              "type": "boolean",
+              "default": false
             }
           }
         }

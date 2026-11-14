@@ -73,11 +73,11 @@ Top-level `_schema_root` (header and the order of the sections), `_schema_defs` 
 
 ## Variables owned by tools (`tools:`)
 
-The registry also registers the variables each tool owns, apart from the keys of `infrastructure.yml`: `tools.<tool>.<kind>.<group>.<name>` for `os_configuration`, `ztp`, `sonar`, `arm_deployment`, `cicd_infra`, `discovery`, `ranger`, `loadtools`, `draftsman`, `terraform` and `ansible` (see "The own settings of a tool" in [docs/infrastructure-file.md](docs/infrastructure-file.md)). Kinds: `parameters`, `run_settings`, `guard_settings`, `config_keys`, `event_fields`, `state_fields`, `handoff_fields`, `secret_names`, `env_vars`, `terraform_variables`, `pipeline_variables`, `pipeline_inputs`, `ansible_variables`, and `variables` (the variables of `src/terraform` and `src/ansible`). The group is the script, file or feed (its `area` says which); each entry has the real `name`, `type`, `default`, `enum`, `required`, `read_at` and `description`.
+The registry also registers the variables each tool owns, apart from the keys of `infrastructure.yml`: `tools.<tool>.<kind>.<group>.<name>` for `os_configuration`, `ztp`, `sonar`, `arm_deployment`, `cicd_infra`, `discovery`, `ranger`, `loadtools`, `draftsman`, `trailwright`, `terraform` and `ansible` (see "The own settings of a tool" in [docs/infrastructure-file.md](docs/infrastructure-file.md)). Kinds: `parameters`, `run_settings`, `guard_settings`, `config_keys`, `event_fields`, `state_fields`, `handoff_fields`, `secret_names`, `env_vars`, `terraform_variables`, `pipeline_variables`, `pipeline_inputs`, `ansible_variables`, and `variables` (the variables of `src/terraform` and `src/ansible`). The group is the script, file or feed (its `area` says which); each entry has the real `name`, `type`, `default`, `enum`, `required`, `read_at` and `description`.
 
 - The Terraform and Ansible variables (`tools.terraform.variables`, `tools.ansible.variables`) each say where they come from: `class`, `source`, `infrastructure_key`, `form` and `target`. `scripts/New-IacVariableFiles.ps1` reads those entries and writes `terraform.tfvars.json`, `backend.hcl`, `group_vars/all.yml` and `host_vars/<node>.yml` from `infrastructure.yml`; `tests/variables/IacVariables.Tests.ps1` fails when a declared variable is not registered. See [Terraform and Ansible variable files](docs/infrastructure-file.md#terraform-and-ansible-variable-files-schema-5617).
 - A script parameter that is not registered fails `tests/variables/ToolRegistry.Tests.ps1` (`Test-ToolParameterRegistration.ps1` reads the `param()` block) and `tests/variables/ScriptParameterRegistry.Tests.ps1` (see [Script parameters](#script-parameters-generated)).
-- ZTP, Sonar, Ranger, Loadtools and Draftsman live in other repositories: [`tool-mappings/`](tool-mappings/README.md) maps their names to registry paths, and the same check runs on their checkouts with `AZL_CHECK_EXTERNAL_TOOLS=1`.
+- ZTP, Sonar, Ranger, Loadtools, Draftsman and Trailwright live in other repositories: [`tool-mappings/`](tool-mappings/README.md) maps their names to registry paths, and the same check runs on their checkouts with `AZL_CHECK_EXTERNAL_TOOLS=1`.
 - The discovery variables describe the Dell Redfish discovery branch; its scripts are checked once it is merged.
 
 ## Script parameters (generated)
@@ -100,7 +100,7 @@ Every parameter of every script a person calls is a registry variable. Nobody ke
 | Command | Run it when |
 |---|---|
 | `New-InfrastructureArtifacts.ps1` | The registry's infrastructure keys changed. Rewrites the schema, templates and `docs/VARIABLES.md`. |
-| `New-ToolMapping.ps1` | A variable of ztp, sonar, ranger, loadtools or draftsman changed. |
+| `New-ToolMapping.ps1` | A variable of ztp, sonar, ranger, loadtools, draftsman or trailwright changed. |
 | `New-ScriptParameterRegistry.ps1` | A script parameter was added, removed or changed. Rewrites the generated block of the registry. |
 | `New-VariableMap.ps1` | Any of the above, or any script or test change. Rewrites the variable map. |
 | `scripts/deploy/common/New-DeployScriptStatus.ps1` | A deploy script was added, removed or turned from a placeholder into a real script. |

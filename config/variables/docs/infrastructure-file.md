@@ -60,6 +60,7 @@ The keys above are facts of the environment. A tool also has settings of its own
 | [azurelocal-sonar](https://github.com/AzureLocal/azurelocal-sonar) | `tools.sonar` | Its configuration file keys, command parameters, events and environment variables |
 | [azurelocal-ztp](https://github.com/AzureLocal/azurelocal-ztp) | `tools.ztp` | Script parameters, configuration keys, handoff and state fields, environment variables |
 | [azurelocal-draftsman](https://github.com/AzureLocal/azurelocal-draftsman) | `tools.draftsman` | The URL parameters of the page and `VITE_BASE` |
+| [azurelocal-trailwright](https://github.com/AzureLocal/azurelocal-trailwright) | `tools.trailwright` | The parameters of its example script `docs/examples/ConvertTo-AsBuiltSnapshot.ps1` (it also writes `infrastructure.yml`: those keys are in the main sections) |
 | [azurelocal-surveyor](https://github.com/AzureLocal/azurelocal-surveyor) | none | It has no setting outside its page |
 
 An entry has the name as the tool writes it, `type`, the tool's own `default`, `enum` where the code fixes the values, `required`, `read_at` (the file and line, or "not read by code" for a setting that is only documented) and a one-line description. The test thresholds in the load tool's `alert-rules.yml` are the load tool's own limits for a test run, not Azure Monitor alert rules.

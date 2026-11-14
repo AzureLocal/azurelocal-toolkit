@@ -116,7 +116,7 @@ Describe 'The list of tools' {
         $named = @($script:AllTools | Where-Object { $script:Catalog[$_].Contains('tools_section') } | ForEach-Object { [string]$script:Catalog[$_]['tools_section'] })
         $orphans = @($script:Registry['tools']['properties'].Keys | Where-Object { $_ -notin $named })
         $orphans | Should -BeNullOrEmpty -Because "add the tool to _tool_catalog with tools_section: $($orphans -join ', ')"
-        foreach ($id in 'ranger', 'loadtools', 'draftsman') { $script:Catalog[$id]['tools_section'] | Should -Be $id }
+        foreach ($id in 'ranger', 'loadtools', 'draftsman', 'trailwright') { $script:Catalog[$id]['tools_section'] | Should -Be $id }
         # loadtools and draftsman read no key of infrastructure.yml: they keep their settings in tools.<tool> and have no template
         foreach ($id in 'loadtools', 'draftsman') { $id | Should -BeIn $script:ToolsWithoutKeys }
     }

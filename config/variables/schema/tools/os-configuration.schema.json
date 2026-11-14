@@ -59,6 +59,7 @@
         "storage_architecture": {
           "description": "s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both (S2D plus a SAN). san and hybrid TELL THE SOLUTION THERE IS A SAN: the OS configuration then does the host-side SAN work itself (the Mpio step: MPIO, MSDSM hardware ID, the MPIO claim of the device (mpclaim -n -i -d), load balance policy, vendor MPIO settings; for iSCSI the initiator service, auto-claim, portals and sessions, except for a san design on Azure Local 2610 or later, where the deployment configures iSCSI and Microsoft Learn says not to enable it before) and checks each LUN is seen once (SanVerify). storage.san.type says whether the SAN is fibre_channel or iscsi. On every node the OS configuration also looks, read only, for FC or iSCSI LUNs that are visible while the file declares no SAN, and reports them. https://learn.microsoft.com/azure/azure-local/deploy/enable-external-storage",
           "type": "string",
+          "default": "s2d",
           "enum": [
             "s2d",
             "san",
@@ -676,7 +677,8 @@
             },
             "use_dhcp": {
               "description": "ARM useDhcp: the deployment takes the host and cluster addresses from DHCP instead of static addresses and the infrastructure_pool. Default false. A deployment setting, not how each machine's management port gets its address before deployment: that is ip_assignment.",
-              "type": "boolean"
+              "type": "boolean",
+              "default": false
             },
             "site_ip_range": {
               "description": "Simplified provisioning: the address range of the site's network setting (Microsoft.Edge/configurations/networkConfigurations ipv4.addressRange) when the management addresses are static. Default: the lowest to the highest static management address. Inside the management subnet, and holding every static management address.",
@@ -887,7 +889,8 @@
           "properties": {
             "auto_ip": {
               "description": "Network ATC assigns the storage addresses. When false, each node lists its storage_ips. Default true.",
-              "type": "boolean"
+              "type": "boolean",
+              "default": true
             },
             "layout": {
               "description": "dedicated: storage on its own ports. converged: storage shares ports with other traffic. Documentation only; not read by the tools. Derived from networking.intents[].traffic: a storage-only intent is dedicated, storage with other traffic is converged.",
@@ -1291,7 +1294,8 @@
                   "properties": {
                     "enabled": {
                       "description": "true when the iSCSI targets require CHAP. The OS configuration then makes the target portals but not the sessions (CHAP sessions need the secret, which no tool reads yet) and says so in its plan.",
-                      "type": "boolean"
+                      "type": "boolean",
+                      "default": false
                     }
                   }
                 }

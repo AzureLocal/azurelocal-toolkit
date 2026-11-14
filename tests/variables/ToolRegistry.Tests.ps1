@@ -66,8 +66,8 @@ Describe 'Script parameters are registered' {
     }
 }
 
-Describe 'Tool mappings (ztp, sonar, ranger, loadtools, draftsman)' {
-    It '<_>.csv is current and names only registry paths' -ForEach 'ztp', 'sonar', 'ranger', 'loadtools', 'draftsman' {
+Describe 'Tool mappings (ztp, sonar, ranger, loadtools, draftsman, trailwright)' {
+    It '<_>.csv is current and names only registry paths' -ForEach 'ztp', 'sonar', 'ranger', 'loadtools', 'draftsman', 'trailwright' {
         $file = Join-Path $script:Repo "config\variables\tool-mappings\$_.csv"
         $file | Should -Exist
         $out = Join-Path $TestDrive 'maps'

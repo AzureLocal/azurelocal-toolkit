@@ -1,6 +1,6 @@
 # Tool mappings
 
-The variables of the tools that live outside this repository (azurelocal-ztp, azurelocal-sonar, azurelocal-ranger, azurelocal-loadtools, azurelocal-draftsman) are registered in the master registry under `tools.<tool>.<kind>.<group>.<name>`. These CSVs map each name, as the tool writes it, to its registry path:
+The variables of the tools that live outside this repository (azurelocal-ztp, azurelocal-sonar, azurelocal-ranger, azurelocal-loadtools, azurelocal-draftsman, azurelocal-trailwright) are registered in the master registry under `tools.<tool>.<kind>.<group>.<name>`. These CSVs map each name, as the tool writes it, to its registry path:
 
 | File | Tool | Rows |
 | --- | --- | --- |
@@ -9,6 +9,7 @@ The variables of the tools that live outside this repository (azurelocal-ztp, az
 | `ranger.csv` | azurelocal-ranger: configuration keys, WAF rule tunables, command parameters, environment variables | one per variable |
 | `loadtools.csv` | azurelocal-loadtools: `variables.yml`, cluster, profile and alert rule files, script parameters, pipeline, Bicep and Ansible variables | one per variable |
 | `draftsman.csv` | azurelocal-draftsman: URL parameters and `VITE_BASE` | one per variable |
+| `trailwright.csv` | azurelocal-trailwright: the parameters of its example script `docs/examples/ConvertTo-AsBuiltSnapshot.ps1` | one per variable |
 
 Columns: `tool`, `kind`, `group` (the script, file or feed), `name`, `registry_path`, `read_at` (where the tool reads it).
 

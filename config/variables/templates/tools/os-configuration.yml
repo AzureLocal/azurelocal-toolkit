@@ -28,13 +28,13 @@ scenario:
   # one of: active_directory | local_identity; used by: os_configuration, deployment, monitoring, trailwright
   identity: "active_directory"
   # s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both (S2D plus a SAN). san...
-  # one of: s2d | san | hybrid; used by: os_configuration, deployment, trailwright
+  # one of: s2d | san | hybrid; default: "s2d"; used by: os_configuration, deployment, trailwright
   storage_architecture: "s2d"
   # Azure public cloud or Azure Government.
   # one of: public | government; used by: os_configuration, deployment, trailwright
   cloud: "public"
   # How the machines reach Azure.
-  # one of: direct | proxy | arc_gateway | proxy_arc_gateway | private_path; used by: os_configuration, trailwright, ansible
+  # one of: direct | proxy | arc_gateway | proxy_arc_gateway | private_path; used by: os_configuration, trailwright, ansible, ztp
   outbound_path: "direct"
   # iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp...
   # one of: iso | simplified; used by: ztp, os_configuration, monitoring, trailwright
@@ -336,7 +336,7 @@ networking:
     # one of: static | dhcp | preconfigured; default: "static"; used by: ztp, os_configuration, deployment
     ip_assignment: "static"
     # ARM useDhcp: the deployment takes the host and cluster addresses from DHCP instead of static addresses and the infrastructure_pool.
-    # used by: os_configuration, deployment, trailwright
+    # default: false; used by: os_configuration, deployment, trailwright
     use_dhcp: false
     # Simplified provisioning: the address range of the site's network setting (Microsoft.Edge/configurations/networkConfigurations ipv4.addressR...
     # used by: ztp, os_configuration
@@ -432,7 +432,7 @@ networking:
   # when scenario.storage_connectivity is switchless; used by: os_configuration, deployment
   storage:
     # Network ATC assigns the storage addresses.
-    # used by: os_configuration, deployment, trailwright
+    # default: true; used by: os_configuration, deployment, trailwright
     auto_ip: true
     # dedicated: storage on its own ports. converged: storage shares ports with other traffic.
     # one of: dedicated | converged; used by: os_configuration, trailwright
@@ -501,10 +501,10 @@ networking:
     # when scenario.outbound_path is proxy or proxy_arc_gateway
     proxy:
       # URL of the proxy server, for example http://proxy.example.test:3128.
-      # required; used by: os_configuration, trailwright, ansible
+      # required; used by: os_configuration, trailwright, ansible, ztp
       url: ""
       # Addresses and names that go direct, not through the proxy.
-      # used by: os_configuration
+      # used by: os_configuration, ztp
       bypass: []
     # The Arc gateway resource, in the same subscription as the machines.
     # when scenario.outbound_path is arc_gateway or proxy_arc_gateway
@@ -630,7 +630,7 @@ storage:
       # used by: os_configuration, deployment
       chap:
         # true when the iSCSI targets require CHAP.
-        # required; used by: os_configuration, deployment
+        # required; default: false; used by: os_configuration, deployment
         enabled: false
     # LUN of the infrastructure volume (250 GB minimum).
     # used by: os_configuration, deployment, trailwright

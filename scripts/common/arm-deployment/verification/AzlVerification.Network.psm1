@@ -223,7 +223,7 @@ function Get-AzlVerificationCheckDefinition {
     $hasIntents = { param($Context) if (@(Get-AzlVerIntent $Context).Count) { $true } else { $false } }
 
     $defs.Add((New-AzlVerDefinition -Id 'NW-001' -Category network -Title 'Intents against adapters: every adapter of every intent exists under the same name on every node, link up, at least two per intent' `
-                -Source "$($script:Src.HostNet); $($script:Src.NetPlan) (Decision 6, 7); azl-toolkit phase-03-os-configuration task-03 Set-StaticIPAddress / task-13 Task0304_StaticIP" -Run {
+                -Source "$($script:Src.HostNet); $($script:Src.NetPlan) (Decision 6, 7); azl-toolkit phase-03-os-configuration task-03 network step of Set-AzureLocalNodeConfiguration.ps1 / task-13 Task0304_StaticIP" -Run {
                 param($Context)
                 $intents = @(Get-AzlVerIntent $Context)
                 if (-not $intents.Count) { return New-AzlVerResult Failed 'networking.intents is empty: the deployment needs at least one network intent.' 'Define the intents in infrastructure.yml (networking.intents).' }

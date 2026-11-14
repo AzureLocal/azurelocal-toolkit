@@ -24,6 +24,9 @@ _metadata:
 
 # The design choices.
 scenario:
+  # How the machines reach Azure.
+  # one of: direct | proxy | arc_gateway | proxy_arc_gateway | private_path; used by: os_configuration, trailwright, ansible, ztp
+  outbound_path: "direct"
   # iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp...
   # one of: iso | simplified; used by: ztp, os_configuration, monitoring, trailwright
   os_install: "simplified"
@@ -282,6 +285,18 @@ networking:
   # Time sources, as host names or addresses.
   # used by: ztp, os_configuration, deployment, ansible
   ntp_servers: ["192.0.2.4", "192.0.2.5"]
+  # Details of scenario.outbound_path.
+  # when scenario.outbound_path is proxy or proxy_arc_gateway
+  outbound:
+    # Proxy server for the machines' outbound traffic, for scenario.outbound_path proxy or proxy_arc_gateway.
+    # when scenario.outbound_path is proxy or proxy_arc_gateway
+    proxy:
+      # URL of the proxy server, for example http://proxy.example.test:3128.
+      # required; used by: os_configuration, trailwright, ansible, ztp
+      url: ""
+      # Addresses and names that go direct, not through the proxy.
+      # used by: os_configuration, ztp
+      bypass: []
 
 # Accounts and the identity provider (scenario.identity).
 identity:

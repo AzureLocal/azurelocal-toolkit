@@ -1,0 +1,4 @@
+"tool","kind","group","name","registry_path","read_at"
+"trailwright","parameters","docs/examples/ConvertTo-AsBuiltSnapshot.ps1","ManifestPath","tools.trailwright.parameters.docs_examples_ConvertTo_AsBuiltSnapshot_ps1.ManifestPath","docs/examples/ConvertTo-AsBuiltSnapshot.ps1:18"
+"trailwright","parameters","docs/examples/ConvertTo-AsBuiltSnapshot.ps1","OutPath","tools.trailwright.parameters.docs_examples_ConvertTo_AsBuiltSnapshot_ps1.OutPath","docs/examples/ConvertTo-AsBuiltSnapshot.ps1:19"
+"trailwright","parameters","docs/examples/ConvertTo-AsBuiltSnapshot.ps1","Release","tools.trailwright.parameters.docs_examples_ConvertTo_AsBuiltSnapshot_ps1.Release","docs/examples/ConvertTo-AsBuiltSnapshot.ps1:20"

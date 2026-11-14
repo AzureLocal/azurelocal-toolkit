@@ -40,4 +40,8 @@ Two per-task scripts are removed because the schema 5 path replaces them and the
   `Set-AzureLocalNodeConfiguration.ps1` does the same work (tasks 02 to 10: RDP, address, DHCP off, DNS, NTP, ICMP, unused adapters, host name) and reads every
   value from `infrastructure.yml`.
 
+Four node-local scripts are removed because they held `REPLACE_WITH_...` text that a person had to type into the script, and the schema 5 path replaces them
+(Network, Dns, Time and Hostname steps of `Set-AzureLocalNodeConfiguration.ps1`, which read every value from `infrastructure.yml`):
+`Set-StaticIPAddress.ps1` (task 03), `Set-DnsServers.ps1` (task 05), `Set-NTPConfiguration.ps1` (task 07) and `Set-NodeHostname.ps1` (task 10).
+
 The `Invoke-*-Orchestrated.ps1` wrappers of both task folders stay.

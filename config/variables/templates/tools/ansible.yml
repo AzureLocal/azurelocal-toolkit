@@ -25,7 +25,7 @@ _metadata:
 # The design choices.
 scenario:
   # How the machines reach Azure.
-  # one of: direct | proxy | arc_gateway | proxy_arc_gateway | private_path; used by: os_configuration, trailwright, ansible
+  # one of: direct | proxy | arc_gateway | proxy_arc_gateway | private_path; used by: os_configuration, trailwright, ansible, ztp
   outbound_path: "direct"
 
 # The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
@@ -105,7 +105,7 @@ networking:
     # when scenario.outbound_path is proxy or proxy_arc_gateway
     proxy:
       # URL of the proxy server, for example http://proxy.example.test:3128.
-      # required; used by: os_configuration, trailwright, ansible
+      # required; used by: os_configuration, trailwright, ansible, ztp
       url: ""
     # The Arc gateway resource, in the same subscription as the machines.
     # when scenario.outbound_path is arc_gateway or proxy_arc_gateway

@@ -13,7 +13,7 @@
     repository (azurelocal-ztp, azurelocal-sonar): point -Root at its checkout.
 
 .PARAMETER Tool
-    os_configuration, ztp, sonar, arm_deployment, cicd_infra, discovery, ranger, loadtools or draftsman.
+    os_configuration, ztp, sonar, arm_deployment, cicd_infra, discovery, ranger, loadtools, draftsman or trailwright.
 
 .PARAMETER Root
     The folder to scan for *.ps1 files.
@@ -35,7 +35,7 @@
 #>
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('os_configuration', 'ztp', 'sonar', 'arm_deployment', 'cicd_infra', 'discovery', 'ranger', 'loadtools', 'draftsman')][string]$Tool,
+    [Parameter(Mandatory)][ValidateSet('os_configuration', 'ztp', 'sonar', 'arm_deployment', 'cicd_infra', 'discovery', 'ranger', 'loadtools', 'draftsman', 'trailwright')][string]$Tool,
     [Parameter(Mandatory)][string]$Root,
     [string]$RegistryPath = (Join-Path $PSScriptRoot '../schema/master-registry.yaml'),
     [object[]]$Registry,
@@ -51,7 +51,7 @@ if (-not $Registry) { $Registry = @(Get-RegistryVariable -Path $RegistryPath) }
 $groups = @($Registry | Where-Object { $_.Path -match "^tools\.$Tool\.parameters\.[^.]+$" })
 $common = 'Verbose', 'Debug', 'ErrorAction', 'WarningAction', 'InformationAction', 'ErrorVariable', 'WarningVariable', 'InformationVariable', 'OutVariable', 'OutBuffer', 'PipelineVariable', 'WhatIf', 'Confirm', 'ProgressAction'
 
-foreach ($file in Get-ChildItem -LiteralPath $Root -Recurse -Filter '*.ps1' -File) {
+foreach ($file in Get-ChildItem -LiteralPath $Root -Recurse -Filter '*.ps1' -File | Where-Object { $_.FullName -notmatch '[\\/](node_modules|\.git)[\\/]' }) {
     $tokens = $null; $errs = $null
     $ast = [System.Management.Automation.Language.Parser]::ParseFile($file.FullName, [ref]$tokens, [ref]$errs)
     $params = @()

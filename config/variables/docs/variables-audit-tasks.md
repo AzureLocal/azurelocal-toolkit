@@ -33,14 +33,14 @@ Orchestrators (run on the jump server or in a pipeline: must be 7):
 
 Task scripts that run on a node or on the jump server (decide per script; a node-side script copied to a machine without PowerShell 7 stays 5.1):
 
-- phase-03-os-configuration: `Enable-RDP.ps1`, `Set-StaticIPAddress.ps1`, `Disable-DHCPOnAllAdapters.ps1`, `Set-DnsServers.ps1`
+- phase-03-os-configuration: `Enable-RDP.ps1`, `Disable-DHCPOnAllAdapters.ps1`
 - phase-06-post-deployment: none left (the Standalone scripts are removed)
 
 ## 4. Tool parameters that are not registered
 
 `Test-ToolParameterRegistration.ps1 -ReportUnregisteredScripts` reports no registry group for the older foundation scripts of
 `phase-03-os-configuration` (`az-*.ps1`, `*-Orchestrated.ps1`, `Test-DnsConfiguration.ps1`, ...), `phase-05-cluster-deployment`
-(`Deploy-AzureLocalCluster*.ps1`, `Invoke-Verify*-Orchestrated.ps1`, `Monitor-*.ps1`, `Test-ADDomainStatus*.ps1`, ...) and
+(`Deploy-AzureLocalCluster*.ps1`, `Invoke-Verify*-Orchestrated.ps1`, `Monitor-*.ps1`, `Test-ADDomainStatus.ps1`, ...) and
 `phase-01-hardware-provisioning/.../az-discover-hardware.ps1`. The main entry scripts are registered: `Invoke-AzureLocalArmDeployment.ps1`,
 `Invoke-AzureLocalPreClusterVerification.ps1`, `Set-AzureLocalNodeConfiguration.ps1`, `Invoke-HardwareDiscovery.ps1` (three parameters added in
 5.0.13), `Start-AzlSonar.ps1` and the azurelocal-ztp scripts. Register the foundation scripts' parameters when they are brought under the standard.

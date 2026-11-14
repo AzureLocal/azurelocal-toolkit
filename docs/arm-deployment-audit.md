@@ -49,11 +49,11 @@ reads code, tests and documents.
 | --- | --- | --- |
 | `active-directory/task-01-.../powershell/Deploy-AzureLocalCluster.ps1` and the `local-identity` copy | Legacy | Calls `Generate-AzureLocal-Parameters.ps1`, which is not in the repository (`find` finds none). Reads `cluster_arm_deployment.*` of the old layout |
 | `.../Deploy-AzureLocalCluster-Standalone.ps1` (both identities) | Legacy | Needs a hand-made `azuredeploy.parameters.*.json` with `{{VARIABLE}}` placeholders |
-| `.../Invoke-VerifyADPrerequisites-Orchestrated.ps1`, `Test-ADPrerequisites-Standalone.ps1` | Partly real, legacy config | Documented as the AD prerequisite check; reads the old layout |
+| `.../Invoke-VerifyADPrerequisites-Orchestrated.ps1` (the `-Standalone` copy is removed) | Partly real, legacy config | Documented as the AD prerequisite check; reads the old layout |
 | `.../Invoke-DeployCluster-Orchestrated.ps1` (local identity), `Invoke-CreateLocalIdentityAccounts-Orchestrated.ps1` | Scaffold / legacy | The first is a 1 KB wrapper over the scaffold module; the second reads the old layout |
 | `azurecli/az-deploy-cluster*.ps1` (the Bash variant has since been removed) | Scaffold | `Invoke-DeploymentAzCliPowerShell` logs "standards-compliant scaffold. Add task-specific az commands" |
 | `Get-HciResourceProviderObjectId*.ps1` | Real, small | Same lookup the module does (`Get-AzlHciResourceProviderObjectId`) |
-| `active-directory/task-02-verify-.../Test-ClusterHealth*.ps1`, `Test-ADDomainStatus*.ps1`, local-identity `Test-LocalIdentityConfig*.ps1` | Real, legacy config | Post-deployment verification over PSRemoting |
+| `active-directory/task-02-verify-.../Test-ClusterHealth.ps1`, `Test-ADDomainStatus.ps1`, local-identity `Test-LocalIdentityConfig.ps1` (their `-Standalone` copies are removed) | Real, legacy config | Post-deployment verification over PSRemoting |
 
 ### 1.5 Pipelines today
 

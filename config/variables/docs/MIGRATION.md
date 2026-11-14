@@ -633,3 +633,15 @@ The registry became the source of the schema. Nothing in `infrastructure.yml` ch
 ## Version history
 
 One history, in order: 5.2 (the ports of each machine), 5.3 (BIOS phases, the static method, the SAN), 5.4 (every ZTP setting), 5.4.1 (adapter wait), 5.4.2 (SBE delivery), 5.4.3 (`clear_storage`), 5.4.4 (the guarded network change and the transport keys: `os_configuration.network`, `os_configuration.remoting.transport`, `bootstrap_transport`, `allowed_source_cidrs`), 5.5 (the domain join keys and the CI/CD `devops` keys), 5.6 (the `deployment` block and the remote management security profile), 5.6.1 (`local_groups`), 5.6.2 (adapter identity), 5.6.3 (logical network keys), 5.6.4 (the SBE package as a requirement), 5.6.5 (`landing_zone.policy`), 5.6.6 (`operations.monitoring.action_group`). A file that uses any of them says the version of the newest key it uses (`5.6.6` is the current version); each key's description in the schema says `since` which version added it. Rules: AZL-030 SBE delivery, AZL-033 SBE package requirement, AZL-031 `clear_storage`, AZL-040 `deployment`, AZL-050 to AZL-053 domain join, AZL-060 to AZL-068 security profile, AZL-070 `devops`.
+
+## Scripts removed in registry 5.0.55 (no key changes)
+
+These scripts held `REPLACE_...` or `<PLACEHOLDER>` text that a person had to type into the script, and a script that reads `infrastructure.yml` does the same work. Infrastructure schema 5.6.24 is unchanged: no file needs an edit.
+
+| Removed | Use instead |
+| --- | --- |
+| `Test-ADPrerequisites-Standalone.ps1` (phase 05, active directory, task 01) | `Invoke-AzureLocalPreClusterVerification.ps1` (checks ID-AD-003, ID-AD-007, ID-AD-010) and `Invoke-VerifyADPrerequisites-Orchestrated.ps1` |
+| `Test-ADDomainStatus-Standalone.ps1` (task 02) | `Invoke-VerifyADDomainStatus-Orchestrated.ps1` |
+| `Test-ClusterHealth-Standalone.ps1` (active directory and local identity, task 02) | `Invoke-VerifyClusterHealth-Orchestrated.ps1` of the same task folder |
+| `Test-LocalIdentityConfig-Standalone.ps1` (local identity, task 02) | `Invoke-VerifyLocalIdentityConfig-Orchestrated.ps1` |
+| `Set-StaticIPAddress.ps1`, `Set-DnsServers.ps1`, `Set-NTPConfiguration.ps1`, `Set-NodeHostname.ps1` (phase 03, tasks 03, 05, 07, 10) | The Network, Dns, Time and Hostname steps of `Set-AzureLocalNodeConfiguration.ps1` |

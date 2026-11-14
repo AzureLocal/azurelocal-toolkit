@@ -422,7 +422,8 @@ function New-AzlArmParameterSet {
     $useDhcp = [bool](& $g 'networking.management.use_dhcp' $false)
 
     $deploymentMode = if ($Mode) { $Mode } else { (Get-Culture).TextInfo.ToTitleCase([string](& $g 'cluster.deployment_mode' 'validate')) }
-    $witnessType = [string](& $g 'cluster.witness.type' 'none')
+    # cluster.witness.type is a required key (no registry default): the file always has it, and an empty value means no witness.
+    $witnessType = [string](& $g 'cluster.witness.type' '')
     if ($witnessType -eq 'file_share') { throw 'A file share witness is for disconnected operations; Microsoft''s quickstart templates take a cloud witness or none.' }
     $modeMap = @{ express = 'Express'; infra_only = 'InfraOnly'; keep_storage = 'KeepStorage' }
     $configurationMode = $modeMap[[string](& $g 'storage.configuration_mode' $(if ($storage -eq 'san') { 'infra_only' } else { 'express' }))]
@@ -523,7 +524,7 @@ function New-AzlArmParameterSet {
     else {
         $li = & $g 'identity.local_identity' $null
         $p.identityProvider = 'LocalIdentity'
-        $p.dnsServerConfig = if ([string](Get-AzlProp $li 'dns_server_config' 'use_dns_server') -eq 'use_forwarder') { 'UseForwarder' } else { 'UseDnsServer' }
+        $p.dnsServerConfig = if ([string](Get-AzlProp $li 'dns_server_config' '') -eq 'use_forwarder') { 'UseForwarder' } else { 'UseDnsServer' }
         $p.dnsZones = @([ordered]@{ dnsZoneName = [string](Get-AzlProp $li 'dns_zone' ''); dnsForwarder = @(ConvertTo-List (Get-AzlProp $li 'dns_forwarders' @()) | ForEach-Object { [string]$_ }) })
     }
 

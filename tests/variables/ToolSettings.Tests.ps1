@@ -5,7 +5,7 @@
 #   - a setting in the tool that is not registered fails, and a registered one that the tool no longer has fails;
 #   - a source_key must name a key of the master infrastructure file.
 # The comparison with a tool needs its repository. When the repository is not on the machine the test is skipped with a message
-# (CI has only the toolkit). Folders: D:\git\azurelocal\azurelocal-<tool>, or the environment variable AZL_<TOOL>_REPO.
+# (CI has only the toolkit). Folders: D:\git\azurelocal\azurelocal-<tool> (azurelocal-trailwright: D:\git\hybrid-solutions-cloud\azurelocal-trailwright), or the environment variable AZL_<TOOL>_REPO.
 
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Pester blocks.')]
 param()
@@ -20,8 +20,9 @@ BeforeAll {
     function Get-ToolRepo([string]$Tool) {
         $envName = 'AZL_{0}_REPO' -f $Tool.ToUpperInvariant()
         $fromEnv = [Environment]::GetEnvironmentVariable($envName)
-        $path = if ($fromEnv) { $fromEnv } else { Join-Path 'D:\git\azurelocal' "azurelocal-$Tool" }
-        if (Test-Path -LiteralPath $path -PathType Container) { (Resolve-Path -LiteralPath $path).ProviderPath } else { $null }
+        # azurelocal-trailwright lives in D:\git\hybrid-solutions-cloud, the other tools in D:\git\azurelocal.
+        $path = if ($fromEnv) { $fromEnv } else { @('D:\git\azurelocal', 'D:\git\hybrid-solutions-cloud' | ForEach-Object { Join-Path $_ "azurelocal-$Tool" } | Where-Object { Test-Path -LiteralPath $_ -PathType Container } | Select-Object -First 1) }
+        if ($path -and (Test-Path -LiteralPath $path -PathType Container)) { (Resolve-Path -LiteralPath $path).ProviderPath } else { $null }
     }
 
     # The registered leaves of a tool: one object per leaf with Kind, Area (the group's area), Name and the node.
@@ -85,7 +86,7 @@ Describe 'Registered settings of the external tools' {
         @(Get-ToolLeaf $_).Count | Should -BeGreaterThan 5
     }
 
-    It 'gives every setting of <_> a type, a place where it is read and a one-line description' -ForEach 'ranger', 'loadtools', 'draftsman', 'sonar' {
+    It 'gives every setting of <_> a type, a place where it is read and a one-line description' -ForEach 'ranger', 'loadtools', 'draftsman', 'sonar', 'trailwright' {
         $bad = foreach ($l in (Get-ToolLeaf $_)) {
             foreach ($f in 'type', 'read_at', 'description') { if (-not $l.Node.Contains($f) -or [string]::IsNullOrWhiteSpace([string]$l.Node[$f])) { "$($l.Path): no $f" } }
             if ($l.Node.Contains('description') -and ([string]$l.Node['description']).Length -gt 900) { "$($l.Path): description is longer than 900 characters" }
@@ -93,13 +94,13 @@ Describe 'Registered settings of the external tools' {
         @($bad) | Should -BeNullOrEmpty
     }
 
-    It 'gives every group of <_> an area that names a file of the tool' -ForEach 'ranger', 'loadtools', 'draftsman', 'sonar' {
+    It 'gives every group of <_> an area that names a file of the tool' -ForEach 'ranger', 'loadtools', 'draftsman', 'sonar', 'trailwright' {
         $tool = $_
         $bad = foreach ($r in $script:All) { if ($r.Path -match "^tools\.$tool\.[^.]+\.[^.]+$" -and (-not $r.Node.Contains('area') -or [string]::IsNullOrWhiteSpace([string]$r.Node['area']))) { $r.Path } }
         @($bad) | Should -BeNullOrEmpty
     }
 
-    It 'names, in source_key of <_>, only keys that exist in the master infrastructure file' -ForEach 'ranger', 'loadtools', 'draftsman', 'sonar' {
+    It 'names, in source_key of <_>, only keys that exist in the master infrastructure file' -ForEach 'ranger', 'loadtools', 'draftsman', 'sonar', 'trailwright' {
         $bad = foreach ($l in (Get-ToolLeaf $_)) {
             if ($l.Node.Contains('source_key') -and -not $script:MasterPaths.Contains([string]$l.Node['source_key'])) { "$($l.Path): source_key $($l.Node['source_key']) is not a key of the master file" }
         }
@@ -311,6 +312,61 @@ Describe 'azurelocal-sonar: the registered settings match its source' {
         if (-not $script:SnRoot) { return (Skip-NoRepo 'sonar' $null) }
         $problems = @(& (Join-Path $script:Vars 'scripts\Test-ToolParameterRegistration.ps1') -Tool sonar -Root $script:SnRoot -Registry $script:All)
         @($problems | ForEach-Object { "$(Split-Path -Leaf $_.Script) -$($_.Parameter)" }) | Should -BeNullOrEmpty
+    }
+}
+
+Describe 'azurelocal-trailwright: the registered settings match its source' {
+    # Trailwright is a web app. Its only PowerShell is the example script docs/examples/ConvertTo-AsBuiltSnapshot.ps1 (Ranger manifest to as-built snapshot).
+    # Its parameters are registered under tools.trailwright.parameters, like the parameters of the scripts of the other external tools.
+    BeforeAll {
+        $script:TwRoot = Get-ToolRepo 'trailwright'
+        $script:TwLeaf = @(Get-ToolLeaf 'trailwright')
+    }
+
+    It 'registers the parameters of the example script, with the file as its area' {
+        $params = @($script:TwLeaf | Where-Object { $_.Kind -eq 'parameters' -and $_.Area -eq 'docs/examples/ConvertTo-AsBuiltSnapshot.ps1' })
+        @($params | ForEach-Object { $_.Name } | Sort-Object) | Should -Be @('ManifestPath', 'OutPath', 'Release')
+        @($script:TwLeaf | Where-Object { $_.Kind -ne 'parameters' }).Count | Should -Be 0 -Because 'Trailwright has no other registered kind of setting; add a test for it when one is registered'
+    }
+
+    It 'marks the mandatory parameters and ties Release to deployment.solution_version' {
+        $byName = @{}; foreach ($l in $script:TwLeaf) { $byName[$l.Name] = $l }
+        $byName['ManifestPath'].Node['required'] | Should -Be 'Y'
+        $byName['OutPath'].Node['required'] | Should -Be 'Y'
+        $byName['Release'].Node['required'] | Should -Be 'N'
+        $byName['Release'].Node['source_key'] | Should -Be 'deployment.solution_version'
+    }
+
+    It 'the tool catalog names the tools section and the script' {
+        $catalog = (Read-RegistryYaml -Path $script:RegistryPath)['_tool_catalog']['tools']['trailwright']
+        $catalog['tools_section'] | Should -Be 'trailwright'
+        @($catalog['evidence']) | Should -Contain 'docs/examples/ConvertTo-AsBuiltSnapshot.ps1'
+    }
+
+    It 'every parameter of every PowerShell script of the repository is registered, and every registered parameter exists' {
+        if (-not $script:TwRoot) { return (Skip-NoRepo 'trailwright' $null) }
+        $files = @(Get-ChildItem -LiteralPath $script:TwRoot -Recurse -Include '*.ps1', '*.psm1' -File | Where-Object { $_.FullName -notmatch '[\\/](node_modules|\.git)[\\/]' })
+        $files.Count | Should -BeGreaterThan 0
+        $seen = @()
+        $problems = foreach ($file in $files) {
+            $rel = $file.FullName.Substring($script:TwRoot.Length + 1).Replace('\', '/')
+            $inCode = @(Get-ParamName $file.FullName $null)
+            if (-not $inCode.Count) { continue }
+            $seen += $rel
+            $registered = @($script:TwLeaf | Where-Object { $_.Kind -eq 'parameters' -and $_.Area -eq $rel } | ForEach-Object { $_.Name })
+            if (-not $registered.Count) { "${rel}: no tools.trailwright.parameters group has this area"; continue }
+            $c = Compare-Name $inCode $registered
+            foreach ($n in $c.NotRegistered) { "${rel}: -$n is not registered" }
+            foreach ($n in $c.NotInSource) { "${rel}: -$n is registered but the script has no such parameter" }
+        }
+        $stale = foreach ($a in @($script:TwLeaf | Where-Object { $_.Kind -eq 'parameters' } | Select-Object -ExpandProperty Area -Unique)) { if ($a -notin $seen) { "${a}: registered, but the repository has no such script with parameters" } }
+        @($problems + $stale) | Should -BeNullOrEmpty
+    }
+
+    It 'Test-ToolParameterRegistration.ps1 finds no unregistered parameter in the checkout' {
+        if (-not $script:TwRoot) { return (Skip-NoRepo 'trailwright' $null) }
+        $found = @(& (Join-Path $script:Vars 'scripts\Test-ToolParameterRegistration.ps1') -Tool trailwright -Root $script:TwRoot -Registry $script:All -ReportUnregisteredScripts)
+        @($found | ForEach-Object { "$(Split-Path -Leaf $_.Script) -$($_.Parameter)" }) | Should -BeNullOrEmpty
     }
 }
 

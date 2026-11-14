@@ -566,3 +566,4 @@
 "loadtools","pipeline_inputs",".azuredevops/azure-pipelines-vmfleet.yml","clusterConfig","tools.loadtools.pipeline_inputs.azuredevops_azure_pipelines_vmfleet_yml.clusterConfig",".azuredevops/azure-pipelines-vmfleet.yml:11"
 "loadtools","pipeline_inputs",".azuredevops/azure-pipelines-vmfleet.yml","profile","tools.loadtools.pipeline_inputs.azuredevops_azure_pipelines_vmfleet_yml.profile",".azuredevops/azure-pipelines-vmfleet.yml:15"
 "loadtools","pipeline_inputs",".azuredevops/azure-pipelines-vmfleet.yml","skipCleanup","tools.loadtools.pipeline_inputs.azuredevops_azure_pipelines_vmfleet_yml.skipCleanup",".azuredevops/azure-pipelines-vmfleet.yml:19"
+"loadtools","pipeline_inputs",".azuredevops/azure-pipelines-vmfleet.yml","variableGroup","tools.loadtools.pipeline_inputs.azuredevops_azure_pipelines_vmfleet_yml.variableGroup",".azuredevops/azure-pipelines-vmfleet.yml:26"

@@ -28,10 +28,10 @@ scenario:
   # one of: active_directory | local_identity; used by: os_configuration, deployment, monitoring, trailwright
   identity: "active_directory"
   # s2d: Storage Spaces Direct (hyperconverged). san: external SAN only (disaggregated; needs storage.san). hybrid: both (S2D plus a SAN). san...
-  # one of: s2d | san | hybrid; used by: os_configuration, deployment, trailwright
+  # one of: s2d | san | hybrid; default: "s2d"; used by: os_configuration, deployment, trailwright
   storage_architecture: "s2d"
   # switched: storage traffic goes through top-of-rack switches. switchless: machines are cabled directly to each other for storage.
-  # one of: switched | switchless; used by: deployment, trailwright
+  # one of: switched | switchless; default: "switched"; used by: deployment, trailwright
   storage_connectivity: "switched"
   # standard, or rack_aware (machines split across two local availability zones; every node needs a zone).
   # one of: standard | rack_aware; used by: deployment, trailwright
@@ -43,7 +43,7 @@ scenario:
   # one of: public | government; used by: os_configuration, deployment, trailwright
   cloud: "public"
   # How the machines reach Azure.
-  # one of: direct | proxy | arc_gateway | proxy_arc_gateway | private_path; used by: os_configuration, trailwright, ansible
+  # one of: direct | proxy | arc_gateway | proxy_arc_gateway | private_path; used by: os_configuration, trailwright, ansible, ztp
   outbound_path: "direct"
   # iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp...
   # one of: iso | simplified; used by: ztp, os_configuration, monitoring, trailwright
@@ -184,10 +184,10 @@ cluster:
   # required; used by: os_configuration, deployment, monitoring, trailwright, ansible
   name: "iic-azl-01"
   # Prefix of the Azure resources the deployment creates.
-  # used by: deployment, trailwright
+  # default: "hci"; used by: deployment, trailwright
   naming_prefix: "iicazl01"
   # ARM deploymentMode: validate runs the checks only; deploy deploys.
-  # one of: validate | deploy; used by: deployment
+  # one of: validate | deploy; default: "validate"; used by: deployment
   deployment_mode: "validate"
   # The quorum witness of the cluster.
   # required
@@ -208,10 +208,10 @@ cluster:
     # required; used by: deployment, trailwright, terraform
     name: "kv-iic-azl-01"
     # ARM createNewKeyVault.
-    # used by: deployment, trailwright
+    # default: true; used by: deployment, trailwright
     create_new: true
     # Days a deleted secret or vault stays recoverable, 7 to 90.
-    # used by: deployment, trailwright
+    # default: 30; used by: deployment, trailwright
     soft_delete_retention_days: 30
   # Key Vault audit logs.
   # used by: deployment
@@ -220,10 +220,10 @@ cluster:
     # used by: deployment, trailwright
     storage_account: "stiicazl01diag"
     # Days the diagnostic logs are kept.
-    # used by: deployment, trailwright
+    # default: 30; used by: deployment, trailwright
     logs_retention_days: 30
     # SKU of the diagnostic storage account, for example Standard_LRS.
-    # used by: deployment, trailwright
+    # default: "Standard_LRS"; used by: deployment, trailwright
     storage_account_type: "Standard_LRS"
 
 # How the toolkit's ARM Validate and Deploy run (Invoke-AzureLocalArmDeployment.ps1) waits, asks for approval and recovers.
@@ -677,7 +677,7 @@ networking:
     # one of: static | dhcp | preconfigured; default: "static"; used by: ztp, os_configuration, deployment
     ip_assignment: "static"
     # ARM useDhcp: the deployment takes the host and cluster addresses from DHCP instead of static addresses and the infrastructure_pool.
-    # used by: os_configuration, deployment, trailwright
+    # default: false; used by: os_configuration, deployment, trailwright
     use_dhcp: false
     # Simplified provisioning: the address range of the site's network setting (Microsoft.Edge/configurations/networkConfigurations ipv4.addressR...
     # used by: ztp, os_configuration
@@ -777,7 +777,7 @@ networking:
   # when scenario.storage_connectivity is switchless; used by: os_configuration, deployment
   storage:
     # Network ATC assigns the storage addresses.
-    # used by: os_configuration, deployment, trailwright
+    # default: true; used by: os_configuration, deployment, trailwright
     auto_ip: true
     # Switchless only: one or two links between each pair of machines.
     # when scenario.storage_connectivity is switchless; one of: single | dual; used by: trailwright
@@ -939,10 +939,10 @@ networking:
     # when scenario.outbound_path is proxy or proxy_arc_gateway
     proxy:
       # URL of the proxy server, for example http://proxy.example.test:3128.
-      # required; used by: os_configuration, trailwright, ansible
+      # required; used by: os_configuration, trailwright, ansible, ztp
       url: ""
       # Addresses and names that go direct, not through the proxy.
-      # used by: os_configuration
+      # used by: os_configuration, ztp
       bypass: []
     # The Arc gateway resource, in the same subscription as the machines.
     # when scenario.outbound_path is arc_gateway or proxy_arc_gateway
@@ -1089,7 +1089,7 @@ identity:
 # Storage of the instance: the deployment's storage mode, the volumes, and the SAN of a disaggregated or hybrid deployment (the san block app...
 storage:
   # ARM configurationMode: express (Express), infra_only (InfraOnly) or keep_storage (KeepStorage).
-  # one of: express | infra_only | keep_storage; used by: deployment, trailwright
+  # one of: express | infra_only | keep_storage; default: "express"; used by: deployment, trailwright
   configuration_mode: "express"
   # (since 5.6.9) 
   # used by: deployment
@@ -1242,7 +1242,7 @@ storage:
       # used by: os_configuration, deployment
       chap:
         # true when the iSCSI targets require CHAP.
-        # required; used by: os_configuration, deployment
+        # required; default: false; used by: os_configuration, deployment
         enabled: false
         # CHAP user name for the iSCSI targets.
         # used by: deployment
@@ -1296,28 +1296,28 @@ storage:
 # Security settings of the deployment.
 security:
   # ARM securityLevel: recommended (Recommended) or customized (Customized).
-  # one of: recommended | customized; used by: deployment, trailwright
+  # one of: recommended | customized; default: "recommended"; used by: deployment, trailwright
   level: "recommended"
   # true turns drift control on: Azure Local resets the security settings to the baseline after drift.
-  # used by: deployment, trailwright
+  # default: true; used by: deployment, trailwright
   drift_control: true
   # true turns Credential Guard on in the security settings of the deployment.
-  # used by: deployment, trailwright
+  # default: true; used by: deployment, trailwright
   credential_guard: true
   # true turns SMB signing on in the security settings of the deployment.
-  # used by: deployment, trailwright
+  # default: true; used by: deployment, trailwright
   smb_signing: true
   # true encrypts SMB traffic between the cluster nodes (not the storage traffic).
-  # used by: deployment, trailwright
+  # default: false; used by: deployment, trailwright
   smb_cluster_encryption: false
   # true turns BitLocker on for the boot volume.
-  # used by: deployment, trailwright
+  # default: true; used by: deployment, trailwright
   bitlocker_boot_volume: true
   # true turns BitLocker on for the data volumes.
-  # used by: deployment, trailwright
+  # default: true; used by: deployment, trailwright
   bitlocker_data_volumes: true
   # true turns Windows Defender Application Control on.
-  # used by: deployment, trailwright
+  # default: true; used by: deployment, trailwright
   wdac: true
   # (since 5.6.21) 
   baseline_settings:
@@ -1348,13 +1348,13 @@ security:
   # used by: deployment
   telemetry:
     # true sends the streaming diagnostic data.
-    # used by: deployment, trailwright
+    # default: true; used by: deployment, trailwright
     streaming_data: true
     # true sends the episodic diagnostic data.
-    # used by: deployment, trailwright
+    # default: true; used by: deployment, trailwright
     episodic_data_upload: true
     # true keeps the diagnostic data in the EU data boundary.
-    # used by: deployment, trailwright
+    # default: false; used by: deployment, trailwright
     eu_location: false
 
 # SDN enabled by Azure Arc (Network Controller as a Failover Cluster service; Azure Local 2506 or later, OS build 26100 or later).

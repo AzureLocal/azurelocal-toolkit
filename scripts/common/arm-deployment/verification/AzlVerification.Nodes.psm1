@@ -70,7 +70,7 @@ function Get-AzlVerificationCheckDefinition {
             }))
 
     $defs.Add((New-AzlVerDefinition -Id 'ND-002' -Category nodes -Title 'Computer name equals the node name in the file and is a valid name' `
-                -Source "$($script:Src.Install); azl-toolkit phase-03-os-configuration task-10 Set-NodeHostname / task-13 Task10_Hostname" -Run {
+                -Source "$($script:Src.Install); azl-toolkit phase-03-os-configuration task-10 hostname step of Set-AzureLocalNodeConfiguration.ps1 / task-13 Task10_Hostname" -Run {
                 param($Context)
                 Invoke-AzlVerPerNode -Context $Context -Section 'GetOsBuild' -Body {
                     param($Name, $D, $N)
@@ -115,7 +115,7 @@ function Get-AzlVerificationCheckDefinition {
             }))
 
     $defs.Add((New-AzlVerDefinition -Id 'ND-005' -Category nodes -Title 'Time: a real NTP source (not the CMOS clock), the same on every node, in step with this host' `
-                -Source "$($script:Src.Install); azl-toolkit phase-03-os-configuration task-07 Set-NTPConfiguration / task-13 Task07_NTP; Learn software validator (same NTP on all nodes)" -Run {
+                -Source "$($script:Src.Install); azl-toolkit phase-03-os-configuration task-07 time step of Set-AzureLocalNodeConfiguration.ps1 / task-13 Task07_NTP; Learn software validator (same NTP on all nodes)" -Run {
                 param($Context)
                 $expected = @(ConvertTo-AzlVerList (Get-AzlProp (Get-AzlVerInfra $Context) 'networking.ntp_servers' @()) | ForEach-Object { ([string]$_).ToLowerInvariant() })
                 $maxSkew = [double](Get-AzlVerSetting $Context 'verificationMaxClockSkewSeconds')
