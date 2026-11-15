@@ -14869,14 +14869,6 @@ devops:
           default: "cicd-infra.tfstate"
           example: "cicd-infra.tfstate"
           used_by: [cicd_infra, terraform]
-        azure_local_key:
-          description: "Schema 5.6.28. Blob name of the state of the azure-local Terraform environment. Default azure-local.tfstate. Task 05 sets TF_BACKEND_KEY from it for the pipelines."
-          type: string
-          since: "5.6.28"
-          required: false
-          default: "azure-local.tfstate"
-          pattern: "^[A-Za-z0-9._/-]+\\.tfstate$"
-          used_by: [cicd_infra, terraform]
         storage_account:
           description: "Storage account that holds the state."
           type: string
@@ -14911,7 +14903,7 @@ devops:
 # format (a named type from _schema_defs; kv_ref = a keyvault:// reference), schema_extra (other JSON
 # Schema keywords kept verbatim). See config/variables/README.md.
         azure_local_key:
-          description: "Schema 5.6.28. Blob name of the state of the azure-local Terraform environment (src/terraform/environments/azure-local). Default azure-local.tfstate."
+          description: "Schema 5.6.28. Blob name of the state of the azure-local Terraform environment (src/terraform/environments/azure-local). Default azure-local.tfstate. Task 05 sets TF_BACKEND_KEY from it for the pipelines, and the generated backend.hcl names it."
           type: string
           since: "5.6.28"
           required: false

@@ -1323,12 +1323,6 @@
               "type": "string",
               "default": "cicd-infra.tfstate"
             },
-            "azure_local_key": {
-              "description": "Schema 5.6.28. Blob name of the state of the azure-local Terraform environment (src/terraform/environments/azure-local). Default azure-local.tfstate.",
-              "type": "string",
-              "default": "azure-local.tfstate",
-              "pattern": "^[A-Za-z0-9._/-]+\\.tfstate$"
-            },
             "storage_account": {
               "$ref": "#/$defs/storage_account_name",
               "description": "Storage account that holds the state."
@@ -1341,6 +1335,12 @@
             "resource_group": {
               "$ref": "#/$defs/resource_group",
               "description": "Resource group of the state storage account."
+            },
+            "azure_local_key": {
+              "description": "Schema 5.6.28. Blob name of the state of the azure-local Terraform environment (src/terraform/environments/azure-local). Default azure-local.tfstate. Task 05 sets TF_BACKEND_KEY from it for the pipelines, and the generated backend.hcl names it.",
+              "type": "string",
+              "default": "azure-local.tfstate",
+              "pattern": "^[A-Za-z0-9._/-]+\\.tfstate$"
             },
             "replication_type": {
               "description": "Schema 5.6.28. Redundancy of the state storage account (Microsoft Learn: Azure Storage redundancy). Default GRS.",

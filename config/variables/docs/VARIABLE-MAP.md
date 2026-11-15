@@ -666,10 +666,10 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `devops.runner_access.additional_role_assignments[].role_definition_name` | cicd_infra; terraform | operator by hand | read as part by cicd-infra |
 | `devops.state.subscription_id` | cicd_infra; terraform | operator by hand | read as part by cicd-infra |
 | `devops.state.key` | cicd_infra; terraform | operator by hand; default | read as part by cicd-infra |
-| `devops.state.azure_local_key` | cicd_infra; terraform | operator by hand; default | read as part by cicd-infra |
 | `devops.state.storage_account` | cicd_infra; terraform | operator by hand | read as part by cicd-infra |
 | `devops.state.container` | cicd_infra; terraform | operator by hand; default | read as part by cicd-infra |
 | `devops.state.resource_group` | cicd_infra; terraform | operator by hand | read as part by cicd-infra |
+| `devops.state.azure_local_key` | cicd_infra; terraform | operator by hand; default | read as part by cicd-infra |
 | `devops.state.replication_type` | terraform | operator by hand; default | read as part by cicd-infra |
 | `devops.state.public_network_access` | terraform | operator by hand; default | read as part by cicd-infra |
 | `devops.state.allowed_ip_ranges` | terraform | operator by hand | read as part by cicd-infra |
@@ -1164,10 +1164,10 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `devops.runner.registration_token` | string (kv_ref) | operator; Key Vault ref | cicd_infra |  |  | placeholder |
 | `devops.state.subscription_id` | string (guid) | operator | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
 | `devops.state.key` | string, default `cicd-infra.tfstate` | operator; default | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
-| `devops.state.azure_local_key` | string, default `azure-local.tfstate` | operator; default | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
 | `devops.state.storage_account` | string (storage_account_name) | operator | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
 | `devops.state.container` | string, default `tfstate` | operator; default | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
 | `devops.state.resource_group` | string (resource_group) | operator | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
+| `devops.state.azure_local_key` | string, default `azure-local.tfstate` | operator; default | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
 | `devops.state.replication_type` | string, default `GRS`, one of `LRS`, `ZRS`, `GRS`, `RAGRS`, `GZRS`, `RAGZRS` | operator; default | terraform | (part: cicd-infra) |  | read-as-part |
 | `devops.state.public_network_access` | boolean, default `false` | operator; default | terraform | (part: cicd-infra) |  | read-as-part |
 | `devops.state.allowed_ip_ranges` | array | operator | terraform | (part: cicd-infra) |  | read-as-part |

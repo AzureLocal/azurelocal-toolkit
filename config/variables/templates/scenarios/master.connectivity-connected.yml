@@ -2556,9 +2556,6 @@ devops:
     # (since 5.5) 
     # default: "cicd-infra.tfstate"; used by: cicd_infra, terraform
     key: "cicd-infra.tfstate"
-    # (since 5.6.28) 
-    # default: "azure-local.tfstate"; used by: cicd_infra, terraform
-    azure_local_key: "azure-local.tfstate"
     # Storage account that holds the state.
     # used by: cicd_infra, terraform
     storage_account: "stiictfstate01"
@@ -2568,6 +2565,9 @@ devops:
     # Resource group of the state storage account.
     # used by: cicd_infra, terraform
     resource_group: "rg-iic-mgmt-01"
+    # (since 5.6.28) 
+    # default: "azure-local.tfstate"; used by: cicd_infra, terraform
+    azure_local_key: "azure-local.tfstate"
     # (since 5.6.28) 
     # one of: LRS | ZRS | GRS | RAGRS | GZRS | RAGZRS; default: "GRS"; used by: terraform
     replication_type: "GRS"

@@ -76,7 +76,14 @@ if ('Terraform' -in $Tool) {
         $arch = switch ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture) { 'Arm64' { 'arm64' } default { 'amd64' } }
         $target = Join-Path $ToolDirectory "terraform-$TerraformVersion"
         $zip = Join-Path $ToolDirectory "terraform-$TerraformVersion.zip"
-        Invoke-WebRequest -Uri "https://releases.hashicorp.com/terraform/$TerraformVersion/terraform_${TerraformVersion}_${os}_${arch}.zip" -OutFile $zip
+        # HashiCorp's release host (vendor-fixed). The zip is checked against the SHA256SUMS file HashiCorp publishes with each release.
+        $release = "https://releases.hashicorp.com/terraform/$TerraformVersion"
+        $name = "terraform_${TerraformVersion}_${os}_${arch}.zip"
+        Invoke-WebRequest -Uri "$release/$name" -OutFile $zip
+        $sums = (Invoke-WebRequest -Uri "$release/terraform_${TerraformVersion}_SHA256SUMS").Content
+        $want = ([regex]::Match([string]$sums, "(?m)^(?<h>[0-9a-f]{64})\s+$([regex]::Escape($name))\s*$")).Groups['h'].Value
+        $have = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLowerInvariant()
+        if (-not $want -or $have -ne $want) { Remove-Item -LiteralPath $zip -Force; throw "terraform $TerraformVersion ($name): the SHA-256 of the download does not match HashiCorp's SHA256SUMS." }
         Expand-Archive -LiteralPath $zip -DestinationPath $target -Force
         if (-not $IsWindows) { & chmod +x (Join-Path $target 'terraform') }
         Add-AzlToolPath $target

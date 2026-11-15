@@ -19,5 +19,11 @@
             Literal = 'gitlab.com'
             Reason  = 'the public GitLab service address, fixed by the vendor; the module supports GitLab as a platform and the file can set another URL'
         }
+        @{
+            File    = 'pipelines/gitlab/Use-AzlGitLabTool.ps1'
+            Rule    = 'B'
+            Literal = 'releases.hashicorp.com'
+            Reason  = 'the HashiCorp release host Terraform is downloaded from, fixed by the vendor; the version comes from AZL_TERRAFORM_VERSION (devops.pipelines.tool_versions.terraform) and the download is checked against the published SHA256SUMS'
+        }
     )
 }
