@@ -134,8 +134,8 @@ BeforeAll {
     # Parameters that carry the name or ID of a resource, policy, account, vault, workspace, subscription, tenant, host or address. A default for
     # one of them is a value a deployment chooses. IP is matched in capitals only (StaticIP, not Skip).
     $script:ParameterNamePattern = '^(ServicePrincipalName|\w*(Policy|Account|Vault|Workspace|Subscription|Tenant)(Name|Id)|\w*ResourceGroup(Name)?|Region|Location|Hostname|NewHostname|\w*(?-i:IP))$'
-    # Names of change kinds in the node configuration plan. They look like resource names (nic-*) and are not.
-    $script:ResourceNameException = @{ 'nic-static' = 1; 'nic-vlan' = 1; 'nic-dns' = 1; 'nic-clean' = 1; 'nic-disable' = 1; 'nic-rename' = 1 }
+    # Names of change kinds in the node configuration plan (nic-*), and the Azure CLI command group az monitor log-analytics. They look like resource names and are not.
+    $script:ResourceNameException = @{ 'nic-static' = 1; 'nic-vlan' = 1; 'nic-dns' = 1; 'nic-clean' = 1; 'nic-disable' = 1; 'nic-rename' = 1; 'log-analytics' = 1 }
     # Variables that hold the whole infrastructure file in the scripts; a chain from one of them is certainly a read of the file.
     $script:FileVariable = 'infrastructure', 'infra', 'inf', 'infradata', 'infrastructuredata', 'masterfile'
     $script:DomainTld = 'com|net|org|io|cloud|local|lan|corp|internal|edu|gov|mil|us|uk|de|ms|info|biz|test|localdomain|home|intranet|private'
