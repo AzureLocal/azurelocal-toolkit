@@ -31,6 +31,7 @@ cluster:
   witness: { type: cloud, storage_account: "stiicbr01wit" }
   # Local identity: the instance's secrets live in this vault (one per instance).
   key_vault: { name: "kv-iic-br01", create_new: true }
+  diagnostics: { storage_account: "stiicbr01diag" } # ARM diagnosticStorageAccountName, when the same design is deployed with the ARM template
 
 nodes:
   - { name: "iic-br01-n01", management: { ip_address: "192.0.2.11" } }

@@ -31,6 +31,7 @@ cluster:
   name: "iic-campus"
   witness: { type: cloud, storage_account: "stiiccampuswit" } # rack aware needs a witness
   key_vault: { name: "kv-iic-campus-azl" }
+  diagnostics: { storage_account: "stiiccampusdiag" } # ARM diagnosticStorageAccountName (required by the template)
 
 # Two zones with the same number of machines. Simplified provisioning: serial number, BMC address and management MAC
 # (the port the static address is set on). arc_machine_name defaults to the node name; set it at the first claim,

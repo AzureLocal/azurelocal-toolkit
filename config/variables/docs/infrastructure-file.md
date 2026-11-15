@@ -274,7 +274,7 @@ The OEM Solution Builder Extension (SBE) package is **downloaded and available o
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `hardware.sbe.source_path` | none; `bundle_path` when empty | The share or folder with the three files `SBE_Discovery_<Vendor>.xml`, `SBE_<Vendor>_<Family>_<Version>.xml` and `.zip`. No credential in the path |
-| `hardware.sbe.requirement` | the vendor catalog (`config/oem/<vendor>.json`): `required` for a manual download (Dell, HPE, DataON), a Warning to state it for a vendor whose cluster downloads the package itself (Lenovo Premier) | `required`, or `not_applicable` for hardware with no SBE or a cluster that downloads it with the vendor credential |
+| `hardware.sbe.requirement` | `vendor`: the vendor catalog decides (`config/oem/<vendor>.json` `sbe.requiredByDefault`): `required` for a manual download (Dell, HPE, DataON), a Warning to state it for a vendor whose cluster downloads the package itself (Lenovo Premier) | `required`, or `not_applicable` for hardware with no SBE or a cluster that downloads it with the vendor credential |
 | `hardware.sbe.not_applicable_reason` | none | Required with `not_applicable`: why. An empty reason fails SB-001 and AZL-033 |
 | `hardware.sbe.source_username`, `source_password` | none | Optional read account; the password is a `keyvault://` reference read into memory only |
 | `hardware.sbe.package_sha256`, `package_size_bytes` | none | Optional pins for the payload zip; the discovery manifest's `PackageHash` is checked either way |

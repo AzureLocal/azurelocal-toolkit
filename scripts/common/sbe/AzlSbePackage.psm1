@@ -95,9 +95,10 @@ function Get-AzlSbeRequirement {
     .SYNOPSIS
         Whether the SBE package is required for this deployment. Pure (reads the vendor catalog file).
     .DESCRIPTION
-        hardware.sbe.requirement says it: required, or not_applicable (which needs hardware.sbe.not_applicable_reason). When the key is absent
-        the vendor catalog decides: a vendor that needs a manual download (Dell, HPE, DataON) is required, a vendor whose cluster downloads it
-        itself (Lenovo Premier) is not required by default, a vendor the catalog does not know is Unknown.
+        hardware.sbe.requirement says it: required, or not_applicable (which needs hardware.sbe.not_applicable_reason). When the key is vendor
+        (its registry default, so also when the key is absent) the vendor catalog decides through config/oem/<vendor>.json sbe.requiredByDefault:
+        a vendor that needs a manual download (Dell, HPE, DataON) is required, a vendor whose cluster downloads it itself (Lenovo Premier) is
+        not required by default, a vendor the catalog does not know is Unknown.
     .OUTPUTS
         State: Required | NotApplicable | NotApplicableNoReason | NotRequiredByCatalog | Unknown | Invalid.
         From (file or vendor catalog), Reason, Vendor, Profile.
@@ -115,8 +116,9 @@ function Get-AzlSbeRequirement {
             if ($reason) { return (& $result 'NotApplicable' 'hardware.sbe.requirement' $reason) }
             return (& $result 'NotApplicableNoReason' 'hardware.sbe.requirement' 'hardware.sbe.requirement is not_applicable but hardware.sbe.not_applicable_reason is empty')
         }
-        '' { }
-        default { return (& $result 'Invalid' 'hardware.sbe.requirement' "hardware.sbe.requirement is '$declared'; it is required or not_applicable") }
+        # vendor is the registry default of hardware.sbe.requirement: the vendor catalog below decides, as for a file without the key.
+        { $_ -in '', 'vendor' } { }
+        default { return (& $result 'Invalid' 'hardware.sbe.requirement' "hardware.sbe.requirement is '$declared'; it is required, not_applicable or vendor") }
     }
     if (-not $vendor) { return (& $result 'Unknown' 'hardware.vendor' 'hardware.vendor is empty, so the vendor catalog cannot say whether an SBE package is required') }
     if (-not $vendorProfile -or $null -eq $vendorProfile.RequiredByDefault) { return (& $result 'Unknown' 'vendor catalog' "the vendor catalog (config/oem) has no SBE entry for '$vendor'") }

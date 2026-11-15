@@ -1388,6 +1388,59 @@
             },
             "mode": {
               "type": "string"
+            },
+            "domain_id": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 255
+            },
+            "peer_address": {
+              "$ref": "#/$defs/ipv4"
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "system_mac": {
+              "$ref": "#/$defs/mac"
+            }
+          }
+        },
+        "mtu": {
+          "type": "integer",
+          "minimum": 1500,
+          "maximum": 9216
+        },
+        "ports": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "uplinks": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "node_ports": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "peer_link": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "native_vlan_id": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4094
             }
           }
         }

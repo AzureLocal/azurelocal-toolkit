@@ -217,8 +217,8 @@ hardware:
   # used by: deployment
   sbe:
     # Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster...
-    # one of: required | not_applicable; used by: os_configuration, deployment, trailwright
-    requirement: "required"
+    # one of: required | not_applicable | vendor; default: "vendor"; used by: os_configuration, deployment, trailwright
+    requirement: "vendor"
     # Required when requirement is not_applicable: why no package is needed, in one sentence, for example that no SBE exists for the hardware mod...
     # used by: os_configuration, deployment, trailwright
     not_applicable_reason: "The cluster downloads the package with the vendor credential"

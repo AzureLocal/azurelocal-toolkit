@@ -39,6 +39,7 @@ cluster:
   deployment_mode: validate
   witness: { type: cloud, storage_account: "stiicdc02wit" }
   key_vault: { name: "kv-iic-dc02-azl", create_new: true }
+  diagnostics: { storage_account: "stiicdc02diag" } # ARM diagnosticStorageAccountName (required by the template)
 
 nodes:
   - name: "iic-dc02-n01"

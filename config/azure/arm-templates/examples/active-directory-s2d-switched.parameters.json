@@ -1,0 +1,239 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "deploymentMode": {
+      "value": "Validate"
+    },
+    "keyVaultName": {
+      "value": "kv-iic-azl-01"
+    },
+    "createNewKeyVault": {
+      "value": true
+    },
+    "softDeleteRetentionDays": {
+      "value": 30
+    },
+    "diagnosticStorageAccountName": {
+      "value": "stiicazl01diag"
+    },
+    "logsRetentionInDays": {
+      "value": 30
+    },
+    "storageAccountType": {
+      "value": "Standard_LRS"
+    },
+    "clusterName": {
+      "value": "iic-azl-01"
+    },
+    "location": {
+      "value": "eastus"
+    },
+    "tenantId": {
+      "value": "00000000-0000-0000-0000-000000000000"
+    },
+    "witnessType": {
+      "value": "Cloud"
+    },
+    "clusterWitnessStorageAccountName": {
+      "value": "stiicazl01wit"
+    },
+    "localAdminUserName": {
+      "value": "azl-admin"
+    },
+    "localAdminPassword": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-mgmt-01/providers/Microsoft.KeyVault/vaults/kv-iic-mgmt-01"
+        },
+        "secretName": "local-admin-password"
+      }
+    },
+    "hciResourceProviderObjectID": {
+      "value": "00000000-0000-0000-0000-000000000000"
+    },
+    "arcNodeResourceIds": {
+      "value": [
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-azl-01/providers/Microsoft.HybridCompute/machines/iic-azl-n01",
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-azl-01/providers/Microsoft.HybridCompute/machines/iic-azl-n02"
+      ]
+    },
+    "namingPrefix": {
+      "value": "iicazl01"
+    },
+    "securityLevel": {
+      "value": "Recommended"
+    },
+    "driftControlEnforced": {
+      "value": true
+    },
+    "credentialGuardEnforced": {
+      "value": true
+    },
+    "smbSigningEnforced": {
+      "value": true
+    },
+    "smbClusterEncryption": {
+      "value": false
+    },
+    "bitlockerBootVolume": {
+      "value": true
+    },
+    "bitlockerDataVolumes": {
+      "value": true
+    },
+    "wdacEnforced": {
+      "value": true
+    },
+    "streamingDataClient": {
+      "value": true
+    },
+    "euLocation": {
+      "value": false
+    },
+    "episodicDataUpload": {
+      "value": true
+    },
+    "configurationMode": {
+      "value": "Express"
+    },
+    "subnetMask": {
+      "value": "255.255.255.0"
+    },
+    "defaultGateway": {
+      "value": "192.0.2.1"
+    },
+    "startingIPAddress": {
+      "value": "192.0.2.20"
+    },
+    "endingIPAddress": {
+      "value": "192.0.2.29"
+    },
+    "dnsServers": {
+      "value": [
+        "192.0.2.4",
+        "192.0.2.5"
+      ]
+    },
+    "useDhcp": {
+      "value": false
+    },
+    "physicalNodesSettings": {
+      "value": [
+        {
+          "name": "iic-azl-n01",
+          "ipv4Address": "192.0.2.11"
+        },
+        {
+          "name": "iic-azl-n02",
+          "ipv4Address": "192.0.2.12"
+        }
+      ]
+    },
+    "networkingType": {
+      "value": "switchedMultiServerDeployment"
+    },
+    "networkingPattern": {
+      "value": "convergedComputeStorage"
+    },
+    "intentList": {
+      "value": [
+        {
+          "name": "management",
+          "trafficType": [
+            "Management"
+          ],
+          "adapter": [
+            "Port1",
+            "Port2"
+          ],
+          "overrideVirtualSwitchConfiguration": false,
+          "virtualSwitchConfigurationOverrides": {
+            "enableIov": "",
+            "loadBalancingAlgorithm": ""
+          },
+          "overrideQosPolicy": false,
+          "qosPolicyOverrides": {
+            "priorityValue8021Action_Cluster": "7",
+            "priorityValue8021Action_SMB": "3",
+            "bandwidthPercentage_SMB": "50"
+          },
+          "overrideAdapterProperty": true,
+          "adapterPropertyOverrides": {
+            "jumboPacket": "1514",
+            "networkDirect": "Disabled",
+            "networkDirectTechnology": ""
+          }
+        },
+        {
+          "name": "compute_storage",
+          "trafficType": [
+            "Compute",
+            "Storage"
+          ],
+          "adapter": [
+            "Port3",
+            "Port4"
+          ],
+          "overrideVirtualSwitchConfiguration": false,
+          "virtualSwitchConfigurationOverrides": {
+            "enableIov": "",
+            "loadBalancingAlgorithm": ""
+          },
+          "overrideQosPolicy": false,
+          "qosPolicyOverrides": {
+            "priorityValue8021Action_Cluster": "7",
+            "priorityValue8021Action_SMB": "3",
+            "bandwidthPercentage_SMB": "50"
+          },
+          "overrideAdapterProperty": true,
+          "adapterPropertyOverrides": {
+            "jumboPacket": "9014",
+            "networkDirect": "Enabled",
+            "networkDirectTechnology": "RoCEv2"
+          }
+        }
+      ]
+    },
+    "storageConnectivitySwitchless": {
+      "value": false
+    },
+    "customLocation": {
+      "value": "cl-iic-azl-01"
+    },
+    "domainFqdn": {
+      "value": "improbability.cloud"
+    },
+    "adouPath": {
+      "value": "OU=iic-azl-01,OU=AzureLocal,DC=improbability,DC=cloud"
+    },
+    "AzureStackLCMAdminUsername": {
+      "value": "lcm-iic-azl-01"
+    },
+    "AzureStackLCMAdminPassword": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-mgmt-01/providers/Microsoft.KeyVault/vaults/kv-iic-mgmt-01"
+        },
+        "secretName": "lcm-password"
+      }
+    },
+    "enableStorageAutoIp": {
+      "value": true
+    },
+    "storageNetworkList": {
+      "value": [
+        {
+          "name": "StorageNetwork1",
+          "networkAdapterName": "Port3",
+          "vlanId": "711"
+        },
+        {
+          "name": "StorageNetwork2",
+          "networkAdapterName": "Port4",
+          "vlanId": "712"
+        }
+      ]
+    }
+  }
+}

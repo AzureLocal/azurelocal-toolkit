@@ -1,0 +1,235 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "deploymentMode": {
+      "value": "Validate"
+    },
+    "keyVaultName": {
+      "value": "kv-iic-br01"
+    },
+    "createNewKeyVault": {
+      "value": true
+    },
+    "softDeleteRetentionDays": {
+      "value": 30
+    },
+    "diagnosticStorageAccountName": {
+      "value": "stiicbr01diag"
+    },
+    "logsRetentionInDays": {
+      "value": 30
+    },
+    "storageAccountType": {
+      "value": "Standard_LRS"
+    },
+    "clusterName": {
+      "value": "iic-br01"
+    },
+    "location": {
+      "value": "westeurope"
+    },
+    "tenantId": {
+      "value": "00000000-0000-0000-0000-000000000000"
+    },
+    "witnessType": {
+      "value": "Cloud"
+    },
+    "clusterWitnessStorageAccountName": {
+      "value": "stiicbr01wit"
+    },
+    "localAdminUserName": {
+      "value": "azl-admin"
+    },
+    "localAdminPassword": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-mgmt-01/providers/Microsoft.KeyVault/vaults/kv-iic-branch-mgmt"
+        },
+        "secretName": "local-admin-password"
+      }
+    },
+    "hciResourceProviderObjectID": {
+      "value": "00000000-0000-0000-0000-000000000000"
+    },
+    "arcNodeResourceIds": {
+      "value": [
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-branch-01/providers/Microsoft.HybridCompute/machines/iic-br01-n01",
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-branch-01/providers/Microsoft.HybridCompute/machines/iic-br01-n02"
+      ]
+    },
+    "namingPrefix": {
+      "value": "hci"
+    },
+    "securityLevel": {
+      "value": "Recommended"
+    },
+    "driftControlEnforced": {
+      "value": true
+    },
+    "credentialGuardEnforced": {
+      "value": true
+    },
+    "smbSigningEnforced": {
+      "value": true
+    },
+    "smbClusterEncryption": {
+      "value": false
+    },
+    "bitlockerBootVolume": {
+      "value": true
+    },
+    "bitlockerDataVolumes": {
+      "value": true
+    },
+    "wdacEnforced": {
+      "value": true
+    },
+    "streamingDataClient": {
+      "value": true
+    },
+    "euLocation": {
+      "value": false
+    },
+    "episodicDataUpload": {
+      "value": true
+    },
+    "configurationMode": {
+      "value": "Express"
+    },
+    "subnetMask": {
+      "value": "255.255.255.0"
+    },
+    "defaultGateway": {
+      "value": "192.0.2.1"
+    },
+    "startingIPAddress": {
+      "value": "192.0.2.20"
+    },
+    "endingIPAddress": {
+      "value": "192.0.2.29"
+    },
+    "dnsServers": {
+      "value": [
+        "192.0.2.4"
+      ]
+    },
+    "useDhcp": {
+      "value": false
+    },
+    "physicalNodesSettings": {
+      "value": [
+        {
+          "name": "iic-br01-n01",
+          "ipv4Address": "192.0.2.11"
+        },
+        {
+          "name": "iic-br01-n02",
+          "ipv4Address": "192.0.2.12"
+        }
+      ]
+    },
+    "networkingType": {
+      "value": "switchlessMultiServerDeployment"
+    },
+    "networkingPattern": {
+      "value": "convergedManagementCompute"
+    },
+    "intentList": {
+      "value": [
+        {
+          "name": "mgmt_compute",
+          "trafficType": [
+            "Management",
+            "Compute"
+          ],
+          "adapter": [
+            "NIC1",
+            "NIC2"
+          ],
+          "overrideVirtualSwitchConfiguration": false,
+          "virtualSwitchConfigurationOverrides": {
+            "enableIov": "",
+            "loadBalancingAlgorithm": ""
+          },
+          "overrideQosPolicy": false,
+          "qosPolicyOverrides": {
+            "priorityValue8021Action_Cluster": "7",
+            "priorityValue8021Action_SMB": "3",
+            "bandwidthPercentage_SMB": "50"
+          },
+          "overrideAdapterProperty": true,
+          "adapterPropertyOverrides": {
+            "jumboPacket": "1514",
+            "networkDirect": "Disabled",
+            "networkDirectTechnology": ""
+          }
+        },
+        {
+          "name": "storage",
+          "trafficType": [
+            "Storage"
+          ],
+          "adapter": [
+            "SMB1",
+            "SMB2"
+          ],
+          "overrideVirtualSwitchConfiguration": false,
+          "virtualSwitchConfigurationOverrides": {
+            "enableIov": "",
+            "loadBalancingAlgorithm": ""
+          },
+          "overrideQosPolicy": false,
+          "qosPolicyOverrides": {
+            "priorityValue8021Action_Cluster": "7",
+            "priorityValue8021Action_SMB": "3",
+            "bandwidthPercentage_SMB": "50"
+          },
+          "overrideAdapterProperty": true,
+          "adapterPropertyOverrides": {
+            "jumboPacket": "9014",
+            "networkDirect": "Enabled",
+            "networkDirectTechnology": "RoCEv2"
+          }
+        }
+      ]
+    },
+    "storageConnectivitySwitchless": {
+      "value": true
+    },
+    "customLocation": {
+      "value": "iic-br01-cl"
+    },
+    "identityProvider": {
+      "value": "LocalIdentity"
+    },
+    "dnsServerConfig": {
+      "value": "UseDnsServer"
+    },
+    "dnsZones": {
+      "value": [
+        {
+          "dnsZoneName": "br01.improbability.cloud",
+          "dnsForwarder": []
+        }
+      ]
+    },
+    "enableStorageAutoIp": {
+      "value": true
+    },
+    "storageNetworkList": {
+      "value": [
+        {
+          "name": "StorageNetwork1",
+          "networkAdapterName": "SMB1",
+          "vlanId": "711"
+        },
+        {
+          "name": "StorageNetwork2",
+          "networkAdapterName": "SMB2",
+          "vlanId": "712"
+        }
+      ]
+    }
+  }
+}

@@ -261,8 +261,8 @@ hardware:
     # used by: os_configuration, deployment
     bundle_path: "D:\\sbe\\dell"
     # Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster...
-    # one of: required | not_applicable; used by: os_configuration, deployment, trailwright
-    requirement: "required"
+    # one of: required | not_applicable | vendor; default: "vendor"; used by: os_configuration, deployment, trailwright
+    requirement: "vendor"
     # Required when requirement is not_applicable: why no package is needed, in one sentence, for example that no SBE exists for the hardware mod...
     # used by: os_configuration, deployment, trailwright
     not_applicable_reason: "The cluster downloads the package with the vendor credential"
@@ -371,7 +371,7 @@ networking:
       # Last address of the infrastructure pool (ARM endingIPAddress).
       # required; used by: os_configuration, deployment, trailwright
       end: "192.0.2.29"
-  # The out-of-band network of the BMCs.
+  # The out-of-band network of the BMCs and of the switches' management ports. subnet is read by the remote management security profile; New-Sw...
   # used by: os_configuration
   oob:
     # Subnet of the out-of-band (BMC) network in CIDR form.

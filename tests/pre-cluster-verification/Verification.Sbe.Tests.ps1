@@ -382,6 +382,14 @@ Describe 'SB-001 required, source configured, or not applicable with a reason' {
         $r['SB-001'][0].Message | Should -Match 'vendor catalog'
         foreach ($id in 'SB-002', 'SB-003') { $r[$id][0].Status | Should -Be 'NotApplicable' -Because $id }
     }
+    It 'requirement vendor (the registry default) reads like no requirement: <Vendor> gives <Status>' -ForEach @(
+        @{ Vendor = 'Dell'; Status = 'Failed' }
+        @{ Vendor = 'Lenovo'; Status = 'Warning' }
+    ) {
+        $r = Invoke-Sb (New-SbeContext (New-DellShare) -Hardware @{ vendor = $Vendor; model = 'X' } -Sbe @{ requirement = 'vendor' })
+        $r['SB-001'][0].Status | Should -Be $Status
+        $r['SB-001'][0].Message | Should -Match 'vendor catalog|source_path is empty'
+    }
     It 'a vendor that is not in the catalog cannot decide: Skipped, never Passed' {
         $r = Invoke-Sb (New-SbeContext (New-DellShare) -Hardware @{ vendor = 'ExampleCorp'; model = 'X' } -Sbe @{})
         $r['SB-001'][0].Status | Should -Be 'Skipped'; $r['SB-001'][0].Remedy | Should -Match 'hardware.sbe.requirement'

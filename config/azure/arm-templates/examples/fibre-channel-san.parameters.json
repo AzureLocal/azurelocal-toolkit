@@ -1,0 +1,237 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "deploymentMode": {
+      "value": "Validate"
+    },
+    "keyVaultName": {
+      "value": "kv-iic-dc02-azl"
+    },
+    "createNewKeyVault": {
+      "value": true
+    },
+    "softDeleteRetentionDays": {
+      "value": 30
+    },
+    "diagnosticStorageAccountName": {
+      "value": "stiicdc02diag"
+    },
+    "logsRetentionInDays": {
+      "value": 30
+    },
+    "storageAccountType": {
+      "value": "Standard_LRS"
+    },
+    "clusterName": {
+      "value": "iic-dc02-azl"
+    },
+    "location": {
+      "value": "eastus2"
+    },
+    "tenantId": {
+      "value": "00000000-0000-0000-0000-000000000000"
+    },
+    "witnessType": {
+      "value": "Cloud"
+    },
+    "clusterWitnessStorageAccountName": {
+      "value": "stiicdc02wit"
+    },
+    "localAdminUserName": {
+      "value": "azl-admin"
+    },
+    "localAdminPassword": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-mgmt-01/providers/Microsoft.KeyVault/vaults/kv-iic-dc02-mgmt"
+        },
+        "secretName": "local-admin-password"
+      }
+    },
+    "hciResourceProviderObjectID": {
+      "value": "00000000-0000-0000-0000-000000000000"
+    },
+    "arcNodeResourceIds": {
+      "value": [
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-dc02-azl/providers/Microsoft.HybridCompute/machines/iic-dc02-n01",
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-dc02-azl/providers/Microsoft.HybridCompute/machines/iic-dc02-n02",
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-dc02-azl/providers/Microsoft.HybridCompute/machines/iic-dc02-n03",
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-dc02-azl/providers/Microsoft.HybridCompute/machines/iic-dc02-n04"
+      ]
+    },
+    "namingPrefix": {
+      "value": "hci"
+    },
+    "securityLevel": {
+      "value": "Recommended"
+    },
+    "driftControlEnforced": {
+      "value": true
+    },
+    "credentialGuardEnforced": {
+      "value": true
+    },
+    "smbSigningEnforced": {
+      "value": true
+    },
+    "smbClusterEncryption": {
+      "value": false
+    },
+    "bitlockerBootVolume": {
+      "value": true
+    },
+    "bitlockerDataVolumes": {
+      "value": true
+    },
+    "wdacEnforced": {
+      "value": true
+    },
+    "streamingDataClient": {
+      "value": true
+    },
+    "euLocation": {
+      "value": false
+    },
+    "episodicDataUpload": {
+      "value": true
+    },
+    "configurationMode": {
+      "value": "InfraOnly"
+    },
+    "subnetMask": {
+      "value": "255.255.255.0"
+    },
+    "defaultGateway": {
+      "value": "192.0.2.1"
+    },
+    "startingIPAddress": {
+      "value": "192.0.2.30"
+    },
+    "endingIPAddress": {
+      "value": "192.0.2.49"
+    },
+    "dnsServers": {
+      "value": [
+        "192.0.2.4",
+        "192.0.2.5"
+      ]
+    },
+    "useDhcp": {
+      "value": false
+    },
+    "physicalNodesSettings": {
+      "value": [
+        {
+          "name": "iic-dc02-n01",
+          "ipv4Address": "192.0.2.11"
+        },
+        {
+          "name": "iic-dc02-n02",
+          "ipv4Address": "192.0.2.12"
+        },
+        {
+          "name": "iic-dc02-n03",
+          "ipv4Address": "192.0.2.13"
+        },
+        {
+          "name": "iic-dc02-n04",
+          "ipv4Address": "192.0.2.14"
+        }
+      ]
+    },
+    "networkingType": {
+      "value": "switchedMultiServerDeployment"
+    },
+    "networkingPattern": {
+      "value": "hyperConverged"
+    },
+    "intentList": {
+      "value": [
+        {
+          "name": "mgmt_compute",
+          "trafficType": [
+            "Management",
+            "Compute"
+          ],
+          "adapter": [
+            "NIC1",
+            "NIC2"
+          ],
+          "overrideVirtualSwitchConfiguration": false,
+          "virtualSwitchConfigurationOverrides": {
+            "enableIov": "",
+            "loadBalancingAlgorithm": ""
+          },
+          "overrideQosPolicy": false,
+          "qosPolicyOverrides": {
+            "priorityValue8021Action_Cluster": "7",
+            "priorityValue8021Action_SMB": "3",
+            "bandwidthPercentage_SMB": "50"
+          },
+          "overrideAdapterProperty": true,
+          "adapterPropertyOverrides": {
+            "jumboPacket": "1514",
+            "networkDirect": "Disabled",
+            "networkDirectTechnology": ""
+          }
+        }
+      ]
+    },
+    "storageConnectivitySwitchless": {
+      "value": false
+    },
+    "customLocation": {
+      "value": "iic-dc02-azl-cl"
+    },
+    "domainFqdn": {
+      "value": "improbability.cloud"
+    },
+    "adouPath": {
+      "value": "OU=iic-dc02-azl,OU=AzureLocal,DC=improbability,DC=cloud"
+    },
+    "AzureStackLCMAdminUsername": {
+      "value": "lcm-iic-dc02"
+    },
+    "AzureStackLCMAdminPassword": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-mgmt-01/providers/Microsoft.KeyVault/vaults/kv-iic-dc02-mgmt"
+        },
+        "secretName": "lcm-password"
+      }
+    },
+    "infraVolLunId": {
+      "value": ""
+    },
+    "infraPerfLunId": {
+      "value": ""
+    },
+    "sanNetworkList": {
+      "value": {
+        "clusterNetworkConfig": {
+          "adapterProperties": {
+            "bandwidthPercentageSmb": 50,
+            "jumboPacket": 9014,
+            "priorityValue8021ActionCluster": 7,
+            "priorityValue8021ActionSmb": 3
+          },
+          "adapterIPConfig": [
+            {
+              "name": "clusterNetwork-A",
+              "networkAdapterName": "NIC3",
+              "vlanId": 1711,
+              "addressPrefix": "198.51.100.0/26"
+            },
+            {
+              "name": "clusterNetwork-B",
+              "networkAdapterName": "NIC4",
+              "vlanId": 1712,
+              "addressPrefix": "198.51.100.64/26"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

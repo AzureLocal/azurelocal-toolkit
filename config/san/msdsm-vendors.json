@@ -1,4 +1,5 @@
 {
+  "description": "Vendor facts of the SAN arrays Azure Local supports, not deployment choices: the MSDSM hardware IDs each array reports, the load balance policy, and the MPIO timers the array vendor recommends. Read by AzlNodeConfiguration.psm1 (Get-AzlSanVendor) and the pre-cluster verification; the array is picked by storage.san.array.vendor and model. No registry key overrides mpioSettings, on purpose: Microsoft Learn (Connect an external storage array to Azure Local, step 2.1 and 2.4) gives the Azure Local 2604 MPIO defaults and says most vendors need no tuning beyond them, and lists the overrides only as the array vendor's recommendation (Dell PowerStore, Everpure FlashArray); it describes no site-specific tuning. A different value is a change of the vendor's recommendation, so it belongs in this file with its source, not in infrastructure.yml. Checked 2026-11.",
   "source": "https://learn.microsoft.com/azure/azure-local/deploy/enable-external-storage (Step 2: register vendor with MPIO)",
   "loadBalancePolicy": "RR",
   "vendors": [
