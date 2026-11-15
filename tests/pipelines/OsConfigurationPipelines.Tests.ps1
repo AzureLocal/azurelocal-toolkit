@@ -6,7 +6,7 @@
 
 BeforeAll {
     $repo = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..'))
-    $script:GitHubFile = [IO.Path]::Combine($repo, 'pipelines', 'github', 'os-configuration.yml')
+    $script:GitHubFile = [IO.Path]::Combine($repo, 'pipelines', 'github-actions', 'os-configuration.yml')
     $script:GitLabFile = [IO.Path]::Combine($repo, 'pipelines', 'gitlab', 'os-configuration.gitlab-ci.yml')
     $script:EntryScript = [IO.Path]::Combine($repo, 'scripts', 'deploy', '04-cluster-deployment', 'phase-03-os-configuration', 'Invoke-AzureLocalOsConfiguration.ps1')
     Import-Module powershell-yaml
@@ -36,12 +36,15 @@ Describe 'The entry point the pipelines call' {
             $script:EntryParameters | Should -Contain $p
         }
     }
-    It '<Name> passes only parameters that exist' -ForEach @(@{ Name = 'GitHub' }, @{ Name = 'GitLab' }) {
-        $calls = [regex]::Matches($script:AllText[$Name], '(?m)Invoke-AzureLocalOsConfiguration\.ps1|"\$OSCONFIG_SCRIPT"[^\r\n]*')
-        $calls.Count | Should -BeGreaterThan 0
-        $used = [regex]::Matches($script:AllText[$Name], '(?m)"\$OSCONFIG_SCRIPT"([^\r\n]*)') | ForEach-Object { [regex]::Matches($_.Groups[1].Value, '\s-([A-Za-z]+)') | ForEach-Object { $_.Groups[1].Value } }
-        $used.Count | Should -BeGreaterThan 0
+    It '<Name> passes only parameters that exist, and never a transport or a storage wipe of its own' -ForEach @(@{ Name = 'GitHub' }, @{ Name = 'GitLab' }) {
+        $script:AllText[$Name] | Should -Match '& \$env:OSCONFIG_SCRIPT @p'
+        # the keys of the splat: $p = @{ Name = ...; Name = ... } and $p.Name = ...
+        $used = @([regex]::Matches($script:AllText[$Name], '\$p = @\{([^\r\n]*)\}') | ForEach-Object { [regex]::Matches($_.Groups[1].Value, '(?:^|;)\s*([A-Za-z]+)\s*=') | ForEach-Object { $_.Groups[1].Value } }) +
+            @([regex]::Matches($script:AllText[$Name], '\$p\.([A-Za-z]+)\s*=') | ForEach-Object { $_.Groups[1].Value })
+        $used.Count | Should -BeGreaterThan 3
         foreach ($u in $used) { $script:EntryParameters | Should -Contain $u }
+        $used | Should -Not -Contain 'Transport'
+        $used | Should -Not -Contain 'ClearStorage'
     }
 }
 
@@ -52,25 +55,27 @@ Describe 'The apply is bound to the wipe list the Plan stage published' {
         $download = @($steps | Where-Object { $_['uses'] -like 'actions/download-artifact*' -and $_['with']['name'] -eq 'os-configuration-plan' })
         $download.Count | Should -Be 1
         $run = ($steps | ForEach-Object { $_['run'] }) -join "`n"
-        $run | Should -Match '-Mode Apply[^\r\n]*-ApprovedWipeList "\$RUNNER_TEMP/osconfig-plan/wipe-list\.json"'
+        $run | Should -Match "Mode = 'Apply'[^\r\n]*ApprovedWipeList = `"\`$env:RUNNER_TEMP/osconfig-plan/wipe-list\.json`""
         $download[0]['with']['path'] | Should -Be '${{ runner.temp }}/osconfig-plan'
     }
     It 'GitLab: the apply job passes the wipe-list.json of the plan job (the artifact comes with needs)' {
         $apply = $script:GitLab['os-configuration-apply']
-        @($apply['script']) -join "`n" | Should -Match '-Mode Apply[^\r\n]*-ApprovedWipeList "\$REPORT_DIRECTORY/plan/wipe-list\.json"'
+        @($apply['script']) -join "`n" | Should -Match 'Mode = "Apply"[^\r\n]*ApprovedWipeList = "\$env:REPORT_DIRECTORY/plan/wipe-list\.json"'
         @($apply['needs']) | Should -Contain 'os-configuration-plan'
     }
 }
 
 Describe 'GitHub Actions workflow' {
-    It 'parses and is a dispatch workflow with the infrastructure file and the mode as inputs' {
+    It 'parses and is a dispatch workflow with the mode as an input; the paths are the variables task 05 sets' {
         $script:GitHub | Should -Not -BeNullOrEmpty
         $on = if ($script:GitHub.Contains('on')) { $script:GitHub['on'] } else { $script:GitHub[$true] }
         $inputs = $on['workflow_dispatch']['inputs']
-        $inputs.Keys | Should -Contain 'infrastructure_file'
         $inputs.Keys | Should -Contain 'mode'
         $inputs['mode']['options'] | Should -Be @('Plan', 'Apply')
-        $inputs['infrastructure_file']['required'] | Should -BeTrue
+        $inputs.Keys | Should -Not -Contain 'infrastructure_file'
+        $inputs.Keys | Should -Not -Contain 'handoff_path'
+        $script:GitHub['env']['AZL_INFRASTRUCTURE_FILE'] | Should -Be '${{ vars.AZL_INFRASTRUCTURE_FILE }}'
+        $script:GitHub['env']['HANDOFF_PATH'] | Should -Be '${{ vars.AZL_HANDOFF_PATH }}'
     }
     It 'has a plan job and an apply job that needs it' {
         $script:GitHub['jobs'].Keys | Should -Contain 'plan'
@@ -84,14 +89,15 @@ Describe 'GitHub Actions workflow' {
     It 'plan runs -Mode Plan, apply runs -Mode Apply, both through the one script' {
         $plan = ($script:GitHub['jobs']['plan']['steps'] | ForEach-Object { $_['run'] }) -join "`n"
         $apply = ($script:GitHub['jobs']['apply']['steps'] | ForEach-Object { $_['run'] }) -join "`n"
-        $plan | Should -Match '-Mode Plan'
-        $plan | Should -Not -Match '-Mode Apply'
-        $apply | Should -Match '-Mode Apply'
+        $plan | Should -Match "Mode = 'Plan'"
+        $plan | Should -Not -Match "Mode = 'Apply'"
+        $apply | Should -Match "Mode = 'Apply'"
         $script:GitHub['env']['OSCONFIG_SCRIPT'] | Should -Be 'scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1'
         Test-Path -LiteralPath ([IO.Path]::Combine($PSScriptRoot, '..', '..', 'scripts', 'deploy', '04-cluster-deployment', 'phase-03-os-configuration', 'Invoke-AzureLocalOsConfiguration.ps1')) | Should -BeTrue
-        $plan | Should -Match 'pwsh -NoProfile -File'
-        $plan | Should -Match '-InfrastructureFile'
-        $plan | Should -Match '-HandoffPath'
+        $plan | Should -Match '& \$env:OSCONFIG_SCRIPT @p'
+        $plan | Should -Match 'InfrastructureFile = \$env:AZL_INFRASTRUCTURE_FILE'
+        $plan | Should -Match '\$p\.HandoffPath = \$env:HANDOFF_PATH'
+        $script:GitHub['defaults']['run']['shell'] | Should -Be 'pwsh'
     }
     It 'plan publishes the report and the wipe list as an artifact and in the job summary; apply publishes the report' {
         $planSteps = $script:GitHub['jobs']['plan']['steps']
@@ -99,14 +105,17 @@ Describe 'GitHub Actions workflow' {
         (($planSteps | ForEach-Object { $_['run'] }) -join "`n") | Should -Match 'GITHUB_STEP_SUMMARY'
         @($script:GitHub['jobs']['apply']['steps'] | Where-Object { $_['uses'] -like 'actions/upload-artifact@*' }).Count | Should -Be 1
     }
-    It 'logs in to Azure by OIDC with variable names only' {
+    It 'logs in to Azure by the method of devops.authentication.method (AZL_AUTH_METHOD), with variable names only' {
         $script:GitHub['permissions']['id-token'] | Should -Be 'write'
         foreach ($job in 'plan', 'apply') {
-            $login = $script:GitHub['jobs'][$job]['steps'] | Where-Object { $_['uses'] -like 'azure/login@*' }
-            $login | Should -Not -BeNullOrEmpty
-            $login['with']['client-id'] | Should -Be '${{ vars.AZURE_CLIENT_ID }}'
-            $login['with']['tenant-id'] | Should -Be '${{ vars.AZURE_TENANT_ID }}'
-            $login['with']['subscription-id'] | Should -Be '${{ vars.AZURE_SUBSCRIPTION_ID }}'
+            $login = @($script:GitHub['jobs'][$job]['steps'] | Where-Object { $_['uses'] -like 'azure/login@*' })
+            $login.Count | Should -Be 2
+            $login[0]['if'] | Should -Be "`${{ vars.AZL_AUTH_METHOD == 'oidc' }}"
+            $login[0]['with']['client-id'] | Should -Be '${{ vars.ARM_CLIENT_ID }}'
+            $login[0]['with']['tenant-id'] | Should -Be '${{ vars.ARM_TENANT_ID }}'
+            $login[0]['with']['subscription-id'] | Should -Be '${{ vars.ARM_SUBSCRIPTION_ID }}'
+            $login[1]['if'] | Should -Be "`${{ vars.AZL_AUTH_METHOD == 'client_secret' }}"
+            $login[1]['with']['creds'] | Should -Match 'secrets\.ARM_CLIENT_SECRET'
         }
     }
     It 'allows one run at a time' {
@@ -131,8 +140,8 @@ Describe 'GitLab CI pipeline' {
         @($apply['needs']) | Should -Contain 'os-configuration-plan'
     }
     It 'runs the one script with -Mode Plan and -Mode Apply' {
-        ($script:GitLab['os-configuration-plan']['script'] -join "`n") | Should -Match 'pwsh -NoProfile -File "\$OSCONFIG_SCRIPT" .*-Mode Plan'
-        ($script:GitLab['os-configuration-apply']['script'] -join "`n") | Should -Match 'pwsh -NoProfile -File "\$OSCONFIG_SCRIPT" .*-Mode Apply'
+        ($script:GitLab['os-configuration-plan']['script'] -join "`n") | Should -Match '(?s)Mode = "Plan".*& \$env:OSCONFIG_SCRIPT @p'
+        ($script:GitLab['os-configuration-apply']['script'] -join "`n") | Should -Match '(?s)Mode = "Apply".*& \$env:OSCONFIG_SCRIPT @p'
         $script:GitLab['variables']['OSCONFIG_SCRIPT'] | Should -Be 'scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1'
     }
     It 'keeps the reports as artifacts, even when the job failed' {
@@ -141,13 +150,15 @@ Describe 'GitLab CI pipeline' {
             @($script:GitLab[$job]['artifacts']['paths']).Count | Should -BeGreaterThan 0
         }
     }
-    It 'authenticates with the runner''s managed identity or an OIDC id_token, and the IDs are placeholders' {
-        $script:GitLab['.os-configuration']['id_tokens']['AZURE_ID_TOKEN']['aud'] | Should -Be 'api://AzureADTokenExchange'
+    It 'signs in by devops.authentication.method (AZL_AUTH_METHOD): the OIDC id_token or the masked client secret; no ID is in the file' {
+        $script:GitLab['.os-configuration']['id_tokens']['ARM_OIDC_TOKEN']['aud'] | Should -Be 'api://AzureADTokenExchange'
         $v = $script:GitLab['variables']
-        $v['AZURE_AUTH'] | Should -Match 'managed-identity'
-        foreach ($k in 'AZURE_CLIENT_ID', 'AZURE_TENANT_ID', 'AZURE_SUBSCRIPTION_ID') { $v[$k] | Should -BeLike '<*>' }
-        $script:GitLab['.os-configuration']['before_script'] -join "`n" | Should -Match 'Connect-AzAccount -Identity'
-        $script:GitLab['.os-configuration']['before_script'] -join "`n" | Should -Match '-FederatedToken'
+        foreach ($k in 'AZURE_AUTH', 'AZURE_CLIENT_ID', 'AZURE_TENANT_ID', 'AZURE_SUBSCRIPTION_ID', 'ARM_CLIENT_ID', 'INFRASTRUCTURE_FILE', 'HANDOFF_PATH') { $v.Contains($k) | Should -BeFalse -Because "$k comes from the project variables task 05 sets" }
+        $before = $script:GitLab['.os-configuration']['before_script'] -join "`n"
+        $before | Should -Match 'AZL_AUTH_METHOD -eq "oidc"'
+        $before | Should -Match '-FederatedToken \$env:ARM_OIDC_TOKEN'
+        $before | Should -Match 'ARM_CLIENT_SECRET'
+        $before | Should -Not -Match 'Connect-AzAccount -Identity'
     }
     It 'extends the shared job in both jobs' {
         $script:GitLab['os-configuration-plan']['extends'] | Should -Be '.os-configuration'

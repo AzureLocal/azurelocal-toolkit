@@ -1,38 +1,111 @@
 # =============================================================================
 # Stage: Configure On-Prem — Ansible/PowerShell on-premises configuration
 # =============================================================================
+# Each job writes the Ansible inventory, group_vars and host_vars from the infrastructure file (New-IacVariableFiles.ps1, into
+# IAC_DIRECTORY) and copies them to src/ansible/inventory (git-ignored there), signs in to Azure by AZL_AUTH_METHOD (the roles read the
+# LCM and DSRM passwords from Key Vault on the controller, azure.azcollection through the Azure CLI) and runs its playbook.
+# Use-AzlGitLabTool.ps1 makes the Python, ansible-core and module versions of devops.pipelines.tool_versions the ones the job uses.
+# Order: playbook 05 builds the domain controllers first; the AD preparation (01) runs on the first of them.
+
+.configure-onprem:
+  stage: configure-onprem
+  when: manual
+  allow_failure: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+
+management:vms:
+  extends: .configure-onprem
+  script:
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Ansible, Modules -PythonVersion $env:AZL_PYTHON_VERSION -AnsibleCoreVersion $env:AZL_ANSIBLE_CORE_VERSION -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION
+        # The sign-in method of devops.authentication.method.
+        if ($env:AZL_AUTH_METHOD -eq "oidc") { az login --service-principal --username $env:ARM_CLIENT_ID --tenant $env:ARM_TENANT_ID --federated-token $env:ARM_OIDC_TOKEN --output none }
+        else { az login --service-principal --username $env:ARM_CLIENT_ID --tenant $env:ARM_TENANT_ID --password $env:ARM_CLIENT_SECRET --output none }
+        az account set --subscription $env:ARM_SUBSCRIPTION_ID
+        $env:ANSIBLE_AZURE_AUTH_SOURCE = "cli"
+        ./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile $env:AZL_INFRASTRUCTURE_FILE -OutputDirectory $env:IAC_DIRECTORY -Target Ansible
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        Copy-Item -Path "$env:IAC_DIRECTORY/ansible/inventory/*" -Destination "$env:ANSIBLE_ROOT/inventory" -Recurse -Force
+        Set-Location $env:ANSIBLE_ROOT
+        ansible-galaxy collection install -r collections/requirements.yml
+        $root = @((ansible-galaxy collection list azure.azcollection --format json | ConvertFrom-Json).PSObject.Properties.Name)[0]
+        python -m pip install --quiet -r (Get-ChildItem -LiteralPath (Join-Path $root "azure/azcollection") -Filter "requirements*.txt" | Select-Object -First 1).FullName
+        ansible-playbook -i inventory/hosts.yml playbooks/05-management-vms.yml
+      '
 
 ad:preparation:
-  stage: configure-onprem
+  extends: .configure-onprem
   script:
-    - cd "${ANSIBLE_ROOT}"
-    - ansible-galaxy collection install -r collections/requirements.yml
-    - ansible-playbook -i inventory/hosts.yml playbooks/01-ad-preparation.yml
-  when: manual
-  allow_failure: false
-  rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Ansible, Modules -PythonVersion $env:AZL_PYTHON_VERSION -AnsibleCoreVersion $env:AZL_ANSIBLE_CORE_VERSION -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION
+        # The sign-in method of devops.authentication.method.
+        if ($env:AZL_AUTH_METHOD -eq "oidc") { az login --service-principal --username $env:ARM_CLIENT_ID --tenant $env:ARM_TENANT_ID --federated-token $env:ARM_OIDC_TOKEN --output none }
+        else { az login --service-principal --username $env:ARM_CLIENT_ID --tenant $env:ARM_TENANT_ID --password $env:ARM_CLIENT_SECRET --output none }
+        az account set --subscription $env:ARM_SUBSCRIPTION_ID
+        $env:ANSIBLE_AZURE_AUTH_SOURCE = "cli"
+        ./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile $env:AZL_INFRASTRUCTURE_FILE -OutputDirectory $env:IAC_DIRECTORY -Target Ansible
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        Copy-Item -Path "$env:IAC_DIRECTORY/ansible/inventory/*" -Destination "$env:ANSIBLE_ROOT/inventory" -Recurse -Force
+        Set-Location $env:ANSIBLE_ROOT
+        ansible-galaxy collection install -r collections/requirements.yml
+        $root = @((ansible-galaxy collection list azure.azcollection --format json | ConvertFrom-Json).PSObject.Properties.Name)[0]
+        python -m pip install --quiet -r (Get-ChildItem -LiteralPath (Join-Path $root "azure/azcollection") -Filter "requirements*.txt" | Select-Object -First 1).FullName
+        ansible-playbook -i inventory/hosts.yml playbooks/01-ad-preparation.yml
+      '
+  needs:
+    - management:vms
 
+# Playbook 02 runs Invoke-AzureLocalOsConfiguration.ps1 on this runner (localhost): PowerShell 7 with powershell-yaml, Az and Az.KeyVault,
+# and Az PowerShell signed in. It reads the master file itself.
 os:configuration:
-  stage: configure-onprem
+  extends: .configure-onprem
   script:
-    - cd "${ANSIBLE_ROOT}"
-    - ansible-playbook -i inventory/hosts.yml playbooks/02-os-configuration.yml
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Ansible, Modules -PythonVersion $env:AZL_PYTHON_VERSION -AnsibleCoreVersion $env:AZL_ANSIBLE_CORE_VERSION -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION -AzPowerShellVersion $env:AZL_AZ_POWERSHELL_VERSION -AzKeyVaultVersion $env:AZL_AZ_KEYVAULT_VERSION
+        # The sign-in method of devops.authentication.method, for the Azure CLI and for Az PowerShell (kept for the child processes).
+        Enable-AzContextAutosave -Scope CurrentUser | Out-Null
+        $connect = @{ Tenant = $env:ARM_TENANT_ID; Subscription = $env:ARM_SUBSCRIPTION_ID; ServicePrincipal = $true }
+        if ($env:AZL_AUTH_METHOD -eq "oidc") {
+          az login --service-principal --username $env:ARM_CLIENT_ID --tenant $env:ARM_TENANT_ID --federated-token $env:ARM_OIDC_TOKEN --output none
+          Connect-AzAccount -ApplicationId $env:ARM_CLIENT_ID -FederatedToken $env:ARM_OIDC_TOKEN @connect | Out-Null
+        }
+        else {
+          az login --service-principal --username $env:ARM_CLIENT_ID --tenant $env:ARM_TENANT_ID --password $env:ARM_CLIENT_SECRET --output none
+          Connect-AzAccount -Credential ([pscredential]::new($env:ARM_CLIENT_ID, (ConvertTo-SecureString -String $env:ARM_CLIENT_SECRET -AsPlainText -Force))) @connect | Out-Null
+        }
+        az account set --subscription $env:ARM_SUBSCRIPTION_ID
+        $env:ANSIBLE_AZURE_AUTH_SOURCE = "cli"
+        ./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile $env:AZL_INFRASTRUCTURE_FILE -OutputDirectory $env:IAC_DIRECTORY -Target Ansible
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        Copy-Item -Path "$env:IAC_DIRECTORY/ansible/inventory/*" -Destination "$env:ANSIBLE_ROOT/inventory" -Recurse -Force
+        Set-Location $env:ANSIBLE_ROOT
+        ansible-galaxy collection install -r collections/requirements.yml
+        ansible-playbook -i inventory/hosts.yml playbooks/02-os-configuration.yml -e "azurelocal_os_configuration_infrastructure_file=$env:CI_PROJECT_DIR/$env:AZL_INFRASTRUCTURE_FILE"
+      '
   needs:
     - ad:preparation
-  when: manual
-  allow_failure: false
-  rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
 arc:registration:
-  stage: configure-onprem
+  extends: .configure-onprem
   script:
-    - cd "${ANSIBLE_ROOT}"
-    - ansible-playbook -i inventory/hosts.yml playbooks/03-arc-registration.yml
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Ansible, Modules -PythonVersion $env:AZL_PYTHON_VERSION -AnsibleCoreVersion $env:AZL_ANSIBLE_CORE_VERSION -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION
+        # The sign-in method of devops.authentication.method.
+        if ($env:AZL_AUTH_METHOD -eq "oidc") { az login --service-principal --username $env:ARM_CLIENT_ID --tenant $env:ARM_TENANT_ID --federated-token $env:ARM_OIDC_TOKEN --output none }
+        else { az login --service-principal --username $env:ARM_CLIENT_ID --tenant $env:ARM_TENANT_ID --password $env:ARM_CLIENT_SECRET --output none }
+        az account set --subscription $env:ARM_SUBSCRIPTION_ID
+        $env:ANSIBLE_AZURE_AUTH_SOURCE = "cli"
+        ./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile $env:AZL_INFRASTRUCTURE_FILE -OutputDirectory $env:IAC_DIRECTORY -Target Ansible
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        Copy-Item -Path "$env:IAC_DIRECTORY/ansible/inventory/*" -Destination "$env:ANSIBLE_ROOT/inventory" -Recurse -Force
+        Set-Location $env:ANSIBLE_ROOT
+        ansible-galaxy collection install -r collections/requirements.yml
+        ansible-playbook -i inventory/hosts.yml playbooks/03-arc-registration.yml
+      '
   needs:
     - os:configuration
-  when: manual
-  allow_failure: false
-  rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'

@@ -6,42 +6,46 @@
 # and nothing else; the logic is in the script, not here. PowerShell 7 only (pwsh: steps and AzurePowerShell@5 with pwsh: true).
 #
 # Stage Plan is read only. It publishes the plan report and the wipe list (which disks on which node would be wiped when
-# clear_storage is on) as the build artifact os-configuration-plan, and attaches summary.md to the run summary.
-# Stage ConfirmStorageWipe exists only when mode is Apply AND clear_storage is true: a second, separate approval (the environment of the
-# parameter clear_storage_approval_environment) that the reviewer gives after reading the wipe list. Otherwise it is skipped.
+# os_configuration.clear_storage is true) as the build artifact os-configuration-plan, and attaches summary.md to the run summary. It also
+# reads os_configuration.clear_storage from the master file, for the next stage.
+# Stage ConfirmStorageWipe exists only when mode is Apply AND os_configuration.clear_storage is true in the master file: a second, separate
+# approval (the environment of the parameter clear_storage_approval_environment) that the reviewer gives after reading the wipe list.
+# Otherwise it is skipped.
 # Stage Apply runs only for mode Apply, and only after a reviewer of the environment of the parameter approval_environment approved it.
 #
-# Transport. WinRM is the default: the agent must have line of sight to the nodes' management network (TCP 5985, or 5986 with HTTPS).
-# Azure Arc Run Command is used only when transport is set to ArcRunCommand (for sites with no route to the nodes), never as a
-# silent fallback. approved_bootstrap passes -ApprovedBootstrap to the entry point, in the Apply stage only, after the reviewer's
-# approval: it is the pipeline approval the environment classes production and dmz need before the one-time bootstrap may open the nodes'
-# WinRM firewall rule. The route itself (arc, smb or auto) is chosen in the master file (os_configuration.remoting.bootstrap_transport).
+# Transport and storage wipe. The script reads both from the master file (os_configuration.remoting.transport, os_configuration.clear_storage);
+# this pipeline overrides neither. WinRM is the default: the agent must have line of sight to the nodes' management network (TCP 5985, or 5986
+# with HTTPS). Azure Arc Run Command is used only when the file says so, never as a silent fallback. approved_bootstrap passes
+# -ApprovedBootstrap to the entry point, in the Apply stage only, after the reviewer's approval: it is the pipeline approval the environment
+# classes production and dmz need before the one-time bootstrap may open the nodes' WinRM firewall rule. The route itself (arc, smb or auto) is
+# chosen in the master file (os_configuration.remoting.bootstrap_transport).
 #
-# What to configure in the organization (names only; no value of any ID, password or key is in this file):
-#   Agent pool      a self-hosted pool (parameter agent_pool: devops.runners[].pool of the general runner) with PowerShell 7 (pwsh), Az.Accounts and Az.KeyVault, and a route to
+# What to configure in the organization (names only; no value of any ID, password or key is in this file). Task 05 of the CI/CD setup lists
+# the value of every run parameter to enter.
+#   Agent pool      a self-hosted pool (parameter agent_pool: devops.runners[].pool of the general runner) with PowerShell 7 (pwsh) and a route to
 #                   the nodes' management subnet. For WinRM from a Linux agent, the PSWSMan module (Negotiate authentication).
 #   Service conn.   the Azure Resource Manager service connection of the parameter service_connection (devops.pipelines.service_connection; task 05 creates it), workload identity
 #                   federation, with Azure Connected Machine Resource Administrator and Reader on the Arc machines' resource group,
 #                   and Key Vault Secrets User on the vault named by identity.local_admin.password in the master file.
-#   Variable group  parameter variable_group (Pipelines > Library; devops.pipelines.variable_group, the group task 05 writes). It holds nothing this file needs as a secret: the nodes'
-#                   local administrator password is read from the Key Vault by the script. Put any site setting there, or link the
-#                   group to a Key Vault (secrets then arrive as secret variables, never in this file).
+#   Variable group  parameter variable_group (Pipelines > Library; devops.pipelines.variable_group, the group task 05 writes). This file reads
+#                   AZL_AZ_POWERSHELL_VERSION, AZL_POWERSHELL_YAML_VERSION and AZL_AZ_KEYVAULT_VERSION from it (devops.pipelines.tool_versions.*). It
+#                   holds nothing this file needs as a secret: the nodes' local administrator password is read from the Key Vault by the script.
 #   Environments    approval_environment                      (devops.pipelines.environments.os_configuration) Approvals and checks: Approvals (required
 #                                                              reviewers), and an Exclusive lock so two runs never work on the cluster at once.
 #                   clear_storage_approval_environment        (devops.pipelines.environments.os_configuration_clear_storage) Approvals: the people allowed to
 #                                                              approve a storage wipe. Use different people than the first environment where you can.
-#                   Task 04 of the CI/CD setup creates both from devops.environments; task 05 lists the values to enter. A deployment job to an environment
+#                   Task 04 of the CI/CD setup creates both from devops.environments. A deployment job to an environment
 #                   with no approval check runs without one, so add the checks before use.
 #   Why parameters: the pool and the environment of a job are not task inputs. Learn says a macro variable $(name) is expanded only in task
 #                   inputs, and that other keywords take template expressions or runtime parameters
 #                   (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
 #                   ${{ variables.name }} does not see variables stored on the pipeline or in a library
-#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool and the environment names are runtime
-#                   parameters (${{ parameters.name }}) with no default: the run form asks for them.
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool, the environment names and the
+#                   file paths are runtime parameters (${{ parameters.name }}) with no default: the run form asks for them.
 #
-# Where the files come from: the master file is a path in this repository (parameter infrastructure_file). The handoff files
-# (<node>.ztp-handoff.json) are a repository path (handoff_path) or the artifact ztp-handoff of a ZTP pipeline run
-# (handoff_pipeline_id and handoff_run_id). See docs/os-configuration-and-arm-deployment.md.
+# Where the files come from: the master file is a path in this repository (parameter infrastructure_file: devops.pipelines.infrastructure_file).
+# The handoff files (<node>.ztp-handoff.json) are a repository path (handoff_path: devops.pipelines.handoff_path, none for an ISO-installed
+# cluster) or the artifact ztp-handoff of a ZTP pipeline run (handoff_pipeline_id and handoff_run_id). See docs/os-configuration-and-arm-deployment.md.
 name: os-configuration-$(Date:yyyyMMdd)$(Rev:.r)
 
 trigger: none
@@ -52,13 +56,11 @@ lockBehavior: sequential
 
 parameters:
   - name: infrastructure_file
-    displayName: 'Path of the master infrastructure.yml in the repository'
+    displayName: 'Path of the master infrastructure.yml in the repository. Enter devops.pipelines.infrastructure_file'
     type: string
-    default: config/infrastructure.yml
   - name: handoff_path
-    displayName: 'Handoff file or directory of *.ztp-handoff.json in the repository (none for an ISO-installed cluster)'
+    displayName: 'Handoff file or directory of *.ztp-handoff.json in the repository. Enter devops.pipelines.handoff_path (none for an ISO-installed cluster)'
     type: string
-    default: ztp-state
   - name: handoff_pipeline_id
     displayName: 'Optional: ID of the ZTP pipeline whose artifact ztp-handoff holds the handoff files (with handoff_run_id; replaces handoff_path; none to skip)'
     type: string
@@ -82,23 +84,12 @@ parameters:
     values:
       - Plan
       - Apply
-  - name: transport
-    displayName: 'WinRM (default; the agent reaches the nodes) or ArcRunCommand (explicit; only for sites with no route to the nodes)'
-    type: string
-    default: WinRM
-    values:
-      - WinRM
-      - ArcRunCommand
   - name: approved_bootstrap
-    displayName: 'Apply only: use Azure Arc once per node to open the WinRM firewall rule for this agent (remoting.bootstrapTransport arc)'
-    type: boolean
-    default: false
-  - name: clear_storage
-    displayName: 'Wipe leftover local storage (Apply needs a second approval after the wipe list is shown)'
+    displayName: 'Apply only: approve the one-time WinRM bootstrap of os_configuration.remoting.bootstrap_transport for this run'
     type: boolean
     default: false
   - name: confirm_wipe_deployed_cluster
-    displayName: 'Let the storage wipe touch a node of a deployed cluster (one run; only with clear_storage)'
+    displayName: 'Let the storage wipe touch a node of a deployed cluster (one run; only when os_configuration.clear_storage is true)'
     type: boolean
     default: false
   - name: agent_pool
@@ -150,16 +141,16 @@ stages:
 
           - pwsh: |
               $ErrorActionPreference = 'Stop'
-              foreach ($m in 'powershell-yaml', 'Az.Accounts', 'Az.KeyVault') {
-                if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery }
-              }
-            displayName: 'Install the PowerShell modules'
+              $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
+              foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+            displayName: 'Install the PowerShell modules (devops.pipelines.tool_versions)'
 
           - task: AzurePowerShell@5
             displayName: 'Plan'
             inputs:
               azureSubscription: ${{ parameters.service_connection }}
-              azurePowerShellVersion: LatestVersion
+              azurePowerShellVersion: OtherVersion
+              preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
               pwsh: true
               ScriptType: InlineScript
               workingDirectory: $(Build.SourcesDirectory)
@@ -169,7 +160,6 @@ stages:
                 $p = @{
                   InfrastructureFile = $env:OSC_INFRASTRUCTURE_FILE
                   Mode               = 'Plan'
-                  Transport          = $env:OSC_TRANSPORT
                   ReportDirectory    = $env:OSC_REPORT_DIRECTORY
                   EventLogPath       = Join-Path $env:OSC_REPORT_DIRECTORY 'os-configuration-events.jsonl'
                 }
@@ -179,7 +169,6 @@ stages:
                   foreach ($item in $list) { if ($item -notmatch '^[A-Za-z0-9._-]+$') { throw "$($pair[0]) holds an invalid name: '$item'." } }
                   if ($list.Count) { $p[$pair[1]] = $list }
                 }
-                if ($env:OSC_CLEAR_STORAGE -eq 'true') { $p.ClearStorage = $true }
                 & $env:OSCONFIG_SCRIPT @p
                 if ($LASTEXITCODE -ne 0) { throw "Invoke-AzureLocalOsConfiguration.ps1 exited with code $LASTEXITCODE." }
             env:
@@ -187,9 +176,20 @@ stages:
               OSC_HANDOFF_PATH: ${{ iif(and(ne(parameters.handoff_pipeline_id, 'none'), ne(parameters.handoff_run_id, 'none')), '$(Pipeline.Workspace)/ztp-handoff', parameters.handoff_path) }}
               OSC_NODES: ${{ parameters.nodes }}
               OSC_STEPS: ${{ parameters.steps }}
-              OSC_TRANSPORT: ${{ parameters.transport }}
-              OSC_CLEAR_STORAGE: ${{ parameters.clear_storage }}
               OSC_REPORT_DIRECTORY: $(Agent.TempDirectory)/osconfig-plan
+
+          # The storage wipe gate follows the master file: os_configuration.clear_storage, the key the script itself reads.
+          - pwsh: |
+              $ErrorActionPreference = 'Stop'
+              Import-Module powershell-yaml
+              $doc = ConvertFrom-Yaml (Get-Content -LiteralPath $env:OSC_INFRASTRUCTURE_FILE -Raw)
+              $clear = ($doc -is [System.Collections.IDictionary]) -and ($doc['os_configuration'] -is [System.Collections.IDictionary]) -and ([string]$doc['os_configuration']['clear_storage'] -eq 'True')
+              Write-Output "os_configuration.clear_storage is $clear."
+              Write-Output "##vso[task.setvariable variable=clearStorage;isOutput=true]$($clear.ToString().ToLowerInvariant())"
+            name: storage
+            displayName: 'Read os_configuration.clear_storage'
+            env:
+              OSC_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
 
           - pwsh: |
               $ErrorActionPreference = 'Stop'
@@ -218,11 +218,12 @@ stages:
               publishLocation: pipeline
 
   # ---------------------------------------------------------------------------------------------------------------------------
-  # Second, explicit approval for a storage wipe. Runs only for mode Apply with clear_storage on; otherwise it is skipped.
+  # Second, explicit approval for a storage wipe. Runs only for mode Apply with os_configuration.clear_storage true in the master file;
+  # otherwise it is skipped.
   - stage: ConfirmStorageWipe
     displayName: 'Confirm storage wipe (second approval)'
     dependsOn: Plan
-    condition: and(succeeded('Plan'), eq('${{ parameters.mode }}', 'Apply'), eq('${{ parameters.clear_storage }}', 'true'))
+    condition: and(succeeded('Plan'), eq('${{ parameters.mode }}', 'Apply'), eq(dependencies.Plan.outputs['Plan.storage.clearStorage'], 'true'))
     jobs:
       - deployment: ConfirmStorageWipe
         displayName: 'Confirm storage wipe'
@@ -288,16 +289,16 @@ stages:
 
                 - pwsh: |
                     $ErrorActionPreference = 'Stop'
-                    foreach ($m in 'powershell-yaml', 'Az.Accounts', 'Az.KeyVault') {
-                      if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery }
-                    }
-                  displayName: 'Install the PowerShell modules'
+                    $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
+                    foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+                  displayName: 'Install the PowerShell modules (devops.pipelines.tool_versions)'
 
                 - task: AzurePowerShell@5
                   displayName: 'Apply'
                   inputs:
                     azureSubscription: ${{ parameters.service_connection }}
-                    azurePowerShellVersion: LatestVersion
+                    azurePowerShellVersion: OtherVersion
+                    preferredAzurePowerShellVersion: $(AZL_AZ_POWERSHELL_VERSION)
                     pwsh: true
                     ScriptType: InlineScript
                     workingDirectory: $(Build.SourcesDirectory)
@@ -307,7 +308,6 @@ stages:
                       $p = @{
                         InfrastructureFile = $env:OSC_INFRASTRUCTURE_FILE
                         Mode               = 'Apply'
-                        Transport          = $env:OSC_TRANSPORT
                         ReportDirectory    = $env:OSC_REPORT_DIRECTORY
                         EventLogPath       = Join-Path $env:OSC_REPORT_DIRECTORY 'os-configuration-events.jsonl'
                       }
@@ -317,11 +317,10 @@ stages:
                         foreach ($item in $list) { if ($item -notmatch '^[A-Za-z0-9._-]+$') { throw "$($pair[0]) holds an invalid name: '$item'." } }
                         if ($list.Count) { $p[$pair[1]] = $list }
                       }
-                      if ($env:OSC_CLEAR_STORAGE -eq 'true') { $p.ClearStorage = $true }
                       if ($env:OSC_APPROVED_BOOTSTRAP -eq 'true') { $p.ApprovedBootstrap = $true }
                       # The approval of the wipe is the Plan's own wipe-list.json (an Apply whose own wipe list is not empty is refused without it, and refuses a disk that is not on it).
                       $wipeList = Join-Path $env:OSC_PLAN_DIRECTORY 'wipe-list.json'
-                      if ($env:OSC_CLEAR_STORAGE -eq 'true' -and (Test-Path -LiteralPath $wipeList -PathType Leaf)) { $p.ApprovedWipeList = $wipeList }
+                      if (Test-Path -LiteralPath $wipeList -PathType Leaf) { $p.ApprovedWipeList = $wipeList }
                       if ($env:OSC_CONFIRM_WIPE_DEPLOYED_CLUSTER -eq 'true') { $p.ConfirmWipeDeployedCluster = $true }
                       & $env:OSCONFIG_SCRIPT @p
                       if ($LASTEXITCODE -ne 0) { throw "Invoke-AzureLocalOsConfiguration.ps1 exited with code $LASTEXITCODE." }
@@ -330,8 +329,6 @@ stages:
                     OSC_HANDOFF_PATH: ${{ iif(and(ne(parameters.handoff_pipeline_id, 'none'), ne(parameters.handoff_run_id, 'none')), '$(Pipeline.Workspace)/ztp-handoff', parameters.handoff_path) }}
                     OSC_NODES: ${{ parameters.nodes }}
                     OSC_STEPS: ${{ parameters.steps }}
-                    OSC_TRANSPORT: ${{ parameters.transport }}
-                    OSC_CLEAR_STORAGE: ${{ parameters.clear_storage }}
                     OSC_APPROVED_BOOTSTRAP: ${{ parameters.approved_bootstrap }}
                     OSC_CONFIRM_WIPE_DEPLOYED_CLUSTER: ${{ parameters.confirm_wipe_deployed_cluster }}
                     OSC_PLAN_DIRECTORY: $(Pipeline.Workspace)/os-configuration-plan

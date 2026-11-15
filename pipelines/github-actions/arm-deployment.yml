@@ -16,31 +16,32 @@
 #                   checks every precondition and that THESE parameters validated, so an approval cannot start a Deploy of
 #                   parameters that were never validated. `resume` resubmits a failed Deploy.
 #
-# Settings (Settings > Secrets and variables > Actions; names only, no value is in this file)
-#   variables  AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID   an app registration (or user-assigned managed identity)
-#              with a federated credential for this repository and for the approval environment. No client secret.
-#              AZL_RUNNER_LABEL                 the label of the self-hosted runner (devops.pipelines.runner_label)
-#              AZL_ENVIRONMENT_ARM_DEPLOYMENT   the approval environment (devops.pipelines.environments.arm_deployment)
-#              Task 05 of the CI/CD setup (Set-CicdVariables.ps1) sets both from infrastructure.yml as repository variables. GitHub reads
-#              runs-on and the environment name from the vars context (https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability), so no name is here.
-#   secrets    none. The local administrator and LCM passwords are read from the Key Vaults named by the keyvault:// references
-#              in the master file; the identity needs Get on those secrets and the rights listed in the design (section 12).
+# Settings (Settings > Secrets and variables > Actions). No value is in this file: task 05 of the CI/CD setup (Set-CicdVariables.ps1) sets
+# every variable below from infrastructure.yml. GitHub reads runs-on, the environment name, a job timeout and env from the vars context
+# (https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability).
+#   ARM_CLIENT_ID, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID  the app registration of azure.automation_identity, azure.tenant_id, azure.subscription_id
+#   AZL_AUTH_METHOD                   devops.authentication.method: oidc (a federated credential for this repository and the approval
+#                                     environment, no secret) or client_secret (the secret ARM_CLIENT_SECRET, which task 05 reads from Key Vault)
+#   AZL_RUNNER_OS, AZL_RUNNER_LABEL   devops.runners[].os_type of the general runner and devops.pipelines.runner_label
+#   AZL_ENVIRONMENT_ARM_DEPLOYMENT    devops.pipelines.environments.arm_deployment (the approval environment)
+#   AZL_INFRASTRUCTURE_FILE           devops.pipelines.infrastructure_file (the master file in this repository)
+#   AZL_VALIDATE_JOB_TIMEOUT_MINUTES  deployment.validate_timeout_minutes plus the toolkit's 60 minutes for the checks and the report
+#   AZL_DEPLOY_JOB_TIMEOUT_MINUTES    deployment.deploy_timeout_minutes plus the same 60 minutes
+#   AZL_POWERSHELL_YAML_VERSION, AZL_AZ_POWERSHELL_VERSION, AZL_AZ_KEYVAULT_VERSION  devops.pipelines.tool_versions.*
+# The local administrator and LCM passwords are read from the Key Vaults named by the keyvault:// references in the master file; the
+# identity needs Get on those secrets and the rights listed in the design (section 12).
 # The approval environment: task 04 creates it with its required reviewers (Settings > Environments). That is the approval gate.
-# Runner: a self-hosted Linux runner with pwsh 7, labelled with devops.pipelines.runner_label. It needs only HTTPS to Azure. The Active Directory
-# check needs a domain-joined runner with the ActiveDirectory module; on another runner that check is Skipped, not failed.
+# Runner: the general self-hosted runner with pwsh 7. It needs only HTTPS to Azure. The Active Directory check needs a domain-joined runner
+# with the ActiveDirectory module; on another runner that check is Skipped, not failed.
 #
-# Where the files come from: the master file is a path in this repository (infrastructure_file). The OS configuration report is
+# Where the files come from: the master file is a path in this repository (AZL_INFRASTRUCTURE_FILE). The OS configuration report is
 # the artifact `os-configuration-report` of the OS configuration workflow (os_configuration_run_id) or a repository path
-# (os_configuration_report). The ZTP handoff is optional (handoff_file).
+# (os_configuration_report). The ZTP handoff is optional (handoff_file). Azure DevOps fetches the report the same way; GitLab takes a path.
 name: Azure Local ARM deployment
 
 on:
   workflow_dispatch:
     inputs:
-      infrastructure_file:
-        description: 'Path of the master infrastructure.yml in the repository'
-        required: true
-        default: 'config/infrastructure.yml'
       os_configuration_run_id:
         description: 'Run ID of the OS configuration workflow whose artifact os-configuration-report holds the report (leave empty to use os_configuration_report)'
         required: false
@@ -76,22 +77,31 @@ permissions:
   id-token: write
   actions: read
 
-# One ARM deployment at a time per repository.
+# One ARM deployment at a time per repository (GitLab: resource_group; Azure DevOps: lockBehavior and the environment's Exclusive lock).
 concurrency:
   group: azure-local-arm-deployment
   cancel-in-progress: false
 
+# Every run step is PowerShell 7.
+defaults:
+  run:
+    shell: pwsh
+
 env:
   ARM_SCRIPT: scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1
-  INFRASTRUCTURE_FILE: ${{ inputs.infrastructure_file }}
+  AZL_INFRASTRUCTURE_FILE: ${{ vars.AZL_INFRASTRUCTURE_FILE }}
+  AZL_POWERSHELL_YAML_VERSION: ${{ vars.AZL_POWERSHELL_YAML_VERSION }}
+  AZL_AZ_POWERSHELL_VERSION: ${{ vars.AZL_AZ_POWERSHELL_VERSION }}
+  AZL_AZ_KEYVAULT_VERSION: ${{ vars.AZL_AZ_KEYVAULT_VERSION }}
   HANDOFF_FILE: ${{ inputs.handoff_file }}
   OS_REPORT: ${{ inputs.os_configuration_report }}
   ACKNOWLEDGE: ${{ inputs.acknowledge_known_issues }}
+  RESUME: ${{ inputs.resume }}
 
 jobs:
   preconditions:
     name: Preconditions (read only)
-    runs-on: [self-hosted, linux, "${{ vars.AZL_RUNNER_LABEL }}"]
+    runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
     # Read-only checks that make no long wait: the toolkit's limit for them, not a figure from Microsoft.
     timeout-minutes: 30
     steps:
@@ -108,37 +118,46 @@ jobs:
 
       - name: Point OS_REPORT at the downloaded artifact
         if: ${{ inputs.os_configuration_run_id != '' }}
-        shell: bash
-        run: echo "OS_REPORT=${RUNNER_TEMP}/os-configuration-report" >> "$GITHUB_ENV"
+        shell: pwsh
+        run: Add-Content -LiteralPath $env:GITHUB_ENV -Value "OS_REPORT=$env:RUNNER_TEMP/os-configuration-report"
 
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-          enable-AzPSSession: true
-
-      - name: Install the PowerShell modules
+      - name: Install the PowerShell modules (devops.pipelines.tool_versions)
         shell: pwsh
         run: |
-          foreach ($m in 'powershell-yaml', 'Az.Accounts', 'Az.KeyVault') {
-            if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery }
-          }
+          $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az' = $env:AZL_AZ_POWERSHELL_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
+          foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+
+      - name: Azure login (OIDC)
+        if: ${{ vars.AZL_AUTH_METHOD == 'oidc' }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.ARM_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      - name: Azure login (client secret)
+        if: ${{ vars.AZL_AUTH_METHOD == 'client_secret' }}
+        uses: azure/login@v2
+        with:
+          creds: ${{ format('{{"clientId":"{0}","clientSecret":"{1}","subscriptionId":"{2}","tenantId":"{3}"}}', vars.ARM_CLIENT_ID, secrets.ARM_CLIENT_SECRET, vars.ARM_SUBSCRIPTION_ID, vars.ARM_TENANT_ID) }}
+          enable-AzPSSession: true
 
       - name: Preconditions
-        shell: bash
+        shell: pwsh
         run: |
-          args=(-InfrastructureFile "$INFRASTRUCTURE_FILE" -Mode Plan -ReportDirectory "$RUNNER_TEMP/arm-plan")
-          [ -n "$OS_REPORT" ] && args+=(-OsConfigurationReport "$OS_REPORT")
-          [ -n "$HANDOFF_FILE" ] && args+=(-HandoffFile "$HANDOFF_FILE")
-          pwsh -NoProfile -File "$ARM_SCRIPT" "${args[@]}"
+          $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Mode = 'Plan'; ReportDirectory = "$env:RUNNER_TEMP/arm-plan" }
+          if ($env:OS_REPORT) { $p.OsConfigurationReport = $env:OS_REPORT }
+          if ($env:HANDOFF_FILE) { $p.HandoffFile = $env:HANDOFF_FILE }
+          & $env:ARM_SCRIPT @p
+          exit $LASTEXITCODE
 
       - name: Job summary
         if: ${{ always() }}
-        shell: bash
+        shell: pwsh
         run: |
-          if [ -f "$RUNNER_TEMP/arm-plan/summary.md" ]; then cat "$RUNNER_TEMP/arm-plan/summary.md" >> "$GITHUB_STEP_SUMMARY"; fi
+          $summary = "$env:RUNNER_TEMP/arm-plan/summary.md"
+          if (Test-Path -LiteralPath $summary) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value (Get-Content -LiteralPath $summary) }
 
       - name: Publish the plan report and the event feed
         if: ${{ always() }}
@@ -152,10 +171,10 @@ jobs:
     name: Validate
     needs: preconditions
     if: ${{ inputs.mode == 'Validate' || inputs.mode == 'ValidateAndDeploy' }}
-    runs-on: [self-hosted, linux, "${{ vars.AZL_RUNNER_LABEL }}"]
+    runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
     # Microsoft Learn: the validation takes about 10 minutes (https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template-disaggregated).
-    # The script waits at most deployment.validate_timeout_minutes (default 90); 150 minutes is the toolkit's limit above that wait.
-    timeout-minutes: 150
+    # The script waits at most deployment.validate_timeout_minutes; task 05 sets this limit to that wait plus 60 minutes for the checks and the report.
+    timeout-minutes: ${{ fromJSON(vars.AZL_VALIDATE_JOB_TIMEOUT_MINUTES) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -170,37 +189,46 @@ jobs:
 
       - name: Point OS_REPORT at the downloaded artifact
         if: ${{ inputs.os_configuration_run_id != '' }}
-        shell: bash
-        run: echo "OS_REPORT=${RUNNER_TEMP}/os-configuration-report" >> "$GITHUB_ENV"
+        shell: pwsh
+        run: Add-Content -LiteralPath $env:GITHUB_ENV -Value "OS_REPORT=$env:RUNNER_TEMP/os-configuration-report"
 
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-          enable-AzPSSession: true
-
-      - name: Install the PowerShell modules
+      - name: Install the PowerShell modules (devops.pipelines.tool_versions)
         shell: pwsh
         run: |
-          foreach ($m in 'powershell-yaml', 'Az.Accounts', 'Az.KeyVault') {
-            if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery }
-          }
+          $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az' = $env:AZL_AZ_POWERSHELL_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
+          foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+
+      - name: Azure login (OIDC)
+        if: ${{ vars.AZL_AUTH_METHOD == 'oidc' }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.ARM_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      - name: Azure login (client secret)
+        if: ${{ vars.AZL_AUTH_METHOD == 'client_secret' }}
+        uses: azure/login@v2
+        with:
+          creds: ${{ format('{{"clientId":"{0}","clientSecret":"{1}","subscriptionId":"{2}","tenantId":"{3}"}}', vars.ARM_CLIENT_ID, secrets.ARM_CLIENT_SECRET, vars.ARM_SUBSCRIPTION_ID, vars.ARM_TENANT_ID) }}
+          enable-AzPSSession: true
 
       - name: Validate
-        shell: bash
+        shell: pwsh
         run: |
-          args=(-InfrastructureFile "$INFRASTRUCTURE_FILE" -Mode Validate -ReportDirectory "$RUNNER_TEMP/arm-validate")
-          [ -n "$OS_REPORT" ] && args+=(-OsConfigurationReport "$OS_REPORT")
-          [ -n "$HANDOFF_FILE" ] && args+=(-HandoffFile "$HANDOFF_FILE")
-          pwsh -NoProfile -File "$ARM_SCRIPT" "${args[@]}"
+          $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Mode = 'Validate'; ReportDirectory = "$env:RUNNER_TEMP/arm-validate" }
+          if ($env:OS_REPORT) { $p.OsConfigurationReport = $env:OS_REPORT }
+          if ($env:HANDOFF_FILE) { $p.HandoffFile = $env:HANDOFF_FILE }
+          & $env:ARM_SCRIPT @p
+          exit $LASTEXITCODE
 
       - name: Job summary (the reviewer reads this before approving the Deploy)
         if: ${{ always() }}
-        shell: bash
+        shell: pwsh
         run: |
-          if [ -f "$RUNNER_TEMP/arm-validate/summary.md" ]; then cat "$RUNNER_TEMP/arm-validate/summary.md" >> "$GITHUB_STEP_SUMMARY"; fi
+          $summary = "$env:RUNNER_TEMP/arm-validate/summary.md"
+          if (Test-Path -LiteralPath $summary) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value (Get-Content -LiteralPath $summary) }
 
       - name: Publish the validate report and the event feed
         if: ${{ always() }}
@@ -215,13 +243,12 @@ jobs:
     needs: [preconditions, validate]
     # validate is skipped for mode Deploy; always() lets the job run then, but only when nothing before it failed.
     if: ${{ always() && !cancelled() && needs.preconditions.result == 'success' && (needs.validate.result == 'success' || needs.validate.result == 'skipped') && (inputs.mode == 'ValidateAndDeploy' || inputs.mode == 'Deploy') }}
-    runs-on: [self-hosted, linux, "${{ vars.AZL_RUNNER_LABEL }}"]
+    runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
     # Required reviewers on this environment are the approval gate.
     environment: ${{ vars.AZL_ENVIRONMENT_ARM_DEPLOYMENT }}
     # Microsoft Learn: the deployment takes between 2.5 and 3 hours (https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template).
-    # The script waits at most deployment.deploy_timeout_minutes (default 360, 6 hours); 420 minutes is that wait plus an hour for the checks and the report.
-    # If you raise deployment.deploy_timeout_minutes above 360, raise this limit in your copy too.
-    timeout-minutes: 420
+    # The script waits at most deployment.deploy_timeout_minutes; task 05 sets this limit to that wait plus 60 minutes for the checks and the report.
+    timeout-minutes: ${{ fromJSON(vars.AZL_DEPLOY_JOB_TIMEOUT_MINUTES) }}
     steps:
       - uses: actions/checkout@v4
 
@@ -236,39 +263,48 @@ jobs:
 
       - name: Point OS_REPORT at the downloaded artifact
         if: ${{ inputs.os_configuration_run_id != '' }}
-        shell: bash
-        run: echo "OS_REPORT=${RUNNER_TEMP}/os-configuration-report" >> "$GITHUB_ENV"
+        shell: pwsh
+        run: Add-Content -LiteralPath $env:GITHUB_ENV -Value "OS_REPORT=$env:RUNNER_TEMP/os-configuration-report"
 
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-          enable-AzPSSession: true
-
-      - name: Install the PowerShell modules
+      - name: Install the PowerShell modules (devops.pipelines.tool_versions)
         shell: pwsh
         run: |
-          foreach ($m in 'powershell-yaml', 'Az.Accounts', 'Az.KeyVault') {
-            if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery }
-          }
+          $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION; 'Az' = $env:AZL_AZ_POWERSHELL_VERSION; 'Az.KeyVault' = $env:AZL_AZ_KEYVAULT_VERSION }
+          foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+
+      - name: Azure login (OIDC)
+        if: ${{ vars.AZL_AUTH_METHOD == 'oidc' }}
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.ARM_CLIENT_ID }}
+          tenant-id: ${{ vars.ARM_TENANT_ID }}
+          subscription-id: ${{ vars.ARM_SUBSCRIPTION_ID }}
+          enable-AzPSSession: true
+
+      - name: Azure login (client secret)
+        if: ${{ vars.AZL_AUTH_METHOD == 'client_secret' }}
+        uses: azure/login@v2
+        with:
+          creds: ${{ format('{{"clientId":"{0}","clientSecret":"{1}","subscriptionId":"{2}","tenantId":"{3}"}}', vars.ARM_CLIENT_ID, secrets.ARM_CLIENT_SECRET, vars.ARM_SUBSCRIPTION_ID, vars.ARM_TENANT_ID) }}
+          enable-AzPSSession: true
 
       - name: Deploy
-        shell: bash
+        shell: pwsh
         run: |
-          args=(-InfrastructureFile "$INFRASTRUCTURE_FILE" -Mode Deploy -ReportDirectory "$RUNNER_TEMP/arm-deploy")
-          [ -n "$OS_REPORT" ] && args+=(-OsConfigurationReport "$OS_REPORT")
-          [ -n "$HANDOFF_FILE" ] && args+=(-HandoffFile "$HANDOFF_FILE")
-          [ "${{ inputs.resume }}" = "true" ] && args+=(-Resume)
-          [ -n "$ACKNOWLEDGE" ] && args+=(-AcknowledgeKnownIssues "$ACKNOWLEDGE")
-          pwsh -NoProfile -File "$ARM_SCRIPT" "${args[@]}"
+          $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Mode = 'Deploy'; ReportDirectory = "$env:RUNNER_TEMP/arm-deploy" }
+          if ($env:OS_REPORT) { $p.OsConfigurationReport = $env:OS_REPORT }
+          if ($env:HANDOFF_FILE) { $p.HandoffFile = $env:HANDOFF_FILE }
+          if ($env:RESUME -eq 'true') { $p.Resume = $true }
+          if ($env:ACKNOWLEDGE) { $p.AcknowledgeKnownIssues = $env:ACKNOWLEDGE }
+          & $env:ARM_SCRIPT @p
+          exit $LASTEXITCODE
 
       - name: Job summary (result)
         if: ${{ always() }}
-        shell: bash
+        shell: pwsh
         run: |
-          if [ -f "$RUNNER_TEMP/arm-deploy/summary.md" ]; then cat "$RUNNER_TEMP/arm-deploy/summary.md" >> "$GITHUB_STEP_SUMMARY"; fi
+          $summary = "$env:RUNNER_TEMP/arm-deploy/summary.md"
+          if (Test-Path -LiteralPath $summary) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value (Get-Content -LiteralPath $summary) }
 
       - name: Publish the deploy report and the event feed
         if: ${{ always() }}

@@ -64,7 +64,8 @@ Describe 'Settings' {
             $c.Parameters.Keys | Should -Not -Contain 'Configuration'
         }
         $text = Get-Content -LiteralPath (Join-Path $script:Repo 'scripts\common\cicd-infra\AzlCicdInfra.psm1') -Raw
-        $text | Should -Not -Match 'AZL_INFRASTRUCTURE_FILE|CONFIGURATION region|\./infrastructure\.yml'
+        # AZL_INFRASTRUCTURE_FILE is a pipeline variable task 05 sets (devops.pipelines.infrastructure_file); the module never reads it as a fallback.
+        $text | Should -Not -Match '\$env:AZL_INFRASTRUCTURE_FILE|GetEnvironmentVariable\(.AZL_INFRASTRUCTURE_FILE|CONFIGURATION region|\./infrastructure\.yml'
     }
     It 'reads the file the caller names' {
         $doc = ConvertFrom-Yaml (Get-Content -LiteralPath $script:Example -Raw) -Ordered
@@ -344,13 +345,16 @@ Describe 'Task 05: variables' {
             & $global:AzlResponder $FilePath @($ArgumentList)
         }
     }
-    It 'GitHub with OIDC: sets the IDs per environment and no client secret' {
+    It 'GitHub with OIDC: sets the IDs as variables for the repository and per environment, and no client secret' {
         Start-Recording { param($f, $a) New-Out '' }
         $s = Get-Settings
         Set-AzlCicdVariable -Settings $s -ClientId '33333333-3333-3333-3333-333333333333' -Confirm:$false | Out-Null
-        (Get-Calls 'ARM_CLIENT_ID').Count | Should -Be $s.Environments.Count
+        # the repository (jobs without an environment: validate, plan, preconditions) and each environment
+        (Get-Calls 'variable set ARM_CLIENT_ID ').Count | Should -Be ($s.Environments.Count + 1)
+        @(Get-Calls 'variable set ARM_CLIENT_ID ' | Where-Object { $_.Line -notmatch '--env' }).Count | Should -Be 1
+        (Get-Calls 'secret set ARM_(CLIENT_ID|TENANT_ID|SUBSCRIPTION_ID)').Count | Should -Be 0
         (Get-Calls 'ARM_CLIENT_SECRET').Count | Should -Be 0
-        (Get-Calls 'variable set ARM_USE_OIDC').Count | Should -Be $s.Environments.Count
+        (Get-Calls 'variable set ARM_USE_OIDC').Count | Should -Be ($s.Environments.Count + 1)
     }
     It 'GitHub with a client secret: the value goes through stdin and not on a command line' {
         # The client secret is read through the toolkit's secret resolver, not by a command of this module.
@@ -359,7 +363,7 @@ Describe 'Task 05: variables' {
         $s = Get-Settings -Change { param($d) $d.devops.authentication.method = 'client_secret'; $d.devops.authentication.client_secret = 'keyvault://kv-iic-mgmt-01/automation-spn-secret' }
         Set-AzlCicdVariable -Settings $s -ClientId '33333333-3333-3333-3333-333333333333' -Confirm:$false | Out-Null
         $set = Get-Calls 'secret set ARM_CLIENT_SECRET'
-        $set.Count | Should -Be $s.Environments.Count
+        $set.Count | Should -Be ($s.Environments.Count + 1)
         $set | ForEach-Object { $_.Line | Should -Not -Match 'TopSecretClientSecret'; $_.Input | Should -Be 'TopSecretClientSecret' }
     }
     It '-WhatIf sets nothing' {
@@ -519,8 +523,14 @@ Describe 'Task 05: the runner label and approval environments of the pipelines (
         $s = Get-Settings
         Set-AzlCicdVariable -Settings $s -ClientId $script:Client -Confirm:$false | Out-Null
         $set = @(Get-Calls 'variable set AZL_')
-        $set.Count | Should -Be 5
+        $set.Count | Should -Be @(Get-AzlCicdPipelineInput -Settings $s).Count
+        $set.Count | Should -BeGreaterThan 15
         $set | ForEach-Object { $_.Line | Should -Not -Match '--env' }
+        (Get-Calls 'variable set AZL_RUNNER_OS .*--body linux$').Count | Should -Be 1
+        (Get-Calls 'variable set AZL_INFRASTRUCTURE_FILE .*--body config/infrastructure.yml$').Count | Should -Be 1
+        (Get-Calls 'variable set AZL_AUTH_METHOD .*--body oidc$').Count | Should -Be 1
+        (Get-Calls 'variable set AZL_TERRAFORM_VERSION .*--body 1\.16\.3$').Count | Should -Be 1
+        (Get-Calls 'variable set AZL_DEPLOY_JOB_TIMEOUT_MINUTES .*--body \d+$').Count | Should -Be 1
         (Get-Calls 'variable set AZL_RUNNER_LABEL .*--body azure-local$').Count | Should -Be 1
         (Get-Calls 'variable set AZL_ENVIRONMENT_OS_CONFIGURATION .*--body azr-prod-us$').Count | Should -Be 1
         (Get-Calls 'variable set AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT .*--body azr-prod-us$').Count | Should -Be 1
@@ -529,7 +539,7 @@ Describe 'Task 05: the runner label and approval environments of the pipelines (
         Start-Recording { param($f, $a) New-Out '' }
         $r = Set-AzlCicdVariable -Settings (Get-Settings) -ClientId $script:Client -WhatIf
         (Get-Calls 'variable set AZL_').Count | Should -Be 0
-        @($r | Where-Object { $_.Action -eq 'Pipeline variable' -and $_.Status -eq 'Planned' }).Count | Should -Be 5
+        @($r | Where-Object { $_.Action -eq 'Pipeline variable' -and $_.Status -eq 'Planned' }).Count | Should -Be @(Get-AzlCicdPipelineInput -Settings (Get-Settings)).Count
     }
     It 'GitLab: creates project variables for all environments (scope *), not per environment' {
         $env:GITLAB_TOKEN = 'glpat-test-value'
@@ -542,10 +552,14 @@ Describe 'Task 05: the runner label and approval environments of the pipelines (
             }
             $r = Set-AzlCicdVariable -Settings (Get-Settings 'gitlab') -ClientId $script:Client -Confirm:$false
             $posts = @(Get-Calls '^REST POST .*/projects/55/variables$' | Where-Object { $_.Body.key -like 'AZL_*' })
-            $posts.Count | Should -Be 5
+            $expected = @(Get-AzlCicdPipelineInput -Settings (Get-Settings 'gitlab')).Count
+            $posts.Count | Should -Be $expected
             $posts | ForEach-Object { $_.Body.environment_scope | Should -Be '*'; $_.Body.masked | Should -BeFalse }
             ($posts | Where-Object { $_.Body.key -eq 'AZL_RUNNER_LABEL' }).Body.value | Should -Be 'azure-local'
-            @($r | Where-Object Action -eq 'Pipeline variable').Count | Should -Be 5
+            ($posts | Where-Object { $_.Body.key -eq 'AZL_PYTHON_VERSION' }).Body.value | Should -Be '3.12'
+            # GitHub only: GitLab chooses the runner by its tag and reads no job timeout from a variable
+            @($posts | Where-Object { $_.Body.key -in 'AZL_RUNNER_OS', 'AZL_DEPLOY_JOB_TIMEOUT_MINUTES' }).Count | Should -Be 0
+            @($r | Where-Object Action -eq 'Pipeline variable').Count | Should -Be $expected
         }
         finally { $env:GITLAB_TOKEN = $null }
     }
@@ -608,11 +622,83 @@ Describe 'Task 05: the runner label and approval environments of the pipelines (
         $t = Get-Settings -Change { param($d) $d.devops.pipelines.environments.arm_deployment = 'azr-dev-us' }
         { Get-AzlCicdPipelineInput -Settings $t } | Should -Throw '*without approval_required*'
     }
-    It 'a file without devops.pipelines sets nothing and says so' {
+    It 'a file without devops.pipelines sets no runner label or environment, and the registry defaults of the rest' {
         Start-Recording { param($f, $a) New-Out '' }
         $s = Get-Settings -Change { param($d) $d.devops.Remove('pipelines') }
+        Set-AzlCicdVariable -Settings $s -ClientId $script:Client -Confirm:$false | Out-Null
+        (Get-Calls 'variable set AZL_(RUNNER_LABEL|ENVIRONMENT_)').Count | Should -Be 0
+        (Get-Calls 'variable set AZL_INFRASTRUCTURE_FILE .*--body config/infrastructure.yml$').Count | Should -Be 1
+        (Get-Calls 'variable set AZL_HANDOFF_PATH .*--body ztp-state$').Count | Should -Be 1
+        (Get-Calls 'variable set AZL_TERRAFORM_VERSION .*--body 1\.16\.3$').Count | Should -Be 1
+    }
+    It 'sets every value from its key: the paths, the tool versions, the sign-in method and the job timeouts (5.6.28)' {
+        Start-Recording { param($f, $a) New-Out '' }
+        $s = Get-Settings -Change {
+            param($d)
+            $d.devops.pipelines.infrastructure_file = 'environments/iic/infrastructure.yml'
+            $d.devops.pipelines.handoff_path = 'environments/iic/ztp-state'
+            $d.devops.pipelines.tool_versions = [ordered]@{ terraform = '1.17.0'; python = '3.13'; ansible_core = '2.22.0'; ansible_lint = '26.11.0'; az_powershell = '16.4.0'; powershell_yaml = '0.4.13'; az_keyvault = '6.7.0' }
+            $d.devops.authentication.method = 'client_secret'
+            $d.devops.authentication.client_secret = 'keyvault://kv-iic-mgmt-01/automation-spn-secret'
+            $d['deployment'] = [ordered]@{ validate_timeout_minutes = 120; deploy_timeout_minutes = 480 }
+        }
+        Mock -ModuleName AzlCicdInfra Get-AzlSecretPlainText { 'TopSecretClientSecret' }
+        Set-AzlCicdVariable -Settings $s -ClientId $script:Client -Confirm:$false | Out-Null
+        $expect = [ordered]@{
+            AZL_INFRASTRUCTURE_FILE = 'environments/iic/infrastructure.yml'; AZL_HANDOFF_PATH = 'environments/iic/ztp-state'
+            AZL_TERRAFORM_VERSION = '1.17.0'; AZL_PYTHON_VERSION = '3.13'; AZL_ANSIBLE_CORE_VERSION = '2.22.0'; AZL_ANSIBLE_LINT_VERSION = '26.11.0'
+            AZL_AZ_POWERSHELL_VERSION = '16.4.0'; AZL_POWERSHELL_YAML_VERSION = '0.4.13'; AZL_AZ_KEYVAULT_VERSION = '6.7.0'
+            AZL_AUTH_METHOD = 'client_secret'; AZL_VALIDATE_JOB_TIMEOUT_MINUTES = '180'; AZL_DEPLOY_JOB_TIMEOUT_MINUTES = '540'
+        }
+        foreach ($k in $expect.Keys) { (Get-Calls "variable set $k .*--body $([regex]::Escape($expect[$k]))$").Count | Should -Be 1 -Because $k }
+    }
+    It 'sets the runner public key from devops.runners[].admin_ssh_public_key, and reads a reference through the secret resolver' {
+        Start-Recording { param($f, $a) New-Out '' }
+        $s = Get-Settings -Change { param($d) $d.devops.runners[0]['admin_ssh_public_key'] = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyOnly iic-runner-admin' }
+        Set-AzlCicdVariable -Settings $s -ClientId $script:Client -Confirm:$false | Out-Null
+        (Get-Calls 'variable set AZL_RUNNER_SSH_PUBLIC_KEY .*--body ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyOnly iic-runner-admin$').Count | Should -Be 1
+        Mock -ModuleName AzlCicdInfra Get-AzlSecretPlainText { "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFromTheFile iic-runner-admin`n" }
+        Start-Recording { param($f, $a) New-Out '' }
+        $s = Get-Settings -Change { param($d) $d.devops.runners[0]['admin_ssh_public_key'] = 'file://runner-admin.pub' }
+        $r = Set-AzlCicdVariable -Settings $s -ClientId $script:Client -WhatIf
+        (Get-Calls 'variable set AZL_RUNNER_SSH_PUBLIC_KEY').Count | Should -Be 0
+        ($r | Where-Object Target -eq 'AZL_RUNNER_SSH_PUBLIC_KEY (repository)').Detail | Should -Match 'reference'
+        Set-AzlCicdVariable -Settings $s -ClientId $script:Client -Confirm:$false | Out-Null
+        (Get-Calls 'variable set AZL_RUNNER_SSH_PUBLIC_KEY .*--body ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFromTheFile iic-runner-admin$').Count | Should -Be 1
+        Should -Invoke -ModuleName AzlCicdInfra Get-AzlSecretPlainText -ParameterFilter { $Reference -eq 'file://runner-admin.pub' }
+    }
+    It 'a value other than the public key may not be a secret reference' {
+        $s = Get-Settings -Change { param($d) $d.devops.pipelines.tool_versions = @{ terraform = 'env://TF_VERSION' } }
+        { Get-AzlCicdPipelineInput -Settings $s } | Should -Throw '*is a secret reference*'
+    }
+    It 'Azure DevOps: writes the tool versions, the sign-in method, the default branch and the public key to the variable group' {
+        Start-Recording {
+            param($f, $a)
+            if ($f -eq 'az') { return New-Out 'x' }
+            return [pscustomobject]@{ id = 'x'; value = @() }
+        }
+        $s = Get-Settings 'azure_devops' { param($d) $d.devops.runners[0].pool = 'pool-lnx'; $d.devops.runners[0]['admin_ssh_public_key'] = 'ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExampleKeyOnly iic-runner-admin' }
         $r = Set-AzlCicdVariable -Settings $s -ClientId $script:Client -Confirm:$false
-        (Get-Calls 'variable set AZL_').Count | Should -Be 0
-        ($r | Where-Object Action -eq 'Pipeline variable').Status | Should -Be 'Skipped'
+        $groups = @(Get-Calls '^REST POST .*/distributedtask/variablegroups')
+        $groups.Count | Should -Be $s.Environments.Count
+        foreach ($g in $groups) {
+            $vars = $g.Body.variables
+            $vars['AZL_TERRAFORM_VERSION'].value | Should -Be '1.16.3'
+            $vars['AZL_AZ_POWERSHELL_VERSION'].value | Should -Be '16.3.0'
+            $vars['AZL_AUTH_METHOD'].value | Should -Be 'oidc'
+            $vars['AZL_DEFAULT_BRANCH'].value | Should -Be 'main'
+            $vars['AZL_RUNNER_SSH_PUBLIC_KEY'].value | Should -Match '^ssh-ed25519 '
+            $vars['TF_BACKEND_KEY'].value | Should -Be 'azure-local.tfstate'
+            $vars.Contains('AZL_INFRASTRUCTURE_FILE') | Should -BeFalse -Because 'the path is a run parameter'
+        }
+        $rows = @($r | Where-Object Action -eq 'Pipeline run parameter')
+        ($rows | Where-Object Target -eq 'devops.pipelines.infrastructure_file').Detail | Should -Match "Enter 'config/infrastructure.yml' as the infrastructure file parameter"
+        ($rows | Where-Object Target -eq 'devops.pipelines.handoff_path').Detail | Should -Match "Enter 'ztp-state' as the handoff path parameter"
+        @($rows | Where-Object Target -like 'devops.pipelines.tool_versions.*').Count | Should -Be 0
+    }
+    It 'TF_BACKEND_KEY is devops.state.azure_local_key' {
+        $s = Get-Settings -Change { param($d) $d.devops.state['azure_local_key'] = 'iic/azure-local.tfstate' }
+        $plan = & (Get-Module AzlCicdInfra) { param($x) Get-AzlCicdVariablePlan -Settings $x -ClientId 'x' } $s
+        ($plan | Where-Object Name -EQ 'TF_BACKEND_KEY').Value | Should -Be 'iic/azure-local.tfstate'
     }
 }

@@ -27,7 +27,13 @@ Describe 'All three pipelines' {
     }
     It '<Name> holds no client secret, no password and no real identifier' -ForEach @(@{ Name = 'github' }, @{ Name = 'gitlab' }, @{ Name = 'ado' }) {
         $t = $script:Text[$Name]
-        $t | Should -Not -Match 'ARM_CLIENT_SECRET|client_secret|clientSecret|AZURE_CLIENT_SECRET'
+        # devops.authentication.method client_secret: the secret is only ever the platform's secret ARM_CLIENT_SECRET, chosen by AZL_AUTH_METHOD
+        foreach ($m in [regex]::Matches($t, '(?m)^.*(ARM_CLIENT_SECRET|clientSecret).*$')) {
+            $line = $m.Value
+            if ($line.TrimStart().StartsWith('#')) { continue }
+            $line | Should -Match 'secrets\.ARM_CLIENT_SECRET|\$env:ARM_CLIENT_SECRET' -Because 'the secret is read from the platform, never written'
+        }
+        $t | Should -Not -Match 'AZURE_CLIENT_SECRET'
         $t | Should -Not -Match '(?i)password\s*[:=]\s*[''"][^''"<]'
         $t | Should -Not -Match '(?<![0-9a-fA-F-])[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}(?![0-9a-fA-F-])'
         $t | Should -Not -Match 'https://[^\s]*\.(vault\.azure\.net)'
@@ -36,9 +42,9 @@ Describe 'All three pipelines' {
         $script:Text[$Name] | Should -Not -Match 'scripts\\|pipelines\\|config\\'
     }
     It '<Name> runs preconditions (Plan) before Validate and Deploy, and reports with the event feed' -ForEach @(@{ Name = 'github' }, @{ Name = 'gitlab' }, @{ Name = 'ado' }) {
-        $script:Text[$Name] | Should -Match '-Mode Plan|Mode = .Plan.'
-        $script:Text[$Name] | Should -Match '-Mode Validate|Mode = .Validate.'
-        $script:Text[$Name] | Should -Match '-Mode Deploy|Mode = .Deploy.'
+        $script:Text[$Name] | Should -Match '-Mode Plan|Mode = .Plan.|ARM_STEP_MODE: Plan'
+        $script:Text[$Name] | Should -Match '-Mode Validate|Mode = .Validate.|ARM_STEP_MODE: Validate'
+        $script:Text[$Name] | Should -Match '-Mode Deploy|Mode = .Deploy.|ARM_STEP_MODE: Deploy'
         $script:Text[$Name] | Should -Match 'summary\.md'
     }
     It '<Name> takes the approval environment from devops.pipelines.environments.arm_deployment, and names none itself' -ForEach @(@{ Name = 'github'; Pattern = 'vars\.AZL_ENVIRONMENT_ARM_DEPLOYMENT' }, @{ Name = 'gitlab'; Pattern = '\$AZL_ENVIRONMENT_ARM_DEPLOYMENT' }, @{ Name = 'ado'; Pattern = 'parameters\.approvalEnvironment' }) {
@@ -62,17 +68,20 @@ Describe 'GitHub Actions' {
         $script:G.jobs.preconditions.Contains('environment') | Should -BeFalse
         $script:G.jobs.validate.Contains('environment') | Should -BeFalse
     }
-    It 'the Deploy job only runs for the Deploy modes and has a timeout that fits 3 hours of deployment' {
+    It 'the Deploy job only runs for the Deploy modes and its timeout is the wait of the file plus the margin (task 05 sets it)' {
         $script:G.jobs.deploy.if | Should -Match 'ValidateAndDeploy'
         $script:G.jobs.deploy.if | Should -Match "'Deploy'"
-        [int]$script:G.jobs.deploy.'timeout-minutes' | Should -BeGreaterThan 360
+        $script:G.jobs.deploy.'timeout-minutes' | Should -Be '${{ fromJSON(vars.AZL_DEPLOY_JOB_TIMEOUT_MINUTES) }}'
     }
-    It 'signs in with OIDC (id-token write, azure/login, no secret input)' {
+    It 'signs in by devops.authentication.method (AZL_AUTH_METHOD): OIDC with id-token write, or the client secret of the platform' {
         $script:G.permissions.'id-token' | Should -Be 'write'
         $script:Text['github'] | Should -Match 'azure/login@v2'
-        $script:Text['github'] | Should -Not -Match 'creds:'
         foreach ($job in 'preconditions', 'validate', 'deploy') {
-            @($script:G.jobs[$job].steps | Where-Object { $_.uses -like 'azure/login@*' }).Count | Should -Be 1
+            $logins = @($script:G.jobs[$job].steps | Where-Object { $_.uses -like 'azure/login@*' })
+            $logins.Count | Should -Be 2
+            $logins[0].if | Should -Be "`${{ vars.AZL_AUTH_METHOD == 'oidc' }}"
+            $logins[0].with.Contains('creds') | Should -BeFalse
+            $logins[1].if | Should -Be "`${{ vars.AZL_AUTH_METHOD == 'client_secret' }}"
         }
     }
     It 'every action is pinned to a major version' {
@@ -109,7 +118,7 @@ Describe 'GitLab CI' {
     }
     It 'serialises runs with a resource group and has OIDC id_tokens' {
         foreach ($j in 'arm-preconditions', 'arm-validate', 'arm-deploy') { $script:L[$j].resource_group | Should -Be 'azure-local-arm-deployment' }
-        $script:L['.arm-deployment'].id_tokens.AZURE_ID_TOKEN.aud | Should -Be 'api://AzureADTokenExchange'
+        $script:L['.arm-deployment'].id_tokens.ARM_OIDC_TOKEN.aud | Should -Be 'api://AzureADTokenExchange'
     }
     It 'keeps the artifacts of every job even when it failed' {
         foreach ($j in 'arm-preconditions', 'arm-validate', 'arm-deploy') { $script:L[$j].artifacts.when | Should -Be 'always' }
@@ -118,10 +127,10 @@ Describe 'GitLab CI' {
         $main = Get-Content -LiteralPath ([IO.Path]::Combine($script:Repo, 'pipelines', 'gitlab', '.gitlab-ci.yml')) -Raw
         $main | Should -Not -Match 'arm-deployment'
     }
-    It 'the placeholders are placeholders' {
-        $script:L.variables.AZURE_CLIENT_ID | Should -Match '^<.*>$'
-        $script:L.variables.AZURE_TENANT_ID | Should -Match '^<.*>$'
-        $script:L.variables.AZURE_SUBSCRIPTION_ID | Should -Match '^<.*>$'
+    It 'holds no ID, placeholder or path of its own: the sign-in values and the infrastructure file are the project variables task 05 sets' {
+        foreach ($k in 'AZURE_CLIENT_ID', 'AZURE_TENANT_ID', 'AZURE_SUBSCRIPTION_ID', 'AZURE_AUTH', 'INFRASTRUCTURE_FILE') { $script:L.variables.Contains($k) | Should -BeFalse -Because $k }
+        $script:Text['gitlab'] | Should -Match 'AZL_AUTH_METHOD -eq "oidc"'
+        $script:Text['gitlab'] | Should -Match 'InfrastructureFile = \$env:AZL_INFRASTRUCTURE_FILE'
     }
 }
 
@@ -153,7 +162,10 @@ Describe 'Azure DevOps' {
         $p[0].Contains('default') | Should -BeFalse
         $script:Text['ado'] | Should -Match 'devops\.pipelines\.service_connection'
     }
-    It 'the stage with the long deploy has a timeout over 3 hours' {
-        $script:Text['ado'] | Should -Match 'timeoutInMinutes: 480'
+    It 'the stage with the long deploy has the fixed upper bound above the largest wait the file allows, and runs queue one after the other' {
+        $script:Text['ado'] | Should -Match 'timeoutInMinutes: 1500'
+        $script:A.lockBehavior | Should -Be 'sequential'
+        @($script:A.parameters | Where-Object name -eq 'infrastructureFile')[0].Contains('default') | Should -BeFalse
+        $script:Text['ado'] | Should -Match 'preferredAzurePowerShellVersion: \$\(AZL_AZ_POWERSHELL_VERSION\)'
     }
 }

@@ -94,7 +94,7 @@ $task = './scripts/deploy/01-cicd-infra/phase-01-cicd-setup'
 | 02 | `task-02-create-project/powershell/...` | The private repository or project from the template. |
 | 03 | `task-03-configure-project/powershell/...` | Branch protection, approvals, squash only, secret scanning. |
 | 04 | `task-04-create-environments/powershell/...` | Environments with approvers and a `main`-only branch rule, including `ztp-reinstall`. |
-| 05 | `task-05-configure-variables/powershell/...` | `ARM_TENANT_ID`, `ARM_SUBSCRIPTION_ID`, `ARM_CLIENT_ID` per environment; the Azure DevOps service connection. |
+| 05 | `task-05-configure-variables/powershell/...` | The sign-in and state variables for the repository and per environment (`ARM_*`, `TF_BACKEND_*`), every value the pipelines read (the `AZL_*` variables in [pipelines/README.md](../pipelines/README.md#where-every-value-comes-from)), and the Azure DevOps service connection and variable groups. |
 | 06 | `task-06-deploy-runners/powershell/...` | Terraform for the runners. Plan only unless `-Apply`. |
 
 Each task has one script. It takes `-InfrastructureFile` (required: there is no default path, no environment variable and no CONFIGURATION region) and ends with exit code 0 (done, already there, or planned under `-WhatIf`), 1 (a call failed) or 2 (the file cannot be read or does not validate). The scripts ask for nothing: platform tokens come from the environment or from `devops.api_token`.
@@ -103,7 +103,7 @@ Each task has one script. It takes `-InfrastructureFile` (required: there is no 
 
 ```powershell
 $t06 = "$task/task-06-deploy-runners/powershell/Deploy-CicdRunners.ps1"
-$env:AZL_RUNNER_SSH_PUBLIC_KEY = Get-Content ~/.ssh/id_ed25519.pub -Raw   # a public key
+$env:AZL_RUNNER_SSH_PUBLIC_KEY = Get-Content ~/.ssh/id_ed25519.pub -Raw   # a public key; in a pipeline task 05 sets it from devops.runners[].admin_ssh_public_key
 
 & $t06 -InfrastructureFile $file -WorkingDirectory D:\work\cicd                 # init, validate, plan. Nothing changes in Azure.
 terraform -chdir=src/terraform/environments/cicd-infra show D:\work\cicd\cicd-infra.tfplan   # review
@@ -142,9 +142,9 @@ Role `cicd_runner` does the same work with the same variables (`cicd_runner_plat
 
 | Platform | File | Approval | Sign-in |
 | --- | --- | --- | --- |
-| GitHub Actions | [`pipelines/github-actions/cicd-infra.yml`](../pipelines/github-actions/cicd-infra.yml), copy to `.github/workflows/` | The environment named by `devops.pipelines.environments.cicd_infra` (repository variable `AZL_ENVIRONMENT_CICD_INFRA`), with required reviewers | OIDC (`azure/login`) |
-| GitLab CI/CD | [`pipelines/gitlab/stages/deploy-cicd-infra.yml`](../pipelines/gitlab/stages/deploy-cicd-infra.yml), included by one line in `.gitlab-ci.yml`; runs with `CICD_INFRA=true` | Manual job on the protected environment named by `devops.pipelines.environments.cicd_infra` (project variable `AZL_ENVIRONMENT_CICD_INFRA`) | GitLab ID token (OIDC) |
-| Azure DevOps | [`pipelines/azure-devops/cicd-infra.yml`](../pipelines/azure-devops/cicd-infra.yml) | Approvals check on the environment you enter as the parameter `approvalEnvironment` (`devops.pipelines.environments.cicd_infra`) | The service connection of the parameter `serviceConnection` (`devops.pipelines.service_connection`; task 05 creates it with workload identity federation) |
+| GitHub Actions | [`pipelines/github-actions/cicd-infra.yml`](../pipelines/github-actions/cicd-infra.yml), copy to `.github/workflows/` | The environment named by `devops.pipelines.environments.cicd_infra` (repository variable `AZL_ENVIRONMENT_CICD_INFRA`), with required reviewers | `AZL_AUTH_METHOD` (`devops.authentication.method`): OIDC, or the client secret `ARM_CLIENT_SECRET` (`azure/login`) |
+| GitLab CI/CD | [`pipelines/gitlab/stages/deploy-cicd-infra.yml`](../pipelines/gitlab/stages/deploy-cicd-infra.yml), included by one line in `.gitlab-ci.yml`; runs with `CICD_INFRA=true` | Manual job on the protected environment named by `devops.pipelines.environments.cicd_infra` (project variable `AZL_ENVIRONMENT_CICD_INFRA`) | `AZL_AUTH_METHOD`: the GitLab ID token `ARM_OIDC_TOKEN` (OIDC), or the masked `ARM_CLIENT_SECRET` |
+| Azure DevOps | [`pipelines/azure-devops/cicd-infra.yml`](../pipelines/azure-devops/cicd-infra.yml) | Approvals check on the environment you enter as the parameter `approvalEnvironment` (`devops.pipelines.environments.cicd_infra`) | The service connection of the parameter `serviceConnection` (`devops.pipelines.service_connection`; task 05 creates it with workload identity federation); the script follows `AZL_AUTH_METHOD` of the variable group of the parameter `variableGroup` |
 
 All three do the same: validate (format, `terraform validate`, the module tests, the infrastructure file), plan (saved, shown to the approver), a manual approval, and apply of **the plan file that was reviewed** (no new plan). They call task 06, so a pipeline and a workstation run the same code. The first run uses hosted runners, because the self-hosted ones do not exist yet; afterwards choose the self-hosted pool.
 
@@ -154,11 +154,11 @@ Job routing:
 
 | Platform | Linux Azure runner | ZTP runner |
 | --- | --- | --- |
-| GitHub | `runs-on: [self-hosted, linux, "${{ vars.AZL_RUNNER_LABEL }}"]` | `runs-on: [self-hosted, windows, ztp]` |
+| GitHub | `runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]` | `runs-on: [self-hosted, windows, ztp]` |
 | GitLab | `tags: [$AZL_RUNNER_LABEL]` (the tag is set when the runner token is created) | `tags: [ztp, windows]` |
 | Azure DevOps | `pool: name: ${{ parameters.agentPool }}` (`devops.runners[].pool`) | the pool of the ztp runner (demands `ztp`) |
 
-`AZL_RUNNER_LABEL` is `devops.pipelines.runner_label`: one entry of `devops.runners[].labels` of the general runner. Task 05 sets it, and the approval environment variables, from the file as GitHub repository variables or GitLab project variables. Azure DevOps reads the pool and the environment of a job before any variable exists, so there they are run parameters with no default; task 05 prints the values to enter. The pipelines under `pipelines/` hold no runner label, pool or environment name.
+`AZL_RUNNER_LABEL` is `devops.pipelines.runner_label`: one entry of `devops.runners[].labels` of the general runner; `AZL_RUNNER_OS` is its `devops.runners[].os_type`. Task 05 sets them, and the approval environment variables, from the file as GitHub repository variables or GitLab project variables. Azure DevOps reads the pool and the environment of a job before any variable exists, so there they are run parameters with no default; task 05 prints the values to enter. The pipelines under `pipelines/` hold no runner label, pool or environment name.
 
 ## Verify
 

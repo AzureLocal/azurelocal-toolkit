@@ -5,8 +5,13 @@
 validate:connectivity:
   stage: validate-deployment
   script:
-    - pwsh -NoProfile -File scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path "${INFRASTRUCTURE_FILE}"
-    - echo "The post-deployment checks are Invoke-VerifyPostDeployment.ps1 and the scripts of scripts/deploy/06-testing-validation; run them from a jump server that reaches the cluster."
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Modules -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION
+        ./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path $env:AZL_INFRASTRUCTURE_FILE
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        Write-Output "The post-deployment checks are Invoke-VerifyPostDeployment.ps1 and the scripts of scripts/deploy/06-testing-validation; run them from a jump server that reaches the cluster."
+      '
   when: manual
   allow_failure: true
   rules:
@@ -15,14 +20,18 @@ validate:connectivity:
 validate:compliance:
   stage: validate-deployment
   script:
-    - az login --service-principal -u "${ARM_CLIENT_ID}" -p "${ARM_CLIENT_SECRET}" --tenant "${ARM_TENANT_ID}"
-    - az account set --subscription "${ARM_SUBSCRIPTION_ID}"
     - |
-      echo "Checking Azure Policy compliance..."
-      az policy state summarize --subscription "${ARM_SUBSCRIPTION_ID}" --output table
-    - |
-      echo "Checking Defender for Cloud recommendations..."
-      az security assessment list --output table | head -20
+      pwsh -NoProfile -Command '
+        $PSNativeCommandUseErrorActionPreference = $true
+        # The sign-in method of devops.authentication.method: the GitLab ID token (oidc) or the masked client secret (client_secret).
+        if ($env:AZL_AUTH_METHOD -eq "oidc") { az login --service-principal --username $env:ARM_CLIENT_ID --tenant $env:ARM_TENANT_ID --federated-token $env:ARM_OIDC_TOKEN --output none }
+        else { az login --service-principal --username $env:ARM_CLIENT_ID --tenant $env:ARM_TENANT_ID --password $env:ARM_CLIENT_SECRET --output none }
+        az account set --subscription $env:ARM_SUBSCRIPTION_ID
+        Write-Output "Checking Azure Policy compliance..."
+        az policy state summarize --subscription $env:ARM_SUBSCRIPTION_ID --output table
+        Write-Output "Checking Defender for Cloud recommendations..."
+        az security assessment list --output table | Select-Object -First 20
+      '
   when: manual
   allow_failure: true
   rules:

@@ -1,27 +1,29 @@
 # =============================================================================
 # Stage: Deploy Foundation — Terraform Apply (Azure resources)
 # =============================================================================
+# Every script is one pwsh block: Use-AzlGitLabTool.ps1 makes the Terraform version of devops.pipelines.tool_versions the one the job uses.
 
 terraform:apply:
   stage: deploy-foundation
   script:
-    - cd "${TF_ROOT}"
-    - terraform init -input=false
-      -backend-config="resource_group_name=${TF_BACKEND_RG}"
-      -backend-config="storage_account_name=${TF_BACKEND_SA}"
-      -backend-config="container_name=${TF_BACKEND_CONTAINER}"
-      -backend-config="key=${TF_BACKEND_KEY}"
-      -backend-config="use_azuread_auth=true"
-    - terraform apply -auto-approve -input=false tfplan
-  dependencies:
-    - terraform:plan
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Terraform -TerraformVersion $env:AZL_TERRAFORM_VERSION
+        # The sign-in method of devops.authentication.method.
+        if ($env:AZL_AUTH_METHOD -eq "oidc") { $env:ARM_USE_OIDC = "true"; $env:ARM_CLIENT_SECRET = $null } else { $env:ARM_USE_OIDC = "false"; $env:ARM_OIDC_TOKEN = $null }
+        Set-Location $env:TF_ROOT
+        terraform init -input=false "-backend-config=resource_group_name=$env:TF_BACKEND_RG" "-backend-config=storage_account_name=$env:TF_BACKEND_SA" "-backend-config=container_name=$env:TF_BACKEND_CONTAINER" "-backend-config=key=$env:TF_BACKEND_KEY" "-backend-config=use_azuread_auth=true"
+        terraform apply -auto-approve -input=false tfplan
+      '
+  needs:
+    - job: terraform:plan
+      artifacts: true
   environment:
     name: ${AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT} # a project CI/CD variable set by task 05 (devops.pipelines.environments.terraform_deployment)
     action: start
+  # One deployment at a time (GitHub: concurrency group; Azure DevOps: the environment's Exclusive lock). Terraform locks the state too.
+  resource_group: azure-local-deploy
   # No state file as an artifact: the state is in the azurerm backend (TF_BACKEND_*), and a state file holds secrets.
-  artifacts:
-    reports:
-      terraform: "${TF_ROOT}/tfplan.json"
   when: manual
   allow_failure: false
   rules:
@@ -30,16 +32,15 @@ terraform:apply:
 terraform:outputs:
   stage: deploy-foundation
   script:
-    - cd "${TF_ROOT}"
-    - terraform init -input=false
-      -backend-config="resource_group_name=${TF_BACKEND_RG}"
-      -backend-config="storage_account_name=${TF_BACKEND_SA}"
-      -backend-config="container_name=${TF_BACKEND_CONTAINER}"
-      -backend-config="key=${TF_BACKEND_KEY}"
-      -backend-config="use_azuread_auth=true"
-    - terraform output -json > terraform-outputs.json
-  dependencies:
-    - terraform:apply
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Terraform -TerraformVersion $env:AZL_TERRAFORM_VERSION
+        if ($env:AZL_AUTH_METHOD -eq "oidc") { $env:ARM_USE_OIDC = "true"; $env:ARM_CLIENT_SECRET = $null } else { $env:ARM_USE_OIDC = "false"; $env:ARM_OIDC_TOKEN = $null }
+        Set-Location $env:TF_ROOT
+        terraform init -input=false "-backend-config=resource_group_name=$env:TF_BACKEND_RG" "-backend-config=storage_account_name=$env:TF_BACKEND_SA" "-backend-config=container_name=$env:TF_BACKEND_CONTAINER" "-backend-config=key=$env:TF_BACKEND_KEY" "-backend-config=use_azuread_auth=true"
+        terraform output -json | Set-Content -LiteralPath terraform-outputs.json
+      '
+  needs: ["terraform:apply"]
   artifacts:
     paths:
       - "${TF_ROOT}/terraform-outputs.json"

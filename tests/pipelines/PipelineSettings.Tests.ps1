@@ -23,7 +23,7 @@ BeforeDiscovery {
     $script:AllFiles = @($script:GitHubFiles) + @($script:AdoFiles) + @($script:GitLabFiles)
     # the variables the setup (task 05) sets, read from the module: name, key and platforms
     $module = Import-Module ([IO.Path]::Combine($repo, 'scripts', 'common', 'cicd-infra', 'AzlCicdInfra.psm1')) -Force -PassThru
-    $script:SetupData = @(& $module { $script:AzlPipelineVariable } | ForEach-Object { @{ Name = $_.Name; Key = $_.Key; Platforms = @($_.Platforms) } })
+    $script:SetupData = @(& $module { $script:AzlPipelineVariable } | ForEach-Object { @{ Name = $_.Name; Key = $_.Key; Platforms = @($_.Platforms); AzureDevOps = $_.AzureDevOps } })
 }
 
 BeforeAll {
@@ -74,7 +74,7 @@ BeforeAll {
 }
 
 Describe 'GitHub Actions: runner labels and environment names come from the vars context' {
-    It '<File>: runs-on is the hosted image or names the runner label variable, and the environment is an expression' -ForEach $script:GitHubFiles {
+    It '<File>: runs-on is the hosted image or names the runner OS and label variables, and the environment is an expression' -ForEach $script:GitHubFiles {
         $doc = Get-Yaml $File
         foreach ($job in $doc['jobs'].Keys) {
             $j = $doc['jobs'][$job]
@@ -82,9 +82,10 @@ Describe 'GitHub Actions: runner labels and environment names come from the vars
             if ($on -is [System.Collections.IList]) {
                 $on[0] | Should -Be 'self-hosted' -Because "$job lists self-hosted first"
                 $dynamic = @($on | Where-Object { $_ -like '${{*' })
-                $dynamic.Count | Should -BeGreaterThan 0 -Because "$job selects the runner by a variable"
-                $dynamic | ForEach-Object { $_ | Should -Match 'vars\.AZL_RUNNER_LABEL' }
-                @($on | Where-Object { $_ -notlike '${{*' -and $_ -notin 'self-hosted', 'linux' }) | Should -BeNullOrEmpty -Because "$job names no label of its own (self-hosted and linux are GitHub's own labels)"
+                $dynamic.Count | Should -Be 2 -Because "$job selects the runner by its OS (devops.runners[].os_type) and its label (devops.pipelines.runner_label)"
+                $dynamic[0] | Should -Match 'vars\.AZL_RUNNER_OS'
+                $dynamic[1] | Should -Match 'vars\.AZL_RUNNER_LABEL'
+                @($on | Where-Object { $_ -notlike '${{*' -and $_ -ne 'self-hosted' }) | Should -BeNullOrEmpty -Because "$job names no label of its own (self-hosted is GitHub's own label; the OS label is AZL_RUNNER_OS)"
             }
             else {
                 # ubuntu-latest is the vendor's label of its hosted image, not a setting of a deployment
@@ -208,8 +209,15 @@ Describe 'The setup and the pipelines read the same key' {
     It '<Name> is set from <Key>, and the registry entries of every pipeline file that reads it carry the same source_key' -ForEach $script:SetupData {
         $script:MasterPaths.Contains($Key) | Should -BeTrue
         $entries = @($script:Inputs | Where-Object { $_.Name -eq $Name })
-        if ($Platforms -contains 'github' -or $Platforms -contains 'gitlab') { $entries.Count | Should -BeGreaterThan 0 }
+        if ($Platforms -contains 'github' -or $Platforms -contains 'gitlab' -or $AzureDevOps -eq 'Group') { $entries.Count | Should -BeGreaterThan 0 }
         foreach ($e in $entries) { $e.Node['source_key'] | Should -Be $Key -Because "$($e.Area) reads $Name" }
+    }
+    It 'the setup (task 05) writes to the Azure DevOps variable group each AZL_ name an Azure DevOps pipeline reads, and no more' {
+        $read = @(foreach ($f in @($script:RtFiles | Where-Object { $_ -like 'pipelines/azure-devops/*' })) {
+                [regex]::Matches((Get-Text $f), '(?:\$\(|\$env:|variables\[.)(AZL_[A-Z_]+)') | ForEach-Object { $_.Groups[1].Value }
+            }) | Sort-Object -Unique
+        $set = @($script:SetupVariables | Where-Object { $_.Platforms -contains 'azure_devops' -and $_.AzureDevOps -eq 'Group' } | ForEach-Object { $_.Name }) | Sort-Object -Unique
+        $read | Should -Be $set
     }
     It 'the Azure DevOps parameters take the same keys as the setup lists for Azure DevOps' {
         $byKey = @{}
@@ -262,31 +270,43 @@ Describe 'Job timeouts and artifact retention stay in the files, each with a com
         }
     }
     It 'a deployment job timeout cites the Microsoft Learn page on how long a deployment takes, and the wait setting it must exceed' -ForEach @(
-        @{ File = 'pipelines/github-actions/arm-deployment.yml'; Pattern = 'timeout-minutes: 420' }
-        @{ File = 'pipelines/azure-devops/arm-deployment.yml'; Pattern = 'timeoutInMinutes: 480' }
-        @{ File = 'pipelines/gitlab/stages/arm-deployment.yml'; Pattern = 'timeout: 7 hours' }
+        @{ File = 'pipelines/github-actions/arm-deployment.yml'; Pattern = 'timeout-minutes: ${{ fromJSON(vars.AZL_DEPLOY_JOB_TIMEOUT_MINUTES) }}' }
+        @{ File = 'pipelines/azure-devops/arm-deployment.yml'; Pattern = 'timeoutInMinutes: 1500' }
+        @{ File = 'pipelines/gitlab/stages/arm-deployment.yml'; Pattern = 'timeout: 25 hours' }
     ) {
         $lines = (Get-Text $File) -split "`r?`n"
-        $at = 0..($lines.Count - 1) | Where-Object { $lines[$_] -match [regex]::Escape($Pattern) } | Select-Object -First 1
+        $at = 0..($lines.Count - 1) | Where-Object { $lines[$_] -match [regex]::Escape($Pattern) } | Select-Object -Last 1
         $at | Should -Not -BeNullOrEmpty
         $above = ($lines[([Math]::Max(0, $at - 4))..($at - 1)]) -join "`n"
         $above | Should -Match 'learn\.microsoft\.com/azure/azure-local/deploy/deployment-azure-resource-manager-template'
         $above | Should -Match 'deployment\.deploy_timeout_minutes'
     }
-    It 'the timeout of the longest job is longer than the wait of the script it runs (deployment.deploy_timeout_minutes, default 360)' {
-        $entry = @($script:Registry | Where-Object { $_.Path -like '*deploy_timeout_minutes' -and $_.Node.Contains('default') })
-        $entry.Count | Should -BeGreaterThan 0
-        $default = [int]$entry[0].Node['default']
-        $default | Should -Be 360
-        [int][regex]::Match((Get-Text 'pipelines/github-actions/arm-deployment.yml'), 'timeout-minutes: (4\d\d)').Groups[1].Value | Should -BeGreaterThan $default
-        [int][regex]::Match((Get-Text 'pipelines/azure-devops/arm-deployment.yml'), 'timeoutInMinutes: (4\d\d)').Groups[1].Value | Should -BeGreaterThan $default
+    It 'GitHub derives the Validate and Deploy job timeouts from the file; Azure DevOps and GitLab hold one fixed upper bound above the largest wait the file allows' {
+        $validate = @($script:Registry | Where-Object { $_.Path -eq 'deployment.validate_timeout_minutes' })[0].Node
+        $deploy = @($script:Registry | Where-Object { $_.Path -eq 'deployment.deploy_timeout_minutes' })[0].Node
+        [int]$deploy['default'] | Should -Be 360
+        $github = Get-Yaml 'pipelines/github-actions/arm-deployment.yml'
+        $github['jobs']['validate']['timeout-minutes'] | Should -Be '${{ fromJSON(vars.AZL_VALIDATE_JOB_TIMEOUT_MINUTES) }}'
+        $github['jobs']['deploy']['timeout-minutes'] | Should -Be '${{ fromJSON(vars.AZL_DEPLOY_JOB_TIMEOUT_MINUTES) }}'
+        # task 05: the wait plus the toolkit's margin
+        $margin = & $script:Module { $script:AzlJobTimeoutMarginMinutes }
+        $s = ConvertTo-AzlCicdSetting -Infrastructure ([ordered]@{ devops = [ordered]@{ platform = 'github' }; deployment = [ordered]@{ validate_timeout_minutes = 45; deploy_timeout_minutes = 400 } })
+        $v = @(Get-AzlCicdPipelineInput -Settings $s)
+        ($v | Where-Object Name -EQ 'AZL_VALIDATE_JOB_TIMEOUT_MINUTES').Value | Should -Be ([string](45 + $margin))
+        ($v | Where-Object Name -EQ 'AZL_DEPLOY_JOB_TIMEOUT_MINUTES').Value | Should -Be ([string](400 + $margin))
+        # the one fixed bound of Azure DevOps and GitLab: the largest wait either key allows, plus the margin
+        $bound = [Math]::Max([int]$validate['maximum'], [int]$deploy['maximum']) + $margin
+        $ado = Get-Text 'pipelines/azure-devops/arm-deployment.yml'
+        $gitlab = Get-Yaml 'pipelines/gitlab/stages/arm-deployment.yml'
+        @([regex]::Matches($ado, 'timeoutInMinutes: (\d+)') | ForEach-Object { [int]$_.Groups[1].Value } | Where-Object { $_ -gt 30 }) | Should -Be @($bound, $bound)
+        foreach ($j in 'arm-validate', 'arm-deploy') { $gitlab[$j]['timeout'] | Should -Be "$($bound / 60) hours" }
     }
 }
 
 Describe 'The Terraform state of the azure-local pipelines (registry 5.0.61)' {
     It '<_> passes the four TF_BACKEND_* values to terraform init and names no container or state file itself' -ForEach @(
         'pipelines/azure-devops/azure-local-deploy.yml', 'pipelines/github-actions/azure-local-deploy.yml',
-        'pipelines/gitlab/templates/terraform-plan-apply.yml', 'pipelines/gitlab/stages/validate.yml', 'pipelines/gitlab/stages/deploy-foundation.yml') {
+        'pipelines/gitlab/stages/validate.yml', 'pipelines/gitlab/stages/deploy-foundation.yml') {
         $text = Get-Text $_
         foreach ($name in 'TF_BACKEND_RG', 'TF_BACKEND_SA', 'TF_BACKEND_CONTAINER', 'TF_BACKEND_KEY') { $text | Should -Match $name -Because "$_ reads $name" }
         $text | Should -Not -Match "(?m)(ContainerName|container_name)[:=]\s*'?tfstate"
@@ -294,27 +314,29 @@ Describe 'The Terraform state of the azure-local pipelines (registry 5.0.61)' {
         $text | Should -Not -Match 'TF_STATE_NAME'
     }
     It 'every terraform init of the azure-local pipelines either skips the backend or passes the state key' {
-        foreach ($file in 'pipelines/github-actions/azure-local-deploy.yml', 'pipelines/gitlab/stages/validate.yml', 'pipelines/gitlab/stages/deploy-foundation.yml', 'pipelines/gitlab/templates/terraform-plan-apply.yml') {
+        foreach ($file in 'pipelines/github-actions/azure-local-deploy.yml', 'pipelines/gitlab/stages/validate.yml', 'pipelines/gitlab/stages/deploy-foundation.yml') {
             $lines = (Get-Text $file) -split '\r?\n'
             for ($i = 0; $i -lt $lines.Count; $i++) {
                 if ($lines[$i] -cmatch 'terraform init' -and $lines[$i] -notmatch '-backend=false') {
-                    (($lines[$i..([Math]::Min($i + 7, $lines.Count - 1))]) -join "`n") | Should -Match 'key=\$\{\{ vars\.TF_BACKEND_KEY \}\}|key=\$\{TF_BACKEND_KEY\}' -Because "$file line $($i + 1)"
+                    (($lines[$i..([Math]::Min($i + 7, $lines.Count - 1))]) -join "`n") | Should -Match 'key=\$\{\{ vars\.TF_BACKEND_KEY \}\}|key=\$\{TF_BACKEND_KEY\}|key=\$env:TF_BACKEND_KEY' -Because "$file line $($i + 1)"
                 }
             }
         }
     }
-    It 'task 05 sets TF_BACKEND_CONTAINER and TF_BACKEND_KEY with the registry defaults' {
+    It 'task 05 sets TF_BACKEND_CONTAINER and TF_BACKEND_KEY from devops.state.container and devops.state.azure_local_key, with the registry defaults' {
         $settings = @{ State = @{ resource_group = 'rg-iic-tfstate'; storage_account = 'stiictfstate01' }; Authentication = @{ Method = 'oidc' }; TenantId = [guid]::Empty.ToString(); AzureSubscriptionId = [guid]::Empty.ToString() }
         $plan = @(& $script:Module { param($s) Get-AzlCicdVariablePlan -Settings $s -ClientId 'x' } $settings)
         $container = @($script:Registry | Where-Object Path -EQ 'devops.state.container')[0].Node['default']
-        $key = @($script:Registry | Where-Object Path -EQ 'tools.terraform.variables.src_terraform_environments_azure_local_backend_hcl.backend_key')[0].Node['default']
+        $key = @($script:Registry | Where-Object Path -EQ 'devops.state.azure_local_key')[0].Node['default']
         $container | Should -Be 'tfstate'
         $key | Should -Be 'azure-local.tfstate'
         ($plan | Where-Object Name -EQ 'TF_BACKEND_CONTAINER').Value | Should -Be $container
         ($plan | Where-Object Name -EQ 'TF_BACKEND_KEY').Value | Should -Be $key
         $settings.State.container = 'state-iic'
+        $settings.State.azure_local_key = 'iic/azure-local.tfstate'
         $plan = @(& $script:Module { param($s) Get-AzlCicdVariablePlan -Settings $s -ClientId 'x' } $settings)
         ($plan | Where-Object Name -EQ 'TF_BACKEND_CONTAINER').Value | Should -Be 'state-iic'
+        ($plan | Where-Object Name -EQ 'TF_BACKEND_KEY').Value | Should -Be 'iic/azure-local.tfstate'
     }
     It 'task 05 sets no state variable when the file names no state storage account' {
         $settings = @{ State = @{}; Authentication = @{ Method = 'oidc' }; TenantId = [guid]::Empty.ToString(); AzureSubscriptionId = [guid]::Empty.ToString() }

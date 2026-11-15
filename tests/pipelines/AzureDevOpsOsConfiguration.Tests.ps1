@@ -69,21 +69,25 @@ Describe 'Azure DevOps OS configuration pipeline: shape' {
     }
     It 'asks for the parameters of the task, with safe defaults' {
         $p = @{}; foreach ($x in $script:Ado['parameters']) { $p[$x['name']] = $x }
-        foreach ($n in 'infrastructure_file', 'handoff_path', 'nodes', 'steps', 'mode', 'transport', 'approved_bootstrap', 'clear_storage', 'agent_pool', 'service_connection') { $p.Keys | Should -Contain $n }
+        foreach ($n in 'infrastructure_file', 'handoff_path', 'nodes', 'steps', 'mode', 'approved_bootstrap', 'agent_pool', 'service_connection') { $p.Keys | Should -Contain $n }
         $p['mode']['default'] | Should -Be 'Plan'
-        $p['transport']['default'] | Should -Be 'WinRM'
         $p['approved_bootstrap']['type'] | Should -Be 'boolean'
         $p['approved_bootstrap']['default'] | Should -BeFalse
-        $p['clear_storage']['type'] | Should -Be 'boolean'
-        $p['clear_storage']['default'] | Should -BeFalse
         foreach ($n in 'nodes', 'steps') { $p[$n]['default'] | Should -Be 'all' }
+        # the paths are devops.pipelines.infrastructure_file and handoff_path: run parameters with no default
+        foreach ($n in 'infrastructure_file', 'handoff_path') { $p[$n].Contains('default') | Should -BeFalse -Because $n }
     }
-    It 'offers only modes and transports the entry point accepts, and never Auto for the transport (no silent Arc)' {
+    It 'has no transport or storage wipe parameter: the script reads os_configuration.remoting.transport and os_configuration.clear_storage from the file' {
+        $p = @{}; foreach ($x in $script:Ado['parameters']) { $p[$x['name']] = $x }
+        $p.Keys | Should -Not -Contain 'transport'
+        $p.Keys | Should -Not -Contain 'clear_storage'
+        $script:Text | Should -Not -Match 'OSC_TRANSPORT|OSC_CLEAR_STORAGE'
+    }
+    It 'offers only modes the entry point accepts' {
         $p = @{}; foreach ($x in $script:Ado['parameters']) { $p[$x['name']] = $x }
         @($p['mode']['values']) | Should -Be @('Plan', 'Apply')
         foreach ($m in $p['mode']['values']) { $script:WrapperModes | Should -Contain $m }
-        @($p['transport']['values']) | Should -Be @('WinRM', 'ArcRunCommand')
-        foreach ($t in $p['transport']['values']) { $script:WrapperTransports | Should -Contain $t }
+        $script:WrapperTransports | Should -Contain 'Auto'
     }
     It 'documents every step name the entry point accepts' {
         $steps = ($script:Ado['parameters'] | Where-Object { $_['name'] -eq 'steps' })['displayName']
@@ -105,14 +109,19 @@ Describe 'Azure DevOps OS configuration pipeline: approval gates' {
         @($apply['dependsOn']) | Should -Contain 'Plan'
         $apply['condition'] | Should -Match "parameters\.mode.*'Apply'"
     }
-    It 'a storage wipe has its own second environment, only for Apply with clear_storage on' {
+    It 'a storage wipe has its own second environment, only for Apply with os_configuration.clear_storage true in the file' {
         $confirm = $script:Ado['stages'] | Where-Object { $_['stage'] -eq 'ConfirmStorageWipe' }
         $apply = $script:Ado['stages'] | Where-Object { $_['stage'] -eq 'Apply' }
         $confirm['jobs'][0].Contains('deployment') | Should -BeTrue
         $confirm['jobs'][0]['environment'] | Should -Be '${{ parameters.clear_storage_approval_environment }}'
         $confirm['jobs'][0]['environment'] | Should -Not -Be $apply['jobs'][0]['environment']
         $confirm['condition'] | Should -Match "parameters\.mode.*'Apply'"
-        $confirm['condition'] | Should -Match "parameters\.clear_storage.*'true'"
+        $confirm['condition'] | Should -Match "dependencies\.Plan\.outputs\['Plan\.storage\.clearStorage'\], 'true'"
+        $plan = $script:Ado['stages'] | Where-Object { $_['stage'] -eq 'Plan' }
+        $read = @(Get-StageStep $plan | Where-Object { $_['name'] -eq 'storage' })
+        $read.Count | Should -Be 1
+        $read[0]['pwsh'] | Should -Match "os_configuration'\]\['clear_storage'\]"
+        $read[0]['pwsh'] | Should -Match 'task\.setvariable variable=clearStorage;isOutput=true'
         @($confirm['dependsOn']) | Should -Contain 'Plan'
     }
     It 'Apply waits for the wipe confirmation (a rejection stops it), and only a skipped confirmation lets it pass' {
@@ -158,7 +167,8 @@ Describe 'Azure DevOps OS configuration pipeline: the approval of the storage wi
 Describe 'Azure DevOps OS configuration pipeline: the entry point and PowerShell 7' {
     It 'the entry point has every parameter the pipeline passes (<Stage>)' -ForEach @(@{ Stage = 'Plan' }, @{ Stage = 'Apply' }) {
         $used = @(Get-UsedEntryParameter (Get-AzureStep $Stage)['inputs']['Inline'])
-        foreach ($n in 'InfrastructureFile', 'Mode', 'Transport', 'ReportDirectory', 'EventLogPath', 'HandoffPath', 'Node', 'Step', 'ClearStorage') { $used | Should -Contain $n }
+        foreach ($n in 'InfrastructureFile', 'Mode', 'ReportDirectory', 'EventLogPath', 'HandoffPath', 'Node', 'Step') { $used | Should -Contain $n }
+        foreach ($n in 'Transport', 'ClearStorage') { $used | Should -Not -Contain $n -Because 'the script reads it from the master file' }
         foreach ($u in $used) { $script:EntryParameters | Should -Contain $u }
         if ($Stage -eq 'Apply') { foreach ($n in 'ApprovedBootstrap', 'ApprovedWipeList', 'ConfirmWipeDeployedCluster') { $used | Should -Contain $n } }
     }

@@ -4,11 +4,16 @@
 # Task 06 of automation / 01-cicd-infra as a pipeline: validate, terraform plan,
 # manual approval (environment check), terraform apply of the reviewed plan.
 #
-# Sign-in: the workload identity federation service connection of the parameter serviceConnection (devops.pipelines.service_connection;
-# made by task 05). No client secret. The identity needs Storage Blob Data Contributor on
-# the state account, and the roles in docs/cicd-infra-deployment.md.
-# Environment:  the parameter approvalEnvironment (devops.pipelines.environments.cicd_infra), with an Approvals check (the manual approval)
-# Variable:     RUNNER_SSH_PUBLIC_KEY (the public key for the Linux runners)
+# Sign-in: the service connection of the parameter serviceConnection (devops.pipelines.service_connection; made by task 05 with workload
+# identity federation when devops.authentication.method is oidc). The scripts follow AZL_AUTH_METHOD (devops.authentication.method) from the
+# variable group: oidc takes the federated token of the service connection, client_secret its secret. The identity needs Storage Blob Data
+# Contributor on the state account, and the roles in docs/cicd-infra-deployment.md.
+# Environment:    the parameter approvalEnvironment (devops.pipelines.environments.cicd_infra), with an Approvals check (the manual approval)
+# Variable group: the parameter variableGroup (devops.pipelines.variable_group, <name>-<environment>). Task 05 writes to it AZL_AUTH_METHOD,
+#                 AZL_RUNNER_SSH_PUBLIC_KEY (devops.runners[].admin_ssh_public_key of the Linux runner, a public key), AZL_TERRAFORM_VERSION
+#                 and AZL_POWERSHELL_YAML_VERSION (devops.pipelines.tool_versions.*).
+# Infrastructure file: the parameter infrastructureFile (devops.pipelines.infrastructure_file). Task 05 lists every value to enter.
+# Requirements: the Terraform extension from the marketplace (TerraformInstaller@1).
 #
 # Where it runs: the first time on Microsoft-hosted agents (there are no agents yet);
 # set the agentPool parameter to the pool of the agents (devops.runners[].pool of the general runner) after the agents exist.
@@ -18,18 +23,20 @@
 # ${{ variables.name }} does not see variables stored on the pipeline or in a library
 # (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So both are runtime parameters (${{ parameters.name }}).
 # =============================================================================
-# Hosted image: ubuntu-latest is the vendor's label of its hosted Linux image. The jobs that use it only validate and plan and read nothing that
-# belongs to one deployment, so the label is not a setting of a deployment.
+# Hosted image: ubuntu-latest is the vendor's label of its hosted Linux image, a platform choice and not a setting of a deployment. The
+# Validate stage only validates; Plan and Apply use it only for the first run (agentPool hosted), before the self-hosted agents exist.
 name: cicd-infra-$(Date:yyyyMMdd)$(Rev:.r)
 
 trigger: none
 pr: none
 
+# Runs queue one after the other, as GitHub's concurrency group and GitLab's resource_group. Terraform locks the state too.
+lockBehavior: sequential
+
 parameters:
   - name: infrastructureFile
-    displayName: Path of infrastructure.yml in the repository
+    displayName: Path of infrastructure.yml in the repository. Enter devops.pipelines.infrastructure_file
     type: string
-    default: config/infrastructure.yml
   - name: agentPool
     displayName: Agent pool. hosted for the first run (Microsoft-hosted ubuntu-latest), then devops.runners[].pool of the general runner
     type: string
@@ -39,7 +46,10 @@ parameters:
     type: string
     default: ''
   - name: serviceConnection
-    displayName: Azure service connection (workload identity federation). Enter devops.pipelines.service_connection
+    displayName: Azure service connection. Enter devops.pipelines.service_connection
+    type: string
+  - name: variableGroup
+    displayName: Variable group with the sign-in method, the tool versions and the runner public key. Enter devops.pipelines.variable_group (with environments, <name>-<environment>)
     type: string
   - name: apply
     displayName: Also run the apply stage (it waits for approval)
@@ -47,6 +57,7 @@ parameters:
     default: false
 
 variables:
+  - group: ${{ parameters.variableGroup }}
   - name: TF_ROOT
     value: src/terraform/environments/cicd-infra
   - name: TASK06
@@ -57,32 +68,44 @@ variables:
 stages:
   - stage: Validate
     displayName: Validate
+    # Validates only: the hosted image is a platform choice.
     pool:
       vmImage: ubuntu-latest
     jobs:
       - job: validate
         steps:
           - checkout: self
-          - script: terraform fmt -check -recursive src/terraform/modules/cicd-runner $(TF_ROOT)
+          - task: TerraformInstaller@1
+            displayName: Install Terraform (devops.pipelines.tool_versions.terraform)
+            inputs:
+              terraformVersion: $(AZL_TERRAFORM_VERSION)
+          - pwsh: |
+              $PSNativeCommandUseErrorActionPreference = $true
+              terraform fmt -check -recursive src/terraform/modules/cicd-runner $(TF_ROOT)
             displayName: Terraform format
-          - script: |
+          - pwsh: |
+              $PSNativeCommandUseErrorActionPreference = $true
               terraform init -backend=false -input=false
               terraform validate
             workingDirectory: $(TF_ROOT)
             displayName: Terraform validate (environment)
-          - script: |
+          - pwsh: |
+              $PSNativeCommandUseErrorActionPreference = $true
               terraform init -backend=false -input=false
               terraform test
             workingDirectory: src/terraform/modules/cicd-runner
             displayName: Terraform test (module, mocked providers)
           - pwsh: |
-              Install-Module powershell-yaml -Force -Scope CurrentUser
-              ./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path '${{ parameters.infrastructureFile }}'
+              Install-Module powershell-yaml -RequiredVersion $env:AZL_POWERSHELL_YAML_VERSION -Force -Scope CurrentUser -Repository PSGallery
+              ./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path $env:CICD_INFRASTRUCTURE_FILE
             displayName: Check infrastructure.yml
+            env:
+              CICD_INFRASTRUCTURE_FILE: ${{ parameters.infrastructureFile }}
 
   - stage: Plan
     displayName: Plan
     dependsOn: Validate
+    # The first run has no self-hosted agent yet, so it runs on the hosted image; later runs name the pool.
     ${{ if eq(parameters.agentPool, 'hosted') }}:
       pool:
         vmImage: ubuntu-latest
@@ -97,22 +120,29 @@ stages:
         timeoutInMinutes: 60
         steps:
           - checkout: self
+          - task: TerraformInstaller@1
+            displayName: Install Terraform (devops.pipelines.tool_versions.terraform)
+            inputs:
+              terraformVersion: $(AZL_TERRAFORM_VERSION)
           - task: AzureCLI@2
             displayName: Plan (nothing changes in Azure)
             inputs:
               azureSubscription: ${{ parameters.serviceConnection }}
               scriptType: pscore
               scriptLocation: inlineScript
-              addSpnToEnvironment: true # exposes $env:servicePrincipalId, $env:idToken, $env:tenantId
+              addSpnToEnvironment: true # exposes $env:servicePrincipalId, $env:tenantId and $env:idToken (federation) or $env:servicePrincipalKey (secret)
               inlineScript: |
-                Install-Module powershell-yaml -Force -Scope CurrentUser
-                $env:ARM_USE_OIDC = 'true'
+                Install-Module powershell-yaml -RequiredVersion $env:AZL_POWERSHELL_YAML_VERSION -Force -Scope CurrentUser -Repository PSGallery
                 $env:ARM_CLIENT_ID = $env:servicePrincipalId
                 $env:ARM_TENANT_ID = $env:tenantId
-                $env:ARM_OIDC_TOKEN = $env:idToken
-                $env:AZL_RUNNER_SSH_PUBLIC_KEY = '$(RUNNER_SSH_PUBLIC_KEY)'
-                & './$(TASK06)' -InfrastructureFile '${{ parameters.infrastructureFile }}' -WorkingDirectory '$(WORK)'
+                # The sign-in method of devops.authentication.method (AZL_AUTH_METHOD from the variable group).
+                if ($env:AZL_AUTH_METHOD -eq 'client_secret') { $env:ARM_CLIENT_SECRET = $env:servicePrincipalKey } else { $env:ARM_USE_OIDC = 'true'; $env:ARM_OIDC_TOKEN = $env:idToken }
+                & './$(TASK06)' -InfrastructureFile $env:CICD_INFRASTRUCTURE_FILE -WorkingDirectory '$(WORK)'
                 terraform -chdir='$(TF_ROOT)' show -no-color '$(WORK)/cicd-infra.tfplan' | Tee-Object '$(WORK)/plan.txt'
+            env:
+              CICD_INFRASTRUCTURE_FILE: ${{ parameters.infrastructureFile }}
+              # The public key of the Linux runners task 06 writes to the Terraform variables (from the variable group).
+              AZL_RUNNER_SSH_PUBLIC_KEY: $(AZL_RUNNER_SSH_PUBLIC_KEY)
           - publish: $(WORK)
             artifact: cicd-infra-plan
             displayName: Keep the reviewed plan
@@ -121,6 +151,7 @@ stages:
       - stage: Apply
         displayName: Apply (needs approval)
         dependsOn: Plan
+        # The same pool choice as the Plan stage: the first run has no self-hosted agent yet.
         ${{ if eq(parameters.agentPool, 'hosted') }}:
           pool:
             vmImage: ubuntu-latest
@@ -141,6 +172,10 @@ stages:
                     - checkout: self
                     - download: current
                       artifact: cicd-infra-plan
+                    - task: TerraformInstaller@1
+                      displayName: Install Terraform (devops.pipelines.tool_versions.terraform)
+                      inputs:
+                        terraformVersion: $(AZL_TERRAFORM_VERSION)
                     - task: AzureCLI@2
                       displayName: Apply the reviewed plan
                       inputs:
@@ -149,9 +184,11 @@ stages:
                         scriptLocation: inlineScript
                         addSpnToEnvironment: true
                         inlineScript: |
-                          Install-Module powershell-yaml -Force -Scope CurrentUser
-                          $env:ARM_USE_OIDC = 'true'
+                          Install-Module powershell-yaml -RequiredVersion $env:AZL_POWERSHELL_YAML_VERSION -Force -Scope CurrentUser -Repository PSGallery
                           $env:ARM_CLIENT_ID = $env:servicePrincipalId
                           $env:ARM_TENANT_ID = $env:tenantId
-                          $env:ARM_OIDC_TOKEN = $env:idToken
-                          & './$(TASK06)' -InfrastructureFile '${{ parameters.infrastructureFile }}' -PlanFile '$(Pipeline.Workspace)/cicd-infra-plan/cicd-infra.tfplan' -Apply
+                          # The sign-in method of devops.authentication.method (AZL_AUTH_METHOD from the variable group).
+                          if ($env:AZL_AUTH_METHOD -eq 'client_secret') { $env:ARM_CLIENT_SECRET = $env:servicePrincipalKey } else { $env:ARM_USE_OIDC = 'true'; $env:ARM_OIDC_TOKEN = $env:idToken }
+                          & './$(TASK06)' -InfrastructureFile $env:CICD_INFRASTRUCTURE_FILE -PlanFile '$(Pipeline.Workspace)/cicd-infra-plan/cicd-infra.tfplan' -Apply
+                      env:
+                        CICD_INFRASTRUCTURE_FILE: ${{ parameters.infrastructureFile }}

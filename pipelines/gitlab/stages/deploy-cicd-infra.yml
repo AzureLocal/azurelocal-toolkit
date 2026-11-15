@@ -5,51 +5,50 @@
 # the pipeline is started with CICD_INFRA=true (Run pipeline, or a schedule
 # variable), so they never run with the Azure Local deployment pipeline.
 #
-# Sign-in: OIDC with a GitLab ID token (the federated credential made by task 01).
-# CI/CD variables (task 05):   ARM_TENANT_ID, ARM_SUBSCRIPTION_ID, ARM_CLIENT_ID, ARM_USE_OIDC=true
-# Pipeline variables:
-#   CICD_INFRA=true            run these jobs
-#   CICD_INFRASTRUCTURE_FILE   path of infrastructure.yml (default config/infrastructure.yml)
-#   AZL_RUNNER_LABEL           the runner tag (devops.pipelines.runner_label), a project variable set by task 05. For the very first run,
-#                              before the runners exist, give AZL_RUNNER_LABEL a shared runner tag when you run the pipeline.
-#   AZL_ENVIRONMENT_CICD_INFRA the protected environment of the apply job (devops.pipelines.environments.cicd_infra), set by task 05.
-#                              tags: and environment:name expand CI/CD variables (https://docs.gitlab.com/ci/variables/where_variables_can_be_used/).
-#   RUNNER_SSH_PUBLIC_KEY      the public key for the Linux runners (a public key)
+# Sign-in: AZL_AUTH_METHOD (devops.authentication.method). oidc: the GitLab ID token ARM_OIDC_TOKEN (the federated credential made by task 01);
+# client_secret: the masked variable ARM_CLIENT_SECRET. Task 05 sets ARM_TENANT_ID, ARM_SUBSCRIPTION_ID, ARM_CLIENT_ID and AZL_AUTH_METHOD.
+# Project CI/CD variables (task 05 sets each from infrastructure.yml; tags: and environment:name expand CI/CD variables,
+# https://docs.gitlab.com/ci/variables/where_variables_can_be_used/):
+#   AZL_RUNNER_LABEL           the runner tag (devops.pipelines.runner_label). For the very first run, before the runners exist, give
+#                              AZL_RUNNER_LABEL a shared runner tag when you run the pipeline.
+#   AZL_ENVIRONMENT_CICD_INFRA the protected environment of the apply job (devops.pipelines.environments.cicd_infra)
+#   AZL_INFRASTRUCTURE_FILE    devops.pipelines.infrastructure_file
+#   AZL_RUNNER_SSH_PUBLIC_KEY  devops.runners[].admin_ssh_public_key of the Linux runner (a public key)
+#   AZL_TERRAFORM_VERSION, AZL_POWERSHELL_YAML_VERSION  devops.pipelines.tool_versions.terraform and .powershell_yaml
+# Pipeline variable: CICD_INFRA=true runs these jobs.
 # Protect the approval environment with an approval rule (task 04 creates it), so the apply waits for a reviewer.
 # Reuses the stages of .gitlab-ci.yml: validate, plan and deploy-foundation.
 # =============================================================================
 
 .cicd-infra:base:
   variables:
-    CICD_INFRASTRUCTURE_FILE: "config/infrastructure.yml"
     CICD_TF_ROOT: "${CI_PROJECT_DIR}/src/terraform/environments/cicd-infra"
     CICD_WORK: "${CI_PROJECT_DIR}/.cicd-infra"
     CICD_TASK06: "scripts/deploy/01-cicd-infra/phase-01-cicd-setup/task-06-deploy-runners/powershell/Deploy-CicdRunners.ps1"
-    ARM_USE_OIDC: "true"
     TF_IN_AUTOMATION: "true"
   tags:
     - ${AZL_RUNNER_LABEL}
+  # One CI/CD infrastructure run at a time (GitHub: concurrency group; Azure DevOps: lockBehavior). Terraform locks the state too.
+  resource_group: azure-local-cicd-infra
   rules:
     - if: '$CICD_INFRA == "true"'
   id_tokens:
     ARM_OIDC_TOKEN:
       aud: api://AzureADTokenExchange
-  before_script:
-    # A runner made by the cicd-runner module has these tools. Shared runners get what is missing.
-    - command -v terraform >/dev/null || { curl -fsSL -o /tmp/tf.zip "https://releases.hashicorp.com/terraform/1.16.3/terraform_1.16.3_linux_amd64.zip" && unzip -o /tmp/tf.zip -d /usr/local/bin; }
-    - command -v pwsh >/dev/null || { echo "PowerShell 7 is needed on the runner"; exit 1; }
-    - pwsh -NoProfile -Command "Install-PSResource powershell-yaml -TrustRepository -Scope CurrentUser -ErrorAction Stop" || pwsh -NoProfile -Command "Install-Module powershell-yaml -Force -Scope CurrentUser"
-    - export AZL_RUNNER_SSH_PUBLIC_KEY="${RUNNER_SSH_PUBLIC_KEY}"
-    - mkdir -p "${CICD_WORK}"
 
 cicd-infra:validate:
   extends: .cicd-infra:base
   stage: validate
   script:
-    - terraform fmt -check -recursive src/terraform/modules/cicd-runner src/terraform/environments/cicd-infra
-    - (cd "${CICD_TF_ROOT}" && terraform init -backend=false -input=false && terraform validate)
-    - (cd src/terraform/modules/cicd-runner && terraform init -backend=false -input=false && terraform test)
-    - pwsh -NoProfile -File scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path "${CICD_INFRASTRUCTURE_FILE}"
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Terraform, Modules -TerraformVersion $env:AZL_TERRAFORM_VERSION -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION
+        terraform fmt -check -recursive src/terraform/modules/cicd-runner src/terraform/environments/cicd-infra
+        Push-Location $env:CICD_TF_ROOT; terraform init -backend=false -input=false; terraform validate; Pop-Location
+        Push-Location src/terraform/modules/cicd-runner; terraform init -backend=false -input=false; terraform test; Pop-Location
+        ./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path $env:AZL_INFRASTRUCTURE_FILE
+        exit $LASTEXITCODE
+      '
 
 cicd-infra:plan:
   extends: .cicd-infra:base
@@ -58,9 +57,17 @@ cicd-infra:plan:
   # terraform init, validate and plan of the runner VMs and their network: the toolkit's limit, not a figure from Microsoft.
   timeout: 1h
   script:
-    # Nothing changes in Azure: init, validate and plan, with the plan saved.
-    - pwsh -NoProfile -File "${CICD_TASK06}" -InfrastructureFile "${CICD_INFRASTRUCTURE_FILE}" -WorkingDirectory "${CICD_WORK}"
-    - (cd "${CICD_TF_ROOT}" && terraform show -no-color "${CICD_WORK}/cicd-infra.tfplan" | tee "${CICD_WORK}/plan.txt")
+    # Nothing changes in Azure: init, validate and plan, with the plan saved. Task 06 reads AZL_RUNNER_SSH_PUBLIC_KEY.
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Terraform, Modules -TerraformVersion $env:AZL_TERRAFORM_VERSION -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION
+        # The sign-in method of devops.authentication.method.
+        if ($env:AZL_AUTH_METHOD -eq "oidc") { $env:ARM_USE_OIDC = "true"; $env:ARM_CLIENT_SECRET = $null } else { $env:ARM_USE_OIDC = "false"; $env:ARM_OIDC_TOKEN = $null }
+        $null = New-Item -ItemType Directory -Path $env:CICD_WORK -Force
+        & $env:CICD_TASK06 -InfrastructureFile $env:AZL_INFRASTRUCTURE_FILE -WorkingDirectory $env:CICD_WORK
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        terraform "-chdir=$env:CICD_TF_ROOT" show -no-color "$env:CICD_WORK/cicd-infra.tfplan" | Tee-Object -FilePath "$env:CICD_WORK/plan.txt"
+      '
   artifacts:
     paths:
       - .cicd-infra/cicd-infra.tfplan
@@ -77,7 +84,14 @@ cicd-infra:apply:
   timeout: 2h
   script:
     # Applies the plan that was reviewed. It makes no new plan.
-    - pwsh -NoProfile -File "${CICD_TASK06}" -InfrastructureFile "${CICD_INFRASTRUCTURE_FILE}" -PlanFile "${CICD_WORK}/cicd-infra.tfplan" -Apply
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Terraform, Modules -TerraformVersion $env:AZL_TERRAFORM_VERSION -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION
+        # The sign-in method of devops.authentication.method.
+        if ($env:AZL_AUTH_METHOD -eq "oidc") { $env:ARM_USE_OIDC = "true"; $env:ARM_CLIENT_SECRET = $null } else { $env:ARM_USE_OIDC = "false"; $env:ARM_OIDC_TOKEN = $null }
+        & $env:CICD_TASK06 -InfrastructureFile $env:AZL_INFRASTRUCTURE_FILE -PlanFile "$env:CICD_WORK/cicd-infra.tfplan" -Apply
+        exit $LASTEXITCODE
+      '
   environment:
     name: ${AZL_ENVIRONMENT_CICD_INFRA}
   rules:

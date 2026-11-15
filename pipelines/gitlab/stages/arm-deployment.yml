@@ -16,21 +16,24 @@
 #                                          plays it. It checks every precondition and that these parameters validated.
 #                                          ARM_RESUME=true resubmits a failed Deploy.
 #
-# CI/CD variables (Settings > CI/CD > Variables; the values below are placeholders, set the real ones there)
-#   ARM_MODE               Plan | Validate | ValidateAndDeploy | Deploy   (a pipeline run from the web form offers the list)
-#   AZURE_AUTH             oidc (a federated app registration) or managed-identity (the runner's managed identity)
-#   AZURE_CLIENT_ID, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
-#   INFRASTRUCTURE_FILE    path of the master infrastructure.yml in the repository
-#   OS_CONFIGURATION_REPORT path of the OS configuration report directory (the artifact of the OS configuration pipeline: add
-#                          `needs: [{ pipeline: ..., job: ..., artifacts: true }]` or `dependencies` to the jobs below)
+# Project CI/CD variables: task 05 of the CI/CD setup sets each from infrastructure.yml; no value is in this file. tags: and environment:name
+# expand CI/CD variables (https://docs.gitlab.com/ci/variables/where_variables_can_be_used/).
+#   ARM_CLIENT_ID, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID  azure.automation_identity, azure.tenant_id, azure.subscription_id
+#   AZL_AUTH_METHOD        devops.authentication.method: oidc (the GitLab ID token ARM_OIDC_TOKEN and the federated credential of task 01)
+#                          or client_secret (the masked variable ARM_CLIENT_SECRET, which task 05 reads from Key Vault)
+#   AZL_RUNNER_LABEL       devops.pipelines.runner_label (the tag of the general runner)
+#   AZL_ENVIRONMENT_ARM_DEPLOYMENT  devops.pipelines.environments.arm_deployment (the protected environment of the deploy job)
+#   AZL_INFRASTRUCTURE_FILE         devops.pipelines.infrastructure_file
+#   AZL_POWERSHELL_YAML_VERSION, AZL_AZ_POWERSHELL_VERSION, AZL_AZ_KEYVAULT_VERSION  devops.pipelines.tool_versions.*
+# Run variables (a pipeline run from the web form offers them):
+#   ARM_MODE               Plan | Validate | ValidateAndDeploy | Deploy
+#   OS_CONFIGURATION_REPORT path of the OS configuration report directory. GitLab fetches the artifact of another pipeline only with
+#                          `needs: [{ pipeline: ..., job: ..., artifacts: true }]` (a parent-child pipeline) or `needs: project:` (Premium),
+#                          so add that to the jobs below; GitHub and Azure DevOps fetch it by a run ID.
 #   HANDOFF_FILE           optional ZTP handoff file
 #   ARM_ACKNOWLEDGE        optional known issue ids to proceed past, comma-separated (for example arc-device-id-name)
-#   AZL_RUNNER_LABEL       the tag of the self-hosted runner (devops.pipelines.runner_label)
-#   AZL_ENVIRONMENT_ARM_DEPLOYMENT  the protected environment of the deploy job (devops.pipelines.environments.arm_deployment)
-#                          Task 05 of the CI/CD setup sets these two from infrastructure.yml as project variables. tags: and environment:name
-#                          expand CI/CD variables (https://docs.gitlab.com/ci/variables/where_variables_can_be_used/).
 # No secret is stored here. The local administrator and LCM passwords are read from the Key Vaults named by the keyvault://
-# references in the master file. Runner: a Linux runner with the tag AZL_RUNNER_LABEL and pwsh 7. The Active Directory check needs a
+# references in the master file. Runner: the general runner with the tag AZL_RUNNER_LABEL and pwsh 7. The Active Directory check needs a
 # domain-joined runner; elsewhere it is Skipped, not failed.
 # Protected environment: task 04 creates it; Settings > CI/CD > Protected environments holds its approval rules (Premium and above).
 
@@ -47,43 +50,43 @@ variables:
     description: 'Plan: preconditions only. Validate: plus Validate. ValidateAndDeploy: plus a manual Deploy. Deploy: the manual Deploy only.'
   ARM_RESUME: 'false'
   ARM_ACKNOWLEDGE: ''
-  INFRASTRUCTURE_FILE: config/infrastructure.yml
+  # The directory the OS configuration pipeline's report artifact lands in when it is fetched (the toolkit's artifact name); not used when missing.
   OS_CONFIGURATION_REPORT: os-configuration-report
   HANDOFF_FILE: ''
-  AZURE_AUTH: oidc # oidc | managed-identity
-  AZURE_CLIENT_ID: '<client-id-of-the-app-registration-or-managed-identity>'
-  AZURE_TENANT_ID: '<tenant-id>'
-  AZURE_SUBSCRIPTION_ID: '<subscription-id>'
   REPORT_DIRECTORY: arm-deployment-report
 
 .arm-deployment:
   tags: [$AZL_RUNNER_LABEL]
   # OIDC: GitLab issues a token the Azure app registration trusts (federated credential, audience api://AzureADTokenExchange).
   id_tokens:
-    AZURE_ID_TOKEN:
+    ARM_OIDC_TOKEN:
       aud: api://AzureADTokenExchange
   before_script:
     - |
       pwsh -NoProfile -Command '
-        foreach ($m in "powershell-yaml", "Az.Accounts", "Az.KeyVault") {
-          if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery }
-        }
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Modules -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION -AzPowerShellVersion $env:AZL_AZ_POWERSHELL_VERSION -AzKeyVaultVersion $env:AZL_AZ_KEYVAULT_VERSION
         Enable-AzContextAutosave -Scope CurrentUser | Out-Null
-        $connect = @{ Tenant = $env:AZURE_TENANT_ID; Subscription = $env:AZURE_SUBSCRIPTION_ID }
-        if ($env:AZURE_AUTH -eq "oidc") {
-          Connect-AzAccount -ServicePrincipal -ApplicationId $env:AZURE_CLIENT_ID -FederatedToken $env:AZURE_ID_TOKEN @connect | Out-Null
-        }
-        else {
-          if ($env:AZURE_CLIENT_ID -and $env:AZURE_CLIENT_ID -notlike "<*") { $connect.AccountId = $env:AZURE_CLIENT_ID }
-          Connect-AzAccount -Identity @connect | Out-Null
-        }
+        $connect = @{ Tenant = $env:ARM_TENANT_ID; Subscription = $env:ARM_SUBSCRIPTION_ID; ServicePrincipal = $true }
+        # The sign-in method of devops.authentication.method.
+        if ($env:AZL_AUTH_METHOD -eq "oidc") { Connect-AzAccount -ApplicationId $env:ARM_CLIENT_ID -FederatedToken $env:ARM_OIDC_TOKEN @connect | Out-Null }
+        else { Connect-AzAccount -Credential ([pscredential]::new($env:ARM_CLIENT_ID, (ConvertTo-SecureString -String $env:ARM_CLIENT_SECRET -AsPlainText -Force))) @connect | Out-Null }
       '
+
+# The job scripts: one pwsh block each. ARM_STEP_MODE and ARM_STEP_DIRECTORY are set by each job.
+.arm-scripts:
+  run: &arm-run
     - |
-      # before_script and script share one shell, so ARM_ARGS is there in the script.
-      ARM_ARGS="-InfrastructureFile $INFRASTRUCTURE_FILE"
-      if [ -d "$OS_CONFIGURATION_REPORT" ] || [ -f "$OS_CONFIGURATION_REPORT" ]; then ARM_ARGS="$ARM_ARGS -OsConfigurationReport $OS_CONFIGURATION_REPORT"; fi
-      if [ -n "$HANDOFF_FILE" ]; then ARM_ARGS="$ARM_ARGS -HandoffFile $HANDOFF_FILE"; fi
-      export ARM_ARGS
+      pwsh -NoProfile -Command '
+        $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Mode = $env:ARM_STEP_MODE; ReportDirectory = "$env:REPORT_DIRECTORY/$env:ARM_STEP_DIRECTORY" }
+        if ($env:OS_CONFIGURATION_REPORT -and (Test-Path -LiteralPath $env:OS_CONFIGURATION_REPORT)) { $p.OsConfigurationReport = $env:OS_CONFIGURATION_REPORT }
+        if ($env:HANDOFF_FILE) { $p.HandoffFile = $env:HANDOFF_FILE }
+        if ($env:ARM_STEP_MODE -eq "Deploy" -and $env:ARM_RESUME -eq "true") { $p.Resume = $true }
+        if ($env:ARM_STEP_MODE -eq "Deploy" -and $env:ARM_ACKNOWLEDGE) { $p.AcknowledgeKnownIssues = $env:ARM_ACKNOWLEDGE }
+        & $env:ARM_SCRIPT @p
+        exit $LASTEXITCODE
+      '
+  summary: &arm-summary
+    - pwsh -NoProfile -Command '$s = "$env:REPORT_DIRECTORY/$env:ARM_STEP_DIRECTORY/summary.md"; if (Test-Path -LiteralPath $s) { Get-Content -LiteralPath $s }'
 
 arm-preconditions:
   extends: .arm-deployment
@@ -91,10 +94,11 @@ arm-preconditions:
   resource_group: azure-local-arm-deployment
   # Read-only checks that make no long wait: the toolkit's limit for them, not a figure from Microsoft.
   timeout: 30 minutes
-  script:
-    - pwsh -NoProfile -File "$ARM_SCRIPT" $ARM_ARGS -Mode Plan -ReportDirectory "$REPORT_DIRECTORY/plan"
-  after_script:
-    - 'if [ -f "$REPORT_DIRECTORY/plan/summary.md" ]; then cat "$REPORT_DIRECTORY/plan/summary.md"; fi'
+  variables:
+    ARM_STEP_MODE: Plan
+    ARM_STEP_DIRECTORY: plan
+  script: *arm-run
+  after_script: *arm-summary
   artifacts:
     when: always
     # The plan report: 30 days is the toolkit's retention for it.
@@ -109,14 +113,16 @@ arm-validate:
   needs: [arm-preconditions]
   resource_group: azure-local-arm-deployment
   # Microsoft Learn: the validation takes about 10 minutes (https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template-disaggregated).
-  # The script waits at most deployment.validate_timeout_minutes (default 90); 2 hours 30 minutes is the toolkit's limit above that wait.
-  timeout: 2 hours 30 minutes
+  # The real limit is the script's wait, deployment.validate_timeout_minutes, read from the infrastructure file. GitLab reads the timeout keyword
+  # before any variable exists, so this is a fixed upper bound: the registry maximum of that key (1440) plus 60 minutes, the same as Azure DevOps.
+  timeout: 25 hours
   rules:
     - if: '$ARM_MODE == "Validate" || $ARM_MODE == "ValidateAndDeploy"'
-  script:
-    - pwsh -NoProfile -File "$ARM_SCRIPT" $ARM_ARGS -Mode Validate -ReportDirectory "$REPORT_DIRECTORY/validate"
-  after_script:
-    - 'if [ -f "$REPORT_DIRECTORY/validate/summary.md" ]; then cat "$REPORT_DIRECTORY/validate/summary.md"; fi'
+  variables:
+    ARM_STEP_MODE: Validate
+    ARM_STEP_DIRECTORY: validate
+  script: *arm-run
+  after_script: *arm-summary
   artifacts:
     when: always
     # The validate and deploy reports (the approver reads the first; the second is the record of the deployment): 90 days is the toolkit's retention for them.
@@ -134,9 +140,10 @@ arm-deploy:
       optional: true
   resource_group: azure-local-arm-deployment
   # Microsoft Learn: the deployment takes between 2.5 and 3 hours (https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template).
-  # The script waits at most deployment.deploy_timeout_minutes (default 360, 6 hours); 7 hours is that wait plus an hour for the checks and the report.
-  # If you raise deployment.deploy_timeout_minutes above 360, raise this limit in your copy too.
-  timeout: 7 hours
+  # The real limit is the script's wait, deployment.deploy_timeout_minutes, read from the infrastructure file. GitLab reads the timeout keyword
+  # before any variable exists, so this is a fixed upper bound: the registry maximum of that key (1440) plus 60 minutes, the same as Azure DevOps.
+  # The runner's own maximum job timeout must allow it.
+  timeout: 25 hours
   environment:
     name: $AZL_ENVIRONMENT_ARM_DEPLOYMENT
   rules:
@@ -144,14 +151,11 @@ arm-deploy:
     - if: '$ARM_MODE == "ValidateAndDeploy" || $ARM_MODE == "Deploy"'
       when: manual
       allow_failure: false
-  script:
-    - |
-      EXTRA=""
-      if [ "$ARM_RESUME" = "true" ]; then EXTRA="$EXTRA -Resume"; fi
-      if [ -n "$ARM_ACKNOWLEDGE" ]; then EXTRA="$EXTRA -AcknowledgeKnownIssues $ARM_ACKNOWLEDGE"; fi
-      pwsh -NoProfile -File "$ARM_SCRIPT" $ARM_ARGS -Mode Deploy -ReportDirectory "$REPORT_DIRECTORY/deploy" $EXTRA
-  after_script:
-    - 'if [ -f "$REPORT_DIRECTORY/deploy/summary.md" ]; then cat "$REPORT_DIRECTORY/deploy/summary.md"; fi'
+  variables:
+    ARM_STEP_MODE: Deploy
+    ARM_STEP_DIRECTORY: deploy
+  script: *arm-run
+  after_script: *arm-summary
   artifacts:
     when: always
     # The validate and deploy reports (the approver reads the first; the second is the record of the deployment): 90 days is the toolkit's retention for them.

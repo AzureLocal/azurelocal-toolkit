@@ -908,6 +908,12 @@
               "type": "string",
               "default": "cicd-infra.tfstate"
             },
+            "azure_local_key": {
+              "description": "Schema 5.6.28. Blob name of the state of the azure-local Terraform environment. Default azure-local.tfstate. Task 05 sets TF_BACKEND_KEY from it for the pipelines.",
+              "type": "string",
+              "default": "azure-local.tfstate",
+              "pattern": "^[A-Za-z0-9._/-]+\\.tfstate$"
+            },
             "storage_account": {
               "$ref": "#/$defs/storage_account_name",
               "description": "Storage account that holds the state."
