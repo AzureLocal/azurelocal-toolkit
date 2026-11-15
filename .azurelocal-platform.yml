@@ -6,11 +6,9 @@ repoType: ps-module
 
 adopts:
   standards: true
-  reusableWorkflows:
-    - drift-check
-    - release-please
-    - validate-structure
-    - add-to-project
+  # None: the workflows drift-check, release-please, validate-structure and add-to-project are archived under archive/github-actions/
+  # and run nowhere. The repository CI is azure-pipelines.yml (Azure DevOps); the only live GitHub workflow is deploy-docs.yml.
+  reusableWorkflows: []
   maproom: false
   trailhead: false
 

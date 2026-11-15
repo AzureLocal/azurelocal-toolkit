@@ -32,12 +32,32 @@ $script:Token = $null
 $script:LogPath = ''
 
 # The Terraform state names the pipelines and task 06 use when the file does not set them. Each is the default the master registry gives:
-# devops.state.container (tfstate) and devops.state.key (cicd-infra.tfstate, the CI/CD runners' state), and backend.key of the azure-local
-# environment (azure-local.tfstate, tools.terraform.variables.src_terraform_environments_azure_local_backend_hcl.backend_key, the name
-# New-IacVariableFiles.ps1 writes to backend.hcl). tests/pipelines/PipelineSettings.Tests.ps1 compares them with the registry.
+# devops.state.container (tfstate), devops.state.key (cicd-infra.tfstate, the CI/CD runners' state) and devops.state.azure_local_key
+# (azure-local.tfstate, the state of the azure-local environment; schema 5.6.28). tests/pipelines/PipelineSettings.Tests.ps1 compares them
+# with the registry.
 $script:AzlStateContainerDefault = 'tfstate'
 $script:AzlCicdStateKeyDefault = 'cicd-infra.tfstate'
 $script:AzlAzureLocalStateKey = 'azure-local.tfstate'
+
+# The defaults of the devops.pipelines keys task 05 turns into pipeline variables (schema 5.6.28), and of the deployment wait times the
+# GitHub job timeouts are derived from. Each is the default the master registry gives; tests/pipelines/PipelineSettings.Tests.ps1 compares
+# them with the registry.
+$script:AzlPipelineDefault = [ordered]@{
+    'devops.pipelines.infrastructure_file'          = 'config/infrastructure.yml'
+    'devops.pipelines.handoff_path'                 = 'ztp-state'
+    'devops.pipelines.tool_versions.terraform'      = '1.16.3'
+    'devops.pipelines.tool_versions.python'         = '3.12'
+    'devops.pipelines.tool_versions.ansible_core'   = '2.21.5'
+    'devops.pipelines.tool_versions.ansible_lint'   = '26.10.1'
+    'devops.pipelines.tool_versions.az_powershell'  = '16.3.0'
+    'devops.pipelines.tool_versions.powershell_yaml' = '0.4.12'
+    'devops.pipelines.tool_versions.az_keyvault'    = '6.6.1'
+    'deployment.validate_timeout_minutes'           = 90
+    'deployment.deploy_timeout_minutes'             = 360
+}
+# The time a job gets on top of the wait of the ARM deployment script, for the preconditions, the report and the upload: the toolkit's own
+# margin, not a setting of a deployment.
+$script:AzlJobTimeoutMarginMinutes = 60
 
 # ---------------------------------------------------------------------------------------------------------------------
 # Plumbing
@@ -238,11 +258,24 @@ function ConvertTo-AzlCicdSetting {
 
     # devops.pipelines (schema 5.6.25): the runner label and the approval environment of each toolkit pipeline. Schema 5.6.27: on Azure DevOps the name of
     # the service connection task 05 creates and the name of the variable group it writes the sign-in values to.
+    # Schema 5.6.28: the infrastructure file and handoff path the pipelines pass to the scripts, and the tool versions every pipeline installs.
     $pipelineEnvironments = Get-AzlValue $devops 'pipelines.environments' @{}
+    $toolVersions = Get-AzlValue $devops 'pipelines.tool_versions' @{}
     $pipelines = [pscustomobject]@{
-        RunnerLabel       = [string](Get-AzlValue $devops 'pipelines.runner_label')
-        ServiceConnection = [string](Get-AzlValue $devops 'pipelines.service_connection')
-        VariableGroup     = [string](Get-AzlValue $devops 'pipelines.variable_group')
+        RunnerLabel        = [string](Get-AzlValue $devops 'pipelines.runner_label')
+        ServiceConnection  = [string](Get-AzlValue $devops 'pipelines.service_connection')
+        VariableGroup      = [string](Get-AzlValue $devops 'pipelines.variable_group')
+        InfrastructureFile = [string](Get-AzlValue $devops 'pipelines.infrastructure_file' $script:AzlPipelineDefault['devops.pipelines.infrastructure_file'])
+        HandoffPath        = [string](Get-AzlValue $devops 'pipelines.handoff_path' $script:AzlPipelineDefault['devops.pipelines.handoff_path'])
+        ToolVersions       = [ordered]@{
+            terraform       = [string](Get-AzlValue $toolVersions 'terraform' $script:AzlPipelineDefault['devops.pipelines.tool_versions.terraform'])
+            python          = [string](Get-AzlValue $toolVersions 'python' $script:AzlPipelineDefault['devops.pipelines.tool_versions.python'])
+            ansible_core    = [string](Get-AzlValue $toolVersions 'ansible_core' $script:AzlPipelineDefault['devops.pipelines.tool_versions.ansible_core'])
+            ansible_lint    = [string](Get-AzlValue $toolVersions 'ansible_lint' $script:AzlPipelineDefault['devops.pipelines.tool_versions.ansible_lint'])
+            az_powershell   = [string](Get-AzlValue $toolVersions 'az_powershell' $script:AzlPipelineDefault['devops.pipelines.tool_versions.az_powershell'])
+            powershell_yaml = [string](Get-AzlValue $toolVersions 'powershell_yaml' $script:AzlPipelineDefault['devops.pipelines.tool_versions.powershell_yaml'])
+            az_keyvault     = [string](Get-AzlValue $toolVersions 'az_keyvault' $script:AzlPipelineDefault['devops.pipelines.tool_versions.az_keyvault'])
+        }
         Environments = [ordered]@{
             os_configuration               = [string](Get-AzlValue $pipelineEnvironments 'os_configuration')
             os_configuration_clear_storage = [string](Get-AzlValue $pipelineEnvironments 'os_configuration_clear_storage')
@@ -988,12 +1021,16 @@ function New-AzlCicdEnvironment {
 # ---------------------------------------------------------------------------------------------------------------------
 
 function Get-AzlCicdVariablePlan {
-    <# The variables for one environment: name, value, secret. The client secret, if used, is read from Key Vault only here. #>
+    <#
+    The sign-in and state variables for one environment: name, value, secret. The client secret, if used, is read from Key Vault only here.
+    The tenant, subscription and client IDs are identifiers, not secrets: they are plain variables, so the pipelines read them as
+    vars.ARM_* (GitHub), $ARM_* (GitLab) or $(ARM_*) (Azure DevOps), the names Terraform and the toolkit's pipelines use.
+    #>
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Settings, [string]$ClientId, [switch]$IncludeSecretValue)
     $plan = [System.Collections.Generic.List[object]]::new()
-    $plan.Add([pscustomobject]@{ Name = 'ARM_TENANT_ID'; Value = $Settings.TenantId; Secret = $true; Sensitive = $false })
-    $plan.Add([pscustomobject]@{ Name = 'ARM_SUBSCRIPTION_ID'; Value = $Settings.AzureSubscriptionId; Secret = $true; Sensitive = $false })
-    $plan.Add([pscustomobject]@{ Name = 'ARM_CLIENT_ID'; Value = $ClientId; Secret = $true; Sensitive = $false })
+    $plan.Add([pscustomobject]@{ Name = 'ARM_TENANT_ID'; Value = $Settings.TenantId; Secret = $false; Sensitive = $false })
+    $plan.Add([pscustomobject]@{ Name = 'ARM_SUBSCRIPTION_ID'; Value = $Settings.AzureSubscriptionId; Secret = $false; Sensitive = $false })
+    $plan.Add([pscustomobject]@{ Name = 'ARM_CLIENT_ID'; Value = $ClientId; Secret = $false; Sensitive = $false })
     if ($Settings.Authentication.Method -eq 'oidc') {
         $plan.Add([pscustomobject]@{ Name = 'ARM_USE_OIDC'; Value = 'true'; Secret = $false; Sensitive = $false })
     }
@@ -1009,28 +1046,58 @@ function Get-AzlCicdVariablePlan {
         if ($value) { $plan.Add([pscustomobject]@{ Name = $pair[0]; Value = $value; Secret = $false; Sensitive = $false }) }
     }
     # With a state storage account the pipelines also need the container and the state file of the azure-local environment (the four
-    # TF_BACKEND_* variables the Azure DevOps, GitHub and GitLab pipelines pass to terraform init).
+    # TF_BACKEND_* variables the Azure DevOps, GitHub and GitLab pipelines pass to terraform init): devops.state.container and
+    # devops.state.azure_local_key (schema 5.6.28).
     if ([string](Get-AzlValue $state 'storage_account')) {
         $plan.Add([pscustomobject]@{ Name = 'TF_BACKEND_CONTAINER'; Value = [string](Get-AzlValue $state 'container' $script:AzlStateContainerDefault); Secret = $false; Sensitive = $false })
-        $plan.Add([pscustomobject]@{ Name = 'TF_BACKEND_KEY'; Value = $script:AzlAzureLocalStateKey; Secret = $false; Sensitive = $false })
+        $plan.Add([pscustomobject]@{ Name = 'TF_BACKEND_KEY'; Value = [string](Get-AzlValue $state 'azure_local_key' $script:AzlAzureLocalStateKey); Secret = $false; Sensitive = $false })
     }
     return $plan.ToArray()
 }
 
-# The variables the toolkit's pipelines read (pipelines/github, github-actions, gitlab) and the infrastructure key each one is set from.
-# Name is the repository variable (GitHub) or project CI/CD variable (GitLab); Role is the run parameter of the Azure DevOps pipelines.
-# These names are the contract with the pipeline files; tests/pipelines/PipelineSettings.Tests.ps1 checks both sides.
+# The variables the toolkit's pipelines read (pipelines/github-actions, pipelines/gitlab, pipelines/azure-devops) and the infrastructure key
+# each one is set from. Name is the repository variable (GitHub), the project CI/CD variable (GitLab) or the variable of the variable group
+# (Azure DevOps); Role names the run parameter of the Azure DevOps pipelines. AzureDevOps says how Azure DevOps takes it: Parameter (a run
+# parameter with no default, because the pool, the environment, the service connection, the variable group and the file paths are read
+# before any variable exists; task 05 lists the value to enter) or Group (task 05 writes it to the variable group, and a task input or a
+# script reads it as $(name)). These names are the contract with the pipeline files; tests/pipelines/PipelineSettings.Tests.ps1 and
+# tests/variables/PipelineValues.Tests.ps1 check both sides.
 $script:AzlPipelineVariable = @(
-    [pscustomobject]@{ Name = 'AZL_RUNNER_LABEL'; Role = 'runner label'; Key = 'devops.pipelines.runner_label'; Platforms = @('github', 'gitlab') }
-    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_OS_CONFIGURATION'; Role = 'OS configuration approval environment'; Key = 'devops.pipelines.environments.os_configuration'; Platforms = @('github', 'gitlab', 'azure_devops') }
-    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE'; Role = 'storage wipe approval environment'; Key = 'devops.pipelines.environments.os_configuration_clear_storage'; Platforms = @('azure_devops') }
-    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_ARM_DEPLOYMENT'; Role = 'ARM deployment approval environment'; Key = 'devops.pipelines.environments.arm_deployment'; Platforms = @('github', 'gitlab', 'azure_devops') }
-    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_CICD_INFRA'; Role = 'CI/CD infrastructure approval environment'; Key = 'devops.pipelines.environments.cicd_infra'; Platforms = @('github', 'gitlab', 'azure_devops') }
-    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT'; Role = 'Terraform deployment approval environment'; Key = 'devops.pipelines.environments.terraform_deployment'; Platforms = @('github', 'gitlab', 'azure_devops') }
+    [pscustomobject]@{ Name = 'AZL_RUNNER_LABEL'; Role = 'runner label'; Key = 'devops.pipelines.runner_label'; Platforms = @('github', 'gitlab'); AzureDevOps = '' }
+    # Schema 5.6.28: GitHub selects a self-hosted runner by its OS label too (runs-on: [self-hosted, <os>, <label>]).
+    [pscustomobject]@{ Name = 'AZL_RUNNER_OS'; Role = 'runner OS label'; Key = 'devops.runners[].os_type'; Platforms = @('github'); AzureDevOps = '' }
+    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_OS_CONFIGURATION'; Role = 'OS configuration approval environment'; Key = 'devops.pipelines.environments.os_configuration'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Parameter' }
+    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_OS_CONFIGURATION_CLEAR_STORAGE'; Role = 'storage wipe approval environment'; Key = 'devops.pipelines.environments.os_configuration_clear_storage'; Platforms = @('azure_devops'); AzureDevOps = 'Parameter' }
+    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_ARM_DEPLOYMENT'; Role = 'ARM deployment approval environment'; Key = 'devops.pipelines.environments.arm_deployment'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Parameter' }
+    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_CICD_INFRA'; Role = 'CI/CD infrastructure approval environment'; Key = 'devops.pipelines.environments.cicd_infra'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Parameter' }
+    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT'; Role = 'Terraform deployment approval environment'; Key = 'devops.pipelines.environments.terraform_deployment'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Parameter' }
     # Azure DevOps only (schema 5.6.27): the names of the service connection and the variable group that task 05 creates. GitHub and GitLab sign in
     # with the repository's or project's own variables and have neither.
-    [pscustomobject]@{ Name = 'AZL_SERVICE_CONNECTION'; Role = 'service connection'; Key = 'devops.pipelines.service_connection'; Platforms = @('azure_devops') }
-    [pscustomobject]@{ Name = 'AZL_VARIABLE_GROUP'; Role = 'variable group'; Key = 'devops.pipelines.variable_group'; Platforms = @('azure_devops') }
+    [pscustomobject]@{ Name = 'AZL_SERVICE_CONNECTION'; Role = 'service connection'; Key = 'devops.pipelines.service_connection'; Platforms = @('azure_devops'); AzureDevOps = 'Parameter' }
+    [pscustomobject]@{ Name = 'AZL_VARIABLE_GROUP'; Role = 'variable group'; Key = 'devops.pipelines.variable_group'; Platforms = @('azure_devops'); AzureDevOps = 'Parameter' }
+    # Schema 5.6.28: the infrastructure file and the ZTP handoff path the pipelines pass to the scripts (Azure DevOps: run parameters, because
+    # a compile-time parameter path is what the run form shows).
+    [pscustomobject]@{ Name = 'AZL_INFRASTRUCTURE_FILE'; Role = 'infrastructure file'; Key = 'devops.pipelines.infrastructure_file'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Parameter' }
+    [pscustomobject]@{ Name = 'AZL_HANDOFF_PATH'; Role = 'handoff path'; Key = 'devops.pipelines.handoff_path'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Parameter' }
+    # The sign-in method every pipeline follows (oidc or client_secret).
+    [pscustomobject]@{ Name = 'AZL_AUTH_METHOD'; Role = 'sign-in method'; Key = 'devops.authentication.method'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Group' }
+    # Azure DevOps has no predefined variable with the default branch of the repository (GitHub: github.event.repository.default_branch;
+    # GitLab: CI_DEFAULT_BRANCH).
+    [pscustomobject]@{ Name = 'AZL_DEFAULT_BRANCH'; Role = 'default branch'; Key = 'devops.repository.default_branch'; Platforms = @('azure_devops'); AzureDevOps = 'Group' }
+    # The tool versions every pipeline installs.
+    [pscustomobject]@{ Name = 'AZL_TERRAFORM_VERSION'; Role = 'Terraform version'; Key = 'devops.pipelines.tool_versions.terraform'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Group' }
+    [pscustomobject]@{ Name = 'AZL_PYTHON_VERSION'; Role = 'Python version'; Key = 'devops.pipelines.tool_versions.python'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Group' }
+    [pscustomobject]@{ Name = 'AZL_ANSIBLE_CORE_VERSION'; Role = 'ansible-core version'; Key = 'devops.pipelines.tool_versions.ansible_core'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Group' }
+    [pscustomobject]@{ Name = 'AZL_ANSIBLE_LINT_VERSION'; Role = 'ansible-lint version'; Key = 'devops.pipelines.tool_versions.ansible_lint'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Group' }
+    [pscustomobject]@{ Name = 'AZL_AZ_POWERSHELL_VERSION'; Role = 'Az PowerShell version'; Key = 'devops.pipelines.tool_versions.az_powershell'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Group' }
+    [pscustomobject]@{ Name = 'AZL_POWERSHELL_YAML_VERSION'; Role = 'powershell-yaml version'; Key = 'devops.pipelines.tool_versions.powershell_yaml'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Group' }
+    [pscustomobject]@{ Name = 'AZL_AZ_KEYVAULT_VERSION'; Role = 'Az.KeyVault version'; Key = 'devops.pipelines.tool_versions.az_keyvault'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Group' }
+    # GitHub reads a job timeout from a variable (fromJSON(vars.X)); it is the wait of the script plus the toolkit's margin. Azure DevOps
+    # and GitLab read a job timeout before any variable exists, so their files hold a fixed upper bound and the script's wait is the limit.
+    [pscustomobject]@{ Name = 'AZL_VALIDATE_JOB_TIMEOUT_MINUTES'; Role = 'Validate job timeout'; Key = 'deployment.validate_timeout_minutes'; Platforms = @('github'); AzureDevOps = '' }
+    [pscustomobject]@{ Name = 'AZL_DEPLOY_JOB_TIMEOUT_MINUTES'; Role = 'Deploy job timeout'; Key = 'deployment.deploy_timeout_minutes'; Platforms = @('github'); AzureDevOps = '' }
+    # The public key of the Linux runners (task 06 reads AZL_RUNNER_SSH_PUBLIC_KEY). A public key, not a secret.
+    [pscustomobject]@{ Name = 'AZL_RUNNER_SSH_PUBLIC_KEY'; Role = 'runner SSH public key'; Key = 'devops.runners[].admin_ssh_public_key'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Group' }
 )
 
 # The variable groups task 05 writes the sign-in values to on Azure DevOps: one per entry of devops.environments[], named <variable_group>-<environment>,
@@ -1046,12 +1113,16 @@ function Get-AzlCicdVariableGroupName {
 function Get-AzlCicdPipelineInput {
     <#
     .SYNOPSIS
-        The runner label, the agent pool and the approval environments the pipelines select, each with the infrastructure key it comes from.
+        Every value the pipelines select or read, each with the infrastructure key it comes from.
     .DESCRIPTION
-        Reads devops.pipelines (runner_label, environments.*) and the pool of the general runner (devops.runners[].pool) and checks them
-        against what the other tasks create: runner_label must be one of the labels of the general (Linux) runner, and every environment
-        must be an entry of devops.environments[] with approval_required true. Returns nothing for a key that is not set.
-        GitHub and GitLab take the values as variables (Name); Azure DevOps takes them as run parameters (Role).
+        Reads devops.pipelines (runner_label, environments.*, infrastructure_file, handoff_path, tool_versions.*), devops.authentication.method,
+        devops.repository.default_branch, deployment.validate_timeout_minutes and deploy_timeout_minutes, and the general runner
+        (devops.runners[]: os_type, pool, admin_ssh_public_key), and checks them against what the other tasks create: runner_label must be one
+        of the labels of the general (Linux) runner, and every environment must be an entry of devops.environments[] with approval_required
+        true. A key with a registry default gives its default. Returns nothing for a key that is not set and has no default.
+        GitHub and GitLab take the values as variables (Name); Azure DevOps takes them as run parameters (Role) or from the variable group.
+        A value that is a secret reference (keyvault://, env://, file://, command://; only devops.runners[].admin_ssh_public_key may be one)
+        is returned as it is, with Reference true: Set-AzlCicdVariable resolves it when it sets the variable.
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Settings)
@@ -1062,29 +1133,60 @@ function Get-AzlCicdPipelineInput {
         if ($Settings.Platform -notin $variable.Platforms) { continue }
         $role = $variable.Key -replace '^devops\.pipelines\.(environments\.)?', ''
         # The service connection and the variable group have no default name on Azure DevOps: a missing key stops here (Get-AzlCicdPipelineName).
-        if ($role -eq 'service_connection') { $found.Add([pscustomobject]@{ Name = $variable.Name; Role = $variable.Role; Key = $variable.Key; Value = (Get-AzlCicdPipelineName -Settings $Settings -Name ServiceConnection) }); continue }
-        if ($role -eq 'variable_group') { $found.Add([pscustomobject]@{ Name = $variable.Name; Role = $variable.Role; Key = $variable.Key; Value = (@(Get-AzlCicdVariableGroupName -Settings $Settings) -join "' or '") }); continue }
-        $value = if ($role -eq 'runner_label') { $pipelines.RunnerLabel } else { $pipelines.Environments[$role] }
+        if ($role -eq 'service_connection') { $found.Add([pscustomobject]@{ Name = $variable.Name; Role = $variable.Role; Key = $variable.Key; Value = (Get-AzlCicdPipelineName -Settings $Settings -Name ServiceConnection); AzureDevOps = $variable.AzureDevOps; Reference = $false }); continue }
+        if ($role -eq 'variable_group') { $found.Add([pscustomobject]@{ Name = $variable.Name; Role = $variable.Role; Key = $variable.Key; Value = (@(Get-AzlCicdVariableGroupName -Settings $Settings) -join "' or '"); AzureDevOps = $variable.AzureDevOps; Reference = $false }); continue }
+        $value = switch ($variable.Key) {
+            'devops.pipelines.runner_label' { $pipelines.RunnerLabel }
+            'devops.runners[].os_type' { if ($general) { $general.OsType } }
+            'devops.pipelines.infrastructure_file' { $pipelines.InfrastructureFile }
+            'devops.pipelines.handoff_path' { $pipelines.HandoffPath }
+            'devops.authentication.method' { $Settings.Authentication.Method }
+            'devops.repository.default_branch' { $Settings.Repository.DefaultBranch }
+            { $_ -in 'deployment.validate_timeout_minutes', 'deployment.deploy_timeout_minutes' } {
+                [string]([int](Get-AzlValue $Settings.Infrastructure $variable.Key $script:AzlPipelineDefault[$variable.Key]) + $script:AzlJobTimeoutMarginMinutes)
+            }
+            'devops.runners[].admin_ssh_public_key' {
+                # Read from the file as written: the general Linux runner (purpose general is the default).
+                $raw = @(Get-AzlList (Get-AzlValue $Settings.Infrastructure 'devops.runners') | Where-Object { $_ -is [System.Collections.IDictionary] -and [string]$_['os_type'] -eq 'linux' -and [string](Get-AzlValue $_ 'purpose' 'general') -eq 'general' }) | Select-Object -First 1
+                if ($raw) { [string](Get-AzlValue $raw 'admin_ssh_public_key') }
+            }
+            default {
+                if ($variable.Key -like 'devops.pipelines.tool_versions.*') { $pipelines.ToolVersions[($variable.Key -replace '^devops\.pipelines\.tool_versions\.', '')] }
+                else { $pipelines.Environments[$role] }
+            }
+        }
         if (-not $value) { continue }
-        if ($role -eq 'runner_label') {
+        if ($variable.Key -eq 'devops.pipelines.runner_label') {
             if (-not $general -or $value -notin @($general.Labels)) { throw "devops.pipelines.runner_label '$value' is not an entry of devops.runners[].labels of the general (Linux) runner. The runner registers with its labels; a label it does not have never matches a job." }
         }
-        else {
+        elseif ($variable.Key -like 'devops.pipelines.environments.*') {
             $environment = $Settings.Environments | Where-Object { $_.Name -eq $value } | Select-Object -First 1
             if (-not $environment) { throw "$($variable.Key) '$value' is not the name of an entry of devops.environments[]." }
             if (-not $environment.ApprovalRequired) { throw "$($variable.Key) '$value' is an environment without approval_required. The pipeline's approval gate would not hold anything." }
         }
-        $found.Add([pscustomobject]@{ Name = $variable.Name; Role = $variable.Role; Key = $variable.Key; Value = [string]$value })
+        $reference = [string]$value -match '^(keyvault|env|file|command)://'
+        if ($reference -and $variable.Key -ne 'devops.runners[].admin_ssh_public_key') { throw "$($variable.Key) is a secret reference; it must be a value." }
+        $found.Add([pscustomobject]@{ Name = $variable.Name; Role = $variable.Role; Key = $variable.Key; Value = [string]$value; AzureDevOps = $variable.AzureDevOps; Reference = $reference })
     }
     if ($Settings.Platform -eq 'azure_devops') {
         if (-not $general -or -not $general.Pool) { throw 'devops.runners[].pool is not set for the general (Linux) runner. The Azure DevOps pipelines take it as their agent pool.' }
-        $found.Add([pscustomobject]@{ Name = 'agent pool'; Role = 'agent pool'; Key = 'devops.runners[].pool'; Value = [string]$general.Pool })
+        $found.Add([pscustomobject]@{ Name = 'agent pool'; Role = 'agent pool'; Key = 'devops.runners[].pool'; Value = [string]$general.Pool; AzureDevOps = 'Parameter'; Reference = $false })
     }
     return $found.ToArray()
 }
 
+function Resolve-AzlCicdPipelineValue {
+    <# The value task 05 sets for one pipeline input: the value itself, or the text a reference resolves to (the runner's public key). #>
+    param([Parameter(Mandatory)][object]$PipelineInput, [Parameter(Mandatory)][System.Collections.IDictionary]$Settings)
+    if (-not $PipelineInput.Reference) { return [string]$PipelineInput.Value }
+    return ([string](Get-AzlCicdSecretValue -Reference $PipelineInput.Value -Infrastructure $Settings.Infrastructure)).Trim()
+}
+
 function Set-AzlCicdVariable {
-    <# Task 05. ARM_* values per environment; the runner label and approval environments of the pipelines (devops.pipelines); for Azure DevOps also the workload identity service connection. #>
+    <#
+    Task 05. ARM_* and TF_BACKEND_* values per environment and for the repository; every value the pipelines select or read
+    (Get-AzlCicdPipelineInput); for Azure DevOps also the workload identity service connection.
+    #>
     [CmdletBinding(SupportsShouldProcess)]
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Settings, [string]$ClientId = '')
     $task = '05-configure-variables'
@@ -1098,8 +1200,10 @@ function Set-AzlCicdVariable {
         if ($ids.Count -ne 1) { throw "Could not find exactly one app registration named '$($Settings.AppName)'. Run task 01, or set azure.automation_identity.client_id." }
         $ClientId = [string]$ids[0]
     }
-    $scopes = @($Settings.Environments | ForEach-Object { $_.Name })
-    if ($scopes.Count -eq 0) { $scopes = @('') }
+    $environmentScopes = @($Settings.Environments | ForEach-Object { $_.Name } | Where-Object { $_ })
+    # GitHub and GitLab: the repository (or project) gets the values too, so a job with no environment (validate, plan, preconditions) reads
+    # them; a job in an environment reads that environment's values. Azure DevOps: one variable group per environment.
+    $scopes = if ($Settings.Platform -eq 'azure_devops') { if ($environmentScopes.Count) { $environmentScopes } else { @('') } } else { @('') + $environmentScopes }
     Use-AzlCicdSession -Settings $Settings
     try {
         $withSecret = ($Settings.Authentication.Method -eq 'client_secret') -and $PSCmdlet.ShouldProcess('Key Vault', 'Read the client secret to store it as a masked variable')
@@ -1115,7 +1219,7 @@ function Set-AzlCicdVariable {
                         if ($scope) { $arguments += @('--env', $scope) }
                         if ($variable.Secret) {
                             if ($PSCmdlet.ShouldProcess("$($variable.Name) ($label)", 'Set the secret')) {
-                                # The client secret goes through stdin so it is never on a command line. The IDs are identifiers.
+                                # The client secret goes through stdin so it is never on a command line.
                                 if ($variable.Sensitive) { Invoke-AzlGitHub -ArgumentList $arguments -InputText ([string]$variable.Value) | Out-Null }
                                 else { Invoke-AzlGitHub -ArgumentList ($arguments + @('--body', [string]$variable.Value)) | Out-Null }
                                 $results.Add((Format-AzlResult $task 'Secret' "$($variable.Name) ($label)" 'Updated'))
@@ -1155,52 +1259,57 @@ function Set-AzlCicdVariable {
                 $groupBase = Get-AzlCicdPipelineName -Settings $Settings -Name VariableGroup
                 $groupName = if ($scope) { "$groupBase-$scope" } else { $groupBase }
                 $projectInfo = Invoke-AzlAdo -Method GET -Uri "$($Settings.ScmUrl)/_apis/projects/$([uri]::EscapeDataString($Settings.Project))?api-version=7.1"
-                $values = [ordered]@{}
-                foreach ($variable in $variables) {
-                    if ($null -ne $variable.Value) { $values[$variable.Name] = @{ value = [string]$variable.Value; isSecret = $variable.Secret } }
-                }
-                $body = [ordered]@{ name = $groupName; type = 'Vsts'; variables = $values; variableGroupProjectReferences = @(@{ name = $groupName; projectReference = @{ id = $projectInfo.id; name = $Settings.Project } }) }
-                $current = @((Invoke-AzlAdo -Method GET -Uri "$base/distributedtask/variablegroups?groupName=$([uri]::EscapeDataString($groupName))&api-version=7.1").value) | Where-Object { $_.name -eq $groupName } | Select-Object -First 1
+                $groupInputs = @($pipelineInputs | Where-Object { $_.AzureDevOps -eq 'Group' })
                 if ($PSCmdlet.ShouldProcess($groupName, 'Create or update the variable group')) {
+                    $values = [ordered]@{}
+                    foreach ($variable in $variables) {
+                        if ($null -ne $variable.Value) { $values[$variable.Name] = @{ value = [string]$variable.Value; isSecret = $variable.Secret } }
+                    }
+                    # Schema 5.6.28: the values the Azure DevOps pipelines read as $(name) (tool versions, sign-in method, default branch, public key).
+                    foreach ($groupInput in $groupInputs) { $values[$groupInput.Name] = @{ value = (Resolve-AzlCicdPipelineValue -PipelineInput $groupInput -Settings $Settings); isSecret = $false } }
+                    $body = [ordered]@{ name = $groupName; type = 'Vsts'; variables = $values; variableGroupProjectReferences = @(@{ name = $groupName; projectReference = @{ id = $projectInfo.id; name = $Settings.Project } }) }
+                    $current = @((Invoke-AzlAdo -Method GET -Uri "$base/distributedtask/variablegroups?groupName=$([uri]::EscapeDataString($groupName))&api-version=7.1").value) | Where-Object { $_.name -eq $groupName } | Select-Object -First 1
                     if ($current) { Invoke-AzlAdo -Method PUT -Uri "$base/distributedtask/variablegroups/$($current.id)?api-version=7.1" -Body $body | Out-Null }
                     else { Invoke-AzlAdo -Method POST -Uri "$base/distributedtask/variablegroups?api-version=7.1" -Body $body | Out-Null }
-                    $results.Add((Format-AzlResult $task 'Variable group' $groupName $(if ($current) { 'Updated' } else { 'Created' })))
+                    $results.Add((Format-AzlResult $task 'Variable group' $groupName $(if ($current) { 'Updated' } else { 'Created' }) (@($groupInputs | ForEach-Object { "$($_.Name) from $($_.Key)" }) -join '; ')))
                 }
-                else { $results.Add((Format-AzlResult $task 'Variable group' $groupName 'Planned')) }
+                else { $results.Add((Format-AzlResult $task 'Variable group' $groupName 'Planned' (@($groupInputs | ForEach-Object { "$($_.Name) from $($_.Key)" }) -join '; '))) }
             }
         }
 
-        # The runner label and the approval environments the pipelines select (devops.pipelines, schema 5.6.25). They are set for the
-        # whole repository, never for one environment: runs-on and the environment name are read before any environment applies.
-        if ($pipelineInputs.Count -eq 0) { $results.Add((Format-AzlResult $task 'Pipeline variable' 'devops.pipelines' 'Skipped' 'devops.pipelines is not set, so the pipelines have no runner label or approval environment.')) }
+        # The values the pipelines select or read (devops.pipelines and the keys in Get-AzlCicdPipelineInput). GitHub and GitLab: set for the
+        # whole repository, never for one environment, because runs-on, the environment name and a job timeout are read before any environment
+        # applies. Azure DevOps: the run parameters are listed; the Group values went to the variable groups above.
         foreach ($pipelineInput in $pipelineInputs) {
             $target = "$($pipelineInput.Name) (repository)"
+            $detail = if ($pipelineInput.Reference) { "$($pipelineInput.Key) (read from its reference when set)" } else { "$($pipelineInput.Key) = $($pipelineInput.Value)" }
             switch ($Settings.Platform) {
                 'github' {
                     $slug = "$($Settings.Organization)/$($Settings.Repository.Name)"
                     if ($PSCmdlet.ShouldProcess($target, 'Set the variable')) {
-                        Invoke-AzlGitHub -ArgumentList @('variable', 'set', $pipelineInput.Name, '--repo', $slug, '--body', [string]$pipelineInput.Value) | Out-Null
-                        $results.Add((Format-AzlResult $task 'Pipeline variable' $target 'Updated' "$($pipelineInput.Key) = $($pipelineInput.Value)"))
+                        Invoke-AzlGitHub -ArgumentList @('variable', 'set', $pipelineInput.Name, '--repo', $slug, '--body', (Resolve-AzlCicdPipelineValue -PipelineInput $pipelineInput -Settings $Settings)) | Out-Null
+                        $results.Add((Format-AzlResult $task 'Pipeline variable' $target 'Updated' $detail))
                     }
-                    else { $results.Add((Format-AzlResult $task 'Pipeline variable' $target 'Planned' "$($pipelineInput.Key) = $($pipelineInput.Value)")) }
+                    else { $results.Add((Format-AzlResult $task 'Pipeline variable' $target 'Planned' $detail)) }
                 }
                 'gitlab' {
                     $encoded = [uri]::EscapeDataString("$($Settings.Organization)/$($Settings.Repository.Name)")
                     $id = (Invoke-AzlGitLab -Settings $Settings -Method GET -Path "projects/$encoded").id
                     $query = "filter[environment_scope]=$([uri]::EscapeDataString('*'))"
                     $current = Invoke-AzlGitLab -Settings $Settings -Method GET -Path "projects/$id/variables/$($pipelineInput.Name)?$query" -AllowNotFound
-                    $body = [ordered]@{ key = $pipelineInput.Name; value = [string]$pipelineInput.Value; masked = $false; environment_scope = '*'; protected = $false }
                     if ($PSCmdlet.ShouldProcess($target, 'Set the CI/CD variable')) {
+                        $body = [ordered]@{ key = $pipelineInput.Name; value = (Resolve-AzlCicdPipelineValue -PipelineInput $pipelineInput -Settings $Settings); masked = $false; environment_scope = '*'; protected = $false }
                         if ($current) { Invoke-AzlGitLab -Settings $Settings -Method PUT -Path "projects/$id/variables/$($pipelineInput.Name)?$query" -Body $body | Out-Null }
                         else { Invoke-AzlGitLab -Settings $Settings -Method POST -Path "projects/$id/variables" -Body $body | Out-Null }
-                        $results.Add((Format-AzlResult $task 'Pipeline variable' $target $(if ($current) { 'Updated' } else { 'Created' }) "$($pipelineInput.Key) = $($pipelineInput.Value)"))
+                        $results.Add((Format-AzlResult $task 'Pipeline variable' $target $(if ($current) { 'Updated' } else { 'Created' }) $detail))
                     }
-                    else { $results.Add((Format-AzlResult $task 'Pipeline variable' $target 'Planned' "$($pipelineInput.Key) = $($pipelineInput.Value)")) }
+                    else { $results.Add((Format-AzlResult $task 'Pipeline variable' $target 'Planned' $detail)) }
                 }
                 'azure_devops' {
-                    # Azure DevOps expands a variable only at run time and reads the pool and the environment of a job at compile time, so
-                    # these two are run parameters of the pipelines. The task cannot set a parameter; it lists the value to enter.
-                    $results.Add((Format-AzlResult $task 'Pipeline run parameter' $pipelineInput.Key 'Skipped' "Enter '$($pipelineInput.Value)' as the $($pipelineInput.Role) parameter when you run the pipeline."))
+                    # Azure DevOps expands a variable only at run time and reads the pool, the environment, the service connection and a
+                    # parameter path at compile time, so these are run parameters with no default. The task cannot set a parameter; it lists
+                    # the value to enter.
+                    if ($pipelineInput.AzureDevOps -eq 'Parameter') { $results.Add((Format-AzlResult $task 'Pipeline run parameter' $pipelineInput.Key 'Skipped' "Enter '$($pipelineInput.Value)' as the $($pipelineInput.Role) parameter when you run the pipeline.")) }
                 }
             }
         }

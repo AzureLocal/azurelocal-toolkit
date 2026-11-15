@@ -20,7 +20,7 @@ Describe 'Pipelines and the Ansible role do not enable an SBE' {
         $script:Automation.Count | Should -BeGreaterThan 8
     }
     It 'sets no hardware.sbe value, delivery route, bundle or pull address in <_>' -ForEach @(
-        'pipelines/github/os-configuration.yml', 'pipelines/gitlab/os-configuration.gitlab-ci.yml', 'pipelines/azure-devops/os-configuration.yml',
+        'pipelines/github-actions/os-configuration.yml', 'pipelines/gitlab/os-configuration.gitlab-ci.yml', 'pipelines/azure-devops/os-configuration.yml',
         'pipelines/azure-devops/arm-deployment.yml', 'pipelines/github-actions/arm-deployment.yml',
         'ansible/os-configuration/roles/azurelocal_os_configuration/defaults/main.yml', 'ansible/os-configuration/inventory/hosts.yml.example'
     ) {

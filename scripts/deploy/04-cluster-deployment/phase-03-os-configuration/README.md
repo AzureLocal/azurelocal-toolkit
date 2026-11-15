@@ -6,7 +6,7 @@
   works out per node whether it was provisioned by ZTP (Arc Run Command) or installed from an ISO (WinRM, plus the computer name and Arc registration),
   plans for all nodes, applies node by node, verifies with a Plan pass, and writes `report.json`, `summary.md`, `plan-report.json` and `wipe-list.txt`.
   `os_configuration.clear_storage: true` (schema 5.4.3) lets Apply wipe leftover local storage; the Plan prints which disks. The same command runs in
-  GitHub Actions and GitLab CI (`pipelines/github/os-configuration.yml`, `pipelines/gitlab/os-configuration.gitlab-ci.yml`).
+  GitHub Actions and GitLab CI (`pipelines/github-actions/os-configuration.yml`, `pipelines/gitlab/os-configuration.gitlab-ci.yml`).
 - `Set-AzureLocalNodeConfiguration.ps1` is what it calls once per node, and what you run for a single node. One idempotent script reads each node, changes
   only what differs from `infrastructure.yml`, and reports; it replaces running tasks 01 to 13 one by one. Without `-Execute` it is a plan.
 Prerequisites, roles and the keys it reads: [docs/os-configuration-and-arm-deployment.md](../../../../docs/os-configuration-and-arm-deployment.md).

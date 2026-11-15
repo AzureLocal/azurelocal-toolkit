@@ -1,12 +1,20 @@
-# GitHub Actions — azurelocal-toolkit
+# GitHub Actions — azurelocal-toolkit (archived)
 
-> This document describes every GitHub Actions workflow in this repository:
-> what it does, why it exists, what it requires, and what must be replicated
-> when setting up a new repository in this organisation.
+> **Archived.** The workflows this document describes are no longer live. Their files are kept under
+> `archive/github-actions/` for reference and run nowhere. The repository's own CI is the Azure DevOps pipeline
+> `azure-pipelines.yml` (governed by HCS Platform Engineering); the only live GitHub workflow is
+> `.github/workflows/deploy-docs.yml` (the documentation site). Where this document says `.github/workflows/<file>`,
+> read `archive/github-actions/<file>`.
+>
+> The deployment pipelines the toolkit ships for its users (Azure DevOps, GitHub Actions, GitLab) are under `pipelines/`;
+> see `pipelines/README.md`.
+
+> What follows is the record of what each archived workflow did, why it existed, what it required, and what had
+> to be replicated when setting up a new repository in this organisation.
 
 ---
 
-## Workflow Index
+## Workflow Index (archived)
 
 | File | Name | Trigger | Purpose |
 |------|------|---------|---------|

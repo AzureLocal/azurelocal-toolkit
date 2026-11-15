@@ -4970,7 +4970,7 @@
               "additionalProperties": false,
               "properties": {
                 "os_configuration": {
-                  "description": "Schema 5.6.25. The environment that gates the Apply job of the OS configuration pipelines (pipelines/github/os-configuration.yml, pipelines/gitlab/os-configuration.gitlab-ci.yml, pipelines/azure-devops/os-configuration.yml).",
+                  "description": "Schema 5.6.25. The environment that gates the Apply job of the OS configuration pipelines (pipelines/github-actions/os-configuration.yml, pipelines/gitlab/os-configuration.gitlab-ci.yml, pipelines/azure-devops/os-configuration.yml).",
                   "type": "string",
                   "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$"
                 },
@@ -5005,6 +5005,67 @@
               "description": "Schema 5.6.27. Azure DevOps only. The name of the variable group (Pipelines > Library) task 05 writes the sign-in values (ARM_*) and the state settings (TF_BACKEND_*) to. With entries in devops.environments[] there is one group per environment, named <variable_group>-<environment>. The Azure DevOps pipelines that link a group (azure-local-deploy.yml, os-configuration.yml) take its name as a run parameter with no default, and task 05 lists the value to enter. Required when devops.platform is azure_devops; GitHub and GitLab ignore it.",
               "type": "string",
               "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._-]*$"
+            },
+            "infrastructure_file": {
+              "description": "Schema 5.6.28. The path, in the deployment repository, of the infrastructure file the toolkit's pipelines pass to the scripts (-InfrastructureFile). Task 05 sets it as AZL_INFRASTRUCTURE_FILE (GitHub repository variable, GitLab project variable); the Azure DevOps pipelines take it as a run parameter with no default, and task 05 lists the value to enter. The pipeline files hold no path of their own.",
+              "type": "string",
+              "default": "config/infrastructure.yml",
+              "pattern": "^[A-Za-z0-9._][A-Za-z0-9._/-]*\\.ya?ml$"
+            },
+            "handoff_path": {
+              "description": "Schema 5.6.28. The repository path of the ZTP handoff files (a handoff file or a directory of *.ztp-handoff.json) the OS configuration pipelines pass to the script (-HandoffPath). A path that does not exist (a cluster installed from ISO) is not passed. Task 05 sets it as AZL_HANDOFF_PATH (GitHub, GitLab); the Azure DevOps pipeline takes it as a run parameter with no default (none for no handoff), and task 05 lists the value to enter. A run can instead take the artifact of a ZTP run (its run ID).",
+              "type": "string",
+              "default": "ztp-state",
+              "pattern": "^[A-Za-z0-9._][A-Za-z0-9._/-]*$"
+            },
+            "tool_versions": {
+              "description": "Schema 5.6.28. The tool versions every toolkit pipeline installs, the same on GitHub, GitLab and Azure DevOps. Task 05 sets each as an AZL_*_VERSION variable (GitHub repository variable, GitLab project variable, Azure DevOps variable group). The pipeline files hold no version of their own.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "terraform": {
+                  "description": "Schema 5.6.28. The Terraform release the pipelines install (AZL_TERRAFORM_VERSION): hashicorp/setup-terraform, TerraformInstaller, or pipelines/gitlab/Use-AzlGitLabTool.ps1. Default: the version the toolkit's runners carry (tool_versions.terraform of the cicd-runner module, cicd_runner_terraform_version of the Ansible role).",
+                  "type": "string",
+                  "default": "1.16.3",
+                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                },
+                "python": {
+                  "description": "Schema 5.6.28. The Python minor version of the Ansible jobs (AZL_PYTHON_VERSION): actions/setup-python, UsePythonVersion, or the python<version> virtual environment of Use-AzlGitLabTool.ps1. ansible-core 2.21 needs 3.12 or later.",
+                  "type": "string",
+                  "default": "3.12",
+                  "pattern": "^3\\.[0-9]+$"
+                },
+                "ansible_core": {
+                  "description": "Schema 5.6.28. The ansible-core release the Ansible jobs install with pip (AZL_ANSIBLE_CORE_VERSION).",
+                  "type": "string",
+                  "default": "2.21.5",
+                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                },
+                "ansible_lint": {
+                  "description": "Schema 5.6.28. The ansible-lint release the lint jobs install with pip (AZL_ANSIBLE_LINT_VERSION).",
+                  "type": "string",
+                  "default": "26.10.1",
+                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                },
+                "az_powershell": {
+                  "description": "Schema 5.6.28. The Az PowerShell module version (AZL_AZ_POWERSHELL_VERSION): preferredAzurePowerShellVersion of AzurePowerShell@5 on Azure DevOps, Install-Module Az -RequiredVersion on GitHub and GitLab.",
+                  "type": "string",
+                  "default": "16.3.0",
+                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                },
+                "powershell_yaml": {
+                  "description": "Schema 5.6.28. The powershell-yaml module version the pipelines install to read infrastructure.yml (AZL_POWERSHELL_YAML_VERSION). Default: the version the toolkit is tested with (README).",
+                  "type": "string",
+                  "default": "0.4.12",
+                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                },
+                "az_keyvault": {
+                  "description": "Schema 5.6.28. The Az.KeyVault module version the pipelines install to read keyvault:// secrets (AZL_AZ_KEYVAULT_VERSION). Default: the version the toolkit is tested with (README).",
+                  "type": "string",
+                  "default": "6.6.1",
+                  "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+                }
+              }
             }
           }
         },
@@ -5014,7 +5075,7 @@
           "additionalProperties": false,
           "properties": {
             "method": {
-              "description": "oidc: a federated credential per repository and environment, no secret. client_secret: a secret, stored only in Key Vault (devops.authentication.client_secret) and in the platform as a masked variable.",
+              "description": "oidc: a federated credential per repository and environment, no secret. client_secret: a secret, stored only in Key Vault (devops.authentication.client_secret) and in the platform as a masked variable. Every toolkit pipeline follows it: task 05 sets AZL_AUTH_METHOD (GitHub, GitLab, the Azure DevOps variable group), and the sign-in steps choose OIDC or the secret by it (schema 5.6.28). A managed identity of the runner is not a method of the pipelines.",
               "type": "string",
               "default": "oidc",
               "enum": [
@@ -5140,6 +5201,11 @@
                 "default": 0,
                 "minimum": 0,
                 "maximum": 32767
+              },
+              "admin_ssh_public_key": {
+                "description": "Schema 5.6.28. The SSH public key of the administrator of a Linux runner (a public key, not a secret): the key itself (ssh-ed25519, ssh-rsa or ecdsa-sha2-nistp*), or a reference the toolkit's secret resolver reads (file://<name> in secrets.file.directory, keyvault://, env://, command://). Task 05 sets AZL_RUNNER_SSH_PUBLIC_KEY from the general Linux runner's key (GitHub, GitLab, the Azure DevOps variable group), and task 06 reads it from there.",
+                "type": "string",
+                "pattern": "^((ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/]+={0,3}( [^\\r\\n]*)?|keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
               }
             },
             "required": [
@@ -5342,6 +5408,12 @@
               "description": "Schema 5.5. Blob name of the CI/CD runners state. Default cicd-infra.tfstate.",
               "type": "string",
               "default": "cicd-infra.tfstate"
+            },
+            "azure_local_key": {
+              "description": "Schema 5.6.28. Blob name of the state of the azure-local Terraform environment. Default azure-local.tfstate. Task 05 sets TF_BACKEND_KEY from it for the pipelines.",
+              "type": "string",
+              "default": "azure-local.tfstate",
+              "pattern": "^[A-Za-z0-9._/-]+\\.tfstate$"
             },
             "storage_account": {
               "$ref": "#/$defs/storage_account_name",

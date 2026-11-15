@@ -1,24 +1,35 @@
 # =============================================================================
-# Stage: Configure Operations — Monitoring, WAC, Syslog
+# Stage: Configure Operations — Monitoring
 # =============================================================================
+# The job writes the Ansible inventory, group_vars and host_vars from the infrastructure file (New-IacVariableFiles.ps1, into
+# IAC_DIRECTORY), copies them to src/ansible/inventory (git-ignored there), signs in to Azure by AZL_AUTH_METHOD and runs playbook 04.
+# Playbook 05 (the domain controllers) runs first, in the configure-onprem stage. Use-AzlGitLabTool.ps1 makes the Python and ansible-core
+# versions of devops.pipelines.tool_versions the ones the job uses.
+
+.configure-operations:
+  stage: configure-operations
+  when: manual
+  allow_failure: false
+  rules:
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
 monitoring:setup:
-  stage: configure-operations
+  extends: .configure-operations
   script:
-    - cd "${ANSIBLE_ROOT}"
-    - ansible-galaxy collection install -r collections/requirements.yml
-    - ansible-playbook -i inventory/hosts.yml playbooks/04-monitoring-setup.yml
-  when: manual
-  allow_failure: false
-  rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
-
-management:vms:
-  stage: configure-operations
-  script:
-    - cd "${ANSIBLE_ROOT}"
-    - ansible-playbook -i inventory/hosts.yml playbooks/05-management-vms.yml
-  when: manual
-  allow_failure: false
-  rules:
-    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Ansible, Modules -PythonVersion $env:AZL_PYTHON_VERSION -AnsibleCoreVersion $env:AZL_ANSIBLE_CORE_VERSION -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION
+        # The sign-in method of devops.authentication.method.
+        if ($env:AZL_AUTH_METHOD -eq "oidc") { az login --service-principal --username $env:ARM_CLIENT_ID --tenant $env:ARM_TENANT_ID --federated-token $env:ARM_OIDC_TOKEN --output none }
+        else { az login --service-principal --username $env:ARM_CLIENT_ID --tenant $env:ARM_TENANT_ID --password $env:ARM_CLIENT_SECRET --output none }
+        az account set --subscription $env:ARM_SUBSCRIPTION_ID
+        $env:ANSIBLE_AZURE_AUTH_SOURCE = "cli"
+        ./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile $env:AZL_INFRASTRUCTURE_FILE -OutputDirectory $env:IAC_DIRECTORY -Target Ansible
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        Copy-Item -Path "$env:IAC_DIRECTORY/ansible/inventory/*" -Destination "$env:ANSIBLE_ROOT/inventory" -Recurse -Force
+        Set-Location $env:ANSIBLE_ROOT
+        ansible-galaxy collection install -r collections/requirements.yml
+        $root = @((ansible-galaxy collection list azure.azcollection --format json | ConvertFrom-Json).PSObject.Properties.Name)[0]
+        python -m pip install --quiet -r (Get-ChildItem -LiteralPath (Join-Path $root "azure/azcollection") -Filter "requirements*.txt" | Select-Object -First 1).FullName
+        ansible-playbook -i inventory/hosts.yml playbooks/04-monitoring-setup.yml
+      '

@@ -1,14 +1,19 @@
 # =============================================================================
 # Stage: Validate — Lint, schema validation, Terraform plan
 # =============================================================================
+# Every script is one pwsh block: Use-AzlGitLabTool.ps1 makes the versions of devops.pipelines.tool_versions the ones the job uses.
 
 terraform:validate:
   stage: validate
   script:
-    - cd "${TF_ROOT}"
-    - terraform init -backend=false
-    - terraform validate
-    - terraform fmt -check -recursive
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Terraform -TerraformVersion $env:AZL_TERRAFORM_VERSION
+        Set-Location $env:TF_ROOT
+        terraform init -backend=false
+        terraform validate
+        terraform fmt -check -recursive
+      '
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
@@ -16,33 +21,47 @@ terraform:validate:
 ansible:lint:
   stage: validate
   script:
-    - cd "${ANSIBLE_ROOT}"
-    - ansible-galaxy collection install -r collections/requirements.yml
-    - ansible-lint playbooks/ roles/
-    - ansible-playbook --syntax-check playbooks/site.yml
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Ansible -PythonVersion $env:AZL_PYTHON_VERSION -AnsibleCoreVersion $env:AZL_ANSIBLE_CORE_VERSION -AnsibleLintVersion $env:AZL_ANSIBLE_LINT_VERSION
+        Set-Location $env:ANSIBLE_ROOT
+        ansible-galaxy collection install -r collections/requirements.yml
+        ansible-lint playbooks/ roles/
+        ansible-playbook --syntax-check playbooks/site.yml
+      '
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
+# The infrastructure file is checked before anything is generated from it.
 config:validate:
   stage: validate
   script:
-    - pwsh -NoProfile -File scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path "${INFRASTRUCTURE_FILE}"
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Modules -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION
+        ./scripts/common/infrastructure/Test-InfrastructureFile.ps1 -Path $env:AZL_INFRASTRUCTURE_FILE
+        exit $LASTEXITCODE
+      '
   rules:
     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
     - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
 
 terraform:plan:
   stage: plan
+  needs: ["config:validate", "terraform:validate"]
   script:
-    - cd "${TF_ROOT}"
-    - terraform init -input=false
-      -backend-config="resource_group_name=${TF_BACKEND_RG}"
-      -backend-config="storage_account_name=${TF_BACKEND_SA}"
-      -backend-config="container_name=${TF_BACKEND_CONTAINER}"
-      -backend-config="key=${TF_BACKEND_KEY}"
-      -backend-config="use_azuread_auth=true"
-    - terraform plan -out=tfplan -input=false
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Terraform, Modules -TerraformVersion $env:AZL_TERRAFORM_VERSION -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION
+        # The sign-in method of devops.authentication.method.
+        if ($env:AZL_AUTH_METHOD -eq "oidc") { $env:ARM_USE_OIDC = "true"; $env:ARM_CLIENT_SECRET = $null } else { $env:ARM_USE_OIDC = "false"; $env:ARM_OIDC_TOKEN = $null }
+        ./config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile $env:AZL_INFRASTRUCTURE_FILE -OutputDirectory $env:IAC_DIRECTORY -Target AzureLocal
+        if ($LASTEXITCODE) { exit $LASTEXITCODE }
+        Set-Location $env:TF_ROOT
+        terraform init -input=false "-backend-config=resource_group_name=$env:TF_BACKEND_RG" "-backend-config=storage_account_name=$env:TF_BACKEND_SA" "-backend-config=container_name=$env:TF_BACKEND_CONTAINER" "-backend-config=key=$env:TF_BACKEND_KEY" "-backend-config=use_azuread_auth=true"
+        terraform plan -out=tfplan -input=false "-var-file=$env:IAC_DIRECTORY/terraform/azure-local/terraform.tfvars.json"
+      '
   artifacts:
     paths:
       - "${TF_ROOT}/tfplan"

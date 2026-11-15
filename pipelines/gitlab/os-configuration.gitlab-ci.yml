@@ -9,23 +9,24 @@
 # os_configuration.clear_storage is true) as artifacts. Stage `apply` is a manual job: someone with permission to run protected
 # jobs reads the plan job's log and artifacts, then plays it. `resource_group` keeps two runs from working on the cluster at once.
 #
-# CI/CD variables (Settings > CI/CD > Variables; the values below are placeholders, set the real ones there):
-#   AZL_RUNNER_LABEL        the tag of the self-hosted runner (devops.pipelines.runner_label)
-#   AZL_ENVIRONMENT_OS_CONFIGURATION  the approval environment of the apply job (devops.pipelines.environments.os_configuration)
-#                           Task 05 of the CI/CD setup sets these two from infrastructure.yml as project variables. tags: and environment:name
-#                           expand CI/CD variables (https://docs.gitlab.com/ci/variables/where_variables_can_be_used/).
-#   AZURE_AUTH              managed-identity (the runner's managed identity) or oidc (a federated app registration)
-#   AZURE_CLIENT_ID         client ID of the user-assigned managed identity, or of the app registration with a federated credential
-#                           for this project; leave empty for a system-assigned managed identity
-#   AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID
-#   INFRASTRUCTURE_FILE     path of the master infrastructure.yml in the repository, or in a pipeline artifact
-#   HANDOFF_PATH            a handoff file or a directory of *.ztp-handoff.json: a repository path, or the artifact of the ZTP pipeline
-#                           (add `needs: [{ pipeline: ..., job: ..., artifacts: true }]` or a `dependencies` entry below)
+# Project CI/CD variables: task 05 of the CI/CD setup sets each from infrastructure.yml; no value is in this file. tags: and environment:name
+# expand CI/CD variables (https://docs.gitlab.com/ci/variables/where_variables_can_be_used/).
+#   ARM_CLIENT_ID, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID  azure.automation_identity, azure.tenant_id, azure.subscription_id
+#   AZL_AUTH_METHOD         devops.authentication.method: oidc (the GitLab ID token ARM_OIDC_TOKEN and the federated credential of task 01)
+#                           or client_secret (the masked variable ARM_CLIENT_SECRET, which task 05 reads from Key Vault)
+#   AZL_RUNNER_LABEL        devops.pipelines.runner_label (the tag of the general runner)
+#   AZL_ENVIRONMENT_OS_CONFIGURATION  devops.pipelines.environments.os_configuration (the approval environment of the apply job)
+#   AZL_INFRASTRUCTURE_FILE devops.pipelines.infrastructure_file (the master infrastructure.yml in the repository)
+#   AZL_HANDOFF_PATH        devops.pipelines.handoff_path: a handoff file or a directory of *.ztp-handoff.json in the repository (not used
+#                           when missing), or the artifact of the ZTP pipeline (add `needs: [{ pipeline: ..., job: ..., artifacts: true }]`
+#                           or a `dependencies` entry below)
+#   AZL_POWERSHELL_YAML_VERSION, AZL_AZ_POWERSHELL_VERSION, AZL_AZ_KEYVAULT_VERSION  devops.pipelines.tool_versions.*
+# The transport, the storage wipe and the bootstrap route are read by the script from the master file; this file overrides none of them.
 # No secret is stored here. The nodes' local administrator password is read from the Key Vault named by identity.local_admin.password.
-# Runner: PowerShell remoting (WinRM) is the transport, so the runner needs a ROUTE to the nodes' management network: a Windows runner on it, or a Linux runner
-# tagged with AZL_RUNNER_LABEL, with pwsh 7 and the PSWSMan module (Negotiate/Kerberos), or WinRM over HTTPS (5986, a certificate on the nodes; remoting.useSsl). A node whose
-# firewall still limits WinRM to its own subnet needs remoting.bootstrapTransport = arc once, or WinRM-In opened for the runner's CIDR. A runner with no route can
-# pass -Transport ArcRunCommand, which is not recommended for network changes.
+# Runner: PowerShell remoting (WinRM) is the transport, so the runner needs a ROUTE to the nodes' management network: the general runner,
+# tagged with AZL_RUNNER_LABEL, with pwsh 7 and the PSWSMan module (Negotiate/Kerberos), or WinRM over HTTPS (5986, a certificate on the
+# nodes). A node whose firewall still limits WinRM to its own subnet needs os_configuration.remoting.bootstrap_transport arc once, or WinRM-In
+# opened for the runner's CIDR.
 
 stages:
   - plan
@@ -33,12 +34,6 @@ stages:
 
 variables:
   OSCONFIG_SCRIPT: scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1
-  INFRASTRUCTURE_FILE: config/infrastructure.yml
-  HANDOFF_PATH: ztp-state
-  AZURE_AUTH: managed-identity # managed-identity | oidc
-  AZURE_CLIENT_ID: '<client-id-of-the-managed-identity-or-app-registration>'
-  AZURE_TENANT_ID: '<tenant-id>'
-  AZURE_SUBSCRIPTION_ID: '<subscription-id>'
   REPORT_DIRECTORY: os-configuration-report
   # Set to 'true' when you play the apply job to approve the one-time WinRM bootstrap (bootstrap_transport arc, smb or auto) for this run.
   # Production and dmz do not bootstrap without it. An smb bootstrap needs a Windows runner.
@@ -48,23 +43,17 @@ variables:
   tags: [$AZL_RUNNER_LABEL]
   # OIDC: GitLab issues a token the Azure app registration trusts (federated credential, audience api://AzureADTokenExchange).
   id_tokens:
-    AZURE_ID_TOKEN:
+    ARM_OIDC_TOKEN:
       aud: api://AzureADTokenExchange
   before_script:
     - |
       pwsh -NoProfile -Command '
-        foreach ($m in "powershell-yaml", "Az.Accounts", "Az.KeyVault") {
-          if (-not (Get-Module -ListAvailable $m)) { Install-Module $m -Scope CurrentUser -Force -Repository PSGallery }
-        }
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Modules -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION -AzPowerShellVersion $env:AZL_AZ_POWERSHELL_VERSION -AzKeyVaultVersion $env:AZL_AZ_KEYVAULT_VERSION
         Enable-AzContextAutosave -Scope CurrentUser | Out-Null
-        $connect = @{ Tenant = $env:AZURE_TENANT_ID; Subscription = $env:AZURE_SUBSCRIPTION_ID }
-        if ($env:AZURE_AUTH -eq "oidc") {
-          Connect-AzAccount -ServicePrincipal -ApplicationId $env:AZURE_CLIENT_ID -FederatedToken $env:AZURE_ID_TOKEN @connect | Out-Null
-        }
-        else {
-          if ($env:AZURE_CLIENT_ID -and $env:AZURE_CLIENT_ID -notlike "<*") { $connect.AccountId = $env:AZURE_CLIENT_ID }
-          Connect-AzAccount -Identity @connect | Out-Null
-        }
+        $connect = @{ Tenant = $env:ARM_TENANT_ID; Subscription = $env:ARM_SUBSCRIPTION_ID; ServicePrincipal = $true }
+        # The sign-in method of devops.authentication.method.
+        if ($env:AZL_AUTH_METHOD -eq "oidc") { Connect-AzAccount -ApplicationId $env:ARM_CLIENT_ID -FederatedToken $env:ARM_OIDC_TOKEN @connect | Out-Null }
+        else { Connect-AzAccount -Credential ([pscredential]::new($env:ARM_CLIENT_ID, (ConvertTo-SecureString -String $env:ARM_CLIENT_SECRET -AsPlainText -Force))) @connect | Out-Null }
         (Get-AzContext).Subscription.Id | Out-Null
       '
 
@@ -73,9 +62,15 @@ os-configuration-plan:
   stage: plan
   resource_group: azure-local-os-configuration
   script:
-    - pwsh -NoProfile -File "$OSCONFIG_SCRIPT" -InfrastructureFile "$INFRASTRUCTURE_FILE" -HandoffPath "$HANDOFF_PATH" -Mode Plan -ReportDirectory "$REPORT_DIRECTORY/plan"
+    - |
+      pwsh -NoProfile -Command '
+        $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Mode = "Plan"; ReportDirectory = "$env:REPORT_DIRECTORY/plan" }
+        if ($env:AZL_HANDOFF_PATH -and (Test-Path -LiteralPath $env:AZL_HANDOFF_PATH)) { $p.HandoffPath = $env:AZL_HANDOFF_PATH }
+        & $env:OSCONFIG_SCRIPT @p
+        exit $LASTEXITCODE
+      '
   after_script:
-    - 'if [ -f "$REPORT_DIRECTORY/plan/summary.md" ]; then cat "$REPORT_DIRECTORY/plan/summary.md"; fi'
+    - pwsh -NoProfile -Command '$s = "$env:REPORT_DIRECTORY/plan/summary.md"; if (Test-Path -LiteralPath $s) { Get-Content -LiteralPath $s }'
   artifacts:
     when: always
     # The plan report and the wipe list the approver read: 30 days is the toolkit's retention for them, long enough to check later what was approved.
@@ -96,10 +91,16 @@ os-configuration-apply:
   environment:
     name: $AZL_ENVIRONMENT_OS_CONFIGURATION
   script:
-    - approval=''; if [ "$APPROVED_BOOTSTRAP" = 'true' ]; then approval='-ApprovedBootstrap'; fi
-    - pwsh -NoProfile -File "$OSCONFIG_SCRIPT" -InfrastructureFile "$INFRASTRUCTURE_FILE" -HandoffPath "$HANDOFF_PATH" -Mode Apply -ReportDirectory "$REPORT_DIRECTORY/apply" -ApprovedWipeList "$REPORT_DIRECTORY/plan/wipe-list.json" $approval
+    - |
+      pwsh -NoProfile -Command '
+        $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Mode = "Apply"; ReportDirectory = "$env:REPORT_DIRECTORY/apply"; ApprovedWipeList = "$env:REPORT_DIRECTORY/plan/wipe-list.json" }
+        if ($env:AZL_HANDOFF_PATH -and (Test-Path -LiteralPath $env:AZL_HANDOFF_PATH)) { $p.HandoffPath = $env:AZL_HANDOFF_PATH }
+        if ($env:APPROVED_BOOTSTRAP -eq "true") { $p.ApprovedBootstrap = $true }
+        & $env:OSCONFIG_SCRIPT @p
+        exit $LASTEXITCODE
+      '
   after_script:
-    - 'if [ -f "$REPORT_DIRECTORY/apply/summary.md" ]; then cat "$REPORT_DIRECTORY/apply/summary.md"; fi'
+    - pwsh -NoProfile -Command '$s = "$env:REPORT_DIRECTORY/apply/summary.md"; if (Test-Path -LiteralPath $s) { Get-Content -LiteralPath $s }'
   artifacts:
     when: always
     # The report of what the apply changed: 90 days is the toolkit's retention for it.

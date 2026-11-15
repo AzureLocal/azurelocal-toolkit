@@ -2198,6 +2198,36 @@ devops:
     # (since 5.6.27) 
     # used by: cicd_infra
     variable_group: "iic-azure-credentials"
+    # (since 5.6.28) 
+    # default: "config/infrastructure.yml"; used by: cicd_infra
+    infrastructure_file: "config/infrastructure.yml"
+    # (since 5.6.28) 
+    # default: "ztp-state"; used by: cicd_infra
+    handoff_path: "ztp-state"
+    # (since 5.6.28) 
+    # used by: cicd_infra
+    tool_versions:
+      # (since 5.6.28) 
+      # default: "1.16.3"; used by: cicd_infra
+      terraform: "1.16.3"
+      # (since 5.6.28) 
+      # default: "3.12"; used by: cicd_infra
+      python: "3.12"
+      # (since 5.6.28) 
+      # default: "2.21.5"; used by: cicd_infra
+      ansible_core: "2.21.5"
+      # (since 5.6.28) 
+      # default: "26.10.1"; used by: cicd_infra
+      ansible_lint: "26.10.1"
+      # (since 5.6.28) 
+      # default: "16.3.0"; used by: cicd_infra
+      az_powershell: "16.3.0"
+      # (since 5.6.28) 
+      # default: "0.4.12"; used by: cicd_infra
+      powershell_yaml: "0.4.12"
+      # (since 5.6.28) 
+      # default: "6.6.1"; used by: cicd_infra
+      az_keyvault: "6.6.1"
   # (since 5.5) 
   # used by: cicd_infra
   authentication:
@@ -2261,6 +2291,9 @@ devops:
       # Data disk for the ZTP media, images and vouchers. 512 or more for ztp.
       # default: 0; used by: cicd_infra, terraform
       data_disk_gb: 512
+      # (since 5.6.28) 
+      # used by: cicd_infra
+      admin_ssh_public_key: "file://runner-admin.pub"
   # (since 5.5) 
   # used by: cicd_infra
   runner_network:
@@ -2363,6 +2396,9 @@ devops:
     # (since 5.5) 
     # default: "cicd-infra.tfstate"; used by: cicd_infra, terraform
     key: "cicd-infra.tfstate"
+    # (since 5.6.28) 
+    # default: "azure-local.tfstate"; used by: cicd_infra, terraform
+    azure_local_key: "azure-local.tfstate"
     # Storage account that holds the state.
     # used by: cicd_infra, terraform
     storage_account: "stiictfstate01"

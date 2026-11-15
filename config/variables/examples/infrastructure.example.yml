@@ -588,10 +588,22 @@ devops:
     # with these names; the Azure DevOps pipelines take them as run parameters. GitHub and GitLab ignore both.
     service_connection: "iic-azure-local"
     variable_group: "iic-azure-credentials"
+    # 5.6.28: the infrastructure file and the ZTP handoff path the pipelines pass to the scripts, and the tool versions every pipeline
+    # installs. Task 05 sets them as AZL_* variables (Azure DevOps: the paths are run parameters, the versions go to the variable group).
+    infrastructure_file: "config/infrastructure.yml"
+    handoff_path: "ztp-state"
+    tool_versions:
+      terraform: "1.16.3"
+      python: "3.12"
+      ansible_core: "2.21.5"
+      ansible_lint: "26.10.1"
+      az_powershell: "16.3.0"
+      powershell_yaml: "0.4.12"
+      az_keyvault: "6.6.1"
 
   # Tasks 01 and 05. The app registration is azure.automation_identity.name.
   authentication:
-    method: oidc # oidc | client_secret
+    method: oidc # oidc | client_secret; every pipeline follows it (AZL_AUTH_METHOD)
     roles: ["Contributor", "User Access Administrator"]
     grant_graph_role_management: false
     register_encryption_at_host: true
@@ -629,7 +641,7 @@ devops:
     arc_run_command: true
     key_vaults: ["kv-iic-mgmt-01"] # default: every vault in key_vaults
 
-  state: { storage_account: "stiictfstate01", container: "tfstate", resource_group: "rg-iic-mgmt-01", key: "cicd-infra.tfstate" }
+  state: { storage_account: "stiictfstate01", container: "tfstate", resource_group: "rg-iic-mgmt-01", key: "cicd-infra.tfstate", azure_local_key: "azure-local.tfstate" }
 
 # Anything this schema doesn't define, under its own key. Tools ignore keys they don't own.
 # Schema 5.4.3. The OS configuration run (Invoke-AzureLocalOsConfiguration.ps1). Optional.
