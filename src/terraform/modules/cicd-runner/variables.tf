@@ -524,7 +524,7 @@ variable "ansible_collections" {
 }
 
 variable "tool_versions" {
-  description = "Tool versions. Empty strings take the current release (Azure CLI, PowerShell, Az, the Azure Pipelines agent). SHA-256 values are checked when set."
+  description = "Tool versions. Empty strings take the current release (Azure CLI, PowerShell, the Azure Pipelines agent). SHA-256 values are checked when set."
   type = object({
     terraform                    = optional(string, "1.16.3")
     bicep                        = optional(string, "0.49.2")
@@ -537,8 +537,8 @@ variable "tool_versions" {
     gitlab_runner_sha256         = optional(string, "cd586a217b0ba4d339b3f3d645b84f8f5e1cc711e73148c30a3eec0f8c78378b")
     gitlab_runner_windows_sha256 = optional(string, "")
     azure_devops_agent           = optional(string, "")
-    az_powershell                = optional(string, "")
-    ansible_core                 = optional(string, "")
+    az_powershell                = optional(string, "16.3.0")
+    ansible_core                 = optional(string, "2.21.5")
   })
   default = {}
 }

@@ -275,7 +275,7 @@ Describe 'Task 05 sets every value a pipeline reads, from its key, with the regi
         $state | Should -Be (& $script:Module { $script:AzlAzureLocalStateKey })
     }
     It 'the Terraform default is the version the toolkit''s runners carry' {
-        $runner = @($script:Registry | Where-Object { $_.Path -like 'tools.*.tool_versions_terraform' })[0].Node['default']
+        $runner = ([string]@($script:Registry | Where-Object { $_.Path -like 'tools.*.tool_versions_terraform' })[0].Node['default']).Trim('"')  # the Terraform entries hold the HCL default, quotes included
         $pipelines = @($script:Registry | Where-Object Path -EQ 'devops.pipelines.tool_versions.terraform')[0].Node['default']
         $pipelines | Should -Be $runner
         (Get-Text 'src/ansible/roles/cicd_runner/defaults/main.yml') | Should -Match "cicd_runner_terraform_version: `"$([regex]::Escape($pipelines))`""
@@ -324,5 +324,29 @@ Describe 'Removed and moved pipeline files' {
     It 'the archived GitHub workflows are described as archived' {
         (Get-Text '.azurelocal-platform.yml') | Should -Match 'reusableWorkflows: \[\]'
         (Get-Text 'repo-management/automation.md') | Should -Match '\*\*Archived\.\*\*'
+    }
+}
+
+Describe 'One version per tool (D121): the pipelines, the Terraform runner module and the Ansible runner role install the same release' {
+    BeforeAll {
+        $schema = [IO.File]::ReadAllText([IO.Path]::Combine($script:Repo, 'config', 'variables', 'schema', 'infrastructure.schema.json')) | ConvertFrom-Json -AsHashtable
+        $script:PipelineVersion = $schema.properties.devops.properties.pipelines.properties.tool_versions.properties
+        $tf = [IO.File]::ReadAllText([IO.Path]::Combine($script:Repo, 'src', 'terraform', 'modules', 'cicd-runner', 'variables.tf'))
+        $script:TerraformVersion = @{}
+        foreach ($m in [regex]::Matches($tf, '(?m)^\s+(?<k>[a-z_]+)\s*=\s*optional\(string,\s*"(?<v>[^"]*)"\)')) { $script:TerraformVersion[$m.Groups['k'].Value] = $m.Groups['v'].Value }
+        $role = ConvertFrom-Yaml ([IO.File]::ReadAllText([IO.Path]::Combine($script:Repo, 'src', 'ansible', 'roles', 'cicd_runner', 'defaults', 'main.yml')))
+        $script:RoleVersion = $role
+    }
+    It '<Tool>: pipelines <Pipeline>, Terraform <Terraform>, Ansible <Role>' -ForEach @(
+        @{ Tool = 'terraform'; Pipeline = 'terraform'; Terraform = 'terraform'; Role = 'cicd_runner_terraform_version' }
+        @{ Tool = 'ansible-core'; Pipeline = 'ansible_core'; Terraform = 'ansible_core'; Role = 'cicd_runner_ansible_core_version' }
+        @{ Tool = 'ansible-lint'; Pipeline = 'ansible_lint'; Terraform = $null; Role = 'cicd_runner_ansible_lint_version' }
+        @{ Tool = 'Az PowerShell'; Pipeline = 'az_powershell'; Terraform = 'az_powershell'; Role = 'cicd_runner_az_module_version' }
+        @{ Tool = 'powershell-yaml'; Pipeline = 'powershell_yaml'; Terraform = $null; Role = 'cicd_runner_powershell_yaml_version' }
+    ) {
+        $want = [string]$script:PipelineVersion[$Pipeline].default
+        $want | Should -Not -BeNullOrEmpty -Because "devops.pipelines.tool_versions.$Pipeline needs a pinned default"
+        [string]$script:RoleVersion[$Role] | Should -Be $want -Because "src/ansible/roles/cicd_runner/defaults/main.yml $Role must install the release the pipelines install"
+        if ($Terraform) { $script:TerraformVersion[$Terraform] | Should -Be $want -Because "src/terraform/modules/cicd-runner/variables.tf tool_versions.$Terraform must install the release the pipelines install" }
     }
 }

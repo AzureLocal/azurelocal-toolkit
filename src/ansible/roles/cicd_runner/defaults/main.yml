@@ -60,13 +60,13 @@ cicd_runner_gitlab_runner_linux_sha256: "cd586a217b0ba4d339b3f3d645b84f8f5e1cc71
 cicd_runner_gitlab_runner_windows_sha256: ""
 cicd_runner_azure_devops_agent_version: ""
 # Python packages of the Ansible tooling on Linux (pip). ansible-core follows the Terraform module (tool_versions.ansible_core).
-cicd_runner_ansible_core_version: ""
-cicd_runner_ansible_lint_version: "25.6.1"
+cicd_runner_ansible_core_version: "2.21.5"
+cicd_runner_ansible_lint_version: "26.10.1"
 cicd_runner_pywinrm_version: "0.5.0"
 cicd_runner_pypsrp_version: "0.8.1"
 cicd_runner_yamllint_version: "1.37.1"
 # PowerShell modules (PowerShell Gallery). Az follows the Terraform module (tool_versions.az_powershell).
-cicd_runner_az_module_version: ""
+cicd_runner_az_module_version: "16.3.0"
 cicd_runner_powershell_yaml_version: "0.4.12"
 cicd_runner_pester_version: "5.9.1"
 # Windows: Git for Windows (the release tag, vX.Y.Z.windows.N without the v) and PowerShell 7.
