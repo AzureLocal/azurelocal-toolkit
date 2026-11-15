@@ -427,6 +427,16 @@
               "pool": {
                 "description": "The Azure Pipelines agent pool, or the GitHub runner group. A ztp runner gets its own. Required on Azure DevOps (task 06 stops without it, there is no default pool); the Azure DevOps pipelines take the pool of the general runner as their agent pool parameter.",
                 "type": "string"
+              },
+              "admin_username": {
+                "description": "Schema 5.6.28. Local administrator of the runner machines. Default runneradmin.",
+                "type": "string",
+                "default": "runneradmin",
+                "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+              },
+              "identity_client_id": {
+                "$ref": "#/$defs/guid",
+                "description": "Schema 5.6.28. Client (application) ID of the runner's user-assigned managed identity (GUID), once it exists. Not a secret."
               }
             }
           }

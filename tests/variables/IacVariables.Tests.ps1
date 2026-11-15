@@ -268,14 +268,19 @@ Describe 'The generator, run on the example file' {
         $tf = Get-Content (Join-Path $script:Run 'terraform\azure-local\terraform.tfvars.json') -Raw | ConvertFrom-Json -AsHashtable
         $tf.subnets.Keys | Should -Contain 'gateway'
         $tf.subnets.Keys | Should -Contain 'bastion'
-        $tf.management_groups.root_name | Should -Be 'mg-iic'
-        $tf.org_code | Should -Be 'iic'
+        @($tf.management_groups | Where-Object { $_.name -eq 'mg-iic' }).Count | Should -Be 1
         $tf.enable_vpn_gateway | Should -BeTrue
         $tf.vpn_config.local_gateway_ip | Should -Be '203.0.113.1'
         # every management VM sits in a subnet that exists
         foreach ($vm in $tf.management_vms.Values) { $tf.subnets.Keys | Should -Contain $vm.subnet_key }
         # every resource group the modules look up is one the landing zone creates
-        foreach ($k in 'hub_resource_group_name', 'monitoring_resource_group_name', 'identity_resource_group_name', 'compute_resource_group_name') { $tf.resource_groups.Keys | Should -Contain $tf[$k] }
+        foreach ($k in 'hub_resource_group_name', 'monitoring_resource_group_name', 'identity_resource_group_name') { $tf.resource_groups.Keys | Should -Contain $tf[$k] }
+        # each VM takes its own keys; a key the file leaves out takes its registry default
+        foreach ($vm in $tf.management_vms.Values) { $tf.resource_groups.Keys | Should -Contain $vm.resource_group; $vm.admin_username | Should -Not -BeNullOrEmpty; $vm.os_disk_caching | Should -Be 'ReadWrite' }
+        @($tf.management_groups | Where-Object { $_.name -eq 'mg-iic-identity' })[0].parent | Should -Be 'mg-iic-platform'
+        @($tf.subscriptions | Where-Object { $_.name -eq 'sub-iic-connectivity' })[0].management_group | Should -Be 'mg-iic-platform'
+        $tf.environment_class | Should -Not -BeNullOrEmpty
+        $tf.key_vault_soft_delete_retention_days | Should -Be 90 -Because 'the registry default of key_vaults[].soft_delete_retention_days'
         $backend = Get-Content (Join-Path $script:Run 'terraform\azure-local\backend.hcl') -Raw
         $backend | Should -Match 'key = "azure-local.tfstate"'
     }

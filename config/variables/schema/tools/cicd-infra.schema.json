@@ -679,6 +679,107 @@
                 "default": 0,
                 "minimum": 0,
                 "maximum": 32767
+              },
+              "admin_username": {
+                "description": "Schema 5.6.28. Local administrator of the runner machines. Default runneradmin.",
+                "type": "string",
+                "default": "runneradmin",
+                "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+              },
+              "identity_client_id": {
+                "$ref": "#/$defs/guid",
+                "description": "Schema 5.6.28. Client (application) ID of the runner's user-assigned managed identity (GUID), once it exists. Not a secret."
+              },
+              "nsg_name": {
+                "description": "Schema 5.6.28. Name of the network security group of the runner subnet. Task 06 needs it; set an existing group's name to adopt it with terraform import.",
+                "type": "string"
+              },
+              "managed_identity_name": {
+                "description": "Schema 5.6.28. Name of the user-assigned managed identity the runner signs in to Azure as. Task 06 needs it.",
+                "type": "string"
+              },
+              "windows_admin_password_secret": {
+                "$ref": "#/$defs/kv_ref",
+                "description": "Schema 5.6.28. Windows runners only: Key Vault reference to the secret task 06 writes the generated administrator password to. The vault must be the vault of registration_secret. Absent: the password is kept in the Terraform state only."
+              },
+              "zones": {
+                "description": "Schema 5.6.28. Availability zones the runner machines are spread over (the VM scale set spans them). Empty: no zone.",
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "1",
+                    "2",
+                    "3"
+                  ]
+                }
+              },
+              "os_disk_size_gb": {
+                "description": "Schema 5.6.28. Size of the OS disk in GB. Absent: the size the Terraform module gives the OS (default_os_disk_size_gb: 64 on Linux, 128 on Windows).",
+                "type": "integer",
+                "minimum": 30,
+                "maximum": 4095
+              },
+              "os_disk_type": {
+                "description": "Schema 5.6.28. Storage type of the OS disk and of the data disk. Default Premium_LRS.",
+                "type": "string",
+                "default": "Premium_LRS",
+                "enum": [
+                  "Standard_LRS",
+                  "StandardSSD_LRS",
+                  "StandardSSD_ZRS",
+                  "Premium_LRS",
+                  "Premium_ZRS"
+                ]
+              },
+              "os_disk_caching": {
+                "description": "Schema 5.6.28. Caching of the OS disk. Default ReadWrite.",
+                "type": "string",
+                "default": "ReadWrite",
+                "enum": [
+                  "None",
+                  "ReadOnly",
+                  "ReadWrite"
+                ]
+              },
+              "data_disk_caching": {
+                "description": "Schema 5.6.28. Caching of the data disk (data_disk_gb). Default ReadWrite.",
+                "type": "string",
+                "default": "ReadWrite",
+                "enum": [
+                  "None",
+                  "ReadOnly",
+                  "ReadWrite"
+                ]
+              },
+              "encryption_at_host": {
+                "description": "Schema 5.6.28. Encryption at host of the runner machines. The Microsoft.Compute/EncryptionAtHost feature must be registered on the subscription (task 01 does this with devops.authentication.register_encryption_at_host). Default false.",
+                "type": "boolean",
+                "default": false
+              },
+              "image": {
+                "description": "Schema 5.6.28. Marketplace image of the runner machines. Absent: the image the Terraform module gives the OS (default_images: Ubuntu 24.04 LTS on Linux, Windows Server 2025 Datacenter Azure Edition on Windows).",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "publisher": {
+                    "description": "Image publisher.",
+                    "type": "string"
+                  },
+                  "offer": {
+                    "description": "Image offer.",
+                    "type": "string"
+                  },
+                  "sku": {
+                    "description": "Image SKU.",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "Image version. Default latest.",
+                    "type": "string",
+                    "default": "latest"
+                  }
+                }
               }
             }
           }
@@ -734,6 +835,14 @@
                   "description": "Create the hub half of the peering. False when the network team owns it.",
                   "type": "boolean",
                   "default": true
+                },
+                "spoke_name": {
+                  "description": "Schema 5.6.28. Name of the spoke half of the peering (on the runner VNet). Needed when enabled is true.",
+                  "type": "string"
+                },
+                "hub_name": {
+                  "description": "Schema 5.6.28. Name of the hub half of the peering (on the hub VNet). Needed when enabled and create_hub_side are true.",
+                  "type": "string"
                 }
               }
             },
@@ -747,6 +856,14 @@
             "reachable_tcp_ports": {
               "description": "TCP ports allowed outbound to the lab networks. Default 22, 443, 445, 3389, 5985, 5986.",
               "type": "array",
+              "default": [
+                "22",
+                "443",
+                "445",
+                "3389",
+                "5985",
+                "5986"
+              ],
               "items": {
                 "type": "string"
               }
@@ -764,6 +881,21 @@
               "items": {
                 "$ref": "#/$defs/cidr"
               }
+            },
+            "allow_internet_https": {
+              "description": "Schema 5.6.28. The runner NSG allows HTTPS (443) outbound to the internet: GitHub, GitLab, Azure DevOps, package repositories and runner downloads. Default true.",
+              "type": "boolean",
+              "default": true
+            },
+            "allow_internet_http": {
+              "description": "Schema 5.6.28. The runner NSG allows HTTP (80) outbound to the internet: package mirrors with signed metadata. Default true.",
+              "type": "boolean",
+              "default": true
+            },
+            "allow_icmp": {
+              "description": "Schema 5.6.28. The runner NSG allows ICMP outbound to reachable_cidrs and bmc_cidrs, for reachability checks. Default true.",
+              "type": "boolean",
+              "default": true
             }
           }
         },
@@ -801,6 +933,30 @@
               "type": "array",
               "items": {
                 "$ref": "#/$defs/key_vault_name"
+              }
+            },
+            "additional_role_assignments": {
+              "description": "Schema 5.6.28. Other role assignments of the runner identities, each with a short name, a scope (a resource ID) and a role name.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "description": "Short name of the assignment (unique in the list).",
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,40}$"
+                  },
+                  "scope": {
+                    "description": "Resource ID of the scope: a subscription, a resource group or a resource.",
+                    "type": "string",
+                    "pattern": "^/subscriptions/.+"
+                  },
+                  "role_definition_name": {
+                    "description": "Name of the role, for example Reader.",
+                    "type": "string"
+                  }
+                }
               }
             }
           }
@@ -886,6 +1042,12 @@
             "resource_group": {
               "$ref": "#/$defs/resource_group",
               "description": "Resource group of the state storage account."
+            },
+            "azure_local_key": {
+              "description": "Schema 5.6.28. Blob name of the state of the azure-local Terraform environment (src/terraform/environments/azure-local). Default azure-local.tfstate.",
+              "type": "string",
+              "default": "azure-local.tfstate",
+              "pattern": "^[A-Za-z0-9._/-]+\\.tfstate$"
             }
           }
         }

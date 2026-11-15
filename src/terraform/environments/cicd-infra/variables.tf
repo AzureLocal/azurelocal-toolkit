@@ -1,8 +1,11 @@
 # =============================================================================
 # CI/CD infrastructure - variables
 # =============================================================================
-# No secret is a variable. Real values (subscription and tenant IDs, names) go in
-# a terraform.tfvars that stays outside the repository (*.tfvars is git-ignored).
+# No secret is a variable. Every fact of the environment comes from infrastructure.yml:
+# New-IacVariableFiles.ps1 (or task 06, Deploy-CicdRunners.ps1) writes the generated
+# terraform.tfvars.json outside the repository, from the devops, azure, key_vaults,
+# landing_zone and tags sections. A variable with a default is a setting of this code
+# (class c under tools.cicd_infra.terraform_variables in the master registry).
 # =============================================================================
 
 # ------------------------------------------------------------------ azure ----
@@ -46,6 +49,18 @@ variable "tags" {
   default     = {}
 }
 
+variable "prevent_deletion_if_contains_resources" {
+  description = "Provider setting: refuse to delete a resource group that still holds resources Terraform does not manage."
+  type        = bool
+  default     = true
+}
+
+variable "storage_use_azuread" {
+  description = "Provider setting: reach storage with Entra ID, never with an account key."
+  type        = bool
+  default     = true
+}
+
 # --------------------------------------------------------------- platform ----
 
 variable "platform" {
@@ -59,7 +74,13 @@ variable "scm_url" {
 }
 
 variable "github_runner_group" {
-  description = "GitHub runner group for the runners. Empty uses the default group."
+  description = "GitHub runner group of the general (Linux) runners (devops.runners[].pool). Empty uses the default group."
+  type        = string
+  default     = ""
+}
+
+variable "github_ztp_runner_group" {
+  description = "GitHub runner group of the ZTP (Windows) runner (devops.runners[].pool of the ztp runner). Empty uses the default group."
   type        = string
   default     = ""
 }
@@ -97,37 +118,67 @@ variable "admin_ssh_public_key" {
 }
 
 variable "linux_runner" {
-  description = "The general runner: Linux, for ARM, Arc, Terraform, Ansible and OS-configuration jobs."
+  description = "The general runner (devops.runners[] with os_type linux): Linux, for ARM, Arc, Terraform, Ansible and OS-configuration jobs."
   type = object({
-    enabled              = optional(bool, true)
-    name_prefix          = optional(string, "runner-lnx")
+    enabled              = bool
+    os_type              = optional(string)
+    purpose              = optional(string)
+    name_prefix          = optional(string)
     computer_name_prefix = optional(string, "azlrunlnx")
-    count                = optional(number, 1)
-    compute_type         = optional(string, "vm")
-    vm_size              = optional(string, "Standard_D2s_v5")
+    count                = optional(number)
+    compute_type         = optional(string)
+    vm_size              = optional(string)
     private_ip_addresses = optional(list(string), [])
     extra_labels         = optional(list(string), [])
     install_ansible      = optional(bool, true)
-    nsg_name             = optional(string, "")
-    identity_name        = optional(string, "")
+    nsg_name             = optional(string)
+    identity_name        = optional(string)
+    admin_username       = optional(string)
+    os_disk_size_gb      = optional(number)
+    os_disk_type         = optional(string)
+    os_disk_caching      = optional(string)
+    data_disk_caching    = optional(string)
+    encryption_at_host   = optional(bool)
+    zones                = optional(list(string), [])
+    image = optional(object({
+      publisher = string
+      offer     = string
+      sku       = string
+      version   = string
+    }))
   })
-  default = {}
 }
 
 variable "ztp_runner" {
-  description = "The ZTP runner: one Windows VM that the BMCs can reach on TCP 445, for the azurelocal-ztp Boot, Bootstrap and Vouchers stages."
+  description = "The ZTP runner (devops.runners[] with purpose ztp): one Windows VM that the BMCs can reach on TCP 445, for the azurelocal-ztp Boot, Bootstrap and Vouchers stages."
   type = object({
-    enabled              = optional(bool, false)
-    name_prefix          = optional(string, "runner-ztp")
+    enabled              = bool
+    os_type              = optional(string)
+    purpose              = optional(string)
+    name_prefix          = optional(string)
     computer_name_prefix = optional(string, "azlrunztp")
-    vm_size              = optional(string, "Standard_D4s_v5")
-    data_disk_size_gb    = optional(number, 512)
+    count                = optional(number)
+    compute_type         = optional(string)
+    vm_size              = optional(string)
+    data_disk_size_gb    = optional(number)
     private_ip_addresses = optional(list(string), [])
     extra_labels         = optional(list(string), [])
-    nsg_name             = optional(string, "")
-    identity_name        = optional(string, "")
+    nsg_name             = optional(string)
+    identity_name        = optional(string)
+    admin_username       = optional(string)
+    os_disk_size_gb      = optional(number)
+    os_disk_type         = optional(string)
+    os_disk_caching      = optional(string)
+    data_disk_caching    = optional(string)
+    encryption_at_host   = optional(bool)
+    zones                = optional(list(string), [])
+    image = optional(object({
+      publisher = string
+      offer     = string
+      sku       = string
+      version   = string
+    }))
   })
-  default = {}
 }
 
 # ---------------------------------------------------------------- network ----
@@ -169,12 +220,14 @@ variable "dns_servers" {
 variable "hub_peering" {
   description = "Peering with the hub VNet (see the module's hub_peering)."
   type = object({
-    enabled             = optional(bool, false)
-    hub_vnet_id         = optional(string, "")
-    use_remote_gateways = optional(bool, true)
-    create_hub_side     = optional(bool, true)
-    spoke_name          = optional(string, "")
-    hub_name            = optional(string, "")
+    enabled                 = optional(bool, false)
+    hub_vnet_id             = optional(string, "")
+    use_remote_gateways     = optional(bool)
+    create_hub_side         = optional(bool)
+    spoke_name              = optional(string, "")
+    hub_name                = optional(string, "")
+    allow_forwarded_traffic = optional(bool)
+    allow_gateway_transit   = optional(bool)
   })
   default = {}
 }
@@ -186,9 +239,23 @@ variable "reachable_cidrs" {
 }
 
 variable "reachable_tcp_ports" {
-  description = "TCP ports allowed outbound to the lab networks."
+  description = "TCP ports allowed outbound to the lab networks (devops.runner_network.reachable_tcp_ports)."
   type        = list(string)
-  default     = ["22", "443", "445", "3389", "5985", "5986"]
+}
+
+variable "allow_internet_https" {
+  description = "Allow HTTPS outbound to the internet (devops.runner_network.allow_internet_https)."
+  type        = bool
+}
+
+variable "allow_internet_http" {
+  description = "Allow HTTP outbound to the internet (devops.runner_network.allow_internet_http)."
+  type        = bool
+}
+
+variable "allow_icmp" {
+  description = "Allow ICMP outbound to the lab networks (devops.runner_network.allow_icmp)."
+  type        = bool
 }
 
 variable "bmc_cidrs" {
@@ -236,7 +303,7 @@ variable "key_vault_reader_ids" {
 }
 
 variable "additional_role_assignments" {
-  description = "Any other role assignment: { scope, role_definition_name }, keyed by a short name."
+  description = "Any other role assignment of the runners (devops.runner_access.additional_role_assignments[]): { scope, role_definition_name }, keyed by its name."
   type = map(object({
     scope                = string
     role_definition_name = string
@@ -245,7 +312,7 @@ variable "additional_role_assignments" {
 }
 
 variable "windows_admin_password_secret_name" {
-  description = "Write the generated Windows administrator password to this secret in the registration vault. Empty keeps it in state only."
+  description = "Write the generated Windows administrator password to this secret in the registration vault (devops.runners[].windows_admin_password_secret of the ztp runner). Empty keeps it in state only."
   type        = string
   default     = ""
 }

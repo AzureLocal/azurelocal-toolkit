@@ -8,10 +8,13 @@
 # =============================================================================
 
 locals {
-  linux_image   = coalesce(var.image, { publisher = "Canonical", offer = "ubuntu-24_04-lts", sku = "server", version = "latest" })
-  windows_image = coalesce(var.image, { publisher = "MicrosoftWindowsServer", offer = "WindowsServer", sku = "2025-datacenter-azure-edition", version = "latest" })
+  # devops.runners[].image when the file sets it; otherwise the image of the OS in default_images (a setting of this code).
+  image         = var.image != null ? var.image : var.default_images[var.os_type]
+  linux_image   = local.image
+  windows_image = local.image
 
-  os_disk_size = var.os_disk_size_gb > 0 ? var.os_disk_size_gb : (local.is_windows ? 128 : 64)
+  # devops.runners[].os_disk_size_gb when the file sets it; otherwise the size of the OS in default_os_disk_size_gb.
+  os_disk_size = var.os_disk_size_gb != null ? var.os_disk_size_gb : var.default_os_disk_size_gb[var.os_type]
 
   bootstrap_vars = {
     platform                     = local.platform
@@ -26,6 +29,7 @@ locals {
     identity_client_id           = azurerm_user_assigned_identity.this.client_id
     purpose                      = var.purpose
     service_account              = var.windows_service_account
+    windows_root                 = var.windows_root
     init_data_disk               = tostring(var.data_disk_size_gb > 0)
     terraform_version            = var.tool_versions.terraform
     bicep_version                = var.tool_versions.bicep
@@ -59,13 +63,13 @@ locals {
 resource "azurerm_network_interface" "vm" {
   for_each = local.all_vms
 
-  name                = "nic-${each.key}"
+  name                = "${var.nic_name_prefix}${each.key}"
   location            = var.location
   resource_group_name = local.resource_group_name
   tags                = local.tags
 
   ip_configuration {
-    name                          = "internal"
+    name                          = var.ip_configuration_name
     subnet_id                     = local.subnet_id
     private_ip_address_allocation = try(var.private_ip_addresses[each.value.index], null) != null ? "Static" : "Dynamic"
     private_ip_address            = try(var.private_ip_addresses[each.value.index], null)
@@ -75,14 +79,15 @@ resource "azurerm_network_interface" "vm" {
 resource "azurerm_managed_disk" "data" {
   for_each = var.data_disk_size_gb > 0 ? local.all_vms : {}
 
-  name                 = "disk-data-${each.key}"
+  name                 = "${var.data_disk_name_prefix}${each.key}"
   location             = var.location
   resource_group_name  = local.resource_group_name
   storage_account_type = var.os_disk_type
-  create_option        = "Empty"
-  disk_size_gb         = var.data_disk_size_gb
-  zone                 = length(var.zones) > 0 ? var.zones[each.value.index % length(var.zones)] : null
-  tags                 = local.tags
+  # A new, empty data disk (the bootstrap initialises it).
+  create_option = "Empty"
+  disk_size_gb  = var.data_disk_size_gb
+  zone          = length(var.zones) > 0 ? var.zones[each.value.index % length(var.zones)] : null
+  tags          = local.tags
 }
 
 # -----------------------------------------------------------------------------
@@ -97,7 +102,7 @@ resource "azurerm_linux_virtual_machine" "this" {
   resource_group_name             = local.resource_group_name
   size                            = var.vm_size
   admin_username                  = var.admin_username
-  disable_password_authentication = true
+  disable_password_authentication = var.disable_password_authentication
   network_interface_ids           = [azurerm_network_interface.vm[each.key].id]
   custom_data                     = base64encode(local.cloud_init)
   encryption_at_host_enabled      = var.encryption_at_host_enabled
@@ -115,7 +120,7 @@ resource "azurerm_linux_virtual_machine" "this" {
   }
 
   os_disk {
-    caching              = "ReadWrite"
+    caching              = var.os_disk_caching
     storage_account_type = var.os_disk_type
     disk_size_gb         = local.os_disk_size
   }
@@ -127,7 +132,10 @@ resource "azurerm_linux_virtual_machine" "this" {
     version   = local.linux_image.version
   }
 
-  boot_diagnostics {}
+  dynamic "boot_diagnostics" {
+    for_each = var.boot_diagnostics_enabled ? [1] : []
+    content {}
+  }
 
   # The identity needs its roles (including Key Vault Secrets User) before the first boot reads the secret.
   depends_on = [azurerm_role_assignment.this, azurerm_subnet_network_security_group_association.this]
@@ -138,8 +146,9 @@ resource "azurerm_virtual_machine_data_disk_attachment" "linux" {
 
   managed_disk_id    = azurerm_managed_disk.data[each.key].id
   virtual_machine_id = azurerm_linux_virtual_machine.this[each.key].id
-  lun                = 0
-  caching            = "ReadWrite"
+  # The only data disk of the VM.
+  lun     = 0
+  caching = var.data_disk_caching
 }
 
 # -----------------------------------------------------------------------------
@@ -148,13 +157,13 @@ resource "azurerm_virtual_machine_data_disk_attachment" "linux" {
 resource "random_password" "windows_admin" {
   count = local.is_windows ? 1 : 0
 
-  length           = 28
+  length           = var.windows_password_policy.length
   special          = true
-  override_special = "!#%*()-_=+[]"
-  min_upper        = 2
-  min_lower        = 2
-  min_numeric      = 2
-  min_special      = 2
+  override_special = var.windows_password_policy.special_characters
+  min_upper        = var.windows_password_policy.min_upper
+  min_lower        = var.windows_password_policy.min_lower
+  min_numeric      = var.windows_password_policy.min_numeric
+  min_special      = var.windows_password_policy.min_special
 }
 
 resource "azurerm_key_vault_secret" "windows_admin_password" {
@@ -163,7 +172,7 @@ resource "azurerm_key_vault_secret" "windows_admin_password" {
   name         = var.windows_admin_password_secret_name
   value        = random_password.windows_admin[0].result
   key_vault_id = var.registration_secret.key_vault_id
-  content_type = "text/plain"
+  content_type = var.secret_content_type
   tags         = local.tags
 }
 
@@ -188,7 +197,7 @@ resource "azurerm_windows_virtual_machine" "this" {
   }
 
   os_disk {
-    caching              = "ReadWrite"
+    caching              = var.os_disk_caching
     storage_account_type = var.os_disk_type
     disk_size_gb         = local.os_disk_size
   }
@@ -200,7 +209,10 @@ resource "azurerm_windows_virtual_machine" "this" {
     version   = local.windows_image.version
   }
 
-  boot_diagnostics {}
+  dynamic "boot_diagnostics" {
+    for_each = var.boot_diagnostics_enabled ? [1] : []
+    content {}
+  }
 
   depends_on = [azurerm_role_assignment.this, azurerm_subnet_network_security_group_association.this]
 }
@@ -210,8 +222,9 @@ resource "azurerm_virtual_machine_data_disk_attachment" "windows" {
 
   managed_disk_id    = azurerm_managed_disk.data[each.key].id
   virtual_machine_id = azurerm_windows_virtual_machine.this[each.key].id
-  lun                = 0
-  caching            = "ReadWrite"
+  # The only data disk of the VM.
+  lun     = 0
+  caching = var.data_disk_caching
 }
 
 # Installs the tooling and registers the runner. Runs as SYSTEM. It runs again
@@ -219,7 +232,7 @@ resource "azurerm_virtual_machine_data_disk_attachment" "windows" {
 resource "azurerm_virtual_machine_run_command" "windows_bootstrap" {
   for_each = local.windows_vms
 
-  name               = "azl-runner-bootstrap"
+  name               = var.bootstrap_run_command_name
   location           = var.location
   virtual_machine_id = azurerm_windows_virtual_machine.this[each.key].id
   tags               = local.tags
@@ -249,8 +262,8 @@ resource "azurerm_linux_virtual_machine_scale_set" "this" {
   sku                             = var.vm_size
   instances                       = var.runner_count
   admin_username                  = var.admin_username
-  disable_password_authentication = true
-  upgrade_mode                    = "Manual"
+  disable_password_authentication = var.disable_password_authentication
+  upgrade_mode                    = var.vmss_upgrade_mode
   custom_data                     = base64encode(local.cloud_init)
   encryption_at_host_enabled      = var.encryption_at_host_enabled
   zones                           = length(var.zones) > 0 ? var.zones : null
@@ -267,7 +280,7 @@ resource "azurerm_linux_virtual_machine_scale_set" "this" {
   }
 
   os_disk {
-    caching              = "ReadWrite"
+    caching              = var.os_disk_caching
     storage_account_type = var.os_disk_type
     disk_size_gb         = local.os_disk_size
   }
@@ -280,17 +293,21 @@ resource "azurerm_linux_virtual_machine_scale_set" "this" {
   }
 
   network_interface {
-    name    = "nic"
+    name = var.vmss_nic_name
+    # A scale set NIC and its IP configuration: the one and only, so the primary ones.
     primary = true
 
     ip_configuration {
-      name      = "internal"
+      name      = var.ip_configuration_name
       primary   = true
       subnet_id = local.subnet_id
     }
   }
 
-  boot_diagnostics {}
+  dynamic "boot_diagnostics" {
+    for_each = var.boot_diagnostics_enabled ? [1] : []
+    content {}
+  }
 
   depends_on = [azurerm_role_assignment.this, azurerm_subnet_network_security_group_association.this]
 }

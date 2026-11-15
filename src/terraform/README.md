@@ -18,14 +18,14 @@ terraform apply -var-file=D:\work\iac\terraform\backend\terraform.tfvars.json
 # 3. Deploy the Azure foundation.
 cd ../environments/azure-local
 terraform init -backend-config=D:\work\iac\terraform\azure-local\backend.hcl
-terraform plan -var-file=D:\work\iac\terraform\azure-local\terraform.tfvars.json -var-file=extra.tfvars -out=tfplan
+terraform plan -var-file=D:\work\iac\terraform\azure-local\terraform.tfvars.json -out=tfplan
 terraform apply tfplan
 ```
 
-`extra.tfvars` is a copy of `terraform.tfvars.example`: the settings that `infrastructure.yml` has no key for yet (NSG rules, Key Vault IP ranges, policy assignments). A secret is never in a file. The generator writes `not-written.txt` next to the variable file and names the environment variable that supplies each one:
+Every value comes from `infrastructure.yml` (a key the file leaves out gets its registry default); a variable with a default is a setting of the code (class c in the registry). Add no `.tfvars` file of your own: a later `-var-file` overrides the generated values. A secret is never in a file. The generator writes `not-written.txt` next to the variable file and names the environment variable that supplies each one:
 
 ```powershell
-$env:TF_VAR_vm_admin_password = '<resolve landing_zone.virtual_machines[0].admin_password>'
+$env:TF_VAR_vm_admin_password = '<resolve landing_zone.virtual_machines[].admin_password>'
 $env:TF_VAR_vpn_shared_key    = '<resolve landing_zone.connectivity.vpn_gateway.site_to_site[0].shared_key>'
 ```
 

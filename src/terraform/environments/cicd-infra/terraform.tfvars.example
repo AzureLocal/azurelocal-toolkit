@@ -1,9 +1,10 @@
 # =============================================================================
-# CI/CD infrastructure - the settings that infrastructure.yml does not hold
+# CI/CD infrastructure - nothing to set by hand
 # =============================================================================
 # Every fact of the environment (subscriptions, names, networks, runners, the
-# registration secret's vault and name, the access scopes) comes from the devops,
-# azure, key_vaults, landing_zone and tags sections of infrastructure.yml. Write it:
+# registration secret's vault and name, the access scopes, the ports) comes from the
+# devops, azure, key_vaults, landing_zone and tags sections of infrastructure.yml.
+# Write it:
 #
 #   pwsh config/variables/scripts/New-IacVariableFiles.ps1 `
 #       -InfrastructureFile ./infrastructure.yml -OutputDirectory <folder outside the repository>
@@ -13,33 +14,18 @@
 # (Deploy-CicdRunners.ps1) builds the same variables from the same keys.
 #
 #   terraform init -backend-config=backend.hcl
-#   terraform plan -var-file=terraform.tfvars.json -var-file=extra.tfvars -out=cicd.tfplan
+#   terraform plan -var-file=terraform.tfvars.json -out=cicd.tfplan
 #
-# Copy this file to extra.tfvars for the settings below. Each of them is registered in
-# config/variables/schema/master-registry.yaml under tools.terraform.variables
-# (and tools.cicd_infra.terraform_variables). The values here are neutral examples.
+# Each variable is registered in config/variables/schema/master-registry.yaml under
+# tools.cicd_infra.terraform_variables. A variable with a default is a setting of this
+# code (class c). Do not set a value of the environment in a .tfvars file: a later
+# -var-file wins over terraform.tfvars.json. Where the values come from:
+#   reachable_tcp_ports                 devops.runner_network.reachable_tcp_ports
+#   windows_admin_password_secret_name  devops.runners[].windows_admin_password_secret of the ztp runner
+#   additional_role_assignments         devops.runner_access.additional_role_assignments[]
+#   tool_versions                       a setting of the code (the module's defaults)
+#
+# The public key of the Linux runners is not in infrastructure.yml. Pass it in the
+# environment:  TF_VAR_admin_ssh_public_key
 # Nothing in this file is a secret.
 # =============================================================================
-
-# The public key of the Linux runners. It is not in infrastructure.yml. Pass it in the
-# environment instead of a file:  TF_VAR_admin_ssh_public_key
-# admin_ssh_public_key = "ssh-ed25519 AAAA...replace-with-your-public-key"
-
-# TCP ports allowed outbound to the lab networks.
-reachable_tcp_ports = ["22", "443", "445", "3389", "5985", "5986"]
-
-# Write the generated Windows administrator password to this secret in the registration vault.
-# windows_admin_password_secret_name = "runner-ztp-local-admin"
-
-# Any other role assignment of the runners, by a short name.
-# additional_role_assignments = {
-#   monitoring = {
-#     scope                = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-mgmt-01"
-#     role_definition_name = "Reader"
-#   }
-# }
-
-# Tool versions of the runners. An empty object takes the defaults of the module.
-# tool_versions = {
-#   terraform = "1.16.3"
-# }

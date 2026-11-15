@@ -3,7 +3,9 @@
 # =============================================================================
 # Self-hosted CI/CD runners on Azure VMs (or a VM scale set), Linux or Windows,
 # for GitHub Actions, GitLab CI/CD or Azure Pipelines. See compute.tf for the
-# machines and templates/ for what runs at first boot.
+# machines and templates/ for what runs at first boot. Every name and setting
+# comes from devops.runners[], devops.runner_network and devops.runner_access of
+# infrastructure.yml; a variable with a default is a setting of this code.
 # =============================================================================
 
 locals {
@@ -14,9 +16,10 @@ locals {
   use_vmss   = var.compute_type == "vmss"
 
   default_labels = concat(
-    ["azure", var.os_type],
-    local.is_windows ? [] : ["terraform", "ansible"],
-    local.is_ztp ? ["ztp"] : [],
+    var.base_labels,
+    [var.os_type],
+    local.is_windows ? [] : var.linux_labels,
+    local.is_ztp ? var.ztp_labels : [],
   )
   labels = distinct(concat(local.default_labels, var.extra_labels))
 
@@ -29,17 +32,18 @@ locals {
   # BMC networks are always reachable outbound (Redfish on 443) for the ztp purpose.
   outbound_cidrs = distinct(concat(var.reachable_cidrs, var.bmc_cidrs))
 
-  instance_names = [for i in range(var.runner_count) : format("%s-%02d", var.name_prefix, i + 1)]
+  instance_names = [for i in range(var.runner_count) : format(var.instance_name_format, var.name_prefix, i + 1)]
   instances = {
     for i, n in local.instance_names : n => {
       index         = i
-      computer_name = format("%s%02d", var.computer_name_prefix, i + 1)
+      computer_name = format(var.computer_name_format, var.computer_name_prefix, i + 1)
     }
   }
 
-  tags = merge(var.tags, { "managed-by" = "azurelocal-toolkit/cicd-runner" })
+  tags = merge(var.tags, var.module_tags)
 
-  # ABAC condition that limits which roles the runner may assign (constrained delegation).
+  # ABAC condition that limits which roles the runner may assign (constrained delegation). The syntax is Microsoft's (Microsoft Learn:
+  # Delegate Azure role assignment management to others with conditions, https://learn.microsoft.com/azure/role-based-access-control/delegate-role-assignments-portal).
   delegable_ids = join(", ", var.rbac_administrator_delegable_role_ids)
   rbac_condition = length(var.rbac_administrator_delegable_role_ids) == 0 ? null : join("", [
     "((!(ActionMatches{'Microsoft.Authorization/roleAssignments/write'})) OR ",
@@ -48,6 +52,7 @@ locals {
     "(@Resource[Microsoft.Authorization/roleAssignments:RoleDefinitionId] ForAnyOfAnyValues:GuidEquals {${local.delegable_ids}}))",
   ])
 
+  # The built-in roles a runner needs for the jobs it runs: Microsoft fixes their names (Microsoft Learn: Azure built-in roles).
   role_assignments = merge(
     { for i, s in var.contributor_scopes : "contributor-${i}" => {
       scope       = s, role = "Contributor", condition = null
@@ -98,7 +103,7 @@ locals {
 # registration credential from Key Vault with it.
 # -----------------------------------------------------------------------------
 resource "azurerm_user_assigned_identity" "this" {
-  name                = var.managed_identity_name != "" ? var.managed_identity_name : "id-${var.name_prefix}"
+  name                = var.managed_identity_name
   location            = var.location
   resource_group_name = local.resource_group_name
   tags                = local.tags
@@ -137,19 +142,29 @@ resource "azurerm_user_assigned_identity" "this" {
       condition     = local.platform != "azure_devops" || var.azure_devops_pool != ""
       error_message = "azure_devops_pool is needed when platform is azure_devops (devops.runners[].pool in infrastructure.yml). There is no default pool."
     }
+    precondition {
+      condition     = !local.create_vnet || !var.hub_peering.enabled || (var.hub_peering.spoke_name != "" && (!var.hub_peering.create_hub_side || var.hub_peering.hub_name != ""))
+      error_message = "hub_peering needs spoke_name, and hub_name when the hub side is created (devops.runner_network.hub_peering.spoke_name and hub_name)."
+    }
+    precondition {
+      condition     = !local.create_vnet || !var.hub_peering.enabled || !var.hub_peering.use_remote_gateways || var.hub_peering.allow_gateway_transit
+      error_message = "hub_peering.use_remote_gateways needs the hub to allow gateway transit (landing_zone.networks[].allow_gateway_transit of the hub network)."
+    }
   }
 }
 
 resource "azurerm_role_assignment" "this" {
   for_each = local.role_assignments
 
-  scope                            = each.value.scope
-  role_definition_name             = each.value.role
-  principal_id                     = azurerm_user_assigned_identity.this.principal_id
-  principal_type                   = "ServicePrincipal"
-  description                      = each.value.description
-  condition                        = each.value.condition
-  condition_version                = each.value.condition == null ? null : "2.0"
+  scope                = each.value.scope
+  role_definition_name = each.value.role
+  principal_id         = azurerm_user_assigned_identity.this.principal_id
+  # A user-assigned managed identity is a service principal in Entra ID.
+  principal_type    = "ServicePrincipal"
+  description       = each.value.description
+  condition         = each.value.condition
+  condition_version = each.value.condition == null ? null : "2.0"
+  # The identity is new and may not have replicated in Entra ID yet; the principal type is known.
   skip_service_principal_aad_check = true
 }
 
@@ -189,12 +204,12 @@ locals {
 resource "azurerm_virtual_network_peering" "spoke_to_hub" {
   count = local.create_vnet && var.hub_peering.enabled ? 1 : 0
 
-  name                         = var.hub_peering.spoke_name != "" ? var.hub_peering.spoke_name : "peer-${var.vnet_name}-to-hub"
+  name                         = var.hub_peering.spoke_name
   resource_group_name          = local.resource_group_name
   virtual_network_name         = azurerm_virtual_network.this[0].name
   remote_virtual_network_id    = var.hub_peering.hub_vnet_id
-  allow_virtual_network_access = true
-  allow_forwarded_traffic      = true
+  allow_virtual_network_access = var.peering_allow_virtual_network_access
+  allow_forwarded_traffic      = var.hub_peering.allow_forwarded_traffic
   use_remote_gateways          = var.hub_peering.use_remote_gateways
 
   # The hub must allow gateway transit before the spoke may use its gateway.
@@ -206,22 +221,24 @@ resource "azurerm_virtual_network_peering" "hub_to_spoke" {
   provider = azurerm.hub
   count    = local.create_vnet && var.hub_peering.enabled && var.hub_peering.create_hub_side ? 1 : 0
 
-  name                         = var.hub_peering.hub_name != "" ? var.hub_peering.hub_name : "peer-hub-to-${var.vnet_name}"
+  name = var.hub_peering.hub_name
+  # The resource group and the name of the hub VNet are the 5th and 9th segments of its resource ID (/subscriptions/<id>/resourceGroups/<rg>/providers/Microsoft.Network/virtualNetworks/<name>).
   resource_group_name          = split("/", var.hub_peering.hub_vnet_id)[4]
   virtual_network_name         = split("/", var.hub_peering.hub_vnet_id)[8]
   remote_virtual_network_id    = azurerm_virtual_network.this[0].id
-  allow_virtual_network_access = true
-  allow_forwarded_traffic      = true
-  allow_gateway_transit        = var.hub_peering.use_remote_gateways
+  allow_virtual_network_access = var.peering_allow_virtual_network_access
+  allow_forwarded_traffic      = var.hub_peering.allow_forwarded_traffic
+  allow_gateway_transit        = var.hub_peering.allow_gateway_transit
 }
 
 # -----------------------------------------------------------------------------
 # NSG. Nothing inbound except, for the ztp purpose, TCP 445 from the BMC ranges
 # and, when you list them, administration from admin_source_cidrs.
-# Outbound: Azure, package and runner downloads (HTTPS, HTTP), the lab ranges.
+# Outbound: Azure, package and runner downloads (HTTPS, HTTP, as
+# devops.runner_network allows them), the lab ranges.
 # -----------------------------------------------------------------------------
 resource "azurerm_network_security_group" "this" {
-  name                = var.nsg_name != "" ? var.nsg_name : "nsg-${var.name_prefix}"
+  name                = var.nsg_name
   location            = var.location
   resource_group_name = local.resource_group_name
   tags                = local.tags
@@ -230,68 +247,40 @@ resource "azurerm_network_security_group" "this" {
 }
 
 locals {
+  # The ports are fixed by the protocols: SSH 22 (Linux) and RDP 3389 (Windows) for administration, HTTPS 443, HTTP 80, SMB 445.
   admin_port = local.is_windows ? "3389" : "22"
+  r          = var.nsg_rule_settings
 
-  nsg_rules = merge(
-    {
-      "Deny-Inbound-Internet" = {
-        priority        = 4000, direction = "Inbound", access = "Deny", protocol = "*"
-        source_prefixes = ["Internet"], dest_prefixes = ["*"], ports = ["*"]
-        description     = "Nothing from the internet."
-      }
-      "Allow-Outbound-AzurePlatform" = {
-        priority        = 100, direction = "Outbound", access = "Allow", protocol = "*"
-        source_prefixes = ["*"], dest_prefixes = ["168.63.129.16"], ports = ["*"]
-        description     = "Azure DNS, wireserver and health probe address."
-      }
-      "Allow-Outbound-HTTPS-AzureCloud" = {
-        priority        = 110, direction = "Outbound", access = "Allow", protocol = "Tcp"
-        source_prefixes = ["*"], dest_prefixes = ["AzureCloud"], ports = ["443"]
-        description     = "ARM, Entra ID, Key Vault."
-      }
-      "Allow-Outbound-HTTPS-Internet" = {
-        priority        = 120, direction = "Outbound", access = "Allow", protocol = "Tcp"
-        source_prefixes = ["*"], dest_prefixes = ["Internet"], ports = ["443"]
-        description     = "GitHub, GitLab, Azure DevOps, package repositories and runner downloads."
-      }
-      "Allow-Outbound-HTTP-Internet" = {
-        priority        = 130, direction = "Outbound", access = "Allow", protocol = "Tcp"
-        source_prefixes = ["*"], dest_prefixes = ["Internet"], ports = ["80"]
-        description     = "Package mirrors (signed metadata)."
-      }
-      "Deny-Outbound-Other" = {
-        priority        = 4000, direction = "Outbound", access = "Deny", protocol = "*"
-        source_prefixes = ["*"], dest_prefixes = ["*"], ports = ["*"]
-        description     = "Everything not listed above."
-      }
-    },
-    length(local.outbound_cidrs) == 0 ? {} : {
-      "Allow-Outbound-Lab-Tcp" = {
-        priority        = 200, direction = "Outbound", access = "Allow", protocol = "Tcp"
-        source_prefixes = ["*"], dest_prefixes = local.outbound_cidrs, ports = var.reachable_tcp_ports
-        description     = "The lab over the peering or tunnel."
-      }
-      "Allow-Outbound-Lab-Icmp" = {
-        priority        = 210, direction = "Outbound", access = "Allow", protocol = "Icmp"
-        source_prefixes = ["*"], dest_prefixes = local.outbound_cidrs, ports = ["*"]
-        description     = "Reachability checks."
-      }
-    },
-    !local.is_ztp ? {} : {
-      "Allow-Inbound-BMC-SMB" = {
-        priority        = 100, direction = "Inbound", access = "Allow", protocol = "Tcp"
-        source_prefixes = var.bmc_cidrs, dest_prefixes = ["*"], ports = ["445"]
-        description     = "The BMC's SMB client reads and writes the virtual USB image on the runner."
-      }
-    },
-    length(var.admin_source_cidrs) == 0 ? {} : {
-      "Allow-Inbound-Admin" = {
-        priority        = 110, direction = "Inbound", access = "Allow", protocol = "Tcp"
-        source_prefixes = var.admin_source_cidrs, dest_prefixes = ["*"], ports = [local.admin_port]
-        description     = "Administration from the listed ranges."
-      }
-    },
+  # Service tags and the Azure platform address are Microsoft's: Internet, AzureCloud, and 168.63.129.16 (DNS, the wireserver and health
+  # probes; Microsoft Learn: What is IP address 168.63.129.16?, https://learn.microsoft.com/azure/virtual-network/what-is-ip-address-168-63-129-16).
+  nsg_rules_list = concat(
+    [
+      { key = "deny_inbound_internet", direction = "Inbound", access = "Deny", protocol = "*", source_prefixes = ["Internet"], dest_prefixes = ["*"], ports = ["*"], description = "Nothing from the internet." },
+      { key = "allow_outbound_azure_platform", direction = "Outbound", access = "Allow", protocol = "*", source_prefixes = ["*"], dest_prefixes = ["168.63.129.16"], ports = ["*"], description = "Azure DNS, wireserver and health probe address." },
+      { key = "allow_outbound_https_azure_cloud", direction = "Outbound", access = "Allow", protocol = "Tcp", source_prefixes = ["*"], dest_prefixes = ["AzureCloud"], ports = ["443"], description = "ARM, Entra ID, Key Vault." },
+      { key = "deny_outbound_other", direction = "Outbound", access = "Deny", protocol = "*", source_prefixes = ["*"], dest_prefixes = ["*"], ports = ["*"], description = "Everything not listed above." },
+    ],
+    !var.allow_internet_https ? [] : [
+      { key = "allow_outbound_https_internet", direction = "Outbound", access = "Allow", protocol = "Tcp", source_prefixes = ["*"], dest_prefixes = ["Internet"], ports = ["443"], description = "GitHub, GitLab, Azure DevOps, package repositories and runner downloads." },
+    ],
+    !var.allow_internet_http ? [] : [
+      { key = "allow_outbound_http_internet", direction = "Outbound", access = "Allow", protocol = "Tcp", source_prefixes = ["*"], dest_prefixes = ["Internet"], ports = ["80"], description = "Package mirrors (signed metadata)." },
+    ],
+    length(local.outbound_cidrs) == 0 ? [] : [
+      { key = "allow_outbound_lab_tcp", direction = "Outbound", access = "Allow", protocol = "Tcp", source_prefixes = ["*"], dest_prefixes = local.outbound_cidrs, ports = var.reachable_tcp_ports, description = "The lab over the peering or tunnel." },
+    ],
+    length(local.outbound_cidrs) == 0 || !var.allow_icmp ? [] : [
+      { key = "allow_outbound_lab_icmp", direction = "Outbound", access = "Allow", protocol = "Icmp", source_prefixes = ["*"], dest_prefixes = local.outbound_cidrs, ports = ["*"], description = "Reachability checks." },
+    ],
+    !local.is_ztp ? [] : [
+      { key = "allow_inbound_bmc_smb", direction = "Inbound", access = "Allow", protocol = "Tcp", source_prefixes = var.bmc_cidrs, dest_prefixes = ["*"], ports = ["445"], description = "The BMC's SMB client reads and writes the virtual USB image on the runner." },
+    ],
+    length(var.admin_source_cidrs) == 0 ? [] : [
+      { key = "allow_inbound_admin", direction = "Inbound", access = "Allow", protocol = "Tcp", source_prefixes = var.admin_source_cidrs, dest_prefixes = ["*"], ports = [local.admin_port], description = "Administration from the listed ranges." },
+    ],
   )
+  # The rule names and priorities are settings of this code (nsg_rule_settings).
+  nsg_rules = { for rule in local.nsg_rules_list : local.r[rule.key].name => merge(rule, { priority = local.r[rule.key].priority }) }
 }
 
 resource "azurerm_network_security_rule" "this" {

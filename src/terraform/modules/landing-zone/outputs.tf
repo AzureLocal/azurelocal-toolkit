@@ -3,16 +3,8 @@
 # =============================================================================
 
 output "management_group_ids" {
-  description = "Map of management group names to IDs."
-  value = {
-    root          = azurerm_management_group.root.id
-    platform      = azurerm_management_group.platform.id
-    identity      = azurerm_management_group.identity.id
-    connectivity  = azurerm_management_group.connectivity.id
-    management    = azurerm_management_group.management.id
-    security      = azurerm_management_group.security.id
-    landing_zones = azurerm_management_group.landing_zones.id
-  }
+  description = "Map of management group name to ID."
+  value       = local.management_group_ids
 }
 
 output "resource_group_ids" {

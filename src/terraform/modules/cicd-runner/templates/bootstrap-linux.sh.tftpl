@@ -128,7 +128,7 @@ install_tooling() {
 fetch_secret() {
   local access_token
   access_token="$(curl -fsS -H 'Metadata: true' \
-    "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net&client_id=$IDENTITY_CLIENT_ID" \
+    "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2F$VAULT_SUFFIX&client_id=$IDENTITY_CLIENT_ID" \
     | jq -r .access_token)"
   [ -n "$access_token" ] && [ "$access_token" != "null" ] || { log "No managed identity token"; return 1; }
   curl -fsS -H "Authorization: Bearer $access_token" \

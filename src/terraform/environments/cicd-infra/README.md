@@ -11,7 +11,6 @@ The variables come from the `devops`, `azure`, `key_vaults`, `landing_zone` and 
 
 ```powershell
 pwsh config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile ./infrastructure.yml -OutputDirectory D:\work\iac -Target CicdInfra
-Copy-Item terraform.tfvars.example D:\work\iac\extra.tfvars   # the settings the file has no key for; optional
 
 cd src/terraform/environments/cicd-infra
 terraform init -backend-config=D:\work\iac\terraform\cicd-infra\backend.hcl

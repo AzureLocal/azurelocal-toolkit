@@ -293,6 +293,32 @@
             "resource_group": {
               "$ref": "#/$defs/resource_group",
               "description": "Resource group that holds the identity."
+            },
+            "resource_group_roles": {
+              "description": "Schema 5.6.28. Roles of the automation identity at resource group scope, assigned by the Terraform identity module (the subscription roles are devops.authentication.roles). Each resource group is in the Azure Local subscription (azure.subscription_id).",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "resource_group": {
+                    "$ref": "#/$defs/resource_group",
+                    "description": "Name of the resource group."
+                  },
+                  "roles": {
+                    "description": "Names of the roles, for example Contributor.",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": [
+                  "resource_group",
+                  "roles"
+                ]
+              }
             }
           },
           "required": [
@@ -330,6 +356,21 @@
           "purpose": {
             "description": "What the vault holds, for example management, deployment or backup.",
             "type": "string"
+          },
+          "soft_delete_retention_days": {
+            "description": "Schema 5.6.28. Days a deleted secret or the vault stays recoverable, 7 to 90 (Microsoft Learn: Azure Key Vault soft-delete overview). Default 90, the Azure default. The cluster vault takes cluster.key_vault.soft_delete_retention_days.",
+            "type": "integer",
+            "default": 90,
+            "minimum": 7,
+            "maximum": 90
+          },
+          "allowed_ip_ranges": {
+            "description": "Schema 5.6.28. Public IP addresses or CIDR ranges that may reach the vault. Listed: the vault denies every other address (trusted Microsoft services pass); empty: the Azure default, all networks. Read for the platform vault (purpose management) by the Terraform identity module.",
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/cidr",
+              "pattern": "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(/([0-9]|[12][0-9]|3[0-2]))?$"
+            }
           }
         },
         "required": [
@@ -3083,6 +3124,16 @@
             "security_contact_email": {
               "description": "Address that Microsoft Defender for Cloud sends its security notifications to (a team mailbox; several addresses are separated by semicolons). Free. Empty or absent sets no contact. Enable-DefenderForCloud.ps1 sets it when the subscription has no security contact yet, and never replaces one that exists.",
               "type": "string"
+            },
+            "alert_notifications": {
+              "description": "Schema 5.6.28. Defender for Cloud sends security_contact_email the security alerts. Alerts come with a paid Defender plan only, which the toolkit never turns on. Default true.",
+              "type": "boolean",
+              "default": true
+            },
+            "alerts_to_admins": {
+              "description": "Schema 5.6.28. Defender for Cloud sends the security alerts to the subscription owners too. Default true.",
+              "type": "boolean",
+              "default": true
             }
           }
         },
@@ -4229,6 +4280,95 @@
               "description": "Name (id) of the management group the tag policy is assigned at; the assignment cascades to everything under it. Empty or absent: the tenant root management group, whose id is azure.tenant_id. A management group id has 1 to 90 letters, digits, hyphens, underscores, periods and parentheses, starts with a letter or digit and does not end with a period.",
               "type": "string",
               "pattern": "^([A-Za-z0-9]([A-Za-z0-9._()-]{0,88}[A-Za-z0-9_()-])?)?$"
+            },
+            "assignments": {
+              "description": "Schema 5.6.28. Azure Policy assignments at the scope of the Azure Local subscription (azure.subscription_id), made by the Terraform security module. The tag policy of required_tags is separate.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "description": "Name of the assignment (its resource name, unique in its scope).",
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                  },
+                  "policy_definition_id": {
+                    "description": "Resource ID of the policy definition or initiative.",
+                    "type": "string",
+                    "pattern": "^(/subscriptions/[^/]+|/providers/Microsoft.Management/managementGroups/[^/]+)?/providers/Microsoft.Authorization/(policyDefinitions|policySetDefinitions)/[^/]+$"
+                  },
+                  "display_name": {
+                    "description": "Display name of the assignment.",
+                    "type": "string"
+                  },
+                  "description": {
+                    "description": "Description of the assignment.",
+                    "type": "string"
+                  },
+                  "enforce": {
+                    "description": "Enforcement mode: true (Default) applies the policy's effect, false only reports (DoNotEnforce). Default true.",
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "non_compliance_message": {
+                    "description": "Message shown when a resource is not compliant.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "policy_definition_id",
+                  "display_name"
+                ]
+              }
+            },
+            "resource_group_assignments": {
+              "description": "Schema 5.6.28. Azure Policy assignments at the scope of a resource group of the landing zone, made by the Terraform security module.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "description": "Name of the assignment (its resource name, unique in its scope).",
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                  },
+                  "resource_group": {
+                    "$ref": "#/$defs/resource_group",
+                    "description": "Name of the resource group the policy is assigned to (an entry of landing_zone.resource_groups)."
+                  },
+                  "policy_definition_id": {
+                    "description": "Resource ID of the policy definition or initiative.",
+                    "type": "string",
+                    "pattern": "^(/subscriptions/[^/]+|/providers/Microsoft.Management/managementGroups/[^/]+)?/providers/Microsoft.Authorization/(policyDefinitions|policySetDefinitions)/[^/]+$"
+                  },
+                  "display_name": {
+                    "description": "Display name of the assignment.",
+                    "type": "string"
+                  },
+                  "description": {
+                    "description": "Description of the assignment.",
+                    "type": "string"
+                  },
+                  "enforce": {
+                    "description": "Enforcement mode: true (Default) applies the policy's effect, false only reports (DoNotEnforce). Default true.",
+                    "type": "boolean",
+                    "default": true
+                  },
+                  "non_compliance_message": {
+                    "description": "Message shown when a resource is not compliant.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "resource_group",
+                  "policy_definition_id",
+                  "display_name"
+                ]
+              }
             }
           }
         },
@@ -4479,6 +4619,19 @@
                   "description": "SKU of the VPN gateway, for example VpnGw1AZ.",
                   "type": "string"
                 },
+                "public_ip_name": {
+                  "description": "Schema 5.6.28. Name of the public IP address of the VPN gateway (of its first instance in active-active mode). Needed by the Terraform networking module.",
+                  "type": "string"
+                },
+                "secondary_public_ip_name": {
+                  "description": "Schema 5.6.28. Name of the public IP address of the second instance; needed when active_active is true (Microsoft Learn: About active-active mode VPN gateways).",
+                  "type": "string"
+                },
+                "active_active": {
+                  "description": "Schema 5.6.28. Active-active mode: both gateway instances carry tunnels; it needs a route-based VPN, a SKU other than Basic and two Standard static public IPs (Microsoft Learn: About active-active mode VPN gateways). Default false.",
+                  "type": "boolean",
+                  "default": false
+                },
                 "bgp_asn": {
                   "description": "BGP autonomous system number of the gateway.",
                   "type": "integer",
@@ -4600,6 +4753,10 @@
                 "network": {
                   "description": "Schema 5.6.19. Name of the virtual network the Bastion host is in: an entry of landing_zone.networks with a subnet named AzureBastionSubnet of /26 or larger (Microsoft Learn: Azure Bastion configuration settings). The subscription and region of the host are those of that entry.",
                   "type": "string"
+                },
+                "public_ip_name": {
+                  "description": "Schema 5.6.28. Name of the public IP address of the Bastion host (Standard SKU, static: Microsoft Learn, About Azure Bastion configuration settings). Needed by the Terraform networking module.",
+                  "type": "string"
                 }
               },
               "required": [
@@ -4635,6 +4792,19 @@
                   "type": "integer",
                   "minimum": 4,
                   "maximum": 120
+                },
+                "public_ip_name": {
+                  "description": "Schema 5.6.28. Name of the public IP address of the NAT gateway. Needed by the Terraform networking module.",
+                  "type": "string"
+                },
+                "sku": {
+                  "description": "Schema 5.6.28. SKU of the NAT gateway and of its public IP: Standard or StandardV2 (zone redundant; it takes StandardV2 public IPs only). Microsoft Learn: Azure NAT Gateway SKUs. Default Standard.",
+                  "type": "string",
+                  "default": "Standard",
+                  "enum": [
+                    "Standard",
+                    "StandardV2"
+                  ]
                 }
               },
               "required": [
@@ -4744,6 +4914,40 @@
               "admin_password": {
                 "$ref": "#/$defs/kv_ref",
                 "description": "A Key Vault secret reference: keyvault://<vault>/<secret>. The vault must be listed in key_vaults."
+              },
+              "os_disk_size_gb": {
+                "description": "Schema 5.6.28. Size of the OS disk in GB (VMs in Azure). Default 128.",
+                "type": "integer",
+                "default": 128,
+                "minimum": 30,
+                "maximum": 4095
+              },
+              "os_disk_type": {
+                "description": "Schema 5.6.28. Storage type of the OS disk (VMs in Azure). Default Premium_LRS.",
+                "type": "string",
+                "default": "Premium_LRS",
+                "enum": [
+                  "Standard_LRS",
+                  "StandardSSD_LRS",
+                  "StandardSSD_ZRS",
+                  "Premium_LRS",
+                  "Premium_ZRS"
+                ]
+              },
+              "os_disk_caching": {
+                "description": "Schema 5.6.28. Caching of the OS disk (VMs in Azure). Default ReadWrite.",
+                "type": "string",
+                "default": "ReadWrite",
+                "enum": [
+                  "None",
+                  "ReadOnly",
+                  "ReadWrite"
+                ]
+              },
+              "image_version": {
+                "description": "Schema 5.6.28. Version of the Marketplace image of os (VMs in Azure): latest, or a version such as 26100.1234.250101. Default latest.",
+                "type": "string",
+                "default": "latest"
               }
             },
             "required": [
@@ -5140,6 +5344,112 @@
                 "default": 0,
                 "minimum": 0,
                 "maximum": 32767
+              },
+              "admin_username": {
+                "description": "Schema 5.6.28. Local administrator of the runner machines. Default runneradmin.",
+                "type": "string",
+                "default": "runneradmin",
+                "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+              },
+              "identity_client_id": {
+                "$ref": "#/$defs/guid",
+                "description": "Schema 5.6.28. Client (application) ID of the runner's user-assigned managed identity (GUID), once it exists. Not a secret."
+              },
+              "nsg_name": {
+                "description": "Schema 5.6.28. Name of the network security group of the runner subnet. Task 06 needs it; set an existing group's name to adopt it with terraform import.",
+                "type": "string"
+              },
+              "managed_identity_name": {
+                "description": "Schema 5.6.28. Name of the user-assigned managed identity the runner signs in to Azure as. Task 06 needs it.",
+                "type": "string"
+              },
+              "windows_admin_password_secret": {
+                "$ref": "#/$defs/kv_ref",
+                "description": "Schema 5.6.28. Windows runners only: Key Vault reference to the secret task 06 writes the generated administrator password to. The vault must be the vault of registration_secret. Absent: the password is kept in the Terraform state only."
+              },
+              "zones": {
+                "description": "Schema 5.6.28. Availability zones the runner machines are spread over (the VM scale set spans them). Empty: no zone.",
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "1",
+                    "2",
+                    "3"
+                  ]
+                }
+              },
+              "os_disk_size_gb": {
+                "description": "Schema 5.6.28. Size of the OS disk in GB. Absent: the size the Terraform module gives the OS (default_os_disk_size_gb: 64 on Linux, 128 on Windows).",
+                "type": "integer",
+                "minimum": 30,
+                "maximum": 4095
+              },
+              "os_disk_type": {
+                "description": "Schema 5.6.28. Storage type of the OS disk and of the data disk. Default Premium_LRS.",
+                "type": "string",
+                "default": "Premium_LRS",
+                "enum": [
+                  "Standard_LRS",
+                  "StandardSSD_LRS",
+                  "StandardSSD_ZRS",
+                  "Premium_LRS",
+                  "Premium_ZRS"
+                ]
+              },
+              "os_disk_caching": {
+                "description": "Schema 5.6.28. Caching of the OS disk. Default ReadWrite.",
+                "type": "string",
+                "default": "ReadWrite",
+                "enum": [
+                  "None",
+                  "ReadOnly",
+                  "ReadWrite"
+                ]
+              },
+              "data_disk_caching": {
+                "description": "Schema 5.6.28. Caching of the data disk (data_disk_gb). Default ReadWrite.",
+                "type": "string",
+                "default": "ReadWrite",
+                "enum": [
+                  "None",
+                  "ReadOnly",
+                  "ReadWrite"
+                ]
+              },
+              "encryption_at_host": {
+                "description": "Schema 5.6.28. Encryption at host of the runner machines. The Microsoft.Compute/EncryptionAtHost feature must be registered on the subscription (task 01 does this with devops.authentication.register_encryption_at_host). Default false.",
+                "type": "boolean",
+                "default": false
+              },
+              "image": {
+                "description": "Schema 5.6.28. Marketplace image of the runner machines. Absent: the image the Terraform module gives the OS (default_images: Ubuntu 24.04 LTS on Linux, Windows Server 2025 Datacenter Azure Edition on Windows).",
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "publisher": {
+                    "description": "Image publisher.",
+                    "type": "string"
+                  },
+                  "offer": {
+                    "description": "Image offer.",
+                    "type": "string"
+                  },
+                  "sku": {
+                    "description": "Image SKU.",
+                    "type": "string"
+                  },
+                  "version": {
+                    "description": "Image version. Default latest.",
+                    "type": "string",
+                    "default": "latest"
+                  }
+                },
+                "required": [
+                  "publisher",
+                  "offer",
+                  "sku"
+                ]
               }
             },
             "required": [
@@ -5199,6 +5509,14 @@
                   "description": "Create the hub half of the peering. False when the network team owns it.",
                   "type": "boolean",
                   "default": true
+                },
+                "spoke_name": {
+                  "description": "Schema 5.6.28. Name of the spoke half of the peering (on the runner VNet). Needed when enabled is true.",
+                  "type": "string"
+                },
+                "hub_name": {
+                  "description": "Schema 5.6.28. Name of the hub half of the peering (on the hub VNet). Needed when enabled and create_hub_side are true.",
+                  "type": "string"
                 }
               }
             },
@@ -5212,6 +5530,14 @@
             "reachable_tcp_ports": {
               "description": "TCP ports allowed outbound to the lab networks. Default 22, 443, 445, 3389, 5985, 5986.",
               "type": "array",
+              "default": [
+                "22",
+                "443",
+                "445",
+                "3389",
+                "5985",
+                "5986"
+              ],
               "items": {
                 "type": "string"
               }
@@ -5229,6 +5555,21 @@
               "items": {
                 "$ref": "#/$defs/cidr"
               }
+            },
+            "allow_internet_https": {
+              "description": "Schema 5.6.28. The runner NSG allows HTTPS (443) outbound to the internet: GitHub, GitLab, Azure DevOps, package repositories and runner downloads. Default true.",
+              "type": "boolean",
+              "default": true
+            },
+            "allow_internet_http": {
+              "description": "Schema 5.6.28. The runner NSG allows HTTP (80) outbound to the internet: package mirrors with signed metadata. Default true.",
+              "type": "boolean",
+              "default": true
+            },
+            "allow_icmp": {
+              "description": "Schema 5.6.28. The runner NSG allows ICMP outbound to reachable_cidrs and bmc_cidrs, for reachability checks. Default true.",
+              "type": "boolean",
+              "default": true
             }
           }
         },
@@ -5266,6 +5607,35 @@
               "type": "array",
               "items": {
                 "$ref": "#/$defs/key_vault_name"
+              }
+            },
+            "additional_role_assignments": {
+              "description": "Schema 5.6.28. Other role assignments of the runner identities, each with a short name, a scope (a resource ID) and a role name.",
+              "type": "array",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "description": "Short name of the assignment (unique in the list).",
+                    "type": "string",
+                    "pattern": "^[a-z0-9][a-z0-9_-]{0,40}$"
+                  },
+                  "scope": {
+                    "description": "Resource ID of the scope: a subscription, a resource group or a resource.",
+                    "type": "string",
+                    "pattern": "^/subscriptions/.+"
+                  },
+                  "role_definition_name": {
+                    "description": "Name of the role, for example Reader.",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "name",
+                  "scope",
+                  "role_definition_name"
+                ]
               }
             }
           }
@@ -5355,6 +5725,75 @@
             "resource_group": {
               "$ref": "#/$defs/resource_group",
               "description": "Resource group of the state storage account."
+            },
+            "azure_local_key": {
+              "description": "Schema 5.6.28. Blob name of the state of the azure-local Terraform environment (src/terraform/environments/azure-local). Default azure-local.tfstate.",
+              "type": "string",
+              "default": "azure-local.tfstate",
+              "pattern": "^[A-Za-z0-9._/-]+\\.tfstate$"
+            },
+            "replication_type": {
+              "description": "Schema 5.6.28. Redundancy of the state storage account (Microsoft Learn: Azure Storage redundancy). Default GRS.",
+              "type": "string",
+              "default": "GRS",
+              "enum": [
+                "LRS",
+                "ZRS",
+                "GRS",
+                "RAGRS",
+                "GZRS",
+                "RAGZRS"
+              ]
+            },
+            "public_network_access": {
+              "description": "Schema 5.6.28. Public network access of the state storage account. false (default): private endpoints only. allowed_ip_ranges needs true.",
+              "type": "boolean",
+              "default": false
+            },
+            "allowed_ip_ranges": {
+              "description": "Schema 5.6.28. Public IP addresses or CIDR ranges that may reach the state storage account (its IP network rules). Needs public_network_access true; IP rules apply to public access only (Microsoft Learn: Configure Azure Storage firewalls and virtual networks).",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/cidr",
+                "pattern": "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])(/([0-9]|[12][0-9]|3[0-2]))?$"
+              }
+            },
+            "versioning": {
+              "description": "Schema 5.6.28. Blob versioning of the state storage account: every overwrite of a state file keeps the earlier version. Default true.",
+              "type": "boolean",
+              "default": true
+            },
+            "blob_soft_delete_days": {
+              "description": "Schema 5.6.28. Days a deleted state blob stays recoverable, 1 to 365 (Microsoft Learn: Soft delete for blobs). Default 30.",
+              "type": "integer",
+              "default": 30,
+              "minimum": 1,
+              "maximum": 365
+            },
+            "container_soft_delete_days": {
+              "description": "Schema 5.6.28. Days a deleted state container stays recoverable, 1 to 365 (Microsoft Learn: Soft delete for containers). Default 30.",
+              "type": "integer",
+              "default": 30,
+              "minimum": 1,
+              "maximum": 365
+            },
+            "network_bypass": {
+              "description": "Schema 5.6.28. Traffic that passes the network rules of the state storage account: AzureServices (trusted Microsoft services), Logging, Metrics, or None. Default AzureServices, Logging and Metrics.",
+              "type": "array",
+              "default": [
+                "AzureServices",
+                "Logging",
+                "Metrics"
+              ],
+              "items": {
+                "type": "string",
+                "enum": [
+                  "AzureServices",
+                  "Logging",
+                  "Metrics",
+                  "None"
+                ]
+              }
             }
           }
         }

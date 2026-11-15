@@ -103,15 +103,16 @@ Describe 'The authoring template generates scripts that read registered keys' {
 Describe 'Terraform variables that the generator feeds from the file have no literal default' {
     It 'the environment: <Name>' -ForEach @(
         @{ Name = 'log_analytics_retention_days' }
-        @{ Name = 'vm_admin_username' }
-        @{ Name = 'windows_server_sku' }
+        @{ Name = 'environment_class' }
+        @{ Name = 'azl_key_vault_soft_delete_retention_days' }
+        @{ Name = 'key_vault_soft_delete_retention_days' }
     ) {
         (Get-TfVariable 'src/terraform/environments/azure-local/variables.tf' $Name) | Should -Not -Match '(?m)^\s*default\s*=(?!\s*null\s*$)'   # default = null means not set (Azure decides); a literal value is not allowed
     }
     It 'the modules: <File> <Name>' -ForEach @(
         @{ File = 'src/terraform/modules/monitoring/variables.tf'; Name = 'retention_days' }
-        @{ File = 'src/terraform/modules/compute/variables.tf'; Name = 'admin_username' }
-        @{ File = 'src/terraform/modules/compute/variables.tf'; Name = 'windows_server_sku' }
+        @{ File = 'src/terraform/modules/cicd-runner/variables.tf'; Name = 'admin_username' }
+        @{ File = 'src/terraform/modules/cicd-runner/variables.tf'; Name = 'vm_size' }
     ) {
         (Get-TfVariable $File $Name) | Should -Not -Match '(?m)^\s*default\s*=(?!\s*null\s*$)'   # default = null means not set (Azure decides); a literal value is not allowed
     }
@@ -127,10 +128,12 @@ Describe 'Terraform variables that the generator feeds from the file have no lit
         $text = Get-RepoText 'src/terraform/modules/networking/main.tf'
         $text | Should -Match 'generation\s*=\s*var\.vpn_config\.sku == "VpnGw1AZ" \? "Generation1" : "Generation2"'
     }
-    It 'the management group display names come from the file, not from the module' {
+    It 'the management group names, display names and parents come from the file, not from the module' {
         $text = Get-RepoText 'src/terraform/modules/landing-zone/main.tf'
         $text | Should -Not -Match 'display_name\s*=\s*"'
-        foreach ($role in 'identity', 'connectivity', 'management', 'security', 'landing_zones') { $text | Should -Match "var\.management_groups\.${role}_display_name" }
+        $text | Should -Match 'display_name\s*=\s*coalesce\(local\.groups\[each\.value\]\.display_name'
+        $text | Should -Match 'parent_management_group_id\s*=\s*local\.parent_id\[each\.value\]'
+        $text | Should -Match 'management_group_id\s*=\s*contains\(local\.group_names, each\.value\.management_group\)'
     }
     It 'the Key Vault network rules follow the allowed ranges, and the cluster vault keeps the Azure default' {
         $text = Get-RepoText 'src/terraform/modules/identity/main.tf'

@@ -104,10 +104,10 @@ secrets:
 # Part 2 of the implementation steps: the Azure foundation the instance depends on.
 landing_zone:
   # Subscriptions by role. azure.subscription_id is the one the instance uses.
-  # used by: cicd_infra
+  # used by: cicd_infra, terraform
   subscriptions:
     # Name of the subscription; the other landing_zone entries refer to it.
-    # required; used by: cicd_infra, trailwright
+    # required; used by: cicd_infra, trailwright, terraform
     - name: "sub-iic-connectivity"
       # Subscription id (a GUID).
       # used by: cicd_infra, trailwright, terraform
@@ -116,7 +116,7 @@ landing_zone:
       # required; one of: connectivity | identity | management | security | devops | workload | azure_local; used by: cicd_infra, trailwright, terraform
       role: "connectivity"
       # Management group the subscription is under.
-      # used by: cicd_infra
+      # used by: cicd_infra, terraform
       management_group: "mg-iic-platform"
   # Resource groups of the landing zone.
   # used by: cicd_infra
@@ -173,10 +173,10 @@ landing_zone:
           # used by: cicd_infra
           route_table: ""
       # (since 5.6.23) 
-      # default: true; used by: cicd_infra
+      # default: true; used by: cicd_infra, terraform
       allow_forwarded_traffic: true
       # (since 5.6.23) 
-      # default: false; used by: cicd_infra
+      # default: false; used by: cicd_infra, terraform
       allow_gateway_transit: false
       # (since 5.6.23) 
       # default: false; used by: cicd_infra
@@ -356,6 +356,54 @@ devops:
       # Data disk for the ZTP media, images and vouchers. 512 or more for ztp.
       # default: 0; used by: cicd_infra, terraform
       data_disk_gb: 512
+      # (since 5.6.28) 
+      # default: "runneradmin"; used by: cicd_infra, terraform, ansible
+      admin_username: "runneradmin"
+      # (since 5.6.28) 
+      # used by: cicd_infra, ansible
+      identity_client_id: "00000000-0000-0000-0000-000000000000"
+      # (since 5.6.28) 
+      # used by: cicd_infra, terraform
+      nsg_name: "nsg-iic-runner-lnx-01"
+      # (since 5.6.28) 
+      # used by: cicd_infra, terraform
+      managed_identity_name: "id-iic-runner-lnx-01"
+      # (since 5.6.28) 
+      # used by: cicd_infra, terraform
+      windows_admin_password_secret: "keyvault://kv-iic-mgmt-01/runner-ztp-local-admin"
+      # (since 5.6.28) 
+      # used by: cicd_infra, terraform
+      zones: ["1", "2"]
+      # (since 5.6.28) 
+      # used by: cicd_infra, terraform
+      os_disk_size_gb: 128
+      # (since 5.6.28) 
+      # one of: Standard_LRS | StandardSSD_LRS | StandardSSD_ZRS | Premium_LRS | Premium_ZRS; default: "Premium_LRS"; used by: cicd_infra, terraform
+      os_disk_type: "Premium_LRS"
+      # (since 5.6.28) 
+      # one of: None | ReadOnly | ReadWrite; default: "ReadWrite"; used by: cicd_infra, terraform
+      os_disk_caching: "ReadWrite"
+      # (since 5.6.28) 
+      # one of: None | ReadOnly | ReadWrite; default: "ReadWrite"; used by: cicd_infra, terraform
+      data_disk_caching: "ReadWrite"
+      # (since 5.6.28) 
+      # default: false; used by: cicd_infra, terraform
+      encryption_at_host: false
+      # (since 5.6.28) 
+      # used by: cicd_infra, terraform
+      image:
+        # Image publisher.
+        # required; used by: cicd_infra, terraform
+        publisher: "Canonical"
+        # Image offer.
+        # required; used by: cicd_infra, terraform
+        offer: "ubuntu-24_04-lts"
+        # Image SKU.
+        # required; used by: cicd_infra, terraform
+        sku: "server"
+        # Image version.
+        # default: "latest"; used by: cicd_infra, terraform
+        version: "latest"
   # (since 5.5) 
   # used by: cicd_infra
   runner_network:
@@ -386,18 +434,33 @@ devops:
       # Create the hub half of the peering.
       # default: true; used by: cicd_infra, terraform
       create_hub_side: true
+      # (since 5.6.28) 
+      # used by: cicd_infra, terraform
+      spoke_name: "peer-vnet-iic-devops-01-to-hub"
+      # (since 5.6.28) 
+      # used by: cicd_infra, terraform
+      hub_name: "peer-hub-to-vnet-iic-devops-01"
     # Lab networks the runners reach: management, storage, BMC.
     # used by: cicd_infra, terraform
     reachable_cidrs: ["192.0.2.0/24", "198.51.100.0/24"]
     # TCP ports allowed outbound to the lab networks.
-    # used by: cicd_infra, terraform
-    reachable_tcp_ports: []
+    # default: ["22", "443", "445", "3389", "5985", "5986"]; used by: cicd_infra, terraform
+    reachable_tcp_ports: ["22", "443", "445", "3389", "5985", "5986"]
     # The BMC networks.
     # used by: cicd_infra, terraform
     bmc_cidrs: ["198.51.100.0/24"]
     # Ranges that may reach SSH or RDP on the runners.
     # used by: cicd_infra, terraform
     admin_source_cidrs: []
+    # (since 5.6.28) 
+    # default: true; used by: cicd_infra, terraform
+    allow_internet_https: true
+    # (since 5.6.28) 
+    # default: true; used by: cicd_infra, terraform
+    allow_internet_http: true
+    # (since 5.6.28) 
+    # default: true; used by: cicd_infra, terraform
+    allow_icmp: true
   # (since 5.5) 
   # used by: cicd_infra
   runner_access:
@@ -416,6 +479,18 @@ devops:
     # Vaults the runners read secrets from.
     # used by: cicd_infra, terraform
     key_vaults: ["kv-iic-mgmt-01"]
+    # (since 5.6.28) 
+    # used by: cicd_infra, terraform
+    additional_role_assignments:
+      # Short name of the assignment (unique in the list).
+      # required; used by: cicd_infra, terraform
+      - name: "monitoring"
+        # Resource ID of the scope: a subscription, a resource group or a resource.
+        # required; used by: cicd_infra, terraform
+        scope: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-mgmt-01"
+        # Name of the role, for example Reader.
+        # required; used by: cicd_infra, terraform
+        role_definition_name: "Reader"
   # One runner (the form before devops.runners[]).
   # used by: cicd_infra
   runner:
@@ -467,3 +542,6 @@ devops:
     # Resource group of the state storage account.
     # used by: cicd_infra, terraform
     resource_group: "rg-iic-mgmt-01"
+    # (since 5.6.28) 
+    # default: "azure-local.tfstate"; used by: cicd_infra, terraform
+    azure_local_key: "azure-local.tfstate"

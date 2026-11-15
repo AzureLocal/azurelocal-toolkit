@@ -136,6 +136,15 @@ azure:
     # Resource group that holds the identity.
     # used by: cicd_infra
     resource_group: "rg-iic-devops-01"
+    # (since 5.6.28) 
+    # used by: terraform
+    resource_group_roles:
+      # Name of the resource group.
+      # required; used by: terraform
+      - resource_group: "rg-iic-azl-01"
+        # Names of the roles, for example Contributor.
+        # required; used by: terraform
+        roles: ["Contributor"]
 
 # Every Key Vault that a keyvault:// reference in this file names, with where it is.
 # used by: ztp, cicd_infra
@@ -152,6 +161,12 @@ key_vaults:
     # What the vault holds, for example management, deployment or backup.
     # used by: cicd_infra, trailwright
     purpose: "management"
+    # (since 5.6.28) 
+    # default: 90; used by: terraform
+    soft_delete_retention_days: 90
+    # (since 5.6.28) 
+    # used by: terraform
+    allowed_ip_ranges: ["198.51.100.0/24"]
 
 # (since 5.6.13) 
 # used by: ztp, os_configuration, deployment, discovery, cicd_infra
@@ -1343,6 +1358,12 @@ security:
     # Address that Microsoft Defender for Cloud sends its security notifications to (a team mailbox; several addresses are separated by semicolon...
     # used by: terraform
     security_contact_email: "security@improbability.cloud"
+    # (since 5.6.28) 
+    # default: true; used by: terraform
+    alert_notifications: true
+    # (since 5.6.28) 
+    # default: true; used by: terraform
+    alerts_to_admins: true
   # What the cluster sends to Microsoft as telemetry.
   # used by: deployment
   telemetry:
@@ -1805,6 +1826,7 @@ network_devices:
 # Part 2 of the implementation steps: the Azure foundation the instance depends on.
 landing_zone:
   # Azure management groups of the landing zone.
+  # used by: terraform
   management_groups:
     # Name (id) of the management group.
     # required; used by: terraform
@@ -1813,15 +1835,16 @@ landing_zone:
       # used by: terraform
       display_name: "IIC"
       # Parent management group name; empty for the tenant root.
+      # used by: terraform
       parent: "mg-iic"
       # Which group of the fixed Azure landing zone hierarchy this is: root, platform, identity, connectivity, management, security or landing_zone...
       # one of: root | platform | identity | connectivity | management | security | landing_zones; used by: terraform
       role: "root"
   # Subscriptions by role. azure.subscription_id is the one the instance uses.
-  # used by: cicd_infra
+  # used by: cicd_infra, terraform
   subscriptions:
     # Name of the subscription; the other landing_zone entries refer to it.
-    # required; used by: cicd_infra, trailwright
+    # required; used by: cicd_infra, trailwright, terraform
     - name: "sub-iic-connectivity"
       # Subscription id (a GUID).
       # used by: cicd_infra, trailwright, terraform
@@ -1830,7 +1853,7 @@ landing_zone:
       # required; one of: connectivity | identity | management | security | devops | workload | azure_local; used by: cicd_infra, trailwright, terraform
       role: "connectivity"
       # Management group the subscription is under.
-      # used by: cicd_infra
+      # used by: cicd_infra, terraform
       management_group: "mg-iic-platform"
       # (since 5.6.19) 
       billing_scope: "/providers/Microsoft.Billing/billingAccounts/1234567/enrollmentAccounts/7654321"
@@ -1858,6 +1881,51 @@ landing_zone:
     required_tags: ["environment", "owner", "cost_center", "workload"]
     # Name (id) of the management group the tag policy is assigned at; the assignment cascades to everything under it.
     management_group: "mg-iic"
+    # (since 5.6.28) 
+    # used by: terraform
+    assignments:
+      # Name of the assignment (its resource name, unique in its scope).
+      # required; used by: terraform
+      - name: "require-tag-owner"
+        # Resource ID of the policy definition or initiative.
+        # required; used by: terraform
+        policy_definition_id: "/providers/Microsoft.Authorization/policyDefinitions/871b6d14-10aa-478d-b590-94f262ecfa99"
+        # Display name of the assignment.
+        # required; used by: terraform
+        display_name: "Require the Owner tag"
+        # Description of the assignment.
+        # used by: terraform
+        description: ""
+        # Enforcement mode: true (Default) applies the policy's effect, false only reports (DoNotEnforce).
+        # default: true; used by: terraform
+        enforce: true
+        # Message shown when a resource is not compliant.
+        # used by: terraform
+        non_compliance_message: ""
+    # (since 5.6.28) 
+    # used by: terraform
+    resource_group_assignments:
+      # Name of the assignment (its resource name, unique in its scope).
+      # required; used by: terraform
+      - name: "require-tag-owner"
+        # Name of the resource group the policy is assigned to (an entry of landing_zone.resource_groups).
+        # required; used by: terraform
+        resource_group: "rg-iic-azl-01"
+        # Resource ID of the policy definition or initiative.
+        # required; used by: terraform
+        policy_definition_id: "/providers/Microsoft.Authorization/policyDefinitions/871b6d14-10aa-478d-b590-94f262ecfa99"
+        # Display name of the assignment.
+        # required; used by: terraform
+        display_name: "Require the Owner tag"
+        # Description of the assignment.
+        # used by: terraform
+        description: ""
+        # Enforcement mode: true (Default) applies the policy's effect, false only reports (DoNotEnforce).
+        # default: true; used by: terraform
+        enforce: true
+        # Message shown when a resource is not compliant.
+        # used by: terraform
+        non_compliance_message: ""
   # Azure virtual networks.
   # used by: cicd_infra
   networks:
@@ -1900,10 +1968,10 @@ landing_zone:
       # Names of networks this one peers with.
       peer_with: ["vnet-iic-hub-01"]
       # (since 5.6.23) 
-      # default: true; used by: cicd_infra
+      # default: true; used by: cicd_infra, terraform
       allow_forwarded_traffic: true
       # (since 5.6.23) 
-      # default: false; used by: cicd_infra
+      # default: false; used by: cicd_infra, terraform
       allow_gateway_transit: false
       # (since 5.6.23) 
       # default: false; used by: cicd_infra
@@ -1956,12 +2024,23 @@ landing_zone:
       # required; used by: terraform
       name: "vpng-iic-hub-01"
       # Resource group of the VPN gateway.
+      # used by: terraform
       resource_group: "rg-iic-conn-01"
       # Name of the virtual network the gateway sits in.
+      # used by: terraform
       network: "vnet-iic-hub-01"
       # SKU of the VPN gateway, for example VpnGw1AZ.
       # used by: terraform
       sku: "VpnGw1AZ"
+      # (since 5.6.28) 
+      # used by: terraform
+      public_ip_name: "pip-iic-vpng-hub-01"
+      # (since 5.6.28) 
+      # used by: terraform
+      secondary_public_ip_name: "pip-iic-vpng-hub-02"
+      # (since 5.6.28) 
+      # default: false; used by: terraform
+      active_active: false
       # BGP autonomous system number of the gateway.
       # used by: terraform
       bgp_asn: 65515
@@ -1980,8 +2059,10 @@ landing_zone:
           # used by: terraform
           peer_address_prefixes: ["192.0.2.0/24", "198.51.100.0/24"]
           # BGP peer address of the peer device.
+          # used by: terraform
           peer_bgp_address: "192.0.2.10"
           # BGP autonomous system number of the peer.
+          # used by: terraform
           peer_asn: 1
           # A Key Vault secret reference: keyvault://<vault>/<secret>.
           # required; used by: terraform
@@ -2007,27 +2088,41 @@ landing_zone:
       # required; used by: terraform
       name: "bas-iic-hub-01"
       # Resource group of the Bastion host.
+      # used by: terraform
       resource_group: "rg-iic-conn-01"
       # SKU of the Bastion host: Basic, Standard or Premium (New-AzBastion -Sku).
       # used by: terraform
       sku: "Standard"
       # (since 5.6.19) 
+      # used by: terraform
       network: "vnet-iic-hub-01"
+      # (since 5.6.28) 
+      # used by: terraform
+      public_ip_name: "pip-iic-bas-hub-01"
     # (since 5.6.19) 
     # used by: terraform
     nat_gateway:
       # Name of the NAT gateway.
-      # required
+      # required; used by: terraform
       name: "ng-iic-hub-01"
       # Resource group of the NAT gateway and its public IP address; default: the resource group of the network.
+      # used by: terraform
       resource_group: "rg-iic-conn-01"
       # Name of the virtual network (an entry of landing_zone.networks) whose subnets the gateway serves.
+      # used by: terraform
       network: "vnet-iic-mgmt-01"
       # Names of the subnets of that network that use the NAT gateway for outbound traffic.
+      # used by: terraform
       subnets: ["snet-iic-mgmt-01", "snet-iic-mgmt-02"]
       # Minutes a TCP connection may stay idle before the NAT gateway drops it: 4 to 120 (Microsoft Learn, Azure NAT Gateway).
       # used by: terraform
       idle_timeout_minutes: 10
+      # (since 5.6.28) 
+      # used by: terraform
+      public_ip_name: "pip-iic-ng-hub-01"
+      # (since 5.6.28) 
+      # one of: Standard | StandardV2; default: "Standard"; used by: terraform
+      sku: "Standard"
     # Azure Firewall of the hub.
     firewall:
       # Name of the firewall.
@@ -2079,6 +2174,18 @@ landing_zone:
       # A Key Vault secret reference: keyvault://<vault>/<secret>.
       # used by: terraform
       admin_password: "keyvault://kv-iic-mgmt-01/vm-admin-password"
+      # (since 5.6.28) 
+      # default: 128; used by: terraform
+      os_disk_size_gb: 128
+      # (since 5.6.28) 
+      # one of: Standard_LRS | StandardSSD_LRS | StandardSSD_ZRS | Premium_LRS | Premium_ZRS; default: "Premium_LRS"; used by: terraform
+      os_disk_type: "Premium_LRS"
+      # (since 5.6.28) 
+      # one of: None | ReadOnly | ReadWrite; default: "ReadWrite"; used by: terraform
+      os_disk_caching: "ReadWrite"
+      # (since 5.6.28) 
+      # default: "latest"; used by: terraform
+      image_version: "latest"
   # The Log Analytics workspace of the landing zone.
   log_analytics:
     # Name of the workspace.
@@ -2270,6 +2377,54 @@ devops:
       # Data disk for the ZTP media, images and vouchers. 512 or more for ztp.
       # default: 0; used by: cicd_infra, terraform
       data_disk_gb: 512
+      # (since 5.6.28) 
+      # default: "runneradmin"; used by: cicd_infra, terraform, ansible
+      admin_username: "runneradmin"
+      # (since 5.6.28) 
+      # used by: cicd_infra, ansible
+      identity_client_id: "00000000-0000-0000-0000-000000000000"
+      # (since 5.6.28) 
+      # used by: cicd_infra, terraform
+      nsg_name: "nsg-iic-runner-lnx-01"
+      # (since 5.6.28) 
+      # used by: cicd_infra, terraform
+      managed_identity_name: "id-iic-runner-lnx-01"
+      # (since 5.6.28) 
+      # used by: cicd_infra, terraform
+      windows_admin_password_secret: "keyvault://kv-iic-mgmt-01/runner-ztp-local-admin"
+      # (since 5.6.28) 
+      # used by: cicd_infra, terraform
+      zones: ["1", "2"]
+      # (since 5.6.28) 
+      # used by: cicd_infra, terraform
+      os_disk_size_gb: 128
+      # (since 5.6.28) 
+      # one of: Standard_LRS | StandardSSD_LRS | StandardSSD_ZRS | Premium_LRS | Premium_ZRS; default: "Premium_LRS"; used by: cicd_infra, terraform
+      os_disk_type: "Premium_LRS"
+      # (since 5.6.28) 
+      # one of: None | ReadOnly | ReadWrite; default: "ReadWrite"; used by: cicd_infra, terraform
+      os_disk_caching: "ReadWrite"
+      # (since 5.6.28) 
+      # one of: None | ReadOnly | ReadWrite; default: "ReadWrite"; used by: cicd_infra, terraform
+      data_disk_caching: "ReadWrite"
+      # (since 5.6.28) 
+      # default: false; used by: cicd_infra, terraform
+      encryption_at_host: false
+      # (since 5.6.28) 
+      # used by: cicd_infra, terraform
+      image:
+        # Image publisher.
+        # required; used by: cicd_infra, terraform
+        publisher: "Canonical"
+        # Image offer.
+        # required; used by: cicd_infra, terraform
+        offer: "ubuntu-24_04-lts"
+        # Image SKU.
+        # required; used by: cicd_infra, terraform
+        sku: "server"
+        # Image version.
+        # default: "latest"; used by: cicd_infra, terraform
+        version: "latest"
   # (since 5.5) 
   # used by: cicd_infra
   runner_network:
@@ -2300,18 +2455,33 @@ devops:
       # Create the hub half of the peering.
       # default: true; used by: cicd_infra, terraform
       create_hub_side: true
+      # (since 5.6.28) 
+      # used by: cicd_infra, terraform
+      spoke_name: "peer-vnet-iic-devops-01-to-hub"
+      # (since 5.6.28) 
+      # used by: cicd_infra, terraform
+      hub_name: "peer-hub-to-vnet-iic-devops-01"
     # Lab networks the runners reach: management, storage, BMC.
     # used by: cicd_infra, terraform
     reachable_cidrs: ["192.0.2.0/24", "198.51.100.0/24"]
     # TCP ports allowed outbound to the lab networks.
-    # used by: cicd_infra, terraform
-    reachable_tcp_ports: []
+    # default: ["22", "443", "445", "3389", "5985", "5986"]; used by: cicd_infra, terraform
+    reachable_tcp_ports: ["22", "443", "445", "3389", "5985", "5986"]
     # The BMC networks.
     # used by: cicd_infra, terraform
     bmc_cidrs: ["198.51.100.0/24"]
     # Ranges that may reach SSH or RDP on the runners.
     # used by: cicd_infra, terraform
     admin_source_cidrs: []
+    # (since 5.6.28) 
+    # default: true; used by: cicd_infra, terraform
+    allow_internet_https: true
+    # (since 5.6.28) 
+    # default: true; used by: cicd_infra, terraform
+    allow_internet_http: true
+    # (since 5.6.28) 
+    # default: true; used by: cicd_infra, terraform
+    allow_icmp: true
   # (since 5.5) 
   # used by: cicd_infra
   runner_access:
@@ -2330,6 +2500,18 @@ devops:
     # Vaults the runners read secrets from.
     # used by: cicd_infra, terraform
     key_vaults: ["kv-iic-mgmt-01"]
+    # (since 5.6.28) 
+    # used by: cicd_infra, terraform
+    additional_role_assignments:
+      # Short name of the assignment (unique in the list).
+      # required; used by: cicd_infra, terraform
+      - name: "monitoring"
+        # Resource ID of the scope: a subscription, a resource group or a resource.
+        # required; used by: cicd_infra, terraform
+        scope: "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-mgmt-01"
+        # Name of the role, for example Reader.
+        # required; used by: cicd_infra, terraform
+        role_definition_name: "Reader"
   # One runner (the form before devops.runners[]).
   # used by: cicd_infra
   runner:
@@ -2381,6 +2563,30 @@ devops:
     # Resource group of the state storage account.
     # used by: cicd_infra, terraform
     resource_group: "rg-iic-mgmt-01"
+    # (since 5.6.28) 
+    # default: "azure-local.tfstate"; used by: cicd_infra, terraform
+    azure_local_key: "azure-local.tfstate"
+    # (since 5.6.28) 
+    # one of: LRS | ZRS | GRS | RAGRS | GZRS | RAGZRS; default: "GRS"; used by: terraform
+    replication_type: "GRS"
+    # (since 5.6.28) 
+    # default: false; used by: terraform
+    public_network_access: false
+    # (since 5.6.28) 
+    # used by: terraform
+    allowed_ip_ranges: ["203.0.113.0/24"]
+    # (since 5.6.28) 
+    # default: true; used by: terraform
+    versioning: true
+    # (since 5.6.28) 
+    # default: 30; used by: terraform
+    blob_soft_delete_days: 30
+    # (since 5.6.28) 
+    # default: 30; used by: terraform
+    container_soft_delete_days: 30
+    # (since 5.6.28) 
+    # default: ["AzureServices", "Logging", "Metrics"]; used by: terraform
+    network_bypass: ["AzureServices", "Logging", "Metrics"]
 
 # Anything this schema doesn't define: settings for one environment or one tool, each under its own key (for example extensions.devops_runner...
 extensions: {}

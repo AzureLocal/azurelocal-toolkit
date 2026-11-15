@@ -66,7 +66,6 @@ variable "os_type" {
 variable "purpose" {
   description = "general: ARM, Arc, Terraform and OS-configuration jobs. ztp: the azurelocal-ztp Boot, Bootstrap and Vouchers stages, which need a Windows host that the BMCs can reach on TCP 445."
   type        = string
-  default     = "general"
 
   validation {
     condition     = contains(["general", "ztp"], var.purpose)
@@ -100,6 +99,24 @@ variable "extra_labels" {
   default     = []
 }
 
+variable "base_labels" {
+  description = "Labels every runner carries, before its OS (the second default label)."
+  type        = list(string)
+  default     = ["azure"]
+}
+
+variable "linux_labels" {
+  description = "Labels a Linux runner carries for the tools it has."
+  type        = list(string)
+  default     = ["terraform", "ansible"]
+}
+
+variable "ztp_labels" {
+  description = "Labels a runner of the ztp purpose carries."
+  type        = list(string)
+  default     = ["ztp"]
+}
+
 variable "github_runner_group" {
   description = "GitHub runner group (organization runners only). Empty uses the default group. A ztp runner should have its own group."
   type        = string
@@ -120,7 +137,7 @@ variable "registration_secret" {
       secret_name     the secret.
       kind            github: pat (a PAT or App token that can create registration tokens, the default) or token (a registration token, which expires after one hour).
                       gitlab: the runner authentication token (glrt-...). azure_devops: a PAT with Agent Pools (read, manage).
-      dns_suffix      vault DNS suffix, vault.azure.net unless you use a sovereign cloud.
+      dns_suffix      vault DNS suffix of the cloud (the class c default is the Azure public cloud's).
   EOT
   type = object({
     key_vault_id   = string
@@ -139,9 +156,8 @@ variable "registration_secret" {
 # ---------------------------------------------------------------- compute ----
 
 variable "compute_type" {
-  description = "vm (default) or vmss. A ztp runner and every Windows runner must be a vm: ZTP keeps its state on the runner's disk."
+  description = "vm or vmss (devops.runners[].compute_type). A ztp runner and every Windows runner must be a vm: ZTP keeps its state on the runner's disk."
   type        = string
-  default     = "vm"
 
   validation {
     condition     = contains(["vm", "vmss"], var.compute_type)
@@ -150,9 +166,8 @@ variable "compute_type" {
 }
 
 variable "runner_count" {
-  description = "Number of VMs, or the VM scale set capacity."
+  description = "Number of VMs, or the VM scale set capacity (devops.runners[].count)."
   type        = number
-  default     = 1
 
   validation {
     condition     = var.runner_count >= 1 && var.runner_count <= 20
@@ -161,21 +176,38 @@ variable "runner_count" {
 }
 
 variable "vm_size" {
-  description = "VM size. Docs sizing: Standard_D2s_v5 light, Standard_D4s_v5 medium and heavy."
+  description = "VM size (devops.runners[].size)."
   type        = string
-  default     = "Standard_D2s_v5"
 }
 
 variable "os_disk_size_gb" {
-  description = "OS disk size in GB. 0 uses 64 on Linux and 128 on Windows."
+  description = "OS disk size in GB (devops.runners[].os_disk_size_gb). Null takes the size of the OS in default_os_disk_size_gb."
   type        = number
-  default     = 0
+  default     = null
+}
+
+variable "default_os_disk_size_gb" {
+  description = "OS disk size in GB by os_type when devops.runners[].os_disk_size_gb is not set."
+  type        = map(number)
+  default = {
+    linux   = 64
+    windows = 128
+  }
 }
 
 variable "os_disk_type" {
-  description = "OS disk storage type."
+  description = "Storage type of the OS and data disks (devops.runners[].os_disk_type)."
   type        = string
-  default     = "Premium_LRS"
+}
+
+variable "os_disk_caching" {
+  description = "Caching of the OS disk: None, ReadOnly or ReadWrite (devops.runners[].os_disk_caching)."
+  type        = string
+}
+
+variable "data_disk_caching" {
+  description = "Caching of the data disk: None, ReadOnly or ReadWrite (devops.runners[].data_disk_caching)."
+  type        = string
 }
 
 variable "data_disk_size_gb" {
@@ -185,15 +217,19 @@ variable "data_disk_size_gb" {
 }
 
 variable "encryption_at_host_enabled" {
-  description = "Encryption at host. The Microsoft.Compute/EncryptionAtHost feature must be registered on the subscription (task 01 does this)."
+  description = "Encryption at host (devops.runners[].encryption_at_host). The Microsoft.Compute/EncryptionAtHost feature must be registered on the subscription (task 01 does this)."
   type        = bool
-  default     = false
 }
 
 variable "admin_username" {
-  description = "Local administrator user name."
+  description = "Local administrator user name (devops.runners[].admin_username)."
   type        = string
-  default     = "runneradmin"
+}
+
+variable "disable_password_authentication" {
+  description = "A Linux runner signs in with the SSH key only."
+  type        = bool
+  default     = true
 }
 
 variable "admin_ssh_public_key" {
@@ -219,19 +255,39 @@ variable "windows_service_account" {
   }
 }
 
+variable "windows_root" {
+  description = "Folder on a Windows runner that holds the runner, the agent, the logs and the state: <root>\\actions-runner, <root>\\GitLab-Runner, <root>\\azagent, <root>\\logs, <root>\\state. The same value as cicd_runner_windows_root of the Ansible cicd_runner role."
+  type        = string
+  default     = "C:\\azl"
+}
+
 variable "image" {
-  description = "Marketplace image. Null uses Ubuntu 24.04 LTS on Linux and Windows Server 2025 Datacenter Azure Edition on Windows."
+  description = "Marketplace image (devops.runners[].image). Null takes the image of the OS in default_images."
   type = object({
     publisher = string
     offer     = string
     sku       = string
-    version   = optional(string, "latest")
+    version   = string
   })
   default = null
 }
 
+variable "default_images" {
+  description = "Marketplace image by os_type when devops.runners[].image is not set: Ubuntu 24.04 LTS on Linux and Windows Server 2025 Datacenter Azure Edition on Windows."
+  type = map(object({
+    publisher = string
+    offer     = string
+    sku       = string
+    version   = string
+  }))
+  default = {
+    linux   = { publisher = "Canonical", offer = "ubuntu-24_04-lts", sku = "server", version = "latest" }
+    windows = { publisher = "MicrosoftWindowsServer", offer = "WindowsServer", sku = "2025-datacenter-azure-edition", version = "latest" }
+  }
+}
+
 variable "zones" {
-  description = "Availability zones for VM placement (VM scale set: the zones it spans). Empty means no zone."
+  description = "Availability zones for VM placement (VM scale set: the zones it spans), devops.runners[].zones. Empty means no zone."
   type        = list(string)
   default     = []
 }
@@ -307,15 +363,18 @@ variable "hub_peering" {
       hub_vnet_id          resource ID of the hub VNet.
       use_remote_gateways  use the hub's VPN or ExpressRoute gateway (the hub side then allows gateway transit).
       create_hub_side      create the hub half of the peering (needs rights in the hub subscription). Set false when the network team owns it.
-      spoke_name, hub_name names of the two peerings. Empty uses peer-<vnet>-to-hub and peer-hub-to-<vnet>. Set them to adopt existing peerings.
+      spoke_name, hub_name names of the two peerings (devops.runner_network.hub_peering.spoke_name and hub_name).
+      allow_forwarded_traffic, allow_gateway_transit  the peering options of the hub network (landing_zone.networks[].allow_forwarded_traffic and allow_gateway_transit).
   EOT
   type = object({
-    enabled             = optional(bool, false)
-    hub_vnet_id         = optional(string, "")
-    use_remote_gateways = optional(bool, true)
-    create_hub_side     = optional(bool, true)
-    spoke_name          = optional(string, "")
-    hub_name            = optional(string, "")
+    enabled                 = optional(bool, false)
+    hub_vnet_id             = optional(string, "")
+    use_remote_gateways     = optional(bool)
+    create_hub_side         = optional(bool)
+    spoke_name              = optional(string, "")
+    hub_name                = optional(string, "")
+    allow_forwarded_traffic = optional(bool)
+    allow_gateway_transit   = optional(bool)
   })
   default = {}
 
@@ -332,9 +391,49 @@ variable "reachable_cidrs" {
 }
 
 variable "reachable_tcp_ports" {
-  description = "TCP ports allowed outbound to reachable_cidrs: SSH, HTTPS (BMC), SMB, RDP, WinRM and the ZTP maintenance environment."
+  description = "TCP ports allowed outbound to reachable_cidrs (devops.runner_network.reachable_tcp_ports)."
   type        = list(string)
-  default     = ["22", "443", "445", "3389", "5985", "5986"]
+}
+
+variable "allow_internet_https" {
+  description = "Allow HTTPS (443) outbound to the internet: GitHub, GitLab, Azure DevOps, package repositories and runner downloads (devops.runner_network.allow_internet_https)."
+  type        = bool
+}
+
+variable "allow_internet_http" {
+  description = "Allow HTTP (80) outbound to the internet: package mirrors with signed metadata (devops.runner_network.allow_internet_http)."
+  type        = bool
+}
+
+variable "allow_icmp" {
+  description = "Allow ICMP outbound to the lab networks, for reachability checks (devops.runner_network.allow_icmp)."
+  type        = bool
+}
+
+variable "peering_allow_virtual_network_access" {
+  description = "Both peerings let the two VNets reach each other: the point of the peering."
+  type        = bool
+  default     = true
+}
+
+variable "nsg_rule_settings" {
+  description = "Name and priority of each rule of the runner NSG, by its role."
+  type = map(object({
+    name     = string
+    priority = number
+  }))
+  default = {
+    deny_inbound_internet            = { name = "Deny-Inbound-Internet", priority = 4000 }
+    allow_outbound_azure_platform    = { name = "Allow-Outbound-AzurePlatform", priority = 100 }
+    allow_outbound_https_azure_cloud = { name = "Allow-Outbound-HTTPS-AzureCloud", priority = 110 }
+    allow_outbound_https_internet    = { name = "Allow-Outbound-HTTPS-Internet", priority = 120 }
+    allow_outbound_http_internet     = { name = "Allow-Outbound-HTTP-Internet", priority = 130 }
+    deny_outbound_other              = { name = "Deny-Outbound-Other", priority = 4000 }
+    allow_outbound_lab_tcp           = { name = "Allow-Outbound-Lab-Tcp", priority = 200 }
+    allow_outbound_lab_icmp          = { name = "Allow-Outbound-Lab-Icmp", priority = 210 }
+    allow_inbound_bmc_smb            = { name = "Allow-Inbound-BMC-SMB", priority = 100 }
+    allow_inbound_admin              = { name = "Allow-Inbound-Admin", priority = 110 }
+  }
 }
 
 variable "bmc_cidrs" {
@@ -352,15 +451,23 @@ variable "admin_source_cidrs" {
 # --------------------------------------------------------------- identity ----
 
 variable "nsg_name" {
-  description = "Network security group name. Empty uses nsg-<name_prefix>. Set it to adopt an existing group with terraform import."
+  description = "Network security group name (devops.runners[].nsg_name). Set it to an existing group's name to adopt it with terraform import."
   type        = string
-  default     = ""
+
+  validation {
+    condition     = var.nsg_name != ""
+    error_message = "nsg_name is needed (devops.runners[].nsg_name)."
+  }
 }
 
 variable "managed_identity_name" {
-  description = "User-assigned managed identity name. Empty uses id-<name_prefix>."
+  description = "User-assigned managed identity name (devops.runners[].managed_identity_name)."
   type        = string
-  default     = ""
+
+  validation {
+    condition     = var.managed_identity_name != ""
+    error_message = "managed_identity_name is needed (devops.runners[].managed_identity_name)."
+  }
 }
 
 variable "contributor_scopes" {
@@ -440,4 +547,92 @@ variable "bootstrap_timeout_seconds" {
   description = "How long Terraform waits for the Windows bootstrap (Run Command) to finish."
   type        = number
   default     = 3600
+}
+
+variable "instance_name_format" {
+  description = "Format of a VM name: the name prefix and the instance number (format())."
+  type        = string
+  default     = "%s-%02d"
+}
+
+variable "computer_name_format" {
+  description = "Format of the host name inside the guest: the computer name prefix and the instance number (format())."
+  type        = string
+  default     = "%s%02d"
+}
+
+variable "module_tags" {
+  description = "Tags this module adds to every resource, on top of tags."
+  type        = map(string)
+  default = {
+    "managed-by" = "azurelocal-toolkit/cicd-runner"
+  }
+}
+
+variable "nic_name_prefix" {
+  description = "Prefix of the name of each VM network interface; the VM name follows it."
+  type        = string
+  default     = "nic-"
+}
+
+variable "data_disk_name_prefix" {
+  description = "Prefix of the name of each data disk; the VM name follows it."
+  type        = string
+  default     = "disk-data-"
+}
+
+variable "vmss_nic_name" {
+  description = "Name of the network interface of the VM scale set profile."
+  type        = string
+  default     = "nic"
+}
+
+variable "ip_configuration_name" {
+  description = "Name of the IP configuration of each network interface."
+  type        = string
+  default     = "internal"
+}
+
+variable "boot_diagnostics_enabled" {
+  description = "Boot diagnostics with a managed storage account on each machine."
+  type        = bool
+  default     = true
+}
+
+variable "vmss_upgrade_mode" {
+  description = "Upgrade mode of the VM scale set: Manual, the runners are replaced by a new apply."
+  type        = string
+  default     = "Manual"
+}
+
+variable "bootstrap_run_command_name" {
+  description = "Name of the Run Command that bootstraps a Windows runner."
+  type        = string
+  default     = "azl-runner-bootstrap"
+}
+
+variable "secret_content_type" {
+  description = "Content type of the Windows administrator password secret in Key Vault."
+  type        = string
+  default     = "text/plain"
+}
+
+variable "windows_password_policy" {
+  description = "Length and character classes of the generated Windows administrator password."
+  type = object({
+    length             = number
+    special_characters = string
+    min_upper          = number
+    min_lower          = number
+    min_numeric        = number
+    min_special        = number
+  })
+  default = {
+    length             = 28
+    special_characters = "!#%*()-_=+[]"
+    min_upper          = 2
+    min_lower          = 2
+    min_numeric        = 2
+    min_special        = 2
+  }
 }

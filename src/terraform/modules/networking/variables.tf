@@ -18,12 +18,7 @@ variable "location" {
 }
 
 variable "resource_group_name" {
-  description = "Resource group for networking resources."
-  type        = string
-}
-
-variable "org_code" {
-  description = "Organization code for naming (e.g., iic)."
+  description = "Resource group of the hub virtual network, its subnets and NSGs."
   type        = string
 }
 
@@ -42,7 +37,7 @@ variable "subnets" {
 }
 
 variable "nsgs" {
-  description = "List of NSGs with rules."
+  description = "NSGs with rules (landing_zone.network_security_groups[]): one value in each address and port field of a rule."
   type = list(object({
     name        = string
     description = optional(string, "")
@@ -54,8 +49,8 @@ variable "nsgs" {
       protocol                   = string
       source_address_prefix      = string
       destination_port_range     = string
-      source_port_range          = optional(string, "*")
-      destination_address_prefix = optional(string, "*")
+      source_port_range          = string
+      destination_address_prefix = string
     }))
   }))
   default = []
@@ -85,6 +80,24 @@ variable "nat_gateway_idle_timeout" {
   }
 }
 
+variable "nat_config" {
+  description = "NAT gateway (landing_zone.connectivity.nat_gateway): name, the name of its public IP, SKU (Standard or StandardV2), resource group, network (the hub) and the hub subnets it serves."
+  type = object({
+    name           = optional(string, "")
+    public_ip_name = optional(string, "")
+    sku            = optional(string)
+    resource_group = optional(string, "")
+    network        = optional(string, "")
+    subnets        = optional(list(string), [])
+  })
+  default = {}
+
+  validation {
+    condition     = var.nat_config.sku == null || contains(["Standard", "StandardV2"], coalesce(var.nat_config.sku, "Standard"))
+    error_message = "landing_zone.connectivity.nat_gateway.sku must be Standard or StandardV2."
+  }
+}
+
 # --- VPN Gateway ---
 variable "enable_vpn_gateway" {
   description = "Whether to deploy a VPN Gateway."
@@ -93,18 +106,24 @@ variable "enable_vpn_gateway" {
 }
 
 variable "vpn_config" {
-  description = "VPN Gateway configuration."
+  description = "VPN Gateway configuration (landing_zone.connectivity.vpn_gateway and its first site_to_site entry)."
   type = object({
-    gateway_name           = string
-    public_ip_name         = optional(string, "")
-    sku                    = optional(string)
-    active_active          = optional(bool, false)
-    bgp_enabled            = optional(bool, false)
-    local_gateway_name     = string
-    local_gateway_ip       = string
-    local_address_prefixes = list(string)
-    connection_name        = string
-    routing_weight         = optional(number, 0)
+    gateway_name             = string
+    resource_group           = optional(string, "")
+    network                  = optional(string, "")
+    public_ip_name           = optional(string, "")
+    secondary_public_ip_name = optional(string, "")
+    sku                      = optional(string)
+    active_active            = optional(bool)
+    bgp_enabled              = optional(bool, false)
+    bgp_asn                  = optional(number)
+    local_gateway_name       = string
+    local_gateway_ip         = string
+    local_address_prefixes   = list(string)
+    peer_asn                 = optional(number)
+    peer_bgp_address         = optional(string)
+    connection_name          = string
+    routing_weight           = optional(number, 0)
   })
   default = {
     gateway_name           = ""
@@ -122,6 +141,18 @@ variable "vpn_shared_key" {
   default     = ""
 }
 
+variable "vpn_ip_configuration_name" {
+  description = "Name of the IP configuration of the VPN gateway (of the first instance in active-active mode)."
+  type        = string
+  default     = "vnetGatewayConfig"
+}
+
+variable "vpn_secondary_ip_configuration_name" {
+  description = "Name of the IP configuration of the second instance of an active-active VPN gateway."
+  type        = string
+  default     = "vnetGatewayConfig2"
+}
+
 # --- Bastion ---
 variable "enable_bastion" {
   description = "Whether to deploy Azure Bastion."
@@ -130,15 +161,23 @@ variable "enable_bastion" {
 }
 
 variable "bastion_config" {
-  description = "Bastion host configuration."
+  description = "Bastion host configuration (landing_zone.connectivity.bastion)."
   type = object({
     name           = string
+    resource_group = optional(string, "")
+    network        = optional(string, "")
     public_ip_name = optional(string, "")
     sku            = optional(string)
   })
   default = {
     name = ""
   }
+}
+
+variable "bastion_ip_configuration_name" {
+  description = "Name of the IP configuration of the Bastion host."
+  type        = string
+  default     = "bastionIpConfig"
 }
 
 variable "tags" {

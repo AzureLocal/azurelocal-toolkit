@@ -24,14 +24,14 @@ terraform {
 provider "azurerm" {
   features {
     key_vault {
-      purge_soft_delete_on_destroy = false
+      purge_soft_delete_on_destroy = var.purge_soft_delete_on_destroy
     }
     resource_group {
-      prevent_deletion_if_contains_resources = true
+      prevent_deletion_if_contains_resources = var.prevent_deletion_if_contains_resources
     }
   }
 
-  subscription_id = var.subscriptions.azure_local_id
+  subscription_id = var.azure_local_subscription_id
 }
 
 provider "azuread" {}

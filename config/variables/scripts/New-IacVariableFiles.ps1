@@ -21,6 +21,8 @@
     class a: the same fact as the key named in infrastructure_key. b: a real choice with no key yet (proposed_key says which).
     c: a setting of the code itself, with its default in the registry; the script writes it only to group_vars. d: belongs to a
     feature that is out of scope. source secret or runtime: never written, see below. form: how the value is shaped (-ListForm).
+    In the Terraform files a key the file leaves out gets the registry default of that key (when the object that holds the key is in
+    the file), so the default lives in the registry and the Terraform variable has none. group_vars keeps what the file says.
 
     A secret is never resolved and never written. A variable whose source is secret or runtime is left out, and the file says how
     the code gets it: a comment in a YAML file, not-written.txt next to a JSON file (an environment variable at run time). A value
@@ -147,6 +149,50 @@ function Get-KeyValue {
     [pscustomobject]@{ Found = $true; Value = @($r.Values) }
 }
 
+# The registry default of a key of infrastructure.yml (selectors dropped: landing_zone.networks[role=hub].x is landing_zone.networks[].x).
+function Get-IacKeyDefault([string]$Key) {
+    $path = ($Key -replace '\[[^\]]*\]', '[]') -replace '\[\]$', ''
+    $r = if ($script:KeyRecords -and $script:KeyRecords.ContainsKey($path)) { $script:KeyRecords[$path] } else { $null }
+    if ($r -and $r.HasDefault -and $null -ne $r.Default) { return [pscustomobject]@{ Found = $true; Value = $r.Default } }
+    [pscustomobject]@{ Found = $false; Value = $null }
+}
+
+# A key the file leaves out takes its registry default, so the default lives in the registry and not in the Terraform code. Only when
+# the object that holds the key is in the file (no VPN gateway section: no VPN default either).
+function Get-KeyValueOrDefault {
+    param($Infrastructure, [string]$Key, [switch]$AnyParent)
+    $v = Get-KeyValue $Infrastructure $Key
+    if ($v.Found -and -not (Test-Empty $v.Value)) { return $v }
+    $parent = $Key.Substring(0, [Math]::Max(0, $Key.LastIndexOf('.')))
+    if (-not $AnyParent -and $parent -and -not (Resolve-IacKey -Infrastructure $Infrastructure -Key $parent).Found) { return $v }
+    $d = Get-IacKeyDefault $Key
+    if ($d.Found) { return $d }
+    $v
+}
+
+# One item of a list as an object: the fields the attribute entries of $Entry name (the last segment of each key), each shaped by the
+# attribute's form when it has one, and the registry default of the key when the item leaves the field out.
+function ConvertTo-IacItem {
+    param($Entry, [System.Collections.IDictionary]$Item, [string]$Where, $Ctx)
+    $out = [ordered]@{}
+    foreach ($a in @($Ctx.Attributes[$Entry.Name])) {
+        if (-not $a.Keys.Count -or $a.Source -in 'tool', 'secret', 'runtime') { continue }
+        $field = ($a.Keys[0] -split '\.')[-1] -replace '\[[^\]]*\]', ''
+        if ($a.Form) {
+            if (-not $script:Forms.Contains($a.Form)) { $Ctx.Errors.Add("$($a.Name): the form '$($a.Form)' is not known to this script."); continue }
+            $r = & $script:Forms[$a.Form] ([pscustomobject]@{ Name = $a.Name; Keys = @($field) }) $Item $Ctx
+        }
+        else { $r = Get-KeyValue $Item $field }
+        if (-not $r.Found -or ((Test-Empty $r.Value) -and $r.Value -isnot [bool])) { $r = Get-IacKeyDefault $a.Keys[0] }
+        if (-not $r.Found -or ((Test-Empty $r.Value) -and $r.Value -isnot [bool])) {
+            if ($a.Required -eq 'Y') { $Ctx.Errors.Add("$Where.$field is missing ($($a.Name) of $($Entry.Name)).") }
+            continue
+        }
+        $out[($a.Name -split '\.')[-1]] = $r.Value
+    }
+    $out
+}
+
 # ---------------------------------------------------------------------------------------------------------------------
 # Forms: how a value is shaped when it is not a plain copy. Each returns Found and Value. The names are in the registry.
 # ---------------------------------------------------------------------------------------------------------------------
@@ -257,20 +303,40 @@ $script:Forms = [ordered]@{
             $index++
             if ($vm -isnot [System.Collections.IDictionary]) { continue }
             if ((Get-IacText $(if ($vm.Contains('deploy_target')) { $vm['deploy_target'] })) -ne 'azure') { continue }
-            $item = [ordered]@{}
-            foreach ($a in $Ctx.Attributes[$Entry.Name]) {
-                if (-not $a.Keys.Count) { continue }
-                $field = ($a.Keys[0] -split '\.')[-1] -replace '\[\]', ''
-                $value = if ($vm.Contains($field)) { $vm[$field] } else { $null }
-                if (Test-Empty $value) {
-                    if ($a.Required -eq 'Y') { $Ctx.Errors.Add("landing_zone.virtual_machines[$index].$field is missing ($($a.Name) of $($Entry.Name)).") }
-                    continue
-                }
-                $item[($a.Name -split '\.')[-1]] = $value
-            }
-            $map[(Get-IacText $vm['name'])] = $item
+            $map[(Get-IacText $vm['name'])] = ConvertTo-IacItem -Entry $Entry -Item $vm -Where "$($Entry.Keys[0] -replace '\[\]$', '')[$index]" -Ctx $Ctx
         }
         [pscustomobject]@{ Found = ($map.Count -gt 0); Value = $map }
+    }
+    # A list of objects (landing_zone.management_groups[], landing_zone.subscriptions[], ...): each item with the fields the attribute entries name.
+    object_list         = {
+        param($Entry, $Infra, $Ctx)
+        $v = Get-KeyValue $Infra $Entry.Keys[0]
+        if (-not $v.Found) { return [pscustomobject]@{ Found = $false; Value = $null } }
+        $out = [System.Collections.Generic.List[object]]::new()
+        $index = -1
+        foreach ($item in @($v.Value)) {
+            $index++
+            if ($item -isnot [System.Collections.IDictionary]) { continue }
+            $out.Add((ConvertTo-IacItem -Entry $Entry -Item $item -Where "$($Entry.Keys[0] -replace '\[\]$', '')[$index]" -Ctx $Ctx))
+        }
+        [pscustomobject]@{ Found = $true; Value = $out.ToArray() }
+    }
+    # The same as a map keyed by the name of each item (landing_zone.policy.assignments[], devops.runner_access.additional_role_assignments[]).
+    object_map          = {
+        param($Entry, $Infra, $Ctx)
+        $v = Get-KeyValue $Infra $Entry.Keys[0]
+        if (-not $v.Found) { return [pscustomobject]@{ Found = $false; Value = $null } }
+        $map = [ordered]@{}
+        $index = -1
+        foreach ($item in @($v.Value)) {
+            $index++
+            if ($item -isnot [System.Collections.IDictionary]) { continue }
+            $name = Get-IacText $(if ($item.Contains('name')) { $item['name'] })
+            if (-not $name) { $Ctx.Errors.Add("$($Entry.Keys[0] -replace '\[\]$', '')[$index] has no name ($($Entry.Name)).") ; continue }
+            if ($map.Contains($name)) { $Ctx.Errors.Add("$($Entry.Keys[0] -replace '\[\]$', '')[$index]: the name '$name' is listed twice ($($Entry.Name)).") ; continue }
+            $map[$name] = ConvertTo-IacItem -Entry $Entry -Item $item -Where "$($Entry.Keys[0] -replace '\[\]$', '')[$index]" -Ctx $Ctx
+        }
+        [pscustomobject]@{ Found = $true; Value = $map }
     }
     domain_join_username = {
         param($Entry, $Infra, $Ctx)
@@ -308,6 +374,9 @@ catch { Exit-Failed "Cannot read the registry $RegistryPath : $($_.Exception.Mes
 
 $byPath = @{}
 foreach ($r in $Registry) { $byPath[$r.Path] = $r }
+$script:KeyRecords = $byPath
+# tfvars only: a key the file leaves out takes its registry default (Get-KeyValueOrDefault). group_vars keeps what the file says.
+$script:UseKeyDefault = $false
 $entries = [System.Collections.Generic.List[object]]::new()
 foreach ($r in $Registry) {
     if ($r.Path -notmatch '^tools\.(terraform\.variables|ansible\.variables|cicd_infra\.terraform_variables|cicd_infra\.ansible_variables)\.[^.]+\.[^.]+$') { continue }
@@ -368,7 +437,7 @@ function Get-EntryValue {
         if (-not $script:Forms.Contains($Entry.Form)) { $ctx.Errors.Add("$($Entry.Name): the form '$($Entry.Form)' is not known to this script."); return [pscustomobject]@{ Found = $false; Value = $null } }
         return & $script:Forms[$Entry.Form] $Entry $infra $ctx
     }
-    if ($Entry.Keys.Count -ge 1) { return Get-KeyValue $infra $Entry.Keys[0] }
+    if ($Entry.Keys.Count -ge 1) { if ($script:UseKeyDefault) { return Get-KeyValueOrDefault $infra $Entry.Keys[0] -AnyParent:($Entry.Name -notmatch '\.') }; return Get-KeyValue $infra $Entry.Keys[0] }
     [pscustomobject]@{ Found = $false; Value = $null }
 }
 
@@ -384,6 +453,7 @@ function Get-AttributePath([string]$Name) { $s = @($Name -split '\.'); if ($s.Co
 function Build-Variable {
     # The variables of one group of entries (one variables.tf, or group_vars): an ordered map name -> value.
     param([object[]]$GroupEntries, [string]$Kind)
+    $script:UseKeyDefault = ($Kind -eq 'tfvars')
     $result = [ordered]@{}
     $roots = @($GroupEntries | Where-Object { $_.Name -notmatch '\.' -and $_.Target -eq $Kind })
     foreach ($e in $roots) {

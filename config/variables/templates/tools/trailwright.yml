@@ -780,10 +780,10 @@ disconnected:
 # Part 2 of the implementation steps: the Azure foundation the instance depends on.
 landing_zone:
   # Subscriptions by role. azure.subscription_id is the one the instance uses.
-  # used by: cicd_infra
+  # used by: cicd_infra, terraform
   subscriptions:
     # Name of the subscription; the other landing_zone entries refer to it.
-    # required; used by: cicd_infra, trailwright
+    # required; used by: cicd_infra, trailwright, terraform
     - name: "sub-iic-connectivity"
       # Subscription id (a GUID).
       # used by: cicd_infra, trailwright, terraform

@@ -513,6 +513,7 @@ landing_zone:
       resource_group: "rg-iic-conn-01"
       network: "vnet-iic-hub-01"
       sku: "VpnGw1AZ"
+      public_ip_name: "pip-iic-vpng-hub-01" # 5.6.28
       bgp_asn: 65515
       site_to_site:
         - connection_name: "cn-iic-dal-01"
@@ -520,7 +521,7 @@ landing_zone:
           peer_public_ip: "203.0.113.1"
           peer_address_prefixes: ["192.0.2.0/24", "198.51.100.0/24"]
           shared_key: "keyvault://kv-iic-mgmt-01/vpn-shared-key"
-    bastion: { name: "bas-iic-hub-01", resource_group: "rg-iic-conn-01", sku: "Standard" }
+    bastion: { name: "bas-iic-hub-01", resource_group: "rg-iic-conn-01", sku: "Standard", public_ip_name: "pip-iic-bas-hub-01" }
   virtual_machines:
     - name: "vm-iic-dc-01"
       hostname: "iic-dc01"
@@ -607,6 +608,8 @@ devops:
       registration_secret: "keyvault://kv-iic-mgmt-01/github-runner-token"
       subnet: { name: "snet-iic-runner-lnx-01", prefix: "10.20.10.0/26" }
       private_ips: ["10.20.10.4"]
+      nsg_name: "nsg-iic-runner-lnx-01" # 5.6.28: the NSG and the managed identity task 06 creates
+      managed_identity_name: "id-iic-runner-lnx-01"
     - name: "vm-iic-runner-ztp"
       os_type: windows
       purpose: ztp
@@ -616,10 +619,12 @@ devops:
       subnet: { name: "snet-iic-runner-ztp-01", prefix: "10.20.10.64/26" }
       private_ips: ["10.20.10.68"]
       data_disk_gb: 512
+      nsg_name: "nsg-iic-runner-ztp-01"
+      managed_identity_name: "id-iic-runner-ztp-01"
   runner_network:
     vnet_name: "vnet-iic-devops-01"
     address_space: ["10.20.10.0/24"]
-    hub_peering: { enabled: true, hub_network: "vnet-iic-hub-01", use_remote_gateways: true, create_hub_side: true }
+    hub_peering: { enabled: true, hub_network: "vnet-iic-hub-01", use_remote_gateways: true, create_hub_side: true, spoke_name: "peer-vnet-iic-devops-01-to-hub", hub_name: "peer-hub-to-vnet-iic-devops-01" }
     reachable_cidrs: ["192.0.2.0/24", "198.51.100.0/24"] # the lab: management and storage
     bmc_cidrs: ["198.51.100.0/24"] # the ztp runner accepts inbound TCP 445 from these only
     admin_source_cidrs: []

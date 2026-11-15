@@ -215,3 +215,9 @@ devops:
       # The Azure Pipelines agent pool, or the GitHub runner group.
       # used by: cicd_infra, ansible, terraform
       pool: "azurelocal-ztp"
+      # (since 5.6.28) 
+      # default: "runneradmin"; used by: cicd_infra, terraform, ansible
+      admin_username: "runneradmin"
+      # (since 5.6.28) 
+      # used by: cicd_infra, ansible
+      identity_client_id: "00000000-0000-0000-0000-000000000000"
