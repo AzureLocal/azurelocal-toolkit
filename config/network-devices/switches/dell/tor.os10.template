@@ -241,7 +241,7 @@ logging audit enable
 
 ! ===========================================================================
 ! Login. The account is network_devices[].credentials.username; its password is the secret
-! {{network_devices[].credentials.password}}. The generator never reads or writes a password: create the
+! named by network_devices[].credentials.password. The generator never reads or writes a password: create the
 ! account on the switch with the password from the secret store (username <name> password <password> role sysadmin).
 ! ===========================================================================
 ! username {{network_devices[].credentials.username}} role sysadmin

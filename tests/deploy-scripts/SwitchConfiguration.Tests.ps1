@@ -99,8 +99,9 @@ Describe 'New-SwitchConfiguration.ps1 with the example infrastructure file' {
         $one | Should -Match '(?ms)class QDefault\s+bandwidth percent 49'
         $one | Should -Not -Match 'dot1p 5\b'
     }
-    It 'names the password reference and never a password' {
-        $script:Example1.Rows[0].Text | Should -Match 'keyvault://kv-iic-mgmt-01/switch-admin-password'
+    It 'names the password key and never a password or its reference' {
+        $script:Example1.Rows[0].Text | Should -Match 'network_devices\[\]\.credentials\.password'
+        $script:Example1.Rows[0].Text | Should -Not -Match 'keyvault://|env://|file://|command://'
         $script:Example1.Rows[0].Text | Should -Not -Match '(?m)^\s*username \S+ password'
     }
     It 'leaves syslog and SNMP out (parked)' {
@@ -230,5 +231,14 @@ Describe 'The Dell template holds no site value' {
     It 'uses only the Network ATC values it documents' {
         @([regex]::Matches($script:Body, '\{\{(atc\.[a-z_]+)\}\}') | ForEach-Object { $_.Groups[1].Value } | Sort-Object -Unique) |
             Should -Be @('atc.cluster_bandwidth_percent', 'atc.default_bandwidth_percent', 'atc.default_priorities')
+    }
+}
+
+Describe 'New-SwitchConfiguration.ps1 refuses QoS values that would be wrong on the switch' {
+    It 'a template placeholder that names a secret stops the run' {
+        $src = Get-Content -Raw -LiteralPath ([IO.Path]::Combine($PSScriptRoot, '..', '..', 'scripts', 'deploy', '03-onprem-readiness', 'phase-03-network-infrastructure', 'task-02-dell-powerswitch-configuration', 'powershell', 'New-SwitchConfiguration.ps1'))
+        $src | Should -Match "names a secret; a switch configuration never holds one"
+        $src | Should -Match "smb_priority and cluster_priority are both"
+        $src | Should -Match "leave no bandwidth for the other traffic"
     }
 }

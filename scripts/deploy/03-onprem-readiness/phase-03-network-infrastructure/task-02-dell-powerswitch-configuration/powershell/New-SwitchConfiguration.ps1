@@ -200,6 +200,7 @@ function Get-AtcValue([string]$Name) {
     $cluster = @((Resolve-Term ($qos + 'cluster_priority') $scope).Values)[0]
     switch ($Name) {
         'default_priorities' {
+            if ([int]$smb -eq [int]$cluster) { $script:Problems.Add("$($script:DeviceName): smb_priority and cluster_priority are both $smb; Network ATC needs two priorities."); return $null }
             $rest = @($AllPriorities | Where-Object { $_ -ne [int]$smb -and $_ -ne [int]$cluster })
             # 0,1,2,4,5,6 -> 0-2,4-6
             $ranges = [System.Collections.Generic.List[string]]::new(); $start = $rest[0]; $previous = $rest[0]
@@ -214,7 +215,9 @@ function Get-AtcValue([string]$Name) {
             $smbPercent = [int](@((Resolve-Term ($qos + 'smb_bandwidth_percent') $scope).Values)[0])
             $clusterPercent = Get-AtcClusterPercent
             if ($null -eq $clusterPercent) { return $null }
-            return (100 - $smbPercent - [int]$clusterPercent)
+            $rest = 100 - $smbPercent - [int]$clusterPercent
+            if ($rest -lt 1) { $script:Problems.Add("$($script:DeviceName): smb_bandwidth_percent $smbPercent and the cluster heartbeat ($clusterPercent percent) leave no bandwidth for the other traffic."); return $null }
+            return $rest
         }
         default { throw "Template value atc.$Name is not known." }
     }
@@ -231,7 +234,8 @@ function Get-AtcClusterPercent {
         $script:Problems.Add("The storage intent's adapters ($($adapters -join ', ')) have no speed: set hardware.network_cards[].ports[].speed_gbps (or nodes[].network_adapters[].speed_gbps). Network ATC reserves 1 percent for the cluster heartbeat above 10 Gbps and 2 percent otherwise, and the switch must match.")
         return $null
     }
-    if (@($speeds | Where-Object { $_ -gt $AtcFastAdapterGbps }).Count) { return $AtcClusterPercentFast }
+    # Network ATC reserves 1 percent only when the adapters of the intent are faster than 10 Gbps (an intent has adapters of one speed).
+    if (@($speeds | Where-Object { $_ -le $AtcFastAdapterGbps }).Count -eq 0) { return $AtcClusterPercentFast }
     return $AtcClusterPercentSlow
 }
 
@@ -268,7 +272,7 @@ function Test-Condition([string]$Condition, [hashtable]$Scope) {
     # path=value: the = outside a selector ([traffic=storage] is part of the path).
     $depth = 0; $at = -1
     for ($i = 0; $i -lt $Condition.Length; $i++) {
-        switch ($Condition[$i]) { '[' { $depth++ } ']' { $depth-- } '=' { if ($depth -eq 0) { $at = $i } } }
+        switch ($Condition[$i]) { '[' { $depth++ } ']' { $depth-- } '=' { if ($depth -eq 0 -and $at -lt 0) { $at = $i } } }
     }
     $path = if ($at -ge 0) { $Condition.Substring(0, $at) } else { $Condition }
     $r = Resolve-Expression $path $Scope
@@ -292,6 +296,8 @@ function Invoke-TemplateNode([object[]]$Nodes, [hashtable]$Scope, [System.Collec
                 $drop = $false
                 $rendered = [regex]::Replace($line, '\{\{(?<expr>[^#/][^}]*)\}\}', {
                         param($match)
+                        # A secret is never written: no placeholder may name a password, secret or token, not even its reference.
+                        if ($match.Groups['expr'].Value -match '(?i)(password|secret|token)') { throw "Template line $($node.Line): the placeholder $($match.Value) names a secret; a switch configuration never holds one." }
                         $r = Resolve-Expression $match.Groups['expr'].Value $Scope
                         if (-not $r.Values.Count) {
                             if ($r.IsList) { $script:DropLine = $true }
