@@ -363,7 +363,8 @@ The Terraform code (`src/terraform`) and the Ansible roles (`src/ansible`) are a
 | `terraform/azure-local/terraform.tfvars.json` and `backend.hcl` | `src/terraform/environments/azure-local` (the landing zone, the hub network, the platform Key Vault, the Log Analytics workspace and action group, the management VMs) |
 | `terraform/backend/terraform.tfvars.json` | `src/terraform/backend` (the state storage account, named by `devops.state`) |
 | `terraform/cicd-infra/terraform.tfvars.json` and `backend.hcl` | `src/terraform/environments/cicd-infra` (the same variables task 06 of the CI/CD set-up builds) |
-| `ansible/inventory/group_vars/all.yml` and `host_vars/<node>.yml` | the roles of `src/ansible` |
+| `ansible/inventory/hosts.yml`, `group_vars/all.yml` and `host_vars/<host>.yml` | the roles and playbooks of `src/ansible` (`hosts.yml` groups the virtual machines by `landing_zone.virtual_machines[].role` too) |
+| `ansible/inventory/cicd-runners.yml` | `src/ansible/playbooks/00-cicd-runner.yml` (one group per `devops.runners[]` entry) |
 
 The mapping is in the registry, not in the script. Each variable of the code is a registry entry under `tools.terraform.variables`, `tools.ansible.variables` or (for the CI/CD runners) `tools.cicd_infra.terraform_variables`, with these fields:
 
@@ -373,13 +374,13 @@ The mapping is in the registry, not in the script. Each variable of the code is 
 | `source` | `infrastructure` (written from the file), `tool` (the default in the code; group_vars also gets the registry default), `secret` (the file holds a reference; never written) or `runtime` (not in the file; supplied when the code runs). |
 | `infrastructure_key` | The key the value comes from: a dotted path, with `[]` (every item), `[role=hub]` (the items whose role is hub) or `[0]` (the first item). A list means several keys feed the value. |
 | `form` | How the value is shaped when it is not a plain copy (`names_map`, `subnets_map`, `present`, `lowercase` and so on; `New-IacVariableFiles.ps1 -ListForm`). |
-| `target` | Where it is written: `tfvars`, `backend_hcl`, `group_vars`, `host_vars`, or `none` (a module input or a role default that the generator does not write). |
+| `target` | Where it is written: `tfvars`, `backend_hcl`, `group_vars`, `host_vars` (per host, from a key below `nodes[]` or `landing_zone.virtual_machines[]`), `inventory` (the WinRM settings of the Windows groups), `inventory_host` (`ansible_host`), `cicd_inventory` (per runner group of `cicd-runners.yml`, from a key below `devops.runners[]`), or `none` (a module input or a role default that the generator does not write). |
 | `passed_from` | A module variable that receives the value of a variable of the root environment. |
 | `same_as` | The same setting in the other tool (Terraform and Ansible install the same tools on a runner); a test checks that the defaults agree. |
 
 A secret is never resolved and never written. The file for a Terraform environment is `terraform.tfvars.json`, which cannot carry a comment, so a variable that is a secret or a run-time value is named in `not-written.txt` next to it, with the environment variable that supplies it (`TF_VAR_vm_admin_password`, for example). In `group_vars/all.yml` the same note is a comment. A secret reference where a value is needed stops the run with exit code 2. The files hold subscription IDs and names: keep the output folder out of git.
 
-The committed `src/ansible/inventory/group_vars/all.yml` is the output for `examples/infrastructure.example.yml`; a test fails when it differs.
+The output for `examples/infrastructure.example.yml` is committed as `src/ansible/inventory/hosts.yml.example`, `src/ansible/inventory/cicd-runners.yml.example` and the fixtures `tests/variables/fixtures/ansible/inventory/group_vars/all.yml` and `host_vars/`; a test fails when one differs. The real files (`src/ansible/inventory/hosts.yml`, `cicd-runners.yml`, `group_vars/`, `host_vars/`) are git-ignored: Ansible would load a committed `group_vars/all.yml` on every run.
 
 ## Use it from a script
 

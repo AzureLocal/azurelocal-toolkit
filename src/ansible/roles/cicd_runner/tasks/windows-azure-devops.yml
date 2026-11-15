@@ -26,17 +26,17 @@
 - name: Unpack the agent
   community.windows.win_unzip:
     src: "{{ cicd_runner_windows_root }}\\downloads\\vsts-agent-{{ cicd_runner_ado_version }}.zip"
-    dest: C:\azagent
-    creates: C:\azagent\config.cmd
+    dest: "{{ cicd_runner_windows_root }}\\azagent"
+    creates: "{{ cicd_runner_windows_root }}\\azagent\\config.cmd"
 
 - name: Write the capabilities (each label becomes <label>=true)
   ansible.windows.win_copy:
-    dest: C:\azagent\.env
+    dest: "{{ cicd_runner_windows_root }}\\azagent\\.env"
     content: "{% for capability in cicd_runner_ado_capabilities %}{{ capability }}=true\r\n{% endfor %}"
 
 - name: Check whether the agent is already configured
   ansible.windows.win_stat:
-    path: C:\azagent\.agent
+    path: "{{ cicd_runner_windows_root }}\\azagent\\.agent"
   register: cicd_runner_ado_configured
 
 - name: Configure the agent and install it as a service
@@ -54,7 +54,7 @@
       [CmdletBinding()]
       param($Credential, $ScmUrl, $Pool, $Name, $Account, $Work)
       $ErrorActionPreference = 'Stop'
-      Push-Location C:\azagent
+      Push-Location '{{ cicd_runner_windows_root }}\azagent'
       try {
           & .\config.cmd --unattended --replace --acceptTeeEula --url $ScmUrl --auth pat --token $Credential --pool $Pool --agent $Name `
               --work $Work --runAsService --windowsLogonAccount $Account

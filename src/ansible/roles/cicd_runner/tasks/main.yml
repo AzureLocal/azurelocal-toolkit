@@ -11,6 +11,7 @@
 - name: Check the role variables
   ansible.builtin.assert:
     that:
+      - cicd_runner_platform is defined
       - cicd_runner_platform in ['github', 'gitlab', 'azure_devops']
       - cicd_runner_scm_url | length > 0
       - cicd_runner_purpose in ['general', 'ztp']
@@ -21,7 +22,8 @@
       - cicd_runner_is_windows | bool or ansible_os_family == 'Debian'
       - cicd_runner_platform != 'azure_devops' or cicd_runner_azure_devops_pool | length > 0
     fail_msg: >-
-      Set cicd_runner_platform, cicd_runner_scm_url and a credential source. The ztp purpose needs a Windows host.
+      cicd_runner_platform (devops.platform) and cicd_runner_scm_url come from group_vars/all.yml (New-IacVariableFiles.ps1); a
+      credential source is needed. The ztp purpose needs a Windows host.
       Linux hosts must be Debian family (Ubuntu 22.04 or 24.04). Azure DevOps needs cicd_runner_azure_devops_pool
       (devops.runners[].pool in infrastructure.yml); there is no default pool.
     quiet: true

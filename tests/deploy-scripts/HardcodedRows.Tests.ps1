@@ -177,7 +177,7 @@ Describe 'Terraform follows the registry' {
 Describe 'settings registered by hand' {
     It 'registers every setting of src/ansible/ansible.cfg under tools.ansible.config_keys' {
         $lines = @((Get-RepoText 'src/ansible/ansible.cfg') -split "`r?`n" | Where-Object { $_ -match '^\s*[a-z_]+\s*=' })
-        $lines.Count | Should -Be 15
+        $lines.Count | Should -Be 12
         foreach ($line in $lines) {
             $name = ($line -split '=')[0].Trim()
             $script:Registry | Should -Match ('"name":"ansible\.cfg \[[a-z_]+\] ' + [regex]::Escape($name) + '"') -Because "$name is registered"

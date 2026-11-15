@@ -679,6 +679,17 @@
                 "default": 0,
                 "minimum": 0,
                 "maximum": 32767
+              },
+              "admin_username": {
+                "description": "Schema 5.6.28. Local administrator user name of the runner machines: the admin_username Terraform gives the VMs, and the account the Ansible cicd_runner playbook connects as (ansible_user of the cicd-runners inventory).",
+                "type": "string",
+                "default": "runneradmin",
+                "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+              },
+              "identity_client_id": {
+                "description": "Schema 5.6.28. Client ID of the user-assigned managed identity the runner uses to read its registration secret from Key Vault. Empty or missing: the machine's system-assigned identity.",
+                "type": "string",
+                "format": "uuid"
               }
             }
           }

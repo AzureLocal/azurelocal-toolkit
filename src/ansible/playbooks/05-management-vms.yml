@@ -1,8 +1,12 @@
 # =============================================================================
 # Playbook 05: Management VM Configuration
 # =============================================================================
-# Part 2 — Azure Foundation, Phase 4 + Part 5: Management Infrastructure
-# Run on: domain_controllers (DC promotion), management (WAC + syslog)
+# Part 2 — Azure Foundation, Phase 4: Management Infrastructure
+# Run on: domain_controllers (DC promotion). The inventory groups the management VMs by
+# landing_zone.virtual_machines[].role (New-IacVariableFiles.ps1).
+#
+# The roles wac-server (Windows Admin Center, deferred) and syslog-receiver (syslog forwarding, parked) stay in the
+# repository but no playbook runs them: their features are out of scope (registry class d).
 # =============================================================================
 ---
 - name: "Part 2 | Phase 4 — Promote Domain Controllers"
@@ -24,37 +28,3 @@
 
   roles:
     - role: domain-controller
-
-- name: "Part 5 | Phase 2 — Configure WAC Server"
-  hosts: management
-  gather_facts: true
-  become: false
-  tags:
-    - wac-server
-    - management-vms
-
-  pre_tasks:
-    - name: Check if host is the WAC server
-      ansible.builtin.set_fact:
-        _is_wac_server: "{{ 'wac' in inventory_hostname | lower }}"
-
-  roles:
-    - role: wac-server
-      when: _is_wac_server | bool
-
-- name: "Part 5 | Phase 2 — Configure Syslog Receiver"
-  hosts: management
-  gather_facts: true
-  become: false
-  tags:
-    - syslog-receiver
-    - management-vms
-
-  pre_tasks:
-    - name: Check if host is the syslog receiver
-      ansible.builtin.set_fact:
-        _is_syslog_server: "{{ 'syslog' in inventory_hostname | lower }}"
-
-  roles:
-    - role: syslog-receiver
-      when: _is_syslog_server | bool

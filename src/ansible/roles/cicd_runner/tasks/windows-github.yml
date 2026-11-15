@@ -12,12 +12,12 @@
 - name: Unpack the runner
   community.windows.win_unzip:
     src: "{{ cicd_runner_windows_root }}\\downloads\\actions-runner-{{ cicd_runner_github_runner_version }}.zip"
-    dest: C:\actions-runner
-    creates: C:\actions-runner\config.cmd
+    dest: "{{ cicd_runner_windows_root }}\\actions-runner"
+    creates: "{{ cicd_runner_windows_root }}\\actions-runner\\config.cmd"
 
 - name: Check whether the runner is already configured
   ansible.windows.win_stat:
-    path: C:\actions-runner\.runner
+    path: "{{ cicd_runner_windows_root }}\\actions-runner\\.runner"
   register: cicd_runner_github_configured
 
 - name: Register the runner and install it as a service
@@ -50,7 +50,7 @@
       $arguments = @('--unattended', '--replace', '--url', $ScmUrl, '--token', $registration, '--name', $Name,
           '--labels', $Labels, '--work', $Work, '--runasservice', '--windowslogonaccount', $Account)
       if ($Group) { $arguments += @('--runnergroup', $Group) }
-      Push-Location C:\actions-runner
+      Push-Location '{{ cicd_runner_windows_root }}\actions-runner'
       try {
           & .\config.cmd @arguments
           if ($LASTEXITCODE -ne 0) { throw 'config.cmd failed' }

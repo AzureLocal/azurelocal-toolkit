@@ -15,6 +15,11 @@
 # The registration credential is read from Key Vault by the host. To supply it
 # yourself set cicd_runner_token_source=variable and cicd_runner_registration_token
 # from Ansible Vault.
+#
+# inventory/cicd-runners.yml is written by config/variables/scripts/New-IacVariableFiles.ps1
+# from devops.runners[] (one group per entry, with its purpose, labels, pool, secret,
+# identity and admin user). The Linux groups set ansible_become; the become method is
+# the host's default (sudo): ansible.cfg sets none.
 # =============================================================================
 ---
 - name: "Part 1 | Task 06 - Linux CI/CD runners"

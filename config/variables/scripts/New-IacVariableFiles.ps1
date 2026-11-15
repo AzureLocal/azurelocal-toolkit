@@ -12,15 +12,19 @@
         <OutputDirectory>/terraform/backend/terraform.tfvars.json
         <OutputDirectory>/terraform/cicd-infra/terraform.tfvars.json    and backend.hcl
         <OutputDirectory>/ansible/inventory/hosts.yml
+        <OutputDirectory>/ansible/inventory/cicd-runners.yml           (when the file has devops.runners)
         <OutputDirectory>/ansible/inventory/group_vars/all.yml
-        <OutputDirectory>/ansible/inventory/host_vars/<node>.yml
+        <OutputDirectory>/ansible/inventory/host_vars/<host>.yml        (the virtual machines of hosts.yml)
 
     The mapping lives in the registry (config/variables/schema/master-registry.yaml): every Terraform variable
     (tools.terraform.variables, tools.cicd_infra.terraform_variables) and every Ansible variable (tools.ansible.variables) has
     class, source, infrastructure_key, form and target. The script reads those entries; it has no name or value of its own.
     class a: the same fact as the key named in infrastructure_key. b: a real choice with no key yet (proposed_key says which).
-    c: a setting of the code itself, with its default in the registry; the script writes it only to group_vars. d: belongs to a
-    feature that is out of scope. source secret or runtime: never written, see below. form: how the value is shaped (-ListForm).
+    c: a setting of the code itself, with its default in the registry; the script writes it only to group_vars and the
+    inventories. d: belongs to a feature that is out of scope. source secret or runtime: never written, see below. form: how the
+    value is shaped (-ListForm). target: group_vars, host_vars (a key below nodes[] or landing_zone.virtual_machines[], per host),
+    inventory (the connection settings of the Windows groups), inventory_host (ansible_host, per host), cicd_inventory (a key
+    below devops.runners[], per runner group of cicd-runners.yml) or none.
 
     A secret is never resolved and never written. A variable whose source is secret or runtime is left out, and the file says how
     the code gets it: a comment in a YAML file, not-written.txt next to a JSON file (an environment variable at run time). A value
@@ -36,8 +40,9 @@
     cluster.key_vault.soft_delete_retention_days, scenario.environment_class, landing_zone.* (management_groups[], subscriptions[], resource_groups[], networks[], connectivity, virtual_machines[]),
     operations.monitoring.*, operations.notifications.emails, security.defender_for_cloud.security_contact_email, devops.*,
     identity.active_directory.*, networking.management.*, networking.ntp_servers, networking.outbound.*, scenario.outbound_path,
-    cluster.name, nodes[].name, nodes[].management.ip_address, nodes[].management.adapter_name, landing_zone.virtual_machines[] (name, hostname,
-    role, private_ip, os: the machines of the Ansible inventory).
+    cluster.name, nodes[].name, nodes[].management.ip_address, landing_zone.virtual_machines[] (name, hostname, role, private_ip, os,
+    deploy_target, dc_promotion, dsrm_password: the machines of the Ansible inventory), devops.runners[] (name, os_type, count,
+    private_ips, admin_username and the settings of each runner), scenario.cloud.
 
     Exit codes: 0 every file is written, unchanged or planned under -WhatIf, or there was nothing to write; 1 a precondition failed
     (the registry or a module cannot be read, a file cannot be written); 2 a value in the file is missing or not usable, or the
@@ -77,7 +82,7 @@
 .EXAMPLE
     ./New-IacVariableFiles.ps1 -InfrastructureFile ./infrastructure.yml -OutputDirectory D:\work\iac -Target Ansible
 
-    Writes hosts.yml, group_vars/all.yml and host_vars/<node>.yml only.
+    Writes hosts.yml, cicd-runners.yml, group_vars/all.yml and host_vars/<host>.yml only.
 #>
 [CmdletBinding(SupportsShouldProcess)]
 [Diagnostics.CodeAnalysis.SuppressMessageAttribute('PSReviewUnusedParameter', '', Justification = 'Every form is a scriptblock called with the same three arguments (entry, file, context); most forms use some of them.')]
@@ -292,6 +297,8 @@ $script:Forms = [ordered]@{
     keyvault_vault      = { param($Entry, $Infra, $Ctx) $v = Get-KeyValue $Infra $Entry.Keys[0]; if ($v.Found -and (Get-IacText $v.Value) -match '^keyvault://([^/]+)/') { [pscustomobject]@{ Found = $true; Value = $Matches[1] } } else { [pscustomobject]@{ Found = $false; Value = $null } } }
     keyvault_secret     = { param($Entry, $Infra, $Ctx) $v = Get-KeyValue $Infra $Entry.Keys[0]; if ($v.Found -and (Get-IacText $v.Value) -match '^keyvault://[^/]+/(.+)$') { [pscustomobject]@{ Found = $true; Value = $Matches[1] } } else { [pscustomobject]@{ Found = $false; Value = $null } } }
     cicd_runners        = { param($Entry, $Infra, $Ctx) [pscustomobject]@{ Found = $false; Value = $null } }   # built as a whole by ConvertTo-AzlRunnerTerraformVariable
+    # A number of the file as a switch: true when it is greater than 0 (devops.runners[].data_disk_gb: a data disk to initialise).
+    greater_than_zero   = { param($Entry, $Infra, $Ctx) $v = Get-KeyValue $Infra $Entry.Keys[0]; $n = 0; $ok = $v.Found -and [int]::TryParse([string]$v.Value, [ref]$n); [pscustomobject]@{ Found = $true; Value = [bool]($ok -and $n -gt 0) } }
 }
 
 if ($ListForm) { $script:Forms.Keys; exit 0 }
@@ -323,6 +330,7 @@ foreach ($r in $Registry) {
             Required = $(if ($n.Contains('required')) { [string]$n['required'] } else { 'N' })
             HasDefault = $n.Contains('default'); Default = $(if ($n.Contains('default')) { $n['default'] } else { $null }); Type = [string]$n['type']
             Note = $(if ($n.Contains('note')) { [string]$n['note'] } else { '' })
+            Os = $(if ($n.Contains('os')) { [string]$n['os'] } else { '' })
         })
 }
 
@@ -372,6 +380,38 @@ function Get-EntryValue {
     [pscustomobject]@{ Found = $false; Value = $null }
 }
 
+function ConvertFrom-RegistryDefault($Entry) {
+    # The registry holds a default as text; a YAML file gets it in its type (integer, boolean, list, map).
+    $d = $Entry.Default
+    if ($d -isnot [string]) { return $d }
+    switch -Regex ($Entry.Type) {
+        '^(integer|int)$' { return [int]$d }
+        '^(boolean|bool)$' { return $d -eq 'true' }
+        '^(array|object|dict|list)$' { if ($d.Trim() -match '^[\[{]') { return (ConvertFrom-Json -InputObject $d -AsHashtable -NoEnumerate) } }
+    }
+    $d
+}
+
+function Get-ItemEntryValue {
+    # The value of an entry for one item of a list (a node, a virtual machine, a runner): the key that starts with Prefix
+    # (nodes[], landing_zone.virtual_machines[], devops.runners[]) is read below the item, through the form of the entry.
+    # A key the item does not set takes the default the registry gives that key, when it has one.
+    param($Entry, [System.Collections.IDictionary]$Item, [string]$Prefix)
+    $relative = @($Entry.Keys | Where-Object { $_.StartsWith("$Prefix.") } | ForEach-Object { $_.Substring($Prefix.Length + 1) })
+    if ($relative.Count -eq 0) { return [pscustomobject]@{ Found = $false; Value = $null } }
+    $local = [pscustomobject]@{ Name = $Entry.Name; Keys = $relative; Form = $Entry.Form }
+    if ($Entry.Form) {
+        if (-not $script:Forms.Contains($Entry.Form)) { $ctx.Errors.Add("$($Entry.Name): the form '$($Entry.Form)' is not known to this script."); return [pscustomobject]@{ Found = $false; Value = $null } }
+        return & $script:Forms[$Entry.Form] $local $Item $ctx
+    }
+    $r = Get-KeyValue $Item $relative[0]
+    if (-not $r.Found -or (Test-Empty $r.Value)) {
+        $keyNode = $byPath["$Prefix.$($relative[0])"]
+        if ($keyNode -and $keyNode.Node -is [System.Collections.IDictionary] -and $keyNode.Node.Contains('default')) { return [pscustomobject]@{ Found = $true; Value = $keyNode.Node['default'] } }
+    }
+    $r
+}
+
 function ConvertTo-PlainData($Value) {
     # JSON and YAML writers get plain dictionaries, lists and scalars.
     if ($Value -is [System.Collections.IDictionary]) { $o = [ordered]@{}; foreach ($k in $Value.Keys) { $o[[string]$k] = ConvertTo-PlainData $Value[$k] }; return $o }
@@ -413,7 +453,7 @@ function Build-Variable {
             if ($found -or $e.Required -eq 'Y') { foreach ($m in $pending) { $ctx.Errors.Add($m) } }
         }
         elseif ($e.Source -eq 'infrastructure') { $r = Get-EntryValue $e; $found = $r.Found; $value = $r.Value }
-        elseif ($e.Source -eq 'tool' -and $Kind -eq 'group_vars' -and $e.HasDefault) { $found = $true; $value = $e.Default }
+        elseif ($e.Source -eq 'tool' -and $Kind -eq 'group_vars' -and $e.HasDefault) { $found = $true; $value = ConvertFrom-RegistryDefault $e }
         $empty = (-not $found) -or ((Test-Empty $value) -and $value -isnot [bool] -and -not ($e.Form -in 'proxy_url', 'arc_gateway_id') )
         if ($empty) {
             if ($e.Required -eq 'Y' -and $e.Source -eq 'infrastructure') { $ctx.Errors.Add("$($e.Name): $(if ($e.Keys.Count) { $e.Keys -join ', ' } else { 'its form' }) is missing or empty in the file.") }
@@ -485,26 +525,40 @@ function Add-TerraformEnvironment([string]$TargetName, [string]$AreaSuffix, [str
 }
 
 # The Ansible inventory (inventory/hosts.yml): the machines of the file in the groups the playbooks use, and how Ansible connects to the Windows ones.
-#   cluster_nodes      nodes[]                                                   ansible_host: the management address of the node
-#   domain_controllers landing_zone.virtual_machines[] with role domain_controller   ansible_host: private_ip
-#   management         the other landing_zone.virtual_machines[]                 ansible_host: private_ip
-#   windows            all three groups, with the connection settings of the registry (tools.ansible.variables, target inventory)
-# A Linux machine (os ubuntu_2404) is left out: the connection settings are WinRM. The file says how many.
+#   cluster_nodes      nodes[]
+#   domain_controllers landing_zone.virtual_machines[] with role domain_controller
+#   management         the other landing_zone.virtual_machines[]
+#   vm_role_<role>     every virtual machine of landing_zone.virtual_machines[] by its role (domain_controller, jumpbox, windows_admin_center, ...)
+#   windows            cluster_nodes, domain_controllers and management, with the connection settings of the registry (target inventory)
+# ansible_host is the registry entry with target inventory_host: the key it names below nodes[] and below landing_zone.virtual_machines[].
+# A Linux machine (os ubuntu_2404) is left out: the connection settings are WinRM. The file says which.
+# Returns the hosts it lists (Name, Item, Prefix), for the host_vars files.
 function Add-AnsibleInventory([object[]]$GroupEntries) {
+    $listed = [System.Collections.Generic.List[object]]::new()
     $connection = [ordered]@{}
-    foreach ($e in @($GroupEntries | Where-Object { $_.Target -eq 'inventory' })) { $connection[$e.Name] = if ($e.Type -eq 'integer') { [int]$e.Default } else { [string]$e.Default } }
+    foreach ($e in @($GroupEntries | Where-Object { $_.Target -eq 'inventory' })) { $connection[$e.Name] = ConvertFrom-RegistryDefault $e }
+    $address = @($GroupEntries | Where-Object { $_.Target -eq 'inventory_host' } | Select-Object -First 1)
+    if ($address.Count -eq 0) { $ctx.Errors.Add('The registry has no Ansible entry with target inventory_host (ansible_host).'); return $listed }
+    $address = $address[0]
+    $addressKey = @{ 'nodes[]' = @($address.Keys | Where-Object { $_ -like 'nodes`[`].*' })[0]; 'landing_zone.virtual_machines[]' = @($address.Keys | Where-Object { $_ -like 'landing_zone.virtual_machines`[`].*' })[0] }
     $groups = [ordered]@{ domain_controllers = [ordered]@{}; management = [ordered]@{}; cluster_nodes = [ordered]@{} }
+    $roleGroups = [ordered]@{}
     $owner = @{}
     $left = [System.Collections.Generic.List[string]]::new()
     $hostPattern = '^[A-Za-z0-9][A-Za-z0-9._-]*$'
+    $nodes = Get-KeyValue $infra 'nodes'
     $index = -1
-    foreach ($node in @(Get-AzlInfrastructureNode -Infrastructure $infra)) {
+    foreach ($node in @(if ($nodes.Found) { $nodes.Value })) {
         $index++
-        if ($node.Name -notmatch $hostPattern) { $ctx.Errors.Add("nodes[$index].name '$($node.Name)' is not usable as a host name."); continue }
-        if ($owner.ContainsKey($node.Name.ToLowerInvariant())) { $ctx.Errors.Add("nodes[$index].name '$($node.Name)' is listed twice."); continue }
-        $owner[$node.Name.ToLowerInvariant()] = 'nodes'
-        if (-not $node.ManagementIp) { $ctx.Errors.Add("nodes[$index]: '$($node.Name)' has no management address (nodes[].management.ip_address), which is its ansible_host."); continue }
-        $groups.cluster_nodes[$node.Name] = [ordered]@{ ansible_host = $node.ManagementIp }
+        if ($node -isnot [System.Collections.IDictionary]) { continue }
+        $name = Get-IacText $node['name']
+        if ($name -notmatch $hostPattern) { $ctx.Errors.Add("nodes[$index].name '$name' is missing or is not usable as a host name."); continue }
+        if ($owner.ContainsKey($name.ToLowerInvariant())) { $ctx.Errors.Add("nodes[$index].name '$name' is listed twice."); continue }
+        $owner[$name.ToLowerInvariant()] = 'nodes'
+        $r = Get-ItemEntryValue $address $node 'nodes[]'
+        if (-not $r.Found -or (Test-Empty $r.Value)) { $ctx.Errors.Add("nodes[$index]: '$name' has no $($addressKey['nodes[]']), which is its ansible_host."); continue }
+        $groups.cluster_nodes[$name] = [ordered]@{ ansible_host = Get-IacText $r.Value }
+        $listed.Add([pscustomobject]@{ Name = $name; Item = $node; Prefix = 'nodes[]' })
     }
     $machines = Get-KeyValue $infra 'landing_zone.virtual_machines'
     $index = -1
@@ -517,25 +571,101 @@ function Add-AnsibleInventory([object[]]$GroupEntries) {
         if ((Get-IacText $machine['os']) -eq 'ubuntu_2404') { $left.Add($hostName); continue }
         if ($owner.ContainsKey($hostName.ToLowerInvariant())) { $ctx.Errors.Add("landing_zone.virtual_machines[$index]: the host name '$hostName' is already used by $($owner[$hostName.ToLowerInvariant()])."); continue }
         $owner[$hostName.ToLowerInvariant()] = 'landing_zone.virtual_machines'
-        $address = Get-IacText $machine['private_ip']
-        if (-not $address) { $ctx.Errors.Add("landing_zone.virtual_machines[$index]: '$hostName' has no private_ip, which is its ansible_host."); continue }
-        $group = if ((Get-IacText $machine['role']) -eq 'domain_controller') { 'domain_controllers' } else { 'management' }
-        $groups[$group][$hostName] = [ordered]@{ ansible_host = $address }
+        $r = Get-ItemEntryValue $address $machine 'landing_zone.virtual_machines[]'
+        if (-not $r.Found -or (Test-Empty $r.Value)) { $ctx.Errors.Add("landing_zone.virtual_machines[$index]: '$hostName' has no $(($addressKey['landing_zone.virtual_machines[]'] -split '\.')[-1]), which is its ansible_host."); continue }
+        $role = Get-IacText $machine['role']
+        $group = if ($role -eq 'domain_controller') { 'domain_controllers' } else { 'management' }
+        $groups[$group][$hostName] = [ordered]@{ ansible_host = Get-IacText $r.Value }
+        if ($role -match '^[a-z_]+$') {
+            if (-not $roleGroups.Contains("vm_role_$role")) { $roleGroups["vm_role_$role"] = [ordered]@{} }
+            $roleGroups["vm_role_$role"][$hostName] = [ordered]@{}
+        }
+        $listed.Add([pscustomobject]@{ Name = $hostName; Item = $machine; Prefix = 'landing_zone.virtual_machines[]' })
     }
     $filled = @($groups.Keys | Where-Object { $groups[$_].Count -gt 0 })
-    if ($filled.Count -eq 0) { $skipped.Add('ansible/inventory/hosts.yml: the file lists no node and no Windows virtual machine.'); return }
+    if ($filled.Count -eq 0) { $skipped.Add('ansible/inventory/hosts.yml: the file lists no node and no Windows virtual machine.'); return $listed }
     $children = [ordered]@{}
     foreach ($g in $filled) { $children[$g] = [ordered]@{ hosts = $groups[$g] } }
+    foreach ($g in $roleGroups.Keys) { $children[$g] = [ordered]@{ hosts = $roleGroups[$g] } }
     $windowsChildren = [ordered]@{}
     foreach ($g in $filled) { $windowsChildren[$g] = [ordered]@{} }
     $windows = [ordered]@{ children = $windowsChildren }
     if ($connection.Count) { $windows.vars = $connection }
     $children.windows = $windows
     $text = "# Written by config/variables/scripts/New-IacVariableFiles.ps1 from nodes[] and landing_zone.virtual_machines[] of infrastructure.yml. Do not edit.`n"
-    $text += "# ansible_host is the management address of a node and the private_ip of a virtual machine. The connection settings of the windows group are settings of the code (tools.ansible.variables).`n"
+    $text += "# ansible_host is the management address of a node and the private_ip of a virtual machine. The vm_role_<role> groups list the virtual machines by role. The connection settings of the windows group are settings of the code (tools.ansible.variables).`n"
     if ($left.Count) { $text += "# Not listed (Linux, connected by SSH, which this file does not set up): $($left -join ', ').`n" }
     $text += (ConvertTo-Yaml ([ordered]@{ all = [ordered]@{ children = $children } })).TrimEnd() + "`n"
     Add-File 'Ansible' 'ansible/inventory/hosts.yml' $text
+    $listed
+}
+
+# The inventory of the CI/CD runners (inventory/cicd-runners.yml), from devops.runners[]: one group per runner entry under
+# cicd_runners_linux or cicd_runners_windows (os_type), the groups playbook 00-cicd-runner.yml targets. The hosts are the VMs
+# Terraform creates for the entry (<name>-01, <name>-02, ... as the cicd-runner module names them), with ansible_host from
+# private_ips in the same order. The group variables are the registry entries with target cicd_inventory (purpose, labels,
+# pool, the registration secret, the identity, the data disk, the admin user); an entry with os linux or windows is written
+# for that OS only. The windows groups get the WinRM connection settings (target inventory), as in hosts.yml.
+function Add-CicdRunnerInventory([object[]]$GroupEntries) {
+    $runners = Get-KeyValue $infra 'devops.runners'
+    if (-not $runners.Found -or (Test-Empty $runners.Value)) { $skipped.Add('ansible/inventory/cicd-runners.yml: the file has no devops.runners.'); return }
+    $address = @($GroupEntries | Where-Object { $_.Target -eq 'inventory_host' } | Select-Object -First 1)
+    $runnerEntries = @($GroupEntries | Where-Object { $_.Target -eq 'cicd_inventory' })
+    $connection = [ordered]@{}
+    foreach ($e in @($GroupEntries | Where-Object { $_.Target -eq 'inventory' })) { $connection[$e.Name] = ConvertFrom-RegistryDefault $e }
+    $tops = [ordered]@{ cicd_runners_linux = [ordered]@{}; cicd_runners_windows = [ordered]@{} }
+    $notes = [System.Collections.Generic.List[string]]::new()
+    $seen = @{}
+    $index = -1
+    foreach ($runner in @($runners.Value)) {
+        $index++
+        if ($runner -isnot [System.Collections.IDictionary]) { continue }
+        $name = Get-IacText $runner['name']
+        $os = Get-IacText $runner['os_type']
+        if ($name -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') { $ctx.Errors.Add("devops.runners[$index].name '$name' is missing or is not usable as a host name."); continue }
+        if ($os -notin 'linux', 'windows') { $ctx.Errors.Add("devops.runners[$index].os_type '$os' is not linux or windows."); continue }
+        $countValue = Get-ItemEntryValue ([pscustomobject]@{ Name = 'count'; Keys = @('devops.runners[].count'); Form = '' }) $runner 'devops.runners[]'
+        $count = 1
+        if ($countValue.Found -and -not [int]::TryParse([string]$countValue.Value, [ref]$count)) { $ctx.Errors.Add("devops.runners[$index].count is not a number."); continue }
+        $ips = @(if ($address.Count) { $r = Get-ItemEntryValue $address[0] $runner 'devops.runners[]'; if ($r.Found) { @($r.Value) | ForEach-Object { Get-IacText $_ } | Where-Object { $_ } } })
+        $hosts = [ordered]@{}
+        for ($i = 1; $i -le $count; $i++) {
+            $hostName = '{0}-{1:00}' -f $name, $i
+            if ($seen.ContainsKey($hostName.ToLowerInvariant())) { $ctx.Errors.Add("devops.runners[$index]: the host name '$hostName' is used twice."); continue }
+            $seen[$hostName.ToLowerInvariant()] = $true
+            if ($i -le $ips.Count) { $hosts[$hostName] = [ordered]@{ ansible_host = $ips[$i - 1] } }
+            else { $hosts[$hostName] = [ordered]@{}; $notes.Add("$hostName has no address in devops.runners[$index].private_ips: Ansible resolves the name.") }
+        }
+        $vars = [ordered]@{}
+        foreach ($e in $runnerEntries) {
+            if ($e.Os -and $e.Os -ne $os) { continue }
+            if ($e.Source -in 'secret', 'runtime') {
+                $line = "$($e.Name): not written. $(if ($e.Note) { $e.Note } else { 'Pass it at run time.' })"
+                if (-not $notes.Contains($line)) { $notes.Add($line) }
+                continue
+            }
+            if ($e.Source -eq 'tool') { if ($e.HasDefault) { $vars[$e.Name] = ConvertFrom-RegistryDefault $e }; continue }
+            $r = Get-ItemEntryValue $e $runner 'devops.runners[]'
+            if (-not $r.Found -or ((Test-Empty $r.Value) -and $r.Value -isnot [bool])) { continue }
+            $vars[$e.Name] = ConvertTo-PlainData $r.Value
+        }
+        $group = [ordered]@{ hosts = $hosts }
+        if ($vars.Count) { $group.vars = $vars }
+        $tops["cicd_runners_$os"]["cicd_runner_$(($name -replace '[^A-Za-z0-9_]', '_').ToLowerInvariant())"] = $group
+    }
+    $children = [ordered]@{}
+    foreach ($k in $tops.Keys) {
+        if ($tops[$k].Count -eq 0) { continue }
+        $children[$k] = [ordered]@{ children = $tops[$k] }
+        if ($k -eq 'cicd_runners_windows' -and $connection.Count) { $children[$k].vars = $connection }
+    }
+    if ($children.Count -eq 0) { return }
+    Test-SecretReference $children 'cicd-runners.yml'
+    $text = "# Written by config/variables/scripts/New-IacVariableFiles.ps1 from devops.runners[] of infrastructure.yml. Do not edit.`n"
+    $text += "# One group per runner entry. ansible-playbook -i inventory/cicd-runners.yml playbooks/00-cicd-runner.yml. No secret is in this file.`n"
+    foreach ($n in $notes) { $text += "# $n`n" }
+    $text += (ConvertTo-Yaml ([ordered]@{ all = [ordered]@{ children = $children } })).TrimEnd() + "`n"
+    Add-File 'Ansible' 'ansible/inventory/cicd-runners.yml' $text
 }
 
 foreach ($t in $Target) {
@@ -583,32 +713,30 @@ foreach ($t in $Target) {
             $nw = @(Get-NotWritten -GroupEntries $group -Kind 'group_vars')
             if ($nw.Count) { [void]$sb.Append("`n"); foreach ($l in $nw) { [void]$sb.Append("# $l`n") } }
             Add-File 'Ansible' 'ansible/inventory/group_vars/all.yml' $sb.ToString()
-            Add-AnsibleInventory $group
-            # host_vars: one file for each node
+            $listed = @(Add-AnsibleInventory $group)
+            Add-CicdRunnerInventory $group
+            # host_vars: one file for each host of hosts.yml whose list (nodes[], landing_zone.virtual_machines[]) has entries with target host_vars
             $hostEntries = @($group | Where-Object { $_.Target -eq 'host_vars' })
-            $nodes = Get-KeyValue $infra 'nodes'
-            if ($hostEntries.Count -and $nodes.Found) {
-                $seen = @{}
-                $index = -1
-                foreach ($node in @($nodes.Value)) {
-                    $index++
-                    if ($node -isnot [System.Collections.IDictionary]) { continue }
-                    $nodeName = Get-IacText $node['name']
-                    if ($nodeName -notmatch '^[A-Za-z0-9][A-Za-z0-9._-]*$') { $ctx.Errors.Add("nodes[$index].name '$nodeName' is missing or is not usable as a host name."); continue }
-                    if ($seen.ContainsKey($nodeName.ToLowerInvariant())) { $ctx.Errors.Add("nodes[$index].name '$nodeName' is listed twice."); continue }
-                    $seen[$nodeName.ToLowerInvariant()] = $true
-                    $hv = [ordered]@{}
-                    foreach ($h in $hostEntries) {
-                        $field = ($h.Keys[0] -split '\.')[-1]
-                        $inner = $node
-                        foreach ($seg in @(($h.Keys[0] -replace '^nodes\[\]\.', '') -split '\.')) { if ($inner -is [System.Collections.IDictionary] -and $inner.Contains($seg)) { $inner = $inner[$seg] } else { $inner = $null; break } }
-                        if (Test-Empty $inner) { if ($h.Required -eq 'Y') { $ctx.Errors.Add("nodes[$index].$($h.Keys[0] -replace '^nodes\[\]\.', '') is missing."); }; continue }
-                        $hv[$h.Name] = $inner
+            foreach ($h in $listed) {
+                $mine = @($hostEntries | Where-Object { @($_.Keys | Where-Object { $_.StartsWith("$($h.Prefix).") }).Count -gt 0 })
+                if ($mine.Count -eq 0) { continue }
+                $hv = [ordered]@{}
+                $left = [System.Collections.Generic.List[string]]::new()
+                foreach ($e in $mine) {
+                    if ($e.Source -in 'secret', 'runtime') {
+                        $raw = Get-ItemEntryValue ([pscustomobject]@{ Name = $e.Name; Keys = $e.Keys; Form = '' }) $h.Item $h.Prefix
+                        if ($raw.Found -and -not (Test-Empty $raw.Value)) { $left.Add("$($e.Name): not written. The file holds the reference at $($e.Keys -join ' or '). $(if ($e.Note) { $e.Note } else { 'Pass it at run time.' })") }
+                        continue
                     }
-                    $text = "# Written by config/variables/scripts/New-IacVariableFiles.ps1 from nodes[] of infrastructure.yml. Do not edit.`n"
-                    if ($hv.Count) { $text += (ConvertTo-Yaml $hv).TrimEnd() + "`n" } else { $text += "{}`n" }
-                    Add-File 'Ansible' "ansible/inventory/host_vars/$nodeName.yml" $text
+                    $r = Get-ItemEntryValue $e $h.Item $h.Prefix
+                    if (-not $r.Found -or ((Test-Empty $r.Value) -and $r.Value -isnot [bool])) { if ($e.Required -eq 'Y') { $ctx.Errors.Add("$($h.Name): $($e.Keys -join ', ') is missing ($($e.Name)).") }; continue }
+                    $hv[$e.Name] = ConvertTo-PlainData $r.Value
                 }
+                Test-SecretReference $hv "host_vars/$($h.Name)"
+                $text = "# Written by config/variables/scripts/New-IacVariableFiles.ps1 from $($h.Prefix) of infrastructure.yml. Do not edit.`n"
+                if ($hv.Count) { $text += (ConvertTo-Yaml $hv).TrimEnd() + "`n" } else { $text += "{}`n" }
+                foreach ($l in $left) { $text += "# $l`n" }
+                Add-File 'Ansible' "ansible/inventory/host_vars/$($h.Name).yml" $text
             }
         }
     }

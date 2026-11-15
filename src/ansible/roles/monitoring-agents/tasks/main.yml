@@ -32,7 +32,7 @@
               -Name "AzureMonitorWindowsAgent" `
               -Publisher "Microsoft.Azure.Monitor" `
               -ExtensionType "AzureMonitorWindowsAgent" `
-              -EnableAutomaticUpgrade
+              -EnableAutomaticUpgrade:${{ 'true' if ama_enable_automatic_upgrade | bool else 'false' }}
           Write-Output "AMA extension installed"
       }
   register: ama_result

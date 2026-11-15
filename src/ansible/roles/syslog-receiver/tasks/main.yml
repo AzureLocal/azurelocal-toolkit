@@ -6,8 +6,16 @@
 # Target: management group (syslog VM — Ubuntu 24.04 LTS or Windows)
 # Note: This role handles BOTH Linux and Windows syslog receivers.
 #       Windows uses the NXLog agent; Linux uses rsyslog + snmpd.
+# PARKED: syslog forwarding is out of scope (registry class d). No playbook runs this role.
 # =============================================================================
 ---
+- name: Check the SNMP community
+  ansible.builtin.assert:
+    that:
+      - syslog_snmp_community is defined
+      - syslog_snmp_community | length > 0
+    fail_msg: "Set syslog_snmp_community (-e @vault.yml). The role has no default community."
+    quiet: true
 # ---------------------------------------------------------------
 # Linux Path — rsyslog + snmpd
 # ---------------------------------------------------------------
@@ -36,7 +44,7 @@
       input(type="imudp" port="{{ syslog_port }}")
 
       # Log all network device messages to dedicated file
-      $template NetworkDevices,"/var/log/azurelocal/network/%HOSTNAME%/%$YEAR%-%$MONTH%-%$DAY%.log"
+      $template NetworkDevices,"{{ syslog_log_root }}/%HOSTNAME%/%$YEAR%-%$MONTH%-%$DAY%.log"
       if $fromhost-ip != '127.0.0.1' then -?NetworkDevices
       & stop
     owner: root
@@ -47,7 +55,7 @@
 
 - name: Ensure log directory exists (Linux)
   ansible.builtin.file:
-    path: /var/log/azurelocal/network
+    path: "{{ syslog_log_root }}"
     state: directory
     owner: syslog
     group: adm
@@ -60,12 +68,13 @@
     content: |
       # Azure Local SNMP Trap Receiver
       # Managed by Ansible
-      disableAuthorization yes
+      disableAuthorization {{ 'yes' if syslog_snmp_disable_authorization | bool else 'no' }}
       traphandle default /usr/sbin/snmptthandler
-      authCommunity log,execute,net public
+      authCommunity log,execute,net {{ syslog_snmp_community }}
     owner: root
     group: root
     mode: "0600"
+  no_log: true
   notify: restart snmptrapd
   when: ansible_os_family == "Debian"
 

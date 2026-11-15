@@ -48,6 +48,14 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "cloud": {
+          "description": "Azure public cloud or Azure Government.",
+          "type": "string",
+          "enum": [
+            "public",
+            "government"
+          ]
+        },
         "outbound_path": {
           "description": "How the machines reach Azure. Paths with a proxy need networking.outbound.proxy; paths with Arc gateway need networking.outbound.arc_gateway; private_path needs networking.outbound.private_path.",
           "type": "string",
@@ -57,6 +65,14 @@
             "arc_gateway",
             "proxy_arc_gateway",
             "private_path"
+          ]
+        },
+        "os_install": {
+          "description": "iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp automates (needs provisioning.simplified, and on every node a serial number, a BMC address and the management MAC: management.mac_address, or from 5.2 a mac_address on every network_adapters port with role management and at least one port with role provisioning).",
+          "type": "string",
+          "enum": [
+            "iso",
+            "simplified"
           ]
         }
       }
@@ -233,6 +249,17 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
+        "local_admin": {
+          "description": "The deployment's local administrator on every machine. Not the built-in Administrator: the deployment renames it. ARM localAdminUserName and localAdminPassword.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "password": {
+              "$ref": "#/$defs/kv_ref",
+              "description": "At least 14 characters with lowercase, uppercase, a digit and a special character."
+            }
+          }
+        },
         "active_directory": {
           "description": "The Active Directory the instance joins and its accounts. Applies when scenario.identity is active_directory.",
           "type": "object",
@@ -285,6 +312,36 @@
                 }
               }
             },
+            "precreate_computer_objects": {
+              "description": "Schema 5.6.23. Whether Set-ADConfiguration.ps1 creates the computer objects of the machines (nodes[].name) and of the cluster (cluster.name) in the OU before the deployment. Microsoft Learn allows this instead of letting the deployment create them (Custom Active Directory configuration for your Azure Local instance; Prestage cluster computer objects). The cluster object is created disabled. Default false: the domain join of the OS configuration and the deployment create the objects.",
+              "type": "boolean",
+              "default": false
+            },
+            "forest_functional_level": {
+              "description": "Schema 5.6.28. Forest functional level of a new forest that the toolkit's Ansible domain controller role creates (a landing_zone.virtual_machines[] entry with role domain_controller and dc_promotion new_forest); ignored for a replica. WinThreshold is the Windows Server 2016 level: the highest a Windows Server 2022 domain controller supports and the lowest a new forest may have. Win2025 needs every domain controller on Windows Server 2025 (Microsoft Learn: Active Directory Domain Services functional levels, https://learn.microsoft.com/windows-server/identity/ad-ds/active-directory-functional-levels).",
+              "type": "string",
+              "default": "WinThreshold",
+              "enum": [
+                "WinThreshold",
+                "Win2025"
+              ]
+            },
+            "domain_functional_level": {
+              "description": "Schema 5.6.28. Domain functional level of that new forest's domain. It may be higher than forest_functional_level, never lower (Microsoft Learn: Active Directory Domain Services functional levels). Same values.",
+              "type": "string",
+              "default": "WinThreshold",
+              "enum": [
+                "WinThreshold",
+                "Win2025"
+              ]
+            },
+            "dns_forwarders": {
+              "description": "Schema 5.6.28. The DNS forwarders of the domain controllers that the toolkit's Ansible domain controller role promotes: the servers they ask for names outside the domain. Empty or missing: a domain controller that runs in Azure (landing_zone.virtual_machines[].deploy_target azure) forwards to Azure DNS (168.63.129.16, reachable only from inside Azure); one that runs anywhere else keeps the root hints.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ipv4"
+              }
+            },
             "security_groups": {
               "description": "Groups created in the OU for administration of the instance.",
               "type": "array",
@@ -310,6 +367,30 @@
             "enabled": {
               "description": "true when Azure Monitor is part of the design. When it is false, every monitoring script of phase 02 (workspace, endpoint, Azure Monitor Agent, Insights association, action group) does nothing and exits 0.",
               "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "os_configuration": {
+      "description": "How the toolkit's OS configuration run (Invoke-AzureLocalOsConfiguration.ps1) treats the machines after the OS is installed, whichever way it was installed. Optional; every key has a default. (since 5.4.3)",
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "remoting": {
+          "description": "How the OS configuration reaches the nodes and how their remote management (WinRM, RDP, ICMP) is secured. The environment class (scenario.environment_class) picks the profile; these keys refine it. The baseline holds in every class and no key changes it: AllowUnencrypted false, Basic and CredSSP off, no SkipCACheck or SkipCNCheck, TLS 1.2 or higher. transport, bootstrap_transport and allowed_source_cidrs are since 5.4.4; the other keys are since 5.6.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "transport": {
+              "description": "winrm (HTTP, 5985), winrm_https (5986, a certificate on the node) or arc (Azure Arc Run Command: the exception for sites with no route to the nodes; not recommended for network changes). The command line's -Transport WinRM or ArcRunCommand overrides it.",
+              "type": "string",
+              "default": "winrm",
+              "enum": [
+                "winrm",
+                "winrm_https",
+                "arc"
+              ]
             }
           }
         }
@@ -346,6 +427,15 @@
                   "other"
                 ]
               },
+              "deploy_target": {
+                "description": "Where the VM runs.",
+                "type": "string",
+                "enum": [
+                  "azure",
+                  "azure_local",
+                  "onprem"
+                ]
+              },
               "private_ip": {
                 "$ref": "#/$defs/ipv4",
                 "description": "Private IPv4 address of the machine."
@@ -358,6 +448,18 @@
                   "windows_server_2025",
                   "ubuntu_2404"
                 ]
+              },
+              "dc_promotion": {
+                "description": "Schema 5.6.28. For a machine with role domain_controller: new_forest (the first domain controller: it creates the forest of identity.active_directory.domain_fqdn) or replica (an additional domain controller of that existing domain). No default: the toolkit's Ansible domain controller role stops when a domain controller has none.",
+                "type": "string",
+                "enum": [
+                  "new_forest",
+                  "replica"
+                ]
+              },
+              "dsrm_password": {
+                "$ref": "#/$defs/kv_ref",
+                "description": "Schema 5.6.28. For a machine with role domain_controller: a Key Vault secret reference (keyvault://<vault>/<secret>) to the Directory Services Restore Mode (safe mode) password the promotion sets. The toolkit reads it; it never generates or stores one. The vault must be listed in key_vaults."
               }
             }
           }
@@ -404,6 +506,18 @@
             "type": "object",
             "additionalProperties": false,
             "properties": {
+              "name": {
+                "description": "Name prefix of the VM or VMs, for example vm-contoso-runner-lnx.",
+                "type": "string"
+              },
+              "os_type": {
+                "description": "Operating system.",
+                "type": "string",
+                "enum": [
+                  "linux",
+                  "windows"
+                ]
+              },
               "purpose": {
                 "description": "general: ARM, Arc, Terraform, Ansible and OS configuration. ztp: the azurelocal-ztp Boot, Bootstrap and Vouchers stages (Windows only).",
                 "type": "string",
@@ -412,6 +526,13 @@
                   "general",
                   "ztp"
                 ]
+              },
+              "count": {
+                "description": "Number of VMs.",
+                "type": "integer",
+                "default": 1,
+                "minimum": 1,
+                "maximum": 20
               },
               "labels": {
                 "description": "Labels added to the defaults (azure, the OS, terraform, ansible, ztp). The pipelines choose the general runner by one of them, devops.pipelines.runner_label.",
@@ -427,6 +548,31 @@
               "pool": {
                 "description": "The Azure Pipelines agent pool, or the GitHub runner group. A ztp runner gets its own. Required on Azure DevOps (task 06 stops without it, there is no default pool); the Azure DevOps pipelines take the pool of the general runner as their agent pool parameter.",
                 "type": "string"
+              },
+              "private_ips": {
+                "description": "Static private addresses, one per VM. Empty uses dynamic addresses.",
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/ipv4"
+                }
+              },
+              "data_disk_gb": {
+                "description": "Data disk for the ZTP media, images and vouchers. 512 or more for ztp.",
+                "type": "integer",
+                "default": 0,
+                "minimum": 0,
+                "maximum": 32767
+              },
+              "admin_username": {
+                "description": "Schema 5.6.28. Local administrator user name of the runner machines: the admin_username Terraform gives the VMs, and the account the Ansible cicd_runner playbook connects as (ansible_user of the cicd-runners inventory).",
+                "type": "string",
+                "default": "runneradmin",
+                "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+              },
+              "identity_client_id": {
+                "description": "Schema 5.6.28. Client ID of the user-assigned managed identity the runner uses to read its registration secret from Key Vault. Empty or missing: the machine's system-assigned identity.",
+                "type": "string",
+                "format": "uuid"
               }
             }
           }

@@ -28,7 +28,7 @@ scenario:
   # one of: active_directory | local_identity; used by: os_configuration, deployment, monitoring, trailwright
   identity: "active_directory"
   # iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp...
-  # one of: iso | simplified; used by: ztp, os_configuration, monitoring, trailwright
+  # one of: iso | simplified; used by: ztp, os_configuration, monitoring, trailwright, ansible
   os_install: "simplified"
 
 # The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...

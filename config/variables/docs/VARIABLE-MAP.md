@@ -16,10 +16,10 @@ Registry version 5.0.61. Sources of the scan: toolkit (this repository), sonar d
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 669 | 471 | 85 | 3 | 108 | 2 |
-| Owned by a tool (`tools.*`) | 4035 | 3827 | 0 | 0 | 208 | 0 |
+| Keys of infrastructure.yml | 676 | 471 | 85 | 3 | 115 | 2 |
+| Owned by a tool (`tools.*`) | 4057 | 3849 | 0 | 0 | 208 | 0 |
 | Older variables-file sections | 1373 | 2 | 11 | 0 | 1354 | 6 |
-| All registry leaves | 6077 | 4300 | 96 | 3 | 1670 | 8 |
+| All registry leaves | 6106 | 4322 | 96 | 3 | 1677 | 8 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -462,7 +462,7 @@ Ranked by how many different tools read the key, then how many places in the cod
 
 Variables the registry documents that no tool in the scan reads by name. Each is either a key a coming phase will read, a key only the validator checks, or a name kept for compatibility. Nothing here is an error; it is the list to look at before you spend time filling a key in that nothing uses yet.
 
-### Placeholder: documented, not read by any tool in the scan (108)
+### Placeholder: documented, not read by any tool in the scan (115)
 
 | Variable | Tools | Provided by | Note |
 | --- | --- | --- | --- |
@@ -473,6 +473,9 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `environment.type` | trailwright | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `environment.owner` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `environment.description` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
+| `identity.active_directory.forest_functional_level` | ansible | operator by hand; default | documented in the registry; no tool in the scan reads it |
+| `identity.active_directory.domain_functional_level` | ansible | operator by hand; default | documented in the registry; no tool in the scan reads it |
+| `identity.active_directory.dns_forwarders` | ansible | operator by hand | documented in the registry; no tool in the scan reads it |
 | `networking.oob.gateway` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `networking.oob.vlan_id` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `networking.storage.switchless_links` | trailwright | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
@@ -501,6 +504,8 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `operations.disaster_recovery.target_rto_minutes` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `operations.disaster_recovery.target_rpo_minutes` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `operations.licensing.azure_verification_for_vms` |  | operator by hand | documented in the registry; no tool in the scan reads it |
+| `devops.runners[].admin_username` | cicd_infra; terraform; ansible | operator by hand; default | documented in the registry; no tool in the scan reads it |
+| `devops.runners[].identity_client_id` | cicd_infra; ansible | operator by hand | documented in the registry; no tool in the scan reads it |
 | `devops.runner.name` | cicd_infra | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `devops.runner.type` | cicd_infra | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `devops.runner.subscription` | cicd_infra | operator by hand | documented in the registry; no tool in the scan reads it |
@@ -535,7 +540,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `storage.san.fibre_channel.fabrics[].switch` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `storage.san.fibre_channel.fabrics[].zone_set` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `provisioning.iso.image_source` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
-| `os_configuration.remoting.transport` | os_configuration | operator by hand; default | documented in the registry; no tool in the scan reads it |
+| `os_configuration.remoting.transport` | os_configuration; ansible | operator by hand; default | documented in the registry; no tool in the scan reads it |
 | `disconnected.role` | trailwright | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `disconnected.base_path` | trailwright | operator by hand | documented in the registry; no tool in the scan reads it |
 | `disconnected.domain_suffix` | trailwright | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
@@ -567,6 +572,8 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `landing_zone.connectivity.firewall.resource_group` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.connectivity.firewall.sku` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.connectivity.firewall.private_ip` |  | operator by hand | documented in the registry; no tool in the scan reads it |
+| `landing_zone.virtual_machines[].dc_promotion` | ansible | operator by hand | documented in the registry; no tool in the scan reads it |
+| `landing_zone.virtual_machines[].dsrm_password` | ansible | operator by hand; Key Vault reference (keyvault://) | documented in the registry; no tool in the scan reads it |
 | `landing_zone.log_analytics.name` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `landing_zone.storage_accounts[].purpose` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `extensions` |  | operator by hand | documented in the registry; no tool in the scan reads it |
@@ -1033,19 +1040,21 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `devops.authentication.roles` | array | operator | cicd_infra; terraform | cicd-infra |  | read |
 | `devops.authentication.grant_graph_role_management` | boolean, default `false` | operator; default | cicd_infra | cicd-infra |  | read |
 | `devops.authentication.register_encryption_at_host` | boolean, default `true` | operator; default | cicd_infra | cicd-infra |  | read |
-| `devops.runners[].name` | string, required | operator | cicd_infra; terraform | cicd-infra |  | read |
-| `devops.runners[].os_type` | string, required, one of `linux`, `windows` | operator | cicd_infra; terraform | cicd-infra |  | read |
+| `devops.runners[].name` | string, required | operator | cicd_infra; terraform; ansible | cicd-infra |  | read |
+| `devops.runners[].os_type` | string, required, one of `linux`, `windows` | operator | cicd_infra; terraform; ansible | cicd-infra |  | read |
 | `devops.runners[].purpose` | string, default `general`, one of `general`, `ztp` | operator; default | deployment; cicd_infra; ansible; terraform | cicd-infra |  | read |
-| `devops.runners[].count` | integer, default `1` | operator; default | cicd_infra; terraform | cicd-infra |  | read |
+| `devops.runners[].count` | integer, default `1` | operator; default | cicd_infra; terraform; ansible | cicd-infra |  | read |
 | `devops.runners[].compute_type` | string, default `vm`, one of `vm`, `vmss` | operator; default | cicd_infra; terraform | cicd-infra |  | read |
 | `devops.runners[].size` | string | operator | cicd_infra; terraform | cicd-infra |  | read |
 | `devops.runners[].labels` | array | operator | cicd_infra; ansible; terraform | cicd-infra |  | read |
 | `devops.runners[].registration_secret` | string (kv_ref) | operator; Key Vault ref | cicd_infra; ansible; terraform | cicd-infra |  | read |
 | `devops.runners[].pool` | string | operator | cicd_infra; ansible; terraform | cicd-infra |  | read |
-| `devops.runners[].private_ips` | array | operator | cicd_infra; terraform | cicd-infra |  | read |
+| `devops.runners[].private_ips` | array | operator | cicd_infra; terraform; ansible | cicd-infra |  | read |
 | `devops.runners[].subnet.name` | string, required | operator | cicd_infra; terraform | cicd-infra |  | read |
 | `devops.runners[].subnet.prefix` | string (cidr), required | operator | cicd_infra; terraform | cicd-infra |  | read |
-| `devops.runners[].data_disk_gb` | integer, default `0` | operator; default | cicd_infra; terraform | cicd-infra |  | read |
+| `devops.runners[].data_disk_gb` | integer, default `0` | operator; default | cicd_infra; terraform; ansible | cicd-infra |  | read |
+| `devops.runners[].admin_username` | string, default `runneradmin` | operator; default | cicd_infra; terraform; ansible |  |  | placeholder |
+| `devops.runners[].identity_client_id` | string (uuid) | operator | cicd_infra; ansible |  |  | placeholder |
 | `devops.runner_network.vnet_name` | string | operator | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
 | `devops.runner_network.address_space` | array | operator | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
 | `devops.runner_network.dns_servers` | array | operator | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
@@ -1190,14 +1199,17 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `identity.active_directory.domain_controllers` | array | operator; Trailwright | os_configuration | discovery; os-configuration; pre-cluster-verification | OS DomainJoin; Gate NW-015 | read |
 | `identity.active_directory.use_gmsa` | boolean, default `false` | operator; default | deployment | pre-cluster-verification | OS ~DomainJoin | read |
 | `identity.active_directory.dns_secure_dynamic_updates` | boolean | operator | deployment | pre-cluster-verification | OS ~DomainJoin | read |
-| `identity.active_directory.precreate_computer_objects` | boolean, default `false` | operator; default | deployment | toolkit-legacy-scripts | OS ~DomainJoin | read |
+| `identity.active_directory.precreate_computer_objects` | boolean, default `false` | operator; default | deployment; ansible | toolkit-legacy-scripts | OS ~DomainJoin | read |
+| `identity.active_directory.forest_functional_level` | string, default `WinThreshold`, one of `WinThreshold`, `Win2025` | operator; default | ansible |  | OS ~DomainJoin | placeholder |
+| `identity.active_directory.domain_functional_level` | string, default `WinThreshold`, one of `WinThreshold`, `Win2025` | operator; default | ansible |  | OS ~DomainJoin | placeholder |
+| `identity.active_directory.dns_forwarders` | array | operator | ansible |  | OS ~DomainJoin | placeholder |
 | `identity.active_directory.security_groups[].name` | string, required | operator | os_configuration | os-configuration; toolkit-legacy-scripts | OS DomainJoin | read |
 | `identity.active_directory.security_groups[].purpose` | string | operator | os_configuration | os-configuration; toolkit-legacy-scripts | OS DomainJoin | read |
 | `identity.active_directory.security_groups[].members` | array | operator |  | toolkit-legacy-scripts | OS ~DomainJoin | read |
 | `identity.active_directory.security_groups[].local_groups` | array | operator | os_configuration | toolkit-legacy-scripts | OS ~DomainJoin | read |
 | `identity.local_admin.username` | string, required | operator; Trailwright | os_configuration; deployment; monitoring; trailwright | arm-deployment; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | ARM localAdminUserName; OS LocalAdmin | read |
 | `identity.local_admin.username_secret` | string (kv_ref) | operator; Key Vault ref | deployment | pre-cluster-verification | OS ~LocalAdmin | read |
-| `identity.local_admin.password` | string (kv_ref), required | operator; Trailwright; Key Vault ref | os_configuration; deployment; trailwright | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM localAdminPassword; OS LocalAdmin | read |
+| `identity.local_admin.password` | string (kv_ref), required | operator; Trailwright; Key Vault ref | os_configuration; deployment; trailwright; ansible | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM localAdminPassword; OS LocalAdmin | read |
 | `identity.local_identity.dns_server_config` | string, required, one of `use_dns_server`, `use_forwarder` | operator; Trailwright | deployment; trailwright | arm-deployment; pre-cluster-verification | ARM dnsServerConfig | read |
 | `identity.local_identity.dns_zone` | string | operator; Trailwright | deployment; trailwright | arm-deployment; pre-cluster-verification; toolkit-legacy-scripts | ARM dnsZones | read |
 | `identity.local_identity.dns_forwarders` | array | operator; Trailwright | deployment; trailwright | arm-deployment; pre-cluster-verification | ARM dnsZones | read |
@@ -1294,7 +1306,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `landing_zone.virtual_machines[].name` | string, required | operator | terraform; ansible | toolkit-legacy-scripts |  | read |
 | `landing_zone.virtual_machines[].hostname` | string (netbios_name) | operator | terraform; ansible | toolkit-legacy-scripts |  | read |
 | `landing_zone.virtual_machines[].role` | string, required, one of `domain_controller`, `jumpbox`, `windows_admin_center`, `syslog`, `management`, `other` | operator | terraform; ansible | toolkit-legacy-scripts |  | read |
-| `landing_zone.virtual_machines[].deploy_target` | string, one of `azure`, `azure_local`, `onprem` | operator | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.virtual_machines[].deploy_target` | string, one of `azure`, `azure_local`, `onprem` | operator | terraform; ansible | toolkit-legacy-scripts |  | read |
 | `landing_zone.virtual_machines[].subscription` | string | operator |  | toolkit-legacy-scripts |  | read |
 | `landing_zone.virtual_machines[].resource_group` | string (resource_group) | operator | terraform | toolkit-legacy-scripts |  | read |
 | `landing_zone.virtual_machines[].network` | string | operator |  | toolkit-legacy-scripts |  | read |
@@ -1304,6 +1316,8 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `landing_zone.virtual_machines[].os` | string, one of `windows_server_2022`, `windows_server_2025`, `ubuntu_2404` | operator | terraform; ansible | toolkit-legacy-scripts |  | read |
 | `landing_zone.virtual_machines[].admin_username` | string | operator | terraform | toolkit-legacy-scripts |  | read |
 | `landing_zone.virtual_machines[].admin_password` | string (kv_ref) | operator; Key Vault ref | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.virtual_machines[].dc_promotion` | string, one of `new_forest`, `replica` | operator | ansible |  |  | placeholder |
+| `landing_zone.virtual_machines[].dsrm_password` | string (kv_ref) | operator; Key Vault ref | ansible |  |  | placeholder |
 | `landing_zone.log_analytics.name` | string, required | operator; Trailwright |  |  |  | placeholder |
 | `landing_zone.storage_accounts[].name` | string (storage_account_name), required | operator |  | infrastructure-helpers |  | read |
 | `landing_zone.storage_accounts[].resource_group` | string (resource_group) | operator |  | infrastructure-helpers |  | read |
@@ -1519,7 +1533,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `os_configuration.clear_storage` | boolean, default `false` | operator; default | os_configuration | os-configuration | OS ClearStorage; Gate ST-002 (named) | read |
 | `os_configuration.network.confirm_minutes` | integer, default `10` | operator; default | os_configuration | os-configuration |  | read |
 | `os_configuration.network.stable_seconds` | integer, default `60` | operator; default | os_configuration | os-configuration |  | read |
-| `os_configuration.remoting.transport` | string, default `winrm`, one of `winrm`, `winrm_https`, `arc` | operator; default | os_configuration |  | OS ~RemoteManagement | placeholder |
+| `os_configuration.remoting.transport` | string, default `winrm`, one of `winrm`, `winrm_https`, `arc` | operator; default | os_configuration; ansible |  | OS ~RemoteManagement | placeholder |
 | `os_configuration.remoting.bootstrap_transport` | string, default `none`, one of `none`, `arc`, `smb`, `auto` | operator; default | os_configuration | os-configuration | OS RemoteManagement | read |
 | `os_configuration.remoting.allowed_source_cidrs` | array | operator | os_configuration | os-configuration | OS RemoteManagement | read |
 | `os_configuration.remoting.allow_any_source` | boolean | operator | os_configuration | os-configuration | OS RemoteManagement | read |
@@ -1593,9 +1607,9 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `scenario.storage_connectivity` | string, default `switched`, one of `switched`, `switchless` | operator; Trailwright; default | deployment; trailwright | arm-deployment; toolkit-legacy-scripts | ARM networkingType; storageConnectivitySwitchless | read |
 | `scenario.topology` | string, one of `standard`, `rack_aware` | operator; Trailwright | deployment; trailwright | arm-deployment |  | read |
 | `scenario.connectivity` | string, one of `connected`, `disconnected` | operator; Trailwright | deployment; trailwright | arm-deployment; pre-cluster-verification; toolkit-legacy-scripts | Gate NW-005 | read |
-| `scenario.cloud` | string, one of `public`, `government` | operator; Trailwright | os_configuration; deployment; trailwright | arm-deployment; os-configuration; pre-cluster-verification | OS ArcRegistration; Gate NW-005 | read |
+| `scenario.cloud` | string, one of `public`, `government` | operator; Trailwright | os_configuration; deployment; trailwright; ansible | arm-deployment; os-configuration; pre-cluster-verification | OS ArcRegistration; Gate NW-005 | read |
 | `scenario.outbound_path` | string, one of `direct`, `proxy`, `arc_gateway`, `proxy_arc_gateway`, `private_path` | operator; Trailwright | os_configuration; trailwright; ansible; ztp | infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | OS ArcRegistration; Gate NW-006 | read |
-| `scenario.os_install` | string, one of `iso`, `simplified` | operator; Trailwright | ztp; os_configuration; monitoring; trailwright | os-configuration; sonar; ztp | Sonar provisioningRoute | read |
+| `scenario.os_install` | string, one of `iso`, `simplified` | operator; Trailwright | ztp; os_configuration; monitoring; trailwright; ansible | os-configuration; sonar; ztp | Sonar provisioningRoute | read |
 | `scenario.deploy_method` | string, one of `portal`, `arm` | operator; Trailwright | trailwright |  |  | placeholder |
 | `scenario.environment_class` | string, default `production`, one of `lab`, `test`, `dev`, `production`, `dmz` | operator; default | os_configuration; terraform | os-configuration; toolkit-legacy-scripts | OS DomainJoin; RemoteManagement | read |
 
@@ -1723,8 +1737,8 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 
 | Tool | Kind | Variables | read | placeholder |
 | --- | --- | ---: | ---: | ---: |
-| ansible | config_keys | 15 | 15 | 0 |
-| ansible | variables | 89 | 89 | 0 |
+| ansible | config_keys | 12 | 12 | 0 |
+| ansible | variables | 114 | 114 | 0 |
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |

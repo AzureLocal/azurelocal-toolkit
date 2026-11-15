@@ -7,6 +7,9 @@
 terraform.tfvars.json
 not-written.txt
 src/ansible/inventory/host_vars/
+src/ansible/inventory/group_vars/
+src/ansible/inventory/hosts.yml
+src/ansible/inventory/cicd-runners.yml
 *.tfvars
 backend.hcl
 !*.tfvars.example

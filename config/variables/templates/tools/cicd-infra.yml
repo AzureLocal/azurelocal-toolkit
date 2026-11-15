@@ -315,16 +315,16 @@ devops:
   # used by: cicd_infra, terraform
   runners:
     # Name prefix of the VM or VMs, for example vm-contoso-runner-lnx.
-    # required; used by: cicd_infra, terraform
+    # required; used by: cicd_infra, terraform, ansible
     - name: "vm-iic-runner-lnx"
       # Operating system.
-      # required; one of: linux | windows; used by: cicd_infra, terraform
+      # required; one of: linux | windows; used by: cicd_infra, terraform, ansible
       os_type: "linux"
       # general: ARM, Arc, Terraform, Ansible and OS configuration. ztp: the azurelocal-ztp Boot, Bootstrap and Vouchers stages (Windows only).
       # one of: general | ztp; default: "general"; used by: deployment, cicd_infra, ansible, terraform
       purpose: "general"
       # Number of VMs.
-      # default: 1; used by: cicd_infra, terraform
+      # default: 1; used by: cicd_infra, terraform, ansible
       count: 1
       # vm or vmss.
       # one of: vm | vmss; default: "vm"; used by: cicd_infra, terraform
@@ -342,7 +342,7 @@ devops:
       # used by: cicd_infra, ansible, terraform
       pool: "azurelocal-ztp"
       # Static private addresses, one per VM.
-      # used by: cicd_infra, terraform
+      # used by: cicd_infra, terraform, ansible
       private_ips: ["10.20.10.4"]
       # The runner subnet inside runner_network.address_space.
       # used by: cicd_infra, terraform
@@ -354,8 +354,14 @@ devops:
         # required; used by: cicd_infra, terraform
         prefix: "10.20.10.0/26"
       # Data disk for the ZTP media, images and vouchers. 512 or more for ztp.
-      # default: 0; used by: cicd_infra, terraform
+      # default: 0; used by: cicd_infra, terraform, ansible
       data_disk_gb: 512
+      # (since 5.6.28) 
+      # default: "runneradmin"; used by: cicd_infra, terraform, ansible
+      admin_username: "runneradmin"
+      # (since 5.6.28) 
+      # used by: cicd_infra, ansible
+      identity_client_id: ""
   # (since 5.5) 
   # used by: cicd_infra
   runner_network:

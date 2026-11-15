@@ -1,47 +1,24 @@
-# =============================================================================
-# Ansible Inventory — example (neutral values)
-# =============================================================================
-# Copy to hosts.yml. The host names of cluster_nodes are the names in nodes[].name of
-# infrastructure.yml: the os-configuration role sets each node's host name from the inventory
-# name, and config/variables/scripts/New-IacVariableFiles.ps1 writes inventory/host_vars/<name>.yml
-# (mgmt_ip, mgmt_nic_name) for each of them. The addresses below are documentation addresses:
-# use the ones of nodes[].management.ip_address and of the management VMs.
-# The variables of group_vars/all.yml come from the same script.
-# =============================================================================
+# Written by config/variables/scripts/New-IacVariableFiles.ps1 from nodes[] and landing_zone.virtual_machines[] of infrastructure.yml. Do not edit.
+# ansible_host is the management address of a node and the private_ip of a virtual machine. The vm_role_<role> groups list the virtual machines by role. The connection settings of the windows group are settings of the code (tools.ansible.variables).
 all:
   children:
-    # Active Directory domain controllers (management VMs)
     domain_controllers:
       hosts:
         iic-dc01:
-          ansible_host: 192.0.2.4
-        iic-dc02:
-          ansible_host: 192.0.2.5
-
-    # Management servers
-    management:
-      hosts:
-        iic-jumpbox:
-          ansible_host: 192.0.2.20
-        iic-wac01:
-          ansible_host: 192.0.2.21
-        iic-syslog01:
-          ansible_host: 192.0.2.22
-
-    # Azure Local cluster nodes
+          ansible_host: 10.20.0.134
     cluster_nodes:
       hosts:
         iic-azl-n01:
           ansible_host: 192.0.2.11
         iic-azl-n02:
           ansible_host: 192.0.2.12
-
-    # Windows hosts (all groups combined)
+    vm_role_domain_controller:
+      hosts:
+        iic-dc01: {}
     windows:
       children:
-        domain_controllers:
-        management:
-        cluster_nodes:
+        domain_controllers: {}
+        cluster_nodes: {}
       vars:
         ansible_connection: winrm
         ansible_winrm_transport: kerberos

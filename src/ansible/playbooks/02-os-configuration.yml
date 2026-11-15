@@ -2,30 +2,36 @@
 # Playbook 02: OS Configuration
 # =============================================================================
 # Part 4 — Cluster Deployment, Phase 3: OS Configuration
-# Run on: cluster_nodes (each bare-metal Azure Local node)
+# Run on: the controller (localhost). The nodes are not Ansible hosts here.
+#
+# One route only: this play runs the role of ansible/os-configuration, the Ansible front end of
+# scripts/deploy/04-cluster-deployment/phase-03-os-configuration/Invoke-AzureLocalOsConfiguration.ps1. The wrapper reads
+# infrastructure.yml itself (domain join account, local administrators, join options, the management VLAN, the transport)
+# and does Plan, the approval pause and Apply. Pass the file at run time:
+#   ansible-playbook playbooks/02-os-configuration.yml -e azurelocal_os_configuration_infrastructure_file=/path/infrastructure.yml
+# The settings of the role (azurelocal_os_configuration_*) are documented in ansible/os-configuration/README.md.
 # =============================================================================
 ---
-- name: "Part 4 | Phase 3 — OS Configuration"
-  hosts: cluster_nodes
-  gather_facts: true
-  become: false
-  serial: 1  # Configure nodes one at a time (reboots involved)
+- name: "Part 4 | Phase 3 — OS Configuration (Invoke-AzureLocalOsConfiguration.ps1)"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  any_errors_fatal: true
   tags:
     - os-configuration
     - cluster-deployment
+  vars:
+    # The repository checkout this playbook is in: src/ansible/playbooks is three folders below it.
+    azurelocal_os_configuration_toolkit_root: "{{ playbook_dir | dirname | dirname | dirname }}"
 
   pre_tasks:
-    - name: Validate required variables
+    - name: Check that the infrastructure file is given
       ansible.builtin.assert:
         that:
-          - ad_domain_fqdn is defined
-          - onprem_dns_servers is defined
-          - onprem_ntp_servers is defined
-          - onprem_domain_join_ou is defined
-          - onprem_vlans is defined
-          - domain_admin_username is defined
-          - domain_admin_password is defined
-        fail_msg: "Missing required OS config variables: check group_vars/all.yml (New-IacVariableFiles.ps1 writes it). domain_admin_password is never in a file: pass it with -e @vault.yml."
+          - azurelocal_os_configuration_infrastructure_file is defined
+          - azurelocal_os_configuration_infrastructure_file | length > 0
+        fail_msg: "Pass the master infrastructure.yml: -e azurelocal_os_configuration_infrastructure_file=<path on this machine>."
+        quiet: true
 
   roles:
-    - role: os-configuration
+    - role: ../../../ansible/os-configuration/roles/azurelocal_os_configuration

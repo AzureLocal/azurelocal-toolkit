@@ -42,14 +42,14 @@ argument_specs:
         description: Wrapper -ContinueOnNodeFailure.
       azurelocal_os_configuration_transport:
         type: str
-        default: Auto
-        choices: [Auto, ArcRunCommand, WinRM]
-        description: Wrapper -Transport.
+        default: ""
+        choices: ["", Auto, ArcRunCommand, WinRM]
+        description: Wrapper -Transport. Empty is not passed, so the wrapper uses os_configuration.remoting.transport of the file.
       azurelocal_os_configuration_method:
         type: str
-        default: Auto
-        choices: [Auto, Ztp, Iso]
-        description: Wrapper -Method. Auto lets the wrapper decide ZTP versus ISO per node.
+        default: ""
+        choices: ["", Auto, Ztp, Iso]
+        description: Wrapper -Method. Empty is not passed, so the wrapper decides ZTP versus ISO per node (scenario.os_install plus evidence).
       azurelocal_os_configuration_clear_storage:
         type: bool
         default: false

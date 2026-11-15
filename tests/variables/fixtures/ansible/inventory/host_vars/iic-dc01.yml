@@ -1,0 +1,6 @@
+# Written by config/variables/scripts/New-IacVariableFiles.ps1 from landing_zone.virtual_machines[] of infrastructure.yml. Do not edit.
+dc_promotion_mode: new_forest
+dc_dsrm_key_vault_name: kv-iic-mgmt-01
+dc_dsrm_secret_name: dsrm-password
+vm_deploy_target: azure
+# dc_dsrm_password: not written. The file holds the reference at landing_zone.virtual_machines[].dsrm_password. The domain controller role reads it from Key Vault (dc_dsrm_key_vault_name, dc_dsrm_secret_name). Pass it with -e @vault.yml only when the file holds another kind of reference than a Key Vault one.

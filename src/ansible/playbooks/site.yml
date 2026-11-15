@@ -3,17 +3,22 @@
 # =============================================================================
 # Runs all playbooks in the correct deployment order.
 # Usage:
-#   ansible-playbook -i inventory/hosts.yml playbooks/site.yml
+#   ansible-playbook -i inventory/hosts.yml playbooks/site.yml -e azurelocal_os_configuration_infrastructure_file=<path>
 #
 # To run a specific phase:
 #   ansible-playbook -i inventory/hosts.yml playbooks/site.yml --tags ad-preparation
+#
+# The inventory and group_vars/host_vars are written by config/variables/scripts/New-IacVariableFiles.ps1 from
+# infrastructure.yml. Phase 3 runs Invoke-AzureLocalOsConfiguration.ps1 through the ansible/os-configuration role.
+# Windows Admin Center and the syslog receiver are not run (out of scope).
 # =============================================================================
 ---
-- name: "Phase 1 — Active Directory Preparation"
-  ansible.builtin.import_playbook: 01-ad-preparation.yml
-
-- name: "Phase 2 — Management VM Configuration"
+# The domain controllers first (Part 2): the AD preparation (Part 3) runs on the first of them.
+- name: "Phase 1 — Management VM Configuration (domain controllers)"
   ansible.builtin.import_playbook: 05-management-vms.yml
+
+- name: "Phase 2 — Active Directory Preparation"
+  ansible.builtin.import_playbook: 01-ad-preparation.yml
 
 - name: "Phase 3 — Cluster Node OS Configuration"
   ansible.builtin.import_playbook: 02-os-configuration.yml

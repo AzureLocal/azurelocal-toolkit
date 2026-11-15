@@ -24,10 +24,11 @@ azurelocal_os_configuration_nodes: []
 azurelocal_os_configuration_steps: []
 # -ContinueOnNodeFailure
 azurelocal_os_configuration_continue_on_node_failure: true
-# -Transport Auto|ArcRunCommand|WinRM, -Method Auto|Ztp|Iso: the wrapper decides ZTP versus ISO per node on its own
-# (declared scenario.os_install plus evidence). Leave both on Auto unless you must force it.
-azurelocal_os_configuration_transport: Auto
-azurelocal_os_configuration_method: Auto
+# -Transport ArcRunCommand|WinRM, -Method Ztp|Iso. Empty (the default): the role does not pass them, and the wrapper takes
+# the transport from os_configuration.remoting.transport and decides ZTP versus ISO per node from scenario.os_install plus
+# evidence (its own Auto). Set one only to override the file for a run.
+azurelocal_os_configuration_transport: ""
+azurelocal_os_configuration_method: ""
 # -ClearStorage forces the storage wipe on (Apply only). os_configuration.clear_storage in the master file does the same.
 azurelocal_os_configuration_clear_storage: false
 # -ConfirmWipeDeployedCluster: one-shot, per run: lets the storage wipe touch a node that belongs to a deployed cluster. Apply phase only.

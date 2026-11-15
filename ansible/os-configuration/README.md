@@ -76,7 +76,8 @@ not covered by `no_log`. Keep `inventory/hosts.yml` and `inventory/group_vars/` 
 
 ## ZTP or ISO: the wrapper decides
 
-The play does not look at handoff files, Arc machines or WinRM. `-Method Auto` and `-Transport Auto` (the defaults) let the wrapper work
+The play does not look at handoff files, Arc machines or WinRM. By default the role passes neither `-Method` nor `-Transport`: the
+wrapper takes the transport from `os_configuration.remoting.transport` of `infrastructure.yml` and works
 out, per node, whether it was provisioned by ZTP (Arc Run Command) or installed from an ISO (WinRM), from `scenario.os_install` in
 `infrastructure.yml` and from what answers. A cluster can mix both. The result is in the report per node and is surfaced as the fact
 `azurelocal_os_configuration_node_methods`. Set `azurelocal_os_configuration_method: Ztp|Iso` or `azurelocal_os_configuration_transport:
@@ -95,8 +96,8 @@ Each role variable passes one wrapper parameter. Empty values are left out, so t
 | `-Mode` | set by the phase: `Plan`, then `Apply` | |
 | `-ReportDirectory` | `<report_root>/<UTC time>/plan` and `.../apply` on the runner | `/var/tmp/azurelocal-os-configuration` |
 | `-ContinueOnNodeFailure` | `azurelocal_os_configuration_continue_on_node_failure` | `true` |
-| `-Transport` | `azurelocal_os_configuration_transport` | `Auto` |
-| `-Method` | `azurelocal_os_configuration_method` | `Auto` |
+| `-Transport` | `azurelocal_os_configuration_transport` | empty: not passed, `os_configuration.remoting.transport` of the file |
+| `-Method` | `azurelocal_os_configuration_method` | empty: not passed, the wrapper decides per node |
 | `-ClearStorage` | `azurelocal_os_configuration_clear_storage` | `false` |
 | `-ConfirmWipeDeployedCluster` | `azurelocal_os_configuration_confirm_wipe_deployed_cluster` (Apply phase only) | `false` |
 | `-ApprovedWipeList` | `azurelocal_os_configuration_approved_wipe_list` | empty (in the phase `both`: this play's Plan `wipe-list.json`) |

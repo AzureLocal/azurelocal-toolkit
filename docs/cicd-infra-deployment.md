@@ -131,7 +131,9 @@ For hosts that already exist (an on-premises VM, a Hyper-V guest), or to bring a
 
 ```bash
 ansible-galaxy collection install -r src/ansible/collections/requirements.yml
-cp src/ansible/inventory/cicd-runners.yml.example src/ansible/inventory/cicd-runners.yml   # edit
+# The inventory comes from devops.runners[] (one group per entry); group_vars/all.yml from devops.platform and devops.url.
+pwsh config/variables/scripts/New-IacVariableFiles.ps1 -InfrastructureFile ./infrastructure.yml -OutputDirectory /tmp/iac -Target Ansible
+cp -r /tmp/iac/ansible/inventory/* src/ansible/inventory/
 ansible-playbook -i src/ansible/inventory/cicd-runners.yml src/ansible/playbooks/00-cicd-runner.yml --check --diff
 ansible-playbook -i src/ansible/inventory/cicd-runners.yml src/ansible/playbooks/00-cicd-runner.yml
 ```

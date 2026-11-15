@@ -1,8 +1,12 @@
 # =============================================================================
 # Role: monitoring-agents — Default Variables
 # =============================================================================
-# The role has no setting of its own. hci_insights_enabled (operations.monitoring.enabled) is in
-# inventory/group_vars/all.yml, which config/variables/scripts/New-IacVariableFiles.ps1 writes.
+# hci_insights_enabled (operations.monitoring.enabled) is in inventory/group_vars/all.yml, which
+# config/variables/scripts/New-IacVariableFiles.ps1 writes.
 # The role installs the Azure Monitor Agent extension and notes the Azure Local Insights step.
 # It creates no data collection rule: the rule Insights uses is the one the portal creates
 # (operations.monitoring.data_collection_rule).
+
+# Let Azure upgrade the Azure Monitor Agent extension to new minor versions on its own (New-AzConnectedMachineExtension
+# -EnableAutomaticUpgrade). Microsoft recommends automatic extension upgrade for the agent.
+ama_enable_automatic_upgrade: true
