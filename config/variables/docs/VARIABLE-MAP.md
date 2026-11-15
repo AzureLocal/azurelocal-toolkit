@@ -16,10 +16,10 @@ Registry version 5.0.61. Sources of the scan: toolkit (this repository), sonar d
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 680 | 483 | 84 | 3 | 108 | 2 |
-| Owned by a tool (`tools.*`) | 4190 | 3982 | 0 | 0 | 208 | 0 |
-| Older variables-file sections | 1373 | 2 | 11 | 0 | 1352 | 8 |
-| All registry leaves | 6243 | 4467 | 95 | 3 | 1668 | 10 |
+| Keys of infrastructure.yml | 671 | 469 | 72 | 3 | 125 | 2 |
+| Owned by a tool (`tools.*`) | 4212 | 4004 | 0 | 0 | 208 | 0 |
+| Older variables-file sections | 1389 | 16 | 11 | 0 | 1354 | 8 |
+| All registry leaves | 6272 | 4489 | 83 | 3 | 1687 | 10 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -45,7 +45,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 65 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
 | ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 95 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 19 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
-| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 324 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
+| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 310 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
 
 ### Which section is read in which phase (number of keys)
 
@@ -58,7 +58,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `networking` | 22 |  | 9 | 10 | 24 | 20 |  | 37 |
 | `security` | 1 |  |  |  |  | 11 |  | 7 |
 | `operations` | 13 |  |  |  |  |  |  | 13 |
-| `devops` | 4 |  |  |  |  |  |  | 59 |
+| `devops` | 4 |  |  |  |  |  |  | 45 |
 | `scenario` | 9 | 1 | 2 | 6 | 5 | 6 | 2 | 6 |
 | `azure` | 8 | 1 | 5 | 4 | 5 | 6 | 3 | 10 |
 | `key_vaults` |  |  | 1 |  | 3 | 3 |  | 4 |
@@ -96,9 +96,9 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
 | arm-deployment | ARM Validate/Deploy | 95 | 0 | 1003 |
 | sonar | Sonar | 19 | 0 | 266 |
-| cicd-infra | Outside the flow | 73 | 0 | 523 |
+| cicd-infra | Outside the flow | 59 | 0 | 523 |
 | infrastructure-helpers | Outside the flow | 39 | 0 | 0 |
-| validator | Outside the flow | 111 | 0 | 0 |
+| validator | Outside the flow | 97 | 0 | 0 |
 | toolkit-legacy-scripts | Outside the flow | 226 | 0 | 0 |
 
 ### trailwright
@@ -241,16 +241,16 @@ Where in the code (file, function, keys read by name; 15 places, the first 12):
 
 ### cicd-infra
 
-**Reads (73):**
-`devops.platform`, `devops.url`, `devops.organization`, `devops.project`, `devops.api_token`, `devops.subscription`, `devops.resource_group`, `devops.create_resource_group`, `devops.repository.name`, `devops.repository.template`, `devops.repository.visibility`, `devops.repository.default_branch`, `devops.settings.required_approvals`, `devops.settings.reviewers`, `devops.settings.squash_only`, `devops.settings.secret_scanning`, `devops.settings.resolve_conversations`, `devops.settings.required_status_checks`, `devops.environments[].name`, `devops.environments[].approval_required`, `devops.environments[].approvers`, `devops.environments[].wait_minutes`, `devops.environments[].deployment_branch`, `devops.pipelines.runner_label`, `devops.pipelines.environments.os_configuration`, `devops.pipelines.environments.os_configuration_clear_storage`, `devops.pipelines.environments.arm_deployment`, `devops.pipelines.environments.cicd_infra`, `devops.pipelines.environments.terraform_deployment`, `devops.pipelines.service_connection`, `devops.pipelines.variable_group`, `devops.pipelines.infrastructure_file`, `devops.pipelines.handoff_path`, `devops.pipelines.tool_versions.terraform`, `devops.pipelines.tool_versions.python`, `devops.pipelines.tool_versions.ansible_core`, `devops.pipelines.tool_versions.ansible_lint`, `devops.pipelines.tool_versions.az_powershell`, `devops.pipelines.tool_versions.powershell_yaml`, `devops.pipelines.tool_versions.az_keyvault`, `devops.authentication.method`, `devops.authentication.client_secret`, `devops.authentication.roles`, `devops.authentication.grant_graph_role_management`, `devops.authentication.register_encryption_at_host`, `devops.runners[].name`, `devops.runners[].os_type`, `devops.runners[].purpose`, `devops.runners[].count`, `devops.runners[].compute_type`, `devops.runners[].size`, `devops.runners[].labels`, `devops.runners[].registration_secret`, `devops.runners[].pool`, `devops.runners[].private_ips`, `devops.runners[].subnet.name`, `devops.runners[].subnet.prefix`, `devops.runners[].data_disk_gb`, `devops.runners[].admin_ssh_public_key`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.automation_identity.name`, `azure.automation_identity.client_id`, `key_vaults[].name`, `key_vaults[].subscription_id`, `key_vaults[].resource_group`, `deployment.validate_timeout_minutes`, `deployment.deploy_timeout_minutes`, `landing_zone.subscriptions[].name`, `landing_zone.subscriptions[].id`, `landing_zone.subscriptions[].role`
+**Reads (59):**
+`devops.platform`, `devops.url`, `devops.organization`, `devops.project`, `devops.api_token`, `devops.subscription`, `devops.resource_group`, `devops.create_resource_group`, `devops.repository.name`, `devops.repository.template`, `devops.repository.visibility`, `devops.repository.default_branch`, `devops.settings.required_approvals`, `devops.settings.reviewers`, `devops.settings.squash_only`, `devops.settings.secret_scanning`, `devops.settings.resolve_conversations`, `devops.settings.required_status_checks`, `devops.environments[].name`, `devops.environments[].approval_required`, `devops.environments[].approvers`, `devops.environments[].wait_minutes`, `devops.environments[].deployment_branch`, `devops.pipelines.runner_label`, `devops.pipelines.environments.os_configuration`, `devops.pipelines.environments.os_configuration_clear_storage`, `devops.pipelines.environments.arm_deployment`, `devops.pipelines.environments.cicd_infra`, `devops.pipelines.environments.terraform_deployment`, `devops.pipelines.service_connection`, `devops.pipelines.variable_group`, `devops.pipelines.infrastructure_file`, `devops.pipelines.handoff_path`, `devops.pipelines.tool_versions.terraform`, `devops.pipelines.tool_versions.python`, `devops.pipelines.tool_versions.ansible_core`, `devops.pipelines.tool_versions.ansible_lint`, `devops.pipelines.tool_versions.az_powershell`, `devops.pipelines.tool_versions.powershell_yaml`, `devops.pipelines.tool_versions.az_keyvault`, `devops.authentication.method`, `devops.authentication.client_secret`, `devops.authentication.roles`, `devops.authentication.grant_graph_role_management`, `devops.authentication.register_encryption_at_host`, `azure.tenant_id`, `azure.location`, `azure.subscription_id`, `azure.resource_group`, `azure.automation_identity.name`, `azure.automation_identity.client_id`, `key_vaults[].name`, `key_vaults[].subscription_id`, `key_vaults[].resource_group`, `deployment.validate_timeout_minutes`, `deployment.deploy_timeout_minutes`, `landing_zone.subscriptions[].name`, `landing_zone.subscriptions[].id`, `landing_zone.subscriptions[].role`
 
 Where in the code (file, function, keys read by name; 4 places):
 
 | File | Function | Keys |
 | --- | --- | ---: |
-| `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `ConvertTo-AzlCicdSetting` | 70 |
-| `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `(script)` | 23 |
-| `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `Get-AzlCicdPipelineInput` | 11 |
+| `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `ConvertTo-AzlCicdSetting` | 57 |
+| `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `(script)` | 21 |
+| `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `Get-AzlCicdPipelineInput` | 7 |
 | `scripts/common/cicd-infra/AzlCicdInfra.psm1` | `Get-AzlCicdPipelineName` | 2 |
 
 ### infrastructure-helpers
@@ -277,19 +277,19 @@ Where in the code (file, function, keys read by name; 15 places, the first 12):
 
 ### validator
 
-**Reads (111):**
-`identity.active_directory.domain_fqdn`, `identity.active_directory.ou_path`, `identity.active_directory.lcm_user.username`, `identity.active_directory.lcm_user.password`, `identity.active_directory.domain_join_account.username`, `identity.active_directory.domain_join_account.password`, `identity.active_directory.local_admin_members`, `identity.active_directory.domain_controllers`, `identity.local_admin.username`, `networking.management.subnet`, `networking.management.gateway`, `networking.management.vlan_id`, `networking.management.dns_servers`, `networking.management.ip_assignment`, `networking.management.use_dhcp`, `networking.management.provisioning_network`, `networking.management.static_method`, `networking.management.provisioning_dhcp_range.start`, `networking.management.provisioning_dhcp_range.end`, `networking.management.infrastructure_pool.start`, `networking.management.infrastructure_pool.end`, `networking.intents[].name`, `networking.intents[].traffic`, `networking.intents[].adapters`, `networking.storage.auto_ip`, `networking.storage.networks[].name`, `networking.storage.networks[].adapter`, `networking.storage.networks[].vlan_id`, `networking.storage.networks[].subnet`, `networking.logical_networks[].address_prefix`, `devops.platform`, `devops.resource_group`, `devops.environments[].name`, `devops.environments[].approval_required`, `devops.environments[].approvers`, `devops.authentication.method`, `devops.authentication.client_secret`, `devops.runners[].name`, `devops.runners[].os_type`, `devops.runners[].purpose`, `devops.runners[].count`, `devops.runners[].compute_type`, `devops.runners[].labels`, `devops.runners[].registration_secret`, `devops.runners[].subnet.prefix`, `devops.runners[].data_disk_gb`, `devops.runner_network.address_space`, `devops.runner_network.hub_peering.enabled`, `devops.runner_network.hub_peering.hub_network`, `devops.runner_network.hub_peering.hub_vnet_id`, `devops.runner_network.bmc_cidrs`, `scenario.identity`, `scenario.storage_architecture`, `scenario.storage_connectivity`, `scenario.topology`, `scenario.connectivity`, `scenario.cloud`, `scenario.outbound_path`, `scenario.os_install`, `azure.location`, `key_vaults[].name`, `secrets.file.directory`, `secrets.command.executable`, `secrets.command.arguments`, `cluster.witness.type`, `deployment.validate_timeout_minutes`, `deployment.deploy_timeout_minutes`, `deployment.poll_seconds`, `deployment.poll_max_seconds`, `deployment.approval`, `deployment.acknowledge_known_issues`, `nodes[].name`, `nodes[].management.ip_address`, `nodes[].management.mac_address`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].roles`, `nodes[].network_adapters[].ip_assignment`, `nodes[].bmc.password`, `nodes[].zone`, `nodes[].storage_ips`, `nodes[].arc_machine_name`, `nodes[].arc_resource_name`, `hardware.bios_during_provisioning.*`, `hardware.sbe.publisher`, `hardware.sbe.family`, `hardware.sbe.version`, `hardware.sbe.bundle_path`, `hardware.sbe.requirement`, `hardware.sbe.not_applicable_reason`, `hardware.sbe.source_path`, `hardware.sbe.source_username`, `hardware.sbe.source_password`, `hardware.sbe.delivery`, `hardware.sbe.node_pull_url`, `storage.volumes[].name`, `storage.volumes[].resiliency`, `storage.san.type`, `storage.san.fibre_channel.fabrics[].name`, `storage.san.fibre_channel.target_wwpns[].wwpn`, `storage.san.fibre_channel.target_wwpns[].fabric`, `storage.san.iscsi.targets[].iqn`, `provisioning.os_version`, `provisioning.simplified.isolate_san_adapters`, `provisioning.simplified.ntp.configuration`, `provisioning.simplified.ntp.server`, `provisioning.simplified.ntp.alternate_server`, `provisioning.simplified.timeouts.bootstrap_minutes`, `provisioning.simplified.timeouts.bootstrap_voucher_minutes`, `os_configuration.clear_storage`, `landing_zone.networks[].name`, `_metadata.schema_version`
+**Reads (97):**
+`identity.active_directory.domain_fqdn`, `identity.active_directory.ou_path`, `identity.active_directory.lcm_user.username`, `identity.active_directory.lcm_user.password`, `identity.active_directory.domain_join_account.username`, `identity.active_directory.domain_join_account.password`, `identity.active_directory.local_admin_members`, `identity.active_directory.domain_controllers`, `identity.local_admin.username`, `networking.management.subnet`, `networking.management.gateway`, `networking.management.vlan_id`, `networking.management.dns_servers`, `networking.management.ip_assignment`, `networking.management.use_dhcp`, `networking.management.provisioning_network`, `networking.management.static_method`, `networking.management.provisioning_dhcp_range.start`, `networking.management.provisioning_dhcp_range.end`, `networking.management.infrastructure_pool.start`, `networking.management.infrastructure_pool.end`, `networking.intents[].name`, `networking.intents[].traffic`, `networking.intents[].adapters`, `networking.storage.auto_ip`, `networking.storage.networks[].name`, `networking.storage.networks[].adapter`, `networking.storage.networks[].vlan_id`, `networking.storage.networks[].subnet`, `networking.logical_networks[].address_prefix`, `devops.platform`, `devops.resource_group`, `devops.environments[].name`, `devops.environments[].approval_required`, `devops.environments[].approvers`, `devops.authentication.method`, `devops.authentication.client_secret`, `scenario.identity`, `scenario.storage_architecture`, `scenario.storage_connectivity`, `scenario.topology`, `scenario.connectivity`, `scenario.cloud`, `scenario.outbound_path`, `scenario.os_install`, `azure.location`, `key_vaults[].name`, `secrets.file.directory`, `secrets.command.executable`, `secrets.command.arguments`, `cluster.witness.type`, `deployment.validate_timeout_minutes`, `deployment.deploy_timeout_minutes`, `deployment.poll_seconds`, `deployment.poll_max_seconds`, `deployment.approval`, `deployment.acknowledge_known_issues`, `nodes[].name`, `nodes[].management.ip_address`, `nodes[].management.mac_address`, `nodes[].network_adapters[].name`, `nodes[].network_adapters[].roles`, `nodes[].network_adapters[].ip_assignment`, `nodes[].bmc.password`, `nodes[].zone`, `nodes[].storage_ips`, `nodes[].arc_machine_name`, `nodes[].arc_resource_name`, `hardware.bios_during_provisioning.*`, `hardware.sbe.publisher`, `hardware.sbe.family`, `hardware.sbe.version`, `hardware.sbe.bundle_path`, `hardware.sbe.requirement`, `hardware.sbe.not_applicable_reason`, `hardware.sbe.source_path`, `hardware.sbe.source_username`, `hardware.sbe.source_password`, `hardware.sbe.delivery`, `hardware.sbe.node_pull_url`, `storage.volumes[].name`, `storage.volumes[].resiliency`, `storage.san.type`, `storage.san.fibre_channel.fabrics[].name`, `storage.san.fibre_channel.target_wwpns[].wwpn`, `storage.san.fibre_channel.target_wwpns[].fabric`, `storage.san.iscsi.targets[].iqn`, `provisioning.os_version`, `provisioning.simplified.isolate_san_adapters`, `provisioning.simplified.ntp.configuration`, `provisioning.simplified.ntp.server`, `provisioning.simplified.ntp.alternate_server`, `provisioning.simplified.timeouts.bootstrap_minutes`, `provisioning.simplified.timeouts.bootstrap_voucher_minutes`, `os_configuration.clear_storage`, `landing_zone.networks[].name`, `_metadata.schema_version`
 
 Where in the code (file, function, keys read by name; 14 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-SemanticFinding` | 37 |
-| `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-CicdFinding` | 22 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-AdapterFinding` | 11 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-DomainJoinFinding` | 10 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-SanFinding` | 9 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-SbePresenceFinding` | 9 |
+| `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-CicdFinding` | 8 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-ZtpActionFinding` | 7 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-DeploymentOptionFinding` | 6 |
 | `scripts/common/infrastructure/AzlInfrastructure.psm1` | `Get-ProvisioningNetworkFinding` | 5 |
@@ -462,7 +462,7 @@ Ranked by how many different tools read the key, then how many places in the cod
 
 Variables the registry documents that no tool in the scan reads by name. Each is either a key a coming phase will read, a key only the validator checks, or a name kept for compatibility. Nothing here is an error; it is the list to look at before you spend time filling a key in that nothing uses yet.
 
-### Placeholder: documented, not read by any tool in the scan (108)
+### Placeholder: documented, not read by any tool in the scan (125)
 
 | Variable | Tools | Provided by | Note |
 | --- | --- | --- | --- |
@@ -473,6 +473,9 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `environment.type` | trailwright | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `environment.owner` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `environment.description` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
+| `identity.active_directory.forest_functional_level` | ansible | operator by hand; default | documented in the registry; no tool in the scan reads it |
+| `identity.active_directory.domain_functional_level` | ansible | operator by hand; default | documented in the registry; no tool in the scan reads it |
+| `identity.active_directory.dns_forwarders` | ansible | operator by hand | documented in the registry; no tool in the scan reads it |
 | `networking.oob.gateway` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `networking.oob.vlan_id` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `networking.storage.switchless_links` | trailwright | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
@@ -501,6 +504,18 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `operations.disaster_recovery.target_rto_minutes` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `operations.disaster_recovery.target_rpo_minutes` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `operations.licensing.azure_verification_for_vms` |  | operator by hand | documented in the registry; no tool in the scan reads it |
+| `devops.runners.vnet_name` | cicd_infra; terraform | operator by hand | documented in the registry; no tool in the scan reads it |
+| `devops.runners.address_space` | cicd_infra; terraform | operator by hand | documented in the registry; no tool in the scan reads it |
+| `devops.runners.dns_servers` | cicd_infra; terraform | operator by hand | documented in the registry; no tool in the scan reads it |
+| `devops.runners.hub_peering.enabled` | cicd_infra; terraform | operator by hand; default | documented in the registry; no tool in the scan reads it |
+| `devops.runners.hub_peering.hub_network` | cicd_infra; terraform | operator by hand | documented in the registry; no tool in the scan reads it |
+| `devops.runners.hub_peering.hub_vnet_id` | cicd_infra; terraform | operator by hand | documented in the registry; no tool in the scan reads it |
+| `devops.runners.hub_peering.use_remote_gateways` | cicd_infra; terraform | operator by hand; default | documented in the registry; no tool in the scan reads it |
+| `devops.runners.hub_peering.create_hub_side` | cicd_infra; terraform | operator by hand; default | documented in the registry; no tool in the scan reads it |
+| `devops.runners.reachable_cidrs` | cicd_infra; terraform | operator by hand | documented in the registry; no tool in the scan reads it |
+| `devops.runners.reachable_tcp_ports` | cicd_infra; terraform | operator by hand | documented in the registry; no tool in the scan reads it |
+| `devops.runners.bmc_cidrs` | cicd_infra; terraform | operator by hand | documented in the registry; no tool in the scan reads it |
+| `devops.runners.admin_source_cidrs` | cicd_infra; terraform | operator by hand | documented in the registry; no tool in the scan reads it |
 | `devops.runner.name` | cicd_infra | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `devops.runner.type` | cicd_infra | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `devops.runner.subscription` | cicd_infra | operator by hand | documented in the registry; no tool in the scan reads it |
@@ -535,7 +550,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `storage.san.fibre_channel.fabrics[].switch` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `storage.san.fibre_channel.fabrics[].zone_set` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `provisioning.iso.image_source` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
-| `os_configuration.remoting.transport` | os_configuration | operator by hand; default | documented in the registry; no tool in the scan reads it |
+| `os_configuration.remoting.transport` | os_configuration; ansible | operator by hand; default | documented in the registry; no tool in the scan reads it |
 | `disconnected.role` | trailwright | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `disconnected.base_path` | trailwright | operator by hand | documented in the registry; no tool in the scan reads it |
 | `disconnected.domain_suffix` | trailwright | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
@@ -567,6 +582,8 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `landing_zone.connectivity.firewall.resource_group` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.connectivity.firewall.sku` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.connectivity.firewall.private_ip` |  | operator by hand | documented in the registry; no tool in the scan reads it |
+| `landing_zone.virtual_machines[].dc_promotion` | ansible | operator by hand | documented in the registry; no tool in the scan reads it |
+| `landing_zone.virtual_machines[].dsrm_password` | ansible | operator by hand; Key Vault reference (keyvault://) | documented in the registry; no tool in the scan reads it |
 | `landing_zone.log_analytics.name` |  | operator by hand; Trailwright questionnaire | documented in the registry; no tool in the scan reads it |
 | `landing_zone.storage_accounts[].purpose` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `extensions` |  | operator by hand | documented in the registry; no tool in the scan reads it |
@@ -583,7 +600,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `storage.san.fibre_channel.target_wwpns[].wwpn` | deployment | operator by hand | only the validator names it |
 | `storage.san.fibre_channel.target_wwpns[].fabric` | deployment | operator by hand | only the validator names it |
 
-### Read as part: no tool names the key; a tool reads the section or list that holds it (84)
+### Read as part: no tool names the key; a tool reads the section or list that holds it (72)
 
 | Variable | Tools | Provided by | Note |
 | --- | --- | --- | --- |
@@ -596,18 +613,6 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `networking.intents[].overrides.virtual_switch.enable_iov` | os_configuration; deployment; trailwright | operator by hand | read as part by arm-deployment |
 | `networking.intents[].overrides.virtual_switch.load_balancing_algorithm` | os_configuration; deployment; trailwright | operator by hand | read as part by arm-deployment |
 | `networking.cluster_networks[].purpose` | os_configuration | operator by hand | read as part by os-configuration; pre-cluster-verification |
-| `devops.runner_network.vnet_name` | cicd_infra; terraform | operator by hand | read as part by cicd-infra |
-| `devops.runner_network.address_space` | cicd_infra; terraform | operator by hand | read as part by cicd-infra |
-| `devops.runner_network.dns_servers` | cicd_infra; terraform | operator by hand | read as part by cicd-infra |
-| `devops.runner_network.hub_peering.enabled` | cicd_infra; terraform | operator by hand; default | read as part by cicd-infra |
-| `devops.runner_network.hub_peering.hub_network` | cicd_infra; terraform | operator by hand | read as part by cicd-infra |
-| `devops.runner_network.hub_peering.hub_vnet_id` | cicd_infra; terraform | operator by hand | read as part by cicd-infra |
-| `devops.runner_network.hub_peering.use_remote_gateways` | cicd_infra; terraform | operator by hand; default | read as part by cicd-infra |
-| `devops.runner_network.hub_peering.create_hub_side` | cicd_infra; terraform | operator by hand; default | read as part by cicd-infra |
-| `devops.runner_network.reachable_cidrs` | cicd_infra; terraform | operator by hand | read as part by cicd-infra |
-| `devops.runner_network.reachable_tcp_ports` | cicd_infra; terraform | operator by hand | read as part by cicd-infra |
-| `devops.runner_network.bmc_cidrs` | cicd_infra; terraform | operator by hand | read as part by cicd-infra |
-| `devops.runner_network.admin_source_cidrs` | cicd_infra; terraform | operator by hand | read as part by cicd-infra |
 | `devops.runner_access.resource_groups` | cicd_infra; terraform | operator by hand | read as part by cicd-infra |
 | `devops.runner_access.rbac_administrator` | cicd_infra; terraform | operator by hand; default | read as part by cicd-infra |
 | `devops.runner_access.rbac_delegable_role_ids` | cicd_infra; terraform | operator by hand | read as part by cicd-infra |
@@ -900,7 +905,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `tools.ztp.config_keys.config_oem_vendor_json.bios_status` | ztp | config_keys |
 | `tools.ztp.config_keys.config_oem_vendor_json.models_validatedBySimplifiedProvisioning` | ztp | config_keys |
 
-### Older variables-file sections (1373 variables)
+### Older variables-file sections (1389 variables)
 
 These registry sections (`compute`, `identity.accounts`, `azure_platform`, ...) describe the earlier variables file, not `infrastructure.yml`. The numbered deploy scripts under `scripts/deploy` read some of them. They are in the CSV (`kind` = `variables-file`).
 
@@ -909,7 +914,7 @@ These registry sections (`compute`, `identity.accounts`, `azure_platform`, ...) 
 | `azure_platform` | 73 | 0 | 73 | 0 |
 | `cluster_shared_volumes` | 15 | 0 | 15 | 0 |
 | `compute` | 390 | 0 | 388 | 2 |
-| `devops` | 8 | 0 | 6 | 2 |
+| `devops` | 24 | 14 | 8 | 2 |
 | `identity` | 104 | 0 | 104 | 0 |
 | `infrastructure_scenarios` | 1 | 0 | 1 | 0 |
 | `marketplace_images` | 9 | 0 | 9 | 0 |
@@ -1043,32 +1048,18 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `devops.authentication.roles` | array | operator | cicd_infra; terraform | cicd-infra |  | read |
 | `devops.authentication.grant_graph_role_management` | boolean, default `false` | operator; default | cicd_infra | cicd-infra |  | read |
 | `devops.authentication.register_encryption_at_host` | boolean, default `true` | operator; default | cicd_infra | cicd-infra |  | read |
-| `devops.runners[].name` | string, required | operator | cicd_infra; terraform | cicd-infra |  | read |
-| `devops.runners[].os_type` | string, required, one of `linux`, `windows` | operator | cicd_infra; terraform | cicd-infra |  | read |
-| `devops.runners[].purpose` | string, default `general`, one of `general`, `ztp` | operator; default | deployment; cicd_infra; ansible; terraform | cicd-infra |  | read |
-| `devops.runners[].count` | integer, default `1` | operator; default | cicd_infra; terraform | cicd-infra |  | read |
-| `devops.runners[].compute_type` | string, default `vm`, one of `vm`, `vmss` | operator; default | cicd_infra; terraform | cicd-infra |  | read |
-| `devops.runners[].size` | string | operator | cicd_infra; terraform | cicd-infra |  | read |
-| `devops.runners[].labels` | array | operator | cicd_infra; ansible; terraform | cicd-infra |  | read |
-| `devops.runners[].registration_secret` | string (kv_ref) | operator; Key Vault ref | cicd_infra; ansible; terraform | cicd-infra |  | read |
-| `devops.runners[].pool` | string | operator | cicd_infra; ansible; terraform | cicd-infra |  | read |
-| `devops.runners[].private_ips` | array | operator | cicd_infra; terraform | cicd-infra |  | read |
-| `devops.runners[].subnet.name` | string, required | operator | cicd_infra; terraform | cicd-infra |  | read |
-| `devops.runners[].subnet.prefix` | string (cidr), required | operator | cicd_infra; terraform | cicd-infra |  | read |
-| `devops.runners[].data_disk_gb` | integer, default `0` | operator; default | cicd_infra; terraform | cicd-infra |  | read |
-| `devops.runners[].admin_ssh_public_key` | string | operator | cicd_infra | cicd-infra |  | read |
-| `devops.runner_network.vnet_name` | string | operator | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
-| `devops.runner_network.address_space` | array | operator | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
-| `devops.runner_network.dns_servers` | array | operator | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
-| `devops.runner_network.hub_peering.enabled` | boolean, default `false` | operator; default | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
-| `devops.runner_network.hub_peering.hub_network` | string | operator | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
-| `devops.runner_network.hub_peering.hub_vnet_id` | string | operator | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
-| `devops.runner_network.hub_peering.use_remote_gateways` | boolean, default `true` | operator; default | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
-| `devops.runner_network.hub_peering.create_hub_side` | boolean, default `true` | operator; default | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
-| `devops.runner_network.reachable_cidrs` | array | operator | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
-| `devops.runner_network.reachable_tcp_ports` | array | operator | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
-| `devops.runner_network.bmc_cidrs` | array | operator | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
-| `devops.runner_network.admin_source_cidrs` | array | operator | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
+| `devops.runners.vnet_name` | string | operator | cicd_infra; terraform |  |  | placeholder |
+| `devops.runners.address_space` | array | operator | cicd_infra; terraform |  |  | placeholder |
+| `devops.runners.dns_servers` | array | operator | cicd_infra; terraform |  |  | placeholder |
+| `devops.runners.hub_peering.enabled` | boolean, default `false` | operator; default | cicd_infra; terraform |  |  | placeholder |
+| `devops.runners.hub_peering.hub_network` | string | operator | cicd_infra; terraform |  |  | placeholder |
+| `devops.runners.hub_peering.hub_vnet_id` | string | operator | cicd_infra; terraform |  |  | placeholder |
+| `devops.runners.hub_peering.use_remote_gateways` | boolean, default `true` | operator; default | cicd_infra; terraform |  |  | placeholder |
+| `devops.runners.hub_peering.create_hub_side` | boolean, default `true` | operator; default | cicd_infra; terraform |  |  | placeholder |
+| `devops.runners.reachable_cidrs` | array | operator | cicd_infra; terraform |  |  | placeholder |
+| `devops.runners.reachable_tcp_ports` | array | operator | cicd_infra; terraform |  |  | placeholder |
+| `devops.runners.bmc_cidrs` | array | operator | cicd_infra; terraform |  |  | placeholder |
+| `devops.runners.admin_source_cidrs` | array | operator | cicd_infra; terraform |  |  | placeholder |
 | `devops.runner_access.resource_groups` | array | operator | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
 | `devops.runner_access.rbac_administrator` | boolean, default `true` | operator; default | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
 | `devops.runner_access.rbac_delegable_role_ids` | array | operator | cicd_infra; terraform | (part: cicd-infra) |  | read-as-part |
@@ -1202,14 +1193,17 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `identity.active_directory.domain_controllers` | array | operator; Trailwright | os_configuration | discovery; os-configuration; pre-cluster-verification | OS DomainJoin; Gate NW-015 | read |
 | `identity.active_directory.use_gmsa` | boolean, default `false` | operator; default | deployment | pre-cluster-verification | OS ~DomainJoin | read |
 | `identity.active_directory.dns_secure_dynamic_updates` | boolean | operator | deployment | pre-cluster-verification | OS ~DomainJoin | read |
-| `identity.active_directory.precreate_computer_objects` | boolean, default `false` | operator; default | deployment | toolkit-legacy-scripts | OS ~DomainJoin | read |
+| `identity.active_directory.precreate_computer_objects` | boolean, default `false` | operator; default | deployment; ansible | toolkit-legacy-scripts | OS ~DomainJoin | read |
+| `identity.active_directory.forest_functional_level` | string, default `WinThreshold`, one of `WinThreshold`, `Win2025` | operator; default | ansible |  | OS ~DomainJoin | placeholder |
+| `identity.active_directory.domain_functional_level` | string, default `WinThreshold`, one of `WinThreshold`, `Win2025` | operator; default | ansible |  | OS ~DomainJoin | placeholder |
+| `identity.active_directory.dns_forwarders` | array | operator | ansible |  | OS ~DomainJoin | placeholder |
 | `identity.active_directory.security_groups[].name` | string, required | operator | os_configuration | os-configuration; toolkit-legacy-scripts | OS DomainJoin | read |
 | `identity.active_directory.security_groups[].purpose` | string | operator | os_configuration | os-configuration; toolkit-legacy-scripts | OS DomainJoin | read |
 | `identity.active_directory.security_groups[].members` | array | operator |  | toolkit-legacy-scripts | OS ~DomainJoin | read |
 | `identity.active_directory.security_groups[].local_groups` | array | operator | os_configuration | toolkit-legacy-scripts | OS ~DomainJoin | read |
 | `identity.local_admin.username` | string, required | operator; Trailwright | os_configuration; deployment; monitoring; trailwright | arm-deployment; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | ARM localAdminUserName; OS LocalAdmin | read |
 | `identity.local_admin.username_secret` | string (kv_ref) | operator; Key Vault ref | deployment | pre-cluster-verification | OS ~LocalAdmin | read |
-| `identity.local_admin.password` | string (kv_ref), required | operator; Trailwright; Key Vault ref | os_configuration; deployment; trailwright | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM localAdminPassword; OS LocalAdmin | read |
+| `identity.local_admin.password` | string (kv_ref), required | operator; Trailwright; Key Vault ref | os_configuration; deployment; trailwright; ansible | arm-deployment; os-configuration; pre-cluster-verification; toolkit-legacy-scripts | ARM localAdminPassword; OS LocalAdmin | read |
 | `identity.local_identity.dns_server_config` | string, required, one of `use_dns_server`, `use_forwarder` | operator; Trailwright | deployment; trailwright | arm-deployment; pre-cluster-verification | ARM dnsServerConfig | read |
 | `identity.local_identity.dns_zone` | string | operator; Trailwright | deployment; trailwright | arm-deployment; pre-cluster-verification; toolkit-legacy-scripts | ARM dnsZones | read |
 | `identity.local_identity.dns_forwarders` | array | operator; Trailwright | deployment; trailwright | arm-deployment; pre-cluster-verification | ARM dnsZones | read |
@@ -1306,7 +1300,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `landing_zone.virtual_machines[].name` | string, required | operator | terraform; ansible | toolkit-legacy-scripts |  | read |
 | `landing_zone.virtual_machines[].hostname` | string (netbios_name) | operator | terraform; ansible | toolkit-legacy-scripts |  | read |
 | `landing_zone.virtual_machines[].role` | string, required, one of `domain_controller`, `jumpbox`, `windows_admin_center`, `syslog`, `management`, `other` | operator | terraform; ansible | toolkit-legacy-scripts |  | read |
-| `landing_zone.virtual_machines[].deploy_target` | string, one of `azure`, `azure_local`, `onprem` | operator | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.virtual_machines[].deploy_target` | string, one of `azure`, `azure_local`, `onprem` | operator | terraform; ansible | toolkit-legacy-scripts |  | read |
 | `landing_zone.virtual_machines[].subscription` | string | operator |  | toolkit-legacy-scripts |  | read |
 | `landing_zone.virtual_machines[].resource_group` | string (resource_group) | operator | terraform | toolkit-legacy-scripts |  | read |
 | `landing_zone.virtual_machines[].network` | string | operator |  | toolkit-legacy-scripts |  | read |
@@ -1316,6 +1310,8 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `landing_zone.virtual_machines[].os` | string, one of `windows_server_2022`, `windows_server_2025`, `ubuntu_2404` | operator | terraform; ansible | toolkit-legacy-scripts |  | read |
 | `landing_zone.virtual_machines[].admin_username` | string | operator | terraform | toolkit-legacy-scripts |  | read |
 | `landing_zone.virtual_machines[].admin_password` | string (kv_ref) | operator; Key Vault ref | terraform | toolkit-legacy-scripts |  | read |
+| `landing_zone.virtual_machines[].dc_promotion` | string, one of `new_forest`, `replica` | operator | ansible |  |  | placeholder |
+| `landing_zone.virtual_machines[].dsrm_password` | string (kv_ref) | operator; Key Vault ref | ansible |  |  | placeholder |
 | `landing_zone.log_analytics.name` | string, required | operator; Trailwright |  |  |  | placeholder |
 | `landing_zone.storage_accounts[].name` | string (storage_account_name), required | operator |  | infrastructure-helpers |  | read |
 | `landing_zone.storage_accounts[].resource_group` | string (resource_group) | operator |  | infrastructure-helpers |  | read |
@@ -1531,7 +1527,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `os_configuration.clear_storage` | boolean, default `false` | operator; default | os_configuration | os-configuration | OS ClearStorage; Gate ST-002 (named) | read |
 | `os_configuration.network.confirm_minutes` | integer, default `10` | operator; default | os_configuration | os-configuration |  | read |
 | `os_configuration.network.stable_seconds` | integer, default `60` | operator; default | os_configuration | os-configuration |  | read |
-| `os_configuration.remoting.transport` | string, default `winrm`, one of `winrm`, `winrm_https`, `arc` | operator; default | os_configuration |  | OS ~RemoteManagement | placeholder |
+| `os_configuration.remoting.transport` | string, default `winrm`, one of `winrm`, `winrm_https`, `arc` | operator; default | os_configuration; ansible |  | OS ~RemoteManagement | placeholder |
 | `os_configuration.remoting.bootstrap_transport` | string, default `none`, one of `none`, `arc`, `smb`, `auto` | operator; default | os_configuration | os-configuration | OS RemoteManagement | read |
 | `os_configuration.remoting.allowed_source_cidrs` | array | operator | os_configuration | os-configuration | OS RemoteManagement | read |
 | `os_configuration.remoting.allow_any_source` | boolean | operator | os_configuration | os-configuration | OS RemoteManagement | read |
@@ -1605,9 +1601,9 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `scenario.storage_connectivity` | string, default `switched`, one of `switched`, `switchless` | operator; Trailwright; default | deployment; trailwright | arm-deployment; toolkit-legacy-scripts | ARM networkingType; storageConnectivitySwitchless | read |
 | `scenario.topology` | string, one of `standard`, `rack_aware` | operator; Trailwright | deployment; trailwright | arm-deployment |  | read |
 | `scenario.connectivity` | string, one of `connected`, `disconnected` | operator; Trailwright | deployment; trailwright | arm-deployment; pre-cluster-verification; toolkit-legacy-scripts | Gate NW-005 | read |
-| `scenario.cloud` | string, one of `public`, `government` | operator; Trailwright | os_configuration; deployment; trailwright | arm-deployment; os-configuration; pre-cluster-verification | OS ArcRegistration; Gate NW-005 | read |
+| `scenario.cloud` | string, one of `public`, `government` | operator; Trailwright | os_configuration; deployment; trailwright; ansible | arm-deployment; os-configuration; pre-cluster-verification | OS ArcRegistration; Gate NW-005 | read |
 | `scenario.outbound_path` | string, one of `direct`, `proxy`, `arc_gateway`, `proxy_arc_gateway`, `private_path` | operator; Trailwright | os_configuration; trailwright; ansible; ztp | infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | OS ArcRegistration; Gate NW-006 | read |
-| `scenario.os_install` | string, one of `iso`, `simplified` | operator; Trailwright | ztp; os_configuration; monitoring; trailwright | os-configuration; sonar; ztp | Sonar provisioningRoute | read |
+| `scenario.os_install` | string, one of `iso`, `simplified` | operator; Trailwright | ztp; os_configuration; monitoring; trailwright; ansible | os-configuration; sonar; ztp | Sonar provisioningRoute | read |
 | `scenario.deploy_method` | string, one of `portal`, `arm` | operator; Trailwright | trailwright |  |  | placeholder |
 | `scenario.environment_class` | string, default `production`, one of `lab`, `test`, `dev`, `production`, `dmz` | operator; default | os_configuration; terraform | os-configuration; toolkit-legacy-scripts | OS DomainJoin; RemoteManagement | read |
 
@@ -1735,8 +1731,8 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 
 | Tool | Kind | Variables | read | placeholder |
 | --- | --- | ---: | ---: | ---: |
-| ansible | config_keys | 15 | 15 | 0 |
-| ansible | variables | 89 | 89 | 0 |
+| ansible | config_keys | 12 | 12 | 0 |
+| ansible | variables | 114 | 114 | 0 |
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |

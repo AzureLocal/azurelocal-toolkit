@@ -1,7 +1,0 @@
-# =============================================================================
-# Role: os-configuration — Default Variables
-# =============================================================================
-# onprem_dns_servers, onprem_ntp_servers, onprem_domain_join_ou and onprem_vlans.management come from
-# infrastructure.yml: New-IacVariableFiles.ps1 writes them to inventory/group_vars/all.yml. The management
-# address of a node (mgmt_ip, mgmt_nic_name) is in inventory/host_vars/<node>.yml.
-firewall_icmp_enabled: true

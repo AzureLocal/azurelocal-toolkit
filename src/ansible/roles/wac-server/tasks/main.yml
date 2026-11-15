@@ -5,14 +5,15 @@
 # Tasks: Download WAC, silent install, verify service, configure KCD
 # Target: management group (WAC server host)
 # Collections: ansible.windows
+# DEFERRED: Windows Admin Center is out of scope (registry class d). No playbook runs this role.
 # =============================================================================
 ---
 # ---------------------------------------------------------------
-# Task 1 — Ensure temp directory exists
+# Task 1 — Ensure the folder of the installer exists
 # ---------------------------------------------------------------
-- name: Ensure temp directory for WAC installer
+- name: Ensure the folder of the WAC installer exists
   ansible.windows.win_file:
-    path: "C:\\Temp"
+    path: "{{ wac_installer_path | ansible.builtin.win_dirname }}"
     state: directory
 
 # ---------------------------------------------------------------

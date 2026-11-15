@@ -192,12 +192,13 @@ Describe 'The parameters match Invoke-AzureLocalOsConfiguration.ps1' {
     }
     It 'the allowed values equal the wrapper''s ValidateSet' {
         $options = $script:Specs['argument_specs']['main']['options']
-        @($options['azurelocal_os_configuration_transport']['choices']) | Should -Be $script:WrapperSets['Transport']
-        @($options['azurelocal_os_configuration_method']['choices']) | Should -Be $script:WrapperSets['Method']
+        # an empty value (the default) is not passed: the wrapper then reads the file (os_configuration.remoting.transport, scenario.os_install)
+        @($options['azurelocal_os_configuration_transport']['choices'] | Where-Object { $_ -ne '' }) | Should -Be $script:WrapperSets['Transport']
+        @($options['azurelocal_os_configuration_method']['choices'] | Where-Object { $_ -ne '' }) | Should -Be $script:WrapperSets['Method']
         @($options['azurelocal_os_configuration_steps']['choices']) | Should -Be $script:WrapperSets['Step']
         $script:WrapperSets['Mode'] | Should -Be @('Plan', 'Apply')
-        $script:Defaults['azurelocal_os_configuration_transport'] | Should -Be 'Auto'
-        $script:Defaults['azurelocal_os_configuration_method'] | Should -Be 'Auto'
+        $script:Defaults['azurelocal_os_configuration_transport'] | Should -Be ''
+        $script:Defaults['azurelocal_os_configuration_method'] | Should -Be ''
     }
     It 'the exit codes mean what the wrapper says' {
         @($script:Defaults['azurelocal_os_configuration_exit_meanings'].Keys) | Should -Be @('0', '1', '2')
@@ -210,8 +211,8 @@ Describe 'The parameters match Invoke-AzureLocalOsConfiguration.ps1' {
     It 'does not reimplement the ZTP versus ISO decision' {
         $text = (Get-Content -LiteralPath (Join-Path $script:RoleRoot 'tasks/phase.yml') -Raw) + (Get-Content -LiteralPath (Join-Path $script:RoleRoot 'tasks/main.yml') -Raw)
         $text | Should -Not -Match '(?i)os_install|ztp-handoff|Resolve-AzlNodeMethod|arcMachine'
-        $script:ArgsVars['azurelocal_os_configuration__args_always']['Method'] | Should -Match 'azurelocal_os_configuration_method'
-        $script:ArgsVars['azurelocal_os_configuration__args_always']['Transport'] | Should -Match 'azurelocal_os_configuration_transport'
+        $script:ArgsVars['azurelocal_os_configuration__args_optional']['Method'] | Should -Match 'azurelocal_os_configuration_method'
+        $script:ArgsVars['azurelocal_os_configuration__args_optional']['Transport'] | Should -Match 'azurelocal_os_configuration_transport'
     }
     It 'the parameters added by the other OS configuration branches are accepted: ApprovedBootstrap, EventLogPath, ClearStorage, the Transport values, Method and the DomainJoin step' {
         foreach ($p in 'ApprovedBootstrap', 'EventLogPath', 'ClearStorage', 'Transport', 'Method') { $script:WrapperParameters | Should -Contain $p }

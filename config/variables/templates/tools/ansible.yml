@@ -24,9 +24,15 @@ _metadata:
 
 # The design choices.
 scenario:
+  # Azure public cloud or Azure Government.
+  # one of: public | government; used by: os_configuration, deployment, trailwright, ansible
+  cloud: "public"
   # How the machines reach Azure.
   # one of: direct | proxy | arc_gateway | proxy_arc_gateway | private_path; used by: os_configuration, trailwright, ansible, ztp
   outbound_path: "direct"
+  # iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp...
+  # one of: iso | simplified; used by: ztp, os_configuration, monitoring, trailwright, ansible
+  os_install: "simplified"
 
 # The Azure targets of the instance: tenant, region, and the subscription and resource group of the Arc machines, the cluster and (unless pro...
 azure:
@@ -119,6 +125,12 @@ networking:
 
 # Accounts and the identity provider (scenario.identity).
 identity:
+  # The deployment's local administrator on every machine.
+  # required; used by: os_configuration, deployment
+  local_admin:
+    # At least 14 characters with lowercase, uppercase, a digit and a special character.
+    # required; used by: os_configuration, deployment, trailwright, ansible
+    password: "keyvault://kv-iic-mgmt-01/local-admin-password"
   # The Active Directory the instance joins and its accounts.
   # when scenario.identity is active_directory
   active_directory:
@@ -149,6 +161,18 @@ identity:
       # A Key Vault secret reference.
       # required; used by: os_configuration, monitoring, ansible
       password: "keyvault://kv-example-01/password"
+    # (since 5.6.23) 
+    # default: false; used by: deployment, ansible
+    precreate_computer_objects: false
+    # (since 5.6.28) 
+    # one of: WinThreshold | Win2025; default: "WinThreshold"; used by: ansible
+    forest_functional_level: "WinThreshold"
+    # (since 5.6.28) 
+    # one of: WinThreshold | Win2025; default: "WinThreshold"; used by: ansible
+    domain_functional_level: "WinThreshold"
+    # (since 5.6.28) 
+    # used by: ansible
+    dns_forwarders: ["192.0.2.53"]
     # Groups created in the OU for administration of the instance.
     # used by: ansible
     security_groups: []
@@ -160,6 +184,16 @@ operations:
     # true when Azure Monitor is part of the design.
     # required; used by: trailwright, ansible
     enabled: true
+
+# How the toolkit's OS configuration run (Invoke-AzureLocalOsConfiguration.ps1) treats the machines after the OS is installed, whichever way...
+# used by: os_configuration
+os_configuration:
+  # How the OS configuration reaches the nodes and how their remote management (WinRM, RDP, ICMP) is secured.
+  # used by: os_configuration
+  remoting:
+    # winrm (HTTP, 5985), winrm_https (5986, a certificate on the node) or arc (Azure Arc Run Command: the exception for sites with no route to t...
+    # one of: winrm | winrm_https | arc; default: "winrm"; used by: os_configuration, ansible
+    transport: "winrm"
 
 # Part 2 of the implementation steps: the Azure foundation the instance depends on.
 landing_zone:
@@ -175,12 +209,21 @@ landing_zone:
       # What the machine is: domain_controller, jumpbox, windows_admin_center, syslog, management or other.
       # required; one of: domain_controller | jumpbox | windows_admin_center | syslog | management | other; used by: terraform, ansible
       role: "domain_controller"
+      # Where the VM runs.
+      # one of: azure | azure_local | onprem; used by: terraform, ansible
+      deploy_target: "azure"
       # Private IPv4 address of the machine.
       # used by: terraform, ansible
       private_ip: "10.20.4.10"
       # (since 5.6.19) 
       # one of: windows_server_2022 | windows_server_2025 | ubuntu_2404; used by: terraform, ansible
       os: "windows_server_2025"
+      # (since 5.6.28) 
+      # one of: new_forest | replica; used by: ansible
+      dc_promotion: "new_forest"
+      # (since 5.6.28) 
+      # used by: ansible
+      dsrm_password: "keyvault://kv-iic-mgmt-01/dsrm-password"
 
 # Part 1 of the implementation steps: the pipeline platform, the project and its settings, the environments, the sign-in to Azure and the sel...
 # used by: cicd_infra
@@ -201,11 +244,20 @@ devops:
     # used by: cicd_infra, ansible
     client_secret: "keyvault://kv-example-01/client-secret"
   # (since 5.5) 
-  # used by: cicd_infra, terraform
+  # used by: cicd_infra
   runners:
-    # general: ARM, Arc, Terraform, Ansible and OS configuration. ztp: the azurelocal-ztp Boot, Bootstrap and Vouchers stages (Windows only).
-    # one of: general | ztp; default: "general"; used by: deployment, cicd_infra, ansible, terraform
-    - purpose: "general"
+    # Name prefix of the VM or VMs, for example vm-contoso-runner-lnx.
+    # required; used by: cicd_infra, terraform, ansible
+    - name: "vm-iic-runner-lnx"
+      # Operating system.
+      # required; one of: linux | windows; used by: cicd_infra, terraform, ansible
+      os_type: "linux"
+      # general: ARM, Arc, Terraform, Ansible and OS configuration. ztp: the azurelocal-ztp Boot, Bootstrap and Vouchers stages (Windows only).
+      # one of: general | ztp; default: "general"; used by: deployment, cicd_infra, ansible, terraform
+      purpose: "general"
+      # Number of VMs.
+      # default: 1; used by: cicd_infra, terraform, ansible
+      count: 1
       # Labels added to the defaults (azure, the OS, terraform, ansible, ztp).
       # used by: cicd_infra, ansible, terraform
       labels: []
@@ -215,3 +267,15 @@ devops:
       # The Azure Pipelines agent pool, or the GitHub runner group.
       # used by: cicd_infra, ansible, terraform
       pool: "azurelocal-ztp"
+      # Static private addresses, one per VM.
+      # used by: cicd_infra, terraform, ansible
+      private_ips: ["10.20.10.4"]
+      # Data disk for the ZTP media, images and vouchers. 512 or more for ztp.
+      # default: 0; used by: cicd_infra, terraform, ansible
+      data_disk_gb: 512
+      # (since 5.6.28) 
+      # default: "runneradmin"; used by: cicd_infra, terraform, ansible
+      admin_username: "runneradmin"
+      # (since 5.6.28) 
+      # used by: cicd_infra, ansible
+      identity_client_id: ""

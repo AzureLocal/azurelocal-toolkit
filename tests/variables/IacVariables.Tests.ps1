@@ -95,11 +95,13 @@ Describe 'Every Ansible variable is registered' {
     It 'the variables of <_> are registered' -ForEach @(
         'src/ansible/roles/ad-preparation/defaults/main.yml', 'src/ansible/roles/arc-registration/defaults/main.yml', 'src/ansible/roles/cicd_runner/defaults/main.yml',
         'src/ansible/roles/cicd_runner/vars/main.yml', 'src/ansible/roles/domain-controller/defaults/main.yml', 'src/ansible/roles/monitoring-agents/defaults/main.yml',
-        'src/ansible/roles/os-configuration/defaults/main.yml', 'src/ansible/roles/syslog-receiver/defaults/main.yml', 'src/ansible/roles/wac-server/defaults/main.yml',
+        'src/ansible/roles/syslog-receiver/defaults/main.yml', 'src/ansible/roles/wac-server/defaults/main.yml',
         'src/ansible/inventory/group_vars/all.yml'
     ) {
         $file = $_
-        $doc = ConvertFrom-Yaml ([IO.File]::ReadAllText((Join-Path $script:Repo $file)))
+        # group_vars/all.yml is generated and not in git: its output for the example file is the fixture tests/variables/fixtures/ansible/inventory/group_vars/all.yml
+        $read = if ($file -like '*group_vars*') { 'tests/variables/fixtures/ansible/inventory/group_vars/all.yml' } else { $file }
+        $doc = ConvertFrom-Yaml ([IO.File]::ReadAllText((Join-Path $script:Repo $read)))
         $declared = @(if ($doc) { $doc.Keys | Sort-Object })
         $registered = @($script:Entries | Where-Object { $_.Area -eq $file } | ForEach-Object { $_.Root } | Sort-Object -Unique)
         # a role default that the generator also writes to group_vars/all.yml is registered once, with the area of the role default
@@ -119,21 +121,24 @@ Describe 'Every Ansible variable is registered' {
         }
     }
 
-    It 'finds every defaults, vars and group_vars file under src/ansible (a new one must be listed above)' {
+    It 'finds every defaults and vars file under src/ansible (a new one must be listed above), and no group_vars or host_vars file is in git' {
         $found = @(Get-ChildItem (Join-Path $script:Repo 'src\ansible') -Recurse -Include main.yml, all.yml -File | Where-Object { $_.DirectoryName -match 'defaults$|vars$' } | ForEach-Object { Get-RelativePath $_.FullName })
-        $found.Count | Should -Be 10
+        $found.Count | Should -Be 8
+        @(& git -C $script:Repo ls-files 'src/ansible/inventory/group_vars' 'src/ansible/inventory/host_vars' 'src/ansible/inventory/hosts.yml' 'src/ansible/inventory/cicd-runners.yml') | Should -BeNullOrEmpty
     }
 
     It 'the host variables are read by a role task' {
-        $tasks = [IO.File]::ReadAllText((Join-Path $script:Repo 'src\ansible\roles\os-configuration\tasks\main.yml'))
-        foreach ($e in @($script:Entries | Where-Object { $_.Node.Contains('target') -and $_.Node['target'] -eq 'host_vars' })) { $tasks | Should -Match ([regex]::Escape($e.Name)) }
+        $tasks = (Get-ChildItem (Join-Path $script:Repo 'src\ansible\roles') -Recurse -Filter *.yml -File | Where-Object { $_.DirectoryName -match 'tasks$' } | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"
+        $hostVars = @($script:Entries | Where-Object { $_.Node.Contains('target') -and $_.Node['target'] -eq 'host_vars' })
+        $hostVars.Count | Should -BeGreaterThan 0
+        foreach ($e in $hostVars) { $tasks | Should -Match ([regex]::Escape($e.Name)) }
     }
 
     It 'the registered default of a role default is the default in the file' {
         foreach ($e in @($script:IacEntries | Where-Object { $_.Area -like 'src/ansible/roles/*' -and $_.Node.Contains('default') })) {
             $doc = ConvertFrom-Yaml ([IO.File]::ReadAllText((Join-Path $script:Repo $e.Area)))
             $v = $doc[$e.Name]
-            $text = if ($v -is [bool]) { $v.ToString().ToLowerInvariant() } elseif ($v -is [System.Collections.IDictionary] -or $v -is [System.Collections.IList]) { $v | ConvertTo-Json -Compress -Depth 8 } else { [string]$v }
+            $text = if ($v -is [bool]) { $v.ToString().ToLowerInvariant() } elseif ($v -is [System.Collections.IDictionary] -or $v -is [System.Collections.IList]) { ConvertTo-Json -InputObject $v -Compress -Depth 8 } else { [string]$v }
             (ConvertTo-ComparableDefault $e.Node['default']) | Should -BeExactly (ConvertTo-ComparableDefault $text) -Because "$($e.Name) in $($e.Area)"
         }
     }
@@ -171,7 +176,7 @@ Describe 'Each registered variable says where it comes from' {
             if ($cls -eq 'd' -and -not $n.Contains('out_of_scope')) { "$($e.Path): class d without out_of_scope" }
             if ($src -in 'secret', 'runtime' -and $n.Contains('default') -and (ConvertTo-ComparableDefault $n['default']) -ne '') { "$($e.Path): a secret or run-time variable has a default value" }
             if (-not $n.Contains('target')) { "$($e.Path): no target" }
-            elseif ($n['target'] -notin 'tfvars', 'backend_hcl', 'group_vars', 'host_vars', 'inventory', 'none') { "$($e.Path): target '$($n['target'])'" }
+            elseif ($n['target'] -notin 'tfvars', 'backend_hcl', 'group_vars', 'host_vars', 'inventory', 'inventory_host', 'cicd_inventory', 'none') { "$($e.Path): target '$($n['target'])'" }
         }
         @($problems) | Should -BeNullOrEmpty
     }
@@ -193,7 +198,7 @@ Describe 'Each registered variable says where it comes from' {
 
     It 'a key a Terraform or Ansible variable reads is tagged used_by terraform or ansible' {
         $problems = foreach ($e in $script:IacEntries) {
-            $tool = if ($e.Path -like 'tools.ansible.*') { 'ansible' } else { 'terraform' }
+            $tool = if ($e.Path -like 'tools.ansible.*' -or $e.Path -like 'tools.cicd_infra.ansible_variables.*') { 'ansible' } else { 'terraform' }
             foreach ($k in @(if ($e.Node.Contains('infrastructure_key')) { $e.Node['infrastructure_key'] })) {
                 $path = ($k -replace '\[[^\]]*\]', '[]') -replace '\[\]$', ''
                 $r = $script:ByPath[$path]
@@ -216,8 +221,11 @@ Describe 'Each registered variable says where it comes from' {
         }
     }
 
-    It 'the out-of-scope features are not in the code any more (Windows Admin Center is listed, nothing else)' {
-        @($script:IacEntries | Where-Object { $_.Node['class'] -eq 'd' } | ForEach-Object { [string]$_.Node['out_of_scope'] } | Sort-Object -Unique) | Should -Be @('Windows Admin Center')
+    It 'the out-of-scope features are not in the code any more (Windows Admin Center and syslog forwarding are listed, nothing else)' {
+        @($script:IacEntries | Where-Object { $_.Node['class'] -eq 'd' } | ForEach-Object { [string]$_.Node['out_of_scope'] } | Sort-Object -Unique) | Should -Be @('Syslog forwarding', 'Windows Admin Center')
+        # no playbook runs the roles of an out-of-scope feature
+        $playbooks = (Get-ChildItem (Join-Path $script:Repo 'src\ansible\playbooks') -Filter *.yml -File | ForEach-Object { [IO.File]::ReadAllText($_.FullName) }) -join "`n"
+        $playbooks | Should -Not -Match 'role:\s*(wac-server|syslog-receiver)'
         foreach ($gone in 'dcr_performance_counters', 'dcr_event_logs', 'ama_extension_version', 'enable_cluster_alerts', 'alert_scopes') {
             @($script:Entries | Where-Object { $_.Name -eq $gone }).Count | Should -Be 0 -Because $gone
         }
@@ -229,10 +237,11 @@ Describe 'Each registered variable says where it comes from' {
 Describe 'The generator, run on the example file' {
     It 'finishes with exit code 0 and writes every file' {
         $script:RunResult.Exit | Should -Be 0 -Because $script:RunResult.Output
-        foreach ($rel in 'terraform\azure-local\terraform.tfvars.json', 'terraform\azure-local\backend.hcl', 'terraform\backend\terraform.tfvars.json', 'terraform\cicd-infra\terraform.tfvars.json', 'terraform\cicd-infra\backend.hcl', 'ansible\inventory\group_vars\all.yml', 'ansible\inventory\hosts.yml') {
+        foreach ($rel in 'terraform\azure-local\terraform.tfvars.json', 'terraform\azure-local\backend.hcl', 'terraform\backend\terraform.tfvars.json', 'terraform\cicd-infra\terraform.tfvars.json', 'terraform\cicd-infra\backend.hcl', 'ansible\inventory\group_vars\all.yml', 'ansible\inventory\hosts.yml', 'ansible\inventory\cicd-runners.yml') {
             Join-Path $script:Run $rel | Should -Exist
         }
-        @(Get-ChildItem (Join-Path $script:Run 'ansible\inventory\host_vars') -Filter *.yml).Count | Should -Be 2
+        # one host_vars file for each virtual machine of hosts.yml (the example has one, the domain controller); the nodes have none
+        @(Get-ChildItem (Join-Path $script:Run 'ansible\inventory\host_vars') -Filter *.yml | ForEach-Object Name) | Should -Be @('iic-dc01.yml')
     }
 
     It 'writes valid JSON, and only variables the environment declares' {
@@ -256,12 +265,46 @@ Describe 'The generator, run on the example file' {
         $vars = ConvertFrom-Yaml (Get-Content (Join-Path $script:Run 'ansible\inventory\group_vars\all.yml') -Raw)
         $vars.cluster_name | Should -Be 'iic-azl-01'
         $vars.ad_domain_fqdn | Should -Be 'improbability.cloud'
-        $vars.onprem_vlans.management.gateway | Should -Be '192.0.2.1'
         $vars.domain_admin_username | Should -Be 'IIC\lcm-iic-azl-01'
+        $vars.azure_cloud | Should -Be 'public'
+        $vars.azure_cloud_endpoints.public.key_vault_dns_suffix | Should -Be 'vault.azure.net'
+        $vars.azure_cloud_endpoints.government.arm_cloud_name | Should -Be 'AzureUSGovernment'
+        @($vars.azure_cloud_endpoints.public.arc_dns_zones).Count | Should -BeGreaterThan 1
+        # the LCM password is the secret identity.active_directory.lcm_user.password references, never generated
+        $vars.lcm_password_key_vault_name | Should -Be 'kv-iic-mgmt-01'
+        $vars.lcm_password_secret_name | Should -Be 'lcm-password'
+        $vars.cicd_runner_platform | Should -Be 'github'
+        $vars.ad_precreate_computer_objects | Should -BeFalse
         $vars.Contains('domain_admin_password') | Should -BeFalse
         $vars.Contains('spn_client_secret') | Should -BeFalse
-        $hostVars = ConvertFrom-Yaml (Get-Content (Join-Path $script:Run 'ansible\inventory\host_vars\iic-azl-n01.yml') -Raw)
-        $hostVars.mgmt_ip | Should -Be '192.0.2.11'
+        $vars.Contains('lcm_password') | Should -BeFalse
+        $hostVars = ConvertFrom-Yaml (Get-Content (Join-Path $script:Run 'ansible\inventory\host_vars\iic-dc01.yml') -Raw)
+        $hostVars.dc_promotion_mode | Should -Be 'new_forest'
+        $hostVars.dc_dsrm_key_vault_name | Should -Be 'kv-iic-mgmt-01'
+        $hostVars.dc_dsrm_secret_name | Should -Be 'dsrm-password'
+        $hostVars.vm_deploy_target | Should -Be 'azure'
+        (Get-Content (Join-Path $script:Run 'ansible\inventory\host_vars\iic-dc01.yml') -Raw) | Should -Match '# dc_dsrm_password: not written'
+    }
+
+    It 'writes the cicd-runners inventory from devops.runners[]: one group per runner, the hosts Terraform names, and the settings of each runner' {
+        $inventory = ConvertFrom-Yaml (Get-Content (Join-Path $script:Run 'ansible\inventory\cicd-runners.yml') -Raw)
+        $linux = $inventory.all.children.cicd_runners_linux.children.cicd_runner_vm_iic_runner_lnx
+        $linux.hosts['vm-iic-runner-lnx-01'].ansible_host | Should -Be '10.20.10.4'
+        $linux.vars.ansible_user | Should -Be 'runneradmin'
+        $linux.vars.ansible_become | Should -BeTrue
+        $linux.vars.cicd_runner_purpose | Should -Be 'general'
+        $linux.vars.cicd_runner_secret_name | Should -Be 'github-runner-token'
+        $linux.vars.Contains('cicd_runner_windows_init_data_disk') | Should -BeFalse
+        $windows = $inventory.all.children.cicd_runners_windows
+        $windows.vars.ansible_connection | Should -Be 'winrm'
+        $ztp = $windows.children.cicd_runner_vm_iic_runner_ztp
+        $ztp.vars.cicd_runner_purpose | Should -Be 'ztp'
+        $ztp.vars.cicd_runner_windows_init_data_disk | Should -BeTrue
+        $ztp.vars.cicd_runner_azure_devops_pool | Should -Be 'azurelocal-ztp'
+        $ztp.vars.Contains('ansible_become') | Should -BeFalse
+        $text = Get-Content (Join-Path $script:Run 'ansible\inventory\cicd-runners.yml') -Raw
+        $text | Should -Match '# ansible_password: not written'
+        $text | Should -Not -Match 'keyvault://'
     }
 
     It 'writes the shape the Terraform modules need' {
@@ -312,10 +355,15 @@ Describe 'The generator, run on the example file' {
         $r.Output | Should -Not -Match '\[(written|updated)\]'
     }
 
-    It 'writes the same files as the committed group_vars/all.yml' {
-        $generated = (Get-Content (Join-Path $script:Run 'ansible\inventory\group_vars\all.yml') -Raw).Replace("`r`n", "`n")
-        $committed = (Get-Content (Join-Path $script:Repo 'src\ansible\inventory\group_vars\all.yml') -Raw).Replace("`r`n", "`n")
-        $committed | Should -BeExactly $generated
+    It 'writes the committed examples and fixtures: <Committed>' -ForEach @(
+        @{ Generated = 'ansible\inventory\group_vars\all.yml'; Committed = 'tests\variables\fixtures\ansible\inventory\group_vars\all.yml' }
+        @{ Generated = 'ansible\inventory\host_vars\iic-dc01.yml'; Committed = 'tests\variables\fixtures\ansible\inventory\host_vars\iic-dc01.yml' }
+        @{ Generated = 'ansible\inventory\hosts.yml'; Committed = 'src\ansible\inventory\hosts.yml.example' }
+        @{ Generated = 'ansible\inventory\cicd-runners.yml'; Committed = 'src\ansible\inventory\cicd-runners.yml.example' }
+    ) {
+        $generated = (Get-Content (Join-Path $script:Run $Generated) -Raw).Replace("`r`n", "`n")
+        $file = (Get-Content (Join-Path $script:Repo $Committed) -Raw).Replace("`r`n", "`n")
+        $file | Should -BeExactly $generated
     }
 
     It 'writes the Ansible inventory: the nodes and the Windows machines with their addresses, in the groups of the playbooks, and the connection settings from the registry' {
@@ -324,6 +372,8 @@ Describe 'The generator, run on the example file' {
         @($children.cluster_nodes.hosts.Keys | Sort-Object) | Should -Be @('iic-azl-n01', 'iic-azl-n02')
         $children.cluster_nodes.hosts['iic-azl-n01'].ansible_host | Should -Be '192.0.2.11'
         $children.domain_controllers.hosts['iic-dc01'].ansible_host | Should -Match '^\d+\.\d+\.\d+\.\d+$'
+        # the virtual machines are also grouped by landing_zone.virtual_machines[].role
+        @($children.vm_role_domain_controller.hosts.Keys) | Should -Be @('iic-dc01')
         @($children.windows.children.Keys) | Should -Contain 'cluster_nodes'
         $children.windows.vars.ansible_connection | Should -Be 'winrm'
         $children.windows.vars.ansible_winrm_transport | Should -Be 'kerberos'

@@ -28,6 +28,7 @@
     create_home: true
     state: present
   become: true
+  register: cicd_runner_user_account
 
 - name: Add the Microsoft package repository (PowerShell)
   ansible.builtin.apt:
@@ -80,9 +81,9 @@
       - -Command
       - >-
         Set-PSResourceRepository -Name PSGallery -Trusted;
-        Install-PSResource -Name Az -Scope AllUsers -TrustRepository;
-        Install-PSResource -Name powershell-yaml -Scope AllUsers -TrustRepository;
-        Install-PSResource -Name Pester -Scope AllUsers -TrustRepository
+        Install-PSResource -Name Az {{ ('-Version ' ~ cicd_runner_az_module_version) if cicd_runner_az_module_version else '' }} -Scope AllUsers -TrustRepository;
+        Install-PSResource -Name powershell-yaml {{ ('-Version ' ~ cicd_runner_powershell_yaml_version) if cicd_runner_powershell_yaml_version else '' }} -Scope AllUsers -TrustRepository;
+        Install-PSResource -Name Pester {{ ('-Version ' ~ cicd_runner_pester_version) if cicd_runner_pester_version else '' }} -Scope AllUsers -TrustRepository
   when: "'missing' in cicd_runner_ps_modules.stdout"
   changed_when: true
   become: true
@@ -104,7 +105,7 @@
 
 - name: Create the Terraform folder for this version
   ansible.builtin.file:
-    path: "/opt/terraform/{{ cicd_runner_terraform_version }}"
+    path: "{{ cicd_runner_linux_root }}/terraform/{{ cicd_runner_terraform_version }}"
     state: directory
     mode: "0755"
   become: true
@@ -112,22 +113,22 @@
 - name: Download Terraform (checksum from HashiCorp's SHA256SUMS)
   ansible.builtin.get_url:
     url: "https://releases.hashicorp.com/terraform/{{ cicd_runner_terraform_version }}/terraform_{{ cicd_runner_terraform_version }}_linux_amd64.zip"
-    dest: "/opt/terraform/{{ cicd_runner_terraform_version }}/terraform.zip"
+    dest: "{{ cicd_runner_linux_root }}/terraform/{{ cicd_runner_terraform_version }}/terraform.zip"
     checksum: "sha256:https://releases.hashicorp.com/terraform/{{ cicd_runner_terraform_version }}/terraform_{{ cicd_runner_terraform_version }}_SHA256SUMS"
     mode: "0644"
   become: true
 
 - name: Unpack Terraform
   ansible.builtin.unarchive:
-    src: "/opt/terraform/{{ cicd_runner_terraform_version }}/terraform.zip"
-    dest: "/opt/terraform/{{ cicd_runner_terraform_version }}"
+    src: "{{ cicd_runner_linux_root }}/terraform/{{ cicd_runner_terraform_version }}/terraform.zip"
+    dest: "{{ cicd_runner_linux_root }}/terraform/{{ cicd_runner_terraform_version }}"
     remote_src: true
-    creates: "/opt/terraform/{{ cicd_runner_terraform_version }}/terraform"
+    creates: "{{ cicd_runner_linux_root }}/terraform/{{ cicd_runner_terraform_version }}/terraform"
   become: true
 
 - name: Point /usr/local/bin/terraform at this version
   ansible.builtin.file:
-    src: "/opt/terraform/{{ cicd_runner_terraform_version }}/terraform"
+    src: "{{ cicd_runner_linux_root }}/terraform/{{ cicd_runner_terraform_version }}/terraform"
     dest: /usr/local/bin/terraform
     state: link
   become: true
@@ -138,18 +139,16 @@
   block:
     - name: Install ansible-core, ansible-lint and the WinRM libraries in a virtual environment
       ansible.builtin.pip:
-        name:
-          - ansible-core
-          - ansible-lint
-          - pywinrm
-          - pypsrp
-          - yamllint
-        virtualenv: /opt/azl-ansible
+        name: >-
+          {{ [['ansible-core', cicd_runner_ansible_core_version], ['ansible-lint', cicd_runner_ansible_lint_version],
+          ['pywinrm', cicd_runner_pywinrm_version], ['pypsrp', cicd_runner_pypsrp_version], ['yamllint', cicd_runner_yamllint_version]]
+          | map('join', '==') | map('regex_replace', '==$', '') | list }}
+        virtualenv: "{{ cicd_runner_linux_root }}/azl-ansible"
         virtualenv_command: python3 -m venv
 
     - name: Link the Ansible commands
       ansible.builtin.file:
-        src: "/opt/azl-ansible/bin/{{ item }}"
+        src: "{{ cicd_runner_linux_root }}/azl-ansible/bin/{{ item }}"
         dest: "/usr/local/bin/{{ item }}"
         state: link
       loop:
@@ -162,7 +161,7 @@
 
     - name: Install the collections
       ansible.builtin.command:
-        argv: ["/opt/azl-ansible/bin/ansible-galaxy", "collection", "install", "{{ item }}", "-p", "/usr/share/ansible/collections"]
+        argv: ["{{ cicd_runner_linux_root }}/azl-ansible/bin/ansible-galaxy", "collection", "install", "{{ item }}", "-p", "/usr/share/ansible/collections"]
         creates: "/usr/share/ansible/collections/ansible_collections/{{ item | replace('.', '/') }}"
       loop: "{{ cicd_runner_ansible_collections }}"
 

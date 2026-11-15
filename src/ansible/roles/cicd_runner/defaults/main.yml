@@ -10,38 +10,44 @@
 # with the host's managed identity (an Azure VM, or an Arc-enabled server), or,
 # when cicd_runner_token_source is "variable", from cicd_runner_registration_token
 # supplied by Ansible Vault or the environment.
+#
+# The facts of the deployment are not here. cicd_runner_platform (devops.platform) and cicd_runner_scm_url are in
+# inventory/group_vars/all.yml; the settings of each runner (devops.runners[]: purpose, labels, pool, the registration
+# secret, the identity, the data disk) are group variables of inventory/cicd-runners.yml. Both files are written by
+# config/variables/scripts/New-IacVariableFiles.ps1. The values below are what a runner gets when its entry of
+# devops.runners[] does not set the key.
 # =============================================================================
-
-# github | gitlab | azure_devops
-cicd_runner_platform: github
 
 # github: https://github.com/<org>[/<repo>]   gitlab: https://gitlab.com   azure_devops: https://dev.azure.com/<org>
 cicd_runner_scm_url: ""
 
-# general | ztp. ztp needs a Windows host (ZTP shares images over SMB with Windows commands).
+# general | ztp (devops.runners[].purpose, default general). ztp needs a Windows host (ZTP shares images over SMB with Windows commands).
 cicd_runner_purpose: general
 
-# Labels added to the defaults (azure, the OS, terraform and ansible on Linux, ztp for the ztp purpose).
+# Labels added to the defaults (azure, the OS, terraform and ansible on Linux, ztp for the ztp purpose): devops.runners[].labels.
 cicd_runner_extra_labels: []
 
+# devops.runners[].pool: the GitHub runner group, or the Azure Pipelines pool (there is no default pool, the role stops without it).
 cicd_runner_github_runner_group: ""
-cicd_runner_azure_devops_pool: "" # Azure DevOps only (devops.runners[].pool); there is no default pool, the role stops without it
+cicd_runner_azure_devops_pool: ""
 
 # keyvault_managed_identity | variable
 cicd_runner_token_source: keyvault_managed_identity
 
 # pat: the secret is a PAT or App token, exchanged for a registration token (GitHub only). token: use as is.
 cicd_runner_token_kind: pat
+# devops.runners[].registration_secret (keyvault://<vault>/<secret>).
 cicd_runner_key_vault_name: ""
-cicd_runner_key_vault_dns_suffix: vault.azure.net
 cicd_runner_secret_name: ""
-# Client ID of the user-assigned managed identity. Empty uses the host's system-assigned identity.
+# The DNS suffix of Key Vault in the cloud of the deployment (scenario.cloud; azure_cloud_endpoints in group_vars).
+cicd_runner_key_vault_dns_suffix: "{{ azure_cloud_endpoints[azure_cloud].key_vault_dns_suffix }}"
+# devops.runners[].identity_client_id: the user-assigned managed identity. Empty uses the host's system-assigned identity.
 cicd_runner_identity_client_id: ""
 
 # Used only when cicd_runner_token_source is "variable". Keep it in Ansible Vault, never in the inventory.
 cicd_runner_registration_token: ""
 
-# Tools
+# Tools. An empty version installs the current release.
 cicd_runner_terraform_version: "1.16.3"
 cicd_runner_bicep_version: "0.49.2"
 cicd_runner_bicep_linux_sha256: "0ab9de90c2493f206f8281bae74f9ee2d5ed3605548dab1adf41fef185e1f7c5"
@@ -52,11 +58,26 @@ cicd_runner_github_runner_windows_sha256: ""
 cicd_runner_gitlab_runner_version: "19.5.3"
 cicd_runner_gitlab_runner_linux_sha256: "cd586a217b0ba4d339b3f3d645b84f8f5e1cc711e73148c30a3eec0f8c78378b"
 cicd_runner_gitlab_runner_windows_sha256: ""
-# Empty: the current release of the agent.
 cicd_runner_azure_devops_agent_version: ""
+# Python packages of the Ansible tooling on Linux (pip). ansible-core follows the Terraform module (tool_versions.ansible_core).
+cicd_runner_ansible_core_version: ""
+cicd_runner_ansible_lint_version: "25.6.1"
+cicd_runner_pywinrm_version: "0.5.0"
+cicd_runner_pypsrp_version: "0.8.1"
+cicd_runner_yamllint_version: "1.37.1"
+# PowerShell modules (PowerShell Gallery). Az follows the Terraform module (tool_versions.az_powershell).
+cicd_runner_az_module_version: ""
+cicd_runner_powershell_yaml_version: "0.4.12"
+cicd_runner_pester_version: "5.9.1"
+# Windows: Git for Windows (the release tag, vX.Y.Z.windows.N without the v) and PowerShell 7.
+cicd_runner_git_windows_version: "2.50.0.windows.1"
+cicd_runner_powershell_windows_version: "7.5.2"
 
 # Linux
 cicd_runner_user: runner
+# The folder the runner software, the Ansible virtual environment and Terraform go under (<root>/runners, <root>/azl-ansible,
+# <root>/terraform), the layout of the Terraform module's first-boot script.
+cicd_runner_linux_root: /opt
 cicd_runner_install_ansible: true
 cicd_runner_ansible_collections:
   - azure.azcollection
@@ -65,9 +86,19 @@ cicd_runner_ansible_collections:
   - community.windows
   - community.general
 
+# GitLab Runner: the executor (shell: the jobs run on the host, with its tools) and, on Windows, the shell of the jobs.
+cicd_runner_gitlab_executor: shell
+cicd_runner_gitlab_windows_shell: pwsh
+
 # Windows
 cicd_runner_windows_root: 'C:\azl'
 # Well-known accounts that need no password: SYSTEM, NETWORK SERVICE, LOCAL SERVICE.
 cicd_runner_windows_service_account: 'NT AUTHORITY\SYSTEM'
-# Initialise a raw data disk and create the persistent folder for ZTP (AZL_ZTP_ROOT).
+# devops.runners[].data_disk_gb greater than 0: initialise the raw data disk and create the persistent folder for ZTP.
 cicd_runner_windows_init_data_disk: false
+# The ZTP data layout: the data volume label, the folder on it and the machine environment variable that names that
+# folder. The Terraform module's first-boot script (bootstrap-windows.ps1.tftpl) uses the same three, so a ztp runner
+# built either way has the same layout.
+cicd_runner_ztp_volume_label: azl-data
+cicd_runner_ztp_folder: azl-ztp
+cicd_runner_ztp_root_variable: AZL_ZTP_ROOT

@@ -1,6 +1,8 @@
 # =============================================================================
 # Role: cicd_runner - GitLab Runner on Linux
 # =============================================================================
+# The runner service runs as cicd_runner_user (created by linux.yml), in its home folder, like the GitHub and Azure
+# Pipelines services.
 ---
 - name: Download the GitLab Runner (checksum verified)
   ansible.builtin.get_url:
@@ -10,17 +12,9 @@
     checksum: "{{ ('sha256:' ~ cicd_runner_gitlab_runner_linux_sha256) if cicd_runner_gitlab_runner_linux_sha256 | length > 0 else omit }}"
   become: true
 
-- name: Create the gitlab-runner user
-  ansible.builtin.user:
-    name: gitlab-runner
-    shell: /bin/bash
-    create_home: true
-    state: present
-  become: true
-
 - name: Install the service
   ansible.builtin.command:
-    argv: [gitlab-runner, install, --user, gitlab-runner, --working-directory, /home/gitlab-runner]
+    argv: [gitlab-runner, install, --user, "{{ cicd_runner_user }}", --working-directory, "{{ cicd_runner_user_account.home }}"]
     creates: /etc/systemd/system/gitlab-runner.service
   become: true
 
@@ -35,7 +29,7 @@
       - --token
       - "{{ cicd_runner_credential }}"
       - --executor
-      - shell
+      - "{{ cicd_runner_gitlab_executor }}"
       - --name
       - "{{ cicd_runner_runner_name }}"
     creates: /etc/gitlab-runner/config.toml
@@ -54,7 +48,7 @@
       - --registration-token
       - "{{ cicd_runner_credential }}"
       - --executor
-      - shell
+      - "{{ cicd_runner_gitlab_executor }}"
       - --name
       - "{{ cicd_runner_runner_name }}"
       - --tag-list

@@ -1,18 +1,16 @@
 # =============================================================================
 # Role: ad-preparation — Default Variables
 # =============================================================================
-# Settings of this role only. Everything that comes from infrastructure.yml, and the
-# Azure DNS address (azure_dns_forwarder_ip), is in inventory/group_vars/all.yml, which
-# config/variables/scripts/New-IacVariableFiles.ps1 writes.
+# Settings of this role only. Every fact of the deployment comes from infrastructure.yml: New-IacVariableFiles.ps1
+# writes it to inventory/group_vars/all.yml (the OU, the LCM user and the Key Vault reference of its password, the
+# security groups, the cloud) and inventory/host_vars/<host>.yml (where the domain controller runs).
 # Mirrors: scripts/deploy/03-onprem-readiness/phase-01-active-directory/
 
-# Azure conditional DNS forwarders
-azure_dns_zones:
-  - "his.arc.azure.com"
-  - "guestconfiguration.azure.com"
-  - "guestnotificationservice.azure.com"
-  - "dp.kubernetesconfiguration.azure.com"
-  - "servicebus.windows.net"
+# identity.active_directory.precreate_computer_objects (default false): create the computer objects of the nodes and
+# of the cluster in the OU before the deployment. New-IacVariableFiles.ps1 writes the value of the file to group_vars.
+ad_precreate_computer_objects: false
 
-# LCM service account
-lcm_service_account_password_length: 24
+# The scope of the security groups: Global. A security group of one domain that holds accounts has the scope Global
+# (Microsoft Learn: Active Directory security groups, group scope; https://learn.microsoft.com/windows-server/identity/ad-ds/manage/understand-security-groups).
+# The PowerShell route (New-ADSecurityGroups.ps1) uses the same scope.
+ad_security_group_scope: global

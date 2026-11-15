@@ -1,11 +1,25 @@
 # =============================================================================
 # Role: domain-controller — Default Variables
 # =============================================================================
-dc_safe_mode_password_length: 24
-dc_promotion_mode: "replica"  # "new_forest" or "replica"
-dc_forest_functional_level: "WinThreshold"  # Windows Server 2016+
+# Per machine, from landing_zone.virtual_machines[] (inventory/host_vars/<host>.yml, written by New-IacVariableFiles.ps1):
+# dc_promotion_mode (dc_promotion: new_forest or replica, no default), the Key Vault reference of the DSRM password
+# (dsrm_password) and vm_deploy_target (deploy_target).
+
+# identity.active_directory.forest_functional_level and .domain_functional_level (default WinThreshold, the Windows
+# Server 2016 level; Microsoft Learn: Active Directory Domain Services functional levels,
+# https://learn.microsoft.com/windows-server/identity/ad-ds/active-directory-functional-levels). New-IacVariableFiles.ps1
+# writes the values of the file to group_vars. Used only for a new forest.
+dc_forest_functional_level: "WinThreshold"
 dc_domain_functional_level: "WinThreshold"
+
+# identity.active_directory.dns_forwarders. Empty: Azure DNS for a domain controller in Azure, the root hints elsewhere.
+dc_dns_forwarders: []
+
+# The Windows defaults of the AD DS promotion (Install-ADDSForest, Install-ADDSDomainController).
 dc_install_dns: true
 dc_database_path: "C:\\Windows\\NTDS"
 dc_log_path: "C:\\Windows\\NTDS"
 dc_sysvol_path: "C:\\Windows\\SYSVOL"
+
+# Seconds a restart of the machine may take (after the AD DS feature is installed).
+dc_reboot_timeout: 600

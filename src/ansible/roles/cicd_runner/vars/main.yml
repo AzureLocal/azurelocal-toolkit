@@ -14,5 +14,6 @@ cicd_runner_labels_csv: "{{ cicd_runner_labels | join(',') }}"
 # Capability names for Azure Pipelines: each label becomes <label>=true in the agent's .env file.
 cicd_runner_ado_capabilities: "{{ cicd_runner_labels | map('regex_replace', '[^A-Za-z0-9_]', '_') | list }}"
 
-cicd_runner_imds_resource: "https://vault.azure.net"
+# The resource a managed identity token for Key Vault is requested for: https://<Key Vault DNS suffix of the cloud>.
+cicd_runner_imds_resource: "https://{{ cicd_runner_key_vault_dns_suffix }}"
 cicd_runner_runner_name: "{{ inventory_hostname_short | lower }}"

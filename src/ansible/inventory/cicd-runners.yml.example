@@ -1,39 +1,39 @@
-# =============================================================================
-# Ansible Inventory - CI/CD runners (example, neutral values)
-# =============================================================================
-# Copy to cicd-runners.yml and change the values. No secret belongs here: keep
-# the registration credential in Key Vault (read by the host) or in Ansible Vault.
-# cicd_runner_platform, cicd_runner_scm_url, cicd_runner_key_vault_name and
-# cicd_runner_secret_name come from devops and key_vaults of infrastructure.yml:
-# config/variables/scripts/New-IacVariableFiles.ps1 writes them to
-# inventory/group_vars/all.yml, which this inventory shares. Only what differs
-# for a host group is set below.
-# =============================================================================
----
+# Written by config/variables/scripts/New-IacVariableFiles.ps1 from devops.runners[] of infrastructure.yml. Do not edit.
+# One group per runner entry. ansible-playbook -i inventory/cicd-runners.yml playbooks/00-cicd-runner.yml. No secret is in this file.
+# ansible_ssh_private_key_file: not written. Pass it at run time: --private-key <file>.
+# ansible_password: not written. Pass it with -e @vault.yml (Ansible Vault) at run time.
 all:
   children:
     cicd_runners_linux:
-      hosts:
-        vm-iic-runner-lnx-01:
-          ansible_host: 192.0.2.30
-      vars:
-        ansible_user: runneradmin
-        ansible_ssh_private_key_file: ~/.ssh/id_ed25519
-        ansible_become: true
-        cicd_runner_purpose: general
-        # cicd_runner_identity_client_id: 00000000-0000-0000-0000-000000000000   # user-assigned identity; empty uses the system-assigned one
-
+      children:
+        cicd_runner_vm_iic_runner_lnx:
+          hosts:
+            vm-iic-runner-lnx-01:
+              ansible_host: 10.20.10.4
+          vars:
+            ansible_user: runneradmin
+            ansible_become: true
+            cicd_runner_purpose: general
+            cicd_runner_extra_labels:
+            - azure-local
+            cicd_runner_key_vault_name: kv-iic-mgmt-01
+            cicd_runner_secret_name: github-runner-token
     cicd_runners_windows:
-      hosts:
-        vm-iic-runner-ztp-01:
-          ansible_host: 192.0.2.31
+      children:
+        cicd_runner_vm_iic_runner_ztp:
+          hosts:
+            vm-iic-runner-ztp-01:
+              ansible_host: 10.20.10.68
+          vars:
+            ansible_user: runneradmin
+            cicd_runner_purpose: ztp
+            cicd_runner_github_runner_group: azurelocal-ztp
+            cicd_runner_azure_devops_pool: azurelocal-ztp
+            cicd_runner_key_vault_name: kv-iic-mgmt-01
+            cicd_runner_secret_name: github-runner-token
+            cicd_runner_windows_init_data_disk: true
       vars:
         ansible_connection: winrm
-        ansible_winrm_transport: kerberos           # or ntlm / credssp; use a domain account for Kerberos
+        ansible_winrm_transport: kerberos
         ansible_winrm_server_cert_validation: ignore
         ansible_port: 5986
-        cicd_runner_purpose: ztp
-        cicd_runner_windows_init_data_disk: true
-        cicd_runner_extra_labels: []
-        # cicd_runner_azure_devops_pool: AzureLocalZtp
-        # ansible_user and ansible_password: pass at run time (-e @vault.yml), never store them here.

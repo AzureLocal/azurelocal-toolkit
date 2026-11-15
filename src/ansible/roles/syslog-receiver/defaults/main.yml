@@ -1,6 +1,12 @@
 # =============================================================================
 # Role: syslog-receiver — Default Variables
 # =============================================================================
+# Syslog forwarding is parked (out of scope, registry class d): no playbook runs this role.
+# The SNMP community (syslog_snmp_community) has no default: whoever runs the role sets it.
 syslog_port: 514
 snmp_port: 161
 snmp_trap_port: 162
+# The folder the received messages are written to, one subfolder per sending device.
+syslog_log_root: /var/log/azurelocal/network
+# false: snmptrapd accepts only the traps of syslog_snmp_community.
+syslog_snmp_disable_authorization: false

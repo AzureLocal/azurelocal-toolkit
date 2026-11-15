@@ -5,6 +5,7 @@
 # Tasks: Arc agent install, Azure registration, connectivity validation
 # Target: cluster_nodes group
 # Collections: ansible.windows
+# The endpoints and the cloud name are the ones of scenario.cloud (azure_cloud, azure_cloud_endpoints in group_vars).
 # =============================================================================
 ---
 # ---------------------------------------------------------------
@@ -15,10 +16,10 @@
   ansible.windows.win_powershell:
     script: |
       $endpoints = @(
-          "https://login.microsoftonline.com",
-          "https://management.azure.com",
-          "https://{{ azure_location }}.his.arc.azure.com",
-          "https://guestnotificationservice.azure.com"
+          "{{ azure_cloud_endpoints[azure_cloud].login_endpoint }}",
+          "{{ azure_cloud_endpoints[azure_cloud].resource_manager_endpoint }}",
+          "https://{{ azure_location }}.{{ azure_cloud_endpoints[azure_cloud].arc_his_dns_suffix }}",
+          "{{ azure_cloud_endpoints[azure_cloud].arc_guest_notification_endpoint }}"
       )
       $failures = @()
       foreach ($ep in $endpoints) {
@@ -47,7 +48,7 @@
       # Authenticate with Service Principal
       $securePassword = ConvertTo-SecureString '{{ spn_client_secret }}' -AsPlainText -Force
       $credential = New-Object System.Management.Automation.PSCredential('{{ spn_client_id }}', $securePassword)
-      Connect-AzAccount -ServicePrincipal -TenantId '{{ azure_tenant_id }}' `
+      Connect-AzAccount -ServicePrincipal -Environment '{{ azure_cloud_endpoints[azure_cloud].arm_cloud_name }}' -TenantId '{{ azure_tenant_id }}' `
           -Credential $credential -SubscriptionId '{{ azure_subscription_azure_local }}'
 
       # Get ARM access token
@@ -59,7 +60,7 @@
           ResourceGroup   = '{{ cluster_resource_group }}'
           TenantID        = '{{ azure_tenant_id }}'
           Region          = '{{ azure_location }}'
-          Cloud           = 'AzureCloud'
+          Cloud           = '{{ azure_cloud_endpoints[azure_cloud].arm_cloud_name }}'
           ArmAccessToken  = $token
           AccountID       = '{{ spn_client_id }}'
       }

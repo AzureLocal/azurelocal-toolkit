@@ -18,7 +18,7 @@
 
 - name: Create the runner folder
   ansible.builtin.file:
-    path: /opt/runners/actions-runner
+    path: "{{ cicd_runner_linux_root }}/runners/actions-runner"
     state: directory
     owner: "{{ cicd_runner_user }}"
     group: "{{ cicd_runner_user }}"
@@ -28,31 +28,31 @@
 - name: Download the runner (checksum verified)
   ansible.builtin.get_url:
     url: "https://github.com/actions/runner/releases/download/v{{ cicd_runner_github_runner_version }}/actions-runner-linux-x64-{{ cicd_runner_github_runner_version }}.tar.gz"
-    dest: "/opt/runners/actions-runner-{{ cicd_runner_github_runner_version }}.tar.gz"
+    dest: "{{ cicd_runner_linux_root }}/runners/actions-runner-{{ cicd_runner_github_runner_version }}.tar.gz"
     checksum: "{{ ('sha256:' ~ cicd_runner_github_runner_linux_sha256) if cicd_runner_github_runner_linux_sha256 | length > 0 else omit }}"
     mode: "0644"
   become: true
 
 - name: Unpack the runner
   ansible.builtin.unarchive:
-    src: "/opt/runners/actions-runner-{{ cicd_runner_github_runner_version }}.tar.gz"
-    dest: /opt/runners/actions-runner
+    src: "{{ cicd_runner_linux_root }}/runners/actions-runner-{{ cicd_runner_github_runner_version }}.tar.gz"
+    dest: "{{ cicd_runner_linux_root }}/runners/actions-runner"
     remote_src: true
     owner: "{{ cicd_runner_user }}"
     group: "{{ cicd_runner_user }}"
-    creates: /opt/runners/actions-runner/bin/Runner.Listener
+    creates: "{{ cicd_runner_linux_root }}/runners/actions-runner/bin/Runner.Listener"
   become: true
 
 - name: Install the runner's operating system dependencies
   ansible.builtin.shell: ./bin/installdependencies.sh && touch .dependencies-installed
   args:
-    chdir: /opt/runners/actions-runner
-    creates: /opt/runners/actions-runner/.dependencies-installed
+    chdir: "{{ cicd_runner_linux_root }}/runners/actions-runner"
+    creates: "{{ cicd_runner_linux_root }}/runners/actions-runner/.dependencies-installed"
   become: true
 
 - name: Check whether the runner is already configured
   ansible.builtin.stat:
-    path: /opt/runners/actions-runner/.runner
+    path: "{{ cicd_runner_linux_root }}/runners/actions-runner/.runner"
   register: cicd_runner_github_configured
 
 - name: Exchange the PAT for a registration token
@@ -81,8 +81,8 @@
       '--labels', cicd_runner_labels_csv,
       '--work', '_work']
       + (['--runnergroup', cicd_runner_github_runner_group] if cicd_runner_github_runner_group | length > 0 else []) }}
-    chdir: /opt/runners/actions-runner
-    creates: /opt/runners/actions-runner/.runner
+    chdir: "{{ cicd_runner_linux_root }}/runners/actions-runner"
+    creates: "{{ cicd_runner_linux_root }}/runners/actions-runner/.runner"
   when: not cicd_runner_github_configured.stat.exists
   become: true
   become_user: "{{ cicd_runner_user }}"
@@ -91,13 +91,13 @@
 - name: Install the runner service
   ansible.builtin.command:
     argv: ["./svc.sh", "install", "{{ cicd_runner_user }}"]
-    chdir: /opt/runners/actions-runner
-    creates: /opt/runners/actions-runner/.service
+    chdir: "{{ cicd_runner_linux_root }}/runners/actions-runner"
+    creates: "{{ cicd_runner_linux_root }}/runners/actions-runner/.service"
   become: true
 
 - name: Read the service name
   ansible.builtin.slurp:
-    src: /opt/runners/actions-runner/.service
+    src: "{{ cicd_runner_linux_root }}/runners/actions-runner/.service"
   register: cicd_runner_github_service
   become: true
 

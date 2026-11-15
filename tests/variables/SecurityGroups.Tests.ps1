@@ -12,8 +12,8 @@ BeforeAll {
 }
 
 Describe 'security_groups, the canonical list form' {
-    It 'the Ansible group_vars use name, purpose and local_groups, all registry variables' {
-        $vars = ConvertFrom-Yaml (Get-Content (Join-Path $script:Repo 'src\ansible\inventory\group_vars\all.yml') -Raw)
+    It 'the Ansible group_vars (the generator output for the example file) use name, purpose and local_groups, all registry variables' {
+        $vars = ConvertFrom-Yaml (Get-Content (Join-Path $script:Repo 'tests\variables\fixtures\ansible\inventory\group_vars\all.yml') -Raw)
         $vars.security_groups.Count | Should -BeGreaterThan 0
         $allowed = 'name', 'purpose', 'members', 'local_groups'
         foreach ($g in $vars.security_groups) {

@@ -2,125 +2,172 @@
 # Role: ad-preparation
 # =============================================================================
 # Mirrors: scripts/deploy/03-onprem-readiness/phase-01-active-directory/
-# Tasks: OU creation, security groups, DNS records, LCM service account
-# Target: domain_controllers group (run on DC with AD RSAT)
-# Collections: microsoft.ad, community.windows
+# Tasks: the dedicated OU and the LCM user (Microsoft's New-HciAdObjectsPreCreation), security groups and their
+#        members, the optional computer objects, the Azure Arc conditional forwarders of a domain controller in Azure
+# Target: domain_controllers[0] (a domain controller with the ActiveDirectory module)
+# Collections: microsoft.ad, ansible.windows, azure.azcollection
+#
+# Every value comes from inventory/group_vars/all.yml and inventory/host_vars/<host>.yml, which
+# config/variables/scripts/New-IacVariableFiles.ps1 writes from infrastructure.yml. The role generates no password:
+# the LCM user's password is the secret that identity.active_directory.lcm_user.password references, the same secret
+# the deployment reads.
 # =============================================================================
 ---
-- name: Build domain DN from FQDN
+- name: Check the variables of the role
+  ansible.builtin.assert:
+    that:
+      - onprem_domain_join_ou is defined
+      - onprem_domain_join_ou | length > 0
+      - lcm_username is defined
+      - lcm_password is defined or (lcm_password_key_vault_name is defined and lcm_password_secret_name is defined)
+    fail_msg: >-
+      onprem_domain_join_ou (identity.active_directory.ou_path) and lcm_username (identity.active_directory.lcm_user.username)
+      come from group_vars/all.yml. The LCM password is read from the Key Vault that identity.active_directory.lcm_user.password
+      references (keyvault://); for another kind of reference pass lcm_password with -e @vault.yml.
+    quiet: true
+
+# ---------------------------------------------------------------
+# Task 1 — the LCM user's password, read on the controller (never generated, never stored)
+# ---------------------------------------------------------------
+- name: Read the LCM user's password from Key Vault
+  azure.azcollection.azure_rm_keyvaultsecret_info:
+    vault_uri: "https://{{ lcm_password_key_vault_name }}.{{ azure_cloud_endpoints[azure_cloud].key_vault_dns_suffix }}"
+    name: "{{ lcm_password_secret_name }}"
+    cloud_environment: "{{ azure_cloud_endpoints[azure_cloud].arm_cloud_name }}"
+  delegate_to: localhost
+  register: ad_preparation_lcm_secret
+  when: lcm_password is not defined
+  no_log: true
+
+- name: Choose the LCM user's password
   ansible.builtin.set_fact:
-    ad_domain_dn: "DC={{ ad_domain_fqdn.split('.') | join(',DC=') }}"
+    ad_preparation_lcm_password: "{{ lcm_password if lcm_password is defined else ad_preparation_lcm_secret.secrets[0].secret }}"
+  no_log: true
 
 # ---------------------------------------------------------------
-# Task 1 — OU Structure
-# Mirrors: task-01-ou-creation-pre-creation-artifacts
+# Task 2 — the dedicated OU and the LCM user
+# Mirrors: task-01-ou-creation-pre-creation-artifacts (Set-ADConfiguration.ps1)
+# Microsoft Learn: one dedicated OU that blocks GPO inheritance, and the LCM user in it, both created by
+# New-HciAdObjectsPreCreation (https://learn.microsoft.com/azure/azure-local/deploy/deployment-prep-active-directory).
 # ---------------------------------------------------------------
-- name: Ensure base OU exists
-  microsoft.ad.ou:
-    name: "AzureLocal"
-    path: "OU=Servers,{{ ad_domain_dn }}"
-    state: present
-    protect_from_deletion: true
+- name: Look for the OU, the LCM user and the Active Directory preparation module
+  ansible.windows.win_powershell:
+    parameters:
+      OuPath: "{{ onprem_domain_join_ou }}"
+      UserName: "{{ lcm_username }}"
+    script: |
+      [CmdletBinding()]
+      param([string]$OuPath, [string]$UserName)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      $ou = [bool](Get-ADOrganizationalUnit -Filter "DistinguishedName -eq '$($OuPath.Replace("'", "''"))'" -ErrorAction SilentlyContinue)
+      $user = [bool](Get-ADUser -Filter "SamAccountName -eq '$($UserName.Replace("'", "''"))'" -ErrorAction SilentlyContinue)
+      $module = [bool](Get-Command -Name New-HciAdObjectsPreCreation -ErrorAction SilentlyContinue)
+      @{ ou = $ou; user = $user; module = $module }
+  register: ad_preparation_state
+  changed_when: false
 
-- name: Ensure child OUs exist
-  microsoft.ad.ou:
-    name: "{{ item }}"
-    path: "OU=AzureLocal,OU=Servers,{{ ad_domain_dn }}"
-    state: present
-    protect_from_deletion: true
-  loop:
-    - Computers
-    - ServiceAccounts
-    - Groups
+- name: Stop when only one of the OU and the LCM user exists, or the module is missing
+  ansible.builtin.assert:
+    that:
+      - ad_preparation_state.output[0].ou == ad_preparation_state.output[0].user
+      - ad_preparation_state.output[0].ou or ad_preparation_state.output[0].module
+    fail_msg: >-
+      New-HciAdObjectsPreCreation creates the OU and the LCM user together: finish or undo an earlier preparation by hand when only
+      one of them exists. When both are missing the domain controller needs the module: Install-Module AsHciADArtifactsPreCreationTool
+      -Repository PSGallery (Microsoft Learn: Prepare Active Directory for Azure Local deployment).
+    quiet: true
 
-- name: Ensure cluster-specific OU exists
-  microsoft.ad.ou:
-    name: "{{ cluster_name }}"
-    path: "OU=Computers,OU=AzureLocal,OU=Servers,{{ ad_domain_dn }}"
-    state: present
+- name: Create the OU and the LCM user (New-HciAdObjectsPreCreation)
+  ansible.windows.win_powershell:
+    parameters:
+      OuPath: "{{ onprem_domain_join_ou }}"
+      UserName: "{{ lcm_username }}"
+      Password: "{{ ad_preparation_lcm_password }}"
+    script: |
+      [CmdletBinding()]
+      param([string]$OuPath, [string]$UserName, [string]$Password)
+      $ErrorActionPreference = 'Stop'
+      $credential = [pscredential]::new($UserName, (ConvertTo-SecureString -String $Password -AsPlainText -Force))
+      New-HciAdObjectsPreCreation -AzureStackLCMUserCredential $credential -AsHciOUName $OuPath
+  when: not ad_preparation_state.output[0].ou
+  no_log: true
+
+- name: Forget the LCM user's password
+  ansible.builtin.set_fact:
+    ad_preparation_lcm_password: ""
+  no_log: true
 
 # ---------------------------------------------------------------
-# Task 2 — Security Groups
-# Mirrors: task-02-security-groups
+# Task 3 — Security Groups, in the dedicated OU
+# Mirrors: task-02-security-groups (New-ADSecurityGroups.ps1)
 # ---------------------------------------------------------------
-- name: Create cluster security groups
+- name: Create the security groups
   microsoft.ad.group:
     name: "{{ item.name }}"
-    scope: global
-    path: "OU=Groups,OU=AzureLocal,OU=Servers,{{ ad_domain_dn }}"
+    scope: "{{ ad_security_group_scope }}"
+    category: security
+    path: "{{ onprem_domain_join_ou }}"
     state: present
-    description: "{{ item.purpose | default(item.name) }} for {{ cluster_name }}"
-  loop: "{{ security_groups }}"
+    description: "{{ item.purpose | default(item.name) }}"
+  loop: "{{ security_groups | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
 
 # ---------------------------------------------------------------
-# Task 3 — DNS Conditional Forwarders for Azure endpoints
-# Mirrors: task-03-dns-node-a-records
+# Task 4 — Group membership
+# Mirrors: task-05-group-assignments (Set-ADGroupMemberships.ps1): security_groups[].members. The LCM user joins the
+# groups that administer the machines: the ones whose local_groups name the local Administrators group.
 # ---------------------------------------------------------------
-- name: Create DNS conditional forwarders for Azure endpoints
-  ansible.windows.win_powershell:
-    script: |
-      $zone = '{{ item }}'
-      $existing = Get-DnsServerZone -Name $zone -ErrorAction SilentlyContinue
-      if (-not $existing) {
-          Add-DnsServerConditionalForwarderZone -Name $zone -MasterServers '{{ azure_dns_forwarder_ip }}'
-          Write-Output "Created conditional forwarder for $zone"
-      } else {
-          Write-Output "Conditional forwarder for $zone already exists"
-      }
-  loop: "{{ azure_dns_zones }}"
-  register: dns_forwarder_results
-  changed_when: "'Created' in dns_forwarder_results.output[0]"
-
-# ---------------------------------------------------------------
-# Task 4 — LCM Deployment Service Account
-# Mirrors: task-04-service-admin-accounts
-# ---------------------------------------------------------------
-- name: Generate LCM service account password
-  ansible.builtin.set_fact:
-    _lcm_password: "{{ lookup('ansible.builtin.password', '/dev/null length=' + (lcm_service_account_password_length | string) + ' chars=ascii_letters,digits,punctuation') }}"
-  no_log: true
-
-- name: Create LCM deployment service account
-  microsoft.ad.user:
-    name: "{{ lcm_username }}"
-    path: "OU=ServiceAccounts,OU=AzureLocal,OU=Servers,{{ ad_domain_dn }}"
-    password: "{{ _lcm_password }}"
-    password_never_expires: true
-    user_cannot_change_password: true
-    enabled: true
-    state: present
-    description: "Azure Local LCM deployment service account for {{ cluster_name }}"
-  register: lcm_account_result
-
-- name: Store LCM password in Key Vault (if Azure auth available)
-  azure.azcollection.azure_rm_keyvaultsecret:
-    secret_name: "{{ lcm_username }}-password"
-    secret_value: "{{ _lcm_password }}"
-    keyvault_uri: "https://{{ key_vault_name }}.vault.azure.net"
-    subscription_id: "{{ azure_subscription_azure_local }}"
-    tenant: "{{ azure_tenant_id }}"
-  when: key_vault_name is defined
-  no_log: true
-
-# ---------------------------------------------------------------
-# Task 5 — Pre-stage Cluster Computer Account
-# ---------------------------------------------------------------
-- name: Pre-stage cluster computer account
-  microsoft.ad.computer:
-    name: "{{ cluster_name }}"
-    path: "OU={{ cluster_name }},OU=Computers,OU=AzureLocal,OU=Servers,{{ ad_domain_dn }}"
-    enabled: false
-    state: present
-    description: "Azure Local cluster object for {{ cluster_name }}"
-
-# ---------------------------------------------------------------
-# Task 6 — Group Membership Assignments
-# Mirrors: task-05-group-assignments
-# ---------------------------------------------------------------
-- name: Add LCM account to cluster admin group
+- name: Add the members of each security group
   microsoft.ad.group:
-    name: "{{ security_groups[0].name }}"
+    name: "{{ item.name }}"
     members:
-      add:
-        - "{{ lcm_username }}"
+      add: "{{ (item.members | default([])) + ([lcm_username] if 'Administrators' in (item.local_groups | default([])) else []) }}"
     state: present
+  loop: "{{ security_groups | default([]) }}"
+  loop_control:
+    label: "{{ item.name }}"
+  when: (item.members | default([]) | length > 0) or ('Administrators' in (item.local_groups | default([])))
+
+# ---------------------------------------------------------------
+# Task 5 — the computer objects, only when identity.active_directory.precreate_computer_objects is true
+# Microsoft Learn: Custom Active Directory configuration for your Azure Local instance, prestage cluster computer
+# objects (https://learn.microsoft.com/azure/azure-local/plan/configure-custom-settings-active-directory). The cluster
+# object is created disabled, the machine objects enabled, as Set-ADConfiguration.ps1 does.
+# ---------------------------------------------------------------
+- name: Pre-create the computer objects of the nodes and of the cluster
+  microsoft.ad.computer:
+    name: "{{ item.name }}"
+    path: "{{ onprem_domain_join_ou }}"
+    enabled: "{{ item.enabled }}"
+    state: present
+  loop: >-
+    {{ (groups['cluster_nodes'] | default([]) | map('community.general.dict_kv', 'name') | map('combine', {'enabled': true}) | list)
+    + [{'name': cluster_name, 'enabled': false}] }}
+  loop_control:
+    label: "{{ item.name }}"
+  when: ad_precreate_computer_objects | bool
+
+# ---------------------------------------------------------------
+# Task 6 — conditional forwarders of the Azure Arc zones, only on a domain controller that runs in Azure
+# (landing_zone.virtual_machines[].deploy_target azure): Azure DNS answers only inside Azure. The zones are the ones of
+# the cloud (scenario.cloud), in azure_cloud_endpoints.
+# ---------------------------------------------------------------
+- name: Create the conditional forwarders of the Azure Arc zones to Azure DNS
+  ansible.windows.win_powershell:
+    parameters:
+      Zones: "{{ azure_cloud_endpoints[azure_cloud].arc_dns_zones }}"
+      Forwarder: "{{ azure_dns_forwarder_ip }}"
+    script: |
+      [CmdletBinding()]
+      param([string[]]$Zones, [string]$Forwarder)
+      $ErrorActionPreference = 'Stop'
+      $Ansible.Changed = $false
+      foreach ($zone in $Zones) {
+          if (-not (Get-DnsServerZone -Name $zone -ErrorAction SilentlyContinue)) {
+              Add-DnsServerConditionalForwarderZone -Name $zone -MasterServers $Forwarder
+              $Ansible.Changed = $true
+          }
+      }
+  when: vm_deploy_target | default('') == 'azure'

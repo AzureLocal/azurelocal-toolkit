@@ -2406,6 +2406,31 @@
               "type": "boolean",
               "default": false
             },
+            "forest_functional_level": {
+              "description": "Schema 5.6.28. Forest functional level of a new forest that the toolkit's Ansible domain controller role creates (a landing_zone.virtual_machines[] entry with role domain_controller and dc_promotion new_forest); ignored for a replica. WinThreshold is the Windows Server 2016 level: the highest a Windows Server 2022 domain controller supports and the lowest a new forest may have. Win2025 needs every domain controller on Windows Server 2025 (Microsoft Learn: Active Directory Domain Services functional levels, https://learn.microsoft.com/windows-server/identity/ad-ds/active-directory-functional-levels).",
+              "type": "string",
+              "default": "WinThreshold",
+              "enum": [
+                "WinThreshold",
+                "Win2025"
+              ]
+            },
+            "domain_functional_level": {
+              "description": "Schema 5.6.28. Domain functional level of that new forest's domain. It may be higher than forest_functional_level, never lower (Microsoft Learn: Active Directory Domain Services functional levels). Same values.",
+              "type": "string",
+              "default": "WinThreshold",
+              "enum": [
+                "WinThreshold",
+                "Win2025"
+              ]
+            },
+            "dns_forwarders": {
+              "description": "Schema 5.6.28. The DNS forwarders of the domain controllers that the toolkit's Ansible domain controller role promotes: the servers they ask for names outside the domain. Empty or missing: a domain controller that runs in Azure (landing_zone.virtual_machines[].deploy_target azure) forwards to Azure DNS (168.63.129.16, reachable only from inside Azure); one that runs anywhere else keeps the root hints.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ipv4"
+              }
+            },
             "security_groups": {
               "description": "Groups created in the OU for administration of the instance.",
               "type": "array",
@@ -4744,6 +4769,18 @@
               "admin_password": {
                 "$ref": "#/$defs/kv_ref",
                 "description": "A Key Vault secret reference: keyvault://<vault>/<secret>. The vault must be listed in key_vaults."
+              },
+              "dc_promotion": {
+                "description": "Schema 5.6.28. For a machine with role domain_controller: new_forest (the first domain controller: it creates the forest of identity.active_directory.domain_fqdn) or replica (an additional domain controller of that existing domain). No default: the toolkit's Ansible domain controller role stops when a domain controller has none.",
+                "type": "string",
+                "enum": [
+                  "new_forest",
+                  "replica"
+                ]
+              },
+              "dsrm_password": {
+                "$ref": "#/$defs/kv_ref",
+                "description": "Schema 5.6.28. For a machine with role domain_controller: a Key Vault secret reference (keyvault://<vault>/<secret>) to the Directory Services Restore Mode (safe mode) password the promotion sets. The toolkit reads it; it never generates or stores one. The vault must be listed in key_vaults."
               }
             },
             "required": [
@@ -5107,8 +5144,88 @@
           }
         },
         "runners": {
-          "description": "Schema 5.5. The self-hosted runners that task 06 deploys with Terraform. One Linux general pool and at most one Windows ztp runner; use the module directly for more. Replaces devops.runner when present.",
-          "type": "array",
+          "description": "Schema 5.5. The VNet of the runners, the peering with the hub and the lab ranges they reach.",
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "vnet_name": {
+              "description": "Name of the virtual network the runners are placed in.",
+              "type": "string"
+            },
+            "address_space": {
+              "description": "Address ranges of that virtual network, in CIDR form.",
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "$ref": "#/$defs/cidr"
+              }
+            },
+            "dns_servers": {
+              "description": "DNS servers of that virtual network.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/ipv4"
+              }
+            },
+            "hub_peering": {
+              "description": "Peering with the hub VNet. The hub half is created in the hub subscription unless create_hub_side is false.",
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "enabled": {
+                  "description": "Peer the runner VNet with the hub.",
+                  "type": "boolean",
+                  "default": false
+                },
+                "hub_network": {
+                  "description": "Name of the hub in landing_zone.networks (its subscription and resource group give the VNet ID).",
+                  "type": "string"
+                },
+                "hub_vnet_id": {
+                  "description": "Resource ID of the hub VNet. Use it instead of hub_network.",
+                  "type": "string"
+                },
+                "use_remote_gateways": {
+                  "description": "Use the hub VPN or ExpressRoute gateway to reach the lab.",
+                  "type": "boolean",
+                  "default": true
+                },
+                "create_hub_side": {
+                  "description": "Create the hub half of the peering. False when the network team owns it.",
+                  "type": "boolean",
+                  "default": true
+                }
+              }
+            },
+            "reachable_cidrs": {
+              "description": "Lab networks the runners reach: management, storage, BMC.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/cidr"
+              }
+            },
+            "reachable_tcp_ports": {
+              "description": "TCP ports allowed outbound to the lab networks. Default 22, 443, 445, 3389, 5985, 5986.",
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "bmc_cidrs": {
+              "description": "The BMC networks. The ztp runner accepts inbound TCP 445 from these only. Required for a ztp runner.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/cidr"
+              }
+            },
+            "admin_source_cidrs": {
+              "description": "Ranges that may reach SSH or RDP on the runners. Empty allows none.",
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/cidr"
+              }
+            }
+          },
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -5206,96 +5323,23 @@
                 "description": "Schema 5.6.28. The SSH public key of the administrator of a Linux runner (a public key, not a secret): the key itself (ssh-ed25519, ssh-rsa or ecdsa-sha2-nistp*), or a reference the toolkit's secret resolver reads (file://<name> in secrets.file.directory, keyvault://, env://, command://). Task 05 sets AZL_RUNNER_SSH_PUBLIC_KEY from the general Linux runner's key (GitHub, GitLab, the Azure DevOps variable group), and task 06 reads it from there.",
                 "type": "string",
                 "pattern": "^((ssh-ed25519|ssh-rsa|ecdsa-sha2-nistp(256|384|521)) [A-Za-z0-9+/]+={0,3}( [^\\r\\n]*)?|keyvault://[A-Za-z][A-Za-z0-9-]{1,22}[A-Za-z0-9]/[A-Za-z0-9-]{1,127}|env://[A-Za-z_][A-Za-z0-9_]{0,127}|(file|command)://[A-Za-z0-9][A-Za-z0-9_-]{0,100}([.][A-Za-z0-9]{1,10})?)$"
+              },
+              "admin_username": {
+                "description": "Schema 5.6.28. Local administrator user name of the runner machines: the admin_username Terraform gives the VMs, and the account the Ansible cicd_runner playbook connects as (ansible_user of the cicd-runners inventory).",
+                "type": "string",
+                "default": "runneradmin",
+                "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
+              },
+              "identity_client_id": {
+                "description": "Schema 5.6.28. Client ID of the user-assigned managed identity the runner uses to read its registration secret from Key Vault. Empty or missing: the machine's system-assigned identity.",
+                "type": "string",
+                "format": "uuid"
               }
             },
             "required": [
               "name",
               "os_type"
             ]
-          }
-        },
-        "runner_network": {
-          "description": "Schema 5.5. The VNet of the runners, the peering with the hub and the lab ranges they reach.",
-          "type": "object",
-          "additionalProperties": false,
-          "properties": {
-            "vnet_name": {
-              "description": "Name of the virtual network the runners are placed in.",
-              "type": "string"
-            },
-            "address_space": {
-              "description": "Address ranges of that virtual network, in CIDR form.",
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "$ref": "#/$defs/cidr"
-              }
-            },
-            "dns_servers": {
-              "description": "DNS servers of that virtual network.",
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/ipv4"
-              }
-            },
-            "hub_peering": {
-              "description": "Peering with the hub VNet. The hub half is created in the hub subscription unless create_hub_side is false.",
-              "type": "object",
-              "additionalProperties": false,
-              "properties": {
-                "enabled": {
-                  "description": "Peer the runner VNet with the hub.",
-                  "type": "boolean",
-                  "default": false
-                },
-                "hub_network": {
-                  "description": "Name of the hub in landing_zone.networks (its subscription and resource group give the VNet ID).",
-                  "type": "string"
-                },
-                "hub_vnet_id": {
-                  "description": "Resource ID of the hub VNet. Use it instead of hub_network.",
-                  "type": "string"
-                },
-                "use_remote_gateways": {
-                  "description": "Use the hub VPN or ExpressRoute gateway to reach the lab.",
-                  "type": "boolean",
-                  "default": true
-                },
-                "create_hub_side": {
-                  "description": "Create the hub half of the peering. False when the network team owns it.",
-                  "type": "boolean",
-                  "default": true
-                }
-              }
-            },
-            "reachable_cidrs": {
-              "description": "Lab networks the runners reach: management, storage, BMC.",
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/cidr"
-              }
-            },
-            "reachable_tcp_ports": {
-              "description": "TCP ports allowed outbound to the lab networks. Default 22, 443, 445, 3389, 5985, 5986.",
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            },
-            "bmc_cidrs": {
-              "description": "The BMC networks. The ztp runner accepts inbound TCP 445 from these only. Required for a ztp runner.",
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/cidr"
-              }
-            },
-            "admin_source_cidrs": {
-              "description": "Ranges that may reach SSH or RDP on the runners. Empty allows none.",
-              "type": "array",
-              "items": {
-                "$ref": "#/$defs/cidr"
-              }
-            }
           }
         },
         "runner_access": {

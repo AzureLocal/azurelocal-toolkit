@@ -18,7 +18,7 @@
 
 - name: Create the agent folder
   ansible.builtin.file:
-    path: /opt/runners/azagent
+    path: "{{ cicd_runner_linux_root }}/runners/azagent"
     state: directory
     owner: "{{ cicd_runner_user }}"
     group: "{{ cicd_runner_user }}"
@@ -28,23 +28,23 @@
 - name: Download and unpack the agent
   ansible.builtin.unarchive:
     src: "https://download.agent.dev.azure.com/agent/{{ cicd_runner_ado_version }}/vsts-agent-linux-x64-{{ cicd_runner_ado_version }}.tar.gz"
-    dest: /opt/runners/azagent
+    dest: "{{ cicd_runner_linux_root }}/runners/azagent"
     remote_src: true
     owner: "{{ cicd_runner_user }}"
     group: "{{ cicd_runner_user }}"
-    creates: /opt/runners/azagent/bin/Agent.Listener
+    creates: "{{ cicd_runner_linux_root }}/runners/azagent/bin/Agent.Listener"
   become: true
 
 - name: Install the agent's operating system dependencies
   ansible.builtin.shell: ./bin/installdependencies.sh && touch .dependencies-installed
   args:
-    chdir: /opt/runners/azagent
-    creates: /opt/runners/azagent/.dependencies-installed
+    chdir: "{{ cicd_runner_linux_root }}/runners/azagent"
+    creates: "{{ cicd_runner_linux_root }}/runners/azagent/.dependencies-installed"
   become: true
 
 - name: Write the capabilities (each label becomes <label>=true)
   ansible.builtin.copy:
-    dest: /opt/runners/azagent/.env
+    dest: "{{ cicd_runner_linux_root }}/runners/azagent/.env"
     content: "{% for capability in cicd_runner_ado_capabilities %}{{ capability }}=true\n{% endfor %}"
     owner: "{{ cicd_runner_user }}"
     group: "{{ cicd_runner_user }}"
@@ -70,8 +70,8 @@
       - "{{ cicd_runner_runner_name }}"
       - --work
       - _work
-    chdir: /opt/runners/azagent
-    creates: /opt/runners/azagent/.agent
+    chdir: "{{ cicd_runner_linux_root }}/runners/azagent"
+    creates: "{{ cicd_runner_linux_root }}/runners/azagent/.agent"
   become: true
   become_user: "{{ cicd_runner_user }}"
   no_log: true
@@ -79,13 +79,13 @@
 - name: Install the agent service
   ansible.builtin.command:
     argv: ["./svc.sh", "install", "{{ cicd_runner_user }}"]
-    chdir: /opt/runners/azagent
-    creates: /opt/runners/azagent/.service
+    chdir: "{{ cicd_runner_linux_root }}/runners/azagent"
+    creates: "{{ cicd_runner_linux_root }}/runners/azagent/.service"
   become: true
 
 - name: Read the service name
   ansible.builtin.slurp:
-    src: /opt/runners/azagent/.service
+    src: "{{ cicd_runner_linux_root }}/runners/azagent/.service"
   register: cicd_runner_ado_service
   become: true
 

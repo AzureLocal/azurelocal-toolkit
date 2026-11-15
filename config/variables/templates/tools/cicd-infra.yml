@@ -342,19 +342,19 @@ devops:
     # default: true; used by: cicd_infra
     register_encryption_at_host: true
   # (since 5.5) 
-  # used by: cicd_infra, terraform
+  # used by: cicd_infra
   runners:
     # Name prefix of the VM or VMs, for example vm-contoso-runner-lnx.
-    # required; used by: cicd_infra, terraform
+    # required; used by: cicd_infra, terraform, ansible
     - name: "vm-iic-runner-lnx"
       # Operating system.
-      # required; one of: linux | windows; used by: cicd_infra, terraform
+      # required; one of: linux | windows; used by: cicd_infra, terraform, ansible
       os_type: "linux"
       # general: ARM, Arc, Terraform, Ansible and OS configuration. ztp: the azurelocal-ztp Boot, Bootstrap and Vouchers stages (Windows only).
       # one of: general | ztp; default: "general"; used by: deployment, cicd_infra, ansible, terraform
       purpose: "general"
       # Number of VMs.
-      # default: 1; used by: cicd_infra, terraform
+      # default: 1; used by: cicd_infra, terraform, ansible
       count: 1
       # vm or vmss.
       # one of: vm | vmss; default: "vm"; used by: cicd_infra, terraform
@@ -372,7 +372,7 @@ devops:
       # used by: cicd_infra, ansible, terraform
       pool: "azurelocal-ztp"
       # Static private addresses, one per VM.
-      # used by: cicd_infra, terraform
+      # used by: cicd_infra, terraform, ansible
       private_ips: ["10.20.10.4"]
       # The runner subnet inside runner_network.address_space.
       # used by: cicd_infra, terraform
@@ -384,53 +384,17 @@ devops:
         # required; used by: cicd_infra, terraform
         prefix: "10.20.10.0/26"
       # Data disk for the ZTP media, images and vouchers. 512 or more for ztp.
-      # default: 0; used by: cicd_infra, terraform
+      # default: 0; used by: cicd_infra, terraform, ansible
       data_disk_gb: 512
       # (since 5.6.28) 
       # used by: cicd_infra
       admin_ssh_public_key: "file://runner-admin.pub"
-  # (since 5.5) 
-  # used by: cicd_infra
-  runner_network:
-    # Name of the virtual network the runners are placed in.
-    # used by: cicd_infra, terraform
-    vnet_name: "vnet-iic-devops-01"
-    # Address ranges of that virtual network, in CIDR form.
-    # used by: cicd_infra, terraform
-    address_space: ["10.20.10.0/24"]
-    # DNS servers of that virtual network.
-    # used by: cicd_infra, terraform
-    dns_servers: []
-    # Peering with the hub VNet.
-    # used by: cicd_infra, terraform
-    hub_peering:
-      # Peer the runner VNet with the hub.
-      # default: false; used by: cicd_infra, terraform
-      enabled: true
-      # Name of the hub in landing_zone.networks (its subscription and resource group give the VNet ID).
-      # used by: cicd_infra, terraform
-      hub_network: "vnet-iic-hub-01"
-      # Resource ID of the hub VNet.
-      # used by: cicd_infra, terraform
-      hub_vnet_id: ""
-      # Use the hub VPN or ExpressRoute gateway to reach the lab.
-      # default: true; used by: cicd_infra, terraform
-      use_remote_gateways: true
-      # Create the hub half of the peering.
-      # default: true; used by: cicd_infra, terraform
-      create_hub_side: true
-    # Lab networks the runners reach: management, storage, BMC.
-    # used by: cicd_infra, terraform
-    reachable_cidrs: ["192.0.2.0/24", "198.51.100.0/24"]
-    # TCP ports allowed outbound to the lab networks.
-    # used by: cicd_infra, terraform
-    reachable_tcp_ports: []
-    # The BMC networks.
-    # used by: cicd_infra, terraform
-    bmc_cidrs: ["198.51.100.0/24"]
-    # Ranges that may reach SSH or RDP on the runners.
-    # used by: cicd_infra, terraform
-    admin_source_cidrs: []
+      # (since 5.6.28) 
+      # default: "runneradmin"; used by: cicd_infra, terraform, ansible
+      admin_username: "runneradmin"
+      # (since 5.6.28) 
+      # used by: cicd_infra, ansible
+      identity_client_id: ""
   # (since 5.5) 
   # used by: cicd_infra
   runner_access:

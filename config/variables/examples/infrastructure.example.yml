@@ -535,6 +535,10 @@ landing_zone:
       os: "windows_server_2025"
       admin_username: "iic-vmadmin"
       admin_password: "keyvault://kv-iic-mgmt-01/vm-admin-password"
+      # Schema 5.6.28, domain controllers only: the Ansible domain controller role creates the forest (new_forest) or joins it (replica),
+      # with the DSRM password from this Key Vault secret (never generated).
+      dc_promotion: new_forest
+      dsrm_password: "keyvault://kv-iic-mgmt-01/dsrm-password"
   log_analytics: { name: "log-iic-azl-01" }
   storage_accounts:
     - { name: "stiicazl01wit", resource_group: "rg-iic-azl-01", sku: "Standard_LRS", purpose: "cloud witness" }
@@ -614,6 +618,7 @@ devops:
       os_type: linux
       purpose: general
       count: 1
+      admin_username: "runneradmin" # 5.6.28: the VM admin (Terraform) and the account Ansible connects as
       size: "Standard_D2s_v5"
       labels: ["azure-local"] # added to the defaults; devops.pipelines.runner_label is one of them
       registration_secret: "keyvault://kv-iic-mgmt-01/github-runner-token"

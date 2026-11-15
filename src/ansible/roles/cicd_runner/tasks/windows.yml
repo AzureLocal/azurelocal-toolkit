@@ -15,67 +15,98 @@
 - name: Initialise the data disk and the persistent ZTP folder
   ansible.windows.win_powershell:
     creates: "{{ cicd_runner_windows_root }}\\state\\disk.done"
+    parameters:
+      Label: "{{ cicd_runner_ztp_volume_label }}"
+      Folder: "{{ cicd_runner_ztp_folder }}"
+      Variable: "{{ cicd_runner_ztp_root_variable }}"
+      Done: "{{ cicd_runner_windows_root }}\\state\\disk.done"
     script: |
+      [CmdletBinding()]
+      param([string]$Label, [string]$Folder, [string]$Variable, [string]$Done)
       $ErrorActionPreference = 'Stop'
       $raw = Get-Disk | Where-Object { $_.PartitionStyle -eq 'RAW' } | Select-Object -First 1
       if ($raw) {
           $raw | Initialize-Disk -PartitionStyle GPT -PassThru |
               New-Partition -AssignDriveLetter -UseMaximumSize |
-              Format-Volume -FileSystem NTFS -NewFileSystemLabel 'azl-data' -Confirm:$false | Out-Null
+              Format-Volume -FileSystem NTFS -NewFileSystemLabel $Label -Confirm:$false | Out-Null
       }
-      $volume = Get-Volume | Where-Object { $_.FileSystemLabel -eq 'azl-data' } | Select-Object -First 1
+      $volume = Get-Volume | Where-Object { $_.FileSystemLabel -eq $Label } | Select-Object -First 1
       if ($volume) {
-          $persistent = '{0}:\azl-ztp' -f $volume.DriveLetter
+          $persistent = '{0}:\{1}' -f $volume.DriveLetter, $Folder
           New-Item -ItemType Directory -Path $persistent -Force | Out-Null
+          # Well-known Windows principals (SYSTEM and the local Administrators group): only they may use the folder.
           & icacls.exe $persistent /inheritance:r /grant:r 'NT AUTHORITY\SYSTEM:(OI)(CI)F' 'BUILTIN\Administrators:(OI)(CI)F' | Out-Null
-          [Environment]::SetEnvironmentVariable('AZL_ZTP_ROOT', $persistent, 'Machine')
+          [Environment]::SetEnvironmentVariable($Variable, $persistent, 'Machine')
       }
-      New-Item -ItemType File -Path '{{ cicd_runner_windows_root }}\state\disk.done' -Force | Out-Null
+      New-Item -ItemType File -Path $Done -Force | Out-Null
   when: cicd_runner_windows_init_data_disk | bool
 
+# The tools install into the Program Files folder of the host (the ProgramFiles environment variable): Git, PowerShell 7
+# and the Azure CLI go there by default; Bicep and Terraform get a folder of their own there.
 - name: Install Git for Windows
   ansible.windows.win_powershell:
-    creates: C:\Program Files\Git\cmd\git.exe
+    creates: "{{ ansible_env.ProgramFiles }}\\Git\\cmd\\git.exe"
+    parameters:
+      Version: "{{ cicd_runner_git_windows_version }}"
+      File: "{{ cicd_runner_windows_root }}\\downloads\\git.exe"
     script: |
+      [CmdletBinding()]
+      param([string]$Version, [string]$File)
       $ErrorActionPreference = 'Stop'
       [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-      $release = Invoke-RestMethod -UseBasicParsing -Uri 'https://api.github.com/repos/git-for-windows/git/releases/latest' -Headers @{ 'User-Agent' = 'ansible' }
+      # An empty version (cicd_runner_git_windows_version) takes the current release.
+      $tag = if ($Version) { "tags/v$Version" } else { 'latest' }
+      $release = Invoke-RestMethod -UseBasicParsing -Uri "https://api.github.com/repos/git-for-windows/git/releases/$tag" -Headers @{ 'User-Agent' = 'ansible' }
       $asset = $release.assets | Where-Object { $_.name -match '^Git-.*-64-bit\.exe$' } | Select-Object -First 1
-      $file = '{{ cicd_runner_windows_root }}\downloads\git.exe'
-      Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile $file
-      Start-Process -FilePath $file -ArgumentList '/VERYSILENT', '/NORESTART', '/SUPPRESSMSGBOXES' -Wait
+      Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile $File
+      Start-Process -FilePath $File -ArgumentList '/VERYSILENT', '/NORESTART', '/SUPPRESSMSGBOXES' -Wait
 
 - name: Install PowerShell 7
   ansible.windows.win_powershell:
-    creates: C:\Program Files\PowerShell\7\pwsh.exe
+    creates: "{{ ansible_env.ProgramFiles }}\\PowerShell\\7\\pwsh.exe"
+    parameters:
+      Version: "{{ cicd_runner_powershell_windows_version }}"
+      File: "{{ cicd_runner_windows_root }}\\downloads\\pwsh.msi"
     script: |
+      [CmdletBinding()]
+      param([string]$Version, [string]$File)
       $ErrorActionPreference = 'Stop'
       [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-      $release = Invoke-RestMethod -UseBasicParsing -Uri 'https://api.github.com/repos/PowerShell/PowerShell/releases/latest' -Headers @{ 'User-Agent' = 'ansible' }
+      # An empty version (cicd_runner_powershell_windows_version) takes the current release.
+      $tag = if ($Version) { "tags/v$Version" } else { 'latest' }
+      $release = Invoke-RestMethod -UseBasicParsing -Uri "https://api.github.com/repos/PowerShell/PowerShell/releases/$tag" -Headers @{ 'User-Agent' = 'ansible' }
       $asset = $release.assets | Where-Object { $_.name -match '^PowerShell-7\.[0-9.]+-win-x64\.msi$' } | Select-Object -First 1
-      $file = '{{ cicd_runner_windows_root }}\downloads\pwsh.msi'
-      Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile $file
-      Start-Process -FilePath msiexec.exe -ArgumentList '/i', $file, '/qn', '/norestart', 'ADD_PATH=1', 'REGISTER_MANIFEST=1' -Wait
+      Invoke-WebRequest -UseBasicParsing -Uri $asset.browser_download_url -OutFile $File
+      Start-Process -FilePath msiexec.exe -ArgumentList '/i', $File, '/qn', '/norestart', 'ADD_PATH=1', 'REGISTER_MANIFEST=1' -Wait
 
 - name: Install the Azure CLI
   ansible.windows.win_package:
     path: https://aka.ms/installazurecliwindowsx64
-    creates_path: C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd
+    creates_path: "{{ ansible_env.ProgramFiles }}\\Microsoft SDKs\\Azure\\CLI2\\wbin\\az.cmd"
     arguments: /qn /norestart
     state: present
 
 - name: Install the Az, powershell-yaml and Pester modules in PowerShell 7
   ansible.windows.win_powershell:
-    executable: C:\Program Files\PowerShell\7\pwsh.exe
+    executable: "{{ ansible_env.ProgramFiles }}\\PowerShell\\7\\pwsh.exe"
+    parameters:
+      Versions:
+        Az: "{{ cicd_runner_az_module_version }}"
+        powershell-yaml: "{{ cicd_runner_powershell_yaml_version }}"
+        Pester: "{{ cicd_runner_pester_version }}"
     script: |
+      [CmdletBinding()]
+      param([hashtable]$Versions)
       $ErrorActionPreference = 'Stop'
       $Ansible.Changed = $false
       $missing = 'Az.Accounts', 'powershell-yaml', 'Pester' | Where-Object { -not (Get-Module -ListAvailable -Name $_) }
       if ($missing) {
           Set-PSResourceRepository -Name PSGallery -Trusted
-          Install-PSResource -Name Az -Scope AllUsers -TrustRepository
-          Install-PSResource -Name powershell-yaml -Scope AllUsers -TrustRepository
-          Install-PSResource -Name Pester -Scope AllUsers -TrustRepository
+          foreach ($name in 'Az', 'powershell-yaml', 'Pester') {
+              # An empty version takes the current release.
+              $version = if ($Versions[$name]) { @{ Version = $Versions[$name] } } else { @{} }
+              Install-PSResource -Name $name @version -Scope AllUsers -TrustRepository
+          }
           $Ansible.Changed = $true
       }
 
@@ -84,13 +115,13 @@
     path: "{{ item }}"
     state: directory
   loop:
-    - C:\Program Files\Bicep
-    - C:\Program Files\Terraform
+    - "{{ ansible_env.ProgramFiles }}\\Bicep"
+    - "{{ ansible_env.ProgramFiles }}\\Terraform"
 
 - name: Install Bicep
   ansible.windows.win_get_url:
     url: "https://github.com/Azure/bicep/releases/download/v{{ cicd_runner_bicep_version }}/bicep-win-x64.exe"
-    dest: C:\Program Files\Bicep\bicep.exe
+    dest: "{{ ansible_env.ProgramFiles }}\\Bicep\\bicep.exe"
     checksum: "{{ cicd_runner_bicep_windows_sha256 if cicd_runner_bicep_windows_sha256 | length > 0 else omit }}"
     checksum_algorithm: sha256
 
@@ -102,17 +133,17 @@
 - name: Unpack Terraform
   community.windows.win_unzip:
     src: "{{ cicd_runner_windows_root }}\\downloads\\terraform-{{ cicd_runner_terraform_version }}.zip"
-    dest: C:\Program Files\Terraform
-    creates: C:\Program Files\Terraform\terraform.exe
+    dest: "{{ ansible_env.ProgramFiles }}\\Terraform"
+    creates: "{{ ansible_env.ProgramFiles }}\\Terraform\\terraform.exe"
 
 - name: Add the tools to the machine PATH
   ansible.windows.win_path:
     elements:
-      - C:\Program Files\Git\cmd
-      - C:\Program Files\PowerShell\7
-      - C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin
-      - C:\Program Files\Bicep
-      - C:\Program Files\Terraform
+      - "{{ ansible_env.ProgramFiles }}\\Git\\cmd"
+      - "{{ ansible_env.ProgramFiles }}\\PowerShell\\7"
+      - "{{ ansible_env.ProgramFiles }}\\Microsoft SDKs\\Azure\\CLI2\\wbin"
+      - "{{ ansible_env.ProgramFiles }}\\Bicep"
+      - "{{ ansible_env.ProgramFiles }}\\Terraform"
     scope: machine
     state: present
 
