@@ -36,15 +36,18 @@ Describe 'The registry: the SBE package is a requirement, the build-time side-lo
         $d | Should -Match 'What stays opt-in is only the build-time side-load'
         $d | Should -Match 'default skip'
     }
-    It 'registers the requirement keys (schema 5.6.4) and none of them has a default' {
+    It 'registers the requirement keys (schema 5.6.4); only requirement has a default, vendor (the vendor catalog decides), which defaults into no SBE' {
         foreach ($k in 'requirement', 'not_applicable_reason', 'source_path', 'source_username', 'source_password', 'package_sha256', 'package_size_bytes') {
             $v = $script:ByPath["hardware.sbe.$k"]
             $v | Should -Not -BeNullOrEmpty -Because $k
             $v.Required | Should -Not -BeTrue -Because $k
-            $v.HasDefault | Should -BeFalse -Because "$k must not default into an SBE"
+            if ($k -ne 'requirement') { $v.HasDefault | Should -BeFalse -Because "$k must not default into an SBE" }
             $v.Node.since | Should -Be '5.6.4' -Because $k
         }
-        @($script:ByPath['hardware.sbe.requirement'].Node.enum) | Should -Be @('required', 'not_applicable')
+        @($script:ByPath['hardware.sbe.requirement'].Node.enum) | Should -Be @('required', 'not_applicable', 'vendor')
+        # The default names who decides (config/oem/<vendor>.json sbe.requiredByDefault), so the decision is visible in the registry.
+        $script:ByPath['hardware.sbe.requirement'].Default | Should -Be 'vendor'
+        $script:ByPath['hardware.sbe.requirement'].Node.description | Should -Match 'sbe\.requiredByDefault'
         $script:ByPath['hardware.sbe.source_password'].Node.format | Should -Be 'kv_ref'
         $script:ByPath['hardware.sbe.source_password'].Node.sensitive | Should -BeTrue
         # 5.6.4 added the SBE keys; later minor versions only add optional keys, so the test must not pin the current version.
@@ -63,11 +66,11 @@ Describe 'The registry: the SBE package is a requirement, the build-time side-lo
         $d | Should -Match 'bundle_path is used'
         $script:ByPath['hardware.sbe.bundle_path'].Node.description | Should -Match 'when source_path is set it is the one read'
     }
-    It 'keeps delivery opt-in: the default is skip and nothing under hardware.sbe has another default' {
+    It 'keeps delivery opt-in: the default is skip and nothing under hardware.sbe has another default (requirement vendor delivers nothing)' {
         $script:ByPath['hardware.sbe.delivery'].Default | Should -Be 'skip'
         $script:ByPath['hardware.sbe.delivery'].Node.description | Should -Match 'opt-in'
-        $withDefault = @($script:Registry | Where-Object { $_.Path -like 'hardware.sbe.*' -and $_.HasDefault } | ForEach-Object Path)
-        $withDefault | Should -Be @('hardware.sbe.delivery')
+        $withDefault = @($script:Registry | Where-Object { $_.Path -like 'hardware.sbe.*' -and $_.HasDefault } | ForEach-Object Path | Sort-Object)
+        $withDefault | Should -Be @('hardware.sbe.delivery', 'hardware.sbe.requirement')
     }
     It 'asks the schema for the keys only when hardware.sbe is there (the rule is in _schema_rules)' {
         $script:SchemaJson | Should -Match '"anyOf":\s*\[\s*\{\s*"required":\s*\[\s*"bundle_path"\s*\]\s*\},\s*\{\s*"required":\s*\[\s*"source_path"\s*\]\s*\},\s*\{\s*"required":\s*\[\s*"requirement"\s*\]\s*\},\s*\{\s*"required":\s*\[\s*"publisher",\s*"family",\s*"version"\s*\]'

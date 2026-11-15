@@ -2,13 +2,11 @@
   "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
-
     "deploymentMode": {
       "value": "Validate"
     },
-
     "keyVaultName": {
-      "value": "kv-iic-deploy-01"
+      "value": "kv-iic-campus-azl"
     },
     "createNewKeyVault": {
       "value": true
@@ -16,9 +14,8 @@
     "softDeleteRetentionDays": {
       "value": 30
     },
-
     "diagnosticStorageAccountName": {
-      "value": "stiicdiag01"
+      "value": "stiiccampusdiag"
     },
     "logsRetentionInDays": {
       "value": 30
@@ -26,70 +23,46 @@
     "storageAccountType": {
       "value": "Standard_LRS"
     },
-
     "clusterName": {
-      "value": "iic-clus01"
+      "value": "iic-campus"
     },
     "location": {
       "value": "eastus"
     },
     "tenantId": {
-      "value": "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+      "value": "00000000-0000-0000-0000-000000000000"
     },
-
     "witnessType": {
       "value": "Cloud"
     },
     "clusterWitnessStorageAccountName": {
-      "value": "stiicwitness01"
+      "value": "stiiccampuswit"
     },
-
     "localAdminUserName": {
-      "value": "osfadmin"
+      "value": "azl-admin"
     },
     "localAdminPassword": {
       "reference": {
         "keyVault": {
-          "id": "/subscriptions/00000000-1111-2222-3333-444444444444/resourceGroups/rg-iic-azl-eus-01/providers/Microsoft.KeyVault/vaults/kv-iic-deploy-01"
+          "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-mgmt-01/providers/Microsoft.KeyVault/vaults/kv-iic-campus-mgmt"
         },
         "secretName": "local-admin-password"
       }
     },
-    "AzureStackLCMAdminUsername": {
-      "value": "svc-azlocal-lcm"
-    },
-    "AzureStackLCMAdminPassword": {
-      "reference": {
-        "keyVault": {
-          "id": "/subscriptions/00000000-1111-2222-3333-444444444444/resourceGroups/rg-iic-azl-eus-01/providers/Microsoft.KeyVault/vaults/kv-iic-deploy-01"
-        },
-        "secretName": "lcm-deployment-password"
-      }
-    },
-
     "hciResourceProviderObjectID": {
-      "value": "abcdef01-2345-6789-abcd-ef0123456789"
+      "value": "00000000-0000-0000-0000-000000000000"
     },
-
     "arcNodeResourceIds": {
       "value": [
-        "/subscriptions/00000000-1111-2222-3333-444444444444/resourceGroups/rg-iic-azl-eus-01/providers/Microsoft.HybridCompute/machines/iic-01-n01",
-        "/subscriptions/00000000-1111-2222-3333-444444444444/resourceGroups/rg-iic-azl-eus-01/providers/Microsoft.HybridCompute/machines/iic-01-n02",
-        "/subscriptions/00000000-1111-2222-3333-444444444444/resourceGroups/rg-iic-azl-eus-01/providers/Microsoft.HybridCompute/machines/iic-01-n03",
-        "/subscriptions/00000000-1111-2222-3333-444444444444/resourceGroups/rg-iic-azl-eus-01/providers/Microsoft.HybridCompute/machines/iic-01-n04"
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-campus-azl/providers/Microsoft.HybridCompute/machines/iic-cmp-n01",
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-campus-azl/providers/Microsoft.HybridCompute/machines/iic-cmp-n02",
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-campus-azl/providers/Microsoft.HybridCompute/machines/iic-cmp-n03",
+        "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-campus-azl/providers/Microsoft.HybridCompute/machines/iic-cmp-n04"
       ]
     },
-
-    "domainFqdn": {
-      "value": ""
-    },
     "namingPrefix": {
-      "value": "iic-01"
+      "value": "hci"
     },
-    "adouPath": {
-      "value": ""
-    },
-
     "securityLevel": {
       "value": "Recommended"
     },
@@ -114,7 +87,6 @@
     "wdacEnforced": {
       "value": true
     },
-
     "streamingDataClient": {
       "value": true
     },
@@ -124,92 +96,62 @@
     "episodicDataUpload": {
       "value": true
     },
-
     "configurationMode": {
       "value": "Express"
     },
-
     "subnetMask": {
       "value": "255.255.255.0"
     },
     "defaultGateway": {
-      "value": "192.168.100.1"
+      "value": "192.0.2.1"
     },
     "startingIPAddress": {
-      "value": "192.168.100.30"
+      "value": "192.0.2.20"
     },
     "endingIPAddress": {
-      "value": "192.168.100.39"
+      "value": "192.0.2.29"
     },
     "dnsServers": {
       "value": [
-        "192.168.100.10",
-        "192.168.100.11"
+        "192.0.2.4",
+        "192.0.2.5"
       ]
     },
     "useDhcp": {
       "value": false
     },
-
     "physicalNodesSettings": {
       "value": [
         {
-          "name": "iic-01-n01",
-          "ipv4Address": "192.168.100.21"
+          "name": "iic-cmp-n01",
+          "ipv4Address": "192.0.2.11"
         },
         {
-          "name": "iic-01-n02",
-          "ipv4Address": "192.168.100.22"
+          "name": "iic-cmp-n02",
+          "ipv4Address": "192.0.2.12"
         },
         {
-          "name": "iic-01-n03",
-          "ipv4Address": "192.168.100.23"
+          "name": "iic-cmp-n03",
+          "ipv4Address": "192.0.2.13"
         },
         {
-          "name": "iic-01-n04",
-          "ipv4Address": "192.168.100.24"
+          "name": "iic-cmp-n04",
+          "ipv4Address": "192.0.2.14"
         }
       ]
     },
-
     "networkingType": {
       "value": "switchedMultiServerDeployment"
     },
     "networkingPattern": {
-      "value": "custom"
+      "value": "convergedManagementCompute"
     },
     "intentList": {
       "value": [
         {
-          "name": "Management",
+          "name": "mgmt_compute",
           "trafficType": [
-            "Management"
-          ],
-          "adapter": [
-            "MGMT1",
-            "MGMT2"
-          ],
-          "overrideVirtualSwitchConfiguration": false,
-          "virtualSwitchConfigurationOverrides": {
-            "enableIov": "",
-            "loadBalancingAlgorithm": ""
-          },
-          "overrideQosPolicy": false,
-          "qosPolicyOverrides": {
-            "priorityValue8021Action_Cluster": "7",
-            "priorityValue8021Action_SMB": "3",
-            "bandwidthPercentage_SMB": "50"
-          },
-          "overrideAdapterProperty": true,
-          "adapterPropertyOverrides": {
-            "jumboPacket": "1514",
-            "networkDirect": "Disabled",
-            "networkDirectTechnology": ""
-          }
-        },
-        {
-          "name": "Compute",
-          "trafficType": [
+            "Management",
             "Compute"
           ],
           "adapter": [
@@ -235,7 +177,7 @@
           }
         },
         {
-          "name": "Storage",
+          "name": "storage",
           "trafficType": [
             "Storage"
           ],
@@ -248,7 +190,7 @@
             "enableIov": "",
             "loadBalancingAlgorithm": ""
           },
-          "overrideQosPolicy": true,
+          "overrideQosPolicy": false,
           "qosPolicyOverrides": {
             "priorityValue8021Action_Cluster": "7",
             "priorityValue8021Action_SMB": "3",
@@ -263,51 +205,66 @@
         }
       ]
     },
+    "storageConnectivitySwitchless": {
+      "value": false
+    },
+    "customLocation": {
+      "value": "iic-campus-cl"
+    },
+    "domainFqdn": {
+      "value": "improbability.cloud"
+    },
+    "adouPath": {
+      "value": "OU=iic-campus,OU=AzureLocal,DC=improbability,DC=cloud"
+    },
+    "AzureStackLCMAdminUsername": {
+      "value": "lcm-iic-campus"
+    },
+    "AzureStackLCMAdminPassword": {
+      "reference": {
+        "keyVault": {
+          "id": "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-mgmt-01/providers/Microsoft.KeyVault/vaults/kv-iic-campus-mgmt"
+        },
+        "secretName": "lcm-password"
+      }
+    },
+    "enableStorageAutoIp": {
+      "value": true
+    },
     "storageNetworkList": {
       "value": [
         {
           "name": "StorageNetwork1",
           "networkAdapterName": "SMB1",
-          "vlanId": "201"
+          "vlanId": "711"
         },
         {
           "name": "StorageNetwork2",
           "networkAdapterName": "SMB2",
-          "vlanId": "202"
+          "vlanId": "712"
         }
       ]
     },
-    "storageConnectivitySwitchless": {
-      "value": false
+    "clusterPattern": {
+      "value": "RackAware"
     },
-    "enableStorageAutoIp": {
-      "value": true
-    },
-
-    "customLocation": {
-      "value": ""
-    },
-
-    "sbeVersion": {
-      "value": "4.1.2411.1"
-    },
-    "sbeFamily": {
-      "value": "AzureLocal"
-    },
-    "sbePublisher": {
-      "value": "Dell"
-    },
-    "sbeManifestSource": {
-      "value": ""
-    },
-    "sbeManifestCreationDate": {
-      "value": ""
-    },
-    "partnerProperties": {
-      "value": []
-    },
-    "partnerCredentiallist": {
-      "value": []
+    "localAvailabilityZones": {
+      "value": [
+        {
+          "localAvailabilityZoneName": "RoomA",
+          "nodes": [
+            "iic-cmp-n01",
+            "iic-cmp-n02"
+          ]
+        },
+        {
+          "localAvailabilityZoneName": "RoomB",
+          "nodes": [
+            "iic-cmp-n03",
+            "iic-cmp-n04"
+          ]
+        }
+      ]
     }
   }
 }

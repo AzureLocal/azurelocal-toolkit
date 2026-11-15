@@ -8,7 +8,7 @@
 #      equals the `default` of the registry entry; an empty fallback has no registry default; a required key has no non-empty fallback.
 #   2. The two fallbacks that are expressions are named, with the reason.
 #   3. A file without the optional keys gives the registry defaults in the parameter set (nothing deployed changes).
-#   4. Those defaults equal the defaultValue of Microsoft's template (config/azure/arm-templates/cluster-deployment/azuredeploy.json).
+#   4. Those defaults equal the defaultValue of Microsoft's template (the copy in tests/fixtures/arm/microsoft-create-cluster/azuredeploy.json).
 # No Azure call is made: Invoke-AzRestMethod is mocked and throws.
 # Run: Import-Module Pester -RequiredVersion 5.9.1; Invoke-Pester ./tests/arm-deployment/ParameterSetDefaults.Tests.ps1
 
@@ -136,7 +136,7 @@ BeforeAll {
     $script:Fixture = [IO.Path]::Combine($script:Repo, 'tests', 'fixtures', 'infrastructure.fc-san.yml')
     $script:RegistryByPath = @{}
     foreach ($r in Get-RegistryVariable -Path ([IO.Path]::Combine($script:Repo, 'config', 'variables', 'schema', 'master-registry.yaml'))) { $script:RegistryByPath[$r.Path] = $r }
-    $script:Template = Get-Content -LiteralPath ([IO.Path]::Combine($script:Repo, 'config', 'azure', 'arm-templates', 'cluster-deployment', 'azuredeploy.json')) -Raw | ConvertFrom-Json -AsHashtable
+    $script:Template = Get-Content -LiteralPath ([IO.Path]::Combine($script:Repo, 'tests', 'fixtures', 'arm', 'microsoft-create-cluster', 'azuredeploy.json')) -Raw | ConvertFrom-Json -AsHashtable
 
     function Get-RegistryDefault([string]$Key) {
         $r = $script:RegistryByPath[$Key]
@@ -200,7 +200,7 @@ Describe 'The intent fallbacks are Network ATC''s defaults, from the registry' {
         (Get-RegistryDefault 'networking.intents[].overrides.qos.smb_bandwidth_percent').Value | Should -Be 50
     }
     It 'the registry defaults are the values of Microsoft''s quickstart parameters file' {
-        $p = Get-Content -LiteralPath ([IO.Path]::Combine($script:Repo, 'config', 'azure', 'arm-templates', 'cluster-deployment', 'azuredeploy.parameters.json')) -Raw | ConvertFrom-Json -AsHashtable
+        $p = Get-Content -LiteralPath ([IO.Path]::Combine($script:Repo, 'tests', 'fixtures', 'arm', 'microsoft-create-cluster', 'azuredeploy.parameters.json')) -Raw | ConvertFrom-Json -AsHashtable
         $storage = @($p.parameters.intentList.value | Where-Object { $_.trafficType -contains 'Storage' })[0]
         $storage.qosPolicyOverrides.priorityValue8021Action_Cluster | Should -Be ([string](Get-RegistryDefault 'networking.intents[].overrides.qos.cluster_priority').Value)
         $storage.qosPolicyOverrides.priorityValue8021Action_SMB | Should -Be ([string](Get-RegistryDefault 'networking.intents[].overrides.qos.smb_priority').Value)

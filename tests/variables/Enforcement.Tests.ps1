@@ -1,7 +1,7 @@
 #Requires -Version 7.0
 #Requires -Modules @{ ModuleName = 'Pester'; ModuleVersion = '5.0.0' }, powershell-yaml
 # No script carries a value a deployment chooses, and every key a script reads from the infrastructure file is registered.
-# The test parses every .ps1 and .psm1 under scripts/ with the PowerShell parser (so comments and help text do not count) and fails on:
+# The test parses every .ps1 and .psm1 in its scope (below) with the PowerShell parser (so comments and help text do not count) and fails on:
 #   A  a key path read from the infrastructure file that is not in the master registry (Get-AzlInfrastructureValue, or the property and
 #      indexer chains and reader commands the variable map recognises: config/variables/scripts/VariableMapScanner.psm1).
 #   B  a hard-coded value of a kind a deployment chooses: an IPv4 address or CIDR, a GUID, a DNS domain or host name, an Azure region name,
@@ -11,7 +11,7 @@
 #      given to a parameter that names a resource, policy, account, vault, workspace, subscription, tenant, host or address). The generator
 #      config/variables/scripts/New-ScriptParameterRegistry.ps1 flags the same kinds; the tests below make sure the two agree.
 #   D  a prompt (Read-Host, Get-Credential, $Host.UI.Prompt*, [Console]::ReadLine) in a script that has -InfrastructureFile.
-# The scan covers scripts/ and config/variables/scripts/.
+# The scan covers every .ps1 and .psm1 of the repository outside tests/, docs/ and .claude/ (scripts/, config/variables/scripts/, tools/, ansible/, src/ ...).
 # What is not a violation is written down twice over:
 #   * values Microsoft or the protocol fixes are rule-level exceptions in this file, each with its reason (documentation, loopback,
 #     link-local and mask addresses, the Azure platform address, Microsoft endpoints, built-in role IDs ...);
@@ -448,7 +448,14 @@ BeforeAll {
     # ------------------------------------------------------------------------------------------------------------------------------
     # The repository
     # ------------------------------------------------------------------------------------------------------------------------------
-    $script:Files = @(Get-ChildItem -LiteralPath $script:ScriptsRoot, $script:VariableScripts -Recurse -File | Where-Object { $_.Extension -in '.ps1', '.psm1' } | Sort-Object FullName | ForEach-Object FullName)
+    # Every .ps1 and .psm1 of the repository except the tests, the docs and the agent settings (top-level tests/, docs/, .claude/, .git/):
+    # scripts/ and config/variables/scripts/ as before, and the PowerShell that lives elsewhere (tools/, ansible/, src/, pipelines/ ...).
+    # scripts/deferred stays in the scan, as it always was: its findings are baselined.
+    $excludedTop = @('tests', 'docs', '.claude', '.git')
+    $script:Files = @(Get-ChildItem -LiteralPath $script:Repo -Directory -Force | Where-Object { $_.Name -notin $excludedTop } |
+            ForEach-Object { Get-ChildItem -LiteralPath $_.FullName -Recurse -File -Force } |
+            Where-Object { $_.Extension -in '.ps1', '.psm1' } | Sort-Object FullName | ForEach-Object FullName)
+    $script:Files = @(@($script:Files) + @(Get-ChildItem -LiteralPath $script:Repo -File | Where-Object { $_.Extension -in '.ps1', '.psm1' } | ForEach-Object FullName) | Sort-Object -Unique)
     $script:Found = @(Get-EnfFinding -Path $script:Files -Root $script:Repo)
     $script:Allow = @(Read-EnfList 'enforcement-allowlist.psd1')
     $script:Baseline = @(Read-EnfList 'enforcement-baseline.psd1')
@@ -484,6 +491,13 @@ Describe 'The scan sees what it is meant to see' {
     It 'scans the scripts of config/variables/scripts as well as scripts/' {
         @($script:Files | Where-Object { $_ -like (Join-Path $script:VariableScripts '*') }).Count | Should -BeGreaterThan 10
         @($script:Files | Where-Object { $_ -like (Join-Path $script:ScriptsRoot '*') }).Count | Should -BeGreaterThan 250   # superseded scripts and placeholders are removed over time; the scan still covers every script
+    }
+
+    It 'scans the PowerShell outside scripts/ too (tools/install-tools.ps1, the Ansible launcher), and not tests/ or docs/' {
+        $script:Files | Should -Contain ([IO.Path]::Combine($script:Repo, 'tools', 'install-tools.ps1'))
+        @($script:Files | Where-Object { $_ -like (Join-Path $script:Repo 'ansible*') }).Count | Should -BeGreaterThan 0
+        @($script:Files | Where-Object { $_ -like ((Join-Path $script:Repo 'tests') + [IO.Path]::DirectorySeparatorChar + '*') }).Count | Should -Be 0
+        @($script:Files | Where-Object { $_ -like ((Join-Path $script:Repo 'docs') + [IO.Path]::DirectorySeparatorChar + '*') }).Count | Should -Be 0
     }
 
     It 'reads the registry' {

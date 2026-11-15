@@ -575,8 +575,8 @@ hardware:
     # used by: os_configuration, deployment
     bundle_path: "D:\\sbe\\dell"
     # Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster...
-    # one of: required | not_applicable; used by: os_configuration, deployment, trailwright
-    requirement: "required"
+    # one of: required | not_applicable | vendor; default: "vendor"; used by: os_configuration, deployment, trailwright
+    requirement: "vendor"
     # Required when requirement is not_applicable: why no package is needed, in one sentence, for example that no SBE exists for the hardware mod...
     # used by: os_configuration, deployment, trailwright
     not_applicable_reason: "The cluster downloads the package with the vendor credential"
@@ -729,7 +729,7 @@ networking:
       # Last address of the infrastructure pool (ARM endingIPAddress).
       # required; used by: os_configuration, deployment, trailwright
       end: "192.0.2.29"
-  # The out-of-band network of the BMCs.
+  # The out-of-band network of the BMCs and of the switches' management ports. subnet is read by the remote management security profile; New-Sw...
   # used by: os_configuration
   oob:
     # Subnet of the out-of-band (BMC) network in CIDR form.
@@ -1786,6 +1786,26 @@ network_devices:
       enabled: false
       # The high availability mode, as the vendor names it.
       mode: ""
+      # The ID of the high availability domain the two switches of a pair share (Dell OS10: vlt-domain).
+      domain_id: 1
+      # The management address of the other switch of the pair, which the pair uses as its backup heartbeat (Dell OS10: vlt-domain backup destinati...
+      peer_address: "198.51.100.7"
+      # Election priority of this switch in the pair; the lower value becomes the primary (Dell OS10: vlt-domain primary-priority).
+      priority: 100
+      # The MAC address the pair presents as one system to the devices below it (Dell OS10: vlt-domain vlt-mac).
+      system_mac: "00-00-5E-00-53-01"
+    # Maximum frame size of the switch ports that face the machines, the uplinks and the link between the two switches of a pair, in bytes.
+    mtu: 9216
+    # The switch ports by role, as the switch names them (Dell OS10: ethernet1/1/2).
+    ports:
+      # Ports to the network above the rack (trunks with the management, out-of-band and workload VLANs).
+      uplinks: ["ethernet1/1/1"]
+      # Ports cabled to the machines' network adapters (trunks with the VLANs of the intents; with RDMA storage on the switch they get the PFC and...
+      node_ports: ["ethernet1/1/2", "ethernet1/1/3"]
+      # Ports of the link between the two switches of a pair (Dell OS10: VLTi, the vlt-domain discovery interfaces).
+      peer_link: ["ethernet1/1/13", "ethernet1/1/14"]
+      # The VLAN the switch puts the untagged frames of the node ports in (Dell OS10: switchport access vlan on a trunk port).
+      native_vlan_id: 2201
 
 # Part 2 of the implementation steps: the Azure foundation the instance depends on.
 landing_zone:

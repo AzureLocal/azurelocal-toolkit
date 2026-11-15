@@ -1595,7 +1595,8 @@ function Get-SbePresenceFinding {
         New-Finding 'AZL-033' error 'hardware.sbe.source_path' 'The path carries a query string or fragment. infrastructure.yml holds no credential: use source_username and source_password (a Key Vault reference) for a share that needs one.'
     }
     $remove = 'To state that no package is needed, set requirement to not_applicable with not_applicable_reason.'
-    if (-not $source -and -not $requirement) {
+    # requirement vendor is the registry default (the vendor catalog decides), so it reads like a file without the key.
+    if (-not $source -and $requirement -in '', 'vendor') {
         foreach ($k in 'publisher', 'family', 'version') {
             if (-not [string]$sbe[$k]) { New-Finding 'AZL-015' error "hardware.sbe.$k" "hardware.sbe is set without source_path or bundle_path (the share or folder with the package, from which publisher, family and version are read), so it needs a $k. $remove" }
         }

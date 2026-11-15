@@ -16,10 +16,10 @@ Registry version 5.0.61. Sources of the scan: toolkit (this repository), sonar d
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 744 | 499 | 82 | 5 | 156 | 2 |
-| Owned by a tool (`tools.*`) | 4360 | 4152 | 0 | 0 | 208 | 0 |
+| Keys of infrastructure.yml | 753 | 507 | 82 | 5 | 157 | 2 |
+| Owned by a tool (`tools.*`) | 4366 | 4158 | 0 | 0 | 208 | 0 |
 | Older variables-file sections | 1373 | 2 | 11 | 0 | 1350 | 10 |
-| All registry leaves | 6477 | 4653 | 93 | 5 | 1714 | 12 |
+| All registry leaves | 6492 | 4667 | 93 | 5 | 1715 | 12 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -45,7 +45,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 65 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
 | ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 95 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 19 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
-| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 340 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
+| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 348 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
 
 ### Which section is read in which phase (number of keys)
 
@@ -72,7 +72,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `provisioning` | 9 |  | 31 | 1 | 1 |  | 2 | 4 |
 | `os_configuration` |  |  |  | 10 |  |  |  |  |
 | `disconnected` | 8 |  |  |  |  |  |  |  |
-| `network_devices` |  |  |  |  |  |  |  | 8 |
+| `network_devices` |  |  |  |  |  |  |  | 16 |
 | `landing_zone` | 1 |  |  |  |  |  |  | 78 |
 | `extensions` |  |  |  |  |  |  |  |  |
 | `_metadata` |  |  | 1 | 1 |  | 1 | 1 | 1 |
@@ -94,12 +94,12 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | ztp | ZTP | 85 | 0 | 843 |
 | os-configuration | OS configuration | 76 | 0 | 282 |
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
-| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1003 |
+| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1009 |
 | sonar | Sonar | 19 | 0 | 266 |
 | cicd-infra | Outside the flow | 89 | 0 | 554 |
 | infrastructure-helpers | Outside the flow | 39 | 0 | 0 |
 | validator | Outside the flow | 111 | 0 | 0 |
-| toolkit-legacy-scripts | Outside the flow | 226 | 0 | 0 |
+| toolkit-legacy-scripts | Outside the flow | 235 | 0 | 0 |
 
 ### trailwright
 
@@ -301,7 +301,7 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 
 ### toolkit-legacy-scripts
 
-**Reads (226):** the keys are listed by section; the CSV has each key with the file and function.
+**Reads (235):** the keys are listed by section; the CSV has each key with the file and function.
 
 - `azure`: 9 keys
 - `cluster`: 1 keys
@@ -309,8 +309,8 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 - `identity`: 19 keys
 - `key_vaults`: 4 keys
 - `landing_zone`: 72 keys
-- `network_devices`: 8 keys
-- `networking`: 26 keys
+- `network_devices`: 16 keys
+- `networking`: 27 keys
 - `nodes`: 2 keys
 - `operations`: 13 keys
 - `provisioning`: 4 keys
@@ -322,7 +322,7 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 - `storage`: 30 keys
 - `tags`: 1 keys
 
-Where in the code (file, function, keys read by name; 83 places, the first 12):
+Where in the code (file, function, keys read by name; 85 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
@@ -445,6 +445,7 @@ Ranked by how many different tools read the key, then how many places in the cod
 | `scenario.outbound_path` | How the machines reach Azure. | operator by hand; Trailwright questionnaire | infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | OS ArcRegistration; Gate NW-006 |
 | `identity.active_directory.netbios_name` | Up to 15 letters, digits and hyphens. | operator by hand; Trailwright questionnaire | os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts | OS DomainJoin |
 | `nodes[].network_adapters[].name` | The port's name in this file: the key that networking.intents[].adapters, networking.storage.networks[].adapter and networking.cluster_networks[].adapter use. | operator by hand; Dell/Redfish discovery (proposed) | arm-deployment; infrastructure-helpers; os-configuration; ztp | ARM nodes; OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-001 (named) |
+| `networking.management.vlan_id` | 0 means untagged. | operator by hand; Trailwright questionnaire | infrastructure-helpers; pre-cluster-verification; toolkit-legacy-scripts; ztp | OS Dns; Network; NicNames; UnusedAdapters; Gate NW-013; NW-015 |
 | `_metadata.schema_version` | The schema version this file follows. | operator by hand | arm-deployment; os-configuration; sonar; ztp |  |
 | `hardware.model` | Model, for example AX-760. | operator by hand; Trailwright questionnaire | discovery; pre-cluster-verification; toolkit-legacy-scripts; ztp | Gate SB-001; SB-002; SB-003; SB-004; SB-005; SB-006 |
 | `nodes[].network_adapters[].mac_address` | The port's identity. | operator by hand; Dell/Redfish discovery (proposed) | discovery; infrastructure-helpers; os-configuration; ztp | OS Dns; Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~RemoteManagement; Gate NW-013 (named) |
@@ -458,13 +459,12 @@ Ranked by how many different tools read the key, then how many places in the cod
 | `scenario.os_install` | iso: the OS is installed from an ISO (by hand or out-of-band). simplified: simplified machine provisioning from Azure, which azurelocal-ztp automates (needs pr... | operator by hand; Trailwright questionnaire | os-configuration; sonar; ztp | Sonar provisioningRoute |
 | `hardware.sbe.bundle_path` | Folder on the management host with the OEM's SBE files as downloaded: one SBE_*.zip, its SBE_*.xml and SBE_Discovery_<oem>.xml. | operator by hand; Trailwright questionnaire | arm-deployment; os-configuration; toolkit-legacy-scripts |  |
 | `networking.management.infrastructure_pool.end` | Last address of the infrastructure pool (ARM endingIPAddress). | operator by hand; Trailwright questionnaire | arm-deployment; pre-cluster-verification; toolkit-legacy-scripts | ARM endingIPAddress; OS ~Dns; ~Network; ~NicNames; ~UnusedAdapters; Gate NW-015 |
-| `networking.management.vlan_id` | 0 means untagged. | operator by hand; Trailwright questionnaire | infrastructure-helpers; pre-cluster-verification; ztp | OS Dns; Network; NicNames; UnusedAdapters; Gate NW-013; NW-015 |
 
 ## Unread and placeholder variables
 
 Variables the registry documents that no tool in the scan reads by name. Each is either a key a coming phase will read, a key only the validator checks, or a name kept for compatibility. Nothing here is an error; it is the list to look at before you spend time filling a key in that nothing uses yet.
 
-### Placeholder: documented, not read by any tool in the scan (156)
+### Placeholder: documented, not read by any tool in the scan (157)
 
 | Variable | Tools | Provided by | Note |
 | --- | --- | --- | --- |
@@ -582,6 +582,7 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `network_devices[].management.vlan_id` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `network_devices[].ha.enabled` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `network_devices[].ha.mode` |  | operator by hand | documented in the registry; no tool in the scan reads it |
+| `network_devices[].ports.uplinks` |  | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.management_groups[].role` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.policy.assignments[].name` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
 | `landing_zone.policy.assignments[].policy_definition_id` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
@@ -1242,7 +1243,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `hardware.sbe.manifest_source` | string | operator | deployment | (part: ztp) | ARM sbeManifestSource | read-as-part |
 | `hardware.sbe.manifest_creation_date` | string | operator | deployment | (part: ztp) | ARM sbeManifestCreationDate | read-as-part |
 | `hardware.sbe.bundle_path` | string | operator; Trailwright | os_configuration; deployment | arm-deployment; os-configuration; toolkit-legacy-scripts |  | read |
-| `hardware.sbe.requirement` | string, one of `required`, `not_applicable` | operator; Trailwright | os_configuration; deployment; trailwright | toolkit-legacy-scripts | Gate SB-001 (named) | read |
+| `hardware.sbe.requirement` | string, default `vendor`, one of `required`, `not_applicable`, `vendor` | operator; Trailwright; default | os_configuration; deployment; trailwright | toolkit-legacy-scripts | Gate SB-001 (named) | read |
 | `hardware.sbe.not_applicable_reason` | string | operator; Trailwright | os_configuration; deployment; trailwright | toolkit-legacy-scripts | Gate SB-001 (named) | read |
 | `hardware.sbe.source_path` | string | operator; Trailwright | os_configuration; deployment; trailwright | arm-deployment; toolkit-legacy-scripts | Gate SB-001 (named); SB-002 (named) | read |
 | `hardware.sbe.source_username` | string | operator; Trailwright | os_configuration; deployment; trailwright | toolkit-legacy-scripts | Gate SB-002 (named) | read |
@@ -1454,6 +1455,15 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `network_devices[].credentials.password` | string (kv_ref), required | operator; Key Vault ref |  | toolkit-legacy-scripts |  | read |
 | `network_devices[].ha.enabled` | boolean | operator |  |  |  | placeholder |
 | `network_devices[].ha.mode` | string | operator |  |  |  | placeholder |
+| `network_devices[].ha.domain_id` | integer | operator |  | toolkit-legacy-scripts |  | read |
+| `network_devices[].ha.peer_address` | string (ipv4) | operator |  | toolkit-legacy-scripts |  | read |
+| `network_devices[].ha.priority` | integer | operator |  | toolkit-legacy-scripts |  | read |
+| `network_devices[].ha.system_mac` | string (mac) | operator |  | toolkit-legacy-scripts |  | read |
+| `network_devices[].mtu` | integer | operator |  | toolkit-legacy-scripts |  | read |
+| `network_devices[].ports.uplinks` | array | operator |  |  |  | placeholder |
+| `network_devices[].ports.node_ports` | array | operator |  | toolkit-legacy-scripts |  | read |
+| `network_devices[].ports.peer_link` | array | operator |  | toolkit-legacy-scripts |  | read |
+| `network_devices[].ports.native_vlan_id` | integer | operator |  | toolkit-legacy-scripts |  | read |
 
 ### networking
 
@@ -1461,7 +1471,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | --- | --- | --- | --- | --- | --- | --- |
 | `networking.management.subnet` | string (cidr), required | operator; Trailwright | ztp; os_configuration; deployment; trailwright; ansible | arm-deployment; infrastructure-helpers; os-configuration; pre-cluster-verification; ztp | ARM subnetMask; OS Dns; Network; NicNames; RemoteManagement; UnusedAdapters; Gate NW-015 | read |
 | `networking.management.gateway` | string (ipv4), required | operator; Trailwright | ztp; os_configuration; deployment; trailwright; ansible | arm-deployment; infrastructure-helpers; pre-cluster-verification; ztp | ARM defaultGateway; OS Dns; Network; NicNames; UnusedAdapters; Gate NW-004; NW-015 | read |
-| `networking.management.vlan_id` | integer | operator; Trailwright | ztp; os_configuration; trailwright; ansible | infrastructure-helpers; pre-cluster-verification; ztp | OS Dns; Network; NicNames; UnusedAdapters; Gate NW-013; NW-015 | read |
+| `networking.management.vlan_id` | integer | operator; Trailwright | ztp; os_configuration; trailwright; ansible | infrastructure-helpers; pre-cluster-verification; toolkit-legacy-scripts; ztp | OS Dns; Network; NicNames; UnusedAdapters; Gate NW-013; NW-015 | read |
 | `networking.management.dns_servers` | array, required | operator; Trailwright | ztp; os_configuration; deployment; trailwright; ansible | arm-deployment; infrastructure-helpers; pre-cluster-verification; ztp | ARM dnsServers; OS Dns; Network; NicNames; UnusedAdapters; Gate ND-006; NW-015 | read |
 | `networking.management.ip_assignment` | string, default `static`, one of `static`, `dhcp`, `preconfigured` | operator; Trailwright; default | ztp; os_configuration; deployment | infrastructure-helpers; ztp | OS Mpio; Network; NicNames; SanVerify; UnusedAdapters; ~Dns | deprecated |
 | `networking.management.use_dhcp` | boolean, default `false` | operator; Trailwright; default | os_configuration; deployment; trailwright | arm-deployment; pre-cluster-verification | ARM useDhcp; OS ~Dns; ~Network; ~NicNames; ~UnusedAdapters | read |
@@ -1856,7 +1866,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |
-| arm_deployment | parameters | 890 | 890 | 0 |
+| arm_deployment | parameters | 896 | 896 | 0 |
 | arm_deployment | report_fields | 20 | 20 | 0 |
 | arm_deployment | run_settings | 44 | 44 | 0 |
 | arm_deployment | secret_names | 2 | 2 | 0 |

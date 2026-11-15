@@ -38,7 +38,7 @@ locals {
   # template", ARM template parameters reference (softDeleteRetentionDays, 7 to 90 days; no purge protection parameter),
   # https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template; and "Purge protection is an optional
   # Key Vault behavior and is not enabled by default" (Azure Key Vault soft-delete overview,
-  # https://learn.microsoft.com/azure/key-vault/general/soft-delete-overview). The template copy: config/azure/arm-templates/cluster-deployment/azuredeploy.json.
+  # https://learn.microsoft.com/azure/key-vault/general/soft-delete-overview). The template copy: tests/fixtures/arm/microsoft-create-cluster/azuredeploy.json.
   cluster_purge_protection_enabled = false
 }
 

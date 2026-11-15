@@ -138,7 +138,7 @@
           "type": "string"
         },
         "time_zone": {
-          "description": "Windows time zone ID of the site, for example UTC or Eastern Standard Time. Simplified provisioning sets it on the site. The OS configuration's Time step sets it on every node (Set-TimeZone, only when it differs) and leaves the zone alone when the key is empty. Learn: the Configurator app sets the time zone with the time server.",
+          "description": "Windows time zone ID of the site, for example UTC or Eastern Standard Time. Simplified provisioning sets it on the site. The OS configuration's Time step sets it on every node (Set-TimeZone, only when it differs) and leaves the zone alone when the key is empty. Learn: the Configurator app sets the time zone with the time server. New-SwitchConfiguration.ps1 writes its UTC offset into the switch configuration (Dell OS10: clock timezone) and needs it for a switch.",
           "type": "string"
         },
         "code": {
@@ -260,7 +260,7 @@
           "additionalProperties": false,
           "properties": {
             "type": {
-              "description": "cloud (an Azure Storage account), file_share (disconnected operations), or none. Two machines need a witness. https://learn.microsoft.com/azure/azure-local/concepts/cluster-witness",
+              "description": "cloud (an Azure Storage account), file_share (disconnected operations), or none. Required, with no default, on purpose: the right value depends on the number of machines and the site, so no single default fits. Microsoft Learn (Understanding cluster and pool quorum, https://learn.microsoft.com/windows-server/storage/storage-spaces/quorum#cluster-quorum-recommendations): two machines need a witness; three or four machines, a witness is strongly recommended; five or more, a witness is not needed; use a cloud witness when the site has internet access. The ARM template reference (https://learn.microsoft.com/azure/azure-local/deploy/rack-aware-cluster-deployment-via-template#arm-template-parameters-reference): witnessType must be Cloud for a two-node cluster and can be empty for other sizes. Microsoft's template defaults witnessType to No Witness, which is wrong for two machines, so the toolkit does not take that default: the file always states the choice. https://learn.microsoft.com/azure/azure-local/concepts/cluster-witness",
               "type": "string",
               "enum": [
                 "cloud",
@@ -428,11 +428,13 @@
           "additionalProperties": false,
           "properties": {
             "requirement": {
-              "description": "Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster verification fails without it). not_applicable: this hardware has no SBE, or the cluster downloads it with the vendor credential; needs not_applicable_reason. Absent: the vendor catalog (config/oem/<vendor>.json) decides: required for a vendor whose package is a manual download (Dell, HPE, DataON), a Warning that asks you to state it for a vendor whose cluster downloads the package itself (Lenovo Premier), Skipped for a vendor the catalog does not know. This key is about the package being available; whether the toolkit also copies it to the nodes during the build is delivery, a separate opt-in that stays off.",
+              "description": "Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster verification fails without it). not_applicable: this hardware has no SBE, or the cluster downloads it with the vendor credential; needs not_applicable_reason. vendor (the default, also when the key is absent; value since 5.6.28): the vendor fact in the vendor catalog decides, config/oem/<hardware.vendor>.json sbe.requiredByDefault (read by Get-AzlSbeRequirement in scripts/common/sbe/AzlSbePackage.psm1): true, so required, for a vendor whose package is a manual download (Dell, HPE, DataON); false for a vendor whose cluster downloads the package itself (Lenovo Premier), which the pre-cluster verification reports as a Warning that asks you to state it; Skipped for a vendor the catalog does not know. The catalog value is a vendor fact (how the vendor delivers its package), not a deployment choice; a deployment that differs states required or not_applicable here. This key is about the package being available; whether the toolkit also copies it to the nodes during the build is delivery, a separate opt-in that stays off.",
               "type": "string",
+              "default": "vendor",
               "enum": [
                 "required",
-                "not_applicable"
+                "not_applicable",
+                "vendor"
               ]
             },
             "not_applicable_reason": {
@@ -2057,6 +2059,59 @@
             },
             "mode": {
               "type": "string"
+            },
+            "domain_id": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 255
+            },
+            "peer_address": {
+              "$ref": "#/$defs/ipv4"
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "system_mac": {
+              "$ref": "#/$defs/mac"
+            }
+          }
+        },
+        "mtu": {
+          "type": "integer",
+          "minimum": 1500,
+          "maximum": 9216
+        },
+        "ports": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "uplinks": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "node_ports": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "peer_link": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "native_vlan_id": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4094
             }
           }
         }

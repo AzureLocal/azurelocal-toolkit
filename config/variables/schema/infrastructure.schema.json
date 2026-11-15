@@ -160,7 +160,7 @@
           "type": "string"
         },
         "time_zone": {
-          "description": "Windows time zone ID of the site, for example UTC or Eastern Standard Time. Simplified provisioning sets it on the site. The OS configuration's Time step sets it on every node (Set-TimeZone, only when it differs) and leaves the zone alone when the key is empty. Learn: the Configurator app sets the time zone with the time server.",
+          "description": "Windows time zone ID of the site, for example UTC or Eastern Standard Time. Simplified provisioning sets it on the site. The OS configuration's Time step sets it on every node (Set-TimeZone, only when it differs) and leaves the zone alone when the key is empty. Learn: the Configurator app sets the time zone with the time server. New-SwitchConfiguration.ps1 writes its UTC offset into the switch configuration (Dell OS10: clock timezone) and needs it for a switch.",
           "type": "string"
         },
         "code": {
@@ -507,7 +507,7 @@
           ],
           "properties": {
             "type": {
-              "description": "cloud (an Azure Storage account), file_share (disconnected operations), or none. Two machines need a witness. https://learn.microsoft.com/azure/azure-local/concepts/cluster-witness",
+              "description": "cloud (an Azure Storage account), file_share (disconnected operations), or none. Required, with no default, on purpose: the right value depends on the number of machines and the site, so no single default fits. Microsoft Learn (Understanding cluster and pool quorum, https://learn.microsoft.com/windows-server/storage/storage-spaces/quorum#cluster-quorum-recommendations): two machines need a witness; three or four machines, a witness is strongly recommended; five or more, a witness is not needed; use a cloud witness when the site has internet access. The ARM template reference (https://learn.microsoft.com/azure/azure-local/deploy/rack-aware-cluster-deployment-via-template#arm-template-parameters-reference): witnessType must be Cloud for a two-node cluster and can be empty for other sizes. Microsoft's template defaults witnessType to No Witness, which is wrong for two machines, so the toolkit does not take that default: the file always states the choice. https://learn.microsoft.com/azure/azure-local/concepts/cluster-witness",
               "type": "string",
               "enum": [
                 "cloud",
@@ -1257,11 +1257,13 @@
               "type": "string"
             },
             "requirement": {
-              "description": "Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster verification fails without it). not_applicable: this hardware has no SBE, or the cluster downloads it with the vendor credential; needs not_applicable_reason. Absent: the vendor catalog (config/oem/<vendor>.json) decides: required for a vendor whose package is a manual download (Dell, HPE, DataON), a Warning that asks you to state it for a vendor whose cluster downloads the package itself (Lenovo Premier), Skipped for a vendor the catalog does not know. This key is about the package being available; whether the toolkit also copies it to the nodes during the build is delivery, a separate opt-in that stays off.",
+              "description": "Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster verification fails without it). not_applicable: this hardware has no SBE, or the cluster downloads it with the vendor credential; needs not_applicable_reason. vendor (the default, also when the key is absent; value since 5.6.28): the vendor fact in the vendor catalog decides, config/oem/<hardware.vendor>.json sbe.requiredByDefault (read by Get-AzlSbeRequirement in scripts/common/sbe/AzlSbePackage.psm1): true, so required, for a vendor whose package is a manual download (Dell, HPE, DataON); false for a vendor whose cluster downloads the package itself (Lenovo Premier), which the pre-cluster verification reports as a Warning that asks you to state it; Skipped for a vendor the catalog does not know. The catalog value is a vendor fact (how the vendor delivers its package), not a deployment choice; a deployment that differs states required or not_applicable here. This key is about the package being available; whether the toolkit also copies it to the nodes during the build is delivery, a separate opt-in that stays off.",
               "type": "string",
+              "default": "vendor",
               "enum": [
                 "required",
-                "not_applicable"
+                "not_applicable",
+                "vendor"
               ]
             },
             "not_applicable_reason": {
@@ -1609,7 +1611,7 @@
           ]
         },
         "oob": {
-          "description": "The out-of-band network of the BMCs. Only subnet is read (by the remote management security profile); gateway and vlan_id are documentation.",
+          "description": "The out-of-band network of the BMCs and of the switches' management ports. subnet is read by the remote management security profile; New-SwitchConfiguration.ps1 reads subnet (the prefix length of a switch's management address and the source the switch accepts SSH from), gateway (the management route) and vlan_id (a VLAN on the switch trunks).",
           "type": "object",
           "additionalProperties": false,
           "properties": {
@@ -1619,10 +1621,10 @@
             },
             "gateway": {
               "$ref": "#/$defs/ipv4",
-              "description": "Default gateway of the out-of-band network. Documentation only; not read by the tools. No tool sets the BMC network; only networking.oob.subnet is read."
+              "description": "Default gateway of the out-of-band network. No tool sets the BMC network. New-SwitchConfiguration.ps1 writes it as the management route of a switch (Dell OS10: management route 0.0.0.0/0) and needs it for a switch."
             },
             "vlan_id": {
-              "description": "VLAN ID of the out-of-band network; 0 for an untagged port. Documentation only; not read by the tools. No tool sets the BMC network; only networking.oob.subnet is read.",
+              "description": "VLAN ID of the out-of-band network; 0 for an untagged port. No tool sets the BMC network. New-SwitchConfiguration.ps1 defines it on a switch and carries it on the uplinks when it is not 0.",
               "type": "integer",
               "minimum": 0,
               "maximum": 4094
@@ -4156,6 +4158,69 @@
               "mode": {
                 "description": "The high availability mode, as the vendor names it. Documentation only; not read by the tools. A record of the device.",
                 "type": "string"
+              },
+              "domain_id": {
+                "description": "The ID of the high availability domain the two switches of a pair share (Dell OS10: vlt-domain). Both switches of the pair give the same ID. New-SwitchConfiguration.ps1 writes the pair section only when it is set.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 255
+              },
+              "peer_address": {
+                "$ref": "#/$defs/ipv4",
+                "description": "The management address of the other switch of the pair, which the pair uses as its backup heartbeat (Dell OS10: vlt-domain backup destination). Usually the other entry's management.ip_address. Needed with domain_id."
+              },
+              "priority": {
+                "description": "Election priority of this switch in the pair; the lower value becomes the primary (Dell OS10: vlt-domain primary-priority). Needed with domain_id. Give the two switches different values.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              "system_mac": {
+                "$ref": "#/$defs/mac",
+                "description": "The MAC address the pair presents as one system to the devices below it (Dell OS10: vlt-domain vlt-mac). The same on both switches of the pair and unique in the network. Needed with domain_id."
+              }
+            }
+          },
+          "mtu": {
+            "description": "Maximum frame size of the switch ports that face the machines, the uplinks and the link between the two switches of a pair, in bytes. Read by New-SwitchConfiguration.ps1, which needs it for a switch. Microsoft Learn (Physical network requirements for Azure Local: the switch supports jumbo frames of 9,014 bytes): at least 9014 for storage traffic. Dell OS10 accepts up to 9216.",
+            "type": "integer",
+            "minimum": 1500,
+            "maximum": 9216
+          },
+          "ports": {
+            "description": "The switch ports by role, as the switch names them (Dell OS10: ethernet1/1/2). Read by New-SwitchConfiguration.ps1.",
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "uplinks": {
+                "description": "Ports to the network above the rack (trunks with the management, out-of-band and workload VLANs).",
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "node_ports": {
+                "description": "Ports cabled to the machines' network adapters (trunks with the VLANs of the intents; with RDMA storage on the switch they get the PFC and ETS policies of the storage intent).",
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "peer_link": {
+                "description": "Ports of the link between the two switches of a pair (Dell OS10: VLTi, the vlt-domain discovery interfaces). Needed with ha.domain_id.",
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "native_vlan_id": {
+                "description": "The VLAN the switch puts the untagged frames of the node ports in (Dell OS10: switchport access vlan on a trunk port). Needed when networking.management.vlan_id is 0, so the machines send management traffic untagged (New-SwitchConfiguration.ps1 stops with the key name without it); when the machines tag the management VLAN it is optional and the node ports carry only tagged VLANs unless it is set. It is not also one of the tagged VLANs of the node ports.",
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4094
               }
             }
           }
@@ -6472,6 +6537,59 @@
             },
             "mode": {
               "type": "string"
+            },
+            "domain_id": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 255
+            },
+            "peer_address": {
+              "$ref": "#/$defs/ipv4"
+            },
+            "priority": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65535
+            },
+            "system_mac": {
+              "$ref": "#/$defs/mac"
+            }
+          }
+        },
+        "mtu": {
+          "type": "integer",
+          "minimum": 1500,
+          "maximum": 9216
+        },
+        "ports": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "uplinks": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "node_ports": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "peer_link": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "native_vlan_id": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4094
             }
           }
         }

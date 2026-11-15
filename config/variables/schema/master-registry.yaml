@@ -790,7 +790,7 @@ site:
       required: false
       example: "Infinite Improbability Corp"
     time_zone:
-      description: "Windows time zone ID of the site, for example UTC or Eastern Standard Time. Simplified provisioning sets it on the site. The OS configuration's Time step sets it on every node (Set-TimeZone, only when it differs) and leaves the zone alone when the key is empty. Learn: the Configurator app sets the time zone with the time server."
+      description: "Windows time zone ID of the site, for example UTC or Eastern Standard Time. Simplified provisioning sets it on the site. The OS configuration's Time step sets it on every node (Set-TimeZone, only when it differs) and leaves the zone alone when the key is empty. Learn: the Configurator app sets the time zone with the time server. New-SwitchConfiguration.ps1 writes its UTC offset into the switch configuration (Dell OS10: clock timezone) and needs it for a switch."
       type: string
       required: false
       example: "Central Standard Time"
@@ -7270,7 +7270,7 @@ networking:
               example: "192.0.2.29"
               used_by: [os_configuration, deployment, trailwright]
     oob:
-      description: "The out-of-band network of the BMCs. Only subnet is read (by the remote management security profile); gateway and vlan_id are documentation."
+      description: "The out-of-band network of the BMCs and of the switches' management ports. subnet is read by the remote management security profile; New-SwitchConfiguration.ps1 reads subnet (the prefix length of a switch's management address and the source the switch accepts SSH from), gateway (the management route) and vlan_id (a VLAN on the switch trunks)."
       type: object
       required: false
       used_by: [os_configuration]
@@ -7285,14 +7285,14 @@ networking:
           pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])$"
           example: "198.51.100.0/24"
         gateway:
-          description: "Default gateway of the out-of-band network. Documentation only; not read by the tools. No tool sets the BMC network; only networking.oob.subnet is read."
+          description: "Default gateway of the out-of-band network. No tool sets the BMC network. New-SwitchConfiguration.ps1 writes it as the management route of a switch (Dell OS10: management route 0.0.0.0/0) and needs it for a switch."
           type: string
           format: ipv4
           required: false
           pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
           example: "198.51.100.1"
         vlan_id:
-          description: "VLAN ID of the out-of-band network; 0 for an untagged port. Documentation only; not read by the tools. No tool sets the BMC network; only networking.oob.subnet is read."
+          description: "VLAN ID of the out-of-band network; 0 for an untagged port. No tool sets the BMC network. New-SwitchConfiguration.ps1 defines it on a switch and carries it on the uplinks when it is not 0."
           type: integer
           required: false
           minimum: 0
@@ -15357,7 +15357,7 @@ cluster:
         type:
           type: string
           used_by: [deployment, trailwright]
-          description: "cloud (an Azure Storage account), file_share (disconnected operations), or none. Two machines need a witness. https://learn.microsoft.com/azure/azure-local/concepts/cluster-witness"
+          description: "cloud (an Azure Storage account), file_share (disconnected operations), or none. Required, with no default, on purpose: the right value depends on the number of machines and the site, so no single default fits. Microsoft Learn (Understanding cluster and pool quorum, https://learn.microsoft.com/windows-server/storage/storage-spaces/quorum#cluster-quorum-recommendations): two machines need a witness; three or four machines, a witness is strongly recommended; five or more, a witness is not needed; use a cloud witness when the site has internet access. The ARM template reference (https://learn.microsoft.com/azure/azure-local/deploy/rack-aware-cluster-deployment-via-template#arm-template-parameters-reference): witnessType must be Cloud for a two-node cluster and can be empty for other sizes. Microsoft's template defaults witnessType to No Witness, which is wrong for two machines, so the toolkit does not take that default: the file always states the choice. https://learn.microsoft.com/azure/azure-local/concepts/cluster-witness"
           required: true
           enum: ["cloud", "file_share", "none"]
           example: "cloud"
@@ -16250,11 +16250,12 @@ hardware:
           example: "D:\\sbe\\dell"
           used_by: [os_configuration, deployment]
         requirement:
-          description: "Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster verification fails without it). not_applicable: this hardware has no SBE, or the cluster downloads it with the vendor credential; needs not_applicable_reason. Absent: the vendor catalog (config/oem/<vendor>.json) decides: required for a vendor whose package is a manual download (Dell, HPE, DataON), a Warning that asks you to state it for a vendor whose cluster downloads the package itself (Lenovo Premier), Skipped for a vendor the catalog does not know. This key is about the package being available; whether the toolkit also copies it to the nodes during the build is delivery, a separate opt-in that stays off."
+          description: "Whether the OEM SBE package is required for this deployment. required: it must be downloaded and available at source_path (the pre-cluster verification fails without it). not_applicable: this hardware has no SBE, or the cluster downloads it with the vendor credential; needs not_applicable_reason. vendor (the default, also when the key is absent; value since 5.6.28): the vendor fact in the vendor catalog decides, config/oem/<hardware.vendor>.json sbe.requiredByDefault (read by Get-AzlSbeRequirement in scripts/common/sbe/AzlSbePackage.psm1): true, so required, for a vendor whose package is a manual download (Dell, HPE, DataON); false for a vendor whose cluster downloads the package itself (Lenovo Premier), which the pre-cluster verification reports as a Warning that asks you to state it; Skipped for a vendor the catalog does not know. The catalog value is a vendor fact (how the vendor delivers its package), not a deployment choice; a deployment that differs states required or not_applicable here. This key is about the package being available; whether the toolkit also copies it to the nodes during the build is delivery, a separate opt-in that stays off."
           type: string
           since: "5.6.4"
           required: false
-          enum: ["required", "not_applicable"]
+          enum: ["required", "not_applicable", "vendor"]
+          default: "vendor"
           example: "required"
           used_by: [os_configuration, deployment, trailwright]
         not_applicable_reason:
@@ -17886,6 +17887,85 @@ network_devices:
             description: "The high availability mode, as the vendor names it. Documentation only; not read by the tools. A record of the device."
             type: string
             required: false
+          domain_id:
+            description: "The ID of the high availability domain the two switches of a pair share (Dell OS10: vlt-domain). Both switches of the pair give the same ID. New-SwitchConfiguration.ps1 writes the pair section only when it is set."
+            type: integer
+            since: "5.6.28"
+            required: false
+            minimum: 1
+            maximum: 255
+            example: 1
+          peer_address:
+            description: "The management address of the other switch of the pair, which the pair uses as its backup heartbeat (Dell OS10: vlt-domain backup destination). Usually the other entry's management.ip_address. Needed with domain_id."
+            since: "5.6.28"
+            required: false
+            type: string
+            format: ipv4
+            pattern: "^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])$"
+            example: "198.51.100.7"
+          priority:
+            description: "Election priority of this switch in the pair; the lower value becomes the primary (Dell OS10: vlt-domain primary-priority). Needed with domain_id. Give the two switches different values."
+            type: integer
+            since: "5.6.28"
+            required: false
+            minimum: 1
+            maximum: 65535
+            example: 100
+          system_mac:
+            description: "The MAC address the pair presents as one system to the devices below it (Dell OS10: vlt-domain vlt-mac). The same on both switches of the pair and unique in the network. Needed with domain_id."
+            type: string
+            format: mac
+            since: "5.6.28"
+            required: false
+            pattern: "^[0-9A-Fa-f]{2}([:-][0-9A-Fa-f]{2}){5}$"
+            example: "00-00-5E-00-53-01"
+      mtu:
+        description: "Maximum frame size of the switch ports that face the machines, the uplinks and the link between the two switches of a pair, in bytes. Read by New-SwitchConfiguration.ps1, which needs it for a switch. Microsoft Learn (Physical network requirements for Azure Local: the switch supports jumbo frames of 9,014 bytes): at least 9014 for storage traffic. Dell OS10 accepts up to 9216."
+        type: integer
+        since: "5.6.28"
+        required: false
+        minimum: 1500
+        maximum: 9216
+        example: 9216
+      ports:
+        description: "The switch ports by role, as the switch names them (Dell OS10: ethernet1/1/2). Read by New-SwitchConfiguration.ps1."
+        type: object
+        since: "5.6.28"
+        required: false
+        additionalProperties: false
+        properties:
+          uplinks:
+            description: "Ports to the network above the rack (trunks with the management, out-of-band and workload VLANs)."
+            type: array
+            since: "5.6.28"
+            required: false
+            items:
+              {"type":"string","minLength":1}
+            example: [["ethernet1/1/1"]]
+          node_ports:
+            description: "Ports cabled to the machines' network adapters (trunks with the VLANs of the intents; with RDMA storage on the switch they get the PFC and ETS policies of the storage intent)."
+            type: array
+            since: "5.6.28"
+            required: false
+            items:
+              {"type":"string","minLength":1}
+            example: [["ethernet1/1/2", "ethernet1/1/3"]]
+          peer_link:
+            description: "Ports of the link between the two switches of a pair (Dell OS10: VLTi, the vlt-domain discovery interfaces). Needed with ha.domain_id."
+            type: array
+            since: "5.6.28"
+            required: false
+            items:
+              {"type":"string","minLength":1}
+            example: [["ethernet1/1/13", "ethernet1/1/14"]]
+          native_vlan_id:
+            description: "The VLAN the switch puts the untagged frames of the node ports in (Dell OS10: switchport access vlan on a trunk port). Needed when networking.management.vlan_id is 0, so the machines send management traffic untagged (New-SwitchConfiguration.ps1 stops with the key name without it); when the machines tag the management VLAN it is optional and the node ports carry only tagged VLANs unless it is set. It is not also one of the tagged VLANs of the node ports."
+            type: integer
+            since: "5.6.28"
+            required: false
+            minimum: 1
+            maximum: 4094
+            example: 2201
 
 landing_zone:
   description: "Part 2 of the implementation steps: the Azure foundation the instance depends on. Optional; leave it out when the foundation exists and is managed elsewhere."
@@ -19372,6 +19452,45 @@ _schema_defs:
             type: boolean
           mode:
             type: string
+          domain_id:
+            type: integer
+            minimum: 1
+            maximum: 255
+          peer_address:
+            $ref: '#/$defs/ipv4'
+          priority:
+            type: integer
+            minimum: 1
+            maximum: 65535
+          system_mac:
+            $ref: '#/$defs/mac'
+      mtu:
+        type: integer
+        minimum: 1500
+        maximum: 9216
+      ports:
+        type: object
+        additionalProperties: false
+        properties:
+          uplinks:
+            type: array
+            items:
+              type: string
+              minLength: 1
+          node_ports:
+            type: array
+            items:
+              type: string
+              minLength: 1
+          peer_link:
+            type: array
+            items:
+              type: string
+              minLength: 1
+          native_vlan_id:
+            type: integer
+            minimum: 1
+            maximum: 4094
   bios_settings:
     description: "BIOS attributes: vendor attribute name -> value, as the BMC's Redfish Bios resource names them (Attributes of /redfish/v1/Systems/<id>/Bios). Values are strings, even for numbers; tools convert them to the type the BMC reports. azurelocal-ztp applies them in its Boot stage, before the maintenance boot: it reads the current values, PATCHes only those that differ to the Bios Settings resource with @Redfish.SettingsApplyTime OnReset, powers the machine on or restarts it, and waits until the BIOS reports every value. Used twice: as bios (the machine's FINAL state) and as bios_during_provisioning (TEMPORARY values for the OS install, which the Restore stage sets back to the bios values). Dell examples: Slot2: Disabled (turn off the card in PCIe slot 2, for example a Fibre Channel HBA whose SAN LUN the maintenance environment would otherwise install onto; as a temporary value, with Slot2: Enabled in bios); Slot2: BootDriverDisabled (the card stays visible to the OS but never boots); EmbNic1Nic2: Enabled (the embedded LOM ports, when they show as DisabledOs and the OS can't see them)."
     type: object
@@ -20952,6 +21071,12 @@ tools:
                 SchemaPath: {"name":"SchemaPath","type":"string","declared_type":"string","default":"(Join-Path $PSScriptRoot '../schema/infrastructure.schema.json')","required":"N","read_at":"config/variables/scripts/Compare-InfrastructureSchemaToRegistry.ps1","description":"Compare-InfrastructureSchemaToRegistry.ps1. Schema path (no help text for this parameter)."}
                 OutputCsv: {"name":"OutputCsv","type":"string","declared_type":"string","default":"(Join-Path $PSScriptRoot '../reports/infrastructure-vs-registry.csv')","required":"N","read_at":"config/variables/scripts/Compare-InfrastructureSchemaToRegistry.ps1","description":"Compare-InfrastructureSchemaToRegistry.ps1. Output csv (no help text for this parameter)."}
                 FailOnGap: {"name":"FailOnGap","type":"boolean","declared_type":"switch","required":"N","read_at":"config/variables/scripts/Compare-InfrastructureSchemaToRegistry.ps1","description":"Compare-InfrastructureSchemaToRegistry.ps1. Fail on gap switch (no help text for this parameter)."}
+            config_variables_scripts_New_ArmParameterExample_ps1_generated:
+              type: object
+              area: "config/variables/scripts/New-ArmParameterExample.ps1"
+              properties:
+                Check: {"name":"Check","type":"boolean","declared_type":"switch","required":"N","read_at":"config/variables/scripts/New-ArmParameterExample.ps1","description":"New-ArmParameterExample.ps1. Check switch (no help text for this parameter)."}
+                Root: {"name":"Root","type":"string","declared_type":"string","required":"N","read_at":"config/variables/scripts/New-ArmParameterExample.ps1","description":"New-ArmParameterExample.ps1. Root (no help text for this parameter)."}
             config_variables_scripts_New_InfrastructureArtifacts_ps1_generated:
               type: object
               area: "config/variables/scripts/New-InfrastructureArtifacts.ps1"
@@ -21665,6 +21790,14 @@ tools:
               properties:
                 InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Invoke-PowerSwitchEndpoint-Orchestrated.ps1","description":"Invoke-PowerSwitchEndpoint-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Infrastructure file (no help text for this parameter)."}
                 LogPath: {"name":"LogPath","type":"string","declared_type":"string","default":"","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/Invoke-PowerSwitchEndpoint-Orchestrated.ps1","description":"Invoke-PowerSwitchEndpoint-Orchestrated.ps1. Placeholder script: it ends with exit code 3 (NOT IMPLEMENTED). Log path (no help text for this parameter)."}
+            scripts_deploy_03_onprem_readiness_phase_03_network_infrastructure_task_02_dell_powerswitch_configuration_powershell_New_SwitchConfiguration_ps1_generated:
+              type: object
+              area: "scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/New-SwitchConfiguration.ps1"
+              properties:
+                InfrastructureFile: {"name":"InfrastructureFile","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/New-SwitchConfiguration.ps1","description":"New-SwitchConfiguration.ps1. Infrastructure file (no help text for this parameter)."}
+                OutputDirectory: {"name":"OutputDirectory","type":"string","declared_type":"string","required":"Y","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/New-SwitchConfiguration.ps1","description":"New-SwitchConfiguration.ps1. Output directory (no help text for this parameter)."}
+                Hostname: {"name":"Hostname","type":"array","declared_type":"string[]","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/New-SwitchConfiguration.ps1","description":"New-SwitchConfiguration.ps1. Hostname (no help text for this parameter)."}
+                TemplateRoot: {"name":"TemplateRoot","type":"string","declared_type":"string","required":"N","read_at":"scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-02-dell-powerswitch-configuration/powershell/New-SwitchConfiguration.ps1","description":"New-SwitchConfiguration.ps1. Template root (no help text for this parameter)."}
             scripts_deploy_03_onprem_readiness_phase_03_network_infrastructure_task_03_firewall_endpoint_verification_powershell_Invoke_FirewallEndpoint_Orchestrated_ps1_generated:
               type: object
               area: "scripts/deploy/03-onprem-readiness/phase-03-network-infrastructure/task-03-firewall-endpoint-verification/powershell/Invoke-FirewallEndpoint-Orchestrated.ps1"

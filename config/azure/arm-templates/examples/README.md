@@ -1,63 +1,14 @@
-# ARM Template Examples
+# ARM parameter examples (generated)
 
-This directory contains validated parameter files for Azure Local cluster deployments. The IIC (Contoso) examples cover all three networking patterns with both AD and Local Identity authentication methods. Environment templates provide starting points for real deployments.
+**Generated files. Do not edit.** Each `*.parameters.json` here is what the toolkit sends to Microsoft's quickstart template for one example design. `config/variables/scripts/New-ArmParameterExample.ps1` builds them from the example infrastructure files with the deployment's own code (`New-AzlArmParameterSet` and `ConvertTo-AzlArmParameterFile`, as `New-AzureLocalArmParameters.ps1` calls them); `-Check` fails when a file differs from what the builder writes. To change an example, change its infrastructure file and run the script.
 
-## Purpose
+| File | Built from | Design |
+| --- | --- | --- |
+| `active-directory-s2d-switched.parameters.json` | `config/variables/examples/infrastructure.example.yml` | Active Directory, Storage Spaces Direct on switched storage, two machines |
+| `local-identity-s2d-switchless.parameters.json` | `config/variables/examples/scenarios/local-identity-switchless-iso.yml` | Local identity with Key Vault, switchless storage, two machines |
+| `rack-aware-s2d.parameters.json` | `config/variables/examples/scenarios/rack-aware-ztp.yml` | Rack aware cluster, two zones of two machines |
+| `fibre-channel-san.parameters.json` | `config/variables/examples/scenarios/disaggregated-fibre-channel-proxy.yml` | Disaggregated, external SAN over Fibre Channel |
 
-- **Reference**: See how all 54 parameters are populated across different networking configurations
-- **Validation**: Compare your parameter file against working examples
-- **Troubleshooting**: Identify differences when deployments fail
-- **Generation**: Compare with the file `Invoke-AzureLocalArmDeployment.ps1 -InfrastructureFile ./infrastructure.yml -Mode Plan -Offline` generates from `infrastructure.yml`
+The values are example values only (the IIC example company, documentation address ranges, zero GUIDs). Secrets are Key Vault references, never values. The inputs a real run takes from outside the file are fixed: no ZTP handoff (the Arc machine IDs are built from the subscription, the resource group and the machine names), no OS configuration report (the adapter names are the file's names), no SBE folder, and the zero GUID for the HCI resource provider when the file has none (the deployment looks it up).
 
-## Structure
-
-```
-examples/
-├── README.md                        # This file
-├── single-intent-converged/         # IIC: 1-intent converged networking
-│   ├── azuredeploy.parameters.ad.json
-│   ├── azuredeploy.parameters.local-identity.json
-│   └── README.md
-├── two-intent-standard/             # IIC: 2-intent standard networking
-│   ├── azuredeploy.parameters.ad.json
-│   ├── azuredeploy.parameters.local-identity.json
-│   └── README.md
-└── three-intent-separated/          # IIC: 3-intent separated networking
-    ├── azuredeploy.parameters.ad.json
-    ├── azuredeploy.parameters.local-identity.json
-    └── README.md
-```
-
-## IIC Examples — Networking Patterns
-
-All IIC examples use the fictional Contoso (`contoso.cloud`, prefix `iic`). Each pattern includes both AD and Local Identity parameter files with all 54 parameters populated.
-
-| Pattern | Directory | Intent Count | Use Case |
-|---------|-----------|-------------|----------|
-| Converged | `single-intent-converged/` | 1 | PoC, small edge, single NIC pair |
-| Standard | `two-intent-standard/` | 2 | Production — compute+management split from storage |
-| Separated | `three-intent-separated/` | 3 | High-performance — dedicated storage, compute, management |
-
-## Adding Examples
-
-When adding a new example:
-
-1. **Sanitize sensitive data** — Remove or replace:
-   - Actual subscription IDs → `xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`
-   - Real customer names → Generic identifiers
-   - IP addresses if customer-specific → Use example ranges
-   - Keep structure and parameter names intact
-
-2. **Document the context** — Add a `README.md` explaining:
-   - Networking pattern and node count
-   - Authentication method
-   - Any special configurations or lessons learned
-
-3. **Naming convention**: Use the networking pattern as directory name
-
-## Security Notice
-
-⚠️ **Never commit actual secrets, passwords, or real subscription IDs** to this directory. All sensitive values should be:
-- Replaced with placeholder text
-- Redacted completely
-- Referenced via Key Vault (which is acceptable to show)
+For a real deployment, run `New-AzureLocalArmParameters.ps1` or `Invoke-AzureLocalArmDeployment.ps1` with your `infrastructure.yml` (see [../README.md](../README.md)).

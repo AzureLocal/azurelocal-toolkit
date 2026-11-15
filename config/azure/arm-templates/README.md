@@ -1,85 +1,45 @@
-# Azure ARM Templates
+# Azure ARM templates
 
-This directory contains ARM template parameter files and validated examples for Azure Local cluster deployments. The parameter file of a deployment is generated from `infrastructure.yml` by `Invoke-AzureLocalArmDeployment.ps1`.
+The toolkit deploys an Azure Local instance with Microsoft's ARM quickstart templates. It keeps no parameter file of its own to fill in by hand: the parameters of a deployment are built from `infrastructure.yml`, the one variable file of the instance (its keys are in the master registry, `config/variables/schema/master-registry.yaml`).
 
-## Directory Structure
+## Directory structure
 
-```
+```text
 arm-templates/
-├── README.md                                # This file
-├── cluster-deployment/                      # Azure Local cluster deployment templates
-│   ├── README.md
-│   ├── azuredeploy.parameters.ad.json       # AD auth — 54 parameters ({{VARIABLE}} placeholders)
-│   └── azuredeploy.parameters.local-identity.json  # LCI auth — 54 parameters
-├── examples/                                # Validated IIC examples by networking pattern
-│   ├── README.md
-│   ├── single-intent-converged/             # 1-intent converged (IIC)
-│   ├── two-intent-standard/                 # 2-intent standard (IIC)
-│   └── three-intent-separated/              # 3-intent separated (IIC)
-└── (future)
-    ├── arc-gateway/                         # Arc Gateway ARM templates
-    ├── key-vault/                           # Key Vault ARM templates
-    └── storage-account/                     # Storage Account ARM templates
+├── README.md                    # This file
+├── template-parameters.json     # The parameters of each Microsoft quickstart template the toolkit can select
+├── parameter-sources.json       # Which infrastructure.yml keys feed which ARM parameter
+└── examples/                    # Example parameter files, GENERATED from the example infrastructure files
 ```
 
-## Template Categories
+## Building the parameters of a deployment
 
-| Directory | Purpose | Status |
-|-----------|---------|--------|
-| `cluster-deployment/` | Azure Local cluster creation via ARM (54 params per auth method) | ✅ Available |
-| `examples/` | Validated IIC examples across 3 networking patterns + env templates | ✅ Available |
-| `arc-gateway/` | Arc Gateway for proxy scenarios | 🔜 Planned |
-| `key-vault/` | Key Vault for cluster secrets | 🔜 Planned |
-| `storage-account/` | Cloud witness storage | 🔜 Planned |
+`New-AzureLocalArmParameters.ps1` writes the full parameter file for the design of `infrastructure.yml` (Active Directory or local identity, Storage Spaces Direct or a SAN, rack aware), checked against the parameters of the template it selects. It reads files only and puts no secret in the file:
 
-## Quick Start
+```powershell
+./scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/New-AzureLocalArmParameters.ps1 `
+    -InfrastructureFile ./infrastructure.yml -OutputPath ./arm/cluster.parameters.json
+```
 
-### Option 1: Automated Generation (Recommended)
-
-`Invoke-AzureLocalArmDeployment.ps1` generates the parameters from `infrastructure.yml` (Active Directory or local identity, as `scenario.identity` says) and checks them against the template. Mode Plan with `-Offline` changes nothing and does not touch Azure:
+`Invoke-AzureLocalArmDeployment.ps1` builds the same parameters and runs the deployment. Mode Plan with `-Offline` changes nothing and does not touch Azure:
 
 ```powershell
 ./scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalArmDeployment.ps1 `
     -InfrastructureFile ./infrastructure.yml -Mode Plan -Offline -ReportDirectory ./arm-plan
 ```
 
-The report directory then holds `<cluster>.parameters.json` (secrets are null in it) and `parameter-sources.md` (which key fed which ARM parameter). Modes Validate and Deploy submit the deployment; see the script's help.
+The report directory then holds `<cluster>.parameters.json` (secrets are null in it) and `parameter-sources.md` (which key fed which ARM parameter). Both scripts build the parameters with `New-AzlArmParameterSet` (`scripts/common/arm-deployment/AzlArmDeployment.psm1`).
 
-### Option 2: Manual Placeholder Replacement
+## Examples
 
-1. Navigate to `cluster-deployment/`
-2. Copy the appropriate parameters file:
-   - `azuredeploy.parameters.ad.json` — Active Directory authentication
-   - `azuredeploy.parameters.local-identity.json` — Local Identity authentication
-3. Replace all `{{VARIABLE}}` placeholders with values from `infrastructure.yml`
-4. Deploy using Azure CLI or PowerShell
+[`examples/`](examples/README.md) holds parameter files built by that same code from the example infrastructure files of `config/variables/examples`, with example values only. They are generated: `config/variables/scripts/New-ArmParameterExample.ps1` writes them and its `-Check` (run by the tests) fails when one is out of date. Do not edit them.
 
-See [cluster-deployment/README.md](cluster-deployment/README.md) for detailed instructions.
+## Microsoft's template
 
-## Microsoft Official Template
-
-We use Microsoft's official ARM template (`azuredeploy.json`, apiVersion `2025-09-15-preview`) and provide Azure Local Cloud-customized parameter files:
-
-| Resource | Template Source |
-|----------|-----------------|
-| Azure Local Cluster | [Azure Quickstart — create-cluster](https://github.com/Azure/azure-quickstart-templates/tree/master/quickstarts/microsoft.azurestackhci/create-cluster) |
-
-## Adding New Template Categories
-
-When adding ARM templates for new resource types:
-
-1. Create a subdirectory with descriptive name (e.g., `arc-gateway/`)
-2. Add a `README.md` with:
-   - Purpose and use cases
-   - Microsoft template reference (if applicable)
-   - Parameter descriptions
-   - Deployment instructions
-3. Add parameter template files with `{{VARIABLE}}` placeholders
-4. Update this README's directory structure and table
+The templates come from [Azure Quickstart Templates, microsoft.azurestackhci](https://github.com/Azure/azure-quickstart-templates/tree/master/quickstarts/microsoft.azurestackhci). The copy of the create-cluster template and Microsoft's sample parameter file that the tests compare against is a test fixture: `tests/fixtures/arm/microsoft-create-cluster`.
 
 ## References
 
-- [ARM Template Best Practices](https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/best-practices)
-- [Azure Quickstart Templates](https://github.com/Azure/azure-quickstart-templates)
-- [Azure Local Documentation](https://learn.microsoft.com/en-us/azure/azure-local/)
-- [Deploy via ARM Template](https://learn.microsoft.com/en-us/azure/azure-local/deploy/deploy-via-arm)
+- [Deploy Azure Local via ARM template](https://learn.microsoft.com/azure/azure-local/deploy/deployment-azure-resource-manager-template)
+- [ARM template best practices](https://learn.microsoft.com/azure/azure-resource-manager/templates/best-practices)
+- [Azure Local documentation](https://learn.microsoft.com/azure/azure-local/)
