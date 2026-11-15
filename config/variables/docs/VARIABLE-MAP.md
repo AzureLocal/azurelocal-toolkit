@@ -17,9 +17,9 @@ Registry version 5.0.62. Sources of the scan: toolkit (this repository), sonar d
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
 | Keys of infrastructure.yml | 753 | 508 | 82 | 5 | 156 | 2 |
-| Owned by a tool (`tools.*`) | 4366 | 4158 | 0 | 0 | 208 | 0 |
+| Owned by a tool (`tools.*`) | 4370 | 4162 | 0 | 0 | 208 | 0 |
 | Older variables-file sections | 1373 | 2 | 11 | 0 | 1350 | 10 |
-| All registry leaves | 6492 | 4668 | 93 | 5 | 1714 | 12 |
+| All registry leaves | 6496 | 4672 | 93 | 5 | 1714 | 12 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -94,7 +94,7 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | ztp | ZTP | 85 | 0 | 843 |
 | os-configuration | OS configuration | 76 | 0 | 282 |
 | pre-cluster-verification | Pre-cluster verification | 65 | 0 | 0 |
-| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1009 |
+| arm-deployment | ARM Validate/Deploy | 95 | 0 | 1013 |
 | sonar | Sonar | 19 | 0 | 266 |
 | cicd-infra | Outside the flow | 89 | 0 | 554 |
 | infrastructure-helpers | Outside the flow | 39 | 0 | 0 |
@@ -322,7 +322,7 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 - `storage`: 30 keys
 - `tags`: 1 keys
 
-Where in the code (file, function, keys read by name; 85 places, the first 12):
+Where in the code (file, function, keys read by name; 97 places, the first 12):
 
 | File | Function | Keys |
 | --- | --- | ---: |
@@ -332,12 +332,12 @@ Where in the code (file, function, keys read by name; 85 places, the first 12):
 | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-03-s2s-vpn-connection/powershell/New-VpnConnection.ps1` | `(script)` | 19 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-07-configure-nsgs/powershell/New-NetworkSecurityGroup.ps1` | `(script)` | 18 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-05-storage-configuration/powershell/New-StorageVolume.ps1` | `(script)` | 17 |
+| `scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-02-configure-network-security-groups/azurecli/Set-NetworkSecurityGroupRule.azcli.ps1` | `(script)` | 17 |
+| `scripts/deploy/05-operational-foundations/phase-01-sdn-deployment/task-03-configure-network-security-groups/azurecli/Test-NetworkSecurityGroupRule.azcli.ps1` | `(script)` | 15 |
 | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-02-vpn-gateway/powershell/Deploy-VpnGateway.ps1` | `(script)` | 14 |
 | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-04-p2s-vpn-connection/powershell/Configure-P2sVpn.ps1` | `(script)` | 14 |
 | `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-07-nat-gateway/powershell/New-NatGateway.ps1` | `(script)` | 14 |
 | `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-01-deploy-sdn/powershell/Enable-ArcSdn.ps1` | `(script)` | 14 |
-| `scripts/deploy/04-cluster-deployment/phase-06-post-deployment/task-06-image-downloads/powershell/New-VmImage.ps1` | `(script)` | 14 |
-| `scripts/deploy/02-azure-foundation/phase-04-azure-management-infrastructure/02-manual-deployment/task-01-virtual-network/powershell/Deploy-VirtualNetworks.ps1` | `(script)` | 13 |
 
 ## By ARM parameter: the template parameter and the file key it comes from
 
@@ -419,8 +419,8 @@ Ranked by how many different tools read the key, then how many places in the cod
 
 | Variable | What it is | Set it by | Read by | Becomes |
 | --- | --- | --- | --- | --- |
-| `nodes[].name` | Host name: up to 15 characters. | operator by hand; Trailwright questionnaire; Dell/Redfish discovery (proposed) | arm-deployment; discovery; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; nodes; physicalNodesSettings; storageNetworkList; OS Hostname; Network; RemoteManagement; Sonar nodes[].name; Gate ND-001; NW-001; NW-015; SB-005; ST-011 |
 | `azure.subscription_id` | Subscription ID (GUID) of the Arc machines and the cluster, and of the site and edge machines unless provisioning.simplified.subscription_id names another one. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; nodes; OS ArcRegistration; Sonar subscriptionId |
+| `nodes[].name` | Host name: up to 15 characters. | operator by hand; Trailwright questionnaire; Dell/Redfish discovery (proposed) | arm-deployment; discovery; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; nodes; physicalNodesSettings; storageNetworkList; OS Hostname; Network; RemoteManagement; Sonar nodes[].name; Gate ND-001; NW-001; NW-015; SB-005; ST-011 |
 | `azure.resource_group` | Resource group of the Arc machines and the cluster: 1 to 90 characters (letters, digits, hyphen, underscore, period, parentheses). | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; infrastructure-helpers; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM arcNodeResourceIds; nodes; OS ArcRegistration; Sonar resourceGroup |
 | `azure.tenant_id` | Microsoft Entra tenant ID (GUID) of the subscription. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; discovery; os-configuration; pre-cluster-verification; toolkit-legacy-scripts; ztp | ARM tenantId; OS ArcRegistration |
 | `azure.location` | Azure region, for example eastus. | operator by hand; Trailwright questionnaire | arm-deployment; cicd-infra; os-configuration; pre-cluster-verification; sonar; toolkit-legacy-scripts; ztp | ARM location; OS ArcRegistration; Gate NW-005 |
@@ -1865,7 +1865,7 @@ The registry lists the variables of each tool under `tools.<tool>.<kind>.<group>
 | arm_deployment | config_keys | 26 | 26 | 0 |
 | arm_deployment | env_vars | 3 | 3 | 0 |
 | arm_deployment | event_fields | 18 | 18 | 0 |
-| arm_deployment | parameters | 896 | 896 | 0 |
+| arm_deployment | parameters | 900 | 900 | 0 |
 | arm_deployment | report_fields | 20 | 20 | 0 |
 | arm_deployment | run_settings | 44 | 44 | 0 |
 | arm_deployment | secret_names | 2 | 2 | 0 |
