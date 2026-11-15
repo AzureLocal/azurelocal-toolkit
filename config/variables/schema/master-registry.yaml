@@ -15227,7 +15227,7 @@ key_vaults:
         example: "management"
         used_by: [cicd_infra, trailwright]
       soft_delete_retention_days:
-        description: "Schema 5.6.28. Days a deleted secret or the vault stays recoverable, 7 to 90 (Microsoft Learn: Azure Key Vault soft-delete overview). Default 90, the Azure default. The cluster vault takes cluster.key_vault.soft_delete_retention_days."
+        description: "Schema 5.6.28. Days a deleted secret or the vault stays recoverable, 7 to 90 (Microsoft Learn: Azure Key Vault soft-delete overview). Default 90, the Azure default. The cluster vault takes cluster.key_vault.soft_delete_retention_days. Read by the Terraform identity module and by Deploy-KeyVaults.ps1 (task 10), which creates the vault with it."
         type: integer
         since: "5.6.28"
         required: false
@@ -15235,7 +15235,7 @@ key_vaults:
         minimum: 7
         maximum: 90
         example: 90
-        used_by: [terraform]
+        used_by: [deployment, terraform]
       allowed_ip_ranges:
         description: "Schema 5.6.28. Public IP addresses or CIDR ranges that may reach the vault. Listed: the vault denies every other address (trusted Microsoft services pass); empty: the Azure default, all networks. Read for the platform vault (purpose management) by the Terraform identity module."
         type: array

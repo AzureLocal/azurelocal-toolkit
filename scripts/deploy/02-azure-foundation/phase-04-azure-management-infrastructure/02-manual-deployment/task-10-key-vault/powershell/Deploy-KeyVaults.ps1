@@ -5,7 +5,8 @@
 .DESCRIPTION
     Phase 04 (Azure management infrastructure), manual deployment, Task 10 (Key Vault). Creates each vault of the key_vaults list in the
     subscription and resource group the entry names, in the region azure.location: a Standard vault that uses Azure RBAC for its data plane
-    (no access policies), with soft delete (90 days, the Azure default) and, depending on scenario.environment_class, purge protection. Then
+    (no access policies), with soft delete for key_vaults[].soft_delete_retention_days days (7 to 90; the registry default is 90, the Azure
+    default) and, depending on scenario.environment_class, purge protection. Then
     it reads every keyvault://<vault>/<secret> reference in the file and reports which of those secrets exist in the vaults it manages.
 
     The script never writes a secret and never asks for one. A secret VALUE does not belong in the file or in a script: set it with
@@ -29,7 +30,7 @@
 
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
         azure.tenant_id, azure.location, tags, scenario.environment_class
-        key_vaults[].name, .subscription_id, .resource_group, .purpose
+        key_vaults[].name, .subscription_id, .resource_group, .purpose, .soft_delete_retention_days
         every keyvault://<vault>/<secret> reference anywhere in the file (names only; no value is read)
 
     Exit codes: 0 every listed vault exists (created now, already there, or planned under -WhatIf), whether or not secrets are still missing;
@@ -77,6 +78,10 @@ $RemovableClasses = 'lab', 'test', 'dev'
 # The vaults hold secrets only, so the Standard SKU is enough: the higher tier adds keys protected by a hardware security module
 # (Microsoft Learn: Azure Key Vault service tiers). Azure RBAC is the permission model Microsoft recommends and the one Azure Local uses.
 $VaultSku = 'Standard'
+# key_vaults[].soft_delete_retention_days when an entry leaves it out: the registry default (the Azure default), and the range Azure accepts.
+$DefaultRetentionDays = 90
+$MinRetentionDays = 7
+$MaxRetentionDays = 90
 
 function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
@@ -131,7 +136,13 @@ $plan = foreach ($entry in $vaultEntries) {
     if ($subscriptionId -notmatch $Guid -or $subscriptionId -eq [guid]::Empty.ToString()) { Exit-InputProblem "key_vaults '$name': subscription_id is missing, not a GUID or the all-zero placeholder." }
     $group = Get-Entry $entry 'resource_group'
     if (-not $group) { Exit-InputProblem "key_vaults '$name': resource_group is missing." }
-    [pscustomobject]@{ Name = $name; SubscriptionId = $subscriptionId; ResourceGroup = $group; Purpose = (Get-Entry $entry 'purpose') }
+    $retentionText = Get-Entry $entry 'soft_delete_retention_days'
+    $retention = $DefaultRetentionDays
+    if ($retentionText) {
+        if ($retentionText -notmatch '^\d+$' -or [int]$retentionText -lt $MinRetentionDays -or [int]$retentionText -gt $MaxRetentionDays) { Exit-InputProblem "key_vaults '$name': soft_delete_retention_days '$retentionText' is not a whole number from $MinRetentionDays to $MaxRetentionDays." }
+        $retention = [int]$retentionText
+    }
+    [pscustomobject]@{ Name = $name; SubscriptionId = $subscriptionId; ResourceGroup = $group; Purpose = (Get-Entry $entry 'purpose'); RetentionDays = $retention }
 }
 $plan = @($plan)
 $duplicate = @($plan | Group-Object { $_.Name.ToLowerInvariant() } | Where-Object Count -GT 1)
@@ -166,6 +177,8 @@ $vaultRows = foreach ($item in $plan) {
             if ($rbac -and $null -ne $rbac.Value -and -not [bool]$rbac.Value) { $differs += 'it uses access policies, not Azure RBAC' }
             $soft = $existing.PSObject.Properties['EnableSoftDelete']
             if ($soft -and $null -ne $soft.Value -and -not [bool]$soft.Value) { $differs += 'soft delete is off' }
+            $days = $existing.PSObject.Properties['SoftDeleteRetentionInDays']
+            if ($days -and $null -ne $days.Value -and [int]$days.Value -ne $item.RetentionDays) { $differs += "soft delete keeps $($days.Value) days, the file says $($item.RetentionDays) (Azure does not change it after creation)" }
             # A vault this script would create with purge protection: say so when the existing one has none. It is never turned on here.
             $purge = $existing.PSObject.Properties['EnablePurgeProtection']
             if ($purgeProtection -and $purge -and -not [bool]$purge.Value) { $differs += 'purge protection is off' }
@@ -174,8 +187,8 @@ $vaultRows = foreach ($item in $plan) {
                 Write-Warning "$($item.Name): $($row.Detail)"
             }
         }
-        elseif ($PSCmdlet.ShouldProcess("Key Vault '$($item.Name)' in '$($item.ResourceGroup)'", "Create (Standard, Azure RBAC, soft delete, purge protection $(if ($purgeProtection) { 'on' } else { 'off' }))")) {
-            $arguments = @{ Name = $item.Name; ResourceGroupName = $item.ResourceGroup; Location = $location; SubscriptionId = $item.SubscriptionId; Sku = $VaultSku; ErrorAction = 'Stop' }
+        elseif ($PSCmdlet.ShouldProcess("Key Vault '$($item.Name)' in '$($item.ResourceGroup)'", "Create (Standard, Azure RBAC, soft delete $($item.RetentionDays) days, purge protection $(if ($purgeProtection) { 'on' } else { 'off' }))")) {
+            $arguments = @{ Name = $item.Name; ResourceGroupName = $item.ResourceGroup; Location = $location; SubscriptionId = $item.SubscriptionId; Sku = $VaultSku; SoftDeleteRetentionInDays = $item.RetentionDays; ErrorAction = 'Stop' }
             if ($purgeProtection) { $arguments.EnablePurgeProtection = $true }
             if ($tags.Count) { $arguments.Tag = $tags }
             $null = New-AzKeyVault @arguments

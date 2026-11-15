@@ -18,7 +18,7 @@ BeforeAll {
     # Stubs with the Az signatures the script uses, so the mocks work whether or not the Az modules are installed.
     function Get-AzContext { [CmdletBinding()] param() }
     function Get-AzKeyVault { [CmdletBinding()] param([string]$VaultName, [string]$ResourceGroupName, [string]$SubscriptionId) }
-    function New-AzKeyVault { [CmdletBinding()] param([string]$Name, [string]$ResourceGroupName, [string]$Location, [string]$SubscriptionId, [string]$Sku, [switch]$EnablePurgeProtection, [hashtable]$Tag) }
+    function New-AzKeyVault { [CmdletBinding()] param([string]$Name, [string]$ResourceGroupName, [string]$Location, [string]$SubscriptionId, [string]$Sku, [int]$SoftDeleteRetentionInDays, [switch]$EnablePurgeProtection, [hashtable]$Tag) }
     function Get-AzKeyVaultSecret { [CmdletBinding()] param([string]$VaultName, [string]$Name) }
 
     $global:AzlKvTestTenant = [guid]::NewGuid().ToString()
@@ -115,6 +115,21 @@ Describe 'Deploy-KeyVaults.ps1' {
             else { Should -Invoke New-AzKeyVault -Times 2 -Exactly -ParameterFilter { -not $EnablePurgeProtection } }
         }
 
+        It 'soft delete keeps the days of key_vaults[].soft_delete_retention_days, and the registry default (90) when the entry leaves it out' {
+            $short = New-Vault 'kv-mgmt-01'; $short.soft_delete_retention_days = 14
+            $r = Invoke-Vault (New-InfraFile -Vaults @($short, (New-Vault 'kv-deploy-01' $global:AzlKvTestSub2 'rg-deploy-01')))
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            Should -Invoke New-AzKeyVault -Times 1 -Exactly -ParameterFilter { $Name -eq 'kv-mgmt-01' -and $SoftDeleteRetentionInDays -eq 14 }
+            Should -Invoke New-AzKeyVault -Times 1 -Exactly -ParameterFilter { $Name -eq 'kv-deploy-01' -and $SoftDeleteRetentionInDays -eq 90 }
+        }
+
+        It 'refuses a retention Azure does not accept: <Days>' -ForEach @(@{ Days = 6 }, @{ Days = 91 }, @{ Days = 'thirty' }) {
+            $bad = New-Vault 'kv-mgmt-01'; $bad.soft_delete_retention_days = $Days
+            $r = Invoke-Vault (New-InfraFile -Vaults @($bad))
+            $r.ExitCode | Should -Be 2
+            $r.Text | Should -Match 'soft_delete_retention_days'
+            Should -Invoke New-AzKeyVault -Times 0 -Exactly
+        }
         It 'treats a not-found error from the lookup as "no vault yet"' {
             Mock Get-AzKeyVault { throw 'The vault could not be found (404 NotFound).' }
             (Invoke-Vault (New-InfraFile)).Result.Created | Should -Be 2

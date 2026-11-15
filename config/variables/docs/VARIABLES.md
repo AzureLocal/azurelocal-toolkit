@@ -158,7 +158,7 @@ Every Key Vault that a keyvault:// reference in this file names, with where it i
 | `key_vaults[].subscription_id` | Subscription (GUID) that holds the vault. | GUID | if section is set / yes |  | `00000000-0000-0000-0000-000000000000` | Azure portal > Key vaults. List every vault a keyvault:// reference names. | ZTP, CI/CD infrastructure, ARM deployment, Trailwright |
 | `key_vaults[].resource_group` | Resource group that holds the vault. | resource group name | if section is set / yes |  | `rg-iic-mgmt-01` | Azure portal > Key vaults. List every vault a keyvault:// reference names. | ZTP, CI/CD infrastructure, ARM deployment, Trailwright |
 | `key_vaults[].purpose` | What the vault holds, for example management, deployment or backup. | string | no / no |  | `management` | Azure portal > Key vaults. List every vault a keyvault:// reference names. | CI/CD infrastructure, Trailwright |
-| `key_vaults[].soft_delete_retention_days` | Days a deleted secret or the vault stays recoverable, 7 to 90 (Microsoft Learn: Azure Key Vault soft-delete overview). (since 5.6.28) | integer | no / no | `90` |  | Azure portal > Key vaults. List every vault a keyvault:// reference names. | Trailwright |
+| `key_vaults[].soft_delete_retention_days` | Days a deleted secret or the vault stays recoverable, 7 to 90 (Microsoft Learn: Azure Key Vault soft-delete overview). (since 5.6.28) | integer | no / no | `90` |  | Azure portal > Key vaults. List every vault a keyvault:// reference names. | ARM deployment, Trailwright |
 | `key_vaults[].allowed_ip_ranges` | Public IP addresses or CIDR ranges that may reach the vault. (since 5.6.28) | list of CIDR | no / no |  |  | Azure portal > Key vaults. List every vault a keyvault:// reference names. | Trailwright |
 
 ### secrets

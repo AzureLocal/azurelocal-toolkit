@@ -16,10 +16,10 @@ Registry version 5.0.62. Sources of the scan: toolkit (this repository), sonar d
 
 | | Variables | read | read as part | validated only | placeholder | deprecated |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Keys of infrastructure.yml | 753 | 507 | 82 | 5 | 157 | 2 |
+| Keys of infrastructure.yml | 753 | 508 | 82 | 5 | 156 | 2 |
 | Owned by a tool (`tools.*`) | 4366 | 4158 | 0 | 0 | 208 | 0 |
 | Older variables-file sections | 1373 | 2 | 11 | 0 | 1350 | 10 |
-| All registry leaves | 6492 | 4667 | 93 | 5 | 1715 | 12 |
+| All registry leaves | 6492 | 4668 | 93 | 5 | 1714 | 12 |
 
 A "leaf" is a registry variable with no variable below it (`nodes[].name`, not `nodes`). Status: **read**: a tool names the key in code; **read as part**: no tool names it, but one reads the section or list that holds it; **validated only**: only the validator names it; **placeholder**: documented in the registry, no tool in the scan reads it; **deprecated**: kept for compatibility (`replaced_by` says what replaces it). For a tool-owned variable, read means the registry points at the code that reads or writes it.
 
@@ -45,7 +45,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | Pre-cluster verification | AzlPreClusterVerification.psm1 | 65 | azure, cluster, hardware, identity, key_vaults, networking, nodes, provisioning, scenario, storage | deployment | the verification report (verdict and check results), precluster-verification-events.jsonl |
 | ARM Validate/Deploy | Invoke-AzureLocalArmDeployment.ps1 (New-AzlArmParameterSet) | 95 | _metadata, azure, cluster, hardware, identity, key_vaults, networking, nodes, scenario, security, storage | deployment | deploymentParameters.json (the ARM parameters), arm-deployment-events.jsonl, the deployment on Azure |
 | Sonar | azurelocal-sonar | 19 | _metadata, azure, cluster, identity, nodes, provisioning, scenario | monitoring | a live view; reads the feeds above |
-| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 348 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
+| Outside the flow | cicd-infra, validator, helpers, legacy scripts | 349 | _metadata, azure, cluster, deployment, devops, hardware, identity, key_vaults, landing_zone, network_devices, networking, nodes, operations, provisioning, scenario, sdn, secrets, security, site, storage, tags | cicd_infra | CI/CD runners, the validator, shared helpers and the older numbered deploy scripts |
 
 ### Which section is read in which phase (number of keys)
 
@@ -61,7 +61,7 @@ The master `infrastructure.yml` is the one file every phase reads. Each phase re
 | `devops` | 4 |  |  |  |  |  |  | 73 |
 | `scenario` | 9 | 1 | 2 | 6 | 5 | 6 | 2 | 6 |
 | `azure` | 8 | 1 | 5 | 4 | 5 | 6 | 3 | 10 |
-| `key_vaults` |  |  | 1 |  | 3 | 3 |  | 4 |
+| `key_vaults` |  |  | 1 |  | 3 | 3 |  | 5 |
 | `secrets` |  |  |  |  |  |  |  | 5 |
 | `cluster` | 9 |  |  | 1 | 1 | 11 | 1 | 4 |
 | `deployment` |  |  |  | 1 |  |  |  | 2 |
@@ -99,7 +99,7 @@ Reads are keys of `infrastructure.yml` the code names (from the scan). Writes ar
 | cicd-infra | Outside the flow | 89 | 0 | 554 |
 | infrastructure-helpers | Outside the flow | 39 | 0 | 0 |
 | validator | Outside the flow | 111 | 0 | 0 |
-| toolkit-legacy-scripts | Outside the flow | 235 | 0 | 0 |
+| toolkit-legacy-scripts | Outside the flow | 236 | 0 | 0 |
 
 ### trailwright
 
@@ -301,13 +301,13 @@ Where in the code (file, function, keys read by name; 14 places, the first 12):
 
 ### toolkit-legacy-scripts
 
-**Reads (235):** the keys are listed by section; the CSV has each key with the file and function.
+**Reads (236):** the keys are listed by section; the CSV has each key with the file and function.
 
 - `azure`: 9 keys
 - `cluster`: 1 keys
 - `hardware`: 14 keys
 - `identity`: 19 keys
-- `key_vaults`: 4 keys
+- `key_vaults`: 5 keys
 - `landing_zone`: 72 keys
 - `network_devices`: 16 keys
 - `networking`: 27 keys
@@ -464,7 +464,7 @@ Ranked by how many different tools read the key, then how many places in the cod
 
 Variables the registry documents that no tool in the scan reads by name. Each is either a key a coming phase will read, a key only the validator checks, or a name kept for compatibility. Nothing here is an error; it is the list to look at before you spend time filling a key in that nothing uses yet.
 
-### Placeholder: documented, not read by any tool in the scan (157)
+### Placeholder: documented, not read by any tool in the scan (156)
 
 | Variable | Tools | Provided by | Note |
 | --- | --- | --- | --- |
@@ -531,7 +531,6 @@ Variables the registry documents that no tool in the scan reads by name. Each is
 | `azure.automation_identity.object_id` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
 | `azure.automation_identity.resource_group_roles[].resource_group` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
 | `azure.automation_identity.resource_group_roles[].roles` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
-| `key_vaults[].soft_delete_retention_days` | terraform | operator by hand; default | documented in the registry; no tool in the scan reads it |
 | `key_vaults[].allowed_ip_ranges` | terraform | operator by hand | documented in the registry; no tool in the scan reads it |
 | `nodes[].network_adapters[].port_index` | os_configuration; discovery | operator by hand; Dell/Redfish discovery (proposed) | documented in the registry; no tool in the scan reads it |
 | `nodes[].network_adapters[].vendor` | os_configuration; discovery | operator by hand; Dell/Redfish discovery (proposed) | documented in the registry; no tool in the scan reads it |
@@ -1314,7 +1313,7 @@ Grouped by section, in the order of the file. `req`: yes when the registry marks
 | `key_vaults[].subscription_id` | string (guid), required | operator | ztp; deployment; cicd_infra; trailwright; terraform | arm-deployment; cicd-infra; pre-cluster-verification; toolkit-legacy-scripts |  | read |
 | `key_vaults[].resource_group` | string (resource_group), required | operator | ztp; deployment; cicd_infra; trailwright; terraform | arm-deployment; cicd-infra; pre-cluster-verification; toolkit-legacy-scripts |  | read |
 | `key_vaults[].purpose` | string | operator | cicd_infra; trailwright | toolkit-legacy-scripts |  | read |
-| `key_vaults[].soft_delete_retention_days` | integer, default `90` | operator; default | terraform |  |  | placeholder |
+| `key_vaults[].soft_delete_retention_days` | integer, default `90` | operator; default | deployment; terraform | toolkit-legacy-scripts |  | read |
 | `key_vaults[].allowed_ip_ranges` | array | operator | terraform |  |  | placeholder |
 
 ### landing_zone

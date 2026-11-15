@@ -162,7 +162,7 @@ key_vaults:
     # used by: cicd_infra, trailwright
     purpose: "management"
     # (since 5.6.28) 
-    # default: 90; used by: terraform
+    # default: 90; used by: deployment, terraform
     soft_delete_retention_days: 90
     # (since 5.6.28) 
     # used by: terraform
