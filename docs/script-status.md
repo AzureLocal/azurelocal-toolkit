@@ -20,9 +20,9 @@ Task folders: 110.
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
 | PowerShell | 58 | 52 | 0 |
-| Azure CLI | 1 | 56 | 53 |
+| Azure CLI | 14 | 41 | 55 |
 
-Azure CLI applies to 49 tasks, does not apply to 53, and is not decided for 8.
+Azure CLI applies to 50 tasks, does not apply to 55, and is not decided for 5.
 
 ## 01-cicd-infra
 
@@ -116,23 +116,23 @@ Azure CLI applies to 49 tasks, does not apply to 53, and is not decided for 8.
 | `phase-03-os-configuration/task-10-configure-hostname` | not built | not applicable | no |
 | `phase-03-os-configuration/task-11-clear-previous-storage-configuration-conditional` | not built | not applicable | no |
 | `phase-03-os-configuration/task-13-phase03-verification` | not built | not applicable | no |
-| `phase-04-arc-registration/task-01-pre-registration-validation` | not built | not built | yes |
-| `phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc` | not built | not built | yes |
-| `phase-04-arc-registration/task-04-verify-arc-registration-and-connectivity` | not built | not built | yes |
-| `phase-05-cluster-deployment/active-directory/task-01-initiate-deployment-via-arm-template` | not built | not built | yes |
-| `phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion` | not built | not built | unclear |
-| `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-arm-template` | not built | not built | yes |
-| `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal` | not built | not built | unclear |
-| `phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion` | not built | not built | unclear |
+| `phase-04-arc-registration/task-01-pre-registration-validation` | not built | built | yes |
+| `phase-04-arc-registration/task-02-register-cluster-nodes-with-azure-arc` | not built | not applicable | no |
+| `phase-04-arc-registration/task-04-verify-arc-registration-and-connectivity` | not built | built | yes |
+| `phase-05-cluster-deployment/active-directory/task-01-initiate-deployment-via-arm-template` | not built | built | yes |
+| `phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion` | not built | built | yes |
+| `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-arm-template` | not built | built | yes |
+| `phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal` | not built | not applicable | no |
+| `phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion` | not built | built | yes |
 | `phase-06-post-deployment/task-01-deploy-sdn` | built | not applicable | no |
-| `phase-06-post-deployment/task-02-cluster-quorum-configuration` | not built | not built | yes |
+| `phase-06-post-deployment/task-02-cluster-quorum-configuration` | not built | built | yes |
 | `phase-06-post-deployment/task-03-security-groups-applied-to-nodes` | built | not applicable | no |
-| `phase-06-post-deployment/task-04-ssh-connectivity-to-nodes` | built | not built | yes |
-| `phase-06-post-deployment/task-05-storage-configuration` | built | not built | yes |
-| `phase-06-post-deployment/task-06-image-downloads` | built | not built | yes |
-| `phase-06-post-deployment/task-07-configure-nsgs` | built | not built | yes |
-| `phase-06-post-deployment/task-08-logical-network-creation` | built | not built | yes |
-| `phase-06-post-deployment/task-09-post-deployment-verification` | built | not built | yes |
+| `phase-06-post-deployment/task-04-ssh-connectivity-to-nodes` | built | built | yes |
+| `phase-06-post-deployment/task-05-storage-configuration` | built | built | yes |
+| `phase-06-post-deployment/task-06-image-downloads` | built | built | yes |
+| `phase-06-post-deployment/task-07-configure-nsgs` | built | built | yes |
+| `phase-06-post-deployment/task-08-logical-network-creation` | built | built | yes |
+| `phase-06-post-deployment/task-09-post-deployment-verification` | built | built | yes |
 | `phase-06-post-deployment/task-10-sbe-update-import` | built | not applicable | no |
 
 ## 05-operational-foundations
@@ -173,8 +173,5 @@ Azure CLI may or may not apply. Decide, then set `AzureCli` to `yes` or `no` in 
 | `02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-01-configuration/task-01-configure-core-variables` | Edits the deployment configuration; there is no real script yet that shows whether it touches Azure. |
 | `02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-01-configuration/task-02-configure-management-mode` | Edits the deployment configuration; there is no real script yet that shows whether it touches Azure. |
 | `02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-01-configuration/task-03-configure-cluster-mode` | Edits the deployment configuration; there is no real script yet that shows whether it touches Azure. |
-| `04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion` | Verifies the deployment, but the real scripts only check Active Directory and cluster health on premises. |
-| `04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal` | Named for the Azure portal, but the real scripts create local accounts on the nodes. |
-| `04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion` | Verifies the deployment, but the real scripts only check the local identity set-up and cluster health on premises. |
 | `05-operational-foundations/phase-04-security-governance/task-04-enable-security-logging` | No script. Audit policy and the Security log size are part of the security baseline, which drift control holds; the supported way to change them is Set-AzsSecurity (task-03, security.baseline_settings). Not decided whether Azure is involved. |
 | `05-operational-foundations/phase-05-licensing-telemetry/task-03-configure-enhanced-telemetry` | No script. Microsoft Learn documents no way to set the Windows telemetry level of an Azure Local machine; diagnostic data is collected by the telemetry and diagnostics extension. Not decided whether Azure is involved. |
