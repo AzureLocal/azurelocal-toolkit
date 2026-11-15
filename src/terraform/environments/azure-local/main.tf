@@ -13,49 +13,29 @@
 module "landing_zone" {
   source = "../../modules/landing-zone"
 
-  management_groups = {
-    parent_id                  = null
-    root_name                  = var.management_groups.root_name
-    root_display_name          = var.management_groups.root_display_name
-    platform_name              = var.management_groups.platform_name
-    platform_display_name      = var.management_groups.platform_display_name
-    identity_name              = var.management_groups.identity_name
-    identity_display_name      = var.management_groups.identity_display_name
-    connectivity_name          = var.management_groups.connectivity_name
-    connectivity_display_name  = var.management_groups.connectivity_display_name
-    management_name            = var.management_groups.management_name
-    management_display_name    = var.management_groups.management_display_name
-    security_name              = var.management_groups.security_name
-    security_display_name      = var.management_groups.security_display_name
-    landing_zones_name         = var.management_groups.landing_zones_name
-    landing_zones_display_name = var.management_groups.landing_zones_display_name
-  }
-
-  subscriptions = {
-    connectivity_id = var.subscriptions.connectivity_id
-    identity_id     = var.subscriptions.identity_id
-    management_id   = var.subscriptions.management_id
-    security_id     = var.subscriptions.security_id
-    azure_local_id  = var.subscriptions.azure_local_id
-    workloads_id    = var.subscriptions.workloads_id
-  }
-
-  resource_groups = var.resource_groups
-  location        = var.location
-  tags            = var.tags
+  management_groups = var.management_groups
+  subscriptions     = var.subscriptions
+  resource_groups   = var.resource_groups
+  location          = var.location
+  tags              = var.tags
 }
 
 # -----------------------------------------------------------------------------
-# Phase 2: Networking — VNet, Subnets, NSGs, VPN, Bastion
+# Phase 2: Networking — VNet, Subnets, NSGs, VPN, Bastion, NAT gateway
 # -----------------------------------------------------------------------------
+locals {
+  # A NAT gateway, VPN gateway or Bastion host with no resource group of its own goes in the resource group of the hub network
+  # (the registry description of landing_zone.connectivity.*.resource_group).
+  hub_resource_group = module.landing_zone.resource_group_names[var.hub_resource_group_name]
+}
+
 module "networking" {
   source = "../../modules/networking"
 
   vnet_name           = var.vnet_name
   vnet_address_space  = var.vnet_address_space
   location            = var.location
-  resource_group_name = module.landing_zone.resource_group_names[var.hub_resource_group_name]
-  org_code            = var.org_code
+  resource_group_name = local.hub_resource_group
   dns_servers         = var.dns_servers
   subnets             = var.subnets
   nsgs                = var.nsgs
@@ -63,13 +43,14 @@ module "networking" {
 
   enable_nat_gateway       = var.enable_nat_gateway
   nat_gateway_idle_timeout = var.nat_gateway_idle_timeout
+  nat_config               = merge(var.nat_config, { resource_group = var.nat_config.resource_group != "" ? var.nat_config.resource_group : local.hub_resource_group })
 
   enable_vpn_gateway = var.enable_vpn_gateway
-  vpn_config         = var.vpn_config
+  vpn_config         = merge(var.vpn_config, { resource_group = var.vpn_config.resource_group != "" ? var.vpn_config.resource_group : local.hub_resource_group })
   vpn_shared_key     = var.vpn_shared_key
 
   enable_bastion = var.enable_bastion
-  bastion_config = var.bastion_config
+  bastion_config = merge(var.bastion_config, { resource_group = var.bastion_config.resource_group != "" ? var.bastion_config.resource_group : local.hub_resource_group })
 
   tags = var.tags
 
@@ -101,10 +82,11 @@ module "monitoring" {
 module "identity" {
   source = "../../modules/identity"
 
-  key_vault_name        = var.key_vault_name
-  location              = var.location
-  resource_group_name   = module.landing_zone.resource_group_names[var.identity_resource_group_name]
-  key_vault_allowed_ips = var.key_vault_allowed_ips
+  key_vault_name                       = var.key_vault_name
+  location                             = var.location
+  resource_group_name                  = module.landing_zone.resource_group_names[var.identity_resource_group_name]
+  key_vault_allowed_ips                = var.key_vault_allowed_ips
+  key_vault_soft_delete_retention_days = var.key_vault_soft_delete_retention_days
 
   log_analytics_workspace_id = module.monitoring.workspace_id
 
@@ -117,7 +99,7 @@ module "identity" {
   azl_key_vault_soft_delete_retention_days = var.azl_key_vault_soft_delete_retention_days
 
   deployment_spn_object_id    = var.deployment_spn_object_id
-  azure_local_subscription_id = var.subscriptions.azure_local_id
+  azure_local_subscription_id = var.azure_local_subscription_id
   spn_subscription_roles      = var.spn_subscription_roles
   spn_resource_group_roles    = var.spn_resource_group_roles
 
@@ -134,29 +116,40 @@ module "identity" {
 module "security" {
   source = "../../modules/security"
 
-  subscription_id        = var.subscriptions.azure_local_id
+  subscription_id        = var.azure_local_subscription_id
   security_contact_email = var.security_contact_email
+  alert_notifications    = var.alert_notifications
+  alerts_to_admins       = var.alerts_to_admins
   policy_assignments     = var.policy_assignments
-  rg_policy_assignments  = var.rg_policy_assignments
+  rg_policy_assignments = {
+    for name, a in var.rg_policy_assignments : name => {
+      resource_group_id      = module.landing_zone.resource_group_ids[a.resource_group]
+      policy_definition_id   = a.policy_definition_id
+      display_name           = a.display_name
+      description            = a.description
+      enforce                = a.enforce
+      non_compliance_message = a.non_compliance_message
+    }
+  }
 
   depends_on = [module.landing_zone]
 }
 
 # -----------------------------------------------------------------------------
-# Phase 6: Compute — Management VMs
+# Phase 6: Compute — Management VMs, each in its own resource group
 # -----------------------------------------------------------------------------
 module "compute" {
   source = "../../modules/compute"
 
   management_vms = {
-    for key, vm in var.management_vms : key => merge(vm, { subnet_id = module.networking.subnet_ids[vm.subnet_key] })
+    for key, vm in var.management_vms : key => merge(vm, {
+      subnet_id      = module.networking.subnet_ids[vm.subnet_key]
+      resource_group = module.landing_zone.resource_group_names[vm.resource_group]
+    })
   }
-  location            = var.location
-  resource_group_name = module.landing_zone.resource_group_names[var.compute_resource_group_name]
-  admin_username      = var.vm_admin_username
-  admin_password      = var.vm_admin_password
-  windows_server_sku  = var.windows_server_sku
-  key_vault_id        = module.identity.key_vault_id
+  location       = var.location
+  admin_password = var.vm_admin_password
+  key_vault_id   = module.identity.key_vault_id
 
   tags = var.tags
 

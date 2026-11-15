@@ -500,9 +500,8 @@
           }
         },
         "runners": {
-          "description": "Schema 5.5. The VNet of the runners, the peering with the hub and the lab ranges they reach.",
-          "type": "object",
-          "additionalProperties": false,
+          "description": "Schema 5.5. The self-hosted runners that task 06 deploys with Terraform. One Linux general pool and at most one Windows ztp runner; use the module directly for more. Replaces devops.runner when present.",
+          "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
@@ -571,9 +570,8 @@
                 "pattern": "^[a-z_][a-z0-9_-]{0,31}$"
               },
               "identity_client_id": {
-                "description": "Schema 5.6.28. Client ID of the user-assigned managed identity the runner uses to read its registration secret from Key Vault. Empty or missing: the machine's system-assigned identity.",
-                "type": "string",
-                "format": "uuid"
+                "$ref": "#/$defs/guid",
+                "description": "Schema 5.6.28. Client (application) ID of the runner's user-assigned managed identity (GUID), once it exists. Not a secret."
               }
             }
           }

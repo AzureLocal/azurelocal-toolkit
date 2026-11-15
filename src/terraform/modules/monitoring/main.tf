@@ -38,13 +38,14 @@ resource "azurerm_monitor_action_group" "critical" {
   resource_group_name = var.resource_group_name
   # Same rule as Deploy-ActionGroup.ps1: the letters and digits of the name, at most 12 characters (the Azure limit of an action group
   # short name), so the Terraform route and the script route make the same group.
-  short_name          = substr(replace(var.action_group_name, "/[^A-Za-z0-9]/", ""), 0, 12)
-  enabled             = true
+  short_name = substr(replace(var.action_group_name, "/[^A-Za-z0-9]/", ""), 0, 12)
+  # The group exists to send the notifications; a disabled group sends none.
+  enabled = true
 
   dynamic "email_receiver" {
     for_each = var.alert_email_addresses
     content {
-      name          = "email-${email_receiver.key}"
+      name          = "${var.email_receiver_name_prefix}${email_receiver.key}"
       email_address = email_receiver.value
     }
   }

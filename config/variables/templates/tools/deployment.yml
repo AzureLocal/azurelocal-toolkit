@@ -910,7 +910,7 @@ provisioning:
 # used by: cicd_infra
 devops:
   # (since 5.5) 
-  # used by: cicd_infra
+  # used by: cicd_infra, terraform
   runners:
     # general: ARM, Arc, Terraform, Ansible and OS configuration. ztp: the azurelocal-ztp Boot, Bootstrap and Vouchers stages (Windows only).
     # one of: general | ztp; default: "general"; used by: deployment, cicd_infra, ansible, terraform

@@ -10,17 +10,32 @@ mock_provider "azurerm" {
 mock_provider "random" {}
 
 variables {
-  name_prefix           = "test-runner"
-  location              = "eastus"
-  resource_group_name   = "rg-test-runners"
-  platform              = "github"
-  scm_url               = "https://github.com/example-org"
-  os_type               = "linux"
-  admin_ssh_public_key  = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDB7vh8Ob2SpmbHdf4DndRVIIH5xYrGhLjfYd4m13+DyKjZ35gN5bSgJ6DptlvnhHNsyczLZoakfIBeQtgGMwf55mMBu2OMQ7jdtnh3IVNTzqZ8m8Aq5RQ6O3NHHlqyNzWOXK1nABi+lrE11nZLSPs0pPaEJQW5Ued/RY2MPNp5hu9gZUdMFTNU2J5QeAWw11F705uq21G42a6si8kAA0xgydrkJnzAmGNHESEZV8mCW/mH5KkYMEskRSl7YzsxJnP+CH7lmqUF/IN1HwINKQgxhjWbwa5quWZlIurMtT5IZ6fPj6Sr1fRUGaxGkhw50fvEDNtA+adI1M4wjI/qyXoP test@example.com"
-  vnet_name             = "vnet-test"
-  vnet_address_space    = ["10.250.10.0/24"]
-  subnet_name           = "snet-test"
-  subnet_address_prefix = "10.250.10.0/26"
+  name_prefix                = "test-runner"
+  location                   = "eastus"
+  resource_group_name        = "rg-test-runners"
+  platform                   = "github"
+  scm_url                    = "https://github.com/example-org"
+  os_type                    = "linux"
+  admin_ssh_public_key       = "ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDB7vh8Ob2SpmbHdf4DndRVIIH5xYrGhLjfYd4m13+DyKjZ35gN5bSgJ6DptlvnhHNsyczLZoakfIBeQtgGMwf55mMBu2OMQ7jdtnh3IVNTzqZ8m8Aq5RQ6O3NHHlqyNzWOXK1nABi+lrE11nZLSPs0pPaEJQW5Ued/RY2MPNp5hu9gZUdMFTNU2J5QeAWw11F705uq21G42a6si8kAA0xgydrkJnzAmGNHESEZV8mCW/mH5KkYMEskRSl7YzsxJnP+CH7lmqUF/IN1HwINKQgxhjWbwa5quWZlIurMtT5IZ6fPj6Sr1fRUGaxGkhw50fvEDNtA+adI1M4wjI/qyXoP test@example.com"
+  vnet_name                  = "vnet-test"
+  vnet_address_space         = ["10.250.10.0/24"]
+  subnet_name                = "snet-test"
+  subnet_address_prefix      = "10.250.10.0/26"
+  purpose                    = "general"
+  compute_type               = "vm"
+  runner_count               = 1
+  vm_size                    = "Standard_D2s_v5"
+  admin_username             = "runneradmin"
+  os_disk_type               = "Premium_LRS"
+  os_disk_caching            = "ReadWrite"
+  data_disk_caching          = "ReadWrite"
+  encryption_at_host_enabled = false
+  nsg_name                   = "nsg-test-runner"
+  managed_identity_name      = "id-test-runner"
+  reachable_tcp_ports        = ["22", "443", "445", "3389", "5985", "5986"]
+  allow_internet_https       = true
+  allow_internet_http        = true
+  allow_icmp                 = true
   registration_secret = {
     key_vault_id   = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-kv/providers/Microsoft.KeyVault/vaults/kv-test"
     key_vault_name = "kv-test"
@@ -168,8 +183,14 @@ run "hub_peering_both_halves" {
 
   variables {
     hub_peering = {
-      enabled     = true
-      hub_vnet_id = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-hub/providers/Microsoft.Network/virtualNetworks/vnet-hub"
+      enabled                 = true
+      hub_vnet_id             = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-hub/providers/Microsoft.Network/virtualNetworks/vnet-hub"
+      use_remote_gateways     = true
+      create_hub_side         = true
+      allow_forwarded_traffic = true
+      allow_gateway_transit   = true
+      spoke_name              = "peer-vnet-test-to-hub"
+      hub_name                = "peer-hub-to-vnet-test"
     }
   }
 
@@ -188,9 +209,13 @@ run "hub_peering_network_team_owns_hub_side" {
 
   variables {
     hub_peering = {
-      enabled         = true
-      hub_vnet_id     = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-hub/providers/Microsoft.Network/virtualNetworks/vnet-hub"
-      create_hub_side = false
+      enabled                 = true
+      hub_vnet_id             = "/subscriptions/11111111-1111-1111-1111-111111111111/resourceGroups/rg-hub/providers/Microsoft.Network/virtualNetworks/vnet-hub"
+      use_remote_gateways     = true
+      create_hub_side         = false
+      allow_forwarded_traffic = true
+      allow_gateway_transit   = true
+      spoke_name              = "peer-vnet-test-to-hub"
     }
   }
 

@@ -28,8 +28,8 @@ output "vpn_gateway_id" {
 }
 
 output "vpn_gateway_public_ip" {
-  description = "VPN Gateway public IP (empty if not deployed)."
-  value       = var.enable_vpn_gateway ? azurerm_public_ip.vpn[0].ip_address : ""
+  description = "VPN Gateway public IPs, comma separated (empty if not deployed)."
+  value       = join(",", azurerm_public_ip.vpn[*].ip_address)
 }
 
 output "bastion_public_ip" {

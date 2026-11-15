@@ -28,7 +28,7 @@ locals {
   # Purge protection of the platform vault, the rule of Deploy-KeyVaults.ps1 (phase 04, task 10): it cannot be switched off once it is on,
   # and it keeps a deleted vault's name reserved for the retention period (Microsoft Learn: Azure Key Vault soft-delete overview, Purge
   # protection). So it is on, except when scenario.environment_class (var.environment_class) is lab, test or dev, where a vault has to be
-  # removable.
+  # removable. The three classes are values of the scenario.environment_class enum of the registry.
   removable_environment_classes     = ["lab", "test", "dev"]
   platform_purge_protection_enabled = !contains(local.removable_environment_classes, lower(trimspace(var.environment_class)))
 
@@ -40,15 +40,10 @@ locals {
   # Key Vault behavior and is not enabled by default" (Azure Key Vault soft-delete overview,
   # https://learn.microsoft.com/azure/key-vault/general/soft-delete-overview). The template copy: config/azure/arm-templates/cluster-deployment/azuredeploy.json.
   cluster_purge_protection_enabled = false
-
-  # The platform vault (key_vaults[purpose=management]) keeps deleted items for the Azure default, 90 days, as Deploy-KeyVaults.ps1 creates it:
-  # "If no configuration is specified, the default recovery period is set to 90 days" (Microsoft Learn: Azure Key Vault soft-delete overview).
-  # key_vaults[] has no retention key, so this is not a choice of a deployment. The cluster vault takes cluster.key_vault.soft_delete_retention_days.
-  platform_soft_delete_retention_days = 90
 }
 
 # -----------------------------------------------------------------------------
-# Key Vault — Platform secrets store
+# Key Vault — Platform secrets store (key_vaults[purpose=management])
 # -----------------------------------------------------------------------------
 resource "azurerm_key_vault" "platform" {
   name                       = var.key_vault_name
@@ -57,15 +52,16 @@ resource "azurerm_key_vault" "platform" {
   tenant_id                  = data.azurerm_client_config.current.tenant_id
   sku_name                   = local.key_vault_sku
   purge_protection_enabled   = local.platform_purge_protection_enabled
-  soft_delete_retention_days = local.platform_soft_delete_retention_days
+  soft_delete_retention_days = var.key_vault_soft_delete_retention_days
 
-  enable_rbac_authorization = true
+  enable_rbac_authorization = var.enable_rbac_authorization
 
   # With ranges listed (key_vault_allowed_ips) the vault is closed to every other address; without them it keeps the Azure default (all networks).
   dynamic "network_acls" {
     for_each = length(var.key_vault_allowed_ips) > 0 ? [1] : []
     content {
-      bypass         = "AzureServices"
+      bypass = var.key_vault_network_bypass
+      # The rules exist to close the vault to every address not listed.
       default_action = "Deny"
       ip_rules       = var.key_vault_allowed_ips
     }
@@ -76,18 +72,25 @@ resource "azurerm_key_vault" "platform" {
 
 # Key Vault Diagnostic Settings
 resource "azurerm_monitor_diagnostic_setting" "keyvault" {
-  count = var.log_analytics_workspace_id != "" ? 1 : 0
+  # A switch, not a test of the workspace ID: the ID is known only after the workspace exists, so a count on it cannot be planned.
+  count = var.diagnostics_enabled ? 1 : 0
 
-  name                       = "diag-${var.key_vault_name}"
+  name                       = "${var.diagnostic_setting_name_prefix}${var.key_vault_name}"
   target_resource_id         = azurerm_key_vault.platform.id
   log_analytics_workspace_id = var.log_analytics_workspace_id
 
-  enabled_log {
-    category = "AuditEvent"
+  dynamic "enabled_log" {
+    for_each = toset(var.diagnostic_log_categories)
+    content {
+      category = enabled_log.value
+    }
   }
 
-  metric {
-    category = "AllMetrics"
+  dynamic "metric" {
+    for_each = toset(var.diagnostic_metric_categories)
+    content {
+      category = metric.value
+    }
   }
 }
 
@@ -105,7 +108,7 @@ resource "azurerm_key_vault" "azure_local" {
   purge_protection_enabled   = local.cluster_purge_protection_enabled
   soft_delete_retention_days = var.azl_key_vault_soft_delete_retention_days
 
-  enable_rbac_authorization = true
+  enable_rbac_authorization = var.enable_rbac_authorization
 
   # No network rules: the cluster Key Vault keeps the Azure default (all networks), because Azure Local needs to reach it
   # (Microsoft Learn: Azure Local system requirements, Key Vault).
@@ -135,13 +138,13 @@ resource "azurerm_role_assignment" "spn_subscription" {
   principal_id         = var.deployment_spn_object_id
 }
 
-# Resource-group-level roles
+# Resource-group-level roles (azure.automation_identity.resource_group_roles[]): each resource group is in the Azure Local subscription.
 locals {
   rg_role_assignments = flatten([
-    for rg_key, rg_name in var.spn_resource_group_roles : [
-      for role in rg_name.roles : {
-        key       = "${rg_key}-${role}"
-        scope     = rg_name.scope
+    for item in var.spn_resource_group_roles : [
+      for role in item.roles : {
+        key       = "${item.resource_group}-${role}"
+        scope     = "/subscriptions/${var.azure_local_subscription_id}/resourceGroups/${item.resource_group}"
         role_name = role
       }
     ]

@@ -1,9 +1,9 @@
 # =============================================================================
-# terraform.tfvars.example: the settings that infrastructure.yml does not hold
+# terraform.tfvars.example: nothing to set by hand
 # =============================================================================
-# Every fact of the environment (subscriptions, names, networks, addresses, VMs,
-# the monitoring workspace, the notification addresses) comes from
-# infrastructure.yml. Write it with:
+# Every fact of the environment (subscriptions, management groups, names, networks,
+# NSGs, addresses, VMs, Key Vaults, the monitoring workspace, the notification
+# addresses, the policy assignments) comes from infrastructure.yml. Write it with:
 #
 #   pwsh config/variables/scripts/New-IacVariableFiles.ps1 `
 #       -InfrastructureFile ./infrastructure.yml -OutputDirectory <folder outside the repository>
@@ -12,68 +12,21 @@
 # the folder out of git: the file holds subscription IDs and names.
 #
 #   terraform init -backend-config=backend.hcl
-#   terraform plan -var-file=terraform.tfvars.json -var-file=extra.tfvars -out=tfplan
+#   terraform plan -var-file=terraform.tfvars.json -out=tfplan
 #
-# Copy this file to extra.tfvars for the settings below. Each of them is
-# registered in config/variables/schema/master-registry.yaml under
-# tools.terraform.variables. The values here are neutral examples.
+# Do not put a value of the environment in a .tfvars file: a later -var-file wins
+# over terraform.tfvars.json, so it would override infrastructure.yml. A variable
+# with a default is a setting of this code (class c, with its default, under
+# tools.terraform.variables in config/variables/schema/master-registry.yaml).
+# Where the values that people ask about come from:
+#   nsgs                       landing_zone.network_security_groups[]
+#   key_vault_allowed_ips      key_vaults[purpose=management].allowed_ip_ranges
+#   spn_resource_group_roles   azure.automation_identity.resource_group_roles[]
+#   policy_assignments         landing_zone.policy.assignments[]
+#   rg_policy_assignments      landing_zone.policy.resource_group_assignments[]
+#   log_analytics_sku          a setting of the code (PerGB2018, the pay-as-you-go pricing tier)
 #
 # Secrets are never in a file. Pass them in the environment:
 #   TF_VAR_vm_admin_password   the reference is landing_zone.virtual_machines[].admin_password
 #   TF_VAR_vpn_shared_key      the reference is landing_zone.connectivity.vpn_gateway.site_to_site[].shared_key
 # =============================================================================
-
-# --- Networking --------------------------------------------------------------------
-# The NAT gateway (enable_nat_gateway, nat_gateway_idle_timeout) comes from landing_zone.connectivity.nat_gateway.
-
-# NSGs with rules. infrastructure.yml names the NSG of a subnet; it has no key for the rules yet.
-nsgs = [
-  {
-    name        = "nsg-iic-management"
-    description = "Management network: admin access only"
-    rules = [
-      {
-        name                   = "Allow-RDP-Management"
-        priority               = 100
-        direction              = "Inbound"
-        access                 = "Allow"
-        protocol               = "Tcp"
-        source_address_prefix  = "192.0.2.0/24"
-        destination_port_range = "3389"
-      },
-      {
-        name                   = "Deny-All-Inbound"
-        priority               = 4000
-        direction              = "Inbound"
-        access                 = "Deny"
-        protocol               = "*"
-        source_address_prefix  = "*"
-        destination_port_range = "*"
-      }
-    ]
-  }
-]
-
-# --- Identity ----------------------------------------------------------------------
-key_vault_allowed_ips = ["198.51.100.0/24"]
-
-# Roles of the deployment principal at resource group scope, by a short name.
-# spn_resource_group_roles = {
-#   azure_local = {
-#     scope = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-iic-azl-01"
-#     roles = ["Contributor"]
-#   }
-# }
-
-# --- Monitoring --------------------------------------------------------------------
-log_analytics_sku = "PerGB2018"
-
-# --- Security ----------------------------------------------------------------------
-# Azure Policy assignments by a short name. infrastructure.yml holds the Tier 1 tag policy
-# (landing_zone.policy); it has no key for other assignments yet.
-# policy_assignments = {
-#   require-tag-owner = {
-#     policy_definition_id = "/providers/Microsoft.Authorization/policyDefinitions/871b6d14-10aa-478d-b590-94f262ecfa99"
-#     display_name         = "Require the Owner tag"
-#   }
-# }

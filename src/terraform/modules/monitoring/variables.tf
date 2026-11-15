@@ -23,7 +23,7 @@ variable "action_group_name" {
 }
 
 variable "sku" {
-  description = "Log Analytics workspace SKU. PerGB2018 is the pay-as-you-go tier, the only one Azure offers for a new workspace (Microsoft Learn: Log Analytics workspace pricing tiers); not a choice of the deployment."
+  description = "Log Analytics workspace SKU. PerGB2018 is the pay-as-you-go pricing tier Microsoft names for a new workspace (Microsoft Learn: Azure Monitor Logs pricing details); not a choice of a deployment."
   type        = string
   default     = "PerGB2018"
 }
@@ -38,6 +38,12 @@ variable "alert_email_addresses" {
   description = "Email addresses that receive the notifications of the action group."
   type        = list(string)
   default     = []
+}
+
+variable "email_receiver_name_prefix" {
+  description = "Prefix of the name of each email receiver of the action group; the position of the address in alert_email_addresses follows it."
+  type        = string
+  default     = "email-"
 }
 
 variable "tags" {

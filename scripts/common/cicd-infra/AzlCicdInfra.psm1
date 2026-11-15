@@ -1353,11 +1353,91 @@ function Get-AzlVaultResourceId {
     return "/subscriptions/$($vault.SubscriptionId)/resourceGroups/$($vault.ResourceGroup)/providers/Microsoft.KeyVault/vaults/$($vault.Name)"
 }
 
+function Get-AzlRunnerKeyDefault {
+    <#
+    .SYNOPSIS
+        The default the master registry gives a key of infrastructure.yml (devops.runners[].admin_username, ...), read from the schema
+        generated from the registry (config/variables/schema/infrastructure.schema.json). $null when the key has none.
+    #>
+    param([Parameter(Mandatory)][string]$Path)
+    if (-not (Get-Variable -Scope Script -Name AzlRunnerSchema -ErrorAction SilentlyContinue) -or $null -eq $script:AzlRunnerSchema) {
+        $schemaPath = [IO.Path]::Combine($PSScriptRoot, '..', '..', '..', 'config', 'variables', 'schema', 'infrastructure.schema.json')
+        $script:AzlRunnerSchema = Get-Content -LiteralPath $schemaPath -Raw | ConvertFrom-Json -AsHashtable
+    }
+    $node = $script:AzlRunnerSchema
+    foreach ($segment in $Path.Split('.')) {
+        $name = $segment -replace '\[\]$', ''
+        if ($node -isnot [System.Collections.IDictionary] -or -not $node.Contains('properties') -or -not $node['properties'].Contains($name)) { return $null }
+        $node = $node['properties'][$name]
+        if ($segment.EndsWith('[]')) { $node = $node['items'] }
+    }
+    if ($node -is [System.Collections.IDictionary] -and $node.Contains('default')) { return $node['default'] }
+    return $null
+}
+
+function Get-AzlRunnerSetting {
+    # A key of one devops.runners[] entry (or of another object), or the registry default of the key when the file leaves it out.
+    param([object]$Node, [Parameter(Mandatory)][string]$Field, [Parameter(Mandatory)][string]$Key)
+    $value = Get-AzlValue $Node $Field
+    if ($null -ne $value) { return $value }
+    return (Get-AzlRunnerKeyDefault -Path $Key)
+}
+
+function Get-AzlKeyVaultSecretName {
+    # The secret of a keyvault://<vault>/<secret> reference that must be in the vault $Vault; '' when the reference is empty.
+    param([string]$Reference, [string]$Vault, [string]$Key)
+    if (-not $Reference) { return '' }
+    if ($Reference -notmatch '^keyvault://([^/]+)/(.+)$') { throw "$Key '$Reference' is not a keyvault:// reference." }
+    if ($Matches[1] -ne $Vault) { throw "$Key names the vault '$($Matches[1])'; it must be the vault of the registration secret ('$Vault')." }
+    return $Matches[2]
+}
+
+function ConvertTo-AzlRunnerPool {
+    # One runner pool of the cicd-infra environment (linux_runner or ztp_runner) from a devops.runners[] entry and its keys.
+    param([Parameter(Mandatory)][object]$Runner, [Parameter(Mandatory)][System.Collections.IDictionary]$Settings, [switch]$Ztp)
+    $node = @(Get-AzlList (Get-AzlValue $Settings.Infrastructure 'devops.runners')) | Where-Object { $_ -is [System.Collections.IDictionary] -and [string]$_['name'] -eq $Runner.Name } | Select-Object -First 1
+    $k = 'devops.runners[]'
+    foreach ($required in 'nsg_name', 'managed_identity_name') {
+        if (-not (Get-AzlValue $node $required)) { throw "devops.runners[].$required is not set for the runner '$($Runner.Name)'. Task 06 needs it." }
+    }
+    $pool = [ordered]@{
+        enabled              = $true
+        os_type              = $Runner.OsType
+        purpose              = $Runner.Purpose
+        name_prefix          = $Runner.Name
+        count                = $Runner.Count
+        compute_type         = $Runner.ComputeType
+        vm_size              = $Runner.Size
+        private_ip_addresses = @($Runner.PrivateIps)
+        extra_labels         = @($Runner.Labels)
+        nsg_name             = [string](Get-AzlValue $node 'nsg_name')
+        identity_name        = [string](Get-AzlValue $node 'managed_identity_name')
+        admin_username       = [string](Get-AzlRunnerSetting $node 'admin_username' "$k.admin_username")
+        os_disk_type         = [string](Get-AzlRunnerSetting $node 'os_disk_type' "$k.os_disk_type")
+        os_disk_caching      = [string](Get-AzlRunnerSetting $node 'os_disk_caching' "$k.os_disk_caching")
+        data_disk_caching    = [string](Get-AzlRunnerSetting $node 'data_disk_caching' "$k.data_disk_caching")
+        encryption_at_host   = [bool](Get-AzlRunnerSetting $node 'encryption_at_host' "$k.encryption_at_host")
+        zones                = @(Get-AzlList (Get-AzlValue $node 'zones') | ForEach-Object { [string]$_ })
+    }
+    if ($Ztp) { $pool.data_disk_size_gb = $Runner.DataDiskGb }
+    # Not set: the Terraform module takes the size and the image of the OS (default_os_disk_size_gb, default_images).
+    if ($null -ne (Get-AzlValue $node 'os_disk_size_gb')) { $pool.os_disk_size_gb = [int](Get-AzlValue $node 'os_disk_size_gb') }
+    $image = Get-AzlValue $node 'image'
+    if ($image -is [System.Collections.IDictionary]) {
+        $pool.image = [ordered]@{
+            publisher = [string](Get-AzlValue $image 'publisher'); offer = [string](Get-AzlValue $image 'offer'); sku = [string](Get-AzlValue $image 'sku')
+            version   = [string](Get-AzlRunnerSetting $image 'version' "$k.image.version")
+        }
+    }
+    return $pool
+}
+
 function ConvertTo-AzlRunnerTerraformVariable {
     <#
     .SYNOPSIS
         Maps devops.runners, runner_network and runner_access to the variables of src/terraform/environments/cicd-infra.
-        Holds names and IDs only: no secret.
+        Holds names and IDs only: no secret. A key the file leaves out takes its registry default (Get-AzlRunnerKeyDefault), so the
+        Terraform variables carry no default of a deployment.
     #>
     [CmdletBinding()]
     param([Parameter(Mandatory)][System.Collections.IDictionary]$Settings, [string]$AdminSshPublicKey = '')
@@ -1388,20 +1468,38 @@ function ConvertTo-AzlRunnerTerraformVariable {
     $readerNames = @(Get-AzlList (Get-AzlValue $access 'key_vaults' @($Settings.KeyVaults | ForEach-Object { $_.Name })) | Where-Object { $_ -and $_ -ne $vaults[0] })
 
     $hub = Get-AzlValue $net 'hub_peering' @{}
-    $hubEnabled = [bool](Get-AzlValue $hub 'enabled' $false)
+    $hp = 'devops.runner_network.hub_peering'
+    $hubEnabled = [bool](Get-AzlRunnerSetting $hub 'enabled' "$hp.enabled")
+    $useRemoteGateways = [bool](Get-AzlRunnerSetting $hub 'use_remote_gateways' "$hp.use_remote_gateways")
+    $createHubSide = [bool](Get-AzlRunnerSetting $hub 'create_hub_side' "$hp.create_hub_side")
     $hubId = [string](Get-AzlValue $hub 'hub_vnet_id')
     $hubSubscriptionId = $null
+    # The peering options are those of the hub network (landing_zone.networks[]); with only hub_vnet_id the hub side allows gateway transit when the spoke uses it.
+    $network = $Settings.LandingNetworks | Where-Object { $_['name'] -eq (Get-AzlValue $hub 'hub_network') } | Select-Object -First 1
+    $allowForwarded = [bool](Get-AzlRunnerSetting $network 'allow_forwarded_traffic' 'landing_zone.networks[].allow_forwarded_traffic')
+    $allowTransit = if ($network) { [bool](Get-AzlRunnerSetting $network 'allow_gateway_transit' 'landing_zone.networks[].allow_gateway_transit') } else { $useRemoteGateways }
     if ($hubEnabled -and -not $hubId) {
-        $network = $Settings.LandingNetworks | Where-Object { $_['name'] -eq (Get-AzlValue $hub 'hub_network') } | Select-Object -First 1
         if (-not $network) { throw 'hub_peering is enabled, but neither hub_vnet_id nor a hub_network from landing_zone.networks resolves.' }
         $hubSubscription = $Settings.Subscriptions | Where-Object { $_.Name -eq $network['subscription'] } | Select-Object -First 1
         if (-not $hubSubscription -or -not $hubSubscription.Id) { throw "The subscription '$($network['subscription'])' of the hub network has no id in landing_zone.subscriptions." }
         $hubId = "/subscriptions/$($hubSubscription.Id)/resourceGroups/$($network['resource_group'])/providers/Microsoft.Network/virtualNetworks/$($network['name'])"
     }
     if ($hubId -match '^/subscriptions/([^/]+)/') { $hubSubscriptionId = $Matches[1] }
+    $spokeName = [string](Get-AzlValue $hub 'spoke_name')
+    $hubName = [string](Get-AzlValue $hub 'hub_name')
+    if ($hubEnabled -and (-not $spokeName -or ($createHubSide -and -not $hubName))) { throw 'hub_peering is enabled: devops.runner_network.hub_peering.spoke_name (and hub_name when create_hub_side is true) are needed.' }
 
-    [string[]]$rbacScopes = if ([bool](Get-AzlValue $access 'rbac_administrator' $true)) { $scopes } else { @() }
-    [string[]]$arcScopes = if ([bool](Get-AzlValue $access 'arc_run_command' $true)) { $scopes } else { @() }
+    $ra = 'devops.runner_access'
+    [string[]]$rbacScopes = if ([bool](Get-AzlRunnerSetting $access 'rbac_administrator' "$ra.rbac_administrator")) { $scopes } else { @() }
+    [string[]]$arcScopes = if ([bool](Get-AzlRunnerSetting $access 'arc_run_command' "$ra.arc_run_command")) { $scopes } else { @() }
+    $extraRoles = [ordered]@{}
+    foreach ($a in @(Get-AzlList (Get-AzlValue $access 'additional_role_assignments'))) {
+        if ($a -isnot [System.Collections.IDictionary]) { continue }
+        $name = [string](Get-AzlValue $a 'name')
+        if (-not $name -or $extraRoles.Contains($name)) { throw "devops.runner_access.additional_role_assignments[]: every entry needs a name of its own ('$name')." }
+        $extraRoles[$name] = [ordered]@{ scope = [string](Get-AzlValue $a 'scope'); role_definition_name = [string](Get-AzlValue $a 'role_definition_name') }
+    }
+    $rn = 'devops.runner_network'
     $variables = [ordered]@{
         tenant_id             = $Settings.TenantId
         subscription_id       = $Settings.DevopsSubscriptionId
@@ -1421,26 +1519,34 @@ function ConvertTo-AzlRunnerTerraformVariable {
         vnet_address_space    = @(Get-AzlList (Get-AzlValue $net 'address_space'))
         dns_servers           = @(Get-AzlList (Get-AzlValue $net 'dns_servers'))
         reachable_cidrs       = @(Get-AzlList (Get-AzlValue $net 'reachable_cidrs'))
+        reachable_tcp_ports   = @(Get-AzlList (Get-AzlRunnerSetting $net 'reachable_tcp_ports' "$rn.reachable_tcp_ports") | ForEach-Object { [string]$_ })
+        allow_internet_https  = [bool](Get-AzlRunnerSetting $net 'allow_internet_https' "$rn.allow_internet_https")
+        allow_internet_http   = [bool](Get-AzlRunnerSetting $net 'allow_internet_http' "$rn.allow_internet_http")
+        allow_icmp            = [bool](Get-AzlRunnerSetting $net 'allow_icmp' "$rn.allow_icmp")
         bmc_cidrs             = @(Get-AzlList (Get-AzlValue $net 'bmc_cidrs'))
         admin_source_cidrs    = @(Get-AzlList (Get-AzlValue $net 'admin_source_cidrs'))
         hub_peering           = [ordered]@{
-            enabled             = $hubEnabled
-            hub_vnet_id         = $hubId
-            use_remote_gateways = [bool](Get-AzlValue $hub 'use_remote_gateways' $true)
-            create_hub_side     = [bool](Get-AzlValue $hub 'create_hub_side' $true)
+            enabled                 = $hubEnabled
+            hub_vnet_id             = $hubId
+            use_remote_gateways     = $useRemoteGateways
+            create_hub_side         = $createHubSide
+            spoke_name              = $spokeName
+            hub_name                = $hubName
+            allow_forwarded_traffic = $allowForwarded
+            allow_gateway_transit   = $allowTransit
         }
         contributor_scopes    = $scopes
         rbac_administrator_scopes = $rbacScopes
         rbac_administrator_delegable_role_ids = @(Get-AzlList (Get-AzlValue $access 'rbac_delegable_role_ids'))
         arc_machine_scopes    = $arcScopes
         key_vault_reader_ids  = @($readerNames | ForEach-Object { Get-AzlVaultResourceId -Settings $Settings -Name $_ })
+        additional_role_assignments = $extraRoles
         admin_ssh_public_key  = $AdminSshPublicKey
     }
     if ($hubSubscriptionId) { $variables.hub_subscription_id = $hubSubscriptionId }
-    # devops.runner_network.reachable_tcp_ports: the Terraform variable keeps its own default when the file sets none.
-    if (@(Get-AzlList (Get-AzlValue $net 'reachable_tcp_ports')).Count -gt 0) { $variables.reachable_tcp_ports = @(Get-AzlList (Get-AzlValue $net 'reachable_tcp_ports') | ForEach-Object { [string]$_ }) }
     if ($Settings.Platform -eq 'github') {
         if ($linux.Count -gt 0 -and $linux[0].Pool) { $variables.github_runner_group = $linux[0].Pool }
+        if ($ztp.Count -gt 0 -and $ztp[0].Pool) { $variables.github_ztp_runner_group = $ztp[0].Pool }
     }
     if ($Settings.Platform -eq 'azure_devops') {
         # There is no default pool: the agents join the pool the file names, and the Azure DevOps pipelines take the same name.
@@ -1452,14 +1558,18 @@ function ConvertTo-AzlRunnerTerraformVariable {
 
     if ($linux.Count -gt 0) {
         $l = $linux[0]
-        $variables.linux_runner = [ordered]@{ enabled = $true; name_prefix = $l.Name; count = $l.Count; compute_type = $l.ComputeType; vm_size = $l.Size; private_ip_addresses = @($l.PrivateIps); extra_labels = @($l.Labels) }
+        $variables.linux_runner = ConvertTo-AzlRunnerPool -Runner $l -Settings $Settings
         $variables.linux_subnet = [ordered]@{ name = $l.SubnetName; address_prefix = $l.SubnetPrefix }
     }
     else { $variables.linux_runner = [ordered]@{ enabled = $false } }
     if ($ztp.Count -gt 0) {
         $z = $ztp[0]
-        $variables.ztp_runner = [ordered]@{ enabled = $true; name_prefix = $z.Name; vm_size = $z.Size; data_disk_size_gb = $z.DataDiskGb; private_ip_addresses = @($z.PrivateIps); extra_labels = @($z.Labels) }
+        $variables.ztp_runner = ConvertTo-AzlRunnerPool -Runner $z -Settings $Settings -Ztp
         $variables.ztp_subnet = [ordered]@{ name = $z.SubnetName; address_prefix = $z.SubnetPrefix }
+        $zNode = @(Get-AzlList (Get-AzlValue $Settings.Infrastructure 'devops.runners')) | Where-Object { $_ -is [System.Collections.IDictionary] -and [string]$_['name'] -eq $z.Name } | Select-Object -First 1
+        # Written only when the file names the secret (an empty name keeps the password in the state only).
+        $adminSecret = Get-AzlKeyVaultSecretName -Reference ([string](Get-AzlValue $zNode 'windows_admin_password_secret')) -Vault $vaults[0] -Key 'devops.runners[].windows_admin_password_secret'
+        if ($adminSecret) { $variables.windows_admin_password_secret_name = $adminSecret }
     }
     else { $variables.ztp_runner = [ordered]@{ enabled = $false } }
     return $variables

@@ -27,13 +27,13 @@ terraform {
 provider "azurerm" {
   features {
     resource_group {
-      prevent_deletion_if_contains_resources = true
+      prevent_deletion_if_contains_resources = var.prevent_deletion_if_contains_resources
     }
   }
 
   subscription_id     = var.subscription_id
   tenant_id           = var.tenant_id
-  storage_use_azuread = true
+  storage_use_azuread = var.storage_use_azuread
 }
 
 # The subscription that holds the hub VNet (the connectivity subscription). Only used for the hub half of the peering.
@@ -44,5 +44,5 @@ provider "azurerm" {
 
   subscription_id     = coalesce(var.hub_subscription_id, var.subscription_id)
   tenant_id           = var.tenant_id
-  storage_use_azuread = true
+  storage_use_azuread = var.storage_use_azuread
 }

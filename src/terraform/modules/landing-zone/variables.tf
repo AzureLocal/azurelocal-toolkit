@@ -3,37 +3,23 @@
 # =============================================================================
 
 variable "management_groups" {
-  description = "Management group hierarchy configuration."
-  type = object({
-    parent_id                  = optional(string, null)
-    root_name                  = string
-    root_display_name          = string
-    platform_name              = string
-    platform_display_name      = string
-    identity_name              = string
-    identity_display_name      = string
-    connectivity_name          = string
-    connectivity_display_name  = string
-    management_name            = string
-    management_display_name    = string
-    security_name              = string
-    security_display_name      = string
-    landing_zones_name         = string
-    landing_zones_display_name = string
-  })
+  description = "The management groups to create (landing_zone.management_groups[]): name, display name (empty uses the name) and the name of the parent group (empty: the tenant root group)."
+  type = list(object({
+    name         = string
+    display_name = optional(string)
+    parent       = optional(string)
+  }))
+  default = []
 }
 
 variable "subscriptions" {
-  description = "Subscription IDs for management group association."
-  type = object({
-    connectivity_id = optional(string, "")
-    identity_id     = optional(string, "")
-    management_id   = optional(string, "")
-    security_id     = optional(string, "")
-    azure_local_id  = optional(string, "")
-    workloads_id    = optional(string, "")
-  })
-  default = {}
+  description = "The subscriptions to place (landing_zone.subscriptions[]): name, id and the name of the management group the subscription goes under. One with no id or no management group is left where it is."
+  type = list(object({
+    name             = string
+    id               = optional(string, "")
+    management_group = optional(string, "")
+  }))
+  default = []
 }
 
 variable "resource_groups" {

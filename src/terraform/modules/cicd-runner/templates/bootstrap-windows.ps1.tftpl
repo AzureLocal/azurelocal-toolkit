@@ -7,8 +7,8 @@
 # credential is read from Key Vault at boot with the VM's managed identity,
 # held in a variable, and never written to disk or to the log.
 # Safe to run again: it skips what is done.
-#   Log:   C:\azl\logs\bootstrap.log
-#   State: C:\azl\state
+#   Log:   <windows_root>\logs\bootstrap.log
+#   State: <windows_root>\state
 # =============================================================================
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
@@ -38,7 +38,7 @@ $GlRunnerSha256    = '${gitlab_runner_windows_sha256}'
 $AdoAgentVersion   = '${azure_devops_agent_version}'
 $AzPsVersion       = '${az_powershell_version}'
 
-$Base = 'C:\azl'
+$Base = '${windows_root}'
 $State = Join-Path $Base 'state'
 $Logs = Join-Path $Base 'logs'
 foreach ($d in @($Base, $State, $Logs, (Join-Path $Base 'work'), (Join-Path $Base 'downloads'))) {
@@ -156,7 +156,7 @@ try {
     }
 
     Write-Step "Reading the registration credential from Key Vault $VaultName"
-    $tokenUri = 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2Fvault.azure.net&client_id=' + $IdentityClientId
+    $tokenUri = 'http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01&resource=https%3A%2F%2F' + $VaultSuffix + '&client_id=' + $IdentityClientId
     $accessToken = (Invoke-RestMethod -UseBasicParsing -Headers @{ Metadata = 'true' } -Uri $tokenUri).access_token
     if (-not $accessToken) { throw 'No managed identity token' }
     $secretUri = "https://$VaultName.$VaultSuffix/secrets/$($SecretName)?api-version=7.4"
@@ -167,7 +167,7 @@ try {
 
     switch ($Platform) {
         'github' {
-            $runnerDir = 'C:\actions-runner'
+            $runnerDir = Join-Path $Base 'actions-runner'
             if (-not (Test-Path $runnerDir)) {
                 New-Item -ItemType Directory -Path $runnerDir -Force | Out-Null
                 $zip = Join-Path $Base 'downloads\actions-runner.zip'
@@ -191,7 +191,7 @@ try {
             try { & .\config.cmd @arguments; if ($LASTEXITCODE -ne 0) { throw 'config.cmd failed' } } finally { Pop-Location }
         }
         'gitlab' {
-            $runnerDir = 'C:\GitLab-Runner'
+            $runnerDir = Join-Path $Base 'GitLab-Runner'
             New-Item -ItemType Directory -Path $runnerDir -Force | Out-Null
             $exe = Join-Path $runnerDir 'gitlab-runner.exe'
             if (-not (Test-Path $exe)) {
@@ -212,7 +212,7 @@ try {
             } finally { Pop-Location }
         }
         'azure_devops' {
-            $agentDir = 'C:\azagent'
+            $agentDir = Join-Path $Base 'azagent'
             if (-not (Test-Path $agentDir)) {
                 $version = $AdoAgentVersion
                 if (-not $version) {

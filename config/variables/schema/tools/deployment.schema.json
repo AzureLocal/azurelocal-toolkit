@@ -1909,9 +1909,8 @@
       "additionalProperties": false,
       "properties": {
         "runners": {
-          "description": "Schema 5.5. The VNet of the runners, the peering with the hub and the lab ranges they reach.",
-          "type": "object",
-          "additionalProperties": false,
+          "description": "Schema 5.5. The self-hosted runners that task 06 deploys with Terraform. One Linux general pool and at most one Windows ztp runner; use the module directly for more. Replaces devops.runner when present.",
+          "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
