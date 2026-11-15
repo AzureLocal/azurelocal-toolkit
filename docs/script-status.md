@@ -20,44 +20,44 @@ Task folders: 110.
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
 | PowerShell | 58 | 52 | 0 |
-| Azure CLI | 1 | 56 | 53 |
+| Azure CLI | 11 | 42 | 57 |
 
-Azure CLI applies to 49 tasks, does not apply to 53, and is not decided for 8.
+Azure CLI applies to 48 tasks, does not apply to 57, and is not decided for 5.
 
 ## 01-cicd-infra
 
 | Task | PowerShell | Azure CLI | Azure CLI applies |
 |---|---|---|---|
-| `phase-01-cicd-setup/task-01-bootstrap` | built | not built | yes |
+| `phase-01-cicd-setup/task-01-bootstrap` | built | built | yes |
 | `phase-01-cicd-setup/task-02-create-project` | built | not applicable | no |
 | `phase-01-cicd-setup/task-03-configure-project` | built | not applicable | no |
 | `phase-01-cicd-setup/task-04-create-environments` | built | not applicable | no |
 | `phase-01-cicd-setup/task-05-configure-variables` | built | not applicable | no |
-| `phase-01-cicd-setup/task-06-deploy-runners` | built | not built | yes |
+| `phase-01-cicd-setup/task-06-deploy-runners` | built | not applicable | no |
 
 ## 02-azure-foundation
 
 | Task | PowerShell | Azure CLI | Azure CLI applies |
 |---|---|---|---|
-| `phase-01-landing-zones/full-deployment/task-01-configure-management-groups` | built | not built | yes |
-| `phase-01-landing-zones/full-deployment/task-02-create-subscriptions` | built | not built | yes |
-| `phase-01-landing-zones/full-deployment/task-03-create-resource-groups` | built | not built | yes |
+| `phase-01-landing-zones/full-deployment/task-01-configure-management-groups` | built | built | yes |
+| `phase-01-landing-zones/full-deployment/task-02-create-subscriptions` | built | built | yes |
+| `phase-01-landing-zones/full-deployment/task-03-create-resource-groups` | built | built | yes |
 | `phase-02-resource-providers/task-01-register-resource-providers` | built | built | yes |
-| `phase-02-resource-providers/task-02-verify-provider-registration` | built | not built | yes |
-| `phase-03-rbac-permissions/task-01-create-azure-local-deployment-spn` | built | not built | yes |
-| `phase-03-rbac-permissions/task-02-assign-rbac-roles` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-01-configuration/task-01-configure-core-variables` | not built | not built | unclear |
-| `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-01-configuration/task-02-configure-management-mode` | not built | not built | unclear |
-| `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-01-configuration/task-03-configure-cluster-mode` | not built | not built | unclear |
+| `phase-02-resource-providers/task-02-verify-provider-registration` | built | built | yes |
+| `phase-03-rbac-permissions/task-01-create-azure-local-deployment-spn` | built | built | yes |
+| `phase-03-rbac-permissions/task-02-assign-rbac-roles` | built | built | yes |
+| `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-01-configuration/task-01-configure-core-variables` | not built | not applicable | no |
+| `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-01-configuration/task-02-configure-management-mode` | not built | not applicable | no |
+| `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-01-configuration/task-03-configure-cluster-mode` | not built | not applicable | no |
 | `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-02-pipeline-execution/task-01-commit-and-push` | not built | not applicable | no |
 | `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-02-pipeline-execution/task-02-monitor-validate-stage` | not built | not applicable | no |
 | `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-02-pipeline-execution/task-03-review-plan-stage` | not built | not applicable | no |
 | `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-02-pipeline-execution/task-04-approve-deployment` | not built | not applicable | no |
 | `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-02-pipeline-execution/task-05-monitor-apply-stage` | not built | not applicable | no |
 | `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-02-pipeline-execution/task-06-verify-test-stage` | not built | not applicable | no |
-| `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-01-verify-resources` | not built | not built | yes |
-| `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-02-test-connectivity` | not built | not built | yes |
-| `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-03-validate-configuration` | not built | not built | yes |
+| `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-01-verify-resources` | not built | built | yes |
+| `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-02-test-connectivity` | not built | built | yes |
+| `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-03-validate-configuration` | not built | built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-01-virtual-network` | built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-02-vpn-gateway` | built | not built | yes |
 | `phase-04-azure-management-infrastructure/02-manual-deployment/task-03-s2s-vpn-connection` | built | not built | yes |
@@ -170,9 +170,6 @@ Azure CLI may or may not apply. Decide, then set `AzureCli` to `yes` or `no` in 
 
 | Task | Why it is not decided |
 |---|---|
-| `02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-01-configuration/task-01-configure-core-variables` | Edits the deployment configuration; there is no real script yet that shows whether it touches Azure. |
-| `02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-01-configuration/task-02-configure-management-mode` | Edits the deployment configuration; there is no real script yet that shows whether it touches Azure. |
-| `02-azure-foundation/phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-01-configuration/task-03-configure-cluster-mode` | Edits the deployment configuration; there is no real script yet that shows whether it touches Azure. |
 | `04-cluster-deployment/phase-05-cluster-deployment/active-directory/task-02-verify-deployment-completion` | Verifies the deployment, but the real scripts only check Active Directory and cluster health on premises. |
 | `04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-01-initiate-deployment-via-azure-portal` | Named for the Azure portal, but the real scripts create local accounts on the nodes. |
 | `04-cluster-deployment/phase-05-cluster-deployment/local-identity/task-02-verify-deployment-completion` | Verifies the deployment, but the real scripts only check the local identity set-up and cluster health on premises. |
