@@ -20,9 +20,9 @@ Task folders: 110.
 | Kind | built | not built | not applicable |
 |---|--:|--:|--:|
 | PowerShell | 58 | 52 | 0 |
-| Azure CLI | 1 | 56 | 53 |
+| Azure CLI | 11 | 42 | 57 |
 
-Azure CLI applies to 49 tasks, does not apply to 53, and is not decided for 8.
+Azure CLI applies to 45 tasks, does not apply to 57, and is not decided for 8.
 
 ## 01-cicd-infra
 
@@ -58,20 +58,20 @@ Azure CLI applies to 49 tasks, does not apply to 53, and is not decided for 8.
 | `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-01-verify-resources` | not built | not built | yes |
 | `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-02-test-connectivity` | not built | not built | yes |
 | `phase-04-azure-management-infrastructure/01-cicd-pipeline-deployment/phase-03-validation/task-03-validate-configuration` | not built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-01-virtual-network` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-02-vpn-gateway` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-03-s2s-vpn-connection` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-04-p2s-vpn-connection` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-05-azure-bastion` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-07-nat-gateway` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-08-arc-gateway` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/02-manual-deployment/task-11-deploy-management-vms` | built | not built | yes |
-| `phase-04-azure-management-infrastructure/task-12-configure-adds` | not built | not built | yes |
-| `phase-04-azure-management-infrastructure/task-13-configure-utility-server` | not built | not built | yes |
-| `phase-04-azure-management-infrastructure/task-14-configure-ndm-server` | not built | not built | yes |
-| `phase-04-azure-management-infrastructure/task-15-configure-lighthouse` | not built | not built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-01-virtual-network` | built | built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-02-vpn-gateway` | built | built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-03-s2s-vpn-connection` | built | built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-04-p2s-vpn-connection` | built | built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-05-azure-bastion` | built | built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-06-network-security-groups` | built | built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-07-nat-gateway` | built | built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-08-arc-gateway` | built | built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-10-key-vault` | built | built | yes |
+| `phase-04-azure-management-infrastructure/02-manual-deployment/task-11-deploy-management-vms` | built | built | yes |
+| `phase-04-azure-management-infrastructure/task-12-configure-adds` | not built | not applicable | no |
+| `phase-04-azure-management-infrastructure/task-13-configure-utility-server` | not built | not applicable | no |
+| `phase-04-azure-management-infrastructure/task-14-configure-ndm-server` | not built | not applicable | no |
+| `phase-04-azure-management-infrastructure/task-15-configure-lighthouse` | not built | not applicable | no |
 
 ## 03-onprem-readiness
 
