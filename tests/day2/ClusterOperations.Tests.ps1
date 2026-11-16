@@ -105,6 +105,24 @@ Describe 'Invoke-ClusterOperations.ps1' {
             $global:AzlOpCalls.Count | Should -Be 0
         }
 
+        It 'with -RequireNodeInFile, ends with exit code 2 for a node that is not in nodes[] and sends nothing' {
+            $r = Invoke-Operation (New-InfraFile) @{ Action = 'MaintenanceMode'; NodeName = 'iic-n09'; Enable = $true; RequireNodeInFile = $true }
+            $r.ExitCode | Should -Be 2 -Because $r.Text
+            $r.Text | Should -Match "Node 'iic-n09' is not a node of nodes\[\]"
+            $global:AzlOpCalls.Count | Should -Be 0
+        }
+
+        It 'with -RequireNodeInFile, a node of nodes[] (by name, address or fully qualified name) goes on as before' -ForEach @(@{ Name = 'iic-n01' }, @{ Name = '192.0.2.12' }, @{ Name = 'iic-n03.improbability.cloud' }) {
+            $r = Invoke-Operation (New-InfraFile) @{ Action = 'MaintenanceMode'; NodeName = $Name; Enable = $true; RequireNodeInFile = $true } -DryRun
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+        }
+
+        It 'the script has the switch, and without it a node outside the file is still used as it is' {
+            (Get-Content -LiteralPath $script:Script -Raw) | Should -Match '\[switch\]\$RequireNodeInFile'
+            $r = Invoke-Operation (New-InfraFile) @{ Action = 'MaintenanceMode'; NodeName = 'iic-n09'; Enable = $true } -DryRun
+            $r.Text | Should -Match 'not in nodes\[\] of the file: it is used as it is'
+        }
+
         It 'ends with exit code 2 for a file that does not exist' {
             (Invoke-Operation (Join-Path $TestDrive 'nowhere.yml') @{ Action = 'HealthCheck' }).ExitCode | Should -Be 2
         }

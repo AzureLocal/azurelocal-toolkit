@@ -24,7 +24,17 @@ toolkit and nothing else.
 | ARM Validate and Deploy | `Invoke-AzureLocalArmDeployment.ps1` | `arm-deployment.yml` | `stages/arm-deployment.yml` | `arm-deployment.yml` |
 | Terraform foundation and Ansible configuration (the older chain, below) | Terraform, `ansible-playbook` | `azure-local-deploy.yml` | `.gitlab-ci.yml` with `stages/*.yml` | `azure-local-deploy.yml` |
 
-The day 2 pipelines are not in this table yet.
+After the deployment come the validation and the day 2 pipelines (stage 07 and stage 08, [below](#validation-and-day-2-stages-07-and-08)). They are
+the same shape: a read-only job first, and every job that changes the cluster (or puts load on it) behind the one approval environment of
+`devops.pipelines.environments.operations`.
+
+| Pipeline | Entry point | GitHub Actions | GitLab CI | Azure DevOps |
+| --- | --- | --- | --- | --- |
+| Validation before the handover (stage 07) | `Test-AzureLocalClusterHealth.ps1`, `Test-ArcConnectivity.ps1`, `Test-NetworkConfiguration.ps1`, `Test-StoragePerformance.ps1` | `validation.yml` | `stages/validation.yml` | `validation.yml` |
+| Day 2: check for updates, on a schedule (task 01) | `Get-AvailableSolutionUpdate.azcli.ps1` (Azure view) or `Get-AvailableSolutionUpdate.ps1` (cluster view) | `day2-check-updates.yml` | `stages/day2-check-updates.yml` | `day2-check-updates.yml` |
+| Day 2: start the solution update (task 02) | `Start-AzureLocalSolutionUpdate.ps1` | `day2-update.yml` | `stages/day2-update.yml` | `day2-update.yml` |
+| Day 2: take one node through maintenance (task 03) | `Invoke-NodeMaintenanceReboot.ps1` | `day2-node-maintenance.yml` | `stages/day2-node-maintenance.yml` | `day2-node-maintenance.yml` |
+| Day 2: cluster operations (task 04) | `Invoke-ClusterOperations.ps1` | `day2-cluster-operations.yml` | `stages/day2-cluster-operations.yml` | `day2-cluster-operations.yml` |
 
 ## The Terraform and Ansible chain
 
@@ -58,13 +68,13 @@ Terraform init takes the state from `TF_BACKEND_RG`, `TF_BACKEND_SA`, `TF_BACKEN
 
 ### GitLab CI/CD
 
-- **Location**: `gitlab/.gitlab-ci.yml` (includes the stages of the Terraform and Ansible chain), `gitlab/os-configuration.gitlab-ci.yml`, and the stage files that declare their own stages and are included from a pipeline file of their own: `gitlab/stages/arm-deployment.yml`, `gitlab/stages/discovery.yml`, `gitlab/stages/pre-cluster-verification.yml`
+- **Location**: `gitlab/.gitlab-ci.yml` (includes the stages of the Terraform and Ansible chain), `gitlab/os-configuration.gitlab-ci.yml`, and the stage files that declare their own stages and are included from a pipeline file of their own: `gitlab/stages/arm-deployment.yml`, `gitlab/stages/discovery.yml`, `gitlab/stages/pre-cluster-verification.yml`, `gitlab/stages/validation.yml` and `gitlab/stages/day2-check-updates.yml`, `day2-update.yml`, `day2-node-maintenance.yml`, `day2-cluster-operations.yml`
 - **Features**: manual approval gates, protected environments, `resource_group`
 - **Tools**: `gitlab/Use-AzlGitLabTool.ps1` installs the versions of `devops.pipelines.tool_versions` (GitLab has no installer action or task)
 
 ### GitHub Actions
 
-- **Location**: `github-actions/` (`azure-local-deploy.yml`, `os-configuration.yml`, `arm-deployment.yml`, `cicd-infra.yml`, `discovery.yml`, `pre-cluster-verification.yml`). This is the only folder of GitHub pipelines: the workflows of this repository's own CI are in `.github/workflows` (K7 removed `archive/github-actions`: see below)
+- **Location**: `github-actions/` (`azure-local-deploy.yml`, `os-configuration.yml`, `arm-deployment.yml`, `cicd-infra.yml`, `discovery.yml`, `pre-cluster-verification.yml`, `validation.yml`, `day2-check-updates.yml`, `day2-update.yml`, `day2-node-maintenance.yml`, `day2-cluster-operations.yml`). This is the only folder of GitHub pipelines: the workflows of this repository's own CI are in `.github/workflows` (K7 removed `archive/github-actions`: see below)
 - **Features**: environment protection rules, OIDC or client secret sign-in, artifact passing
 - **Copy to**: `.github/workflows/` in your repository
 
@@ -134,6 +144,65 @@ Deploy. Guide: [docs/arm-deployment-guide.md](../docs/arm-deployment-guide.md).
 - **GitLab CI**: `gitlab/stages/arm-deployment.yml` (declares its own stages; include it from a pipeline of its own)
 - **Azure DevOps**: `azure-devops/arm-deployment.yml` (the environment of the parameter `approvalEnvironment`, with an Approvals check)
 
+## Validation and day 2 (stages 07 and 08)
+
+Five pipelines run the validation and the day 2 scripts, once per platform. Each runs the script an operator runs by hand and nothing else; the
+scripts stay the way to do the same work from a workstation. All of them connect to the cluster over PowerShell remoting **as the service account of
+the runner**, which must be an administrator of the cluster: no pipeline takes a node password. The node maintenance reads the node login from its
+secret reference in the master file (Key Vault), like the discovery reads the BMC login.
+
+| Pipeline | Read only, no approval | Behind the approval environment |
+| --- | --- | --- |
+| `day2-check-updates` | the whole pipeline: the Azure view (Azure CLI, no node access) or the cluster view (remoting). Runs on a schedule | none |
+| `day2-update` | the plan: `Start-AzureLocalSolutionUpdate.ps1 -WhatIf`, which reads the cluster and says which update it would start | `PrepareOnly` (download and readiness checks) and `Install` (start the update; it does not wait) |
+| `day2-node-maintenance` | the plan: the node is checked against `nodes[]` of the master file and `-WhatIf` prints what would happen | `Reboot` (drain, reboot, resume, wait for the storage) and `Resume` (`-ResumeOnly`, after a failed run) |
+| `day2-cluster-operations` | `HealthCheck`, `Alerts`, `Capacity`; the `-WhatIf` plan of every other action | `MaintenanceMode`, `LiveMigrate`, `Rebalance` |
+| `validation` | cluster health, Arc connectivity, network configuration and the storage checks **without** the load test | the storage performance test (`-RunPerformanceTest`) |
+
+- **Plan first.** The pipelines that change something run a read-only plan job before the approval job, and the approval job starts only when
+  the plan succeeded. A plan that fails (a node that is not in the file, an update already running, a health state of Failure) ends the run
+  before anyone is asked to approve.
+- **The storage performance test is not read only.** `Test-StoragePerformance.ps1 -RunPerformanceTest` writes and reads a scratch file on every cluster
+  shared volume for `DurationSeconds` (60 by default) and removes it; its own help says it generates I/O on the cluster. The validation pipeline runs
+  the other storage checks read only, and runs the load test as a separate job behind the approval environment, after the read-only validation
+  passed. Run it in a maintenance window, never during an update.
+- **One approval environment.** `devops.pipelines.environments.operations` (the variable `AZL_ENVIRONMENT_OPERATIONS`) is the environment of every job that
+  changes the cluster or puts load on it. Make it an entry of `devops.environments[]` with `approval_required` and give it the approvers of your
+  change process. On Azure DevOps the name is the variable of `azure-devops/variables/approval-environments.yml` (bound when the pipeline is compiled,
+  empty in the toolkit; while it is empty the stage `ApprovalEnvironmentNotSet` fails and nothing is changed), and the Exclusive lock check of that
+  one environment is what keeps an update and a node reboot apart.
+- **Never two changes together.** GitHub Actions: the changing job has the concurrency group `azure-local-day2-changes-<infrastructure file>` with
+  `cancel-in-progress: false` (a run waits for the one before it; GitHub keeps one waiting run per group, so a third run replaces the waiting second).
+  GitLab CI: the changing job has the `resource_group` `azure-local-day2-changes`. Azure DevOps: `lockBehavior: sequential` on the pipeline and on the
+  stage, and the Exclusive lock check of the shared environment. The read-only jobs hold no lock.
+- **One node per run.** The node is a run input (`node`, `MAINTENANCE_NODE`, `OPERATIONS_NODE`) and the script is given `-RequireNodeInFile`: a name or an
+  address that `nodes[]` of the master file does not list ends the run with exit code 2 before any credential is read and before anything is sent to a
+  machine. There is no matrix and no loop over nodes: run the pipeline again for the next node after the storage has repaired (exit code 0).
+- **A failed script fails the run.** Exit code 1 (a check failed, the cluster needs attention, a step failed) and 2 (a value of the file is missing)
+  fail the job, and the report, plan or log is published as an artifact even then.
+- **GitLab jobs start only from the web form, the API or a schedule**, never from a push or a merge request; the manual job of a change waits in the
+  protected environment. GitHub and Azure DevOps pipelines are started by hand (`workflow_dispatch`, `trigger: none`), apart from the schedule below.
+
+### Check for updates on a schedule (owner directive D74)
+
+`day2-check-updates` fails when the cluster needs attention (an update in a failed state, a health state of Failure, Error or Warning, a failed update
+environment, an update service that has not checked for days). An update that is only offered ends with exit code 0: read the verdict in the report.
+The failed run is the alert: GitHub, GitLab and Azure DevOps each tell people about a failed run (their notification settings), and the report is
+published as the artifact `day2-update-check`. The schedule is the key `devops.pipelines.schedules.check_for_updates` of `infrastructure.yml`: a
+five-field cron expression in UTC, default `17 4 * * *` (every day at 04:17; the update agent of the cluster checks once a day). No platform reads a
+schedule from a variable, so each applies it where it keeps it, and task 05 of the CI/CD setup prints the value to use:
+
+| Platform | Where the schedule is | What to do |
+| --- | --- | --- |
+| GitHub Actions | the `cron` line of `on.schedule` in `day2-check-updates.yml` (the sample carries the default; a test keeps it equal to the registry default) | change the line in your copy when the key differs. A scheduled run has no inputs, so it takes the Azure view |
+| GitLab CI | the project (CI/CD > Schedules), not the file | create a schedule for the default branch with the value of the key; the Azure view is the default of `UPDATECHECK_SOURCE` |
+| Azure DevOps | not in the sample: a scheduled run cannot supply the run parameters (pool, service connection, variable group and file path have no default, because no value of a deployment is written in a pipeline file), and Learn says a schedule cannot use variables | copy the file, give the four parameters of your deployment as defaults and add the commented `schedules` block with the value of the key |
+
+The Azure view (`Get-AvailableSolutionUpdate.azcli.ps1`) needs no access to a node and the Azure CLI on the runner; the identity needs Azure Stack HCI
+Administrator or Reader on the cluster resource. The cluster view (`Get-AvailableSolutionUpdate.ps1`) needs a route to the cluster and signs in to nothing.
+
+Guide: [Validation and day 2 operations](../docs/day2-and-validation.md) shows each script by hand and in a pipeline.
+
 ## CI/CD infrastructure (the runners)
 
 - **GitHub Actions**: `github-actions/cicd-infra.yml`
@@ -170,6 +239,7 @@ group `devops.pipelines.variable_group` (one per environment, `<name>-<environme
 | `AZL_RUNNER_LABEL` | `devops.pipelines.runner_label` (one of `devops.runners[].labels` of the general runner) | variable | variable | (the pool, a run parameter) |
 | `AZL_RUNNER_OS` | `devops.runners[].os_type` of the general runner | variable | | |
 | `AZL_ENVIRONMENT_OS_CONFIGURATION`, `_ARM_DEPLOYMENT`, `_CICD_INFRA`, `_TERRAFORM_DEPLOYMENT` | `devops.pipelines.environments.*` | variable | variable | (run parameters) |
+| `AZL_ENVIRONMENT_OPERATIONS` | `devops.pipelines.environments.operations` (the approval environment of every day 2 and validation job that changes the cluster or puts load on it) | variable | variable | (a variable of `azure-devops/variables/approval-environments.yml`, bound when the pipeline is compiled) |
 | `AZL_INFRASTRUCTURE_FILE` | `devops.pipelines.infrastructure_file` | variable | variable | (a run parameter) |
 | `AZL_HANDOFF_PATH` | `devops.pipelines.handoff_path` | variable | variable | (a run parameter) |
 | `AZL_TERRAFORM_VERSION`, `AZL_PYTHON_VERSION`, `AZL_ANSIBLE_CORE_VERSION`, `AZL_ANSIBLE_LINT_VERSION`, `AZL_AZ_POWERSHELL_VERSION`, `AZL_POWERSHELL_YAML_VERSION`, `AZL_AZ_KEYVAULT_VERSION` | `devops.pipelines.tool_versions.terraform`, `.python`, `.ansible_core`, `.ansible_lint`, `.az_powershell`, `.powershell_yaml`, `.az_keyvault` | variable | variable | variable group |
@@ -196,7 +266,7 @@ variable exists (a macro variable is expanded only in task inputs, and `${{ vari
 | `variableGroup`, `variable_group` | all | `devops.pipelines.variable_group`, with environments `<name>-<environment>` |
 | `infrastructureFile`, `infrastructure_file` | all | `devops.pipelines.infrastructure_file` |
 | `handoff_path` | `os-configuration.yml` | `devops.pipelines.handoff_path` (`none` for an ISO-installed cluster) |
-| `approvalEnvironment`, `approval_environment` | each, except `pre-cluster-verification.yml` (its approval environment is the variable `AZL_ENVIRONMENT_ARM_DEPLOYMENT` of `azure-devops/variables/approval-environments.yml`, written once in the repository: a run parameter would let whoever queues the run choose an environment with no approval) | `devops.pipelines.environments.terraform_deployment`, `.arm_deployment`, `.cicd_infra` or `.os_configuration` |
+| `approvalEnvironment`, `approval_environment` | each, except `pre-cluster-verification.yml` (its approval environment is the variable `AZL_ENVIRONMENT_ARM_DEPLOYMENT` of `azure-devops/variables/approval-environments.yml`, written once in the repository: a run parameter would let whoever queues the run choose an environment with no approval) and the day 2 and validation pipelines (their approval environment is the variable `AZL_ENVIRONMENT_OPERATIONS` of the same file) | `devops.pipelines.environments.terraform_deployment`, `.arm_deployment`, `.cicd_infra` or `.os_configuration` |
 | `clear_storage_approval_environment` | `os-configuration.yml` | `devops.pipelines.environments.os_configuration_clear_storage` |
 
 The other parameters are choices of one run (mode, nodes, steps, resume, an artifact run ID) and default to the safe choice (`Plan`,

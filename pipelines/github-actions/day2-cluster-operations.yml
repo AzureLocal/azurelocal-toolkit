@@ -1,0 +1,204 @@
+# Azure Local day 2: cluster operations (health check, alerts, capacity, maintenance mode, live migration, volume rebalance), GitHub Actions.
+#
+# Copy to .github/workflows/day2-cluster-operations.yml. It runs the command an operator runs by hand (stage 08, task 04) and nothing else; the logic is in the
+# script, not here:
+#   pwsh -File scripts/deploy/08-day2-operations/task-04-cluster-operations/powershell/Invoke-ClusterOperations.ps1 ...
+# One action per run. The script connects to the cluster over PowerShell remoting as the service account of the runner, which must be an administrator of the
+# cluster; no Azure sign-in and no password is used.
+#
+# Jobs (exactly one path runs, chosen by the input action)
+#   read-only      HealthCheck, Alerts, Capacity. They only read, so there is no approval gate. The run FAILS when HealthCheck or Alerts finds something wrong
+#                  (exit code 1): that failure is the alert, and the report is published as an artifact even then.
+#   plan-changes   MaintenanceMode, LiveMigrate, Rebalance, first. Read only: the same script with -WhatIf, which prints what would be done and changes
+#                  nothing. When this job fails (a node that the file does not list, no -NodeName) the next job does not start.
+#   apply-changes  The same action for real, after a reviewer of the GitHub environment named by the repository variable AZL_ENVIRONMENT_OPERATIONS
+#                  approved it. MaintenanceMode with enable puts the node into maintenance (suspend, drain, remove from the virtual machine configuration);
+#                  without enable the node leaves maintenance. To reboot a node in one run use the day2-node-maintenance workflow.
+# The node input is checked against nodes[] of the master file: with a node the script is given -RequireNodeInFile, so a name or an address that the file does
+# not list ends the run with exit code 2 before anything is sent to the cluster.
+#
+# One change at a time. The apply-changes job, the update, the node maintenance and the storage performance test of this repository share the concurrency
+# group azure-local-day2-changes (with the infrastructure file as part of its name, so another instance in the same repository has its own): a second change
+# waits for the first, it never runs beside it. GitHub keeps at most one waiting run per group: a third one cancels the waiting second.
+#
+# Settings (Settings > Secrets and variables > Actions). No value is in this file: task 05 of the CI/CD setup (Set-CicdVariables.ps1) sets every variable below
+# from infrastructure.yml. GitHub reads runs-on, the environment name and env from the vars context
+# (https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#context-availability).
+#   AZL_RUNNER_OS, AZL_RUNNER_LABEL   devops.runners[].os_type of the general runner and devops.pipelines.runner_label
+#   AZL_ENVIRONMENT_OPERATIONS   devops.pipelines.environments.operations (the approval environment of apply-changes)
+#   AZL_INFRASTRUCTURE_FILE           devops.pipelines.infrastructure_file (the master file in this repository)
+#   AZL_POWERSHELL_YAML_VERSION       devops.pipelines.tool_versions.powershell_yaml
+# Runner: the general self-hosted runner with pwsh 7 and a route to the cluster (WinRM, TCP 5985 or 5986).
+name: Azure Local day 2 cluster operations
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'HealthCheck, Alerts and Capacity only read. MaintenanceMode, LiveMigrate and Rebalance change the cluster and need approval'
+        type: choice
+        options:
+          - HealthCheck
+          - Alerts
+          - Capacity
+          - MaintenanceMode
+          - LiveMigrate
+          - Rebalance
+      node:
+        description: 'MaintenanceMode and LiveMigrate: the node, by its name in nodes[] of the master file (leave empty for the other actions)'
+        required: false
+        default: ''
+      enable:
+        description: 'MaintenanceMode: put the node into maintenance (suspend, drain, remove from the virtual machine configuration). Off: the node leaves maintenance'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  actions: read
+
+# Every run step is PowerShell 7.
+defaults:
+  run:
+    shell: pwsh
+
+env:
+  OPERATIONS_SCRIPT: scripts/deploy/08-day2-operations/task-04-cluster-operations/powershell/Invoke-ClusterOperations.ps1
+  AZL_INFRASTRUCTURE_FILE: ${{ vars.AZL_INFRASTRUCTURE_FILE }}
+  AZL_POWERSHELL_YAML_VERSION: ${{ vars.AZL_POWERSHELL_YAML_VERSION }}
+  OPERATIONS_ACTION: ${{ inputs.action }}
+  OPERATIONS_NODE: ${{ inputs.node }}
+  OPERATIONS_ENABLE: ${{ inputs.enable }}
+
+jobs:
+  read-only:
+    name: Read only (HealthCheck, Alerts, Capacity)
+    if: ${{ contains(fromJSON('["HealthCheck","Alerts","Capacity"]'), inputs.action) }}
+    runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
+    # Reads of the cluster over remoting: the toolkit's limit for a read-only check, not a figure from Microsoft.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the PowerShell modules (devops.pipelines.tool_versions)
+        shell: pwsh
+        run: |
+          $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION }
+          foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+
+      - name: Run the action
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/day2-cluster-operations" -Force | Out-Null
+          $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Action = $env:OPERATIONS_ACTION; OutputPath = "$env:RUNNER_TEMP/day2-cluster-operations/result.json"; LogPath = "$env:RUNNER_TEMP/day2-cluster-operations/run.log" }
+          & $env:OPERATIONS_SCRIPT @p
+          exit $LASTEXITCODE
+
+      - name: Job summary
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          $log = "$env:RUNNER_TEMP/day2-cluster-operations/run.log"
+          if (Test-Path -LiteralPath $log) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value (@("Cluster operation $env:OPERATIONS_ACTION (read only):", '') + @(Get-Content -LiteralPath $log)) }
+
+      - name: Publish the result
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: day2-cluster-operations
+          path: ${{ runner.temp }}/day2-cluster-operations
+          # The result of a read: 30 days is the toolkit's retention for reports, long enough to compare with the next check.
+          retention-days: 30
+          if-no-files-found: warn
+
+  plan-changes:
+    name: Plan the change (read only)
+    if: ${{ contains(fromJSON('["MaintenanceMode","LiveMigrate","Rebalance"]'), inputs.action) }}
+    runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
+    # The script with -WhatIf reads the cluster and changes nothing: the toolkit's limit for a read-only check, not a figure from Microsoft.
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the PowerShell modules (devops.pipelines.tool_versions)
+        shell: pwsh
+        run: |
+          $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION }
+          foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+
+      - name: Plan (nothing is changed)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/day2-cluster-operations" -Force | Out-Null
+          $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Action = $env:OPERATIONS_ACTION; OutputPath = "$env:RUNNER_TEMP/day2-cluster-operations/plan.json"; LogPath = "$env:RUNNER_TEMP/day2-cluster-operations/plan.log"; WhatIf = $true }
+          if ($env:OPERATIONS_NODE) { $p.NodeName = $env:OPERATIONS_NODE; $p.RequireNodeInFile = $true }
+          if ($env:OPERATIONS_ENABLE -eq 'true') { $p.Enable = $true }
+          & $env:OPERATIONS_SCRIPT @p
+          exit $LASTEXITCODE
+
+      - name: Job summary
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          $log = "$env:RUNNER_TEMP/day2-cluster-operations/plan.log"
+          if (Test-Path -LiteralPath $log) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value (@("Plan of $env:OPERATIONS_ACTION (nothing was changed):", '') + @(Get-Content -LiteralPath $log)) }
+
+      - name: Publish the plan
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: day2-cluster-operations-plan
+          path: ${{ runner.temp }}/day2-cluster-operations
+          # The plan of a change: 30 days is the toolkit's retention for reports, long enough to compare with the run that followed it.
+          retention-days: 30
+          if-no-files-found: warn
+
+  apply-changes:
+    name: Apply the change (needs approval)
+    needs: plan-changes
+    if: ${{ contains(fromJSON('["MaintenanceMode","LiveMigrate","Rebalance"]'), inputs.action) }}
+    runs-on: [self-hosted, "${{ vars.AZL_RUNNER_OS }}", "${{ vars.AZL_RUNNER_LABEL }}"]
+    # Required reviewers on this environment are the approval gate.
+    environment: ${{ vars.AZL_ENVIRONMENT_OPERATIONS }}
+    # One change at a time on the cluster: the update, the node maintenance, the changing operations and the storage performance test share this group.
+    concurrency:
+      group: azure-local-day2-changes-${{ vars.AZL_INFRASTRUCTURE_FILE }}
+      cancel-in-progress: false
+    # A drain or a volume move waits for the cluster (no limit in the script): the toolkit's limit, not a figure from Microsoft.
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install the PowerShell modules (devops.pipelines.tool_versions)
+        shell: pwsh
+        run: |
+          $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION }
+          foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+
+      - name: Change the cluster
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "$env:RUNNER_TEMP/day2-cluster-operations" -Force | Out-Null
+          $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Action = $env:OPERATIONS_ACTION; OutputPath = "$env:RUNNER_TEMP/day2-cluster-operations/result.json"; LogPath = "$env:RUNNER_TEMP/day2-cluster-operations/apply.log" }
+          # the one change the reviewer approved: the action, on the node of the file
+          if ($env:OPERATIONS_NODE) { $p.NodeName = $env:OPERATIONS_NODE; $p.RequireNodeInFile = $true }
+          if ($env:OPERATIONS_ENABLE -eq 'true') { $p.Enable = $true }
+          & $env:OPERATIONS_SCRIPT @p
+          exit $LASTEXITCODE
+
+      - name: Job summary
+        if: ${{ always() }}
+        shell: pwsh
+        run: |
+          $log = "$env:RUNNER_TEMP/day2-cluster-operations/apply.log"
+          if (Test-Path -LiteralPath $log) { Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Value (@("What the script did for $env:OPERATIONS_ACTION :", '') + @(Get-Content -LiteralPath $log)) }
+
+      - name: Publish the log
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: day2-cluster-operations-log
+          path: ${{ runner.temp }}/day2-cluster-operations
+          # The log of a change: 90 days is the toolkit's retention for the record of a change to the cluster.
+          retention-days: 90
+          if-no-files-found: warn

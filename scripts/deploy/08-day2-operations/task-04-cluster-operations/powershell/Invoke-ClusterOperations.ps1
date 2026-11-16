@@ -32,12 +32,12 @@
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
         cluster.name                                  the cluster to connect to
         nodes[].name                                  -NodeName is matched against it (a name, a fully qualified name with identity.active_directory.domain_fqdn, or an address);
-                                                      a name that is not in the file is used as it is, with a warning
+                                                      a name that is not in the file is used as it is, with a warning (exit code 2 with -RequireNodeInFile)
 
     Output: one row per finding or step (Item, Action, Detail). With -OutputPath the rows are also written as JSON.
 
     Exit codes: 0 the action finished (or is planned under -WhatIf) and HealthCheck or Alerts found nothing wrong; 1 a step failed, or HealthCheck or Alerts found something;
-    2 cluster.name is missing, the file cannot be read, or an action that needs -NodeName has none. Nothing is sent to the cluster on exit code 2.
+    2 cluster.name is missing, the file cannot be read, an action that needs -NodeName has none, or -RequireNodeInFile is given and the node is not in nodes[]. Nothing is sent to the cluster on exit code 2.
 
 .PARAMETER InfrastructureFile
     The master infrastructure.yml (schema 5). Reads cluster.name and nodes[] (name, management address) and identity.active_directory.domain_fqdn (to match a fully qualified -NodeName); the whole file is not validated here.
@@ -50,6 +50,10 @@
 
 .PARAMETER Enable
     With MaintenanceMode: put the node into maintenance (suspend, drain, remove from the virtual machine configuration). Without it the node leaves maintenance.
+
+.PARAMETER RequireNodeInFile
+    Refuse a -NodeName that is not a node of nodes[] in the file (exit code 2, before anything is sent to the cluster): a pipeline passes it so that a mistyped node name or an
+    address from outside the file never reaches a machine. Without it a name that is not in the file is used as it is, with a warning.
 
 .PARAMETER Credential
     Optional. The account for the remoting sessions (an administrator of the cluster). Without it the account that runs the script is used.
@@ -75,6 +79,7 @@ param(
     [Parameter(Mandatory)][ValidateSet('HealthCheck', 'MaintenanceMode', 'LiveMigrate', 'Rebalance', 'Capacity', 'Alerts')][string]$Action,
     [string]$NodeName,
     [switch]$Enable,
+    [switch]$RequireNodeInFile,
     [pscredential]$Credential,
     [string]$OutputPath,
     [string]$LogPath
@@ -121,6 +126,7 @@ if ($NodeName) {
     $wanted = $NodeName.Trim()
     $found = @(Get-AzlInfrastructureNode -Infrastructure $infra | Where-Object { $_.Name -eq $wanted -or ($_.ManagementIp -and $_.ManagementIp -eq $wanted) -or ($domain -and "$($_.Name).$domain" -eq $wanted) } | Select-Object -First 1)
     if ($found.Count -gt 0) { $node = [string]$found[0].Name }
+    elseif ($RequireNodeInFile) { Exit-InputProblem "Node '$wanted' is not a node of nodes[] in the infrastructure file, and -RequireNodeInFile is set. Nothing was sent to the cluster." }
     else { $node = $wanted; Write-Line "Node '$wanted' is not in nodes[] of the file: it is used as it is." }
 }
 $failed = $false

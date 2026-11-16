@@ -27,7 +27,7 @@
         identity.local_admin.username and .password            the local administrator
         identity.active_directory.lcm_user.username and .password, identity.active_directory.netbios_name   the fallback account
 
-    A -TargetNode that is not in the file is used as it is (a host name or an address).
+    A -TargetNode that is not in the file is used as it is (a host name or an address), unless -RequireNodeInFile is given.
 
     -WhatIf prints the plan and sends nothing to any machine.
 
@@ -50,6 +50,10 @@
 
 .PARAMETER TargetNode
     The node to reboot: host name, fully qualified name or management address.
+
+.PARAMETER RequireNodeInFile
+    Refuse a -TargetNode that is not a node of nodes[] in the file (exit code 2, before any credential is read and before anything is sent): a pipeline passes it so that
+    a mistyped node name or an address from outside the file never reaches a machine. Without it a name that is not in the file is used as it is.
 
 .PARAMETER LogPath
     Optional. The log file. Default: logs\node-maintenance-reboot\<date>_<time>_<node>.log in the current folder.
@@ -93,6 +97,7 @@ param(
     [Parameter(Mandatory)][string]$InfrastructureFile,
     [PSCredential]$Credential,
     [Parameter(Mandatory)][string]$TargetNode,
+    [switch]$RequireNodeInFile,
     [string]$LogPath = '',
     [switch]$SkipDrain,
     [switch]$SkipResume,
@@ -166,6 +171,10 @@ if ($matchedNode.Count -gt 0) {
     $nodeHostname = $matchedNode[0].Name
     if ($matchedNode[0].ManagementIp) { $nodeIp = $matchedNode[0].ManagementIp }
     Write-Log "Node resolved  : $nodeHostname ($nodeIp)"
+}
+elseif ($RequireNodeInFile) {
+    Write-Log "Node '$TargetNode' is not a node of nodes[] in the infrastructure file, and -RequireNodeInFile is set. Nothing was sent to any machine." 'ERROR'
+    exit 2
 }
 else {
     Write-Log "Node '$TargetNode' not found in config - using as-is (hostname/IP passthrough)" 'WARN'

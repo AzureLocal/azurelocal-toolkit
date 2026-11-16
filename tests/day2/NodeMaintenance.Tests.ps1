@@ -124,6 +124,20 @@ Describe 'Invoke-NodeMaintenanceReboot.ps1' {
             $global:AzlNmCalls.Count | Should -Be 0
         }
 
+        It 'with -RequireNodeInFile, exits 2 for a node that is not in nodes[], before any credential is read and before anything is sent' {
+            $r = Invoke-Tool @{ InfrastructureFile = (New-InfraFile); TargetNode = 'other-node'; RequireNodeInFile = $true; LogPath = (Join-Path $TestDrive 'r3.log') } -DryRun
+            $r.ExitCode | Should -Be 2 -Because $r.Text
+            $r.Text | Should -Match "Node 'other-node' is not a node of nodes\[\]"
+            $r.Text | Should -Not -Match 'Resolving local admin credentials'
+            $global:AzlNmCalls.Count | Should -Be 0
+        }
+
+        It 'with -RequireNodeInFile, a node of nodes[] (by name, address or fully qualified name) is resolved as before' -ForEach @(@{ Target = 'iic-n01' }, @{ Target = '192.0.2.11' }, @{ Target = 'iic-n01.improbability.cloud' }) {
+            $r = Invoke-Tool @{ InfrastructureFile = (New-InfraFile); TargetNode = $Target; RequireNodeInFile = $true; LogPath = (Join-Path $TestDrive 'r4.log') } -DryRun
+            $r.Text | Should -Match 'Node resolved\s+: iic-n01 \(192\.0\.2\.11\)'
+            $global:AzlNmCalls.Count | Should -Be 0
+        }
+
         It 'exits 2 and sends nothing when no credential can be built, and does not prompt' {
             $r = Invoke-Tool @{ InfrastructureFile = (New-InfraFile -NoReference); TargetNode = 'iic-n01'; LogPath = (Join-Path $TestDrive 'r2.log') }
             $r.ExitCode | Should -Be 2 -Because $r.Text

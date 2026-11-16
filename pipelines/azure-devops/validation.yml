@@ -1,0 +1,214 @@
+# Azure Local validation (stage 07, before the handover; run it again after a change), Azure DevOps.
+#
+# Create a pipeline from this file (Pipelines > New pipeline > Existing Azure Pipelines YAML file). It runs the four validation scripts an operator runs by
+# hand, one after the other, and nothing else; the checks and the reports are in the scripts, not here. PowerShell 7 only.
+#   cluster health   scripts/deploy/07-validation-handover/task-01-cluster-health-validation/powershell/Test-AzureLocalClusterHealth.ps1
+#   Arc connection   scripts/deploy/07-validation-handover/task-02-arc-connectivity-validation/powershell/Test-ArcConnectivity.ps1
+#   network          scripts/deploy/07-validation-handover/task-03-network-configuration-validation/powershell/Test-NetworkConfiguration.ps1
+#   storage          scripts/deploy/07-validation-handover/task-04-storage-performance-validation/powershell/Test-StoragePerformance.ps1
+# Every script connects to the cluster over PowerShell remoting as the account the agent runs as, which must be an administrator of the cluster; no Azure
+# sign-in and no password is used.
+#
+# Stages
+#   Validate            Read only, no approval. The four scripts run even when an earlier one fails, so one run shows every problem, and the run FAILS when
+#                       any of them ended with a non-zero exit code (1: a check failed or the cluster could not be read; 2: a value of the file is missing).
+#                       The storage script runs WITHOUT its performance test here: it then only reads the pools, the virtual disks, the physical disks and
+#                       the cluster shared volumes.
+#   StoragePerformance  Runs after Validate, only when the parameter run_performance_test is set, as a deployment job in the approval environment (add an
+#                       Approvals check to it). Test-StoragePerformance.ps1 -RunPerformanceTest is NOT read only: its own help says
+#                       "This will generate I/O on the cluster". It creates a scratch folder and file on each cluster shared volume, writes and reads it for DurationSeconds (default
+#                       60) seconds, and removes it again. That load is why it is behind the approval and the lock of the other changes to the cluster, and
+#                       why it is not part of the read-only stage: run it in a maintenance window, never during an update. The environment is fixed when
+#                       the pipeline is compiled (the variable AZL_ENVIRONMENT_OPERATIONS of variables/approval-environments.yml), never a run
+#                       parameter: whoever queues the run cannot pick an environment that has no approval. While the variable is empty, the stage
+#                       ApprovalEnvironmentNotSet fails and nothing is changed.
+#
+# One change at a time. The update, the node maintenance, the changing operations and the storage performance test deploy to the same environment, and the
+# Exclusive lock check of that environment keeps two of them from running on the cluster together; the StoragePerformance stage also sets lockBehavior: sequential.
+#
+# What to configure in the organization (names only; no value of any ID, password or key is in this file). Task 05 of the CI/CD setup lists the value of every
+# run parameter to enter.
+#   Agent pool      a self-hosted pool (parameter agent_pool: devops.runners[].pool of the general runner) with PowerShell 7 (pwsh), a route to the cluster
+#                   (WinRM, TCP 5985 or 5986) and the Failover Clustering PowerShell module (the RSAT feature Failover Clustering Tools), which the health,
+#                   network and storage scripts use (Get-Cluster, Get-ClusterNode and others).
+#   Variable group  parameter variable_group (Pipelines > Library; devops.pipelines.variable_group, the group task 05 writes). This file reads
+#                   AZL_POWERSHELL_YAML_VERSION from it (devops.pipelines.tool_versions.powershell_yaml).
+#   Environment     the name in variables/approval-environments.yml (AZL_ENVIRONMENT_OPERATIONS: devops.pipelines.environments.operations; task 05
+#                   lists the value to write there): Approvals (required reviewers) and an Exclusive lock. Task 04 of the CI/CD setup creates it from
+#                   devops.environments. A deployment job to an environment with no approval check runs without one, which is why the name is not a run
+#                   parameter (Learn: a template expression sees only the variables of the YAML files).
+#   Why parameters  the pool of a job is not a task input. Learn says a macro variable $(name) is expanded only in task inputs, and that other keywords take
+#                   template expressions or runtime parameters
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
+#                   ${{ variables.name }} does not see variables stored on the pipeline or in a library, only those of the YAML files
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool, the variable group and the file path
+#                   are runtime parameters (${{ parameters.name }}) with no default: the run form asks for them.
+name: validation-$(Date:yyyyMMdd)$(Rev:.r)
+
+trigger: none
+pr: none
+
+# lockBehavior does not queue runs by itself. Learn: it only says how runs behave when they meet an Exclusive lock check (sequential: every run waits its turn;
+# runLatest, the default: only the latest run goes on), and a stage that sets it gets a lock of its own (https://learn.microsoft.com/azure/devops/pipelines/process/approvals#exclusive-lock).
+# At the pipeline level it makes the Exclusive lock check on the approval environment queue the runs instead of cancelling the older ones.
+lockBehavior: sequential
+
+parameters:
+  - name: infrastructure_file
+    displayName: 'Path of the master infrastructure.yml in the repository. Enter devops.pipelines.infrastructure_file'
+    type: string
+  - name: run_performance_test
+    displayName: 'After the read-only validation: also run the storage performance test, which writes and reads a scratch file on every cluster shared volume (needs approval)'
+    type: boolean
+    default: false
+  - name: agent_pool
+    displayName: 'Self-hosted agent pool (PowerShell 7, route to the cluster, Failover Clustering tools). Enter devops.runners[].pool of the general runner'
+    type: string
+  - name: variable_group
+    displayName: 'Variable group of the pipeline (Pipelines > Library). Enter devops.pipelines.variable_group (with environments, <name>-<environment>)'
+    type: string
+
+variables:
+  - group: ${{ parameters.variable_group }}
+  # AZL_ENVIRONMENT_OPERATIONS: the approval environment, bound at compile time (not a run parameter).
+  - template: variables/approval-environments.yml
+  - name: healthScript
+    value: scripts/deploy/07-validation-handover/task-01-cluster-health-validation/powershell/Test-AzureLocalClusterHealth.ps1
+  - name: arcScript
+    value: scripts/deploy/07-validation-handover/task-02-arc-connectivity-validation/powershell/Test-ArcConnectivity.ps1
+  - name: networkScript
+    value: scripts/deploy/07-validation-handover/task-03-network-configuration-validation/powershell/Test-NetworkConfiguration.ps1
+  - name: storageScript
+    value: scripts/deploy/07-validation-handover/task-04-storage-performance-validation/powershell/Test-StoragePerformance.ps1
+
+stages:
+  # ---------------------------------------------------------------------------------------------------------------------------
+  - stage: Validate
+    displayName: 'Validate (read only)'
+    jobs:
+      - job: Validate
+        displayName: 'Validate (read only)'
+        pool:
+          name: ${{ parameters.agent_pool }}
+          demands:
+            - pwsh
+        # Reads of the cluster over remoting by four scripts: the toolkit's limit for read-only checks, not a figure from Microsoft.
+        timeoutInMinutes: 60
+        steps:
+          - checkout: self
+
+          - pwsh: |
+              $ErrorActionPreference = 'Stop'
+              $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION }
+              foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+            displayName: 'Install the PowerShell modules (devops.pipelines.tool_versions)'
+
+          - pwsh: |
+              Set-StrictMode -Version Latest
+              $ErrorActionPreference = 'Stop'
+              $dir = $env:VALIDATION_REPORT_DIRECTORY
+              $checks = [ordered]@{
+                ClusterHealth = @{ Script = $env:VALIDATION_HEALTH_SCRIPT; Parameters = @{ InfrastructureFile = $env:VALIDATION_INFRASTRUCTURE_FILE; OutputFormat = 'JSON'; OutputPath = "$dir/cluster-health" } }
+                ArcConnectivity = @{ Script = $env:VALIDATION_ARC_SCRIPT; Parameters = @{ InfrastructureFile = $env:VALIDATION_INFRASTRUCTURE_FILE; OutputPath = "$dir/arc-connectivity" } }
+                Network = @{ Script = $env:VALIDATION_NETWORK_SCRIPT; Parameters = @{ InfrastructureFile = $env:VALIDATION_INFRASTRUCTURE_FILE; OutputPath = "$dir/network" } }
+                Storage = @{ Script = $env:VALIDATION_STORAGE_SCRIPT; Parameters = @{ InfrastructureFile = $env:VALIDATION_INFRASTRUCTURE_FILE; OutputPath = "$dir/storage" } }
+              }
+              $failed = @()
+              foreach ($name in $checks.Keys) {
+                $p = $checks[$name].Parameters
+                New-Item -ItemType Directory -Path $p.OutputPath -Force | Out-Null
+                & $checks[$name].Script @p
+                if ($LASTEXITCODE -ne 0) { $failed += "$name (exit code $LASTEXITCODE)" }
+              }
+              if ($failed.Count -gt 0) { throw "Validation failed: $($failed -join ', ')." }
+            displayName: 'Run the four read-only validation scripts'
+            workingDirectory: $(Build.SourcesDirectory)
+            env:
+              VALIDATION_HEALTH_SCRIPT: $(healthScript)
+              VALIDATION_ARC_SCRIPT: $(arcScript)
+              VALIDATION_NETWORK_SCRIPT: $(networkScript)
+              VALIDATION_STORAGE_SCRIPT: $(storageScript)
+              VALIDATION_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
+              VALIDATION_REPORT_DIRECTORY: $(Build.ArtifactStagingDirectory)/validation-reports
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish the validation reports'
+            condition: always()
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/validation-reports
+              artifact: validation-reports
+              publishLocation: pipeline
+
+  # ---------------------------------------------------------------------------------------------------------------------------
+  # The load test was asked for, but no approval environment is set in variables/approval-environments.yml: nothing is run, and the run says why.
+  - ${{ if and(parameters.run_performance_test, eq(variables.AZL_ENVIRONMENT_OPERATIONS, '')) }}:
+      - stage: ApprovalEnvironmentNotSet
+        displayName: 'Storage performance: no approval environment is set'
+        dependsOn: Validate
+        jobs:
+          - job: Refuse
+            displayName: 'Refuse: no approval environment is set'
+            pool:
+              name: ${{ parameters.agent_pool }}
+              demands:
+                - pwsh
+            # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+            timeoutInMinutes: 5
+            steps:
+              - pwsh: |
+                  Write-Error 'The storage performance test puts load on the cluster, so it runs only behind the approval environment. Set AZL_ENVIRONMENT_OPERATIONS (devops.pipelines.environments.operations) in pipelines/azure-devops/variables/approval-environments.yml, then run again. Nothing was run.'
+                  exit 1
+                displayName: 'No approval environment is set: nothing is run'
+
+  # ---------------------------------------------------------------------------------------------------------------------------
+  - ${{ if and(parameters.run_performance_test, ne(variables.AZL_ENVIRONMENT_OPERATIONS, '')) }}:
+      - stage: StoragePerformance
+        displayName: 'Storage performance test (puts load on the cluster, needs approval)'
+        dependsOn: Validate
+        lockBehavior: sequential
+        jobs:
+          - deployment: StoragePerformance
+            displayName: 'Storage performance test'
+            pool:
+              name: ${{ parameters.agent_pool }}
+              demands:
+                - pwsh
+            # Required reviewers on this environment are the approval gate. The name is a variable of a YAML file of the repository, so the queuer cannot choose it.
+            environment: ${{ variables.AZL_ENVIRONMENT_OPERATIONS }}
+            # One test per cluster shared volume of 60 seconds (the default of the script) plus its reads: the toolkit's limit, not a figure from Microsoft.
+            timeoutInMinutes: 120
+            strategy:
+              runOnce:
+                deploy:
+                  steps:
+                    - checkout: self
+
+                    - pwsh: |
+                        $ErrorActionPreference = 'Stop'
+                        $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION }
+                        foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+                      displayName: 'Install the PowerShell modules (devops.pipelines.tool_versions)'
+
+                    - pwsh: |
+                        Set-StrictMode -Version Latest
+                        $ErrorActionPreference = 'Stop'
+                        $p = @{ InfrastructureFile = $env:VALIDATION_INFRASTRUCTURE_FILE; OutputPath = "$env:VALIDATION_REPORT_DIRECTORY/storage-performance" }
+                        # the one change the reviewer approved: the load test, which writes a scratch file on every cluster shared volume and removes it again
+                        $p.RunPerformanceTest = $true
+                        & $env:VALIDATION_STORAGE_SCRIPT @p
+                        $code = $LASTEXITCODE
+                        if ($code -ne 0) { throw "Test-StoragePerformance.ps1 exited with code $code." }
+                      displayName: 'Run the storage performance test'
+                      workingDirectory: $(Build.SourcesDirectory)
+                      env:
+                        VALIDATION_STORAGE_SCRIPT: $(storageScript)
+                        VALIDATION_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
+                        VALIDATION_REPORT_DIRECTORY: $(Build.ArtifactStagingDirectory)/validation-reports
+
+                    - task: PublishPipelineArtifact@1
+                      displayName: 'Publish the storage performance report'
+                      condition: always()
+                      inputs:
+                        targetPath: $(Build.ArtifactStagingDirectory)/validation-reports
+                        artifact: storage-performance-report
+                        publishLocation: pipeline

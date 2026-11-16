@@ -1,0 +1,123 @@
+# Azure Local day 2: take one node through maintenance (drain, reboot, resume, wait for the storage), GitLab CI.
+#
+# Include it from a pipeline file of its own (include: local: pipelines/gitlab/stages/day2-node-maintenance.yml) or copy it. It declares its own stage, so it
+# is NOT included from pipelines/gitlab/.gitlab-ci.yml, whose stage list belongs to the Terraform and Ansible pipeline. It runs the command an operator runs by
+# hand (stage 08, task 03) and nothing else; the logic is in the script, not here:
+#   pwsh -File scripts/deploy/08-day2-operations/task-03-node-maintenance/powershell/Invoke-NodeMaintenanceReboot.ps1 ...
+# The script checks that it is safe to take the node out (every other node Up, every virtual disk Healthy, no storage repair running), drains it, reboots it,
+# waits for it, resumes it and waits for the storage to repair (Learn: Suspend and resume Azure Local machines for maintenance). Run it for the next node only
+# after this job ended with exit code 0.
+#
+# Exactly one node per run. MAINTENANCE_NODE is one node of nodes[] in the master file: the script is given -RequireNodeInFile, so a name or an address that the
+# file does not list ends the job with exit code 2 before any credential is read and before anything is sent to a machine. Nodes are never handled in
+# parallel: there is no loop, and the apply job shares one resource_group with every other change to the cluster.
+#
+# Jobs
+#   day2-node-maintenance-plan   Read only, and always first. The same script with -WhatIf: it checks the node against the file, reads the credential
+#                                reference and prints what would happen. It sends nothing to any machine. When it fails the next job does not start.
+#   day2-node-maintenance-apply  A MANUAL job, only for MAINTENANCE_ACTION Reboot or Resume: someone allowed to run jobs in the protected environment named
+#                                by AZL_ENVIRONMENT_OPERATIONS plays it. Reboot drains, reboots and resumes the node. Resume only resumes a node that a
+#                                failed run left Paused (the script's -ResumeOnly): use it after you looked at the node.
+# Both jobs start only from the web form or the API, never from a push, a merge request or a schedule.
+#
+# One change at a time. The apply job, the update, the changing operations and the storage performance test of this project share the resource_group
+# azure-local-day2-changes: a second change waits for the first, it never runs beside it.
+#
+# Project CI/CD variables: task 05 of the CI/CD setup sets each from infrastructure.yml; no value is in this file. tags: and environment:name expand CI/CD
+# variables (https://docs.gitlab.com/ci/variables/where_variables_can_be_used/).
+#   ARM_CLIENT_ID, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID  azure.automation_identity, azure.tenant_id, azure.subscription_id (Get on the Key Vault secrets of the
+#                          local administrator and the LCM user)
+#   AZL_AUTH_METHOD        devops.authentication.method: oidc (the GitLab ID token ARM_OIDC_TOKEN and the federated credential of task 01)
+#                          or client_secret (the masked variable ARM_CLIENT_SECRET, which task 05 reads from Key Vault)
+#   AZL_RUNNER_LABEL       devops.pipelines.runner_label (the tag of the general runner)
+#   AZL_ENVIRONMENT_OPERATIONS  devops.pipelines.environments.operations (the protected environment of the manual job)
+#   AZL_INFRASTRUCTURE_FILE         devops.pipelines.infrastructure_file
+#   AZL_POWERSHELL_YAML_VERSION, AZL_AZ_POWERSHELL_VERSION, AZL_AZ_KEYVAULT_VERSION  devops.pipelines.tool_versions.*
+# Run variables (a pipeline run from the web form offers them):
+#   MAINTENANCE_NODE       the one node: its name in nodes[] of the master file (a fully qualified name or a management address of that node also works)
+#   MAINTENANCE_ACTION     Plan | Reboot | Resume
+# The node login is never in this file or in a variable of this project: it is the secret reference of the master file (identity.local_admin, with
+# identity.active_directory.lcm_user as the fallback), and the toolkit secret resolver reads it from Key Vault at run time with the Azure sign-in of the job.
+# Runner: the general runner with the tag AZL_RUNNER_LABEL, pwsh 7 and a route to the node (WinRM, TCP 5985 or 5986, and ping).
+# Protected environment: task 04 creates it; Settings > CI/CD > Protected environments holds its approval rules (Premium and above).
+
+stages:
+  - day2-node-maintenance
+
+variables:
+  MAINTENANCE_SCRIPT: scripts/deploy/08-day2-operations/task-03-node-maintenance/powershell/Invoke-NodeMaintenanceReboot.ps1
+  MAINTENANCE_NODE:
+    value: ''
+    description: 'The one node to take through maintenance: its name in nodes[] of the master file (a fully qualified name or a management address of that node also works).'
+  MAINTENANCE_ACTION:
+    value: Plan
+    options: [Plan, Reboot, Resume]
+    description: 'Plan: check the node against the file and show what would happen (nothing is sent to a machine). Reboot: drain, reboot, resume and wait for the storage (manual job). Resume: only resume a node left Paused by a failed run (manual job).'
+  MAINTENANCE_LOG_DIRECTORY: day2-node-maintenance
+
+.day2-node-maintenance:
+  tags: [$AZL_RUNNER_LABEL]
+  stage: day2-node-maintenance
+  # OIDC: GitLab issues a token the Azure app registration trusts (federated credential, audience api://AzureADTokenExchange).
+  id_tokens:
+    ARM_OIDC_TOKEN:
+      aud: api://AzureADTokenExchange
+  before_script:
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Modules -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION -AzPowerShellVersion $env:AZL_AZ_POWERSHELL_VERSION -AzKeyVaultVersion $env:AZL_AZ_KEYVAULT_VERSION
+        Enable-AzContextAutosave -Scope CurrentUser | Out-Null
+        $connect = @{ Tenant = $env:ARM_TENANT_ID; Subscription = $env:ARM_SUBSCRIPTION_ID; ServicePrincipal = $true }
+        # The sign-in method of devops.authentication.method.
+        if ($env:AZL_AUTH_METHOD -eq "oidc") { Connect-AzAccount -ApplicationId $env:ARM_CLIENT_ID -FederatedToken $env:ARM_OIDC_TOKEN @connect | Out-Null }
+        else { Connect-AzAccount -Credential ([pscredential]::new($env:ARM_CLIENT_ID, (ConvertTo-SecureString -String $env:ARM_CLIENT_SECRET -AsPlainText -Force))) @connect | Out-Null }
+      '
+  artifacts:
+    when: always
+    # The log of a run: 30 days is the toolkit's retention for reports, long enough to compare with the run that followed a plan.
+    expire_in: 30 days
+    name: day2-node-maintenance
+    paths:
+      - $MAINTENANCE_LOG_DIRECTORY/
+
+day2-node-maintenance-plan:
+  extends: .day2-node-maintenance
+  # The check of the node and a read of the secret references: the toolkit's limit for a read-only check, not a figure from Microsoft.
+  timeout: 30 minutes
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/'
+  script:
+    - |
+      pwsh -NoProfile -Command '
+        if (-not $env:MAINTENANCE_NODE) { Write-Error "MAINTENANCE_NODE is empty: give the one node to take through maintenance." -ErrorAction Continue; exit 2 }
+        New-Item -ItemType Directory -Path $env:MAINTENANCE_LOG_DIRECTORY -Force | Out-Null
+        $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; TargetNode = $env:MAINTENANCE_NODE; RequireNodeInFile = $true; LogPath = "$env:MAINTENANCE_LOG_DIRECTORY/plan.log"; WhatIf = $true }
+        if ($env:MAINTENANCE_ACTION -eq "Resume") { $p.ResumeOnly = $true }
+        & $env:MAINTENANCE_SCRIPT @p
+        exit $LASTEXITCODE
+      '
+
+day2-node-maintenance-apply:
+  extends: .day2-node-maintenance
+  needs: [day2-node-maintenance-plan]
+  # One change at a time on the cluster, and one node at a time (GitHub: concurrency group; Azure DevOps: lockBehavior and the Exclusive lock check of the environment).
+  resource_group: azure-local-day2-changes
+  # The drain waits for the virtual machines to move (no limit in the script), the node is awaited for 500 seconds and the storage repair for 180 minutes (the defaults of the script): the toolkit's limit, not a figure from Microsoft.
+  timeout: 6 hours
+  # The approval gate: the job waits until someone allowed in the protected environment plays it.
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($MAINTENANCE_ACTION == "Reboot" || $MAINTENANCE_ACTION == "Resume")'
+      when: manual
+      allow_failure: false
+  environment:
+    name: $AZL_ENVIRONMENT_OPERATIONS
+  script:
+    - |
+      pwsh -NoProfile -Command '
+        New-Item -ItemType Directory -Path $env:MAINTENANCE_LOG_DIRECTORY -Force | Out-Null
+        $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; TargetNode = $env:MAINTENANCE_NODE; RequireNodeInFile = $true; LogPath = "$env:MAINTENANCE_LOG_DIRECTORY/apply.log" }
+        # the one change the person who played the job approved: Resume only resumes a node that a failed run left Paused, Reboot drains, reboots and resumes it
+        if ($env:MAINTENANCE_ACTION -eq "Resume") { $p.ResumeOnly = $true }
+        & $env:MAINTENANCE_SCRIPT @p
+        exit $LASTEXITCODE
+      '

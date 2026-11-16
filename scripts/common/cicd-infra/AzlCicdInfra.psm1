@@ -52,6 +52,7 @@ $script:AzlPipelineDefault = [ordered]@{
     'devops.pipelines.tool_versions.az_powershell'  = '16.3.0'
     'devops.pipelines.tool_versions.powershell_yaml' = '0.4.12'
     'devops.pipelines.tool_versions.az_keyvault'    = '6.6.1'
+    'devops.pipelines.schedules.check_for_updates'  = '17 4 * * *'
     'deployment.validate_timeout_minutes'           = 90
     'deployment.deploy_timeout_minutes'             = 360
 }
@@ -282,6 +283,12 @@ function ConvertTo-AzlCicdSetting {
             arm_deployment                 = [string](Get-AzlValue $pipelineEnvironments 'arm_deployment')
             cicd_infra                     = [string](Get-AzlValue $pipelineEnvironments 'cicd_infra')
             terraform_deployment           = [string](Get-AzlValue $pipelineEnvironments 'terraform_deployment')
+            operations                = [string](Get-AzlValue $pipelineEnvironments 'operations')
+        }
+        # Schema 5.6.28: when the scheduled pipelines run. A platform reads a schedule only from the pipeline file (GitHub, Azure DevOps) or from the
+        # project (GitLab), never from a variable, so task 05 reports the value to use instead of setting a variable.
+        Schedules = [ordered]@{
+            check_for_updates = [string](Get-AzlValue $devops 'pipelines.schedules.check_for_updates' $script:AzlPipelineDefault['devops.pipelines.schedules.check_for_updates'])
         }
     }
     $auth = Get-AzlValue $devops 'authentication' @{}
@@ -1071,6 +1078,8 @@ $script:AzlPipelineVariable = @(
     [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_ARM_DEPLOYMENT'; Role = 'ARM deployment approval environment'; Key = 'devops.pipelines.environments.arm_deployment'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Parameter' }
     [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_CICD_INFRA'; Role = 'CI/CD infrastructure approval environment'; Key = 'devops.pipelines.environments.cicd_infra'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Parameter' }
     [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_TERRAFORM_DEPLOYMENT'; Role = 'Terraform deployment approval environment'; Key = 'devops.pipelines.environments.terraform_deployment'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'Parameter' }
+    # Schema 5.6.28: the one environment of every day 2 job that changes the cluster (update, node maintenance, changing operations, storage performance test).
+    [pscustomobject]@{ Name = 'AZL_ENVIRONMENT_OPERATIONS'; Role = 'day 2 operations approval environment'; Key = 'devops.pipelines.environments.operations'; Platforms = @('github', 'gitlab', 'azure_devops'); AzureDevOps = 'CompileTime' }
     # Azure DevOps only (schema 5.6.27): the names of the service connection and the variable group that task 05 creates. GitHub and GitLab sign in
     # with the repository's or project's own variables and have neither.
     [pscustomobject]@{ Name = 'AZL_SERVICE_CONNECTION'; Role = 'service connection'; Key = 'devops.pipelines.service_connection'; Platforms = @('azure_devops'); AzureDevOps = 'Parameter' }
@@ -1312,8 +1321,21 @@ function Set-AzlCicdVariable {
                     # The pre-cluster verification pipeline binds the approval environment of the ARM deployment at compile time: a run parameter would let whoever queues the run choose an environment with no approval.
                     $templateHint = if ($pipelineInput.Name -eq 'AZL_ENVIRONMENT_ARM_DEPLOYMENT') { " The pre-cluster verification pipeline does not take it as a parameter: write it as the value of AZL_ENVIRONMENT_ARM_DEPLOYMENT in pipelines/azure-devops/variables/approval-environments.yml, once, in a pull request." } else { '' }
                     if ($pipelineInput.AzureDevOps -eq 'Parameter') { $results.Add((Format-AzlResult $task 'Pipeline run parameter' $pipelineInput.Key 'Skipped' "Enter '$($pipelineInput.Value)' as the $($pipelineInput.Role) parameter when you run the pipeline.$templateHint")) }
+                    # The day 2 pipelines take no parameter for the approval environment: it is bound when the pipeline is compiled.
+                    if ($pipelineInput.AzureDevOps -eq 'CompileTime') { $results.Add((Format-AzlResult $task 'Pipeline compile-time value' $pipelineInput.Key 'Skipped' "Write '$($pipelineInput.Value)' as the value of $($pipelineInput.Name) in pipelines/azure-devops/variables/approval-environments.yml, once, in a pull request. The day 2 pipelines bind the $($pipelineInput.Role) when they are compiled and take no run parameter for it.")) }
                 }
             }
+        }
+
+        # devops.pipelines.schedules.check_for_updates (schema 5.6.28): no platform reads a schedule from a variable, so the task says where the value goes.
+        $checkSchedule = if ($Settings.Contains('Pipelines') -and $Settings.Pipelines -and $Settings.Pipelines.PSObject.Properties['Schedules']) { [string]$Settings.Pipelines.Schedules['check_for_updates'] } else { '' }
+        if ($checkSchedule) {
+            $where = switch ($Settings.Platform) {
+                'github' { 'the cron line of on.schedule in your copy of .github/workflows/day2-check-updates.yml (the sample carries the registry default)' }
+                'gitlab' { 'a pipeline schedule of the project (CI/CD > Schedules) for the default branch, which starts pipelines/gitlab/stages/day2-check-updates.yml' }
+                default { 'a schedules entry in your copy of pipelines/azure-devops/day2-check-updates.yml, and a default for each run parameter of that copy (a scheduled run cannot ask for the parameters, and the sample has none)' }
+            }
+            $results.Add((Format-AzlResult $task 'Pipeline schedule' 'devops.pipelines.schedules.check_for_updates' 'Skipped' "Use '$checkSchedule' (UTC) in $where."))
         }
 
         if ($Settings.Platform -eq 'azure_devops' -and $Settings.Authentication.Method -eq 'oidc') {

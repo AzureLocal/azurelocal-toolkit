@@ -1,0 +1,100 @@
+# Azure Local day 2: check for updates (read only, on a schedule), GitLab CI.
+#
+# Include it from a pipeline file of its own (include: local: pipelines/gitlab/stages/day2-check-updates.yml) or copy it. It declares its own stage, so it is
+# NOT included from pipelines/gitlab/.gitlab-ci.yml, whose stage list belongs to the Terraform and Ansible pipeline. It runs the command an operator runs by
+# hand (stage 08, task 01) and nothing else; the logic is in the script, not here:
+#   azure    pwsh -File scripts/deploy/08-day2-operations/task-01-check-for-updates/azurecli/Get-AvailableSolutionUpdate.azcli.ps1 ...
+#            What Azure shows for the cluster resource (the update summary and the updates), with the Azure CLI. It needs no access to a node.
+#   cluster  pwsh -File scripts/deploy/08-day2-operations/task-01-check-for-updates/powershell/Get-AvailableSolutionUpdate.ps1 ...
+#            What the update service on the cluster has discovered, over PowerShell remoting, as the account the runner runs as. It signs in to nothing.
+# Nothing in this run changes the cluster, Azure or a node, so there is no approval job. It starts no update: that is stages/day2-update.yml.
+#
+# The job FAILS when the check says the cluster needs attention (exit code 1: an update in a failed state, a health state of Failure, Error or Warning, a
+# failed update environment, or the cluster could not be read; 2: a value of the file is missing). That failure is the alert: GitLab sends its pipeline failure
+# notification (Settings > Integrations, and each user's notification settings). An update that is merely offered ends with exit code 0: read the verdict in the
+# job log and the report.
+#
+# The schedule (owner directive D74: check for updates on a schedule). GitLab keeps a schedule in the project, not in this file: CI/CD > Schedules > New schedule,
+# with the cron expression of the key devops.pipelines.schedules.check_for_updates of infrastructure.yml (UTC; task 05 of the CI/CD setup prints it) and the default
+# branch as the target. A scheduled pipeline has UPDATECHECK_SOURCE azure, the default below. The jobs start only from a schedule, the web form or the API, never
+# from a push or a merge request.
+#
+# Project CI/CD variables: task 05 of the CI/CD setup sets each from infrastructure.yml; no value is in this file. tags: expands CI/CD variables
+# (https://docs.gitlab.com/ci/variables/where_variables_can_be_used/).
+#   ARM_CLIENT_ID, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID  source azure: azure.automation_identity, azure.tenant_id, azure.subscription_id (Azure Stack HCI
+#                          Administrator or Reader on the cluster resource)
+#   AZL_AUTH_METHOD        devops.authentication.method: oidc (the GitLab ID token ARM_OIDC_TOKEN and the federated credential of task 01)
+#                          or client_secret (the masked variable ARM_CLIENT_SECRET, which task 05 reads from Key Vault)
+#   AZL_RUNNER_LABEL       devops.pipelines.runner_label (the tag of the general runner)
+#   AZL_INFRASTRUCTURE_FILE         devops.pipelines.infrastructure_file
+#   AZL_POWERSHELL_YAML_VERSION     devops.pipelines.tool_versions.powershell_yaml
+# Run variable (a pipeline run from the web form offers it):
+#   UPDATECHECK_SOURCE     azure | cluster
+# Runner: the general runner with the tag AZL_RUNNER_LABEL and pwsh 7. Source azure also needs the Azure CLI (the runner role installs it on Linux). Source
+# cluster needs a route to the cluster (WinRM, TCP 5985 or 5986) and a runner account that may read the update state of the cluster; no password is stored here.
+
+stages:
+  - day2-check-updates
+
+variables:
+  UPDATECHECK_AZURE_SCRIPT: scripts/deploy/08-day2-operations/task-01-check-for-updates/azurecli/Get-AvailableSolutionUpdate.azcli.ps1
+  UPDATECHECK_CLUSTER_SCRIPT: scripts/deploy/08-day2-operations/task-01-check-for-updates/powershell/Get-AvailableSolutionUpdate.ps1
+  UPDATECHECK_SOURCE:
+    value: azure
+    options: [azure, cluster]
+    description: 'azure: what Azure shows for the cluster resource (Azure CLI, no node access). cluster: what the update service on the cluster has discovered (PowerShell remoting).'
+  UPDATECHECK_REPORT_DIRECTORY: day2-update-check
+
+.day2-check-updates:
+  tags: [$AZL_RUNNER_LABEL]
+  stage: day2-check-updates
+  # One read of Azure or of the update service and a file: the toolkit's limit for a read-only check, not a figure from Microsoft.
+  timeout: 15 minutes
+  after_script:
+    - pwsh -NoProfile -Command '$j = "$env:UPDATECHECK_REPORT_DIRECTORY/update-check.json"; if (Test-Path -LiteralPath $j) { $r = Get-Content -LiteralPath $j -Raw | ConvertFrom-Json; if ($r.PSObject.Properties["Verdict"]) { "Update check verdict: $($r.Verdict)" } }'
+  artifacts:
+    when: always
+    # The report of a check: 30 days is the toolkit's retention for reports, long enough to compare with the next monthly update.
+    expire_in: 30 days
+    name: day2-update-check
+    paths:
+      - $UPDATECHECK_REPORT_DIRECTORY/
+
+day2-check-updates-azure:
+  extends: .day2-check-updates
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(schedule|web|api)$/ && $UPDATECHECK_SOURCE == "azure"'
+  # OIDC: GitLab issues a token the Azure app registration trusts (federated credential, audience api://AzureADTokenExchange).
+  id_tokens:
+    ARM_OIDC_TOKEN:
+      aud: api://AzureADTokenExchange
+  before_script:
+    - |
+      pwsh -NoProfile -Command '
+        . ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Modules -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION
+        # The sign-in method of devops.authentication.method.
+        if ($env:AZL_AUTH_METHOD -eq "oidc") { az login --service-principal --username $env:ARM_CLIENT_ID --tenant $env:ARM_TENANT_ID --federated-token $env:ARM_OIDC_TOKEN --output none }
+        else { az login --service-principal --username $env:ARM_CLIENT_ID --tenant $env:ARM_TENANT_ID --password $env:ARM_CLIENT_SECRET --output none }
+        exit $LASTEXITCODE
+      '
+  script:
+    - |
+      pwsh -NoProfile -Command '
+        $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; OutputPath = "$env:UPDATECHECK_REPORT_DIRECTORY/update-check.json" }
+        & $env:UPDATECHECK_AZURE_SCRIPT @p
+        exit $LASTEXITCODE
+      '
+
+day2-check-updates-cluster:
+  extends: .day2-check-updates
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(schedule|web|api)$/ && $UPDATECHECK_SOURCE == "cluster"'
+  before_script:
+    - pwsh -NoProfile -Command '. ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Modules -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION'
+  script:
+    - |
+      pwsh -NoProfile -Command '
+        $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; OutputPath = "$env:UPDATECHECK_REPORT_DIRECTORY/update-check.json" }
+        & $env:UPDATECHECK_CLUSTER_SCRIPT @p
+        exit $LASTEXITCODE
+      '

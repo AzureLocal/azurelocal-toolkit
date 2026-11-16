@@ -2272,6 +2272,15 @@ devops:
       # (since 5.6.25) 
       # used by: cicd_infra
       terraform_deployment: "azr-prod-us"
+      # (since 5.6.28) 
+      # used by: cicd_infra
+      operations: "azr-prod-us"
+    # (since 5.6.28) 
+    # used by: cicd_infra
+    schedules:
+      # (since 5.6.28) 
+      # default: "17 4 * * *"; used by: cicd_infra
+      check_for_updates: "17 4 * * *"
     # (since 5.6.27) 
     # used by: cicd_infra
     service_connection: "iic-azure-local"

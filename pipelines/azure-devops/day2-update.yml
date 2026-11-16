@@ -1,0 +1,209 @@
+# Azure Local day 2: start the solution update (the monthly update, or the first one after a deployment), Azure DevOps.
+#
+# Create a pipeline from this file (Pipelines > New pipeline > Existing Azure Pipelines YAML file). It runs the command an operator runs by hand (stage 08,
+# task 02) and nothing else; the logic is in the script, not here. PowerShell 7 only.
+#   scripts/deploy/08-day2-operations/task-02-start-solution-update/powershell/Start-AzureLocalSolutionUpdate.ps1
+# The script reads the update state of the cluster over PowerShell remoting, chooses the update (operations.updates.target_version), checks that the update
+# environment is healthy and starts it with Start-SolutionUpdate. It does not wait: an update takes hours and the machines restart. Follow the run with
+# day2-check-updates.yml, Azure Update Manager in the portal, or Sonar.
+#
+# Stages
+#   Plan   Read only, and always first. The same script with -WhatIf: it reads the cluster and prints which update it would start. It starts nothing. With
+#          the parameter action Plan it is the only stage; when it fails the next stage does not start.
+#   Apply  Only for the action PrepareOnly or Install, as a deployment job in the approval environment (add an Approvals check to it). PrepareOnly downloads
+#          the update and runs the readiness checks (Learn recommends this before the maintenance window; an update that was prepared this way must be
+#          installed with PowerShell, not from the portal). Install starts the update. The environment is fixed when the pipeline is compiled (the variable
+#          AZL_ENVIRONMENT_OPERATIONS of variables/approval-environments.yml), never a run parameter: whoever queues the run cannot pick an environment
+#          that has no approval. While the variable is empty, the stage ApprovalEnvironmentNotSet fails and nothing is changed.
+#
+# One change at a time. The update, the node maintenance, the changing operations and the storage performance test deploy to the same environment, and the
+# Exclusive lock check of that environment keeps two of them from running on the cluster together; each Apply stage also sets lockBehavior: sequential.
+#
+# What to configure in the organization (names only; no value of any ID, password or key is in this file). Task 05 of the CI/CD setup lists the value of every
+# run parameter to enter.
+#   Agent pool      a self-hosted pool (parameter agent_pool: devops.runners[].pool of the general runner) with PowerShell 7 (pwsh) and a route to the cluster
+#                   (WinRM, TCP 5985 or 5986). The script connects as the account the agent runs as, which must be an administrator of the cluster (Learn:
+#                   Update Azure Local by using PowerShell uses the deployment user account). No Azure sign-in and no password is used.
+#   Variable group  parameter variable_group (Pipelines > Library; devops.pipelines.variable_group, the group task 05 writes). This file reads
+#                   AZL_POWERSHELL_YAML_VERSION from it (devops.pipelines.tool_versions.powershell_yaml).
+#   Environment     the name in variables/approval-environments.yml (AZL_ENVIRONMENT_OPERATIONS: devops.pipelines.environments.operations; task 05
+#                   lists the value to write there): Approvals (required reviewers) and an Exclusive lock. Task 04 of the CI/CD setup creates it from
+#                   devops.environments. A deployment job to an environment with no approval check runs without one, which is why the name is not a run
+#                   parameter (Learn: a template expression sees only the variables of the YAML files).
+#   Why parameters  the pool of a job is not a task input. Learn says a macro variable $(name) is expanded only in task inputs, and that other keywords take
+#                   template expressions or runtime parameters
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
+#                   ${{ variables.name }} does not see variables stored on the pipeline or in a library, only those of the YAML files
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool, the variable group and the file path
+#                   are runtime parameters (${{ parameters.name }}) with no default: the run form asks for them.
+name: day2-update-$(Date:yyyyMMdd)$(Rev:.r)
+
+trigger: none
+pr: none
+
+# lockBehavior does not queue runs by itself. Learn: it only says how runs behave when they meet an Exclusive lock check (sequential: every run waits its turn;
+# runLatest, the default: only the latest run goes on), and a stage that sets it gets a lock of its own (https://learn.microsoft.com/azure/devops/pipelines/process/approvals#exclusive-lock).
+# At the pipeline level it makes the Exclusive lock check on the approval environment queue the runs instead of cancelling the older ones.
+lockBehavior: sequential
+
+parameters:
+  - name: infrastructure_file
+    displayName: 'Path of the master infrastructure.yml in the repository. Enter devops.pipelines.infrastructure_file'
+    type: string
+  - name: action
+    displayName: 'Plan: read the cluster and show which update would be started (nothing is started). PrepareOnly: download the update and run the readiness checks (needs approval). Install: start the update (needs approval)'
+    type: string
+    default: Plan
+    values:
+      - Plan
+      - PrepareOnly
+      - Install
+  - name: update_mode
+    displayName: 'AfterDeployment: start only when operations.updates.install_after_deployment is true in the master file. OnDemand: the monthly update; the person who approves is the decision'
+    type: string
+    default: AfterDeployment
+    values:
+      - AfterDeployment
+      - OnDemand
+  - name: agent_pool
+    displayName: 'Self-hosted agent pool (PowerShell 7, route to the cluster). Enter devops.runners[].pool of the general runner'
+    type: string
+  - name: variable_group
+    displayName: 'Variable group of the pipeline (Pipelines > Library). Enter devops.pipelines.variable_group (with environments, <name>-<environment>)'
+    type: string
+
+variables:
+  - group: ${{ parameters.variable_group }}
+  # AZL_ENVIRONMENT_OPERATIONS: the approval environment, bound at compile time (not a run parameter).
+  - template: variables/approval-environments.yml
+  - name: updateScript
+    value: scripts/deploy/08-day2-operations/task-02-start-solution-update/powershell/Start-AzureLocalSolutionUpdate.ps1
+
+stages:
+  # ---------------------------------------------------------------------------------------------------------------------------
+  - stage: Plan
+    displayName: 'Plan (read only)'
+    jobs:
+      - job: Plan
+        displayName: 'Plan (read only)'
+        pool:
+          name: ${{ parameters.agent_pool }}
+          demands:
+            - pwsh
+        # One read of the update state over remoting: the toolkit's limit for a read-only check, not a figure from Microsoft.
+        timeoutInMinutes: 30
+        steps:
+          - checkout: self
+
+          - pwsh: |
+              $ErrorActionPreference = 'Stop'
+              $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION }
+              foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+            displayName: 'Install the PowerShell modules (devops.pipelines.tool_versions)'
+
+          - pwsh: |
+              Set-StrictMode -Version Latest
+              $ErrorActionPreference = 'Stop'
+              New-Item -ItemType Directory -Path $env:UPDATE_LOG_DIRECTORY -Force | Out-Null
+              $p = @{ InfrastructureFile = $env:UPDATE_INFRASTRUCTURE_FILE; Mode = $env:UPDATE_MODE; LogPath = "$env:UPDATE_LOG_DIRECTORY/plan.log"; WhatIf = $true }
+              if ($env:UPDATE_ACTION -eq 'PrepareOnly') { $p.PrepareOnly = $true }
+              & $env:UPDATE_SCRIPT @p
+              $code = $LASTEXITCODE
+              $log = "$env:UPDATE_LOG_DIRECTORY/plan.log"
+              if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log }
+              if ($code -ne 0) { throw "Start-AzureLocalSolutionUpdate.ps1 exited with code $code." }
+            displayName: 'Plan (nothing is started)'
+            workingDirectory: $(Build.SourcesDirectory)
+            env:
+              UPDATE_SCRIPT: $(updateScript)
+              UPDATE_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
+              UPDATE_ACTION: ${{ parameters.action }}
+              UPDATE_MODE: ${{ parameters.update_mode }}
+              UPDATE_LOG_DIRECTORY: $(Build.ArtifactStagingDirectory)/day2-update
+
+          - task: PublishPipelineArtifact@1
+            displayName: 'Publish the plan'
+            condition: always()
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/day2-update
+              artifact: day2-update-plan
+              publishLocation: pipeline
+
+  # ---------------------------------------------------------------------------------------------------------------------------
+  # A change was asked for, but no approval environment is set in variables/approval-environments.yml: nothing is changed, and the run says why.
+  - ${{ if and(ne(parameters.action, 'Plan'), eq(variables.AZL_ENVIRONMENT_OPERATIONS, '')) }}:
+      - stage: ApprovalEnvironmentNotSet
+        displayName: 'Apply: no approval environment is set'
+        dependsOn: Plan
+        jobs:
+          - job: Refuse
+            displayName: 'Refuse: no approval environment is set'
+            pool:
+              name: ${{ parameters.agent_pool }}
+              demands:
+                - pwsh
+            # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+            timeoutInMinutes: 5
+            steps:
+              - pwsh: |
+                  Write-Error 'PrepareOnly and Install change the cluster, so they run only behind the approval environment. Set AZL_ENVIRONMENT_OPERATIONS (devops.pipelines.environments.operations) in pipelines/azure-devops/variables/approval-environments.yml, then run again. Nothing was changed.'
+                  exit 1
+                displayName: 'No approval environment is set: nothing is changed'
+
+  # ---------------------------------------------------------------------------------------------------------------------------
+  - ${{ if and(ne(parameters.action, 'Plan'), ne(variables.AZL_ENVIRONMENT_OPERATIONS, '')) }}:
+      - stage: Apply
+        displayName: 'Apply (needs approval)'
+        dependsOn: Plan
+        lockBehavior: sequential
+        jobs:
+          - deployment: Apply
+            displayName: 'Apply'
+            pool:
+              name: ${{ parameters.agent_pool }}
+              demands:
+                - pwsh
+            # Required reviewers on this environment are the approval gate. The name is a variable of a YAML file of the repository, so the queuer cannot choose it.
+            environment: ${{ variables.AZL_ENVIRONMENT_OPERATIONS }}
+            # The script starts the update and returns without waiting: the toolkit's limit, not a figure from Microsoft.
+            timeoutInMinutes: 60
+            strategy:
+              runOnce:
+                deploy:
+                  steps:
+                    - checkout: self
+
+                    - pwsh: |
+                        $ErrorActionPreference = 'Stop'
+                        $modules = [ordered]@{ 'powershell-yaml' = $env:AZL_POWERSHELL_YAML_VERSION }
+                        foreach ($m in $modules.GetEnumerator()) { if (-not (Get-Module -ListAvailable $m.Key | Where-Object Version -EQ $m.Value)) { Install-Module $m.Key -RequiredVersion $m.Value -Scope CurrentUser -Force -Repository PSGallery } }
+                      displayName: 'Install the PowerShell modules (devops.pipelines.tool_versions)'
+
+                    - pwsh: |
+                        Set-StrictMode -Version Latest
+                        $ErrorActionPreference = 'Stop'
+                        New-Item -ItemType Directory -Path $env:UPDATE_LOG_DIRECTORY -Force | Out-Null
+                        $p = @{ InfrastructureFile = $env:UPDATE_INFRASTRUCTURE_FILE; Mode = $env:UPDATE_MODE; LogPath = "$env:UPDATE_LOG_DIRECTORY/apply.log" }
+                        # the one change the reviewer approved: with PrepareOnly the update is downloaded and checked, never installed
+                        if ($env:UPDATE_ACTION -eq 'PrepareOnly') { $p.PrepareOnly = $true }
+                        & $env:UPDATE_SCRIPT @p
+                        $code = $LASTEXITCODE
+                        $log = "$env:UPDATE_LOG_DIRECTORY/apply.log"
+                        if (Test-Path -LiteralPath $log) { Get-Content -LiteralPath $log }
+                        if ($code -ne 0) { throw "Start-AzureLocalSolutionUpdate.ps1 exited with code $code." }
+                      displayName: 'Start the update'
+                      workingDirectory: $(Build.SourcesDirectory)
+                      env:
+                        UPDATE_SCRIPT: $(updateScript)
+                        UPDATE_INFRASTRUCTURE_FILE: ${{ parameters.infrastructure_file }}
+                        UPDATE_ACTION: ${{ parameters.action }}
+                        UPDATE_MODE: ${{ parameters.update_mode }}
+                        UPDATE_LOG_DIRECTORY: $(Build.ArtifactStagingDirectory)/day2-update
+
+                    - task: PublishPipelineArtifact@1
+                      displayName: 'Publish the log'
+                      condition: always()
+                      inputs:
+                        targetPath: $(Build.ArtifactStagingDirectory)/day2-update
+                        artifact: day2-update-log
+                        publishLocation: pipeline

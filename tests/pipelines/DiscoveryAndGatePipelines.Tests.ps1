@@ -217,7 +217,7 @@ Describe 'The pre-cluster verification pipelines' {
             $line | Should -Not -Match '"\{[0-3]\}"'
         }
     }
-    It 'every GitHub pipeline builds creds the safe way, and the JSON it makes is valid for a secret that holds a quote or a backslash' -ForEach @(Get-ChildItem -LiteralPath ([IO.Path]::Combine($script:Repo, 'pipelines', 'github-actions')) -Filter '*.yml' | ForEach-Object { @{ File = 'pipelines/github-actions/' + $_.Name } }) {
+    It 'every GitHub pipeline builds creds the safe way, and the JSON it makes is valid for a secret that holds a quote or a backslash' -ForEach @(Get-ChildItem -LiteralPath ([IO.Path]::Combine($script:Repo, 'pipelines', 'github-actions')) -Filter '*.yml' | Where-Object { Select-String -LiteralPath $_.FullName -Pattern '^\s+creds:' -Quiet } | ForEach-Object { @{ File = 'pipelines/github-actions/' + $_.Name } }) {
         $lines = @((Get-Text $File) -split "`r?`n" | Where-Object { $_ -match '^\s+creds:' })
         foreach ($line in $lines) { $line | Should -Match 'toJSON\(secrets\.ARM_CLIENT_SECRET\)' -Because $File }
         # what the expression makes: format() puts toJSON(value) (a JSON string, with its quotes and escapes) into the template

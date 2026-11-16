@@ -1,0 +1,117 @@
+# Azure Local validation (stage 07, before the handover; run it again after a change), GitLab CI.
+#
+# Include it from a pipeline file of its own (include: local: pipelines/gitlab/stages/validation.yml) or copy it. It declares its own stage, so it is NOT
+# included from pipelines/gitlab/.gitlab-ci.yml, whose stage list belongs to the Terraform and Ansible pipeline. It runs the four validation scripts an operator
+# runs by hand, one after the other, and nothing else; the checks and the reports are in the scripts, not here:
+#   cluster health   scripts/deploy/07-validation-handover/task-01-cluster-health-validation/powershell/Test-AzureLocalClusterHealth.ps1
+#   Arc connection   scripts/deploy/07-validation-handover/task-02-arc-connectivity-validation/powershell/Test-ArcConnectivity.ps1
+#   network          scripts/deploy/07-validation-handover/task-03-network-configuration-validation/powershell/Test-NetworkConfiguration.ps1
+#   storage          scripts/deploy/07-validation-handover/task-04-storage-performance-validation/powershell/Test-StoragePerformance.ps1
+# Every script connects to the cluster over PowerShell remoting as the account the runner runs as, which must be an administrator of the cluster; no Azure
+# sign-in and no password is used.
+#
+# Jobs
+#   validation-read-only          Read only, no approval. The four scripts run even when an earlier one fails, so one run shows every problem, and the job
+#                                 FAILS when any of them ended with a non-zero exit code (1: a check failed or the cluster could not be read; 2: a value of
+#                                 the file is missing). The storage script runs WITHOUT its performance test here: it then only reads the pools, the virtual
+#                                 disks, the physical disks and the cluster shared volumes.
+#   validation-storage-performance  A MANUAL job, only when VALIDATION_RUN_PERFORMANCE_TEST is true: someone allowed to run jobs in the protected environment
+#                                 named by AZL_ENVIRONMENT_OPERATIONS plays it. Test-StoragePerformance.ps1 -RunPerformanceTest is NOT read only: its own
+#                                 help says "This will generate I/O on the cluster". It creates a scratch folder and file on each cluster shared volume,
+#                                 writes and reads it for DurationSeconds (default 60) seconds, and removes it again. That load is why it is behind the
+#                                 approval and the lock of the other changes to the cluster, and why it is not part of the read-only job: run it in a
+#                                 maintenance window, never during an update.
+# Both jobs start only from the web form or the API, never from a push or a merge request.
+#
+# One change at a time. The storage performance job, the update, the node maintenance and the changing operations of this project share the resource_group
+# azure-local-day2-changes: the load test never runs beside an update or a node reboot.
+#
+# Project CI/CD variables: task 05 of the CI/CD setup sets each from infrastructure.yml; no value is in this file. tags: and environment:name expand CI/CD
+# variables (https://docs.gitlab.com/ci/variables/where_variables_can_be_used/).
+#   AZL_RUNNER_LABEL       devops.pipelines.runner_label (the tag of the general runner)
+#   AZL_ENVIRONMENT_OPERATIONS  devops.pipelines.environments.operations (the protected environment of the manual job)
+#   AZL_INFRASTRUCTURE_FILE         devops.pipelines.infrastructure_file
+#   AZL_POWERSHELL_YAML_VERSION     devops.pipelines.tool_versions.powershell_yaml
+# Run variable (a pipeline run from the web form offers it):
+#   VALIDATION_RUN_PERFORMANCE_TEST  true: after the read-only validation, also run the storage performance test (manual job)
+# Runner: the general runner with the tag AZL_RUNNER_LABEL, pwsh 7, a route to the cluster (WinRM, TCP 5985 or 5986) and the Failover Clustering PowerShell
+# module (the RSAT feature Failover Clustering Tools), which the health, network and storage scripts use (Get-Cluster, Get-ClusterNode and others).
+# Protected environment: task 04 creates it; Settings > CI/CD > Protected environments holds its approval rules (Premium and above).
+
+stages:
+  - validation
+
+variables:
+  VALIDATION_HEALTH_SCRIPT: scripts/deploy/07-validation-handover/task-01-cluster-health-validation/powershell/Test-AzureLocalClusterHealth.ps1
+  VALIDATION_ARC_SCRIPT: scripts/deploy/07-validation-handover/task-02-arc-connectivity-validation/powershell/Test-ArcConnectivity.ps1
+  VALIDATION_NETWORK_SCRIPT: scripts/deploy/07-validation-handover/task-03-network-configuration-validation/powershell/Test-NetworkConfiguration.ps1
+  VALIDATION_STORAGE_SCRIPT: scripts/deploy/07-validation-handover/task-04-storage-performance-validation/powershell/Test-StoragePerformance.ps1
+  VALIDATION_RUN_PERFORMANCE_TEST:
+    value: 'false'
+    options: ['false', 'true']
+    description: 'After the read-only validation: also run the storage performance test, which writes and reads a scratch file on every cluster shared volume (manual job).'
+  VALIDATION_REPORT_DIRECTORY: validation-reports
+
+.validation:
+  tags: [$AZL_RUNNER_LABEL]
+  stage: validation
+  before_script:
+    - pwsh -NoProfile -Command '. ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Modules -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION'
+  artifacts:
+    when: always
+    # The reports of a validation: 90 days is the toolkit's retention for the record that goes into a handover.
+    expire_in: 90 days
+    name: validation-reports
+    paths:
+      - $VALIDATION_REPORT_DIRECTORY/
+
+validation-read-only:
+  extends: .validation
+  # Reads of the cluster over remoting by four scripts: the toolkit's limit for read-only checks, not a figure from Microsoft.
+  timeout: 1 hour
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/'
+  script:
+    - |
+      pwsh -NoProfile -Command '
+        $dir = $env:VALIDATION_REPORT_DIRECTORY
+        $checks = [ordered]@{
+          ClusterHealth = @{ Script = $env:VALIDATION_HEALTH_SCRIPT; Parameters = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; OutputFormat = "JSON"; OutputPath = "$dir/cluster-health" } }
+          ArcConnectivity = @{ Script = $env:VALIDATION_ARC_SCRIPT; Parameters = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; OutputPath = "$dir/arc-connectivity" } }
+          Network = @{ Script = $env:VALIDATION_NETWORK_SCRIPT; Parameters = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; OutputPath = "$dir/network" } }
+          Storage = @{ Script = $env:VALIDATION_STORAGE_SCRIPT; Parameters = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; OutputPath = "$dir/storage" } }
+        }
+        $failed = @()
+        foreach ($name in $checks.Keys) {
+          $p = $checks[$name].Parameters
+          New-Item -ItemType Directory -Path $p.OutputPath -Force | Out-Null
+          & $checks[$name].Script @p
+          if ($LASTEXITCODE -ne 0) { $failed += "$name (exit code $LASTEXITCODE)" }
+        }
+        if ($failed.Count -gt 0) { Write-Error "Validation failed: $($failed -join ", ")." -ErrorAction Continue; exit 1 }
+        exit 0
+      '
+
+validation-storage-performance:
+  extends: .validation
+  needs: [validation-read-only]
+  # One change at a time on the cluster (GitHub: concurrency group; Azure DevOps: lockBehavior and the Exclusive lock check of the environment).
+  resource_group: azure-local-day2-changes
+  # One test per cluster shared volume of 60 seconds (the default of the script) plus its reads: the toolkit's limit, not a figure from Microsoft.
+  timeout: 2 hours
+  # The approval gate: the job waits until someone allowed in the protected environment plays it.
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $VALIDATION_RUN_PERFORMANCE_TEST == "true"'
+      when: manual
+      allow_failure: false
+  environment:
+    name: $AZL_ENVIRONMENT_OPERATIONS
+  script:
+    - |
+      pwsh -NoProfile -Command '
+        $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; OutputPath = "$env:VALIDATION_REPORT_DIRECTORY/storage-performance" }
+        # the one change the person who played the job approved: the load test, which writes a scratch file on every cluster shared volume and removes it again
+        $p.RunPerformanceTest = $true
+        & $env:VALIDATION_STORAGE_SCRIPT @p
+        exit $LASTEXITCODE
+      '

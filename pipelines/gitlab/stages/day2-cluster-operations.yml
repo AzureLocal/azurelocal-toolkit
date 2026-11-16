@@ -1,0 +1,131 @@
+# Azure Local day 2: cluster operations (health check, alerts, capacity, maintenance mode, live migration, volume rebalance), GitLab CI.
+#
+# Include it from a pipeline file of its own (include: local: pipelines/gitlab/stages/day2-cluster-operations.yml) or copy it. It declares its own stage, so it
+# is NOT included from pipelines/gitlab/.gitlab-ci.yml, whose stage list belongs to the Terraform and Ansible pipeline. It runs the command an operator runs by
+# hand (stage 08, task 04) and nothing else; the logic is in the script, not here:
+#   pwsh -File scripts/deploy/08-day2-operations/task-04-cluster-operations/powershell/Invoke-ClusterOperations.ps1 ...
+# One action per run. The script connects to the cluster over PowerShell remoting as the account the runner runs as, which must be an administrator of the
+# cluster; no Azure sign-in and no password is used.
+#
+# Jobs (exactly one path runs, chosen by OPERATIONS_ACTION)
+#   day2-cluster-operations-read   HealthCheck, Alerts, Capacity. They only read, so there is no approval job. The job FAILS when HealthCheck or Alerts finds
+#                                  something wrong (exit code 1): that failure is the alert, and the report is published as an artifact even then.
+#   day2-cluster-operations-plan   MaintenanceMode, LiveMigrate, Rebalance, first. Read only: the same script with -WhatIf, which prints what would be done and
+#                                  changes nothing. When it fails (a node that the file does not list, no OPERATIONS_NODE) the next job does not start.
+#   day2-cluster-operations-apply  A MANUAL job: someone allowed to run jobs in the protected environment named by AZL_ENVIRONMENT_OPERATIONS plays it.
+#                                  MaintenanceMode with OPERATIONS_ENABLE true puts the node into maintenance (suspend, drain, remove from the virtual machine
+#                                  configuration); with false the node leaves maintenance. To reboot a node in one run use stages/day2-node-maintenance.yml.
+# The node is checked against nodes[] of the master file: with OPERATIONS_NODE the script is given -RequireNodeInFile, so a name or an address that the file does
+# not list ends the job with exit code 2 before anything is sent to the cluster. The jobs start only from the web form, the API or a schedule (the read job),
+# never from a push or a merge request.
+#
+# One change at a time. The apply job, the update, the node maintenance and the storage performance test of this project share the resource_group
+# azure-local-day2-changes: a second change waits for the first, it never runs beside it.
+#
+# Project CI/CD variables: task 05 of the CI/CD setup sets each from infrastructure.yml; no value is in this file. tags: and environment:name expand CI/CD
+# variables (https://docs.gitlab.com/ci/variables/where_variables_can_be_used/).
+#   AZL_RUNNER_LABEL       devops.pipelines.runner_label (the tag of the general runner)
+#   AZL_ENVIRONMENT_OPERATIONS  devops.pipelines.environments.operations (the protected environment of the manual job)
+#   AZL_INFRASTRUCTURE_FILE         devops.pipelines.infrastructure_file
+#   AZL_POWERSHELL_YAML_VERSION     devops.pipelines.tool_versions.powershell_yaml
+# Run variables (a pipeline run from the web form offers them):
+#   OPERATIONS_ACTION      HealthCheck | Alerts | Capacity | MaintenanceMode | LiveMigrate | Rebalance
+#   OPERATIONS_NODE        MaintenanceMode and LiveMigrate: the node, by its name in nodes[] of the master file (empty for the other actions)
+#   OPERATIONS_ENABLE      true: MaintenanceMode puts the node into maintenance. false: the node leaves maintenance
+# Runner: the general runner with the tag AZL_RUNNER_LABEL, pwsh 7 and a route to the cluster (WinRM, TCP 5985 or 5986).
+# Protected environment: task 04 creates it; Settings > CI/CD > Protected environments holds its approval rules (Premium and above).
+
+stages:
+  - day2-cluster-operations
+
+variables:
+  OPERATIONS_SCRIPT: scripts/deploy/08-day2-operations/task-04-cluster-operations/powershell/Invoke-ClusterOperations.ps1
+  OPERATIONS_ACTION:
+    value: HealthCheck
+    options: [HealthCheck, Alerts, Capacity, MaintenanceMode, LiveMigrate, Rebalance]
+    description: 'HealthCheck, Alerts and Capacity only read. MaintenanceMode, LiveMigrate and Rebalance change the cluster (manual job).'
+  OPERATIONS_NODE:
+    value: ''
+    description: 'MaintenanceMode and LiveMigrate: the node, by its name in nodes[] of the master file (leave empty for the other actions).'
+  OPERATIONS_ENABLE:
+    value: 'false'
+    options: ['false', 'true']
+    description: 'MaintenanceMode: true puts the node into maintenance (suspend, drain, remove from the virtual machine configuration). false: the node leaves maintenance.'
+  OPERATIONS_LOG_DIRECTORY: day2-cluster-operations
+
+.day2-cluster-operations:
+  tags: [$AZL_RUNNER_LABEL]
+  stage: day2-cluster-operations
+  before_script:
+    - pwsh -NoProfile -Command '. ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Modules -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION'
+  artifacts:
+    when: always
+    # The result of a run: 30 days is the toolkit's retention for reports, long enough to compare with the next check or the run that followed a plan.
+    expire_in: 30 days
+    name: day2-cluster-operations
+    paths:
+      - $OPERATIONS_LOG_DIRECTORY/
+
+day2-cluster-operations-read:
+  extends: .day2-cluster-operations
+  # Reads of the cluster over remoting: the toolkit's limit for a read-only check, not a figure from Microsoft.
+  timeout: 30 minutes
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(schedule|web|api)$/ && $OPERATIONS_ACTION =~ /^(HealthCheck|Alerts|Capacity)$/'
+  script:
+    - |
+      pwsh -NoProfile -Command '
+        New-Item -ItemType Directory -Path $env:OPERATIONS_LOG_DIRECTORY -Force | Out-Null
+        $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Action = $env:OPERATIONS_ACTION; OutputPath = "$env:OPERATIONS_LOG_DIRECTORY/result.json"; LogPath = "$env:OPERATIONS_LOG_DIRECTORY/run.log" }
+        & $env:OPERATIONS_SCRIPT @p
+        exit $LASTEXITCODE
+      '
+  after_script:
+    - pwsh -NoProfile -Command '$s = "$env:OPERATIONS_LOG_DIRECTORY/run.log"; if (Test-Path -LiteralPath $s) { Get-Content -LiteralPath $s }'
+
+day2-cluster-operations-plan:
+  extends: .day2-cluster-operations
+  # The script with -WhatIf reads the cluster and changes nothing: the toolkit's limit for a read-only check, not a figure from Microsoft.
+  timeout: 30 minutes
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $OPERATIONS_ACTION =~ /^(MaintenanceMode|LiveMigrate|Rebalance)$/'
+  script:
+    - |
+      pwsh -NoProfile -Command '
+        New-Item -ItemType Directory -Path $env:OPERATIONS_LOG_DIRECTORY -Force | Out-Null
+        $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Action = $env:OPERATIONS_ACTION; OutputPath = "$env:OPERATIONS_LOG_DIRECTORY/plan.json"; LogPath = "$env:OPERATIONS_LOG_DIRECTORY/plan.log"; WhatIf = $true }
+        if ($env:OPERATIONS_NODE) { $p.NodeName = $env:OPERATIONS_NODE; $p.RequireNodeInFile = $true }
+        if ($env:OPERATIONS_ENABLE -eq "true") { $p.Enable = $true }
+        & $env:OPERATIONS_SCRIPT @p
+        exit $LASTEXITCODE
+      '
+  after_script:
+    - pwsh -NoProfile -Command '$s = "$env:OPERATIONS_LOG_DIRECTORY/plan.log"; if (Test-Path -LiteralPath $s) { Get-Content -LiteralPath $s }'
+
+day2-cluster-operations-apply:
+  extends: .day2-cluster-operations
+  needs: [day2-cluster-operations-plan]
+  # One change at a time on the cluster (GitHub: concurrency group; Azure DevOps: lockBehavior and the Exclusive lock check of the environment).
+  resource_group: azure-local-day2-changes
+  # A drain or a volume move waits for the cluster (no limit in the script): the toolkit's limit, not a figure from Microsoft.
+  timeout: 4 hours
+  # The approval gate: the job waits until someone allowed in the protected environment plays it.
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && $OPERATIONS_ACTION =~ /^(MaintenanceMode|LiveMigrate|Rebalance)$/'
+      when: manual
+      allow_failure: false
+  environment:
+    name: $AZL_ENVIRONMENT_OPERATIONS
+  script:
+    - |
+      pwsh -NoProfile -Command '
+        New-Item -ItemType Directory -Path $env:OPERATIONS_LOG_DIRECTORY -Force | Out-Null
+        $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Action = $env:OPERATIONS_ACTION; OutputPath = "$env:OPERATIONS_LOG_DIRECTORY/result.json"; LogPath = "$env:OPERATIONS_LOG_DIRECTORY/apply.log" }
+        # the one change the person who played the job approved: the action, on the node of the file
+        if ($env:OPERATIONS_NODE) { $p.NodeName = $env:OPERATIONS_NODE; $p.RequireNodeInFile = $true }
+        if ($env:OPERATIONS_ENABLE -eq "true") { $p.Enable = $true }
+        & $env:OPERATIONS_SCRIPT @p
+        exit $LASTEXITCODE
+      '
+  after_script:
+    - pwsh -NoProfile -Command '$s = "$env:OPERATIONS_LOG_DIRECTORY/apply.log"; if (Test-Path -LiteralPath $s) { Get-Content -LiteralPath $s }'

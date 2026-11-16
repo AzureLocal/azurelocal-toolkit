@@ -8,10 +8,15 @@
 #
 # What to do. Task 05 of the CI/CD setup lists the value to enter. Write the name of the environment here, once per repository, in a pull request:
 #   AZL_ENVIRONMENT_ARM_DEPLOYMENT   devops.pipelines.environments.arm_deployment (an entry of devops.environments[] with approval_required true)
-# The toolkit ships it empty, because no value of a deployment is written in the toolkit. While it is empty, a pipeline that needs it refuses to
+#   AZL_ENVIRONMENT_OPERATIONS  devops.pipelines.environments.operations (an entry of devops.environments[] with approval_required true)
+# The toolkit ships them empty, because no value of a deployment is written in the toolkit. While one is empty, a pipeline that needs it refuses to
 # run the stage that changes something (the stage fails with a message that names this file); the read-only stages run as before.
 #
-# Used by: pre-cluster-verification.yml (the stage that runs -Fix and -InstallEnvironmentChecker).
+# Used by: pre-cluster-verification.yml (the stage that runs -Fix and -InstallEnvironmentChecker with AZL_ENVIRONMENT_ARM_DEPLOYMENT), and day2-update.yml,
+# day2-node-maintenance.yml, day2-cluster-operations.yml and validation.yml (the stages that change the cluster, or load it, with
+# AZL_ENVIRONMENT_OPERATIONS: one environment for all of them, so that its Exclusive lock check keeps two changes from running on the cluster together).
 variables:
   - name: AZL_ENVIRONMENT_ARM_DEPLOYMENT
+    value: ''
+  - name: AZL_ENVIRONMENT_OPERATIONS
     value: ''

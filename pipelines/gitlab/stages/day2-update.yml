@@ -1,0 +1,109 @@
+# Azure Local day 2: start the solution update (the monthly update, or the first one after a deployment), GitLab CI.
+#
+# Include it from a pipeline file of its own (include: local: pipelines/gitlab/stages/day2-update.yml) or copy it. It declares its own stage, so it is NOT
+# included from pipelines/gitlab/.gitlab-ci.yml, whose stage list belongs to the Terraform and Ansible pipeline. It runs the command an operator runs by hand
+# (stage 08, task 02) and nothing else; the logic is in the script, not here:
+#   pwsh -File scripts/deploy/08-day2-operations/task-02-start-solution-update/powershell/Start-AzureLocalSolutionUpdate.ps1 ...
+# The script reads the update state of the cluster over PowerShell remoting, chooses the update (operations.updates.target_version), checks that the update
+# environment is healthy and starts it with Start-SolutionUpdate. It does not wait: an update takes hours and the machines restart. Follow the run with
+# stages/day2-check-updates.yml, Azure Update Manager in the portal, or Sonar.
+#
+# Jobs
+#   day2-update-plan   Read only, and always first. The same script with -WhatIf: it reads the cluster and prints which update it would start. It starts
+#                      nothing. With DAY2UPDATE_ACTION Plan it is the only job; when it fails the next job does not start.
+#   day2-update-apply  A MANUAL job, only for DAY2UPDATE_ACTION PrepareOnly or Install: someone allowed to run jobs in the protected environment named by
+#                      AZL_ENVIRONMENT_OPERATIONS plays it. PrepareOnly downloads the update and runs the readiness checks (Learn recommends this before
+#                      the maintenance window; an update that was prepared this way must be installed with PowerShell, not from the portal). Install starts
+#                      the update.
+# Both jobs start only from the web form, the API or a schedule, never from a push or a merge request.
+#
+# One change at a time. The apply job, the node maintenance, the changing operations and the storage performance test of this project share the
+# resource_group azure-local-day2-changes: a second change waits for the first, it never runs beside it.
+#
+# Project CI/CD variables: task 05 of the CI/CD setup sets each from infrastructure.yml; no value is in this file. tags: and environment:name expand CI/CD
+# variables (https://docs.gitlab.com/ci/variables/where_variables_can_be_used/).
+#   AZL_RUNNER_LABEL       devops.pipelines.runner_label (the tag of the general runner)
+#   AZL_ENVIRONMENT_OPERATIONS  devops.pipelines.environments.operations (the protected environment of the manual job)
+#   AZL_INFRASTRUCTURE_FILE         devops.pipelines.infrastructure_file
+#   AZL_POWERSHELL_YAML_VERSION     devops.pipelines.tool_versions.powershell_yaml
+# Run variables (a pipeline run from the web form offers them):
+#   DAY2UPDATE_ACTION      Plan | PrepareOnly | Install
+#   DAY2UPDATE_MODE        AfterDeployment (start only when operations.updates.install_after_deployment is true) | OnDemand (the monthly update)
+# The values the script reads from the master file: cluster.name, operations.updates.install_after_deployment (mode AfterDeployment only) and
+# operations.updates.target_version. No password and no Azure sign-in is used: the script connects to the cluster as the account the runner runs as, which
+# must be an administrator of the cluster (Learn: Update Azure Local by using PowerShell uses the deployment user account).
+# Runner: the general runner with the tag AZL_RUNNER_LABEL, pwsh 7 and a route to the cluster (WinRM, TCP 5985 or 5986).
+# Protected environment: task 04 creates it; Settings > CI/CD > Protected environments holds its approval rules (Premium and above).
+
+stages:
+  - day2-update
+
+variables:
+  DAY2UPDATE_SCRIPT: scripts/deploy/08-day2-operations/task-02-start-solution-update/powershell/Start-AzureLocalSolutionUpdate.ps1
+  DAY2UPDATE_ACTION:
+    value: Plan
+    options: [Plan, PrepareOnly, Install]
+    description: 'Plan: read the cluster and show which update would be started (nothing is started). PrepareOnly: download the update and run the readiness checks (manual job). Install: start the update (manual job).'
+  DAY2UPDATE_MODE:
+    value: AfterDeployment
+    options: [AfterDeployment, OnDemand]
+    description: 'AfterDeployment: start only when operations.updates.install_after_deployment is true in the master file. OnDemand: the monthly update; the person who plays the manual job is the decision.'
+  DAY2UPDATE_LOG_DIRECTORY: day2-update
+
+.day2-update:
+  tags: [$AZL_RUNNER_LABEL]
+  stage: day2-update
+  before_script:
+    - pwsh -NoProfile -Command '. ./pipelines/gitlab/Use-AzlGitLabTool.ps1 -Tool Modules -PowerShellYamlVersion $env:AZL_POWERSHELL_YAML_VERSION'
+  artifacts:
+    when: always
+    # The log of a run: 30 days is the toolkit's retention for reports, long enough to compare with the run that followed a plan.
+    expire_in: 30 days
+    name: day2-update
+    paths:
+      - $DAY2UPDATE_LOG_DIRECTORY/
+
+day2-update-plan:
+  extends: .day2-update
+  # One read of the update state over remoting: the toolkit's limit for a read-only check, not a figure from Microsoft.
+  timeout: 30 minutes
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(schedule|web|api)$/'
+  script:
+    - |
+      pwsh -NoProfile -Command '
+        New-Item -ItemType Directory -Path $env:DAY2UPDATE_LOG_DIRECTORY -Force | Out-Null
+        $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Mode = $env:DAY2UPDATE_MODE; LogPath = "$env:DAY2UPDATE_LOG_DIRECTORY/plan.log"; WhatIf = $true }
+        if ($env:DAY2UPDATE_ACTION -eq "PrepareOnly") { $p.PrepareOnly = $true }
+        & $env:DAY2UPDATE_SCRIPT @p
+        exit $LASTEXITCODE
+      '
+  after_script:
+    - pwsh -NoProfile -Command '$s = "$env:DAY2UPDATE_LOG_DIRECTORY/plan.log"; if (Test-Path -LiteralPath $s) { Get-Content -LiteralPath $s }'
+
+day2-update-apply:
+  extends: .day2-update
+  needs: [day2-update-plan]
+  # One change at a time on the cluster (GitHub: concurrency group; Azure DevOps: lockBehavior and the Exclusive lock check of the environment).
+  resource_group: azure-local-day2-changes
+  # The script starts the update and returns without waiting: the toolkit's limit, not a figure from Microsoft.
+  timeout: 1 hour
+  # The approval gate: the job waits until someone allowed in the protected environment plays it.
+  rules:
+    - if: '$CI_PIPELINE_SOURCE =~ /^(web|api)$/ && ($DAY2UPDATE_ACTION == "PrepareOnly" || $DAY2UPDATE_ACTION == "Install")'
+      when: manual
+      allow_failure: false
+  environment:
+    name: $AZL_ENVIRONMENT_OPERATIONS
+  script:
+    - |
+      pwsh -NoProfile -Command '
+        New-Item -ItemType Directory -Path $env:DAY2UPDATE_LOG_DIRECTORY -Force | Out-Null
+        $p = @{ InfrastructureFile = $env:AZL_INFRASTRUCTURE_FILE; Mode = $env:DAY2UPDATE_MODE; LogPath = "$env:DAY2UPDATE_LOG_DIRECTORY/apply.log" }
+        # the one change the person who played the job approved: with PrepareOnly the update is downloaded and checked, never installed
+        if ($env:DAY2UPDATE_ACTION -eq "PrepareOnly") { $p.PrepareOnly = $true }
+        & $env:DAY2UPDATE_SCRIPT @p
+        exit $LASTEXITCODE
+      '
+  after_script:
+    - pwsh -NoProfile -Command '$s = "$env:DAY2UPDATE_LOG_DIRECTORY/apply.log"; if (Test-Path -LiteralPath $s) { Get-Content -LiteralPath $s }'

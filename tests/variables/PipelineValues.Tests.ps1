@@ -68,7 +68,9 @@ BeforeAll {
     }
     $script:HostedImage = 'ubuntu-latest'
     # The defaults a per-run choice may have: the safe choice, never a value of a deployment.
-    $script:SafeDefault = @('', 'none', 'all', 'Plan', 'hosted', 'github-hosted', 'false', 'False')
+    # The day 2 pipelines add the first choice of a read-only or guarded run: azure (the check of what Azure shows), AfterDeployment (the update starts only
+    # when the master file says so) and HealthCheck (a read-only cluster operation).
+    $script:SafeDefault = @('', 'none', 'all', 'Plan', 'hosted', 'github-hosted', 'false', 'False', 'azure', 'AfterDeployment', 'HealthCheck')
     # GitLab and Azure DevOps variables a file may define: the toolkit's own paths, built-in variables, artifact names and per-job constants.
     $script:FileVariable = @{
         OSCONFIG_SCRIPT = '^scripts/'; ARM_SCRIPT = '^scripts/'; armScript = '^scripts/'; TASK06 = '^scripts/'; CICD_TASK06 = '^scripts/'
@@ -82,7 +84,16 @@ BeforeAll {
         PRECLUSTER_INSTALL_ENVIRONMENT_CHECKER = '^false$'; PRECLUSTER_CHANGES = '^(true|false)$'
         HANDOFF_FILE = '^$'; ARM_MODE = '^Plan$'; ARM_STEP_MODE = '^(Plan|Validate|Deploy)$'; ARM_STEP_DIRECTORY = '^(plan|validate|deploy)$'
         # the approval environment an Azure DevOps pipeline binds at compile time (a template expression sees only the variables of YAML files): the toolkit ships it empty
-        AZL_ENVIRONMENT_ARM_DEPLOYMENT = '^$'
+        AZL_ENVIRONMENT_ARM_DEPLOYMENT = '^$'; AZL_ENVIRONMENT_OPERATIONS = '^$'
+        # the day 2 pipelines (stage 07 validation and stage 08): the toolkit's own script paths, report folders and the safe first choice of each run variable
+        UPDATECHECK_AZURE_SCRIPT = '^scripts/'; UPDATECHECK_CLUSTER_SCRIPT = '^scripts/'; UPDATECHECK_SOURCE = '^azure$'; UPDATECHECK_REPORT_DIRECTORY = '^day2-update-check$'
+        DAY2UPDATE_SCRIPT = '^scripts/'; DAY2UPDATE_ACTION = '^Plan$'; DAY2UPDATE_MODE = '^AfterDeployment$'; DAY2UPDATE_LOG_DIRECTORY = '^day2-update$'
+        MAINTENANCE_SCRIPT = '^scripts/'; MAINTENANCE_NODE = '^$'; MAINTENANCE_ACTION = '^Plan$'; MAINTENANCE_LOG_DIRECTORY = '^day2-node-maintenance$'
+        OPERATIONS_SCRIPT = '^scripts/'; OPERATIONS_ACTION = '^HealthCheck$'; OPERATIONS_NODE = '^$'; OPERATIONS_ENABLE = '^false$'; OPERATIONS_LOG_DIRECTORY = '^day2-cluster-operations$'
+        VALIDATION_HEALTH_SCRIPT = '^scripts/'; VALIDATION_ARC_SCRIPT = '^scripts/'; VALIDATION_NETWORK_SCRIPT = '^scripts/'; VALIDATION_STORAGE_SCRIPT = '^scripts/'
+        VALIDATION_RUN_PERFORMANCE_TEST = '^false$'; VALIDATION_REPORT_DIRECTORY = '^validation-reports$'
+        checkAzureScript = '^scripts/'; checkClusterScript = '^scripts/'; updateScript = '^scripts/'; maintenanceScript = '^scripts/'; operationsScript = '^scripts/'
+        healthScript = '^scripts/'; arcScript = '^scripts/'; networkScript = '^scripts/'; storageScript = '^scripts/'
     }
 }
 
