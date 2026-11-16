@@ -114,7 +114,7 @@ when the verdict is not Pass**.
 
 - GitHub Actions: `github-actions/pre-cluster-verification.yml` (job `verify`; job `verify-with-changes` behind the environment of `AZL_ENVIRONMENT_ARM_DEPLOYMENT`).
 - GitLab CI: `gitlab/stages/pre-cluster-verification.yml` (job `pre-cluster-verify`; the manual job `pre-cluster-verify-changes` in the protected environment of `AZL_ENVIRONMENT_ARM_DEPLOYMENT`).
-- Azure DevOps: `azure-devops/pre-cluster-verification.yml` (stage `Verify`; stage `VerifyWithChanges`, a deployment job in the environment of the parameter `approval_environment`).
+- Azure DevOps: `azure-devops/pre-cluster-verification.yml` (stage `Verify`; stage `VerifyWithChanges`, a deployment job in the environment named by the variable `AZL_ENVIRONMENT_ARM_DEPLOYMENT` of `azure-devops/variables/approval-environments.yml`: a variable of a YAML file, bound when the pipeline is compiled, so whoever queues the run cannot choose an environment that has no approval. While it is empty the stage `ApprovalEnvironmentNotSet` fails and nothing is changed).
 
 The read-only job runs Plan or Verify. The two changes the gate can make, `-Fix` (it registers the mandatory resource providers that are not
 registered: Azure side only) and `-InstallEnvironmentChecker` (the Environment Checker on the nodes for the run, removed again at the end), run
@@ -196,7 +196,7 @@ variable exists (a macro variable is expanded only in task inputs, and `${{ vari
 | `variableGroup`, `variable_group` | all | `devops.pipelines.variable_group`, with environments `<name>-<environment>` |
 | `infrastructureFile`, `infrastructure_file` | all | `devops.pipelines.infrastructure_file` |
 | `handoff_path` | `os-configuration.yml` | `devops.pipelines.handoff_path` (`none` for an ISO-installed cluster) |
-| `approvalEnvironment`, `approval_environment` | each | `devops.pipelines.environments.terraform_deployment`, `.arm_deployment`, `.cicd_infra` or `.os_configuration` |
+| `approvalEnvironment`, `approval_environment` | each, except `pre-cluster-verification.yml` (its approval environment is the variable `AZL_ENVIRONMENT_ARM_DEPLOYMENT` of `azure-devops/variables/approval-environments.yml`, written once in the repository: a run parameter would let whoever queues the run choose an environment with no approval) | `devops.pipelines.environments.terraform_deployment`, `.arm_deployment`, `.cicd_infra` or `.os_configuration` |
 | `clear_storage_approval_environment` | `os-configuration.yml` | `devops.pipelines.environments.os_configuration_clear_storage` |
 
 The other parameters are choices of one run (mode, nodes, steps, resume, an artifact run ID) and default to the safe choice (`Plan`,

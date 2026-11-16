@@ -150,10 +150,16 @@ Describe 'The pre-cluster verification pipelines' {
         $doc['pre-cluster-verify-changes']['variables']['PRECLUSTER_CHANGES'] | Should -Be 'true'
         (Get-Text 'pipelines/gitlab/stages/pre-cluster-verification.yml') | Should -Match '(?s)if \(\$env:PRECLUSTER_CHANGES -eq "true"\) \{\s+if \(\$env:PRECLUSTER_FIX -eq "true"\) \{ \$p\.Fix = \$true \}'
     }
-    It 'Azure DevOps: the stage with changes is a deployment job in the environment of a parameter, and the read-only stage has none' {
+    It 'Azure DevOps: the stage with changes is a deployment job in an environment the queuer cannot choose, and the read-only stage has none' {
         $text = Get-Text 'pipelines/azure-devops/pre-cluster-verification.yml'
-        $text | Should -Match '(?m)^\s+environment: \$\{\{ parameters\.approval_environment \}\}\r?$'
+        # the environment is a variable of a YAML file (compile time), never a run parameter
+        $text | Should -Match '(?m)^\s+environment: \$\{\{ variables\.AZL_ENVIRONMENT_ARM_DEPLOYMENT \}\}\r?$'
+        $text | Should -Not -Match 'approval_environment'
+        $text | Should -Not -Match '(?m)^\s+environment: \$\{\{ parameters\.'
+        $text | Should -Match '(?m)^\s+- template: variables/approval-environments\.yml\r?$'
         @([regex]::Matches($text, '(?m)^\s+environment:')).Count | Should -Be 1
+        $names = @((Get-Yaml 'pipelines/azure-devops/pre-cluster-verification.yml')['parameters'] | ForEach-Object { $_['name'] })
+        $names | Should -Not -Contain 'approval_environment'
         # Fix and InstallEnvironmentChecker are passed in the second stage only
         $parts = $text -split '- stage: VerifyWithChanges'
         $parts.Count | Should -Be 2
@@ -161,7 +167,65 @@ Describe 'The pre-cluster verification pipelines' {
         $parts[1] | Should -Match '\$p\.Fix = \$true'
         $parts[1] | Should -Match '\$p\.InstallEnvironmentChecker = \$true'
         $text | Should -Match 'if and\(not\(parameters\.fix\), not\(parameters\.install_environment_checker\)\)'
-        $text | Should -Match 'if or\(parameters\.fix, parameters\.install_environment_checker\)'
+        $text | Should -Match 'if and\(or\(parameters\.fix, parameters\.install_environment_checker\)'
+    }
+    It 'Azure DevOps: the variables template defines the environment, empty in the toolkit, and the pipeline refuses the change stage while it is empty' {
+        $template = Get-Yaml 'pipelines/azure-devops/variables/approval-environments.yml'
+        $defined = @($template['variables'] | Where-Object { $_['name'] -eq 'AZL_ENVIRONMENT_ARM_DEPLOYMENT' })
+        $defined.Count | Should -Be 1
+        [string]$defined[0]['value'] | Should -Be '' -Because 'no value of a deployment is written in the toolkit'
+        $text = Get-Text 'pipelines/azure-devops/pre-cluster-verification.yml'
+        # the change stage exists only when the variable is set; when it is not, a stage fails and says which file to edit
+        $text | Should -Match "(?m)^\s+- \`$\{\{ if and\(or\(parameters\.fix, parameters\.install_environment_checker\), ne\(variables\.AZL_ENVIRONMENT_ARM_DEPLOYMENT, ''\)\) \}\}:\r?$"
+        $text | Should -Match "(?m)^\s+- \`$\{\{ if and\(or\(parameters\.fix, parameters\.install_environment_checker\), eq\(variables\.AZL_ENVIRONMENT_ARM_DEPLOYMENT, ''\)\) \}\}:\r?$"
+        $guard = ($text -split '- stage: ApprovalEnvironmentNotSet')[1] -split '- stage: VerifyWithChanges' | Select-Object -First 1
+        $guard | Should -Match 'approval-environments\.yml'
+        $guard | Should -Match '(?m)^\s+exit 1\r?$'
+        $guard | Should -Not -Match '\$p\.Fix|InstallEnvironmentChecker|AzurePowerShell@'
+    }
+    It 'Azure DevOps: no pipeline run form can name the approval environment of the gate (the only parameters are the ones listed)' {
+        $names = @((Get-Yaml 'pipelines/azure-devops/pre-cluster-verification.yml')['parameters'] | ForEach-Object { [string]$_['name'] })
+        $names | Should -Be @('infrastructure_file', 'mode', 'os_configuration_pipeline_id', 'os_configuration_run_id', 'os_configuration_report', 'handoff_file', 'accept_skipped', 'allow_revalidate', 'fix', 'install_environment_checker', 'agent_pool', 'service_connection', 'variable_group')
+    }
+    It 'Azure DevOps: lockBehavior is described as what Learn says it is (it governs Exclusive lock checks), and each stage that must not overlap sets it' -ForEach @(
+        @{ File = 'pipelines/azure-devops/pre-cluster-verification.yml'; Stages = @('Verify', 'VerifyWithChanges') }
+        @{ File = 'pipelines/azure-devops/discovery.yml'; Stages = @('Discover') }
+    ) {
+        $text = Get-Text $File
+        $text | Should -Not -Match '(?m)^#\s*Runs queue one after the other'
+        $text | Should -Match '(?m)^# lockBehavior does not queue runs by itself\.'
+        $text | Should -Match '(?m)^lockBehavior: sequential\r?$'
+        # the stages sit under ${{ if }} keys: walk the whole document
+        function Find-Stage($Node, [string]$Name) {
+            if ($Node -is [System.Collections.IDictionary]) { if ($Node.Contains('stage') -and $Node['stage'] -eq $Name) { $Node }; foreach ($k in $Node.Keys) { Find-Stage $Node[$k] $Name } }
+            elseif ($Node -is [System.Collections.IList]) { foreach ($i in $Node) { Find-Stage $i $Name } }
+        }
+        $doc = Get-Yaml $File
+        foreach ($stage in $Stages) {
+            $s = @(Find-Stage $doc $stage)
+            $s.Count | Should -Be 1 -Because $stage
+            [string]$s[0]['lockBehavior'] | Should -Be 'sequential' -Because "stage $stage"
+        }
+    }
+    It '<Platform> <Name> signs in with a client secret through toJSON, so a secret with a quote or a backslash cannot break the JSON of creds' -ForEach @($script:Pipelines | Where-Object { $_.Platform -eq 'GitHub' }) {
+        $text = Get-Text $File
+        $creds = @($text -split "`r?`n" | Where-Object { $_ -match '^\s+creds:' })
+        $creds.Count | Should -BeGreaterThan 0
+        foreach ($line in $creds) {
+            $line | Should -Match 'toJSON\(secrets\.ARM_CLIENT_SECRET\)'
+            $line | Should -Not -Match '"\{1\}"' -Because 'a secret placed between quotes by format() is not escaped'
+            $line | Should -Not -Match '"\{[0-3]\}"'
+        }
+    }
+    It 'every GitHub pipeline builds creds the safe way, and the JSON it makes is valid for a secret that holds a quote or a backslash' -ForEach @(Get-ChildItem -LiteralPath ([IO.Path]::Combine($script:Repo, 'pipelines', 'github-actions')) -Filter '*.yml' | ForEach-Object { @{ File = 'pipelines/github-actions/' + $_.Name } }) {
+        $lines = @((Get-Text $File) -split "`r?`n" | Where-Object { $_ -match '^\s+creds:' })
+        foreach ($line in $lines) { $line | Should -Match 'toJSON\(secrets\.ARM_CLIENT_SECRET\)' -Because $File }
+        # what the expression makes: format() puts toJSON(value) (a JSON string, with its quotes and escapes) into the template
+        $template = [regex]::Match($lines[0], "format\('(?<t>.*?)',").Groups['t'].Value -replace '\{\{', '{' -replace '\}\}', '}'
+        $secret = 'p"a\ss'
+        $json = $template.Replace('{0}', ($script:Repo | ConvertTo-Json)).Replace('{1}', ($secret | ConvertTo-Json)).Replace('{2}', '"s"').Replace('{3}', '"t"')
+        $parsed = $json | ConvertFrom-Json
+        $parsed.clientSecret | Should -Be $secret
     }
     It '<Platform> publishes a copy of the folder the script wrote, where the ARM run reads it, and does not pass -ReportDirectory' -ForEach @($script:Pipelines | Where-Object { $_.Name -eq 'pre-cluster-verification' }) {
         $text = Get-Text $File

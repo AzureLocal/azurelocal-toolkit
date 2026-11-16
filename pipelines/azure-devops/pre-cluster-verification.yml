@@ -11,10 +11,12 @@
 #
 # Stages (exactly one of them runs)
 #   Verify             Read only. Plan (what would be checked, offline) or Verify (every check, against Azure, Active Directory and the nodes).
-#   VerifyWithChanges  Runs instead of Verify when the parameter fix or install_environment_checker is set, as a deployment job in the environment of
-#                      the parameter approval_environment (add an Approvals check to it): fix registers the mandatory resource providers that are
-#                      not registered (Azure side only); install_environment_checker puts the Environment Checker on the nodes for this run and
-#                      removes it again at the end.
+#   VerifyWithChanges  Runs instead of Verify when the parameter fix or install_environment_checker is set, as a deployment job in the approval
+#                      environment (add an Approvals check to it): fix registers the mandatory resource providers that are not registered (Azure
+#                      side only); install_environment_checker puts the Environment Checker on the nodes for this run and removes it again at
+#                      the end. The environment is fixed when the pipeline is compiled (the variable AZL_ENVIRONMENT_ARM_DEPLOYMENT of
+#                      variables/approval-environments.yml), never a run parameter: whoever queues the run cannot pick an environment that has no
+#                      approval. While the variable is empty, the stage ApprovalEnvironmentNotSet fails and nothing is changed.
 #
 # Where the result goes. The script writes report.json, summary.md and the event feed where the ARM run reads them: the folder of
 # deployment.pre_cluster_verification_report_directory, else arm-report/verification/live in the environment data folder of the master file.
@@ -32,14 +34,17 @@
 #                   the vaults of the local administrator and the LCM user.
 #   Variable group  parameter variable_group (Pipelines > Library; devops.pipelines.variable_group, the group task 05 writes). This file reads
 #                   AZL_AZ_POWERSHELL_VERSION, AZL_POWERSHELL_YAML_VERSION and AZL_AZ_KEYVAULT_VERSION from it (devops.pipelines.tool_versions.*).
-#   Environment     approval_environment (devops.pipelines.environments.arm_deployment): Approvals (required reviewers) and an Exclusive lock. Task 04
-#                   of the CI/CD setup creates it from devops.environments. A deployment job to an environment with no approval check runs without one.
-#   Why parameters  the pool and the environment of a job are not task inputs. Learn says a macro variable $(name) is expanded only in task inputs,
-#                   and that other keywords take template expressions or runtime parameters
+#   Environment     the name in variables/approval-environments.yml (AZL_ENVIRONMENT_ARM_DEPLOYMENT: devops.pipelines.environments.arm_deployment; task 05
+#                   lists the value to write there): Approvals (required reviewers) and an Exclusive lock. Task 04 of the CI/CD setup creates it from
+#                   devops.environments. A deployment job to an environment with no approval check runs without one, which is why the name is not a
+#                   run parameter (Learn: a template expression sees only the variables of the YAML files).
+#   Why parameters  the pool of a job is not a task input. Learn says a macro variable $(name) is expanded only in task inputs, and that other
+#                   keywords take template expressions or runtime parameters
 #                   (https://learn.microsoft.com/azure/devops/pipelines/process/variables#understand-variable-syntax). The template expression
-#                   ${{ variables.name }} does not see variables stored on the pipeline or in a library
-#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool, the environment names and the
-#                   file paths are runtime parameters (${{ parameters.name }}) with no default: the run form asks for them.
+#                   ${{ variables.name }} does not see variables stored on the pipeline or in a library, only those of the YAML files
+#                   (https://learn.microsoft.com/azure/devops/pipelines/process/template-expressions). So the pool, the service connection and the
+#                   file paths are runtime parameters (${{ parameters.name }}) with no default: the run form asks for them. The approval environment is
+#                   not one of them: a value the queuer must not choose is read from a YAML file of the repository.
 #
 # Where the files come from: the master file is a path in this repository (parameter infrastructure_file: devops.pipelines.infrastructure_file).
 # The OS configuration report is the artifact os-configuration-report of an OS configuration pipeline run (os_configuration_pipeline_id and
@@ -49,7 +54,10 @@ name: pre-cluster-verification-$(Date:yyyyMMdd)$(Rev:.r)
 trigger: none
 pr: none
 
-# Runs queue one after the other, never in parallel: the result of a run replaces the one before.
+# lockBehavior does not queue runs by itself. Learn: it only says how runs behave when they meet an Exclusive lock check (sequential: every run waits its turn;
+# runLatest, the default: only the latest run goes on), and a stage that sets it gets a lock of its own (https://learn.microsoft.com/azure/devops/pipelines/process/approvals#exclusive-lock).
+# Here the result of a run replaces the one before, so each stage below sets lockBehavior: sequential too: two runs of the same stage never run together, and the second waits.
+# At the pipeline level it also makes the Exclusive lock check on the approval environment queue the runs instead of cancelling the older ones.
 lockBehavior: sequential
 
 parameters:
@@ -98,9 +106,6 @@ parameters:
   - name: agent_pool
     displayName: 'Self-hosted agent pool (PowerShell 7, route to the nodes). Enter devops.runners[].pool of the general runner'
     type: string
-  - name: approval_environment
-    displayName: 'Environment of the approval of fix and install_environment_checker. Enter devops.pipelines.environments.arm_deployment'
-    type: string
   - name: service_connection
     displayName: 'Azure Resource Manager service connection. Enter devops.pipelines.service_connection'
     type: string
@@ -110,6 +115,8 @@ parameters:
 
 variables:
   - group: ${{ parameters.variable_group }}
+  # AZL_ENVIRONMENT_ARM_DEPLOYMENT: the approval environment, bound at compile time (not a run parameter).
+  - template: variables/approval-environments.yml
   - name: preClusterScript
     value: scripts/deploy/04-cluster-deployment/phase-05-cluster-deployment/Invoke-AzureLocalPreClusterVerification.ps1
 
@@ -118,6 +125,7 @@ stages:
   - ${{ if and(not(parameters.fix), not(parameters.install_environment_checker)) }}:
       - stage: Verify
         displayName: 'Verify (read only)'
+        lockBehavior: sequential
         jobs:
           - job: Verify
             displayName: 'Verify (read only)'
@@ -192,9 +200,30 @@ stages:
                   publishLocation: pipeline
 
   # ---------------------------------------------------------------------------------------------------------------------------
-  - ${{ if or(parameters.fix, parameters.install_environment_checker) }}:
+  # A change was asked for, but no approval environment is set in variables/approval-environments.yml: nothing is changed, and the run says why.
+  - ${{ if and(or(parameters.fix, parameters.install_environment_checker), eq(variables.AZL_ENVIRONMENT_ARM_DEPLOYMENT, '')) }}:
+      - stage: ApprovalEnvironmentNotSet
+        displayName: 'Verify with changes: no approval environment is set'
+        jobs:
+          - job: Refuse
+            displayName: 'Refuse: no approval environment is set'
+            pool:
+              name: ${{ parameters.agent_pool }}
+              demands:
+                - pwsh
+            # Prints one message and stops: the toolkit's limit, not a figure from Microsoft.
+            timeoutInMinutes: 5
+            steps:
+              - pwsh: |
+                  Write-Error 'fix and install_environment_checker change a system, so they run only behind the approval environment. Set AZL_ENVIRONMENT_ARM_DEPLOYMENT (devops.pipelines.environments.arm_deployment) in pipelines/azure-devops/variables/approval-environments.yml, then run again. Nothing was changed.'
+                  exit 1
+                displayName: 'No approval environment is set: nothing is changed'
+
+  # ---------------------------------------------------------------------------------------------------------------------------
+  - ${{ if and(or(parameters.fix, parameters.install_environment_checker), ne(variables.AZL_ENVIRONMENT_ARM_DEPLOYMENT, '')) }}:
       - stage: VerifyWithChanges
         displayName: 'Verify with changes (needs approval)'
+        lockBehavior: sequential
         jobs:
           - deployment: VerifyWithChanges
             displayName: 'Verify with changes'
@@ -202,8 +231,8 @@ stages:
               name: ${{ parameters.agent_pool }}
               demands:
                 - pwsh
-            # Required reviewers on this environment are the approval gate.
-            environment: ${{ parameters.approval_environment }}
+            # Required reviewers on this environment are the approval gate. The name is a variable of a YAML file of the repository, so the queuer cannot choose it.
+            environment: ${{ variables.AZL_ENVIRONMENT_ARM_DEPLOYMENT }}
             # The checks, and a wait for the resource provider registration: the toolkit's limit, not a figure from Microsoft.
             timeoutInMinutes: 60
             strategy:

@@ -1,0 +1,17 @@
+# The approval environments an Azure DevOps pipeline of the toolkit is bound to when it is compiled, not when it is queued.
+#
+# Why this file exists. A deployment job that changes a system sits behind an environment with an Approvals check (and an Exclusive lock). If the
+# environment is a run parameter, whoever queues the run can type the name of an environment that has no check, and the change runs without an
+# approval. A template expression takes only what the YAML defines (Learn: Template expressions, "Context": the variables context holds the
+# variables of the YAML files and the predefined variables, not those stored on the pipeline, in a library or given when you start a run). So a
+# value the queuer must not choose is a variable defined in a YAML file of the repository, and a pipeline reads it as ${{ variables.NAME }}.
+#
+# What to do. Task 05 of the CI/CD setup lists the value to enter. Write the name of the environment here, once per repository, in a pull request:
+#   AZL_ENVIRONMENT_ARM_DEPLOYMENT   devops.pipelines.environments.arm_deployment (an entry of devops.environments[] with approval_required true)
+# The toolkit ships it empty, because no value of a deployment is written in the toolkit. While it is empty, a pipeline that needs it refuses to
+# run the stage that changes something (the stage fails with a message that names this file); the read-only stages run as before.
+#
+# Used by: pre-cluster-verification.yml (the stage that runs -Fix and -InstallEnvironmentChecker).
+variables:
+  - name: AZL_ENVIRONMENT_ARM_DEPLOYMENT
+    value: ''

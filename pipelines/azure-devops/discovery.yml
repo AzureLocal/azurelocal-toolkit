@@ -36,7 +36,9 @@ name: discovery-$(Date:yyyyMMdd)$(Rev:.r)
 trigger: none
 pr: none
 
-# Runs queue one after the other, never in parallel (GitHub: concurrency group; GitLab: resource_group).
+# lockBehavior does not queue runs by itself. Learn: it only says how runs behave when they meet an Exclusive lock check (sequential: every run waits its turn;
+# runLatest, the default: only the latest run goes on), and a stage that sets it gets a lock of its own (https://learn.microsoft.com/azure/devops/pipelines/process/approvals#exclusive-lock).
+# Here the stage Discover sets it, so two discovery runs never run together and the second waits (GitHub: concurrency group; GitLab: resource_group).
 lockBehavior: sequential
 
 parameters:
@@ -83,6 +85,7 @@ variables:
 stages:
   - stage: Discover
     displayName: 'Discover (read only)'
+    lockBehavior: sequential
     jobs:
       - job: Discover
         displayName: 'Discover (read only)'

@@ -113,8 +113,9 @@ Describe 'Azure DevOps: the pool and the environment of a job are runtime parame
                 if ($pool.Contains('vmImage')) { [string]$pool['vmImage'] | Should -Be 'ubuntu-latest' -Because 'the hosted image is the vendor label, not a setting of a deployment' }
             }
             if ($n.Node.Contains('environment') -and $n.Node.Contains('strategy')) {
-                [string]$n.Node['environment'] | Should -Match '^\$\{\{ parameters\.\w+ \}\}$'
-                $used.Add(([regex]::Match([string]$n.Node['environment'], 'parameters\.(\w+)').Groups[1].Value))
+                # a run parameter, or the approval environment that is bound at compile time (a variable of variables/approval-environments.yml, which the queuer cannot choose)
+                [string]$n.Node['environment'] | Should -Match '^\$\{\{ (parameters\.\w+|variables\.AZL_ENVIRONMENT_[A-Z_]+) \}\}$'
+                if ([string]$n.Node['environment'] -like '*parameters.*') { $used.Add(([regex]::Match([string]$n.Node['environment'], 'parameters\.(\w+)').Groups[1].Value)) }
             }
         }
         $used.Count | Should -BeGreaterThan 0
@@ -132,7 +133,7 @@ Describe 'Azure DevOps: the pool and the environment of a job are runtime parame
     }
     It 'every file that gates an Apply or Deploy names its environment by a parameter: no literal environment is left' {
         foreach ($f in @($script:RtFiles | Where-Object { $_ -like 'pipelines/azure-devops/*' })) {
-            (Get-Text $f) | Should -Not -Match "(?m)^\s+environment:\s+(?!\$\{\{ parameters\.)\S" -Because $f
+            (Get-Text $f) | Should -Not -Match "(?m)^\s+environment:\s+(?!\$\{\{ (parameters|variables\.AZL_ENVIRONMENT_[A-Z_]+)\b)\S" -Because $f
         }
     }
 }

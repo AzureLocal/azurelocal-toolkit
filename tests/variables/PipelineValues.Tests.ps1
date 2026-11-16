@@ -81,6 +81,8 @@ BeforeAll {
         PRECLUSTER_MODE = '^Plan$'; PRECLUSTER_ACCEPT_SKIPPED = '^$'; PRECLUSTER_ALLOW_REVALIDATE = '^false$'; PRECLUSTER_FIX = '^false$'
         PRECLUSTER_INSTALL_ENVIRONMENT_CHECKER = '^false$'; PRECLUSTER_CHANGES = '^(true|false)$'
         HANDOFF_FILE = '^$'; ARM_MODE = '^Plan$'; ARM_STEP_MODE = '^(Plan|Validate|Deploy)$'; ARM_STEP_DIRECTORY = '^(plan|validate|deploy)$'
+        # the approval environment an Azure DevOps pipeline binds at compile time (a template expression sees only the variables of YAML files): the toolkit ships it empty
+        AZL_ENVIRONMENT_ARM_DEPLOYMENT = '^$'
     }
 }
 
@@ -217,7 +219,7 @@ Describe 'Branches: the deploy branch is the default branch of the repository' {
 Describe 'Defaults: no parameter, input or variable default is a choice of a deployment' {
     It '<File>: every parameter with a default defaults to the safe choice of one run' -ForEach $script:AdoFiles {
         foreach ($p in @((Get-Yaml $File)['parameters'])) {
-            if (-not $p.Contains('default')) { continue }
+            if ($null -eq $p -or -not $p.Contains('default')) { continue }   # a variables template has no parameters
             [string]$p['default'] | Should -BeIn $script:SafeDefault -Because "$File parameter $($p['name'])"
         }
     }

@@ -115,7 +115,7 @@ jobs:
         if: ${{ vars.AZL_AUTH_METHOD == 'client_secret' }}
         uses: azure/login@v2
         with:
-          creds: ${{ format('{{"clientId":"{0}","clientSecret":"{1}","subscriptionId":"{2}","tenantId":"{3}"}}', vars.ARM_CLIENT_ID, secrets.ARM_CLIENT_SECRET, vars.ARM_SUBSCRIPTION_ID, vars.ARM_TENANT_ID) }}
+          creds: ${{ format('{{"clientId":{0},"clientSecret":{1},"subscriptionId":{2},"tenantId":{3}}}', toJSON(vars.ARM_CLIENT_ID), toJSON(secrets.ARM_CLIENT_SECRET), toJSON(vars.ARM_SUBSCRIPTION_ID), toJSON(vars.ARM_TENANT_ID)) }}
           enable-AzPSSession: true
 
       - name: Plan
@@ -184,7 +184,7 @@ jobs:
         if: ${{ vars.AZL_AUTH_METHOD == 'client_secret' }}
         uses: azure/login@v2
         with:
-          creds: ${{ format('{{"clientId":"{0}","clientSecret":"{1}","subscriptionId":"{2}","tenantId":"{3}"}}', vars.ARM_CLIENT_ID, secrets.ARM_CLIENT_SECRET, vars.ARM_SUBSCRIPTION_ID, vars.ARM_TENANT_ID) }}
+          creds: ${{ format('{{"clientId":{0},"clientSecret":{1},"subscriptionId":{2},"tenantId":{3}}}', toJSON(vars.ARM_CLIENT_ID), toJSON(secrets.ARM_CLIENT_SECRET), toJSON(vars.ARM_SUBSCRIPTION_ID), toJSON(vars.ARM_TENANT_ID)) }}
           enable-AzPSSession: true
 
       # The wipe list the reviewer approved is the one the Plan job published. Apply is bound to it: it stops (exit 2) before changing anything when its own list holds a disk that is not in it.

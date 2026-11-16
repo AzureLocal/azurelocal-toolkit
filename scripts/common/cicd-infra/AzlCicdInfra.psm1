@@ -1309,7 +1309,9 @@ function Set-AzlCicdVariable {
                     # Azure DevOps expands a variable only at run time and reads the pool, the environment, the service connection and a
                     # parameter path at compile time, so these are run parameters with no default. The task cannot set a parameter; it lists
                     # the value to enter.
-                    if ($pipelineInput.AzureDevOps -eq 'Parameter') { $results.Add((Format-AzlResult $task 'Pipeline run parameter' $pipelineInput.Key 'Skipped' "Enter '$($pipelineInput.Value)' as the $($pipelineInput.Role) parameter when you run the pipeline.")) }
+                    # The pre-cluster verification pipeline binds the approval environment of the ARM deployment at compile time: a run parameter would let whoever queues the run choose an environment with no approval.
+                    $templateHint = if ($pipelineInput.Name -eq 'AZL_ENVIRONMENT_ARM_DEPLOYMENT') { " The pre-cluster verification pipeline does not take it as a parameter: write it as the value of AZL_ENVIRONMENT_ARM_DEPLOYMENT in pipelines/azure-devops/variables/approval-environments.yml, once, in a pull request." } else { '' }
+                    if ($pipelineInput.AzureDevOps -eq 'Parameter') { $results.Add((Format-AzlResult $task 'Pipeline run parameter' $pipelineInput.Key 'Skipped' "Enter '$($pipelineInput.Value)' as the $($pipelineInput.Role) parameter when you run the pipeline.$templateHint")) }
                 }
             }
         }
