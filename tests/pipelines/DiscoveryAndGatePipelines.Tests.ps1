@@ -152,7 +152,7 @@ Describe 'The pre-cluster verification pipelines' {
     }
     It 'Azure DevOps: the stage with changes is a deployment job in the environment of a parameter, and the read-only stage has none' {
         $text = Get-Text 'pipelines/azure-devops/pre-cluster-verification.yml'
-        $text | Should -Match '(?m)^\s+environment: \$\{\{ parameters\.approval_environment \}\}$'
+        $text | Should -Match '(?m)^\s+environment: \$\{\{ parameters\.approval_environment \}\}\r?$'
         @([regex]::Matches($text, '(?m)^\s+environment:')).Count | Should -Be 1
         # Fix and InstallEnvironmentChecker are passed in the second stage only
         $parts = $text -split '- stage: VerifyWithChanges'
