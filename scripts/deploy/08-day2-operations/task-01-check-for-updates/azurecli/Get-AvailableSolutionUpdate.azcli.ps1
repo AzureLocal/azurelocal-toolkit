@@ -12,20 +12,29 @@
       1. Update Summaries - Get:  .../clusters/<cluster>/updateSummaries/default   the installed solution and SBE version, the overall update state
          (AppliedSuccessfully, UpdateAvailable, UpdateInProgress, UpdateFailed, NeedsAttention, PreparationInProgress, PreparationFailed), lastChecked, and the
          health check results of the update environment;
-      2. Updates - List:  .../clusters/<cluster>/updates   every update the cluster reports, with its state, version, package type and update state properties.
+      2. Updates - List:  .../clusters/<cluster>/updates   every update the cluster reports, with its state, version, package type and update state properties. The list
+         is followed page by page (nextLink), at most 50 pages.
+
+    The URL is a resource ID without a host (/subscriptions/...): az rest then prefixes the Azure Resource Manager endpoint of the cloud that az is set to (Learn: az rest,
+    --url), so the script works in the public cloud and in a sovereign cloud alike, and no host name is written in it.
 
     The script changes nothing in Azure and does not start an update: that is task 02 (PowerShell on the cluster) or Azure Update Manager in the portal. It does not
     sign in: run "az login" to the tenant in azure.tenant_id first. It selects azure.subscription_id with "az account set" and puts the earlier subscription back
     at the end. The signed-in identity needs read access to the cluster resource (the role Azure Stack HCI Administrator, or Reader).
 
-    Output, verdict and the two checks that raise AttentionNeeded are the same as in the PowerShell variant, plus one for Azure: the update service has not checked
-    for more than -MaxCheckAgeHours hours (the agent should check daily, so a cluster that did not report for days is not looking for updates). With -OutputPath
-    the whole report is also written as JSON.
+    Output, verdict and the checks that raise AttentionNeeded are the same as in the PowerShell variant (an update in a failed state, a health state of Failure, Error or
+    Warning, an update state of UpdateFailed, NeedsAttention or PreparationFailed), plus those of Azure: a failed critical or warning readiness check, and an update service
+    that has not checked for more than -MaxCheckAgeHours hours (the agent should check daily, so a cluster that did not report for days is not looking for updates). With
+    -OutputPath the whole report is also written as JSON.
 
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure): azure.tenant_id, azure.subscription_id, azure.resource_group, cluster.name.
 
+    Every az argument is checked by the toolkit's one guard (scripts/common/azure-cli/AzlAzureCliArgument.psm1): a value of the file that holds & | < > ^ % " or a line break
+    is refused at plan time with exit code 2, before any az call (on Windows az is a batch file, az.cmd).
+
     Exit codes: 0 Azure was read and nothing needs attention (an update may be offered: see the verdict); 1 an az call failed, a precondition failed (az missing,
-    not signed in, wrong tenant), the cluster resource was not found, or the verdict is AttentionNeeded; 2 a value in the file is missing or not usable.
+    not signed in, wrong tenant), the cluster resource was not found, the verdict is AttentionNeeded, or the subscription that was selected before could not be put back
+    (a warning says so: az stays set to the subscription of the file); 2 a value in the file is missing or not usable.
 
 .PARAMETER InfrastructureFile
     The master infrastructure.yml (schema 5). Only the keys above are read.
@@ -61,19 +70,21 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 $logFile = $LogPath
 
-Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common', 'infrastructure', 'AzlInfrastructure.psm1'))) -Force
+$common = [IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '..', '..', '..', 'common'))
+Import-Module ([IO.Path]::Combine($common, 'infrastructure', 'AzlInfrastructure.psm1')) -Force
+Import-Module ([IO.Path]::Combine($common, 'azure-cli', 'AzlAzureCliArgument.psm1')) -Force
 
 $Guid = '^[0-9A-Fa-f]{8}-([0-9A-Fa-f]{4}-){3}[0-9A-Fa-f]{12}$'
-# The Azure CLI is started through a command file on Windows. These characters would be read as commands there, so no value that holds one is sent.
-$UnsafeArgument = '[&|<>^%"`\r\n]'
 # Fixed by Microsoft (Learn REST API reference, Azure Stack HCI: Update Summaries - Get, Updates - List): the provider and the stable API version.
 $ProviderPath = 'Microsoft.AzureStackHCI/clusters'
 $ApiVersion = '2024-04-01'
-$ArmEndpoint = 'https://management.azure.com'
+# The update list is followed page by page, at most this many pages (a bound, not a Microsoft figure).
+$MaxPages = 50
 $StartableState = 'Ready', 'ReadyToInstall', 'HealthCheckExpired'
 $RunningState = 'Downloading', 'Preparing', 'HealthChecking', 'Installing'
 $DoneState = 'Installed', 'Obsolete', 'Invalid', 'Recalled'
-$WaitState = 'ScanInProgress', 'NotApplicableBecauseAnotherUpdateIsInProgress'
+$WaitState = 'ScanInProgress', 'NotApplicableBecauseAnotherUpdateIsInProgress', 'PendingOEMValidation'
+$BlockingHealth = 'Failure', 'Error', 'Warning'
 $BadSummaryState = 'UpdateFailed', 'NeedsAttention', 'PreparationFailed'
 $StateAdvice = @{
     AdditionalContentRequired = 'Import the SBE files from the hardware vendor first (stage 04, phase 06, task 10), then check again.'
@@ -106,9 +117,8 @@ function Get-Prop($Object, [string[]]$Path) {
 # The one place the Azure CLI is called. Arguments go as an array, never as a command string. A character that the Windows command file would read as a
 # command stops the call. Returns the exit code, the text of standard output and of standard error.
 function Invoke-AzCli([string[]]$Arguments) {
-    foreach ($argument in $Arguments) {
-        if ($argument -match $UnsafeArgument) { throw "An argument holds a character that is not sent to the Azure CLI (& | < > ^ % or a quote): $argument" }
-    }
+    $unsafe = Get-AzlAzureCliArgumentProblem -Argument $Arguments
+    if ($unsafe) { Exit-InputProblem $unsafe }
     $all = @(& az @Arguments 2>&1)
     $code = [int](Get-Variable -Name LASTEXITCODE -Scope Global -ValueOnly -ErrorAction SilentlyContinue)
     $out = (@($all | Where-Object { $_ -isnot [Management.Automation.ErrorRecord] }) | ForEach-Object { "$_" }) -join "`n"
@@ -146,10 +156,13 @@ if ($tenantId -notmatch $Guid) { Exit-InputProblem 'azure.tenant_id is missing o
 if ($subscriptionId -notmatch $Guid -or $subscriptionId -eq [guid]::Empty.ToString()) { Exit-InputProblem 'azure.subscription_id is missing, not a GUID or the all-zero placeholder. It is the subscription of the cluster resource.' }
 if (-not $resourceGroup) { Exit-InputProblem 'azure.resource_group is missing. It is the resource group of the cluster resource.' }
 if (-not $clusterName) { Exit-InputProblem 'cluster.name is missing. It is the name of the cluster resource.' }
+$problem = Get-AzlAzureCliValueProblem -Value ([ordered]@{ 'azure.resource_group' = $resourceGroup; 'cluster.name' = $clusterName })
+if ($problem) { Exit-InputProblem $problem }
 foreach ($pair in @(@('azure.resource_group', $resourceGroup), @('cluster.name', $clusterName))) {
-    if ($pair[1] -match $UnsafeArgument -or $pair[1] -match '[/?#\s]') { Exit-InputProblem "$($pair[0]) '$($pair[1])' holds a character that is not allowed in an Azure resource name or that the Azure CLI cannot take." }
+    if ($pair[1] -match '[/?#\s]') { Exit-InputProblem "$($pair[0]) '$($pair[1])' holds a character that is not allowed in an Azure resource name." }
 }
-$clusterUrl = "$ArmEndpoint/subscriptions/$subscriptionId/resourceGroups/$resourceGroup/providers/$ProviderPath/$clusterName"
+# No host: az rest takes a URL that does not start with one as a resource ID and prefixes the Azure Resource Manager endpoint of the current cloud (Learn: az rest, --url).
+$clusterUrl = "/subscriptions/$subscriptionId/resourceGroups/$resourceGroup/providers/$ProviderPath/$clusterName"
 
 # ---- preconditions (read only)
 if (-not (Get-Command -Name 'az' -ErrorAction SilentlyContinue)) { Exit-Failed 'The Azure CLI (az) was not found. Install it, or use Get-AvailableSolutionUpdate.ps1 on a cluster machine.' }
@@ -161,6 +174,7 @@ $originalSubscription = if ($accountParts.Count -gt 1) { $accountParts[1] } else
 
 $report = $null
 $verdict = 'UpToDate'
+$restoreFailed = $false
 $rows = [System.Collections.Generic.List[object]]::new()
 try {
     $set = Invoke-AzCli @('account', 'set', '--subscription', $subscriptionId)
@@ -173,11 +187,25 @@ try {
         throw "The update summary could not be read: $($summaryResult.Detail)"
     }
     $summary = ConvertFrom-AzJson $summaryResult.Output
-    $listResult = Invoke-AzCli @('rest', '--method', 'get', '--url', "$clusterUrl/updates?api-version=$ApiVersion", '--output', 'json', '--only-show-errors')
-    if ($listResult.ExitCode -ne 0) { throw "The updates could not be read: $($listResult.Detail)" }
-    $list = ConvertFrom-AzJson $listResult.Output
-    $values = @(Get-Prop $list @('value'))
-    $more = [bool](Get-Prop $list @('nextLink'))
+    # The list of updates, page by page. A nextLink is an absolute URL with & in its query, which the guard does not let through as one argument: the script keeps only its
+    # path and hands the query to az rest as --url-parameters, one KEY=VALUE argument each (the host of the link is never used: az rest goes to the ARM endpoint of the cloud).
+    $values = @()
+    $listArguments = @('rest', '--method', 'get', '--url', "$clusterUrl/updates?api-version=$ApiVersion", '--output', 'json', '--only-show-errors')
+    for ($page = 1; $true; $page++) {
+        $listResult = Invoke-AzCli $listArguments
+        if ($listResult.ExitCode -ne 0) { throw "The updates could not be read: $($listResult.Detail)" }
+        $list = ConvertFrom-AzJson $listResult.Output
+        $values += @(Get-Prop $list @('value'))
+        $nextLink = [string](Get-Prop $list @('nextLink'))
+        if (-not $nextLink) { break }
+        if ($page -ge $MaxPages) { throw "The list of updates has more than $MaxPages pages; it was not read to the end." }
+        $uri = $null
+        if (-not [uri]::TryCreate($nextLink, [UriKind]::Absolute, [ref]$uri)) { throw 'The list of updates has a next page, but its link is not a URL.' }
+        $queryParameters = @($uri.Query.TrimStart('?') -split '&' | Where-Object { $_ } | ForEach-Object { [uri]::UnescapeDataString($_.Replace('+', '%2B')) })
+        $problem = Get-AzlAzureCliArgumentProblem -Argument $queryParameters
+        if ($problem) { throw 'The link to the next page of updates holds a character that cannot be sent to the Azure CLI safely, so the list was not read to the end.' }
+        $listArguments = @('rest', '--method', 'get', '--url', $uri.AbsolutePath, '--url-parameters') + $queryParameters + @('--output', 'json', '--only-show-errors')
+    }
 
     $attention = [System.Collections.Generic.List[string]]::new()
     $updates = @(foreach ($item in $values) {
@@ -202,6 +230,7 @@ try {
     $lastChecked = if ($rawChecked -is [datetime]) { $rawChecked.ToUniversalTime().ToString('o') } else { [string]$rawChecked }
     $healthState = [string](Get-Prop $summary @('properties', 'healthState'))
     if ($BadSummaryState -contains $summaryState) { $attention.Add("the update state of the cluster is $summaryState") }
+    if ($BlockingHealth -contains $healthState) { $attention.Add("the health of the update environment is $healthState (Learn: Troubleshoot readiness checks)") }
     $failedChecks = @(@(Get-Prop $summary @('properties', 'healthCheckResult')) | Where-Object { $_ -and [string](Get-Prop $_ @('status')) -eq 'Failed' -and [string](Get-Prop $_ @('severity')) -in 'Critical', 'Warning' })
     foreach ($check in $failedChecks) { $attention.Add("readiness check '$([string](Get-Prop $check @('title')))' failed ($([string](Get-Prop $check @('severity'))))") }
     $lastCheckedAge = $null
@@ -214,7 +243,7 @@ try {
         }
     }
     else { Write-Line 'The update summary reports no lastChecked time yet (a new cluster: the first check can take a day).' }
-    if ($more) { Write-Line 'The list of updates has more than one page; only the first page was read.' }
+
 
     $verdict = if ($attention.Count -gt 0) { 'AttentionNeeded' }
     elseif (@($rows | Where-Object Next -EQ 'Follow').Count -gt 0 -or $summaryState -in 'UpdateInProgress', 'PreparationInProgress') { 'UpdateRunning' }
@@ -246,7 +275,10 @@ catch { Exit-Failed "The update check stopped: $($_.Exception.Message)" }
 finally {
     if ($originalSubscription -and $originalSubscription -ne $subscriptionId) {
         $back = Invoke-AzCli @('account', 'set', '--subscription', $originalSubscription)
-        if ($back.ExitCode -ne 0) { Write-Verbose "Could not restore the original subscription: $($back.Detail)" }
+        if ($back.ExitCode -ne 0) {
+            $restoreFailed = $true
+            Write-Warning "The subscription that az had selected before could not be put back: $($back.Detail) az stays set to the subscription of infrastructure.yml. Run az account set --subscription <your earlier subscription>."
+        }
     }
 }
 
@@ -261,5 +293,6 @@ if ($OutputPath) {
 }
 
 $rows
+if ($restoreFailed) { Write-Line 'Exit code 1: the earlier subscription could not be put back (see the warning).'; exit 1 }
 if ($verdict -eq 'AttentionNeeded') { exit 1 }
 exit 0

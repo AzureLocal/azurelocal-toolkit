@@ -12,7 +12,9 @@
       2. polls discovery with Get-SolutionUpdate. Learn names no command that forces a check: the Lifecycle Manager discovers updates by itself (it queries the
          online SBE manifest of the hardware vendor and the Microsoft catalogue), the update agent checks once a day, and "repeat the Get-SolutionUpdate command to
          rediscover the updates". Azure Update Manager has a "Check for updates" button for the same purpose. With -WaitMinutes the script repeats the read until an
-         update is offered or the time is over, so a script that runs straight after the deployment can wait for the first update;
+         update is offered or the time is over, so a script that runs straight after the deployment can wait for the first update. The wait ends at once, with the verdict
+         AttentionNeeded, when an update is in a failed state or needs a prerequisite, when the health of the update environment is Failure, Error or Warning, or when the
+         update environment state is UpdateFailed, NeedsAttention or PreparationFailed: waiting longer does not fix any of them;
       3. says, for each update that is not finished, what is next: Ready or ReadyToInstall (start it: task 02), AdditionalContentRequired (import the SBE files
          first: stage 04, phase 06, task 10, then check again), Downloading, Preparing, HealthChecking or Installing (follow it), or a failed state (look at it).
 
@@ -29,7 +31,7 @@
       AdditionalContentRequired  an update waits for SBE content from the hardware vendor (nothing is ready to start)
       UpdateRunning              an update is Downloading, Preparing, HealthChecking or Installing
       AttentionNeeded            an update is in a failed state, needs a prerequisite, or the health of the update environment is Failure, Error or Warning
-                                 (Learn: review the HealthState before you proceed), or the update environment state is UpdateFailed or NeedsAttention
+                                 (Learn: review the HealthState before you proceed), or the update environment state is UpdateFailed, NeedsAttention or PreparationFailed
 
     Values come only from infrastructure.yml (read through Import-AzlInfrastructure):
         cluster.name                                  the cluster to connect to (unless -ComputerName is given)
@@ -48,7 +50,7 @@
     Optional. The account for the remoting session, the deployment user. Without it the account that runs the script is used.
 
 .PARAMETER WaitMinutes
-    Optional. When no update is offered yet, read again every -PollSeconds until one is offered or this many minutes have passed (0 to 240). Default: 0 (read once).
+    Optional. When no update is offered yet, read again every -PollSeconds until one is offered or this many minutes have passed (0 to 240). The wait stops at once when something needs attention (a failed update, a blocking health state, a failed update environment): the verdict is AttentionNeeded. Default: 0 (read once).
 
 .PARAMETER PollSeconds
     Seconds between two reads while -WaitMinutes waits (5 to 600). Default: 60.
@@ -91,9 +93,9 @@ Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '.
 $StartableState = 'Ready', 'ReadyToInstall', 'HealthCheckExpired'
 $RunningState = 'Downloading', 'Preparing', 'HealthChecking', 'Installing'
 $DoneState = 'Installed', 'Obsolete', 'Invalid', 'Recalled'
-$WaitState = 'ScanInProgress', 'NotApplicableBecauseAnotherUpdateIsInProgress'
+$WaitState = 'ScanInProgress', 'NotApplicableBecauseAnotherUpdateIsInProgress', 'PendingOEMValidation'
 $BlockingHealth = 'Failure', 'Error', 'Warning'
-$BadEnvironmentState = 'UpdateFailed', 'NeedsAttention'
+$BadEnvironmentState = 'UpdateFailed', 'NeedsAttention', 'PreparationFailed'
 $StateAdvice = @{
     AdditionalContentRequired = 'Import the SBE files from the hardware vendor first (stage 04, phase 06, task 10, Get-AzureLocalSbeImportPlan.ps1), then check again.'
     HasPrerequisite           = 'It needs another update installed first (see its Prerequisites in Get-SolutionUpdate).'
@@ -181,7 +183,10 @@ do {
     $readCount++
     $updates = @(@($state.Updates) | Sort-Object { ConvertTo-UpdateVersion $_.Version } -Descending)
     $offered = @($updates | Where-Object { $StartableState -contains $_.State -or $_.State -eq 'AdditionalContentRequired' -or $RunningState -contains $_.State })
-    $again = $WaitMinutes -gt 0 -and $offered.Count -eq 0 -and (Get-Date) -lt $deadline
+    # Something that waiting does not fix ends the wait at once: a failed update, a blocking health state, a failed update environment.
+    $needsAttention = @($updates | Where-Object { (Get-Next $_)[0] -eq 'Attention' }).Count -gt 0 -or $BlockingHealth -contains [string]$state.HealthState -or $BadEnvironmentState -contains [string]$state.State
+    if ($WaitMinutes -gt 0 -and $needsAttention -and $offered.Count -eq 0) { Write-Line 'Something needs attention (a failed update, the health of the update environment, or its state): the wait ends here.' }
+    $again = $WaitMinutes -gt 0 -and $offered.Count -eq 0 -and -not $needsAttention -and (Get-Date) -lt $deadline
     if ($again) {
         Write-Line "No update is offered yet (the update service last checked: $(if ($state.LastChecked) { $state.LastChecked } else { 'not reported' })). Reading again in $PollSeconds seconds, until $($deadline.ToUniversalTime().ToString('HH:mm')) UTC."
         Start-Sleep -Seconds $PollSeconds

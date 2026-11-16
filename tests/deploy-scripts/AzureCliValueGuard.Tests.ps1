@@ -81,6 +81,12 @@ BeforeDiscovery {
         @{ Script = 'Deploy-DataCollectionEndpoint.azcli.ps1'; Key = 'workspace_resource_group'; Bad = 'rg&x'; Edit = { param($d) $d.operations.monitoring.workspace_resource_group = 'rg&x' } }
         @{ Script = 'Deploy-ActionGroup.azcli.ps1'; Key = 'action_group'; Bad = 'ag&x'; Edit = { param($d) $d.operations.monitoring.action_group = 'ag&x' } }
         @{ Script = 'Invoke-AzurePolicyTier1-Orchestrated.azcli.ps1'; Key = 'management_group'; Bad = 'mg&x'; Edit = { param($d) $d.landing_zone.policy.management_group = 'mg&x' } }
+        # day 2 (stage 08 task 01) and handover (stage 07 task 06)
+        @{ Script = 'Get-AvailableSolutionUpdate.azcli.ps1'; Key = 'azure.resource_group'; Bad = 'rg&calc'; Edit = { param($d) $d.azure.resource_group = 'rg&calc' } }
+        @{ Script = 'Get-AvailableSolutionUpdate.azcli.ps1'; Key = 'cluster.name'; Bad = 'cl^x'; Edit = { param($d) $d.cluster.name = 'cl^x' } }
+        @{ Script = 'Set-CustomerTransfer.azcli.ps1'; Key = 'azure.resource_group'; Bad = 'rg&calc'; Edit = { param($d) $d.azure.resource_group = 'rg&calc' }; AzParams = @{ CustomerTenantId = [guid]::NewGuid().ToString(); CustomerAdminUPN = 'admin@example.test' } }
+        @{ Script = 'Set-CustomerTransfer.azcli.ps1'; Key = 'cluster.name'; Bad = 'cl|x'; Edit = { param($d) $d.cluster.name = 'cl|x' }; AzParams = @{ CustomerTenantId = [guid]::NewGuid().ToString(); CustomerAdminUPN = 'admin@example.test' } }
+        @{ Script = 'Set-CustomerTransfer.azcli.ps1'; Key = '-CustomerAdminUPN'; Bad = 'a|b@example.test'; Edit = { param($d) $null = $d }; AzParams = @{ CustomerTenantId = [guid]::NewGuid().ToString(); CustomerAdminUPN = 'a|b@example.test' } }
     )
 }
 
@@ -146,8 +152,10 @@ Describe 'a value of the file that az.cmd cannot carry' {
     It '<Script> refuses <Key> with <Bad> (exit code 2, no az call, also under -WhatIf)' -ForEach $script:Cases {
         $file = New-GuardFile $Edit
         $supportsWhatIf = (Get-Command -Name $script:Scripts[$Script]).Parameters.ContainsKey('WhatIf')
+        $extra = @{}
+        if (Get-Variable -Name AzParams -ErrorAction Ignore) { $extra = $AzParams }
         foreach ($dry in @($false, $true | Where-Object { -not $_ -or $supportsWhatIf })) {
-            $r = if ($dry) { Invoke-AzTool $script:Scripts[$Script] $file -DryRun } else { Invoke-AzTool $script:Scripts[$Script] $file }
+            $r = if ($dry) { Invoke-AzTool $script:Scripts[$Script] $file $extra -DryRun } else { Invoke-AzTool $script:Scripts[$Script] $file $extra }
             $r.ExitCode | Should -Be 2 -Because $r.Text
             $r.Text | Should -Match $Key
             $r.Text | Should -Match ([regex]::Escape($Bad))

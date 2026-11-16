@@ -32,10 +32,16 @@
     Idempotent. The script reports and exits 0 without starting anything when
       the mode is AfterDeployment and the switch is off (install_after_deployment is false or missing);
       the instance already runs the target version, or no newer solution update is ready;
-      an update is already running (Downloading, Preparing, HealthChecking or Installing);
+      an update is already running (Downloading, Preparing, HealthChecking or Installing, of any package type: a standalone SBE update counts too, and so does an update
+      environment whose state is UpdateInProgress or PreparationInProgress). It is reported as AlreadyRunning, never as AlreadyAtTarget;
       with -PrepareOnly, the chosen update is already prepared (ReadyToInstall).
     A chosen update that is in a failed state (HealthCheckFailed, InstallationFailed and the other failures), needs more content (AdditionalContentRequired) or
     needs another update first (HasPrerequisite) is reported as Failed and left alone: the script does not resume or retry it. See Learn: Troubleshoot updates.
+    The states are the ones Learn lists for the update resource (Updates - Get): Ready, ReadyToInstall and HealthCheckExpired can be started; Downloading, Preparing,
+    HealthChecking and Installing are running; Installed, Obsolete, Invalid and Recalled need nothing; every other state (ScanFailed, ScanInProgress,
+    NotApplicableBecauseAnotherUpdateIsInProgress, PendingOEMValidation, the failed states, AdditionalContentRequired, HasPrerequisite, and a state that is not known) is reported as
+    Failed with exit code 1, also when no update is ready (latest mode): it is never reported as AlreadyAtTarget. The same holds when the update environment state is
+    UpdateFailed, NeedsAttention or PreparationFailed and no update is ready.
     -WhatIf reads the cluster and prints what would be started; it starts nothing.
 
     The script does not sign in anywhere and reads no secret. It connects as the account that runs it, or as -Credential. Learn: use the deployment user account.
@@ -102,6 +108,9 @@ Import-Module ([IO.Path]::GetFullPath([IO.Path]::Combine($PSScriptRoot, '..', '.
 # The states of an update that Learn names (Update Azure Local by using PowerShell; Understand update phases of Azure Local).
 $StartableState = 'Ready', 'ReadyToInstall', 'HealthCheckExpired'
 $RunningState = 'Downloading', 'Preparing', 'HealthChecking', 'Installing'
+$DoneState = 'Installed', 'Obsolete', 'Invalid', 'Recalled'
+$RunningEnvironmentState = 'UpdateInProgress', 'PreparationInProgress'
+$BadEnvironmentState = 'UpdateFailed', 'NeedsAttention', 'PreparationFailed'
 $BlockingHealth = 'Failure', 'Error', 'Warning'
 $StateAdvice = @{
     AdditionalContentRequired = 'it needs content from the hardware vendor: import it first (Learn: Solution Builder Extension updates, the AdditionalContentRequired state; toolkit: stage 04, phase 06, task 10, SBE update import)'
@@ -112,7 +121,16 @@ $StateAdvice = @{
     PreparationFailed         = 'the preparation failed (see Get-SolutionUpdateRun and Troubleshoot updates)'
     HealthCheckFailed         = 'the readiness checks failed (see Get-SolutionHealthSummary and Troubleshoot readiness checks)'
     InstallationFailed        = 'the installation failed; look at the failure first, then resume it with Start-SolutionUpdate (see Troubleshoot updates)'
+    ScanFailed                = 'the scan for update content failed (see Troubleshoot updates)'
+    ScanInProgress            = 'the update service is still scanning; try again later'
+    NotApplicableBecauseAnotherUpdateIsInProgress = 'another update is in progress; wait for it to finish'
+    PendingOEMValidation      = 'the update waits for validation by the hardware vendor; try again later'
 }
+function Get-StuckUpdate($Update) {
+    # Every update that is not startable, not running and not done: failed, waiting, or in a state this script does not know. None of them may read as "at target".
+    @(@($Update) | Where-Object { $_ -and $DoneState -notcontains $_.State -and $StartableState -notcontains $_.State -and $RunningState -notcontains $_.State })
+}
+function Get-StateAdvice([string]$State) { if ($StateAdvice.ContainsKey($State)) { $StateAdvice[$State] } else { "the state '$State' is not one this script knows (see Get-SolutionUpdate and Troubleshoot updates)" } }
 
 function Write-Line([string]$Text) {
     Write-Information -MessageData $Text -InformationAction Continue
@@ -200,10 +218,15 @@ try {
     $solution = @(@($state.Updates) | Where-Object { $_.PackageType -eq 'Solution' })
 
     # an update that is already running
-    $running = @($solution | Where-Object { $RunningState -contains $_.State })
+    # An update of any package type that is running counts (a standalone SBE update too), and so does the state of the update environment.
+    $running = @(@($state.Updates) | Where-Object { $RunningState -contains $_.State })
     if ($running) {
         $first = $running[0]
-        Add-Row "solution update $($first.Version)" 'AlreadyRunning' "state $($first.State); nothing is started. $follow"
+        $kind = if ($first.PackageType -eq 'Solution') { 'solution update' } else { "$($first.PackageType) update" }
+        Add-Row "$kind $($first.Version)" 'AlreadyRunning' "state $($first.State); nothing is started. $follow"
+    }
+    elseif ($RunningEnvironmentState -contains [string]$state.State) {
+        Add-Row 'update environment' 'AlreadyRunning' "state $($state.State); an update is in progress, nothing is started. $follow"
     }
     elseif ($targetVersion -and $current -and $current -eq $targetVersion) {
         Add-Row "solution update $targetRaw" 'AlreadyAtTarget' "the instance runs $($state.CurrentVersion)"
@@ -223,12 +246,13 @@ try {
             if ($ready) {
                 $chosen = $ready[0]
                 # a newer update that failed is looked at first: an older one is never started past it
-                $newerStuck = @($solution | Where-Object { $StateAdvice.ContainsKey($_.State) -and $_.State -ne 'Obsolete' -and $_.State -ne 'Invalid' -and (ConvertTo-UpdateVersion $_.Version) -gt (ConvertTo-UpdateVersion $chosen.Version) })
-                if ($newerStuck) { throw "Solution update $($chosen.Version) is ready, but the newer $($newerStuck[0].Version) is in the state $($newerStuck[0].State): $($StateAdvice[$newerStuck[0].State]). Nothing is started; fix the newer update, or name the version to install in operations.updates.target_version." }
+                $newerStuck = @(Get-StuckUpdate $solution | Where-Object { (ConvertTo-UpdateVersion $_.Version) -gt (ConvertTo-UpdateVersion $chosen.Version) })
+                if ($newerStuck) { throw "Solution update $($chosen.Version) is ready, but the newer $($newerStuck[0].Version) is in the state $($newerStuck[0].State): $(Get-StateAdvice $newerStuck[0].State). Nothing is started; fix the newer update, or name the version to install in operations.updates.target_version." }
             }
             else {
-                $stuck = @($solution | Where-Object { $StateAdvice.ContainsKey($_.State) -and $_.State -ne 'Obsolete' -and $_.State -ne 'Invalid' })
-                if ($stuck) { throw "No solution update is ready to install. $($stuck[0].Version) is in the state $($stuck[0].State): $($StateAdvice[$stuck[0].State])." }
+                $stuck = @(Get-StuckUpdate $state.Updates)
+                if ($stuck) { throw "No solution update is ready to install. $($stuck[0].PackageType) update $($stuck[0].Version) is in the state $($stuck[0].State): $(Get-StateAdvice $stuck[0].State)." }
+                if ($BadEnvironmentState -contains [string]$state.State) { throw "No solution update is ready to install, but the update environment state is $($state.State), so the instance is not known to be at the target. Look at it first (Get-SolutionUpdateEnvironment, Get-SolutionUpdateRun, Troubleshoot updates)." }
                 Add-Row 'solution update latest' 'AlreadyAtTarget' "no newer solution update is ready; the instance runs $($state.CurrentVersion)"
             }
             if ($chosen -and $current -and (ConvertTo-UpdateVersion $chosen.Version) -le $current) { Add-Row "solution update $($chosen.Version)" 'AlreadyAtTarget' "the instance runs $($state.CurrentVersion)"; $chosen = $null }

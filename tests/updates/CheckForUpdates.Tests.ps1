@@ -202,6 +202,23 @@ Describe 'Get-AvailableSolutionUpdate.ps1 (the cluster)' {
             $r.Text | Should -Match 'Verdict: UpToDate'
         }
 
+        It 'stops waiting at once with AttentionNeeded and exit 1 for <Case>: it does not sleep and reads once' -ForEach @(
+            @{ Case = 'an update in InstallationFailed'; Set = { $global:AzlChkState.Updates = @((New-Update '12.2607.1002.20' 'Installed'), (New-Update '12.2610.1004.50' 'InstallationFailed')) } }
+            @{ Case = 'an update in HealthCheckFailed'; Set = { $global:AzlChkState.Updates = @((New-Update '12.2607.1002.20' 'Installed'), (New-Update '12.2610.1004.50' 'HealthCheckFailed')) } }
+            @{ Case = 'an update in ScanFailed'; Set = { $global:AzlChkState.Updates = @((New-Update '12.2607.1002.20' 'Installed'), (New-Update '12.2610.1004.50' 'ScanFailed')) } }
+            @{ Case = 'a health state of Failure'; Set = { $global:AzlChkState.HealthState = 'Failure'; $global:AzlChkState.Updates = @((New-Update '12.2607.1002.20' 'Installed')) } }
+            @{ Case = 'a health state of Warning'; Set = { $global:AzlChkState.HealthState = 'Warning'; $global:AzlChkState.Updates = @((New-Update '12.2607.1002.20' 'Installed')) } }
+            @{ Case = 'an update environment in UpdateFailed'; Set = { $global:AzlChkState.State = 'UpdateFailed'; $global:AzlChkState.Updates = @((New-Update '12.2607.1002.20' 'Installed')) } }
+            @{ Case = 'an update environment in PreparationFailed'; Set = { $global:AzlChkState.State = 'PreparationFailed'; $global:AzlChkState.Updates = @((New-Update '12.2607.1002.20' 'Installed')) } }
+        ) {
+            & $Set
+            $r = Invoke-Check (New-InfraFile) @{ WaitMinutes = 120; PollSeconds = 60 }
+            $r.ExitCode | Should -Be 1 -Because $r.Text
+            $r.Text | Should -Match 'Verdict: AttentionNeeded'
+            $global:AzlChkReads | Should -Be 1
+            Should -Invoke Start-Sleep -Times 0
+        }
+
         It 'reads once and does not sleep without -WaitMinutes' {
             $global:AzlChkAppearsOnRead = 999
             $null = Invoke-Check (New-InfraFile)
@@ -251,7 +268,7 @@ Describe 'Get-AvailableSolutionUpdate.azcli.ps1 (Azure)' {
                 @{ name = 'Solution12.2607.1002.20'; properties = @{ version = '12.2607.1002.20'; state = 'Installed'; packageType = 'Solution'; displayName = 'old' } }
                 @{ name = 'Solution12.2610.1004.50'; properties = @{ version = '12.2610.1004.50'; state = 'Ready'; packageType = 'Solution'; displayName = 'new'; updateStateProperties = @{ notifyMessage = '' } } }
             )
-            NotFound = $false; FailList = $false
+            NotFound = $false; FailList = $false; Health = 'Success'; NextLink = ''; PageTwo = @(); NextAlways = $false; RestoreFails = $false
         }
         Mock az {
             $global:LASTEXITCODE = 0
@@ -262,14 +279,23 @@ Describe 'Get-AvailableSolutionUpdate.azcli.ps1 (Azure)' {
                 if (-not $s.SignedIn) { $global:LASTEXITCODE = 1; return 'Please run az login' }
                 return @($s.Tenant, $global:AzlChkHome)
             }
-            if ($line -like 'account set*') { return }
+            if ($line -like 'account set*') {
+                if ($s.RestoreFails -and $args[-1] -eq $global:AzlChkHome) { $global:LASTEXITCODE = 1; return 'ERROR: the subscription was removed' }
+                return
+            }
             if ($line -like 'rest*updateSummaries/default*') {
                 if ($s.NotFound) { $global:LASTEXITCODE = 1; return 'ERROR: (ResourceNotFound) The Resource was not found 404' }
-                return (@{ name = 'default'; properties = @{ currentVersion = '12.2607.1002.20'; currentSbeVersion = '4.1.2410.5'; hardwareModel = 'Model-1'; state = $s.State; lastChecked = $s.LastChecked; healthCheckResult = $s.HealthChecks } } | ConvertTo-Json -Depth 8)
+                return (@{ name = 'default'; properties = @{ currentVersion = '12.2607.1002.20'; currentSbeVersion = '4.1.2410.5'; hardwareModel = 'Model-1'; state = $s.State; healthState = $s.Health; lastChecked = $s.LastChecked; healthCheckResult = $s.HealthChecks } } | ConvertTo-Json -Depth 8)
+            }
+            if ($line -like 'rest*/updates --url-parameters*') {
+                if ($s.NextAlways) { return (@{ value = @(); nextLink = $s.NextLink } | ConvertTo-Json -Depth 8) }
+                return (@{ value = $s.PageTwo } | ConvertTo-Json -Depth 8)
             }
             if ($line -like 'rest*/updates?api-version*') {
                 if ($s.FailList) { $global:LASTEXITCODE = 1; return 'ERROR: Forbidden' }
-                return (@{ value = $s.Updates } | ConvertTo-Json -Depth 8)
+                $page = @{ value = $s.Updates }
+                if ($s.NextLink) { $page.nextLink = $s.NextLink }
+                return ($page | ConvertTo-Json -Depth 8)
             }
             $global:LASTEXITCODE = 1
             "unexpected az call: $line"
@@ -283,8 +309,10 @@ Describe 'Get-AvailableSolutionUpdate.azcli.ps1 (Azure)' {
         $rest = @($global:AzlChkAzCalls | Where-Object { $_ -like 'rest*' })
         $rest.Count | Should -Be 2
         $base = "/subscriptions/$($global:AzlChkSubscription)/resourceGroups/rg-azl-01/providers/Microsoft.AzureStackHCI/clusters/azl-cluster-01"
-        $rest[0] | Should -BeLike "rest --method get --url https://management.azure.com$base/updateSummaries/default?api-version=2024-04-01*"
-        $rest[1] | Should -BeLike "rest --method get --url https://management.azure.com$base/updates?api-version=2024-04-01*"
+        # no host: az rest prefixes the ARM endpoint of the cloud it is set to (Learn: az rest, --url)
+        $rest[0] | Should -BeLike "rest --method get --url $base/updateSummaries/default?api-version=2024-04-01*"
+        $rest[1] | Should -BeLike "rest --method get --url $base/updates?api-version=2024-04-01*"
+        @($global:AzlChkAzCalls | Where-Object { $_ -match 'https?://|management\.azure\.com' }).Count | Should -Be 0
         @($global:AzlChkAzCalls | Where-Object { $_ -match '--method (post|put|patch|delete)' }).Count | Should -Be 0
         $global:AzlChkAzCalls | Should -Contain "account set --subscription $($global:AzlChkSubscription)"
         $global:AzlChkAzCalls[-1] | Should -Be "account set --subscription $($global:AzlChkHome)"
@@ -315,6 +343,54 @@ Describe 'Get-AvailableSolutionUpdate.azcli.ps1 (Azure)' {
         $r = Invoke-CheckCli (New-InfraFile)
         $r.ExitCode | Should -Be 1 -Because $r.Text
         $r.Text | Should -Match 'Verdict: AttentionNeeded'
+    }
+
+    It 'follows the next link of the list of updates (keeping the query as --url-parameters, with no host and no & in an argument) and reads the updates of every page' {
+        $global:AzlChkAz.NextLink = "https://management.azure.com/subscriptions/$($global:AzlChkSubscription)/resourceGroups/rg-azl-01/providers/Microsoft.AzureStackHCI/clusters/azl-cluster-01/updates?api-version=2024-04-01&`$skiptoken=abc%3D%3D"
+        $global:AzlChkAz.PageTwo = @(@{ name = 'Solution12.2612.1001.90'; properties = @{ version = '12.2612.1001.90'; state = 'InstallationFailed'; packageType = 'Solution'; displayName = 'page two' } })
+        $r = Invoke-CheckCli (New-InfraFile)
+        $r.ExitCode | Should -Be 1 -Because 'the update on the second page is in a failed state'
+        $r.Text | Should -Match 'Verdict: AttentionNeeded'
+        @($r.Rows | Where-Object Update -EQ '12.2612.1001.90').Count | Should -Be 1
+        $second = @($global:AzlChkAzCalls | Where-Object { $_ -like 'rest*--url-parameters*' })
+        $second.Count | Should -Be 1
+        $second[0] | Should -BeLike 'rest --method get --url /subscriptions/*/updates --url-parameters api-version=2024-04-01 $skiptoken=abc== --output json*'
+        $second[0] | Should -Not -Match '&|https?:|%'
+    }
+
+    It 'stops after 50 pages with exit 1 instead of looping for ever' {
+        $global:AzlChkAz.NextAlways = $true
+        $global:AzlChkAz.NextLink = "https://management.azure.com/subscriptions/$($global:AzlChkSubscription)/resourceGroups/rg-azl-01/providers/Microsoft.AzureStackHCI/clusters/azl-cluster-01/updates?api-version=2024-04-01&`$skiptoken=again"
+        $r = Invoke-CheckCli (New-InfraFile)
+        $r.ExitCode | Should -Be 1 -Because $r.Text
+        $r.Text | Should -Match 'more than 50 pages'
+        @($global:AzlChkAzCalls | Where-Object { $_ -like '*/updates?api-version*' -or $_ -like '*/updates --url-parameters*' }).Count | Should -Be 50
+    }
+
+    It 'refuses a next link whose query holds a character that cannot be sent safely (exit 1, never an az call with it)' {
+        $global:AzlChkAz.NextLink = "https://management.azure.com/subscriptions/$($global:AzlChkSubscription)/resourceGroups/rg-azl-01/providers/Microsoft.AzureStackHCI/clusters/azl-cluster-01/updates?api-version=2024-04-01&`$skiptoken=a%26b"
+        $r = Invoke-CheckCli (New-InfraFile)
+        $r.ExitCode | Should -Be 1 -Because $r.Text
+        $r.Text | Should -Match 'cannot be sent to the Azure CLI safely'
+        @($global:AzlChkAzCalls | Where-Object { $_ -like 'rest*--url-parameters*' }).Count | Should -Be 0
+    }
+
+    It 'raises AttentionNeeded for a health state of <Health> (as the PowerShell variant does), and not for Success' -ForEach @(@{ Health = 'Failure' }, @{ Health = 'Error' }, @{ Health = 'Warning' }) {
+        $global:AzlChkAz.Health = $Health
+        $r = Invoke-CheckCli (New-InfraFile)
+        $r.ExitCode | Should -Be 1 -Because $r.Text
+        $r.Text | Should -Match 'Verdict: AttentionNeeded'
+        $r.Text | Should -Match "health of the update environment is $Health"
+        $global:AzlChkAz.Health = 'Success'
+        (Invoke-CheckCli (New-InfraFile)).ExitCode | Should -Be 0
+    }
+
+    It 'warns and exits 1 when the earlier subscription cannot be put back, also when everything else was fine' {
+        $global:AzlChkAz.RestoreFails = $true
+        $r = Invoke-CheckCli (New-InfraFile)
+        $r.ExitCode | Should -Be 1 -Because $r.Text
+        $r.Text | Should -Match 'could not be put back'
+        $r.Text | Should -Match 'az account set --subscription'
     }
 
     It 'takes -MaxCheckAgeHours into account' {
@@ -364,7 +440,10 @@ Describe 'Get-AvailableSolutionUpdate.azcli.ps1 (Azure)' {
 
     It 'never runs az with a character the Windows command file would read as a command' {
         $text = Get-Content -LiteralPath $script:ScriptCli -Raw
-        $text | Should -Match 'UnsafeArgument'
+        $text | Should -Match 'AzlAzureCliArgument\.psm1'
+        $text | Should -Match 'Get-AzlAzureCliArgumentProblem'
+        $text | Should -Match 'Get-AzlAzureCliValueProblem'
+        $text | Should -Not -Match 'UnsafeArgument'
         ([regex]::Matches($text, '&\s+az\s')).Count | Should -Be 1 -Because 'one call site, guarded'
     }
 }

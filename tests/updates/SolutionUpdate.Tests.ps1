@@ -256,6 +256,77 @@ Describe 'Start-AzureLocalSolutionUpdate.ps1' {
         }
     }
 
+    Context 'a state that is not "nothing to do" never reads as AlreadyAtTarget' {
+        It 'latest mode: a solution update in the state <_> and nothing ready ends with Failed, exit 1 (not AlreadyAtTarget, not exit 0)' -ForEach @(
+            'ScanFailed', 'ScanInProgress', 'NotApplicableBecauseAnotherUpdateIsInProgress', 'PendingOEMValidation', 'DownloadFailed', 'PreparationFailed', 'HealthCheckFailed',
+            'InstallationFailed', 'AdditionalContentRequired', 'HasPrerequisite', 'SomeStateOfTheFuture'
+        ) {
+            $wanted = $_
+            $global:AzlUpdState.Updates = @((New-Update '12.2607.1002.20' 'Installed'), (New-Update '12.2610.1004.50' $_))
+            $r = Invoke-Update (New-InfraFile)
+            $r.ExitCode | Should -Be 1 -Because $r.Text
+            @($r.Rows | Where-Object Action -EQ 'AlreadyAtTarget').Count | Should -Be 0
+            $r.Rows[0].Action | Should -Be 'Failed'
+            $r.Rows[0].Detail | Should -Match $wanted
+            (Get-Call 'StartUpdate').Count | Should -Be 0
+        }
+
+        It 'latest mode: a failed standalone SBE update with nothing ready is not AlreadyAtTarget either' {
+            $global:AzlUpdState.Updates = @((New-Update '12.2607.1002.20' 'Installed'), (New-Update '12.2612.1001.90' 'ScanFailed' 'SBE'))
+            $r = Invoke-Update (New-InfraFile)
+            $r.ExitCode | Should -Be 1 -Because $r.Text
+            @($r.Rows | Where-Object Action -EQ 'AlreadyAtTarget').Count | Should -Be 0
+        }
+
+        It 'latest mode: the states that need nothing (Installed, Obsolete, Invalid, Recalled) still read as AlreadyAtTarget with exit 0' {
+            $global:AzlUpdState.Updates = @((New-Update '12.2607.1002.20' 'Installed'), (New-Update '12.2605.1001.10' 'Obsolete'), (New-Update '12.2606.1001.10' 'Invalid'), (New-Update '12.2609.1001.10' 'Recalled'))
+            $r = Invoke-Update (New-InfraFile)
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Rows[0].Action | Should -Be 'AlreadyAtTarget'
+        }
+
+        It 'latest mode: a newer update in ScanFailed stops a ready older one' {
+            $global:AzlUpdState.Updates = @((New-Update '12.2609.1003.30'), (New-Update '12.2610.1004.50' 'ScanFailed'))
+            $r = Invoke-Update (New-InfraFile)
+            $r.ExitCode | Should -Be 1 -Because $r.Text
+            (Get-Call 'StartUpdate').Count | Should -Be 0
+        }
+
+        It 'latest mode: an update environment in the state <_> with nothing ready is not AlreadyAtTarget' -ForEach @('UpdateFailed', 'NeedsAttention', 'PreparationFailed') {
+            $wanted = $_
+            $global:AzlUpdState.State = $_
+            $global:AzlUpdState.Updates = @((New-Update '12.2607.1002.20' 'Installed'))
+            $r = Invoke-Update (New-InfraFile)
+            $r.ExitCode | Should -Be 1 -Because $r.Text
+            @($r.Rows | Where-Object Action -EQ 'AlreadyAtTarget').Count | Should -Be 0
+            $r.Text | Should -Match $wanted
+        }
+
+        It 'a running standalone SBE update is reported as AlreadyRunning, not AlreadyAtTarget, and nothing is started' -ForEach @('Downloading', 'Preparing', 'HealthChecking', 'Installing') {
+            $global:AzlUpdState.CurrentVersion = '12.2610.1004.50'
+            $global:AzlUpdState.Updates = @((New-Update '12.2610.1004.50' 'Installed'), (New-Update '12.2612.1001.90' $_ 'SBE'))
+            foreach ($file in (New-InfraFile), (New-InfraFile -Target '12.2610.1004.50')) {
+                $r = Invoke-Update $file -Extra @{ Mode = 'OnDemand' }
+                $r.ExitCode | Should -Be 0 -Because $r.Text
+                $r.Rows[0].Action | Should -Be 'AlreadyRunning'
+                $r.Rows[0].Item | Should -Match 'SBE'
+                @($r.Rows | Where-Object Action -EQ 'AlreadyAtTarget').Count | Should -Be 0
+            }
+            (Get-Call 'StartUpdate').Count | Should -Be 0
+        }
+
+        It 'an update environment that says <_> is reported as AlreadyRunning even when no update lists a running state' -ForEach @('UpdateInProgress', 'PreparationInProgress') {
+            $wanted = $_
+            $global:AzlUpdState.State = $_
+            $global:AzlUpdState.CurrentVersion = '12.2610.1004.50'
+            $global:AzlUpdState.Updates = @((New-Update '12.2610.1004.50' 'Installed'))
+            $r = Invoke-Update (New-InfraFile -Target '12.2610.1004.50') -Extra @{ Mode = 'OnDemand' }
+            $r.ExitCode | Should -Be 0 -Because $r.Text
+            $r.Rows[0].Action | Should -Be 'AlreadyRunning'
+            (Get-Call 'StartUpdate').Count | Should -Be 0
+        }
+    }
+
     Context 'failures (exit 1), nothing started' {
         It 'stops when the cluster cannot be read' {
             $global:AzlUpdFail = 'ReadState'
