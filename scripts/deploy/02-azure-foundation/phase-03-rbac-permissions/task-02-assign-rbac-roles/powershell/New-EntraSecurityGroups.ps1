@@ -89,7 +89,8 @@ catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.M
 
 $tenantId = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.tenant_id')
 $rawGroups = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'identity.entra.groups'
-$entries = @(@($rawGroups) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawGroups)) { Exit-InputProblem 'An entry of identity.entra.groups is not a map (names with their settings).' } })
+if ($null -ne $rawGroups -and @(@($rawGroups) | Where-Object { $_ -isnot [System.Collections.IDictionary] }).Count) { Exit-InputProblem 'An entry of identity.entra.groups is not a map (names with their settings).' }
+$entries = @(@($rawGroups) | Where-Object { $_ -is [System.Collections.IDictionary] })
 
 if ($tenantId -notmatch $Guid) { Exit-InputProblem 'azure.tenant_id is missing or is not a GUID. It is the tenant the sign-in must belong to.' }
 if ($entries.Count -eq 0) { Exit-InputProblem 'identity.entra.groups is empty. List the groups to create, each with a name.' }

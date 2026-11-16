@@ -109,9 +109,11 @@ $tenantId = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'az
 $defaultLocation = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.location')
 $gateway = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.connectivity.vpn_gateway'
 $rawNetworks = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.networks'
-$networks = @(@($rawNetworks) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawNetworks)) { Exit-InputProblem 'An entry of landing_zone.networks is not a map (names with their settings).' } })
+if ($null -ne $rawNetworks -and @(@($rawNetworks) | Where-Object { $_ -isnot [System.Collections.IDictionary] }).Count) { Exit-InputProblem 'An entry of landing_zone.networks is not a map (names with their settings).' }
+$networks = @(@($rawNetworks) | Where-Object { $_ -is [System.Collections.IDictionary] })
 $rawSubscriptions = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.subscriptions'
-$subscriptions = @(@($rawSubscriptions) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawSubscriptions)) { Exit-InputProblem 'An entry of landing_zone.subscriptions is not a map (names with their settings).' } })
+if ($null -ne $rawSubscriptions -and @(@($rawSubscriptions) | Where-Object { $_ -isnot [System.Collections.IDictionary] }).Count) { Exit-InputProblem 'An entry of landing_zone.subscriptions is not a map (names with their settings).' }
+$subscriptions = @(@($rawSubscriptions) | Where-Object { $_ -is [System.Collections.IDictionary] })
 $rawTags = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'tags'
 $tags = @{}
 if ($rawTags -is [System.Collections.IDictionary]) { foreach ($k in $rawTags.Keys) { if ($null -ne $rawTags[$k]) { $tags[[string]$k] = [string]$rawTags[$k] } } }

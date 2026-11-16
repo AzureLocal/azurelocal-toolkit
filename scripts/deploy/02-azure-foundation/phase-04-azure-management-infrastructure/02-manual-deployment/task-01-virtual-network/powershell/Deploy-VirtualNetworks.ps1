@@ -133,9 +133,11 @@ catch { Exit-InputProblem "Cannot read the infrastructure file: $($_.Exception.M
 $tenantId = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.tenant_id')
 $defaultLocation = [string](Get-AzlInfrastructureValue -Infrastructure $infra -Path 'azure.location')
 $rawNetworks = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.networks'
-$networkEntries = @(@($rawNetworks) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawNetworks)) { Exit-InputProblem 'An entry of landing_zone.networks is not a map (names with their settings).' } })
+if ($null -ne $rawNetworks -and @(@($rawNetworks) | Where-Object { $_ -isnot [System.Collections.IDictionary] }).Count) { Exit-InputProblem 'An entry of landing_zone.networks is not a map (names with their settings).' }
+$networkEntries = @(@($rawNetworks) | Where-Object { $_ -is [System.Collections.IDictionary] })
 $rawSubscriptions = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'landing_zone.subscriptions'
-$subscriptionEntries = @(@($rawSubscriptions) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawSubscriptions)) { Exit-InputProblem 'An entry of landing_zone.subscriptions is not a map (names with their settings).' } })
+if ($null -ne $rawSubscriptions -and @(@($rawSubscriptions) | Where-Object { $_ -isnot [System.Collections.IDictionary] }).Count) { Exit-InputProblem 'An entry of landing_zone.subscriptions is not a map (names with their settings).' }
+$subscriptionEntries = @(@($rawSubscriptions) | Where-Object { $_ -is [System.Collections.IDictionary] })
 $rawTags = Get-AzlInfrastructureValue -Infrastructure $infra -Path 'tags'
 $tags = @{}
 if ($rawTags -is [System.Collections.IDictionary]) { foreach ($k in $rawTags.Keys) { if ($null -ne $rawTags[$k]) { $tags[[string]$k] = [string]$rawTags[$k] } } }
@@ -168,7 +170,8 @@ $plan = foreach ($entry in $networkEntries) {
     foreach ($server in $dns) { if ($server -notmatch $Ipv4) { Exit-InputProblem "landing_zone.networks '$name': the DNS server '$server' is not an IPv4 address." } }
 
     $rawSubnets = if ($entry.Contains('subnets')) { $entry['subnets'] } else { $null }
-    $subnets = @(@($rawSubnets) | ForEach-Object { if ($_ -is [System.Collections.IDictionary]) { $_ } elseif ($null -ne ($rawSubnets)) { Exit-InputProblem 'An entry of landing_zone.networks[].subnets is not a map (names with their settings).' } } | ForEach-Object {
+    if ($null -ne $rawSubnets -and @(@($rawSubnets) | Where-Object { $_ -isnot [System.Collections.IDictionary] }).Count) { Exit-InputProblem 'An entry of landing_zone.networks[].subnets is not a map (names with their settings).' }
+    $subnets = @(@($rawSubnets) | Where-Object { $_ -is [System.Collections.IDictionary] } | ForEach-Object {
             $subnetName = Get-Entry $_ 'name'
             if (-not $subnetName) { Exit-InputProblem "landing_zone.networks '$name': a subnet has no name." }
             $prefix = Get-Entry $_ 'prefix'
